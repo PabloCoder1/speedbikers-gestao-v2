@@ -47,6 +47,22 @@ export const ORDENS = {
   criado: "criado",
 } as const;
 
+/**
+ * Os eixos de CATÁLOGO (D-373), além dos de curadoria. Cada um é lista fechada
+ * na URL e vira o argumento de `get_products_overview`.
+ */
+export const TIPOS = { produto: "PRODUTO", kit: "KIT" } as const;
+
+/** `ENCERRANDO` = "ESTOQUE INATIVO" do ERP (`is_discontinued`, D-039); `INATIVO` = `is_active` falso. */
+export const SITUACOES = { ativo: "ATIVO", encerrando: "ENCERRANDO", inativo: "INATIVO" } as const;
+
+/** Com ou sem anúncio que venda o SKU (D-122), e com ou sem venda em 90 dias. */
+export const PRESENCAS = { com: "COM", sem: "SEM" } as const;
+
+export type TipoChave = keyof typeof TIPOS;
+export type SituacaoChave = keyof typeof SITUACOES;
+export type PresencaChave = keyof typeof PRESENCAS;
+
 export type EstadoChave = keyof typeof ESTADOS;
 export type SinalChave = keyof typeof SINAIS;
 export type OrdemChave = keyof typeof ORDENS;
@@ -55,6 +71,12 @@ export interface CurationFilters {
   estado: EstadoChave;
   sinal: SinalChave | null;
   marca: string | null;
+  /** `skus.brand`, a CATEGORIA do UpSeller (D-129) — nunca "marca". `SEM_CATEGORIA` é recorte. */
+  categoria: string | null;
+  tipo: TipoChave | null;
+  situacao: SituacaoChave | null;
+  anuncios: PresencaChave | null;
+  vendas: PresencaChave | null;
   busca: string;
   ordem: OrdemChave;
   tamanho: PageSize;
@@ -64,13 +86,27 @@ export interface CurationFilters {
 /** A marca ausente é um RECORTE, não um valor de marca — por isso o sentinela. */
 export const SEM_MARCA = "__sem__";
 
+/** O mesmo para a categoria. */
+export const SEM_CATEGORIA = "__sem__";
+
 function primeiro(bruto: string | string[] | undefined): string | undefined {
   return Array.isArray(bruto) ? bruto[0] : bruto;
 }
 
-/** Resolve contra lista fechada e cai no default EM SILÊNCIO — URL é entrada de terceiro. */
+/**
+ * Resolve contra lista fechada e cai no default EM SILÊNCIO — URL é entrada de terceiro.
+ *
+ * **O padrão é `todos` desde D-373.** A tela deixou de ser só a fila de
+ * curadoria e virou o catálogo: quem abre "Produtos" quer ver os produtos. A
+ * fila continua a um clique (o cartão "Não classificados"), e os links que
+ * chegam com `estado=pendente` explícito continuam significando o mesmo.
+ */
 export function resolveEstado(bruto: unknown): EstadoChave {
-  return typeof bruto === "string" && bruto in ESTADOS ? (bruto as EstadoChave) : "pendente";
+  return typeof bruto === "string" && bruto in ESTADOS ? (bruto as EstadoChave) : "todos";
+}
+
+function daLista<T extends string>(lista: Record<T, string>, bruto: unknown): T | null {
+  return typeof bruto === "string" && bruto in lista ? (bruto as T) : null;
 }
 
 export function resolveSinal(bruto: unknown): SinalChave | null {
@@ -88,6 +124,11 @@ export function resolveCurationFilters(
     estado: resolveEstado(primeiro(query.estado)),
     sinal: resolveSinal(primeiro(query.sinal)),
     marca: primeiro(query.marca) ?? null,
+    categoria: primeiro(query.categoria) ?? null,
+    tipo: daLista(TIPOS, primeiro(query.tipo)),
+    situacao: daLista(SITUACOES, primeiro(query.situacao)),
+    anuncios: daLista(PRESENCAS, primeiro(query.anuncios)),
+    vendas: daLista(PRESENCAS, primeiro(query.vendas)),
     busca: primeiro(query.busca) ?? "",
     ordem: resolveOrdem(primeiro(query.ordem)),
     tamanho: resolvePageSize(primeiro(query.tamanho), DEFAULT_PAGE_SIZE),
@@ -118,9 +159,14 @@ export function buildCurationHref(
       // Os defaults ficam FORA da URL: `/produtos` limpo continua sendo a mesma
       // página de sempre, e o link salvo de ontem continua significando o
       // mesmo recorte.
-      estado: proximo.estado === "pendente" ? null : proximo.estado,
+      estado: proximo.estado === "todos" ? null : proximo.estado,
       sinal: proximo.sinal,
       marca: proximo.marca,
+      categoria: proximo.categoria,
+      tipo: proximo.tipo,
+      situacao: proximo.situacao,
+      anuncios: proximo.anuncios,
+      vendas: proximo.vendas,
       busca: proximo.busca,
       ordem: proximo.ordem === "curadoria" ? null : proximo.ordem,
       tamanho: proximo.tamanho === DEFAULT_PAGE_SIZE ? null : String(proximo.tamanho),
@@ -162,6 +208,63 @@ export function toCurationRpcArgs(filters: CurationFilters): {
     ...(classificado === null ? {} : { p_classified: classificado }),
     ...(filters.sinal === null ? {} : { p_signal: SINAIS[filters.sinal] }),
     ...(filters.marca === null || semMarca ? {} : { p_brand: filters.marca }),
+    ...(filters.busca === "" ? {} : { p_search: filters.busca }),
+  };
+}
+
+/** Quantos filtros estão ativos, fora busca, ordem, tamanho e página — o "Limpar filtros". */
+export function filtrosAtivos(filters: CurationFilters): number {
+  return [
+    filters.estado !== "todos",
+    filters.sinal !== null,
+    filters.marca !== null,
+    filters.categoria !== null,
+    filters.tipo !== null,
+    filters.situacao !== null,
+    filters.anuncios !== null,
+    filters.vendas !== null,
+    filters.busca !== "",
+  ].filter(Boolean).length;
+}
+
+/**
+ * Argumentos de `get_products_overview` (D-373). Mesmo princípio de
+ * `toCurationRpcArgs`: omitir a chave é "sem filtro" (`exactOptionalPropertyTypes`).
+ */
+export function toOverviewRpcArgs(filters: CurationFilters): {
+  p_limit: number;
+  p_offset: number;
+  p_order: string;
+  p_missing_brand: boolean;
+  p_missing_category: boolean;
+  p_classified?: string;
+  p_signal?: string;
+  p_brand?: string;
+  p_category?: string;
+  p_kind?: string;
+  p_status?: string;
+  p_listing?: string;
+  p_sales?: string;
+  p_search?: string;
+} {
+  const semMarca = filters.marca === SEM_MARCA;
+  const semCategoria = filters.categoria === SEM_CATEGORIA;
+  const classificado = ESTADOS[filters.estado];
+
+  return {
+    p_limit: filters.tamanho,
+    p_offset: (filters.page - 1) * filters.tamanho,
+    p_order: ORDENS[filters.ordem],
+    p_missing_brand: semMarca,
+    p_missing_category: semCategoria,
+    ...(classificado === null ? {} : { p_classified: classificado }),
+    ...(filters.sinal === null ? {} : { p_signal: SINAIS[filters.sinal] }),
+    ...(filters.marca === null || semMarca ? {} : { p_brand: filters.marca }),
+    ...(filters.categoria === null || semCategoria ? {} : { p_category: filters.categoria }),
+    ...(filters.tipo === null ? {} : { p_kind: TIPOS[filters.tipo] }),
+    ...(filters.situacao === null ? {} : { p_status: SITUACOES[filters.situacao] }),
+    ...(filters.anuncios === null ? {} : { p_listing: PRESENCAS[filters.anuncios] }),
+    ...(filters.vendas === null ? {} : { p_sales: PRESENCAS[filters.vendas] }),
     ...(filters.busca === "" ? {} : { p_search: filters.busca }),
   };
 }
