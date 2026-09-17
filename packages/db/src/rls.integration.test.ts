@@ -12944,3 +12944,152 @@ describe("get_actions_queue (D-263)", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe("get_replenishment_reach (D-361)", () => {
+  // Nomes fora dos padrões que os afterAll apagam ('RLSTEST%'): com
+  // stock_movements/daily_sku_metrics, `on delete restrict` torna SKU e conta
+  // indeletáveis — o mesmo raciocínio de get_stock_coverage, acima.
+  const CONTA = "dddd0361-0000-4000-8000-000000000361";
+  const MARCA = "REACHTEST-MARCA";
+  const TODAY = "2026-08-23";
+
+  /*
+    Cinco SKUs, um em cada fronteira do universo de `get_purchase_suggestions`:
+
+      so-saldo      saldo, sem venda            -> na reposição, sem venda 30d
+      venda-30d     venda há 5 dias             -> na reposição, com venda 30d, regra própria
+      venda-40d     venda há 40 dias (<90, >30) -> na reposição, sem venda 30d
+      so-cadastro   nada                        -> só no cadastro, regra própria FORA do universo
+      venda-120d    venda há 120 dias (>90)     -> só no cadastro
+  */
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de alcance','reachtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    for (const nome of ["so-saldo", "venda-30d", "venda-40d", "so-cadastro", "venda-120d"]) {
+      const sku = await client.query<{ id: string }>(
+        `insert into public.skus
+           (organization_id, sku, kind, supplier_brand, supplier_brand_source, supplier_brand_set_at)
+         values ($1,$2,'PRODUTO',$3,'MANUAL',now()) returning id`,
+        [ORG_SB, `REACHTEST-${nome}`, MARCA],
+      );
+
+      ids[nome] = sku.rows[0]?.id ?? "";
+    }
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',8,'ENTRADA_NFE','DOCUMENT','reachtest-doc','reachtest:saldo',now())`,
+      [ORG_SB, ids["so-saldo"]],
+    );
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$6::date - 5,4,200,2,2),
+              ($1,$2,$4,$6::date - 40,3,150,1,1),
+              ($1,$2,$5,$6::date - 120,9,450,3,3)`,
+      [ORG_SB, CONTA, ids["venda-30d"], ids["venda-40d"], ids["venda-120d"], TODAY],
+    );
+
+    await client.query(
+      `insert into public.replenishment_settings (organization_id, sku_id, lead_time_days, target_coverage_days)
+       values ($1,$2,15,30), ($1,$3,15,30)`,
+      [ORG_SB, ids["venda-30d"], ids["so-cadastro"]],
+    );
+  });
+
+  interface Linha {
+    supplier_brand: string | null;
+    skus: string;
+    skus_na_reposicao: string;
+    skus_com_venda_30d: string;
+    skus_com_regra_sku: string;
+    skus_com_regra_sku_venda_30d: string;
+  }
+
+  it("conta cada fronteira do universo: saldo OU métrica em 90 dias, e venda em 30", async () => {
+    // ADMIN alcança todas as contas por papel. Ver o caso do ANALISTA abaixo.
+    const rows = await asUser<Linha>(
+      ADMIN_SB,
+      `select * from public.get_replenishment_reach('${ORG_SB}','${TODAY}') where supplier_brand = '${MARCA}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.skus)).toBe(5);
+    expect(Number(rows[0]?.skus_na_reposicao)).toBe(3);
+    expect(Number(rows[0]?.skus_com_venda_30d)).toBe(1);
+    // A regra própria de `so-cadastro` fica FORA: ele não está na reposição.
+    expect(Number(rows[0]?.skus_com_regra_sku)).toBe(1);
+    expect(Number(rows[0]?.skus_com_regra_sku_venda_30d)).toBe(1);
+  });
+
+  it("o universo É o de get_purchase_suggestions: a mesma marca dá o mesmo total nas duas", async () => {
+    const [alcance] = await asUser<{ skus_na_reposicao: string }>(
+      ADMIN_SB,
+      `select skus_na_reposicao from public.get_replenishment_reach('${ORG_SB}','${TODAY}') where supplier_brand = '${MARCA}'`,
+    );
+    const [sugestao] = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select total_count from public.get_purchase_suggestions('${ORG_SB}','${TODAY}','${MARCA}', null, 1, 0)`,
+    );
+
+    expect(Number(alcance?.skus_na_reposicao)).toBe(Number(sugestao?.total_count));
+  });
+
+  /*
+    Achado ao escrever o primeiro caso como ANALISTA: ele via 1 SKU na
+    reposição, não 3. A conta do fixture não está entre as dele, e a RLS de
+    `daily_sku_metrics` esconde as vendas dela — só o SKU com saldo sobra.
+    Não é defeito: a função é invoker, e `/reposicao` mostra a ele o mesmo
+    recorte. O que precisa valer é que as DUAS telas concordem para ele.
+  */
+  it("para quem alcança só algumas contas, a configuração conta o mesmo que a reposição mostra a ele", async () => {
+    const [alcance] = await asUser<{ skus_na_reposicao: string }>(
+      ANALISTA_SB,
+      `select skus_na_reposicao from public.get_replenishment_reach('${ORG_SB}','${TODAY}') where supplier_brand = '${MARCA}'`,
+    );
+    const [sugestao] = await asUser<{ total_count: string }>(
+      ANALISTA_SB,
+      `select total_count from public.get_purchase_suggestions('${ORG_SB}','${TODAY}','${MARCA}', null, 1, 0)`,
+    );
+
+    expect(Number(alcance?.skus_na_reposicao)).toBe(1);
+    expect(Number(alcance?.skus_na_reposicao)).toBe(Number(sugestao?.total_count));
+  });
+
+  it("data nula é hoje, não nada (D-280): a venda de 120 dias atrás continua fora", async () => {
+    const [comData] = await asUser<Linha>(
+      ADMIN_SB,
+      `select * from public.get_replenishment_reach('${ORG_SB}', current_date) where supplier_brand = '${MARCA}'`,
+    );
+    const [semData] = await asUser<Linha>(
+      ADMIN_SB,
+      `select * from public.get_replenishment_reach('${ORG_SB}') where supplier_brand = '${MARCA}'`,
+    );
+
+    expect(semData).toEqual(comData);
+  });
+
+  it("membro de OUTRA organização não vê a marca — a RLS de skus corta, a função é invoker", async () => {
+    const rows = await asUser<Linha>(
+      DE_OUTRA_ORG,
+      `select * from public.get_replenishment_reach('${ORG_SB}','${TODAY}') where supplier_brand = '${MARCA}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(asAnon(`select * from public.get_replenishment_reach('${ORG_SB}','${TODAY}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});

@@ -1,160 +1,180 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
-import { createClient } from "../../../lib/supabase/server";
+import { validarRegra, type CampoDaRegra } from "../../../lib/replenishment-rule";
 import { currentMembership } from "../../../lib/membership";
+import { createClient } from "../../../lib/supabase/server";
 
 /**
- * Configuração de reposição (D-144, Fase 5D) — Server Actions diretas sob
- * RLS, sem RPC: `replenishment_settings_insert_admin`/`update`/`delete`
- * exigem ADMIN/GESTOR, mesmo padrão de `reply_templates` (D-111). A
+ * Configuração de reposição (D-144, Fase 5D; refeita em D-361) — Server Actions
+ * diretas sob RLS, sem RPC: `replenishment_settings_insert_admin`/`update`/
+ * `delete` exigem ADMIN/GESTOR, mesmo padrão de `reply_templates` (D-111). A
  * autorização mora no banco; a tela só reflete o erro quando a policy nega.
+ *
+ * ## D-361: o resultado VOLTA, não viaja pela URL
+ *
+ * Eram `<form action>` de Server Component, com o erro em `?erro=` e redirect
+ * no sucesso. O formulário agora mora numa gaveta (`gaveta-regra.tsx`) com
+ * `useActionState`: o erro chega NO CAMPO que o causou, a gaveta só fecha
+ * quando salvou, e o `revalidatePath` faz o Next devolver a página atualizada
+ * na mesma resposta (Next 16, "A single response carries data and UI").
+ *
+ * `/reposicao` é revalidada junto: a regra é o que decide a sugestão de lá, e
+ * voltar para a reposição depois de salvar não pode mostrar a política velha.
  */
 
-/**
- * `<form action>` de Server Component exige retorno void, então o erro viaja
- * pela URL (`?erro=`) e a página o exibe — server-only, sem `use client`.
- * Sucesso redireciona para a URL limpa, o que também evita re-submissão no
- * refresh (padrão POST-redirect-GET, de graça).
- */
-function finish(message: string | null): never {
-  revalidatePath("/reposicao/configuracoes");
-  redirect(message === null ? "/reposicao/configuracoes" : `/reposicao/configuracoes?erro=${encodeURIComponent(message)}`);
+export interface ResultadoDaRegra {
+  readonly ok: boolean;
+  /** A frase geral: sucesso, permissão, conflito de escopo. */
+  readonly mensagem: string | null;
+  readonly erros: Partial<Record<CampoDaRegra | "supplier_brand", string>>;
 }
 
-function describeWriteError(error: { message: string; code?: string } | null): string | null {
-  if (error === null) return null;
+const SEM_ERRO: ResultadoDaRegra = { ok: false, mensagem: null, erros: {} };
 
+function revalidar(): void {
+  revalidatePath("/reposicao/configuracoes");
+  revalidatePath("/reposicao");
+}
+
+function texto(formData: FormData, campo: string): string {
+  const valor = formData.get(campo);
+
+  return typeof valor === "string" ? valor : "";
+}
+
+function traduzirErroDoBanco(error: { message: string; code?: string }): ResultadoDaRegra {
   if (error.code === "23505") {
-    return "Já existe configuração para esse escopo — edite ou remova a existente.";
+    return {
+      ...SEM_ERRO,
+      erros: { supplier_brand: "Esse escopo já tem regra. Feche e edite a regra existente." },
+    };
   }
 
   if (error.code === "42501") {
-    return "Sem permissão: só ADMIN e GESTOR alteram a configuração de reposição.";
+    return { ...SEM_ERRO, mensagem: "Sem permissão: só ADMIN e GESTOR alteram a configuração de reposição." };
   }
 
   if (error.code === "23514" && error.message.includes("max_covers_window")) {
-    return "O teto precisa ser maior ou igual a prazo + cobertura + segurança — abaixo da janela, toda cobertura adequada já contaria como excesso.";
+    return {
+      ...SEM_ERRO,
+      erros: { max_coverage_days: "O teto precisa ser maior ou igual a prazo + segurança + cobertura." },
+    };
   }
 
-  return `Não foi possível salvar: ${error.message}`;
+  return { ...SEM_ERRO, mensagem: `Não foi possível salvar: ${error.message}` };
 }
 
 /**
- * O teto ("buffer máximo", D-148) é OPCIONAL: vazio = o ADMIN ainda não
- * definiu o que é "demais", e o estado EXCESSO nunca é afirmado.
+ * Cria (sem `id`) ou edita (com `id`) uma regra.
+ *
+ * O ESCOPO só é lido na criação. Na edição ele é identidade e não muda: trocar
+ * a marca de uma regra existente reatribuiria a política de outro conjunto de
+ * SKUs em silêncio (a mesma regra de identidade fixa de D-076). A nota passa a
+ * ser editável — em D-144 ela só era gravada na criação, e corrigir o motivo de
+ * uma regra exigia removê-la e criá-la de novo.
  */
-function parseOptionalMax(raw: FormDataEntryValue | null): number | null | string {
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-
-  const parsed = Number.parseInt(raw, 10);
-
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 1095) {
-    return "Teto de cobertura precisa ser um número entre 1 e 1095 — ou vazio para não afirmar excesso.";
-  }
-
-  return parsed;
-}
-
-function parseDays(raw: FormDataEntryValue | null, label: string, min: number): number | string {
-  const parsed = Number.parseInt(typeof raw === "string" ? raw : "", 10);
-
-  if (!Number.isFinite(parsed) || parsed < min || parsed > 365) {
-    return `${label} precisa ser um número entre ${String(min)} e 365.`;
-  }
-
-  return parsed;
-}
-
-export async function createSetting(formData: FormData): Promise<void> {
+export async function salvarRegra(_anterior: ResultadoDaRegra, formData: FormData): Promise<ResultadoDaRegra> {
   const supabase = await createClient();
-
   const membership = await currentMembership(supabase);
-  const organizationId = membership.organizationId;
 
-  if (organizationId === null) {
-    finish("Sessão sem organização — atualize a página.");
+  if (membership.organizationId === null) {
+    return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
   }
 
-  const leadTime = parseDays(formData.get("lead_time_days"), "Prazo de reposição", 1);
-  const coverage = parseDays(formData.get("target_coverage_days"), "Cobertura alvo", 1);
-  const safety = parseDays(formData.get("safety_stock_days"), "Estoque de segurança", 0);
-  const maxCoverage = parseOptionalMax(formData.get("max_coverage_days"));
-
-  const firstError = [leadTime, coverage, safety, maxCoverage].find((v) => typeof v === "string");
-
-  if (typeof firstError === "string") {
-    finish(firstError);
-  }
-
-  const rawBrand = formData.get("supplier_brand");
-  // "" = padrão da organização. A normalização espelha o CHECK do banco
-  // (upper + trim) para o erro chegar legível, não como violação de check.
-  const brand = typeof rawBrand === "string" && rawBrand.trim() !== "" ? rawBrand.trim().toUpperCase() : null;
-  const rawNote = formData.get("policy_note");
-  const note = typeof rawNote === "string" && rawNote.trim() !== "" ? rawNote.trim() : null;
-
-  const { error } = await supabase.from("replenishment_settings").insert({
-    organization_id: organizationId,
-    supplier_brand: brand,
-    sku_id: null,
-    lead_time_days: leadTime as number,
-    target_coverage_days: coverage as number,
-    safety_stock_days: safety as number,
-    max_coverage_days: maxCoverage as number | null,
-    policy_note: note,
+  const validacao = validarRegra({
+    prazo: texto(formData, "lead_time_days"),
+    cobertura: texto(formData, "target_coverage_days"),
+    seguranca: texto(formData, "safety_stock_days"),
+    teto: texto(formData, "max_coverage_days"),
+    nota: texto(formData, "policy_note"),
   });
 
-  finish(describeWriteError(error));
+  if (!validacao.ok) {
+    return { ...SEM_ERRO, erros: validacao.erros };
+  }
+
+  const { prazo, cobertura, seguranca, teto, nota } = validacao.valores;
+  const id = texto(formData, "id");
+
+  if (id !== "") {
+    // `.select` para distinguir "salvou" de "a RLS filtrou a linha": sem ele, um
+    // UPDATE que alcança zero linhas volta sem erro e a tela diria "salvo".
+    const { data, error } = await supabase
+      .from("replenishment_settings")
+      .update({
+        lead_time_days: prazo,
+        target_coverage_days: cobertura,
+        safety_stock_days: seguranca,
+        max_coverage_days: teto,
+        policy_note: nota,
+      })
+      .eq("id", id)
+      .select("id");
+
+    if (error !== null) return traduzirErroDoBanco(error);
+
+    if (data.length === 0) {
+      return {
+        ...SEM_ERRO,
+        mensagem: "A regra não foi alterada: ela foi removida por outra pessoa ou você não tem permissão.",
+      };
+    }
+
+    revalidar();
+
+    return { ok: true, mensagem: "Regra atualizada.", erros: {} };
+  }
+
+  // "" = padrão da organização. A normalização espelha o CHECK do banco
+  // (upper + trim) para o erro chegar legível, não como violação de check.
+  const marcaBruta = texto(formData, "supplier_brand").trim();
+  const marca = marcaBruta === "" ? null : marcaBruta.toUpperCase();
+
+  if (marca !== null && marca.length > 60) {
+    return { ...SEM_ERRO, erros: { supplier_brand: "O nome da marca tem mais de 60 caracteres." } };
+  }
+
+  const { error } = await supabase.from("replenishment_settings").insert({
+    organization_id: membership.organizationId,
+    supplier_brand: marca,
+    sku_id: null,
+    lead_time_days: prazo,
+    target_coverage_days: cobertura,
+    safety_stock_days: seguranca,
+    max_coverage_days: teto,
+    policy_note: nota,
+  });
+
+  if (error !== null) return traduzirErroDoBanco(error);
+
+  revalidar();
+
+  return {
+    ok: true,
+    mensagem: marca === null ? "Padrão da organização criado." : `Regra da marca ${marca} criada.`,
+    erros: {},
+  };
 }
 
-export async function updateSetting(formData: FormData): Promise<void> {
+export async function removerRegra(id: string): Promise<{ ok: boolean; mensagem: string }> {
+  if (id === "") {
+    return { ok: false, mensagem: "Regra não identificada — atualize a página." };
+  }
+
   const supabase = await createClient();
-  const id = formData.get("id");
+  const { data, error } = await supabase.from("replenishment_settings").delete().eq("id", id).select("id");
 
-  if (typeof id !== "string" || id === "") {
-    finish("Configuração não identificada — atualize a página.");
+  if (error !== null) {
+    return { ok: false, mensagem: traduzirErroDoBanco(error).mensagem ?? "Não foi possível remover a regra." };
   }
 
-  const leadTime = parseDays(formData.get("lead_time_days"), "Prazo de reposição", 1);
-  const coverage = parseDays(formData.get("target_coverage_days"), "Cobertura alvo", 1);
-  const safety = parseDays(formData.get("safety_stock_days"), "Estoque de segurança", 0);
-  const maxCoverage = parseOptionalMax(formData.get("max_coverage_days"));
-
-  const firstError = [leadTime, coverage, safety, maxCoverage].find((v) => typeof v === "string");
-
-  if (typeof firstError === "string") {
-    finish(firstError);
+  if (data.length === 0) {
+    return { ok: false, mensagem: "A regra não foi removida: ela já não existe ou você não tem permissão." };
   }
 
-  // O ESCOPO é identidade e não é editável — mudar a marca de uma regra
-  // existente re-atribuiria silenciosamente a política de outro conjunto de
-  // SKUs. Mesma regra de identidade fixa de `notification_preferences` (D-076).
-  // Limpar o teto (campo vazio) é edição legítima: volta a "não afirmar
-  // excesso".
-  const { error } = await supabase
-    .from("replenishment_settings")
-    .update({
-      lead_time_days: leadTime as number,
-      target_coverage_days: coverage as number,
-      safety_stock_days: safety as number,
-      max_coverage_days: maxCoverage as number | null,
-    })
-    .eq("id", id);
+  revalidar();
 
-  finish(describeWriteError(error));
-}
-
-export async function deleteSetting(formData: FormData): Promise<void> {
-  const supabase = await createClient();
-  const id = formData.get("id");
-
-  if (typeof id !== "string" || id === "") {
-    finish("Configuração não identificada — atualize a página.");
-  }
-
-  const { error } = await supabase.from("replenishment_settings").delete().eq("id", id);
-  finish(describeWriteError(error));
+  return { ok: true, mensagem: "Regra removida." };
 }
