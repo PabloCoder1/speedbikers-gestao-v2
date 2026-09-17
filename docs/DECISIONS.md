@@ -12765,3 +12765,64 @@ Pedido da sessao de `/fornecedores` (D-366): o botao "Novo pedido" do fornecedor
 - integracao: os cinco casos novos em `rls.integration.test.ts` e os seis de `get_purchase_orders` passaram (11 de 11, `-t`) no banco local recem-resetado, com a migration aplicada por cima. A suite inteira fica com a CI.
 
 **Impacto:** `supabase/migrations/20260917140000_purchase_orders_overview.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/compras/{page.tsx,novo/page.tsx,novo/purchase-order-form.tsx,[id]/page.tsx,[id]/export/pdf.ts,[id]/export/workbook.ts}`; `apps/web/lib/{purchase-orders-overview,purchase-order-filters}.ts` e testes; `apps/web/app/globals.css` (`sb-cmp-*`); `apps/web/e2e/compras.spec.ts`. Publicacao: a web funciona antes da migration (fallback); os numeros aparecem quando ela passa pela CI (Dev) e pelo workflow de producao.
+
+## D-366 - Fornecedores: uma leitura com busca e "pedido em aberto", edicao que finalmente existe, e contato que vira acao
+
+**Contexto:** pedido do usuario: melhorar a tela de fornecedores "seguindo o padrao que estavamos fazendo, bonita, rapida, util e com bastante qualidade para o usuario final". O padrao e o de D-358 (reposicao): uma leitura, resumo de decisao, cartoes que filtram, tabela com selos. Numeracao combinada com as sessoes paralelas: D-364 (relist) e D-365 (/compras) sao delas.
+
+**1. O QUE FALTAVA -- medido no codigo, nao suposto**
+
+- **nao dava para editar nem inativar fornecedor.** `update_supplier` existe desde a Fase 4 e `updateSupplier` em `app/compras/actions.ts` tambem, sem NENHUM chamador. Telefone errado ficava errado; "inativo" so existia como filtro;
+- sem busca: achar um fornecedor era rolar a pagina;
+- um unico recorte (ativo/inativo), ordem so por nome, nenhum resumo;
+- `notes` era gravado e nao aparecia em tela nenhuma;
+- contato era texto corrido ("Telefone: ..."), copiado a mao;
+- o formulario era uma coluna de nove campos iguais, e nome repetido voltava como "Nao foi possivel concluir a acao".
+
+**2. A LEITURA -- `get_suppliers_overview` (migration `20260917150000`)**
+
+`jsonb` com plano custom, no desenho de `get_replenishment_overview`: pagina, total filtrado, contagens dos recortes (todos, ativos, inativos, `em_aberto`, `sem_pedido`) e totais da base (pedidos e valor em aberto, valor comprado, ultimo pedido e de quem). Busca em nome, razao social, contato, e-mail e **digitos** do documento (CNPJ com ou sem pontuacao). Ordem por nome, em aberto, pedido recente ou valor. Contagens e totais usam a busca SEM o recorte (D-250).
+
+- **as tres saidas de valor de D-258 continuam:** 0 sem item, NULL com itens e nenhum custo, parcial com `itens_sem_custo`. Valem tambem para o valor em aberto e para os totais -- a soma das somas e NULL quando ha itens e nenhum tem custo;
+- "em aberto" = DRAFT, APPROVED, ORDERED, o recorte que a gaveta ja usava; "sem pedido" conta cancelado como relacionamento;
+- **nao e page-first (excecao a D-196):** ordenar por valor/ultimo pedido e contar os recortes exige o agregado de todos os fornecedores da busca. O limite vem do dado: fornecedor e cadastro humano (dezenas a centenas), e os agregados sao dois `group by` sobre os pedidos da organizacao;
+- `get_suppliers` fica igual (a integracao a usa e ela e a referencia).
+
+**Conferido no banco local, dentro de transacao desfeita, como `authenticated`:** `valor_pedido`, `orders_total`, `itens_sem_custo` e `ultimo_pedido_em` identicos a `get_suppliers` fornecedor a fornecedor; os cinco recortes; busca por "inativo", "12.345.678", "e2" e sem resultado; ordem por valor; organizacao alheia devolve tudo zerado; `anon` recusado (`permission denied`). `skus_distintos` inclui itens de pedidos cancelados, como `get_supplier_overview` -- o mesmo nome conta a mesma coisa na lista e no dashboard.
+
+**3. A TELA**
+
+- cabecalho com busca e "Novo Fornecedor" (so ADMIN/GESTOR -- cortesia; a defesa e a RPC);
+- **resumo:** em aberto (valor e pedidos, clicavel para o recorte), comprado, ultimo pedido (idade e fornecedor), base (ativos de todos, quantos sem pedido). Ressalva de "sem custo" em ambar;
+- **cinco cartoes de recorte** com as pecas visuais da reposicao (`sb-rep-destaque`, `sb-rep-estado`), sem copia de CSS com outro prefixo;
+- tabela: avatar com iniciais, nome, razao social e CNPJ formatado; pessoa de contato com os canais em icone; pedidos com selo "N em aberto"; ultimo pedido relativo ("ha 5 dias") com a data; valor comprado; estado; acoes (gaveta e **novo pedido ja com o fornecedor**, `/compras/novo?fornecedor=`, que a sessao de /compras implementou na D-365). Linha inativa esmaecida;
+- vazio que diz o que fazer (primeiro cadastro, ou "nada para 'x'", com "Ver todos");
+- **dashboard:** Editar e Novo pedido no cabecalho, identidade em uma linha (razao social, CNPJ/CPF, contato), canais como botoes e as observacoes;
+- **gaveta:** documento formatado e canais clicaveis.
+
+**Contato vira acao so quando e inequivoco** (`lib/suppliers-overview.ts`): WhatsApp com DDD ganha o 55 (`wa.me`), telefone precisa de DDD (`tel:`), e-mail e site so quando parecem de verdade. O que nao da para interpretar continua visivel como texto tracejado -- esconder perderia o dado, linkar abriria a conversa errada.
+
+**4. CADASTRO E EDICAO**
+
+- `/fornecedores/[id]/editar` (nova) e `/fornecedores/novo`, com o mesmo formulario em dois grupos (quem e, como falar) mais observacoes; teclado do tipo do campo; erro no proprio campo, com foco nele; botoes grudados embaixo;
+- `app/fornecedores/actions.ts`: `salvarFornecedor` e `definirAtivo`. **Conferencia antes do banco** (`lib/supplier-form.ts`): nome obrigatorio ate 200, CNPJ/CPF pelos digitos verificadores, e-mail, telefone e WhatsApp com DDD. Documento guardado so com digitos, e-mail em minusculas, vazio vira NULL. `23505` vira "Ja existe um fornecedor com este nome." no campo;
+- **documento ja gravado passa sem conferencia na edicao.** O do seed (`12345678000199`) nao fecha os digitos, e cadastro antigo nao pode ficar preso ate alguem consertar um CNPJ que ninguem tocou;
+- **inativar pede confirmacao na propria linha** (sem `confirm()` do navegador): sai da escolha de novos pedidos, o historico fica. Reativar e um clique. Como `update_supplier` sobrescreve tudo, `definirAtivo` rele a linha e devolve cada campo como estava;
+- as paginas de cadastro e edicao recusam quem nao e ADMIN/GESTOR (`AcessoRestrito`).
+
+As acoes de fornecedor de `app/compras/actions.ts` ficaram onde estavam: `app/compras` e de outra sessao (D-365), e remover codigo morto la e fatia dela ou posterior.
+
+**5. VERIFICACAO E O QUE FICOU DE FORA**
+
+- `typecheck` (web), `lint` dos arquivos tocados, `next build`, os quatro guardas estaticos (tabela, controles, server actions, waterfalls) e a suite de unidade da web (70 arquivos, 660 testes; 29 novos: leitor do jsonb, links de contato, documento, iniciais, idade, conferencia do cadastro, filtros com busca e ordem);
+- integracao, rodada so com `-t "D-366|D-258"` no banco local: 12 verdes (6 novos -- recortes e contagens, tres saidas do valor em aberto, busca por digitos, ordem por valor, equivalencia com `get_suppliers`, anon negado);
+- E2E contra `next start` e o seed: `fornecedores` (6, 4 novos) e `gavetas` (4), 10 verdes em DUAS passadas seguidas -- os casos que editam e inativam devolvem o seed ao estado original; `compras`, `pedido-compra` e `busca`, 4 verdes;
+- **dois defeitos pegos nas capturas, antes do commit:** (a) o `<form action>` do React 19 reinicia os campos nao controlados ao terminar -- com erro de validacao, o que a pessoa digitou sumia; o formulario passou a `onSubmit`, e o E2E afirma que o valor fica; (b) a 390px a pagina tinha 907px de largura: o rotulo `.sb-sr-only` (absoluto) da coluna de acoes se posicionava na borda da tabela, fora da caixa que rola; `position: relative` na caixa resolve (medido: 390px).
+
+O que ficou de fora:
+
+- **o seed local tem 2 fornecedores sem canais de contato**: as capturas mostram o desenho com pouco dado;
+- **a barra superior do shell estoura 37px a 390px em TODAS as telas** (`.sb-top-actions`, medido tambem em `/reposicao` e `/compras`): anterior a esta fatia, nao corrigido aqui;
+- **a migration nao foi aplicada no Dev**: sobe pela CI no merge. Ate la o Preview do PR mostra erro de schema cache em `/fornecedores` (esperado, D-025). Ordem combinada com a sessao da D-351: esta migration (`20260917150000`) chega ao Dev e a producao DEPOIS das `20260916180000..180400` do PR #17 (D-351) e da `20260917140000` do PR #18 (D-365) -- renomeada de `...130000` para nao ficar antes delas, senao o `db push` recusa fora de ordem;
+- o link "Novo pedido" pre-seleciona o fornecedor so com a D-365 (/compras) no ar; sem ela o parametro e ignorado;
+- `docs/HANDOFF.md` nao foi tocado: esta em 25,5 KB, no teto de 25 KB do `docs:check`, e enxuga-lo com outras sessoes escrevendo nele e decisao a combinar.

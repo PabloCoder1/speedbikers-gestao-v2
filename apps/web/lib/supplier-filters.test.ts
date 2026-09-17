@@ -4,18 +4,23 @@ import {
   PAGE_SIZE,
   buildSupplierHref,
   resolveSupplierFilters,
+  resolveSupplierOrder,
+  resolveSupplierSearch,
   resolveSupplierState,
   summarizeSupplierWindow,
   type SupplierFilters,
 } from "./supplier-filters";
 
-const base: SupplierFilters = { state: "todos", page: 1 };
+const base: SupplierFilters = { state: "todos", order: "nome", search: null, page: 1 };
 
 describe("estado do fornecedor", () => {
-  it("resolve os três recortes", () => {
+  it("resolve os cinco recortes", () => {
     expect(resolveSupplierState("todos")).toBe("todos");
     expect(resolveSupplierState("ativos")).toBe("ativos");
     expect(resolveSupplierState("inativos")).toBe("inativos");
+    // D-366: os dois que saem dos pedidos de compra.
+    expect(resolveSupplierState("em_aberto")).toBe("em_aberto");
+    expect(resolveSupplierState("sem_pedido")).toBe("sem_pedido");
   });
 
   it("valor desconhecido cai em todos, que era o comportamento anterior", () => {
@@ -40,10 +45,40 @@ describe("href", () => {
   });
 
   it("trocar de filtro volta para a página 1; paginar preserva o recorte", () => {
-    const atual: SupplierFilters = { state: "ativos", page: 3 };
+    const atual: SupplierFilters = { state: "ativos", order: "nome", search: null, page: 3 };
 
     expect(buildSupplierHref(atual, { state: "inativos" })).toBe("/fornecedores?estado=inativos");
     expect(buildSupplierHref(atual, { page: 2 })).toBe("/fornecedores?estado=ativos&pagina=2");
+  });
+
+  it("busca e ordem entram na URL e sobrevivem à troca de recorte", () => {
+    const atual: SupplierFilters = { state: "todos", order: "valor", search: "navetec", page: 2 };
+
+    expect(buildSupplierHref(atual, { state: "em_aberto" })).toBe(
+      "/fornecedores?busca=navetec&estado=em_aberto&ordem=valor",
+    );
+    expect(buildSupplierHref(atual, { order: "nome" })).toBe("/fornecedores?busca=navetec");
+    expect(buildSupplierHref(atual, { search: null })).toBe("/fornecedores?ordem=valor");
+  });
+});
+
+describe("busca e ordem", () => {
+  it("busca vazia ou só espaços é ausência de busca", () => {
+    expect(resolveSupplierSearch("   ")).toBeNull();
+    expect(resolveSupplierSearch(undefined)).toBeNull();
+    expect(resolveSupplierSearch(["a", "b"])).toBeNull();
+    expect(resolveSupplierSearch("  Navetec ")).toBe("Navetec");
+  });
+
+  it("a busca tem teto: a URL é entrada de terceiro", () => {
+    expect(resolveSupplierSearch("x".repeat(500))).toHaveLength(80);
+  });
+
+  it("ordem fora da lista cai no nome", () => {
+    expect(resolveSupplierOrder("valor")).toBe("valor");
+    expect(resolveSupplierOrder("recente")).toBe("recente");
+    expect(resolveSupplierOrder("em_aberto")).toBe("em_aberto");
+    expect(resolveSupplierOrder("created_at; drop")).toBe("nome");
   });
 });
 

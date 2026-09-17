@@ -62,3 +62,94 @@ test("/fornecedores: Ativos e Inativos recortam conjuntos diferentes", async ({ 
   await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toHaveCount(0);
 });
+
+/*
+  D-366 — busca, recortes dos pedidos, edição e ativação.
+
+  O seed tem dois fornecedores: o ativo, com pedidos (um deles em rascunho, logo
+  EM ABERTO), e o inativo, sem pedido nenhum. É o par que faz cada recorte novo
+  provar alguma coisa.
+*/
+
+test("/fornecedores: a busca acha pelo CNPJ digitado com pontuação, e diz quando não acha", async ({ page }) => {
+  // O seed guarda o documento SEM pontuação; a busca compara só os dígitos.
+  await login(page, "/fornecedores?busca=12.345.678%2F0001");
+
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toHaveCount(0);
+
+  await page.goto("/fornecedores?busca=nao-existe-fornecedor");
+  await expect(page.getByText("Nenhum fornecedor com estes filtros.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ver todos" })).toBeVisible();
+});
+
+test("/fornecedores: 'com pedido em aberto' e 'sem pedido' recortam pelos pedidos de compra", async ({ page }) => {
+  await login(page, "/fornecedores?estado=em_aberto");
+
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toHaveCount(0);
+  // O selo da linha diz quantos estão em aberto.
+  await expect(page.locator("tbody tr", { hasText: E2E_SUPPLIER.name }).getByText(/\d+ em aberto/)).toBeVisible();
+
+  await page.goto("/fornecedores?estado=sem_pedido");
+
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toHaveCount(0);
+});
+
+test("editar fornecedor: erro no campo, contato vira link, e o cadastro volta como estava", async ({ page }) => {
+  await login(page, "/fornecedores");
+  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+  await page.getByRole("link", { name: "Editar" }).click();
+
+  await expect(page.getByRole("heading", { name: `Editar ${E2E_SUPPLIER.name}`, level: 1 })).toBeVisible();
+
+  /*
+    O documento do seed NÃO passa na conferência de dígitos — e continua
+    editável: só documento novo ou alterado é conferido. Sem isso, cadastro
+    antigo ficaria preso até alguém consertar um CNPJ que ninguém tocou.
+  */
+  await expect(page.getByLabel("CNPJ ou CPF")).toHaveValue("12.345.678/0001-99");
+
+  // O erro aparece NO campo, e nada é gravado.
+  await page.getByLabel("E-mail").fill("vendas-sem-arroba");
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByText("E-mail inválido.")).toBeVisible();
+  // O que a pessoa digitou FICA no campo — o `<form action>` do React o apagava.
+  await expect(page.getByLabel("E-mail")).toHaveValue("vendas-sem-arroba");
+
+  await page.getByLabel("E-mail").fill("");
+  await page.getByLabel("WhatsApp").fill("(11) 98765-4321");
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+
+  // De volta ao dashboard, o WhatsApp é um link para a conversa.
+  await expect(page.getByRole("link", { name: "(11) 98765-4321" })).toHaveAttribute(
+    "href",
+    "https://wa.me/5511987654321",
+  );
+
+  // Desfaz: outras specs leem este fornecedor sem canal de contato.
+  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByLabel("WhatsApp").fill("");
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(page.getByText("Nenhum canal de contato cadastrado.")).toBeVisible();
+});
+
+test("ativar e inativar: reativar é um clique, inativar pede confirmação na linha", async ({ page }) => {
+  await login(page, "/fornecedores?estado=inativos");
+  await page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true }).click();
+  await page.getByRole("link", { name: "Editar" }).click();
+
+  await page.getByRole("button", { name: "Reativar" }).click();
+  await expect(page.getByRole("button", { name: "Inativar" })).toBeVisible();
+
+  // O primeiro clique só pergunta; a mudança exige o segundo.
+  await page.getByRole("button", { name: "Inativar" }).click();
+  const confirmacao = page.getByRole("group", { name: "Confirmar inativação" });
+
+  await expect(confirmacao).toBeVisible();
+  await confirmacao.getByRole("button", { name: "Inativar" }).click();
+
+  // Volta ao estado do seed: a spec de recortes conta com ele inativo.
+  await expect(page.getByRole("button", { name: "Reativar" })).toBeVisible();
+});
