@@ -1,3 +1,4 @@
+import { isRelistRetryEligible } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -406,6 +407,35 @@ export default async function AnuncioPage({
   const papel = membership?.role ?? null;
   const decisions = (decisionsResult.data ?? []) as unknown as DecisionRow[];
 
+  /*
+    A ÚLTIMA FALHA da operação, só quando ela está em RELIST_FAILED (D-364): é
+    o `reason` desse evento que diz se o Mercado Livre RECUSOU (nenhum anúncio
+    novo nasceu) — e só então a tela oferece tentar de novo. Depende da
+    operação lida acima e só existe no estado raro; a RLS de
+    `listing_relist_events` é a mesma de `listing_relists`.
+  */
+  const ultimaFalhaResult =
+    operacaoComoPai?.status === "RELIST_FAILED"
+      ? await supabase
+          .from("listing_relist_events")
+          .select("reason")
+          .eq("relist_id", operacaoComoPai.id)
+          .eq("to_status", "RELIST_FAILED")
+          .order("occurred_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+
+  const retomavel =
+    operacaoComoPai !== null &&
+    ultimaFalhaResult.error === null &&
+    isRelistRetryEligible({
+      status: operacaoComoPai.status,
+      parentItemId: operacaoComoPai.parent_item_id,
+      failureReason: operacaoComoPai.failure_reason,
+      lastFailedEventReason: ultimaFalhaResult.data?.reason ?? null,
+    });
+
   // Falha em qualquer consulta secundária aparece como ERRO, nunca como
   // "sem dado" (D-067).
   const secondaryError =
@@ -418,6 +448,7 @@ export default async function AnuncioPage({
     visitsResult.error ??
     pricesResult.error ??
     relistsResult.error ??
+    ultimaFalhaResult.error ??
     decisionsResult.error;
 
   /*
@@ -1291,6 +1322,8 @@ export default async function AnuncioPage({
                             failureReason: operacaoComoPai.failure_reason,
                             childItemId: operacaoComoPai.child_item_id,
                             createdAt: operacaoComoPai.created_at,
+                            updatedAt: operacaoComoPai.updated_at,
+                            retomavel,
                           }
                     }
                   />
