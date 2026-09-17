@@ -7,7 +7,12 @@
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
 
-export const PAGE_SIZE = 200;
+/**
+ * Cem linhas mantêm a leitura analítica sem mandar 200 linhas de tabela no
+ * HTML de cada navegação. O total e as classes continuam vindo da janela SQL
+ * sobre o recorte inteiro; só a fatia visual fica menor.
+ */
+export const PAGE_SIZE = 100;
 
 export const ABC_CRITERIA = [
   { key: "faturamento", label: "Faturamento", definitionId: "receita_bruta", format: "currency" },

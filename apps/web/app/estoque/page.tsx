@@ -2,7 +2,9 @@ import { computeUsableStock } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { FilterPill, FilterSubmit } from "../../components/filter-pill";
+import { FilterMenu } from "../../components/filter-menu";
+import { FilterPill } from "../../components/filter-pill";
+import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -35,6 +37,21 @@ interface StockRow {
   stock_is_virtual: boolean;
   stock_is_virtual_set_at: string | null;
   total_count: number;
+}
+
+function monogramaDeProduto(title: string | null, sku: string): string {
+  const titulo = title?.trim();
+  const fonte = titulo === undefined || titulo === "" ? sku : titulo;
+  const palavras = fonte
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return palavras
+    .slice(0, 2)
+    .map((palavra) => palavra[0])
+    .join("")
+    .toUpperCase();
 }
 
 /**
@@ -125,7 +142,9 @@ export default async function EstoquePage({
   const totalCount = rows[0]?.total_count ?? 0;
   const windowInfo = summarizeStockWindow(filters.page, totalCount, rows.length);
 
-  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
+  const brands = (brandsResult.data ?? [])
+    .map((r) => r.supplier_brand)
+    .filter((brand): brand is string => typeof brand === "string" && brand.trim() !== "");
 
   const total = resumo.data;
 
@@ -215,6 +234,16 @@ export default async function EstoquePage({
     },
   ];
 
+  const rotuloMarca = filters.brand ?? "Todas as marcas";
+  const filtrosAtivos = [
+    filters.brand === null ? null : `marca ${filters.brand}`,
+    filters.category === null ? null : `categoria ${filters.category}`,
+    filters.onlyNegative ? "somente saldo negativo" : null,
+    filters.search === null ? null : `busca “${filters.search}”`,
+  ].filter((item): item is string => item !== null);
+
+  const contextoDoRecorte = filtrosAtivos.length === 0 ? "Todos os produtos" : filtrosAtivos.join(" · ");
+
   return (
     <Shell>
       {/* Sobrancelha e título do frame `Inventory` (ESTOQUE / POSIÇÃO). */}
@@ -223,66 +252,102 @@ export default async function EstoquePage({
         title="Visão de estoque"
         subtitle={
           <>
-            A posição atual para sustentar decisões de venda, reposição e capital. Saldo por SKU recomputado do
-            ledger (<code>stock_movements</code>): local é o estoque físico, reservado vem da reconciliação contra o
-            UpSeller, e Full é a última captura de cada bucket de variação.
+            Saldos locais auditáveis, reservas e Full em uma única leitura — sem misturar as autoridades de cada
+            estoque.
+          </>
+        }
+        aside={
+          <>
+            <Link className="sb-button" href="/estoque/movimentacoes">
+              <Icone nome="setas" tamanho={14} />
+              Movimentações
+            </Link>
+            <Link className="sb-button sb-button-primary" href="/reposicao">
+              <Icone nome="carrinho" tamanho={14} />
+              Planejar reposição
+            </Link>
           </>
         }
       />
 
-      <KpiStrip cells={celulas} />
+      <KpiStrip ancora cells={celulas} />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4rem" }}>Marca</span>
-          <FilterPill href={buildStockHref(filters, { brand: null })} active={filters.brand === null}>
-            Todas
-          </FilterPill>
-          {brands.map((brand) => (
-            <FilterPill key={brand} href={buildStockHref(filters, { brand })} active={filters.brand === brand}>
-              {brand}
-            </FilterPill>
-          ))}
-        </div>
+      <div className="sb-stock-workspace">
+        <Panel
+          title="Estoque por produto"
+          subtitle={`${windowInfo.label} · ${contextoDoRecorte}`}
+          aside={
+            <>
+              <FilterMenu
+                rotulo={rotuloMarca}
+                opcoes={[
+                  {
+                    href: buildStockHref(filters, { brand: null }),
+                    ativo: filters.brand === null,
+                    label: "Todas as marcas",
+                  },
+                  ...brands.map((brand) => ({
+                    href: buildStockHref(filters, { brand }),
+                    ativo: filters.brand === brand,
+                    label: brand,
+                  })),
+                ]}
+              />
+              <FilterPill
+                href={buildStockHref(filters, { onlyNegative: !filters.onlyNegative })}
+                active={filters.onlyNegative}
+                tone="danger"
+              >
+                Saldo negativo
+              </FilterPill>
+            </>
+          }
+        >
+          <div className="sb-stock-toolbar">
+            <form method="get" action="/estoque" className="sb-stock-search">
+              {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
+              {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
+              {filters.category !== null && <input type="hidden" name="categoria" value={filters.category} />}
+              {filters.onlyNegative && <input type="hidden" name="negativo" value="1" />}
+              <span className="sb-stock-search-field">
+                <Icone nome="lupa" tamanho={15} />
+                <input
+                  className="sb-input"
+                  type="search"
+                  name="busca"
+                  defaultValue={filters.search ?? ""}
+                  placeholder="Buscar por SKU ou nome do produto"
+                  aria-label="Buscar por SKU ou nome do produto"
+                />
+              </span>
+              <button type="submit" className="sb-button">
+                Buscar
+              </button>
+              {filtrosAtivos.length > 0 && (
+                <Link className="sb-text-button" href="/estoque">
+                  Limpar filtros
+                </Link>
+              )}
+            </form>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <FilterPill
-            href={buildStockHref(filters, { onlyNegative: !filters.onlyNegative })} active={filters.onlyNegative}
-          >
-            Só saldo negativo
-          </FilterPill>
+            <p>
+              <strong>Como ler:</strong> local é o saldo físico; reservado já está comprometido; Full pertence ao
+              Mercado Livre e nunca é somado silenciosamente ao local.
+            </p>
+          </div>
 
-          <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
-            {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
-            {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
-            {filters.category !== null && <input type="hidden" name="categoria" value={filters.category} />}
-            {filters.onlyNegative && <input type="hidden" name="negativo" value="1" />}
-            <input
-              className="sb-input"
-              type="search"
-              name="busca"
-              defaultValue={filters.search ?? ""}
-              placeholder="SKU ou título"
-              aria-label="Buscar por SKU ou título"
-              style={{ minWidth: "14rem" }}
-            />
-            <FilterSubmit>Buscar</FilterSubmit>
-          </form>
-        </div>
-      </div>
+          {error !== null && (
+            <p role="alert" className="sb-stock-message sb-stock-message-error">
+              Não foi possível carregar: {error.message}
+            </p>
+          )}
 
-      {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
-      )}
-
-      {error === null && (
-        <Panel title="Estoque por produto" subtitle={windowInfo.label}>
-          {rows.length === 0 && <p className="sb-empty">Nenhum SKU corresponde a estes filtros.</p>}
-          {rows.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="sb-table">
+          {error === null && (
+            <>
+              {rows.length === 0 && <p className="sb-empty">Nenhum SKU corresponde a estes filtros.</p>}
+              {rows.length > 0 && (
+                <div className="sb-stock-table-wrap">
+                  <table className="sb-table sb-stock-table">
             <thead>
               <tr>
                 {/*
@@ -296,7 +361,7 @@ export default async function EstoquePage({
                   (D-146, METRICS §5D), e métrica canônica vence o Figma pela
                   própria regra de conflito do documento.
                 */}
-                <th>SKU</th>
+                <th>Produto</th>
                 <th>Marca</th>
                 <th>Categoria</th>
                 <th className="sb-num">Custo</th>
@@ -306,21 +371,25 @@ export default async function EstoquePage({
                 <th className="sb-num">Full</th>
                 <th className="sb-num">Aproveitável</th>
                 <th>Último movimento</th>
-                <th></th>
-                <th></th>
+                <th className="sb-num">Ações</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.map((row) => (
                 <tr key={row.sku_id}>
-                  <td className="sb-mono">
-                    {row.sku}
-                    {row.title !== null && (
-                      <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-                        {row.title}
-                      </div>
-                    )}
+                  <td>
+                    <span className="sb-product-cell sb-stock-product">
+                      <span className="sb-product-thumb" aria-hidden="true">
+                        {monogramaDeProduto(row.title, row.sku)}
+                      </span>
+                      <span className="sb-stock-product-copy">
+                        <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                          {row.title ?? "Produto sem título"}
+                        </Link>
+                        <span className="sb-mono">{row.sku}</span>
+                      </span>
+                    </span>
                   </td>
                   {/*
                     Marca VAZIA é estado legítimo, não falta de dado: só 36%
@@ -330,10 +399,12 @@ export default async function EstoquePage({
                   <td>{row.supplier_brand ?? "—"}</td>
                   <td>{row.category ?? "—"}</td>
                   <td className="sb-num">{formatCurrency(row.purchase_cost)}</td>
-                  <td className="sb-num" style={{ color: row.local_quantity < 0 ? "var(--sb-danger)" : undefined }}>
-                    {formatCount(row.local_quantity)}
+                  <td className="sb-num">
+                    <span className={row.local_quantity < 0 ? "sb-stock-value sb-stock-value-danger" : "sb-stock-value"}>
+                      {formatCount(row.local_quantity)}
+                    </span>
                     {row.stock_is_virtual && (
-                      <div style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>virtual</div>
+                      <span className="sb-status sb-stock-virtual">virtual</span>
                     )}
                   </td>
                   <td className="sb-num">{formatCount(row.reservado)}</td>
@@ -378,46 +449,44 @@ export default async function EstoquePage({
                   <td>
                     {row.last_movement_at === null ? "—" : formatBusinessDate(row.last_movement_at.slice(0, 10))}
                   </td>
-                  <td className="sb-num">
-                    <Link href={`/skus/${row.sku_id}`}>Detalhes</Link>
-                  </td>
-                  <td className="sb-num">
-                    <Link href={`/estoque/${row.sku_id}/ajuste`}>Ajustar</Link>
+                  <td>
+                    <span className="sb-stock-row-actions">
+                      <Link className="sb-button sb-button-sm" href={`/skus/${row.sku_id}`}>
+                        Ver SKU
+                      </Link>
+                      <Link className="sb-text-button" href={`/estoque/${row.sku_id}/ajuste`}>
+                        Ajustar
+                      </Link>
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </Panel>
-      )}
 
-      {error === null && windowInfo.totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--sb-space-2)",
-            alignItems: "center",
-            marginTop: "var(--sb-space-3)",
-            fontSize: "0.8125rem",
-          }}
-        >
-          {filters.page > 1 && (
-            <FilterPill href={buildStockHref(filters, { page: filters.page - 1 })} active={false}>
-              ← Anterior
-            </FilterPill>
-          )}
-          <span style={{ color: "var(--sb-text-soft)" }}>
-            Página {filters.page} de {windowInfo.totalPages}
-          </span>
-          {filters.page < windowInfo.totalPages && (
-            <FilterPill href={buildStockHref(filters, { page: filters.page + 1 })} active={false}>
-              Próxima →
-            </FilterPill>
-          )}
-        </div>
-      )}
+        {error === null && windowInfo.totalPages > 1 && (
+          <nav className="sb-stock-pagination" aria-label="Paginação do estoque">
+            {filters.page > 1 && (
+              <FilterPill href={buildStockHref(filters, { page: filters.page - 1 })} active={false}>
+                ← Anterior
+              </FilterPill>
+            )}
+            <span style={{ color: "var(--sb-text-soft)" }}>
+              Página {filters.page} de {windowInfo.totalPages}
+            </span>
+            {filters.page < windowInfo.totalPages && (
+              <FilterPill href={buildStockHref(filters, { page: filters.page + 1 })} active={false}>
+                Próxima →
+              </FilterPill>
+            )}
+          </nav>
+        )}
+      </div>
     </Shell>
   );
 }

@@ -123,15 +123,15 @@ describe("summarizeAbcWindow", () => {
     const r = summarizeAbcWindow(1, 1492, PAGE_SIZE);
 
     expect(r.label).toContain("1.492");
-    expect(r.totalPages).toBe(8);
+    expect(r.totalPages).toBe(15);
   });
 
   it("última página parcial mostra o intervalo real", () => {
-    expect(summarizeAbcWindow(8, 1492, 92).label).toContain("1.401 a 1.492");
+    expect(summarizeAbcWindow(15, 1492, 92).label).toContain("1.401 a 1.492");
   });
 
   it("uma página só não vira ruído de intervalo", () => {
-    expect(summarizeAbcWindow(1, 150, 150).label).toBe("150 SKUs na curva.");
+    expect(summarizeAbcWindow(1, 80, 80).label).toBe("80 SKUs na curva.");
   });
 
   it("zero é resultado, não erro", () => {

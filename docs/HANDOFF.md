@@ -32,6 +32,11 @@ Fornecedor). A 8A entregou Usuários/Permissões (D-175) e Saúde do
 Sistema (D-176). **Integrações e Configurações também existem** — a checagem de
 D-271 desmentiu a nota anterior, que dizia faltarem.
 
+A `/estoque` segue o frame `Inventory` com a faixa única de indicadores,
+filtros dentro do painel, busca operacional, identidade de produto e ações
+compactas por linha. As recusas métricas de D-249 permanecem intactas; a
+mudança é de hierarquia e velocidade percebida, sem inventar agregado.
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
@@ -278,6 +283,14 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 ---
 
 ### Próxima tarefa segura
+
+**`/curva-abc` reorganizada em 17/09:** os filtros agora ficam compactos no
+cabeçalho e a configuração ativa aparece em um painel único; os cartões A/B/C
+expõem limites e participação visual; Full, risco e tabela ganharam hierarquia,
+links para SKU e estados mais legíveis. A página passou de 200 para 100 linhas
+por página para reduzir HTML e trabalho de SSR, sem alterar os totais e classes
+calculados no SQL sobre todo o recorte. O fluxo autenticado foi conferido com a
+seed local, inclusive a troca do critério para unidades.
 
 **D-351 publicada em 17/09** (§13): falta a prova de 24 h e a decisão do dono sobre
 `v3-reconcile-balances` (3 SKUs com alvo negativo sem causa conhecida). Depois, na

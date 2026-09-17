@@ -2882,36 +2882,94 @@ table {
  *    `/reposicao`, que é dona desses estados (D-150). Reimplementá-los aqui
  *    seria a segunda definição de "ruptura" na mesma base.
  */
+.sb-abc-controls {
+  display: grid;
+  gap: var(--sb-space-3);
+  margin-bottom: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-abc-controls-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sb-space-3);
+}
+
+.sb-abc-controls-head p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-abc-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sb-space-2) var(--sb-space-4);
+  padding-top: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
 .sb-abc-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--sb-space-3);
   margin-bottom: var(--sb-space-3);
 }
 
-@media (max-width: 850px) {
-  .sb-abc-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
 .sb-abc-card {
+  --sb-abc-tone: var(--sb-secondary);
+  position: relative;
   display: grid;
   gap: 0.25rem;
+  overflow: hidden;
   align-content: start;
-  background: var(--sb-surface);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius);
   padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-top: 3px solid var(--sb-abc-tone);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
 }
 
-.sb-abc-card > span {
+.sb-abc-card-a {
+  --sb-abc-tone: var(--sb-primary);
+}
+
+.sb-abc-card-b {
+  --sb-abc-tone: var(--sb-accent-ink);
+}
+
+.sb-abc-card-c {
+  --sb-abc-tone: var(--sb-secondary);
+}
+
+.sb-abc-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  align-items: center;
+}
+
+.sb-abc-card-head > span {
+  font-family: var(--sb-mono);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
+  color: var(--sb-abc-tone);
+}
+
+.sb-abc-card-head > small {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
 }
 
 .sb-abc-card > strong {
+  margin-top: 0.125rem;
   font-size: 1.5rem;
   font-variant-numeric: tabular-nums;
   color: var(--sb-text);
@@ -2919,74 +2977,218 @@ table {
 
 .sb-abc-card > p {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--sb-text-soft);
 }
 
-.sb-abc-card > div {
-  margin-top: var(--sb-space-1);
+.sb-abc-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-2);
   padding-top: var(--sb-space-2);
-  border-top: 1px solid var(--sb-border);
-  display: grid;
-  gap: 0.125rem;
+  border-top: 1px solid var(--sb-table-rule);
 }
 
-.sb-abc-card > div > b {
-  font-size: 0.875rem;
+.sb-abc-card-foot > b {
+  font-size: 0.8125rem;
 }
 
-.sb-abc-card > div > small {
+.sb-abc-card-foot > small {
   font-size: 0.6875rem;
   color: var(--sb-text-soft);
 }
 
+.sb-abc-card > i {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 0 2px 0 0;
+  background: var(--sb-abc-tone);
+}
+
 .sb-abc-bars {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--sb-space-4);
-  background: var(--sb-surface);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius);
-  padding: var(--sb-space-3);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--sb-space-3);
   margin-bottom: var(--sb-space-3);
 }
 
-@media (max-width: 850px) {
-  .sb-abc-bars {
-    grid-template-columns: 1fr;
-  }
+.sb-abc-full-card,
+.sb-abc-risk-card {
+  min-height: 10.25rem;
 }
 
-.sb-abc-bars > div {
+.sb-abc-full-card {
   display: grid;
-  gap: 0.375rem;
-  align-content: start;
-  /* `justify-items` para o filho não esticar na coluna: a pílula "ver só
-     estes" virava uma caixa da largura toda, que lê como campo e não como
-     ação (visto na tela, D-251). */
+  gap: var(--sb-space-2);
   justify-items: start;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
 }
 
-.sb-abc-bars b {
+.sb-abc-insight-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: var(--sb-space-3);
+  width: 100%;
+}
+
+.sb-abc-insight-head > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.sb-abc-insight-head b {
   font-size: 0.8125rem;
 }
 
-.sb-abc-bars span {
-  font-size: 0.8125rem;
+.sb-abc-insight-head > strong {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-abc-progress {
+  width: 100%;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sb-secondary-soft);
+}
+
+.sb-abc-progress > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sb-secondary);
+}
+
+.sb-abc-full-card > p {
+  margin: 0;
+  font-size: 0.75rem;
   color: var(--sb-text-soft);
 }
 
-/* O fio da barra, como no export: 7px, cantos arredondados, cor da marca. */
-.sb-abc-bars i {
-  display: block;
-  height: 7px;
-  background: var(--sb-secondary);
-  border-radius: 5px;
-  margin-bottom: 0.25rem;
+.sb-abc-risk-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0;
 }
 
-.sb-abc-bars-nota {
-  line-height: 1.4;
+.sb-abc-risk-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  margin-top: auto;
+  padding-top: var(--sb-space-2);
+}
+
+.sb-abc-risk-links a {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  text-decoration: none;
+}
+
+.sb-abc-risk-links a:hover {
+  text-decoration: underline;
+}
+
+.sb-abc-table-context {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-abc-table-wrap {
+  overflow-x: auto;
+}
+
+.sb-abc-class {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--sb-radius-md);
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.sb-abc-class-a {
+  background: var(--sb-primary);
+  color: white;
+}
+
+.sb-abc-class-b {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-abc-class-c {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-abc-share {
+  display: grid;
+  grid-template-columns: minmax(3rem, 5.5rem) 3rem;
+  align-items: center;
+  justify-content: end;
+  gap: var(--sb-space-2);
+}
+
+.sb-abc-share > i {
+  display: block;
+  justify-self: end;
+  height: 0.3125rem;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--sb-secondary);
+}
+
+.sb-abc-full-empty {
+  display: inline-block;
+  padding: 0.1875rem 0.4375rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+.sb-abc-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-3);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+@media (max-width: 850px) {
+  .sb-abc-filter-grid,
+  .sb-abc-cards,
+  .sb-abc-bars {
+    grid-template-columns: 1fr;
+  }
+
+  .sb-abc-controls-head {
+    align-items: flex-start;
+  }
+
+  .sb-abc-pagination {
+    justify-content: center;
+  }
 }
 
 /*
@@ -10939,6 +11141,198 @@ td.sb-pco-num-linha {
 
   .sb-vnc-busca-form .sb-input {
     min-width: 0;
+  }
+}
+
+/*
+ * ESTOQUE — espaço de trabalho operacional.
+ *
+ * O frame `Inventory` põe os filtros no próprio painel e dá à identidade do
+ * produto o maior peso da tabela. As regras ficam escopadas à rota: a tabela
+ * continua usando o contrato global `.sb-table`, enquanto busca, primeira
+ * coluna fixa e ações compactas resolvem a leitura horizontal desta superfície.
+ */
+.sb-stock-workspace {
+  display: grid;
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+}
+
+.sb-stock-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+  border-bottom: 1px solid var(--sb-table-rule);
+  background: var(--sb-bg-soft);
+}
+
+.sb-stock-toolbar > p {
+  flex: 1 1 24rem;
+  max-width: 42rem;
+  margin: 0;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.sb-stock-toolbar > p strong {
+  color: var(--sb-primary);
+}
+
+.sb-stock-search {
+  display: flex;
+  align-items: center;
+  flex: 1 1 30rem;
+  gap: var(--sb-space-2);
+}
+
+.sb-stock-search-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 18rem;
+  min-width: 12rem;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
+  color: var(--sb-text-soft);
+}
+
+.sb-stock-search-field:focus-within {
+  border-color: var(--sb-secondary);
+  box-shadow: 0 0 0 2px var(--sb-secondary-soft);
+}
+
+.sb-stock-search-field .sb-input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--sb-text);
+  font: inherit;
+  font-size: 0.6875rem;
+}
+
+.sb-stock-search-field .sb-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.sb-stock-search-field .sb-input::placeholder {
+  color: var(--sb-muted-ink);
+}
+
+.sb-stock-table-wrap {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.sb-stock-table {
+  min-width: 76rem;
+}
+
+.sb-stock-table th:first-child,
+.sb-stock-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--sb-surface);
+  box-shadow: 1px 0 0 var(--sb-table-rule);
+}
+
+.sb-stock-table th:first-child {
+  z-index: 2;
+  background: var(--sb-table-head);
+}
+
+.sb-stock-table tr:hover td:first-child {
+  background: var(--sb-bg-soft);
+}
+
+.sb-stock-product {
+  width: 18rem;
+}
+
+.sb-stock-product-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1875rem;
+}
+
+.sb-stock-product-copy .sb-entity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-stock-value {
+  display: block;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-stock-value-danger {
+  color: var(--sb-danger);
+}
+
+.sb-stock-virtual {
+  margin-top: 0.25rem;
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-stock-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+}
+
+.sb-stock-message {
+  margin: 0;
+  padding: var(--sb-space-3);
+  font-size: 0.75rem;
+}
+
+.sb-stock-message-error {
+  color: var(--sb-danger);
+  background: var(--sb-danger-soft);
+}
+
+.sb-stock-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .sb-stock-toolbar,
+  .sb-stock-search {
+    align-items: stretch;
+  }
+
+  .sb-stock-search {
+    flex-wrap: wrap;
+  }
+
+  .sb-stock-search-field {
+    flex-basis: 100%;
+  }
+
+  .sb-stock-pagination {
+    justify-content: space-between;
   }
 }
 
