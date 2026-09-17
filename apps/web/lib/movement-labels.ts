@@ -6,7 +6,7 @@
  * `describeActionEvidence`).
  */
 
-/** Os 14 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12; o 13º e o 14º em D-351). */
+/** Os 15 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12; o 13º e o 14º em D-351, o 15º em D-352). */
 const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   ENTRADA_NFE: "Entrada por NF-e",
   SAIDA_NFE: "Saída por NF-e",
@@ -26,6 +26,9 @@ const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   // D-351 §12: a venda estornada que o legado reverteu duas vezes (cancelamento E
   // devolução) — a reversão a mais é anulada com a data dela.
   ESTORNO_REVERSAO_EXCEDENTE: "Estorno de reversão em dobro (cancelamento e devolução da mesma venda)",
+  // D-352: a venda que o Mercado Livre despachou do galpão dele — a unidade
+  // nunca foi da loja, e o par anula a baixa.
+  ESTORNO_FULL: "Estorno de venda entregue pelo Full (Mercado Livre)",
 };
 
 const LOCATION_LABELS: Readonly<Record<string, string>> = {
