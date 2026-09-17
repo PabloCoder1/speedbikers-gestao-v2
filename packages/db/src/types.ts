@@ -4938,6 +4938,18 @@ export type Database = {
           valor_pedido: number
         }[]
       }
+      get_suppliers_overview: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_order?: string | null
+          p_organization_id: string
+          p_search?: string | null
+          p_state?: string | null
+        }
+        // jsonb (D-366): conferido campo a campo em apps/web/lib/suppliers-overview.ts.
+        Returns: Json
+      }
       get_supplier_overview: {
         Args: { p_organization_id: string; p_supplier_id: string }
         Returns: {

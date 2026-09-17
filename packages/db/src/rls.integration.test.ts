@@ -3549,6 +3549,158 @@ describe("valor comprado por fornecedor (D-258)", () => {
   });
 });
 
+// get_suppliers_overview (20260917150000, D-366) -- a lista de /fornecedores
+// numa leitura: recortes pelos pedidos, busca por digitos do documento e o
+// valor EM ABERTO com as mesmas tres saidas de D-258.
+describe("get_suppliers_overview (D-366)", () => {
+  const MARCA = "FORNOVTEST";
+  const forn: Record<string, string> = {};
+
+  interface Linha {
+    id: string;
+    name: string;
+    orders_total: number;
+    orders_em_aberto: number;
+    valor_pedido: number | null;
+    valor_em_aberto: number | null;
+    itens_sem_custo: number;
+    ultimo_pedido_em: string | null;
+  }
+  interface Visao {
+    total: number;
+    linhas: Linha[];
+    contagens: Record<string, number>;
+    totais: Record<string, number | string | null>;
+  }
+
+  beforeAll(async () => {
+    const cadastros: readonly (readonly [string, boolean, string | null])[] = [
+      ["aberto-custo", true, "11.222.333/0001-81"],
+      ["aberto-sem-custo", true, null],
+      ["recebido", true, null],
+      ["inativo-sem-pedido", false, null],
+    ];
+
+    for (const [chave, ativo, documento] of cadastros) {
+      const r = await client.query<{ id: string }>(
+        `insert into public.suppliers (organization_id, name, is_active, document) values ($1,$2,$3,$4) returning id`,
+        [ORG_SB, `${MARCA}-${chave}`, ativo, documento],
+      );
+      forn[chave] = r.rows[0]?.id ?? "";
+    }
+
+    const pedidos: readonly (readonly [string, string, readonly (readonly [number, number | null])[]])[] = [
+      ["aberto-custo", "DRAFT", [[2, 10]]],
+      ["aberto-custo", "CANCELLED", [[1, 500]]],
+      ["aberto-sem-custo", "DRAFT", [[4, null]]],
+    ];
+
+    for (const [chave, status, itens] of pedidos) {
+      const po = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, created_by, cancelled_at)
+         values ($1,$2::uuid,$3,$4::uuid, case when $3 = 'CANCELLED' then now() else null end)
+         returning id`,
+        [ORG_SB, forn[chave], status, ADMIN_SB],
+      );
+
+      for (const [posicao, [qtd, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, po.rows[0]?.id ?? "", posicao, `${MARCA}-${chave}-${String(posicao)}`, qtd, custo],
+        );
+      }
+    }
+
+    // RECEIVED exige approved/ordered/received_at coerentes (checks da tabela).
+    await client.query(
+      `insert into public.purchase_orders
+         (organization_id, supplier_id, status, created_by, approved_at, ordered_at, received_at)
+       values ($1,$2::uuid,'RECEIVED',$3::uuid, now(), now(), now())`,
+      [ORG_SB, forn.recebido, ADMIN_SB],
+    );
+  });
+
+  async function visao(busca: string | null, estado: string | null, ordem: string | null = null): Promise<Visao> {
+    const rows = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_suppliers_overview('${ORG_SB}', ${busca === null ? "null" : `'${busca}'`}, ${
+        estado === null ? "null" : `'${estado}'`
+      }, ${ordem === null ? "null" : `'${ordem}'`}, 200, 0) as v`,
+    );
+
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_suppliers_overview nao devolveu linha");
+
+    return v;
+  }
+
+  const nomes = (v: Visao): string[] => v.linhas.map((l) => l.name).sort();
+
+  it("a busca pelo nome recorta so os do teste, e os recortes contam pelos pedidos", async () => {
+    const v = await visao(MARCA, null);
+
+    expect(v.total).toBe(4);
+    expect(v.contagens).toEqual({ todos: 4, ativos: 3, inativos: 1, em_aberto: 2, sem_pedido: 1 });
+    expect(nomes(await visao(MARCA, "em_aberto"))).toEqual([`${MARCA}-aberto-custo`, `${MARCA}-aberto-sem-custo`]);
+    expect(nomes(await visao(MARCA, "sem_pedido"))).toEqual([`${MARCA}-inativo-sem-pedido`]);
+    // O recorte filtra a pagina, nunca os cartoes (D-250).
+    expect((await visao(MARCA, "inativos")).contagens.todos).toBe(4);
+  });
+
+  it("valor em aberto tem as tres saidas de D-258, e o cancelado fica fora", async () => {
+    const v = await visao(MARCA, null);
+    const linha = (chave: string) => v.linhas.find((l) => l.name === `${MARCA}-${chave}`);
+
+    expect(Number(linha("aberto-custo")?.valor_em_aberto)).toBe(20);
+    expect(Number(linha("aberto-custo")?.valor_pedido)).toBe(20);
+    expect(linha("aberto-sem-custo")?.valor_em_aberto).toBeNull();
+    expect(Number(linha("recebido")?.valor_em_aberto)).toBe(0);
+    // Total: 20 conhecido + itens sem custo contados a parte, nunca somados como zero.
+    expect(Number(v.totais.valor_em_aberto)).toBe(20);
+    expect(Number(v.totais.itens_em_aberto_sem_custo)).toBe(1);
+    expect(Number(v.totais.pedidos_em_aberto)).toBe(2);
+  });
+
+  it("a busca compara os DIGITOS do documento, com ou sem pontuacao", async () => {
+    expect(nomes(await visao("11222333", null))).toEqual([`${MARCA}-aberto-custo`]);
+    expect(nomes(await visao("11.222.333/0001", null))).toEqual([`${MARCA}-aberto-custo`]);
+  });
+
+  it("ordem por valor poe o maior primeiro e o desconhecido por ultimo", async () => {
+    const v = await visao(MARCA, null, "valor");
+
+    expect(v.linhas[0]?.name).toBe(`${MARCA}-aberto-custo`);
+    expect(v.linhas.at(-1)?.name).toBe(`${MARCA}-aberto-sem-custo`);
+  });
+
+  it("a lista responde o MESMO que get_suppliers para os quatro (D-224)", async () => {
+    const v = await visao(MARCA, null);
+    const antigas = await asUser<{ id: string; orders_total: string; valor_pedido: string | null; itens_sem_custo: string }>(
+      ADMIN_SB,
+      `select * from public.get_suppliers('${ORG_SB}',500,0,null) where name like '${MARCA}-%'`,
+    );
+
+    expect(antigas).toHaveLength(4);
+
+    for (const antiga of antigas) {
+      const nova = v.linhas.find((l) => l.id === antiga.id);
+
+      expect(Number(nova?.orders_total)).toBe(Number(antiga.orders_total));
+      expect(nova?.valor_pedido === null).toBe(antiga.valor_pedido === null);
+      expect(Number(nova?.valor_pedido)).toBe(Number(antiga.valor_pedido));
+      expect(Number(nova?.itens_sem_custo)).toBe(Number(antiga.itens_sem_custo));
+    }
+  });
+
+  it("anon nao executa get_suppliers_overview", async () => {
+    await expect(asAnon(`select public.get_suppliers_overview('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
 // p_sold em get_listings_dashboard (20260907160000, D-259) -- a celula
 // "Vendidos sem vinculo" da Integridade de Catalogo.
 describe("p_sold em get_listings_dashboard (D-259)", () => {
