@@ -153,3 +153,42 @@ test("ativar e inativar: reativar é um clique, inativar pede confirmação na l
   // Volta ao estado do seed: a spec de recortes conta com ele inativo.
   await expect(page.getByRole("button", { name: "Reativar" })).toBeVisible();
 });
+
+test("novo fornecedor: a prévia acompanha o que se digita, e o duplicado é avisado antes de salvar (D-367)", async ({ page }) => {
+  await login(page, "/fornecedores/novo");
+
+  await expect(page.getByRole("heading", { name: "Novo fornecedor", level: 1 })).toBeVisible();
+
+  const previa = page.getByRole("complementary", { name: "Prévia do fornecedor" });
+  await expect(previa.getByText("Nome do fornecedor")).toBeVisible();
+  await expect(previa.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+
+  // O mesmo nome com outra caixa: o banco aceitaria (a unicidade é exata), a tela avisa.
+  await page.getByLabel("Nome").fill(E2E_SUPPLIER.name.toUpperCase());
+  await expect(page.getByRole("status").filter({ hasText: "Já existe" })).toContainText(E2E_SUPPLIER.name);
+  await expect(previa.getByText(E2E_SUPPLIER.name.toUpperCase())).toBeVisible();
+
+  // O documento do seed, com máscara: aviso de duplicado. O selo diz que os dígitos não fecham.
+  await page.getByLabel("CNPJ ou CPF").fill("12.345.678/0001-99");
+  await expect(page.getByRole("status").filter({ hasText: "Este documento já está em" })).toBeVisible();
+  await expect(page.getByText("CNPJ não confere")).toBeVisible();
+
+  // Um CNPJ válido e novo: selo verde, sem aviso.
+  await page.getByLabel("CNPJ ou CPF").fill("11222333000181");
+  await expect(page.getByText("CNPJ válido")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Este documento já está em" })).toHaveCount(0);
+
+  // Telefone formatado ao sair, e o atalho que o copia para o WhatsApp.
+  await page.getByLabel("Telefone").fill("11987654321");
+  await page.getByLabel("Telefone").blur();
+  await expect(page.getByLabel("Telefone")).toHaveValue("(11) 98765-4321");
+  await page.getByRole("button", { name: "usar o número do telefone" }).click();
+  await expect(page.getByLabel("WhatsApp")).toHaveValue("(11) 98765-4321");
+
+  // O atalho de condição escreve a linha nas observações.
+  await page.getByRole("button", { name: "Prazo de entrega" }).click();
+  await expect(page.getByRole("textbox", { name: "Observações" })).toHaveValue("Prazo de entrega: ");
+
+  // Nome, documento válido, fone e condições: 4 de 7.
+  await expect(previa.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "57");
+});

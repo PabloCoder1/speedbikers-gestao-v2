@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import { AcessoRestrito } from "../../../components/acesso-restrito";
 import { PageTitle } from "../../../components/page-title";
 import { Shell } from "../../../components/shell";
+import { lerExistentes } from "../../../lib/supplier-existentes";
 import { currentMembership } from "../../../lib/request-membership";
+import { createClient } from "../../../lib/supabase/server";
 import { SupplierForm } from "./supplier-form";
 
 export const metadata = { title: "Novo fornecedor — Speed Bikers Gestão" };
@@ -20,16 +22,25 @@ export default async function NovoFornecedorPage(): Promise<ReactNode> {
     return <AcessoRestrito titulo="Novo fornecedor" papel="ADMIN ou GESTOR" />;
   }
 
+  const existentes = await lerExistentes(await createClient());
+
   return (
     <Shell>
       <PageTitle
         eyebrow="ESTOQUE / OPERAÇÃO"
         title="Novo fornecedor"
-        subtitle={<Link href="/fornecedores">← Voltar aos fornecedores</Link>}
+        subtitle={
+          <>
+            <Link href="/fornecedores">← Voltar aos fornecedores</Link>
+            <span className="sb-fnv-subtitulo">
+              Só o nome é obrigatório. A prévia mostra, enquanto você digita, como ele vai aparecer na lista e nos pedidos.
+            </span>
+          </>
+        }
         compacto
       />
 
-      <SupplierForm />
+      <SupplierForm existentes={existentes} />
     </Shell>
   );
 }
