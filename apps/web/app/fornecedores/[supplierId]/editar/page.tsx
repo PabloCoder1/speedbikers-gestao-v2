@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { AcessoRestrito } from "../../../../components/acesso-restrito";
 import { PageTitle } from "../../../../components/page-title";
 import { Shell } from "../../../../components/shell";
+import { lerExistentes } from "../../../../lib/supplier-existentes";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { AlternarAtivo } from "../../alternar-ativo";
@@ -31,11 +32,15 @@ export default async function EditarFornecedorPage({
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("suppliers")
-    .select("id, name, legal_name, document, contact_name, email, phone, whatsapp, website, notes, is_active")
-    .eq("id", supplierId)
-    .maybeSingle();
+  // As duas leituras partem do id da URL e da sessão, e vão juntas (D-195).
+  const [{ data, error }, existentes] = await Promise.all([
+    supabase
+      .from("suppliers")
+      .select("id, name, legal_name, document, contact_name, email, phone, whatsapp, website, notes, is_active")
+      .eq("id", supplierId)
+      .maybeSingle(),
+    lerExistentes(supabase),
+  ]);
 
   // Inexistente, de outra organização ou id malformado: os três viram 404.
   if (error !== null || data === null) {
@@ -60,6 +65,7 @@ export default async function EditarFornecedorPage({
 
       <SupplierForm
         id={data.id}
+        existentes={existentes}
         inicial={{
           name: data.name,
           legalName: data.legal_name,
