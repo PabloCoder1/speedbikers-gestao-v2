@@ -8671,47 +8671,15 @@ a.sb-forn-canal:hover {
   color: var(--sb-secondary);
 }
 
-.sb-fnv-link {
+/* As famílias da casa (sb-text-button, sb-button-sm), só alinhadas na grade do campo. */
+.sb-fnv .sb-form-campo .sb-text-button {
   justify-self: start;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--sb-secondary);
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 .sb-fnv-atalhos {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-}
-
-.sb-fnv-atalho {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.625rem;
-  border: 1px dashed var(--sb-border);
-  border-radius: 999px;
-  background: var(--sb-surface);
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--sb-text);
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.sb-fnv-atalho:hover {
-  border-color: var(--sb-secondary);
-  border-style: solid;
-  color: var(--sb-secondary);
 }
 
 /* A COLUNA DA PRÉVIA */
@@ -8914,7 +8882,6 @@ a.sb-forn-canal:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sb-fnv-atalho,
   .sb-fnv-barra > i {
     transition: none;
   }

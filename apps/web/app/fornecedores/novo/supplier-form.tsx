@@ -311,7 +311,7 @@ export function SupplierForm({
 
     if (campo === "whatsapp" && valores.whatsapp.trim() === "" && valores.phone.trim() !== "") {
       return (
-        <button type="button" className="sb-fnv-link" onClick={() => {
+        <button type="button" className="sb-text-button" onClick={() => {
             definir("whatsapp", valores.phone);
           }}>
           usar o número do telefone
@@ -422,7 +422,7 @@ export function SupplierForm({
                 <button
                   key={condicao}
                   type="button"
-                  className="sb-fnv-atalho"
+                  className="sb-button sb-button-sm"
                   onClick={() => {
                     definir("notes", acrescentarCondicao(valores.notes, condicao), true);
                   }}
