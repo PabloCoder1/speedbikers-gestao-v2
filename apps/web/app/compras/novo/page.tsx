@@ -46,6 +46,12 @@ export default async function NovoPedidoDeCompraPage({
 
   const byId = new Map((skusResult.data ?? []).map((s) => [s.id, s]));
 
+  // `?fornecedor=<uuid>` (D-365): o botão "Novo pedido" do fornecedor chega com
+  // ele pré-selecionado. Só vale se o id está na lista de ATIVOS que a RLS
+  // devolveu — id alheio, inativo ou malformado é ignorado, nunca erro.
+  const fornecedorPedido = typeof query.fornecedor === "string" ? query.fornecedor : null;
+  const fornecedorInicial = (suppliers.data ?? []).find((s) => s.id === fornecedorPedido) ?? null;
+
   const prefillItems: DraftItem[] = prefill.flatMap((p) => {
     const sku = byId.get(p.skuId);
 
@@ -90,10 +96,10 @@ export default async function NovoPedidoDeCompraPage({
 
       <PurchaseOrderForm
         suppliers={suppliers.data ?? []}
-        {...(prefillItems.length > 0
+        {...(prefillItems.length > 0 || fornecedorInicial !== null
           ? {
               initial: {
-                supplierId: null,
+                supplierId: fornecedorInicial?.id ?? null,
                 destinationWarehouseName: null,
                 notes: null,
                 expectedAt: null,

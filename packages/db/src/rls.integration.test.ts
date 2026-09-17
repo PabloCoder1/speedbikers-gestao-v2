@@ -3432,6 +3432,138 @@ describe("get_purchase_orders (D-255)", () => {
   });
 });
 
+// get_purchase_orders_overview (20260917140000, D-365) -- /compras numa leitura:
+// resumo, contagens por estado e a pagina, com atraso pela data de Sao Paulo.
+describe("get_purchase_orders_overview (D-365)", () => {
+  const MARCA = "POVIEWTEST";
+  const HOJE_SP = "(now() at time zone 'America/Sao_Paulo')::date";
+
+  beforeAll(async () => {
+    const fornecedor = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-fornecedor`],
+    );
+    const supplierId = fornecedor.rows[0]?.id ?? "";
+
+    // [chave, estado, dias ate a previsao (null = sem), itens]
+    const pedidos: readonly (readonly [string, string, number | null, readonly (readonly [number, number | null])[]])[] = [
+      ["atrasado", "ORDERED", -3, [[10, 5], [2, null]]],
+      ["chegando", "APPROVED", 2, [[4, 25]]],
+      ["longe", "APPROVED", 30, [[1, 10]]],
+      ["rascunho-vencido", "DRAFT", -10, [[7, null]]],
+      ["vazio", "DRAFT", null, []],
+    ];
+
+    for (const [chave, status, dias, itens] of pedidos) {
+      const pedido = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, notes, created_by, approved_at, ordered_at, expected_at)
+         values ($1,$2::uuid,$3,$4,$5::uuid,
+                 case when $3 in ('APPROVED','ORDERED') then now() end,
+                 case when $3 = 'ORDERED' then now() end,
+                 case when $6::int is null then null else ((${HOJE_SP} + $6::int)::timestamp at time zone 'UTC') end)
+         returning id`,
+        [ORG_SB, supplierId, status, `${MARCA}:${chave}`, ADMIN_SB, dias],
+      );
+
+      const pedidoId = pedido.rows[0]?.id ?? "";
+
+      for (const [posicao, [quantidade, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, pedidoId, posicao, `${MARCA}-${chave}-${String(posicao)}`, quantidade, custo],
+        );
+      }
+    }
+  });
+
+  interface Agregado {
+    pedidos: number;
+    valor: number | null;
+    unidades: number;
+    sem_custo: number;
+  }
+
+  interface Visao {
+    total: number;
+    contagens: { status: string; pedidos: number; valor: number | null; sem_custo: number }[];
+    em_aberto: Agregado;
+    atrasados: Agregado & { maior_atraso_dias: number };
+    chegando: Agregado;
+    linhas: { status: string; atrasado: boolean; dias_para_previsao: number | null; valor: number | null; itens: number }[];
+  }
+
+  async function visao(args: string): Promise<Visao | undefined> {
+    const [linha] = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_purchase_orders_overview('${ORG_SB}',${args}) as v`,
+    );
+
+    return linha?.v;
+  }
+
+  it("a pagina e a MESMA de get_purchase_orders, com o mesmo valor por pedido (D-254)", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+    const antiga = await asUser<{ estimated_value: string | null; items_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',100,0,null,'${MARCA}-fornecedor')`,
+    );
+
+    expect(v?.total).toBe(5);
+    expect(v?.linhas.map((l) => [l.valor, l.itens])).toEqual(
+      antiga.map((l) => [l.estimated_value === null ? null : Number(l.estimated_value), Number(l.items_count)]),
+    );
+  });
+
+  it("atraso so vale para aprovado/enviado, pela data de Sao Paulo", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+
+    // O rascunho com previsao vencida NAO e atraso: ainda nao foi pedido.
+    expect(v?.atrasados.pedidos).toBe(1);
+    expect(v?.atrasados.maior_atraso_dias).toBe(3);
+    // 10 x 5 = 50, com um item sem custo: parcial e dito.
+    expect(Number(v?.atrasados.valor)).toBe(50);
+    expect(v?.atrasados.sem_custo).toBe(1);
+    // Chegando = previsao entre hoje e hoje + 7; os 30 dias ficam fora.
+    expect(v?.chegando.pedidos).toBe(1);
+    expect(Number(v?.chegando.valor)).toBe(100);
+  });
+
+  it("em aberto soma rascunho, aprovado e enviado, e o valor desconhecido nao vira zero", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+
+    expect(v?.em_aberto.pedidos).toBe(5);
+    // 50 + 100 + 10 + (rascunho sem custo: fora) + (vazio: zero sabido).
+    expect(Number(v?.em_aberto.valor)).toBe(160);
+    expect(v?.em_aberto.sem_custo).toBe(2);
+
+    const rascunhos = v?.contagens.find((c) => c.status === "DRAFT");
+    expect(rascunhos?.pedidos).toBe(2);
+  });
+
+  it("estado e 'so atrasados' recortam a pagina e NAO os cartoes (D-250)", async () => {
+    const atrasados = await visao(`100,0,null,'${MARCA}-fornecedor',true`);
+
+    expect(atrasados?.total).toBe(1);
+    expect(atrasados?.linhas.every((l) => l.atrasado && l.status === "ORDERED")).toBe(true);
+    expect(atrasados?.em_aberto.pedidos).toBe(5);
+
+    const aprovados = await visao(`1,0,'APPROVED','${MARCA}-fornecedor'`);
+
+    expect(aprovados?.total).toBe(2);
+    expect(aprovados?.linhas).toHaveLength(1);
+    expect(aprovados?.contagens.reduce((soma, c) => soma + c.pedidos, 0)).toBe(5);
+  });
+
+  it("anon nao executa get_purchase_orders_overview", async () => {
+    await expect(asAnon(`select public.get_purchase_orders_overview('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
 // get_suppliers + get_supplier_overview (20260907130000, D-258) -- "valor
 // comprado" na lista, e o custo AUSENTE que deixou de virar R$ 0,00.
 describe("valor comprado por fornecedor (D-258)", () => {
@@ -3546,6 +3678,158 @@ describe("valor comprado por fornecedor (D-258)", () => {
     await expect(asAnon(`select * from public.get_suppliers('${ORG_SB}')`)).rejects.toThrow(
       /permission denied/i,
     );
+  });
+});
+
+// get_suppliers_overview (20260917150000, D-366) -- a lista de /fornecedores
+// numa leitura: recortes pelos pedidos, busca por digitos do documento e o
+// valor EM ABERTO com as mesmas tres saidas de D-258.
+describe("get_suppliers_overview (D-366)", () => {
+  const MARCA = "FORNOVTEST";
+  const forn: Record<string, string> = {};
+
+  interface Linha {
+    id: string;
+    name: string;
+    orders_total: number;
+    orders_em_aberto: number;
+    valor_pedido: number | null;
+    valor_em_aberto: number | null;
+    itens_sem_custo: number;
+    ultimo_pedido_em: string | null;
+  }
+  interface Visao {
+    total: number;
+    linhas: Linha[];
+    contagens: Record<string, number>;
+    totais: Record<string, number | string | null>;
+  }
+
+  beforeAll(async () => {
+    const cadastros: readonly (readonly [string, boolean, string | null])[] = [
+      ["aberto-custo", true, "11.222.333/0001-81"],
+      ["aberto-sem-custo", true, null],
+      ["recebido", true, null],
+      ["inativo-sem-pedido", false, null],
+    ];
+
+    for (const [chave, ativo, documento] of cadastros) {
+      const r = await client.query<{ id: string }>(
+        `insert into public.suppliers (organization_id, name, is_active, document) values ($1,$2,$3,$4) returning id`,
+        [ORG_SB, `${MARCA}-${chave}`, ativo, documento],
+      );
+      forn[chave] = r.rows[0]?.id ?? "";
+    }
+
+    const pedidos: readonly (readonly [string, string, readonly (readonly [number, number | null])[]])[] = [
+      ["aberto-custo", "DRAFT", [[2, 10]]],
+      ["aberto-custo", "CANCELLED", [[1, 500]]],
+      ["aberto-sem-custo", "DRAFT", [[4, null]]],
+    ];
+
+    for (const [chave, status, itens] of pedidos) {
+      const po = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, created_by, cancelled_at)
+         values ($1,$2::uuid,$3,$4::uuid, case when $3 = 'CANCELLED' then now() else null end)
+         returning id`,
+        [ORG_SB, forn[chave], status, ADMIN_SB],
+      );
+
+      for (const [posicao, [qtd, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, po.rows[0]?.id ?? "", posicao, `${MARCA}-${chave}-${String(posicao)}`, qtd, custo],
+        );
+      }
+    }
+
+    // RECEIVED exige approved/ordered/received_at coerentes (checks da tabela).
+    await client.query(
+      `insert into public.purchase_orders
+         (organization_id, supplier_id, status, created_by, approved_at, ordered_at, received_at)
+       values ($1,$2::uuid,'RECEIVED',$3::uuid, now(), now(), now())`,
+      [ORG_SB, forn.recebido, ADMIN_SB],
+    );
+  });
+
+  async function visao(busca: string | null, estado: string | null, ordem: string | null = null): Promise<Visao> {
+    const rows = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_suppliers_overview('${ORG_SB}', ${busca === null ? "null" : `'${busca}'`}, ${
+        estado === null ? "null" : `'${estado}'`
+      }, ${ordem === null ? "null" : `'${ordem}'`}, 200, 0) as v`,
+    );
+
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_suppliers_overview nao devolveu linha");
+
+    return v;
+  }
+
+  const nomes = (v: Visao): string[] => v.linhas.map((l) => l.name).sort();
+
+  it("a busca pelo nome recorta so os do teste, e os recortes contam pelos pedidos", async () => {
+    const v = await visao(MARCA, null);
+
+    expect(v.total).toBe(4);
+    expect(v.contagens).toEqual({ todos: 4, ativos: 3, inativos: 1, em_aberto: 2, sem_pedido: 1 });
+    expect(nomes(await visao(MARCA, "em_aberto"))).toEqual([`${MARCA}-aberto-custo`, `${MARCA}-aberto-sem-custo`]);
+    expect(nomes(await visao(MARCA, "sem_pedido"))).toEqual([`${MARCA}-inativo-sem-pedido`]);
+    // O recorte filtra a pagina, nunca os cartoes (D-250).
+    expect((await visao(MARCA, "inativos")).contagens.todos).toBe(4);
+  });
+
+  it("valor em aberto tem as tres saidas de D-258, e o cancelado fica fora", async () => {
+    const v = await visao(MARCA, null);
+    const linha = (chave: string) => v.linhas.find((l) => l.name === `${MARCA}-${chave}`);
+
+    expect(Number(linha("aberto-custo")?.valor_em_aberto)).toBe(20);
+    expect(Number(linha("aberto-custo")?.valor_pedido)).toBe(20);
+    expect(linha("aberto-sem-custo")?.valor_em_aberto).toBeNull();
+    expect(Number(linha("recebido")?.valor_em_aberto)).toBe(0);
+    // Total: 20 conhecido + itens sem custo contados a parte, nunca somados como zero.
+    expect(Number(v.totais.valor_em_aberto)).toBe(20);
+    expect(Number(v.totais.itens_em_aberto_sem_custo)).toBe(1);
+    expect(Number(v.totais.pedidos_em_aberto)).toBe(2);
+  });
+
+  it("a busca compara os DIGITOS do documento, com ou sem pontuacao", async () => {
+    expect(nomes(await visao("11222333", null))).toEqual([`${MARCA}-aberto-custo`]);
+    expect(nomes(await visao("11.222.333/0001", null))).toEqual([`${MARCA}-aberto-custo`]);
+  });
+
+  it("ordem por valor poe o maior primeiro e o desconhecido por ultimo", async () => {
+    const v = await visao(MARCA, null, "valor");
+
+    expect(v.linhas[0]?.name).toBe(`${MARCA}-aberto-custo`);
+    expect(v.linhas.at(-1)?.name).toBe(`${MARCA}-aberto-sem-custo`);
+  });
+
+  it("a lista responde o MESMO que get_suppliers para os quatro (D-224)", async () => {
+    const v = await visao(MARCA, null);
+    const antigas = await asUser<{ id: string; orders_total: string; valor_pedido: string | null; itens_sem_custo: string }>(
+      ADMIN_SB,
+      `select * from public.get_suppliers('${ORG_SB}',500,0,null) where name like '${MARCA}-%'`,
+    );
+
+    expect(antigas).toHaveLength(4);
+
+    for (const antiga of antigas) {
+      const nova = v.linhas.find((l) => l.id === antiga.id);
+
+      expect(Number(nova?.orders_total)).toBe(Number(antiga.orders_total));
+      expect(nova?.valor_pedido === null).toBe(antiga.valor_pedido === null);
+      expect(Number(nova?.valor_pedido)).toBe(Number(antiga.valor_pedido));
+      expect(Number(nova?.itens_sem_custo)).toBe(Number(antiga.itens_sem_custo));
+    }
+  });
+
+  it("anon nao executa get_suppliers_overview", async () => {
+    await expect(asAnon(`select public.get_suppliers_overview('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });
 

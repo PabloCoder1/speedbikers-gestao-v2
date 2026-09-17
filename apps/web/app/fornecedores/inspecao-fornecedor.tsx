@@ -6,6 +6,9 @@ import { useState, useTransition, type ReactNode } from "react";
 import { DetailRow, Drawer } from "../../components/drawer";
 import { TOM } from "../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { formatarDocumento } from "../../lib/suppliers-overview";
+
+import { Canais, temCanal } from "./canais";
 
 import { inspecionarFornecedor, type SupplierInspection } from "./inspecao";
 
@@ -101,7 +104,7 @@ function Retrato({ retrato }: { retrato: SupplierInspection }): ReactNode {
         </span>
         {retrato.document !== null && (
           <span className="sb-status" style={TOM.info}>
-            {retrato.document}
+            {formatarDocumento(retrato.document)}
           </span>
         )}
       </div>
@@ -131,10 +134,12 @@ function Retrato({ retrato }: { retrato: SupplierInspection }): ReactNode {
       ) : (
         <>
           {retrato.contactName !== null && <DetailRow label="Pessoa" value={retrato.contactName} />}
-          {retrato.email !== null && <DetailRow label="E-mail" value={retrato.email} />}
-          {retrato.phone !== null && <DetailRow label="Telefone" value={retrato.phone} />}
-          {retrato.whatsapp !== null && <DetailRow label="WhatsApp" value={retrato.whatsapp} />}
-          {retrato.website !== null && <DetailRow label="Site" value={retrato.website} />}
+          {/* D-366: os canais viram ação — um toque abre WhatsApp, discador, e-mail ou site. */}
+          {temCanal(retrato) && (
+            <div className="sb-forn-gaveta-canais">
+              <Canais canais={retrato} />
+            </div>
+          )}
         </>
       )}
 
