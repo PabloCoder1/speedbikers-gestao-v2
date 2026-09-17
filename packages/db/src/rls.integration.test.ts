@@ -13796,8 +13796,9 @@ describe("get_listings_link_overview (D-376)", () => {
       vendidos_sem_vinculo: 1,
       parados_sem_vinculo: 1,
     });
-    expect(Number(v.contagens.receita_sem_vinculo)).toBe(700);
-    expect(Number(v.contagens.unidades_sem_vinculo)).toBe(7);
+    // jsonb devolve numero de verdade (nao o texto que `numeric` daria fora dele).
+    expect(v.contagens.receita_sem_vinculo).toBe(700);
+    expect(v.contagens.unidades_sem_vinculo).toBe(7);
 
     const porEstado = new Map(v.linhas.map((l) => [l.item_id, l.link_state]));
 
@@ -13830,7 +13831,7 @@ describe("get_listings_link_overview (D-376)", () => {
     // servico do painel.
     expect(olhando.get(CONTA_VAZIA)).toMatchObject({ listings_total: 0, pct_vinculado: null });
     expect(olhando.get(CONTA_A)).toMatchObject({ listings_total: 4, com_vinculo: 2, sem_vinculo: 2 });
-    expect(Number(olhando.get(CONTA_A)?.pct_vinculado)).toBe(50);
+    expect(olhando.get(CONTA_A)?.pct_vinculado).toBe(50);
   });
 
   it("de outra organizacao volta vazia sem erro, e anon nao executa", async () => {
