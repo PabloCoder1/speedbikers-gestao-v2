@@ -32,6 +32,11 @@ Fornecedor). A 8A entregou Usuários/Permissões (D-175) e Saúde do
 Sistema (D-176). **Integrações e Configurações também existem** — a checagem de
 D-271 desmentiu a nota anterior, que dizia faltarem.
 
+A `/estoque` segue o frame `Inventory` com a faixa única de indicadores,
+filtros dentro do painel, busca operacional, identidade de produto e ações
+compactas por linha. As recusas métricas de D-249 permanecem intactas; a
+mudança é de hierarquia e velocidade percebida, sem inventar agregado.
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 

@@ -11143,3 +11143,195 @@ td.sb-pco-num-linha {
     min-width: 0;
   }
 }
+
+/*
+ * ESTOQUE — espaço de trabalho operacional.
+ *
+ * O frame `Inventory` põe os filtros no próprio painel e dá à identidade do
+ * produto o maior peso da tabela. As regras ficam escopadas à rota: a tabela
+ * continua usando o contrato global `.sb-table`, enquanto busca, primeira
+ * coluna fixa e ações compactas resolvem a leitura horizontal desta superfície.
+ */
+.sb-stock-workspace {
+  display: grid;
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+}
+
+.sb-stock-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+  border-bottom: 1px solid var(--sb-table-rule);
+  background: var(--sb-bg-soft);
+}
+
+.sb-stock-toolbar > p {
+  flex: 1 1 24rem;
+  max-width: 42rem;
+  margin: 0;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.sb-stock-toolbar > p strong {
+  color: var(--sb-primary);
+}
+
+.sb-stock-search {
+  display: flex;
+  align-items: center;
+  flex: 1 1 30rem;
+  gap: var(--sb-space-2);
+}
+
+.sb-stock-search-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 18rem;
+  min-width: 12rem;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
+  color: var(--sb-text-soft);
+}
+
+.sb-stock-search-field:focus-within {
+  border-color: var(--sb-secondary);
+  box-shadow: 0 0 0 2px var(--sb-secondary-soft);
+}
+
+.sb-stock-search-field .sb-input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--sb-text);
+  font: inherit;
+  font-size: 0.6875rem;
+}
+
+.sb-stock-search-field .sb-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.sb-stock-search-field .sb-input::placeholder {
+  color: var(--sb-muted-ink);
+}
+
+.sb-stock-table-wrap {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.sb-stock-table {
+  min-width: 76rem;
+}
+
+.sb-stock-table th:first-child,
+.sb-stock-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--sb-surface);
+  box-shadow: 1px 0 0 var(--sb-table-rule);
+}
+
+.sb-stock-table th:first-child {
+  z-index: 2;
+  background: var(--sb-table-head);
+}
+
+.sb-stock-table tr:hover td:first-child {
+  background: var(--sb-bg-soft);
+}
+
+.sb-stock-product {
+  width: 18rem;
+}
+
+.sb-stock-product-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1875rem;
+}
+
+.sb-stock-product-copy .sb-entity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-stock-value {
+  display: block;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-stock-value-danger {
+  color: var(--sb-danger);
+}
+
+.sb-stock-virtual {
+  margin-top: 0.25rem;
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-stock-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+}
+
+.sb-stock-message {
+  margin: 0;
+  padding: var(--sb-space-3);
+  font-size: 0.75rem;
+}
+
+.sb-stock-message-error {
+  color: var(--sb-danger);
+  background: var(--sb-danger-soft);
+}
+
+.sb-stock-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .sb-stock-toolbar,
+  .sb-stock-search {
+    align-items: stretch;
+  }
+
+  .sb-stock-search {
+    flex-wrap: wrap;
+  }
+
+  .sb-stock-search-field {
+    flex-basis: 100%;
+  }
+
+  .sb-stock-pagination {
+    justify-content: space-between;
+  }
+}
