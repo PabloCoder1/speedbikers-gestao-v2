@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ABC_CRITERIA,
+  ABC_CLASSES,
   PAGE_SIZE,
   buildAbcHref,
   resolveAbcCriterion,
+  resolveAbcClass,
   resolveAbcFilters,
   resolveAbcPeriod,
   summarizeAbcWindow,
@@ -16,6 +18,7 @@ const base = {
   criterion: ABC_CRITERIA[0],
   days: 90,
   onlyWithoutFull: false,
+  abcClass: null,
   page: 1,
 };
 
@@ -52,6 +55,13 @@ describe("critério e período", () => {
     expect(resolveAbcFilters({ semFull: "1" }).onlyWithoutFull).toBe(true);
     expect(resolveAbcFilters({ semFull: "0" }).onlyWithoutFull).toBe(false);
     expect(resolveAbcFilters({}).onlyWithoutFull).toBe(false);
+  });
+
+  it("resolve classe ABC e ignora valor desconhecido", () => {
+    expect(resolveAbcClass("A")).toBe("A");
+    expect(resolveAbcFilters({ classe: "B" }).abcClass).toBe("B");
+    expect(resolveAbcFilters({ classe: "D" }).abcClass).toBeNull();
+    expect(ABC_CLASSES).toEqual(["A", "B", "C"]);
   });
 
   it("cada critério carrega o ID da definição do catálogo", () => {
@@ -104,6 +114,11 @@ describe("buildAbcHref", () => {
     expect(buildAbcHref(atual, { brand: null })).toBe("/curva-abc?conta=sbmotos");
   });
 
+  it("classe entra na URL e troca de classe volta para a página 1", () => {
+    expect(buildAbcHref(base, { abcClass: "B" })).toBe("/curva-abc?classe=B");
+    expect(buildAbcHref({ ...base, abcClass: "A", page: 4 }, { abcClass: "C" })).toBe("/curva-abc?classe=C");
+  });
+
   it("trocar de marca volta para a página 1", () => {
     expect(buildAbcHref({ ...base, brand: "RT", page: 4 }, { brand: "NAVETEC" })).toBe("/curva-abc?marca=NAVETEC");
   });
@@ -123,15 +138,15 @@ describe("summarizeAbcWindow", () => {
     const r = summarizeAbcWindow(1, 1492, PAGE_SIZE);
 
     expect(r.label).toContain("1.492");
-    expect(r.totalPages).toBe(15);
+    expect(r.totalPages).toBe(30);
   });
 
   it("última página parcial mostra o intervalo real", () => {
-    expect(summarizeAbcWindow(15, 1492, 92).label).toContain("1.401 a 1.492");
+    expect(summarizeAbcWindow(30, 1492, 42).label).toContain("1.451 a 1.492");
   });
 
   it("uma página só não vira ruído de intervalo", () => {
-    expect(summarizeAbcWindow(1, 80, 80).label).toBe("80 SKUs na curva.");
+    expect(summarizeAbcWindow(1, 40, 40).label).toBe("40 SKUs na curva.");
   });
 
   it("zero é resultado, não erro", () => {

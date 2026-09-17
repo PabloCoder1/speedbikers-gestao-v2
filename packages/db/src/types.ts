@@ -5068,6 +5068,7 @@ export type Database = {
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null
+          p_abc_class?: string | null
           p_date_from: string
           p_date_to: string
           p_limit?: number

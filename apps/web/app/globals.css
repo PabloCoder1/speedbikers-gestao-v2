@@ -3109,7 +3109,19 @@ table {
 }
 
 .sb-abc-table-wrap {
+  max-height: min(58vh, 640px);
   overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.sb-abc-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--sb-surface);
+  box-shadow: 0 1px 0 var(--sb-border);
 }
 
 .sb-abc-class {
