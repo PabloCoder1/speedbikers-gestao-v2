@@ -13015,3 +13015,44 @@ Revisando o envio: o `min` da data impediria salvar a edicao de um rascunho com 
 - a busca no dropdown NAO mostra estoque: `get_stock_balances` mede ~680 ms por chamada (`docs/PERFORMANCE.md`), lento demais para autocompletar;
 - o seed local tem poucos SKUs e fornecedor sem contato: as capturas mostram o desenho com pouco dado;
 - a edicao (`/compras/[id]/editar`) ganhou o visual, mas nao a ficha completa do fornecedor nem o ultimo custo -- a pagina e da D-365 e passa so id e nome.
+
+
+## D-370 - Logo do fornecedor, e o cadastro de D-367 sem a barra que cobria os campos nem o "voltar" sublinhado
+
+**Contexto:** o dono olhou a D-367 no ar e mandou duas capturas: "o botao de voltar nao achei legal" e "essa parte abaixo que tem os botoes esta sobrepondo junto com o scroll". No meio da correcao, pediu: "tambem coloque opcao de colocar a logo no fornecedor".
+
+**1. AS DUAS CORRECOES DE D-367**
+
+- **acoes:** a barra `sb-forn-form-acoes` grudava no pe da pagina e cobria os campos ao rolar. Os botoes (Cadastrar/Salvar e Cancelar, com o resumo do cadastro e a mensagem de erro) passam para a coluna lateral, que ja acompanha a rolagem. Ela so gruda quando cabe na tela (a partir de 880 px de altura); numa tela baixa fica estatica, para os botoes nunca ficarem fora de alcance. Abaixo de 1.100 px a coluna vem depois do formulario, com os botoes no fim;
+- **voltar:** o link sublinhado no subtitulo vira botao da casa com seta (`app/fornecedores/voltar.tsx`), no canto do cabecalho -- no cadastro, na edicao e no painel do fornecedor. `/compras/novo` (D-368) ainda tem o link antigo.
+
+**2. A LOGO -- o desenho da foto de perfil (D-354), com a organizacao no lugar da pessoa**
+
+Migration `20260917160000_supplier_logo.sql` (timestamp depois da ultima da v3, `20260917150000`):
+
+- `suppliers.logo_path`: o CAMINHO `<organization_id>/<uuid>.<ext>`, nunca a URL, com a forma travada por check;
+- bucket `supplier-logos`, **publico** (a logo aparece na lista, no painel e na escolha do fornecedor do pedido; URL assinada seria uma ida por render, D-195), 1 MiB, WebP/PNG/JPEG;
+- escrita no bucket so para ADMIN/GESTOR da organizacao dona da pasta, por `private.can_manage_supplier_logo(text)` sobre `private.has_org_role` (a juncao de D-180). Pasta que nao e uuid vira recusa, nao erro;
+- `set_supplier_logo(p_id, p_logo_path default null)`: `suppliers` so muda por RPC. Confere o papel NA organizacao do fornecedor e que a pasta e dela, e devolve o caminho ANTERIOR para a tela apagar o arquivo velho so depois da troca. `update_supplier` nao conhece a coluna e nao a apaga;
+- `get_suppliers_overview` devolve `logo_path` em cada linha (mesma assinatura, `create or replace`, corpo identico a D-366 com uma coluna a mais).
+
+Na web:
+
+- **a logo nao se recorta:** e ajustada dentro de 512 px com o fundo transparente preservado (`lib/logo-fornecedor.ts`); o recorte central do avatar de pessoa cortaria o nome da marca. Na tela, `contain` sobre fundo claro com borda (`LogoFornecedor`);
+- **no formulario**, a logo escolhida fica pronta e so sobe DEPOIS de o cadastro salvar -- o fornecedor novo ainda nao tem id. Se o envio falhar, o fornecedor ja existe: a pessoa vai para a edicao dele com o aviso "a logo nao subiu", em vez de salvar de novo e duplicar;
+- aparece na **lista**, no **cabecalho do painel** (`ObjectHeader` ganhou `avatar` opcional), na **previa** do formulario e na **ficha do fornecedor em /compras/novo**;
+- **antes da migration chegar ao banco:** o leitor da lista trata `logo_path` como opcional (ausente = sem logo), e o painel e a edicao leem a logo numa consulta separada, cujo erro vira "sem logo" -- nunca 404 nem a lista recusada.
+
+**3. ACHADO, SEM MUDANCA**
+
+`private.check_purchase_order_writer` (Fase 4), usado por `create_supplier`/`update_supplier` e pelas RPCs de pedido de compra, ainda confere `is_member_of(org)` e `has_role(papeis)` separados -- o par que D-180 substituiu por `has_org_role` nas policies. A funcao nova desta fatia usa `has_org_role`; a correcao da antiga fica registrada para uma fatia propria.
+
+**Verificacao**
+
+- `typecheck`, `lint`, `test` de `@sb/web` e `@sb/db`, e os quatro guardas `check:*`;
+- a migration aplicada no banco local e testada como `authenticated` (numa transacao desfeita e depois por cima): pasta propria aceita, pasta de outra organizacao e pasta invalida recusadas no bucket; RPC recusa caminho de outra organizacao, caminho fora da forma, e `anon`;
+- integracao: os 6 casos novos passaram localmente (`-t "D-370"`). O bloco de D-366 nao rodou de novo no banco local por fixtures de uma rodada anterior (nome unico) e fica com a CI, que parte de base limpa;
+- e2e: `fornecedores.spec.ts` (9, com um caso novo que sobe a logo na edicao, confere no painel e a remove), `pedido-compra.spec.ts` e `compras.spec.ts` -- 13 de 13 contra a web local;
+- visual com uma logo real no formulario, no painel, na lista e em /compras/novo, a 1440 px, e o formulario rolado e numa tela de 700 px de altura.
+
+**Impacto:** `supabase/migrations/20260917160000_supplier_logo.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/fornecedores/{logo,voltar}.tsx`, `novo/{page,supplier-form}.tsx`, `[supplierId]/{page,editar/page}.tsx`, `page.tsx`; `apps/web/app/compras/novo/{page,purchase-order-form}.tsx`; `apps/web/components/object-header.tsx`; `apps/web/lib/{logo-fornecedor,logo-fornecedor-url,suppliers-overview}.ts`; `apps/web/app/globals.css`; `apps/web/e2e/fornecedores.spec.ts`. Publicacao: web funciona antes da migration (sem logo); a logo aparece depois da migration no Dev (CI) e em producao (workflow com duas aprovacoes).

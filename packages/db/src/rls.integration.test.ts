@@ -13245,3 +13245,95 @@ describe("get_replenishment_reach (D-361)", () => {
     );
   });
 });
+
+// Logo do fornecedor (20260917160000, D-370) -- o caminho no cadastro, o bucket
+// e quem escreve nos dois. Tudo por `asUser`, que desfaz a transacao.
+describe("logo do fornecedor (D-370)", () => {
+  const MARCA = "LOGOTEST";
+  const ARQUIVO = "aaaaaaaa-2222-4333-8444-555555555555.webp";
+  let fornecedor = "";
+
+  beforeAll(async () => {
+    const r = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-fornecedor`],
+    );
+    fornecedor = r.rows[0]?.id ?? "";
+  });
+
+  it("a troca grava o caminho e devolve o anterior, para a tela apagar o arquivo velho", async () => {
+    // Duas chamadas no MESMO statement: a de dentro grava, a de fora tira e
+    // devolve o que a de dentro gravou. Funcao plpgsql volatil enxerga o que a
+    // anterior escreveu na mesma transacao.
+    const rows = await asUser<{ primeiro: string | null; anterior: string | null }>(
+      ADMIN_SB,
+      `select t.primeiro, public.set_supplier_logo('${fornecedor}') as anterior
+       from (select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}') as primeiro) t`,
+    );
+
+    expect(rows[0]?.primeiro).toBeNull();
+    expect(rows[0]?.anterior).toBe(`${ORG_SB}/${ARQUIVO}`);
+  });
+
+  it("get_suppliers_overview devolve logo_path em cada linha", async () => {
+    const rows = await asUser<{ tem: boolean }>(
+      ADMIN_SB,
+      `select bool_and(l ? 'logo_path') as tem
+       from jsonb_array_elements(public.get_suppliers_overview('${ORG_SB}', '${MARCA}-fornecedor') -> 'linhas') l`,
+    );
+
+    expect(rows[0]?.tem).toBe(true);
+  });
+
+  it("caminho fora da pasta da organizacao e recusado, e o fora da forma tambem", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_OUTRA}/${ARQUIVO}')`),
+    ).rejects.toThrow(/fora da pasta da organizacao/);
+
+    await expect(
+      asUser(ADMIN_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/logo.webp')`),
+    ).rejects.toThrow(/suppliers_logo_path_shape/);
+  });
+
+  it("ANALISTA e ADMIN de OUTRA organizacao nao trocam a logo (D-180)", async () => {
+    await expect(
+      asUser(ANALISTA_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}')`),
+    ).rejects.toThrow(/sem permissao|nao encontrado/);
+
+    await expect(
+      asUser(DE_OUTRA_ORG, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}')`),
+    ).rejects.toThrow(/sem permissao|nao encontrado/);
+  });
+
+  it("o bucket aceita a pasta da propria organizacao e recusa a de outra", async () => {
+    const aceito = await asUser<{ name: string }>(
+      ADMIN_SB,
+      `insert into storage.objects (bucket_id, name, owner_id)
+       values ('supplier-logos', '${ORG_SB}/${ARQUIVO}', '${ADMIN_SB}') returning name`,
+    );
+
+    expect(aceito[0]?.name).toBe(`${ORG_SB}/${ARQUIVO}`);
+
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into storage.objects (bucket_id, name, owner_id)
+         values ('supplier-logos', '${ORG_OUTRA}/${ARQUIVO}', '${ADMIN_SB}')`,
+      ),
+    ).rejects.toThrow(/row-level security/);
+
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into storage.objects (bucket_id, name, owner_id)
+         values ('supplier-logos', '${ORG_SB}/${ARQUIVO}', '${ANALISTA_SB}')`,
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("anon nao executa set_supplier_logo", async () => {
+    await expect(
+      asAnon(`select public.set_supplier_logo('${fornecedor}', null)`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});

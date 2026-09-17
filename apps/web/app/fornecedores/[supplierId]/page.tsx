@@ -14,6 +14,8 @@ import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
 import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
 import { Canais, temCanal } from "../canais";
+import { LogoFornecedor } from "../logo";
+import { Voltar } from "../voltar";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
@@ -76,7 +78,7 @@ export default async function FornecedorPage({
     );
   }
 
-  const [overviewResult, skusResult, ordersResult] = await Promise.all([
+  const [overviewResult, skusResult, ordersResult, logoResult] = await Promise.all([
     supabase
       .rpc("get_supplier_overview", { p_organization_id: organizationId, p_supplier_id: supplierId })
       .maybeSingle(),
@@ -92,6 +94,9 @@ export default async function FornecedorPage({
       .eq("supplier_id", supplierId)
       .order("created_at", { ascending: false })
       .limit(50),
+    // Separada (D-370): sem a migration a coluna não existe, e o erro dela não
+    // pode virar 404 do painel.
+    supabase.from("suppliers").select("logo_path").eq("id", supplierId).maybeSingle(),
   ]);
 
   // Sem cast: os tipos gerados de `get_supplier_overview` ja descrevem esta
@@ -141,13 +146,20 @@ export default async function FornecedorPage({
       <PageTitle
         eyebrow="ESTOQUE / OPERAÇÃO"
         title="Fornecedores"
-        subtitle={<Link href="/fornecedores">← Voltar aos fornecedores</Link>}
+        aside={<Voltar href="/fornecedores" rotulo="Fornecedores" />}
         compacto
       />
 
       <ObjectHeader
         identificador="FORNECEDOR"
         titulo={overview.name}
+        avatar={
+          <LogoFornecedor
+            nome={overview.name}
+            logoPath={logoResult.error === null ? (logoResult.data?.logo_path ?? null) : null}
+            className="sb-forn-painel-logo"
+          />
+        }
         badges={badges}
         meta={
           overview.ultimo_pedido_em === null

@@ -3234,6 +3234,7 @@ export type Database = {
           id: string
           is_active: boolean
           legal_name: string | null
+          logo_path: string | null
           name: string
           notes: string | null
           organization_id: string
@@ -3251,6 +3252,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           legal_name?: string | null
+          logo_path?: string | null
           name: string
           notes?: string | null
           organization_id: string
@@ -3268,6 +3270,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           legal_name?: string | null
+          logo_path?: string | null
           name?: string
           notes?: string | null
           organization_id?: string
@@ -5664,6 +5667,11 @@ export type Database = {
           label: string
           sublabel: string
         }[]
+      }
+      set_supplier_logo: {
+        Args: { p_id: string; p_logo_path?: string }
+        // D-370: devolve o caminho ANTERIOR, NULL quando nao havia logo (o gerador nao marcaria o nulo).
+        Returns: string | null
       }
       set_skus_stock_virtual: {
         Args: {

@@ -21,6 +21,8 @@ export interface LinhaFornecedor {
   readonly phone: string | null;
   readonly whatsapp: string | null;
   readonly website: string | null;
+  /** D-370. Ausente na resposta (banco sem a migration) = sem logo, nunca recusa. */
+  readonly logo_path: string | null;
   readonly is_active: boolean;
   readonly orders_total: number;
   readonly orders_em_aberto: number;
@@ -80,6 +82,9 @@ function lerLinha(v: unknown): LinhaFornecedor | null {
   if (!textoOuNulo(v.ultimo_pedido_em) || !numOuNulo(v.valor_pedido) || !numOuNulo(v.valor_em_aberto)) return null;
   if (TEXTOS_OPCIONAIS.some((campo) => !textoOuNulo(v[campo]))) return null;
   if (NUMEROS.some((campo) => !ehNum(v[campo]))) return null;
+  // Opcional de propósito: a web chega ao ar antes da migration de D-370, e um
+  // campo novo obrigatório recusaria a lista inteira (e a de /compras/novo).
+  if (v.logo_path !== undefined && !textoOuNulo(v.logo_path)) return null;
 
   const texto = (campo: (typeof TEXTOS_OPCIONAIS)[number]): string | null => v[campo] as string | null;
   const numero = (campo: (typeof NUMEROS)[number]): number => v[campo] as number;
@@ -94,6 +99,7 @@ function lerLinha(v: unknown): LinhaFornecedor | null {
     phone: texto("phone"),
     whatsapp: texto("whatsapp"),
     website: texto("website"),
+    logo_path: typeof v.logo_path === "string" ? v.logo_path : null,
     is_active: v.is_active,
     orders_total: numero("orders_total"),
     orders_em_aberto: numero("orders_em_aberto"),

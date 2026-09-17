@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { Icone, type NomeDoIcone } from "../../../components/icons";
+import { LOGO_TIPOS_ACEITOS, enviarLogo, prepararLogo, removerLogo } from "../../../lib/logo-fornecedor";
 import type { CampoFornecedor } from "../../../lib/supplier-form";
 import {
   CONDICOES,
@@ -16,9 +17,10 @@ import {
   type FornecedorExistente,
   type ValoresGuia,
 } from "../../../lib/supplier-form-guia";
-import { formatarDocumento, iniciais } from "../../../lib/suppliers-overview";
+import { formatarDocumento } from "../../../lib/suppliers-overview";
 import { salvarFornecedor } from "../actions";
 import { Canais } from "../canais";
+import { LogoFornecedor } from "../logo";
 
 /**
  * O formulário de fornecedor — cadastro e edição (D-366, refeito em D-367).
@@ -196,12 +198,18 @@ export function SupplierForm({
   id = null,
   inicial = null,
   existentes = [],
+  organizationId,
+  logoPath = null,
 }: {
   /** Nulo = cadastro novo. */
   id?: string | null;
   inicial?: ValoresFornecedor | null;
   /** Os fornecedores da organização, para o aviso de duplicado (D-367). */
   existentes?: readonly FornecedorExistente[];
+  /** A pasta da logo no bucket (D-370). Nulo: a conta não tem organização, e a logo não é oferecida. */
+  organizationId: string | null;
+  /** O caminho da logo já salva, na edição. */
+  logoPath?: string | null;
 }): ReactNode {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -209,6 +217,22 @@ export function SupplierForm({
   const [erros, setErros] = useState<Partial<Record<CampoFornecedor, string>>>({});
   const [mensagem, setMensagem] = useState<string | null>(null);
   const [valores, setValores] = useState<ValoresGuia>(() => valoresIniciais(inicial));
+  // A logo só sobe DEPOIS de o cadastro ser salvo: o fornecedor novo ainda não
+  // tem id para a RPC apontar. Até lá ela fica aqui, preparada (D-370).
+  const [logoNova, setLogoNova] = useState<Blob | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [tirarLogo, setTirarLogo] = useState(false);
+  const [preparandoLogo, setPreparandoLogo] = useState(false);
+  const [erroLogo, setErroLogo] = useState<string | null>(null);
+
+  // O `URL.createObjectURL` segura o blob na memória até ser revogado.
+  useEffect(() => {
+    return () => {
+      if (logoPreview !== null) URL.revokeObjectURL(logoPreview);
+    };
+  }, [logoPreview]);
+
+  const temLogo = logoPreview !== null || (logoPath !== null && !tirarLogo);
 
   const destinoCancelar = id === null ? "/fornecedores" : `/fornecedores/${id}`;
   const documento = estadoDocumento(valores.document);
@@ -255,9 +279,51 @@ export function SupplierForm({
       }
 
       setErros({});
-      router.push(resultado.id === undefined ? "/fornecedores" : `/fornecedores/${resultado.id}`);
+
+      const salvo = resultado.id;
+
+      // A logo vai depois do cadastro. Se ela falhar, o fornecedor JÁ existe:
+      // voltar a este formulário e salvar de novo criaria outro. A pessoa vai
+      // para a edição dele, que diz o que faltou (D-370).
+      if (salvo !== undefined && organizationId !== null && (logoNova !== null || (tirarLogo && logoPath !== null))) {
+        try {
+          if (logoNova !== null) await enviarLogo(organizationId, salvo, logoNova);
+          else await removerLogo(salvo);
+        } catch {
+          router.push(`/fornecedores/${salvo}/editar?aviso=logo`);
+          router.refresh();
+
+          return;
+        }
+      }
+
+      router.push(salvo === undefined ? "/fornecedores" : `/fornecedores/${salvo}`);
       router.refresh();
     });
+  }
+
+  async function escolherLogo(arquivo: File): Promise<void> {
+    setErroLogo(null);
+    setPreparandoLogo(true);
+
+    try {
+      const logo = await prepararLogo(arquivo);
+
+      setLogoNova(logo);
+      setLogoPreview(URL.createObjectURL(logo));
+      setTirarLogo(false);
+    } catch (falha) {
+      setErroLogo(falha instanceof Error ? falha.message : "Não foi possível usar esta imagem.");
+    } finally {
+      setPreparandoLogo(false);
+    }
+  }
+
+  function tirarALogo(): void {
+    setErroLogo(null);
+    setLogoNova(null);
+    setLogoPreview(null);
+    setTirarLogo(logoPath !== null);
   }
 
   function aoSair(campo: NomeCampo, elemento: HTMLInputElement): void {
@@ -397,6 +463,56 @@ export function SupplierForm({
             descricao="O nome do dia a dia e os dados como estão na nota fiscal."
             id="forn-secao-quem"
           >
+            {organizationId !== null && (
+              <div className="sb-fnv-logo">
+                <LogoFornecedor
+                  nome={nomePrevia === "" ? "?" : nomePrevia}
+                  logoPath={tirarLogo ? null : logoPath}
+                  previewUrl={logoPreview}
+                  className="sb-fnv-logo-imagem"
+                />
+                <div className="sb-fnv-logo-acoes">
+                  <b>Logo</b>
+                  <div className="sb-fnv-logo-botoes">
+                    <label className={`sb-button sb-button-sm${preparandoLogo ? " sb-campo-foto-ocupado" : ""}`}>
+                      <Icone nome="mais" tamanho={12} />
+                      {preparandoLogo ? "Preparando…" : temLogo ? "Trocar logo" : "Adicionar logo"}
+                      <input
+                        className="sb-input sb-sr-only"
+                        type="file"
+                        accept={LOGO_TIPOS_ACEITOS}
+                        disabled={preparandoLogo || salvando}
+                        onChange={(evento) => {
+                          const arquivo = evento.target.files?.[0];
+
+                          // Zera o valor: escolher o MESMO arquivo de novo precisa disparar `change`.
+                          evento.target.value = "";
+
+                          if (arquivo !== undefined) void escolherLogo(arquivo);
+                        }}
+                      />
+                    </label>
+                    {temLogo && (
+                      <button type="button" className="sb-text-button" disabled={salvando} onClick={tirarALogo}>
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                  <small>
+                    {logoNova !== null
+                      ? "Pronta — sobe quando você salvar."
+                      : tirarLogo
+                        ? "Será removida quando você salvar."
+                        : "Opcional. JPG, PNG ou WebP — ajustada sem cortar, fundo transparente mantido."}
+                  </small>
+                  {erroLogo !== null && (
+                    <span role="alert" className="sb-campo-erro">
+                      {erroLogo}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="sb-forn-grade">{IDENTIFICACAO.map(renderCampo)}</div>
           </Secao>
 
@@ -456,9 +572,12 @@ export function SupplierForm({
           <div className="sb-fnv-previa">
             <span className="sb-fnv-rotulo">Prévia</span>
             <div className="sb-fnv-previa-cabeca">
-              <span className="sb-avatar sb-forn-avatar sb-fnv-avatar" aria-hidden="true">
-                {nomePrevia === "" ? "?" : iniciais(nomePrevia)}
-              </span>
+              <LogoFornecedor
+                nome={nomePrevia === "" ? "?" : nomePrevia}
+                logoPath={tirarLogo ? null : logoPath}
+                previewUrl={logoPreview}
+                className="sb-forn-avatar sb-fnv-avatar"
+              />
               <div>
                 <b className={nomePrevia === "" ? "sb-fnv-vazio" : undefined}>{nomePrevia || "Nome do fornecedor"}</b>
                 {valores.legalName.trim() !== "" && <small>{valores.legalName.trim()}</small>}
@@ -482,6 +601,29 @@ export function SupplierForm({
             ) : (
               <Canais canais={canais} />
             )}
+          </div>
+
+          {/*
+            AS AÇÕES moram na coluna que acompanha a rolagem. Eram uma barra
+            grudada no pé da página, e ela cobria os campos ao rolar (visto na
+            captura do dono, D-367). No celular a coluna vem depois do
+            formulário, e os botões ficam no fim, sem sobrepor nada.
+          */}
+          <div className="sb-fnv-acoes">
+            <span className="sb-fnv-acoes-resumo">
+              {nomePrevia === "" ? "Preencha ao menos o nome para cadastrar." : `Cadastro ${String(cadastro.percentual)}% preenchido.`}
+            </span>
+            {mensagem !== null && (
+              <p role="alert" className="sb-note sb-note-perigo" style={{ margin: 0 }}>
+                {mensagem}
+              </p>
+            )}
+            <button className="sb-button sb-button-primary" type="submit" disabled={salvando || preparandoLogo}>
+              {salvando ? "Salvando…" : id === null ? "Cadastrar fornecedor" : "Salvar alterações"}
+            </button>
+            <Link className="sb-button" href={destinoCancelar}>
+              Cancelar
+            </Link>
           </div>
 
           <div className="sb-fnv-completude">
@@ -522,23 +664,6 @@ export function SupplierForm({
         </aside>
       </div>
 
-      {mensagem !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: 0 }}>
-          {mensagem}
-        </p>
-      )}
-
-      <div className="sb-forn-form-acoes">
-        <span className="sb-fnv-acoes-resumo" aria-hidden="true">
-          {nomePrevia === "" ? "Preencha ao menos o nome" : `${nomePrevia} · cadastro ${String(cadastro.percentual)}%`}
-        </span>
-        <Link className="sb-button" href={destinoCancelar}>
-          Cancelar
-        </Link>
-        <button className="sb-button sb-button-primary" type="submit" disabled={salvando}>
-          {salvando ? "Salvando…" : id === null ? "Cadastrar fornecedor" : "Salvar alterações"}
-        </button>
-      </div>
     </form>
   );
 }
