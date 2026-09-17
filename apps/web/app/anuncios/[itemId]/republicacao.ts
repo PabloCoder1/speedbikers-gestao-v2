@@ -12,6 +12,11 @@
  *    interrompida, resposta ambígua — pode ter criado o anúncio novo, e a tela
  *    diz que exige gente em vez de oferecer o botão.
  *
+ * Variações em conta de user products (D-369) não republicam: o Mercado Livre
+ * recusa com `item.variations.relist.invalid`. A recusa gravada com essa causa
+ * não oferece botão e diz isso ao dono; o pedido reprovado pelo preflight
+ * (`VARIACOES_USER_PRODUCT`) mostra a descrição do bloqueio.
+ *
  * Esconder o botão é cortesia: papel, conta e elegibilidade são conferidos de
  * novo na `api` e no worker.
  *
@@ -21,6 +26,7 @@
  */
 
 import type { RelistLeftOutVariation } from "@sb/domain";
+import { RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO, isRelistUserProductVariationsRejection } from "@sb/domain";
 
 /**
  * Estados que TRAVAM uma operação nova para o mesmo pai — o predicado de
@@ -42,6 +48,8 @@ export interface OperacaoDoPainel {
   readonly status: string;
   /** `isRelistRetryEligible` da operação, com o último evento de falha. */
   readonly retomavel: boolean;
+  /** `listing_relists.failure_reason` — por ele a tela reconhece a regra de D-369. */
+  readonly failureReason: string | null;
 }
 
 export interface AtosDaRepublicacao {
@@ -49,8 +57,14 @@ export interface AtosDaRepublicacao {
   readonly executar: boolean;
   readonly retomar: boolean;
   /** Em RELIST_FAILED, a explicação que a tela dá — com ou sem o botão. */
-  readonly falha: "recusada" | "exige-gente" | null;
+  readonly falha: "recusada" | "nao-permitida" | "exige-gente" | null;
+  /** Em PREFLIGHT_FAILED pelo bloqueio de D-369, a descrição dele; senão `null`. */
+  readonly bloqueio: string | null;
 }
+
+/** O que a tela diz quando o ML recusou por variações em conta de user products (D-369). */
+export const MENSAGEM_NAO_PERMITIDA =
+  "O Mercado Livre não permite republicar este anúncio (variações em conta de user products). Nenhum anúncio novo foi criado; o anúncio antigo segue fechado.";
 
 export function atosDaRepublicacao({
   podeRepublicar,
@@ -63,15 +77,22 @@ export function atosDaRepublicacao({
   readonly aguardandoWorker: boolean;
 }): AtosDaRepublicacao {
   if (aguardandoWorker) {
-    return { pedir: false, executar: false, retomar: false, falha: null };
+    return { pedir: false, executar: false, retomar: false, falha: null, bloqueio: null };
   }
 
   const falhou = operacao?.status === "RELIST_FAILED";
-  const recusada = falhou && operacao.retomavel;
-  const falha = falhou ? (recusada ? "recusada" : "exige-gente") : null;
+  // D-369: a recusa por variações em conta de user products nunca oferece
+  // botão, mesmo que a elegibilidade calculada dissesse o contrário.
+  const naoPermitida = falhou && isRelistUserProductVariationsRejection(operacao.failureReason);
+  const recusada = falhou && !naoPermitida && operacao.retomavel;
+  const falha = falhou ? (naoPermitida ? "nao-permitida" : recusada ? "recusada" : "exige-gente") : null;
+  const bloqueio =
+    operacao?.status === "PREFLIGHT_FAILED" && operacao.failureReason?.includes(RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO) === true
+      ? RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO
+      : null;
 
   if (!podeRepublicar) {
-    return { pedir: false, executar: false, retomar: false, falha };
+    return { pedir: false, executar: false, retomar: false, falha, bloqueio };
   }
 
   return {
@@ -79,6 +100,7 @@ export function atosDaRepublicacao({
     executar: operacao?.status === "REQUESTED",
     retomar: recusada,
     falha,
+    bloqueio,
   };
 }
 
@@ -122,9 +144,9 @@ export function passoDaReleitura(leitura: number): "reler" | "desistir" {
 
 /**
  * O worker pode terminar SEM mudar a operação: a retomada que reprova na
- * conferência (anúncio não fechado, já republicado ou sem estoque), o CAS
- * perdido para outra execução, ou só uma fila atrasada. A tela não sabe qual —
- * diz o que conferir.
+ * conferência (anúncio não fechado, já republicado, sem estoque ou com
+ * variações em conta de user products), o CAS perdido para outra execução,
+ * ou só uma fila atrasada. A tela não sabe qual — diz o que conferir.
  */
 export const MENSAGEM_SEM_RESPOSTA =
-  "A operação não mudou em 30 segundos. O worker pode só estar atrasado: recarregue a página em alguns minutos. Se continuar igual, a tentativa parou numa conferência do worker (anúncio que não está fechado, que já foi republicado ou sem estoque) e o motivo está no log dele — confira o anúncio no Mercado Livre antes de tentar de novo.";
+  "A operação não mudou em 30 segundos. O worker pode só estar atrasado: recarregue a página em alguns minutos. Se continuar igual, a tentativa parou numa conferência do worker (anúncio que não está fechado, que já foi republicado, sem estoque ou com variações em conta de user products) e o motivo está no log dele — confira o anúncio no Mercado Livre antes de tentar de novo.";

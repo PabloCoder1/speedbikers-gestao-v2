@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizeRelistVariations } from "@sb/domain";
+import { evaluateRelistPreflight, relistRejectionFailureReason, summarizeRelistVariations } from "@sb/domain";
 
 import {
+  MENSAGEM_NAO_PERMITIDA,
   RELEITURAS,
   atosDaRepublicacao,
   cienciaDaExecucao,
@@ -54,60 +55,143 @@ describe("atosDaRepublicacao (D-295, D-364)", () => {
     expect(
       atosDaRepublicacao({
         podeRepublicar: true,
-        operacao: { status: "RELIST_FAILED", retomavel: true },
+        operacao: { status: "RELIST_FAILED", retomavel: true, failureReason: null },
         aguardandoWorker: false,
       }),
-    ).toEqual({ pedir: false, executar: false, retomar: true, falha: "recusada" });
+    ).toEqual({ pedir: false, executar: false, retomar: true, falha: "recusada", bloqueio: null });
   });
 
   it("RELIST_FAILED que NÃO é recusa comprovada: nenhum botão, e a tela diz que exige gente", () => {
     expect(
       atosDaRepublicacao({
         podeRepublicar: true,
-        operacao: { status: "RELIST_FAILED", retomavel: false },
+        operacao: { status: "RELIST_FAILED", retomavel: false, failureReason: null },
         aguardandoWorker: false,
       }),
-    ).toEqual({ pedir: false, executar: false, retomar: false, falha: "exige-gente" });
+    ).toEqual({ pedir: false, executar: false, retomar: false, falha: "exige-gente", bloqueio: null });
   });
 
   it("quem não pode republicar vê a explicação da recusa, mas não o botão", () => {
     expect(
       atosDaRepublicacao({
         podeRepublicar: false,
-        operacao: { status: "RELIST_FAILED", retomavel: true },
+        operacao: { status: "RELIST_FAILED", retomavel: true, failureReason: null },
         aguardandoWorker: false,
       }),
-    ).toEqual({ pedir: false, executar: false, retomar: false, falha: "recusada" });
+    ).toEqual({ pedir: false, executar: false, retomar: false, falha: "recusada", bloqueio: null });
   });
 
   it("depois de enviar a retomada, nada é oferecido até o worker mudar a operação (D-360)", () => {
     expect(
       atosDaRepublicacao({
         podeRepublicar: true,
-        operacao: { status: "RELIST_FAILED", retomavel: true },
+        operacao: { status: "RELIST_FAILED", retomavel: true, failureReason: null },
         aguardandoWorker: true,
       }),
-    ).toEqual({ pedir: false, executar: false, retomar: false, falha: null });
+    ).toEqual({ pedir: false, executar: false, retomar: false, falha: null, bloqueio: null });
   });
 
   it("os atos de antes continuam: sem operação ou reprovada, pedir; REQUESTED, executar; viva, nada", () => {
     const semOperacao = atosDaRepublicacao({ podeRepublicar: true, operacao: null, aguardandoWorker: false });
-    expect(semOperacao).toEqual({ pedir: true, executar: false, retomar: false, falha: null });
+    expect(semOperacao).toEqual({ pedir: true, executar: false, retomar: false, falha: null, bloqueio: null });
 
     for (const status of ["PREFLIGHT_FAILED", "CLOSE_FAILED"]) {
       expect(
-        atosDaRepublicacao({ podeRepublicar: true, operacao: { status, retomavel: false }, aguardandoWorker: false }).pedir,
+        atosDaRepublicacao({
+          podeRepublicar: true,
+          operacao: { status, retomavel: false, failureReason: null },
+          aguardandoWorker: false,
+        }).pedir,
       ).toBe(true);
     }
 
     expect(
-      atosDaRepublicacao({ podeRepublicar: true, operacao: { status: "REQUESTED", retomavel: false }, aguardandoWorker: false }),
-    ).toEqual({ pedir: false, executar: true, retomar: false, falha: null });
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: { status: "REQUESTED", retomavel: false, failureReason: null },
+        aguardandoWorker: false,
+      }),
+    ).toEqual({ pedir: false, executar: true, retomar: false, falha: null, bloqueio: null });
 
     for (const status of ["CLOSING", "CLOSED", "RELISTING", "RELISTED", "REMAPPED"]) {
       expect(
-        atosDaRepublicacao({ podeRepublicar: true, operacao: { status, retomavel: true }, aguardandoWorker: false }),
-      ).toEqual({ pedir: false, executar: false, retomar: false, falha: null });
+        atosDaRepublicacao({
+          podeRepublicar: true,
+          operacao: { status, retomavel: true, failureReason: null },
+          aguardandoWorker: false,
+        }),
+      ).toEqual({ pedir: false, executar: false, retomar: false, falha: null, bloqueio: null });
     }
+  });
+});
+
+describe("variações em conta de user products (D-369)", () => {
+  /** O `failure_reason` REAL da a7638dc5 depois da retomada de 2026-09-17 13:36 UTC. */
+  const RECUSA_USER_PRODUCT = relistRejectionFailureReason(
+    400,
+    "Validation error (validation_error) causas: item.variations.relist.invalid: Relist item with variations are not allowed for user product seller",
+  );
+
+  it("RELIST_FAILED recusado com item.variations.relist.invalid: sem botão, e a tela diz que o ML não permite", () => {
+    // Mesmo que a elegibilidade calculada viesse `true`, a causa manda.
+    for (const retomavel of [false, true]) {
+      expect(
+        atosDaRepublicacao({
+          podeRepublicar: true,
+          operacao: { status: "RELIST_FAILED", retomavel, failureReason: RECUSA_USER_PRODUCT },
+          aguardandoWorker: false,
+        }),
+      ).toEqual({ pedir: false, executar: false, retomar: false, falha: "nao-permitida", bloqueio: null });
+    }
+
+    expect(MENSAGEM_NAO_PERMITIDA).toBe(
+      "O Mercado Livre não permite republicar este anúncio (variações em conta de user products). Nenhum anúncio novo foi criado; o anúncio antigo segue fechado.",
+    );
+  });
+
+  it("outra recusa 4xx continua oferecendo tentar de novo", () => {
+    expect(
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: {
+          status: "RELIST_FAILED",
+          retomavel: true,
+          failureReason: relistRejectionFailureReason(400, "Validation error causas: item.variations.missing: x"),
+        },
+        aguardandoWorker: false,
+      }),
+    ).toEqual({ pedir: false, executar: false, retomar: true, falha: "recusada", bloqueio: null });
+  });
+
+  it("pedido reprovado pelo preflight com VARIACOES_USER_PRODUCT: mostra a descrição do bloqueio e nunca oferece executar", () => {
+    const preflight = evaluateRelistPreflight({
+      tags: [],
+      catalog_listing: false,
+      listing_type_id: "gold_special",
+      available_quantity: 698,
+      variations: [{ id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" }],
+    });
+    // O `failure_reason` que o worker grava: as descrições dos bloqueios, juntas.
+    const failureReason = preflight.blocks.map((block) => block.descricao).join(" ");
+
+    const atos = atosDaRepublicacao({
+      podeRepublicar: true,
+      operacao: { status: "PREFLIGHT_FAILED", retomavel: false, failureReason },
+      aguardandoWorker: false,
+    });
+
+    expect(atos.executar).toBe(false);
+    expect(atos.retomar).toBe(false);
+    expect(atos.bloqueio).toBe(preflight.blocks[0]?.descricao);
+    expect(atos.bloqueio).toContain("não permite republicar anúncio com variações de conta no modelo de user products");
+
+    // Outro bloqueio de preflight não ganha a descrição de D-369.
+    expect(
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: { status: "PREFLIGHT_FAILED", retomavel: false, failureReason: "O anúncio está sem estoque." },
+        aguardandoWorker: false,
+      }).bloqueio,
+    ).toBeNull();
   });
 });

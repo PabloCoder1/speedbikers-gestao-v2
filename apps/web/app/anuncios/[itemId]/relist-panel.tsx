@@ -9,6 +9,7 @@ import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
 import {
   INTERVALO_MS,
+  MENSAGEM_NAO_PERMITIDA,
   MENSAGEM_SEM_RESPOSTA,
   atosDaRepublicacao,
   cienciaDaExecucao,
@@ -58,6 +59,16 @@ import {
  * no mesmo acompanhamento da execução. Qualquer outra falha pode ter criado o
  * anúncio novo — a tela diz que alguém precisa conferir, e não oferece botão.
  * A regra é a do domínio (`isRelistRetryEligible`), calculada pela página.
+ *
+ * ## Variações em conta de user products: não há republicação (D-369)
+ *
+ * Em 2026-09-17 o Mercado Livre recusou a retomada do MLB1476804187 com
+ * `item.variations.relist.invalid`: não aceita relist de item com variações
+ * de vendedor no modelo de user products. Recusa com essa causa não oferece
+ * botão — a tela diz que o ML não permite e que o anúncio antigo segue
+ * fechado. O pedido que a conferência prévia reprova por esse motivo mostra a
+ * descrição do bloqueio aqui, e a execução nunca é oferecida (só REQUESTED é
+ * executável).
  *
  * As duas confirmações listam as variações que ficam FORA do anúncio novo
  * (sem estoque no retrato do pedido, `summarizeRelistVariations`), e com
@@ -237,6 +248,14 @@ export function RelistPanel({
           O Mercado Livre <b>recusou</b> a republicação: nenhum anúncio novo foi criado, e o anúncio antigo continua
           fechado. O motivo está na tabela abaixo.
         </p>
+      )}
+
+      {atos.falha === "nao-permitida" && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{MENSAGEM_NAO_PERMITIDA}</p>
+      )}
+
+      {atos.bloqueio !== null && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{atos.bloqueio}</p>
       )}
 
       {atos.falha === "exige-gente" && (
