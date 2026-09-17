@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { E2E_SUPPLIER } from "./constants.js";
 import { factValue, login } from "./helpers.js";
 
 /**
@@ -41,4 +42,39 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
     "aria-current",
     "step",
   );
+});
+
+/*
+  D-368 — o formulário novo, SEM gravar nada: o resumo soma ao vivo com a mesma
+  regra do pedido salvo (item sem custo fica fora e é contado), a lista colada
+  vira linhas, o atalho de prazo preenche a data e o fornecedor escolhido
+  aparece como ficha.
+*/
+test("novo pedido: lista colada, resumo ao vivo, atalho de prazo e ficha do fornecedor", async ({ page }) => {
+  await login(page, "/compras/novo");
+
+  await page.getByRole("button", { name: "Colar lista" }).click();
+  await page.getByLabel(/Uma linha por item/).fill(["COLA-E2E-1\t2\t10,00", "COLA-E2E-2;3"].join("\n"));
+  await page.getByRole("button", { name: "Adicionar à lista" }).click();
+
+  await expect(page.getByRole("status").filter({ hasText: /2 item\(ns\) adicionados/ })).toBeVisible();
+  // A linha vazia do começo dá lugar à lista.
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+
+  const resumo = page.getByRole("complementary", { name: "Resumo do pedido" });
+
+  await expect(resumo.getByText("R$ 20,00")).toBeVisible();
+  await expect(resumo.getByText(/soma parcial — 1 item\(ns\) sem custo/)).toBeVisible();
+
+  await page.getByRole("button", { name: "+15 dias" }).click();
+  await expect(page.getByLabel("Previsão de chegada")).not.toHaveValue("");
+  await expect(page.getByText(/Chega em 15 dias/)).toBeVisible();
+
+  // O rótulo da opção carrega "· N em aberto": escolhe pelo valor.
+  const opcao = page.locator("#pco-supplier option", { hasText: E2E_SUPPLIER.name }).first();
+  const valor = await opcao.getAttribute("value");
+
+  await page.locator("#pco-supplier").selectOption(valor ?? "");
+  await expect(page.getByRole("link", { name: /Ver fornecedor/ })).toBeVisible();
+  await expect(page.getByText(/pedido\(s\) em aberto/)).toBeVisible();
 });

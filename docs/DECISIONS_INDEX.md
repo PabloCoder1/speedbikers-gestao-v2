@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **361** (D-001 a D-367).
+Decisões registradas: **362** (D-001 a D-368).
 
 ## Por domínio
 
@@ -235,7 +235,7 @@ Decisões registradas: **361** (D-001 a D-367).
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 - **D-364** — Republicacao de anuncio com variacoes: o corpo oficial, a trava sem estoque antes de fechar, a recusa do ML gravada e a retomada humana so depois de recusa comprovada
 
-### outros (61)
+### outros (62)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -298,6 +298,7 @@ Decisões registradas: **361** (D-001 a D-367).
 - **D-355** — A sidebar ganhou a marca e grupos por assunto, e /usuarios passou a se ler de uma passada
 - **D-365** — /compras refeita: o resumo que responde sem abrir pedido, o proximo passo em cada linha e a previsao que mostrava a vespera
 - **D-366** — Fornecedores: uma leitura com busca e "pedido em aberto", edicao que finalmente existe, e contato que vira acao
+- **D-368** — Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
 
 ### processo/docs (1)
 
