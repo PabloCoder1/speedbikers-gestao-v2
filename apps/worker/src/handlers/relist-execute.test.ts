@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { isRelistRetryEligible, relistRejectionFailureReason } from "@sb/domain";
+import { isRelistRetryEligible, isRelistUserProductVariationsRejection, relistRejectionFailureReason } from "@sb/domain";
 import { MercadoLivreApiError, createMercadoLivreClient, encryptToken } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
@@ -905,10 +905,15 @@ describe("relist.execute com variações e recusa do ML (D-364)", () => {
       message: "Relist item with variations are not allowed for user product seller",
     };
 
-    for (const message of ["Validation error", `Validation error ${"x".repeat(2_000)}`]) {
+    // `message` e `error` longos (B2): cada um tem teto próprio, ou empurraria a decisiva para depois do corte.
+    for (const { message, error } of [
+      { message: "Validation error", error: "validation_error" },
+      { message: `Validation error ${"x".repeat(2_000)}`, error: "validation_error" },
+      { message: "Validation error", error: "e".repeat(2_000) },
+    ]) {
       const { db, updates, events } = fakeDb();
       const { client } = fakeClient({
-        relistOutcome: recusa400({ message, error: "validation_error", status: 400, cause: [...causasAntes, decisiva] }),
+        relistOutcome: recusa400({ message, error, status: 400, cause: [...causasAntes, decisiva] }),
       });
       const lines: string[] = [];
 
@@ -929,6 +934,67 @@ describe("relist.execute com variações e recusa do ML (D-364)", () => {
       expect(String(logs(lines).find((line) => line.message === "relist_post_rejected")?.summary)).toContain(
         "item.variations.relist.invalid",
       );
+    }
+  });
+
+  it("D-369 (R2): a causa decisiva sobrevive em qualquer forma legível do corpo — a recusa nunca volta a parecer retomável", async () => {
+    const CODIGO = "item.variations.relist.invalid";
+    const MENSAGEM = "Relist item with variations are not allowed for user product seller";
+    const longas = Array.from({ length: 12 }, (_, indice) => `item.attributes.invalid_${String(indice + 1)}: ${"z".repeat(90)}`);
+
+    // [nome, corpo, trecho que o resumo precisa manter além do código]
+    const formas: readonly (readonly [string, unknown, string])[] = [
+      ["cause como objeto único", { message: "Validation error", error: "validation_error", cause: { code: CODIGO, message: MENSAGEM } }, `${CODIGO}: ${MENSAGEM}`],
+      ["cause como texto", { message: "Validation error", error: "validation_error", cause: `${CODIGO}: ${MENSAGEM}` }, `${CODIGO}: ${MENSAGEM}`],
+      ["array de textos com a decisiva no fim", { message: "Validation error", cause: [...longas, `${CODIGO}: ${MENSAGEM}`] }, `causas: ${CODIGO}: ${MENSAGEM}`],
+      ["código no fim de `error` com 300 caracteres", { message: "Validation error", error: `${"e".repeat(270)} ${CODIGO}`, cause: [] }, `causas: ${CODIGO}`],
+      ["código no fim de `message` com 3.000 caracteres", { message: `${"m".repeat(3_000)} ${CODIGO}` }, `causas: ${CODIGO}`],
+      ["código seguido do ponto final", { message: `Relist refused: ${CODIGO}.`, error: "validation_error", cause: [] }, `Relist refused: ${CODIGO}.`],
+      ["corpo em texto longo", `${"t".repeat(2_000)} ${CODIGO}`, `causas: ${CODIGO}`],
+      ["código num campo que o resumo não lê", { message: "Validation error", details: [{ reason: CODIGO }] }, `causas: ${CODIGO}`],
+      [
+        "causa decisiva com o código só no fim de uma mensagem longa",
+        { message: "Validation error", cause: [...longas.map((texto) => ({ code: texto.split(":")[0], message: "z".repeat(90) })), { code: "item.invalid", message: `${"y".repeat(900)} ${CODIGO}` }] },
+        `causas: ${CODIGO}; item.invalid: yyy`,
+      ],
+    ];
+
+    for (const [nome, corpo, trecho] of formas) {
+      const { db, updates, events } = fakeDb();
+      const { client } = fakeClient({ relistOutcome: recusa400(corpo) });
+      const lines: string[] = [];
+
+      await run(db, client, { relistId: RELIST_ID }, lines);
+
+      const failureReason = String(updates.at(-1)?.patch.failure_reason);
+      expect(events.at(-1), nome).toMatchObject({ to_status: "RELIST_FAILED", reason: "POST_RECUSADO" });
+      expect(failureReason, nome).toContain(trecho);
+      expect(failureReason.length, nome).toBeLessThan(1_000);
+      expect(isRelistUserProductVariationsRejection(failureReason), nome).toBe(true);
+      expect(
+        isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_RECUSADO" }),
+        nome,
+      ).toBe(false);
+    }
+  });
+
+  it("D-369 (R2): sem a causa decisiva no corpo, nada é acrescentado — códigos parecidos continuam recusas retomáveis", async () => {
+    for (const corpo of [
+      { message: "Validation error", error: `${"e".repeat(270)} item.variations.relist.invalid_quantity`, cause: [] },
+      { message: "Validation error", cause: { code: "item.variations.relist.invalid.quantity", message: "x" } },
+      `${"t".repeat(2_000)} xitem.variations.relist.invalid`,
+    ]) {
+      const { db, updates } = fakeDb();
+      const { client } = fakeClient({ relistOutcome: recusa400(corpo) });
+
+      await run(db, client);
+
+      const failureReason = String(updates.at(-1)?.patch.failure_reason);
+      expect(failureReason).not.toMatch(/causas: item\.variations\.relist\.invalid(;|$)/u);
+      expect(isRelistUserProductVariationsRejection(failureReason)).toBe(false);
+      expect(
+        isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_RECUSADO" }),
+      ).toBe(true);
     }
   });
 

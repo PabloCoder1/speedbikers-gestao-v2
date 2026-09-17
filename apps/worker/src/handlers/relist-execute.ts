@@ -13,6 +13,7 @@ import {
   isRelistRejectionStatus,
   isRelistRetryEligible,
   isRelistUserProductVariationsRejection,
+  mentionsRelistUserProductVariationsCause,
   relistRejectionFailureReason,
   relistUserProductVariationsBlock,
   summarizeRelistVariations,
@@ -155,9 +156,15 @@ const ML_ERROR_HEAD_MAX = 200;
  * Causas que DECIDEM o que a tela e a retomada fazem, lidas no `failure_reason`
  * gravado (D-369). Vão primeiro na lista de causas: numa resposta com muitas
  * causas, o corte do resumo apagaria a decisiva, e a recusa voltaria a parecer
- * retomável.
+ * retomável. `mentionedIn` é a MESMA regra de código inteiro que lê o
+ * `failure_reason` — a do domínio, sem cópia aqui.
  */
-const DECISIVE_ML_CAUSES: readonly string[] = [RELIST_USER_PRODUCT_VARIATIONS_CAUSE];
+const DECISIVE_ML_CAUSES: readonly { readonly code: string; readonly mentionedIn: (text: string) => boolean }[] = [
+  { code: RELIST_USER_PRODUCT_VARIATIONS_CAUSE, mentionedIn: mentionsRelistUserProductVariationsCause },
+];
+
+/** Até onde a busca por causa decisiva desce no corpo de erro — o do ML tem dois níveis (`cause[].code`). */
+const ML_ERROR_SEARCH_DEPTH = 8;
 
 export interface RelistExecuteDeps {
   db: AdminClient;
@@ -280,61 +287,116 @@ function cleanErrorText(text: string, max: number): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+interface SummaryCause {
+  readonly decisive: boolean;
+  readonly text: string;
+}
+
 /**
- * Resumo LEGÍVEL do corpo de erro do Mercado Livre (D-364): `message`,
- * `error` e cada `cause[]` como `code: message`. Nada além desses campos
- * entra — o corpo inteiro poderia trazer o que não se grava —, o texto passa
- * pela redação de segredo da casa e é cortado em ~800 caracteres.
- *
- * D-369: as causas DECISIVAS (`DECISIVE_ML_CAUSES`) vão primeiro, na ordem
- * do ML entre si, e `message`/`error` têm teto próprio. Assim o código delas
- * sempre cabe antes do corte, e a detecção pelo `failure_reason`
- * (`isRelistUserProductVariationsRejection`) continua valendo com qualquer
- * número de causas. O formato é o mesmo — o `failure_reason` antigo segue
- * legível pela mesma regra.
+ * As causas do corpo, como `code: message` (objeto) ou o próprio texto. D-369:
+ * `cause` fora de array — um objeto só, ou um texto — é UMA causa, não
+ * nenhuma; e a causa que menciona um código decisivo é decisiva, em objeto ou
+ * em texto.
  */
-function summarizeMercadoLivreError(body: unknown): string {
-  const parts: string[] = [];
+function readSummaryCauses(value: unknown): SummaryCause[] {
+  const causes: unknown[] = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+
+  return causes.flatMap((cause) => {
+    const text = isRecord(cause)
+      ? [readText(cause.code), readText(cause.message)].filter((piece) => piece !== null).join(": ")
+      : (readText(cause) ?? "");
+
+    return text === "" ? [] : [{ decisive: DECISIVE_ML_CAUSES.some((decisive) => decisive.mentionedIn(text)), text }];
+  });
+}
+
+/** Todos os textos do corpo, em qualquer campo — só para PROCURAR as causas decisivas; nada daqui é gravado. */
+function collectBodyTexts(value: unknown, depth: number, texts: string[]): void {
+  if (typeof value === "string") {
+    texts.push(value);
+    return;
+  }
+
+  if (depth >= ML_ERROR_SEARCH_DEPTH || typeof value !== "object" || value === null) {
+    return;
+  }
+
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    collectBodyTexts(child, depth + 1, texts);
+  }
+}
+
+/**
+ * O resumo com `markers` (códigos decisivos soltos) à frente das causas. No
+ * corpo que não é objeto, o texto não tem teto próprio — as causas vão antes
+ * dele.
+ */
+function assembleErrorSummary(body: unknown, markers: readonly string[]): string {
+  const head: string[] = [];
+  const causes: SummaryCause[] = markers.map((code) => ({ decisive: true, text: code }));
 
   if (isRecord(body)) {
     const message = readText(body.message);
     const error = readText(body.error);
 
     if (message !== null) {
-      parts.push(cleanErrorText(message, ML_ERROR_HEAD_MAX));
+      head.push(cleanErrorText(message, ML_ERROR_HEAD_MAX));
     }
 
     if (error !== null && error !== message) {
-      parts.push(`(${cleanErrorText(error, ML_ERROR_HEAD_MAX)})`);
+      head.push(`(${cleanErrorText(error, ML_ERROR_HEAD_MAX)})`);
     }
 
-    const causes: unknown[] = Array.isArray(body.cause) ? body.cause : [];
-    const causeTexts = causes
-      .map((cause) => {
-        if (!isRecord(cause)) {
-          return { decisive: false, text: readText(cause) };
-        }
-
-        const code = readText(cause.code);
-        const text = [code, readText(cause.message)].filter((piece) => piece !== null).join(": ");
-
-        return { decisive: code !== null && DECISIVE_ML_CAUSES.includes(code), text: text === "" ? null : text };
-      })
-      .filter((cause): cause is { decisive: boolean; text: string } => cause.text !== null);
-    const ordered = [...causeTexts.filter((cause) => cause.decisive), ...causeTexts.filter((cause) => !cause.decisive)];
-
-    if (ordered.length > 0) {
-      parts.push(`causas: ${ordered.map((cause) => cause.text).join("; ")}`);
-    }
+    causes.push(...readSummaryCauses(body.cause));
   } else {
     const text = readText(body);
 
     if (text !== null) {
-      parts.push(text);
+      head.push(text);
     }
   }
 
+  const ordered = [...causes.filter((cause) => cause.decisive), ...causes.filter((cause) => !cause.decisive)];
+  const causesPart = ordered.length === 0 ? [] : [`causas: ${ordered.map((cause) => cause.text).join("; ")}`];
+  const parts = isRecord(body) ? [...head, ...causesPart] : [...causesPart, ...head];
+
   return cleanErrorText(parts.length === 0 ? "sem corpo de erro legível" : parts.join(" "), ML_ERROR_SUMMARY_MAX);
+}
+
+/**
+ * Resumo LEGÍVEL do corpo de erro do Mercado Livre (D-364): `message`,
+ * `error` e cada `cause` como `code: message`. Nada além desses campos
+ * entra — o corpo inteiro poderia trazer o que não se grava —, o texto passa
+ * pela redação de segredo da casa e é cortado em ~800 caracteres.
+ *
+ * D-369: a causa decisiva (`DECISIVE_ML_CAUSES`) não pode sumir do resumo, ou
+ * a recusa volta a parecer retomável:
+ *
+ *  - as causas decisivas vão primeiro, na ordem do ML entre si, e
+ *    `message`/`error` têm teto próprio — a primeira causa começa antes do
+ *    caractere ~420;
+ *  - `cause` como objeto único ou texto conta como causa;
+ *  - e, se o código decisivo está em QUALQUER texto do corpo mas o resumo
+ *    ficou sem ele (no fim de um `message` ou `error` longo, num campo que o
+ *    resumo não lê), o código entra solto à frente das causas. Só o código
+ *    entra, nunca o texto em volta.
+ *
+ * Corpo que não é JSON (HTML, vazio) chega `undefined` do cliente HTTP e não
+ * tem como ser lido: a retomada ainda confere o anúncio ao vivo antes do POST.
+ * O formato é o mesmo — o `failure_reason` antigo segue legível pela mesma
+ * regra.
+ */
+function summarizeMercadoLivreError(body: unknown): string {
+  const summary = assembleErrorSummary(body, []);
+  const texts: string[] = [];
+
+  collectBodyTexts(body, 0, texts);
+
+  const missing = DECISIVE_ML_CAUSES.filter(
+    (decisive) => !decisive.mentionedIn(summary) && texts.some((text) => decisive.mentionedIn(text)),
+  ).map((decisive) => decisive.code);
+
+  return missing.length === 0 ? summary : assembleErrorSummary(body, missing);
 }
 
 async function remapRelistedOperation(
