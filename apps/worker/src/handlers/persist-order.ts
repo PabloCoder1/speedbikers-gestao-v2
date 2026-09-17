@@ -642,31 +642,34 @@ function skusDaVenda(links: readonly (ResolvedLink | null)[]): string[] {
  * O pedido precisa que a V3 leia o ENVIO? (D-352.)
  *
  * A chamada e barata por pedido e cara na soma (~963 pedidos/dia), entao ela so
- * acontece para o pedido cuja venda vai DE FATO baixar a loja. Cinco perguntas,
+ * acontece para o pedido cuja venda vai DE FATO baixar a loja. Quatro perguntas,
  * todas baratas e locais:
  *
- *  1. a decisao ja foi tomada? `logistic_captured_at` preenchido congela (R5) —
- *    e cobre tambem o "foi lido e o envio nao disse", que e resposta e nao
- *    pendencia;
- *  2. o status vende? cancelado, `payment_in_process` e `invalid` nao deduzem;
- *  3. ha `shipping_id`? e a unica chave da leitura. Em producao, 100% dos
+ *  1. o status vende? cancelado, `payment_in_process` e `invalid` nao deduzem;
+ *  2. ha `shipping_id`? e a unica chave da leitura. Em producao, 100% dos
  *     28.902 pedidos pagos de 30 dias tem;
- *  4. algum item tem vinculo? sem SKU nao ha movimento;
- *  5. a venda cai DEPOIS da exportacao da planilha de algum SKU deduzido? venda
+ *  3. algum item tem vinculo? sem SKU nao ha movimento;
+ *  4. a venda cai DEPOIS da exportacao da planilha de algum SKU deduzido? venda
  *     ate o corte ja sai com `ESTORNO_PRE_CAPTURA` (D-351): o par soma zero, e
  *     saber a logistica nao mudaria uma linha. E o filtro que derruba a maior
  *     parte do volume na carga da historia.
+ *
+ * **"Ja decidido" NAO e pergunta daqui**, e a ausencia e deliberada: o
+ * congelamento da R5 tem dono unico, o `if (gravada.capturedAt !== null)` de
+ * `resolveLogistica`, que devolve o valor gravado antes de chegar neste gate.
+ * Repetir a checagem aqui parecia defesa em profundidade e era linha MORTA —
+ * nenhum teste conseguia alcanca-la, porque nenhuma execucao consegue. Um
+ * segundo dono do mesmo invariante e pior que nenhum: os dois podem divergir, e
+ * o que o teste mede nao e o que decide.
  *
  * Corte NAO LIDO (`undefined`) conta como "precisa": uma chamada a mais nunca
  * estraga o saldo, e `corteDe` ja LANCA onde a ausencia importaria.
  */
 function precisaDoSinalDaLogistica(
   order: ParsedOrder,
-  gravada: PersistedLogistic,
   links: readonly (ResolvedLink | null)[],
   cortes: Map<string, ErpCutoff | null>,
 ): boolean {
-  if (gravada.capturedAt !== null) return false;
   if (!isValidSaleStatus(order.status)) return false;
   if (order.shipping?.id == null) return false;
 
@@ -734,7 +737,7 @@ async function resolveLogistica(
     return { logisticType: doPedido, capturedAt: logistics.now().toISOString() };
   }
 
-  if (!precisaDoSinalDaLogistica(order, gravada, links, cortes)) {
+  if (!precisaDoSinalDaLogistica(order, links, cortes)) {
     return gravada;
   }
 
