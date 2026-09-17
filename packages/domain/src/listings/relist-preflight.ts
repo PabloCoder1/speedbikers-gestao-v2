@@ -24,11 +24,17 @@
  * - `ENCADEAMENTO_NAO_DOCUMENTADO` — o pai que JÁ É FILHO de um relist
  *   (`parent_item_id` presente) cai no caso "incerto" da doc; bloquear é a
  *   única postura defensável.
+ * - `VARIACOES_SEM_ESTOQUE` / `SEM_ESTOQUE` — D-364: sem estoque não há
+ *   corpo de relist (`buildRelistBody` devolve `null`), e fechar o pai
+ *   sem ter o que republicar deixa o produto fora do ar. Com variações, a
+ *   conta é por variação; sem variações, pelo `available_quantity` da raiz.
  * - `SNAPSHOT_ILEGIVEL` / `SNAPSHOT_INCOMPLETO` — **fail-safe**: o snapshot
  *   é jsonb sem contrato de banco; se a forma não permite VERIFICAR uma
  *   pré-condição, o preflight reprova em vez de presumir que está tudo bem.
  *   Ausência só é aceitável onde ausência é o caso normal (`inventory_id`
  *   ausente = item fora do Full; `parent_item_id` ausente = não é filho).
+ *   Desde D-364, `variations` e o estoque/preço/id de cada variação também
+ *   precisam ser legíveis: são o corpo do POST.
  *
  * Avisos (nunca bloqueio):
  *
@@ -37,7 +43,11 @@
  *   permitido; quem decide sabendo é o humano.
  * - `FULL_CADASTRO_SEM_ESTOQUE` — cadastro no Full com zero unidades (D-360):
  *   nada fica preso no CD, mas a doc não diz se o filho herda o cadastro.
+ * - `VARIACOES_SEM_ESTOQUE_FORA` — D-364: parte das variações está zerada.
+ *   Elas ficam fora do corpo, e o anúncio novo nasce sem elas.
  */
+
+import { hasRelistStock } from "./relist-body.js";
 
 export interface RelistPreflightIssue {
   readonly code: string;
@@ -72,6 +82,29 @@ function readOptionalString(source: Record<string, unknown>, key: string): strin
   const value = source[key];
 
   return typeof value === "string" && value !== "" ? value : null;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+/** Uma variação que dá para levar ao corpo do relist: id, preço e estoque legíveis. */
+interface LegibleVariation {
+  readonly id: string;
+  readonly available_quantity: number;
+}
+
+function readLegibleVariation(variation: unknown): LegibleVariation | null {
+  if (!isRecord(variation)) {
+    return null;
+  }
+
+  const { id, price, available_quantity: quantity } = variation;
+  const idText = typeof id === "number" ? String(id) : typeof id === "string" ? id : "";
+  const legibleId = /^\d+$/u.test(idText) && Number.isSafeInteger(Number(idText));
+  const legiblePrice = typeof price === "number" && Number.isFinite(price);
+
+  return legibleId && legiblePrice && isNonNegativeInteger(quantity) ? { id: idText, available_quantity: quantity } : null;
 }
 
 function isValidReading(reading: RelistFullStockReading | null | undefined): reading is RelistFullStockReading {
@@ -221,6 +254,56 @@ export function evaluateRelistPreflight(
       descricao:
         "Este anúncio já é filho de uma republicação — encadear relist não é descrito pela documentação oficial.",
     });
+  }
+
+  // Estoque que a republicação leva (D-364). O corpo com variações manda
+  // só as que têm estoque; sem nenhuma, não há POST possível — e fechar o pai
+  // antes de descobrir isso foi o que tirou o MLB1476804187 do ar. Forma
+  // ilegível é fail-safe, como o resto: é o corpo do POST.
+  const variations = item.variations;
+
+  if (!Array.isArray(variations)) {
+    blocks.push({
+      code: "SNAPSHOT_INCOMPLETO",
+      descricao: "O snapshot não traz `variations` legíveis — impossível montar o corpo da republicação.",
+    });
+  } else if (variations.length === 0) {
+    if (!isNonNegativeInteger(item.available_quantity)) {
+      blocks.push({
+        code: "SNAPSHOT_INCOMPLETO",
+        descricao: "O snapshot não traz `available_quantity` legível — impossível conferir o estoque que a republicação levaria.",
+      });
+    } else if (!hasRelistStock(item.available_quantity)) {
+      blocks.push({
+        code: "SEM_ESTOQUE",
+        descricao:
+          "O anúncio está sem estoque: não há quantidade para republicar, e fechar o anúncio agora o deixaria fora do ar sem anúncio novo.",
+      });
+    }
+  } else {
+    const legible = variations.map(readLegibleVariation).filter((variation) => variation !== null);
+
+    if (legible.length !== variations.length) {
+      blocks.push({
+        code: "SNAPSHOT_INCOMPLETO",
+        descricao:
+          "O snapshot traz variação sem id, preço ou estoque legível — impossível montar o corpo da republicação.",
+      });
+    } else {
+      const withoutStock = legible.filter((variation) => !hasRelistStock(variation.available_quantity));
+
+      if (withoutStock.length === legible.length) {
+        blocks.push({
+          code: "VARIACOES_SEM_ESTOQUE",
+          descricao: `Nenhuma das ${String(legible.length)} variação(ões) tem estoque: não há o que republicar, e fechar o anúncio agora o deixaria fora do ar sem anúncio novo.`,
+        });
+      } else if (withoutStock.length > 0) {
+        warnings.push({
+          code: "VARIACOES_SEM_ESTOQUE_FORA",
+          descricao: `${String(withoutStock.length)} de ${String(legible.length)} variação(ões) sem estoque (${withoutStock.map((variation) => variation.id).join(", ")}) ficam fora da republicação: o anúncio novo nasce só com as variações que têm estoque.`,
+        });
+      }
+    }
   }
 
   // Herança de visitas/vendas: não ocorre em `free`. Aviso, nunca bloqueio.

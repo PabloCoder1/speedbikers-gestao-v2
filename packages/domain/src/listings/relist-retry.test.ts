@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+
+import type { RelistRetryCandidate } from "./relist-retry.js";
+import { isRelistRejectionStatus, isRelistRetryEligible } from "./relist-retry.js";
+
+const PARENT = "MLB1476804187";
+
+/** A mensagem REAL gravada na operação a7638dc5 (2026-09-16 18:41 UTC). */
+const MENSAGEM_REAL =
+  "o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 400 para POST /items/MLB1476804187/relist.";
+
+function legado(status: number, parent = PARENT): string {
+  return `o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu ${String(status)} para POST /items/${parent}/relist.`;
+}
+
+function candidate(overrides: Partial<RelistRetryCandidate> = {}): RelistRetryCandidate {
+  return {
+    status: "RELIST_FAILED",
+    parentItemId: PARENT,
+    failureReason: "o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado.",
+    lastFailedEventReason: "POST_RECUSADO",
+    ...overrides,
+  };
+}
+
+describe("isRelistRetryEligible (D-364)", () => {
+  it("POST_RECUSADO no último evento de falha: elegível", () => {
+    expect(isRelistRetryEligible(candidate())).toBe(true);
+  });
+
+  it("legado: POST_FALHOU com a mensagem REAL do 400 do MLB1476804187 é elegível", () => {
+    expect(isRelistRetryEligible(candidate({ lastFailedEventReason: "POST_FALHOU", failureReason: MENSAGEM_REAL }))).toBe(
+      true,
+    );
+  });
+
+  it("legado: outros 4xx de recusa também (401, 403, 404, 409, 422)", () => {
+    for (const status of [401, 403, 404, 409, 422]) {
+      expect(isRelistRetryEligible(candidate({ lastFailedEventReason: "POST_FALHOU", failureReason: legado(status) }))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("legado: 408, 429, 500 e 503 NÃO — o filho pode ter nascido", () => {
+    for (const status of [408, 429, 500, 503]) {
+      expect(isRelistRetryEligible(candidate({ lastFailedEventReason: "POST_FALHOU", failureReason: legado(status) }))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("legado: a mensagem precisa casar EXATAMENTE — e ser do POST deste pai", () => {
+    for (const failureReason of [
+      `${MENSAGEM_REAL} `,
+      MENSAGEM_REAL.replace("o POST /relist falhou", "O POST /relist falhou"),
+      "o POST /relist falhou e não é seguro repetir: fetch failed",
+      "o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 400 para PUT /items/MLB1476804187.",
+      legado(400, "MLB900000000"),
+      null,
+    ]) {
+      expect(isRelistRetryEligible(candidate({ lastFailedEventReason: "POST_FALHOU", failureReason }))).toBe(false);
+    }
+  });
+
+  it("EXECUCAO_INTERROMPIDA e RESPOSTA_AMBIGUA não — mesmo com a mensagem de um 400 no failure_reason", () => {
+    for (const reason of ["EXECUCAO_INTERROMPIDA", "RESPOSTA_AMBIGUA", "PAI_INDISPONIVEL", null]) {
+      expect(isRelistRetryEligible(candidate({ lastFailedEventReason: reason, failureReason: MENSAGEM_REAL }))).toBe(false);
+    }
+  });
+
+  it("status diferente de RELIST_FAILED nunca é elegível", () => {
+    for (const status of ["REQUESTED", "CLOSING", "CLOSED", "RELISTING", "RELISTED", "REMAPPED", "PREFLIGHT_FAILED"]) {
+      expect(isRelistRetryEligible(candidate({ status }))).toBe(false);
+      expect(
+        isRelistRetryEligible(candidate({ status, lastFailedEventReason: "POST_FALHOU", failureReason: MENSAGEM_REAL })),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("isRelistRejectionStatus (D-364)", () => {
+  it("4xx é recusa, menos 408 e 429; o resto não é", () => {
+    expect([400, 401, 403, 404, 409, 422, 499].every(isRelistRejectionStatus)).toBe(true);
+    expect([408, 429, 399, 500, 502, 503, 0, 400.5].some(isRelistRejectionStatus)).toBe(false);
+  });
+});
