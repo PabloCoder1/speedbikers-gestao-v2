@@ -8,6 +8,7 @@ import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { describeFullStock, readRelistFullStock } from "./relist-full-stock.js";
+import { describeSellerUserProducts, readRelistSellerUserProducts } from "./relist-seller-model.js";
 
 /**
  * `relist.prepare` (Fase 9, D-161) — o segundo elo do fio: captura o
@@ -19,7 +20,8 @@ import { describeFullStock, readRelistFullStock } from "./relist-full-stock.js";
  * **Nada destrutivo acontece aqui.** O fechamento do pai e o POST /relist
  * são a fatia seguinte, atrás de confirmação própria. Este handler é
  * deliberadamente só-leitura no remoto: o item e, desde D-360, o estoque do
- * Full de cada `inventory_id` dele.
+ * Full de cada `inventory_id` dele; desde D-369, para item com variações, as
+ * tags da conta em `GET /users/me`.
  *
  * Idempotência: o índice único parcial `listing_relists_one_live_per_parent`
  * (D-159) é a garantia — um retry do Cloud Tasks que chegue depois do
@@ -115,6 +117,16 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       logFields: { ml_account_id: mlAccountId, item_id: itemId },
     });
 
+    // D-369: o modelo da conta, também ANTES do insert. Só sai a chamada para
+    // item com variações; leitura que falha vira bloqueio, nunca aprovação.
+    const sellerUserProducts = await readRelistSellerUserProducts({
+      mercadoLivre: deps.mercadoLivre,
+      accessToken: tokenResult.accessToken,
+      rawItem: snapshot,
+      logger: context.logger,
+      logFields: { ml_account_id: mlAccountId, item_id: itemId },
+    });
+
     const inserted = await deps.db
       .from("listing_relists")
       .insert({
@@ -165,7 +177,7 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       });
     }
 
-    const preflight = evaluateRelistPreflight(snapshot, fullStock);
+    const preflight = evaluateRelistPreflight(snapshot, fullStock, sellerUserProducts);
 
     if (!preflight.approved && canTransitionRelist("REQUESTED", "PREFLIGHT_FAILED")) {
       const failureReason = preflight.blocks.map((block) => block.descricao).join(" ");
@@ -213,6 +225,7 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       blocks: preflight.blocks.map((block) => block.code),
       warnings: preflight.warnings.map((warning) => warning.code),
       full_stock: describeFullStock(fullStock),
+      seller_user_products: describeSellerUserProducts(sellerUserProducts),
     });
 
     return { status: "done", processed: 1 };
