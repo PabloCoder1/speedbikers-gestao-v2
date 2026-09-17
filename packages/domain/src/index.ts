@@ -12,6 +12,7 @@ export * from "./upseller/index.js";
 export * from "./events/index.js";
 export * from "./metrics/index.js";
 export * from "./inventory/index.js";
+export * from "./documentos/index.js";
 export * from "./nfe/index.js";
 export * from "./purchasing/index.js";
 export * from "./diagnostics/index.js";

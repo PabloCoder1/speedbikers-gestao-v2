@@ -30,6 +30,36 @@ import type { FileStore } from "./erp-import.js";
  */
 export const MAX_NFE_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Teto do PDF — quatro vezes o do XML (D-375).
+ *
+ * O XML é texto; o PDF carrega fontes embutidas, logotipo e código de barras.
+ * Os arquivos reais que desenharam os leitores têm centenas de KB, mas um DANFE
+ * digitalizado (imagem por página) passa fácil dos 5 MB, e recusá-lo por
+ * tamanho seria recusar o documento que a pessoa TEM.
+ */
+export const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+/**
+ * XML ou PDF — decidido pelos BYTES (D-375).
+ *
+ * O nome do arquivo não decide nada: "Imprimir - UpSeller.pdf" pode chegar
+ * renomeado, e um `.xml` pode vir com o PDF dentro. O que não mente é o começo
+ * do arquivo: todo PDF abre com `%PDF-`, e o XML da NF-e tem `<NFe`/`<nfeProc`.
+ *
+ * QUAL dos três layouts de PDF é este, isso o worker descobre lendo o texto
+ * (`@sb/domain/documentos`) — aqui basta saber que é PDF.
+ */
+export function formatoDoArquivo(bytes: Uint8Array): "XML" | "PDF" | null {
+  const inicio = Buffer.from(bytes.subarray(0, 1024)).toString("latin1").trimStart();
+
+  if (inicio.startsWith("%PDF-")) return "PDF";
+
+  if (/<\?xml|<nfeProc|<NFe|<enviNFe/i.test(inicio)) return "XML";
+
+  return null;
+}
+
 export interface NfeUploadRequest {
   fileName: string;
   contentType: string;
@@ -58,8 +88,23 @@ export async function receiveNfeUpload(
     return { status: "rejected", reason: "arquivo vazio" };
   }
 
-  if (request.body.byteLength > MAX_NFE_UPLOAD_BYTES) {
+  // O teto maior primeiro: um arquivo gigante é recusado sem que ninguém
+  // precise olhar o conteúdo dele.
+  if (request.body.byteLength > MAX_PDF_UPLOAD_BYTES) {
     return { status: "rejected", reason: "arquivo acima do limite aceito" };
+  }
+
+  const formato = formatoDoArquivo(request.body);
+
+  if (formato === null) {
+    return {
+      status: "rejected",
+      reason: "arquivo não reconhecido — envie o XML da NF-e ou o PDF do documento (DANFE, pedido de saída ou envio ao Full)",
+    };
+  }
+
+  if (formato === "XML" && request.body.byteLength > MAX_NFE_UPLOAD_BYTES) {
+    return { status: "rejected", reason: "XML acima do limite aceito" };
   }
 
   const contentHash = createHash("sha256").update(request.body).digest("hex");
@@ -86,8 +131,10 @@ export async function receiveNfeUpload(
   const now = deps.now?.() ?? new Date();
   const month = now.toISOString().slice(0, 7);
 
-  // Caminho endereçado pelo conteúdo, mesmo motivo de erp-import.ts.
-  const storagePath = `${caller.organizationId}/${month}/${contentHash}.xml`;
+  // Caminho endereçado pelo conteúdo, mesmo motivo de erp-import.ts. A
+  // extensão vem do formato LIDO — é ela que o worker usa para saber qual
+  // leitor abre o arquivo.
+  const storagePath = `${caller.organizationId}/${month}/${contentHash}.${formato === "PDF" ? "pdf" : "xml"}`;
 
   await deps.store.upload(storagePath, request.body, request.contentType);
 
@@ -98,6 +145,7 @@ export async function receiveNfeUpload(
       storage_path: storagePath,
       file_name: request.fileName,
       content_hash: contentHash,
+      source_format: formato,
       uploaded_by: caller.userId,
     })
     .select("id")
@@ -127,6 +175,7 @@ export async function receiveNfeUpload(
 
   deps.logger.info("nfe_import_received", {
     document_id: documentId,
+    formato,
     bytes: request.body.byteLength,
     content_hash: contentHash,
   });
@@ -160,7 +209,7 @@ export async function confirmNfeApply(
 ): Promise<ConfirmNfeApplyOutcome> {
   const document = await deps.db
     .from("documents")
-    .select("id, status, total_items, resolved_items")
+    .select("id, status, total_items, resolved_items, document_type")
     .eq("id", documentId)
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
@@ -171,6 +220,20 @@ export async function confirmNfeApply(
 
   if (document.data.status !== "PARSED") {
     return { status: "rejected", reason: `documento em ${document.data.status}, não está pronto para aplicação` };
+  }
+
+  if (document.data.document_type === "ENVIO_FULL_ML_PDF") {
+    /*
+      Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa, no
+      centro do Mercado Livre. Gravar como saída simples faria a unidade
+      desaparecer do sistema. O documento é lido e conferido; aplicar espera o
+      desenho do Full (D-352).
+    */
+    return {
+      status: "rejected",
+      reason:
+        "envio ao Full é transferência, não saída — o documento fica conferido, mas a baixa espera o desenho do Full (D-352)",
+    };
   }
 
   const total = document.data.total_items ?? 0;

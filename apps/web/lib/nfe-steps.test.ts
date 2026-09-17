@@ -11,14 +11,48 @@ describe("etapas do processo de NF-e (D-277)", () => {
   const base = { parsedAt: null, totalItems: 3, resolvedItems: 0 };
 
   it("são QUATRO etapas, uma por estado real — nunca as seis do frame", () => {
-    const etapas = nfeEtapas({ ...base, status: "PARSED", parsedAt: "2026-09-05T10:00:00Z" });
+    const etapas = nfeEtapas({
+      ...base,
+      status: "PARSED",
+      parsedAt: "2026-09-05T10:00:00Z",
+      direcao: "ENTRADA",
+    });
 
     expect(etapas.map((e) => e.label)).toEqual([
-      "Upload do XML",
+      "Envio do arquivo",
       "Leitura do arquivo",
       "Conferência e vínculo",
       "Entrada no estoque",
     ]);
+  });
+
+  /**
+   * D-375: a tela deixou de ser só entrada. Chamar a baixa de uma SAÍDA de
+   * "entrada no estoque" seria dizer o contrário do que vai acontecer — e,
+   * antes da leitura, a direção ainda não existe.
+   */
+  it("a última etapa segue a direção do documento, e é neutra enquanto ela não existe", () => {
+    const saida = nfeEtapas({ ...base, status: "PARSED", parsedAt: "2026-09-05T10:00:00Z", direcao: "SAIDA" });
+    const semDirecao = nfeEtapas({ ...base, status: "UPLOADED" });
+
+    expect(saida.at(-1)?.label).toBe("Baixa no estoque");
+    expect(semDirecao.at(-1)?.label).toBe("Movimento no estoque");
+  });
+
+  /**
+   * Envio ao Full é transferência: desenhar uma baixa pendente prometeria um
+   * movimento que não vem (D-352).
+   */
+  it("envio ao Full não promete baixa nenhuma", () => {
+    const etapas = nfeEtapas({
+      ...base,
+      status: "PARSED",
+      parsedAt: "2026-09-05T10:00:00Z",
+      direcao: "SAIDA",
+      tipo: "ENVIO_FULL_ML_PDF",
+    });
+
+    expect(etapas.at(-1)).toEqual({ label: "Sem baixa: transferência (D-352)", estado: "pendente" });
   });
 
   it("UPLOADED: a leitura está na fila, e diz isso", () => {

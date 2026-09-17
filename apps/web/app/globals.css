@@ -11680,3 +11680,282 @@ td.sb-pco-num-linha {
     max-width: 24rem;
   }
 }
+
+/*
+ * NOTAS E DOCUMENTOS (D-375) — `/notas-fiscais` e `/notas-fiscais/nova`.
+ *
+ * O resumo, os cartões de estado, a busca e a paginação reusam as classes de
+ * `/reposicao` e `/compras` (`sb-rep-destaque`, `sb-rep-estado`, `sb-rep-busca`,
+ * `sb-cmp-numero`, `sb-cmp-sub`, `sb-cmp-passo`): é a mesma jornada de estoque e
+ * deve se ler igual. O que é só desta tela mora em `sb-nf-*`. Só tokens da casa.
+ */
+
+/*
+ * O par de `sb-rep-destaque-perigo` que faltava: "esperando conferência" não é
+ * falha, é trabalho a fazer — e o vermelho diria a coisa errada.
+ */
+.sb-rep-destaque-atencao {
+  border-color: color-mix(in srgb, var(--sb-accent) 40%, var(--sb-border));
+  background: linear-gradient(135deg, var(--sb-accent-soft), var(--sb-surface) 70%);
+}
+
+.sb-rep-destaque-atencao .sb-rep-destaque-rotulo {
+  color: var(--sb-accent-ink);
+}
+
+/* Oito colunas: os sete estados do ciclo (docs/NFE.md) mais "Todos". */
+.sb-nf-estados {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.sb-nf-tabela td {
+  vertical-align: top;
+}
+
+.sb-nf-tabela th {
+  white-space: nowrap;
+}
+
+.sb-nf-linha-falha td:first-child {
+  box-shadow: inset 3px 0 0 var(--sb-danger);
+}
+
+/* A referência do documento: armazém, nº do envio — o que situa quem confere. */
+.sb-nf-referencia {
+  display: block;
+  max-width: 18rem;
+  margin-top: 0.125rem;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-erro {
+  display: block;
+  max-width: 18rem;
+  margin-top: 0.1875rem;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: var(--sb-danger-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-tipo {
+  display: inline-block;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-text);
+  white-space: nowrap;
+}
+
+.sb-nf-direcao {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-nf-tom);
+  white-space: nowrap;
+}
+
+/* O nome do arquivo e longo por natureza ("Inbound-77036991-preparation..."): a
+   primeira coluna corta em vez de empurrar o PROXIMO PASSO para fora da tela. */
+.sb-nf-tabela td:first-child {
+  max-width: 17rem;
+}
+
+.sb-nf-tabela td:first-child .sb-cmp-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-nf-emitente {
+  display: block;
+  max-width: 12rem;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-itens {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Conferência incompleta: é o que impede a baixa, e a cor diz isso. */
+.sb-nf-itens-parcial {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--sb-accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ENVIO — `/notas-fiscais/nova`. */
+.sb-nf-formatos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--sb-space-2);
+  margin: 0 0 var(--sb-space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.sb-nf-formato {
+  display: grid;
+  gap: 0.1875rem;
+  padding: var(--sb-space-2) var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-nf-formato b {
+  font-size: 0.8125rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-formato span {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-formato small {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--sb-secondary);
+  text-transform: uppercase;
+}
+
+/*
+ * A área de arrastar. O `<input type="file">` fica DENTRO do rótulo, visível ao
+ * leitor de tela e coberto pela área — arrastar é atalho, o clique continua
+ * sendo o caminho de sempre.
+ */
+.sb-nf-solta {
+  display: grid;
+  justify-items: center;
+  gap: 0.375rem;
+  padding: var(--sb-space-5) var(--sb-space-3);
+  border: 1px dashed color-mix(in srgb, var(--sb-secondary) 45%, var(--sb-border));
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.sb-nf-solta:hover,
+.sb-nf-solta:focus-within {
+  border-color: var(--sb-secondary);
+}
+
+.sb-nf-solta-ativa {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-nf-solta b {
+  font-size: 0.875rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-solta span {
+  max-width: 30rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+/* A lista do que foi escolhido, antes de enviar. */
+.sb-nf-escolhidos {
+  display: grid;
+  gap: 0.25rem;
+  margin: var(--sb-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-nf-escolhido {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 0.3125rem var(--sb-space-2);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-surface);
+  font-size: 0.75rem;
+}
+
+.sb-nf-escolhido-nome {
+  overflow: hidden;
+  font-family: var(--sb-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-escolhido-nota {
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+.sb-nf-escolhido-recusado {
+  border-color: color-mix(in srgb, var(--sb-danger) 40%, var(--sb-border));
+  color: var(--sb-danger-ink);
+}
+
+/* O resultado de cada arquivo, depois de enviar. */
+.sb-nf-resultados {
+  display: grid;
+  gap: 0.375rem;
+  margin: var(--sb-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-nf-resultado {
+  display: grid;
+  gap: 0.125rem;
+  padding: var(--sb-space-2);
+  border: 1px solid var(--sb-border);
+  border-left: 3px solid var(--sb-nf-tom, var(--sb-border));
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  font-size: 0.75rem;
+}
+
+.sb-nf-resultado b {
+  font-family: var(--sb-mono);
+  font-size: 0.75rem;
+}
+
+.sb-nf-resultado span {
+  color: var(--sb-text-soft);
+  line-height: 1.45;
+}
+
+@media (max-width: 1100px) {
+  .sb-nf-estados {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .sb-nf-estados {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sb-nf-referencia,
+  .sb-nf-erro,
+  .sb-nf-emitente {
+    max-width: 11rem;
+  }
+}

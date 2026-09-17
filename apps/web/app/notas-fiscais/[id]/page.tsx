@@ -1,15 +1,16 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AutoRefresh } from "../../../components/auto-refresh";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { Voltar } from "../../../components/voltar";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { ProcessSteps } from "../../../components/process-steps";
 import { Shell } from "../../../components/shell";
 import { TOM, tomDeStatus } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
+import { documentTypeLabel } from "../../../lib/document-filters";
 import { batchStatusLabel, operationTypeLabel, statusTone } from "../../../lib/labels";
 import { nfeEtapas } from "../../../lib/nfe-steps";
 import { createClient } from "../../../lib/supabase/server";
@@ -53,7 +54,7 @@ export default async function NotaFiscalPage({
     supabase
       .from("documents")
       .select(
-        "id, file_name, status, access_key, operation_type, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error",
+        "id, file_name, status, access_key, operation_type, document_type, source_format, reference, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -80,6 +81,14 @@ export default async function NotaFiscalPage({
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
   const editable = info.status === "PARSED";
 
+  /*
+    Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa, no
+    centro do Mercado Livre (D-375, combinado com a frente do Full). A `api`
+    recusa a confirmação; a tela não oferece o botão, e diz por quê — oferecer
+    para depois recusar seria pior que não oferecer.
+  */
+  const envioAoFull = info.document_type === "ENVIO_FULL_ML_PDF";
+
   const badges: readonly ObjectBadge[] = [
     { label: batchStatusLabel(info.status), tom: tomDeStatus(statusTone(info.status)) },
     ...(info.operation_type === null
@@ -92,6 +101,8 @@ export default async function NotaFiscalPage({
     parsedAt: info.parsed_at,
     totalItems: info.total_items,
     resolvedItems: info.resolved_items,
+    direcao: info.operation_type,
+    tipo: info.document_type,
   });
 
   // Os fatos do documento. O frame NÃO desenha esta grade — ele nunca chegou a
@@ -101,6 +112,10 @@ export default async function NotaFiscalPage({
   // quando ele só veio vazio (D-067).
   const fatos: readonly (readonly [string, ReactNode])[] = [
     ["Número", info.document_number ?? "—"],
+    // O tipo é o que explica por que faltam chave, série e valor num documento
+    // que não é nota fiscal (D-375).
+    ["Tipo", documentTypeLabel(info.document_type)],
+    ...(info.reference === null || info.reference === "" ? [] : ([["Referência", info.reference]] as const)),
     ["Série", info.series ?? "—"],
     ["Emitido em", info.issue_date === null ? "—" : formatDateTime(info.issue_date)],
     ["Itens", formatCount(info.total_items)],
@@ -129,13 +144,14 @@ export default async function NotaFiscalPage({
 
       <PageTitle
         eyebrow="ESTOQUE / OPERAÇÃO"
-        title="NF-e / Entradas"
-        subtitle={<Link href="/notas-fiscais">← Voltar ao histórico de notas</Link>}
+        title="Conferência do documento"
+        subtitle="Vincule cada item a um SKU; a baixa no estoque só acontece depois da sua confirmação."
+        aside={<Voltar href="/notas-fiscais" rotulo="Notas e Documentos" />}
         compacto
       />
 
       <ObjectHeader
-        identificador={info.document_number === null ? "NF-e" : `NF-e ${info.document_number}`}
+        identificador={info.document_number === null ? documentTypeLabel(info.document_type) : `${documentTypeLabel(info.document_type)} ${info.document_number}`}
         titulo={info.file_name ?? info.id}
         badges={badges}
         meta={info.parsed_at === null ? undefined : `Lida em ${formatDateTime(info.parsed_at)}`}
@@ -175,7 +191,26 @@ export default async function NotaFiscalPage({
         </p>
       )}
 
-      {info.status === "PARSED" && (
+      {info.status === "PARSED" && envioAoFull && (
+        <p
+          role="note"
+          style={{
+            ...TOM.neutro,
+            margin: "0 0 var(--sb-space-3)",
+            padding: "var(--sb-space-3)",
+            borderRadius: "var(--sb-radius)",
+            fontSize: "0.8125rem",
+            lineHeight: 1.5,
+          }}
+        >
+          Envio ao Full é <b>transferência</b>, não saída: a mercadoria continua sendo nossa, guardada no centro do
+          Mercado Livre. Por isso este documento é lido e conferido, mas não dá baixa no estoque — gravar como saída
+          faria as unidades desaparecerem do sistema. A baixa passa a existir quando o Full tiver representação própria
+          (D-352).
+        </p>
+      )}
+
+      {info.status === "PARSED" && !envioAoFull && (
         <ConfirmApplyForm
           documentId={info.id}
           totalItems={info.total_items ?? 0}
@@ -191,16 +226,16 @@ export default async function NotaFiscalPage({
 
       {items.error === null && (
         <Panel
-          title="Itens encontrados no XML"
+          title="Itens lidos do documento"
           subtitle={
             editable
-              ? "Cada item precisa apontar para um SKU antes da confirmação — uma nota é aplicada por completo, nunca parcialmente."
+              ? "Cada item precisa apontar para um SKU antes da confirmação — um documento é aplicado por completo, nunca parcialmente."
               : "Vínculos travados: só documentos em conferência aceitam alteração."
           }
         >
           {items.data.length === 0 && (
             <p className="sb-empty">
-              Nenhum item lido deste arquivo ainda. Os itens aparecem quando a leitura do XML termina.
+              Nenhum item lido deste arquivo ainda. Os itens aparecem quando a leitura termina.
             </p>
           )}
 
@@ -210,8 +245,8 @@ export default async function NotaFiscalPage({
                 <thead>
                   <tr>
                     <th className="sb-num">#</th>
-                    <th>Produto na NF-e</th>
-                    <th>cProd</th>
+                    <th>Produto no documento</th>
+                    <th>Código na origem</th>
                     <th>EAN</th>
                     <th className="sb-num">Quantidade</th>
                     <th className="sb-num">Custo unit.</th>
@@ -233,10 +268,28 @@ export default async function NotaFiscalPage({
                           usaria (docs/NFE.md secao 3). */}
                       <td className="sb-mono">{item.ean ?? "—"}</td>
                       <td className="sb-num">
-                        {item.quantity} {item.unit}
+                        {item.quantity}
+                        {item.unit === null ? "" : ` ${item.unit}`}
                       </td>
-                      <td className="sb-num">{formatCurrency(item.unit_value)}</td>
-                      <td className="sb-num">{formatCurrency(item.total_value)}</td>
+                      {/*
+                        Pedido de separação não traz preço, e zero se leria como
+                        "de graça" (D-254): a célula fica muda em vez de afirmar
+                        um valor que o documento não tem.
+                      */}
+                      <td className="sb-num">
+                        {item.unit_value === null ? (
+                          <span className="sb-rep-mudo">—</span>
+                        ) : (
+                          formatCurrency(item.unit_value)
+                        )}
+                      </td>
+                      <td className="sb-num">
+                        {item.total_value === null ? (
+                          <span className="sb-rep-mudo">—</span>
+                        ) : (
+                          formatCurrency(item.total_value)
+                        )}
+                      </td>
                       <td style={{ minWidth: "18rem" }}>
                         <DocumentItemRow
                           itemId={item.id}

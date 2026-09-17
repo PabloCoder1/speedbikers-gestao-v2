@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **369** (D-001 a D-376).
+Decisões registradas: **370** (D-001 a D-376).
 
 ## Por domínio
 
@@ -182,7 +182,7 @@ Decisões registradas: **369** (D-001 a D-376).
 - **D-372** — Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
 - **D-376** — Vinculacoes: a moldura que faltava e a pagina numa leitura so
 
-### mercado-livre (56)
+### mercado-livre (57)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -240,6 +240,7 @@ Decisões registradas: **369** (D-001 a D-376).
 - **D-364** — Republicacao de anuncio com variacoes: o corpo oficial, a trava sem estoque antes de fechar, a recusa do ML gravada e a retomada humana so depois de recusa comprovada
 - **D-369** — Republicacao: anuncio com variacoes em conta de user products nao republica -- o preflight trava antes de fechar e a recusa com essa causa deixa de oferecer retomada
 - **D-373** — /produtos vira o catalogo: uma leitura com contagens facetadas, atalhos do que pede acao e filtros por categoria, marca, tipo, situacao, anuncios e vendas
+- **D-375** — Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
 
 ### outros (62)
 

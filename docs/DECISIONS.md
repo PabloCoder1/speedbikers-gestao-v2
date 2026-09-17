@@ -13326,6 +13326,49 @@ Capturas a 1440 px e 390 px (popup em tela cheia, sem rolagem lateral) com a res
 - ordem das migrations combinada: `20260917190000` (D-373) antes desta `20260917200000`;
 - a D-362 deve acrescentar `vinculo_via` nas leituras de vinculo: a tela ja ignora coluna desconhecida.
 
+## D-375 - Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
+
+**Contexto:** pedido do dono: "melhore a tela /notas-fiscais ... deixe ela mais bonita, rapida e util ... essa tela tem que dar pra dar entrada e saida, tanto por xml tanto por pdf", com quatro arquivos reais: o XML e o DANFE da MESMA nota de entrada, o "Pedido de Saida" impresso do UpSeller e as "instrucoes de preparacao" de um envio ao Full do Mercado Livre. A tela existia desde D18/D-253 e aceitava **so XML de NF-e**, um arquivo por vez; o copy dizia "Envie o XML, nao o PDF/DANFE".
+
+**1. QUATRO LAYOUTS, UMA FORMA (`packages/domain/src/documentos/*`, `apps/worker/src/documentos/pdf-texto.ts`)**
+
+O tipo sai do **conteudo**, nunca do nome do arquivo (`Imprimir - UpSeller.pdf` chega renomeado):
+
+- `NFE` -- o XML, caminho **preferido**: e o unico conferido pela SEFAZ. Parser de sempre (D-053), so traduzido para a forma comum;
+- `DANFE_PDF` -- a tabela de produtos e achada pelos ROTULOS do cabecalho, por pagina (CODIGO/DESCRICAO/NCM/CFOP/UN/QUANT, com "VALOR UNIT"/"TOTAL" buscados na vizinhanca porque a ordem varia por emissor); chave exigida em ONZE blocos de quatro e CNPJ so COM pontuacao -- sem isso o protocolo de autorizacao virava "chave" e "CNPJ do emitente" (medido no arquivo real);
+- `SAIDA_UPSELLER_PDF` -- cabecalho "# SKU Estante Qtd."; a coluna do SKU e uma FAIXA, nao proximidade (o rotulo fica a esquerda do valor); a descricao vem na linha seguinte;
+- `ENVIO_FULL_ML_PDF` -- quantidade numa coluna a direita, casada por proximidade vertical; se UM produto ficar sem quantidade, o documento INTEIRO e recusado.
+
+**Extracao de PDF sem dependencia nova** (`zlib` do Node, no worker): inflate dos streams, `ToUnicode` (bfchar/bfrange), operadores `Tj/TJ/Tm/Td/TD/T*`. Tres achados que mudaram o codigo: stream de imagem inflado vira lixo (filtro por proporcao de caracteres imprimiveis), o Chrome parte a MESMA palavra em varios pedacos (colar sem espaco; a coluna fica no `x`) e o PDF impresso pelo Chrome INVERTE o eixo vertical (ordenar por `y` punha o rodape antes do cabecalho -- a ordem e a do arquivo). O dominio continua puro: ele recebe as linhas ja posicionadas, como o XML ja chegava convertido.
+
+**2. BANCO (migration `20260917230000`)**
+
+- `documents.document_type` aceita os quatro layouts e passa a ser **ANULAVEL**: ate o parse, o tipo nao e conhecido, e nascer "NFE" seria mentir. O formato (`source_format` XML|PDF), esse sim, e sabido no upload -- e e ele que a tela mostra enquanto a leitura nao terminou;
+- `document_items.unit`, `unit_value` e `total_value` viram anulaveis: **pedido de separacao nao tem preco**, e gravar zero se leria como "de graca" (D-254);
+- `documents.reference` -- a linha que situa quem confere ("Armazem ESTOQUE LOJA · ENVIO FULL #77375684 CONTA 1");
+- `stock_movements.movement_type` ganha **`SAIDA_DOCUMENTO`**: saida conferida por documento NAO fiscal nao pode ser gravada como `SAIDA_NFE`, que afirmaria uma nota que ninguem emitiu;
+- `get_documents_overview` -- a tela numa leitura: pagina (com unidades e valor por documento), total filtrado, contagens por estado/direcao/tipo (tipo nulo aparece como `EM_LEITURA`) e resumo (em conferencia, em leitura, falhas, aplicados/entradas/saidas de 30 dias, itens sem vinculo). `security invoker` -- a policy de `documents` (ADMIN/GESTOR) continua sendo quem autoriza; `force_custom_plan` (D-319). Contagens respeitam a busca e ignoram os recortes (D-250).
+
+**3. O ENVIO AO FULL NAO DA BAIXA** -- combinado com a frente da D-352 antes de tocar o ledger. Envio ao Full e **transferencia**, nao saida: a mercadoria continua nossa, no centro do Mercado Livre. Gravar como saida simples faria a unidade desaparecer do sistema. O documento e lido e conferido; `confirmNfeApply` recusa ("transferencia, nao saida"), o worker recusa de novo (dupla checagem) e a tela de conferencia explica em vez de oferecer um botao que a `api` vai negar. A baixa passa a existir quando o Full tiver representacao propria (D-352).
+
+**4. AS TELAS**
+
+`/notas-fiscais` -- titulo **"Notas e Documentos"** (era "NF-e / Entradas"; o frame de D18 era um esboco, e o que mudou nao foi o gosto, foi o que a tela FAZ): quatro cartoes (esperando conferencia, em leitura, falhas, aplicados em 30 dias), os sete estados do ciclo como filtro com contagem, menus de tipo e direcao, busca por numero/chave/emitente/arquivo/referencia, e tabela de oito colunas com **proximo passo** por linha ("Vincular 3 de 44", "Conferido · aplicar", "Envio ao Full · sem baixa"). Valor ausente sai "sem valor", nunca "R$ 0".
+
+`/notas-fiscais/nova` -- **varios arquivos**, XML e PDF, arrastar e soltar (a area e um `<label>`: o clique cai no input nativo); quatro cartoes dizendo o que a leitura sabe ler ANTES do envio; um resultado por arquivo, e um recusado nao interrompe os outros. Triagem no navegador e de **cortesia** e erra para o lado de deixar passar -- quem decide e a `api`, pelos bytes (`%PDF-` / `<NFe`). Teto do PDF: 20 MB (quatro vezes o do XML, que e texto).
+
+`/notas-fiscais/:id` -- tipo e referencia na grade de fatos, valores anulaveis mudos, "voltar" como botao (D-367) e o aviso do Full.
+
+**Enquanto a migration nao chega ao banco** (a web da branch principal vai ao ar antes dela, D-363): PGRST202 cai na consulta antiga em `documents` -- sem cartoes, sem tipo e sem valor, nunca em erro.
+
+**Verificacao**
+
+- `typecheck`, `lint` e `test` de todos os pacotes (dominio 591, web 771, api 396, worker 699, db 25) e os quatro guardas `check:*`;
+- 11 testes de layout no dominio e 8 do extrator no worker, com PDFs montados em memoria -- **os arquivos reais nao entram no repositorio** (`docs/NFE.md`); um teste sintetico do pedido de saida achou um bug real: sem "Operador:" no papel, a regex do armazem engolia o documento inteiro;
+- os quatro arquivos reais, conferidos por script: DANFE 44 itens / R$ 237.515,28 (igual ao total do XML) / chave 4226...8331; UpSeller OUT12467, BAU05 x 20; ML #77036991, 40 itens, 574 unidades;
+- integracao local `-t "D-375"`: 9 de 9 (resumo do ciclo, tipo nulo como EM_LEITURA, documento sem valor somando zero com unidades intactas, contagens ignorando o recorte, busca pela referencia, ANALISTA/outra organizacao sem linha, anon recusado, `SAIDA_DOCUMENTO` baixando o saldo pela trigger e tipo fora do CHECK ainda recusado).
+
+**Impacto:** `supabase/migrations/20260917230000_documentos_pdf.sql`; `packages/domain/src/documentos/*`; `apps/worker/src/documentos/pdf-texto.ts`, `apps/worker/src/documento-reader.ts` (era `nfe-xml-reader.ts`), `handlers/nfe-import-{parse,apply}.ts`; `apps/api/src/nfe-import.ts`; `apps/web/app/notas-fiscais/**`, `apps/web/lib/{document-filters,documents-overview,movement-labels,movement-filters}.ts`, `components/nav.tsx`, `app/globals.css` (`sb-nf-*`); `packages/db/src/{types,rls.integration.test}.ts`; `docs/NFE.md`.
 ## D-376 - Vinculacoes: a moldura que faltava e a pagina numa leitura so
 
 **Contexto:** o dono, depois da D-374: "melhore de novo a tela de vincular; voce deixou mais facil vincular, porem nao mexeu na qualidade visual da tela, deixe ela mais bonita e mais rapida". Ele estava certo nas duas metades, e as duas tinham a mesma causa: a D-374 trocou o JEITO de vincular e nao encostou na moldura nem nas leituras.
