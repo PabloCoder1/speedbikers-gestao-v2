@@ -280,8 +280,8 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**A próxima tarefa é publicar a D-351** (guarda do estoque): a bateria pendente
-(D-351 §12), PR, CI no Dev, `migrations-producao.yml`, conferência do corte = 0,
+**A próxima tarefa é publicar a D-351** (guarda do estoque): bateria verde em `8504cd9`
+(D-351 §12), falta PR, CI no Dev, `migrations-producao.yml`, conferência do corte = 0,
 worker e api, a F3 por psql (16/09: 2.698 estornos, 20 anulações e os trios), provas
 com 1 h e 24 h, e só então a decisão de despausar `v3-reconcile-balances`. Antes de puxar item de backlog, confira a
 categoria dele em D-223 — quase todos dependem de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
