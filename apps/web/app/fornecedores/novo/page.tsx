@@ -6,7 +6,7 @@ import { Shell } from "../../../components/shell";
 import { lerExistentes } from "../../../lib/supplier-existentes";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
-import { Voltar } from "../voltar";
+import { Voltar } from "../../../components/voltar";
 import { SupplierForm } from "./supplier-form";
 
 export const metadata = { title: "Novo fornecedor — Speed Bikers Gestão" };

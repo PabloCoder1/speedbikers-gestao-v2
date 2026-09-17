@@ -16,7 +16,7 @@ import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overvie
 import { Canais, temCanal } from "../canais";
 import { ExcluirFornecedor } from "../excluir-fornecedor";
 import { LogoFornecedor } from "../logo";
-import { Voltar } from "../voltar";
+import { Voltar } from "../../../components/voltar";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 

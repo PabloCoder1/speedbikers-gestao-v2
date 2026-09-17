@@ -5662,6 +5662,74 @@ describe("prioridade da sugestão de compra (D-150) — equivalência SQL × dom
     expect(bySku.get("PURCHPRIO-virtual")?.suggested_quantity).toBeNull();
   });
 
+  // get_purchase_order_suggestions (20260917170000, D-371): a sugestão
+  // DENTRO do pedido de compra é um recorte desta mesma classificação — nunca
+  // uma segunda conta. Roda sobre os mesmos quatro SKUs plantados.
+  interface SugestaoPedido {
+    sku_id: string;
+    sku: string;
+    state: string | null;
+    suggested_quantity: number | null;
+    aproveitavel: number | null;
+    supplier_brand: string | null;
+  }
+
+  async function sugestaoDoPedido(args: string): Promise<{ total: number; linhas: SugestaoPedido[] }> {
+    const rows = await asUser<{ v: { total: number; linhas: SugestaoPedido[] } }>(
+      ADMIN_SB,
+      `select public.get_purchase_order_suggestions('${ORG_SB}', ${args}) as v`,
+    );
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_purchase_order_suggestions nao devolveu linha");
+
+    return v;
+  }
+
+  it("D-371: por lista de SKUs, a sugestão do pedido é a MESMA da reposição", async () => {
+    const todas = (await fetchAll()).filter((r) => r.sku.startsWith("PURCHPRIO-"));
+    const ids = todas.map((r) => r.sku_id);
+
+    expect(ids).toHaveLength(4);
+
+    const pedido = await sugestaoDoPedido(`'{${ids.join(",")}}'::uuid[], null, null, 500, '${TODAY}'`);
+
+    expect(pedido.total).toBe(4);
+
+    for (const linha of todas) {
+      const nova = pedido.linhas.find((l) => l.sku_id === linha.sku_id);
+
+      expect({ sku: linha.sku, state: nova?.state, suggested: nova?.suggested_quantity }).toEqual({
+        sku: linha.sku,
+        state: linha.state,
+        suggested: linha.suggested_quantity,
+      });
+    }
+
+    // Estoque virtual: o aproveitável é AUSENTE, nunca zero (D-127).
+    expect(pedido.linhas.find((l) => l.sku === "PURCHPRIO-virtual")?.aproveitavel).toBeNull();
+  });
+
+  it("D-371: por marca, 'comprar agora' traz só ruptura e urgente, em ordem de prioridade", async () => {
+    const agora = await sugestaoDoPedido(`null, 'PURCHPRIO-MARCA', 'comprar_agora', 500, '${TODAY}'`);
+
+    expect(agora.linhas.map((l) => l.sku)).toEqual(["PURCHPRIO-ruptura", "PURCHPRIO-urgente"]);
+    expect(agora.linhas.every((l) => (l.suggested_quantity ?? 0) > 0)).toBe(true);
+
+    // "Tudo com sugestão" nunca traz recusa (virtual) nem sugestão zero.
+    const tudo = await sugestaoDoPedido(`null, 'PURCHPRIO-MARCA', 'com_sugestao', 500, '${TODAY}'`);
+
+    expect(tudo.linhas.some((l) => l.sku === "PURCHPRIO-virtual")).toBe(false);
+    expect(tudo.linhas.every((l) => (l.suggested_quantity ?? 0) > 0)).toBe(true);
+  });
+
+  it("D-371: sem SKU e sem marca devolve vazio, e anon não executa", async () => {
+    expect(await sugestaoDoPedido(`null, '  ', null, 500, '${TODAY}'`)).toEqual({ total: 0, linhas: [] });
+    await expect(asAnon(`select public.get_purchase_order_suggestions('${ORG_SB}', null, 'X')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
   it("a ordem é a prioridade: ruptura > urgente > recusas > excesso", async () => {
     const order = (await fetchAll()).map((r) => r.sku);
     const at = (sku: string) => order.indexOf(sku);

@@ -5391,6 +5391,18 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_purchase_order_suggestions: {
+        Args: {
+          p_date_to?: string | null
+          p_limit?: number
+          p_organization_id: string
+          p_scope?: string | null
+          p_sku_ids?: string[] | null
+          p_supplier_brand?: string | null
+        }
+        // jsonb (D-371): conferido campo a campo em apps/web/app/compras/novo/sugestoes.ts.
+        Returns: Json
+      }
       get_purchase_orders_overview: {
         Args: {
           p_limit?: number

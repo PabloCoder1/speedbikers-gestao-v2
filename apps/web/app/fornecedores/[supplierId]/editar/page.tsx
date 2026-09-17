@@ -10,7 +10,7 @@ import { createClient } from "../../../../lib/supabase/server";
 import { AlternarAtivo } from "../../alternar-ativo";
 import { ExcluirFornecedor } from "../../excluir-fornecedor";
 import { SupplierForm } from "../../novo/supplier-form";
-import { Voltar } from "../../voltar";
+import { Voltar } from "../../../../components/voltar";
 
 export const metadata = { title: "Editar fornecedor — Speed Bikers Gestão" };
 
