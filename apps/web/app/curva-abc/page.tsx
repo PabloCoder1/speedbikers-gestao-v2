@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { FilterPill } from "../../components/filter-pill";
+import { FilterMenu } from "../../components/filter-menu";
+import { FilterGroup, FilterPill } from "../../components/filter-pill";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -57,13 +58,6 @@ interface AbcRow {
   class_b_count: number;
   class_c_count: number;
 }
-
-const CLASS_TONE: Record<string, { background: string; color: string }> = {
-  A: { background: "var(--sb-success-soft)", color: "var(--sb-success)" },
-  B: { background: "var(--sb-accent-soft)", color: "var(--sb-accent-ink)" },
-  C: { background: "var(--sb-muted)", color: "var(--sb-text)" },
-};
-
 
 export default async function CurvaAbcPage({
   searchParams,
@@ -135,6 +129,8 @@ export default async function CurvaAbcPage({
   const totalCount = first?.total_count ?? 0;
   const windowInfo = summarizeAbcWindow(filters.page, totalCount, rows.length);
   const formatValue = filters.criterion.format === "currency" ? formatCurrency : formatCount;
+  const totalDasClasses =
+    first === undefined ? 0 : first.class_a_value + first.class_b_value + first.class_c_value;
 
   // Conta e marca são recortes independentes e componíveis, e a frase precisa
   // dizer isso numa só oração: "recalculada dentro de X, recalculada dentro de
@@ -143,6 +139,12 @@ export default async function CurvaAbcPage({
   // não é a fatia do recorte na curva global.
   const recortes = [selectedAccount?.label, filters.brand].filter((r): r is string => r !== undefined && r !== null);
   const escopo = recortes.length === 0 ? ", consolidado" : `, recalculada dentro de ${recortes.join(" e ")}`;
+  const filtrosAtivos =
+    filters.accountSlug !== null ||
+    filters.brand !== null ||
+    filters.criterion.key !== ABC_CRITERIA[0].key ||
+    filters.days !== 90 ||
+    filters.onlyWithoutFull;
 
   return (
     <Shell>
@@ -151,18 +153,80 @@ export default async function CurvaAbcPage({
         eyebrow="ESTOQUE / CLASSIFICAÇÃO"
         title="Curva ABC"
         subtitle="Onde receita, volume e disponibilidade se concentram."
+        aside={
+          <>
+            <FilterMenu
+              rotulo={selectedAccount?.label ?? "Todas as contas"}
+              opcoes={[
+                {
+                  href: buildAbcHref(filters, { accountSlug: null }),
+                  label: "Todas as contas",
+                  ativo: selectedAccount === null,
+                },
+                ...accounts.map((account) => ({
+                  href: buildAbcHref(filters, { accountSlug: account.slug }),
+                  label: account.label,
+                  ativo: selectedAccount?.id === account.id,
+                })),
+              ]}
+            />
+            <FilterMenu
+              rotulo={filters.brand ?? "Todas as marcas"}
+              opcoes={[
+                {
+                  href: buildAbcHref(filters, { brand: null }),
+                  label: "Todas as marcas",
+                  ativo: filters.brand === null,
+                },
+                ...brands.map((brand) => ({
+                  href: buildAbcHref(filters, { brand }),
+                  label: brand,
+                  ativo: filters.brand === brand,
+                })),
+              ]}
+            />
+          </>
+        }
       />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Últimos {filters.days} dias ({dateFrom} a {dateTo}), por {filters.criterion.label.toLowerCase()}
-        {escopo}. Classe A
-        concentra até 80% do acumulado, B até 95%, C o resto — SKU sem venda no período não entra na curva.
-        {first !== undefined && (
-          <>
-            {" "}
-          </>
-        )}
-      </p>
+      <section className="sb-abc-controls" aria-label="Configuração da análise">
+        <div className="sb-abc-controls-head">
+          <div>
+            <span className="sb-eyebrow">ANÁLISE ATUAL</span>
+            <p>
+              Últimos {filters.days} dias, por {filters.criterion.label.toLowerCase()}
+              {escopo}.
+            </p>
+          </div>
+          {filtrosAtivos && (
+            <Link className="sb-button" href="/curva-abc">
+              Limpar filtros
+            </Link>
+          )}
+        </div>
+
+        <div className="sb-abc-filter-grid">
+          <FilterGroup label="Critério">
+            {ABC_CRITERIA.map((criterion) => (
+              <FilterPill
+                key={criterion.key}
+                href={buildAbcHref(filters, { criterion })}
+                active={filters.criterion.key === criterion.key}
+              >
+                {criterion.label}
+              </FilterPill>
+            ))}
+          </FilterGroup>
+
+          <FilterGroup label="Período">
+            {ABC_PERIODS.map((days) => (
+              <FilterPill key={days} href={buildAbcHref(filters, { days })} active={filters.days === days}>
+                {days} dias
+              </FilterPill>
+            ))}
+          </FilterGroup>
+        </div>
+      </section>
 
       {/*
         Os três cartões de classe do frame `Abc`. O valor por classe vem de
@@ -177,27 +241,38 @@ export default async function CurvaAbcPage({
         <div className="sb-abc-cards">
           {(
             [
-              { classe: "A", cor: "var(--sb-danger)", valor: first.class_a_value, skus: first.class_a_count },
-              { classe: "B", cor: "var(--sb-accent-ink)", valor: first.class_b_value, skus: first.class_b_count },
-              { classe: "C", cor: "var(--sb-secondary)", valor: first.class_c_value, skus: first.class_c_count },
+              { classe: "A", limite: "até 80%", valor: first.class_a_value, skus: first.class_a_count },
+              { classe: "B", limite: "de 80% a 95%", valor: first.class_b_value, skus: first.class_b_count },
+              { classe: "C", limite: "acima de 95%", valor: first.class_c_value, skus: first.class_c_count },
             ] as const
-          ).map((c) => {
-            const totalDasClasses = first.class_a_value + first.class_b_value + first.class_c_value;
-
-            return (
-              <section className="sb-abc-card" key={c.classe} aria-label={`Classe ${c.classe}`}>
-                <span style={{ color: c.cor }}>CLASSE {c.classe}</span>
+          ).map((c) => (
+              <section
+                className={`sb-abc-card sb-abc-card-${c.classe.toLowerCase()}`}
+                key={c.classe}
+                aria-label={`Classe ${c.classe}`}
+              >
+                <div className="sb-abc-card-head">
+                  <span>CLASSE {c.classe}</span>
+                  <small>{c.limite} do acumulado</small>
+                </div>
                 <strong>{formatValue(c.valor)}</strong>
                 <p>
-                  {totalDasClasses === 0 ? "sem base para percentual" : `${formatPercent(c.valor / totalDasClasses)} do total`}
+                  {totalDasClasses === 0
+                    ? "sem base para percentual"
+                    : `${formatPercent(c.valor / totalDasClasses)} do resultado`}
                 </p>
-                <div>
-                  <b>{formatCount(c.skus)} SKUs</b>
-                  <small>concentram este resultado</small>
+                <div className="sb-abc-card-foot">
+                  <b>
+                    {formatCount(c.skus)} {c.skus === 1 ? "SKU" : "SKUs"}
+                  </b>
+                  <small>nesta classe</small>
                 </div>
+                <i
+                  aria-hidden="true"
+                  style={{ width: totalDasClasses === 0 ? "0%" : `${String((c.valor / totalDasClasses) * 100)}%` }}
+                />
               </section>
-            );
-          })}
+            ))}
         </div>
       )}
 
@@ -216,89 +291,41 @@ export default async function CurvaAbcPage({
       */}
       {first !== undefined && (
         <div className="sb-abc-bars">
-          <div>
-            <b>Sem estoque no Full</b>
-            <span>
+          <section className="sb-abc-full-card">
+            <div className="sb-abc-insight-head">
+              <div>
+                <span className="sb-eyebrow">DISPONIBILIDADE FULL</span>
+                <b>Sem estoque no Full</b>
+              </div>
+              <strong>{formatCount(first.without_full_count)}</strong>
+            </div>
+            <div className="sb-abc-progress" aria-hidden="true">
               <i style={{ width: `${String(Math.min(100, Math.round((first.without_full_count / Math.max(first.total_count, 1)) * 100)))}%` }} />
-              {formatCount(first.without_full_count)} de {formatCount(first.total_count)} SKUs
-            </span>
+            </div>
+            <p>
+              {formatCount(first.without_full_count)} de {formatCount(first.total_count)} SKUs do recorte.
+            </p>
             <FilterPill
               href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })}
               active={filters.onlyWithoutFull}
             >
-              {filters.onlyWithoutFull ? "mostrando só estes" : "ver só estes"}
+              {filters.onlyWithoutFull ? "Mostrando somente sem Full" : "Ver somente sem Full"}
             </FilterPill>
-          </div>
+          </section>
 
-          <div>
-            <b>Risco operacional</b>
-            <span className="sb-abc-bars-nota">
-              Ruptura e cobertura baixa são estados da <strong>política de reposição</strong>, não da curva — a
-              mesma palavra calculada em dois lugares divergiria no primeiro ajuste.
-            </span>
-            <span style={{ display: "flex", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
-              <Link href="/reposicao?estado=RUPTURA">Em ruptura →</Link>
-              <Link href="/reposicao?estado=COBERTURA_BAIXA">Cobertura baixa →</Link>
-            </span>
-          </div>
+          <section className="sb-note sb-abc-risk-card">
+            <span>RISCO OPERACIONAL</span>
+            <p>
+              Ruptura e cobertura baixa seguem a política de reposição. Consulte a fila operacional para agir
+              sobre esses estados.
+            </p>
+            <div className="sb-abc-risk-links">
+              <Link href="/reposicao?estado=RUPTURA">Ver rupturas →</Link>
+              <Link href="/reposicao?estado=COBERTURA_BAIXA">Ver cobertura baixa →</Link>
+            </div>
+          </section>
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Escopo</span>
-          <FilterPill href={buildAbcHref(filters, { accountSlug: null })} active={filters.accountSlug === null}>
-            Consolidado
-          </FilterPill>
-          {accounts.map((account) => (
-            <FilterPill
-              key={account.id}
-              href={buildAbcHref(filters, { accountSlug: account.slug })} active={filters.accountSlug === account.slug}
-            >
-              {account.label}
-            </FilterPill>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Marca</span>
-          <FilterPill href={buildAbcHref(filters, { brand: null })} active={filters.brand === null}>
-            Todas
-          </FilterPill>
-          {brands.map((brand) => (
-            <FilterPill key={brand} href={buildAbcHref(filters, { brand })} active={filters.brand === brand}>
-              {brand}
-            </FilterPill>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Critério</span>
-          {ABC_CRITERIA.map((criterion) => (
-            <FilterPill
-              key={criterion.key}
-              href={buildAbcHref(filters, { criterion })} active={filters.criterion.key === criterion.key}
-            >
-              {criterion.label}
-            </FilterPill>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Período</span>
-          {ABC_PERIODS.map((days) => (
-            <FilterPill key={days} href={buildAbcHref(filters, { days })} active={filters.days === days}>
-              {days} dias
-            </FilterPill>
-          ))}
-
-          <FilterPill
-            href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })} active={filters.onlyWithoutFull}
-          >
-            Somente sem estoque em Full
-          </FilterPill>
-        </div>
-      </div>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -310,85 +337,80 @@ export default async function CurvaAbcPage({
         <Panel
           title={filters.onlyWithoutFull ? "SKUs sem estoque no Full" : "SKUs por participação"}
           subtitle={windowInfo.label}
+          aside={
+            <span className="sb-abc-table-context">
+              {filters.criterion.label} · {filters.days} dias
+            </span>
+          }
         >
           {rows.length === 0 && <p className="sb-empty">Nenhum SKU com venda no período e escopo escolhidos.</p>}
 
           {rows.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="sb-table">
-            <thead>
-              <tr>
-                <th>Classe</th>
-                <th>SKU</th>
-                <th>{filters.criterion.label}</th>
-                <th>% do total</th>
-                <th>% acumulado</th>
-                <th>Estoque Full</th>
-              </tr>
-            </thead>
+            <div className="sb-abc-table-wrap">
+              <table className="sb-table">
+                <thead>
+                  <tr>
+                    <th>Classe</th>
+                    <th>Produto / SKU</th>
+                    <th className="sb-num">{filters.criterion.label}</th>
+                    <th className="sb-num">% do total</th>
+                    <th className="sb-num">% acumulado</th>
+                    <th className="sb-num">Estoque Full</th>
+                  </tr>
+                </thead>
 
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.sku_id}>
-                  <td>
-                    <span
-                      style={{
-                        ...CLASS_TONE[row.abc_class],
-                        display: "inline-block",
-                        borderRadius: "999px",
-                        padding: "0.125rem 0.5rem",
-                        fontSize: "0.75rem",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {row.abc_class}
-                    </span>
-                  </td>
-                  <td className="sb-mono">
-                    {row.sku}
-                    {row.title !== null && (
-                      <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-                        {row.title}
-                      </div>
-                    )}
-                  </td>
-                  <td className="sb-num">{formatValue(row.metric_value)}</td>
-                  <td className="sb-num">{row.metric_share}%</td>
-                  <td className="sb-num">{row.cumulative_share}%</td>
-                  <td className="sb-num">{formatCount(row.full_quantity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.sku_id}>
+                      <td>
+                        <span className={`sb-abc-class sb-abc-class-${row.abc_class.toLowerCase()}`}>
+                          {row.abc_class}
+                        </span>
+                      </td>
+                      <td>
+                        <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                          {row.title ?? "Produto sem título"}
+                        </Link>
+                        <div className="sb-mono">{row.sku}</div>
+                      </td>
+                      <td className="sb-num">{formatValue(row.metric_value)}</td>
+                      <td className="sb-num">
+                        <div className="sb-abc-share">
+                          <i aria-hidden="true" style={{ width: `${String(Math.min(100, row.metric_share))}%` }} />
+                          <span>{row.metric_share}%</span>
+                        </div>
+                      </td>
+                      <td className="sb-num">{row.cumulative_share}%</td>
+                      <td className="sb-num">
+                        {row.full_quantity === 0 ? (
+                          <span className="sb-abc-full-empty">Sem Full</span>
+                        ) : (
+                          formatCount(row.full_quantity)
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Panel>
       )}
 
       {error === null && windowInfo.totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--sb-space-2)",
-            alignItems: "center",
-            marginTop: "var(--sb-space-3)",
-            fontSize: "0.8125rem",
-          }}
-        >
+        <nav className="sb-abc-pagination" aria-label="Paginação da Curva ABC">
           {filters.page > 1 && (
             <FilterPill href={buildAbcHref(filters, { page: filters.page - 1 })} active={false}>
               ← Anterior
             </FilterPill>
           )}
-          <span style={{ color: "var(--sb-text-soft)" }}>
-            Página {filters.page} de {windowInfo.totalPages}
-          </span>
+          <span>Página {filters.page} de {windowInfo.totalPages}</span>
           {filters.page < windowInfo.totalPages && (
             <FilterPill href={buildAbcHref(filters, { page: filters.page + 1 })} active={false}>
               Próxima →
             </FilterPill>
           )}
-        </div>
+        </nav>
       )}
     </Shell>
   );
