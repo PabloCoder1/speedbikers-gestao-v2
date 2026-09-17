@@ -11,9 +11,14 @@ import {
 } from "./curation-filters";
 
 const base: CurationFilters = {
-  estado: "pendente",
+  estado: "todos",
   sinal: null,
   marca: null,
+  categoria: null,
+  tipo: null,
+  situacao: null,
+  anuncios: null,
+  vendas: null,
   busca: "",
   ordem: "curadoria",
   tamanho: DEFAULT_PAGE_SIZE,
