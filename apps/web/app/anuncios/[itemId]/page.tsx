@@ -1,4 +1,5 @@
-import { isRelistRetryEligible } from "@sb/domain";
+import { readLastRelistFailureReason } from "@sb/db";
+import { isRelistRetryEligible, summarizeRelistVariations } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -408,33 +409,38 @@ export default async function AnuncioPage({
   const decisions = (decisionsResult.data ?? []) as unknown as DecisionRow[];
 
   /*
-    A ÚLTIMA FALHA da operação, só quando ela está em RELIST_FAILED (D-364): é
-    o `reason` desse evento que diz se o Mercado Livre RECUSOU (nenhum anúncio
-    novo nasceu) — e só então a tela oferece tentar de novo. Depende da
-    operação lida acima e só existe no estado raro; a RLS de
-    `listing_relist_events` é a mesma de `listing_relists`.
+    Duas leituras que dependem da operação lida acima, e só nos estados em que
+    o painel pede confirmação (D-364):
+
+    - A ÚLTIMA FALHA, em RELIST_FAILED: é o `reason` desse evento que diz se o
+      Mercado Livre RECUSOU (nenhum anúncio novo nasceu) — e só então a tela
+      oferece tentar de novo. A consulta é a mesma da `api` e do worker
+      (`readLastRelistFailureReason`); a RLS de `listing_relist_events` é a
+      mesma de `listing_relists`.
+    - As VARIAÇÕES do retrato do pedido, em REQUESTED e RELIST_FAILED: as que
+      estão sem estoque ficam fora do anúncio novo, e o dono precisa ler quais
+      ANTES de confirmar. Só `variations` sai do jsonb — o retrato inteiro é
+      o item do Mercado Livre, pesado demais para uma confirmação.
   */
-  const ultimaFalhaResult =
+  const [ultimaFalhaResult, variacoesDoPedidoResult] = await Promise.all([
     operacaoComoPai?.status === "RELIST_FAILED"
-      ? await supabase
-          .from("listing_relist_events")
-          .select("reason")
-          .eq("relist_id", operacaoComoPai.id)
-          .eq("to_status", "RELIST_FAILED")
-          .order("occurred_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : { data: null, error: null };
+      ? readLastRelistFailureReason(supabase, operacaoComoPai.id)
+      : Promise.resolve({ ok: true as const, reason: null }),
+    operacaoComoPai?.status === "REQUESTED" || operacaoComoPai?.status === "RELIST_FAILED"
+      ? supabase.from("listing_relists").select("variations:parent_snapshot->variations").eq("id", operacaoComoPai.id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
   const retomavel =
     operacaoComoPai !== null &&
-    ultimaFalhaResult.error === null &&
+    ultimaFalhaResult.ok &&
     isRelistRetryEligible({
       status: operacaoComoPai.status,
       parentItemId: operacaoComoPai.parent_item_id,
       failureReason: operacaoComoPai.failure_reason,
-      lastFailedEventReason: ultimaFalhaResult.data?.reason ?? null,
+      lastFailedEventReason: ultimaFalhaResult.reason,
     });
+  const variacoesDoPedido = summarizeRelistVariations({ variations: variacoesDoPedidoResult.data?.variations });
 
   // Falha em qualquer consulta secundária aparece como ERRO, nunca como
   // "sem dado" (D-067).
@@ -448,7 +454,8 @@ export default async function AnuncioPage({
     visitsResult.error ??
     pricesResult.error ??
     relistsResult.error ??
-    ultimaFalhaResult.error ??
+    (ultimaFalhaResult.ok ? null : { message: ultimaFalhaResult.message }) ??
+    variacoesDoPedidoResult.error ??
     decisionsResult.error;
 
   /*
@@ -1313,6 +1320,7 @@ export default async function AnuncioPage({
                     itemId={row.item_id}
                     mlAccountId={row.ml_account_id}
                     podeRepublicar={papel === "ADMIN" || papel === "GESTOR"}
+                    variacoes={variacoesDoPedido}
                     operacao={
                       operacaoComoPai === null
                         ? null

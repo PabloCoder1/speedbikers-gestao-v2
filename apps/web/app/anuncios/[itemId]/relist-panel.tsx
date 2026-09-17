@@ -1,12 +1,21 @@
 "use client";
 
+import type { RelistVariationsSummary } from "@sb/domain";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { TOM, tomDeRelist } from "../../../components/tone";
 import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
-import { atosDaRepublicacao } from "./republicacao";
+import {
+  INTERVALO_MS,
+  MENSAGEM_SEM_RESPOSTA,
+  atosDaRepublicacao,
+  cienciaDaExecucao,
+  cienciaDaRetomada,
+  descreverVariacaoFora,
+  passoDaReleitura,
+} from "./republicacao";
 
 /**
  * A SUPERFÍCIE DE CONFIRMAÇÃO HUMANA da republicação (D-295) — o item que
@@ -50,6 +59,12 @@ import { atosDaRepublicacao } from "./republicacao";
  * anúncio novo — a tela diz que alguém precisa conferir, e não oferece botão.
  * A regra é a do domínio (`isRelistRetryEligible`), calculada pela página.
  *
+ * As duas confirmações listam as variações que ficam FORA do anúncio novo
+ * (sem estoque no retrato do pedido, `summarizeRelistVariations`), e com
+ * variação de fora a caixa de ciência diz isso: o dono não confirma sem saber
+ * que o anúncio novo nasce menor. Se o worker terminar sem mudar a operação,
+ * a tela para de esperar depois das releituras e diz o que conferir.
+ *
  * ## O que a interface NÃO decide
  *
  * Nada. Papel (ADMIN/GESTOR) e escopo por conta são impostos no servidor
@@ -60,10 +75,6 @@ import { atosDaRepublicacao } from "./republicacao";
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-/** Quantas vezes, e de quanto em quanto, a tela relê depois de enfileirar. */
-const RELEITURAS = 10;
-const INTERVALO_MS = 3_000;
 
 export interface RelistOperation {
   id: string;
@@ -85,18 +96,22 @@ type Estado =
   | { kind: "enviando" }
   | { kind: "enfileirado"; mensagem: string; operacaoNoEnvio: string | null }
   | { kind: "estado-mudou"; mensagem: string }
+  | { kind: "sem-resposta"; mensagem: string }
   | { kind: "erro"; mensagem: string };
 
 export function RelistPanel({
   itemId,
   mlAccountId,
   podeRepublicar,
+  variacoes,
   operacao,
 }: {
   itemId: string;
   mlAccountId: string;
   /** ADMIN ou GESTOR — o mesmo par que a rota exige (D-161). */
   podeRepublicar: boolean;
+  /** As variações do retrato do pedido e as que ficam fora do anúncio novo (D-364). */
+  variacoes: RelistVariationsSummary;
   /** A operação viva deste anúncio como PAI, se houver. */
   operacao: RelistOperation | null;
 }): ReactNode {
@@ -120,11 +135,18 @@ export function RelistPanel({
     let leituras = 0;
     const timer = setInterval(() => {
       leituras += 1;
-      router.refresh();
 
-      if (leituras >= RELEITURAS) {
+      // Passadas as releituras sem mudança, a tela SAI da espera (D-364): o
+      // worker pode ter terminado sem transição, e "enfileirado" para sempre
+      // não explicaria nada — nem devolveria os botões.
+      if (passoDaReleitura(leituras) === "desistir") {
         clearInterval(timer);
+        setEstado({ kind: "sem-resposta", mensagem: MENSAGEM_SEM_RESPOSTA });
+
+        return;
       }
+
+      router.refresh();
     }, INTERVALO_MS);
 
     return () => {
@@ -272,6 +294,12 @@ export function RelistPanel({
         </p>
       )}
 
+      {estado.kind === "sem-resposta" && (
+        <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+          {estado.mensagem}
+        </p>
+      )}
+
       {estado.kind === "estado-mudou" && (
         <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-secondary)" }}>
           {estado.mensagem}
@@ -318,7 +346,7 @@ export function RelistPanel({
           titulo={`Fechar ${itemId} e republicar`}
           confirmar="Fechar e republicar"
           perigoso
-          exigirCiencia="Entendo que fechar este anúncio é irreversível."
+          exigirCiencia={cienciaDaExecucao(variacoes.leftOut.length)}
           onCancel={() => {
             setEstado({ kind: "idle" });
           }}
@@ -342,6 +370,7 @@ export function RelistPanel({
             No lugar dele nasce um anúncio <b>novo, com outro MLB</b>. Anúncio grátis não herda visitas nem vendas,
             e a exposição não é prometida por ninguém — nem pelo Mercado Livre, nem por esta tela.
           </p>
+          <VariacoesDoAnuncioNovo variacoes={variacoes} />
           <p style={{ margin: 0 }}>
             A conferência prévia roda <b>de novo agora</b>, com o estado atual do anúncio: se algo mudou desde o
             pedido, a operação para antes de fechar.
@@ -354,6 +383,7 @@ export function RelistPanel({
           eyebrow="Tentar republicar de novo"
           titulo={`Republicar ${itemId} de novo`}
           confirmar="Tentar republicar de novo"
+          exigirCiencia={cienciaDaRetomada(variacoes.leftOut.length)}
           onCancel={() => {
             setEstado({ kind: "idle" });
           }}
@@ -373,12 +403,45 @@ export function RelistPanel({
             O worker confere o anúncio <b>de novo agora</b> — ele precisa estar fechado e ter estoque — e envia a
             republicação só com as variações que têm estoque, cada uma com o próprio preço.
           </p>
+          <VariacoesDoAnuncioNovo variacoes={variacoes} />
           <p style={{ margin: 0 }}>
             Se o Mercado Livre recusar de novo, o motivo aparece na tabela abaixo. Nada é repetido sozinho.
           </p>
         </Confirmacao>
       )}
     </div>
+  );
+}
+
+/**
+ * As variações que o anúncio novo NÃO leva (D-364), escritas na confirmação —
+ * a mesma régua de D-127: confirmar sem ver o que se perde não é confirmar. A
+ * lista é a do retrato do pedido; o worker refaz a conta com o estoque da hora.
+ */
+function VariacoesDoAnuncioNovo({ variacoes }: { variacoes: RelistVariationsSummary }): ReactNode {
+  if (variacoes.total === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <p style={{ margin: 0 }}>
+        O anúncio tem {variacoes.total} variações, e o anúncio novo leva <b>só as que tiverem estoque</b> na hora do
+        envio.{" "}
+        {variacoes.leftOut.length === 0
+          ? "No retrato do pedido, todas tinham."
+          : `No retrato do pedido, ${String(variacoes.leftOut.length)} estavam sem estoque e ficam fora — não voltam no anúncio novo:`}
+      </p>
+      {variacoes.leftOut.length > 0 && (
+        <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+          {variacoes.leftOut.map((variacao) => (
+            <li key={variacao.id} className="sb-mono">
+              {descreverVariacaoFora(variacao)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -401,7 +464,7 @@ function Confirmacao({
   titulo: string;
   confirmar: string;
   perigoso?: boolean;
-  exigirCiencia?: string;
+  exigirCiencia?: string | undefined;
   onCancel: () => void;
   onConfirm: () => void;
   children: ReactNode;
