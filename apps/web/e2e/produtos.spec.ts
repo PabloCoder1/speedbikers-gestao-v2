@@ -38,7 +38,8 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
   await page.getByRole("button", { name: "Entrar" }).click();
 
   await expect(page).toHaveURL(/\/produtos/);
-  await expect(page.getByRole("heading", { level: 1, name: "Curadoria de produtos" })).toBeVisible();
+  // "Produtos" desde D-373: a tela virou o catálogo, e a curadoria é parte dela.
+  await expect(page.getByRole("heading", { level: 1, name: "Produtos" })).toBeVisible();
 
   // As três decisões de estoque moram no menu "Classificar estoque" (o
   // "Classificar Estoque ⌄" do frame da curadoria); abrir o menu é parte do
@@ -195,8 +196,9 @@ test("/produtos: da para escolher quantos por pagina e em que ordem, e o recorte
   await menuOrdem.getByRole("link", { name: "Atualizados primeiro" }).click();
 
   await expect(page).toHaveURL(/ordem=atualizado/);
-  // Trocar a ordem NAO descarta o estado que ja estava no recorte.
-  await expect(page).toHaveURL(/estado=todos/);
+  // Desde D-373 "todos" e o padrao e fica FORA da URL -- trocar a ordem nao o
+  // transforma em outro recorte.
+  await expect(page).not.toHaveURL(/estado=/);
 
   const menuTamanho = menus.filter({ hasText: "por página" }).last();
   await menuTamanho.locator("summary").click();
@@ -226,4 +228,37 @@ test("/produtos: da para escolher quantos por pagina e em que ordem, e o recorte
   await expect(page).toHaveURL(/tamanho=20/);
   await expect(page).toHaveURL(/ordem=atualizado/);
   await expect(page).toHaveURL(new RegExp(`busca=${E2E_SKU_CODE}`));
+});
+
+/**
+ * D-373: os atalhos do catálogo, a coluna de filtros com contagem e os chips.
+ * Tudo continua na URL: o cartão leva a um recorte limpo, o filtro compõe, e o
+ * chip tira só o que nomeia.
+ */
+test("/produtos: atalho, filtro facetado e chip compõem o recorte na URL (D-373)", async ({ page }) => {
+  await page.goto("/login?next=%2Fprodutos");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Produtos" })).toBeVisible();
+
+  const atalhos = page.getByRole("navigation", { name: "Atalhos do catálogo" });
+  await expect(atalhos.locator('[aria-current="true"]')).toContainText("Catálogo");
+
+  // O cartão "Não classificados" é a fila de curadoria de antes.
+  await atalhos.getByRole("link", { name: /^Não classificados/ }).click();
+  await expect(page).toHaveURL(/estado=pendente/);
+  await expect(atalhos.locator('[aria-current="true"]')).toContainText("Não classificados");
+
+  // Um filtro da coluna COMPÕE com o atalho em vez de substituí-lo.
+  const filtros = page.getByRole("complementary", { name: "Filtros do catálogo" });
+  await filtros.getByRole("group", { name: "Tipo" }).getByRole("link", { name: /^Produtos/ }).click();
+  await expect(page).toHaveURL(/estado=pendente/);
+  await expect(page).toHaveURL(/tipo=produto/);
+
+  // O chip tira só o que ele nomeia.
+  await page.getByRole("link", { name: "Tirar filtro Produtos" }).click();
+  await expect(page).toHaveURL(/estado=pendente/);
+  await expect(page).not.toHaveURL(/tipo=/);
 });

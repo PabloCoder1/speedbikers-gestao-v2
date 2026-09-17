@@ -12178,6 +12178,8 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     // travado, o join parte de `organization_members` (ninguem de fora dela
     // aparece) e so tres campos de auth saem -- nada de token nem metadata.
     "get_organization_members",
+    // D-373: has_org_role(ADMIN/GESTOR) na organizacao pedida; so leitura.
+    "get_products_overview",
     "get_sku_curation",
     "get_sku_curation_summary",
     "get_system_health",
@@ -13471,6 +13473,97 @@ describe("excluir fornecedor (D-372)", () => {
 
   it("anon nao executa delete_supplier", async () => {
     await expect(asAnon(`select public.delete_supplier('${semPedido}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+// get_products_overview (20260917190000, D-373) -- /produtos numa leitura, com
+// contagens facetadas. A pagina e o total precisam ser os de get_sku_curation.
+describe("get_products_overview (D-373)", () => {
+  const MARCA = `PRODOVTEST-${String(Date.now())}`;
+
+  beforeAll(async () => {
+    // Quatro SKUs: duas categorias, um kit, um encerrando, um inativo.
+    const skus: readonly (readonly [string, string, string | null, boolean, boolean])[] = [
+      ["A", "PRODUTO", "CATX", true, false],
+      ["B", "KIT", "CATX", true, false],
+      ["C", "PRODUTO", "CATY", true, true],
+      ["D", "PRODUTO", null, false, false],
+    ];
+
+    for (const [chave, kind, categoria, ativo, encerrando] of skus) {
+      await client.query(
+        `insert into public.skus (organization_id, sku, kind, title, brand, is_active, is_discontinued)
+         values ($1,$2,$3,$4,$5,$6,$7)`,
+        [ORG_SB, `${MARCA}-${chave}`, kind, `${MARCA} titulo ${chave}`, categoria, ativo, encerrando],
+      );
+    }
+  });
+
+  interface Visao {
+    total: number;
+    linhas: { sku: string; kind: string; situacao: string }[];
+    facetas: {
+      tipo: { todos: number; produto: number; kit: number };
+      situacao: { ativo: number; encerrando: number; inativo: number };
+      categorias: { valor: string | null; n: number }[];
+    };
+  }
+
+  async function visao(args: string): Promise<Visao | undefined> {
+    const [linha] = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_products_overview('${ORG_SB}', p_search => '${MARCA}'${args}) as v`,
+    );
+
+    return linha?.v;
+  }
+
+  it("a pagina e o total sao os de get_sku_curation, na mesma ordem (D-315)", async () => {
+    const nova = await visao(", p_limit => 100");
+    const antiga = await asUser<{ sku: string; total_count: string }>(
+      ADMIN_SB,
+      `select sku, total_count from public.get_sku_curation('${ORG_SB}', p_search => '${MARCA}', p_limit => 100)`,
+    );
+
+    expect(nova?.total).toBe(4);
+    expect(nova?.linhas.map((l) => l.sku)).toEqual(antiga.map((l) => l.sku));
+    expect(Number(antiga[0]?.total_count)).toBe(4);
+  });
+
+  it("situacao sai de is_active e is_discontinued", async () => {
+    const v = await visao("");
+
+    expect(v?.facetas.situacao).toMatchObject({ ativo: 2, encerrando: 1, inativo: 1 });
+    expect(v?.linhas.find((l) => l.sku === `${MARCA}-D`)?.situacao).toBe("INATIVO");
+  });
+
+  it("a contagem de um eixo ignora o proprio filtro e respeita os outros", async () => {
+    const v = await visao(", p_category => 'CATX', p_kind => 'KIT'");
+
+    expect(v?.total).toBe(1);
+    // Tipo conta DENTRO de CATX, sem o filtro de tipo: 1 produto e 1 kit.
+    expect(v?.facetas.tipo).toMatchObject({ todos: 2, produto: 1, kit: 1 });
+    // Categoria conta com o filtro de tipo e sem o proprio: so CATX tem kit.
+    expect(v?.facetas.categorias).toEqual([{ valor: "CATX", n: 1 }]);
+  });
+
+  it("sem categoria e um recorte, nao um valor", async () => {
+    const v = await visao(", p_missing_category => true");
+
+    expect(v?.linhas.map((l) => l.sku)).toEqual([`${MARCA}-D`]);
+  });
+
+  it("ANALISTA e ADMIN de outra organizacao sao recusados (D-180)", async () => {
+    await expect(asUser(ANALISTA_SB, `select public.get_products_overview('${ORG_SB}')`)).rejects.toThrow(
+      /sem permissao/,
+    );
+    await expect(asUser(DE_OUTRA_ORG, `select public.get_products_overview('${ORG_SB}')`)).rejects.toThrow(
+      /sem permissao/,
+    );
+  });
+
+  it("anon nao executa get_products_overview", async () => {
+    await expect(asAnon(`select public.get_products_overview('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });
 
