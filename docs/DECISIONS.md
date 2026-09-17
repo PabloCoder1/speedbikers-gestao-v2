@@ -12478,21 +12478,23 @@ Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados pr
 2. **O preflight trava antes de fechar** (`evaluateRelistPreflight`):
    - `VARIACOES_SEM_ESTOQUE`: tem variacoes e nenhuma tem estoque;
    - `SEM_ESTOQUE`: sem variacoes e `available_quantity` zero. Antes, o item sem variacao zerado passava e o POST saia com `quantity: 0`. A regra e a mesma nos dois casos: fechar sem ter o que republicar tira o produto do ar;
-   - aviso `VARIACOES_SEM_ESTOQUE_FORA`: parte das variacoes esta zerada e fica fora do anuncio novo;
+   - aviso `VARIACOES_SEM_ESTOQUE_FORA`: parte das variacoes esta zerada e fica fora do anuncio novo. O aviso chega ao DONO antes do ato: a pagina le so `parent_snapshot->variations` da operacao em REQUESTED ou RELIST_FAILED, e as duas confirmacoes listam id, combinacao e SKU das que ficam fora (`summarizeRelistVariations`, o mesmo predicado do aviso e do corpo). Com variacao de fora, a caixa de ciencia da execucao diz que o anuncio novo nasce sem elas, e a retomada passa a exigir ciencia. O worker registra os ids no log (`variations_left_out` em `relist_execute_preflight` e `relist_retry_started`);
    - `SNAPSHOT_INCOMPLETO`: `variations`, o estoque da raiz ou id/preco/estoque de variacao ilegiveis. Sao o corpo do POST, entao seguem o mesmo fail-safe do resto.
    No worker, o corpo e montado ANTES do PUT. Numa retomada de CLOSING/CLOSED sem estoque, nem PUT nem POST: o job falha sem retry e loga `relist_execute_without_stock`.
 3. **A recusa do ML ganha motivo proprio.** Um `MercadoLivreApiError` 4xx, exceto 408 e 429 (`isRelistRejectionStatus`), grava RELIST_FAILED com:
    - `reason` `POST_RECUSADO`;
    - `failure_reason` "o Mercado Livre recusou a republicacao (HTTP n) -- nenhum anuncio novo foi criado. Resposta: ..." com o resumo do corpo do erro (`message`, `error`, `cause[]` como `code: message`), passado por `redactSecretText` e cortado em ~800 caracteres;
    - o log `relist_post_rejected` com `relist_id`, `status` e o mesmo resumo.
-   5xx, 408, 429, rede e resposta invalida continuam `POST_FALHOU`, agora com o log `relist_post_failed`. `EXECUCAO_INTERROMPIDA` e `RESPOSTA_AMBIGUA` nao mudam.
+   5xx, 408, 429, rede e resposta invalida continuam `POST_FALHOU`, agora com o log `relist_post_failed` (o resumo do corpo do erro fica so no log; o `failure_reason` guarda a mensagem do cliente HTTP). `EXECUCAO_INTERROMPIDA` e `RESPOSTA_AMBIGUA` nao mudam.
+
+   **O POST sai com UMA tentativa no cliente HTTP** (`maxAttempts: 1` por chamada, opcao nova de `RequestOptions` em `@sb/mercado-livre`). Sem isso, o cliente repetia 429/5xx ate 4 vezes, e um 5xx com o filho criado seguido de 400 na repeticao ("uma republicacao por pai") chegava ao worker como recusa: `POST_RECUSADO`, "nenhum anuncio novo foi criado" e o botao oferecido com um filho vivo. Agora o 4xx que o worker ve e o do unico POST. O preco: um 429 no POST vira `POST_FALHOU` (exige gente), em vez de ser repetido.
 4. **Retomada HUMANA, so depois de recusa comprovada.** A regra pura e `isRelistRetryEligible` (`relist-retry.ts`). A operacao e elegivel sse esta em RELIST_FAILED e o ULTIMO evento com `to_status` RELIST_FAILED:
-   - tem `POST_RECUSADO`; ou
+   - tem `POST_RECUSADO` E o `failure_reason` da linha comeca com a mensagem de recusa (`relistRejectionFailureReason`) de um status que prova recusa. O evento e gravado numa chamada separada, e perde-lo e so log (`relist_event_not_recorded`): uma retomada com 5xx cujo `POST_FALHOU` nao foi gravado deixaria o `POST_RECUSADO` antigo como ultimo evento. O `failure_reason` sai no mesmo update do status, entao e ele que desempata; ou
    - (legado, para a `a7638dc5`) tem `POST_FALHOU` e o `failure_reason` casa EXATAMENTE a mensagem antiga de um 4xx recusavel para o POST deste mesmo pai.
-   A regra roda nas tres camadas:
-   - **api** `POST /v1/listings/relist/:relistId/retry`: mesmo papel (ADMIN/GESTOR) e mesmo escopo de organizacao e conta da execucao. Da 409 se nao for elegivel. Se for, enfileira `relist.execute` com `{relistId, retomada: true}`, dedupeKey `relist-retry:<id>:<minuto>`, e responde como a execucao;
-   - **worker**: com `retomada`, rele o ultimo evento e reaplica a regra. Depois le o pai ao vivo e exige `closed`, `tags` legiveis sem a tag `relist` (a marca oficial de "ja republicado") e estoque. Qualquer reprovacao termina SEM transicao e SEM POST. Passando, faz RELIST_FAILED -> RELISTING (`RETOMADA_APOS_RECUSA`, `failure_reason` limpo) e emite o POST pela MESMA funcao da execucao normal (`postRelistAndSettle`): recusa, falha, resposta ambigua, RELISTED e remapeamento. CAS perdido na retomada termina sem retry: com retry, a proxima entrega acharia RELISTING e marcaria como interrompido um POST em curso. RELIST_FAILED sem `retomada` continua noop, e `retomada` para outro estado tambem;
-   - **web**: a pagina le o ultimo evento RELIST_FAILED so nesse estado. Elegivel mostra a explicacao e "Tentar republicar de novo", com confirmacao, no mesmo acompanhamento da execucao. Nao elegivel diz que alguem precisa conferir no ML.
+   A leitura do ultimo evento e UMA so (`readLastRelistFailureReason`, `packages/db/src/listing-relists.ts`), usada pelas tres camadas: filtro por `relist_id` (o `AdminClient` ignora a RLS), por `to_status` RELIST_FAILED e ordem descendente de `occurred_at`. A regra roda nas tres camadas:
+   - **api** `POST /v1/listings/relist/:relistId/retry`: mesmo papel (ADMIN/GESTOR) e mesmo escopo de organizacao e conta da execucao. Da 409 se nao for elegivel. Se for, enfileira `relist.execute` com `{relistId, retomada: true, autorizadoPor}` (o `userId` de quem pediu), dedupeKey `relist-retry:<id>:<minuto>`, e responde como a execucao;
+   - **worker**: com `retomada`, rele o ultimo evento e reaplica a regra. Depois le o pai ao vivo e exige `closed`, `tags` legiveis sem a tag `relist` (a marca oficial de "ja republicado") e estoque. Qualquer reprovacao termina SEM transicao e SEM POST. Passando, faz RELIST_FAILED -> RELISTING (`RETOMADA_APOS_RECUSA`, `failure_reason` limpo) e emite o POST pela MESMA funcao da execucao normal (`postRelistAndSettle`): recusa, falha, resposta ambigua, RELISTED e remapeamento. O CAS dessa transicao confere `status` E o `updated_at` lido junto com a operacao: e a unica aresta que volta na maquina, e duas retomadas concorrentes (cliques em minutos diferentes, entrega duplicada; a fila aceita 10 despachos) fariam um ABA -- A sai de RELIST_FAILED, leva 5xx ou resposta ambigua e volta; B, que leu antes, casaria o status e emitiria o 2o POST. Com a versao, B perde o CAS. CAS perdido na retomada termina sem retry: com retry, a proxima entrega acharia RELISTING e marcaria como interrompido um POST em curso. O evento da retomada grava `actor_user_id` = `autorizadoPor` (ato humano, contrato da tabela); retomada sem `autorizadoPor` e payload invalido. RELIST_FAILED sem `retomada` continua noop, e `retomada` para outro estado tambem;
+   - **web**: a pagina le o ultimo evento RELIST_FAILED so nesse estado. Elegivel mostra a explicacao e "Tentar republicar de novo", com confirmacao, no mesmo acompanhamento da execucao. Nao elegivel diz que alguem precisa conferir no ML. Se o worker terminar sem mudar a operacao (pai nao fechado, tag `relist`, sem estoque, CAS perdido ou fila atrasada), a tela para de esperar depois das 10 releituras e diz o que conferir, em vez de ficar em "enfileirado" para sempre.
 
 **Nenhuma migration:** `reason` e `failure_reason` sao `text` livres (`20260831123707_create_listing_relists.sql`), e a maquina de D-159 ja permitia RELIST_FAILED -> RELISTING.
 
@@ -12509,14 +12511,18 @@ Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados pr
 
 **CONSEQUENCIAS**
 
-- anuncio com variacoes republica pelo contrato oficial; variacao sem estoque fica fora, com aviso;
+- anuncio com variacoes republica pelo contrato oficial; variacao sem estoque fica fora, listada na confirmacao da tela antes do ato e no log do worker;
 - anuncio sem estoque nenhum e barrado ANTES de fechar;
 - a recusa do ML deixa o motivo escrito na operacao e no log;
 - a `a7638dc5` fica elegivel. Depois do deploy, o dono republica o MLB1476804187 pelo botao, e o worker confere de novo o pai fechado e o estoque;
 - `Pedir republicacao` deixa de aparecer em RELIST_FAILED: o indice `listing_relists_one_live_per_parent` inclui o estado, e o pedido morria em silencio no 23505 do `relist.prepare`;
 - **publicacao:** worker antes da api, e a web por ultimo. Uma api nova com o worker velho enfileira `retomada`, que o schema antigo descarta, e cai no noop de RELIST_FAILED: nada acontece, mas o botao nao funciona.
 
-**O que continua aberto (fora desta decisao):** o `http-client` de `@sb/mercado-livre` repete 429 e 5xx para QUALQUER metodo, inclusive o `POST /relist` (ate 4 tentativas). Um 5xx seguido de sucesso pode, em tese, ter criado dois filhos antes de o worker ver qualquer erro. A regra 4 de D-162 vale para o que chega ao worker, nao para o que o cliente faz antes. O caso inverso tambem existe: se so a REPETICAO foi recusada ("uma republicacao por pai"), a operacao diz `POST_RECUSADO` com um filho vivo. A retomada se protege lendo a tag `relist` no pai; a execucao normal, nao. O conserto e o cliente nao repetir POST nao idempotente, e fica para decisao propria.
+**O que continua aberto (fora desta decisao):**
+
+- o CAS por `updated_at` depende de o valor lido pelo PostgREST voltar igual no filtro (`timestamptz` com microssegundos); nao ha precedente no repo nem teste contra banco real. Se nao casar, a retomada termina em `relist_retry_superseded` sem POST -- o lado seguro, mas o botao nao funciona;
+- a lista de variacoes da confirmacao e a do retrato do pedido. Uma variacao que zera entre o pedido e a execucao ainda sai do corpo so com o log;
+- o outro POST nao idempotente do worker, a resposta de pergunta (`postQuestionAnswer`, `POST /answers`), continua com o teto padrao de tentativas do cliente.
 
 ---
 
@@ -12527,7 +12533,15 @@ Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados pr
   - worker 17: corpo de variacoes no POST, 400 -> `POST_RECUSADO` com resumo e log, 500/408/429 -> `POST_FALHOU`, retomada elegivel e legado ate RELISTED e remap, nao elegivel, pai nao `closed`, pai com a tag `relist`, sem estoque, CAS perdido, noop sem retomada, REQUESTED zerado -> PREFLIGHT_FAILED antes do PUT;
   - api 11: funcao e rota, com 503, 401, 403, 404 de outra organizacao, 409 nao elegivel, enfileiramento e status diferente;
   - web 5: `republicacao.ts`, os atos oferecidos por estado.
+- revisao adversarial (achados R1-R5, C1-C3), testes a mais:
+  - dominio 4: `POST_RECUSADO` com a linha dizendo 5xx/interrupcao/ambigua nao e elegivel; a mensagem gravada e a aceita; `summarizeRelistVariations` com combinacao e SKU, e os casos vazios;
+  - `@sb/mercado-livre` 2: `maxAttempts: 1` na chamada nao repete 503 nem 429; sem ele vale o teto do cliente;
+  - `@sb/db` 4: a consulta com um PostgREST falso que aplica filtros e ordem -- recusa seguida de 5xx, evento de outra operacao, transicao para outro estado, vazio e erro;
+  - worker 5: duas retomadas concorrentes com banco com estado (A leva 500 ou resposta ambigua; B perde o CAS; 1 POST so), cliente REAL com 503 -> 400 nos dois caminhos (1 POST, `POST_FALHOU`, nao elegivel), historico recusa -> 5xx sem POST, a ultima entrada desta operacao decide, retomada sem `autorizadoPor`;
+  - api 3: historico recusa -> 5xx da 409; a ultima entrada desta operacao decide; GESTOR sem permissao na conta da 404 pela rota;
+  - web 3: a lista e a ciencia das variacoes de fora, e a espera que desiste.
 - bateria sem banco: `turbo build` dos pacotes; `typecheck lint test` com `--force` em domain (441), worker (578), api (387) e web (644); `turbo run build --force`; os quatro guardas da web; `docs-check`. Tudo verde.
+- bateria depois da revisao, igual e com os dois pacotes tocados: `typecheck lint test` com `--force` em domain (445), `@sb/db` (25), `@sb/mercado-livre` (130), worker (583), api (390) e web (647); `turbo run build --force` (inclusive `next build`); os quatro guardas da web; `docs-check`. Tudo verde.
 - mutacao: 9 guardas, 9 reprovando teste nomeado, cada arquivo restaurado e conferido por sha256 (o dominio reconstruido para o worker ver a mutacao):
   - corpo com price/quantity na raiz;
   - variacao zerada no corpo;
@@ -12538,6 +12552,7 @@ Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados pr
   - preflight sem `VARIACOES_SEM_ESTOQUE`;
   - recusa 4xx tratada como `POST_FALHOU`;
   - retomada ignorando a tag `relist` no pai.
-- nao verificado: a chamada real ao ML (nenhuma), o banco (nenhum teste de integracao roda aqui) e a tela no navegador (a pagina exige sessao e banco).
+- mutacao da revisao: 15 guardas, 15 reprovando teste nomeado, arquivos restaurados e conferidos por sha256 (pacotes reconstruidos quando a mutacao era neles): CAS sem `updated_at`; POST sem `maxAttempts: 1`; cliente ignorando o teto da chamada; consulta com ordem ascendente, sem `relist_id` e sem `to_status` (cada uma reprova em db, worker e api); `POST_RECUSADO` sem conferir o `failure_reason`; recusa de qualquer status; evento sem ator; worker sem exigir `autorizadoPor`; api sem `autorizadoPor`; resumo perdendo variacao; SKU ignorado; ciencia da retomada ignorando variacoes; espera sem fim.
+- nao verificado: a chamada real ao ML (nenhuma), o banco (nenhum teste de integracao roda aqui, inclusive o CAS por `updated_at` e o `parent_snapshot->variations` pelo PostgREST) e a tela no navegador (a pagina exige sessao e banco).
 
-**Impacto:** `packages/domain/src/listings/{relist-body,relist-retry,relist-preflight,index}.ts` e testes; `apps/worker/src/handlers/relist-execute.ts` e testes (e a fixture de `relist-prepare.test.ts`); `apps/api/src/{relist,app}.ts` e testes; `apps/web/app/anuncios/[itemId]/{page.tsx,relist-panel.tsx,republicacao.ts}` e teste; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
+**Impacto:** `packages/domain/src/listings/{relist-body,relist-retry,relist-preflight,index}.ts` e testes; `packages/db/src/{listing-relists,index}.ts` e teste; `packages/mercado-livre/src/http-client.ts` e teste; `apps/worker/src/handlers/relist-execute.ts` e testes (e a fixture de `relist-prepare.test.ts`); `apps/api/src/{relist,app}.ts` e testes; `apps/web/app/anuncios/[itemId]/{page.tsx,relist-panel.tsx,republicacao.ts}` e teste; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
