@@ -31,11 +31,17 @@
  * - `VARIACOES_USER_PRODUCT` — D-369: o Mercado Livre RECUSA relist de item
  *   com variações de vendedor no modelo de user products. CONFIRMADO pela
  *   resposta real de 17/09/2026 13:36 UTC ao MLB1476804187 (operação
- *   a7638dc5), causa `item.variations.relist.invalid`; a doc oficial não diz
- *   isso. O sinal é ter variações e alguma delas com `user_product_id`
- *   (`hasUserProductVariations`). Item SEM variação com `user_product_id` na
- *   raiz continua permitido: republicou, e o filho manteve o mesmo user
- *   product.
+ *   a7638dc5), causa `item.variations.relist.invalid`. A doc oficial de User
+ *   Products identifica esse vendedor pela tag `user_product_seller` em
+ *   `/users` e diz que, depois da ativação, o array `variations` não pode mais
+ *   ser enviado. A regra é pela CONTA: item com variações bloqueia quando a
+ *   conta tem a tag (lida ao vivo pelo worker) OU quando alguma variação traz
+ *   `user_product_id` (`hasUserProductVariations`). Item SEM variação com
+ *   `user_product_id` na raiz continua permitido: republicou, e o filho
+ *   manteve o mesmo user product.
+ * - `USER_PRODUCT_NAO_VERIFICADO` — **fail-safe** de D-369: o item tem
+ *   variações, nenhuma traz `user_product_id`, e a tag da conta não foi lida.
+ *   Sem confirmar o modelo da conta, não se presume que o relist passa.
  * - `SNAPSHOT_ILEGIVEL` / `SNAPSHOT_INCOMPLETO` — **fail-safe**: o snapshot
  *   é jsonb sem contrato de banco; se a forma não permite VERIFICAR uma
  *   pré-condição, o preflight reprova em vez de presumir que está tudo bem.
@@ -83,6 +89,13 @@ export interface RelistFullStockReading {
 
 /** Leituras por `inventory_id`; `null` (ou ausente) = não foi possível ler. */
 export type RelistFullStockReadings = ReadonlyMap<string, RelistFullStockReading | null>;
+
+/**
+ * O modelo da CONTA, lido ao vivo pelo worker (D-369): `true` quando
+ * `GET /users/me` traz a tag `user_product_seller`, `false` quando a traz sem
+ * ela, `null` quando a leitura falhou. Só é lido para item COM variações.
+ */
+export type RelistSellerUserProducts = boolean | null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -210,12 +223,28 @@ export const RELIST_USER_PRODUCT_VARIATIONS_BLOCK = "VARIACOES_USER_PRODUCT";
 export const RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO =
   "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.";
 
+/** O código do fail-safe de D-369: variações, e o modelo da conta não foi lido. */
+export const RELIST_SELLER_MODEL_UNVERIFIED_BLOCK = "USER_PRODUCT_NAO_VERIFICADO";
+
+/**
+ * A descrição do fail-safe de D-369. Não contém a descrição do bloqueio
+ * definitivo: a tela distingue os dois pelo texto gravado.
+ */
+export const RELIST_SELLER_MODEL_UNVERIFIED_DESCRICAO =
+  "O anúncio tem variações e não foi possível confirmar agora se a conta está no modelo de user products, em que o Mercado Livre não aceita republicar variações — sem confirmar, a republicação não fecha o anúncio.";
+
+/** `true` sse o item traz `variations` com pelo menos uma entrada — só então o modelo da conta importa (D-369). */
+export function hasRelistVariations(rawItem: unknown): boolean {
+  return isRecord(rawItem) && Array.isArray(rawItem.variations) && rawItem.variations.length > 0;
+}
+
 /**
  * `true` sse o item tem variações e pelo menos uma traz `user_product_id`
- * preenchido (D-369) — o caso que o Mercado Livre recusa no relist. Recebe o
- * item cru (o `parent_snapshot` ou o pai ao vivo; os dois trazem o campo por
- * variação, sem `include_attributes`). Valor que não é texto vazio nem nulo
- * conta como preenchido: na dúvida, o anúncio não é fechado.
+ * preenchido (D-369) — sinal do modelo de user products que dispensa ler a
+ * conta. Recebe o item cru (o `parent_snapshot` ou o pai ao vivo; os dois
+ * trazem o campo por variação, sem `include_attributes`). Valor que não é
+ * texto vazio nem nulo conta como preenchido: na dúvida, o anúncio não é
+ * fechado.
  */
 export function hasUserProductVariations(rawItem: unknown): boolean {
   if (!isRecord(rawItem) || !Array.isArray(rawItem.variations)) {
@@ -233,6 +262,36 @@ export function hasUserProductVariations(rawItem: unknown): boolean {
 
     return typeof userProductId === "string" ? userProductId.trim() !== "" : userProductId !== null && userProductId !== undefined;
   });
+}
+
+/**
+ * A regra de D-369, fail-closed pela CONTA — a mesma no pedido, antes do PUT
+ * (em REQUESTED e na retomada de CLOSING) e na retomada humana:
+ *
+ * - item SEM variações: nada a bloquear (e o worker nem lê a conta);
+ * - com variações, a conta com a tag `user_product_seller` OU alguma variação
+ *   com `user_product_id`: `VARIACOES_USER_PRODUCT`;
+ * - com variações, nenhuma com `user_product_id`, e a conta sem leitura
+ *   (`null`): `USER_PRODUCT_NAO_VERIFICADO`;
+ * - com variações e a conta confirmada sem a tag (`false`): nada a bloquear.
+ */
+export function relistUserProductVariationsBlock(
+  rawItem: unknown,
+  sellerUserProducts: RelistSellerUserProducts,
+): RelistPreflightIssue | null {
+  if (!hasRelistVariations(rawItem)) {
+    return null;
+  }
+
+  if (sellerUserProducts === true || hasUserProductVariations(rawItem)) {
+    return { code: RELIST_USER_PRODUCT_VARIATIONS_BLOCK, descricao: RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO };
+  }
+
+  if (sellerUserProducts === null) {
+    return { code: RELIST_SELLER_MODEL_UNVERIFIED_BLOCK, descricao: RELIST_SELLER_MODEL_UNVERIFIED_DESCRICAO };
+  }
+
+  return null;
 }
 
 function isValidReading(reading: RelistFullStockReading | null | undefined): reading is RelistFullStockReading {
@@ -278,11 +337,14 @@ export function collectRelistInventoryIds(rawItem: unknown): string[] {
 /**
  * Avalia o snapshot CRU do pai (o `parent_snapshot` capturado na criação da
  * operação, D-159) — o payload de `GET /items/{id}` sem projeção — junto com
- * as leituras do Full de cada `inventory_id` dele (D-360).
+ * as leituras do Full de cada `inventory_id` dele (D-360) e o modelo da conta
+ * (D-369). Sem a leitura da conta, item com variações reprova: o padrão é
+ * `null`, não lido.
  */
 export function evaluateRelistPreflight(
   rawParentSnapshot: unknown,
   fullStock: RelistFullStockReadings = new Map(),
+  sellerUserProducts: RelistSellerUserProducts = null,
 ): RelistPreflightResult {
   const blocks: RelistPreflightIssue[] = [];
   const warnings: RelistPreflightIssue[] = [];
@@ -440,10 +502,13 @@ export function evaluateRelistPreflight(
 
   // User products com variações (D-369). O ML recusou o relist do
   // MLB1476804187 com `item.variations.relist.invalid` — e fechar o pai antes
-  // de descobrir isso foi o que o deixou fora do ar. Independe da
-  // legibilidade das outras regras de variação: o bloqueio aparece junto.
-  if (hasUserProductVariations(item)) {
-    blocks.push({ code: RELIST_USER_PRODUCT_VARIATIONS_BLOCK, descricao: RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO });
+  // de descobrir isso foi o que o deixou fora do ar. A regra é pela conta, e
+  // falha fechada. Independe da legibilidade das outras regras de variação:
+  // o bloqueio aparece junto.
+  const userProductBlock = relistUserProductVariationsBlock(item, sellerUserProducts);
+
+  if (userProductBlock !== null) {
+    blocks.push(userProductBlock);
   }
 
   // Herança de visitas/vendas: não ocorre em `free`. Aviso, nunca bloqueio.

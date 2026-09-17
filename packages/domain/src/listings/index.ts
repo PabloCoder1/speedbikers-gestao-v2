@@ -8,11 +8,15 @@ export {
 export type { RelistState } from "./relist.js";
 
 export {
+  RELIST_SELLER_MODEL_UNVERIFIED_BLOCK,
+  RELIST_SELLER_MODEL_UNVERIFIED_DESCRICAO,
   RELIST_USER_PRODUCT_VARIATIONS_BLOCK,
   RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO,
   collectRelistInventoryIds,
   evaluateRelistPreflight,
+  hasRelistVariations,
   hasUserProductVariations,
+  relistUserProductVariationsBlock,
   summarizeRelistVariations,
 } from "./relist-preflight.js";
 export type {
@@ -21,6 +25,7 @@ export type {
   RelistLeftOutVariation,
   RelistPreflightIssue,
   RelistPreflightResult,
+  RelistSellerUserProducts,
   RelistVariationsSummary,
 } from "./relist-preflight.js";
 

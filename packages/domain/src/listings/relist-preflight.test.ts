@@ -4,7 +4,9 @@ import type { RelistFullStockReading } from "./relist-preflight.js";
 import {
   collectRelistInventoryIds,
   evaluateRelistPreflight,
+  hasRelistVariations,
   hasUserProductVariations,
+  relistUserProductVariationsBlock,
   summarizeRelistVariations,
 } from "./relist-preflight.js";
 
@@ -26,6 +28,9 @@ function full(entries: Record<string, RelistFullStockReading | null>): Map<strin
 }
 
 const ZERADO: RelistFullStockReading = { availableQuantity: 0, notAvailableQuantity: 0 };
+
+/** A conta lida SEM a tag `user_product_seller` (D-369): os testes de variação que não são sobre ela partem daqui. */
+const CONTA_SEM_UP = false;
 
 /** Variação legível como o GET /items devolve: id, preço e estoque (D-364). */
 function variacao(id: number, estoque: number, inventoryId?: string): Record<string, unknown> {
@@ -76,6 +81,7 @@ describe("evaluateRelistPreflight (D-160)", () => {
         ],
       },
       full({ LCQI99999: { availableQuantity: 1, notAvailableQuantity: 0 } }),
+      CONTA_SEM_UP,
     );
 
     expect(result.approved).toBe(false);
@@ -174,6 +180,7 @@ describe("Full sem estoque (D-360)", () => {
     const result = evaluateRelistPreflight(
       { ...healthyItem(), variations: [variacao(1, 2, "INV-A"), variacao(2, 2, "INV-B")] },
       full({ "INV-A": ZERADO }),
+      CONTA_SEM_UP,
     );
 
     expect(result.blocks.map((issue) => issue.code)).toEqual(["FULL_NAO_VERIFICADO"]);
@@ -208,6 +215,7 @@ describe("Full sem estoque (D-360)", () => {
     const result = evaluateRelistPreflight(
       { ...healthyItem(), inventory_id: "INV-RAIZ", variations: [variacao(1, 2, "INV-VAR")] },
       full({ "INV-RAIZ": ZERADO, "INV-VAR": { availableQuantity: 1, notAvailableQuantity: 1 } }),
+      CONTA_SEM_UP,
     );
 
     expect(result.blocks.map((issue) => issue.code)).toEqual(["FULL_BLOQUEADO"]);
@@ -216,19 +224,23 @@ describe("Full sem estoque (D-360)", () => {
 });
 
 describe("estoque que a republicação leva (D-364)", () => {
-  it("dez variações com estoque e SEM user_product_id aprovam, sem aviso", () => {
-    const result = evaluateRelistPreflight({
-      ...healthyItem(),
-      available_quantity: 17_135,
-      shipping: { logistic_type: "cross_docking" },
-      variations: Array.from({ length: 10 }, (_, indice) => variacao(180_214_523_000 + indice, 1_700 + indice)),
-    });
+  it("dez variações com estoque, SEM user_product_id e conta sem a tag aprovam, sem aviso", () => {
+    const result = evaluateRelistPreflight(
+      {
+        ...healthyItem(),
+        available_quantity: 17_135,
+        shipping: { logistic_type: "cross_docking" },
+        variations: Array.from({ length: 10 }, (_, indice) => variacao(180_214_523_000 + indice, 1_700 + indice)),
+      },
+      new Map(),
+      CONTA_SEM_UP,
+    );
 
     expect(result).toEqual({ approved: true, blocks: [], warnings: [] });
   });
 
   it("variações TODAS sem estoque bloqueiam com VARIACOES_SEM_ESTOQUE — o POST não teria corpo, e o pai seria fechado à toa", () => {
-    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 0)] });
+    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 0)] }, new Map(), CONTA_SEM_UP);
 
     expect(result.approved).toBe(false);
     expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_SEM_ESTOQUE"]);
@@ -236,7 +248,11 @@ describe("estoque que a republicação leva (D-364)", () => {
   });
 
   it("parte das variações sem estoque: aprovado, com o aviso VARIACOES_SEM_ESTOQUE_FORA nomeando as que ficam de fora", () => {
-    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 4), variacao(3, 0)] });
+    const result = evaluateRelistPreflight(
+      { ...healthyItem(), variations: [variacao(1, 0), variacao(2, 4), variacao(3, 0)] },
+      new Map(),
+      CONTA_SEM_UP,
+    );
 
     expect(result.approved).toBe(true);
     expect(result.warnings.map((issue) => issue.code)).toEqual(["VARIACOES_SEM_ESTOQUE_FORA"]);
@@ -260,7 +276,7 @@ describe("estoque que a republicação leva (D-364)", () => {
       { ...healthyItem(), variations: [{ id: 2 ** 60, price: 10, available_quantity: 3 }] },
       { ...healthyItem(), variations: [{ id: 1, price: 10, available_quantity: -1 }] },
     ]) {
-      const result = evaluateRelistPreflight(snapshot);
+      const result = evaluateRelistPreflight(snapshot, new Map(), CONTA_SEM_UP);
 
       expect(result.approved).toBe(false);
       expect(result.blocks.map((issue) => issue.code)).toEqual(["SNAPSHOT_INCOMPLETO"]);
@@ -305,13 +321,82 @@ describe("variações em conta de user products (D-369)", () => {
     }
   });
 
-  it("variações SEM user_product_id (ausente, nulo ou vazio) continuam permitidas", () => {
-    const result = evaluateRelistPreflight({
-      ...healthyItem(),
-      variations: [variacao(1, 3), variacaoUp(2, 4, null), variacaoUp(3, 5, ""), variacaoUp(4, 6, "  ")],
-    });
+  it("variações SEM user_product_id (ausente, nulo ou vazio) só passam com a conta LIDA sem a tag", () => {
+    const result = evaluateRelistPreflight(
+      {
+        ...healthyItem(),
+        variations: [variacao(1, 3), variacaoUp(2, 4, null), variacaoUp(3, 5, ""), variacaoUp(4, 6, "  ")],
+      },
+      new Map(),
+      CONTA_SEM_UP,
+    );
 
     expect(result).toEqual({ approved: true, blocks: [], warnings: [] });
+  });
+
+  it("A3: conta com a tag user_product_seller bloqueia variações SEM user_product_id — a regra é pela conta", () => {
+    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 3), variacao(2, 4)] }, new Map(), true);
+
+    expect(result.approved).toBe(false);
+    expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    expect(result.blocks[0]?.descricao).toBe(
+      "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.",
+    );
+  });
+
+  it("A3: leitura da conta que falhou (ou ausente) bloqueia variações com USER_PRODUCT_NAO_VERIFICADO — nunca presume que passa", () => {
+    for (const result of [
+      evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 3)] }, new Map(), null),
+      evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 3)] }),
+    ]) {
+      expect(result.approved).toBe(false);
+      expect(result.blocks).toEqual([
+        {
+          code: "USER_PRODUCT_NAO_VERIFICADO",
+          descricao:
+            "O anúncio tem variações e não foi possível confirmar agora se a conta está no modelo de user products, em que o Mercado Livre não aceita republicar variações — sem confirmar, a republicação não fecha o anúncio.",
+        },
+      ]);
+      // A tela reconhece o bloqueio definitivo pelo texto: o fail-safe não pode contê-lo.
+      expect(result.blocks[0]?.descricao).not.toContain(
+        "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products",
+      );
+    }
+  });
+
+  it("A3: user_product_id numa variação decide mesmo com a conta lida sem a tag ou sem leitura", () => {
+    for (const conta of [false, null]) {
+      const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacaoUp(1, 3, "MLBU1")] }, new Map(), conta);
+
+      expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    }
+  });
+
+  it("A3: SEM variações, a conta não importa — com a tag, sem leitura ou sem ela, o item passa", () => {
+    for (const conta of [true, null, false]) {
+      expect(evaluateRelistPreflight({ ...healthyItem(), user_product_id: "MLBU3858499373" }, new Map(), conta)).toEqual({
+        approved: true,
+        blocks: [],
+        warnings: [],
+      });
+    }
+  });
+
+  it("relistUserProductVariationsBlock e hasRelistVariations: a mesma regra fora do preflight (CLOSING e retomada)", () => {
+    expect(hasRelistVariations({ variations: [{}] })).toBe(true);
+
+    for (const semVariacoes of [{ variations: [] }, {}, { variations: "x" }, null, "texto", ["array"]]) {
+      expect(hasRelistVariations(semVariacoes)).toBe(false);
+      expect(relistUserProductVariationsBlock(semVariacoes, true)).toBeNull();
+      expect(relistUserProductVariationsBlock(semVariacoes, null)).toBeNull();
+    }
+
+    expect(relistUserProductVariationsBlock({ variations: [{ id: 1 }] }, true)?.code).toBe("VARIACOES_USER_PRODUCT");
+    expect(relistUserProductVariationsBlock({ variations: [{ id: 1, user_product_id: "MLBU1" }] }, false)?.code).toBe(
+      "VARIACOES_USER_PRODUCT",
+    );
+    expect(relistUserProductVariationsBlock({ variations: [{ id: 1 }] }, null)?.code).toBe("USER_PRODUCT_NAO_VERIFICADO");
+    expect(relistUserProductVariationsBlock({ variations: [{ id: 1 }] }, false)).toBeNull();
   });
 
   it("SEM variações e com user_product_id na raiz continua permitido — o filho mantém o mesmo user product", () => {
