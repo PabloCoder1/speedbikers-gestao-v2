@@ -279,6 +279,14 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
+**`/curva-abc` reorganizada em 17/09:** os filtros agora ficam compactos no
+cabeçalho e a configuração ativa aparece em um painel único; os cartões A/B/C
+expõem limites e participação visual; Full, risco e tabela ganharam hierarquia,
+links para SKU e estados mais legíveis. A página passou de 200 para 100 linhas
+por página para reduzir HTML e trabalho de SSR, sem alterar os totais e classes
+calculados no SQL sobre todo o recorte. O fluxo autenticado foi conferido com a
+seed local, inclusive a troca do critério para unidades.
+
 **D-351 publicada em 17/09** (§13): falta a prova de 24 h e a decisão do dono sobre
 `v3-reconcile-balances` (3 SKUs com alvo negativo sem causa conhecida). Depois, na
 ordem do dono: D-352 (Full não baixa a loja) → D-362 (SKU por user product) →
