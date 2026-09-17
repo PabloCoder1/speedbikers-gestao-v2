@@ -13,7 +13,7 @@ import { Canais } from "../../fornecedores/canais";
 import { LogoFornecedor } from "../../fornecedores/logo";
 import { createPurchaseOrder, updatePurchaseOrderDraft } from "../actions";
 
-import { ItemRow, type DraftItem, type UltimaCompra } from "./item-row";
+import { ItemRow, type DraftItem, type SugestaoDaLinha, type UltimaCompra } from "./item-row";
 import { detectOriginMix } from "./prefill";
 import {
   custoInformado,
@@ -25,6 +25,8 @@ import {
   resumirRascunho,
   somarDias,
 } from "./rascunho";
+import { lerSugestoes, marcaDoFornecedor, type SugestaoItem } from "./sugestoes";
+import { TrazerReposicao } from "./trazer-reposicao";
 
 /**
  * O formulário do pedido de compra — criação e edição do rascunho.
@@ -40,6 +42,11 @@ import {
  * - **previsão com atalhos** (+7, +15, +30, +45 dias) e o prazo por extenso;
  * - **itens**: subtotal por linha, último custo pago ao fornecedor, aviso de
  *   SKU repetido, Enter para a próxima linha e "Colar lista" de planilha.
+ *
+ * D-371: a coluna SUGESTÃO por item (a quantidade que a Cobertura e reposição
+ * manda comprar, lida em lote para todos os SKUs do pedido) e "Trazer da
+ * reposição" — os itens a comprar de uma marca, pré-selecionada pelo nome do
+ * fornecedor.
  *
  * O que NÃO mudou, porque outras telas dependem: `?fornecedor=` e `?sku=`
  * (D-151/D-365) chegam por `initial`; `expectedAt` continua data de negócio
@@ -97,6 +104,7 @@ export function PurchaseOrderForm({
   initial,
   organizationId,
   destinosRecentes = [],
+  marcas = [],
 }: {
   suppliers: FornecedorOpcao[];
   /** Presente = editando um rascunho existente; ausente = criando um pedido novo. */
@@ -106,6 +114,8 @@ export function PurchaseOrderForm({
   organizationId?: string;
   /** Destinos usados nos pedidos recentes, como sugestão do campo. */
   destinosRecentes?: readonly string[];
+  /** Marcas do catálogo, para "Trazer da reposição" (D-371). Vazio esconde o recurso. */
+  marcas?: readonly string[];
 }): ReactNode {
   const router = useRouter();
   const isEditing = orderId !== undefined;
@@ -127,6 +137,12 @@ export function PurchaseOrderForm({
   const [ultimasCompras, setUltimasCompras] = useState<Map<string, UltimaCompra>>(new Map());
   // `hoje` só no cliente: no servidor a data sairia do fuso da máquina de build.
   const [hoje, setHoje] = useState<string | null>(null);
+  // A sugestão da reposição por SKU (D-371), lida em lote e guardada por id.
+  const [sugestoes, setSugestoes] = useState<ReadonlyMap<string, SugestaoItem>>(new Map());
+  const [sugestaoIndisponivel, setSugestaoIndisponivel] = useState(false);
+  const [trazendo, setTrazendo] = useState(false);
+  const [avisoTrazer, setAvisoTrazer] = useState<string | null>(null);
+  const pedindoSugestao = useRef<Set<string>>(new Set());
   const focarLinha = useRef<string | null>(null);
   const tabelaRef = useRef<HTMLTableSectionElement | null>(null);
 
@@ -135,6 +151,12 @@ export function PurchaseOrderForm({
   }, []);
 
   const fornecedor = suppliers.find((s) => s.id === supplierId) ?? null;
+  const marcaSugerida = marcaDoFornecedor(fornecedor?.name ?? null, marcas);
+  const podeTrazer = organizationId !== undefined && marcas.length > 0;
+  const skusNoPedido = useMemo(
+    () => new Set(items.flatMap((i) => (i.skuId === null ? [] : [i.skuId]))),
+    [items],
+  );
   const resumo = useMemo(() => resumirRascunho(items), [items]);
   const mix = detectOriginMix(items.filter((i) => i.skuSnapshot.trim() !== ""));
 
@@ -180,6 +202,93 @@ export function PurchaseOrderForm({
       estado.vigente = false;
     };
   }, [supplierId, organizationId]);
+
+  // A SUGESTÃO dos SKUs do pedido: uma leitura para todos os que ainda não
+  // têm, com uma espera curta — escolher três SKUs seguidos vira UMA chamada.
+  useEffect(() => {
+    if (organizationId === undefined) return;
+
+    const faltando = [...skusNoPedido].filter((id) => !sugestoes.has(id) && !pedindoSugestao.current.has(id));
+
+    if (faltando.length === 0) return;
+
+    const espera = setTimeout(() => {
+      for (const id of faltando) pedindoSugestao.current.add(id);
+
+      void (async () => {
+        const { data, error: erro } = await createClient().rpc("get_purchase_order_suggestions", {
+          p_organization_id: organizationId,
+          p_sku_ids: faltando,
+        });
+
+        for (const id of faltando) pedindoSugestao.current.delete(id);
+
+        const lidas = erro === null ? lerSugestoes(data) : null;
+
+        if (lidas === null) {
+          // Sem a função no banco (Preview antes da migration) ou falha: a coluna
+          // diz "indisponível", e o pedido segue normal.
+          setSugestaoIndisponivel(true);
+
+          return;
+        }
+
+        setSugestaoIndisponivel(false);
+        setSugestoes((atual) => {
+          const proximo = new Map(atual);
+
+          for (const linha of lidas.linhas) proximo.set(linha.skuId, linha);
+
+          return proximo;
+        });
+      })();
+    }, 300);
+
+    return () => {
+      clearTimeout(espera);
+    };
+  }, [skusNoPedido, sugestoes, organizationId]);
+
+  function sugestaoDaLinha(item: DraftItem): SugestaoDaLinha {
+    if (item.skuId === null) return null;
+
+    const lida = sugestoes.get(item.skuId);
+
+    if (lida !== undefined) return lida;
+
+    return sugestaoIndisponivel ? "indisponivel" : "carregando";
+  }
+
+  function adicionarDaReposicao(linhas: readonly SugestaoItem[], marca: string): void {
+    const novos: DraftItem[] = linhas.map((l) => ({
+      ...emptyItem(),
+      skuId: l.skuId,
+      skuSnapshot: l.sku,
+      titleSnapshot: l.title,
+      isImported: l.isImported,
+      supplierBrand: l.supplierBrand,
+      quantityOrdered: l.suggestedQuantity === null ? "" : String(l.suggestedQuantity),
+      unitCost: l.purchaseCost === null ? "" : String(l.purchaseCost),
+      unitCostSuggested: l.purchaseCost !== null,
+    }));
+
+    setSugestoes((atual) => {
+      const proximo = new Map(atual);
+
+      for (const linha of linhas) proximo.set(linha.skuId, linha);
+
+      return proximo;
+    });
+    // A linha vazia do começo dá lugar aos itens trazidos.
+    setItems((current) => [
+      ...current.filter((i) => i.skuSnapshot.trim() !== "" || i.quantityOrdered.trim() !== "" || i.unitCost.trim() !== ""),
+      ...novos,
+    ]);
+    setAvisoTrazer(
+      `${formatCount(novos.length)} item(ns) de ${marca} trazidos da reposição, com a quantidade sugerida e o custo cadastrado — revise à vontade.`,
+    );
+    setTrazendo(false);
+  }
 
   // Depois de "Enter" ou "Adicionar item", o foco vai para o SKU da linha nova.
   useEffect(() => {
@@ -454,6 +563,19 @@ export function PurchaseOrderForm({
                       Ver fornecedor ↗
                     </Link>
                   </div>
+                  {podeTrazer && marcaSugerida !== null && !trazendo && (
+                    <button
+                      type="button"
+                      className="sb-text-button sb-pco-ficha-trazer"
+                      onClick={() => {
+                        setTrazendo(true);
+                        setColando(false);
+                        document.getElementById("pco-itens")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                    >
+                      Trazer os itens a comprar de {marcaSugerida} →
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -544,19 +666,56 @@ export function PurchaseOrderForm({
               <h2 id="pco-itens">Itens</h2>
               <p>Busque pelo código ou pelo nome. O custo cadastrado entra como sugestão e nunca altera o cadastro.</p>
             </div>
-            <button
-              type="button"
-              className="sb-button sb-pco-colar-botao"
-              aria-expanded={colando}
-              onClick={() => {
-                setColando((v) => !v);
-                setAvisoColagem(null);
-              }}
-            >
-              <Icone nome="prancheta" tamanho={14} />
-              Colar lista
-            </button>
+            <div className="sb-pco-cartao-acoes">
+              {podeTrazer && (
+                <button
+                  type="button"
+                  className={trazendo ? "sb-button sb-button-primary" : "sb-button"}
+                  aria-expanded={trazendo}
+                  onClick={() => {
+                    setTrazendo((v) => !v);
+                    setColando(false);
+                    setAvisoTrazer(null);
+                  }}
+                >
+                  <Icone nome="ciclo" tamanho={14} />
+                  Trazer da reposição
+                </button>
+              )}
+              <button
+                type="button"
+                className="sb-button sb-pco-colar-botao"
+                aria-expanded={colando}
+                onClick={() => {
+                  setColando((v) => !v);
+                  setTrazendo(false);
+                  setAvisoColagem(null);
+                }}
+              >
+                <Icone nome="prancheta" tamanho={14} />
+                Colar lista
+              </button>
+            </div>
           </header>
+
+          {trazendo && organizationId !== undefined && (
+            <TrazerReposicao
+              organizationId={organizationId}
+              marcas={marcas}
+              marcaSugerida={marcaSugerida}
+              skusNoPedido={skusNoPedido}
+              onAdicionar={adicionarDaReposicao}
+              onFechar={() => {
+                setTrazendo(false);
+              }}
+            />
+          )}
+
+          {avisoTrazer !== null && (
+            <p className="sb-pco-nota" role="status">
+              {avisoTrazer}
+            </p>
+          )}
 
           {colando && (
             <div className="sb-pco-colar">
@@ -617,6 +776,9 @@ export function PurchaseOrderForm({
                     <span className="sb-sr-only">Número</span>#
                   </th>
                   <th>SKU</th>
+                  <th title="Quanto a Cobertura e reposição manda comprar deste SKU — um clique usa como quantidade">
+                    Sugestão
+                  </th>
                   <th>Quantidade</th>
                   <th>Custo unitário</th>
                   <th className="sb-num">Subtotal</th>
@@ -635,6 +797,7 @@ export function PurchaseOrderForm({
                     podeRemover={items.length > 1}
                     duplicada={resumo.duplicadas.has(item.key)}
                     ultimaCompra={item.skuId === null ? null : (ultimasCompras.get(item.skuId) ?? null)}
+                    sugestao={sugestaoDaLinha(item)}
                     onChange={(next) => {
                       updateItem(item.key, next);
                     }}
