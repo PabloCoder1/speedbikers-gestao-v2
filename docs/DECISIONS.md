@@ -12930,6 +12930,36 @@ O que ficou de fora:
 - o link "Novo pedido" pre-seleciona o fornecedor so com a D-365 (/compras) no ar; sem ela o parametro e ignorado;
 - `docs/HANDOFF.md` nao foi tocado: esta em 25,5 KB, no teto de 25 KB do `docs:check`, e enxuga-lo com outras sessoes escrevendo nele e decisao a combinar.
 
+## D-367 - Novo fornecedor: a prévia que acompanha o que se digita, o duplicado avisado antes de salvar e o cadastro que diz o que falta
+
+**Contexto:** pedido do usuario: "quero uma tela mais bonita para o fornecedores/novo, sinto que ela esta simples e faltando detalhe". D-366 tinha separado os campos em grupos e posto o erro no proprio campo; a tela continuava uma coluna de caixas sem retorno nenhum ate o clique em salvar. Nada do que se grava muda: sem migration, a conferencia continua sendo `conferirCadastro` e o banco.
+
+**1. O QUE A TELA DIZ ENQUANTO SE DIGITA** (`apps/web/lib/supplier-form-guia.ts`, puro e com teste)
+
+- **selo do CNPJ/CPF:** "CNPJ valido", "faltam N digitos" ou "CNPJ nao confere". Com 11 digitos que nao fecham como CPF, o selo diz quanto falta para CNPJ em vez de acusar erro;
+- **duplicado:** o banco so recusa o nome IDENTICO (`suppliers_org_name_unique`). A tela compara sem acento, caixa, pontuacao e sufixo societario ("NAVETEC LTDA" = "Navetec") e acha o mesmo documento com ou sem mascara, com link para o que ja existe. Na edicao, o proprio fornecedor nao conta;
+- **completude:** sete itens (nome, documento valido, razao social, contato, WhatsApp OU telefone, e-mail, condicoes), com barra e lista. Telefone e WhatsApp contam como um item: exigir os dois puniria quem so atende por um;
+- telefone formatado ao sair do campo; "usar o numero do telefone" no WhatsApp; atalhos de condicao comercial (pedido minimo, prazo, pagamento, frete, representante) que escrevem a linha nas observacoes sem repetir a que ja existe.
+
+**2. A TELA**
+
+- tres secoes numeradas com icone e uma linha do porque;
+- coluna lateral grudada: a **previa** do cartao (avatar, nome, razao social, documento, contato e os canais como botoes, pelo mesmo `Canais` da lista) e a completude;
+- barra de acoes com o resumo ("Nome · cadastro 57%");
+- abaixo de 1.100 px o formulario vem primeiro e a previa fecha a pagina; no celular a lista de itens some e fica a barra.
+
+Os campos continuam nao controlados, com `onSubmit` (D-366): a previa le o formulario a cada `input`, e o que foi digitado sobrevive a um erro do servidor. A edicao (`/fornecedores/[id]/editar`) usa o mesmo formulario e ganha tudo isso; ela passa a ler os fornecedores existentes junto com o cadastro, em paralelo.
+
+A lista de existentes vem de `lib/supplier-existentes.ts` (RLS recorta a organizacao, teto de 2.000); falha de leitura vira lista vazia -- sem o aviso, o formulario continua funcionando.
+
+**Verificacao**
+
+- `typecheck`, `lint` e `test` de `@sb/web`; 15 testes novos em `supplier-form-guia`;
+- e2e `fornecedores.spec.ts`: 7 de 7 contra a web local, com um caso novo (previa, selo, duplicado por nome e documento, telefone, atalho e completude), que nao salva nada;
+- visual conferido em 1440 px e 390 px.
+
+**Impacto:** `apps/web/app/fornecedores/novo/{page,supplier-form}.tsx`, `apps/web/app/fornecedores/[supplierId]/editar/page.tsx`, `apps/web/lib/{supplier-form-guia,supplier-form-guia.test,supplier-existentes}.ts`, `apps/web/app/globals.css` (`sb-fnv-*`), `apps/web/e2e/fornecedores.spec.ts`. So web.
+
 ## D-368 - Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
 
 **Contexto:** pedido do usuario: "uma tela mais bonita para o compras/novo, sinto que ela esta simples e faltando detalhe". Numeracao combinada com as sessoes paralelas (D-367 e de /fornecedores/novo). So web, sem migration.
