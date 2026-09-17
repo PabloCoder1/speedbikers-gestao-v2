@@ -14,8 +14,11 @@
  *
  * Variações em conta de user products (D-369) não republicam: o Mercado Livre
  * recusa com `item.variations.relist.invalid`. A recusa gravada com essa causa
- * não oferece botão e diz isso ao dono; o pedido reprovado pelo preflight
- * (`VARIACOES_USER_PRODUCT`) mostra a descrição do bloqueio.
+ * não oferece botão e diz isso ao dono. A operação que a conferência reprovou
+ * por esse motivo (`VARIACOES_USER_PRODUCT`, em PREFLIGHT_FAILED ou no
+ * CLOSE_FAILED da retomada de CLOSING) não oferece OUTRO pedido enquanto o
+ * retrato tiver variações — o pedido reprovaria de novo — e a tela mostra só
+ * um aviso: o motivo já está na tabela, e não se repete no painel.
  *
  * Esconder o botão é cortesia: papel, conta e elegibilidade são conferidos de
  * novo na `api` e no worker.
@@ -58,26 +61,56 @@ export interface AtosDaRepublicacao {
   readonly retomar: boolean;
   /** Em RELIST_FAILED, a explicação que a tela dá — com ou sem o botão. */
   readonly falha: "recusada" | "nao-permitida" | "exige-gente" | null;
-  /** Em PREFLIGHT_FAILED pelo bloqueio de D-369, a descrição dele; senão `null`. */
-  readonly bloqueio: string | null;
+  /**
+   * A última operação reprovou por variações em conta de user products e o
+   * retrato tem variações (D-369): nenhum pedido novo, só o aviso
+   * `MENSAGEM_SEM_REPUBLICACAO`.
+   */
+  readonly semRepublicacao: boolean;
 }
 
 /** O que a tela diz quando o ML recusou por variações em conta de user products (D-369). */
 export const MENSAGEM_NAO_PERMITIDA =
   "O Mercado Livre não permite republicar este anúncio (variações em conta de user products). Nenhum anúncio novo foi criado; o anúncio antigo segue fechado.";
 
+/**
+ * O aviso no lugar de "Pedir republicação" (D-369). Diz por que não há botão,
+ * e aponta a tabela — a descrição do bloqueio já está lá, no motivo da falha.
+ */
+export const MENSAGEM_SEM_REPUBLICACAO =
+  "Sem pedido de republicação: o Mercado Livre não aceita republicar este anúncio enquanto ele tiver variações. Nada foi fechado — o motivo está na tabela abaixo.";
+
+/** Estados em que a conferência de D-369 reprova SEM fechar nada: o pedido, e a retomada de CLOSING com o pai ativo. */
+const REPROVAM_SEM_FECHAR: readonly string[] = ["PREFLIGHT_FAILED", "CLOSE_FAILED"];
+
+/**
+ * `true` sse a operação reprovou pelo bloqueio definitivo de D-369
+ * (`VARIACOES_USER_PRODUCT`), reconhecido pela descrição gravada no motivo.
+ * O fail-safe `USER_PRODUCT_NAO_VERIFICADO` (a conta não foi lida) NÃO conta:
+ * outro pedido pode passar quando a leitura voltar.
+ */
+export function reprovadaPorVariacoesUserProduct(operacao: Pick<OperacaoDoPainel, "status" | "failureReason">): boolean {
+  return (
+    REPROVAM_SEM_FECHAR.includes(operacao.status) &&
+    operacao.failureReason?.includes(RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO) === true
+  );
+}
+
 export function atosDaRepublicacao({
   podeRepublicar,
   operacao,
+  variacoesDoRetrato,
   aguardandoWorker,
 }: {
   readonly podeRepublicar: boolean;
   readonly operacao: OperacaoDoPainel | null;
+  /** Quantas variações o retrato do pedido tem (`summarizeRelistVariations(...).total`). */
+  readonly variacoesDoRetrato: number;
   /** Um ato foi enviado e o worker ainda não mudou a operação (D-360). */
   readonly aguardandoWorker: boolean;
 }): AtosDaRepublicacao {
   if (aguardandoWorker) {
-    return { pedir: false, executar: false, retomar: false, falha: null, bloqueio: null };
+    return { pedir: false, executar: false, retomar: false, falha: null, semRepublicacao: false };
   }
 
   const falhou = operacao?.status === "RELIST_FAILED";
@@ -86,21 +119,20 @@ export function atosDaRepublicacao({
   const naoPermitida = falhou && isRelistUserProductVariationsRejection(operacao.failureReason);
   const recusada = falhou && !naoPermitida && operacao.retomavel;
   const falha = falhou ? (naoPermitida ? "nao-permitida" : recusada ? "recusada" : "exige-gente") : null;
-  const bloqueio =
-    operacao?.status === "PREFLIGHT_FAILED" && operacao.failureReason?.includes(RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO) === true
-      ? RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO
-      : null;
+  // D-369: pedir de novo o anúncio que a conferência reprovou por variações em
+  // conta de user products só geraria outra reprovação.
+  const semRepublicacao = operacao !== null && reprovadaPorVariacoesUserProduct(operacao) && variacoesDoRetrato > 0;
 
   if (!podeRepublicar) {
-    return { pedir: false, executar: false, retomar: false, falha, bloqueio };
+    return { pedir: false, executar: false, retomar: false, falha, semRepublicacao };
   }
 
   return {
-    pedir: operacao === null || !TRAVAM_NOVO_PEDIDO.includes(operacao.status),
+    pedir: !semRepublicacao && (operacao === null || !TRAVAM_NOVO_PEDIDO.includes(operacao.status)),
     executar: operacao?.status === "REQUESTED",
     retomar: recusada,
     falha,
-    bloqueio,
+    semRepublicacao,
   };
 }
 

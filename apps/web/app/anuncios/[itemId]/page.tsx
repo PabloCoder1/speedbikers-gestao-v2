@@ -24,6 +24,7 @@ import { BarrasDiarias } from "./barras-diarias";
 import { checarAnuncio, horasDesde, idadeRelativa, SYNC_VELHO_HORAS } from "./checagem";
 import { CopiarMlb } from "./copiar-mlb";
 import { RelistPanel } from "./relist-panel";
+import { reprovadaPorVariacoesUserProduct } from "./republicacao";
 
 /**
  * O endereço público do anúncio. O Mercado Livre resolve `MLB-<número>` para a
@@ -420,13 +421,19 @@ export default async function AnuncioPage({
     - As VARIAÇÕES do retrato do pedido, em REQUESTED e RELIST_FAILED: as que
       estão sem estoque ficam fora do anúncio novo, e o dono precisa ler quais
       ANTES de confirmar. Só `variations` sai do jsonb — o retrato inteiro é
-      o item do Mercado Livre, pesado demais para uma confirmação.
+      o item do Mercado Livre, pesado demais para uma confirmação. Também na
+      operação que a conferência reprovou por variações em conta de user
+      products (D-369): com variações no retrato, o painel não oferece outro
+      pedido.
   */
   const [ultimaFalhaResult, variacoesDoPedidoResult] = await Promise.all([
     operacaoComoPai?.status === "RELIST_FAILED"
       ? readLastRelistFailureReason(supabase, operacaoComoPai.id)
       : Promise.resolve({ ok: true as const, reason: null }),
-    operacaoComoPai?.status === "REQUESTED" || operacaoComoPai?.status === "RELIST_FAILED"
+    operacaoComoPai !== null &&
+    (operacaoComoPai.status === "REQUESTED" ||
+      operacaoComoPai.status === "RELIST_FAILED" ||
+      reprovadaPorVariacoesUserProduct({ status: operacaoComoPai.status, failureReason: operacaoComoPai.failure_reason }))
       ? supabase.from("listing_relists").select("variations:parent_snapshot->variations").eq("id", operacaoComoPai.id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
