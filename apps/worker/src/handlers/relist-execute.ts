@@ -551,6 +551,21 @@ async function resumeAfterRejection(
     return { status: "done", processed: 0 };
   }
 
+  // A marca oficial de "já republicado" é a tag `relist` no pai (2.16; o
+  // JA_REPUBLICADO de D-160). Com ela, um filho existe — por exemplo, se o
+  // cliente HTTP repetiu um 5xx e a repetição é que foi recusada. Sem `tags`
+  // legíveis não dá para conferir: nada sai.
+  const tags = isRecord(parentRaw) ? parentRaw.tags : undefined;
+
+  if (!Array.isArray(tags) || tags.includes("relist")) {
+    context.logger.warn("relist_retry_parent_already_relisted", {
+      relist_id: operation.id,
+      tags_legible: Array.isArray(tags),
+    });
+
+    return { status: "done", processed: 0 };
+  }
+
   const body = buildRelistBody(parent);
 
   if (body === null) {

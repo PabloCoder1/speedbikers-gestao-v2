@@ -779,6 +779,19 @@ describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
     expect(logs(lines).some((line) => line.message === "relist_retry_parent_not_closed")).toBe(true);
   });
 
+  it("pai com a tag `relist` (já republicado) ou sem tags legíveis: nenhuma transição e nenhum POST", async () => {
+    for (const tags of [["relist"], undefined]) {
+      const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
+      const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed", tags }) });
+
+      const outcome = await run(db, client, RETOMADA);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(calls).toEqual([`GET /items/${PARENT}`]);
+    }
+  });
+
   it("pai fechado mas sem estoque em variação nenhuma: nenhuma transição e nenhum POST", async () => {
     const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
     const { client, calls } = fakeClient({
