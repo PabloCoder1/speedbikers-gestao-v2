@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelistRetryCandidate } from "./relist-retry.js";
-import { isRelistRejectionStatus, isRelistRetryEligible, relistRejectionFailureReason } from "./relist-retry.js";
+import {
+  RELIST_USER_PRODUCT_VARIATIONS_CAUSE,
+  isRelistRejectionStatus,
+  isRelistRetryEligible,
+  isRelistUserProductVariationsRejection,
+  relistRejectionFailureReason,
+} from "./relist-retry.js";
 
 const PARENT = "MLB1476804187";
 
@@ -101,6 +107,53 @@ describe("isRelistRetryEligible (D-364)", () => {
       expect(
         isRelistRetryEligible(candidate({ status, lastFailedEventReason: "POST_FALHOU", failureReason: MENSAGEM_REAL })),
       ).toBe(false);
+    }
+  });
+});
+
+/** O `failure_reason` REAL da operação a7638dc5 depois da retomada de 2026-09-17 13:36 UTC. */
+const RECUSA_USER_PRODUCT_REAL =
+  "o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado. Resposta: Validation error (validation_error) causas: item.variations.relist.invalid: Relist item with variations are not allowed for user product seller";
+
+describe("recusa por variações em conta de user products (D-369)", () => {
+  it("a recusa REAL da a7638dc5 (item.variations.relist.invalid) NÃO é elegível — outra tentativa traria outro 400", () => {
+    expect(RECUSA_USER_PRODUCT_REAL).toBe(
+      relistRejectionFailureReason(
+        400,
+        `Validation error (validation_error) causas: ${RELIST_USER_PRODUCT_VARIATIONS_CAUSE}: Relist item with variations are not allowed for user product seller`,
+      ),
+    );
+    expect(isRelistUserProductVariationsRejection(RECUSA_USER_PRODUCT_REAL)).toBe(true);
+    expect(isRelistRetryEligible(candidate({ failureReason: RECUSA_USER_PRODUCT_REAL }))).toBe(false);
+    // Entre outras causas, também.
+    expect(
+      isRelistRetryEligible(
+        candidate({ failureReason: relistRejectionFailureReason(422, "x causas: item.price.invalid: y; item.variations.relist.invalid: z") }),
+      ),
+    ).toBe(false);
+  });
+
+  it("outras recusas 4xx continuam elegíveis — inclusive causas parecidas que não são a de D-369", () => {
+    for (const failureReason of [
+      relistRejectionFailureReason(400, "Validation error causas: item.variations.missing: Item with variations must be relisted with variations"),
+      relistRejectionFailureReason(422, "Validation error causas: item.listing_type_id.invalid: x"),
+      relistRejectionFailureReason(403, "forbidden"),
+      relistRejectionFailureReason(400, "causas: item.variations.relist.invalid_quantity: x"),
+      relistRejectionFailureReason(400, "causas: xitem.variations.relist.invalid: x"),
+    ]) {
+      expect(isRelistUserProductVariationsRejection(failureReason)).toBe(false);
+      expect(isRelistRetryEligible(candidate({ failureReason }))).toBe(true);
+    }
+  });
+
+  it("só vale para a recusa gravada: a causa fora da mensagem de recusa não é reconhecida", () => {
+    for (const failureReason of [
+      `o POST /relist falhou e não é seguro repetir: ${RELIST_USER_PRODUCT_VARIATIONS_CAUSE}`,
+      ` ${RECUSA_USER_PRODUCT_REAL}`,
+      RELIST_USER_PRODUCT_VARIATIONS_CAUSE,
+      null,
+    ]) {
+      expect(isRelistUserProductVariationsRejection(failureReason)).toBe(false);
     }
   });
 });

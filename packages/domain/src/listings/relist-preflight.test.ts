@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelistFullStockReading } from "./relist-preflight.js";
-import { collectRelistInventoryIds, evaluateRelistPreflight, summarizeRelistVariations } from "./relist-preflight.js";
+import {
+  collectRelistInventoryIds,
+  evaluateRelistPreflight,
+  hasUserProductVariations,
+  summarizeRelistVariations,
+} from "./relist-preflight.js";
 
 /** Forma mínima de um item SAUDÁVEL para o preflight — cada teste quebra um pedaço. */
 function healthyItem(): Record<string, unknown> {
@@ -211,7 +216,7 @@ describe("Full sem estoque (D-360)", () => {
 });
 
 describe("estoque que a republicação leva (D-364)", () => {
-  it("o pai do incidente (MLB1476804187): dez variações com estoque aprovam, sem aviso", () => {
+  it("dez variações com estoque e SEM user_product_id aprovam, sem aviso", () => {
     const result = evaluateRelistPreflight({
       ...healthyItem(),
       available_quantity: 17_135,
@@ -259,6 +264,78 @@ describe("estoque que a republicação leva (D-364)", () => {
 
       expect(result.approved).toBe(false);
       expect(result.blocks.map((issue) => issue.code)).toEqual(["SNAPSHOT_INCOMPLETO"]);
+    }
+  });
+});
+
+describe("variações em conta de user products (D-369)", () => {
+  /** Variação com o `user_product_id` que o GET /items devolve em cada uma. */
+  function variacaoUp(id: number, estoque: number, userProductId: unknown): Record<string, unknown> {
+    return { ...variacao(id, estoque), user_product_id: userProductId };
+  }
+
+  it("o pai do incidente (MLB1476804187): variações com user_product_id e sem UP na raiz bloqueiam com VARIACOES_USER_PRODUCT", () => {
+    const result = evaluateRelistPreflight({
+      ...healthyItem(),
+      available_quantity: 17_135,
+      user_product_id: null,
+      shipping: { logistic_type: "cross_docking" },
+      variations: [variacaoUp(52_844_432_013, 698, "MLBU1406603522"), variacaoUp(52_844_432_017, 9_981, "MLBU1402620069")],
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.blocks).toEqual([
+      {
+        code: "VARIACOES_USER_PRODUCT",
+        descricao:
+          "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.",
+      },
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("basta UMA variação com user_product_id; valor não textual preenchido também conta (na dúvida, não fecha)", () => {
+    for (const variations of [
+      [variacao(1, 3), variacaoUp(2, 4, "MLBU1")],
+      [variacaoUp(1, 3, 1_406_603_522)],
+    ]) {
+      const result = evaluateRelistPreflight({ ...healthyItem(), variations });
+
+      expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    }
+  });
+
+  it("variações SEM user_product_id (ausente, nulo ou vazio) continuam permitidas", () => {
+    const result = evaluateRelistPreflight({
+      ...healthyItem(),
+      variations: [variacao(1, 3), variacaoUp(2, 4, null), variacaoUp(3, 5, ""), variacaoUp(4, 6, "  ")],
+    });
+
+    expect(result).toEqual({ approved: true, blocks: [], warnings: [] });
+  });
+
+  it("SEM variações e com user_product_id na raiz continua permitido — o filho mantém o mesmo user product", () => {
+    const result = evaluateRelistPreflight({ ...healthyItem(), user_product_id: "MLBU3858499373", variations: [] });
+
+    expect(result).toEqual({ approved: true, blocks: [], warnings: [] });
+  });
+
+  it("aparece junto dos outros bloqueios de variação", () => {
+    const result = evaluateRelistPreflight({
+      ...healthyItem(),
+      variations: [variacaoUp(1, 0, "MLBU1"), variacaoUp(2, 0, "MLBU2")],
+    });
+
+    expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_SEM_ESTOQUE", "VARIACOES_USER_PRODUCT"]);
+  });
+
+  it("hasUserProductVariations: só com variações; forma ilegível não conta", () => {
+    expect(hasUserProductVariations({ variations: [{ user_product_id: "MLBU1" }] })).toBe(true);
+    expect(hasUserProductVariations({ user_product_id: "MLBU1", variations: [] })).toBe(false);
+    expect(hasUserProductVariations({ user_product_id: "MLBU1" })).toBe(false);
+
+    for (const garbage of [null, undefined, "texto", 42, ["array"], { variations: "x" }, { variations: ["MLBU1", null] }]) {
+      expect(hasUserProductVariations(garbage)).toBe(false);
     }
   });
 });

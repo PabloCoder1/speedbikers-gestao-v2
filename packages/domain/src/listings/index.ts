@@ -7,7 +7,14 @@ export {
 } from "./relist.js";
 export type { RelistState } from "./relist.js";
 
-export { collectRelistInventoryIds, evaluateRelistPreflight, summarizeRelistVariations } from "./relist-preflight.js";
+export {
+  RELIST_USER_PRODUCT_VARIATIONS_BLOCK,
+  RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO,
+  collectRelistInventoryIds,
+  evaluateRelistPreflight,
+  hasUserProductVariations,
+  summarizeRelistVariations,
+} from "./relist-preflight.js";
 export type {
   RelistFullStockReading,
   RelistFullStockReadings,
@@ -31,8 +38,10 @@ export {
   RELIST_POST_FAILED_REASON,
   RELIST_POST_REJECTED_REASON,
   RELIST_RETRY_REASON,
+  RELIST_USER_PRODUCT_VARIATIONS_CAUSE,
   isRelistRejectionStatus,
   isRelistRetryEligible,
+  isRelistUserProductVariationsRejection,
   relistRejectionFailureReason,
 } from "./relist-retry.js";
 export type { RelistRetryCandidate } from "./relist-retry.js";

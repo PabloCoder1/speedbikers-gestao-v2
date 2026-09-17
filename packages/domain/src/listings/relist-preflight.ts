@@ -28,6 +28,14 @@
  *   corpo de relist (`buildRelistBody` devolve `null`), e fechar o pai
  *   sem ter o que republicar deixa o produto fora do ar. Com variações, a
  *   conta é por variação; sem variações, pelo `available_quantity` da raiz.
+ * - `VARIACOES_USER_PRODUCT` — D-369: o Mercado Livre RECUSA relist de item
+ *   com variações de vendedor no modelo de user products. CONFIRMADO pela
+ *   resposta real de 17/09/2026 13:36 UTC ao MLB1476804187 (operação
+ *   a7638dc5), causa `item.variations.relist.invalid`; a doc oficial não diz
+ *   isso. O sinal é ter variações e alguma delas com `user_product_id`
+ *   (`hasUserProductVariations`). Item SEM variação com `user_product_id` na
+ *   raiz continua permitido: republicou, e o filho manteve o mesmo user
+ *   product.
  * - `SNAPSHOT_ILEGIVEL` / `SNAPSHOT_INCOMPLETO` — **fail-safe**: o snapshot
  *   é jsonb sem contrato de banco; se a forma não permite VERIFICAR uma
  *   pré-condição, o preflight reprova em vez de presumir que está tudo bem.
@@ -193,6 +201,38 @@ export function summarizeRelistVariations(rawItem: unknown): RelistVariationsSum
       sku: describeVariationSku(raw),
     })),
   };
+}
+
+/** O código do bloqueio de D-369 — a tela e o log o reconhecem por ele. */
+export const RELIST_USER_PRODUCT_VARIATIONS_BLOCK = "VARIACOES_USER_PRODUCT";
+
+/** A descrição do bloqueio de D-369, como o dono a lê no motivo da falha. */
+export const RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO =
+  "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.";
+
+/**
+ * `true` sse o item tem variações e pelo menos uma traz `user_product_id`
+ * preenchido (D-369) — o caso que o Mercado Livre recusa no relist. Recebe o
+ * item cru (o `parent_snapshot` ou o pai ao vivo; os dois trazem o campo por
+ * variação, sem `include_attributes`). Valor que não é texto vazio nem nulo
+ * conta como preenchido: na dúvida, o anúncio não é fechado.
+ */
+export function hasUserProductVariations(rawItem: unknown): boolean {
+  if (!isRecord(rawItem) || !Array.isArray(rawItem.variations)) {
+    return false;
+  }
+
+  const variations: unknown[] = rawItem.variations;
+
+  return variations.some((variation) => {
+    if (!isRecord(variation)) {
+      return false;
+    }
+
+    const userProductId = variation.user_product_id;
+
+    return typeof userProductId === "string" ? userProductId.trim() !== "" : userProductId !== null && userProductId !== undefined;
+  });
 }
 
 function isValidReading(reading: RelistFullStockReading | null | undefined): reading is RelistFullStockReading {
@@ -396,6 +436,14 @@ export function evaluateRelistPreflight(
         });
       }
     }
+  }
+
+  // User products com variações (D-369). O ML recusou o relist do
+  // MLB1476804187 com `item.variations.relist.invalid` — e fechar o pai antes
+  // de descobrir isso foi o que o deixou fora do ar. Independe da
+  // legibilidade das outras regras de variação: o bloqueio aparece junto.
+  if (hasUserProductVariations(item)) {
+    blocks.push({ code: RELIST_USER_PRODUCT_VARIATIONS_BLOCK, descricao: RELIST_USER_PRODUCT_VARIATIONS_DESCRICAO });
   }
 
   // Herança de visitas/vendas: não ocorre em `free`. Aviso, nunca bloqueio.
