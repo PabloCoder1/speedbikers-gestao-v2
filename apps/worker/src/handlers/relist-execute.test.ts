@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { isRelistRetryEligible, relistRejectionFailureReason } from "@sb/domain";
+import { isRelistRetryEligible, isRelistUserProductVariationsRejection, relistRejectionFailureReason } from "@sb/domain";
 import { MercadoLivreApiError, createMercadoLivreClient, encryptToken } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
@@ -272,7 +272,15 @@ interface FakeClientOptions {
   relistOutcome?: { id: string } | Error;
   /** Estoque do Full por inventory_id: corpo da resposta ou erro lançado (D-360). Ausente = 404. */
   fullStock?: Record<string, Record<string, unknown> | Error>;
+  /** Tags da conta em GET /users/me (D-369): a lista, ou o erro lançado. Ausente = conta SEM `user_product_seller`. */
+  sellerTags?: string[] | Error;
 }
+
+/** As tags de uma conta que NÃO está no modelo de user products. */
+const TAGS_SEM_UP = ["normal", "eshop"];
+
+/** As tags medidas nas quatro contas em 17/09/2026 (D-369). */
+const TAGS_COM_UP = ["normal", "user_product_seller", "eshop"];
 
 function fakeClient(options: FakeClientOptions = {}): {
   client: MercadoLivreClient;
@@ -307,6 +315,14 @@ function fakeClient(options: FakeClientOptions = {}): {
         }
 
         return answer instanceof Error ? Promise.reject(answer) : respond(answer);
+      }
+
+      // D-369: o modelo da conta. Tratado ANTES do GET genérico — senão o
+      // corpo do pai atravessaria o schema de /users/me.
+      if (request.method === "GET" && request.path === "/users/me") {
+        const tags = options.sellerTags ?? TAGS_SEM_UP;
+
+        return tags instanceof Error ? Promise.reject(tags) : respond({ id: 244_878_077, tags });
       }
 
       if (request.method === "GET") {
@@ -355,7 +371,7 @@ function run(
 }
 
 describe("relist.execute (D-162/D-163)", () => {
-  it("caminho feliz: confirma o filho e conclui o remapeamento transacional", async () => {
+  it("caminho feliz: confirma o filho e conclui o remapeamento transacional (item sem variações não lê a conta, D-369)", async () => {
     const { db, updates, events, rpcCalls, decisionInserts } = fakeDb();
     const { client, calls } = fakeClient();
 
@@ -511,6 +527,67 @@ describe("relist.execute (D-162/D-163)", () => {
     expect(updates.map((update) => update.patch.status)).toEqual(["CLOSED", "RELISTING", "RELISTED"]);
   });
 
+  it("D-369 (A1): retomada em CLOSING com o pai ATIVO e variações de user products: CLOSE_FAILED, nenhum PUT, nenhum POST", async () => {
+    const { db, updates, events } = fakeDb({ operationStatus: "CLOSING" });
+    const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations({ status: "active" }) });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(updates.map((update) => [update.fromStatus, update.patch.status])).toEqual([["CLOSING", "CLOSE_FAILED"]]);
+    expect(updates[0]?.patch.failure_reason).toBe(
+      "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.",
+    );
+    expect(events.map((event) => [event.to_status, event.reason])).toEqual([["CLOSE_FAILED", "VARIACOES_USER_PRODUCT"]]);
+    expect(logs(lines).find((line) => line.message === "relist_closing_user_product_variations")).toMatchObject({
+      block: "VARIACOES_USER_PRODUCT",
+    });
+  });
+
+  it("D-369 (A1): retomada em CLOSING com o pai ativo e variações sem user_product_id — a conta decide: com a tag ou sem leitura para, sem a tag fecha", async () => {
+    for (const [sellerTags, reason] of [
+      [TAGS_COM_UP, "VARIACOES_USER_PRODUCT"],
+      [new MercadoLivreApiError("Mercado Livre respondeu 500 para GET /users/me.", { status: 500, errorClass: "retryable", url: "x" }), "USER_PRODUCT_NAO_VERIFICADO"],
+    ] as const) {
+      const { db, updates, events } = fakeDb({ operationStatus: "CLOSING" });
+      const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "active" }), sellerTags });
+
+      const outcome = await run(db, client);
+
+      expect(outcome).toEqual({ status: "done", processed: 1 });
+      expect(calls).toEqual([`GET /items/${PARENT}`, "GET /users/me"]);
+      expect(updates.map((update) => update.patch.status)).toEqual(["CLOSE_FAILED"]);
+      expect(events.map((event) => event.reason)).toEqual([reason]);
+    }
+
+    const { db, updates } = fakeDb({ operationStatus: "CLOSING" });
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "active" }), sellerTags: TAGS_SEM_UP });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(calls.slice(0, 4)).toEqual([
+      `GET /items/${PARENT}`,
+      "GET /users/me",
+      `PUT /items/${PARENT}`,
+      `POST /items/${PARENT}/relist`,
+    ]);
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSED", "RELISTING", "RELISTED"]);
+  });
+
+  it("D-369 (A1): retomada em CLOSING com o pai ativo SEM variações fecha como antes, sem ler a conta", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "CLOSING" });
+    const { client, calls } = fakeClient({ sellerTags: TAGS_COM_UP });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(calls.slice(0, 3)).toEqual([`GET /items/${PARENT}`, `PUT /items/${PARENT}`, `POST /items/${PARENT}/relist`]);
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSED", "RELISTING", "RELISTED"]);
+  });
+
   it("retomada em RELISTED faz só GET do filho + remapeamento, sem repetir PUT/POST", async () => {
     const { db, updates, rpcCalls } = fakeDb({ operationStatus: "RELISTED" });
     const { client, calls } = fakeClient();
@@ -623,6 +700,24 @@ function logs(lines: string[]): Record<string, unknown>[] {
 
 const RETOMADA = { relistId: RELIST_ID, retomada: true, autorizadoPor: AUTORIZADO_POR };
 
+/** O pai do incidente como o GET /items o devolve: `user_product_id` em cada variação, nulo na raiz (D-369). */
+function parentWithUserProductVariations(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return parentWithVariations({
+    user_product_id: null,
+    variations: [
+      { id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" },
+      { id: 52_844_432_017, price: 114.9, available_quantity: 9_981, user_product_id: "MLBU1402620069" },
+    ],
+    ...overrides,
+  });
+}
+
+/** O `failure_reason` REAL da a7638dc5 depois da retomada de 2026-09-17 13:36 UTC (D-369). */
+const RECUSA_USER_PRODUCT = relistRejectionFailureReason(
+  400,
+  "Validation error (validation_error) causas: item.variations.relist.invalid: Relist item with variations are not allowed for user product seller",
+);
+
 /** O `failure_reason` que a recusa grava (D-364) — a linha e o evento `POST_RECUSADO` concordam. */
 const RECUSA_GRAVADA = relistRejectionFailureReason(400, "Validation error causas: item.variations.missing");
 
@@ -632,13 +727,15 @@ const MENSAGEM_LEGADA_400 = `o POST /relist falhou e não é seguro repetir: Mer
 describe("relist.execute com variações e recusa do ML (D-364)", () => {
   it("o POST do pai COM variações leva listing_type_id + variations com preço próprio, sem a zerada e sem price/quantity na raiz", async () => {
     const { db, updates } = fakeDb();
-    const { client, bodies } = fakeClient({ parentBody: parentWithVariations() });
+    const { client, bodies, calls } = fakeClient({ parentBody: parentWithVariations() });
 
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
     expect(bodies[`POST /items/${PARENT}/relist`]).toEqual(CORPO_COM_VARIACOES);
+    // D-369 (A3): a conta foi lida SEM a tag antes do PUT — é isso que permite.
+    expect(calls.slice(0, 3)).toEqual([`GET /items/${PARENT}`, "GET /users/me", `PUT /items/${PARENT}`]);
   });
 
   it("o POST do pai SEM variações continua com o corpo de sempre", async () => {
@@ -667,6 +764,82 @@ describe("relist.execute com variações e recusa do ML (D-364)", () => {
     expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
     expect(events.map((event) => event.reason)).toEqual(["VARIACOES_SEM_ESTOQUE"]);
     expect(calls.some((call) => call.startsWith("PUT") || call.startsWith("POST"))).toBe(false);
+  });
+
+  it("D-369: REQUESTED com variações de user products: PREFLIGHT_FAILED (VARIACOES_USER_PRODUCT) antes do PUT — nenhum PUT, nenhum POST", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations() });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+    expect(events.map((event) => event.reason)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    expect(String(updates[0]?.patch.failure_reason)).toContain(
+      "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products",
+    );
+    // A variação com user_product_id já decide: a conta não é lida.
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(logs(lines).find((line) => line.message === "relist_execute_preflight")).toMatchObject({
+      approved: false,
+      blocks: ["VARIACOES_USER_PRODUCT"],
+      seller_user_products: "nao_consultado",
+    });
+  });
+
+  it("D-369 (A3): REQUESTED com variações SEM user_product_id e a conta com a tag user_product_seller: PREFLIGHT_FAILED antes do PUT", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations(), sellerTags: TAGS_COM_UP });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+    expect(events.map((event) => event.reason)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    expect(calls).toEqual([`GET /items/${PARENT}`, "GET /users/me"]);
+    expect(logs(lines).find((line) => line.message === "relist_execute_preflight")).toMatchObject({
+      blocks: ["VARIACOES_USER_PRODUCT"],
+      seller_user_products: true,
+    });
+  });
+
+  it("D-369 (A3): leitura da conta que falha (5xx, 403 ou forma) reprova com USER_PRODUCT_NAO_VERIFICADO — nenhum PUT", async () => {
+    for (const sellerTags of [
+      new MercadoLivreApiError("Mercado Livre respondeu 503 para GET /users/me.", { status: 503, errorClass: "retryable", url: "/users/me" }),
+      new MercadoLivreApiError("Mercado Livre respondeu 403 para GET /users/me.", { status: 403, errorClass: "not_retryable", url: "/users/me" }),
+      new Error("forma inesperada"),
+    ]) {
+      const { db, updates, events } = fakeDb();
+      const { client, calls } = fakeClient({ parentBody: parentWithVariations(), sellerTags });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 1 });
+      expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+      expect(events.map((event) => event.reason)).toEqual(["USER_PRODUCT_NAO_VERIFICADO"]);
+      expect(String(updates[0]?.patch.failure_reason)).toContain("não foi possível confirmar agora se a conta está no modelo de user products");
+      expect(calls.some((call) => call.startsWith("PUT") || call.startsWith("POST"))).toBe(false);
+      expect(logs(lines).some((line) => line.message === "relist_seller_model_unreadable")).toBe(true);
+    }
+  });
+
+  it("D-369: SEM variações e com user_product_id na raiz, o pai é fechado e republicado como sempre", async () => {
+    const { db, updates } = fakeDb();
+    const { client, calls } = fakeClient({
+      parentBody: healthyParent({ user_product_id: "MLBU3858499373" }),
+      sellerTags: TAGS_COM_UP,
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
+    expect(calls).toContain(`POST /items/${PARENT}/relist`);
+    // A3: sem variações, nenhuma chamada à conta — nem com a conta no modelo de user products.
+    expect(calls).not.toContain("GET /users/me");
   });
 
   it("retomada de CLOSED com o pai sem estoque: nem transição nem POST — o job falha sem retry", async () => {
@@ -720,6 +893,109 @@ describe("relist.execute com variações e recusa do ML (D-364)", () => {
     const failureReason = String(updates.at(-1)?.patch.failure_reason);
     expect(failureReason).not.toContain("APP_USR-1234567890abcdef");
     expect(failureReason.length).toBeLessThan(1_000);
+  });
+
+  it("D-369 (A2): a causa item.variations.relist.invalid depois de 12 causas longas sobrevive ao corte — a recusa não volta a ser elegível", async () => {
+    const causasAntes = Array.from({ length: 12 }, (_, indice) => ({
+      code: `item.attributes.invalid_${String(indice + 1)}`,
+      message: `Attribute ${String(indice + 1)} is invalid for this category and must be reviewed before any relist attempt`,
+    }));
+    const decisiva = {
+      code: "item.variations.relist.invalid",
+      message: "Relist item with variations are not allowed for user product seller",
+    };
+
+    // `message` e `error` longos (B2): cada um tem teto próprio, ou empurraria a decisiva para depois do corte.
+    for (const { message, error } of [
+      { message: "Validation error", error: "validation_error" },
+      { message: `Validation error ${"x".repeat(2_000)}`, error: "validation_error" },
+      { message: "Validation error", error: "e".repeat(2_000) },
+    ]) {
+      const { db, updates, events } = fakeDb();
+      const { client } = fakeClient({
+        relistOutcome: recusa400({ message, error, status: 400, cause: [...causasAntes, decisiva] }),
+      });
+      const lines: string[] = [];
+
+      // Sem a ordem, o texto das 12 causas passaria dos 800 caracteres antes da decisiva.
+      expect(causasAntes.map((causa) => `${causa.code}: ${causa.message}`).join("; ").length).toBeGreaterThan(800);
+
+      await run(db, client, { relistId: RELIST_ID }, lines);
+
+      const failureReason = String(updates.at(-1)?.patch.failure_reason);
+      expect(events.at(-1)).toMatchObject({ to_status: "RELIST_FAILED", reason: "POST_RECUSADO" });
+      expect(failureReason).toContain("causas: item.variations.relist.invalid: Relist item with variations are not allowed");
+      expect(failureReason.length).toBeLessThan(1_000);
+      expect(
+        isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_RECUSADO" }),
+      ).toBe(false);
+      // As outras causas continuam no resumo, na ordem do ML, até o corte.
+      expect(failureReason).toContain("item.attributes.invalid_1: Attribute 1");
+      expect(String(logs(lines).find((line) => line.message === "relist_post_rejected")?.summary)).toContain(
+        "item.variations.relist.invalid",
+      );
+    }
+  });
+
+  it("D-369 (R2): a causa decisiva sobrevive em qualquer forma legível do corpo — a recusa nunca volta a parecer retomável", async () => {
+    const CODIGO = "item.variations.relist.invalid";
+    const MENSAGEM = "Relist item with variations are not allowed for user product seller";
+    const longas = Array.from({ length: 12 }, (_, indice) => `item.attributes.invalid_${String(indice + 1)}: ${"z".repeat(90)}`);
+
+    // [nome, corpo, trecho que o resumo precisa manter além do código]
+    const formas: readonly (readonly [string, unknown, string])[] = [
+      ["cause como objeto único", { message: "Validation error", error: "validation_error", cause: { code: CODIGO, message: MENSAGEM } }, `${CODIGO}: ${MENSAGEM}`],
+      ["cause como texto", { message: "Validation error", error: "validation_error", cause: `${CODIGO}: ${MENSAGEM}` }, `${CODIGO}: ${MENSAGEM}`],
+      ["array de textos com a decisiva no fim", { message: "Validation error", cause: [...longas, `${CODIGO}: ${MENSAGEM}`] }, `causas: ${CODIGO}: ${MENSAGEM}`],
+      ["código no fim de `error` com 300 caracteres", { message: "Validation error", error: `${"e".repeat(270)} ${CODIGO}`, cause: [] }, `causas: ${CODIGO}`],
+      ["código no fim de `message` com 3.000 caracteres", { message: `${"m".repeat(3_000)} ${CODIGO}` }, `causas: ${CODIGO}`],
+      ["código seguido do ponto final", { message: `Relist refused: ${CODIGO}.`, error: "validation_error", cause: [] }, `Relist refused: ${CODIGO}.`],
+      ["corpo em texto longo", `${"t".repeat(2_000)} ${CODIGO}`, `causas: ${CODIGO}`],
+      ["código num campo que o resumo não lê", { message: "Validation error", details: [{ reason: CODIGO }] }, `causas: ${CODIGO}`],
+      [
+        "causa decisiva com o código só no fim de uma mensagem longa",
+        { message: "Validation error", cause: [...longas.map((texto) => ({ code: texto.split(":")[0], message: "z".repeat(90) })), { code: "item.invalid", message: `${"y".repeat(900)} ${CODIGO}` }] },
+        `causas: ${CODIGO}; item.invalid: yyy`,
+      ],
+    ];
+
+    for (const [nome, corpo, trecho] of formas) {
+      const { db, updates, events } = fakeDb();
+      const { client } = fakeClient({ relistOutcome: recusa400(corpo) });
+      const lines: string[] = [];
+
+      await run(db, client, { relistId: RELIST_ID }, lines);
+
+      const failureReason = String(updates.at(-1)?.patch.failure_reason);
+      expect(events.at(-1), nome).toMatchObject({ to_status: "RELIST_FAILED", reason: "POST_RECUSADO" });
+      expect(failureReason, nome).toContain(trecho);
+      expect(failureReason.length, nome).toBeLessThan(1_000);
+      expect(isRelistUserProductVariationsRejection(failureReason), nome).toBe(true);
+      expect(
+        isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_RECUSADO" }),
+        nome,
+      ).toBe(false);
+    }
+  });
+
+  it("D-369 (R2): sem a causa decisiva no corpo, nada é acrescentado — códigos parecidos continuam recusas retomáveis", async () => {
+    for (const corpo of [
+      { message: "Validation error", error: `${"e".repeat(270)} item.variations.relist.invalid_quantity`, cause: [] },
+      { message: "Validation error", cause: { code: "item.variations.relist.invalid.quantity", message: "x" } },
+      `${"t".repeat(2_000)} xitem.variations.relist.invalid`,
+    ]) {
+      const { db, updates } = fakeDb();
+      const { client } = fakeClient({ relistOutcome: recusa400(corpo) });
+
+      await run(db, client);
+
+      const failureReason = String(updates.at(-1)?.patch.failure_reason);
+      expect(failureReason).not.toMatch(/causas: item\.variations\.relist\.invalid(;|$)/u);
+      expect(isRelistUserProductVariationsRejection(failureReason)).toBe(false);
+      expect(
+        isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_RECUSADO" }),
+      ).toBe(true);
+    }
   });
 
   it("500, 408 e 429 continuam POST_FALHOU — não é recusa comprovada", async () => {
@@ -780,8 +1056,10 @@ describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
       ["RELISTING", "RETOMADA_APOS_RECUSA"],
       ["RELISTED", null],
     ]);
+    // D-369: a conta é lida (sem a tag) antes do POST.
     expect(calls).toEqual([
       `GET /items/${PARENT}`,
+      "GET /users/me",
       `POST /items/${PARENT}/relist`,
       `GET /items/${CHILD}?include_attributes=all`,
     ]);
@@ -867,6 +1145,70 @@ describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
     }
   });
 
+  it("D-369: variações de user products — a recusa com a causa não é elegível, e outra recusa com o pai nessa forma também não emite o POST", async () => {
+    // (a) A recusa REAL da a7638dc5: a regra de elegibilidade barra antes de qualquer leitura remota.
+    {
+      const { db, updates, events } = fakeDb({
+        operationStatus: "RELIST_FAILED",
+        failureReason: RECUSA_USER_PRODUCT,
+        lastFailedReason: "POST_RECUSADO",
+      });
+      const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations({ status: "closed" }) });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, RETOMADA, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls).toEqual([]);
+      expect(logs(lines).find((line) => line.message === "relist_retry_not_eligible")).toMatchObject({
+        user_product_variations_rejection: true,
+      });
+    }
+
+    // (b) Recusa elegível por OUTRA causa, e o pai ao vivo com variações de user products: nada sai.
+    {
+      const { db, updates, events } = fakeDb({
+        operationStatus: "RELIST_FAILED",
+        failureReason: RECUSA_GRAVADA,
+        lastFailedReason: "POST_RECUSADO",
+      });
+      const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations({ status: "closed" }) });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, RETOMADA, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls).toEqual([`GET /items/${PARENT}`]);
+      expect(logs(lines).some((line) => line.message === "relist_retry_user_product_variations")).toBe(true);
+    }
+
+    // (c) A3: outra recusa, variações SEM user_product_id e a conta com a tag (ou sem leitura): nada sai.
+    for (const [sellerTags, block] of [
+      [TAGS_COM_UP, "VARIACOES_USER_PRODUCT"],
+      [new Error("sem resposta"), "USER_PRODUCT_NAO_VERIFICADO"],
+    ] as const) {
+      const { db, updates, events } = fakeDb({
+        operationStatus: "RELIST_FAILED",
+        failureReason: RECUSA_GRAVADA,
+        lastFailedReason: "POST_RECUSADO",
+      });
+      const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }), sellerTags });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, RETOMADA, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls).toEqual([`GET /items/${PARENT}`, "GET /users/me"]);
+      expect(logs(lines).find((line) => line.message === "relist_retry_user_product_variations")).toMatchObject({ block });
+    }
+  });
+
   it("pai fechado mas sem estoque em variação nenhuma: nenhuma transição e nenhum POST", async () => {
     const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", failureReason: RECUSA_GRAVADA, lastFailedReason: "POST_RECUSADO" });
     const { client, calls } = fakeClient({
@@ -877,7 +1219,7 @@ describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(updates).toHaveLength(0);
-    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(calls).toEqual([`GET /items/${PARENT}`, "GET /users/me"]);
   });
 
   it("CAS perdido na retomada é outra execução que assumiu: termina SEM retry e sem POST", async () => {
@@ -1175,6 +1517,10 @@ describe("relist.execute — o POST /relist sai com UMA tentativa no cliente rea
 
           if (init?.method === "PUT") {
             return Promise.resolve(jsonResponse(200, { id: PARENT, status: "closed" }));
+          }
+
+          if (url.pathname === "/users/me") {
+            return Promise.resolve(jsonResponse(200, { id: 244_878_077, tags: TAGS_SEM_UP }));
           }
 
           return Promise.resolve(jsonResponse(200, cenario.parent));

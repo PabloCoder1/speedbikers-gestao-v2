@@ -9,6 +9,8 @@ import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
 import {
   INTERVALO_MS,
+  MENSAGEM_NAO_PERMITIDA,
+  MENSAGEM_SEM_REPUBLICACAO,
   MENSAGEM_SEM_RESPOSTA,
   atosDaRepublicacao,
   cienciaDaExecucao,
@@ -58,6 +60,19 @@ import {
  * no mesmo acompanhamento da execução. Qualquer outra falha pode ter criado o
  * anúncio novo — a tela diz que alguém precisa conferir, e não oferece botão.
  * A regra é a do domínio (`isRelistRetryEligible`), calculada pela página.
+ *
+ * ## Variações em conta de user products: não há republicação (D-369)
+ *
+ * Em 2026-09-17 o Mercado Livre recusou a retomada do MLB1476804187 com
+ * `item.variations.relist.invalid`: não aceita relist de item com variações
+ * de vendedor no modelo de user products. Recusa com essa causa não oferece
+ * botão — a tela diz que o ML não permite e que o anúncio antigo segue
+ * fechado. Quando a conferência reprova por esse motivo sem fechar nada
+ * (PREFLIGHT_FAILED, ou CLOSE_FAILED na retomada de CLOSING) e o retrato tem
+ * variações, "Pedir republicação" some: outro pedido reprovaria igual. O
+ * painel mostra só um aviso: a descrição do bloqueio já é o motivo da falha
+ * na tabela, e repeti-la aqui seria o mesmo dado em dois lugares. A execução
+ * nunca é oferecida (só REQUESTED é executável).
  *
  * As duas confirmações listam as variações que ficam FORA do anúncio novo
  * (sem estoque no retrato do pedido, `summarizeRelistVariations`), e com
@@ -110,7 +125,7 @@ export function RelistPanel({
   mlAccountId: string;
   /** ADMIN ou GESTOR — o mesmo par que a rota exige (D-161). */
   podeRepublicar: boolean;
-  /** As variações do retrato do pedido e as que ficam fora do anúncio novo (D-364). */
+  /** As variações do retrato do pedido e as que ficam fora do anúncio novo (D-364); o total também decide o pedido (D-369). */
   variacoes: RelistVariationsSummary;
   /** A operação viva deste anúncio como PAI, se houver. */
   operacao: RelistOperation | null;
@@ -125,7 +140,7 @@ export function RelistPanel({
   const operacaoAtual = operacao === null ? null : `${operacao.id}:${operacao.status}:${operacao.updatedAt}`;
   const aguardandoWorker =
     estado.kind === "enviando" || (estado.kind === "enfileirado" && estado.operacaoNoEnvio === operacaoAtual);
-  const atos = atosDaRepublicacao({ podeRepublicar, operacao, aguardandoWorker });
+  const atos = atosDaRepublicacao({ podeRepublicar, operacao, variacoesDoRetrato: variacoes.total, aguardandoWorker });
 
   useEffect(() => {
     if (!aguardandoWorker || estado.kind !== "enfileirado") {
@@ -239,6 +254,14 @@ export function RelistPanel({
         </p>
       )}
 
+      {atos.falha === "nao-permitida" && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{MENSAGEM_NAO_PERMITIDA}</p>
+      )}
+
+      {atos.semRepublicacao && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{MENSAGEM_SEM_REPUBLICACAO}</p>
+      )}
+
       {atos.falha === "exige-gente" && (
         <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
           O anúncio antigo está fechado e o novo não foi confirmado. Daqui não dá para saber se ele nasceu — tentar de
@@ -330,8 +353,8 @@ export function RelistPanel({
         >
           <p style={{ margin: 0 }}>
             Este ato <b>não fecha nada</b>. Ele guarda o retrato do anúncio e roda a conferência prévia — a que
-            recusa republicar anúncio já republicado, com estoque no Full, de catálogo ou que já é filho de outra
-            republicação.
+            recusa republicar anúncio já republicado, com estoque no Full, de catálogo, que já é filho de outra
+            republicação ou com variações em conta de user products.
           </p>
           <p style={{ margin: 0 }}>
             Se a conferência aprovar, a operação fica <b>aguardando execução</b> — e é a execução, num segundo
