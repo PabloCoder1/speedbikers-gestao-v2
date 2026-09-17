@@ -1,4 +1,5 @@
 import type { AdminClient } from "@sb/db";
+import { readLastRelistFailureReason } from "@sb/db";
 import type { RelistBody } from "@sb/domain";
 import {
   RELIST_POST_FAILED_REASON,
@@ -10,6 +11,8 @@ import {
   evaluateRelistPreflight,
   isRelistRejectionStatus,
   isRelistRetryEligible,
+  relistRejectionFailureReason,
+  summarizeRelistVariations,
 } from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
@@ -43,18 +46,25 @@ import { ensureRelistMeasurement } from "./relist-measurement.js";
  *    nasceu" e repetir o POST poderia criar DOIS filhos. Gente decide.
  * 4. **Falha do POST não re-tenta**: mesma razão do envio de resposta
  *    (D-096) — um 5xx pode significar que o filho existe. RELIST_FAILED.
- *    A RECUSA (4xx exceto 408/429) também para em RELIST_FAILED, mas com
- *    motivo próprio (`POST_RECUSADO`) e o corpo do erro do Mercado Livre
- *    gravado (D-364): o ML leu o pedido e disse não, nenhum filho nasceu.
+ *    Nem o cliente HTTP repete: o POST sai com `maxAttempts: 1` (D-364),
+ *    senão um 5xx repetido pelo cliente e recusado na repetição chegaria
+ *    aqui como 4xx, com o filho talvez vivo. A RECUSA (4xx exceto 408/429)
+ *    também para em RELIST_FAILED, mas com motivo próprio (`POST_RECUSADO`)
+ *    e o corpo do erro do Mercado Livre gravado (D-364): o ML leu o pedido e
+ *    disse não, nenhum filho nasceu.
  * 5. **Filho só é confirmado pelo id DIFERENTE do pai**: o defeito
  *    registrado da própria doc (resposta com variações devolvendo o id do
  *    pai) não é tratado como contrato — resposta ambígua é RELIST_FAILED.
  * 6. **Retomada HUMANA, só depois de recusa comprovada** (D-364): o job com
- *    `retomada: true` — enfileirado pela `api` quando uma pessoa pede —
- *    relê o último evento de falha e reaplica a regra de elegibilidade
- *    (`isRelistRetryEligible`), confere o pai AO VIVO (precisa estar
- *    `closed` e ter estoque), persiste RELIST_FAILED → RELISTING e emite o
- *    POST pelo MESMO código da execução normal. Nada disso acontece sozinho:
+ *    `retomada: true` e `autorizadoPor` — enfileirado pela `api` quando
+ *    uma pessoa pede, e essa pessoa vai para o evento — relê o último evento
+ *    de falha e reaplica a regra de elegibilidade (`isRelistRetryEligible`),
+ *    confere o pai AO VIVO (precisa estar `closed` e ter estoque), persiste
+ *    RELIST_FAILED → RELISTING e emite o POST pelo MESMO código da execução
+ *    normal. É a única aresta que VOLTA na máquina, então o CAS dela confere
+ *    também o `updated_at` lido: outra retomada que saiu de RELIST_FAILED e
+ *    voltou (5xx, resposta ambígua) no meio do caminho deixa o mesmo
+ *    `status`, mas não a mesma versão. Nada disso acontece sozinho:
  *    RELIST_FAILED sem `retomada` continua noop.
  *
  * O corpo do POST sai de `buildRelistBody` (D-364): com variações, só as que
@@ -62,7 +72,10 @@ import { ensureRelistMeasurement } from "./relist-measurement.js";
  * sai.
  */
 
-const payloadSchema = z.object({ relistId: z.uuid(), retomada: z.boolean().optional() });
+/** A retomada leva quem a autorizou (D-364): é ato humano, e o evento guarda o ator. */
+const payloadSchema = z
+  .object({ relistId: z.uuid(), retomada: z.boolean().optional(), autorizadoPor: z.uuid().optional() })
+  .refine((payload) => payload.retomada !== true || payload.autorizadoPor !== undefined);
 
 /** PUT /items/{id} {status:"closed"} — contrato confirmado em 2.16. */
 const closeItemResponseSchema = z.object({ id: z.string(), status: z.string() });
@@ -134,12 +147,21 @@ interface OperationRow {
   status: string;
   failure_reason: string | null;
   requested_by: string;
+  /** A versão da linha (trigger `listing_relists_set_updated_at`) — o CAS da retomada. */
+  updated_at: string;
 }
 
 interface TransitionContext {
   db: AdminClient;
   logger: Logger;
   operation: OperationRow;
+}
+
+interface TransitionOptions {
+  /** Só aplica se a linha ainda tem esta versão, além do status (D-364). */
+  expectedUpdatedAt?: string;
+  /** Ator humano do evento; nulo nas transições do sistema. */
+  actorUserId?: string | null;
 }
 
 interface TransitionResult {
@@ -161,6 +183,7 @@ async function transition(
   to: string,
   patch: Record<string, unknown>,
   reason: string | null,
+  options: TransitionOptions = {},
 ): Promise<TransitionResult> {
   if (!canTransitionRelist(from as never, to as never)) {
     return { ok: false, message: `transição inválida ${from} → ${to}` };
@@ -170,12 +193,13 @@ async function transition(
   // execução fez a transição. Zero linhas = o estado mudou sob os pés
   // (outra execução, outra decisão) — falhar e reler é o único caminho que
   // não grava evento de uma transição que não aconteceu.
-  const updated = await ctx.db
-    .from("listing_relists")
-    .update({ status: to, ...patch })
-    .eq("id", ctx.operation.id)
-    .eq("status", from)
-    .select("id");
+  let update = ctx.db.from("listing_relists").update({ status: to, ...patch }).eq("id", ctx.operation.id).eq("status", from);
+
+  if (options.expectedUpdatedAt !== undefined) {
+    update = update.eq("updated_at", options.expectedUpdatedAt);
+  }
+
+  const updated = await update.select("id");
 
   if (updated.error !== null) {
     return { ok: false, message: updated.error.message };
@@ -191,7 +215,7 @@ async function transition(
     relist_id: ctx.operation.id,
     from_status: from,
     to_status: to,
-    actor_user_id: null,
+    actor_user_id: options.actorUserId ?? null,
     reason,
   });
 
@@ -373,6 +397,8 @@ async function postRelistAndSettle(
       accessToken,
       body,
       schema: relistResponseSchema,
+      // UMA tentativa (regra 4): o erro que chega aqui é o do único POST.
+      maxAttempts: 1,
     });
   } catch (error) {
     // RECUSA comprovada (D-364): 4xx fora 408/429 é o Mercado Livre dizendo
@@ -388,9 +414,7 @@ async function postRelistAndSettle(
         ctx,
         "RELISTING",
         "RELIST_FAILED",
-        {
-          failure_reason: `o Mercado Livre recusou a republicação (HTTP ${String(error.status)}) — nenhum anúncio novo foi criado. Resposta: ${summary}`,
-        },
+        { failure_reason: relistRejectionFailureReason(error.status, summary) },
         RELIST_POST_REJECTED_REASON,
       );
 
@@ -474,23 +498,17 @@ async function resumeAfterRejection(
   context: HandlerContext,
   ctx: TransitionContext,
   now: Date,
+  autorizadoPor: string,
 ): Promise<JobOutcome> {
   const operation = ctx.operation;
 
-  const lastFailure = await deps.db
-    .from("listing_relist_events")
-    .select("reason")
-    .eq("relist_id", operation.id)
-    .eq("to_status", "RELIST_FAILED")
-    .order("occurred_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const lastFailure = await readLastRelistFailureReason(deps.db, operation.id);
 
-  if (lastFailure.error !== null) {
-    return { status: "failed", retryable: true, reason: `falha ao ler o último evento de falha: ${lastFailure.error.message}` };
+  if (!lastFailure.ok) {
+    return { status: "failed", retryable: true, reason: `falha ao ler o último evento de falha: ${lastFailure.message}` };
   }
 
-  const lastFailedEventReason = lastFailure.data?.reason ?? null;
+  const lastFailedEventReason = lastFailure.reason;
 
   const eligible = isRelistRetryEligible({
     status: operation.status,
@@ -575,8 +593,18 @@ async function resumeAfterRejection(
   }
 
   // Estado persistido ANTES do POST (regra 1). O motivo antigo sai: se esta
-  // tentativa falhar, ela grava o dela.
-  const relisting = await transition(ctx, "RELIST_FAILED", "RELISTING", { failure_reason: null }, RELIST_RETRY_REASON);
+  // tentativa falhar, ela grava o dela. O CAS amarra a VERSÃO que a regra
+  // avaliou (regra 6): outra retomada que emitiu o POST e voltou a
+  // RELIST_FAILED entre a leitura e aqui mudou o `updated_at`, e este job
+  // perde o CAS em vez de emitir um segundo POST depois de um 5xx.
+  const relisting = await transition(
+    ctx,
+    "RELIST_FAILED",
+    "RELISTING",
+    { failure_reason: null },
+    RELIST_RETRY_REASON,
+    { expectedUpdatedAt: operation.updated_at, actorUserId: autorizadoPor },
+  );
 
   if (!relisting.ok) {
     // CAS perdido na retomada é outra execução que ASSUMIU a operação. Falhar
@@ -595,6 +623,8 @@ async function resumeAfterRejection(
     relist_id: operation.id,
     parent_item_id: operation.parent_item_id,
     last_failed_reason: lastFailedEventReason,
+    authorized_by: autorizadoPor,
+    variations_left_out: summarizeRelistVariations(parentRaw).leftOut.map((variation) => variation.id),
   });
 
   return postRelistAndSettle(deps, context, ctx, accessToken, body);
@@ -613,7 +643,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
 
     const loaded = await deps.db
       .from("listing_relists")
-      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status, failure_reason, requested_by")
+      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status, failure_reason, requested_by, updated_at")
       .eq("id", parsed.data.relistId)
       .maybeSingle();
 
@@ -687,8 +717,8 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
     }
 
     // Retomada humana (regra 6, D-364): a única saída de RELIST_FAILED.
-    if (operation.status === "RELIST_FAILED" && retomada) {
-      return resumeAfterRejection(deps, context, ctx, now);
+    if (operation.status === "RELIST_FAILED" && retomada && parsed.data.autorizadoPor !== undefined) {
+      return resumeAfterRejection(deps, context, ctx, now, parsed.data.autorizadoPor);
     }
 
     // Idempotência de retomada: estado que este job não trata é trabalho já
@@ -763,6 +793,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
         approved: preflight.approved,
         blocks: preflight.blocks.map((block) => block.code),
         warnings: preflight.warnings.map((warning) => warning.code),
+        variations_left_out: summarizeRelistVariations(parentRaw).leftOut.map((variation) => variation.id),
         full_stock: describeFullStock(fullStock),
       });
 
