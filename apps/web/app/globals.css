@@ -7971,3 +7971,568 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/*
+ * PEDIDOS DE COMPRA (D-365) — `/compras`.
+ *
+ * O resumo, os cartões de estado, a busca e a paginação reusam as classes de
+ * `/reposicao` (`sb-rep-destaque`, `sb-rep-estado`, `sb-rep-busca`,
+ * `sb-rep-paginas`): as duas telas são a mesma jornada de compra e devem se ler
+ * iguais. O que é só desta tela mora em `sb-cmp-*`. Só tokens da casa.
+ */
+.sb-cmp-estados {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+a.sb-cmp-destaque-link {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+a.sb-cmp-destaque-link:hover {
+  border-color: var(--sb-secondary);
+  box-shadow: var(--sb-shadow-pop);
+  transform: translateY(-1px);
+}
+
+a.sb-cmp-destaque-link[aria-current="true"] {
+  box-shadow: inset 0 0 0 1px var(--sb-danger);
+}
+
+.sb-cmp-vazio {
+  display: grid;
+  justify-items: start;
+  gap: 0.375rem;
+  padding: var(--sb-space-4) var(--sb-space-3);
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-cmp-vazio b {
+  font-size: 0.9375rem;
+  color: var(--sb-primary);
+}
+
+.sb-cmp-vazio span {
+  max-width: 38rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-cmp-vazio div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-2);
+}
+
+/* A TABELA */
+.sb-cmp-tabela td {
+  vertical-align: middle;
+}
+
+.sb-cmp-tabela th {
+  white-space: nowrap;
+}
+
+.sb-cmp-linha-atrasada td:first-child {
+  box-shadow: inset 3px 0 0 var(--sb-danger);
+}
+
+.sb-cmp-numero {
+  font-family: var(--sb-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  text-decoration: none;
+}
+
+.sb-cmp-numero:hover,
+.sb-cmp-fornecedor:hover {
+  text-decoration: underline;
+}
+
+.sb-cmp-sub {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+.sb-cmp-fornecedor {
+  display: block;
+  max-width: 16rem;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sb-text);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-cmp-valor {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sb-cmp-ressalva {
+  color: var(--sb-accent-ink);
+}
+
+.sb-cmp-tabela td .sb-status {
+  white-space: nowrap;
+}
+
+/* A régua do ciclo: quatro traços, do rascunho ao recebimento. */
+.sb-cmp-regua {
+  display: flex;
+  gap: 3px;
+  width: 5.5rem;
+  margin-top: 0.375rem;
+}
+
+.sb-cmp-regua > i {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sb-table-rule);
+}
+
+.sb-cmp-regua > i.sb-cmp-regua-feita {
+  background: var(--sb-secondary);
+}
+
+.sb-cmp-regua-cancelada > i.sb-cmp-regua-feita {
+  background: var(--sb-danger);
+}
+
+.sb-cmp-data {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sb-cmp-selo {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--sb-radius-sm);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.sb-cmp-passo {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--sb-cmp-tom) 35%, var(--sb-border));
+  border-radius: var(--sb-radius-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-cmp-tom);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sb-cmp-passo:hover {
+  border-color: var(--sb-cmp-tom);
+  background: var(--sb-surface-hover);
+}
+
+.sb-cmp-abrir {
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sb-cmp-abrir:hover {
+  color: var(--sb-secondary);
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.sb-cmp-destaque-link,
+  .sb-cmp-passo {
+    transition: none;
+  }
+
+  a.sb-cmp-destaque-link:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 1150px) {
+  .sb-cmp-estados {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-cmp-estados {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+ * FORNECEDORES (D-366) — `/fornecedores`, o dashboard e o formulário.
+ *
+ * O resumo, os cartões de recorte, a busca e a paginação usam as peças da
+ * reposição (`sb-rep-destaque`, `sb-rep-estado`, `sb-rep-busca`,
+ * `sb-rep-paginas`, D-358): são a mesma linguagem, e uma cópia com outro
+ * prefixo seria a que sai de sincronia. Aqui fica só o que é de fornecedor.
+ * Só tokens da casa.
+ */
+.sb-forn-destaque-link {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.sb-forn-destaque-link:hover {
+  border-color: var(--sb-accent-ink);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+.sb-forn-ressalva {
+  font-style: normal;
+  color: var(--sb-accent-ink);
+}
+
+.sb-forn-de {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--sb-text-soft);
+}
+
+.sb-forn-recortes {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sb-forn-vazio {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem var(--sb-space-3);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-forn-vazio b {
+  font-size: 0.875rem;
+  color: var(--sb-primary);
+}
+
+.sb-forn-vazio .sb-button {
+  margin-top: 0.25rem;
+}
+
+/* A TABELA */
+/* `relative`: os rótulos só para leitor de tela (`.sb-sr-only`, absolutos) da
+   coluna de ações ficam presos à caixa que rola. Sem isso eles se posicionam
+   na borda direita da tabela e alargam a PÁGINA no celular (medido: 907px a
+   390px de viewport). */
+.sb-forn-tabela-rolagem {
+  position: relative;
+  overflow-x: auto;
+}
+
+.sb-forn-tabela td {
+  vertical-align: middle;
+}
+
+.sb-forn-linha-inativa td {
+  background: var(--sb-bg-soft);
+}
+
+.sb-forn-linha-inativa .sb-forn-avatar {
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+}
+
+.sb-forn-identidade {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 13rem;
+}
+
+.sb-forn-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--sb-radius-md);
+}
+
+.sb-forn-nome {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sb-forn-nome .sb-entity {
+  font-size: 0.75rem;
+}
+
+.sb-forn-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-forn-sub .sb-mono {
+  font-size: 0.5875rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-forn-contato {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 9rem;
+  font-size: 0.6875rem;
+}
+
+.sb-forn-num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-forn-bloco {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.5625rem;
+}
+
+.sb-forn-aberto {
+  display: table;
+  margin: 0.25rem 0 0 auto;
+  white-space: nowrap;
+}
+
+.sb-forn-quando {
+  display: grid;
+  gap: 0.125rem;
+  white-space: nowrap;
+}
+
+.sb-forn-quando b {
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+.sb-forn-quando small {
+  font-size: 0.5625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-forn-acoes {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.sb-forn-acoes > * + * {
+  margin-left: 0.5rem;
+}
+
+.sb-forn-acao {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  color: var(--sb-secondary);
+  background: var(--sb-surface);
+}
+
+.sb-forn-acao:hover {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+/* OS CANAIS DE CONTATO */
+.sb-forn-canais {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.sb-forn-canal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  color: var(--sb-text);
+  background: var(--sb-surface);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+a.sb-forn-canal:hover {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+  color: var(--sb-primary);
+}
+
+.sb-forn-canal .sb-icone {
+  flex: none;
+  color: var(--sb-secondary);
+}
+
+.sb-forn-canal-whatsapp .sb-icone {
+  color: var(--sb-success);
+}
+
+.sb-forn-canal-texto {
+  border-style: dashed;
+  color: var(--sb-text-soft);
+}
+
+.sb-forn-canais-compacto {
+  gap: 0.25rem;
+}
+
+.sb-forn-canais-compacto .sb-forn-canal {
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+/* O DASHBOARD */
+.sb-forn-ficha {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.sb-forn-ficha-linha {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-forn-notas {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 48rem;
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-left: 3px solid var(--sb-accent-ink);
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-bg-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+  white-space: pre-line;
+}
+
+.sb-forn-notas b {
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sb-accent-ink);
+}
+
+.sb-forn-gaveta-canais {
+  padding: 0.5rem 0;
+}
+
+.sb-forn-alternar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-forn-alternar-confirma > span:first-child {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* O FORMULÁRIO */
+.sb-forn-form {
+  display: grid;
+  gap: var(--sb-space-3);
+  max-width: 46rem;
+}
+
+.sb-forn-grade {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem var(--sb-space-3);
+}
+
+.sb-forn-campo-largo {
+  grid-column: 1 / -1;
+}
+
+.sb-forn-obrigatorio {
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--sb-muted-ink);
+}
+
+.sb-forn-form .sb-input[aria-invalid="true"] {
+  border-color: var(--sb-danger);
+  box-shadow: 0 0 0 3px var(--sb-danger-soft);
+}
+
+/* Salvar à vista enquanto se rola o formulário. */
+.sb-forn-form-acoes {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--sb-border);
+  background: var(--sb-ground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-forn-destaque-link {
+    transition: none;
+  }
+}
+
+@media (max-width: 1150px) {
+  .sb-forn-recortes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .sb-forn-recortes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-forn-grade {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-forn-alternar-confirma > span:first-child {
+    flex-basis: 100%;
+  }
+}

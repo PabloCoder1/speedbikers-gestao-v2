@@ -152,6 +152,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
         from: windowFrom,
         to: windowTo,
         logger: context.logger,
+        eventSource: "sync",
       });
 
       const dirtyWindow = recomputeWindow(deps.now?.() ?? new Date());

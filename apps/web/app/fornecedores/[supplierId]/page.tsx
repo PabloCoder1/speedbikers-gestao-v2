@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { Icone } from "../../../components/icons";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -11,6 +12,8 @@ import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format
 import { purchaseOrderStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
+import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
+import { Canais, temCanal } from "../canais";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
@@ -52,16 +55,6 @@ export const dynamic = "force-dynamic";
  * enviado num "Em Aberto" esconderia exatamente a diferença que decide o que
  * fazer com o pedido. Mesma classe de D-250 e D-265.
  */
-
-function Contato({ label, value }: { label: string; value: string | null }): ReactNode {
-  if (value === null || value.trim() === "") return null;
-
-  return (
-    <span>
-      <span style={{ color: "var(--sb-text-soft)" }}>{label}:</span> {value}
-    </span>
-  );
-}
 
 export default async function FornecedorPage({
   params,
@@ -120,15 +113,15 @@ export default async function FornecedorPage({
     overview.is_active ? { label: "Ativo", tom: "ok" } : { label: "Inativo", tom: "atencao" },
   ];
 
-  const contatos: readonly (readonly [string, string | null])[] = [
-    ["Razão social", overview.legal_name],
-    ["Documento", overview.document],
-    ["Contato", overview.contact_name],
-    ["Telefone", overview.phone],
-    ["WhatsApp", overview.whatsapp],
-    ["E-mail", overview.email],
-    ["Site", overview.website],
-  ];
+  // D-366: quem cadastra edita, e "Novo pedido" já leva o fornecedor. Esconder
+  // o botão é cortesia; a defesa é `update_supplier`.
+  const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
+  const documento = formatarDocumento(overview.document);
+  const identidade = [
+    overview.legal_name,
+    documento === null ? null : `${documento.replace(/\D/g, "").length === 11 ? "CPF" : "CNPJ"} ${documento}`,
+    overview.contact_name === null ? null : `Contato: ${overview.contact_name}`,
+  ].filter((parte): parte is string => parte !== null);
 
   // As CINCO contagens de estado que a RPC já devolvia e a tela não mostrava.
   // Não são links: `/compras` filtra por estado, mas não por fornecedor, então
@@ -159,23 +152,47 @@ export default async function FornecedorPage({
         meta={
           overview.ultimo_pedido_em === null
             ? "Nenhum pedido registrado"
-            : `Último pedido em ${formatDateTime(overview.ultimo_pedido_em)}`
+            : `Último pedido ${idadeRelativa(overview.ultimo_pedido_em, new Date()) ?? ""} · ${formatDateTime(overview.ultimo_pedido_em)}`
+        }
+        acoes={
+          podeEditar ? (
+            <>
+              <Link className="sb-button" href={`/fornecedores/${overview.supplier_id}/editar`}>
+                <Icone nome="lapis" tamanho={14} />
+                Editar
+              </Link>
+              {overview.is_active && (
+                <Link className="sb-button sb-button-primary" href={`/compras/novo?fornecedor=${overview.supplier_id}`}>
+                  <Icone nome="carrinho" tamanho={14} />
+                  Novo pedido
+                </Link>
+              )}
+            </>
+          ) : undefined
         }
       >
-        <p
-          style={{
-            margin: 0,
-            color: "var(--sb-text-soft)",
-            fontSize: "0.8125rem",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "0.75rem",
-          }}
-        >
-          {contatos.map(([label, value]) => (
-            <Contato key={label} label={label} value={value} />
-          ))}
-        </p>
+        <div className="sb-forn-ficha">
+          {identidade.length > 0 && <p className="sb-forn-ficha-linha">{identidade.join(" · ")}</p>}
+          {temCanal(overview) ? (
+            <Canais canais={overview} />
+          ) : (
+            <p className="sb-forn-ficha-linha">
+              Nenhum canal de contato cadastrado.
+              {podeEditar && (
+                <>
+                  {" "}
+                  <Link href={`/fornecedores/${overview.supplier_id}/editar`}>Cadastrar contato</Link>
+                </>
+              )}
+            </p>
+          )}
+          {overview.notes !== null && overview.notes.trim() !== "" && (
+            <p className="sb-forn-notas">
+              <b>Observações</b>
+              {overview.notes}
+            </p>
+          )}
+        </div>
       </ObjectHeader>
 
       {secondaryError !== null && (

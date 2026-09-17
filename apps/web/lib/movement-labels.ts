@@ -6,7 +6,7 @@
  * `describeActionEvidence`).
  */
 
-/** Os 12 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12). */
+/** Os 14 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12; o 13º e o 14º em D-351). */
 const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   ENTRADA_NFE: "Entrada por NF-e",
   SAIDA_NFE: "Saída por NF-e",
@@ -20,6 +20,12 @@ const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   LIBERACAO_RESERVA: "Liberação de reserva",
   ENTRADA_TRANSITO: "Entrada em trânsito (compra)",
   RECEBIMENTO_TRANSITO: "Recebimento do trânsito",
+  // D-351: a venda anterior à planilha do UpSeller é gravada e anulada por este
+  // par — o ERP já a tinha descontado.
+  ESTORNO_PRE_CAPTURA: "Estorno de venda anterior à planilha (UpSeller)",
+  // D-351 §12: a venda estornada que o legado reverteu duas vezes (cancelamento E
+  // devolução) — a reversão a mais é anulada com a data dela.
+  ESTORNO_REVERSAO_EXCEDENTE: "Estorno de reversão em dobro (cancelamento e devolução da mesma venda)",
 };
 
 const LOCATION_LABELS: Readonly<Record<string, string>> = {
