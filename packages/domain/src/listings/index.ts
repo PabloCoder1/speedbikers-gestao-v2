@@ -7,12 +7,14 @@ export {
 } from "./relist.js";
 export type { RelistState } from "./relist.js";
 
-export { collectRelistInventoryIds, evaluateRelistPreflight } from "./relist-preflight.js";
+export { collectRelistInventoryIds, evaluateRelistPreflight, summarizeRelistVariations } from "./relist-preflight.js";
 export type {
   RelistFullStockReading,
   RelistFullStockReadings,
+  RelistLeftOutVariation,
   RelistPreflightIssue,
   RelistPreflightResult,
+  RelistVariationsSummary,
 } from "./relist-preflight.js";
 
 export { buildRelistBody, hasRelistStock } from "./relist-body.js";
@@ -31,5 +33,6 @@ export {
   RELIST_RETRY_REASON,
   isRelistRejectionStatus,
   isRelistRetryEligible,
+  relistRejectionFailureReason,
 } from "./relist-retry.js";
 export type { RelistRetryCandidate } from "./relist-retry.js";

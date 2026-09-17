@@ -25,16 +25,29 @@ export const RELIST_RETRY_REASON = "RETOMADA_APOS_RECUSA";
 
 /**
  * O status HTTP que prova recusa: 4xx, menos 408 (timeout — o pedido pode ter
- * sido processado) e 429 (limite — idem, e o cliente HTTP já repete 429).
+ * sido processado) e 429 (limite — sem prova de que não foi). Só vale como
+ * prova porque o POST /relist sai com UMA tentativa no cliente HTTP: um 4xx
+ * depois de um 5xx repetido pelo cliente seria a recusa da REPETIÇÃO, com o
+ * filho talvez vivo.
  */
 export function isRelistRejectionStatus(status: number): boolean {
   return Number.isInteger(status) && status >= 400 && status <= 499 && status !== 408 && status !== 429;
 }
 
+/**
+ * O `failure_reason` de uma recusa, gravado no MESMO update que põe a operação
+ * em RELIST_FAILED. É por ele que a regra confere o evento `POST_RECUSADO`.
+ */
+export function relistRejectionFailureReason(status: number, summary: string): string {
+  return `o Mercado Livre recusou a republicação (HTTP ${String(status)}) — nenhum anúncio novo foi criado. Resposta: ${summary}`;
+}
+
+const REJECTION_FAILURE = /^o Mercado Livre recusou a republicação \(HTTP (\d{3})\) — nenhum anúncio novo foi criado\./u;
+
 export interface RelistRetryCandidate {
   readonly status: string;
   readonly parentItemId: string;
-  /** `listing_relists.failure_reason` como está gravado. */
+  /** `listing_relists.failure_reason` como está gravado (no mesmo update do status). */
   readonly failureReason: string | null;
   /** `reason` do ÚLTIMO evento com `to_status` RELIST_FAILED; `null` sem evento ou sem motivo. */
   readonly lastFailedEventReason: string | null;
@@ -52,6 +65,13 @@ const LEGACY_POST_FAILURE = /^o POST \/relist falhou e não é seguro repetir: M
  * Elegível sse a operação está em RELIST_FAILED e a ÚLTIMA falha registrada é
  * uma recusa comprovada: `POST_RECUSADO`, ou (legado) `POST_FALHOU` com a
  * mensagem antiga de um 4xx recusável para o POST deste mesmo pai.
+ *
+ * O evento e a linha precisam concordar. O evento é gravado numa chamada
+ * separada, e perdê-lo é só log (`relist_event_not_recorded`): uma retomada
+ * que levou 5xx e não gravou o `POST_FALHOU` deixaria o `POST_RECUSADO` antigo
+ * como último evento. O `failure_reason` sai no mesmo update do status, então
+ * é ele que desempata — com a mensagem de recusa, e de um status que prova
+ * recusa.
  */
 export function isRelistRetryEligible(candidate: RelistRetryCandidate): boolean {
   if (candidate.status !== "RELIST_FAILED") {
@@ -59,7 +79,9 @@ export function isRelistRetryEligible(candidate: RelistRetryCandidate): boolean 
   }
 
   if (candidate.lastFailedEventReason === RELIST_POST_REJECTED_REASON) {
-    return true;
+    const rejection = candidate.failureReason === null ? null : REJECTION_FAILURE.exec(candidate.failureReason);
+
+    return rejection !== null && isRelistRejectionStatus(Number(rejection[1]));
   }
 
   if (candidate.lastFailedEventReason !== RELIST_POST_FAILED_REASON || candidate.failureReason === null) {

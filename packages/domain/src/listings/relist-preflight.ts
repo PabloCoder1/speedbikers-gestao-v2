@@ -44,7 +44,9 @@
  * - `FULL_CADASTRO_SEM_ESTOQUE` — cadastro no Full com zero unidades (D-360):
  *   nada fica preso no CD, mas a doc não diz se o filho herda o cadastro.
  * - `VARIACOES_SEM_ESTOQUE_FORA` — D-364: parte das variações está zerada.
- *   Elas ficam fora do corpo, e o anúncio novo nasce sem elas.
+ *   Elas ficam fora do corpo, e o anúncio novo nasce sem elas. O dono lê a
+ *   lista (`summarizeRelistVariations`) na confirmação da tela, antes de
+ *   fechar; o worker a registra no log.
  */
 
 import { hasRelistStock } from "./relist-body.js";
@@ -105,6 +107,92 @@ function readLegibleVariation(variation: unknown): LegibleVariation | null {
   const legiblePrice = typeof price === "number" && Number.isFinite(price);
 
   return legibleId && legiblePrice && isNonNegativeInteger(quantity) ? { id: idText, available_quantity: quantity } : null;
+}
+
+/** Uma variação que o corpo do relist deixa de fora — como a tela a mostra ao dono. */
+export interface RelistLeftOutVariation {
+  readonly id: string;
+  /** `attribute_combinations` como "Color: Preto"; `null` sem combinação legível. */
+  readonly label: string | null;
+  /** `seller_custom_field`, ou o atributo `SELLER_SKU`; `null` sem nenhum. */
+  readonly sku: string | null;
+}
+
+export interface RelistVariationsSummary {
+  /** Quantas variações o item tem; 0 para item sem variação ou forma ilegível. */
+  readonly total: number;
+  /** As que ficam FORA do anúncio novo: legíveis e sem estoque, havendo outra com estoque. */
+  readonly leftOut: readonly RelistLeftOutVariation[];
+}
+
+function describeVariationLabel(variation: Record<string, unknown>): string | null {
+  const combinations: unknown[] = Array.isArray(variation.attribute_combinations) ? variation.attribute_combinations : [];
+  const parts = combinations
+    .map((combination) => {
+      if (!isRecord(combination)) {
+        return null;
+      }
+
+      const name = readOptionalString(combination, "name");
+      const value = readOptionalString(combination, "value_name");
+
+      return value === null ? null : name === null ? value : `${name}: ${value}`;
+    })
+    .filter((part) => part !== null);
+
+  return parts.length === 0 ? null : parts.join(", ");
+}
+
+function describeVariationSku(variation: Record<string, unknown>): string | null {
+  const sellerCustomField = readOptionalString(variation, "seller_custom_field");
+
+  if (sellerCustomField !== null) {
+    return sellerCustomField;
+  }
+
+  const attributes: unknown[] = Array.isArray(variation.attributes) ? variation.attributes : [];
+  const sellerSku = attributes.find((attribute) => isRecord(attribute) && attribute.id === "SELLER_SKU");
+
+  return isRecord(sellerSku) ? readOptionalString(sellerSku, "value_name") : null;
+}
+
+/**
+ * As variações do item e as que a republicação deixa de fora (D-364) — o
+ * MESMO predicado de `buildRelistBody` e do aviso `VARIACOES_SEM_ESTOQUE_FORA`.
+ * Recebe o item cru (o `parent_snapshot` ou o pai ao vivo). Sem variação
+ * legível, ou sem nenhuma com estoque (o preflight bloqueia), nada fica "de
+ * fora": a lista vem vazia.
+ */
+export function summarizeRelistVariations(rawItem: unknown): RelistVariationsSummary {
+  if (!isRecord(rawItem) || !Array.isArray(rawItem.variations)) {
+    return { total: 0, leftOut: [] };
+  }
+
+  const variations: unknown[] = rawItem.variations;
+  const legible = variations.flatMap((variation) => {
+    const read = readLegibleVariation(variation);
+
+    return read === null || !isRecord(variation) ? [] : [{ read, raw: variation }];
+  });
+
+  if (legible.length !== variations.length) {
+    return { total: variations.length, leftOut: [] };
+  }
+
+  const withoutStock = legible.filter(({ read }) => !hasRelistStock(read.available_quantity));
+
+  if (withoutStock.length === legible.length) {
+    return { total: variations.length, leftOut: [] };
+  }
+
+  return {
+    total: variations.length,
+    leftOut: withoutStock.map(({ read, raw }) => ({
+      id: read.id,
+      label: describeVariationLabel(raw),
+      sku: describeVariationSku(raw),
+    })),
+  };
 }
 
 function isValidReading(reading: RelistFullStockReading | null | undefined): reading is RelistFullStockReading {
@@ -298,9 +386,13 @@ export function evaluateRelistPreflight(
           descricao: `Nenhuma das ${String(legible.length)} variação(ões) tem estoque: não há o que republicar, e fechar o anúncio agora o deixaria fora do ar sem anúncio novo.`,
         });
       } else if (withoutStock.length > 0) {
+        // A lista sai da mesma função que a tela usa na confirmação: o que o
+        // log do worker diz e o que o dono lê antes de fechar não divergem.
+        const leftOut = summarizeRelistVariations(item).leftOut;
+
         warnings.push({
           code: "VARIACOES_SEM_ESTOQUE_FORA",
-          descricao: `${String(withoutStock.length)} de ${String(legible.length)} variação(ões) sem estoque (${withoutStock.map((variation) => variation.id).join(", ")}) ficam fora da republicação: o anúncio novo nasce só com as variações que têm estoque.`,
+          descricao: `${String(leftOut.length)} de ${String(legible.length)} variação(ões) sem estoque (${leftOut.map((variation) => variation.id).join(", ")}) ficam fora da republicação: o anúncio novo nasce só com as variações que têm estoque.`,
         });
       }
     }

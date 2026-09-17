@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelistRetryCandidate } from "./relist-retry.js";
-import { isRelistRejectionStatus, isRelistRetryEligible } from "./relist-retry.js";
+import { isRelistRejectionStatus, isRelistRetryEligible, relistRejectionFailureReason } from "./relist-retry.js";
 
 const PARENT = "MLB1476804187";
 
@@ -26,6 +26,32 @@ function candidate(overrides: Partial<RelistRetryCandidate> = {}): RelistRetryCa
 describe("isRelistRetryEligible (D-364)", () => {
   it("POST_RECUSADO no último evento de falha: elegível", () => {
     expect(isRelistRetryEligible(candidate())).toBe(true);
+  });
+
+  it("POST_RECUSADO com a linha dizendo OUTRA falha não é elegível: o evento da falha nova pode não ter sido gravado", () => {
+    for (const failureReason of [
+      // A retomada levou 5xx, o update gravou, o insert do evento POST_FALHOU não.
+      legado(503),
+      "o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 503 para POST /items/MLB1476804187/relist.",
+      "execução interrompida após o POST /relist ser emitido — impossível saber se o filho nasceu",
+      "a resposta do relist devolveu o próprio id do pai — filho não confirmado",
+      relistRejectionFailureReason(429, "x"),
+      relistRejectionFailureReason(500, "x"),
+      ` ${relistRejectionFailureReason(400, "x")}`,
+      null,
+    ]) {
+      expect(isRelistRetryEligible(candidate({ lastFailedEventReason: "POST_RECUSADO", failureReason }))).toBe(false);
+    }
+  });
+
+  it("a mensagem que o worker grava na recusa é a que a regra aceita", () => {
+    const failureReason = relistRejectionFailureReason(400, "Validation error causas: item.variations.missing");
+
+    expect(failureReason.startsWith("o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado")).toBe(
+      true,
+    );
+    expect(isRelistRetryEligible(candidate({ failureReason }))).toBe(true);
+    expect(isRelistRetryEligible(candidate({ failureReason: relistRejectionFailureReason(422, "") }))).toBe(true);
   });
 
   it("legado: POST_FALHOU com a mensagem REAL do 400 do MLB1476804187 é elegível", () => {

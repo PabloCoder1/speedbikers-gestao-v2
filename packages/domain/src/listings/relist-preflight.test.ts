@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelistFullStockReading } from "./relist-preflight.js";
-import { collectRelistInventoryIds, evaluateRelistPreflight } from "./relist-preflight.js";
+import { collectRelistInventoryIds, evaluateRelistPreflight, summarizeRelistVariations } from "./relist-preflight.js";
 
 /** Forma mínima de um item SAUDÁVEL para o preflight — cada teste quebra um pedaço. */
 function healthyItem(): Record<string, unknown> {
@@ -276,6 +276,71 @@ describe("collectRelistInventoryIds (D-360)", () => {
   it("o que não é item não tem inventário", () => {
     for (const garbage of [null, undefined, "texto", 42, ["array"]]) {
       expect(collectRelistInventoryIds(garbage)).toEqual([]);
+    }
+  });
+});
+
+describe("summarizeRelistVariations (D-364)", () => {
+  /** Variação como o GET /items devolve, com combinação e SKU. */
+  function variacaoCompleta(id: number, estoque: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      ...variacao(id, estoque),
+      attribute_combinations: [{ id: null, name: "Color", value_id: null, value_name: "Preto" }],
+      seller_custom_field: null,
+      ...extra,
+    };
+  }
+
+  it("lista as variações sem estoque que ficam fora, com a combinação e o SKU — as mesmas do aviso", () => {
+    const item = {
+      ...healthyItem(),
+      variations: [
+        variacaoCompleta(52_844_432_013, 698),
+        variacaoCompleta(52_844_432_007, 0, { seller_custom_field: "SB-RETRO-PRETO" }),
+        variacaoCompleta(52_844_432_008, 0, {
+          attribute_combinations: [
+            { name: "Color", value_name: "Vermelho" },
+            { name: "Lado", value_name: "Esquerdo" },
+          ],
+          attributes: [{ id: "SELLER_SKU", value_name: "SB-RETRO-VERM-E" }],
+        }),
+        variacaoCompleta(52_844_432_009, 0, { attribute_combinations: [] }),
+      ],
+    };
+
+    const summary = summarizeRelistVariations(item);
+
+    expect(summary).toEqual({
+      total: 4,
+      leftOut: [
+        { id: "52844432007", label: "Color: Preto", sku: "SB-RETRO-PRETO" },
+        { id: "52844432008", label: "Color: Vermelho, Lado: Esquerdo", sku: "SB-RETRO-VERM-E" },
+        { id: "52844432009", label: null, sku: null },
+      ],
+    });
+
+    const warning = evaluateRelistPreflight(item).warnings.find((issue) => issue.code === "VARIACOES_SEM_ESTOQUE_FORA");
+    expect(warning?.descricao).toContain("3 de 4");
+    expect(warning?.descricao).toContain("52844432007, 52844432008, 52844432009");
+  });
+
+  it("todas com estoque, sem variação, forma ilegível ou nenhuma com estoque (o preflight bloqueia): nada fica de fora", () => {
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 3), variacao(2, 1)] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+    expect(summarizeRelistVariations(healthyItem())).toEqual({ total: 0, leftOut: [] });
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 0)] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 3), { id: 2, available_quantity: 0 }] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+
+    for (const garbage of [null, undefined, "texto", { variations: "x" }]) {
+      expect(summarizeRelistVariations(garbage)).toEqual({ total: 0, leftOut: [] });
     }
   });
 });
