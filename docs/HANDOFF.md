@@ -44,25 +44,9 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos (trilha 8B)
 
-Medidos contra o Dev em 2026-09-01, não herdados de documentação.
-
-**Todo o P0 da trilha 8B fechou** — A a H, cada um com a sua decisão: contexto
-dos agentes (D-177), writes sem verificação (D-178), webhooks sem consumidor
-(D-179), `has_role` sem organização (D-180), `SECURITY DEFINER` (D-182, sem
-vulnerabilidade), e as três de desempenho (D-181, D-183). A frente passa para o
-P1.
-
-✅ **O bloco P0 está completo — os nomeados E os três sem letra.** Ficam
-listados porque "P0 fechado, A a H" já foi o recorte só dos que tinham letra, e
-isso tornava os outros três invisíveis:
-
-| item | estado |
-|---|---|
-| ~~`get_system_health` com escopo de plataforma~~ | ✅ **fechado em D-209** |
-| ~~`ml_accounts` com UPDATE/DELETE para `authenticated`~~ | ✅ **fechado em D-210** |
-| ~~`pg_default_acl` de funções~~ | ✅ **fechado em D-211** |
-
-Números completos e método: `docs/PERFORMANCE.md`.
+**Nenhum.** O bloco inteiro fechou — os oito com letra e os três sem (D-177 a D-183,
+D-209 a D-211). História e números: `docs/archive/handoffs/2026-09-17_p0-8b-e-varredura-das-rpcs.md`
+e `docs/PERFORMANCE.md`.
 
 ---
 
@@ -80,18 +64,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
 
-- **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).**
-  **Duas** tinham a doença do plano genérico
-  (`get_listings_dashboard`, `get_stock_coverage`), uma tinha desperdício
-  (`get_sales_expanded_summary`, `orders` lido duas vezes) e **16 estão
-  saudáveis** — de 1 ms a 1,2 s de estado estável, nenhuma perto do teto de
-  8 s. **A lição que fica é sobre a FONTE:** `get_stock_coverage` aparecia
-  com 89 ms de média no `pg_stat_statements` e custava **27 s** na forma que
-  a tela inicial usa — a estatística mede o que foi chamado, não o que pode
-  ser. Toda RPC nova, ou toda mudança de volume, pede o ensaio deliberado:
-  6 a 8 execuções como `authenticated`, **cada forma de chamada**, e comparar
-  com o mesmo corpo em literais. Corpo rápido + função lenta = é o plano.
-
+- **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).** Duas tinham
+  plano genérico, uma tinha desperdício e 16 estavam saudáveis. **A lição que fica é sobre a
+  FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
+  forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
+  de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
   (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a

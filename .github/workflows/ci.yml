@@ -78,6 +78,12 @@ jobs:
       - name: Guarda de forma de campo e botao
         run: pnpm --filter @sb/web run check:control-styles
 
+      # O budget de contexto (HANDOFF e AGENTS) so existia como script local, e em
+      # 2026-09-17 a v3 passou do limite sem nenhum PR reprovar. Guarda estatica,
+      # roda em segundos e nao precisa de banco.
+      - name: Budget de contexto dos agentes
+        run: pnpm run docs:check
+
       - name: Build
         run: pnpm run build
 
