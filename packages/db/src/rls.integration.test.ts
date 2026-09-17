@@ -12119,6 +12119,9 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "retarget_sku_listing_link",
     "set_skus_stock_virtual",
     "set_skus_supplier_brand",
+    // D-370: confere o papel NA organizacao do fornecedor (has_org_role) e que
+    // a pasta do caminho e dessa organizacao; a forma do caminho e uma check.
+    "set_supplier_logo",
     "triage_support_case",
     "update_action_status",
     "update_purchase_order_draft",
