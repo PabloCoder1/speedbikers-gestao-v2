@@ -36,10 +36,52 @@ jobs:
       - name: Ativar pnpm
         run: corepack enable
 
+      # `actions/setup-node` sabe cachear o store do pnpm com `cache: pnpm`,
+      # mas so enxerga o pnpm se ele ja estiver no PATH na hora em que ELE
+      # roda -- e aqui o `corepack enable` vem depois, de proposito: e o campo
+      # `packageManager` do package.json que fixa a versao, sem action de
+      # terceiro no meio. Reordenar por causa do cache trocaria essa garantia
+      # por alguns segundos. O cache explicito nao pede nada em troca.
+      - name: Caminho do store do pnpm
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Com
+      # `restore-keys`, um lockfile alterado ainda parte do store da execucao
+      # anterior e o install so busca no registry o que mudou.
+      - name: Cache do store do pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
       # `--frozen-lockfile` falha se o lockfile estiver desatualizado em relação
       # aos package.json. É o que impede uma dependência entrar sem revisão.
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
+
+      # O cache do Turborepo e local (`.turbo/cache`) e o runner nasce limpo:
+      # sem isto, toda tarefa de todo pacote roda de novo mesmo quando nada
+      # naquele pacote mudou. Restaurar nao arrisca resultado velho -- o
+      # Turborepo so aproveita uma entrada quando o hash das ENTRADAS bate
+      # (arquivos, configuracao e as variaveis declaradas em turbo.json);
+      # entrada que nao bate e ignorada, nao reaproveitada.
+      #
+      # O SHA na chave faz cada execucao gravar entrada propria (o
+      # `actions/cache` nao regrava uma chave que ja existe, e sem isso o
+      # cache congelaria no primeiro commit); `restore-keys` pega a anterior
+      # como ponto de partida.
+      #
+      # So aqui: a job `e2e` builda com as `NEXT_PUBLIC_*` do Supabase local,
+      # que entram no hash e formam outro universo de entradas -- duas jobs
+      # gravando a mesma chave so trocariam de lugar sem aproveitar nada.
+      - name: Cache do Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-turbo-
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -113,6 +155,26 @@ jobs:
       - name: Ativar pnpm
         run: corepack enable
 
+      # `actions/setup-node` sabe cachear o store do pnpm com `cache: pnpm`,
+      # mas so enxerga o pnpm se ele ja estiver no PATH na hora em que ELE
+      # roda -- e aqui o `corepack enable` vem depois, de proposito: e o campo
+      # `packageManager` do package.json que fixa a versao, sem action de
+      # terceiro no meio. Reordenar por causa do cache trocaria essa garantia
+      # por alguns segundos. O cache explicito nao pede nada em troca.
+      - name: Caminho do store do pnpm
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Com
+      # `restore-keys`, um lockfile alterado ainda parte do store da execucao
+      # anterior e o install so busca no registry o que mudou.
+      - name: Cache do store do pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
 
@@ -167,8 +229,52 @@ jobs:
       - name: Ativar pnpm
         run: corepack enable
 
+      # `actions/setup-node` sabe cachear o store do pnpm com `cache: pnpm`,
+      # mas so enxerga o pnpm se ele ja estiver no PATH na hora em que ELE
+      # roda -- e aqui o `corepack enable` vem depois, de proposito: e o campo
+      # `packageManager` do package.json que fixa a versao, sem action de
+      # terceiro no meio. Reordenar por causa do cache trocaria essa garantia
+      # por alguns segundos. O cache explicito nao pede nada em troca.
+      - name: Caminho do store do pnpm
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Com
+      # `restore-keys`, um lockfile alterado ainda parte do store da execucao
+      # anterior e o install so busca no registry o que mudou.
+      - name: Cache do store do pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
+
+      # Sem cache o Chromium e baixado inteiro a cada execucao. A chave e a
+      # VERSAO do Playwright, nao o hash do lockfile: o navegador so muda
+      # quando o Playwright muda, e chavear pelo lockfile jogaria o download
+      # fora a cada dependencia nova de qualquer pacote. Se o formato do
+      # lockfile mudar e a leitura vier vazia, a chave cai no hash -- pior
+      # aproveitamento, nunca navegador errado.
+      - name: Versao do Playwright no lockfile
+        id: playwright
+        run: |
+          versao="$(sed -n "s/^  '@playwright\/test@\(.*\)':$/\1/p" pnpm-lock.yaml | head -n1)"
+          if [ -z "${versao}" ]; then
+            versao="lock-${{ hashFiles('pnpm-lock.yaml') }}"
+          fi
+          echo "versao=${versao}" >> "$GITHUB_OUTPUT"
+
+      # O cache guarda o NAVEGADOR; as bibliotecas de sistema do `--with-deps`
+      # vem do apt e continuam sendo instaladas. Com acerto, o passo abaixo so
+      # confere que o binario esta la e segue.
+      - name: Cache do navegador do Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright.outputs.versao }}
 
       - name: Instalar navegador do Playwright
         run: pnpm --filter web exec playwright install --with-deps chromium
@@ -250,6 +356,26 @@ jobs:
 
       - name: Ativar pnpm
         run: corepack enable
+
+      # `actions/setup-node` sabe cachear o store do pnpm com `cache: pnpm`,
+      # mas so enxerga o pnpm se ele ja estiver no PATH na hora em que ELE
+      # roda -- e aqui o `corepack enable` vem depois, de proposito: e o campo
+      # `packageManager` do package.json que fixa a versao, sem action de
+      # terceiro no meio. Reordenar por causa do cache trocaria essa garantia
+      # por alguns segundos. O cache explicito nao pede nada em troca.
+      - name: Caminho do store do pnpm
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Com
+      # `restore-keys`, um lockfile alterado ainda parte do store da execucao
+      # anterior e o install so busca no registry o que mudou.
+      - name: Cache do store do pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
 
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
