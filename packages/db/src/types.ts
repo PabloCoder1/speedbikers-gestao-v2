@@ -4606,6 +4606,21 @@ export type Database = {
           visits: number
         }[]
       }
+      get_listings_link_overview: {
+        Args: {
+          p_organization_id: string
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string | null
+          p_link_state?: string
+          p_sold?: string
+          p_search?: string | null
+          p_limit?: number
+          p_offset?: number
+        }
+        // jsonb (D-376): conferido campo a campo em apps/web/lib/vinculacoes-visao.ts.
+        Returns: Json
+      }
       // ENTRADA MANUAL (D-296): a migration `20260910120000` ainda nao passou
       // pelo gerador do MCP, que le o Dev. A assinatura veio de
       // `pg_get_function_result` no banco local, e o teste de integracao a fixa.

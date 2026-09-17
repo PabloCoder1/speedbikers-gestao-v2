@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **368** (D-001 a D-374).
+Decisões registradas: **369** (D-001 a D-376).
 
 ## Por domínio
 
@@ -137,7 +137,7 @@ Decisões registradas: **368** (D-001 a D-374).
 - **D-361** — Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
 - **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 
-### interface (41)
+### interface (42)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -180,6 +180,7 @@ Decisões registradas: **368** (D-001 a D-374).
 - **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 - **D-372** — Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
+- **D-376** — Vinculacoes: a moldura que faltava e a pagina numa leitura so
 
 ### mercado-livre (56)
 
