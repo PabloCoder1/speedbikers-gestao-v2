@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,6 +18,7 @@ import {
   cienciaDaRetomada,
   descreverVariacaoFora,
   passoDaReleitura,
+  precisaDasVariacoesDoRetrato,
 } from "./republicacao";
 
 describe("variações que ficam fora do anúncio novo, na confirmação (D-364)", () => {
@@ -252,5 +255,60 @@ describe("variações em conta de user products (D-369)", () => {
         }).semRepublicacao,
       ).toBe(false);
     }
+  });
+
+  it("B1/R1: precisaDasVariacoesDoRetrato — REQUESTED, RELIST_FAILED e a reprovação por VARIACOES_USER_PRODUCT; nunca a leitura da conta que falhou", () => {
+    const casos: readonly (readonly [string, string | null, boolean])[] = [
+      ["REQUESTED", null, true],
+      ["RELIST_FAILED", relistRejectionFailureReason(400, "causas: item.variations.relist.invalid: x"), true],
+      ["RELIST_FAILED", null, true],
+      ["PREFLIGHT_FAILED", motivoDoPreflight(true), true],
+      ["CLOSE_FAILED", motivoDoPreflight(true), true],
+      ["PREFLIGHT_FAILED", motivoDoPreflight(null), false],
+      ["CLOSE_FAILED", motivoDoPreflight(null), false],
+      ["PREFLIGHT_FAILED", "O anúncio está sem estoque.", false],
+      ["PREFLIGHT_FAILED", null, false],
+      ["CLOSING", motivoDoPreflight(true), false],
+      ["RELISTED", null, false],
+      ["REMAPPED", null, false],
+    ];
+
+    for (const [status, failure_reason, esperado] of casos) {
+      expect(precisaDasVariacoesDoRetrato({ status, failure_reason }), `${status} / ${String(failure_reason)}`).toBe(esperado);
+    }
+
+    expect(precisaDasVariacoesDoRetrato(null)).toBe(false);
+  });
+
+  it("B1/R1: o caminho da página — só lê o retrato quando precisa, e a reprovação por VARIACOES_USER_PRODUCT fica sem pedido", () => {
+    // O retrato do pai do incidente: 10 variações. A página só o lê quando o predicado deixa.
+    const retrato = {
+      variations: Array.from({ length: 10 }, (_, indice) => ({ id: 52_844_432_000 + indice, price: 114.9, available_quantity: 5 })),
+    };
+
+    for (const status of ["PREFLIGHT_FAILED", "CLOSE_FAILED"]) {
+      const linha = { id: "a7638dc5", status, failure_reason: motivoDoPreflight(true) };
+      const variacoes = summarizeRelistVariations(precisaDasVariacoesDoRetrato(linha) ? retrato : { variations: undefined });
+      const atos = atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: { status: linha.status, retomavel: false, failureReason: linha.failure_reason },
+        variacoesDoRetrato: variacoes.total,
+        aguardandoWorker: false,
+      });
+
+      expect(variacoes.total).toBe(10);
+      expect(atos).toMatchObject({ pedir: false, semRepublicacao: true });
+    }
+  });
+
+  it("B1/R1: page.tsx condiciona a leitura de parent_snapshot->variations a precisaDasVariacoesDoRetrato(operacaoComoPai)", () => {
+    // Guarda da ligação: nenhum teste sem banco renderiza a página. Trocar a
+    // condição por outra (ou tirar a leitura) faz este teste falhar — e o A4
+    // não volta em silêncio.
+    const pagina = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pagina).toMatch(
+      /precisaDasVariacoesDoRetrato\(operacaoComoPai\)\s*\?\s*supabase\s*\.from\("listing_relists"\)\s*\.select\("variations:parent_snapshot->variations"\)/u,
+    );
   });
 });

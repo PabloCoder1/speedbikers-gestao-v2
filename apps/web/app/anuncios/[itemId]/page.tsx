@@ -24,7 +24,7 @@ import { BarrasDiarias } from "./barras-diarias";
 import { checarAnuncio, horasDesde, idadeRelativa, SYNC_VELHO_HORAS } from "./checagem";
 import { CopiarMlb } from "./copiar-mlb";
 import { RelistPanel } from "./relist-panel";
-import { reprovadaPorVariacoesUserProduct } from "./republicacao";
+import { precisaDasVariacoesDoRetrato } from "./republicacao";
 
 /**
  * O endereço público do anúncio. O Mercado Livre resolve `MLB-<número>` para a
@@ -424,16 +424,15 @@ export default async function AnuncioPage({
       o item do Mercado Livre, pesado demais para uma confirmação. Também na
       operação que a conferência reprovou por variações em conta de user
       products (D-369): com variações no retrato, o painel não oferece outro
+      pedido. A condição é `precisaDasVariacoesDoRetrato` (`republicacao.ts`),
+      testada lá — sem ela, o painel veria 0 variações e voltaria a oferecer o
       pedido.
   */
   const [ultimaFalhaResult, variacoesDoPedidoResult] = await Promise.all([
     operacaoComoPai?.status === "RELIST_FAILED"
       ? readLastRelistFailureReason(supabase, operacaoComoPai.id)
       : Promise.resolve({ ok: true as const, reason: null }),
-    operacaoComoPai !== null &&
-    (operacaoComoPai.status === "REQUESTED" ||
-      operacaoComoPai.status === "RELIST_FAILED" ||
-      reprovadaPorVariacoesUserProduct({ status: operacaoComoPai.status, failureReason: operacaoComoPai.failure_reason }))
+    precisaDasVariacoesDoRetrato(operacaoComoPai)
       ? supabase.from("listing_relists").select("variations:parent_snapshot->variations").eq("id", operacaoComoPai.id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);

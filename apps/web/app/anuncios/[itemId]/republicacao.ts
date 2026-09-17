@@ -96,6 +96,36 @@ export function reprovadaPorVariacoesUserProduct(operacao: Pick<OperacaoDoPainel
   );
 }
 
+/** A linha de `listing_relists` como a página a lê — só o que decide a leitura do retrato. */
+export interface OperacaoLida {
+  readonly status: string;
+  readonly failure_reason: string | null;
+}
+
+/**
+ * `true` sse o painel precisa das variações do retrato do pedido
+ * (`parent_snapshot->variations`) para decidir o que oferecer — e só então a
+ * página as lê, porque o retrato inteiro é pesado:
+ *
+ *  - REQUESTED e RELIST_FAILED: as variações sem estoque ficam fora do anúncio
+ *    novo, e as confirmações as listam (D-364);
+ *  - reprovada por variações em conta de user products (D-369): sem as
+ *    variações lidas, `atosDaRepublicacao` veria 0 e ofereceria outro pedido,
+ *    que reprovaria igual.
+ *
+ * Recebe a linha como a página a lê, sem tradução de campo: a condição da
+ * leitura mora aqui, testada, e não na página, que nenhum teste sem banco
+ * renderiza.
+ */
+export function precisaDasVariacoesDoRetrato<T extends OperacaoLida>(operacao: T | null): operacao is T {
+  return (
+    operacao !== null &&
+    (operacao.status === "REQUESTED" ||
+      operacao.status === "RELIST_FAILED" ||
+      reprovadaPorVariacoesUserProduct({ status: operacao.status, failureReason: operacao.failure_reason }))
+  );
+}
+
 export function atosDaRepublicacao({
   podeRepublicar,
   operacao,
