@@ -13473,3 +13473,124 @@ describe("excluir fornecedor (D-372)", () => {
     await expect(asAnon(`select public.delete_supplier('${semPedido}')`)).rejects.toThrow(/permission denied/i);
   });
 });
+
+// get_listing_link_suggestions (20260917200000, D-374) -- a sugestao de SKU do
+// popup de /vinculacoes, tirada do seller_sku dos pedidos do anuncio.
+describe("get_listing_link_suggestions (D-374)", () => {
+  // Sufixo por execucao: SKU e anuncio sao unicos, e a suite roda de novo sem
+  // `db reset` localmente.
+  const RUN = String(Date.now());
+  const CONTA = "aaaa3740-0000-4000-8000-00000000d374";
+  const ITEM_INTEIRO = `MLB374${RUN.slice(-8)}1`;
+  const ITEM_VARIACOES = `MLB374${RUN.slice(-8)}2`;
+  let skuA = "";
+  let skuB = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta D-374','linksug-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const a = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, `LINKSUG-A-${RUN}`],
+    );
+    const b = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, `LINKSUG-B-${RUN}`],
+    );
+    skuA = a.rows[0]?.id ?? "";
+    skuB = b.rows[0]?.id ?? "";
+
+    const base = Number(RUN.slice(-9)) * 10;
+    const pedidos = [base + 1, base + 2, base + 3, base + 4];
+
+    for (const [i, id] of pedidos.entries()) {
+      await client.query(
+        `insert into public.orders
+           (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+         values ($1,$2,$3,null,'paid',now() - ($4 || ' hours')::interval, now(),100,'BRL')`,
+        [id, ORG_SB, CONTA, String(i + 1)],
+      );
+    }
+
+    /*
+      ITEM_INTEIRO: tres pedidos sem variacao, o seller_sku em caixa e espacos
+      diferentes -- a sugestao casa pela MESMA normalizacao da coluna gerada
+      (upper(btrim)). ITEM_VARIACOES: duas variacoes, uma com SKU do catalogo e
+      outra com codigo que nao existe.
+    */
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, seller_sku)
+       values
+         ($1,$5,$6,0,$7,null,'Anuncio inteiro',2,50,'BRL',$9),
+         ($2,$5,$6,0,$7,null,'Anuncio inteiro',1,50,'BRL',$10),
+         ($3,$5,$6,0,$8,'111','Var 111',4,50,'BRL',$11),
+         ($4,$5,$6,0,$8,'222','Var 222',1,50,'BRL','NAO-EXISTE-${RUN}')`,
+      [
+        pedidos[0], pedidos[1], pedidos[2], pedidos[3], ORG_SB, CONTA, ITEM_INTEIRO, ITEM_VARIACOES,
+        ` linksug-a-${RUN} `, `LINKSUG-A-${RUN}`, `LINKSUG-B-${RUN}`,
+      ],
+    );
+
+    // Um vinculo JA existente na variacao 111, para a funcao devolver.
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id, variation_id)
+       values ($1,$2,$3,'ITEM',$4,'111')`,
+      [ORG_SB, CONTA, skuB, ITEM_VARIACOES],
+    );
+  });
+
+  interface Sugestao {
+    variacoes: { variation_id: string | null; seller_sku: string | null; pedidos: number; unidades: number; sku_id: string | null }[];
+    vinculos: { variation_id: string | null; sku_id: string | null }[];
+  }
+
+  async function sugestao(item: string): Promise<Sugestao> {
+    const rows = await asUser<{ v: Sugestao }>(
+      ADMIN_SB,
+      `select public.get_listing_link_suggestions('${CONTA}', '${item.toLowerCase()} ') as v`,
+    );
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_listing_link_suggestions nao devolveu linha");
+
+    return v;
+  }
+
+  it("agrupa os pedidos e casa o seller_sku com o catalogo pela mesma normalizacao do sku_key", async () => {
+    const v = await sugestao(ITEM_INTEIRO);
+
+    // Um grupo so: " linksug-a " e "LINKSUG-A" sao o mesmo SKU.
+    expect(v.variacoes).toHaveLength(1);
+    expect(v.variacoes[0]).toMatchObject({ variation_id: null, pedidos: 2, unidades: 3, sku_id: skuA });
+    expect(v.vinculos).toEqual([]);
+  });
+
+  it("variacoes: uma linha por variacao, a que mais vende primeiro, codigo sem cadastro fica sem sku_id", async () => {
+    const v = await sugestao(ITEM_VARIACOES);
+
+    expect(v.variacoes.map((x) => [x.variation_id, x.sku_id])).toEqual([
+      ["111", skuB],
+      ["222", null],
+    ]);
+    expect(v.vinculos).toEqual([expect.objectContaining({ variation_id: "111", sku_id: skuB })]);
+  });
+
+  it("de outra organizacao nao ve nada, e anon nao executa", async () => {
+    const rows = await asUser<{ v: Sugestao }>(
+      DE_OUTRA_ORG,
+      `select public.get_listing_link_suggestions('${CONTA}', '${ITEM_INTEIRO}') as v`,
+    );
+
+    expect(rows[0]?.v).toEqual({ variacoes: [], vinculos: [] });
+    await expect(asAnon(`select public.get_listing_link_suggestions('${CONTA}', '${ITEM_INTEIRO}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+

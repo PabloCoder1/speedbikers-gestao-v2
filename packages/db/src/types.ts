@@ -4562,6 +4562,11 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_listing_link_suggestions: {
+        Args: { p_item_id: string; p_ml_account_id: string }
+        // jsonb (D-374): conferido campo a campo em apps/web/lib/vinculo-sugestao.ts.
+        Returns: Json
+      }
       get_listings_dashboard: {
         Args: {
           p_date_from: string
