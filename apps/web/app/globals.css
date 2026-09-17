@@ -8536,3 +8536,691 @@ a.sb-forn-canal:hover {
     flex-basis: 100%;
   }
 }
+
+/*
+ * NOVO PEDIDO DE COMPRA (D-368) — `/compras/novo` e `/compras/[id]/editar`.
+ *
+ * Duas colunas: o formulário em cartões numerados à esquerda e o resumo
+ * grudado à direita, com o botão sempre à vista. Abaixo de 1150px o resumo
+ * desce para depois dos cartões. Só tokens da casa.
+ */
+.sb-pco {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  align-items: start;
+  gap: var(--sb-space-3);
+}
+
+.sb-pco-principal {
+  display: grid;
+  gap: var(--sb-space-3);
+  min-width: 0;
+}
+
+.sb-pco-origem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 var(--sb-space-3);
+  padding: 0.75rem var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-left: 3px solid var(--sb-secondary);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-origem b {
+  color: var(--sb-primary);
+}
+
+/* OS CARTÕES */
+.sb-pco-cartao {
+  display: grid;
+  gap: 0.875rem;
+  min-width: 0;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-pco-cartao-topo {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.sb-pco-cartao-topo > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-pco-cartao-topo h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-pco-cartao-topo p {
+  margin: 0.125rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-passo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.sb-pco-grade {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem var(--sb-space-3);
+}
+
+.sb-pco-largo {
+  grid-column: 1 / -1;
+}
+
+/* O campo com atalhos é mais alto: os vizinhos alinham pelo topo, não esticam. */
+.sb-pco-grade > .sb-form-campo {
+  align-content: start;
+}
+
+.sb-pco-nota {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-mudo {
+  color: var(--sb-muted-ink);
+  font-weight: 400;
+}
+
+.sb-pco-alerta-texto {
+  color: var(--sb-accent-ink);
+}
+
+/* A FICHA DO FORNECEDOR */
+.sb-pco-ficha {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+}
+
+.sb-pco-ficha-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--sb-radius-md);
+}
+
+.sb-pco-ficha-corpo {
+  display: grid;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-pco-ficha-nome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--sb-primary);
+}
+
+.sb-pco-ficha-nome .sb-mono {
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-pco-ficha-fatos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.875rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-ficha-aberto {
+  font-weight: 600;
+  color: var(--sb-accent-ink);
+}
+
+.sb-pco-ficha-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sb-pco-link-discreto {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  text-decoration: none;
+}
+
+.sb-pco-link-discreto:hover {
+  text-decoration: underline;
+}
+
+/* PREVISÃO: atalhos de prazo */
+.sb-pco-atalhos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.125rem;
+}
+
+.sb-pco-chip {
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 999px;
+  background: var(--sb-surface);
+  font-family: var(--sb-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--sb-text);
+  cursor: pointer;
+}
+
+.sb-pco-chip:hover:not(:disabled) {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-pco-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sb-pco-chip-ativo {
+  border-color: var(--sb-primary);
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+}
+
+.sb-pco-chip-ativo:hover:not(:disabled) {
+  border-color: var(--sb-primary);
+  background: var(--sb-primary-hover);
+  color: var(--sb-on-primary);
+}
+
+.sb-pco-chip-limpar {
+  border-style: dashed;
+  color: var(--sb-text-soft);
+}
+
+/* ITENS */
+.sb-pco-colar-botao {
+  flex: none;
+}
+
+.sb-pco-colar {
+  display: grid;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+}
+
+.sb-pco-colar textarea {
+  font-size: 0.75rem;
+}
+
+.sb-pco-colar-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* relative: os rótulos sb-sr-only do cabeçalho ficam presos à caixa que rola,
+   e não alargam a página no celular (a lição de D-366). */
+.sb-pco-tabela-rolagem {
+  position: relative;
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--sb-space-3));
+}
+
+.sb-pco-tabela {
+  min-width: 44rem;
+}
+
+.sb-pco-tabela th:first-child,
+.sb-pco-tabela td:first-child {
+  padding-left: var(--sb-space-3);
+}
+
+.sb-pco-tabela td {
+  padding: 0.5rem 0.375rem;
+  vertical-align: top;
+}
+
+.sb-pco-num-linha {
+  width: 2.25rem;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+td.sb-pco-num-linha {
+  padding-top: 0.875rem;
+}
+
+.sb-pco-sku {
+  width: 42%;
+  min-width: 16rem;
+}
+
+.sb-pco-campo-num {
+  width: 8.5rem;
+}
+
+.sb-pco-subtotal {
+  width: 7rem;
+  padding-top: 0.75rem;
+  white-space: nowrap;
+}
+
+.sb-pco-subtotal b {
+  display: block;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-pco-subtotal small {
+  font-size: 0.5625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-pco-remover {
+  width: 2.5rem;
+}
+
+.sb-pco-item-duplicado td {
+  background: var(--sb-accent-soft);
+}
+
+.sb-pco-busca {
+  position: relative;
+}
+
+.sb-pco-buscando {
+  position: absolute;
+  top: 50%;
+  right: 0.625rem;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border: 2px solid var(--sb-border);
+  border-top-color: var(--sb-secondary);
+  border-radius: 50%;
+  animation: sb-pco-girar 0.7s linear infinite;
+}
+
+@keyframes sb-pco-girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Posição fixa, medida do campo no componente: a caixa da tabela rola e cortaria. */
+.sb-pco-resultados {
+  position: fixed;
+  z-index: 60;
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+.sb-pco-resultado {
+  display: grid;
+  gap: 0.1875rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: var(--sb-radius-md);
+  background: none;
+  font-family: var(--sb-sans);
+  text-align: left;
+  white-space: normal;
+  color: var(--sb-text);
+  cursor: pointer;
+}
+
+.sb-pco-resultado-ativo {
+  background: var(--sb-secondary-soft);
+}
+
+.sb-pco-resultado-topo {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.sb-pco-resultado-topo b {
+  font-family: var(--sb-mono);
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+.sb-pco-resultado-topo span {
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+.sb-pco-resultado-titulo {
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: var(--sb-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-pco-resultado-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.sb-pco-resultado-vazio {
+  padding: 0.625rem;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-tag {
+  display: inline-block;
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-neutral-soft);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--sb-neutral-ink);
+}
+
+.sb-pco-tag-importado {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-pco-tag-alerta {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-pco-escolhido {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+
+.sb-pco-escolhido-titulo {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--sb-text);
+}
+
+.sb-pco-dica {
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-dica-erro {
+  color: var(--sb-danger-ink);
+}
+
+.sb-pco-variacao-alta {
+  color: var(--sb-danger-ink);
+}
+
+.sb-pco-variacao-baixa {
+  color: var(--sb-success);
+}
+
+.sb-pco-moeda {
+  position: relative;
+}
+
+.sb-pco-moeda > span {
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  transform: translateY(-50%);
+  font-size: 0.6875rem;
+  color: var(--sb-muted-ink);
+  pointer-events: none;
+}
+
+.sb-pco-moeda .sb-input {
+  padding-left: 1.875rem;
+}
+
+.sb-pco-icone-botao {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-top: 0.125rem;
+  border: 1px solid transparent;
+  border-radius: var(--sb-radius-md);
+  background: none;
+  color: var(--sb-muted-ink);
+  cursor: pointer;
+}
+
+.sb-pco-icone-botao:hover:not(:disabled) {
+  border-color: var(--sb-danger-soft);
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-pco-icone-botao:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sb-pco-itens-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sb-pco-itens-rodape .sb-pco-dica {
+  margin: 0;
+}
+
+.sb-pco-aviso {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--sb-accent-ink) 35%, var(--sb-border));
+  border-left: 3px solid var(--sb-accent-ink);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-accent-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+}
+
+.sb-pco-aviso-compacto {
+  padding: 0.5rem 0.625rem;
+}
+
+/* O RESUMO */
+.sb-pco-resumo {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-pco-resumo-cartao {
+  display: grid;
+  gap: 0.75rem;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-pco-resumo-rotulo {
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sb-secondary);
+}
+
+.sb-pco-resumo-valor {
+  display: grid;
+  gap: 0.125rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--sb-table-rule);
+}
+
+.sb-pco-resumo-valor > span {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-resumo-valor strong {
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-pco-resumo-valor small {
+  font-size: 0.625rem;
+}
+
+.sb-pco-resumo-fatos {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.sb-pco-resumo-fatos > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.sb-pco-resumo-fatos dt {
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-resumo-fatos dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sb-primary);
+}
+
+.sb-pco-resumo-fatos dd small {
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-pco-enviar {
+  justify-content: center;
+  width: 100%;
+}
+
+/* O ciclo em coluna: no painel estreito a régua horizontal não cabe. */
+.sb-pco-ciclo .sb-process-steps {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.sb-pco-ciclo .sb-process-step::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-pco-buscando {
+    animation-duration: 2s;
+  }
+}
+
+@media (max-width: 1150px) {
+  .sb-pco {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-pco-resumo {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .sb-pco-resumo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-pco-grade {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-pco-cartao-topo {
+    flex-wrap: wrap;
+  }
+
+  .sb-pco-ficha {
+    flex-direction: column;
+  }
+}

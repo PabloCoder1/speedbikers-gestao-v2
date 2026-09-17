@@ -1,19 +1,27 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
+import { Icone } from "../../../components/icons";
+import { formatCount, formatCurrency, formatDay } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/browser";
 
+import { subtotal } from "./rascunho";
+
 /**
- * Uma linha de item do pedido — busca de SKU (mesmo padrão de
- * `apps/web/app/notas-fiscais/[id]/document-item-row.tsx`: lê `skus` direto
- * do navegador sob RLS, Modelo A). `skuId` fica nulo se o usuário digitar
- * um código livre sem selecionar da lista — mesmo raciocínio de
- * `document_items`: um item para um SKU ainda não catalogado continua
- * sendo informação, não é bloqueado.
+ * Uma linha de item do pedido — busca de SKU lida direto do navegador sob RLS
+ * (Modelo A, mesmo padrão de `notas-fiscais/[id]/document-item-row.tsx`).
+ * `skuId` fica nulo quando o código é digitado livre sem escolher da lista: um
+ * SKU ainda não catalogado continua sendo informação, não é bloqueado.
  *
- * Exibe nacional/importado (`skus.is_imported`) quando o SKU é encontrado —
- * é o dado estruturado que atende o item do roadmap, sem coluna nova.
+ * D-368, o que a linha ganhou:
+ * - busca por código OU nome, com espera curta entre teclas e descarte de
+ *   resposta atrasada (a digitação rápida mostrava o resultado de "AB" depois
+ *   do de "ABC");
+ * - teclado: ↑/↓ percorrem, Enter escolhe, Esc fecha;
+ * - marca, origem e custo cadastrado na lista e na linha escolhida;
+ * - subtotal da linha e o ÚLTIMO CUSTO pago a este fornecedor por este SKU,
+ *   quando existe — é a referência que faltava para negociar.
  */
 
 export interface DraftItem {
@@ -26,6 +34,14 @@ export interface DraftItem {
   unitCost: string;
   /** True quando `unitCost` veio do cadastro e o usuário ainda não mexeu. */
   unitCostSuggested?: boolean | undefined;
+  /** Marca do SKU (D-129), só para exibição. */
+  supplierBrand?: string | null | undefined;
+}
+
+export interface UltimaCompra {
+  readonly custo: number;
+  readonly pedido: number;
+  readonly em: string;
 }
 
 interface SkuResult {
@@ -34,65 +50,164 @@ interface SkuResult {
   title: string | null;
   /** Nulo quando o SKU não tem código fiscal de origem cadastrado (~2% do catálogo). */
   is_imported: boolean | null;
-  /** Custo CADASTRADO (94,9% preenchido) — vira sugestão editável, nunca volta pro cadastro. */
+  /** Custo CADASTRADO — vira sugestão editável, nunca volta pro cadastro (D-149). */
   purchase_cost: number | null;
+  supplier_brand: string | null;
 }
 
-function originLabel(isImported: boolean | null): string {
-  if (isImported === null) return "origem não cadastrada";
+function Origem({ isImported }: { isImported: boolean | null }): ReactNode {
+  if (isImported === null) return <span className="sb-pco-tag">origem não cadastrada</span>;
 
-  return isImported ? "Importado" : "Nacional";
+  return <span className={isImported ? "sb-pco-tag sb-pco-tag-importado" : "sb-pco-tag"}>{isImported ? "Importado" : "Nacional"}</span>;
 }
+
+/** Vírgula e parênteses quebram a sintaxe do `or=` do PostgREST: saem do termo. */
+function termoSeguro(valor: string): string {
+  return valor.replace(/[,()%*\\]/g, " ").trim();
+}
+
 export function ItemRow({
   item,
+  numero,
   onChange,
   onRemove,
+  podeRemover,
+  duplicada = false,
+  ultimaCompra = null,
+  onEnterNaQuantidade,
 }: {
   item: DraftItem;
+  /** Posição exibida (1, 2, 3…). */
+  numero: number;
   onChange: (next: DraftItem) => void;
   onRemove: () => void;
+  podeRemover: boolean;
+  duplicada?: boolean;
+  ultimaCompra?: UltimaCompra | null;
+  /** Enter na quantidade/custo: o formulário acrescenta uma linha e leva o foco a ela. */
+  onEnterNaQuantidade?: () => void;
 }): ReactNode {
   const [results, setResults] = useState<SkuResult[]>([]);
+  const [aberta, setAberta] = useState(false);
+  const [ativo, setAtivo] = useState(0);
+  const [buscando, setBuscando] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const pedido = useRef(0);
+  const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listaId = useId();
+  const campoRef = useRef<HTMLInputElement | null>(null);
+  const listaRef = useRef<HTMLUListElement | null>(null);
+  const [posicao, setPosicao] = useState<CSSProperties | null>(null);
 
-  async function search(value: string): Promise<void> {
-    onChange({ ...item, skuSnapshot: value, skuId: null, titleSnapshot: null, isImported: null });
+  /*
+    A lista flutua com posição FIXA, medida do campo. Absoluta, ela ficava
+    presa na caixa da tabela, que rola na horizontal e por isso corta o que
+    sai dela — a lista aparecia como um traço embaixo do campo (visto na
+    captura). Rolar a página ou redimensionar fecha a lista em vez de deixá-la
+    solta no lugar antigo.
+  */
+  useLayoutEffect(() => {
+    if (!aberta) return;
+
+    const medir = (): void => {
+      const r = campoRef.current?.getBoundingClientRect();
+
+      if (r === undefined) return;
+
+      setPosicao({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 352) });
+    };
+
+    const fechar = (): void => {
+      setAberta(false);
+    };
+
+    // Rolar a PRÓPRIA lista (mais resultados que a altura) não fecha.
+    const rolou = (evento: Event): void => {
+      if (evento.target instanceof Node && listaRef.current?.contains(evento.target) === true) return;
+      fechar();
+    };
+
+    medir();
+    window.addEventListener("resize", fechar);
+    window.addEventListener("scroll", rolou, true);
+
+    return () => {
+      window.removeEventListener("resize", fechar);
+      window.removeEventListener("scroll", rolou, true);
+    };
+  }, [aberta]);
+
+  useEffect(
+    () => () => {
+      if (espera.current !== null) clearTimeout(espera.current);
+    },
+    [],
+  );
+
+  function digitar(value: string): void {
+    onChange({
+      ...item,
+      skuSnapshot: value,
+      skuId: null,
+      titleSnapshot: null,
+      isImported: null,
+      supplierBrand: null,
+    });
     setSearchError(null);
 
-    if (value.trim().length < 2) {
+    if (espera.current !== null) clearTimeout(espera.current);
+
+    const termo = termoSeguro(value);
+
+    if (termo.length < 2) {
+      pedido.current += 1;
       setResults([]);
+      setAberta(false);
+      setBuscando(false);
 
       return;
     }
 
+    setBuscando(true);
+    espera.current = setTimeout(() => {
+      void buscar(termo);
+    }, 220);
+  }
+
+  async function buscar(termo: string): Promise<void> {
+    pedido.current += 1;
+    const este = pedido.current;
     const supabase = createClient();
 
     const { data, error } = await supabase
       .from("skus")
-      .select("id, sku, title, is_imported, purchase_cost")
-      .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
+      .select("id, sku, title, is_imported, purchase_cost, supplier_brand")
+      .or(`sku_key.ilike.%${termo.toUpperCase()}%,title.ilike.%${termo}%`)
       .order("sku")
       .limit(8);
 
+    // Resposta de uma busca que já foi substituída por outra: descarta.
+    if (este !== pedido.current) return;
+
+    setBuscando(false);
+
     if (error !== null) {
-      // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
-      // a uma busca genuinamente vazia (D-067, Nível 3).
+      // Falha de rede/RLS não pode parecer "nenhum SKU encontrado" (D-067).
       setSearchError("Não foi possível buscar SKUs — tente de novo.");
+      setAberta(false);
 
       return;
     }
 
     setResults(data);
+    setAtivo(0);
+    setAberta(true);
   }
 
   function select(sku: SkuResult): void {
-    // Custo de simulação separado do cadastrado (D-149): o cadastrado entra
-    // como SUGESTÃO editável — só quando o campo ainda está vazio ou ainda
-    // carrega a sugestão anterior (nunca por cima do que o usuário digitou).
-    // O valor vai para `purchase_order_items.unit_cost` e jamais escreve de
-    // volta em `skus.purchase_cost`.
-    const shouldSuggest =
-      sku.purchase_cost !== null && (item.unitCost === "" || item.unitCostSuggested === true);
+    // Custo cadastrado entra como SUGESTÃO editável (D-149) — só com o campo
+    // vazio ou ainda com a sugestão anterior, nunca por cima do digitado.
+    const shouldSuggest = sku.purchase_cost !== null && (item.unitCost === "" || item.unitCostSuggested === true);
 
     onChange({
       ...item,
@@ -100,118 +215,223 @@ export function ItemRow({
       skuSnapshot: sku.sku,
       titleSnapshot: sku.title,
       isImported: sku.is_imported,
+      supplierBrand: sku.supplier_brand,
       unitCost: shouldSuggest ? String(sku.purchase_cost) : item.unitCost,
       unitCostSuggested: shouldSuggest ? true : item.unitCostSuggested,
     });
     setResults([]);
+    setAberta(false);
   }
 
-  return (
-    <tr>
-      <td style={{ padding: "0.375rem", verticalAlign: "top", position: "relative" }}>
-        <input
-          className="sb-input sb-input-full"
-          type="text"
-          value={item.skuSnapshot}
-          onChange={(event) => {
-            void search(event.target.value);
-          }}
-          placeholder="SKU ou nome…"
-          required
-        />
+  function teclaNaBusca(evento: KeyboardEvent<HTMLInputElement>): void {
+    if (!aberta || results.length === 0) {
+      // Enter no código com a lista fechada NÃO envia o pedido pela metade.
+      if (evento.key === "Enter") evento.preventDefault();
 
-        {results.length > 0 && (
-          <ul
-            style={{
-              listStyle: "none",
-              margin: "0.25rem 0 0",
-              padding: 0,
-              border: "1px solid var(--sb-border)",
-              borderRadius: "var(--sb-radius)",
-              maxHeight: "10rem",
-              overflowY: "auto",
-              position: "absolute",
-              zIndex: 1,
-              background: "var(--sb-surface)",
-              width: "18rem",
+      return;
+    }
+
+    if (evento.key === "ArrowDown") {
+      evento.preventDefault();
+      setAtivo((i) => (i + 1) % results.length);
+    } else if (evento.key === "ArrowUp") {
+      evento.preventDefault();
+      setAtivo((i) => (i - 1 + results.length) % results.length);
+    } else if (evento.key === "Enter") {
+      evento.preventDefault();
+      const escolhido = results[ativo];
+
+      if (escolhido !== undefined) select(escolhido);
+    } else if (evento.key === "Escape") {
+      setAberta(false);
+    }
+  }
+
+  function enterAvanca(evento: KeyboardEvent<HTMLInputElement>): void {
+    if (evento.key === "Enter" && onEnterNaQuantidade !== undefined) {
+      evento.preventDefault();
+      onEnterNaQuantidade();
+    }
+  }
+
+  const linha = subtotal(item);
+  const custoAtual = item.unitCost.trim() === "" ? null : Number(item.unitCost);
+  const variacao =
+    ultimaCompra !== null && custoAtual !== null && Number.isFinite(custoAtual) && ultimaCompra.custo > 0
+      ? (custoAtual - ultimaCompra.custo) / ultimaCompra.custo
+      : null;
+
+  return (
+    <tr className={duplicada ? "sb-pco-item sb-pco-item-duplicado" : "sb-pco-item"} data-linha={item.key}>
+      <td className="sb-pco-num-linha" aria-hidden="true">
+        {numero}
+      </td>
+
+      <td className="sb-pco-sku">
+        <div className="sb-pco-busca">
+          <input
+            ref={campoRef}
+            className="sb-input sb-input-full"
+            type="text"
+            value={item.skuSnapshot}
+            onChange={(event) => {
+              digitar(event.target.value);
             }}
-          >
-            {results.map((sku) => (
-              <li key={sku.id}>
-                <button
-                  className="sb-button"
-                  type="button"
-                  onClick={() => {
-                    select(sku);
-                  }} style={{ display: "block", width: "100%", textAlign: "left" }}
-                >
-                  <strong>{sku.sku}</strong>
-                  {sku.title !== null && ` — ${sku.title}`}
-                  <span style={{ color: "var(--sb-text-soft)" }}> ({originLabel(sku.is_imported)})</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+            onKeyDown={teclaNaBusca}
+            onBlur={() => {
+              // Deixa o clique na lista chegar antes de fechar.
+              setTimeout(() => {
+                setAberta(false);
+              }, 150);
+            }}
+            onFocus={() => {
+              if (results.length > 0) setAberta(true);
+            }}
+            placeholder="SKU ou nome…"
+            aria-label={`SKU do item ${String(numero)}`}
+            role="combobox"
+            aria-expanded={aberta}
+            aria-controls={listaId}
+            aria-autocomplete="list"
+            autoComplete="off"
+            required
+          />
+          {buscando && <span className="sb-pco-buscando" aria-hidden="true" />}
+
+          {aberta && posicao !== null && (
+            <ul ref={listaRef} id={listaId} className="sb-pco-resultados" role="listbox" style={posicao}>
+              {results.length === 0 ? (
+                <li className="sb-pco-resultado-vazio">
+                  Nenhum SKU com “{item.skuSnapshot.trim()}”. Pode seguir com o código livre — o vínculo fica pendente.
+                </li>
+              ) : (
+                results.map((sku, indice) => (
+                  <li key={sku.id} role="option" aria-selected={indice === ativo}>
+                    <button
+                      type="button"
+                      className={indice === ativo ? "sb-menu-item sb-pco-resultado sb-pco-resultado-ativo" : "sb-menu-item sb-pco-resultado"}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onMouseEnter={() => {
+                        setAtivo(indice);
+                      }}
+                      onClick={() => {
+                        select(sku);
+                      }}
+                    >
+                      <span className="sb-pco-resultado-topo">
+                        <b>{sku.sku}</b>
+                        <span>{sku.purchase_cost === null ? "sem custo" : formatCurrency(sku.purchase_cost)}</span>
+                      </span>
+                      <span className="sb-pco-resultado-titulo">{sku.title ?? "sem título"}</span>
+                      <span className="sb-pco-resultado-meta">
+                        {sku.supplier_brand !== null && <span className="sb-pco-tag">{sku.supplier_brand}</span>}
+                        <Origem isImported={sku.is_imported} />
+                      </span>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          )}
+        </div>
 
         {item.skuId !== null && (
-          <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
-            {item.titleSnapshot ?? "—"} · {originLabel(item.isImported)}
+          <div className="sb-pco-escolhido">
+            <span className="sb-pco-escolhido-titulo">{item.titleSnapshot ?? "sem título"}</span>
+            <span className="sb-pco-resultado-meta">
+              {item.supplierBrand !== null && item.supplierBrand !== undefined && (
+                <span className="sb-pco-tag">{item.supplierBrand}</span>
+              )}
+              <Origem isImported={item.isImported} />
+              {duplicada && <span className="sb-pco-tag sb-pco-tag-alerta">repetido no pedido</span>}
+            </span>
           </div>
         )}
 
-        {item.skuId === null && item.skuSnapshot.trim() !== "" && searchError === null && (
-          <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
-            Sem SKU catalogado — vínculo fica pendente.
-          </div>
+        {item.skuId === null && item.skuSnapshot.trim() !== "" && searchError === null && !aberta && !buscando && (
+          <div className="sb-pco-dica">Sem SKU catalogado — o vínculo fica pendente.</div>
         )}
 
         {searchError !== null && (
-          <div role="alert" style={{ fontSize: "0.75rem", color: "var(--sb-danger)", marginTop: "0.25rem" }}>
+          <div role="alert" className="sb-pco-dica sb-pco-dica-erro">
             {searchError}
           </div>
         )}
       </td>
 
-      <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
+      <td className="sb-pco-campo-num">
         <input
           className="sb-input sb-input-full"
           type="number"
           min="0.001"
           step="0.001"
+          inputMode="decimal"
           value={item.quantityOrdered}
           onChange={(event) => {
             onChange({ ...item, quantityOrdered: event.target.value });
           }}
+          onKeyDown={enterAvanca}
+          aria-label={`Quantidade do item ${String(numero)}`}
           required
         />
       </td>
 
-      <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
-        <input
-          className="sb-input sb-input-full"
-          type="number"
-          min="0"
-          step="0.01"
-          value={item.unitCost}
-          onChange={(event) => {
-            onChange({ ...item, unitCost: event.target.value, unitCostSuggested: false });
-          }}
-        />
-        {item.unitCostSuggested === true && (
-          <div style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
-            custo cadastrado — edite à vontade; o pedido não altera o cadastro
+      <td className="sb-pco-campo-num">
+        <div className="sb-pco-moeda">
+          <span aria-hidden="true">R$</span>
+          <input
+            className="sb-input sb-input-full"
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            value={item.unitCost}
+            onChange={(event) => {
+              onChange({ ...item, unitCost: event.target.value, unitCostSuggested: false });
+            }}
+            onKeyDown={enterAvanca}
+            aria-label={`Custo unitário do item ${String(numero)}`}
+          />
+        </div>
+        {item.unitCostSuggested === true && <div className="sb-pco-dica">custo cadastrado — não altera o cadastro</div>}
+        {ultimaCompra !== null && (
+          <div className="sb-pco-dica" title={`pedido #${String(ultimaCompra.pedido)} em ${formatDay(ultimaCompra.em)}`}>
+            último com este fornecedor: {formatCurrency(ultimaCompra.custo)}
+            {variacao !== null && Math.abs(variacao) >= 0.005 && (
+              <b className={variacao > 0 ? "sb-pco-variacao-alta" : "sb-pco-variacao-baixa"}>
+                {" "}
+                {variacao > 0 ? "▲" : "▼"} {Math.abs(variacao * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%
+              </b>
+            )}
           </div>
         )}
       </td>
 
-      <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
+      <td className="sb-num sb-pco-subtotal">
+        {linha === null ? (
+          <span className="sb-pco-mudo" title={item.quantityOrdered.trim() === "" ? "sem quantidade" : "sem custo — fora da soma"}>
+            —
+          </span>
+        ) : (
+          <>
+            <b>{formatCurrency(linha)}</b>
+            <small>{formatCount(Number(item.quantityOrdered))} un</small>
+          </>
+        )}
+      </td>
+
+      <td className="sb-pco-remover">
         <button
-          className="sb-button"
+          className="sb-icon-button sb-pco-icone-botao"
           type="button"
           onClick={onRemove}
+          disabled={!podeRemover}
+          aria-label={`Remover item ${String(numero)}`}
+          title={podeRemover ? "Remover item" : "O pedido precisa de ao menos uma linha"}
         >
-          Remover
+          <Icone nome="lixeira" tamanho={15} />
         </button>
       </td>
     </tr>

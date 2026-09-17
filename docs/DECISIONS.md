@@ -12929,3 +12929,52 @@ O que ficou de fora:
 - **a migration nao foi aplicada no Dev**: sobe pela CI no merge. Ate la o Preview do PR mostra erro de schema cache em `/fornecedores` (esperado, D-025). Ordem combinada com a sessao da D-351: esta migration (`20260917150000`) chega ao Dev e a producao DEPOIS das `20260916180000..180400` do PR #17 (D-351) e da `20260917140000` do PR #18 (D-365) -- renomeada de `...130000` para nao ficar antes delas, senao o `db push` recusa fora de ordem;
 - o link "Novo pedido" pre-seleciona o fornecedor so com a D-365 (/compras) no ar; sem ela o parametro e ignorado;
 - `docs/HANDOFF.md` nao foi tocado: esta em 25,5 KB, no teto de 25 KB do `docs:check`, e enxuga-lo com outras sessoes escrevendo nele e decisao a combinar.
+
+## D-368 - Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
+
+**Contexto:** pedido do usuario: "uma tela mais bonita para o compras/novo, sinto que ela esta simples e faltando detalhe". Numeracao combinada com as sessoes paralelas (D-367 e de /fornecedores/novo). So web, sem migration.
+
+**1. O QUE FALTAVA -- medido na tela antiga**
+
+- nenhum total: quem montava o pedido nao via quantos itens, unidades nem quanto somava ate salvar e abrir o detalhe;
+- o fornecedor era so um nome num `<select>`: sem documento, contato, pedidos em aberto nem ultimo pedido;
+- previsao de chegada so pelo calendario; destino digitado toda vez;
+- itens: busca so pelo CODIGO (o placeholder dizia "SKU ou nome"), sem espera entre teclas e sem descartar resposta atrasada; lista de resultados sem custo nem marca; nenhum subtotal; nenhuma referencia de preco com aquele fornecedor; nenhuma forma de trazer uma lista de planilha;
+- Enter no campo de SKU enviava o formulario pela metade; linha vazia sobrando travava o envio com o balao `required` do navegador.
+
+**2. A TELA**
+
+- **duas colunas:** cartoes numerados (1 fornecedor e entrega, 2 itens, 3 observacoes) e o **resumo grudado** a direita -- valor estimado, itens, unidades, fornecedor, previsao, destino, linhas pela metade e o botao sempre a vista; embaixo, o ciclo do pedido (rascunho, aprovado, enviado, recebido). Abaixo de 1150px o resumo desce;
+- **ficha do fornecedor escolhido:** iniciais, CNPJ formatado, contato, pedidos em aberto, idade do ultimo pedido, canais clicaveis (`Canais` de D-366) e link para o dashboard. A opcao do select diz "N em aberto";
+- **previsao:** atalhos +7/+15/+30/+45 dias contados do dia de Sao Paulo e o prazo por extenso ("Chega em 30 dias"); data no passado e dita, nao bloqueada;
+- **destino:** sugestoes dos 50 pedidos mais recentes (`datalist`);
+- **itens:** busca por codigo OU nome com espera de 220 ms e descarte da resposta atrasada; lista com marca, origem e custo cadastrado, navegavel por teclado; linha escolhida com titulo e selos; campo de custo com "R$"; **subtotal por linha**; **ultimo custo pago a este fornecedor** por SKU (`get_supplier_purchased_skus`, uma leitura por troca de fornecedor) com a variacao em % do custo digitado; SKU repetido destacado; Enter na quantidade ou no custo abre a proxima linha com o foco nela; remover por icone;
+- **"Colar lista":** uma linha por item (`SKU quantidade custo`, por tabulacao, ponto e virgula ou espaco; custo em formato brasileiro), SKU repetido soma, cabecalho ignorado, teto de 100; os codigos sao conferidos no catalogo numa leitura (`sku_key in (...)`) e o que nao existe entra como codigo livre, dito na mensagem.
+
+**3. AS CONTAS -- `app/compras/novo/rascunho.ts`, com testes**
+
+O resumo ao vivo usa a MESMA regra do pedido salvo: linha sem SKU ou sem quantidade fica fora (o envio a descarta); item sem custo nao entra como zero e e contado a parte; nenhum item com custo e valor DESCONHECIDO, nunca R$ 0,00 (D-254). Datas de negocio por calendario, sem fuso.
+
+**4. O QUE NAO MUDOU, por dependencia**
+
+- `?fornecedor=` (so fornecedor ATIVO) e `?sku=<uuid>:<qtd>` da reposicao (D-151/D-365) continuam chegando por `initial`; `initial.items` vazio cai numa linha vazia;
+- `expectedAt` continua data de negocio gravada como meia-noite UTC -- lista, detalhe e exportacoes cortam com `slice(0, 10)`;
+- o mesmo `PurchaseOrderForm` serve `/compras/[id]/editar`, que segue passando so `id` e `name` dos fornecedores (os campos da ficha sao opcionais);
+- os rotulos que o E2E usa ("SKU ou nome...", "Criar pedido (rascunho)", os dois campos numericos na ordem quantidade/custo).
+
+A lista de fornecedores passou a vir de `get_suppliers_overview` (recorte `ativos`, D-366) no lugar de `suppliers(id, name)`.
+
+**5. DOIS DEFEITOS PEGOS NAS CAPTURAS, ANTES DO COMMIT**
+
+- a lista de resultados aparecia como um traco embaixo do campo: absoluta, ficava presa na caixa da tabela, que rola na horizontal e corta o que sai dela. Passou a posicao FIXA medida do campo, fechando ao rolar a pagina (rolar a propria lista nao fecha);
+- o atalho de prazo ativo sumia no hover (texto escuro de `.sb-button:hover` sobre o fundo escuro).
+
+Revisando o envio: o `min` da data impediria salvar a edicao de um rascunho com previsao ja vencida, e os `required` das linhas travavam o envio com a linha vazia que o Enter cria. O formulario passou a `noValidate`, e a conferencia de numero (quantidade > 0, custo nao negativo) e feita no envio, dizendo a linha.
+
+**6. VERIFICACAO**
+
+`typecheck` (web), `lint`, `next build`, os quatro guardas estaticos e a suite de unidade da web (20 testes novos das contas e da lista colada). E2E contra `next start` e o seed local: `pedido-compra` (2, 1 novo -- lista colada, resumo ao vivo com soma parcial, atalho de prazo, ficha do fornecedor, sem gravar), `compras` (3) e `reposicao` (4), 9 verdes; `pedido-compra` de novo depois das ultimas mudancas, 2 verdes. A edicao de um rascunho real do seed abriu com os 2 itens e R$ 52,50 (soma parcial).
+
+- a busca no dropdown NAO mostra estoque: `get_stock_balances` mede ~680 ms por chamada (`docs/PERFORMANCE.md`), lento demais para autocompletar;
+- o seed local tem poucos SKUs e fornecedor sem contato: as capturas mostram o desenho com pouco dado;
+- a edicao (`/compras/[id]/editar`) ganhou o visual, mas nao a ficha completa do fornecedor nem o ultimo custo -- a pagina e da D-365 e passa so id e nome.
