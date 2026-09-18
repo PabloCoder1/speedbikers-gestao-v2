@@ -20,7 +20,7 @@ export default function CopilotoPage(): ReactNode {
       <PageTitle
         eyebrow="INTELIGÊNCIA / COPILOTO"
         title="Copiloto"
-        subtitle="Pergunte sobre vendas — por período, comparando períodos ou comparando contas. Toda resposta vem de consulta real, com o período e a conta sempre citados; o que as consultas não cobrem, o Copiloto diz que não cobre."
+        subtitle="Respostas operacionais baseadas em consultas reais, com período, conta e limites da informação sempre explícitos."
       />
 
       {/*
@@ -36,10 +36,17 @@ export default function CopilotoPage(): ReactNode {
         ideia e chamar de pronto — a medição completa está em D-276.
       */}
       <Panel
-        title="Conversa"
-        subtitle="Cada pergunta é independente: não há histórico entre uma e outra, e a tela não guarda o que foi perguntado."
+        title="Conversa com dados reais"
+        subtitle="Pergunte sobre vendas por período, comparação entre períodos ou desempenho das contas. Cada pergunta é independente: não há histórico entre uma e outra, e a tela não guarda o que foi perguntado."
       >
-        <div className="sb-panel-body">
+        <div className="sb-panel-body sb-copilot-panel-body">
+          <div className="sb-copilot-contract" role="note">
+            <span className="sb-copilot-contract-mark" aria-hidden="true">✦</span>
+            <div>
+              <strong>O que você pode esperar</strong>
+              <p>O Copiloto consulta dados autorizados da operação e mostra quais fontes usou. Quando não houver cobertura, ele informa — sem transformar ausência em zero.</p>
+            </div>
+          </div>
           <CopilotChat />
         </div>
       </Panel>

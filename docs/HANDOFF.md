@@ -29,6 +29,8 @@
 
 `/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
+`/copiloto` e `/notificacoes` receberam acabamento de produto na mesma branch: o Copiloto agora explicita o contrato de dados autorizados, fontes consultadas e estado de consulta, com composição responsiva e sem alterar o SSE; a Central ganhou linhas mais escaneáveis, estado lido/não lido acessível, metadata semântica e CTA responsivo. Não houve alteração de banco, API ou dependência. Verificação: `check` 29/29, build web, `docs:check`, cinco guardas e E2E do Copiloto 8/8; a suíte de notificações passou 4/4 na primeira execução e precisa de reset do seed local antes de repetir, conforme D-225.
+
 
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
