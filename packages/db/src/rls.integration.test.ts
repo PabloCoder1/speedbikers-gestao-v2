@@ -3109,6 +3109,151 @@ describe("observabilidade de sincronização", () => {
   });
 });
 
+// fulfillment_item_absences (20260918040000) -- a marca que tira do snapshot do
+// Full o anuncio que respondeu 404/403. Mesmo desenho de RLS de
+// metric_refresh_state (D-304): quem alcanca a CONTA le, so o worker escreve.
+//
+// Nenhuma guarda de catalogo trava o ALCANCE da policy: a de GRANTs olha so
+// escrita sem policy, a de anon olha so anon, a de RLS confere so se esta
+// ligada, e a da forma escalar nao pega `using (true)`. Uma migration futura
+// que trocasse a policy por `using (true)`, ou filtrasse por organizacao em vez
+// de conta, deixaria o ANALISTA de uma conta ler as marcas das outras -- e so
+// este bloco reprovaria.
+describe("fulfillment_item_absences respeita o alcance por conta", () => {
+  // Contas proprias no padrao `rlstest%`. A marca e a permissao caem em
+  // cascata com a conta, entao o afterAll abaixo limpa tudo com um delete.
+  const CONTA_PERMITIDA = "aaaa6666-0000-4000-8000-00000000aaaa"; // ANALISTA_SB tem permissao aqui.
+  const CONTA_SEM_PERMISSAO = "bbbb6666-0000-4000-8000-00000000bbbb"; // mesma organizacao, sem permissao.
+  const CONTA_OUTRA_ORG = "dddd6666-0000-4000-8000-00000000dddd";
+  const CONTAS = [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG];
+  const DESTAS_CONTAS = `ml_account_id in ('${CONTA_PERMITIDA}','${CONTA_SEM_PERMISSAO}','${CONTA_OUTRA_ORG}')`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$4,'Ausência A','rlstest-ausencia-a','PENDING'),
+              ($2,$4,'Ausência B','rlstest-ausencia-b','PENDING'),
+              ($3,$5,'Ausência de outra organização','rlstest-ausencia-outra','PENDING')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA_PERMITIDA],
+    );
+
+    // Uma marca por conta, gravada pelo dono da conexao. O caminho do worker
+    // (service_role, upsert) tem teste proprio abaixo.
+    await client.query(
+      `insert into public.fulfillment_item_absences
+         (ml_account_id, organization_id, item_id, http_status, failures,
+          first_failed_at, last_failed_at, recheck_after)
+       values ($1,$4,'MLB900661',404,1,now(),now(),now() + interval '45 hours'),
+              ($2,$4,'MLB900662',404,1,now(),now(),now() + interval '45 hours'),
+              ($3,$5,'MLB900663',403,1,now(),now(),now() + interval '9 hours')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.ml_accounts where id = any($1)", [CONTAS]);
+  });
+
+  it("ANALISTA vê a marca da conta permitida e NÃO a da conta sem permissão, mesmo na mesma organização", async () => {
+    const rows = await asUser<{ ml_account_id: string; item_id: string }>(
+      ANALISTA_SB,
+      `select ml_account_id, item_id from public.fulfillment_item_absences
+        where ${DESTAS_CONTAS} order by item_id`,
+    );
+
+    expect(rows).toEqual([{ ml_account_id: CONTA_PERMITIDA, item_id: "MLB900661" }]);
+  });
+
+  it("ADMIN vê as marcas de todas as contas da própria organização, e só delas", async () => {
+    const rows = await asUser<{ ml_account_id: string }>(
+      ADMIN_SB,
+      `select ml_account_id from public.fulfillment_item_absences
+        where ${DESTAS_CONTAS} order by item_id`,
+    );
+
+    expect(rows.map((row) => row.ml_account_id)).toEqual([CONTA_PERMITIDA, CONTA_SEM_PERMISSAO]);
+  });
+
+  it("usuário de outra organização vê só a marca da conta dele", async () => {
+    const rows = await asUser<{ ml_account_id: string }>(
+      DE_OUTRA_ORG,
+      `select ml_account_id from public.fulfillment_item_absences where ${DESTAS_CONTAS}`,
+    );
+
+    expect(rows).toEqual([{ ml_account_id: CONTA_OUTRA_ORG }]);
+  });
+
+  it("usuário sem organização não vê marca nenhuma", async () => {
+    const rows = await asUser(SEM_ORG, `select item_id from public.fulfillment_item_absences where ${DESTAS_CONTAS}`);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon é recusado", async () => {
+    await expect(asAnon("select * from public.fulfillment_item_absences")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não insere, não atualiza e não apaga — nem o ADMIN que enxerga a marca", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.fulfillment_item_absences
+           (ml_account_id, organization_id, item_id, http_status, first_failed_at, last_failed_at, recheck_after)
+         values ('${CONTA_PERMITIDA}','${ORG_SB}','MLB900669',404,now(),now(),now() + interval '1 hour')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+
+    // Adiar o recheque por um ano esconderia o estoque Full do anúncio: é
+    // exatamente a escrita que não pode sair do navegador.
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `update public.fulfillment_item_absences set recheck_after = now() + interval '1 year'
+          where ml_account_id = '${CONTA_PERMITIDA}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      asUser(ADMIN_SB, `delete from public.fulfillment_item_absences where ml_account_id = '${CONTA_PERMITIDA}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("service_role grava e renova a marca pelo upsert do worker", async () => {
+    const rows = await asServiceRole<{ failures: number }>(
+      `insert into public.fulfillment_item_absences
+         (ml_account_id, organization_id, item_id, http_status, failures,
+          first_failed_at, last_failed_at, recheck_after)
+       values ('${CONTA_PERMITIDA}','${ORG_SB}','MLB900661',404,2,now(),now(),now() + interval '45 hours')
+       on conflict (ml_account_id, item_id) do update
+         set failures = excluded.failures,
+             last_failed_at = excluded.last_failed_at,
+             recheck_after = excluded.recheck_after
+       returning failures`,
+    );
+
+    expect(rows).toEqual([{ failures: 2 }]);
+  });
+
+  it("toda marca vence: recheck_after tem de ser depois da última falha", async () => {
+    await expect(
+      client.query(
+        `insert into public.fulfillment_item_absences
+           (ml_account_id, organization_id, item_id, http_status, first_failed_at, last_failed_at, recheck_after)
+         values ($1,$2,'MLB900668',404,now(),now(),now())`,
+        [CONTA_PERMITIDA, ORG_SB],
+      ),
+    ).rejects.toThrow(/fulfillment_item_absences_order/);
+  });
+});
+
 // get_stock_summary (20260904234500, D-249) -- a faixa de KPIs de /estoque, e
 // a recusa que se desfaz sozinha quando o ato humano acontece.
 describe("get_stock_summary (D-249)", () => {
