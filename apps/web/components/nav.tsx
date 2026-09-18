@@ -132,7 +132,9 @@ const NAV_GROUPS: readonly NavGroup[] = [
         de entrada de dado.
       */
       { label: "Importações", href: "/importacoes", icone: "envio", somenteAdmin: true },
-      { label: "Saúde do Sistema", href: "/saude", icone: "coracao" },
+      // get_system_health é só ADMIN: sem isto o item levava os outros papéis a
+      // uma tela de acesso restrito (lote 1 do pente fino, 18/09).
+      { label: "Saúde do Sistema", href: "/saude", icone: "coracao", somenteAdmin: true },
       { label: "Configurações", href: "/configuracoes", icone: "engrenagem" },
     ],
   },

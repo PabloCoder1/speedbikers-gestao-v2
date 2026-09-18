@@ -693,13 +693,46 @@ body {
     justify-content: center;
   }
 
+  /*
+    Lote 1 do pente fino (18/09): o trilho escondia TODOS os itens menos o
+    ativo -- no celular e no tablet a unica navegacao virava a busca. Agora
+    ficam todos os glifos; o texto sai so da VISTA (continua sendo o nome
+    acessivel do link) e o `title` do link da o rotulo no hover.
+  */
   .sb-brand > :not(.sb-brand-symbol),
   .sb-nav-label,
-  .sb-nav-link:not([aria-current="page"]),
   .sb-nav-count,
-  .sb-sidebar-bottom,
+  .sb-account > :not(.sb-account-mark),
   .sb-profile > :not(.sb-avatar) {
     display: none;
+  }
+
+  .sb-nav-texto,
+  .sb-sidebar-link > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Grupo recolhido no desktop nao pode sumir com os glifos no trilho. */
+  .sb-nav-group::details-content {
+    content-visibility: visible;
+    display: block;
+  }
+
+  .sb-nav {
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .sb-nav-link,
+  .sb-sidebar-link,
+  .sb-account {
+    justify-content: center;
+    padding-inline: 0;
   }
 
   .sb-nav-group-menu {
@@ -6021,13 +6054,9 @@ button.sb-profile:focus-visible {
     display: block;
   }
 
-  .sb-nav-link[aria-current="page"] {
+  .sb-nav-link {
     height: 38px;
     justify-content: center;
-  }
-
-  .sb-nav-link[aria-current="page"] .sb-nav-texto {
-    display: none;
   }
 }
 
@@ -15239,3 +15268,13 @@ td.sb-pco-num-linha {
     justify-content: center;
   }
 }
+
+/* PÁGINAS DE SISTEMA (lote 1 do pente fino, 18/09) — 404 dentro do Shell e a fronteira de erro. */
+.sb-system-state { display: grid; justify-items: center; gap: 0.6rem; max-width: 36rem; margin: var(--sb-space-4) auto 0; padding: 2.5rem 1.5rem; text-align: center; }
+.sb-system-state h1, .sb-system-state h2 { margin: 0; color: var(--sb-primary); font-size: 1.15rem; letter-spacing: -0.02em; }
+.sb-system-state p { margin: 0; color: var(--sb-text-soft); font-size: 0.8125rem; line-height: 1.55; }
+.sb-system-state-icon { display: grid; width: 3rem; height: 3rem; place-items: center; border-radius: 999px; background: var(--sb-secondary-soft); color: var(--sb-primary); font-size: 1.25rem; font-weight: 800; }
+.sb-system-state-icon-danger { background: var(--sb-danger-soft); color: var(--sb-danger); }
+.sb-system-state-code { padding: 0.2rem 0.5rem; border-radius: var(--sb-radius-sm); background: var(--sb-neutral-soft); color: var(--sb-neutral-ink); font-family: var(--sb-mono); font-size: 0.6875rem; }
+.sb-system-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
+.sb-system-error-page { display: grid; min-height: 100vh; place-items: center; padding: 1rem; background: var(--sb-ground, var(--sb-bg-soft)); }
