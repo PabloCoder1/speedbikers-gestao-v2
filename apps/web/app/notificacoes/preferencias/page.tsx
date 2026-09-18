@@ -89,15 +89,15 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
         <>
           <Panel
             title="Regras de alerta"
-            subtitle="A regra mais específica vence; sem nenhuma, todo evento vira toast."
+            subtitle="A regra mais específica vence; em empate, vale a mais restritiva. Sem nenhuma, todo evento vira toast."
           >
             {rows.length === 0 && (
               <p className="sb-empty">Nenhuma preferência configurada — todo evento vira toast por padrão.</p>
             )}
 
             {rows.length > 0 && (
-              <div style={{ overflowX: "auto" }}>
-                <table className="sb-table">
+              <div className="sb-notification-preferences-table-wrap">
+                <table className="sb-table sb-notification-preferences-table">
                   <thead>
                     <tr>
                       <th>Tipo de evento</th>

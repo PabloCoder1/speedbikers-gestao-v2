@@ -106,6 +106,21 @@ describe("runCopilotChat (D-114)", () => {
     ]);
   });
 
+  it("aguarda cada escrita de texto antes de encerrar o SSE", async () => {
+    const { copilot } = deps([finalText("Resposta em fluxo")]);
+    const events: CopilotChatEvent[] = [];
+
+    await runCopilotChat(copilot, CALLER, "token", { message: "teste" }, async (event) => {
+      if (event.type === "text") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      events.push(event);
+    });
+
+    expect(events.map((event) => event.type)).toEqual(["text", "done"]);
+  });
+
   it("rodada de tool_use executa a ferramenta REAL e alimenta o modelo", async () => {
     const { events, plan } = await run([
       {
@@ -180,6 +195,8 @@ describe("runCopilotChat (D-114)", () => {
     const { events } = await run([round, round, round, round]);
 
     expect(events.some((event) => event.type === "error" && event.message.includes("limite de consultas"))).toBe(true);
+    expect(events.at(-1)?.type).toBe("error");
+    expect(events.some((event) => event.type === "done")).toBe(false);
   });
 
   it("o system prompt carrega hoje, as contas do usuário e a proibição de inventar", async () => {

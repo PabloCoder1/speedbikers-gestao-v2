@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { CopilotScreenContext } from "../../components/copilot-context";
 import { createClient } from "../../lib/supabase/browser";
@@ -88,6 +88,21 @@ export function CopilotChat({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const autoScrollRef = useRef(true);
+
+  useEffect(() => {
+    if (autoScrollRef.current) {
+      listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [exchanges]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   function patchLast(patch: (exchange: Exchange) => Exchange): void {
     setExchanges((current) => {
@@ -100,7 +115,6 @@ export function CopilotChat({
 
       return next;
     });
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }
 
   /*
@@ -118,6 +132,10 @@ export function CopilotChat({
     setBusy(true);
     setDraft("");
     setExchanges((current) => [...current, { question, answer: "", tools: [], status: "streaming" }]);
+    autoScrollRef.current = true;
+    const controller = new AbortController();
+
+    abortRef.current = controller;
 
     const supabase = createClient();
     const { data } = await supabase.auth.getSession();
@@ -125,6 +143,7 @@ export function CopilotChat({
 
     if (token === undefined) {
       patchLast((exchange) => ({ ...exchange, answer: "Sessão expirada — atualize a página.", status: "error" }));
+      abortRef.current = null;
       setBusy(false);
 
       return;
@@ -151,6 +170,7 @@ export function CopilotChat({
                 },
               }),
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok || response.body === null) {
@@ -221,17 +241,30 @@ export function CopilotChat({
 
       // Conexão encerrada sem evento `done`: não fingir que terminou bem.
       patchLast((exchange) =>
-        exchange.status === "streaming" ? { ...exchange, status: "error" } : exchange,
+        exchange.status === "streaming"
+          ? {
+              ...exchange,
+              answer: `${exchange.answer}${exchange.answer.length > 0 ? "\n\n" : ""}Resposta interrompida antes da conclusão. Tente novamente.`,
+              status: "error",
+            }
+          : exchange,
       );
-    } catch {
+    } catch (error) {
+      const cancelled = error instanceof DOMException && error.name === "AbortError";
+
       patchLast((exchange) => ({
         ...exchange,
-        answer: exchange.answer.length > 0 ? exchange.answer : "Falha de conexão.",
+        answer: `${exchange.answer}${exchange.answer.length > 0 ? "\n\n" : ""}${cancelled ? "Consulta cancelada." : "Falha de conexão. Tente novamente."}`,
         status: "error",
       }));
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
+  }
+
+  function cancel(): void {
+    abortRef.current?.abort();
   }
 
   return (
@@ -240,8 +273,13 @@ export function CopilotChat({
         ref={listRef}
         className="sb-copilot-message-list"
         role="log"
-        aria-live="polite"
         aria-label="Histórico da conversa"
+        aria-busy={busy}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+
+          autoScrollRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+        }}
         style={{
           display: exchanges.length === 0 ? "none" : "grid",
           gap: "var(--sb-space-3)",
@@ -290,9 +328,30 @@ export function CopilotChat({
             >
               {exchange.answer.length > 0 ? exchange.answer : exchange.status === "streaming" ? "Consultando os dados…" : ""}
             </div>
+            {exchange.status === "error" && !busy && (
+              <button
+                className="sb-button sb-copilot-retry"
+                type="button"
+                onClick={() => {
+                  void ask(exchange.question);
+                }}
+              >
+                Tentar novamente
+              </button>
+            )}
           </article>
         ))}
       </div>
+
+      <p className="sb-sr-only" role="status" aria-live="polite">
+        {busy
+          ? "Copiloto consultando os dados."
+          : exchanges.at(-1)?.status === "done"
+            ? "Resposta do Copiloto concluída."
+            : exchanges.at(-1)?.status === "error"
+              ? "A consulta do Copiloto não foi concluída."
+              : ""}
+      </p>
 
       {/*
         As sugestões só aparecem no ESTADO VAZIO. Depois da primeira pergunta
@@ -370,7 +429,14 @@ export function CopilotChat({
         </div>
       )}
 
-      <div className="sb-copilot-composer" role="group" aria-label="Enviar pergunta ao Copiloto">
+      <form
+        className="sb-copilot-composer"
+        aria-label="Enviar pergunta ao Copiloto"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void ask();
+        }}
+      >
         <input
           className="sb-input"
           aria-label="Pergunta ao Copiloto"
@@ -381,25 +447,18 @@ export function CopilotChat({
           onChange={(event) => {
             setDraft(event.target.value);
           }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void ask();
-            }
-          }}
           style={{ flex: 1 }}
         />
-        <button
-          className="sb-button sb-button-primary"
-          type="button"
-          disabled={busy || draft.trim().length === 0}
-          onClick={() => {
-            void ask();
-          }}
-        >
-          {busy ? "Consultando…" : "Perguntar"}
-        </button>
-      </div>
+        {busy ? (
+          <button className="sb-button" type="button" onClick={cancel}>
+            Cancelar
+          </button>
+        ) : (
+          <button className="sb-button sb-button-primary" type="submit" disabled={draft.trim().length === 0}>
+            Perguntar
+          </button>
+        )}
+      </form>
     </div>
   );
 }

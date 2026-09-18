@@ -251,24 +251,36 @@ export async function runCopilotChat(
   const startedAt = Date.now();
   const toolsUsed: string[] = [];
   let costUsd = 0;
+  let terminalError = false;
 
   try {
     const accountsResult = await userClient.from("ml_accounts").select("id, label").order("label");
-    const accounts = accountsResult.error === null ? accountsResult.data : [];
+
+    if (accountsResult.error !== null) {
+      throw new Error(`falha ao carregar contas acessíveis: ${accountsResult.error.message}`);
+    }
+
+    const accounts = accountsResult.data;
 
     const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
+      // `onText` do SDK é síncrono, enquanto escrever no stream é assíncrono.
+      // A fila preserva a ordem dos deltas e impede `tool`/`done` de ultrapassar
+      // uma escrita lenta ou ainda pendente.
+      let textWrites = Promise.resolve();
       const result = await deps.anthropic.plan({
         system,
         messages,
         tools: CHAT_TOOLS,
         maxTokens: MAX_TOKENS,
         onText: (delta) => {
-          void emit({ type: "text", delta });
+          textWrites = textWrites.then(() => emit({ type: "text", delta }));
         },
       });
+
+      await textWrites;
 
       costUsd += result.costUsd;
 
@@ -334,6 +346,7 @@ export async function runCopilotChat(
       messages.push({ role: "user", content: toolResults });
 
       if (round === MAX_ROUNDS - 1) {
+        terminalError = true;
         await emit({
           type: "error",
           message: "A conversa passou do limite de consultas por pergunta — tente uma pergunta mais direta.",
@@ -341,10 +354,18 @@ export async function runCopilotChat(
       }
     }
 
-    await emit({ type: "done", toolsUsed });
+    if (!terminalError) {
+      await emit({ type: "done", toolsUsed });
+    }
   } catch (error) {
     deps.logger.error("copilot_chat_failed", { error });
-    await emit({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." });
+    try {
+      await emit({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." });
+    } catch (emitError) {
+      // Cliente desconectado: a resposta já não tem destinatário, mas a
+      // observabilidade e o registro de custo abaixo ainda precisam terminar.
+      deps.logger.warn("copilot_chat_emit_failed", { error: emitError });
+    }
   }
 
   // Best-effort, como em handleCopilotQuery: observabilidade nunca dita o

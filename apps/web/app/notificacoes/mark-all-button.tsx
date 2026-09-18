@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { formatCount } from "../../lib/format";
 import { markAllNotificationsRead } from "./actions";
 
-export function MarkAllButton(): ReactNode {
+export function MarkAllButton({ unreadCount }: { unreadCount: number }): ReactNode {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleClick(): Promise<void> {
@@ -30,21 +32,50 @@ export function MarkAllButton(): ReactNode {
     router.refresh();
   }
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
+  if (!confirming) {
+    return (
       <button
         className="sb-button"
+        type="button"
+        onClick={() => {
+          setConfirming(true);
+        }}
+      >
+        Marcar todas como lidas
+      </button>
+    );
+  }
+
+  return (
+    <div className="sb-notification-mark-all-confirm" role="group" aria-label="Confirmar leitura de todas as notificações">
+      <span>
+        Marcar {formatCount(unreadCount)} {unreadCount === 1 ? "notificação" : "notificações"} como lida
+        {unreadCount === 1 ? "" : "s"}?
+      </span>
+      <button
+        className="sb-button sb-button-primary"
         type="button"
         disabled={busy}
         onClick={() => {
           void handleClick();
         }}
       >
-        Marcar todas como lidas
+        {busy ? "Marcando…" : "Confirmar"}
+      </button>
+      <button
+        className="sb-button"
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setConfirming(false);
+          setError(null);
+        }}
+      >
+        Cancelar
       </button>
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+        <p className="sb-notification-mark-all-error" role="alert">
           {error}
         </p>
       )}

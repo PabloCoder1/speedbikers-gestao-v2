@@ -238,6 +238,9 @@ export function NotificationToasts({
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-label="Novas notificações"
       style={{
         position: "fixed",
         right: "var(--sb-space-4)",

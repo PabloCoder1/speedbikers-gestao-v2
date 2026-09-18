@@ -20,7 +20,7 @@ export default function CopilotoPage(): ReactNode {
       <PageTitle
         eyebrow="INTELIGÊNCIA / COPILOTO"
         title="Copiloto"
-        subtitle="Respostas operacionais baseadas em consultas reais, com período, conta e limites da informação sempre explícitos."
+        subtitle="Respostas operacionais sobre vendas, estoque e anúncios, sempre baseadas em consultas reais e no acesso do usuário."
       />
 
       {/*
@@ -37,7 +37,7 @@ export default function CopilotoPage(): ReactNode {
       */}
       <Panel
         title="Conversa com dados reais"
-        subtitle="Pergunte sobre vendas por período, comparação entre períodos ou desempenho das contas. Cada pergunta é independente: não há histórico entre uma e outra, e a tela não guarda o que foi perguntado."
+        subtitle="Pergunte sobre vendas por período, compare contas ou informe um SKU/anúncio para consultar reposição e desempenho. Cada pergunta é independente: não há histórico entre uma e outra e nada fica salvo."
       >
         <div className="sb-panel-body sb-copilot-panel-body">
           <div className="sb-copilot-contract" role="note">

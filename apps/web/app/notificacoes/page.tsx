@@ -199,7 +199,7 @@ export default async function NotificacoesPage({
             <Link href="/notificacoes/preferencias" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
               Preferências
             </Link>
-            {unreadCount !== null && unreadCount > 0 && <MarkAllButton />}
+            {unreadCount !== null && unreadCount > 0 && <MarkAllButton unreadCount={unreadCount} />}
           </>
         }
       />
