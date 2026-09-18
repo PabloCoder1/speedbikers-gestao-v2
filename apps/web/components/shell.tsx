@@ -174,7 +174,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
       <div className="sb-workspace">
         <header className="sb-topbar">
-          <CommandPalette organizationId={organizationId} />
+          <CommandPalette organizationId={organizationId} papel={role} />
 
           <div className="sb-top-actions">
             {/*

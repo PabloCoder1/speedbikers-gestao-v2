@@ -306,3 +306,19 @@ export function SidebarRodapeLink({
     </Link>
   );
 }
+
+/**
+ * As telas do menu que este papel alcança, como lista plana — para a busca
+ * (`CommandPalette`) oferecer "ir para a tela" com EXATAMENTE a regra do menu
+ * (lote 3 do pente fino, 18/09). No celular a busca é a navegação mais rápida,
+ * e ela só achava registros, nunca telas.
+ */
+export function paginasDoMenu(papel: string | null): { label: string; href: string; grupo: string }[] {
+  const ehAdmin = papel === "ADMIN";
+
+  return NAV_GROUPS.flatMap((group) =>
+    group.items
+      .filter((item) => item.somenteAdmin !== true || ehAdmin)
+      .map((item) => ({ label: item.label, href: item.href, grupo: group.title })),
+  );
+}
