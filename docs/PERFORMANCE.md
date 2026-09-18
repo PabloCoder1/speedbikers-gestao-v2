@@ -500,6 +500,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-03 | Caminho de pedidos (janela) — **medido em produção** | 743 / 608 / 541 ms por pedido | **43,4 / 29,4 / 19,0** | lote de leitura e de escrita por página (D-186/D-188/D-190), agora com tráfego real; ganho de **17× a 28×**, por faixa de lote | D-220 |
 | 2026-09-11 | `get_sku_curation` — **da 6ª execução em diante** | 360 a 4.000 ms | **16 a 34 ms** | `plan_cache_mode = 'force_custom_plan'`; nenhuma linha do corpo mudou. Medido em LOCAL com catálogo sintético de 3.502 SKUs | D-319 |
 | 2026-09-12 | Varredura das 25 `plpgsql` sem `plan_cache_mode` | `get_sku_curation_summary`: 9–14 ms, **sem salto na 6ª**; escritas em lote (300 ids): custom 22–30 ms | genérico **14–20 ms** nas escritas | **nenhuma mudança** — `force_custom_plan` deixaria as escritas em lote mais lentas. 21 escritas de uma linha classificadas pela forma, não cronometradas. LOCAL, carga sintética de 3.500 SKUs / 8.376 retratos | D-324 |
+| 2026-09-18 | Faixa de `/anuncios` — **medido em produção**, `authenticated` | 6 × `get_listings_dashboard(p_limit 1)`, ~115 ms cada (~0,7 s) | **63 ms** as seis, `get_listings_dashboard_counts` | contagens sem os CTEs de venda e visitas; predicado copiado e preso por teste de integração | D-381 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)

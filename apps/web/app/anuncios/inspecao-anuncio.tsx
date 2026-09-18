@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 
 import { DetailRow, Drawer } from "../../components/drawer";
+import { Icone } from "../../components/icons";
 import { TOM, tomDeRelist } from "../../components/tone";
 import { formatEventDiff } from "../../lib/event-format";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
@@ -47,6 +48,7 @@ export function InspecaoAnuncio({
   accountLabel,
   sku,
   skuId,
+  compacto = false,
 }: {
   mlAccountId: string;
   itemId: string;
@@ -58,6 +60,8 @@ export function InspecaoAnuncio({
   accountLabel: string;
   sku: string | null;
   skuId: string | null;
+  /** Só o ícone, para a coluna de ações da tabela; o texto vai para o leitor de tela. */
+  compacto?: boolean;
 }): ReactNode {
   const [aberta, setAberta] = useState(false);
   const [retrato, setRetrato] = useState<ListingInspection | null>(null);
@@ -76,9 +80,21 @@ export function InspecaoAnuncio({
 
   return (
     <>
-      <button type="button" className="sb-text-button" onClick={abrir}>
-        Inspecionar
-      </button>
+      {compacto ? (
+        <button
+          type="button"
+          className="sb-icon-button sb-an-inspecionar"
+          onClick={abrir}
+          aria-label={`Inspecionar ${itemId}`}
+          title="Inspecionar: frescor, republicação e últimos eventos"
+        >
+          <Icone nome="lupa" tamanho={14} />
+        </button>
+      ) : (
+        <button type="button" className="sb-text-button" onClick={abrir}>
+          Inspecionar
+        </button>
+      )}
 
       {aberta && (
         <Drawer

@@ -18,8 +18,10 @@
  *   o navegador fala com o Supabase (HTTPS e o WebSocket do Realtime, que os
  *   toasts de notificação usam) e com a `api` (`NEXT_PUBLIC_API_URL`, lida por dez
  *   componentes de cliente). O mesmo código serve o local e o Dev.
- * - **Sem `img-src` externo, `worker-src`, `frame-src`**: conferido que o app não
- *   tem `<img>`, `Worker`, `blob:` criado, `iframe` nem `EventSource`.
+ * - **`img-src` externo só para o Mercado Livre**: a miniatura do anúncio em
+ *   `/anuncios` vem de `https://*.mlstatic.com` (a sincronização só grava host
+ *   desse domínio). Sem `worker-src` nem `frame-src`: conferido que o app não
+ *   tem `Worker`, `iframe` nem `EventSource`.
  */
 
 /** Um valor imprevisível e único por requisição — é o que o atacante teria de adivinhar. */
@@ -74,8 +76,9 @@ export function montarCsp({
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     // A foto de perfil vem do Storage do Supabase (D-354): a mesma origem que
-    // `connect-src` já abre, e nenhuma outra.
-    `img-src 'self' data: blob:${supabase === null ? "" : ` ${supabase.http}`}`,
+    // `connect-src` já abre. A miniatura do anúncio vem do CDN do Mercado Livre
+    // (`/anuncios`, 20260918150000) — e só dele.
+    `img-src 'self' data: blob:${supabase === null ? "" : ` ${supabase.http}`} https://*.mlstatic.com`,
     "font-src 'self'",
     `connect-src ${[...new Set(conectar)].join(" ")}`,
     "object-src 'none'",

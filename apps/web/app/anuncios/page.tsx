@@ -2,9 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { FilterMenu } from "../../components/filter-menu";
+import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
+import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
@@ -17,15 +19,22 @@ import {
   SOLD_FILTERS,
   STOCK_FILTERS,
   linkStateBadge,
+  nextOrder,
+  orderKey,
+  orderParam,
+  pageNumbers,
   resolveFullFilter,
   resolveLinkStateFilter,
+  resolveOrder,
   resolvePage,
   resolveSoldFilter,
   resolveStatusFilter,
   resolveStockFilter,
   summarizeWindow,
+  type ListingsOrder,
+  type OrderColumn,
 } from "../../lib/listings-dashboard";
-import { buildFilterHref } from "../../lib/filters";
+import { PAGE_SIZES, buildFilterHref, resolvePageSize, type PageSize } from "../../lib/filters";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
@@ -39,7 +48,8 @@ export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Dashboard de Anúncios (Fase 5C, D-138; composição do Figma em D-242).
+ * Dashboard de Anúncios (Fase 5C, D-138; composição do Figma em D-242;
+ * ordenação, faixa numa consulta e foto do anúncio em 20260918150000).
  *
  * **Deixou de ser lista e passou a responder perguntas**, que é o que
  * `docs/PRODUCT_REQUIREMENTS.md` pede: quais anúncios existem, em qual conta,
@@ -48,35 +58,23 @@ export const dynamic = "force-dynamic";
  * 🔴 **A versão anterior mostrava 1.000 de 5.085 anúncios, em silêncio.** Lia
  * `from("listings").select(...).order("title")` sem `.range()`, e o PostgREST
  * corta em `max_rows = 1000` devolvendo `error` NULO — sexta ocorrência da
- * classe de D-131. Como ordenava por título, o que sobrevivia eram "os 1.000
- * primeiros no alfabeto".
- *
- * Agora o pivô, os filtros, a ordenação e a CONTAGEM vivem no Postgres
- * (`get_listings_dashboard`) e a tela lê uma janela declarada, exibindo
- * sempre "N de M" — mesmo precedente que D-131 usou em `/estoque`.
+ * classe de D-131. Agora o pivô, os filtros, a ORDEM e a contagem vivem no
+ * Postgres (`get_listings_dashboard`) e a tela lê uma janela declarada,
+ * exibindo sempre "N de M".
  *
  * ## A faixa de estados, e o que ela NÃO diz (D-242)
  *
- * O frame `Listings` abre com seis células de resumo. Cinco o sistema mede:
- * ativos, pausados, sem estoque, no Full e sem vínculo. **Uma ele não mede**
- * e ficou de fora em vez de virar número inventado: **"Com queda"** — não há
- * detecção de anomalia por anúncio, e "queda" não tem entrada em
- * `metric_definitions` (D-023 proíbe estampar número sintetizado sem definição
- * canônica por trás).
+ * Seis células, todas medidas: total, ativos, pausados, sem estoque, no Full
+ * (D-243) e sem vínculo. **"Com queda" do frame ficou de fora** em vez de
+ * virar número inventado — não há detecção de anomalia por anúncio, e "queda"
+ * não tem entrada em `metric_definitions` (D-023).
  *
- * **"No Full" entrou depois de uma correção (D-243).** D-242 o tinha deixado
- * de fora com o motivo "Full é fato de SKU; `listings` não tem coluna de
- * logística" — e a auditoria de fidelidade conferiu o schema: o snapshot de
- * Full (`fulfillment_stock_snapshots`) carrega `item_id`, o MLB. O grão
- * existia; faltava olhar. A RPC devolve `full_quantity` por anúncio (NULA sem
- * snapshot — ausência não é zero, D-067) e o filtro `p_full` faz célula e
- * lista saírem do mesmo predicado.
- *
- * A célula âncora ficou com o TOTAL, que é medido e é o denominador de todas as
- * outras — a ausência de "Com queda" está registrada em
- * `docs/DESIGN_IMPLEMENTATION.md` com o motivo.
+ * Até 18/09/2026 cada célula era uma chamada inteira da lista com
+ * `p_limit = 1` — seis agregações de venda e visitas que as contagens não
+ * usam, ~0,7 s de banco por visita. Agora é `get_listings_dashboard_counts`,
+ * uma passada de 63 ms, com os predicados copiados da lista e presos a ela
+ * pelo teste de integração "contagens = total_count da lista".
  */
-
 
 interface DashboardRow {
   listing_id: string;
@@ -98,6 +96,9 @@ interface DashboardRow {
   conversion_rate: number | null;
   /** NULA sem snapshot de Full (D-243). */
   full_quantity: number | null;
+  /** NULA até a próxima sincronização; AUSENTE com o banco anterior a 20260918150000. */
+  thumbnail_url?: string | null;
+  permalink?: string | null;
   total_count: number;
 }
 
@@ -112,6 +113,8 @@ interface Filters {
   /** Dias da janela. Muda venda/visitas/conversão e o predicado `sold` (D-308). */
   days: number;
   search: string | null;
+  order: ListingsOrder;
+  pageSize: PageSize;
   page: number;
 }
 
@@ -119,9 +122,9 @@ interface Filters {
  * Preserva as outras dimensões ao trocar uma — mesmo `buildHref` de
  * `/vendas`. Trocar de conta NÃO pode resetar o filtro de vínculo.
  *
- * Qualquer mudança de filtro volta para a página 1: manter o offset seria
- * mostrar "página 7 de 2", ou pior, uma página vazia que parece "nenhum
- * resultado".
+ * Qualquer mudança de filtro, ordem ou tamanho volta para a página 1: manter
+ * o offset seria mostrar "página 7 de 2", ou pior, uma página vazia que
+ * parece "nenhum resultado".
  */
 function buildHref(current: Filters, override: Partial<Filters>): string {
   const next = { ...current, ...override };
@@ -131,35 +134,69 @@ function buildHref(current: Filters, override: Partial<Filters>): string {
     {
       conta: next.account,
       estado: next.status,
-      // "all" e o default do vinculo: fica fora da URL, como os demais.
+      // "all" e o default de cada eixo: fica fora da URL.
       vinculo: next.link === "all" ? null : next.link,
       estoque: next.stock === "all" ? null : next.stock,
       full: next.full === "all" ? null : next.full,
       venda: next.sold === "all" ? null : next.sold,
-      // O padrão fica fora da URL, como os demais: `/anuncios` continua
-      // sendo o endereço da janela de 30 dias.
+      // O padrão fica fora da URL: `/anuncios` continua sendo o endereço da
+      // janela de 30 dias, por faturamento, 50 por página.
       dias: next.days === DEFAULT_PERIOD_DAYS ? null : String(next.days),
       busca: next.search,
+      ordem: orderParam(next.order),
+      tamanho: next.pageSize === PAGE_SIZE ? null : String(next.pageSize),
     },
     override.page === undefined ? 1 : next.page,
   );
 }
 
-/**
- * Contagem de uma célula da faixa.
- *
- * Devolve **`null` em erro**, nunca zero: D-067 vale para a faixa igual vale
- * para a tabela. Uma leitura que falhou e vira "0 sem estoque" afirma que está
- * tudo bem — a mentira mais cara desta tela.
- */
-function contagem(resultado: { data: unknown; error: unknown }): number | null {
-  if (resultado.error !== null) {
-    return null;
+const NEUTRO: Partial<Filters> = { status: null, link: "all", stock: "all", full: "all", sold: "all", search: null };
+
+/** Cabeçalho que ordena: o link é o próximo estado, e `aria-sort` diz o atual. */
+function Cabecalho({
+  coluna,
+  rotulo,
+  filters,
+  numerico = false,
+  dica,
+  ordena,
+}: {
+  coluna: OrderColumn;
+  rotulo: string;
+  filters: Filters;
+  numerico?: boolean;
+  dica?: string;
+  /** Falso com o banco anterior a 20260918150000: o cabeçalho vira texto. */
+  ordena: boolean;
+}): ReactNode {
+  const ativa = filters.order.column === coluna;
+  const crescente = filters.order.direction === "asc";
+
+  if (!ordena) {
+    return (
+      <th className={numerico ? "sb-num" : undefined} title={dica}>
+        {rotulo}
+      </th>
+    );
   }
 
-  const linhas = (resultado.data ?? []) as { total_count: number }[];
-
-  return linhas[0]?.total_count ?? 0;
+  return (
+    <th
+      className={numerico ? "sb-num" : undefined}
+      aria-sort={ativa ? (crescente ? "ascending" : "descending") : "none"}
+      title={dica}
+    >
+      <a
+        className={ativa ? "sb-an-ordem sb-an-ordem-ativa" : "sb-an-ordem"}
+        href={buildHref(filters, { order: nextOrder(filters.order, coluna) })}
+      >
+        {rotulo}
+        <span className="sb-an-ordem-seta" aria-hidden="true">
+          {ativa ? (crescente ? "↑" : "↓") : "↕"}
+        </span>
+      </a>
+    </th>
+  );
 }
 
 export default async function AnunciosPage({
@@ -170,13 +207,13 @@ export default async function AnunciosPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As contas não dependem da organização: a RLS já as restringe, e o `select`
-  // de `organization_members` existe para o guarda de "sem organização", não
-  // para filtrar. As duas leituras saem juntas desde D-195; as RPCs abaixo
+  // As contas e os filtros salvos não dependem da organização (a RLS já os
+  // restringe): saem juntos com o membership desde D-195. As duas RPCs abaixo
   // continuam depois, porque elas SIM precisam da conta escolhida.
-  const [membership, accountsResult] = await Promise.all([
+  const [membership, accountsResult, savedFiltersResult] = await Promise.all([
     currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
+    supabase.from("saved_filters").select("id, name, params").eq("screen", "/anuncios").order("name"),
   ]);
 
   const organizationId = membership.organizationId;
@@ -191,6 +228,11 @@ export default async function AnunciosPage({
   }
 
   const accounts = accountsResult.data ?? [];
+  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    params: row.params as Record<string, string>,
+  }));
 
   const requestedAccount = typeof query.conta === "string" ? query.conta : null;
   const selectedAccount = accounts.find((a) => a.slug === requestedAccount) ?? null;
@@ -206,146 +248,188 @@ export default async function AnunciosPage({
     sold: resolveSoldFilter(query.venda),
     days: resolvePeriodDays(query.dias),
     search: typeof query.busca === "string" && query.busca.trim() !== "" ? query.busca.trim() : null,
+    order: resolveOrder(query.ordem),
+    pageSize: resolvePageSize(query.tamanho, PAGE_SIZE),
     page: resolvePage(query.pagina),
   };
 
-  // A janela sai do filtro (D-308) — era fixa em 30 dias. `days - 1` porque o
-  // intervalo da RPC é fechado nas duas pontas: "últimos 7 dias" é hoje mais
-  // seis, não hoje mais sete.
+  // A janela sai do filtro (D-308). `days - 1` porque o intervalo da RPC é
+  // fechado nas duas pontas: "últimos 7 dias" é hoje mais seis.
   const now = new Date();
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const escopo = {
+  const listaSemOrdem = {
     p_organization_id: organizationId,
     p_date_from: dateFrom,
     p_date_to: dateTo,
     p_ml_account_id: selectedAccount?.id ?? null,
     p_search: filters.search,
+    p_status: filters.status,
+    p_link_state: filters.link,
+    p_stock: filters.stock,
+    p_full: filters.full,
+    p_sold: filters.sold,
+    p_limit: filters.pageSize,
+    p_offset: (filters.page - 1) * filters.pageSize,
   };
 
   /*
-    Sete leituras num `Promise.all` só: a página mais as seis contagens da
-    faixa. **O custo de uma chamada ao banco é a ida e volta, não o SQL**
-    (D-185) — em paralelo elas custam uma ida, e a faixa sai de graça no relógio.
-
-    As contagens usam a MESMA função da lista, com `p_limit: 1` para ler só o
-    `total_count`. É a decisão central desta faixa: se a célula diz "1 sem
-    estoque", clicar nela mostra exatamente aquele 1, porque contagem e lista
-    são a mesma consulta com o mesmo predicado. Uma segunda definição — um
-    `count` próprio na tela, ou uma RPC de resumo à parte — seria um segundo
-    dono do mesmo dado, e é assim que os dois números começam a divergir
-    (D-224).
-
-    O ESCOPO das contagens é conta + busca, sem os filtros de estado: cada
-    célula É um filtro de estado, e contá-la já filtrada por outro estado daria
-    sempre zero ou o próprio número da tela.
+    Duas leituras em paralelo: a página e a faixa. O ESCOPO da faixa é conta +
+    busca, sem os filtros de estado — cada célula É um filtro de estado, e
+    contá-la já filtrada por outro daria sempre zero ou o próprio número.
   */
-  const [pagina, total, ativos, pausados, semEstoque, noFull, semVinculo] = await Promise.all([
-    supabase.rpc("get_listings_dashboard", {
-      ...escopo,
-      p_status: filters.status,
-      p_link_state: filters.link,
-      p_stock: filters.stock,
-      p_full: filters.full,
-      p_sold: filters.sold,
-      p_limit: PAGE_SIZE,
-      p_offset: (filters.page - 1) * PAGE_SIZE,
+  const [paginaNova, faixaNova] = await Promise.all([
+    supabase.rpc("get_listings_dashboard", { ...listaSemOrdem, p_order: orderKey(filters.order) }),
+    supabase.rpc("get_listings_dashboard_counts", {
+      p_organization_id: organizationId,
+      p_ml_account_id: selectedAccount?.id ?? null,
+      p_search: filters.search,
     }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_limit: 1 }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_status: "active", p_limit: 1 }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_status: "paused", p_limit: 1 }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_stock: "out", p_limit: 1 }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_full: "with", p_limit: 1 }),
-    supabase.rpc("get_listings_dashboard", { ...escopo, p_link_state: "unlinked", p_limit: 1 }),
   ]);
+
+  /*
+    BANCO AINDA SEM 20260918150000 (PGRST202). A web e a migration chegam a
+    produção por caminhos diferentes — a web pela promoção na Vercel, a
+    migration pelo `migrations-producao.yml` com duas aprovações (D-334) — e em
+    18/09 uma tela publicada antes da migration dela virou 404 (`/notas-fiscais`).
+    Aqui a tela cai na assinatura antiga: lista por faturamento, sem foto, e a
+    faixa pelas seis chamadas de antes. Mesmo desenho de `/compras` e `/full`.
+  */
+  const bancoAntigo = paginaNova.error?.code === "PGRST202" || faixaNova.error?.code === "PGRST202";
+
+  let pagina = paginaNova;
+  // Contagem em erro é `undefined` e a célula diz "—", nunca zero: D-067 vale
+  // para a faixa igual vale para a tabela. Uma leitura que falhou e vira "0 sem
+  // estoque" afirma que está tudo bem — a mentira mais cara desta tela.
+  let contagens: Partial<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", number | undefined>> =
+    faixaNova.error === null ? (faixaNova.data[0] ?? {}) : {};
+
+  if (bancoAntigo) {
+    const contar = (extra: { p_status?: string; p_stock?: string; p_full?: string; p_link_state?: string }) =>
+      supabase.rpc("get_listings_dashboard", {
+        p_organization_id: organizationId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_ml_account_id: selectedAccount?.id ?? null,
+        p_search: filters.search,
+        p_limit: 1,
+        ...extra,
+      });
+
+    const [antiga, total, ativos, pausados, semEstoque, noFull, semVinculo] = await Promise.all([
+      supabase.rpc("get_listings_dashboard", listaSemOrdem),
+      contar({}),
+      contar({ p_status: "active" }),
+      contar({ p_status: "paused" }),
+      contar({ p_stock: "out" }),
+      contar({ p_full: "with" }),
+      contar({ p_link_state: "unlinked" }),
+    ]);
+    const ler = (r: { data: { total_count: number }[] | null; error: unknown }): number | undefined =>
+      r.error === null ? (r.data?.[0]?.total_count ?? 0) : undefined;
+
+    pagina = antiga;
+    contagens = {
+      total: ler(total),
+      active: ler(ativos),
+      paused: ler(pausados),
+      out_of_stock: ler(semEstoque),
+      in_full: ler(noFull),
+      unlinked: ler(semVinculo),
+    };
+  }
 
   const { data, error } = pagina;
 
   const rows = (data ?? []) as DashboardRow[];
   // `total_count` vem repetido em toda linha (window function). Zero linhas
-  // significa zero no conjunto filtrado — não há de onde ler o total, e é a
-  // resposta certa.
+  // significa zero no conjunto filtrado — a resposta certa.
   const totalCount = rows[0]?.total_count ?? 0;
-  const window = summarizeWindow(filters.page, totalCount, rows.length);
+  const window = summarizeWindow(filters.page, totalCount, rows.length, filters.pageSize);
 
-  const numero = (valor: number | null): string => (valor === null ? "—" : formatCount(valor));
+  const numero = (valor: number | undefined): string => (valor === undefined ? "—" : formatCount(valor));
 
   const celulas: KpiCellData[] = [
     {
       // O total é LIDO, não somado. Ativos + pausados + fechados nem sempre
-      // fecha (existe `under_review`), e somar células seria inventar a
-      // aritmética de um conjunto que a tela não enumera.
+      // fecha (existe `under_review`).
       label: "Anúncios monitorados",
       formula: "Total no escopo atual (conta e busca), sem filtro de estado.",
-      value: numero(contagem(total)),
+      value: numero(contagens.total),
       previous: null,
-      href: buildHref(filters, { sold: "all", status: null, link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, NEUTRO),
       tom: "info",
     },
     {
       label: "Ativos",
       formula: "listings.status = 'active' no escopo atual.",
-      value: numero(contagem(ativos)),
+      value: numero(contagens.active),
       previous: null,
-      href: buildHref(filters, { sold: "all", status: "active", link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, { ...NEUTRO, status: "active" }),
       tom: "ok",
     },
     {
       label: "Pausados",
       formula: "listings.status = 'paused' no escopo atual.",
-      value: numero(contagem(pausados)),
+      value: numero(contagens.paused),
       previous: null,
-      href: buildHref(filters, { sold: "all", status: "paused", link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, { ...NEUTRO, status: "paused" }),
       tom: "neutro",
     },
     {
       label: "Sem estoque",
       formula: "listings.available_quantity = 0 — estoque DO ANÚNCIO, não o do ERP nem o do Full.",
-      value: numero(contagem(semEstoque)),
+      value: numero(contagens.out_of_stock),
       previous: null,
-      href: buildHref(filters, { sold: "all", stock: "out", status: null, link: "all", full: "all" }),
+      href: buildHref(filters, { ...NEUTRO, stock: "out" }),
       tom: "perigo",
     },
     {
       label: "No Full",
       formula: "Full do anúncio > 0 — soma do último snapshot por inventory_id nos últimos 3 dias (definição canônica D-173/D-204).",
-      value: numero(contagem(noFull)),
+      value: numero(contagens.in_full),
       previous: null,
-      href: buildHref(filters, { sold: "all", full: "with", status: null, link: "all", stock: "all" }),
+      href: buildHref(filters, { ...NEUTRO, full: "with" }),
       tom: "info",
     },
     {
       label: "Sem vínculo",
       formula: "Nem por anúncio nem por variação — a fila da Central de Vinculações (D-122).",
-      value: numero(contagem(semVinculo)),
+      value: numero(contagens.unlinked),
       previous: null,
-      href: buildHref(filters, { sold: "all", link: "unlinked", status: null, stock: "all", full: "all" }),
+      href: buildHref(filters, { ...NEUTRO, link: "unlinked" }),
       tom: "atencao",
     },
   ];
 
   const rotuloConta = selectedAccount?.label ?? "Todas as contas";
   const rotuloEstado = filters.status === null ? "Todos os estados" : listingStatusLabel(filters.status);
-  const rotuloVinculo = LINK_STATE_FILTERS.find((f) => f.key === filters.link)?.label ?? "Todos";
+  const rotuloVinculo = LINK_STATE_FILTERS.find((f) => f.key === filters.link)?.label ?? "Com ou sem vínculo";
   const rotuloEstoque = STOCK_FILTERS.find((f) => f.key === filters.stock)?.label ?? "Qualquer estoque";
   const rotuloFull = FULL_FILTERS.find((f) => f.key === filters.full)?.label ?? "Full ou não";
   const rotuloVenda = SOLD_FILTERS.find((f) => f.key === filters.sold)?.label ?? "Com ou sem venda";
   const rotuloPeriodo = `Últimos ${String(filters.days)} dias`;
 
-  // A linha "Filtros ativos: …" do frame, com os filtros que estão de fato
-  // ativos — não um texto fixo. O período entra SEMPRE, porque ele não tem
-  // posição neutra: toda leitura de venda desta tela é de alguma janela.
-  const filtrosAtivos = [
-    rotuloConta,
-    rotuloPeriodo.toLowerCase(),
-    ...(filters.status === null ? [] : [rotuloEstado]),
-    ...(filters.link === "all" ? [] : [rotuloVinculo.toLowerCase()]),
-    ...(filters.stock === "all" ? [] : [rotuloEstoque.toLowerCase()]),
-    ...(filters.full === "all" ? [] : [rotuloFull.toLowerCase()]),
-    ...(filters.sold === "all" ? [] : [rotuloVenda.toLowerCase()]),
-    ...(filters.search === null ? [] : [`busca “${filters.search}”`]),
-  ].join(" · ");
+  /*
+    Os filtros ATIVOS, como chips que se desfazem com um clique. Era uma frase
+    ("Filtros ativos: …") que dizia o estado mas não deixava mudá-lo — tirar
+    um recorte pedia achar o menu certo e a opção neutra. O período e a conta
+    não entram: não têm posição "sem filtro" (a janela sempre existe) ou já se
+    leem no botão do cabeçalho.
+  */
+  const chips: { rotulo: string; href: string }[] = [
+    ...(filters.status === null ? [] : [{ rotulo: rotuloEstado, href: buildHref(filters, { status: null }) }]),
+    ...(filters.link === "all" ? [] : [{ rotulo: rotuloVinculo, href: buildHref(filters, { link: "all" }) }]),
+    ...(filters.stock === "all" ? [] : [{ rotulo: rotuloEstoque, href: buildHref(filters, { stock: "all" }) }]),
+    ...(filters.full === "all" ? [] : [{ rotulo: rotuloFull, href: buildHref(filters, { full: "all" }) }]),
+    ...(filters.sold === "all" ? [] : [{ rotulo: rotuloVenda, href: buildHref(filters, { sold: "all" }) }]),
+    ...(filters.search === null ? [] : [{ rotulo: `Busca “${filters.search}”`, href: buildHref(filters, { search: null }) }]),
+  ];
+  const limpar = buildHref(filters, NEUTRO);
+
+  const hidden = (nome: string, valor: string | null): ReactNode =>
+    valor === null ? null : <input type="hidden" name={nome} value={valor} />;
 
   return (
     <Shell>
@@ -354,26 +438,22 @@ export default async function AnunciosPage({
         title="Dashboard de anúncios"
         subtitle={
           <>
-            Catálogo do Mercado Livre sincronizado a cada 6h — estado, estoque, Full, venda, visitas e conversão
-            dos últimos {filters.days} dias. A fila dos sem vínculo está na{" "}
+            Catálogo do Mercado Livre sincronizado a cada 6h — estado, estoque, Full, venda, visitas e conversão dos
+            últimos {filters.days} dias. A fila dos sem vínculo está na{" "}
             <Link href="/vinculacoes">Central de Vinculações</Link>.
           </>
         }
         aside={
           <>
             {/*
-              Os filtros viraram a barra de menus do Figma, como em `/vendas` e
-              `/produtos`. Todo o recorte continua na URL, nunca em estado
-              React: é o que mantém o link compartilhável, o voltar do navegador
-              funcionando e os Filtros Salvos possíveis.
+              Como no frame: o cabeçalho recorta O QUE SE OLHA (conta, período,
+              vínculo, busca); os filtros de ESTADO da tabela moram na barra do
+              painel. Todo o recorte vive na URL, nunca em estado React: é o
+              que mantém o link compartilhável, o voltar do navegador e os
+              Filtros Salvos.
             */}
-            {/*
-              Como no frame: o cabeçalho recorta O QUE SE OLHA (conta, vínculo,
-              busca); os filtros de ESTADO da tabela — Status, Com estoque,
-              Full — moram na barra do painel, ao lado da contagem. Era tudo
-              numa fila de seis controles aqui em cima (a antiga fila de
-              pílulas convertida em menus); a auditoria de fidelidade apontou.
-            */}
+            <SavedFilters screen="/anuncios" organizationId={organizationId} filters={savedFilters} />
+
             <FilterMenu
               rotulo={rotuloConta}
               opcoes={[
@@ -386,11 +466,8 @@ export default async function AnunciosPage({
               ]}
             />
 
-            {/*
-              O período mora no CABEÇALHO, com conta e vínculo, porque é "o que
-              se olha" e não estado da tabela: ele muda o significado das
-              colunas de venda, visitas e conversão de toda a tela.
-            */}
+            {/* O período muda o significado das colunas de venda, visitas e
+                conversão da tela inteira — por isso mora no cabeçalho. */}
             <FilterMenu
               rotulo={rotuloPeriodo}
               opcoes={PERIOD_PRESETS.map((dias) => ({
@@ -409,21 +486,24 @@ export default async function AnunciosPage({
               }))}
             />
 
-            <form method="get" action="/anuncios" style={{ display: "flex", gap: "0.375rem" }}>
+            <form method="get" action="/anuncios" className="sb-an-busca" role="search">
               {/*
                 Hidden para cada dimensão ativa: um GET nativo envia SÓ os campos
-                do formulário, então sem isto buscar descartaria conta, vínculo,
-                estado e estoque. Mesmo cuidado de `/vendas` (D-136).
+                do formulário, então sem isto buscar descartaria o resto do
+                recorte. Mesmo cuidado de `/vendas` (D-136).
               */}
-              {filters.account !== null && <input type="hidden" name="conta" value={filters.account} />}
-              {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
-              {filters.link !== "all" && <input type="hidden" name="vinculo" value={filters.link} />}
-              {filters.stock !== "all" && <input type="hidden" name="estoque" value={filters.stock} />}
-              {filters.full !== "all" && <input type="hidden" name="full" value={filters.full} />}
-              {filters.sold !== "all" && <input type="hidden" name="venda" value={filters.sold} />}
-              {filters.days !== DEFAULT_PERIOD_DAYS && (
-                <input type="hidden" name="dias" value={String(filters.days)} />
-              )}
+              {hidden("conta", filters.account)}
+              {hidden("estado", filters.status)}
+              {hidden("vinculo", filters.link === "all" ? null : filters.link)}
+              {hidden("estoque", filters.stock === "all" ? null : filters.stock)}
+              {hidden("full", filters.full === "all" ? null : filters.full)}
+              {hidden("venda", filters.sold === "all" ? null : filters.sold)}
+              {hidden("dias", filters.days === DEFAULT_PERIOD_DAYS ? null : String(filters.days))}
+              {hidden("ordem", orderParam(filters.order))}
+              {hidden("tamanho", filters.pageSize === PAGE_SIZE ? null : String(filters.pageSize))}
+              <span className="sb-an-busca-icone" aria-hidden="true">
+                <Icone nome="lupa" tamanho={14} />
+              </span>
               <input
                 type="search"
                 name="busca"
@@ -431,7 +511,6 @@ export default async function AnunciosPage({
                 defaultValue={filters.search ?? ""}
                 placeholder="SKU, MLB ou título"
                 aria-label="Buscar por SKU, MLB ou título"
-                style={{ minWidth: "12rem" }}
               />
               <button type="submit" className="sb-button">
                 Buscar
@@ -443,25 +522,12 @@ export default async function AnunciosPage({
 
       <KpiStrip ancora cells={celulas} />
 
-      <div style={{ marginTop: "var(--sb-space-3)" }}>
+      <div className="sb-an-lista">
         <Panel
           title="Anúncios monitorados"
-          subtitle={
-            filters.sold === "without"
-              ? // A ressalva só aparece quando é ela que está em jogo. "Sem
-                // venda" é ausência de MÉTRICA no período, e o recálculo só
-                // materializa dias tocados pela reconciliação — dizer isso aqui
-                // evita ler "não vendeu" onde pode ser "não foi calculado".
-                `Filtros ativos: ${filtrosAtivos} · sem venda = nenhuma métrica de venda no período, e o recálculo só materializa dias tocados pela reconciliação`
-              : `Filtros ativos: ${filtrosAtivos}`
-          }
+          subtitle={error === null ? window.label : undefined}
           aside={
             <>
-              {error === null && (
-                <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", whiteSpace: "nowrap" }}>
-                  {window.label}
-                </span>
-              )}
               <FilterMenu
                 rotulo={rotuloEstado}
                 opcoes={[
@@ -497,56 +563,102 @@ export default async function AnunciosPage({
                   label: option.label,
                 }))}
               />
-              {error === null && window.totalPages > 1 && (
-                <>
-                  {filters.page > 1 && (
-                    <a className="sb-button" href={buildHref(filters, { page: filters.page - 1 })}>
-                      ‹ Anterior
-                    </a>
-                  )}
-                  {filters.page < window.totalPages && (
-                    <a className="sb-button" href={buildHref(filters, { page: filters.page + 1 })}>
-                      Próxima ›
-                    </a>
-                  )}
-                </>
-              )}
             </>
           }
         >
-          {error !== null && (
-            <p role="alert" style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-danger)" }}>
-              Não foi possível carregar: {error.message}
+          {chips.length > 0 && (
+            <div className="sb-an-chips" aria-label="Filtros ativos">
+              <span className="sb-an-chips-rotulo">Filtros ativos:</span>
+              {chips.map((chip) => (
+                <a key={chip.rotulo} className="sb-an-chip" href={chip.href} aria-label={`Tirar o filtro ${chip.rotulo}`}>
+                  {chip.rotulo}
+                  <span aria-hidden="true">×</span>
+                </a>
+              ))}
+              <a className="sb-text-button sb-an-limpar" href={limpar}>
+                Limpar filtros
+              </a>
+            </div>
+          )}
+
+          {bancoAntigo && (
+            <p role="note" className="sb-an-nota">
+              Ordenação por coluna e foto dos anúncios chegam com a próxima atualização do banco; até lá a lista segue
+              por faturamento.
             </p>
+          )}
+
+          {filters.sold === "without" && (
+            // A ressalva só aparece quando é ela que está em jogo. "Sem venda"
+            // é ausência de MÉTRICA no período, e o recálculo só materializa
+            // dias tocados pela reconciliação — dizer isso evita ler "não
+            // vendeu" onde pode ser "não foi calculado".
+            <p className="sb-an-nota">
+              sem venda = nenhuma métrica de venda no período, e o recálculo só materializa dias tocados pela
+              reconciliação
+            </p>
+          )}
+
+          {error !== null && (
+            <div role="alert" className="sb-an-estado sb-an-estado-erro">
+              <b>Não foi possível carregar os anúncios.</b>
+              <span>{error.message}</span>
+              <a className="sb-button" href={buildHref(filters, { page: filters.page })}>
+                Tentar de novo
+              </a>
+            </div>
           )}
 
           {error === null && rows.length === 0 && (
-            <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
-              Nenhum anúncio corresponde a estes filtros.
-            </p>
+            <div className="sb-an-estado">
+              <b>Nenhum anúncio corresponde a estes filtros.</b>
+              {chips.length > 0 ? (
+                <a className="sb-button" href={limpar}>
+                  Limpar filtros
+                </a>
+              ) : (
+                <span>O catálogo desta conta ainda não foi sincronizado.</span>
+              )}
+            </div>
           )}
 
           {error === null && rows.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
+            <div className="sb-an-rolagem">
+              <table className="sb-table sb-an-tabela">
                 <thead>
                   <tr>
-                    <th>Anúncio</th>
-                    <th>MLB</th>
-                    <th>SKU</th>
-                    <th>Conta</th>
+                    <Cabecalho coluna="title" rotulo="Anúncio" filters={filters} ordena={!bancoAntigo} />
                     <th>Status</th>
-                    <th className="sb-num">Preço</th>
-                    <th className="sb-num">Estoque</th>
-                    <th className="sb-num">Full</th>
-                    <th className="sb-num">Unidades</th>
-                    <th className="sb-num">Faturamento</th>
-                    <th className="sb-num">Visitas</th>
+                    <Cabecalho coluna="price" rotulo="Preço" filters={filters} ordena={!bancoAntigo} numerico />
+                    <Cabecalho
+                      coluna="stock"
+                      rotulo="Estoque"
+                      filters={filters} ordena={!bancoAntigo}
+                      numerico
+                      dica="Estoque DO ANÚNCIO no Mercado Livre — não o do ERP nem o do Full"
+                    />
+                    <Cabecalho
+                      coluna="full"
+                      rotulo="Full"
+                      filters={filters} ordena={!bancoAntigo}
+                      numerico
+                      dica="Soma do último snapshot por bucket (inventory_id), últimos 3 dias"
+                    />
+                    <Cabecalho coluna="units" rotulo="Unidades" filters={filters} ordena={!bancoAntigo} numerico />
+                    <Cabecalho coluna="revenue" rotulo="Faturamento" filters={filters} ordena={!bancoAntigo} numerico />
+                    <Cabecalho coluna="visits" rotulo="Visitas" filters={filters} ordena={!bancoAntigo} numerico />
                     <th className="sb-num" title="Dias com visitas observadas na janela — a base do denominador da conversão">
                       Obs.
                     </th>
-                    <th className="sb-num" title="Pedidos dos dias com visita observada ÷ visitas — indefinida sem visita, nunca 0%">
-                      Conversão
+                    <Cabecalho
+                      coluna="conversion"
+                      rotulo="Conversão"
+                      filters={filters} ordena={!bancoAntigo}
+                      numerico
+                      dica="Pedidos dos dias com visita observada ÷ visitas — indefinida sem visita, nunca 0%"
+                    />
+                    <th>
+                      <span className="sb-sr-only">Ações</span>
                     </th>
                   </tr>
                 </thead>
@@ -554,27 +666,81 @@ export default async function AnunciosPage({
                 <tbody>
                   {rows.map((row) => {
                     const badge = linkStateBadge(row.link_state);
+                    const zerado = row.available_quantity === 0;
 
                     return (
-                      <tr key={row.listing_id}>
-                        <td>
-                          {/* `.product-cell` do frame: monograma + nome. */}
-                          <span className="sb-product-cell" title={`Sincronizado em ${formatDateTime(row.synced_at)}`}>
-                            <span className="sb-product-thumb" aria-hidden="true">
-                              {monogramaDeProduto(row.title)}
+                      <tr key={row.listing_id} className={zerado ? "sb-an-linha-zerada" : undefined}>
+                        <td className="sb-an-produto">
+                          {/* `.product-cell` do frame: foto (ou monograma) + nome, e
+                              a identidade do anúncio — MLB, SKU, conta — embaixo,
+                              no lugar de três colunas que só repetiam códigos. */}
+                          <span className="sb-an-produto-linha">
+                            {(row.thumbnail_url ?? null) === null ? (
+                              <span className="sb-product-thumb sb-an-foto" aria-hidden="true">
+                                {monogramaDeProduto(row.title)}
+                              </span>
+                            ) : (
+                              <img
+                                className="sb-an-foto"
+                                src={row.thumbnail_url ?? undefined}
+                                alt=""
+                                width={40}
+                                height={40}
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                              />
+                            )}
+                            <span className="sb-an-produto-texto">
+                              <Link
+                                className="sb-entity sb-an-titulo"
+                                href={`/anuncios/${row.item_id}`}
+                                title={`${row.title} — sincronizado em ${formatDateTime(row.synced_at)}`}
+                              >
+                                {row.title}
+                              </Link>
+                              <span className="sb-an-meta">
+                                {/* Dashboard 360º do anúncio (D-168) — o destino individual. */}
+                                <Link className="sb-mono" href={`/anuncios/${row.item_id}`}>
+                                  {row.item_id}
+                                </Link>
+                                <span aria-hidden="true">·</span>
+                                {row.sku_id !== null && row.sku !== null ? (
+                                  <Link className="sb-mono" href={`/skus/${row.sku_id}`}>
+                                    {row.sku}
+                                  </Link>
+                                ) : (
+                                  <span className="sb-mono" style={{ color: badge.tone }} title={badge.hint}>
+                                    {badge.label}
+                                  </span>
+                                )}
+                                <span aria-hidden="true">·</span>
+                                <span>{row.account_label}</span>
+                              </span>
                             </span>
-                            <Link className="sb-entity" href={`/anuncios/${row.item_id}`}>
-                              {row.title}
-                            </Link>
                           </span>
-                          {/*
-                            A gaveta do frame: frescor, republicação e o que
-                            aconteceu — o que a linha não carrega. O recuo
-                            alinha o gatilho com o TÍTULO, não com a miniatura:
-                            é a largura do monograma (1,75rem) mais o gap da
-                            célula (0,5rem).
-                          */}
-                          <span style={{ display: "block", paddingLeft: "2.25rem" }}>
+                        </td>
+                        <td>
+                          <StatusPill code={row.status} label={listingStatusLabel(row.status)} />
+                        </td>
+                        <td className="sb-num">{formatCurrency(row.price)}</td>
+                        <td className="sb-num">
+                          {zerado ? <span className="sb-an-zerado">0</span> : formatCount(row.available_quantity)}
+                        </td>
+                        {/* NULA sem snapshot: "—", nunca "0" (D-067). */}
+                        <td className="sb-num">{row.full_quantity === null ? "—" : formatCount(row.full_quantity)}</td>
+                        <td className="sb-num">{formatCount(row.units_sold)}</td>
+                        <td className="sb-num sb-an-faturamento">{formatCurrency(row.gross_revenue)}</td>
+                        <td className="sb-num">{row.visits === null ? "—" : formatCount(row.visits)}</td>
+                        {/* Dias com coleta de visitas dentro da janela: sem ela, a
+                            taxa ao lado seria lida como se cobrisse o período todo. */}
+                        <td className="sb-num sb-an-suave" title="Dias com visitas observadas na janela">
+                          {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(filters.days)}`}
+                        </td>
+                        <td className="sb-num">{formatPercent(row.conversion_rate)}</td>
+                        <td className="sb-an-acoes">
+                          {/* A gaveta: frescor, republicação e o que aconteceu —
+                              o que a linha não carrega. */}
                           <InspecaoAnuncio
                             mlAccountId={row.ml_account_id}
                             itemId={row.item_id}
@@ -586,58 +752,20 @@ export default async function AnunciosPage({
                             accountLabel={row.account_label}
                             sku={row.sku}
                             skuId={row.sku_id}
+                            compacto
                           />
-                          </span>
-                        </td>
-                        <td className="sb-mono">
-                          {/* Dashboard 360º do anúncio (D-168) — o destino individual. */}
-                          <Link href={`/anuncios/${row.item_id}`}>{row.item_id}</Link>
-                        </td>
-                        <td className="sb-mono">
-                          {row.sku_id !== null && row.sku !== null ? (
-                            <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
-                          ) : (
-                            <span style={{ color: badge.tone }} title={badge.hint}>
-                              {badge.label}
-                            </span>
+                          {(row.permalink ?? null) !== null && (
+                            <a
+                              className="sb-icon-button sb-an-externo"
+                              href={row.permalink ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Abrir ${row.item_id} no Mercado Livre`}
+                              title="Abrir no Mercado Livre"
+                            >
+                              <Icone nome="externo" tamanho={14} />
+                            </a>
                           )}
-                        </td>
-                        <td>{row.account_label}</td>
-                        <td>
-                          <StatusPill code={row.status} label={listingStatusLabel(row.status)} />
-                        </td>
-                        <td className="sb-num">
-                          {formatCurrency(row.price)}
-                        </td>
-                        <td className="sb-num">
-                          {row.available_quantity}
-                        </td>
-                        {/* NULA sem snapshot: "—", nunca "0" (D-067). */}
-                        <td
-                          className="sb-num"
-                          title={row.full_quantity === null ? "Sem snapshot de Full nos últimos 3 dias para este anúncio" : "Soma do último snapshot por bucket (inventory_id), últimos 3 dias"}
-                        >
-                          {row.full_quantity === null ? "—" : formatCount(row.full_quantity)}
-                        </td>
-                        <td className="sb-num">
-                          {formatCount(row.units_sold)}
-                        </td>
-                        <td className="sb-num">
-                          {formatCurrency(row.gross_revenue)}
-                        </td>
-                        <td className="sb-num">
-                          {row.visits === null ? "—" : formatCount(row.visits)}
-                        </td>
-                        {/*
-                          Dias com coleta de visitas dentro da janela: é a base do
-                          denominador, e sem ela a taxa ao lado seria lida como se
-                          cobrisse os 30 dias.
-                        */}
-                        <td className="sb-num" style={{ color: "var(--sb-text-soft)" }} title="Dias com visitas observadas na janela">
-                          {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(filters.days)}`}
-                        </td>
-                        <td className="sb-num">
-                          {formatPercent(row.conversion_rate)}
                         </td>
                       </tr>
                     );
@@ -646,14 +774,66 @@ export default async function AnunciosPage({
               </table>
             </div>
           )}
+
+          {error === null && totalCount > 0 && (
+            <nav className="sb-an-paginacao" aria-label="Paginação dos anúncios">
+              <FilterMenu
+                rotulo={`${String(filters.pageSize)} por página`}
+                opcoes={PAGE_SIZES.map((tamanho) => ({
+                  href: buildHref(filters, { pageSize: tamanho }),
+                  ativo: filters.pageSize === tamanho,
+                  label: `${String(tamanho)} por página`,
+                }))}
+              />
+
+              {window.totalPages > 1 && (
+                <div className="sb-an-paginas">
+                  {filters.page > 1 ? (
+                    <a className="sb-button" href={buildHref(filters, { page: filters.page - 1 })}>
+                      ‹ Anterior
+                    </a>
+                  ) : (
+                    <span className="sb-button" aria-disabled="true">
+                      ‹ Anterior
+                    </span>
+                  )}
+                  {pageNumbers(filters.page, window.totalPages).map((numeroDaPagina, indice) =>
+                    numeroDaPagina === "…" ? (
+                      <span key={`salto-${String(indice)}`} className="sb-an-salto" aria-hidden="true">
+                        …
+                      </span>
+                    ) : (
+                      <a
+                        key={numeroDaPagina}
+                        className={numeroDaPagina === filters.page ? "sb-an-pagina sb-an-pagina-atual" : "sb-an-pagina"}
+                        href={buildHref(filters, { page: numeroDaPagina })}
+                        aria-current={numeroDaPagina === filters.page ? "page" : undefined}
+                        aria-label={`Página ${String(numeroDaPagina)}`}
+                      >
+                        {formatCount(numeroDaPagina)}
+                      </a>
+                    ),
+                  )}
+                  {filters.page < window.totalPages ? (
+                    <a className="sb-button" href={buildHref(filters, { page: filters.page + 1 })}>
+                      Próxima ›
+                    </a>
+                  ) : (
+                    <span className="sb-button" aria-disabled="true">
+                      Próxima ›
+                    </span>
+                  )}
+                </div>
+              )}
+            </nav>
+          )}
         </Panel>
 
         {/*
           A metodologia da conversão (numerador só dos dias com visita
           observada; sem visita a taxa é indefinida, não 0%) mora no `title`
-          dos cabeçalhos "Obs." e "Conversão" — o frame não tem rodapé de
-          texto sob o painel. Os ids canônicos (`visitas`, `taxa_conversao`)
-          continuam em docs/METRICS.md.
+          dos cabeçalhos "Obs." e "Conversão". Os ids canônicos (`visitas`,
+          `taxa_conversao`) continuam em docs/METRICS.md.
         */}
       </div>
     </Shell>
