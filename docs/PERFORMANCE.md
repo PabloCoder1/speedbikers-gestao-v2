@@ -377,6 +377,7 @@ cardinalidade 1; o multiplicador real é o número de **pedidos** na janela.
 | O quê | Medição | Item |
 |---|---|---|
 | Webhooks sem consumidor viravam Cloud Task | `sync.webhook.received` = **243.944** de 265.276 linhas de `job_runs` (92%) | ✅ P0-C, D-179 |
+| Full perguntava a cada 6 h por anúncio que já respondeu 404 | os mesmos **356** `GET /items/{id}` com 404 em 14 de 15 execuções (a outra: 403 em tudo) = **1.424 chamadas/dia** | ⏳ marca de ausência (seção "Full: anúncio morto…" abaixo), conferir depois do deploy |
 
 Cada uma dessas linhas custou: notificação → API → Cloud Task → dispatch →
 Cloud Run → router → gravação em `job_runs` → retorno. Para nada.
@@ -475,6 +476,121 @@ venda no Dev entre as duas capturas. A comparação correta roda as duas
 definições **na mesma consulta, sobre o mesmo snapshot MVCC**: zero
 divergências em 3.175 SKUs. Num banco que recebe escrita, medir "antes" e
 "depois" em momentos diferentes compara duas coisas ao mesmo tempo.
+
+---
+
+### Full: anúncio morto sai da varredura até o recheque (18/09/2026)
+
+A tabela de 15/09 acima registrou "356 | 356" de falhas por item como
+constante conhecida. Constante era: medido em **produção** (`imvjfgna…`),
+logs `fulfillment_item_fetch_failed` do worker cruzados com `sync_runs` e
+`job_runs`, de 15/09 03:00 a 18/09 09:00 UTC:
+
+| Medida | Valor |
+|---|---|
+| execuções do snapshot do Full | 15 (cadência de 6 h + uma manual em 15/09 17:39) |
+| pares (conta, `item_id`) com 404 em `GET /items/{id}` | **356** — 79, 40, 111 e 126 por conta |
+| em quantas execuções cada par falhou com 404 | **14 de 15**; nenhum par entrou nem saiu. Na 15ª (16/09 21:00) tudo respondeu 403 |
+| chamadas que só ouvem a mesma resposta | 356 por execução, **1.424 por dia** |
+| peso na execução | 356 de ~3.753 `GET /items` (9,5%), mais ~2.179 chamadas de estoque |
+| 403 | uma vez só: 16/09 21:00, **3.220 de 3.220** itens das quatro contas em ~7 s |
+
+**Captura zero: uma execução, não duas.** A auditoria listou 14/09 18:00 e
+16/09 21:00. A de 14/09 (18:32, `processed = 0`) rodou antes da importação
+dos vínculos (18:43): zero vínculos, zero falhas — conta sem nada a capturar,
+não silêncio. A de 16/09 é o caso real: 403 em tudo, as quatro contas `done`
+com `processed = 0`, e o único sinal eram 3.220 avisos por item, iguais aos
+356 de toda execução normal. A execução seguinte (17/09 03:00) capturou
+normalmente.
+
+**Onde a marca mora: `fulfillment_item_absences`** (migration
+`20260918040000_full_item_ausente.sql`), uma linha por (conta, `item_id`).
+Não em `sku_listing_links`: é o vínculo curado, com histórico e dois
+gatilhos por linha, e a marca reescrita a cada 6 h mexeria no `updated_at`
+que a `/vinculacoes` lê. Não em `listings`: 667 dos 3.753 vínculos sem
+variação não têm linha lá — o anúncio morto é justamente o que o snapshot
+de anúncios não traz.
+
+**A regra das janelas** (`ITEM_ABSENCE_RECHECK_MS` em
+`apps/worker/src/handlers/ml-fulfillment-fetch.ts`):
+
+| Status | Janela | Com a cadência de 6 h | Por quê |
+|---|---|---|---|
+| 403 | **9 h** | pula 1 execução, pergunta de novo na seguinte | permissão muda; o único 403 medido passou sozinho em 6 h |
+| 404 | **45 h** | pula 7, recheque na 8ª (48 h) | anúncio que não existe mais; 404 em todas as 14 execuções sem 403 em massa |
+
+As duas caem no **meio** do intervalo entre execuções: com um múltiplo exato
+de 6 h, segundos de atraso no disparo escorregariam o recheque uma execução
+inteira. O teto do 404 **não é economia, é o Full atual**: a definição
+canônica (D-173) aceita snapshot de até 3 dias. Último snapshot bom até 6 h
+antes da falha + 48 h até o recheque = 54 h < 72 h — um 404 falso num
+anúncio vivo atrasa a captura, mas o bucket nunca some das telas. Um teste
+trava essa conta; janela de 404 acima de ~60 h a quebra.
+
+**Guardas, para o pior caso ser atraso e nunca estoque escondido:**
+
+- **Falha em massa não marca.** Mais da metade das consultas da execução
+  falhando é a conta (ou o Mercado Livre), não o item: 16/09 teria marcado
+  3.220 itens e apagado mais uma execução inteira. Log
+  `fulfillment_item_absences_skipped_mass_failure`.
+- **Só 403 e 404 viram marca.** 401 e outros não retryable são da conta.
+- **Sucesso apaga a marca** — inclusive item que voltou sem Full.
+- **A tabela é otimização.** Leitura ou escrita com erro loga
+  (`fulfillment_item_absences_unreadable` / `_not_recorded` /
+  `_not_cleared`) e segue; sem a tabela o worker busca todos os itens, como
+  antes. Por isso a ordem do deploy não importa: worker antes da migration
+  só gera o aviso de leitura a cada execução.
+- Item adiado continua `partial` em `sync_runs`: o vínculo segue apontando
+  para anúncio fora do ar, e isso não pode virar `done` limpo na Saúde da
+  Sincronização. O motivo passa a separar "falharam" de "adiado(s)".
+
+**Aviso de captura zero:** `fulfillment_snapshot_zero_capture` (warn) quando
+a execução termina com `processed = 0` e houve item fora do ar — falha nesta
+execução ou adiado por marca vigente. Não muda status nem retry.
+
+**Esperado:** as 356 marcas nascem juntas na primeira execução depois do
+deploy e vencem juntas: 356 consultas a cada 48 h ≈ **178 por dia no lugar de
+1.424** (−87,5%). `items_processed` não deve mudar: anúncio 404 nunca teve
+inventário para capturar.
+
+#### Como conferir depois do deploy
+
+`job_runs` não guarda `itemsFailed` — só `processed`. A contagem por
+execução está no `reason` de `sync_runs` e no log
+`sync_fulfillment_snapshot_done` (`items_failed`, `items_deferred`).
+
+```sql
+-- Producao. Primeira execucao depois do deploy: falharam = 356, adiados = 0.
+-- Sete seguintes: falharam = 0, adiados = 356. Oitava (48 h): 356 de novo.
+-- capturados igual ao de antes (2.179 em 18/09); cair e defeito.
+select date_trunc('hour', started_at) as execucao,
+       sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) falharam'))[1]::int, 0)) as falharam,
+       sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) adiado'))[1]::int, 0)) as adiados,
+       sum(items_processed) as capturados
+from sync_runs
+where resource = 'fulfillment' and started_at >= now() - interval '3 days'
+group by 1 order by 1 desc;
+
+-- As marcas: ~356 com status 404 (79/40/111/126 por conta), failures = 1
+-- ate o primeiro recheque, recheck_after ~45 h depois da execucao.
+select ml_account_id, http_status, count(*) as marcas,
+       min(recheck_after) as primeiro_recheque, max(failures) as max_falhas
+from fulfillment_item_absences
+group by 1, 2 order by 1, 2;
+```
+
+```bash
+# 404/403 por execucao (esperado: 356 na primeira, 0 nas sete seguintes)
+gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.message="fulfillment_item_fetch_failed" AND timestamp>="<deploy>"' \
+  --project speedbikers-prod --limit 20000 --format 'value(timestamp,jsonPayload.status)'
+
+# Tem de ser vazio depois da migration aplicada (senao o worker esta buscando tudo)
+gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.message="fulfillment_item_absences_unreadable" AND timestamp>="<deploy>"' \
+  --project speedbikers-prod --limit 20
+```
+
+Se o número de marcas for muito maior que 356 logo depois do deploy, olhar
+`http_status`: 403 em massa deveria ter sido barrado pela guarda.
 
 ## Histórico de otimizações medidas
 
