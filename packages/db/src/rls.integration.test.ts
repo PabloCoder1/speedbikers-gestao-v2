@@ -7563,14 +7563,14 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     caso reprova.
   */
   it("o resumo do recorte soma o conjunto filtrado inteiro, não a página", async () => {
-    type Linha = {
+    interface Linha {
       gross_revenue: string;
       units_sold: string;
       visits: string | null;
       recorte_faturamento: string | null;
       recorte_unidades: string | null;
       recorte_visitas: string | null;
-    };
+    }
     const chamada = (limite: number): Promise<Linha[]> =>
       asUser<Linha>(
         ADMIN_SB,
