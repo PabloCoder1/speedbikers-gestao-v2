@@ -122,14 +122,34 @@ function fakeDb(options: {
     return self;
   }
 
-  /** Leitura que se resolve no `await` direto, sem `range` — a de `orders`. */
+  /**
+   * Leitura que se resolve no `await` direto, sem `range` — a de `orders`.
+   *
+   * O `or` só aceita o filtro exato do handler ("ainda pode ser do Full") e o
+   * aplica como o PostgREST aplicaria; sem ele a leitura devolve tudo, e é isso
+   * que deixa um teste reprovar se o filtro sumir.
+   */
   function listChain(rows: unknown[]): unknown {
+    let aindaPodeSerFull = false;
     const self = {
       eq: () => self,
+      or: (filtro: string) => {
+        if (filtro !== "logistic_captured_at.is.null,logistic_type.eq.fulfillment") {
+          throw new Error(`filtro inesperado em orders: ${filtro}`);
+        }
+
+        aindaPodeSerFull = true;
+
+        return self;
+      },
       in: (_coluna: string, ids: number[]) => ({
         then: (resolve: (value: unknown) => unknown) =>
           Promise.resolve({
-            data: (rows as OrderRow[]).filter((row) => ids.includes(row.id)),
+            data: (rows as OrderRow[]).filter(
+              (row) =>
+                ids.includes(row.id) &&
+                (!aindaPodeSerFull || row.logistic_captured_at === null || row.logistic_type === "fulfillment"),
+            ),
             error: null,
           }).then(resolve),
       }),
@@ -440,8 +460,8 @@ describe("sync.order-logistics (D-352, R2)", () => {
     expect(resumo(lines)).toMatchObject({ capturados: 0, full: 1, estornos: 1 });
   });
 
-  it("já capturado como NÃO-Full com a venda sem estorno: nada a fazer, e nenhuma chamada", async () => {
-    const { db, movimentos, updates } = fakeDb({
+  it("já capturado como NÃO-Full com a venda sem estorno: fora do conjunto — nenhuma chamada, nenhuma RPC, pendentes 0", async () => {
+    const { db, movimentos, updates, rpcs } = fakeDb({
       ledger: [venda(9007, "SKU-G", 1, "2026-09-11T12:00:00.000Z")],
       orders: [
         {
@@ -454,11 +474,85 @@ describe("sync.order-logistics (D-352, R2)", () => {
     });
     const { client, calls } = fakeClient({ "5007": "fulfillment" });
 
-    await run(db, client);
+    const { lines } = await run(db, client);
 
     expect(calls).toEqual([]);
     expect(movimentos).toEqual([]);
     expect(updates).toEqual([]);
+    // A venda legítima continua "sem par" para sempre: se o pedido dela entrasse
+    // no conjunto, cada rodada pagaria a RPC por ele e `pendentes` nunca zeraria.
+    expect(rpcs).toEqual([]);
+    expect(resumo(lines)).toMatchObject({ pendentes: 0, restantes: 0 });
+  });
+
+  it("id REAL do Mercado Livre (16 dígitos): o pedido é varrido, e o estorno sai com a origem certa", async () => {
+    // Pedido e envio lidos de verdade em 17/09 (`docs/MERCADO_LIVRE.md` 2.17).
+    const { db, movimentos, updates } = fakeDb({
+      ledger: [venda(2000018515005942, "SKU-REAL", 1, "2026-09-17T15:02:11.000Z")],
+      orders: [{ id: 2000018515005942, shipping_id: 48041052940, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client, calls } = fakeClient({ "48041052940": "fulfillment" });
+
+    await run(db, client);
+
+    expect(calls).toEqual(["/shipments/48041052940"]);
+    expect(movimentos).toEqual([
+      expect.objectContaining({
+        movement_type: "ESTORNO_FULL",
+        source_id: "2000018515005942",
+        idempotency_key: "estorno:venda:2000018515005942:1",
+        qty_delta: 1,
+      }),
+    ]);
+    expect(updates[0]?.id).toBe(2000018515005942);
+  });
+
+  it("id acima do inteiro seguro: não vira pedido — arredondado, a consulta traria OUTRO", async () => {
+    const { db, movimentos, rpcs } = fakeDb({
+      ledger: [{ ...venda(1, "SKU-U", 1, "2026-09-11T12:00:00.000Z"), source_id: "9007199254740993" }],
+      // `Number("9007199254740993")` é 9007199254740992: o pedido vizinho.
+      orders: [{ id: 9007199254740992, shipping_id: 5070, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client, calls } = fakeClient({ "5070": "fulfillment" });
+
+    const { lines } = await run(db, client);
+
+    expect(calls).toEqual([]);
+    expect(movimentos).toEqual([]);
+    // Nem chega a consultar: o vizinho não entra na rodada como se fosse ele.
+    expect(rpcs).toEqual([]);
+    expect(resumo(lines)).toMatchObject({ pendentes: 0 });
+  });
+
+  it("teto de CHAMADAS por rodada: o excedente fica para a próxima, e o já capturado depois dele fecha mesmo assim", async () => {
+    const semCaptura = Array.from({ length: 801 }, (_, i) => 10_000 + i);
+    const jaCapturado = 20_000;
+    const { db, movimentos } = fakeDb({
+      ledger: [...semCaptura, jaCapturado].map((id) => venda(id, "SKU-V", 1, "2026-09-11T12:00:00.000Z")),
+      orders: [
+        ...semCaptura.map((id) => ({ id, shipping_id: id + 1, logistic_type: null, logistic_captured_at: null })),
+        {
+          id: jaCapturado,
+          shipping_id: jaCapturado + 1,
+          logistic_type: "fulfillment",
+          logistic_captured_at: "2026-09-17T20:00:00.000Z",
+        },
+      ],
+    });
+    const { client, calls } = fakeClient(
+      Object.fromEntries(semCaptura.map((id) => [String(id + 1), "cross_docking"])),
+    );
+
+    const { lines } = await run(db, client);
+
+    expect(calls).toHaveLength(800);
+    expect(calls).not.toContain("/shipments/10801");
+    // O pedido do Full já capturado vem DEPOIS do 801º na ordem por id, e não
+    // gasta chamada: o teto não pode segurá-lo.
+    expect(movimentos).toEqual([
+      expect.objectContaining({ movement_type: "ESTORNO_FULL", source_id: String(jaCapturado) }),
+    ]);
+    expect(resumo(lines)).toMatchObject({ pendentes: 802, full: 1, adiados: 1, restantes: 1 });
   });
 
   it("leitura do envio que falha: o pedido continua pendente — sem captura, sem movimento, nunca presumir Full", async () => {

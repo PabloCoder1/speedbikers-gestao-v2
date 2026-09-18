@@ -128,9 +128,20 @@ interface MovimentoDoLedger {
  * este. Mesma defesa do `case when m.source_id ~ '^[0-9]{1,18}$'` da
  * compensação. Um `VENDA_ML` de origem ilegível não é decidível aqui de jeito
  * nenhum: sem pedido não há envio para ler.
+ *
+ * **O id real do Mercado Livre tem 16 dígitos** (`2000018515005942`, lido em
+ * 17/09). O teto é o do NÚMERO, não o de dígitos: `orders.id` chega ao worker
+ * como `number` (`order-schema.ts`), e um id acima de `Number.MAX_SAFE_INTEGER`
+ * seria arredondado para OUTRO pedido na consulta. Até lá (9,007e15, contra os
+ * ~2,0e15 de hoje) todo id cabe; depois disso o movimento sai como ilegível —
+ * pendente, baixando a loja, o lado conservador — em vez de ler o envio errado.
  */
 function pedidoDe(sourceId: string | null): string | null {
-  return sourceId !== null && /^[0-9]{1,15}$/u.test(sourceId) ? sourceId : null;
+  if (sourceId === null || !/^[0-9]{1,16}$/u.test(sourceId)) {
+    return null;
+  }
+
+  return Number.isSafeInteger(Number(sourceId)) ? sourceId : null;
 }
 
 interface PedidoPendente {
@@ -252,9 +263,9 @@ async function lerPendencias(db: AdminClient, organizationId: string): Promise<M
 
 /**
  * As `DEVOLUCAO_ML` gravadas dos pedidos, pela mesma RPC que `persist-order.ts`
- * usa. Lida SÓ para os pedidos que voltaram `fulfillment`: numa varredura do
- * ledger inteiro, chamá-la para todo pendente seria pagar por 2.550 pedidos o
- * que só uns poucos precisam.
+ * usa. Lida para os pedidos que `lerPedidos` devolveu — os que ainda podem ser
+ * do Full —, numa chamada por lote: quais deles são `fulfillment` só se sabe
+ * DEPOIS da ida à rede, e pedir por pedido seria uma consulta por venda.
  */
 async function lerDevolucoes(
   db: AdminClient,
@@ -295,7 +306,16 @@ async function lerDevolucoes(
   return porPedido;
 }
 
-/** Os pedidos pendentes desta CONTA, com o que já está gravado de logística. */
+/**
+ * Os pedidos pendentes desta CONTA, com o que já está gravado de logística.
+ *
+ * **Só os que ainda podem ser do Full:** sem captura (R2, falta ler o envio) ou
+ * capturados como `fulfillment` (o estorno não chegou a ser gravado). O pedido
+ * já decidido como NÃO-Full fica de fora — a venda dele é legítima e continua
+ * "sem par" para sempre, então sem este filtro o conjunto cresceria com cada
+ * venda da loja, cada rodada pagaria a RPC das devoluções por ele e o
+ * `pendentes` do log nunca chegaria a zero.
+ */
 async function lerPedidos(
   db: AdminClient,
   mlAccountId: string,
@@ -308,8 +328,10 @@ async function lerPedidos(
       .from("orders")
       .select("id, shipping_id, logistic_type, logistic_captured_at")
       .eq("ml_account_id", mlAccountId)
+      .or("logistic_captured_at.is.null,logistic_type.eq.fulfillment")
       // `orders.id` é número; o id veio de `source_id`, que é texto. A conversão
-      // é segura porque `pedidoDe` já recusou o que não for dígito.
+      // é segura porque `pedidoDe` já recusou o que não for dígito ou não
+      // couber no inteiro seguro.
       .in("id", lote.map(Number));
 
     if (resultado.error !== null) {
@@ -391,6 +413,7 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
         anulacoes: 0,
         sem_envio: 0,
         falhas: 0,
+        adiados: 0,
         restantes: 0,
       });
 
@@ -400,8 +423,9 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
     const pedidos = await lerPedidos(deps.db, mlAccountId, [...pendencias.keys()]);
 
     if (pedidos.length === 0) {
-      // O ledger tem pendência, mas de OUTRA conta da mesma organização: a
-      // varredura da conta dela fecha. Não é falha, e some do log como zero.
+      // O ledger tem venda sem par, mas de OUTRA conta da mesma organização (a
+      // varredura da conta dela fecha) ou de pedido já decidido como NÃO-Full
+      // (a venda é legítima). Nenhum dos dois é falha, e somem do log como zero.
       context.logger.info("sync_order_logistics_done", {
         ml_account_id: mlAccountId,
         pendentes: 0,
@@ -411,6 +435,7 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
         anulacoes: 0,
         sem_envio: 0,
         falhas: 0,
+        adiados: 0,
         restantes: 0,
       });
 
@@ -445,6 +470,7 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
     let anulacoesGravadas = 0;
     let semEnvio = 0;
     let falhas = 0;
+    let adiados = 0;
     let lidosDaRede = 0;
     let processados = 0;
 
@@ -470,7 +496,12 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
         }
 
         if (lidosDaRede >= PEDIDOS_POR_RODADA) {
-          break;
+          // `continue`, e não `break`: o teto é de CHAMADAS, e o pedido já
+          // capturado mais adiante na lista fecha sem nenhuma. Com `break`, ele
+          // esperaria o backlog inteiro de leituras passar na frente.
+          adiados += 1;
+
+          continue;
         }
 
         if (lidosDaRede > 0) {
@@ -565,6 +596,7 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
       anulacoes: anulacoesGravadas,
       sem_envio: semEnvio,
       falhas,
+      adiados,
       restantes,
     });
 
