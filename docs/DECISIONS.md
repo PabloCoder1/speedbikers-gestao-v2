@@ -13522,3 +13522,40 @@ Capturas a 1440 px e 390 px, pagina e popup, com o banco local enriquecido para 
 
 - a migration precisa chegar a producao ANTES da promocao da web; antes disso a tela mostra o aviso e a tabela;
 - `get_listings_dashboard` e `get_link_integrity` continuam vivas: a primeira e de `/anuncios` e do caminho de degradacao, a segunda e a fonte independente da conferencia.
+
+## D-380 - Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
+
+**Contexto:** o dono pediu a `/full` "como produto", nao so aparencia. As quatro situacoes de D-265 respondem "tem ou nao tem no Full", e a pergunta de quem opera e outra: **o que mando para o Full agora?** Medido em producao em 2026-09-18 (SELECT sobre `get_fulfillment_overview`, 4 contas, janela de 30 dias): 841 fora do Full, **537 saudaveis, 448 em ruptura**, 68 parados. Dos 537 "saudaveis", **205 acabam em menos de 15 dias** no ritmo da janela e **76 em menos de 7** -- pintados de verde. Das 448 rupturas, so 13 tem saldo local.
+
+**1. COBERTURA, DECLARADA E SEM PREVISAO**
+
+`coverage_days = Full / (venda da janela / dias da janela)`, com a MESMA janela da coluna "Venda". Sem venda, `NULL` ("sem venda"), nunca um numero grande inventado. Nao ha sazonalidade, tendencia nem score -- a recusa de D-265 continua. Limiares de LEITURA: abaixo de 7 dias vermelho, abaixo de 15 amarelo (`LOW_COVERAGE_DAYS`/`CRITICAL_COVERAGE_DAYS` em `lib/full-filters.ts`; o 15 vai como `p_low_coverage_days` para a RPC e a tela escreve o mesmo numero). Continua sem sugerir QUANTO enviar: prazo de coleta, lote minimo e custo de envio nao estao no sistema.
+
+**2. A RPC GANHA FOCO, ORDEM E DUAS FACETAS -- sem quebrar os tres chamadores**
+
+Migration `20260918140000_fulfillment_coverage_and_priority`: `get_fulfillment_overview` com `p_focus` (`acabando` | `enviavel`), `p_sort` (`prioridade` | `cobertura` | `vendas` | `local` | `sku`; NULL = Full desc, a ordem antiga) e `p_low_coverage_days` (15), todos com default; retorno ganha `daily_rate`, `coverage_days`, `facet_low_coverage`, `facet_can_ship`. `/skus/[skuId]` e `/anuncios/[itemId]` chamam por NOME e seguem iguais (conferido nas duas telas). As facetas novas contam sobre `base` (antes de situacao e foco), como a de situacao, e viajam na linha-sentinela. A ordem vira `row_number()` e o select final ordena por ela -- o `left join` da sentinela nao preserva ordem sozinho. O grao por bucket, o `as materialized` e a janela de 3 dias nao mudaram; o corpo foi extraido de `20260908210000` (licao de D-259).
+
+"Prioridade de envio" (padrao da tela): ruptura primeiro, pela venda desc; depois acabando, pela cobertura asc; depois saudavel, parado, fora do Full.
+
+Medida no Dev como `authenticated` com RLS (1.918 linhas, janela de 3 dias ancorada na ultima captura do Dev, que esta pausado desde D-350): **615 ms** a versao nova com prioridade, contra **990 ms** a funcao atual na mesma sessao -- a ordenacao custa um quicksort de 409 kB. Leitura de producao pelo MCP foi recusada pela politica da maquina e nao foi contornada.
+
+**3. A TELA**
+
+Faixa de cinco celulas intacta (D-265). Abaixo, tres cartoes de acao -- "Vendendo sem Full", "Acabando em breve", "Pode enviar hoje" -- que filtram. Tabela com produto (monograma), venda com media/dia, Full com variacoes, **cobertura com barra**, local com "pode enviar", situacao, captura relativa ("ha 3 h", data no `title`) e o link para `/reposicao`. Ordem e tamanho de pagina (20/50/100/300, D-315) no painel; filtro ativo como chip com "x"; "Como ler esta tela" recolhida em `<details>` (a ressalva Full x Local continua na pagina, so nao ocupa a tela toda vez); estados vazio e de erro desenhados.
+
+Uma versao intermediaria tinha ABAS de visao no painel, alem da faixa e dos cartoes: tres controles para o mesmo filtro. Sairam.
+
+**4. CSV DO RECORTE**
+
+`/full/exportar` (route handler, sessao do usuario, RPC `security invoker`): o mesmo recorte da tela sem pagina, teto de 5.000 linhas declarado no nome do arquivo quando passa (D-131). Formato do Excel brasileiro -- BOM, `;`, virgula decimal -- e titulo que comeca com `=`, `+`, `-` ou `@` sai prefixado com `'` (injecao de formula).
+
+**5. SEM A MIGRATION, A TELA DEGRADA**
+
+Web no ar antes da migration (ela so vai a producao pelo `migrations-producao.yml`, D-334): a RPC nova responde PGRST202 e a pagina chama a assinatura antiga, calcula a cobertura com `coverageOf` (mesma formula, com teste contra os valores do seed) e mostra um aviso; focos e ordem ficam indisponiveis e as contagens deles aparecem como "--". Mesmo desenho de `/compras` e `/faturamento`.
+
+**6. VERIFICACAO**
+
+`typecheck`, `lint`, `next build` (rotas `/full` e `/full/exportar` dinamicas), unidade da web **813 verdes** (19 em `full-filters`/`full-export`), e2e `full.spec.ts` **6 verdes** (3 novos: prioridade/cobertura, foco + chip, CSV) contra `next dev` da worktree e o banco local com a migration aplicada por cima (sem `db reset`, ver sessoes paralelas). Integracao: 3 casos novos em `rls.integration.test.ts` (cobertura e NULL sem venda, foco com limiar, prioridade), deixados para a CI -- o banco local e compartilhado com outras sessoes e a suite escreve nele. Capturas a 1440 e 390 px.
+
+- a migration precisa chegar a producao para a fila de envio aparecer; antes disso a tela mostra cobertura e o aviso;
+- `20260918140000` e menor que a `20260918150000` da sessao de `/anuncios`: se a dela entrar na `v3` antes, esta precisa ser renomeada.

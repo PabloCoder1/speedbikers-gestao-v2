@@ -43,6 +43,11 @@ recente, bloqueio seguro quando saldo/permissão falha e layout responsivo. O
 núcleo está em `01d1ce7`, com validação local completa (`check`, `build`,
 `docs:check` e E2E responsivo) nesta entrega.
 
+`/full` virou fila de envio (D-380): cobertura por linha (Full ÷ venda média diária
+da janela), focos "Acabando" e "Pode enviar hoje", ordem por prioridade de envio e CSV
+do recorte. Depende da migration `20260918140000`; sem ela a tela degrada para a
+assinatura antiga com aviso.
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
