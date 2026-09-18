@@ -7113,6 +7113,83 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
 
     expect(rows).toHaveLength(0);
   });
+
+  /*
+    A faixa saiu da lista (20260918150000): `get_listings_dashboard_counts`
+    conta as seis células numa passada, com os predicados COPIADOS da lista.
+    Este caso é o que segura a cópia — D-224 pedia célula e lista do mesmo
+    predicado, e a prova agora é o resultado, não a função.
+  */
+  it("as seis contagens da faixa batem com o total_count da lista, com e sem busca", async () => {
+    const totalDaLista = async (filtro: string, busca: string | null): Promise<number> => {
+      const rows = await asUser<{ total_count: string }>(
+        ADMIN_SB,
+        `select total_count from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+           p_search => ${busca === null ? "null" : `'${busca}'`}, p_limit => 1${filtro})`,
+      );
+
+      return Number(rows[0]?.total_count ?? 0);
+    };
+
+    for (const busca of [null, "MLB9001005"]) {
+      const [faixa] = await asUser<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", string>>(
+        ADMIN_SB,
+        `select * from public.get_listings_dashboard_counts('${ORG_SB}', p_search => ${busca === null ? "null" : `'${busca}'`})`,
+      );
+
+      expect(Number(faixa?.total)).toBe(await totalDaLista("", busca));
+      expect(Number(faixa?.active)).toBe(await totalDaLista(", p_status => 'active'", busca));
+      expect(Number(faixa?.paused)).toBe(await totalDaLista(", p_status => 'paused'", busca));
+      expect(Number(faixa?.out_of_stock)).toBe(await totalDaLista(", p_stock => 'out'", busca));
+      expect(Number(faixa?.in_full)).toBe(await totalDaLista(", p_full => 'with'", busca));
+      expect(Number(faixa?.unlinked)).toBe(await totalDaLista(", p_link_state => 'unlinked'", busca));
+    }
+  });
+
+  it("p_order ordena pela coluna pedida, nulo vai para o fim e valor desconhecido é a ordem de antes", async () => {
+    const ordem = async (order: string | null): Promise<{ item_id: string; price: string; visits: string | null }[]> =>
+      asUser(
+        ADMIN_SB,
+        `select item_id, price, visits from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+           p_search => 'MLB9001005', p_limit => 10${order === null ? "" : `, p_order => '${order}'`})`,
+      );
+
+    const [porPrecoAsc, porPrecoDesc, porVisitaAsc, padrao, lixo] = await Promise.all([
+      ordem("price_asc"),
+      ordem("price_desc"),
+      ordem("visits_asc"),
+      ordem(null),
+      ordem("drop table listings"),
+    ]);
+
+    const precos = porPrecoAsc.map((r) => Number(r.price));
+
+    expect(precos).toEqual([...precos].sort((a, b) => a - b));
+    expect(porPrecoDesc.map((r) => r.item_id)).toEqual(porPrecoAsc.map((r) => r.item_id).reverse());
+
+    // Visita ausente (anúncio que vendeu sem visita) fica no FIM mesmo em
+    // ordem crescente: ausência de dado não é o menor valor (D-067).
+    expect(porVisitaAsc.at(-1)?.visits).toBeNull();
+    expect(porVisitaAsc[0]?.visits).not.toBeNull();
+
+    // Fora da lista fechada: a ordem de antes, sem erro e sem injeção.
+    expect(lixo.map((r) => r.item_id)).toEqual(padrao.map((r) => r.item_id));
+  });
+
+  it("anon não executa get_listings_dashboard_counts", async () => {
+    await expect(asAnon(`select * from public.get_listings_dashboard_counts('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("outra organização conta zero, não os anúncios desta", async () => {
+    const [faixa] = await asUser<{ total: string }>(
+      DE_OUTRA_ORG,
+      `select total from public.get_listings_dashboard_counts('${ORG_SB}')`,
+    );
+
+    expect(Number(faixa?.total)).toBe(0);
+  });
 });
 
 // get_price_changes (20260831201544, D-172) — a Central de Precos le os

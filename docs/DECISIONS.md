@@ -13560,3 +13560,32 @@ Web no ar antes da migration (ela so vai a producao pelo `migrations-producao.ym
 - a migration precisa chegar a producao para a fila de envio aparecer; antes disso a tela mostra cobertura e o aviso;
 - `20260918140000` e menor que a `20260918150000` da sessao de `/anuncios`: se a dela entrar na `v3` antes, esta precisa ser renomeada.
 - **pendente, espera o dono:** a mesma consulta leva 72 ms como `postgres` e 615 ms como `authenticated` no Dev -- a RLS das cinco tabelas custa ~8,5x. A saida desenhada e `security definer` com o escopo das policies escrito na funcao (`private.accessible_accounts()` para snapshots, metricas e contas; `private.is_member_of` para SKUs e saldo local). Nao foi aplicada: muda o modelo de seguranca da funcao e a politica da maquina a recusou como enfraquecimento -- e decisao do dono, numa fatia propria.
+
+## D-381 - `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
+
+**Contexto:** o dono pediu `/anuncios` "como produto". Em producao (18/09/2026): 4.447 anuncios em 89 paginas, uma ordem so (faturamento), "Anterior/Proxima" como unica navegacao, e **sete** chamadas de `get_listings_dashboard` por visita -- a pagina e seis com `p_limit = 1` so para ler o `total_count` das celulas (D-224). Medido como `authenticated` (ADMIN, 30 dias): 146 ms a lista, ~115 ms CADA contagem, ~0,7 s de banco por visita para seis numeros que nao dependem da janela.
+
+**1. A FAIXA SAIU DA LISTA, E O TESTE E QUEM SEGURA A PROMESSA DE D-224**
+
+`get_listings_dashboard_counts(org, conta, busca)` conta as seis celulas numa passada, sem os CTEs de venda e visitas: **63 ms** em producao, contra as seis chamadas de antes. D-224 exigia celula e lista do MESMO predicado e resolvia isso usando a mesma funcao; agora o predicado de cada celula e COPIADO da lista, e o teste de integracao "as seis contagens batem com o `total_count` da lista, com e sem busca" reprova a CI se um mudar sem o outro. A garantia passou de "mesma funcao" para "mesmo resultado, provado".
+
+**2. ORDEM**
+
+`p_order` (lista fechada `<coluna>_<asc|desc>`: faturamento, unidades, visitas, conversao, preco, estoque, Full, titulo, sincronizacao). Fora da lista cai em `revenue_desc`, a ordem de antes -- os cinco consumidores que nao passam o parametro nao mudam. Nulo (visita sem coleta, Full sem snapshot, conversao indefinida) vai para o FIM nas duas direcoes (D-067). Desempate por titulo e MLB, para duas paginas seguidas nao repetirem nem pularem anuncio. Na tela, o cabecalho e o controle (`aria-sort`), e a ordem vive em `?ordem=`.
+
+**3. FOTO E LINK DO ANUNCIO**
+
+`listings.thumbnail_url` e `listings.permalink`, nulos ate a proxima sincronizacao (6 h). `ml-listings-fetch` pede `secure_thumbnail`, `thumbnail` e `permalink` no multiget; so passa `https` do dominio esperado (`mlstatic.com`, `mercadolivre.com.br`), o resto vira nulo antes do banco. A CSP abre `img-src` so para `https://*.mlstatic.com`. Sem foto, o monograma de sempre, no mesmo quadrado.
+
+**4. A TELA**
+
+MLB, SKU e conta desceram para a linha de identidade embaixo do titulo (tres colunas a menos); filtros ativos viram chips que se desfazem, com "Limpar filtros"; paginacao numerada e tamanho de pagina (D-315); Filtros Salvos (o componente de `/vendas`); estoque do anuncio zerado destacado; acoes da linha em `.sb-icon-button` (inspecionar e abrir no ML); estados vazio e de erro com saida. "Todos" no menu de vinculo virou "Com ou sem vinculo", como os outros eixos. O corte de cabecalho x barra do painel do frame (D-242) foi mantido.
+
+**5. ORDEM DE PUBLICACAO**
+
+- **Worker so DEPOIS da migration** `20260918150000`: ele grava as duas colunas novas, e o upsert do catalogo inteiro falha sem elas.
+- A web pode ir antes: com PGRST202 ela cai na assinatura antiga (lista por faturamento, sem foto, faixa pelas seis chamadas) e avisa. Mesmo desenho de `/compras` e `/full` (D-380).
+
+**6. VERIFICACAO**
+
+Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, anon, outra organizacao. Unitarios: ordem/paginacao, foto/link, CSP. E2E local de `/anuncios` (com caso novo de ordenacao) e das gavetas: 10/10. Guardas `check:*`, `docs:check` e build de producao. Modo degradado testado no Supabase local com a funcao de contagens renomeada.

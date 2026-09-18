@@ -415,3 +415,4 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 
+- **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada (63 ms contra ~0,7 s) e mostra a foto do anuncio; worker so depois da migration `20260918150000`

@@ -1657,6 +1657,8 @@ export type Database = {
           sku_id: string | null
           status: string
           synced_at: string
+          permalink: string | null
+          thumbnail_url: string | null
           title: string
           updated_at: string
         }
@@ -1673,6 +1675,8 @@ export type Database = {
           sku_id?: string | null
           status: string
           synced_at?: string
+          permalink?: string | null
+          thumbnail_url?: string | null
           title: string
           updated_at?: string
         }
@@ -1689,6 +1693,8 @@ export type Database = {
           sku_id?: string | null
           status?: string
           synced_at?: string
+          permalink?: string | null
+          thumbnail_url?: string | null
           title?: string
           updated_at?: string
         }
@@ -4608,6 +4614,7 @@ export type Database = {
           p_status?: string | null
           p_stock?: string | null
           p_full?: string | null
+          p_order?: string
         }
         Returns: {
           account_label: string
@@ -4621,16 +4628,35 @@ export type Database = {
           item_id: string
           link_state: string
           listing_id: string
+          // NULA ate a proxima sincronizacao do catalogo (20260918150000).
+          permalink: string | null
           ml_account_id: string
           price: number
           sku: string
           sku_id: string
           status: string
           synced_at: string
+          // NULA ate a proxima sincronizacao do catalogo (20260918150000).
+          thumbnail_url: string | null
           title: string
           total_count: number
           units_sold: number
           visits: number
+        }[]
+      }
+      get_listings_dashboard_counts: {
+        Args: {
+          p_organization_id: string
+          p_ml_account_id?: string | null
+          p_search?: string | null
+        }
+        Returns: {
+          active: number
+          in_full: number
+          out_of_stock: number
+          paused: number
+          total: number
+          unlinked: number
         }[]
       }
       get_listings_link_overview: {

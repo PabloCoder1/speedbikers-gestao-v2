@@ -12,7 +12,9 @@ import { resolvePageParam, summarizePagedWindow } from "./filters";
 export const PAGE_SIZE = 50;
 
 export const LINK_STATE_FILTERS = [
-  { key: "all", label: "Todos" },
+  // "Todos" sozinho no botão do menu não dizia DE QUÊ; os outros menus já
+  // nomeiam o eixo no estado neutro ("Com ou sem venda", "Qualquer estoque").
+  { key: "all", label: "Com ou sem vínculo" },
   { key: "linked", label: "Vinculados" },
   { key: "unlinked", label: "Sem vínculo" },
 ] as const;
@@ -146,12 +148,17 @@ export interface WindowSummary {
  * primeiros". Dizer sempre "N a M de TOTAL" torna o truncamento impossível de
  * passar despercebido, mesmo que um limite futuro volte a ser baixo demais.
  */
-export function summarizeWindow(page: number, totalCount: number, rowsOnPage: number): WindowSummary {
+export function summarizeWindow(
+  page: number,
+  totalCount: number,
+  rowsOnPage: number,
+  pageSize: number = PAGE_SIZE,
+): WindowSummary {
   return summarizePagedWindow({
     page,
     totalCount,
     rowsOnPage,
-    pageSize: PAGE_SIZE,
+    pageSize,
     noun: { singular: "anúncio", plural: "anúncios" },
     emptyLabel: "Nenhum anúncio no filtro atual.",
   });
@@ -185,4 +192,94 @@ export function linkStateBadge(linkState: string): LinkStateBadge {
     tone: "var(--sb-danger)",
     hint: "Nenhum vínculo, nem por anúncio nem por variação. Aparece na Central de Vinculações.",
   };
+}
+
+/*
+  ORDENAÇÃO (20260918150000). A lista era sempre por faturamento; com 4.447
+  anúncios em 89 páginas, "quem tem visita e não converte" ou "quem zerou e
+  vende" não tinha como ser perguntado. A chave vai para a URL (`?ordem=`),
+  como todo o resto do recorte, e a RPC só aceita a MESMA lista fechada — um
+  valor que não esteja aqui cai no padrão dos dois lados.
+*/
+export const ORDER_COLUMNS = [
+  "revenue",
+  "units",
+  "visits",
+  "conversion",
+  "price",
+  "stock",
+  "full",
+  "title",
+  "synced",
+] as const;
+
+export type OrderColumn = (typeof ORDER_COLUMNS)[number];
+
+export interface ListingsOrder {
+  readonly column: OrderColumn;
+  readonly direction: "asc" | "desc";
+}
+
+/** A ordem de sempre: quem mais faturou na janela primeiro. */
+export const DEFAULT_ORDER: ListingsOrder = { column: "revenue", direction: "desc" };
+
+const ORDER_COLUMN_SET = new Set<string>(ORDER_COLUMNS);
+
+export function resolveOrder(raw: unknown): ListingsOrder {
+  if (typeof raw !== "string") return DEFAULT_ORDER;
+
+  const match = /^([a-z]+)_(asc|desc)$/.exec(raw);
+
+  if (match === null || !ORDER_COLUMN_SET.has(match[1] ?? "")) return DEFAULT_ORDER;
+
+  return { column: match[1] as OrderColumn, direction: match[2] as "asc" | "desc" };
+}
+
+/** O valor de `p_order` — e de `?ordem=`. */
+export function orderKey(order: ListingsOrder): string {
+  return `${order.column}_${order.direction}`;
+}
+
+/** `null` para a ordem padrão: ela fica fora da URL, como os outros filtros neutros. */
+export function orderParam(order: ListingsOrder): string | null {
+  return order.column === DEFAULT_ORDER.column && order.direction === DEFAULT_ORDER.direction
+    ? null
+    : orderKey(order);
+}
+
+/**
+ * O clique num cabeçalho. Na mesma coluna, inverte. Numa coluna nova, começa
+ * pelo que a pessoa quer ver primeiro: nome de A a Z; número do MAIOR para o
+ * menor (quem mais vende, quem tem mais estoque).
+ */
+export function nextOrder(current: ListingsOrder, column: OrderColumn): ListingsOrder {
+  if (current.column === column) {
+    return { column, direction: current.direction === "desc" ? "asc" : "desc" };
+  }
+
+  return { column, direction: column === "title" ? "asc" : "desc" };
+}
+
+/**
+ * As páginas que a paginação mostra: a primeira, a última e as vizinhas da
+ * atual, com "…" onde pula. `1 … 4 5 6 … 89` — nunca 89 botões.
+ */
+export function pageNumbers(current: number, totalPages: number): (number | "…")[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, indice) => indice + 1);
+  }
+
+  const vizinhas = new Set([1, totalPages, current - 1, current, current + 1].filter((p) => p >= 1 && p <= totalPages));
+  const ordenadas = [...vizinhas].sort((a, b) => a - b);
+  const saida: (number | "…")[] = [];
+
+  for (const [indice, pagina] of ordenadas.entries()) {
+    const anterior = ordenadas[indice - 1];
+
+    if (anterior !== undefined && pagina - anterior > 1) saida.push("…");
+
+    saida.push(pagina);
+  }
+
+  return saida;
 }
