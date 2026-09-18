@@ -566,6 +566,26 @@ function instantOf(timestamp: string | undefined): number {
   return timestamp === undefined ? Number.NaN : Date.parse(timestamp);
 }
 
+/**
+ * Os CHECKs de `fulfillment_item_absences` (migration
+ * 20260918170000_full_item_ausente.sql), com o nome que o Postgres dá a cada
+ * um. Devolve o primeiro violado, ou `null`.
+ */
+function absenceCheckViolation(row: AbsenceRow): string | null {
+  if (!/^MLB[0-9]+$/.test(row.item_id)) return "fulfillment_item_absences_item_id_check";
+  if (row.http_status !== 403 && row.http_status !== 404) return "fulfillment_item_absences_http_status_check";
+  if (!(row.failures >= 1)) return "fulfillment_item_absences_failures_check";
+
+  const first = instantOf(row.first_failed_at);
+  const last = instantOf(row.last_failed_at);
+  const recheck = instantOf(row.recheck_after);
+
+  // NaN (coluna ausente, que no banco seria NOT NULL) também reprova.
+  if (!(first <= last && last < recheck)) return "fulfillment_item_absences_order";
+
+  return null;
+}
+
 function fakeDbWithAbsences(options: {
   links: Link[];
   /** Marcas DESTA conta (`ML_ACCOUNT_ID`). */
@@ -653,6 +673,18 @@ function fakeDbWithAbsences(options: {
         upserts.push({ rows: rows as AbsenceRow[], options: upsertOptions });
 
         if (options.upsertError === true) return Promise.resolve(boom);
+
+        // O upsert é UM comando: uma linha que viola um CHECK da migration
+        // derruba o lote inteiro, e nenhuma marca da conta é gravada. Sem
+        // isto o fake gravava qualquer linha, e marcar um 400 passava.
+        const violated = (rows as AbsenceRow[]).map(absenceCheckViolation).find((name) => name !== null);
+
+        if (violated !== undefined) {
+          return Promise.resolve({
+            data: null,
+            error: { message: `new row for relation "fulfillment_item_absences" violates check constraint "${violated}"` },
+          });
+        }
 
         for (const row of rows as AbsenceRow[]) {
           if (row.ml_account_id === ML_ACCOUNT_ID) table.set(row.item_id, row);
@@ -1111,14 +1143,42 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
     expect([...state.table.keys()]).toEqual(["MLB9"]);
   });
 
-  it("outro erro não retryable (401) conta como falha mas NÃO vira marca — é da conta, não do item", async () => {
+  it.each([400, 401])(
+    "outro erro não retryable (%i) conta como falha mas NÃO vira marca — nem derruba a marca do 404 do mesmo lote",
+    async (status) => {
+      // Dois vivos, um 404 e um `status`: 2 falhas em 4, ainda falha de item.
+      const state = fakeDbWithAbsences({ links: [...LINKS_COM_UM_MORTO, { item_id: "MLB8", sku_id: "sku-8" }] });
+      const { client } = scriptedClient({ ...VIVOS, MLB8: { status }, MLB9: { status: 404 } });
+      const lines: string[] = [];
+
+      const result = await runAt(state.db, client, T0, lines);
+
+      expect(result.itemsFailed).toBe(2);
+      // Só o 404 vai ao banco. Com o `status` no lote, o CHECK
+      // `http_status in (403, 404)` recusaria o upsert INTEIRO, e a marca do
+      // 404 se perderia junto (o worker só loga `_not_recorded`).
+      expect(state.upserts.flatMap((upsert) => upsert.rows.map((row) => row.item_id))).toEqual(["MLB9"]);
+      expect([...state.table.keys()]).toEqual(["MLB9"]);
+      expect(lines.some((line) => line.includes("fulfillment_item_absences_not_recorded"))).toBe(false);
+    },
+  );
+
+  it.each([
+    ["http_status fora de (403, 404)", { http_status: 400 }, "fulfillment_item_absences_http_status_check"],
+    ["item_id fora do formato", { item_id: "MLB-8" }, "fulfillment_item_absences_item_id_check"],
+    ["failures zero", { failures: 0 }, "fulfillment_item_absences_failures_check"],
+    ["recheck_after igual a last_failed_at", { recheck_after: T0.toISOString() }, "fulfillment_item_absences_order"],
+  ] as const)("o fake é o banco: uma linha com %s recusa o lote INTEIRO", async (_caso, invalid, constraint) => {
     const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
-    const { client } = scriptedClient({ ...VIVOS, MLB9: { status: 401 } });
+    const valida = mark("MLB9", 404, at(9));
+    const invalida = { ...mark("MLB8", 404, at(9)), ...invalid };
 
-    const result = await runAt(state.db, client, T0);
+    const written = await state.db
+      .from("fulfillment_item_absences")
+      .upsert([valida, invalida], { onConflict: "ml_account_id,item_id" });
 
-    expect(result.itemsFailed).toBe(1);
-    expect(state.upserts).toHaveLength(0);
+    expect(written.error?.message).toContain(constraint);
+    expect(state.table.size).toBe(0);
   });
 
   it("marca de outro anúncio não afeta este: só o item marcado é pulado", async () => {
