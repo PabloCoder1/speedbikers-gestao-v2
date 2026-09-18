@@ -3005,7 +3005,7 @@ describe("persistOrder — a logistica do envio (D-352)", () => {
   });
 
   describe("o gate: so pedido que vai deduzir DE FATO gasta a chamada", () => {
-    it("pedido cancelado nao le o envio", async () => {
+    it("pedido cancelado que NAO vai reverter nada nao le o envio", async () => {
       const { db } = fakeDb(VINCULADO);
       const { logistics, chamadas } = fakeLogistics("fulfillment");
 
@@ -3040,6 +3040,18 @@ describe("persistOrder — a logistica do envio (D-352)", () => {
 
       expect(chamadas).toEqual([]);
       // O par da D-351 continua saindo, com o tipo dela.
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+    });
+
+    it("venda NO INSTANTE EXATO da exportacao nao le o envio — o mesmo `>` que decide a pre-captura", async () => {
+      // A planilha contem a venda do instante da exportacao: ela sai estornada
+      // pela D-351, e ler o envio seria uma chamada que nao muda linha nenhuma.
+      const { db, inserted } = fakeDb({ ...VINCULADO, cutoffs: { "sku-a": VENDA_EM } });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toEqual([]);
       expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
     });
 
@@ -3195,6 +3207,136 @@ describe("persistOrder — a logistica do envio (D-352)", () => {
 
       expect(lines.join("\n")).toContain("cancellation_reversal_pulada_full");
       expect(lines.join("\n")).not.toContain("cancellation_reversal_pulada_pre_captura");
+    });
+  });
+
+  describe("o cancelamento que vai REVERTER le o envio (revisao de 6965b0e, ALTA — R3)", () => {
+    /** Cancelado DEPOIS da exportacao da planilha (`CORTE`): a planilha nao contem o cancelamento. */
+    const CANCELADO_DEPOIS: ParsedOrder = {
+      ...BASE_ORDER,
+      status: "cancelled",
+      shipping: { id: 48_041_052_940 },
+      date_last_updated: "2026-09-16T10:00:00.000Z",
+    };
+    const VENDA_PRE_CAPTURADA = [
+      { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+      { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_PRE_CAPTURA" },
+    ];
+
+    it("venda do Full ja estornada pela D-351 (P4): le o envio e NAO grava CANCELAMENTO_ML — a unidade nunca foi da loja", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        cutoffs: { "sku-a": CORTE },
+        existingSaleMovements: VENDA_PRE_CAPTURADA,
+      });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(chamadas).toEqual([{ shippingId: 48_041_052_940, orderId: BASE_ORDER.id }]);
+      expect(movimentos(inserted)).toEqual([]);
+      expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+        logistic_type: "fulfillment",
+        logistic_captured_at: CAPTURADO_EM.toISOString(),
+      });
+    });
+
+    it("contraprova FORA do Full: a mesma venda estornada cancelada depois do corte volta +1 a loja, como na D-351", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        cutoffs: { "sku-a": CORTE },
+        existingSaleMovements: VENDA_PRE_CAPTURADA,
+      });
+      const { logistics, chamadas } = fakeLogistics("cross_docking");
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(chamadas).toHaveLength(1);
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.qty_delta])).toEqual([["CANCELAMENTO_ML", 1]]);
+    });
+
+    it("o trio da D-351 num pedido do Full (P5): le o envio e nao grava nada — sem cancelamento a reverter, o par seria enfeite", async () => {
+      const { db, inserted } = fakeDb({ ...VINCULADO, previousStatus: "paid", cutoffs: { "sku-a": CORTE } });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(chamadas).toHaveLength(1);
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("contraprova do trio FORA do Full: venda, estorno e cancelamento, soma +1", async () => {
+      const { db, inserted } = fakeDb({ ...VINCULADO, previousStatus: "paid", cutoffs: { "sku-a": CORTE } });
+      const { logistics } = fakeLogistics("cross_docking");
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual([
+        "VENDA_ML",
+        "ESTORNO_PRE_CAPTURA",
+        "CANCELAMENTO_ML",
+      ]);
+    });
+
+    it("venda PENDENTE (R2) cancelada antes do sinal: le o envio, grava o ESTORNO_FULL e nenhum CANCELAMENTO_ML", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        existingSaleMovements: [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA }],
+      });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(chamadas).toHaveLength(1);
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.qty_delta])).toEqual([["ESTORNO_FULL", 1]]);
+    });
+
+    it("leitura que falha: o cancelamento reverte como hoje e o pedido fica PENDENTE — a varredura o anula depois", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        cutoffs: { "sku-a": CORTE },
+        existingSaleMovements: VENDA_PRE_CAPTURADA,
+      });
+      const { logistics } = fakeLogistics(FALHA);
+
+      await rodaComLogistica(db, CANCELADO_DEPOIS, logistics);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["CANCELAMENTO_ML"]);
+      expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({ logistic_captured_at: null });
+    });
+
+    it("cancelamento que a planilha ja contem (antes da exportacao) nao reverte, e nao le o envio", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        cutoffs: { "sku-a": CORTE },
+        existingSaleMovements: VENDA_PRE_CAPTURADA,
+      });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, { ...CANCELADO_DEPOIS, date_last_updated: "2026-09-13T10:00:00.000Z" }, logistics);
+
+      expect(chamadas).toEqual([]);
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("cancelamento sem shipping_id nao le o envio — nao ha chave — e reverte como hoje", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        cutoffs: { "sku-a": CORTE },
+        existingSaleMovements: VENDA_PRE_CAPTURADA,
+      });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, { ...CANCELADO_DEPOIS, shipping: null }, logistics);
+
+      expect(chamadas).toEqual([]);
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["CANCELAMENTO_ML"]);
     });
   });
 });

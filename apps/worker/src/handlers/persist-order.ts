@@ -12,6 +12,7 @@ import {
   saleInstant,
 } from "@sb/domain";
 import type {
+  CancellationMovements,
   ErpCutoff,
   ObservedSaleTransition,
   OrderLogisticType,
@@ -639,7 +640,8 @@ function skusDaVenda(links: readonly (ResolvedLink | null)[]): string[] {
 }
 
 /**
- * O pedido precisa que a V3 leia o ENVIO? (D-352.)
+ * A VENDA precisa que a V3 leia o ENVIO? (D-352.) O cancelamento tem pergunta
+ * propria — `cancelamentoPrecisaDoSinal`.
  *
  * A chamada e barata por pedido e cara na soma (~963 pedidos/dia), entao ela so
  * acontece para o pedido cuja venda vai DE FATO baixar a loja. Quatro perguntas,
@@ -665,7 +667,7 @@ function skusDaVenda(links: readonly (ResolvedLink | null)[]): string[] {
  * Corte NAO LIDO (`undefined`) conta como "precisa": uma chamada a mais nunca
  * estraga o saldo, e `corteDe` ja LANCA onde a ausencia importaria.
  */
-function precisaDoSinalDaLogistica(
+function vendaPrecisaDoSinal(
   order: ParsedOrder,
   links: readonly (ResolvedLink | null)[],
   cortes: Map<string, ErpCutoff | null>,
@@ -690,6 +692,59 @@ function precisaDoSinalDaLogistica(
 }
 
 /**
+ * O CANCELAMENTO precisa que a V3 leia o ENVIO? (D-352, R3 — revisao de 6965b0e, ALTA.)
+ *
+ * Precisa quando ele vai REVERTER de fato: gravar `CANCELAMENTO_ML`, sozinho ou
+ * no trio da D-351 (venda + estorno + cancelamento — o trio sempre leva o
+ * cancelamento, entao a mesma pergunta o cobre). E exatamente a linha que, num
+ * pedido do Full, devolveria a loja uma unidade que ela nunca perdeu. Antes o unico gate
+ * era o da venda ("vai deduzir?"), e o pedido cancelado nunca lia o envio: a
+ * venda do Full estornada pela D-351 e cancelada depois do corte voltava +1 a
+ * loja.
+ *
+ * A pergunta e feita ao PROPRIO plano do cancelamento, calculado com a logistica
+ * gravada (nula aqui): nenhuma regra paralela que possa divergir dele. O
+ * cancelamento que so completa o par, ou que nao grava nada, nao gasta a chamada.
+ * Se a leitura falhar, o cancelamento reverte como hoje e o pedido fica pendente:
+ * a varredura (`sync-order-logistics.ts`) le o envio depois e anula a reversao.
+ */
+function cancelamentoPrecisaDoSinal(order: ParsedOrder, plano: CancellationMovements): boolean {
+  if (order.shipping?.id == null) return false;
+
+  return plano.reversals.length > 0;
+}
+
+/**
+ * Os itens de deducao do pedido, com o KIT ja decomposto — funcao pura dos
+ * vinculos resolvidos no topo do handler.
+ *
+ * Saem ANTES da gravacao do pedido desde a revisao de 6965b0e: o plano do
+ * cancelamento precisa deles para decidir se vale ler o envio, e o envio e lido
+ * antes do upsert de `orders` (a logistica e coluna dele). Item sem vinculo
+ * continua com `skuKind: null`: a forma `skuKind: "PRODUTO"` com `skuId: null` e
+ * um estado que o contrato de `SaleDeductionItem` declara impossivel.
+ */
+function itensDeDeducao(order: ParsedOrder, resolvedLinks: readonly (ResolvedLink | null)[]): SaleDeductionItem[] {
+  return order.order_items.map((item, position) => {
+    const resolved = resolvedLinks[position] ?? null;
+
+    if (resolved === null) {
+      return { position, quantity: item.quantity, skuId: null, skuKind: null, components: [] };
+    }
+
+    // D-188: `kind` e componentes chegam junto com o vinculo, nos DOIS caminhos —
+    // o lote da janela e o embed do webhook. Nao ha leitura aqui dentro.
+    return {
+      position,
+      quantity: item.quantity,
+      skuId: resolved.sku_id,
+      skuKind: resolved.kind,
+      components: resolved.components,
+    };
+  });
+}
+
+/**
  * A logistica deste pedido (D-352): a que ja esta gravada, ou a capturada agora.
  *
  * **A decisao e funcao pura do campo PERSISTIDO** (R5). Com
@@ -709,8 +764,8 @@ function precisaDoSinalDaLogistica(
 async function resolveLogistica(
   order: ParsedOrder,
   gravada: PersistedLogistic,
-  links: readonly (ResolvedLink | null)[],
-  cortes: Map<string, ErpCutoff | null>,
+  /** O gate: a venda que vai deduzir, ou o cancelamento que vai reverter. */
+  precisaDoSinal: () => boolean,
   logistics: ShipmentLogistics | undefined,
   logger: Logger,
 ): Promise<PersistedLogistic> {
@@ -737,7 +792,7 @@ async function resolveLogistica(
     return { logisticType: doPedido, capturedAt: logistics.now().toISOString() };
   }
 
-  if (!precisaDoSinalDaLogistica(order, links, cortes)) {
+  if (!precisaDoSinal()) {
     return gravada;
   }
 
@@ -1089,11 +1144,60 @@ export async function persistOrder(
     }
   }
 
+  // D-351: os itens de deducao, a transicao e o plano do cancelamento saem ANTES
+  // do sinal da logistica — o cancelamento pergunta ao proprio plano se vale ler
+  // o envio (`cancelamentoPrecisaDoSinal`). Tudo puro: nenhuma leitura aqui.
+  const deductionItems = itensDeDeducao(order, resolvedLinks);
+  const cancelado = isCancelledOrderStatus(order.status);
+  // Sem `date_last_updated` nem `last_updated`, `lastUpdatedAt` e a CRIACAO
+  // do pedido, nao o cancelamento: a regra do corte nao se aplica (D-351).
+  const occurredAtKnown = order.date_last_updated != null || order.last_updated != null;
+
+  // D-351: a transicao de venda para cancelado. Vista agora (o status anterior no
+  // banco era de venda) ou gravada antes em `domain_events` -- o retry de uma
+  // pagina que gravou o pedido e falhou nos movimentos so a acha ali
+  // (`lerTransicoesDeVenda`).
+  const transicao: ObservedSaleTransition | null =
+    previousStatus !== null && isValidSaleStatus(previousStatus)
+      ? { saleStatus: previousStatus, cancelledAt: occurredAtKnown ? new Date(lastUpdatedAt) : null }
+      : transicaoGravada;
+
+  const planoDoCancelamento = (logisticType: OrderLogisticType): CancellationMovements =>
+    computeCancellationMovements({
+      order: {
+        id: order.id,
+        status: order.status,
+        dateCreated: new Date(order.date_created),
+        dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
+        // D-352: pedido do Full nao reverte nada em LOCAL -- so completa o par
+        // da venda gravada.
+        logisticType,
+        items: deductionItems,
+      },
+      occurredAt: new Date(lastUpdatedAt),
+      occurredAtKnown,
+      transition: transicao,
+      recordedSales: gravados.sales,
+      estornadas: gravados.estornadas,
+      reversals: gravados.reversals,
+      cutoffFor: corteDe(cortes, order.id),
+    });
+
   // D-352 — o sinal da logistica, ANTES da gravacao do pedido: ele e coluna de
-  // `orders`, e e ele que decide se a venda abaixo sai com o par `ESTORNO_FULL`.
-  // Roda depois das leituras (precisa dos vinculos e do corte para decidir se
-  // vale a chamada) e antes de qualquer escrita, como tudo neste handler.
-  const logistica = await resolveLogistica(order, logisticaGravada, resolvedLinks, cortes, logistics, logger);
+  // `orders`, e e ele que decide se a venda abaixo sai com o par `ESTORNO_FULL`
+  // e se o cancelamento reverte em LOCAL. Roda depois das leituras (precisa dos
+  // vinculos e do corte para decidir se vale a chamada) e antes de qualquer
+  // escrita, como tudo neste handler.
+  const logistica = await resolveLogistica(
+    order,
+    logisticaGravada,
+    () =>
+      cancelado
+        ? cancelamentoPrecisaDoSinal(order, planoDoCancelamento(logisticaGravada.logisticType))
+        : vendaPrecisaDoSinal(order, resolvedLinks, cortes),
+    logistics,
+    logger,
+  );
 
   // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
   // deducao de estoque -- presume que ele existe.
@@ -1234,74 +1338,11 @@ export async function persistOrder(
     );
   }
 
-  // D-351: os itens de deducao saem ANTES da bifurcacao venda/cancelamento. O
-  // cancelamento tambem precisa deles: a venda anterior ao corte que a V3 nunca
-  // gravou e reposta a partir dos vinculos de hoje (`computeCancellationMovements`).
-  //
-  // Sem `await` aqui: desde D-188 nao ha leitura dentro deste laco. `kind` e
-  // componentes chegam junto com o vinculo, nos dois caminhos.
-  const deductionItems: SaleDeductionItem[] = items.map((item) => {
-      // Item sem vinculo continua com `skuKind: null`: a forma
-      // `skuKind: "PRODUTO"` com `skuId: null` e um estado que o contrato de
-      // `SaleDeductionItem` declara impossivel.
-      if (item.sku_id === null) {
-        return { position: item.position, quantity: item.quantity, skuId: null, skuKind: null, components: [] };
-      }
-
-      // D-188: `kind` e componentes chegam junto com o vinculo, nos DOIS
-      // caminhos — o lote da janela e o embed do webhook. Nao ha mais leitura
-      // aqui dentro.
-      const resolved = resolvedLinks[item.position];
-
-      if (resolved === null || resolved === undefined) {
-        throw new Error(
-          `item ${String(item.position)} da order ${String(order.id)} tem sku_id sem vinculo resolvido — estado impossivel`,
-        );
-      }
-
-    return {
-      position: item.position,
-      quantity: item.quantity,
-      skuId: item.sku_id,
-      skuKind: resolved.kind,
-      components: resolved.components,
-    };
-  });
-
-  if (isCancelledOrderStatus(order.status)) {
-    // Sem `date_last_updated` nem `last_updated`, `lastUpdatedAt` e a CRIACAO
-    // do pedido, nao o cancelamento: a regra do corte nao se aplica (D-351).
-    const occurredAtKnown = order.date_last_updated != null || order.last_updated != null;
-
-    // D-351: a transicao de venda para cancelado. Vista agora (o status
-    // anterior no banco era de venda) ou gravada antes em `domain_events` -- o
-    // retry de uma pagina que gravou o pedido e falhou nos movimentos so a acha
-    // ali (`lerTransicoesDeVenda`).
-    const transicao: ObservedSaleTransition | null =
-      previousStatus !== null && isValidSaleStatus(previousStatus)
-        ? { saleStatus: previousStatus, cancelledAt: occurredAtKnown ? new Date(lastUpdatedAt) : null }
-        : transicaoGravada;
-
+  if (cancelado) {
+    // O MESMO plano que decidiu se valia ler o envio, agora com a logistica
+    // resolvida: `fulfillment` nao reverte nada em LOCAL (D-352, R3).
     const { sales, estornos, estornosFull, excessReversalEstornos, reversals, alreadyReversed } =
-      computeCancellationMovements({
-      order: {
-        id: order.id,
-        status: order.status,
-        dateCreated: new Date(order.date_created),
-        dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
-        // D-352: pedido do Full nao reverte nada em LOCAL -- so completa o par
-        // da venda gravada.
-        logisticType: logistica.logisticType,
-        items: deductionItems,
-      },
-      occurredAt: new Date(lastUpdatedAt),
-      occurredAtKnown,
-      transition: transicao,
-      recordedSales: gravados.sales,
-      estornadas: gravados.estornadas,
-      reversals: gravados.reversals,
-      cutoffFor: corteDe(cortes, order.id),
-      });
+      planoDoCancelamento(logistica.logisticType);
 
     const doFull = isFullLogistic(logistica.logisticType);
     const puladas = gravados.sales.length + sales.length - reversals.length - alreadyReversed.length;
