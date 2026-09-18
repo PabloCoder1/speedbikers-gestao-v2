@@ -57,40 +57,50 @@ export function AdjustmentForm({ skuId }: { skuId: string }): ReactNode {
       action={(formData) => {
         void submit(formData);
       }}
-      style={{ display: "grid", gap: "var(--sb-space-3)", maxWidth: "28rem" }}
+      className="sb-adjust-form"
     >
-      <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-        Local
+      <label className="sb-adjust-field">
+        <span>Local do movimento</span>
         <select className="sb-input sb-input-full" name="locationKind" defaultValue="LOCAL">
           <option value="LOCAL">Local</option>
           <option value="RESERVADO">Reservado</option>
           <option value="TRANSITO">Em trânsito</option>
         </select>
+        <small>Escolha onde a quantidade realmente mudou.</small>
       </label>
 
-      <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-        Quantidade (positiva = entrada, negativa = saída)
+      <label className="sb-adjust-field">
+        <span>Quantidade do ajuste</span>
         <input className="sb-input sb-input-full" name="qtyDelta" type="number" step="any" required />
+        <small>
+          Use <b>+</b> para entrada e <b>−</b> para saída.
+        </small>
       </label>
 
-      <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-        Motivo
+      <label className="sb-adjust-field">
+        <span>
+          Motivo <em>obrigatório</em>
+        </span>
         <textarea className="sb-input sb-input-full" name="reason" rows={3} required />
+        <small>Ex.: conferência física, devolução, avaria ou correção de inventário.</small>
       </label>
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.875rem", color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-adjust-form-error">
           {error}
         </p>
       )}
 
-      <button
-        className="sb-button sb-button-primary"
-        type="submit"
-        disabled={busy}
-      >
-        {busy ? "Salvando…" : "Registrar ajuste"}
-      </button>
+      <div className="sb-adjust-form-footer">
+        <span>
+          <b>Registro permanente</b>
+          <br />
+          A alteração ficará disponível no histórico.
+        </span>
+        <button className="sb-button sb-button-primary" type="submit" disabled={busy}>
+          {busy ? "Salvando…" : "Registrar ajuste"}
+        </button>
+      </div>
     </form>
   );
 }

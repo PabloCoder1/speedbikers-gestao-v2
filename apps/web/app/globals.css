@@ -9616,6 +9616,46 @@ td.sb-pco-num-linha {
   .sb-stock-insights { grid-template-columns: 1fr; }
 }
 
+/* AJUSTE DE ESTOQUE — contexto primeiro, ação depois. */
+.sb-adjust-alert { margin: 0 0 var(--sb-space-3); padding: 0.8rem 1rem; border: 1px solid var(--sb-danger); border-radius: var(--sb-radius-md); background: var(--sb-danger-soft); color: var(--sb-danger); font-size: 0.75rem; }
+.sb-adjust-layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(22rem, 1.1fr); gap: var(--sb-space-4); margin-top: var(--sb-space-4); }
+.sb-adjust-balance, .sb-adjust-form-card { padding: 1.25rem; border-radius: var(--sb-radius-lg); box-shadow: 0 0.75rem 2rem rgb(16 24 40 / 7%); }
+.sb-adjust-balance { background: linear-gradient(145deg, var(--sb-primary), #202b70); color: var(--sb-surface); }
+.sb-adjust-balance .sb-eyebrow, .sb-adjust-balance h2, .sb-adjust-balance .sb-adjust-muted { color: var(--sb-surface); }
+.sb-adjust-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.sb-adjust-section-head h2 { margin: 0.3rem 0 0; font-size: 1.1rem; letter-spacing: -0.02em; }
+.sb-adjust-section-icon { display: grid; width: 2.25rem; height: 2.25rem; flex: 0 0 2.25rem; place-items: center; border-radius: 0.7rem; background: rgb(255 255 255 / 14%); color: var(--sb-surface); }
+.sb-adjust-section-icon-accent { background: var(--sb-accent-soft); color: var(--sb-accent-ink); }
+.sb-adjust-muted { margin: 0.7rem 0 1.1rem; color: var(--sb-text-soft); font-size: 0.75rem; line-height: 1.5; }
+.sb-adjust-balance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.625rem; }
+.sb-adjust-balance-card { min-height: 6.5rem; padding: 0.8rem; border: 1px solid rgb(255 255 255 / 16%); border-radius: 0.7rem; background: rgb(255 255 255 / 9%); }
+.sb-adjust-balance-card span, .sb-adjust-balance-card small { display: block; color: rgb(255 255 255 / 68%); font-size: 0.625rem; }
+.sb-adjust-balance-card strong { display: block; margin: 0.55rem 0 0.15rem; color: var(--sb-surface); font-size: 1.45rem; letter-spacing: -0.04em; }
+.sb-adjust-balance-local { border-color: var(--sb-secondary); box-shadow: inset 0 2px 0 var(--sb-secondary); }
+.sb-adjust-balance-reservado { box-shadow: inset 0 2px 0 var(--sb-accent); }
+.sb-adjust-balance-transito { box-shadow: inset 0 2px 0 #8c9eff; }
+.sb-adjust-rule { display: flex; align-items: center; gap: 0.45rem; margin-top: 1.25rem; padding-top: 0.85rem; border-top: 1px solid rgb(255 255 255 / 15%); color: rgb(255 255 255 / 70%); font-size: 0.6875rem; }
+.sb-adjust-empty { color: rgb(255 255 255 / 70%); font-size: 0.75rem; }
+.sb-adjust-form { display: grid; gap: 1rem; max-width: none; margin-top: 1.15rem; }
+.sb-adjust-field { display: grid; gap: 0.35rem; color: var(--sb-primary); font-size: 0.75rem; font-weight: 700; }
+.sb-adjust-field em { color: var(--sb-danger); font-size: 0.625rem; font-style: normal; font-weight: 600; }
+.sb-adjust-field small { color: var(--sb-text-soft); font-size: 0.6875rem; font-weight: 400; line-height: 1.35; }
+.sb-adjust-field .sb-input { margin-top: 0.15rem; }
+.sb-adjust-form-error { margin: 0; padding: 0.7rem 0.8rem; border-radius: var(--sb-radius-md); background: var(--sb-danger-soft); color: var(--sb-danger); font-size: 0.75rem; }
+.sb-adjust-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.25rem; padding-top: 1rem; border-top: 1px solid var(--sb-border); }
+.sb-adjust-form-footer > span { color: var(--sb-text-soft); font-size: 0.625rem; line-height: 1.4; }
+.sb-adjust-form-footer > span b { color: var(--sb-primary); font-size: 0.6875rem; }
+.sb-adjust-form-footer .sb-button { min-height: 2.5rem; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .sb-adjust-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  .sb-adjust-balance-grid { grid-template-columns: 1fr; }
+  .sb-adjust-form-footer { align-items: stretch; flex-direction: column; }
+  .sb-adjust-form-footer .sb-button { width: 100%; }
+}
+
 /* Posição fixa, medida do campo no componente: a caixa da tabela rola e cortaria. */
 .sb-pco-resultados {
   position: fixed;
