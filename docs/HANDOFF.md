@@ -48,6 +48,10 @@ da janela), focos "Acabando" e "Pode enviar hoje", ordem por prioridade de envio
 do recorte. Depende da migration `20260918140000`; sem ela a tela degrada para a
 assinatura antiga com aviso.
 
+`/anuncios` ordena pela coluna, pagina com números, filtra por chips e mostra a foto do
+anúncio (D-381); a faixa sai de `get_listings_dashboard_counts` (2 leituras por visita em vez
+de 7). Migration `20260918150000`; **worker só depois dela** (grava `thumbnail_url`/`permalink`).
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
