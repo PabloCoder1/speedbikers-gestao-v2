@@ -12,6 +12,8 @@ import { formatBusinessDate, formatCurrency, formatDateTime } from "../../../lib
 import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "../../../lib/purchase-order-cost";
 import { purchaseOrderEtapas } from "../../../lib/purchase-order-steps";
 import { purchaseOrderEventLabel, purchaseOrderStatusLabel, statusTone } from "../../../lib/labels";
+import { podeOperarCompras } from "../../../lib/purchase-order-permission";
+import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
 
@@ -53,7 +55,8 @@ export default async function PedidoDeCompraPage({
   // três leituras de forma independente, então disparar itens e eventos antes
   // de saber se o pedido existe não mostra nada a quem não podia ver. O preço
   // são duas consultas desperdiçadas no caminho 404, que é o caminho raro.
-  const [order, items, events] = await Promise.all([
+  const [membership, order, items, events] = await Promise.all([
+    currentMembership(),
     supabase
       .from("purchase_orders")
       .select(
@@ -81,6 +84,7 @@ export default async function PedidoDeCompraPage({
   }
 
   const info = order.data;
+  const podeOperar = podeOperarCompras(membership.role);
 
   // Duas ausências distintas, e nenhuma delas é zero: falha de LEITURA e custo
   // não preenchido. O porquê e os casos estão em `lib/purchase-order-cost.ts`,
@@ -142,7 +146,7 @@ export default async function PedidoDeCompraPage({
         meta={`Criado em ${formatDateTime(info.created_at)}`}
         acoes={
           <>
-            {info.status === "DRAFT" && (
+            {info.status === "DRAFT" && podeOperar && (
               <Link className="sb-button" href={`/compras/${info.id}/editar`} style={acaoStyle}>
                 Editar
               </Link>
@@ -210,7 +214,17 @@ export default async function PedidoDeCompraPage({
         </p>
       )}
 
-      <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
+      {/* Aprovar, marcar enviado, receber e cancelar passam todos por
+          `check_purchase_order_writer` (ADMIN/GESTOR). Os outros papéis veem o
+          pedido e a trilha, sem botão que o banco vai recusar (lote 1, 18/09). */}
+      {podeOperar ? (
+        <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
+      ) : (
+        <p className="sb-note">
+          <span>SOMENTE LEITURA</span>
+          Aprovar, receber ou cancelar pedidos de compra é feito por ADMIN ou GESTOR.
+        </p>
+      )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel

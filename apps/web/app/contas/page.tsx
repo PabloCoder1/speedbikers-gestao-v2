@@ -55,6 +55,9 @@ export default async function ContasPage(): Promise<ReactNode> {
 
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+  // Conectar e reconectar são só ADMIN na api (`POST /v1/ml-accounts/connect`)
+  // e cadastrar conta é só ADMIN na RLS: os outros papéis não veem os botões.
+  const ehAdmin = membership.role === "ADMIN";
 
   if (organizationId === null) {
     return (
@@ -298,7 +301,14 @@ export default async function ContasPage(): Promise<ReactNode> {
                     Ver saúde da conta →
                   </Link>
 
-                  {!conectada && <ConnectButton mlAccountId={account.id} label={account.label} />}
+                  {ehAdmin && !conectada && <ConnectButton mlAccountId={account.id} label={account.label} />}
+                  {/* O aviso de token vencido pedia reautorização e não havia
+                      botão: ele só existia para conta desconectada (lote 1 do
+                      pente fino, 18/09). A api aceita reautorizar SÓ esta conta
+                      parada, e só com o mesmo usuário do Mercado Livre. */}
+                  {ehAdmin && credencialParada && (
+                    <ConnectButton mlAccountId={account.id} label={account.label} reconectar />
+                  )}
                 </footer>
               </section>
             );
@@ -306,16 +316,18 @@ export default async function ContasPage(): Promise<ReactNode> {
         </div>
       )}
 
-      <div className="sb-account-create">
-        <Panel
-          title="Conectar conta"
-          subtitle="Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill de história começa sozinho."
-        >
-          <div className="sb-panel-body">
-            <NewAccountForm />
-          </div>
-        </Panel>
-      </div>
+      {ehAdmin && (
+        <div className="sb-account-create">
+          <Panel
+            title="Conectar conta"
+            subtitle="Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill de história começa sozinho."
+          >
+            <div className="sb-panel-body">
+              <NewAccountForm />
+            </div>
+          </Panel>
+        </div>
+      )}
     </Shell>
   );
 }

@@ -26,7 +26,16 @@ interface ErrorResponse {
   error: { code: string; message?: string };
 }
 
-export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; label: string }): ReactNode {
+export function ConnectButton({
+  mlAccountId,
+  label,
+  reconectar = false,
+}: {
+  mlAccountId: string;
+  label: string;
+  /** Conta conectada com a credencial parada: o mesmo fluxo, com o nome certo. */
+  reconectar?: boolean;
+}): ReactNode {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,9 +94,9 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
           void connect();
         }}
         disabled={busy}
-        aria-label={`Conectar ${label} ao Mercado Livre`}
+        aria-label={`${reconectar ? "Reconectar" : "Conectar"} ${label} ao Mercado Livre`}
       >
-        {busy ? "Abrindo o Mercado Livre…" : "Conectar"}
+        {busy ? "Abrindo o Mercado Livre…" : reconectar ? "Reconectar" : "Conectar"}
       </button>
 
       {error !== null && (
