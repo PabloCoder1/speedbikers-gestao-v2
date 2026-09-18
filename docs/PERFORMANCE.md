@@ -997,3 +997,58 @@ Migration: `supabase/migrations/20260918010000_drop_indices_sem_uso.sql`.
 ### `/reposicao`: duas leituras de ~490 ms viram uma de ~255 ms (D-358)
 
 Dev, `authenticated` real, 16/09/2026, 8 execuções. `get_purchase_suggestions` e `get_purchase_state_counts` custavam ~490 ms cada (2.420 ms a frio), e o corpo com literais, 218 ms — plano genérico de `language sql` com `SET` (D-305/D-307). A tela chamava as duas, e as contagens classificavam o catálogo inteiro de novo. Depois (funções em `pg_temp`, transação desfeita): sugestão em plpgsql com plano custom 198–202 ms, com md5 idêntico nas 3.284 linhas; `get_replenishment_overview`, uma leitura para página + contagens + investimento, 251–260 ms. Peças do corpo: curva ABC 82 ms, Full 34 ms, tendência 17 ms, histórico 10 ms — a curva é o próximo alvo, se precisar.
+
+### `/faturamento`: o custo do produto por SKU, não por item (18/09/2026)
+
+Produção (`imvjfgnaprqsfjlnsyev`), `authenticated` com o ADMIN real, cada medida numa transação desfeita, uma por vez. Migration `20260918160000_faturamento_sem_varredura.sql` (o carimbo segue a última migration da `v3`: o `db push` da CI recusa versão menor que a última aplicada); consultas e saídas guardadas fora do repositório, na pasta da auditoria de 18/09 (`auditoria2/fat`).
+
+**A premissa da auditoria não se confirmou.** Ela leu "+331 mil `seq_tup_read` em `orders` e `order_items`" numa chamada de 7 dias. Remedido com `pg_stat_user_tables` antes e depois de UMA chamada: `seq_scan` e `seq_tup_read` das duas tabelas não se mexeram, e `idx_scan` de `order_items` subiu 5.420. O delta veio de outra leitura no mesmo intervalo — `seq_tup_read` de produção é compartilhado com todo o tráfego, como o aviso de D-198 diz do Dev. O corpo já chegava a `orders` pelo `orders_date_created_idx` e a `order_items` pela chave do pedido.
+
+**O custo era outro.** O corpo com `$1..$4` em `prepare` + `force_generic_plan` (é como a `language sql` planeja), 30 dias, 27.880 pedidos:
+
+| Nó | Buffers |
+|---|---:|
+| `orders` pela data | 27.364 |
+| `order_items`, uma busca por pedido | 111.545 |
+| `skus`, uma busca por **item** | 65.759 |
+| `sku_cost_history`, uma por item | 46.520 |
+| kit (componentes + skus + histórico), por item | 60.722 |
+| `order_financials`, uma busca por pedido (tabela de 117 páginas) | 64.708 |
+| sort externo (2,9 MB) + HashAggregate em 21 lotes (3,6 MB em disco) | — |
+
+Quase dois terços (238 mil) eram o `LATERAL` de custo e o frete, buscados item a item em tabelas que cabem inteiras em memória.
+
+**O que mudou.** (1) `historico` lê `sku_cost_history` só dos SKUs da janela e dos componentes dos kits deles, e vira intervalos `[changed_at, próxima changed_at)` com `lead()`; o item acha o seu por hash em `sku_id` + o filtro do intervalo — o mesmo "último `new_cost` com `changed_at <= date_created`" de D-356. (2) O pedido é agregado antes do frete, e `order_financials` entra uma vez, por hash; somem as duas janelas (`count(*) over`, `row_number()`) e o sort externo. (3) `order_items` continua pela chave do pedido, e um `offset 0` no `LATERAL` garante: com a estimativa certa, o planejador **prefere varrer `order_items` inteira** em hash join — medido, 331.771 linhas, 7.119 páginas do disco, 2,1 s com cache frio. (4) `plpgsql` + `force_custom_plan` (D-305/D-319); no Dev, oito execuções seguidas na mesma sessão: 535, 495, 495, 497, 493, 497, 493, 491 ms, sem salto na sexta (a atual: 727–741 ms). (5) As listas desempatam por `sku_id` (e `por_conta` por `ml_account_id`): heapsort top-N e quicksort não são estáveis, e entre dois SKUs com a mesma receita a ordem, e quem entra no corte de 30 ou de 20, era escolha do plano; produção tinha um empate real em 178,27 nas posições 28–29. (6) `historico` só guarda os intervalos que cruzam a janela (`desde < fim` e `ate` nulo ou `> início`), filtrados por fora do `lead()`. Sem isso, cada item era comparado com todas as mudanças do seu SKU, e o custo crescia com o histórico. Hoje não pesa (uma linha por SKU). No Dev, com 52 mudanças semanais sintéticas por SKU e 30 dias (corpo com literais, como `postgres`, transação desfeita), as linhas descartadas no filtro do intervalo caíram de 1.307.691 para 115.251 nos itens e de 112.302 para 9.734 nos kits: 885–903 ms viraram 734–749 ms, com os mesmos 147 mil buffers. A leitura e a ordenação do histórico dos SKUs da janela continuam.
+
+A tabela abaixo mede o corpo sem os itens 5 e 6:
+
+| Janela | Buffers | Temp escrito (blocos) | Tempo |
+|---|---:|---:|---:|
+| 7 dias, antes | 83.861 | 31 | 195–197 ms |
+| 7 dias, depois | 29.636 | 0 | 155–168 ms |
+| 30 dias, antes | 382.748 | 2.409 | 740–1.094 ms |
+| 30 dias, depois | 140.370 | 735 | 538 ms (529 + 9 de planejamento) |
+| 30 dias, só resumo, antes | 379.173 | 2.409 | 680 ms |
+| 30 dias, só resumo, depois | 139.866 | 734 | 432 ms |
+
+"Antes" é o `SELECT` da função (o corpo roda sem instrumentar os nós); "depois" é o corpo novo com os parâmetros como literais, que é o plano custom que a `plpgsql` monta, com `timing off`. `pg_stat_statements` registrava a antiga, via PostgREST, a 1,7–1,8 s de média e 353–386 mil blocos por chamada — a tela chama duas vezes (período e anterior, este só com o resumo), e as duas caem na mesma proporção.
+
+**Prova de números — a tela de dinheiro do dono.** Os valores não mudam. A ordem entre empatados nas listas pode mudar (item 5). Em produção, a função atual contra o corpo sem os itens 5 e 6, com literais, na MESMA instrução (mesmo snapshot), comparando `jsonb` e o texto (`md5` do `::text`, que também pega escala de numeric):
+
+| Cenário | `jsonb` | Texto |
+|---|---|---|
+| 7 dias (12–18/09) | igual | igual |
+| 30 dias (20/08–18/09) | igual | igual |
+| 90 dias (21/06–18/09) | igual | igual |
+| agosto inteiro | igual | igual |
+| conta GMR, 30 dias | igual | igual |
+| `p_detalhe = false`, 30 dias | igual | igual |
+| GMR + agosto + `p_detalhe = false` | igual | igual |
+
+Com o desempate, a revisão de 18/09 comparou em produção 09/09 na conta loja 1: `jsonb` e texto **diferentes**, e **iguais** depois de ordenar as listas pela ordem nova. Só a ordem dos empatados em `maior_receita` mudou. Um empate em cima do corte (posição 30 ou 20) também decide quem entra na lista: antes decidia o plano, agora decide o `sku_id`. A comparação campo a campo do corpo **final** (itens 1 a 6) em produção não foi refeita nesta rodada, porque a leitura de produção não estava disponível para a sessão.
+
+O histórico de custo de produção tem **uma linha por SKU**, todas de 14/09, então "o custo mudou no meio da janela" não aparece lá. Isso foi provado no Dev, primeiro com a versão sem os itens 5 e 6 (4.615 linhas sintéticas; a migration aplicada e desfeita deu o mesmo `md5` da atual em 7d, 30d, resumo e conta). Depois, com o corpo **final** em `pg_temp` contra a função atual, numa transação desfeita, com 22.321 linhas sintéticas em 1.762 SKUs (mudança antes, dentro e depois da janela, custo 0 e NULL), mudança no instante exato de 40 vendas, 30 pedidos com dois itens e componentes de kit. Em 7d, 30d, 90d, fevereiro (todo o histórico depois da janela), um dia, uma conta e resumo, comparando campo a campo (resumo, diário, por conta, as duas listas e as contagens), `jsonb` e texto deram idênticos, com e sem ordenar as listas. O fixture do teste de integração, rodado lá, deu os números que o teste espera. A migration final, aplicada e desfeita no Dev, passou pelas guardas de catálogo do teste e fez oito execuções seguidas de 30 dias em 507–574 ms (como `postgres`), sem salto na sexta. A outra diferença possível, também documentada, é o empate de `changed_at` no mesmo SKU: a nova escolhe o maior `id`, e a antiga pegava o que o plano entregasse primeiro. Produção: zero empates.
+
+**Tentado e descartado.** Passar os pedidos da janela como array constante (plpgsql em dois passos) para ler `order_items` por `= any(...)` em bitmap: 4.492 buffers e 29 ms isolado, contra 112 mil. Mas a junção do array com `order_items` sai estimada em **1 linha** (o `unnest` não tem estatística), o resto do plano vira nested loop sobre CTE, e a chamada estourou 120 s no Dev. Relendo `orders` por `id = any(...)` a estimativa ficou em 152 para 28.611 reais. Estimativa frágil numa tela de dinheiro não compensa 100 mil buffers.
+
+**O que sobra.** Das 140 mil, 111 mil são as buscas de `order_items` por pedido (4 por pedido) e 27 mil a leitura de `orders`: o índice `(organization_id, date_created)` é percorrido desde o começo, porque a consulta não tem a organização (a RLS filtra por conta). Um índice de `orders` por data que cubra as colunas lidas cortaria as 27 mil para centenas, ao custo de escrita em toda gravação de pedido — decisão para medir antes, não para esta fatia.
