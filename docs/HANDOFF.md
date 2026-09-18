@@ -25,6 +25,8 @@
 
 ### O que está pronto
 
+`/estoque/movimentacoes` recebeu a reconstrução da experiência operacional: cabeçalho e faixa de indicadores do Design System, filtros agrupados com busca por referência, estados de erro e vazio explícitos, paginação preservada e tabela responsiva com dimensões separadas de movimento, local, origem, referência, motivo e responsável. A tela segue somente leitura e as consultas continuam em RPCs paginadas sob RLS; a migration `20260918125153` alinha busca por referência e datas inclusivas entre extrato e indicadores. Verificação local: `pnpm run check`, `pnpm run build`, `pnpm docs:check` e inspeção visual autenticada em desktop.
+
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,
