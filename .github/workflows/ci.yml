@@ -320,3 +320,6 @@ jobs:
       # seria descoberta quebrada justamente nesse dia.
       - name: Guarda das migrations de produção
         run: bash infra/guarda-migrations-producao.test.sh
+
+      - name: Regra de build da Vercel (previas de feature fora do projeto de producao)
+        run: bash apps/web/scripts/vercel-ignore.test.sh
