@@ -127,7 +127,28 @@ export default async function ContasPage(): Promise<ReactNode> {
         title="Contas Mercado Livre"
         subtitle="Conexões, permissões e disponibilidade de dados por operação."
         compacto
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de canais">
+            <Link href="/integracoes">Mapa de integrações →</Link>
+            <Link href="/sincronizacao">Saúde da sincronização →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-channel-hero sb-channel-hero-accounts" aria-labelledby="contas-hero-title">
+        <div className="sb-channel-hero-copy">
+          <span className="sb-channel-hero-kicker">CENTRAL DE CANAIS</span>
+          <h2 id="contas-hero-title">Toda loja conectada, com o pulso da operação à vista.</h2>
+          <p>Veja rapidamente o que está conectado, o que foi sincronizado e onde uma reautorização pode destravar o fluxo.</p>
+        </div>
+        <div className="sb-channel-hero-flow" aria-label="Fluxo da conta Mercado Livre">
+          <span><Icone nome="tomada" tamanho={17} /> Conectar</span>
+          <i aria-hidden="true">→</i>
+          <span><Icone nome="pulso" tamanho={17} /> Sincronizar</span>
+          <i aria-hidden="true">→</i>
+          <span><Icone nome="tendencia" tamanho={17} /> Operar</span>
+        </div>
+      </section>
 
       <KpiStrip cells={accountKpis} />
 

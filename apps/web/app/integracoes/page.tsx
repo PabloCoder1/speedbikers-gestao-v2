@@ -280,7 +280,26 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS"
         title="Integrações"
         subtitle="Conexões, credenciais e escopos que movimentam sua operação — cada uma respondida em três perguntas separadas, porque uma resposta não prova a outra."
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de canais">
+            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/saude">Saúde do sistema →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-channel-hero sb-channel-hero-integrations" aria-labelledby="integracoes-hero-title">
+        <div className="sb-channel-hero-copy">
+          <span className="sb-channel-hero-kicker">RADAR OPERACIONAL</span>
+          <h2 id="integracoes-hero-title">Um mapa claro do que está vivo, parado ou fora do alcance.</h2>
+          <p>Os cards abaixo separam conexão, sincronização e configuração para você agir na tela certa, com a evidência mais recente.</p>
+        </div>
+        <div className="sb-integration-legend" aria-label="Dimensões monitoradas">
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-connection" />Conexão</span>
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-sync" />Sincronização</span>
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-config" />Configuração</span>
+        </div>
+      </section>
 
       {/*
         O VOCABULÁRIO DAS PÍLULAS, no bloco de ressalva do frame.
