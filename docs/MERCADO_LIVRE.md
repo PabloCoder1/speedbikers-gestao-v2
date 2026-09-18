@@ -794,8 +794,15 @@ falharia e o pedido ficaria pendente por um valor que a V3 já trata como "não 
 - **Se `logistic_type` muda depois de o envio ser criado.** Não foi medido, e a V3 não
   depende disso: a decisão é congelada no primeiro valor persistido (R5), e uma releitura
   divergente vira log.
-- **O custo.** Uma chamada por pedido que vai deduzir. É a mesma ordem de grandeza do que
+- **O custo.** Uma chamada por pedido que vai deduzir, ou cujo cancelamento vai reverter,
+  mais a varredura dos pendentes. É a mesma ordem de grandeza do que
   `sync-order-financials` já paga hoje em `GET /shipments/{id}/costs` (~963/dia).
+- **O que cada erro quer dizer.** Nenhum foi observado. A varredura os trata assim
+  (`classifyShipmentFailure`): 404 = o envio não existe, resposta definitiva (captura com
+  tipo nulo, a venda baixa); 429/5xx esgotados, 401 e erro de transporte = problema da
+  CONTA, a rodada para; 400/403 = recusa do envio sem prova de ser definitiva, fica
+  pendente. O 403 não vira resposta porque um 403 da conta inteira carimbaria o backlog
+  todo como não-Full para sempre (R5).
 
 ---
 
