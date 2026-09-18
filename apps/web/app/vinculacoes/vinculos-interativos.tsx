@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState, useTransition, type ReactNode } from 
 import { Icone } from "../../components/icons";
 import { TOM, type Tom } from "../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { iniciaisDaConta } from "../../lib/vinculacoes-visao";
 
 import { VincularDialog, type AnuncioAlvo, type ContaOpcao, type ModoVincular } from "./vincular-dialog";
 
@@ -16,8 +17,15 @@ import { VincularDialog, type AnuncioAlvo, type ContaOpcao, type ModoVincular } 
  *
  * **Sem navegação e sem esperar a página.** A ação grava com `revalidar:
  * false`, a linha muda NA HORA ("vinculado agora → SKU"), e o `router.refresh()`
- * roda em segundo plano, numa transição: a faixa de números se atualiza quando
- * chegar, sem travar o próximo vínculo.
+ * roda em segundo plano, numa transição: os números se atualizam quando
+ * chegarem, sem travar o próximo vínculo.
+ *
+ * **D-376, o acabamento.** A conta saiu da própria coluna e virou um selo de
+ * duas letras junto do MLB: ela aparece em toda linha, e uma coluna de texto
+ * para ela empurrava o título — que é o que a pessoa lê para reconhecer o
+ * anúncio. A venda agora traz a RECEITA embaixo, porque "vendeu 124" e "vendeu
+ * R$ 36 mil sem baixar estoque" pedem urgências diferentes, e a tabela já vem
+ * ordenada por esse número.
  */
 
 export interface LinhaAnuncio {
@@ -26,10 +34,14 @@ export interface LinhaAnuncio {
   readonly title: string;
   readonly mlAccountId: string;
   readonly accountLabel: string;
+  /** O tom do selo da conta, pela posição dela na lista da tela (D-376). */
+  readonly contaTom: number;
   readonly sku: string | null;
   readonly skuId: string | null;
   readonly linkState: string;
   readonly unitsSold: number;
+  /** Receita da janela — o que está entrando sem baixa de estoque (D-376). */
+  readonly grossRevenue: number;
   readonly price: number;
   readonly fullQuantity: number | null;
 }
@@ -117,7 +129,6 @@ export function TabelaVinculos({
           <thead>
             <tr>
               <th>Anúncio</th>
-              <th>Conta</th>
               <th>SKU no sistema</th>
               <th>Estado</th>
               <th className="sb-num">Vendas ({janelaDias}d)</th>
@@ -148,13 +159,19 @@ export function TabelaVinculos({
                       <Link className="sb-entity" href={`/anuncios/${linha.itemId}`}>
                         {linha.title}
                       </Link>
-                      <span className="sb-mono">
-                        {linha.itemId}
+                      <span className="sb-vnc-anuncio-pe">
+                        <span
+                          className="sb-vnc-selo"
+                          data-tom={linha.contaTom}
+                          title={linha.accountLabel}
+                        >
+                          {iniciaisDaConta(linha.accountLabel)}
+                        </span>
+                        <span className="sb-mono">{linha.itemId}</span>
                         {(linha.fullQuantity ?? 0) > 0 && <em className="sb-vnc-full">Full</em>}
                       </span>
                     </div>
                   </td>
-                  <td className="sb-vnc-conta">{linha.accountLabel}</td>
                   {/* Vínculo por variação não tem `sku_id`, e está ligado: o "—" vem com o estado ao lado. */}
                   <td className="sb-mono">
                     {vinculadoAgora !== null ? (
@@ -170,8 +187,15 @@ export function TabelaVinculos({
                       {estado.rotulo}
                     </span>
                   </td>
-                  <td className={vendeuSemVinculo ? "sb-num sb-vnc-vendas-alerta" : "sb-num"}>
-                    {formatCount(linha.unitsSold)}
+                  <td className="sb-num">
+                    <span className={vendeuSemVinculo ? "sb-vnc-vendas-alerta" : undefined}>
+                      {formatCount(linha.unitsSold)}
+                    </span>
+                    {linha.unitsSold > 0 && (
+                      <small className={vendeuSemVinculo ? "sb-vnc-bloco sb-vnc-risco" : "sb-vnc-bloco"}>
+                        {formatCurrency(linha.grossRevenue)}
+                      </small>
+                    )}
                   </td>
                   <td className="sb-num">{formatCurrency(linha.price)}</td>
                   <td className="sb-vnc-acao">
@@ -183,6 +207,7 @@ export function TabelaVinculos({
                           setAberto(linha);
                         }}
                       >
+                        <Icone nome="corrente" tamanho={12} />
                         Vincular
                       </button>
                     ) : vinculadoAgora !== null ? (
@@ -330,7 +355,7 @@ export function VincularPorMlb({ contas }: { contas: readonly ContaOpcao[] }): R
     <>
       <button
         type="button"
-        className="sb-button"
+        className="sb-button sb-button-primary"
         onClick={() => {
           setAberto(true);
           setUltimo(null);

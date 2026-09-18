@@ -34,7 +34,7 @@ import { createSyncSupportClaimsReconcileHandler } from "./handlers/sync-support
 import { createSyncSupportQuestionsReconcileHandler } from "./handlers/sync-support-questions-reconcile.js";
 import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
 import { createWebhookReceivedHandler } from "./handlers/webhook-received.js";
-import { createNfeXmlReader } from "./nfe-xml-reader.js";
+import { createDocumentoReader } from "./documento-reader.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
 
@@ -65,7 +65,7 @@ const mercadoLivre = createMercadoLivreClient();
 const nfeHandlers =
   env.DOCUMENTS_BUCKET !== undefined
     ? {
-        "nfe.import.parse": createNfeImportParseHandler({ db, reader: createNfeXmlReader(env.DOCUMENTS_BUCKET) }),
+        "nfe.import.parse": createNfeImportParseHandler({ db, reader: createDocumentoReader(env.DOCUMENTS_BUCKET) }),
         "nfe.import.apply": createNfeImportApplyHandler({ db }),
       }
     : {};

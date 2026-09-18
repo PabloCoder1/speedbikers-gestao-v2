@@ -680,9 +680,9 @@ export type Database = {
           quantity: number
           sku_id: string | null
           supplier_code: string
-          total_value: number
-          unit: string
-          unit_value: number
+          total_value: number | null
+          unit: string | null
+          unit_value: number | null
         }
         Insert: {
           cfop?: string | null
@@ -696,9 +696,9 @@ export type Database = {
           quantity: number
           sku_id?: string | null
           supplier_code: string
-          total_value: number
-          unit: string
-          unit_value: number
+          total_value?: number | null
+          unit?: string | null
+          unit_value?: number | null
         }
         Update: {
           cfop?: string | null
@@ -712,9 +712,9 @@ export type Database = {
           quantity?: number
           sku_id?: string | null
           supplier_code?: string
-          total_value?: number
-          unit?: string
-          unit_value?: number
+          total_value?: number | null
+          unit?: string | null
+          unit_value?: number | null
         }
         Relationships: [
           {
@@ -741,7 +741,7 @@ export type Database = {
           content_hash: string
           created_at: string
           document_number: string | null
-          document_type: string
+          document_type: string | null
           file_name: string | null
           id: string
           issue_date: string | null
@@ -753,8 +753,10 @@ export type Database = {
           parsed_at: string | null
           recipient_cnpj: string | null
           recipient_name: string | null
+          reference: string | null
           resolved_items: number | null
           series: string | null
+          source_format: string
           status: string
           storage_path: string
           total_items: number | null
@@ -768,7 +770,7 @@ export type Database = {
           content_hash: string
           created_at?: string
           document_number?: string | null
-          document_type?: string
+          document_type?: string | null
           file_name?: string | null
           id?: string
           issue_date?: string | null
@@ -780,8 +782,10 @@ export type Database = {
           parsed_at?: string | null
           recipient_cnpj?: string | null
           recipient_name?: string | null
+          reference?: string | null
           resolved_items?: number | null
           series?: string | null
+          source_format?: string
           status?: string
           storage_path: string
           total_items?: number | null
@@ -795,7 +799,7 @@ export type Database = {
           content_hash?: string
           created_at?: string
           document_number?: string | null
-          document_type?: string
+          document_type?: string | null
           file_name?: string | null
           id?: string
           issue_date?: string | null
@@ -807,8 +811,10 @@ export type Database = {
           parsed_at?: string | null
           recipient_cnpj?: string | null
           recipient_name?: string | null
+          reference?: string | null
           resolved_items?: number | null
           series?: string | null
+          source_format?: string
           status?: string
           storage_path?: string
           total_items?: number | null
@@ -4618,6 +4624,21 @@ export type Database = {
           visits: number
         }[]
       }
+      get_listings_link_overview: {
+        Args: {
+          p_organization_id: string
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string | null
+          p_link_state?: string
+          p_sold?: string
+          p_search?: string | null
+          p_limit?: number
+          p_offset?: number
+        }
+        // jsonb (D-376): conferido campo a campo em apps/web/lib/vinculacoes-visao.ts.
+        Returns: Json
+      }
       // ENTRADA MANUAL (D-296): a migration `20260910120000` ainda nao passou
       // pelo gerador do MCP, que le o Dev. A assinatura veio de
       // `pg_get_function_result` no banco local, e o teste de integracao a fixa.
@@ -5385,6 +5406,19 @@ export type Database = {
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os filtros abaixo aceitam
       // NULL de verdade (e o valor que significa "sem filtro").
+      get_documents_overview: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_operation?: string
+          p_organization_id: string
+          p_search?: string
+          p_status?: string
+          p_type?: string
+        }
+        // jsonb (D-375): conferido campo a campo em apps/web/lib/documents-overview.ts.
+        Returns: Json
+      }
       get_products_overview: {
         Args: {
           p_brand?: string

@@ -9,8 +9,8 @@ import {
 import { MOVEMENT_TYPES } from "./movement-filters.js";
 
 describe("vocabulário das movimentações (D-167)", () => {
-  it("os 15 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
-    expect(MOVEMENT_TYPES).toHaveLength(15);
+  it("os 16 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
+    expect(MOVEMENT_TYPES).toHaveLength(16);
 
     for (const type of MOVEMENT_TYPES) {
       expect(movementTypeLabel(type)).not.toBe(type);

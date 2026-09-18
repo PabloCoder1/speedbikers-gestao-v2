@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib";
+
 import { createLogger } from "@sb/observability";
 import { describe, expect, it, vi } from "vitest";
 
@@ -59,6 +61,8 @@ function fakeDeps(options: {
   documentMissing?: boolean;
   readFails?: boolean;
   orgCnpj?: string | null;
+  /** Bytes de um PDF; quando presente, o documento aponta para um `.pdf`. */
+  pdf?: Uint8Array;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
@@ -79,7 +83,7 @@ function fakeDeps(options: {
                   ? null
                   : {
                       id: DOCUMENT_ID,
-                      storage_path: "org/2026-08/hash.xml",
+                      storage_path: options.pdf === undefined ? "org/2026-08/hash.xml" : "org/2026-09/hash.pdf",
                       status: options.status ?? "UPLOADED",
                       organization_id: ENVELOPE.organizationId,
                     },
@@ -113,10 +117,14 @@ function fakeDeps(options: {
       db,
       now: () => new Date("2026-08-22T12:00:00.000Z"),
       reader: {
-        read: () =>
+        lerXml: () =>
           options.readFails === true
             ? Promise.reject(new Error("bucket fora do ar"))
             : Promise.resolve(options.xmlObject ?? fixtureXmlObject()),
+        lerBytes: () =>
+          options.pdf === undefined
+            ? Promise.reject(new Error("este documento não é PDF"))
+            : Promise.resolve(options.pdf),
       },
     },
   };
@@ -256,7 +264,7 @@ describe("parse do XML da NF-e", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(captured.updates.at(-1)).toMatchObject({ status: "FAILED" });
     expect(captured.inserted).toHaveLength(0);
-    expect(lines.join()).toContain("nfe_parse_invalid_xml");
+    expect(lines.join()).toContain("documento_parse_invalido");
   });
 
   it("payload sem documentId é falha DEFINITIVA — repetir não resolve", async () => {
@@ -304,5 +312,90 @@ describe("parse do XML da NF-e", () => {
     expect(tables).not.toContain("skus");
     expect(tables).not.toContain("stock_movements");
     expect(tables).not.toContain("inventory_balances");
+  });
+});
+
+/**
+ * Um PDF de "Pedido de Saída" montado aqui — o arquivo real não entra no
+ * repositório (`docs/NFE.md`). O que este bloco garante é o CAMINHO: `.pdf` usa
+ * o leitor de bytes, o layout é reconhecido pelo conteúdo e o documento nasce
+ * como saída, sem valor nenhum inventado.
+ */
+function pdfDoPedidoDeSaida(): Uint8Array {
+  const escrever = (x: number, y: number, texto: string): string =>
+    `BT 1 0 0 1 ${String(x)} ${String(y)} Tm (${texto}) Tj ET\n`;
+
+  const conteudo = [
+    escrever(30, 800, "Pedido de Saida"),
+    escrever(30, 780, "No da Saida: OUT12467"),
+    escrever(30, 760, "Armazem: ESTOQUE LOJA"),
+    escrever(30, 740, "Observacao"),
+    escrever(30, 720, "ENVIO FULL #77375684 CONTA 1"),
+    // O cabecalho da tabela: e ele que da o x de cada coluna.
+    escrever(30, 700, "#"),
+    escrever(79, 700, "SKU"),
+    escrever(400, 700, "Estante"),
+    escrever(740, 700, "Qtd."),
+    escrever(30, 680, "1"),
+    escrever(131, 680, "BAU05"),
+    escrever(720, 680, "x 20"),
+    escrever(131, 660, "Bau Traseiro Plastico 45L"),
+  ].join("");
+
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from("%PDF-1.7\n1 0 obj\n<< /Length 0 >>\nstream\n", "latin1"),
+      deflateSync(Buffer.from(conteudo, "latin1")),
+      Buffer.from("\nendstream\nendobj\n%%EOF", "latin1"),
+    ]),
+  );
+}
+
+describe("parse de PDF (D-375)", () => {
+  it("pedido de saída do UpSeller: vira documento de SAÍDA, sem valor inventado", async () => {
+    const { deps, captured, lines } = fakeDeps({ pdf: pdfDoPedidoDeSaida() });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(captured.updates.at(-1)).toMatchObject({
+      status: "PARSED",
+      document_type: "SAIDA_UPSELLER_PDF",
+      operation_type: "SAIDA",
+      document_number: "OUT12467",
+      reference: "Armazém ESTOQUE LOJA · ENVIO FULL #77375684 CONTA 1",
+      // Pedido de saída não é documento fiscal: nada de chave nem de emitente.
+      access_key: null,
+      issuer_cnpj: null,
+      total_items: 1,
+    });
+    expect(captured.inserted[0]).toEqual([
+      {
+        document_id: DOCUMENT_ID,
+        // Zero-based como no XML: é a numeração que a tela e a chave de
+        // idempotência já usam, e o leitor conta a partir de 1 (D-375).
+        position: 0,
+        supplier_code: "BAU05",
+        ean: null,
+        description: "Bau Traseiro Plastico 45L",
+        ncm: null,
+        cfop: null,
+        unit: null,
+        quantity: 20,
+        // Nulo, não zero: zero se leria como "de graça" (D-254).
+        unit_value: null,
+        total_value: null,
+        sku_id: null,
+      },
+    ]);
+  });
+
+  it("PDF que nenhum leitor reconhece: falha DEFINITIVA com o motivo que a tela mostra", async () => {
+    const { deps, captured, lines } = fakeDeps({ pdf: new Uint8Array(Buffer.from("%PDF-1.7 sem texto algum", "latin1")) });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(String(captured.updates.at(-1)?.last_error)).toContain("não foi possível ler texto neste PDF");
   });
 });

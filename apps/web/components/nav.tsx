@@ -99,7 +99,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { label: "Compras", href: "/compras", icone: "carrinho" },
       { label: "Fornecedores", href: "/fornecedores", icone: "caminhao" },
-      { label: "NF-e / Entradas", href: "/notas-fiscais", icone: "recibo" },
+      { label: "Notas e Documentos", href: "/notas-fiscais", icone: "recibo" },
     ],
   },
   {

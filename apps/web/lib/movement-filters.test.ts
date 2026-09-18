@@ -59,7 +59,7 @@ describe("filtros de /estoque/movimentacoes (D-167)", () => {
     expect(resolveMovementFilters({ tipo: "ESTORNO_REVERSAO_EXCEDENTE" }).movementType).toBe("ESTORNO_REVERSAO_EXCEDENTE");
   });
 
-  it("o tipo ESTORNO_FULL é filtrável — o 15º do CHECK (D-352)", () => {
+  it("o tipo ESTORNO_FULL é filtrável — o 16º do CHECK (D-352)", () => {
     expect(resolveMovementFilters({ tipo: "ESTORNO_FULL" }).movementType).toBe("ESTORNO_FULL");
   });
 

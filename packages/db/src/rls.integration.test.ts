@@ -13687,3 +13687,403 @@ describe("get_listing_link_suggestions (D-374)", () => {
   });
 });
 
+
+// get_listings_link_overview (20260917220000, D-376) -- a pagina de
+// /vinculacoes numa leitura so: pagina + contagens dos cartoes + uma linha por
+// conta. O que a suite fixa aqui e o que a tela LE: as tres saidas de
+// link_state (D-122), o recorte que as contagens obedecem e o que elas
+// ignoram, e o percentual nulo da conta sem anuncio (D-254).
+describe("get_listings_link_overview (D-376)", () => {
+  /*
+    Sufixo por execucao ATE NO ID DA CONTA: as contagens sao por conta, e uma
+    conta fixa acumularia os anuncios das execucoes anteriores quando a suite
+    roda de novo sem `db reset` (medido: 4 viravam 12 na terceira rodada).
+  */
+  const RUN = String(Date.now());
+  const CONTA_A = `aaaa3760-0000-4000-8000-${RUN.slice(-12)}`;
+  const CONTA_VAZIA = `aaaa3761-0000-4000-8000-${RUN.slice(-12)}`;
+  const ITEM_LIGADO = `MLB376${RUN.slice(-8)}1`;
+  const ITEM_VARIACAO = `MLB376${RUN.slice(-8)}2`;
+  const ITEM_SOLTO_VENDEU = `MLB376${RUN.slice(-8)}3`;
+  const ITEM_SOLTO_PARADO = `MLB376${RUN.slice(-8)}4`;
+
+  interface Visao {
+    total: number;
+    contagens: {
+      todos: number;
+      vinculados: number;
+      por_variacao: number;
+      sem_vinculo: number;
+      vendidos_sem_vinculo: number;
+      parados_sem_vinculo: number;
+      receita_sem_vinculo: number;
+      unidades_sem_vinculo: number;
+      candidatos_abertos: number;
+    };
+    por_conta: {
+      ml_account_id: string;
+      listings_total: number;
+      com_vinculo: number;
+      sem_vinculo: number;
+      pct_vinculado: number | null;
+    }[];
+    linhas: { item_id: string; link_state: string; units_sold: number; gross_revenue: number }[];
+  }
+
+  beforeAll(async () => {
+    for (const [id, slug] of [
+      [CONTA_A, `d376-a-${RUN.slice(-9)}`],
+      [CONTA_VAZIA, `d376-vazia-${RUN.slice(-9)}`],
+    ]) {
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, status)
+         values ($1,$2,'Conta D-376',$3,'PENDING') on conflict do nothing`,
+        [id, ORG_SB, slug],
+      );
+    }
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, `OVERVIEW-${RUN}`],
+    );
+    const skuId = sku.rows[0]?.id ?? "";
+
+    // ligado direto; por variacao (sku_id NULO e mesmo assim ligado, D-122);
+    // sem vinculo que vendeu; sem vinculo parado.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, synced_at)
+       values ($1,$2,$3,$7,'Ligado direto','active',10,'BRL',1,now()),
+              ($1,$2,$4,null,'Por variacao','active',10,'BRL',1,now()),
+              ($1,$2,$5,null,'Vendeu sem vinculo','active',10,'BRL',1,now()),
+              ($1,$2,$6,null,'Parado sem vinculo','active',10,'BRL',1,now())`,
+      [ORG_SB, CONTA_A, ITEM_LIGADO, ITEM_VARIACAO, ITEM_SOLTO_VENDEU, ITEM_SOLTO_PARADO, skuId],
+    );
+
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id, variation_id)
+       values ($1,$2,$3,'ITEM',$4,'999')`,
+      [ORG_SB, CONTA_A, skuId, ITEM_VARIACAO],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_metrics
+         (organization_id, ml_account_id, mlb_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count, computed_at)
+       values ($1,$2,$3,current_date - 1, 7, 700, 7, 7, now())`,
+      [ORG_SB, CONTA_A, ITEM_SOLTO_VENDEU],
+    );
+  });
+
+  async function visao(quem: string, args: string): Promise<Visao> {
+    const rows = await asUser<{ v: Visao }>(
+      quem,
+      `select public.get_listings_link_overview('${ORG_SB}', current_date - 30, current_date, ${args}) as v`,
+    );
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_listings_link_overview nao devolveu linha");
+
+    return v;
+  }
+
+  it("conta as tres saidas de link_state: por variacao e VINCULADO, com sku_id nulo (D-122)", async () => {
+    const v = await visao(ADMIN_SB, `'${CONTA_A}', 'all', 'all', null, 50, 0`);
+
+    expect(v.contagens).toMatchObject({
+      todos: 4,
+      vinculados: 2,
+      por_variacao: 1,
+      sem_vinculo: 2,
+      vendidos_sem_vinculo: 1,
+      parados_sem_vinculo: 1,
+    });
+    // jsonb devolve numero de verdade (nao o texto que `numeric` daria fora dele).
+    expect(v.contagens.receita_sem_vinculo).toBe(700);
+    expect(v.contagens.unidades_sem_vinculo).toBe(7);
+
+    const porEstado = new Map(v.linhas.map((l) => [l.item_id, l.link_state]));
+
+    expect(porEstado.get(ITEM_LIGADO)).toBe("linked");
+    expect(porEstado.get(ITEM_VARIACAO)).toBe("linked_variation");
+    expect(porEstado.get(ITEM_SOLTO_VENDEU)).toBe("unlinked");
+  });
+
+  it("as contagens obedecem a busca, e o recorte de estado NAO as muda -- so muda a pagina", async () => {
+    const semFiltro = await visao(ADMIN_SB, `'${CONTA_A}', 'all', 'all', null, 50, 0`);
+    const soSemVinculo = await visao(ADMIN_SB, `'${CONTA_A}', 'unlinked', 'with', null, 50, 0`);
+
+    // O cartao continua dizendo quantos existem no recorte de conta...
+    expect(soSemVinculo.contagens.todos).toBe(semFiltro.contagens.todos);
+    // ...e a PAGINA traz so o que o cartao clicado promete (D-242).
+    expect(soSemVinculo.total).toBe(1);
+    expect(soSemVinculo.linhas.map((l) => l.item_id)).toEqual([ITEM_SOLTO_VENDEU]);
+
+    const comBusca = await visao(ADMIN_SB, `'${CONTA_A}', 'all', 'all', 'Parado sem', 50, 0`);
+
+    expect(comBusca.contagens.todos).toBe(1);
+    expect(comBusca.contagens.sem_vinculo).toBe(1);
+  });
+
+  it("por_conta ignora o filtro de conta, e a conta sem anuncio tem percentual NULO, nao 0% (D-254)", async () => {
+    const v = await visao(ADMIN_SB, `'${CONTA_A}', 'all', 'all', null, 50, 0`);
+    const olhando = new Map(v.por_conta.map((c) => [c.ml_account_id, c]));
+
+    // A conta vazia aparece mesmo com o filtro em CONTA_A: comparar e o
+    // servico do painel.
+    expect(olhando.get(CONTA_VAZIA)).toMatchObject({ listings_total: 0, pct_vinculado: null });
+    expect(olhando.get(CONTA_A)).toMatchObject({ listings_total: 4, com_vinculo: 2, sem_vinculo: 2 });
+    expect(olhando.get(CONTA_A)?.pct_vinculado).toBe(50);
+  });
+
+  it("de outra organizacao volta vazia sem erro, e anon nao executa", async () => {
+    const v = await visao(DE_OUTRA_ORG, `null, 'all', 'all', null, 50, 0`);
+
+    expect(v.total).toBe(0);
+    expect(v.linhas).toEqual([]);
+    expect(v.contagens.todos).toBe(0);
+
+    await expect(
+      asAnon(`select public.get_listings_link_overview('${ORG_SB}', current_date - 30, current_date)`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
+// documentos por XML e por PDF (20260917230000, D-375) -- get_documents_overview
+// e a saida por documento NAO fiscal no ledger.
+describe("get_documents_overview e SAIDA_DOCUMENTO (D-375)", () => {
+  // Sufixo por execucao: `documents_hash_unique` e por organizacao, e a suite
+  // roda de novo sem `db reset` localmente.
+  const RUN = String(Date.now());
+  const ARQUIVO = `D375-${RUN}`;
+  let skuId = "";
+
+  async function documento(
+    status: string,
+    tipo: string | null,
+    direcao: string | null,
+    extra: { itens?: number; resolvidos?: number; valor?: number | null; referencia?: string | null; formato?: string } = {},
+  ): Promise<string> {
+    const hash = `${RUN}${status}${String(tipo)}${String(direcao)}`.padEnd(64, "0").slice(0, 64);
+    const itens = extra.itens ?? 1;
+
+    const d = await client.query<{ id: string }>(
+      `insert into public.documents
+         (organization_id, status, storage_path, file_name, content_hash, document_type, source_format,
+          operation_type, reference, total_items, resolved_items, applied_at, applied_by)
+       values ($1,$2,'nfe/d375.pdf',$3,$4,$5,$6,$7,$8,$9,$10,
+               case when $2 = 'APPLIED' then now() else null end,
+               case when $2 = 'APPLIED' then $11::uuid else null end)
+       returning id`,
+      [
+        ORG_SB,
+        status,
+        `${ARQUIVO}-${String(tipo)}-${String(direcao)}`,
+        hash,
+        tipo,
+        extra.formato ?? "PDF",
+        direcao,
+        extra.referencia ?? null,
+        itens,
+        extra.resolvidos ?? 0,
+        // `documents_applied_coherent`: APLICADO exige quem aplicou, e quem
+        // grava isso é a confirmação humana (`confirmNfeApply`).
+        ADMIN_SB,
+      ],
+    );
+    const id = d.rows[0]?.id ?? "";
+
+    for (let posicao = 0; posicao < itens; posicao += 1) {
+      await client.query(
+        `insert into public.document_items
+           (document_id, position, supplier_code, description, unit, quantity, unit_value, total_value)
+         values ($1,$2,'COD-1','Item D-375',$3,2,$4,$5)`,
+        [
+          id,
+          posicao,
+          extra.valor === null ? null : "UN",
+          extra.valor ?? null,
+          extra.valor === null || extra.valor === undefined ? null : extra.valor * 2,
+        ],
+      );
+    }
+
+    return id;
+  }
+
+  beforeAll(async () => {
+    const s = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, `D375-SKU-${RUN}`],
+    );
+    skuId = s.rows[0]?.id ?? "";
+
+    // Uma NF-e de entrada conferida, um pedido de saida sem valor, um envio ao
+    // Full aplicado e um documento que ainda nao foi lido (tipo NULO).
+    await documento("PARSED", "NFE", "ENTRADA", { itens: 3, resolvidos: 1, valor: 10, formato: "XML" });
+    await documento("PARSED", "SAIDA_UPSELLER_PDF", "SAIDA", {
+      valor: null,
+      referencia: `Armazém ESTOQUE LOJA · ENVIO FULL #${RUN} CONTA 1`,
+    });
+    await documento("APPLIED", "ENVIO_FULL_ML_PDF", "SAIDA", { valor: null });
+    await documento("UPLOADED", null, null, { itens: 0 });
+  });
+
+  interface Visao {
+    total: number;
+    linhas: {
+      file_name: string;
+      document_type: string | null;
+      source_format: string | null;
+      reference: string | null;
+      unidades: number;
+      valor: number;
+      total_items: number | null;
+      resolved_items: number | null;
+    }[];
+    contagens: {
+      estado: Record<string, number>;
+      direcao: Record<string, number>;
+      tipo: Record<string, number>;
+    };
+    resumo: {
+      total: number;
+      em_conferencia: number;
+      em_leitura: number;
+      falhas: number;
+      aplicados_30d: number;
+      entradas_30d: number;
+      saidas_30d: number;
+      itens_sem_vinculo: number;
+    };
+  }
+
+  async function visao(args = ""): Promise<Visao> {
+    const [linha] = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_documents_overview('${ORG_SB}', p_search => '${ARQUIVO}'${args}) as v`,
+    );
+
+    if (linha === undefined) throw new Error("get_documents_overview nao devolveu linha");
+
+    return linha.v;
+  }
+
+  it("o resumo conta o ciclo: em conferencia, em leitura, aplicados e itens sem vinculo", async () => {
+    const v = await visao();
+
+    expect(v.total).toBe(4);
+    expect(v.resumo).toMatchObject({
+      total: 4,
+      em_conferencia: 2,
+      em_leitura: 1,
+      falhas: 0,
+      aplicados_30d: 1,
+      saidas_30d: 1,
+      entradas_30d: 0,
+    });
+    // 3 itens com 1 vinculado, mais o pedido de saida com 1 item sem vinculo.
+    expect(v.resumo.itens_sem_vinculo).toBe(3);
+  });
+
+  it("tipo NULO e um estado (EM_LEITURA), nao um documento escondido", async () => {
+    const v = await visao();
+
+    expect(v.contagens.tipo).toMatchObject({ NFE: 1, SAIDA_UPSELLER_PDF: 1, ENVIO_FULL_ML_PDF: 1, EM_LEITURA: 1 });
+    expect(v.contagens.direcao).toMatchObject({ ENTRADA: 1, SAIDA: 2, SEM_DIRECAO: 1 });
+    expect(v.linhas.some((l) => l.document_type === null && l.source_format === "PDF")).toBe(true);
+  });
+
+  /**
+   * Pedido de saida NAO traz preco, e a coluna e anulavel desde D-375: a soma
+   * devolve zero e a tela le isso como "sem valor" -- nunca como "de graca".
+   */
+  it("documento sem valor soma zero unidades de dinheiro, com as unidades intactas", async () => {
+    const v = await visao(", p_type => 'SAIDA_UPSELLER_PDF'");
+
+    expect(v.total).toBe(1);
+    expect(v.linhas[0]?.valor).toBe(0);
+    expect(v.linhas[0]?.unidades).toBe(2);
+    expect(v.linhas[0]?.reference).toContain(`ENVIO FULL #${RUN}`);
+  });
+
+  it("as contagens respeitam a busca e ignoram os recortes (D-250)", async () => {
+    const v = await visao(", p_status => 'APPLIED'");
+
+    expect(v.total).toBe(1);
+    // O recorte por estado nao zera os outros estados na contagem.
+    expect(v.contagens.estado).toMatchObject({ PARSED: 2, APPLIED: 1, UPLOADED: 1 });
+  });
+
+  it("a busca acha pela referencia, nao so pelo numero", async () => {
+    const [linha] = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_documents_overview('${ORG_SB}', p_search => 'ENVIO FULL #${RUN}') as v`,
+    );
+
+    expect(linha?.v.total).toBe(1);
+  });
+
+  it("ANALISTA e ADMIN de outra organizacao nao veem documento nenhum (a policy decide)", async () => {
+    const analista = await asUser<{ v: Visao }>(
+      ANALISTA_SB,
+      `select public.get_documents_overview('${ORG_SB}', p_search => '${ARQUIVO}') as v`,
+    );
+    const outra = await asUser<{ v: Visao }>(
+      DE_OUTRA_ORG,
+      `select public.get_documents_overview('${ORG_SB}', p_search => '${ARQUIVO}') as v`,
+    );
+
+    // `security invoker`: a policy de documents (ADMIN/GESTOR) e quem autoriza,
+    // e ela nao levanta erro -- simplesmente nao ha linha para ler.
+    expect(analista[0]?.v.total).toBe(0);
+    expect(outra[0]?.v.total).toBe(0);
+  });
+
+  it("anon nao executa get_documents_overview", async () => {
+    await expect(asAnon(`select public.get_documents_overview('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
+  });
+
+  /**
+   * A saida por documento nao fiscal existe no CHECK e move o saldo como
+   * qualquer outra: o tipo novo nao e um rotulo solto, e a projecao trata igual.
+   */
+  it("SAIDA_DOCUMENTO entra no CHECK e baixa o saldo pela trigger", async () => {
+    const antes = await client.query<{ qty: string }>(
+      `select quantity as qty from public.inventory_balances
+       where organization_id = $1 and sku_id = $2 and location_kind = 'LOCAL'`,
+      [ORG_SB, skuId],
+    );
+    const inicial = Number(antes.rows[0]?.qty ?? 0);
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',20,'ENTRADA_NFE',$3,now())`,
+      [ORG_SB, skuId, `d375:entrada:${RUN}`],
+    );
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',-8,'SAIDA_DOCUMENTO',$3,now())`,
+      [ORG_SB, skuId, `d375:saida:${RUN}`],
+    );
+
+    const depois = await client.query<{ qty: string }>(
+      `select quantity as qty from public.inventory_balances
+       where organization_id = $1 and sku_id = $2 and location_kind = 'LOCAL'`,
+      [ORG_SB, skuId],
+    );
+
+    expect(Number(depois.rows[0]?.qty)).toBe(inicial + 12);
+  });
+
+  it("tipo de movimento fora do CHECK continua recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',-1,'SAIDA_FULL',$3,now())`,
+        [ORG_SB, skuId, `d375:invalido:${RUN}`],
+      ),
+    ).rejects.toThrow(/movement_type/);
+  });
+});

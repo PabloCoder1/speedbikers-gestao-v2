@@ -30,6 +30,8 @@ export const MOVEMENT_TYPES = [
   "ESTORNO_PRE_CAPTURA",
   // D-351 §12: a anulação da reversão a mais de uma venda estornada.
   "ESTORNO_REVERSAO_EXCEDENTE",
+  // D-375: a saída conferida por documento não fiscal (pedido de saída).
+  "SAIDA_DOCUMENTO",
   // D-352: o par da venda entregue pelo Full — a unidade nunca saiu da loja.
   "ESTORNO_FULL",
 ] as const;
