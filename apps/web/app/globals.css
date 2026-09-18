@@ -4269,6 +4269,9 @@ table {
   box-shadow: 0 12px 26px rgb(20 27 88 / 8%);
   transform: translateY(-2px);
 }
+.sb-account-cards:has(> .sb-account-card:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
 .sb-account-card footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--sb-border); }
 .sb-account-card footer .sb-button { min-height: 34px; border-radius: 8px; }
 .sb-integration-grid .sb-panel { overflow: hidden; box-shadow: 0 5px 18px rgb(20 27 88 / 4%); transition: border-color 160ms ease, box-shadow 160ms ease; }
