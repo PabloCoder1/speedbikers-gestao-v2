@@ -33,6 +33,8 @@ import { triggerAdsCampaignsSync } from "./ads-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
 import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
+import type { OrderLogisticsScheduleDeps } from "./order-logistics-schedule.js";
+import { triggerOrderLogisticsSweep } from "./order-logistics-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
 import type { SupportMessagesScheduleDeps } from "./support-messages-schedule.js";
 import { triggerSupportMessagesReconcile } from "./support-messages-schedule.js";
@@ -111,6 +113,7 @@ export interface AppDependencies {
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
   adsSchedule?: AdsScheduleDeps;
   orderFinancialsSchedule?: OrderFinancialsScheduleDeps;
+  orderLogisticsSchedule?: OrderLogisticsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
   supportClaimsSchedule?: SupportClaimsScheduleDeps;
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
@@ -520,6 +523,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerOrderFinancialsSweep(orderFinancialsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Varredura da logistica dos pedidos (D-352, R2) -- le o envio dos pedidos
+  // com VENDA_ML sem estorno e fecha o par do Full. Por CONTA, a cada 6h:
+  // `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/order-logistics", async (context) => {
+    const orderLogisticsSchedule = dependencies.orderLogisticsSchedule;
+
+    if (orderLogisticsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerOrderLogisticsSweep(orderLogisticsSchedule);
 
     return context.json(outcome);
   });
@@ -1211,9 +1231,15 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
     }
 
-    // 200 e não 201 no duplicado: o documento já existe, nada foi criado agora.
+    // 200 e não 201 no duplicado e no reenvio: o documento já existe, nada foi
+    // criado agora. `retried` diz ao navegador que a leitura recomeçou.
     return context.json(
-      { documentId: outcome.documentId, contentHash: outcome.contentHash, duplicate: outcome.status === "duplicate" },
+      {
+        documentId: outcome.documentId,
+        contentHash: outcome.contentHash,
+        duplicate: outcome.status === "duplicate",
+        retried: outcome.status === "retried",
+      },
       outcome.status === "created" ? 201 : 200,
     );
   });

@@ -500,6 +500,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-03 | Caminho de pedidos (janela) — **medido em produção** | 743 / 608 / 541 ms por pedido | **43,4 / 29,4 / 19,0** | lote de leitura e de escrita por página (D-186/D-188/D-190), agora com tráfego real; ganho de **17× a 28×**, por faixa de lote | D-220 |
 | 2026-09-11 | `get_sku_curation` — **da 6ª execução em diante** | 360 a 4.000 ms | **16 a 34 ms** | `plan_cache_mode = 'force_custom_plan'`; nenhuma linha do corpo mudou. Medido em LOCAL com catálogo sintético de 3.502 SKUs | D-319 |
 | 2026-09-12 | Varredura das 25 `plpgsql` sem `plan_cache_mode` | `get_sku_curation_summary`: 9–14 ms, **sem salto na 6ª**; escritas em lote (300 ids): custom 22–30 ms | genérico **14–20 ms** nas escritas | **nenhuma mudança** — `force_custom_plan` deixaria as escritas em lote mais lentas. 21 escritas de uma linha classificadas pela forma, não cronometradas. LOCAL, carga sintética de 3.500 SKUs / 8.376 retratos | D-324 |
+| 2026-09-18 | Faixa de `/anuncios` — **medido em produção**, `authenticated` | 6 × `get_listings_dashboard(p_limit 1)`, ~115 ms cada (~0,7 s) | **63 ms** as seis, `get_listings_dashboard_counts` | contagens sem os CTEs de venda e visitas; predicado copiado e preso por teste de integração | D-381 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
@@ -936,7 +937,7 @@ UNIQUE e constraint **nunca** saem por estatística de uso.
 | com `idx_scan = 0` | **235** (72%) |
 | FKs sem índice que as cubra por prefixo | **71** |
 | índices criados nesta triagem | **0** |
-| índices removidos | **0** |
+| índices removidos | **0** (os dois primeiros saíram em 18/09, ver abaixo) |
 
 **Remover ficou bloqueado por falta de janela.** `pg_stat_database.stats_reset`
 é NULO, o que *sugere* estatísticas desde sempre — e sugere errado. O Postgres
@@ -959,6 +960,39 @@ o índice inteiro) — e **nenhum código de produção apaga `skus`, `profiles`
 aparece com 67 varreduras lendo 13,4 milhões de linhas. Não é a aplicação: são
 as consultas de investigação desta sessão e das anteriores. A estatística
 inclui quem investiga.
+
+### Remoção de 18/09/2026: `job_runs_recent_idx` e `erp_import_rows_sku_idx`
+
+Primeira remoção por estatística de uso, feita em **produção**
+(`imvjfgna…`) porque só lá a janela cobre a vida das tabelas. O Dev segue sem
+servir: `stats_reset` nulo e contagens de quem investiga.
+
+| | `job_runs_recent_idx` | `erp_import_rows_sku_idx` |
+|---|---|---|
+| colunas | (organization_id, finished_at desc) | (batch_id, sku_key) where sku_key is not null |
+| `idx_scan` / tuplas lidas | **0 / 0** | **0 / 0** |
+| tamanho | 2.000 kB | 936 kB |
+| UNIQUE, PK, exclusão ou constraint apoiada | não | não |
+| quem cobre o que existe | `job_runs_last_per_type_idx` (179 usos), `job_runs_failures_idx` (14), `job_runs_reconcile_balances_done_idx` (2.343, parcial, 8 kB) | `erp_import_rows_batch_status_idx` (92), `erp_import_rows_pkey` (114) |
+
+**A janela:** `stats_reset` de 2026-08-25 20:33 UTC, 23 dias. `n_tup_ins` de
+`job_runs` é 27.828 contra 27.829 linhas vivas, e o de `erp_import_rows` é
+26.496 contra 26.496. A estatística cobre a vida inteira das duas tabelas,
+que é o que faltou em D-198.
+
+**Os leitores:** três RPCs leem `job_runs`: `get_system_health`,
+`get_job_failures` e `get_erp_stock_cutoffs`. A web não lê (RLS sem
+policy). A terceira é a única com o formato para o qual o índice largo
+nasceu, e o `explain` dela em produção dá `Index Only Scan using
+job_runs_reconcile_balances_done_idx`. Em `erp_import_rows`, nenhum
+consumidor filtra por `sku_key`.
+
+**Risco:** os dois `drop index` pegam `ACCESS EXCLUSIVE` com
+`lock_timeout` de 5 s. Se não conseguirem, a migration aborta e o workflow de
+produção é repetido. Os `create index` de volta estão no fim da migration,
+comentados.
+
+Migration: `supabase/migrations/20260918010000_drop_indices_sem_uso.sql`.
 
 ### `/reposicao`: duas leituras de ~490 ms viram uma de ~255 ms (D-358)
 

@@ -1,0 +1,94 @@
+# O que NAO sobe no `gcloud builds submit` (infra/deploy-cloud-run.sh).
+#
+# LEIA ANTES DE APAGAR UMA LINHA. A simples EXISTENCIA deste arquivo desliga
+# o fallback do gcloud para o `.gitignore`: `GetFileChooserForDir` devolve
+# este arquivo e nunca chega a montar o ignore padrao com `#!include:.gitignore`
+# (googlecloudsdk/command_lib/util/gcloudignore.py). Ate aqui nao havia
+# `.gcloudignore` nenhum, e o gcloud tambem nunca gravou um -- o `builds submit`
+# pede o chooser com `write_on_disk=False` (api_lib/storage/storage_util.py,
+# `Snapshot.__init__`). Por isso ninguem viu o arquivo faltando e ninguem viu
+# `docs/` e `supabase/` subindo em todo deploy.
+#
+# Consequencia: TUDO o que o `.gitignore` barrava precisa estar aqui. Tirar
+# `node_modules`, `.next`, `dist`, `.turbo` ou `.env*` nao e "subir um pouco
+# mais" -- e mandar o repositorio instalado inteiro para o Cloud Storage, e no
+# caso do `.env*` e publicar segredo de ambiente num bucket.
+#
+# O contexto e a RAIZ do repositorio porque o pnpm resolve `workspace:*`
+# olhando o workspace inteiro (ver Dockerfile e .dockerignore). O build PRECISA
+# de: `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `turbo.json`, o
+# `package.json` da raiz, o `package.json` de CADA workspace -- o
+# `--frozen-lockfile` falha se um deles nao existir no contexto -- e o codigo
+# de `apps/` e `packages/`.
+#
+# `infra/` sai sem medo, inclusive o `cloudbuild.yaml` passado em `--config`:
+# esse arquivo e lido no cliente e vira o corpo da requisicao da API
+# (command_lib/builds/submit_util.py, `LoadCloudbuildConfigFromPath`), nunca e
+# procurado dentro do tarball.
+
+# ---------------------------------------------------------------------------
+# Herdado do .gitignore, que este arquivo passou a substituir
+# ---------------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+.turbo/
+.cache/
+.vitest/
+coverage/
+
+# Nunca sobem. `.env.deploy.yaml` -- que `infra/deploy-cloud-run.sh` escreve na
+# raiz durante o deploy da api -- casa com `.env.*` e cai aqui junto.
+.env
+.env.*
+!.env.example
+
+playwright-report/
+test-results/
+apps/web/e2e/.seed-output.json
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.DS_Store
+Thumbs.db
+.idea/
+/.vscode/
+
+# `.claude/settings.local.json` e estado local de agente e estava barrado pelo
+# `.gitignore`. O diretorio inteiro sai: nao e entrada de build.
+/.claude/
+
+# ---------------------------------------------------------------------------
+# O que o gcloud acrescentava sozinho ao ignore que ele gerava
+# ---------------------------------------------------------------------------
+.git
+.gitignore
+.gcloudignore
+
+# ---------------------------------------------------------------------------
+# Espelho do .dockerignore -- nao faz parte do runtime dos servicos
+#
+# `apps/web` NAO entra nesta lista, pelo mesmo motivo registrado la: o lockfile
+# declara todos os projetos do workspace e `pnpm install --frozen-lockfile`
+# falha se um deles nao existir no contexto. O custo sao alguns kilobytes.
+#
+# A BARRA NA FRENTE NAO E ENFEITE. Aqui a sintaxe e a do `.gitignore`, nao a do
+# `.dockerignore`: sem ela, `supabase/` casa com QUALQUER diretorio de nome
+# `supabase` em qualquer profundidade, e `apps/web/lib/supabase/` -- server.ts e
+# browser.ts, o cliente que a web inteira importa -- sumiria do contexto junto.
+# Medido: sem a barra, esses dois arquivos saiam. O `.dockerignore` nao tem esse
+# problema porque la todo padrao ja e ancorado na raiz do contexto.
+# ---------------------------------------------------------------------------
+/docs/
+/infra/
+/supabase/
+/.github/
+/.vercel/

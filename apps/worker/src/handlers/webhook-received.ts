@@ -10,6 +10,7 @@ import { processClaimReturn } from "./claim-return.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { orderSchema } from "./order-schema.js";
 import { persistOrder } from "./persist-order.js";
+import { createShipmentLogistics } from "./shipment-logistics.js";
 
 /**
  * Fast Path do webhook — `sync.webhook.received`, achado em revisão
@@ -175,6 +176,20 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       { organizationId: account.data.organization_id, mlAccountId, eventSource: "sync" },
       order,
       context.logger,
+      undefined,
+      undefined,
+      // D-352: o webhook é o caminho PRINCIPAL de frescor, e é nele que a venda
+      // do Full é vista primeiro — sem a captura aqui, ela baixaria a loja e só
+      // seria corrigida na janela horária seguinte. Uma chamada a mais por
+      // pedido que vai deduzir, na mesma ordem de grandeza do que
+      // `sync.order-financials` já faz por pedido; falha nela não derruba o
+      // webhook, só deixa o pedido pendente.
+      createShipmentLogistics({
+        mercadoLivre: deps.mercadoLivre,
+        accessToken: tokenResult.accessToken,
+        logger: context.logger,
+        now: () => now,
+      }),
     );
 
     context.logger.info("webhook_fast_path_done", { ml_account_id: mlAccountId, order_id: resourceId });

@@ -83,12 +83,21 @@ test("/anuncios: clicar numa célula filtra a lista para exatamente aquela conta
 
   await expect(page.getByText(semEstoque?.title ?? "")).toBeVisible();
 
-  // O painel declara o recorte ativo, como no frame.
-  await expect(page.getByText(/Filtros ativos:.*sem estoque/)).toBeVisible();
+  // O painel declara o recorte ativo — agora como chip que se desfaz.
+  const chips = page.getByLabel("Filtros ativos");
+
+  await expect(chips).toContainText("Sem estoque");
 
   // E a faixa continua contando o ESCOPO, não a página filtrada: o total segue
   // sendo quatro mesmo com um anúncio na tabela.
   await expect(celula(page, "Anúncios monitorados").locator(".sb-kpi-value")).toHaveText(String(ESPERADO.total));
+
+  // Tirar o chip desfaz SÓ aquele recorte e volta para a lista inteira.
+  await chips.getByRole("link", { name: "Tirar o filtro Sem estoque" }).click();
+
+  await expect(page).not.toHaveURL(/estoque=out/);
+  await expect(page.locator("tbody tr")).toHaveCount(ESPERADO.total);
+  await expect(page.getByLabel("Filtros ativos")).toHaveCount(0);
 });
 
 test("/anuncios: vínculo por variação não é fila de trabalho, e conversão sem visita é indefinida", async ({
@@ -119,17 +128,18 @@ test("/anuncios: vínculo por variação não é fila de trabalho, e conversão 
   await expect(comTrafego).toContainText("250");
   await expect(comTrafego).toContainText(`1/30`);
   // A coluna Full mostra a quantidade do snapshot no anúncio que tem um…
-  await expect(comTrafego.locator("td").nth(7)).toHaveText(String(E2E_LISTING_FULL));
+  await expect(comTrafego.locator("td").nth(4)).toHaveText(String(E2E_LISTING_FULL));
 
   const semTrafego = E2E_LISTINGS.find((a) => a.itemId !== E2E_LISTING_TRAFFIC.itemId && a.vinculo === "nenhum");
   const linhaSemTrafego = page.locator("tbody tr", { hasText: semTrafego?.itemId ?? "" });
 
   // …e "—" (não "0") no que nunca teve snapshot, ao lado de visitas e
-  // conversão também indefinidas. Colunas: Anúncio, MLB, SKU, Conta, Status,
-  // Preço, Estoque, Full, Unidades, Faturamento, Visitas, Obs., Conversão.
-  await expect(linhaSemTrafego.locator("td").nth(7)).toHaveText("—");
-  await expect(linhaSemTrafego.locator("td").nth(11)).toHaveText("—");
-  await expect(linhaSemTrafego.locator("td").nth(12)).toHaveText("—");
+  // conversão também indefinidas. Colunas (MLB, SKU e conta desceram para a
+  // linha de identidade da primeira): Anúncio, Status, Preço, Estoque, Full,
+  // Unidades, Faturamento, Visitas, Obs., Conversão, ações.
+  await expect(linhaSemTrafego.locator("td").nth(4)).toHaveText("—");
+  await expect(linhaSemTrafego.locator("td").nth(8)).toHaveText("—");
+  await expect(linhaSemTrafego.locator("td").nth(9)).toHaveText("—");
 });
 
 
@@ -216,4 +226,32 @@ test("/anuncios: os dias observados são contados contra a janela escolhida", as
   await page.goto("/anuncios?dias=7");
 
   await expect(page.locator("tbody tr", { hasText: E2E_LISTING_TRAFFIC.itemId }).getByText("1/7")).toBeVisible();
+});
+
+
+/**
+ * ORDENAR (20260918150000). A lista era sempre por faturamento; o cabeçalho
+ * agora ordena, e a ordem vive na URL como o resto do recorte. O caso prova a
+ * ida ao banco (o zerado sobe para o topo só se `p_order` chegou à RPC) e que
+ * trocar a ordem não descarta filtro nenhum.
+ */
+test("/anuncios: o cabeçalho ordena pela coluna, inverte no segundo clique e preserva o recorte", async ({ page }) => {
+  await login(page, "/anuncios?dias=7");
+
+  const cabecalho = (nome: string) => page.locator("thead").getByRole("link", { name: new RegExp(`^${nome}`) });
+
+  // Primeiro clique num número: do maior para o menor.
+  await cabecalho("Estoque").click();
+  await expect(page).toHaveURL(/ordem=stock_desc/);
+  await expect(page).toHaveURL(/dias=7/);
+  await expect(page.locator("thead th[aria-sort='descending']")).toContainText("Estoque");
+
+  // Segundo clique: inverte, e o anúncio zerado vem primeiro.
+  await cabecalho("Estoque").click();
+  await expect(page).toHaveURL(/ordem=stock_asc/);
+
+  const zerado = E2E_LISTINGS.find((a) => a.available === 0);
+
+  await expect(page.locator("tbody tr").first()).toContainText(zerado?.itemId ?? "");
+  await expect(page.locator("tbody tr")).toHaveCount(ESPERADO.total);
 });

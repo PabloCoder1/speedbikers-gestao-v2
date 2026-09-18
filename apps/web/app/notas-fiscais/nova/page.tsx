@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Icone, type NomeDoIcone } from "../../../components/icons";
 import { PageTitle } from "../../../components/page-title";
-import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { Voltar } from "../../../components/voltar";
 import { UploadForm } from "./upload-form";
@@ -17,36 +17,55 @@ export const dynamic = "force-dynamic";
  * XML e em PDF, e vários de uma vez — quem confere recebe o lote do dia, não um
  * documento por vez.
  *
- * **Os quatro cartões abaixo não são decoração: são a diferença entre um envio
- * que funciona e um arquivo recusado.** A leitura reconhece o documento pelo
- * CONTEÚDO, e dizer de antemão o que ela sabe ler evita a recusa em silêncio.
+ * **Os quatro formatos ao lado não são decoração: são a diferença entre um
+ * envio que funciona e um arquivo recusado.** A leitura reconhece o documento
+ * pelo CONTEÚDO, e dizer de antemão o que ela sabe ler evita a recusa em
+ * silêncio. Ficam na coluna lateral, e não acima da área de envio: quem já
+ * conhece a tela vai direto ao que faz, e quem não conhece acha a explicação
+ * ao lado do gesto.
  */
 
-const FORMATOS = [
+const FORMATOS: readonly {
+  titulo: string;
+  etiqueta: string;
+  tom: "entrada" | "saida" | "neutro";
+  icone: NomeDoIcone;
+  texto: string;
+}[] = [
   {
     titulo: "NF-e (XML)",
     etiqueta: "Entrada ou saída",
-    texto:
-      "O caminho preferido: é o único conferido pela SEFAZ, e traz chave, CFOP e valores. Entrada ou saída sai do CNPJ da Speed Bikers no documento.",
+    tom: "entrada",
+    icone: "recibo",
+    texto: "O caminho preferido: conferido pela SEFAZ, traz chave, CFOP e valores.",
   },
   {
     titulo: "DANFE (PDF)",
     etiqueta: "Entrada ou saída",
-    texto:
-      "O papel da mesma nota, para quando só ele chega. A leitura extrai a tabela de produtos; se o PDF for uma imagem digitalizada, envie o XML.",
+    tom: "entrada",
+    icone: "prancheta",
+    texto: "O papel da mesma nota. Se o PDF for uma imagem digitalizada, envie o XML.",
   },
   {
     titulo: "Pedido de Saída (UpSeller)",
     etiqueta: "Saída",
-    texto:
-      "O impresso que a operação já usa para separar mercadoria. Traz SKU e quantidade — não traz valor, e a conferência não inventa nenhum.",
+    tom: "saida",
+    icone: "caixa",
+    texto: "Traz SKU e quantidade. Não traz valor, e a conferência não inventa nenhum.",
   },
   {
     titulo: "Envio ao Full (Mercado Livre)",
     etiqueta: "Sem baixa por ora",
-    texto:
-      "As instruções de preparação. O documento é lido e conferido, mas a baixa não acontece: envio ao Full é transferência, não saída — ela espera o desenho do Full (D-352).",
+    tom: "neutro",
+    icone: "caminhao",
+    texto: "Lido e conferido, sem baixa: envio ao Full é transferência, não saída (D-352).",
   },
+];
+
+const PASSOS = [
+  { titulo: "Enviar", texto: "O arquivo sobe e a leitura começa sozinha." },
+  { titulo: "Conferir", texto: "Cada item lido é vinculado a um SKU." },
+  { titulo: "Confirmar", texto: "Só então o estoque muda — e de uma vez." },
 ] as const;
 
 export default function NovoDocumentoPage(): ReactNode {
@@ -60,19 +79,59 @@ export default function NovoDocumentoPage(): ReactNode {
         compacto
       />
 
-      <Panel title="O que esta tela lê" subtitle="O tipo é reconhecido pelo conteúdo do arquivo, não pelo nome dele.">
-        <ul className="sb-nf-formatos">
-          {FORMATOS.map((formato) => (
-            <li key={formato.titulo} className="sb-nf-formato">
-              <small>{formato.etiqueta}</small>
-              <b>{formato.titulo}</b>
-              <span>{formato.texto}</span>
-            </li>
-          ))}
-        </ul>
+      <div className="sb-nf-envio">
+        <section className="sb-panel sb-nf-envio-principal" aria-label="Enviar arquivos">
+          <UploadForm />
+        </section>
 
-        <UploadForm />
-      </Panel>
+        <aside className="sb-nf-envio-lateral">
+          <section className="sb-panel sb-nf-guia" aria-labelledby="nf-formatos">
+            <header className="sb-nf-guia-cabeca">
+              <span className="sb-eyebrow">O QUE A LEITURA RECONHECE</span>
+              <h2 id="nf-formatos">Quatro formatos, pelo conteúdo</h2>
+              <p>O tipo sai de dentro do arquivo, não do nome dele.</p>
+            </header>
+
+            <ul className="sb-nf-formatos">
+              {FORMATOS.map((formato) => (
+                <li key={formato.titulo} className={`sb-nf-formato sb-nf-formato-${formato.tom}`}>
+                  <span className="sb-nf-formato-icone" aria-hidden="true">
+                    <Icone nome={formato.icone} tamanho={16} />
+                  </span>
+                  <div>
+                    <div className="sb-nf-formato-topo">
+                      <b>{formato.titulo}</b>
+                      <small>{formato.etiqueta}</small>
+                    </div>
+                    <span>{formato.texto}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="sb-panel sb-nf-guia" aria-labelledby="nf-passos">
+            <header className="sb-nf-guia-cabeca">
+              <span className="sb-eyebrow">DEPOIS DO ENVIO</span>
+              <h2 id="nf-passos">Nada muda no estoque sem você</h2>
+            </header>
+
+            <ol className="sb-nf-passos">
+              {PASSOS.map((passo, indice) => (
+                <li key={passo.titulo}>
+                  <span className="sb-nf-passo-numero" aria-hidden="true">
+                    {indice + 1}
+                  </span>
+                  <div>
+                    <b>{passo.titulo}</b>
+                    <span>{passo.texto}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </aside>
+      </div>
     </Shell>
   );
 }

@@ -475,7 +475,7 @@ describe("segunda planilha: venda gravada antes de o corte chegar nao e estornad
 
     // 1. O pedido da venda legitima e atualizado (envio) em 09-17: o dominio NAO estorna.
     const legitima = computeSaleDeductions(
-      { id: pedidoLegitimo, status: "paid", dateCreated: new Date(VENDA_LEGITIMA), dateClosed: new Date(VENDA_LEGITIMA), items: itens },
+      { id: pedidoLegitimo, status: "paid", dateCreated: new Date(VENDA_LEGITIMA), dateClosed: new Date(VENDA_LEGITIMA), logisticType: null, items: itens },
       {
         cutoffFor,
         recordedSale: (key) =>
@@ -516,6 +516,7 @@ describe("segunda planilha: venda gravada antes de o corte chegar nao e estornad
         status: "paid",
         dateCreated: new Date("2026-09-16T09:59:00.000Z"),
         dateClosed: new Date("2026-09-16T10:00:00.000Z"),
+        logisticType: null,
         items: itens,
       },
       { cutoffFor, recordedSale: () => undefined, recordedReversals: [] },
@@ -566,6 +567,7 @@ describe("chave neutra do estorno: o segundo estorno do MESMO movimento nao entr
         status: "paid",
         dateCreated: new Date(VENDA_EM),
         dateClosed: new Date(VENDA_EM),
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: skuVendido, skuKind: "PRODUTO", components: [] }],
       },
       {
@@ -1319,6 +1321,7 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
         status: "paid",
         dateCreated: new Date("2026-09-14T09:59:00.000Z"),
         dateClosed: new Date("2026-09-14T10:00:00.000Z"),
+        logisticType: null,
         items: itens,
       },
       { cutoffFor, recordedSale: () => gravadaAbsorvida, recordedReversals: [] },
@@ -1349,6 +1352,7 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
         status: "paid",
         dateCreated: new Date("2026-09-14T10:59:00.000Z"),
         dateClosed: new Date("2026-09-14T11:00:00.000Z"),
+        logisticType: null,
         items: itens,
       },
       { cutoffFor, recordedSale: () => gravadaDepois, recordedReversals: [] },
@@ -1408,7 +1412,7 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
         const corte = await corteDaRpc(ORG_PRODUCAO, sku);
         const gravada = await vendaGravada(`venda:${String(id)}:0`);
         const resultado = computeSaleDeductions(
-          { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
+          { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), logisticType: null, items: itens },
           {
             cutoffFor: () => ({
               capturedAt: corte.captured_at,
@@ -1913,26 +1917,45 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
 
       // A nova execucao do claim de P3 (notificacao de encerramento, ou o retry de D-344):
       // com a venda do trio gravada, a devolucao le o cancelamento e nao devolve de novo.
-      const doPedido = await client.query<{ sku_id: string; qty_delta: string; idempotency_key: string; movement_type: string }>(
-        `select sku_id, qty_delta, idempotency_key, movement_type from public.stock_movements
+      const doPedido = await client.query<{
+        sku_id: string;
+        qty_delta: string;
+        idempotency_key: string;
+        movement_type: string;
+        occurred_at: string;
+      }>(
+        `select sku_id, qty_delta, idempotency_key, movement_type, occurred_at from public.stock_movements
          where organization_id = $1 and source_type = 'ORDER' and source_id = $2 and movement_type in ('VENDA_ML', 'CANCELAMENTO_ML')`,
         [ORG_F3_REVERSAO, String(P3)],
       );
-      const devolucoesDeP3 = await client.query<{ qty_delta: string; idempotency_key: string }>(
-        `select qty_delta, idempotency_key from public.get_order_return_movements($1, array[$2])`,
+      const devolucoesDeP3 = await client.query<{ qty_delta: string; idempotency_key: string; occurred_at: string }>(
+        `select qty_delta, idempotency_key, occurred_at from public.get_order_return_movements($1, array[$2])`,
         [ORG_F3_REVERSAO, String(P3)],
       );
       const reversao = computeReturnReversal(
-        { id: P3 },
+        { id: P3, logisticType: null },
         { position: 0, totalQuantity: 1, returnQuantity: 1 },
         doPedido.rows
           .filter((r) => r.movement_type === "VENDA_ML")
-          .map((r) => ({ skuId: r.sku_id, qtyDelta: Number(r.qty_delta), idempotencyKey: r.idempotency_key })),
+          .map((r) => ({
+            skuId: r.sku_id,
+            qtyDelta: Number(r.qty_delta),
+            idempotencyKey: r.idempotency_key,
+            occurredAt: new Date(r.occurred_at),
+          })),
         [
           ...doPedido.rows
             .filter((r) => r.movement_type === "CANCELAMENTO_ML")
-            .map((r) => ({ idempotencyKey: r.idempotency_key, quantity: Number(r.qty_delta) })),
-          ...devolucoesDeP3.rows.map((r) => ({ idempotencyKey: r.idempotency_key, quantity: Number(r.qty_delta) })),
+            .map((r) => ({
+              idempotencyKey: r.idempotency_key,
+              quantity: Number(r.qty_delta),
+              occurredAt: new Date(r.occurred_at),
+            })),
+          ...devolucoesDeP3.rows.map((r) => ({
+              idempotencyKey: r.idempotency_key,
+              quantity: Number(r.qty_delta),
+              occurredAt: new Date(r.occurred_at),
+            })),
         ],
         "5572189795",
         new Date(),
@@ -2103,7 +2126,7 @@ describe("compensacao F3: a reversao a mais do legado anulada com o instante del
     }
 
     return computeCancellationMovements({
-      order: { id, status: "cancelled", dateCreated: new Date(em(-60 * 24 * 60)), dateClosed: new Date(em(-60 * 24 * 60)), items: [] },
+      order: { id, status: "cancelled", dateCreated: new Date(em(-60 * 24 * 60)), dateClosed: new Date(em(-60 * 24 * 60)), logisticType: null, items: [] },
       occurredAt: new Date(),
       occurredAtKnown: true,
       transition: null,
@@ -2333,7 +2356,7 @@ describe("o snapshot que ainda carrega o parse retrata a exportacao do nome do a
       const gravada = await vendaGravada(`venda:${String(id)}:0`);
 
       return computeSaleDeductions(
-        { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
+        { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), logisticType: null, items: itens },
         { cutoffFor: corteUsado, recordedSale: () => gravada, recordedReversals: [] },
       );
     };
@@ -2430,7 +2453,7 @@ describe("o snapshot que ainda carrega o parse retrata a exportacao do nome do a
       ] as const) {
         const gravada = await vendaGravada(`venda:${String(id)}:0`);
         const resultado = computeSaleDeductions(
-          { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
+          { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), logisticType: null, items: itens },
           { cutoffFor: doCorte(corte), recordedSale: () => gravada, recordedReversals: [] },
         );
 

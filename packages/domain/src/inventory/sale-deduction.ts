@@ -35,6 +35,19 @@
  * anteriores ganharia um +1 falso (revisão de D-351, ALTA-1). Por isso o corte
  * traz `importedAt`, e a venda gravada traz `recordedAt`.
  *
+ * **D-352 — a venda entregue pelo Full.** A unidade que o Mercado Livre
+ * despachou do galpão DELE nunca foi da loja, e baixá-la do saldo LOCAL é
+ * inventar uma saída: em produção são 2.768 unidades em 2.550 pedidos, e 66
+ * SKUs com alvo LOCAL negativo. A saída é a MESMA forma da D-351 — grava a
+ * venda e o par que a anula —, com outra causa (`ESTORNO_FULL`) e sem gate de
+ * corte: "a unidade não era da loja" não tem exceção de data.
+ *
+ * O sinal é `orders.logistic_type`, o valor CRU de
+ * `GET /shipments/{id}.logistic_type`. Só `fulfillment` é Full; ausência e
+ * valor desconhecido BAIXAM, como hoje — nunca presumir Full, porque errar para
+ * "Full" deixa o saldo alto e vende o que não existe. Nenhum `location_kind`
+ * novo: o Full segue ESPELHO, não ledger (D-018).
+ *
  * **O que a planilha tem e de que lado do alvo a linha está são duas perguntas**
  * (reverificação de c48fb70, MÉDIA-1). "A venda está na planilha?" é respondida
  * pela exportação (`exportedAt`); "a linha gravada está dentro do alvo?", pelo
@@ -44,7 +57,7 @@
  * venda entre a exportação e o parse não é estornada.
  */
 
-import { excessReversalShares } from "./reversal-limit.js";
+import { excessReversalShares, revertedSaleKeyOf } from "./reversal-limit.js";
 import type { TimedRecordedReversal } from "./reversal-limit.js";
 
 export interface SaleDeductionItem {
@@ -71,6 +84,16 @@ export interface SaleDeductionOrder {
    * das 18:42.
    */
   readonly dateClosed: Date | null;
+  /**
+   * `orders.logistic_type` — a logística do ENVIO deste pedido, no valor CRU do
+   * Mercado Livre, ou `null` enquanto o sinal não foi capturado (D-352).
+   *
+   * OBRIGATÓRIA, e não opcional com padrão: um chamador novo que esquecesse o
+   * campo voltaria a baixar a loja em toda venda do Full, em silêncio — o
+   * defeito que esta fatia existe para fechar. É o mesmo motivo de
+   * `PersistOrderContext.eventSource` ser obrigatória.
+   */
+  readonly logisticType: OrderLogisticType;
   readonly items: readonly SaleDeductionItem[];
 }
 
@@ -171,8 +194,16 @@ export interface SaleDeductionResult {
   /** Movimentos `ESTORNO_PRE_CAPTURA`, um por dedução anterior ou igual ao corte. */
   readonly preCaptureReversals: StockMovementDraft[];
   /**
+   * Movimentos `ESTORNO_FULL` (D-352): o par de cada dedução de um pedido
+   * entregue pelo Full que NÃO saiu estornada pela D-351. Nunca os dois tipos
+   * para a mesma chave — ver `computeSaleDeductions`.
+   */
+  readonly estornosFull: StockMovementDraft[];
+  /**
    * Movimentos `ESTORNO_REVERSAO_EXCEDENTE`: a anulação da reversão a mais do legado
    * das vendas estornadas agora, uma por reversão que passou da venda (D-351 §12).
+   * Numa venda do Full são TODAS as reversões gravadas, não só o excesso
+   * (`fullReversalEstornosOf`).
    */
   readonly excessReversalEstornos: StockMovementDraft[];
 }
@@ -181,8 +212,8 @@ export interface SaleDeductionResult {
  * Prefixo NEUTRO da chave de estorno: `estorno:<chave do movimento estornado>`,
  * qualquer que seja a causa.
  *
- * O TIPO do movimento diz a causa (`ESTORNO_PRE_CAPTURA`; na fatia do Full,
- * `ESTORNO_FULL`); a CHAVE diz o movimento. Com um prefixo por causa, dois
+ * O TIPO do movimento diz a causa (`ESTORNO_PRE_CAPTURA`, `ESTORNO_FULL`); a
+ * CHAVE diz o movimento. Com um prefixo por causa, dois
  * estornos do mesmo movimento teriam chaves diferentes e o `UNIQUE` de
  * `idempotency_key` deixaria os dois entrarem. Impedir isso pediria um índice
  * único a mais — e o lote da página trata QUALQUER 23505 como idempotência
@@ -208,6 +239,33 @@ export function estornadoKeyOf(estornoKey: string): string {
   }
 
   return estornoKey.slice(ESTORNO_KEY_PREFIX.length);
+}
+
+/**
+ * A logística do envio como o pedido a guarda (`orders.logistic_type`): o valor
+ * CRU do Mercado Livre, ou `null` enquanto o sinal não foi capturado (D-352).
+ */
+export type OrderLogisticType = string | null;
+
+/**
+ * O único valor de `logistic_type` que significa "saiu do galpão do Mercado
+ * Livre" — medido em 2026-09-17 em `GET /shipments/{id}` (3 envios
+ * `"fulfillment"`, 1 `"cross_docking"`), e o mesmo valor que
+ * `relist-preflight.ts` já compara no anúncio.
+ */
+export const FULL_LOGISTIC_TYPE = "fulfillment";
+
+/**
+ * A venda é entregue pelo Full? (D-352, R6.)
+ *
+ * **Só a igualdade exata é Full.** Valor desconhecido, valor novo do Mercado
+ * Livre e ausência de sinal caem todos no mesmo lado: BAIXA a loja, que é o
+ * comportamento de hoje. A assimetria é deliberada — errar para "baixa" deixa o
+ * saldo baixo até a próxima planilha do UpSeller corrigir; errar para "Full"
+ * deixa o saldo ALTO e vende o que não existe. Nunca presumir Full (R2).
+ */
+export function isFullLogistic(logisticType: OrderLogisticType): boolean {
+  return logisticType === FULL_LOGISTIC_TYPE;
 }
 
 /**
@@ -319,6 +377,71 @@ export function preCaptureEstornoOf(
 }
 
 /**
+ * O `ESTORNO_FULL` de uma venda (D-352): a mesma FORMA do
+ * `ESTORNO_PRE_CAPTURA` — quantidade oposta, `occurred_at` espelhado, chave
+ * neutra `estorno:<chave da venda>` — com outra CAUSA.
+ *
+ * **Espelha a linha JÁ GRAVADA quando ela existe**, pela razão de sempre: o
+ * worker de antes de D-351 gravava `occurred_at = date_last_updated`, e um
+ * estorno com a "venda em" nova para uma venda gravada com a data velha somaria
+ * zero no saldo e NÃO no alvo — cada linha cairia de um lado do corte de
+ * `compute_erp_target_balances`. Espelhar SKU, quantidade e data é o que mantém
+ * o par nulo nos dois lados.
+ *
+ * **Sem gate de corte, ao contrário do `ESTORNO_PRE_CAPTURA`.** Aquele pergunta
+ * "a planilha já tem esta venda?"; este pergunta "esta venda saiu do galpão do
+ * Mercado Livre?". A segunda pergunta não tem exceção: a unidade nunca foi da
+ * loja, então a baixa é errada em qualquer lado do corte.
+ *
+ * `recordedSale` é opcional porque o cancelamento já chama com a própria linha
+ * gravada como rascunho — ali não há o que procurar.
+ */
+export function fullEstornoOf(
+  sale: StockMovementDraft,
+  recordedSale: (idempotencyKey: string) => RecordedSale | undefined = () => undefined,
+): StockMovementDraft {
+  const base = recordedSale(sale.idempotencyKey) ?? sale;
+
+  return {
+    skuId: base.skuId,
+    qtyDelta: -base.qtyDelta,
+    idempotencyKey: estornoKeyOf(sale.idempotencyKey),
+    occurredAt: base.occurredAt,
+  };
+}
+
+/**
+ * A anulação de TODA reversão já gravada de uma venda do Full (D-352, R3).
+ *
+ * Numa venda que nunca saiu da loja, toda unidade devolvida à loja é excesso —
+ * não só a que passou da quantidade vendida (`excessReversalEstornosOf`, o caso
+ * D-351 §12). A conta, com V vendido e R revertido, tem de dar ZERO no saldo:
+ * `-V + V (ESTORNO_FULL) + R - R (estas anulações) = 0`. E no alvo também,
+ * porque cada par (venda, estorno) e (reversão, anulação) cai do mesmo lado do
+ * corte: a anulação espelha o `occurred_at` da reversão, como em D-351 §12.
+ *
+ * Tipo e chave são os mesmos de lá — `ESTORNO_REVERSAO_EXCEDENTE` e
+ * `estorno:<chave da reversão>` —, e por isso o `UNIQUE` absorve a anulação que
+ * a D-351 já tinha gravado para a mesma reversão. Quem chama escolhe UMA das
+ * duas listas por venda, nunca as duas: dois rascunhos com a mesma chave no
+ * MESMO comando entrariam como um só, e qual dos dois é indeterminado.
+ */
+export function fullReversalEstornosOf(
+  sale: { readonly skuId: string; readonly qtyDelta: number; readonly idempotencyKey: string },
+  reversals: readonly TimedRecordedReversal[],
+): StockMovementDraft[] {
+  return reversals
+    .filter((reversal) => revertedSaleKeyOf(reversal.idempotencyKey) === sale.idempotencyKey)
+    .map((reversal) => ({
+      skuId: sale.skuId,
+      // O sinal da venda: a reversão devolveu unidade, a anulação a tira de novo.
+      qtyDelta: sale.qtyDelta < 0 ? -reversal.quantity : reversal.quantity,
+      idempotencyKey: estornoKeyOf(reversal.idempotencyKey),
+      occurredAt: reversal.occurredAt,
+    }));
+}
+
+/**
  * A anulação da reversão a mais do legado de uma venda estornada (D-351 §12):
  * `ESTORNO_REVERSAO_EXCEDENTE`, um por reversão que passou da quantidade vendida
  * (`excessReversalShares`), com a quantidade que passou, o SKU da venda e o
@@ -354,7 +477,7 @@ export function excessReversalEstornosOf(
 
 export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: PreCaptureCutoffs): SaleDeductionResult {
   if (!isValidSaleStatus(order.status)) {
-    return { deductions: [], preCaptureReversals: [], excessReversalEstornos: [] };
+    return { deductions: [], preCaptureReversals: [], estornosFull: [], excessReversalEstornos: [] };
   }
 
   const saleAt = saleInstant(order);
@@ -390,23 +513,47 @@ export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: Pre
   }
 
   const preCaptureReversals: StockMovementDraft[] = [];
+  const estornosFull: StockMovementDraft[] = [];
   const excessReversalEstornos: StockMovementDraft[] = [];
+  const doFull = isFullLogistic(order.logisticType);
 
   for (const deduction of deductions) {
-    const estorno = preCaptureEstornoOf(deduction, saleAt, preCapture);
+    const preCaptura = preCaptureEstornoOf(deduction, saleAt, preCapture);
+    // **Um estorno por venda, nunca dois.** Os dois tipos usam a MESMA chave
+    // neutra (`estorno:<chave da venda>`), e é isso que faz o `UNIQUE` absorver
+    // o segundo em gravações separadas — mas no lote da página os dois iriam no
+    // MESMO `insert ... on conflict do nothing`, e ali a chave repetida entra
+    // uma vez só, com o tipo indeterminado. A precedência é da D-351: o
+    // `ESTORNO_PRE_CAPTURA` é o que a venda já teria sem o Full, e o Full só
+    // grava o par que faltava (R1).
+    const par = preCaptura ?? (doFull ? fullEstornoOf(deduction, preCapture.recordedSale) : null);
 
-    if (estorno !== null) {
-      preCaptureReversals.push(estorno);
-      // A reversão a mais sai com o estorno: sem ele, a venda não é estornada e o
-      // excesso fica como estava (o legado que a D-351 não compensa).
-      excessReversalEstornos.push(
-        ...excessReversalEstornosOf(
-          { skuId: estorno.skuId, qtyDelta: -estorno.qtyDelta, idempotencyKey: deduction.idempotencyKey },
-          preCapture.recordedReversals,
-        ),
-      );
+    if (preCaptura !== null) {
+      preCaptureReversals.push(preCaptura);
+    } else if (par !== null) {
+      estornosFull.push(par);
     }
+
+    if (par === null) {
+      // Venda não estornada: o excesso do legado fica como estava (o que a
+      // D-351 não compensa).
+      continue;
+    }
+
+    // A venda que o par anula: a linha GRAVADA quando ela existe, e é dela que o
+    // espelho veio (`-par.qtyDelta`).
+    const venda = { skuId: par.skuId, qtyDelta: -par.qtyDelta, idempotencyKey: deduction.idempotencyKey };
+
+    // Numa venda do Full, TODA reversão gravada é excesso: a unidade nunca foi da
+    // loja, então nada devia ter voltado para ela. Fora do Full, só o que passou da
+    // quantidade vendida (D-351 §12). Uma lista OU a outra, nunca as duas — elas
+    // compartilham a chave `estorno:<chave da reversão>`.
+    excessReversalEstornos.push(
+      ...(doFull
+        ? fullReversalEstornosOf(venda, preCapture.recordedReversals)
+        : excessReversalEstornosOf(venda, preCapture.recordedReversals)),
+    );
   }
 
-  return { deductions, preCaptureReversals, excessReversalEstornos };
+  return { deductions, preCaptureReversals, estornosFull, excessReversalEstornos };
 }

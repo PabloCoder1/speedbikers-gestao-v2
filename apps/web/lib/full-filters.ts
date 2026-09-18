@@ -7,10 +7,82 @@
  * desconhecido na URL cai para "sem filtro" antes de tocar o banco.
  */
 
-import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
+import { buildFilterHref, resolvePageParam, resolvePageSize, summarizePagedWindow, type PageSize } from "./filters";
 import type { Tom } from "../components/tone";
 
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE: PageSize = 50;
+
+/**
+ * Cobertura (D-380): dias que o saldo do Full dura no ritmo de venda da janela.
+ * Abaixo de `LOW_COVERAGE_DAYS` o SKU "está acabando" — é o limiar que a RPC
+ * recebe, e a tela escreve o mesmo número. Abaixo de `CRITICAL_COVERAGE_DAYS`
+ * a barra fica vermelha. São limiares de LEITURA, não política de envio:
+ * prazo de coleta e lote mínimo não estão no sistema.
+ */
+export const LOW_COVERAGE_DAYS = 15;
+export const CRITICAL_COVERAGE_DAYS = 7;
+
+/**
+ * Focos (D-380): recortes que cruzam situação e cobertura, e por isso só o SQL
+ * faz — a página tem 50 linhas. Conjunto FECHADO, espelho do `p_focus`.
+ */
+export const FULL_FOCUSES = ["acabando", "enviavel"] as const;
+
+export type FullFocus = (typeof FULL_FOCUSES)[number];
+
+export function fullFocusLabel(value: FullFocus): string {
+  return value === "acabando" ? "Acabando" : "Pode enviar hoje";
+}
+
+export function fullFocusCriterion(value: FullFocus): string {
+  return value === "acabando"
+    ? `tem saldo no Full, vendeu na janela e a cobertura é menor que ${String(LOW_COVERAGE_DAYS)} dias`
+    : `em ruptura ou acabando, e com saldo no estoque local para mandar`;
+}
+
+/** Ordens (D-380), espelho do `p_sort`. A primeira é o padrão da tela e fica fora da URL. */
+export const FULL_SORTS = ["prioridade", "cobertura", "vendas", "full", "local", "sku"] as const;
+
+export type FullSort = (typeof FULL_SORTS)[number];
+
+export function fullSortLabel(value: FullSort): string {
+  switch (value) {
+    case "prioridade":
+      return "Prioridade de envio";
+    case "cobertura":
+      return "Menor cobertura";
+    case "vendas":
+      return "Mais vendidos";
+    case "full":
+      return "Maior saldo no Full";
+    case "local":
+      return "Maior saldo local";
+    case "sku":
+      return "SKU (A–Z)";
+  }
+}
+
+/**
+ * Tom da cobertura: sem venda não há o que medir (neutro); zero é ruptura;
+ * abaixo do crítico é perigo; abaixo do limiar é atenção.
+ */
+export function coverageTom(days: number | null): Tom {
+  if (days === null) return "neutro";
+  if (days < CRITICAL_COVERAGE_DAYS) return "perigo";
+  if (days < LOW_COVERAGE_DAYS) return "atencao";
+
+  return "ok";
+}
+
+/** "0 dias", "3,5 dias", "+90 dias" — acima de 90 a precisão não diz nada. */
+export function formatCoverage(days: number | null): string {
+  if (days === null) return "sem venda";
+  if (days > 90) return "+90 dias";
+
+  const texto = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: days < 10 ? 1 : 0 }).format(days);
+
+  return `${texto} ${days === 1 ? "dia" : "dias"}`;
+}
 
 export const FULL_SITUATIONS = ["saudavel", "parado", "ruptura", "ausente"] as const;
 
@@ -73,6 +145,9 @@ export interface FullFilters {
   search: string | null;
   situation: string | null;
   account: string | null;
+  focus: FullFocus | null;
+  sort: FullSort;
+  pageSize: PageSize;
   page: number;
 }
 
@@ -93,6 +168,9 @@ export function resolveFullFilters(query: Record<string, string | string[] | und
     // A conta não é conjunto fechado aqui: os ids vêm do banco, e a página
     // descarta um id que não pertença à organização antes de chamar a RPC.
     account: readParam(query.conta),
+    focus: readMember(query.foco, FULL_FOCUSES) as FullFocus | null,
+    sort: (readMember(query.ordem, FULL_SORTS) as FullSort | null) ?? "prioridade",
+    pageSize: resolvePageSize(query.tamanho, PAGE_SIZE),
     page: resolvePageParam(query.pagina),
   };
 }
@@ -103,7 +181,15 @@ export function buildFullHref(current: FullFilters, override: Partial<FullFilter
 
   return buildFilterHref(
     "/full",
-    { busca: next.search, situacao: next.situation, conta: next.account },
+    {
+      busca: next.search,
+      situacao: next.situation,
+      conta: next.account,
+      foco: next.focus,
+      // Os padrões ficam fora da URL: `/full` limpo continua sendo `/full`.
+      ordem: next.sort === "prioridade" ? null : next.sort,
+      tamanho: next.pageSize === PAGE_SIZE ? null : String(next.pageSize),
+    },
     override.page === undefined ? 1 : next.page,
   );
 }
@@ -146,3 +232,21 @@ export function isFullRow<T extends { sku_id: string | null }>(
 }
 
 export { summarizePagedWindow };
+
+/**
+ * A fórmula da cobertura (D-380), a MESMA da RPC: média diária sobre os dias
+ * da janela e saldo do Full dividido por ela. Existe no TypeScript só para o
+ * caminho de degradação da tela, quando a RPC nova ainda não chegou ao banco.
+ */
+export function coverageOf(
+  fullQuantity: number,
+  unitsSold: number,
+  windowDays: number,
+): { daily_rate: number | null; coverage_days: number | null } {
+  if (unitsSold <= 0 || windowDays <= 0) return { daily_rate: null, coverage_days: null };
+
+  return {
+    daily_rate: Math.round((unitsSold / windowDays) * 100) / 100,
+    coverage_days: Math.round(((Math.max(fullQuantity, 0) * windowDays) / unitsSold) * 10) / 10,
+  };
+}
