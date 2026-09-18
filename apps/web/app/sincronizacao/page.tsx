@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
@@ -257,7 +258,28 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS"
         title="Sincronização"
         subtitle="Por conta e por recurso, contra a cadência real de cada job. Reconciliação é permanente (o indicador é frescor); backfill é finito (o indicador é o cursor); e o recálculo de métricas é trabalho nosso, medido em separado."
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de dados e processamentos">
+            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/importacoes">Histórico de importações →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-process-hero sb-process-hero-sync" aria-labelledby="sync-hero-title">
+        <div className="sb-process-hero-copy">
+          <span className="sb-process-hero-kicker">CENTRAL DE SAÚDE DOS DADOS</span>
+          <h2 id="sync-hero-title">O dado percorre três etapas até virar decisão.</h2>
+          <p>Use o frescor para acompanhar o que roda continuamente, o cursor para entender o histórico e o recálculo para confirmar que a aplicação processou o que chegou.</p>
+        </div>
+        <div className="sb-process-steps" aria-label="Etapas da sincronização">
+          <span><b>01</b><strong>Capturar</strong><small>Mercado Livre</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>02</b><strong>Completar</strong><small>Backfill histórico</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>03</b><strong>Processar</strong><small>Métricas internas</small></span>
+        </div>
+      </section>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -269,7 +291,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
         <>
           <KpiStrip cells={celulas} />
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div className="sb-sync-sections">
+          <div>
             <Panel
               title="Contas conectadas"
               subtitle="O estado da conexão de cada conta. Conta revogada não sincroniza, e a linha da tabela abaixo continua existindo — por isso as duas coisas aparecem separadas."
@@ -318,7 +341,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div>
             <Panel
               title="Sincronização contínua"
               subtitle="Dado puxado do Mercado Livre. O veredito compara a idade do último sucesso com a cadência DAQUELE recurso — pedidos a cada hora, visitas uma vez por dia."
@@ -394,7 +417,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div>
             <Panel
               title="Backfill"
               subtitle="Histórico, e portanto FINITO: não ter rodado nas últimas 24h é o estado normal de um backfill concluído. Por isso aqui não há selo de atraso nem porcentagem — o indicador é o cursor."
@@ -444,7 +467,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div>
             <Panel
               title="Métricas recalculadas"
               subtitle="Dado processado por nós. O Mercado Livre pode estar em dia e o recálculo parado — é onde os gargalos aparecem."
@@ -481,7 +504,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div>
             <Panel
               title="Eventos recentes"
               subtitle="As 30 mudanças mais recentes registradas pelo próprio banco em domain_events."
@@ -530,7 +553,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div>
             <Panel
               title="Execuções que falharam"
               subtitle={`Agrupadas por job e por MOTIVO, nos últimos ${String(FAILURE_WINDOW_DAYS)} dias. Corridas de quatro ou mais dígitos viram # na assinatura do motivo — assim o código HTTP sobrevive e o id da entidade não fragmenta a lista. No Dev isso reduz 473 falhas de 170 motivos a 16 linhas.`}
@@ -605,6 +628,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                 )}
               </div>
             </Panel>
+          </div>
+
           </div>
 
           {/*
