@@ -136,6 +136,11 @@ const HOUR_MS = 3_600_000;
  * falhou, ou se a do recheque falhar, o intervalo passa de 72 h e o bucket sai
  * do "Full atual" até a próxima captura. Subir a janela longa acima de 48 h
  * tira a folga de vez.
+ *
+ * A janela conta de `capturedAt`, o início REAL da tentativa, não do horário
+ * agendado. Cada janela vence 3 h antes da execução que deve perguntar de
+ * novo; uma tentativa que grave a marca com mais de 3 h de atraso (reentrega
+ * do Cloud Tasks) escorrega o recheque uma execução, e os 66 h viram 72 h.
  */
 export const ITEM_ABSENCE_RECHECK_MS = {
   short: 9 * HOUR_MS,
