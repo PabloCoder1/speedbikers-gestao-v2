@@ -50,6 +50,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Busca de pedidos | `GET /orders/search?seller={seller_id}&...` | `read` | `offset`/`limit` (padrão 50); **teto não documentado** | secao 2.3 | 2026-08-21 |
 | Filtro de pedidos por data | `order.date_last_updated.from`/`.to`, `order.date_created.from`/`.to`, `order.date_closed.from`/`.to` — ISO8601 com offset | `read` | mesma de busca de pedidos | secao 3 | 2026-08-21 |
 | Envios do pedido | `GET /orders/{order_id}/shipments` | `read` | — | secao 2.3 | 2026-08-21 (formato muda em set/2026, ver secao 7) |
+| Envio (detalhe) | `GET /shipments/{shipment_id}` | `read`, "Vendas e envios" | — | secao 2.3 | **2026-09-17, leitura real** — `logistic_type` medido em 4 envios (secao 2.17, D-352) |
 | Descontos do pedido | `GET /orders/{order_id}/discounts` | `read` | — | secao 2.3 | 2026-08-21 |
 | Itens do vendedor (recomendado) | `GET /users/{user_id}/items/search` | `read`, "Publicação e sincronização" | `offset`/`limit` padrão 50; `search_type=scan` + `scroll_id` acima de 1000, até 100/página, scroll expira em 5 min | secao 2.3 | 2026-08-21 |
 | Itens do vendedor (legado) | `GET /sites/{site_id}/search?seller_id=...` | `read` | idem acima | secao 2.3 | 2026-08-21 — documentação indica substituição gradual pelo endpoint acima |
@@ -740,6 +741,61 @@ POST https://api.mercadolibre.com/items/{item_id}/relist
 **Defeito da própria doc, registrado:** o exemplo de resposta do relist **com variações** é internamente inconsistente — devolve o mesmo id do pai e `parent_item_id: null`, contradizendo o texto da página. Não tratar aquele shape como contrato.
 
 **Achado extra:** `automatic_relist` é campo público em todos os exemplos e tem filtro de busca oficial (`with_automatic_relist`), mas **nenhuma página define o que faz**.
+
+---
+
+## 2.17 A logística do envio — `GET /shipments/{id}` — CONFIRMADO por LEITURA REAL (2026-09-17, D-352)
+
+**Por que este endpoint existe aqui.** A pergunta "esta venda saiu do galpão do Mercado
+Livre (Full) ou da loja?" não é respondida pelo pedido. `GET /orders/{id}` traz
+`shipping: { id }` e nada mais de logística — medido nos **4 pedidos reais** abaixo, e é
+também o que `order-schema.ts` sempre leu (D-165). `orders.tags`, em 331 mil pedidos,
+tem 21 valores distintos e **nenhum** diz Full. Quem responde é o ENVIO.
+
+**Isto não é leitura da documentação: é leitura da API, com token, guardada em disco** —
+4 pedidos e 4 envios de 2026-09-17, **fora do repositório** (no scratchpad da sessão da
+D-352, `d352/leitura-real/`): as respostas trazem endereço e ids do comprador, e o
+repositório é público. O recorte sem dado pessoal que prova o schema está em
+`apps/worker/src/handlers/shipment-logistics.test.ts`, e o id real de 16 dígitos, em
+`sync-order-logistics.test.ts`.
+
+| envio | pedido | `logistic_type` | `mode` | `status` | `substatus` |
+|---|---|---|---|---|---|
+| 48041052940 | 2000018515005942 | **`fulfillment`** | `me2` | `ready_to_ship` | `in_warehouse` |
+| 48040791471 | 2000018515121200 | **`fulfillment`** | `me2` | `ready_to_ship` | `in_warehouse` |
+| 48041074562 | 2000018515057680 | **`fulfillment`** | `me2` | `ready_to_ship` | `in_warehouse` |
+| 48040752377 | 2000018515050636 | **`cross_docking`** | `me2` | `ready_to_ship` | `ready_to_print` |
+
+Um dos `fulfillment` é de anúncio **com variação** — o caso que o snapshot de Full não
+cobre, porque `ml-fulfillment-fetch.ts` só varre vínculo sem variação.
+
+**O que é contrato medido:**
+
+| Campo | O que é | Observado |
+|---|---|---|
+| `logistic_type` | a logística do envio | `fulfillment` (3), `cross_docking` (1). O mesmo vocabulário que `shipping.logistic_type` do ANÚNCIO, que `relist-preflight.ts` já compara |
+| `mode` | modalidade do envio | `me2` nos 4 |
+| `status` / `substatus` | estado do envio | `ready_to_ship` / `in_warehouse` no Full, `ready_to_print` no cross-docking. **`in_warehouse` é do galpão do ML, e é coerente com `fulfillment` — mas 3 observações não fazem regra**, e a V3 não decide por ele |
+| `type`, `tracking_method`, `site_id` | `forward`, `MEL Distribution`, `MLB` nos 4 | — |
+
+A resposta tem ~40 chaves no total (endereços, histórico de status, custos, tags). **A V3
+lê uma só**: o schema de `shipment-logistics.ts` é `z.object({ logistic_type:
+z.string().nullable().optional() })`, não-estrito — a mesma regra de `orderSchema` ("só os
+campos que a V3 usa hoje; estender é aditivo"). O campo é opcional **e** anulável de
+propósito: um envio sem logística legível não pode virar ZodError, porque o schema inteiro
+falharia e o pedido ficaria pendente por um valor que a V3 já trata como "não sei".
+
+**O que a leitura NÃO responde, e por isso não é presumido:**
+
+- **A lista fechada de valores.** A documentação cita `fulfillment`, `cross_docking`,
+  `drop_off`, `xd_drop_off`, `self_service`, `custom`, e nada promete que acabou. Por isso
+  `orders.logistic_type` guarda o valor **cru, sem CHECK**, e o domínio compara
+  `=== 'fulfillment'`; qualquer outro valor, e a ausência, baixam a loja (D-352 R6).
+- **Se `logistic_type` muda depois de o envio ser criado.** Não foi medido, e a V3 não
+  depende disso: a decisão é congelada no primeiro valor persistido (R5), e uma releitura
+  divergente vira log.
+- **O custo.** Uma chamada por pedido que vai deduzir. É a mesma ordem de grandeza do que
+  `sync-order-financials` já paga hoje em `GET /shipments/{id}/costs` (~963/dia).
 
 ---
 

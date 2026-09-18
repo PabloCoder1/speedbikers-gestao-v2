@@ -272,7 +272,8 @@ seed local, inclusive a troca do critério para unidades.
 **D-351 publicada em 17/09** (§13): falta a prova de 24 h e a decisão do dono sobre
 `v3-reconcile-balances` (3 SKUs com alvo negativo sem causa conhecida). Depois, na
 ordem do dono: D-352 (Full não baixa a loja) → D-362 (SKU por user product) →
-experiência de compra (captura diária, nota antes do relist e na medição). Antes de puxar item de backlog, confira a
+experiência de compra (captura diária, nota antes do relist e na medição).
+**D-352 pronta na branch `fix/estoque-full-d352` em 18/09, NÃO publicada:** migration `20260918000000` → worker/api → varredura `v3-order-logistics-sweep` → compensação por psql, nessa ordem (`docs/DEPLOYMENT.md` 8.3); `estoque-full.integration.test.ts` ainda não rodou contra banco. Antes de puxar item de backlog, confira a
 categoria dele em D-223 — quase todos dependem de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
 consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev só
 prova no mesmo instante** (histórico em `docs/archive/handoffs/`).
