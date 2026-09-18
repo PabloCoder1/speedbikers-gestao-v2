@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { createClient } from "../../../lib/supabase/browser";
+import { termoSeguroParaOr } from "../../../lib/postgrest-search";
 import { linkDocumentItem } from "../actions";
 
 /**
@@ -76,10 +77,14 @@ export function DocumentItemRow({
 
     const espera = setTimeout(() => {
       void (async () => {
+        // Código OU título (lote 3 do pente fino, 18/09): a linha da nota traz a
+        // descrição do fornecedor, quase nunca o código do SKU da loja. O texto
+        // passa por `termoSeguroParaOr` antes de entrar no `or=`.
+        const seguro = termoSeguroParaOr(termo);
         const { data, error: searchError } = await createClient()
           .from("skus")
           .select("id, sku, title")
-          .ilike("sku_key", `%${termo.toUpperCase()}%`)
+          .or(`sku_key.ilike.%${seguro.toUpperCase()}%,title.ilike.%${seguro}%`)
           .order("sku")
           .limit(8);
 
@@ -182,7 +187,7 @@ export function DocumentItemRow({
               setQuery(event.target.value);
               setSelected(null);
             }}
-            placeholder="Buscar SKU…"
+            placeholder="Buscar SKU por código ou nome…"
             aria-label="Buscar SKU para este item"
             autoComplete="off"
             disabled={busy}

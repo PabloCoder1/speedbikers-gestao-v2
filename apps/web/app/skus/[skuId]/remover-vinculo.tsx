@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { useDialogo } from "../../../components/use-dialogo";
+
 import { removeLink } from "../../vinculacoes/actions";
 import { motivoDaRemocao } from "../../../lib/sku-listings";
 
@@ -43,6 +45,10 @@ export function RemoverVinculo({
   const [aberto, setAberto] = useState(false);
   const [removendo, setRemovendo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Remover é destrutivo: foco no Cancelar; Esc fecha, menos enquanto remove.
+  const dialogo = useDialogo<HTMLDivElement>(aberto, () => {
+    setAberto(false);
+  }, !removendo);
 
   async function remover(): Promise<void> {
     setRemovendo(true);
@@ -82,6 +88,7 @@ export function RemoverVinculo({
           }}
         >
           <div
+            ref={dialogo}
             role="dialog"
             aria-modal="true"
             aria-label="Remover vinculação"
@@ -111,6 +118,7 @@ export function RemoverVinculo({
                 type="button"
                 className="sb-button"
                 disabled={removendo}
+                data-foco-inicial
                 onClick={() => {
                   setAberto(false);
                 }}

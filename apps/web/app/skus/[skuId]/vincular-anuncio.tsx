@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { useDialogo } from "../../../components/use-dialogo";
+
 import { createManualLink } from "../../vinculacoes/actions";
 import { createClient } from "../../../lib/supabase/browser";
 import { formatCount, formatCurrency } from "../../../lib/format";
@@ -84,6 +86,8 @@ export function VincularAnuncio({
     setEstado({ kind: "fechado" });
     setMlb("");
   };
+  // Esc fecha (menos no meio da gravação), foco no campo e rolagem travada.
+  const dialogo = useDialogo<HTMLDivElement>(estado.kind !== "fechado", fechar, estado.kind !== "gravando");
 
   async function buscar(): Promise<void> {
     const itemId = mlb.trim().toUpperCase();
@@ -187,6 +191,7 @@ export function VincularAnuncio({
       {estado.kind !== "fechado" && (
         <div className="sb-backdrop" onClick={fechar}>
           <div
+            ref={dialogo}
             role="dialog"
             aria-modal="true"
             aria-label="Vincular anúncio"

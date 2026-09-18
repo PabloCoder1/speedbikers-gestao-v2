@@ -15326,6 +15326,17 @@ td.sb-pco-num-linha {
   .sb-panel .sb-inbox-note { margin-inline: 1rem; }
 }
 
+/* BUSCA UNIVERSAL pelo teclado (lote 3 do pente fino, 18/09). */
+.sb-command-row.is-active { background: var(--sb-secondary-soft); }
+.sb-command-row-text { flex: 1; min-width: 0; }
+
+/* APLICAR IMPORTAÇÃO com confirmação (lote 3 do pente fino, 18/09). */
+.sb-import-apply { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sb-space-3); margin: var(--sb-space-3) 0; padding: var(--sb-space-3); border: 1px solid var(--sb-border); border-radius: var(--sb-radius); background: var(--sb-surface); }
+.sb-import-apply.is-confirming { border-color: var(--sb-accent); background: var(--sb-accent-soft); }
+.sb-import-apply-text { flex: 1 1 20rem; margin: 0; font-size: 0.875rem; }
+.sb-import-apply-actions { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
+.sb-import-apply-error { flex-basis: 100%; margin: 0; color: var(--sb-danger); font-size: 0.875rem; }
+
 /* PÁGINAS DE SISTEMA (lote 1 do pente fino, 18/09) — 404 dentro do Shell e a fronteira de erro. */
 .sb-system-state { display: grid; justify-items: center; gap: 0.6rem; max-width: 36rem; margin: var(--sb-space-4) auto 0; padding: 2.5rem 1.5rem; text-align: center; }
 .sb-system-state h1, .sb-system-state h2 { margin: 0; color: var(--sb-primary); font-size: 1.15rem; letter-spacing: -0.02em; }
