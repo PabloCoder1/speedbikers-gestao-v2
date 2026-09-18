@@ -23,9 +23,12 @@ const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   // D-351: a venda anterior à planilha do UpSeller é gravada e anulada por este
   // par — o ERP já a tinha descontado.
   ESTORNO_PRE_CAPTURA: "Estorno de venda anterior à planilha (UpSeller)",
-  // D-351 §12: a venda estornada que o legado reverteu duas vezes (cancelamento E
-  // devolução) — a reversão a mais é anulada com a data dela.
-  ESTORNO_REVERSAO_EXCEDENTE: "Estorno de reversão em dobro (cancelamento e devolução da mesma venda)",
+  // A anulação de uma reversão (cancelamento ou devolução) de venda ESTORNADA, com
+  // a data dela. Duas causas gravam este tipo: a reversão a mais do legado
+  // (D-351 §12, cancelamento E devolução da mesma venda) e TODA reversão de venda
+  // do Full (D-352 — a unidade nunca foi da loja, então nada devia ter voltado
+  // para ela). O rótulo antigo, "em dobro", mentia no segundo caso.
+  ESTORNO_REVERSAO_EXCEDENTE: "Anulação de reversão de venda estornada (em dobro ou do Full)",
   // D-375: saída conferida por documento NÃO fiscal (Pedido de Saída do
   // UpSeller). Não é `SAIDA_NFE` porque nota nenhuma foi emitida.
   SAIDA_DOCUMENTO: "Saída por documento (sem nota)",
