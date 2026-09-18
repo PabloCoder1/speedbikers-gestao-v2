@@ -7,6 +7,7 @@
  * pura, separada da rota, para o formato ter teste.
  */
 
+import { csvCell as cell, csvNumber as numero } from "./csv";
 import { formatDateTime } from "./format";
 import { formatCoverage, fullSituationLabel } from "./full-filters";
 
@@ -38,20 +39,6 @@ const HEADER = [
   "Estoque local",
   "Capturado em",
 ];
-
-const DECIMAL = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2, useGrouping: false });
-
-function cell(value: string): string {
-  // Aspas sempre que houver separador, aspas ou quebra de linha (RFC 4180).
-  // E o prefixo "'" neutraliza fórmula (=, +, -, @) vinda de título de anúncio.
-  const seguro = /^[=+\-@]/.test(value) ? `'${value}` : value;
-
-  return /[";\n\r]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
-}
-
-function numero(value: number | null): string {
-  return value === null ? "" : DECIMAL.format(value);
-}
 
 export function fullRowsToCsv(rows: readonly FullExportRow[]): string {
   const linhas = rows.map((row) =>
