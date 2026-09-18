@@ -4686,6 +4686,12 @@ export type Database = {
           permalink: string | null
           ml_account_id: string
           price: number
+          // D-385: somas do recorte filtrado inteiro (antes do limit). A
+          // de visitas e NULA quando nenhum anuncio do recorte tem visita.
+          recorte_faturamento: number
+          recorte_pedidos_observados: number | null
+          recorte_unidades: number
+          recorte_visitas: number | null
           sku: string
           sku_id: string
           status: string

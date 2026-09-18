@@ -15102,7 +15102,10 @@ td.sb-pco-num-linha {
   min-width: 0;
 }
 
+/* `.sb-table` é `nowrap` inteira; o título e a identidade do anúncio precisam
+   quebrar, senão o limite de duas linhas nunca acontece e o nome some no celular. */
 .sb-an-titulo {
+  white-space: normal;
   display: -webkit-box;
   overflow: hidden;
   font-size: 0.75rem;
@@ -15113,6 +15116,7 @@ td.sb-pco-num-linha {
 }
 
 .sb-an-meta {
+  white-space: normal;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -15262,6 +15266,242 @@ td.sb-pco-num-linha {
 .sb-an-salto {
   padding: 0 0.25rem;
   color: var(--sb-text-soft);
+}
+
+/* Visões rápidas (D-385): as perguntas de todo dia, entre a faixa e a lista. */
+.sb-an-visoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: var(--sb-space-3);
+}
+
+.sb-an-visoes-rotulo {
+  margin-right: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-text-soft);
+}
+
+/* O recorte em números: quanto o filtro atual vende, na mesma leitura. */
+.sb-an-recorte {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.75rem var(--sb-space-3) 0;
+  border: 1px solid var(--sb-table-rule);
+  border-radius: var(--sb-radius);
+  background: var(--sb-bg-soft);
+}
+
+.sb-an-recorte > div {
+  padding: 0.625rem 0.875rem;
+  border-left: 1px solid var(--sb-table-rule);
+}
+
+.sb-an-recorte > div:first-child {
+  border-left: 0;
+}
+
+.sb-an-recorte dt {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-an-recorte dd {
+  margin: 0.1875rem 0 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Participação no faturamento do recorte: uma régua fina embaixo do valor. */
+.sb-an-participacao {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  max-width: 7rem;
+  height: 0.1875rem;
+  margin: 0.3125rem 0 0 auto;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-an-participacao span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sb-secondary);
+}
+
+.sb-an-sub {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+/* Pausado e encerrado continuam legíveis, mas saem da frente dos ativos. */
+.sb-an-linha-inativa td:not(.sb-an-acoes) {
+  color: var(--sb-text-soft);
+}
+
+.sb-an-linha-inativa .sb-an-foto {
+  opacity: 0.6;
+  filter: grayscale(0.6);
+}
+
+.sb-an-paginacao-esquerda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/*
+ * Cabeçalho fixo ao rolar uma lista de 50 a 300 linhas. Só em tela larga: ali
+ * a tabela cabe e a rolagem lateral (que prenderia o `sticky` dentro dela) sai
+ * do caminho; abaixo de 1150px a rolagem lateral volta e o cabeçalho rola junto.
+ * O `top` negativo desconta o espaçamento de 31px do `.sb-content` (o `sticky`
+ * mede a partir da borda INTERNA da área que rola) — sem ele, o cabeçalho
+ * parava 31px abaixo do topo e as linhas apareciam por cima dele.
+ */
+@media (min-width: 1151px) {
+  .sb-an-lista .sb-panel {
+    overflow: visible;
+  }
+
+  .sb-an-rolagem {
+    overflow-x: visible;
+  }
+
+  .sb-an-tabela thead th {
+    position: sticky;
+    top: -31px;
+    z-index: 5;
+    background: var(--sb-table-head);
+    /* A sombra de cima, na cor do cabeçalho, cobre a fresta de alguns pixels
+       entre ele e a barra do topo, por onde a linha rolada aparecia. */
+    box-shadow:
+      0 -8px 0 var(--sb-table-head),
+      inset 0 -1px 0 var(--sb-border);
+  }
+}
+
+@media (max-width: 1100px) {
+  .sb-an-recorte {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sb-an-recorte > div:nth-child(3) {
+    border-left: 0;
+  }
+
+  .sb-an-recorte > div:nth-child(n + 3) {
+    border-top: 1px solid var(--sb-table-rule);
+  }
+}
+
+/*
+ * NO CELULAR, CADA ANÚNCIO VIRA UM CARTÃO. Onze colunas não cabem em 390 px, e
+ * rolar de lado para achar o faturamento de uma linha é a pior leitura
+ * possível. A tabela continua sendo tabela no HTML (leitor de tela e testes
+ * leem igual); só a apresentação muda: cada célula vira "rótulo — valor",
+ * com o rótulo vindo do `data-label` que a própria célula carrega.
+ */
+@media (max-width: 760px) {
+  .sb-an-rolagem {
+    overflow-x: visible;
+  }
+
+  .sb-an-tabela thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .sb-an-tabela,
+  .sb-an-tabela tbody {
+    display: block;
+  }
+
+  .sb-an-tabela tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem 0.75rem;
+    margin: 0 var(--sb-space-3) 0.625rem;
+    padding: 0.75rem;
+    border: 1px solid var(--sb-border);
+    border-radius: var(--sb-radius);
+    background: var(--sb-surface);
+  }
+
+  .sb-an-tabela tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0;
+    border: 0;
+    text-align: right;
+  }
+
+  .sb-an-tabela tbody td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.625rem;
+    color: var(--sb-text-soft);
+    text-align: left;
+  }
+
+  .sb-an-tabela tbody td.sb-an-produto,
+  .sb-an-tabela tbody td.sb-an-acoes {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* O produto ocupa a largura do cartão e o título quebra em duas linhas. */
+  .sb-an-tabela tbody td.sb-an-produto {
+    display: block;
+    text-align: left;
+  }
+
+  .sb-an-tabela tbody td.sb-an-acoes {
+    justify-content: flex-end;
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--sb-table-rule);
+  }
+
+  .sb-an-linha-zerada td:first-child {
+    box-shadow: none;
+  }
+
+  .sb-an-tabela tbody tr.sb-an-linha-zerada {
+    border-left: 3px solid var(--sb-danger);
+  }
+
+  .sb-an-faturamento {
+    flex-wrap: wrap;
+  }
+
+  .sb-an-participacao {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .sb-an-sub {
+    display: inline;
+    margin-left: 0.25rem;
+  }
+
+  .sb-an-recorte {
+    margin-inline: var(--sb-space-3);
+  }
 }
 
 @media (max-width: 760px) {

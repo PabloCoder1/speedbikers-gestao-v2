@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **378** (D-001 a D-387).
+Decisões registradas: **379** (D-001 a D-387).
 
 ## Por domínio
 
@@ -186,7 +186,7 @@ Decisões registradas: **378** (D-001 a D-387).
 - **D-386** — Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
 - **D-387** — Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
 
-### mercado-livre (58)
+### mercado-livre (59)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -246,6 +246,7 @@ Decisões registradas: **378** (D-001 a D-387).
 - **D-373** — /produtos vira o catalogo: uma leitura com contagens facetadas, atalhos do que pede acao e filtros por categoria, marca, tipo, situacao, anuncios e vendas
 - **D-375** — Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
 - **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
+- **D-385** — `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
 
 ### outros (62)
 

@@ -7586,6 +7586,44 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     expect(lixo.map((r) => r.item_id)).toEqual(padrao.map((r) => r.item_id));
   });
 
+  /*
+    O resumo do recorte (20260918200000, D-385): as somas são do conjunto
+    FILTRADO inteiro, antes do limit — a mesma base de `total_count`. Se
+    alguém mover a janela para depois do limit, a soma vira "da página" e este
+    caso reprova.
+  */
+  it("o resumo do recorte soma o conjunto filtrado inteiro, não a página", async () => {
+    interface Linha {
+      gross_revenue: string;
+      units_sold: string;
+      visits: string | null;
+      recorte_faturamento: string | null;
+      recorte_unidades: string | null;
+      recorte_visitas: string | null;
+    }
+    const chamada = (limite: number): Promise<Linha[]> =>
+      asUser<Linha>(
+        ADMIN_SB,
+        `select gross_revenue, units_sold, visits, recorte_faturamento, recorte_unidades, recorte_visitas
+           from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+             p_search => 'MLB9001005', p_limit => ${String(limite)})`,
+      );
+
+    const [todas, umaSo] = await Promise.all([chamada(500), chamada(1)]);
+    const soma = (campo: "gross_revenue" | "units_sold" | "visits"): number =>
+      todas.reduce((total, linha) => total + Number(linha[campo] ?? 0), 0);
+
+    expect(todas.length).toBeGreaterThan(1);
+    expect(Number(todas[0]?.recorte_faturamento)).toBeCloseTo(soma("gross_revenue"), 2);
+    expect(Number(todas[0]?.recorte_unidades)).toBe(soma("units_sold"));
+    expect(Number(todas[0]?.recorte_visitas)).toBe(soma("visits"));
+
+    // Uma linha na página, e o resumo continua sendo do recorte inteiro.
+    expect(umaSo).toHaveLength(1);
+    expect(umaSo[0]?.recorte_faturamento).toBe(todas[0]?.recorte_faturamento);
+    expect(umaSo[0]?.recorte_unidades).toBe(todas[0]?.recorte_unidades);
+  });
+
   it("anon não executa get_listings_dashboard_counts", async () => {
     await expect(asAnon(`select * from public.get_listings_dashboard_counts('${ORG_SB}')`)).rejects.toThrow(
       /permission denied/i,

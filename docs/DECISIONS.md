@@ -13674,6 +13674,24 @@ Pilulas viraram `FilterMenu` (conta, tipo, status) mais tres recortes rapidos (M
 
 `tsc` e `eslint`; unidade da web **831 verdes** (novos em `support-filters` e `support-deadline`); `next build`; e2e `atendimento.spec.ts` + `home.spec.ts` **16 verdes** contra `next start`, com um teste novo (faixa com link certo e "Aguardando a loja" sem link, busca por SKU, "Meus", "Limpar filtros"). Quatro asserções antigas mudaram com a tela (texto do vazio, coluna "Prazo", janela no subtitulo do painel, rotulos do paginador). O teste de "Assumir" e stateful: numa segunda passada sem `db reset` o caso ja esta atribuido -- restaurado com `update` no banco local entre as passadas. Capturas a 1440 e 390 px sem rolagem lateral.
 
+## D-385 - `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
+
+**Contexto:** depois de D-381 (ordem, foto, faixa numa passada), o dono pediu a tela "por completo". A tela dizia QUANTOS anuncios o filtro pega, nunca QUANTO eles vendem: "os que estao sem estoque faturaram quanto?" pedia somar 89 paginas a mao. As perguntas de todo dia (vendendo sem estoque, pausados que venderam) pediam dois menus cada. Nao havia como levar o recorte para uma planilha. E no celular a tabela de 11 colunas so rolava de lado.
+
+**1. RESUMO DO RECORTE, NA MESMA LEITURA** -- migration `20260918200000`: quatro somas de janela sobre `filtrado` (antes do limit, a mesma base de `total_count`): faturamento, unidades, visitas e pedidos dos dias com visita. A conversao do recorte e pedidos / visitas somados no SQL (D-170), nunca media das taxas. Visitas nulas quando nenhum anuncio do recorte tem coleta (D-067). Teste de integracao: as somas batem com as linhas, e com `p_limit 1` continuam sendo do recorte inteiro. Com o banco anterior as colunas nao vem e o resumo nao aparece.
+
+**2. VISOES RAPIDAS SAO COMBINACOES, NAO METRICAS** -- "Vendendo sem estoque" = estoque 0 E vendeu; "Pausados que venderam"; "Ativos sem venda"; "Sem vinculo com venda". Nenhum limiar inventado. Sao `FilterPill` (tela de carregamento de D-382 inclusa) e clicar na ativa desfaz.
+
+**3. UM LEITOR DO RECORTE** -- `lib/listings-view.ts` le e escreve a URL; a tela e o CSV usam o mesmo, e o teste "URL gerada volta no mesmo recorte" prende os dois.
+
+**4. CSV** -- `/anuncios/exportar`: mesma RPC, mesma ordem, sem pagina, teto de 5.000 dito no nome do arquivo (D-131). O formato do Excel brasileiro saiu de `full-export` para `lib/csv.ts` (as duas exportacoes protegem a celula igual: aspas e prefixo contra formula).
+
+**5. A TABELA** -- participacao da linha no faturamento do recorte (regua fina, so quando ha resumo e faturamento); "Obs." vira a linha de baixo das visitas ("1/30 dias"); pausado e encerrado em tom apagado; cabecalho fixo acima de 1150px (`top: -31px` desconta o espacamento do `.sb-content`, porque o sticky mede da borda interna da area que rola); titulo quebrando em ate duas linhas (`.sb-table` e `nowrap` inteira, e o limite de linhas nunca tinha funcionado).
+
+**6. CELULAR** -- abaixo de 760px cada anuncio vira cartao: a tabela continua tabela no HTML (leitor de tela e testes leem igual) e cada celula vira "rotulo -- valor" pelo `data-label`.
+
+**Janela de datas:** `lastBusinessDays` (D-383), copia identica da guardas, para tela e CSV usarem a mesma janela de negocio.
+
 ## D-386 - Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
 
 **Contexto:** terceiro lote do pente fino de 18/09 (D-383, D-384). Tres classes de defeito que a auditoria achou espalhadas: referencias que eram texto onde havia tela de destino, uma busca universal que prometia `Enter` em cada linha e nao respondia a tecla nenhuma, e acoes irreversiveis que aconteciam no primeiro clique ou em dialogos sem Esc nem foco.

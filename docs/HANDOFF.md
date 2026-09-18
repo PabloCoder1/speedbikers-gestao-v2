@@ -46,6 +46,7 @@ mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 Entregas de tela fechadas em 18/09 (ajuste de estoque, `/full` D-380, `/estoque/movimentacoes`): `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`.
 
 Página nova precisa de `loading.tsx` (D-382, guarda `check:loading`).
+`/anuncios`: resumo do recorte, visões rápidas, CSV e cartões no celular (D-385, migration `20260918200000`).
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
