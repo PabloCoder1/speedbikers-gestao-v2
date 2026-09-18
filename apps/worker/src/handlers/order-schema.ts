@@ -56,7 +56,17 @@ export const orderSchema = z.object({
   buyer: z.object({ id: z.number() }).nullable().optional(),
   // D-165: shipping.id é a chave de GET /shipments/{id}/costs (§2.15). O
   // objeto shipping do pedido é padrão da API; ler só o id é aditivo.
-  shipping: z.object({ id: z.number().nullable().optional() }).nullable().optional(),
+  //
+  // D-352: `logistic_type` entra ADITIVO, e hoje ele NÃO vem — os 4 pedidos
+  // reais de 2026-09-17 (`scratchpad/d352/leitura-real/`) trazem `shipping`
+  // com o `id` e nada mais. Está aqui porque o campo é o mesmo de
+  // `GET /shipments/{id}`, e o dia em que o Mercado Livre o embutir no pedido
+  // é um `GET /shipments/{id}` a menos por venda. Ler um campo que não vem não
+  // custa nada; não estar pronto para ele custaria outra leitura por pedido.
+  shipping: z
+    .object({ id: z.number().nullable().optional(), logistic_type: z.string().nullable().optional() })
+    .nullable()
+    .optional(),
   tags: z.array(z.string()).optional(),
   cancel_detail: z
     .object({ description: z.string().nullable().optional() })

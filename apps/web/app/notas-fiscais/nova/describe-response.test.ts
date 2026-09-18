@@ -13,6 +13,14 @@ describe("resposta do upload de NF-e", () => {
     const result = describeUploadResponse(200, { documentId: "d-1", duplicate: true });
 
     expect(result.documentId).toBe("d-1");
+    expect(result.message.text).toContain("Já enviado antes");
+  });
+
+  it("reenvio de arquivo que falhou na leitura diz que a leitura recomeçou", () => {
+    const result = describeUploadResponse(200, { documentId: "d-1", duplicate: false, retried: true });
+
+    expect(result.documentId).toBe("d-1");
+    expect(result.message.text).toContain("lendo de novo");
   });
 
   it("repassa o motivo da recusa escrito pela api", () => {
