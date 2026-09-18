@@ -97,6 +97,7 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "sync.fulfillment.snapshot": 360, // v3-fulfillment-snapshot: "0 */6 * * *"
   "sync.listing-visits.snapshot": 1440, // v3-listing-visits-snapshot: "0 7 * * *"
   "sync.order-financials": 1440, // v3-order-financials-sweep: "30 9 * * *"
+  "sync.order-logistics": 360, // v3-order-logistics-sweep: "40 */6 * * *" (D-352)
   "sync.ads.campaigns": 1440, // v3-ads-campaigns-sync: "0 11 * * *"
   "maintenance.reconcile-balances": 1440, // v3-reconcile-balances: "0 6 * * *"
   "maintenance.verify-ledger-integrity": 1440, // v3-verify-ledger-integrity: "30 6 * * *"

@@ -5,6 +5,9 @@ import {
   computeSaleDeductions,
   estornadoKeyOf,
   excessReversalEstornosOf,
+  fullEstornoOf,
+  fullReversalEstornosOf,
+  isFullLogistic,
   preCaptureEstornoOf,
   saleInstant,
 } from "./sale-deduction.js";
@@ -54,6 +57,11 @@ import type {
  * planilha não a descontou. E quando o instante do cancelamento é desconhecido
  * (sem `date_last_updated` nem `last_updated`, só `date_created`), reverte
  * também: "não sei quando" não autoriza pular uma reposição.
+ *
+ * **D-352 — pedido entregue pelo Full não reverte NADA em LOCAL.** A unidade
+ * nunca saiu da loja, então nunca volta para ela. `computeCancellationMovements`
+ * desvia o pedido `fulfillment` inteiro para `cancelamentoDoFull`, que só
+ * completa o par da venda (`ESTORNO_FULL`) e anula o que já foi devolvido.
  */
 
 export interface RecordedSaleMovement {
@@ -169,6 +177,13 @@ function planCancellationReversals(
   return plan;
 }
 
+/**
+ * **Não conhece o Full, de propósito** (D-352). `CancellationReversalOrder` é o
+ * pedido sem os itens — não tem `logistic_type` — e esta função é só o plano de
+ * reversão. A guarda do Full (R3: pedido `fulfillment` nunca gera
+ * `CANCELAMENTO_ML` em LOCAL) fica em `computeCancellationMovements`, que é a
+ * porta usada pelo worker e a única que tem o pedido inteiro na mão.
+ */
 export function computeCancellationReversals(
   order: CancellationReversalOrder,
   saleMovements: readonly RecordedSaleMovement[],
@@ -210,6 +225,12 @@ export interface CancellationMovements {
   readonly sales: StockMovementDraft[];
   /** `ESTORNO_PRE_CAPTURA`: o par dessas vendas, e o que falta de venda já gravada. */
   readonly estornos: StockMovementDraft[];
+  /**
+   * `ESTORNO_FULL` (D-352): o par que falta às vendas gravadas de um pedido
+   * entregue pelo Full. Vazio fora do Full, e vazio para a venda que já tem
+   * estorno gravado.
+   */
+  readonly estornosFull: StockMovementDraft[];
   /**
    * `ESTORNO_REVERSAO_EXCEDENTE` (D-351 §12): a anulação da reversão a mais do legado
    * das vendas estornadas -- agora ou antes. Vem antes do cancelamento na gravação.
@@ -259,7 +280,11 @@ export interface CancellationMovements {
  */
 export function computeCancellationMovements(input: CancellationMovementsInput): CancellationMovements {
   if (!isCancelledOrderStatus(input.order.status)) {
-    return { sales: [], estornos: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] };
+    return { sales: [], estornos: [], estornosFull: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] };
+  }
+
+  if (isFullLogistic(input.order.logisticType)) {
+    return cancelamentoDoFull(input);
   }
 
   const saleAt = saleInstant(input.order);
@@ -344,10 +369,55 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
   return {
     sales,
     estornos,
+    estornosFull: [],
     excessReversalEstornos,
     reversals: [...deGravadas.reversals, ...doTrio.reversals],
     alreadyReversed: [...deGravadas.alreadyReversed, ...doTrio.alreadyReversed],
   };
+}
+
+/**
+ * O cancelamento de um pedido entregue pelo Full (D-352, R3): **nada reverte em
+ * LOCAL**, e o que sai é só o que faltava para a venda somar zero.
+ *
+ * A unidade nunca foi da loja, então ela também nunca volta para a loja. Um
+ * `CANCELAMENTO_ML` aqui devolveria ao saldo uma unidade que o saldo não
+ * perdeu — o espelho do defeito que a fatia conserta, com o sinal trocado.
+ *
+ * Três saídas, nesta ordem de gravação:
+ *
+ *  - `ESTORNO_FULL` para cada venda GRAVADA que ainda não tem estorno. É o que
+ *    faz o cancelamento completar o par quando ele chega antes de qualquer
+ *    releitura da venda (R3) — e é por isso que o cancelamento precisa do sinal
+ *    do pedido tanto quanto a venda precisa.
+ *  - a anulação de TODA reversão já gravada dessas vendas
+ *    (`fullReversalEstornosOf`): o legado, e o cancelamento que já entrou antes
+ *    de o sinal chegar. Sem ela, estornar a venda agora deixaria o `+R` da
+ *    reversão de pé — saldo ALTO, que é o lado perigoso.
+ *  - nada mais.
+ *
+ * **O trio da D-351 (venda + estorno + cancelamento) também não sai.** Ele
+ * existe para dar ao cancelamento o `VENDA_ML` que ele reverteria (revisão de
+ * D-351, ALTA-2); sem cancelamento a reverter, ele seria um par que soma zero
+ * escrito só para ficar bonito no ledger. Pedido do Full sem nenhuma venda
+ * gravada não precisa de nenhuma linha: o estado certo dele já é "nada".
+ */
+function cancelamentoDoFull(input: CancellationMovementsInput): CancellationMovements {
+  const estornosFull: StockMovementDraft[] = [];
+  const excessReversalEstornos: StockMovementDraft[] = [];
+
+  for (const sale of input.recordedSales) {
+    if (!input.estornadas.has(sale.idempotencyKey)) {
+      // A linha gravada É a base do espelho: nada a procurar.
+      estornosFull.push(fullEstornoOf(comoRascunho(sale)));
+    }
+
+    // Sai mesmo com a venda já estornada: o estorno pode ter entrado sem a
+    // anulação (falha no meio), e o `UNIQUE` absorve a repetição.
+    excessReversalEstornos.push(...fullReversalEstornosOf(sale, input.reversals));
+  }
+
+  return { sales: [], estornos: [], estornosFull, excessReversalEstornos, reversals: [], alreadyReversed: [] };
 }
 
 function comoRascunho(sale: RecordedSaleMovement & RecordedSale): StockMovementDraft {

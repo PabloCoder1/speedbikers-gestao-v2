@@ -2222,6 +2222,12 @@ export type Database = {
           },
         ]
       }
+      // CORRECAO MANUAL (D-352, classe D-213): `logistic_type` e
+      // `logistic_captured_at` escritos a mao no formato do gerador -- a
+      // migration `20260918000000_estorno_full_e_logistica_do_pedido` so existe
+      // no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
+      // arquivo. As duas colunas sao `text`/`timestamptz` anulaveis sem default,
+      // entao o proprio gerador as marcaria assim.
       orders: {
         Row: {
           buyer_id: number | null
@@ -2233,6 +2239,8 @@ export type Database = {
           date_last_updated: string
           id: number
           last_updated: string | null
+          logistic_captured_at: string | null
+          logistic_type: string | null
           ml_account_id: string
           organization_id: string
           pack_id: number | null
@@ -2254,6 +2262,8 @@ export type Database = {
           date_last_updated: string
           id: number
           last_updated?: string | null
+          logistic_captured_at?: string | null
+          logistic_type?: string | null
           ml_account_id: string
           organization_id: string
           pack_id?: number | null
@@ -2275,6 +2285,8 @@ export type Database = {
           date_last_updated?: string
           id?: number
           last_updated?: string | null
+          logistic_captured_at?: string | null
+          logistic_type?: string | null
           ml_account_id?: string
           organization_id?: string
           pack_id?: number | null
