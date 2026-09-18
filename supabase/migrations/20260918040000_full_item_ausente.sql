@@ -17,9 +17,11 @@
 --
 -- O worker (`apps/worker/src/handlers/ml-fulfillment-fetch.ts`) grava aqui a
 -- falha 404/403 de um item e pula o item enquanto `recheck_after` nao chega.
--- As janelas moram no codigo, nao aqui: 9 h para 403, 45 h para 404 (o
--- porque de cada numero esta no comentario das constantes e em
--- docs/PERFORMANCE.md). Sucesso posterior APAGA a linha.
+-- As janelas moram no codigo, nao aqui: 9 h para 403 e para o primeiro 404,
+-- 45 h a partir do segundo 404 seguido (o porque de cada numero esta no
+-- comentario das constantes e em docs/PERFORMANCE.md). Sucesso posterior
+-- APAGA a linha, e a marca de item que saiu de `sku_listing_links` tambem sai
+-- na execucao seguinte: a tabela guarda so item vinculado.
 --
 -- POR QUE UMA TABELA PROPRIA, e nao uma coluna:
 --
@@ -33,13 +35,17 @@
 --     nao tem linha em `listings`. O anuncio morto e justamente o que o
 --     snapshot de anuncios nao traz, entao a marca nao teria onde morar;
 --   * a marca e do PAR (conta, item_id), nao do vinculo. Refazer o vinculo
---     para outro anuncio gera um item_id sem marca, buscado na hora; apagar
---     e recriar o vinculo para o mesmo anuncio morto nao reabre 1.424
---     chamadas por dia.
+--     para outro anuncio gera um item_id sem marca, buscado na hora, e a
+--     marca do anuncio antigo sai na execucao seguinte; recriar o vinculo
+--     para o mesmo anuncio morto custa no maximo as duas consultas do comeco
+--     de uma sequencia, nao 1.424 chamadas por dia.
 --
--- NADA AQUI PODE ESCONDER ESTOQUE. Toda marca vence (`recheck_after` e
--- obrigatorio e posterior a falha), entao o pior caso de uma janela errada e
--- atraso de captura, nunca bucket perdido. O worker trata esta tabela como
+-- NADA AQUI PODE ESCONDER ESTOQUE PARA SEMPRE. Toda marca vence
+-- (`recheck_after` e obrigatorio e posterior a falha), entao o pior caso de
+-- uma janela errada e atraso de captura. Atraso nao e gratis: o "Full atual"
+-- aceita snapshot de ate 3 dias (D-173), e se as execucoes vizinhas tambem
+-- falharem o bucket pode sair das telas ate a proxima captura -- a conta
+-- esta em docs/PERFORMANCE.md. O worker trata esta tabela como
 -- OTIMIZACAO: se a leitura falhar (inclusive se o codigo chegar antes desta
 -- migration), ele loga e busca todos os itens, que e o comportamento de antes.
 --
@@ -57,12 +63,13 @@ create table public.fulfillment_item_absences (
 
   item_id text not null check (item_id ~ '^MLB[0-9]+$'),
 
-  -- A ultima resposta: define a janela do recheque. Outro status nao
-  -- retryable (400, 401...) nao vira marca -- 401 e da conta, nao do item.
+  -- A ultima resposta: com `failures`, define a janela do recheque. Outro
+  -- status nao retryable (400, 401...) nao vira marca -- 401 e da conta, nao
+  -- do item.
   http_status smallint not null check (http_status in (403, 404)),
 
   -- Falhas SEGUIDAS desde `first_failed_at`: sucesso apaga a linha, entao a
-  -- contagem recomeca do 1.
+  -- contagem recomeca do 1. O 404 so ganha a janela longa na segunda.
   failures integer not null default 1 check (failures >= 1),
   first_failed_at timestamptz not null,
   last_failed_at timestamptz not null,
@@ -82,10 +89,10 @@ comment on table public.fulfillment_item_absences is
   'Item que respondeu 404/403 em GET /items/{id} no snapshot do Full: o worker pula o item ate recheck_after. Sucesso apaga a linha. Otimizacao -- sem ela o worker busca tudo.';
 
 comment on column public.fulfillment_item_absences.recheck_after is
-  'Antes disto o item nao e buscado. 403: 9 h; 404: 45 h (janelas no worker, docs/PERFORMANCE.md).';
+  'Antes disto o item nao e buscado. 403 e primeiro 404: 9 h; 404 a partir do segundo seguido: 45 h (janelas no worker, docs/PERFORMANCE.md).';
 
 comment on column public.fulfillment_item_absences.failures is
-  'Falhas seguidas desde first_failed_at. Sucesso apaga a linha.';
+  'Falhas seguidas desde first_failed_at. Com 404, a partir da segunda a janela e a longa (45 h). Sucesso apaga a linha.';
 
 -- A leitura do worker e "todas as marcas da conta", uma vez por execucao --
 -- a PK ja e esse prefixo. Nenhum indice a mais.
