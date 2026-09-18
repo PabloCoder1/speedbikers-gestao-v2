@@ -2,8 +2,14 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
-import { createShipmentLogistics, shipmentSchema } from "./shipment-logistics.js";
+import {
+  classifyShipmentFailure,
+  createShipmentLogistics,
+  readShipmentLogistic,
+  shipmentSchema,
+} from "./shipment-logistics.js";
 
 /**
  * D-352 — a leitura do envio.
@@ -129,5 +135,55 @@ describe("createShipmentLogistics", () => {
     const { logistics } = leitor(() => ({}));
 
     expect(logistics.now()).toEqual(AGORA);
+  });
+});
+
+describe("readShipmentLogistic + classifyShipmentFailure (a varredura, D-352)", () => {
+  function erroDoMl(status: number, errorClass: "retryable" | "retryable_eventual" | "not_retryable"): MercadoLivreApiError {
+    return new MercadoLivreApiError(`${String(status)} no envio`, {
+      status,
+      errorClass,
+      url: "https://api.mercadolibre.com/shipments/1",
+    });
+  }
+
+  it("a leitura da varredura LANCA a falha — quem decide o que fazer com ela e a classificacao", async () => {
+    const { client } = fakeClient(() => erroDoMl(429, "retryable"));
+
+    await expect(
+      readShipmentLogistic({ mercadoLivre: client, accessToken: "t", now: () => AGORA }, 1),
+    ).rejects.toBeInstanceOf(MercadoLivreApiError);
+  });
+
+  it("a leitura bem-sucedida e a mesma de `read`: valor cru e o relogio injetado", async () => {
+    const { client } = fakeClient(() => ({ logistic_type: "fulfillment" }));
+
+    await expect(
+      readShipmentLogistic({ mercadoLivre: client, accessToken: "t", now: () => AGORA }, 1),
+    ).resolves.toEqual({ logisticType: "fulfillment", capturedAt: AGORA });
+  });
+
+  it("429 e 5xx esgotados, e o retryable_eventual, PARAM a rodada — a falha e da conta, nao do envio", () => {
+    expect(classifyShipmentFailure(erroDoMl(429, "retryable"))).toBe("interromper");
+    expect(classifyShipmentFailure(erroDoMl(503, "retryable"))).toBe("interromper");
+    expect(classifyShipmentFailure(erroDoMl(409, "retryable_eventual"))).toBe("interromper");
+  });
+
+  it("401 PARA a rodada: um token vencido no meio nao pode virar resposta de cada envio", () => {
+    expect(classifyShipmentFailure(erroDoMl(401, "not_retryable"))).toBe("interromper");
+  });
+
+  it("404 e resposta definitiva: o envio nao existe", () => {
+    expect(classifyShipmentFailure(erroDoMl(404, "not_retryable"))).toBe("inexistente");
+  });
+
+  it("403, 400 e corpo fora do contrato ficam pendentes para a proxima rodada — nada prova que sejam definitivos", () => {
+    expect(classifyShipmentFailure(erroDoMl(403, "not_retryable"))).toBe("pular");
+    expect(classifyShipmentFailure(erroDoMl(400, "not_retryable"))).toBe("pular");
+    expect(classifyShipmentFailure(z.object({ a: z.string() }).safeParse({}).error)).toBe("pular");
+  });
+
+  it("erro de transporte (fetch rejeitado) PARA a rodada", () => {
+    expect(classifyShipmentFailure(new TypeError("fetch failed"))).toBe("interromper");
   });
 });
