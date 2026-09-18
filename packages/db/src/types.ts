@@ -1189,7 +1189,7 @@ export type Database = {
         ]
       }
       // CORRECAO MANUAL (classe D-213): bloco escrito a mao no formato do
-      // gerador -- a migration `20260918040000_full_item_ausente` so existe no
+      // gerador -- a migration `20260918170000_full_item_ausente` so existe no
       // repositorio ate ser aplicada no Dev, e a CLI nao regenera este arquivo.
       fulfillment_item_absences: {
         Row: {

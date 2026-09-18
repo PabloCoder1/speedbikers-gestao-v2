@@ -3109,7 +3109,7 @@ describe("observabilidade de sincronização", () => {
   });
 });
 
-// fulfillment_item_absences (20260918040000) -- a marca que tira do snapshot do
+// fulfillment_item_absences (20260918170000) -- a marca que tira do snapshot do
 // Full o anuncio que respondeu 404/403. Mesmo desenho de RLS de
 // metric_refresh_state (D-304): quem alcanca a CONTA le, so o worker escreve.
 //

@@ -504,7 +504,7 @@ com `processed = 0`, e o único sinal eram 3.220 avisos por item, iguais aos
 normalmente.
 
 **Onde a marca mora: `fulfillment_item_absences`** (migration
-`20260918040000_full_item_ausente.sql`), uma linha por (conta, `item_id`).
+`20260918170000_full_item_ausente.sql`), uma linha por (conta, `item_id`).
 Não em `sku_listing_links`: é o vínculo curado, com histórico e dois
 gatilhos por linha, e a marca reescrita a cada 6 h mexeria no `updated_at`
 que a `/vinculacoes` lê. Não em `listings`: 667 dos 3.753 vínculos sem
