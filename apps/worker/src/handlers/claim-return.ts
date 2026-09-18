@@ -7,7 +7,7 @@ import {
   isCancelledOrderStatus,
   revertedSaleKeyOf,
 } from "@sb/domain";
-import type { RecordedReversal, RecordedSaleMovement } from "@sb/domain";
+import type { OrderLogisticType, ReturnedSaleMovement, TimedRecordedReversal } from "@sb/domain";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -66,6 +66,15 @@ function idadeDoClaimEmMinutos(dateCreated: string | null | undefined, now: Date
  * Reprocessar a mesma notificação (reenvio do Mercado Livre, corrida do
  * Cloud Tasks) é seguro: tudo aqui é releitura do estado atual + chaves
  * determinísticas — nenhum estado é assumido entre chamadas.
+ *
+ * **D-352 — devolução de pedido entregue pelo Full não repõe a loja.** O
+ * produto volta para o galpão do Mercado Livre, não para a prateleira daqui, e
+ * o saldo LOCAL nunca perdeu a unidade. O sinal é `orders.logistic_type`, lido
+ * junto com o pedido; a devolução de pedido `fulfillment` sai sem
+ * `DEVOLUCAO_ML` e, quando a venda gravada ainda não tem par, com o
+ * `ESTORNO_FULL` que falta. Este handler NÃO captura o sinal — ele só lê o que
+ * `persist-order` gravou: um claim não é o momento de decidir de onde a venda
+ * saiu, e a captura tem dono só.
  */
 
 export interface ProcessClaimReturnDeps {
@@ -79,11 +88,28 @@ export interface ProcessClaimReturnContext {
 }
 
 interface OrderMovements {
-  sales: RecordedSaleMovement[];
-  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados: o limite da devolução. */
-  reversals: RecordedReversal[];
-  /** Chaves de `VENDA_ML` com `ESTORNO_PRE_CAPTURA` gravado (D-351). */
+  /**
+   * `VENDA_ML` gravados, com o `occurred_at` de cada um (D-352): é ele que o
+   * `ESTORNO_FULL` espelha, para o par cair do mesmo lado do corte do alvo.
+   */
+  sales: ReturnedSaleMovement[];
+  /**
+   * `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados: o limite da devolução, e —
+   * num pedido do Full — o que a anulação espelha, com o instante de cada um.
+   */
+  reversals: TimedRecordedReversal[];
+  /** Chaves de `VENDA_ML` com estorno gravado: `ESTORNO_PRE_CAPTURA` (D-351) ou `ESTORNO_FULL` (D-352). */
   estornadas: Set<string>;
+}
+
+/** O pedido devolvido, como `orders` o guarda — o que a devolução precisa saber dele. */
+interface OrderRow {
+  status: string;
+  date_created: string;
+  date_last_updated: string;
+  last_updated: string | null;
+  /** D-352: só `fulfillment` é Full, e aí a devolução não repõe a loja. */
+  logistic_type: OrderLogisticType;
 }
 
 /**
@@ -99,13 +125,16 @@ interface OrderMovements {
 async function loadOrderMovements(db: AdminClient, organizationId: string, orderId: number): Promise<OrderMovements> {
   const result = await db
     .from("stock_movements")
-    .select("sku_id, qty_delta, idempotency_key, movement_type")
+    // D-352: `occurred_at` entra porque o `ESTORNO_FULL` espelha o instante da
+    // venda, e a anulação, o da reversão.
+    .select("sku_id, qty_delta, idempotency_key, movement_type, occurred_at")
     .eq("organization_id", organizationId)
     .eq("source_type", "ORDER")
     .eq("source_id", String(orderId))
     // `ESTORNO_PRE_CAPTURA` desde a reverificação de 60c7a6a (BAIXA-1): a venda estornada
     // cujo cancelamento a planilha já contém (`loadCancelledInSheet`).
-    .in("movement_type", ["VENDA_ML", "CANCELAMENTO_ML", "ESTORNO_PRE_CAPTURA"]);
+    // `ESTORNO_FULL` desde D-352: a venda do Full já anulada não ganha um segundo par.
+    .in("movement_type", ["VENDA_ML", "CANCELAMENTO_ML", "ESTORNO_PRE_CAPTURA", "ESTORNO_FULL"]);
 
   if (result.error !== null) {
     // Não tratar como "nenhum movimento": a devolução física reverteria
@@ -113,19 +142,25 @@ async function loadOrderMovements(db: AdminClient, organizationId: string, order
     throw new Error(`falha ao ler stock_movements da order ${String(orderId)}: ${result.error.message}`);
   }
 
-  const sales: RecordedSaleMovement[] = [];
-  const reversals: RecordedReversal[] = [];
+  const sales: ReturnedSaleMovement[] = [];
+  const reversals: TimedRecordedReversal[] = [];
   const estornadas = new Set<string>();
 
   for (const row of result.data) {
     if (row.movement_type === "CANCELAMENTO_ML") {
       revertedSaleKeyOf(row.idempotency_key);
-      reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
-    } else if (row.movement_type === "ESTORNO_PRE_CAPTURA") {
+      reversals.push(reversaoGravada(row.idempotency_key, row.qty_delta, row.occurred_at, orderId));
+    } else if (row.movement_type === "ESTORNO_PRE_CAPTURA" || row.movement_type === "ESTORNO_FULL") {
       // Chave fora do formato `estorno:<venda>` LANÇA: um estorno que não diz qual venda anulou.
+      // As duas causas respondem a MESMA pergunta: "esta venda já foi anulada?".
       estornadas.add(estornadoKeyOf(row.idempotency_key));
     } else {
-      sales.push({ skuId: row.sku_id, qtyDelta: row.qty_delta, idempotencyKey: row.idempotency_key });
+      sales.push({
+        skuId: row.sku_id,
+        qtyDelta: row.qty_delta,
+        idempotencyKey: row.idempotency_key,
+        occurredAt: instanteGravado(row.occurred_at, row.idempotency_key, orderId),
+      });
     }
   }
 
@@ -155,10 +190,38 @@ async function loadOrderMovements(db: AdminClient, organizationId: string, order
 
   for (const row of devolucoes.data) {
     revertedSaleKeyOf(row.idempotency_key);
-    reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
+    reversals.push(reversaoGravada(row.idempotency_key, row.qty_delta, row.occurred_at, orderId));
   }
 
   return { sales, reversals, estornadas };
+}
+
+/**
+ * Um instante de linha gravada, conferido (D-352).
+ *
+ * LANÇA para data ausente ou ilegível: `new Date(undefined)` é Invalid Date, e
+ * um `ESTORNO_FULL` com `occurred_at` inválido não cairia do mesmo lado do
+ * corte do alvo que a venda — o par somaria zero no saldo e NÃO no alvo, em
+ * silêncio. É a mesma regra de `reversaoGravada` em `persist-order.ts`.
+ */
+function instanteGravado(valor: unknown, idempotencyKey: string, orderId: number): Date {
+  if (typeof valor !== "string" || Number.isNaN(new Date(valor).getTime())) {
+    throw new Error(
+      `movimento ${idempotencyKey} da order ${String(orderId)} sem occurred_at legivel ("${String(valor)}") — sem ele o par do Full nao sabe de que lado do corte cair (D-352)`,
+    );
+  }
+
+  return new Date(valor);
+}
+
+/** Uma reversão gravada com a chave e o instante conferidos. */
+function reversaoGravada(
+  idempotencyKey: string,
+  quantity: number,
+  occurredAt: unknown,
+  orderId: number,
+): TimedRecordedReversal {
+  return { idempotencyKey, quantity, occurredAt: instanteGravado(occurredAt, idempotencyKey, orderId) };
 }
 
 /**
@@ -174,14 +237,19 @@ async function loadOrderMovements(db: AdminClient, organizationId: string, order
  * `date_last_updated` diferente de `date_created` -- `persist-order` grava
  * `date_last_updated ?? last_updated ?? date_created`.
  *
- * Só lê o pedido e o corte quando há venda estornada, e o corte só com o pedido
- * cancelado. Leitura que falha LANÇA: "não sei" não vira "a planilha não contém".
+ * Só lê o corte quando há venda estornada e o pedido está cancelado. Leitura que
+ * falha LANÇA: "não sei" não vira "a planilha não contém".
+ *
+ * **O pedido chega pronto desde D-352**: a logística dele é obrigatória para
+ * decidir a devolução, então a linha de `orders` passou a ser lida SEMPRE
+ * (`loadOrder`), e não só quando há venda estornada.
  */
 async function loadCancelledInSheet(
   db: AdminClient,
   organizationId: string,
   orderId: number,
   movements: OrderMovements,
+  pedido: OrderRow,
 ): Promise<Set<string>> {
   const estornadas = movements.sales.filter((sale) => movements.estornadas.has(sale.idempotencyKey));
 
@@ -189,24 +257,7 @@ async function loadCancelledInSheet(
     return new Set();
   }
 
-  const pedido = await db
-    .from("orders")
-    .select("status, date_created, date_last_updated, last_updated")
-    .eq("organization_id", organizationId)
-    .eq("id", orderId)
-    .maybeSingle();
-
-  if (pedido.error !== null) {
-    throw new Error(`falha ao ler o status da order ${String(orderId)}: ${pedido.error.message}`);
-  }
-
-  if (pedido.data === null) {
-    throw new Error(
-      `order ${String(orderId)} com venda estornada e sem linha em orders -- sem ela nao da para saber se a planilha ja contem o cancelamento (D-351)`,
-    );
-  }
-
-  const { status, date_created: criadoEm, date_last_updated: atualizadoEm, last_updated: lastUpdated } = pedido.data;
+  const { status, date_created: criadoEm, date_last_updated: atualizadoEm, last_updated: lastUpdated } = pedido;
 
   if (!isCancelledOrderStatus(status)) {
     return new Set();
@@ -231,6 +282,39 @@ async function loadCancelledInSheet(
       return corte;
     }),
   );
+}
+
+/**
+ * A linha de `orders` do pedido devolvido (D-352).
+ *
+ * Lida SEMPRE, e não só quando há venda estornada: `logistic_type` decide se a
+ * devolução repõe a loja, e essa pergunta vale para todo pedido. É uma ida a
+ * mais por linha devolvida num caminho que processa um claim por notificação —
+ * não é o laço de página de `persist-order`.
+ *
+ * Linha ausente LANÇA. Sem ela não dá para saber nem se a venda saiu do Full
+ * nem se a planilha já contém o cancelamento, e tratar "não sei" como "não é
+ * Full" reporia estoque que a loja não perdeu.
+ */
+async function loadOrder(db: AdminClient, organizationId: string, orderId: number): Promise<OrderRow> {
+  const pedido = await db
+    .from("orders")
+    .select("status, date_created, date_last_updated, last_updated, logistic_type")
+    .eq("organization_id", organizationId)
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (pedido.error !== null) {
+    throw new Error(`falha ao ler a order ${String(orderId)}: ${pedido.error.message}`);
+  }
+
+  if (pedido.data === null) {
+    throw new Error(
+      `order ${String(orderId)} devolvida e sem linha em orders -- sem ela nao da para saber se a venda saiu do Full (D-352) nem se a planilha ja contem o cancelamento (D-351)`,
+    );
+  }
+
+  return pedido.data;
 }
 
 /** Mesma forma de `resolveSku` em `persist-order.ts`: `variation_id` nulo precisa de `.is()`, não `.eq()`. */
@@ -386,17 +470,27 @@ export async function processClaimReturn(
       continue;
     }
 
+    const pedido = await loadOrder(deps.db, context.organizationId, returnedOrder.order_id);
     const movimentos = await loadOrderMovements(deps.db, context.organizationId, returnedOrder.order_id);
-    const naPlanilha = await loadCancelledInSheet(deps.db, context.organizationId, returnedOrder.order_id, movimentos);
+    const naPlanilha = await loadCancelledInSheet(
+      deps.db,
+      context.organizationId,
+      returnedOrder.order_id,
+      movimentos,
+      pedido,
+    );
 
     const reversal = computeReturnReversal(
-      { id: returnedOrder.order_id },
+      // D-352: pedido do Full não repõe a loja — o produto volta para o galpão
+      // do Mercado Livre, e o saldo LOCAL nunca perdeu a unidade.
+      { id: returnedOrder.order_id, logisticType: pedido.logistic_type },
       { position, totalQuantity: returnedOrder.total_quantity, returnQuantity: returnedOrder.return_quantity },
       movimentos.sales,
       movimentos.reversals,
       claimId,
       now,
       naPlanilha,
+      movimentos.estornadas,
     );
 
     if (reversal.movements.length > 0) {
@@ -406,6 +500,48 @@ export async function processClaimReturn(
         reversal.movements,
         "DEVOLUCAO_ML",
         { type: "CLAIM", id: claimId },
+      );
+    }
+
+    // D-352 — o par que faltava à venda de um pedido do Full, e a anulação do
+    // que já tinha sido devolvido à loja antes de o sinal chegar.
+    //
+    // **A origem é o PEDIDO, e não o claim** — a mesma escolha de
+    // `gravaAnulacoes` em `persist-order.ts`. A linha estorna uma VENDA, e a
+    // venda tem origem `ORDER`. Com a origem do claim, nem `loadOrderMovements`
+    // (aqui) nem `lerMovimentosGravados` (lá) achariam o estorno: os dois
+    // filtram por `source_type = 'ORDER'` e `source_id = <pedido>`. A venda
+    // pareceria sem par para sempre, e todo processamento seguinte tentaria
+    // gravá-lo de novo — absorvido pelo `UNIQUE`, mas contado como movimento
+    // novo em log e métrica.
+    //
+    // A ORDEM é a de `persist-order`: o estorno antes da anulação, porque é ele
+    // que o retry usa para recalcular o resto.
+    const origemDoPedido = { type: "ORDER", id: String(returnedOrder.order_id) };
+
+    if (reversal.estornosFull.length > 0) {
+      await recordStockMovements(
+        deps.db,
+        { organizationId: context.organizationId },
+        reversal.estornosFull,
+        "ESTORNO_FULL",
+        origemDoPedido,
+      );
+
+      logger.info("claim_return_estornada_full", {
+        claim_id: claimId,
+        order_id: returnedOrder.order_id,
+        estornos: reversal.estornosFull.length,
+      });
+    }
+
+    if (reversal.excessReversalEstornos.length > 0) {
+      await recordStockMovements(
+        deps.db,
+        { organizationId: context.organizationId },
+        reversal.excessReversalEstornos,
+        "ESTORNO_REVERSAO_EXCEDENTE",
+        origemDoPedido,
       );
     }
 

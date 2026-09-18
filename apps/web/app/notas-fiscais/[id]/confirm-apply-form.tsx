@@ -78,35 +78,35 @@ export function ConfirmApplyForm({
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--sb-space-3)",
-        alignItems: "center",
-        flexWrap: "wrap",
-        margin: "var(--sb-space-3) 0",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        background: "var(--sb-surface)",
-      }}
-    >
-      <p style={{ margin: 0, fontSize: "0.875rem", flex: "1 1 20rem" }}>
+    /*
+      A barra fica presa ao pé da tela (`position: sticky`) enquanto a pessoa
+      desce pela lista de itens: é o lugar onde o "quanto falta" e o botão
+      precisam estar quando o último vínculo é feito, não lá em cima.
+    */
+    <div className={ready ? "sb-nf-confirmar sb-nf-confirmar-pronto" : "sb-nf-confirmar"}>
+      <div className="sb-nf-confirmar-texto">
         {ready ? (
           <>
-            Todos os <strong>{totalItems}</strong> itens estão vinculados. Confirmar gera os movimentos de
-            estoque desta nota. Isto não pode ser desfeito com um novo envio do mesmo arquivo.
+            <b>Tudo vinculado — {totalItems} de {totalItems} itens.</b>
+            <span>
+              Confirmar gera os movimentos de estoque deste documento. Isto não pode ser desfeito com um novo envio do
+              mesmo arquivo.
+            </span>
           </>
         ) : (
           <>
-            <strong>
-              {resolvedItems} de {totalItems}
-            </strong>{" "}
-            itens vinculados. Vincule todos os itens abaixo antes de confirmar — uma nota fiscal só é
-            aplicada por completo, nunca parcialmente.
+            <b>
+              {resolvedItems} de {totalItems} itens vinculados
+            </b>
+            <span>Vincule todos antes de confirmar — um documento só é aplicado por completo, nunca parcialmente.</span>
           </>
         )}
-      </p>
+        {error !== null && (
+          <p role="alert" className="sb-nf-confirmar-erro">
+            {error}
+          </p>
+        )}
+      </div>
 
       <button
         className="sb-button sb-button-primary"
@@ -118,12 +118,6 @@ export function ConfirmApplyForm({
       >
         {busy ? "Confirmando…" : "Confirmar aplicação"}
       </button>
-
-      {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.875rem", color: "var(--sb-danger)", flexBasis: "100%" }}>
-          {error}
-        </p>
-      )}
     </div>
   );
 }

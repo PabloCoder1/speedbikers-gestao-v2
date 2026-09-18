@@ -1711,6 +1711,8 @@ export type Database = {
           sku_id: string | null
           status: string
           synced_at: string
+          permalink: string | null
+          thumbnail_url: string | null
           title: string
           updated_at: string
         }
@@ -1727,6 +1729,8 @@ export type Database = {
           sku_id?: string | null
           status: string
           synced_at?: string
+          permalink?: string | null
+          thumbnail_url?: string | null
           title: string
           updated_at?: string
         }
@@ -1743,6 +1747,8 @@ export type Database = {
           sku_id?: string | null
           status?: string
           synced_at?: string
+          permalink?: string | null
+          thumbnail_url?: string | null
           title?: string
           updated_at?: string
         }
@@ -2276,6 +2282,12 @@ export type Database = {
           },
         ]
       }
+      // CORRECAO MANUAL (D-352, classe D-213): `logistic_type` e
+      // `logistic_captured_at` escritos a mao no formato do gerador -- a
+      // migration `20260918000000_estorno_full_e_logistica_do_pedido` so existe
+      // no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
+      // arquivo. As duas colunas sao `text`/`timestamptz` anulaveis sem default,
+      // entao o proprio gerador as marcaria assim.
       orders: {
         Row: {
           buyer_id: number | null
@@ -2287,6 +2299,8 @@ export type Database = {
           date_last_updated: string
           id: number
           last_updated: string | null
+          logistic_captured_at: string | null
+          logistic_type: string | null
           ml_account_id: string
           organization_id: string
           pack_id: number | null
@@ -2308,6 +2322,8 @@ export type Database = {
           date_last_updated: string
           id: number
           last_updated?: string | null
+          logistic_captured_at?: string | null
+          logistic_type?: string | null
           ml_account_id: string
           organization_id: string
           pack_id?: number | null
@@ -2329,6 +2345,8 @@ export type Database = {
           date_last_updated?: string
           id?: number
           last_updated?: string | null
+          logistic_captured_at?: string | null
+          logistic_type?: string | null
           ml_account_id?: string
           organization_id?: string
           pack_id?: number | null
@@ -4531,13 +4549,17 @@ export type Database = {
         Args: {
           p_date_from: string
           p_date_to: string
+          // D-380: foco, ordem e limiar de cobertura -- todos com default.
+          p_focus?: string | null
           p_limit?: number
+          p_low_coverage_days?: number
           p_ml_account_id?: string | null
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
           p_situation?: string | null
           p_sku_id?: string | null
+          p_sort?: string | null
         }
         // ACRESCIMO MANUAL (D-265): a funcao ganhou `facet_situation` e uma
         // LINHA-SENTINELA. Pagina vazia devolve uma linha com TODAS as colunas
@@ -4549,6 +4571,11 @@ export type Database = {
           account_label: string | null
           buckets: number | null
           captured_at: string | null
+          // D-380: NULL sem venda na janela (cobertura infinita) e na sentinela.
+          coverage_days: number | null
+          daily_rate: number | null
+          facet_can_ship: number
+          facet_low_coverage: number
           facet_situation: Json
           full_quantity: number | null
           local_quantity: number | null
@@ -4641,6 +4668,7 @@ export type Database = {
           p_status?: string | null
           p_stock?: string | null
           p_full?: string | null
+          p_order?: string
         }
         Returns: {
           account_label: string
@@ -4654,16 +4682,35 @@ export type Database = {
           item_id: string
           link_state: string
           listing_id: string
+          // NULA ate a proxima sincronizacao do catalogo (20260918150000).
+          permalink: string | null
           ml_account_id: string
           price: number
           sku: string
           sku_id: string
           status: string
           synced_at: string
+          // NULA ate a proxima sincronizacao do catalogo (20260918150000).
+          thumbnail_url: string | null
           title: string
           total_count: number
           units_sold: number
           visits: number
+        }[]
+      }
+      get_listings_dashboard_counts: {
+        Args: {
+          p_organization_id: string
+          p_ml_account_id?: string | null
+          p_search?: string | null
+        }
+        Returns: {
+          active: number
+          in_full: number
+          out_of_stock: number
+          paused: number
+          total: number
+          unlinked: number
         }[]
       }
       get_listings_link_overview: {
@@ -5143,6 +5190,7 @@ export type Database = {
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null
+          p_abc_class?: string | null
           p_date_from: string
           p_date_to: string
           p_limit?: number

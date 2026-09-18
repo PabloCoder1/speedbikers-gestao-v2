@@ -6,12 +6,17 @@ export {
   estornoKeyOf,
   estornaVendaGravada,
   excessReversalEstornosOf,
+  FULL_LOGISTIC_TYPE,
+  fullEstornoOf,
+  fullReversalEstornosOf,
+  isFullLogistic,
   isValidSaleStatus,
   preCaptureEstornoOf,
   saleInstant,
 } from "./sale-deduction.js";
 export type {
   ErpCutoff,
+  OrderLogisticType,
   PreCaptureCutoffs,
   RecordedSale,
   SaleDeductionItem,
@@ -58,7 +63,12 @@ export { computeLedgerIntegrityDivergences } from "./ledger-integrity.js";
 export type { LedgerBalance } from "./ledger-integrity.js";
 
 export { computeReturnReversal, computeUnreversedReturn } from "./return-reversal.js";
-export type { ReturnedOrderItem, ReturnReversal } from "./return-reversal.js";
+export type {
+  ReturnedOrder,
+  ReturnedOrderItem,
+  ReturnedSaleMovement,
+  ReturnReversal,
+} from "./return-reversal.js";
 
 export { simulateCoverageDays, simulateRequiredQuantity, simulateRuptureDate } from "./coverage-simulation.js";
 export type { CoverageSimulation, RequiredQuantitySimulation, RuptureDateSimulation } from "./coverage-simulation.js";

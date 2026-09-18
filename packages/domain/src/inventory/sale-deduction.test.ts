@@ -7,9 +7,16 @@ import {
   estornadoKeyOf,
   estornaVendaGravada,
   estornoKeyOf,
+  FULL_LOGISTIC_TYPE,
+  isFullLogistic,
   saleInstant,
 } from "./sale-deduction.js";
-import type { PreCaptureCutoffs, RecordedSale, SaleDeductionOrder } from "./sale-deduction.js";
+import type {
+  PreCaptureCutoffs,
+  RecordedSale,
+  SaleDeductionOrder,
+  StockMovementDraft,
+} from "./sale-deduction.js";
 
 const CREATED_AT = new Date("2026-08-21T12:59:00.000Z");
 const CLOSED_AT = new Date("2026-08-21T13:00:00.000Z");
@@ -22,6 +29,9 @@ function baseOrder(overrides: Partial<SaleDeductionOrder> = {}): SaleDeductionOr
     status: "paid",
     dateCreated: CREATED_AT,
     dateClosed: CLOSED_AT,
+    // D-352: sem sinal de logística é o padrão dos testes antigos — e o
+    // comportamento de antes desta fatia, que eles fixam.
+    logisticType: null,
     items: [],
     ...overrides,
   };
@@ -63,7 +73,7 @@ describe("computeSaleDeductions", () => {
         items: [{ position: 0, quantity: 1, skuId: "sku-1", skuKind: "PRODUTO", components: [] }],
       });
 
-      expect(computeSaleDeductions(order, SEM_CORTE)).toEqual({ deductions: [], preCaptureReversals: [], excessReversalEstornos: [] });
+      expect(computeSaleDeductions(order, SEM_CORTE)).toEqual({ deductions: [], preCaptureReversals: [], estornosFull: [], excessReversalEstornos: [] });
     },
   );
 
@@ -634,5 +644,190 @@ describe("estornaVendaGravada — a linha gravada NO corte (reverificação de c
     );
 
     expect(result.preCaptureReversals).toEqual([]);
+  });
+});
+
+/**
+ * D-352 — a venda entregue pelo Full nao baixa o estoque da LOJA.
+ *
+ * O invariante desta fatia, e o que todo teste daqui mede: o par (venda,
+ * `ESTORNO_FULL`) soma ZERO no saldo E no alvo de `compute_erp_target_balances`,
+ * que so soma `occurred_at > captured_at`. Espelhar a data e o que mantem as
+ * duas linhas do MESMO lado do corte — e e por isso que o alvo tambem e
+ * conferido, e nao so o saldo.
+ */
+describe("computeSaleDeductions — venda entregue pelo Full (D-352)", () => {
+  const PRODUTO: SaleDeductionOrder["items"] = [
+    { position: 0, quantity: 2, skuId: "sku-a", skuKind: "PRODUTO", components: [] },
+  ];
+  const VENDA = "venda:9900001001:0";
+
+  /** O saldo: a soma de tudo, que o trigger `apply_to_balance` aplica linha a linha. */
+  function noSaldo(...listas: readonly StockMovementDraft[][]): number {
+    return listas.flat().reduce((total, m) => total + m.qtyDelta, 0);
+  }
+
+  /** O alvo: `compute_erp_target_balances` soma SO o movimento depois do corte. */
+  function noAlvo(corteDoAlvo: Date, ...listas: readonly StockMovementDraft[][]): number {
+    return listas
+      .flat()
+      .filter((m) => m.occurredAt.getTime() > corteDoAlvo.getTime())
+      .reduce((total, m) => total + m.qtyDelta, 0);
+  }
+
+  function doFull(overrides: Partial<SaleDeductionOrder> = {}): SaleDeductionOrder {
+    return baseOrder({ logisticType: FULL_LOGISTIC_TYPE, items: PRODUTO, ...overrides });
+  }
+
+  it("so 'fulfillment' e Full — nem maiuscula, nem outro tipo de logistica, nem a ausencia do sinal", () => {
+    expect(isFullLogistic("fulfillment")).toBe(true);
+    expect(isFullLogistic("FULFILLMENT")).toBe(false);
+    expect(isFullLogistic("cross_docking")).toBe(false);
+    expect(isFullLogistic("drop_off")).toBe(false);
+    expect(isFullLogistic("")).toBe(false);
+    expect(isFullLogistic(null)).toBe(false);
+  });
+
+  it("PRODUTO: grava a venda e o par ESTORNO_FULL, com a MESMA occurred_at e a chave NEUTRA", () => {
+    const result = computeSaleDeductions(doFull(), cortes({ "sku-a": null }));
+
+    expect(result.deductions).toEqual([
+      { skuId: "sku-a", qtyDelta: -2, idempotencyKey: VENDA, occurredAt: CLOSED_AT },
+    ]);
+    expect(result.estornosFull).toEqual([
+      { skuId: "sku-a", qtyDelta: 2, idempotencyKey: `estorno:${VENDA}`, occurredAt: CLOSED_AT },
+    ]);
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+
+  it("o par soma ZERO no saldo E no alvo — de qualquer lado do corte", () => {
+    const { deductions, estornosFull } = computeSaleDeductions(doFull(), cortes({ "sku-a": null }));
+
+    expect(noSaldo(deductions, estornosFull)).toBe(0);
+    // Corte ANTES da venda: as duas linhas caem DENTRO do alvo.
+    expect(noAlvo(new Date(CLOSED_AT.getTime() - 60_000), deductions, estornosFull)).toBe(0);
+    // Corte DEPOIS da venda: as duas caem FORA.
+    expect(noAlvo(new Date(CLOSED_AT.getTime() + 60_000), deductions, estornosFull)).toBe(0);
+    // Corte NO instante da venda: a fronteira e estrita, as duas ficam fora juntas.
+    expect(noAlvo(CLOSED_AT, deductions, estornosFull)).toBe(0);
+    // E a prova de que o alvo mudaria se o espelho NAO fosse espelho: so a venda, dentro.
+    expect(noAlvo(new Date(CLOSED_AT.getTime() - 60_000), deductions)).toBe(-2);
+  });
+
+  it("KIT do Full: um par por COMPONENTE, com a chave do componente — o kit nao tem saldo proprio", () => {
+    const order = doFull({
+      items: [
+        {
+          position: 1,
+          quantity: 2,
+          skuId: "sku-kit-farol",
+          skuKind: "KIT",
+          components: [
+            { componentSkuId: "sku-lampada", quantity: 2 },
+            { componentSkuId: "sku-suporte", quantity: 1 },
+          ],
+        },
+      ],
+    });
+
+    const result = computeSaleDeductions(order, cortes({ "sku-lampada": null, "sku-suporte": null }));
+
+    expect(result.estornosFull).toEqual([
+      {
+        skuId: "sku-lampada",
+        qtyDelta: 4,
+        idempotencyKey: "estorno:venda:9900001001:1:sku-lampada",
+        occurredAt: CLOSED_AT,
+      },
+      {
+        skuId: "sku-suporte",
+        qtyDelta: 2,
+        idempotencyKey: "estorno:venda:9900001001:1:sku-suporte",
+        occurredAt: CLOSED_AT,
+      },
+    ]);
+    expect(noSaldo(result.deductions, result.estornosFull)).toBe(0);
+  });
+
+  it("sinal AUSENTE baixa a loja como sempre — nunca presumir Full", () => {
+    const result = computeSaleDeductions(baseOrder({ logisticType: null, items: PRODUTO }), cortes({ "sku-a": null }));
+
+    expect(result.deductions).toHaveLength(1);
+    expect(result.estornosFull).toEqual([]);
+    expect(noSaldo(result.deductions, result.estornosFull)).toBe(-2);
+  });
+
+  it.each(["cross_docking", "drop_off", "xd_drop_off", "self_service", "logistica_que_o_ML_inventar"])(
+    "valor DESCONHECIDO de logistic_type (%s) baixa a loja — errar para 'baixa' e o lado seguro",
+    (logisticType) => {
+      const result = computeSaleDeductions(baseOrder({ logisticType, items: PRODUTO }), cortes({ "sku-a": null }));
+
+      expect(result.deductions).toHaveLength(1);
+      expect(result.estornosFull).toEqual([]);
+    },
+  );
+
+  it("venda anterior a planilha E do Full: UM estorno so, o da pre-captura — as duas causas dividem a chave", () => {
+    const result = computeSaleDeductions(doFull(), cortes({ "sku-a": CLOSED_AT }));
+
+    expect(result.preCaptureReversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 2, idempotencyKey: `estorno:${VENDA}`, occurredAt: CLOSED_AT },
+    ]);
+    expect(result.estornosFull).toEqual([]);
+    // A prova de que a duplicata e impossivel: nenhuma chave nas duas listas.
+    const chaves = [...result.preCaptureReversals, ...result.estornosFull].map((m) => m.idempotencyKey);
+
+    expect(new Set(chaves).size).toBe(chaves.length);
+    expect(noSaldo(result.deductions, result.preCaptureReversals, result.estornosFull)).toBe(0);
+  });
+
+  it("venda JA GRAVADA com a data velha: o ESTORNO_FULL espelha a LINHA, nao a venda em — o par fica do mesmo lado do corte", () => {
+    // O worker de antes de D-351 gravava `occurred_at = date_last_updated`.
+    const GRAVADA_EM = new Date("2026-09-14T19:00:00.000Z");
+    const gravada: RecordedSale = { skuId: "sku-a", qtyDelta: -2, occurredAt: GRAVADA_EM, recordedAt: GRAVADA_EM };
+
+    const result = computeSaleDeductions(doFull(), cortes({ "sku-a": null }, { [VENDA]: gravada }));
+
+    expect(result.estornosFull).toEqual([
+      { skuId: "sku-a", qtyDelta: 2, idempotencyKey: `estorno:${VENDA}`, occurredAt: GRAVADA_EM },
+    ]);
+    // A linha que de fato move o saldo e a gravada: o rascunho novo e descartado pelo UNIQUE.
+    const gravadoENovo = [{ ...gravada, idempotencyKey: VENDA }, ...result.estornosFull];
+
+    expect(noSaldo(gravadoENovo)).toBe(0);
+    expect(noAlvo(new Date(GRAVADA_EM.getTime() - 1), gravadoENovo)).toBe(0);
+  });
+
+  it("reversao ja gravada de venda do Full: anulada INTEIRA, nao so o excesso — nada devia ter voltado para a loja", () => {
+    const CANCELADO_EM = new Date("2026-09-15T10:00:00.000Z");
+    const result = computeSaleDeductions(
+      doFull(),
+      cortes({ "sku-a": null }, {}, IMPORTADO_EM, null, [
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 2, occurredAt: CANCELADO_EM },
+      ]),
+    );
+
+    expect(result.excessReversalEstornos).toEqual([
+      { skuId: "sku-a", qtyDelta: -2, idempotencyKey: `estorno:cancelamento:${VENDA}`, occurredAt: CANCELADO_EM },
+    ]);
+    // -2 (venda) +2 (ESTORNO_FULL) +2 (cancelamento GRAVADO) -2 (anulacao) = 0.
+    const gravado = [{ skuId: "sku-a", qtyDelta: 2, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO_EM }];
+
+    expect(noSaldo(result.deductions, result.estornosFull, gravado, result.excessReversalEstornos)).toBe(0);
+    expect(noAlvo(new Date(CLOSED_AT.getTime() - 1), result.deductions, result.estornosFull, gravado, result.excessReversalEstornos)).toBe(0);
+  });
+
+  it("contraprova FORA do Full: a mesma reversao gravada nao vira anulacao nenhuma — ela devolveu de verdade", () => {
+    const CANCELADO_EM = new Date("2026-09-15T10:00:00.000Z");
+    const result = computeSaleDeductions(
+      baseOrder({ logisticType: "cross_docking", items: PRODUTO }),
+      cortes({ "sku-a": CLOSED_AT }, {}, IMPORTADO_EM, null, [
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 2, occurredAt: CANCELADO_EM },
+      ]),
+    );
+
+    // R = V: nada passou da venda, entao a D-351 nao anula nada.
+    expect(result.excessReversalEstornos).toEqual([]);
+    expect(result.preCaptureReversals).toHaveLength(1);
   });
 });

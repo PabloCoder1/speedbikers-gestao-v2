@@ -9,8 +9,8 @@ import {
 import { MOVEMENT_TYPES } from "./movement-filters.js";
 
 describe("vocabulário das movimentações (D-167)", () => {
-  it("os 14 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
-    expect(MOVEMENT_TYPES).toHaveLength(15);
+  it("os 16 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
+    expect(MOVEMENT_TYPES).toHaveLength(16);
 
     for (const type of MOVEMENT_TYPES) {
       expect(movementTypeLabel(type)).not.toBe(type);
@@ -21,10 +21,13 @@ describe("vocabulário das movimentações (D-167)", () => {
     expect(movementTypeLabel("ESTORNO_PRE_CAPTURA")).toBe("Estorno de venda anterior à planilha (UpSeller)");
   });
 
-  it("a anulação da reversão em dobro não se confunde com o estorno de venda (D-351 §12)", () => {
+  it("a anulação de reversão nomeia as DUAS causas — o dobro da D-351 §12 e o Full da D-352 — e não se confunde com o estorno de venda", () => {
+    // Um cancelamento de pedido do Full anulado pela varredura não teve "dobro"
+    // nenhum: o rótulo antigo mandava quem audita o saldo procurar a causa errada.
     expect(movementTypeLabel("ESTORNO_REVERSAO_EXCEDENTE")).toBe(
-      "Estorno de reversão em dobro (cancelamento e devolução da mesma venda)",
+      "Anulação de reversão de venda estornada (em dobro ou do Full)",
     );
+    expect(movementTypeLabel("ESTORNO_REVERSAO_EXCEDENTE")).not.toBe(movementTypeLabel("ESTORNO_FULL"));
   });
 
   it("tipo/local desconhecidos degradam para o valor cru — função total, nunca tela quebrada", () => {

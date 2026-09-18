@@ -8,6 +8,7 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import {
   ABC_CRITERIA,
+  ABC_CLASSES,
   ABC_PERIODS,
   PAGE_SIZE,
   buildAbcHref,
@@ -113,6 +114,7 @@ export default async function CurvaAbcPage({
     // Entra na MESMA ponta que a conta: a curva é recalculada DENTRO da marca
     // (participações somam 100% dela), não é a fatia da marca na curva global.
     p_supplier_brand: filters.brand,
+    p_abc_class: filters.abcClass,
     p_limit: PAGE_SIZE,
     p_offset: (filters.page - 1) * PAGE_SIZE,
     }),
@@ -144,7 +146,8 @@ export default async function CurvaAbcPage({
     filters.brand !== null ||
     filters.criterion.key !== ABC_CRITERIA[0].key ||
     filters.days !== 90 ||
-    filters.onlyWithoutFull;
+    filters.onlyWithoutFull ||
+    filters.abcClass !== null;
 
   return (
     <Shell>
@@ -222,6 +225,21 @@ export default async function CurvaAbcPage({
             {ABC_PERIODS.map((days) => (
               <FilterPill key={days} href={buildAbcHref(filters, { days })} active={filters.days === days}>
                 {days} dias
+              </FilterPill>
+            ))}
+          </FilterGroup>
+
+          <FilterGroup label="Classe ABC">
+            <FilterPill href={buildAbcHref(filters, { abcClass: null })} active={filters.abcClass === null}>
+              Todas
+            </FilterPill>
+            {ABC_CLASSES.map((abcClass) => (
+              <FilterPill
+                key={abcClass}
+                href={buildAbcHref(filters, { abcClass })}
+                active={filters.abcClass === abcClass}
+              >
+                Classe {abcClass}
               </FilterPill>
             ))}
           </FilterGroup>
@@ -335,11 +353,17 @@ export default async function CurvaAbcPage({
 
       {error === null && (
         <Panel
-          title={filters.onlyWithoutFull ? "SKUs sem estoque no Full" : "SKUs por participação"}
+          title={
+            filters.onlyWithoutFull
+              ? "SKUs sem estoque no Full"
+              : filters.abcClass
+                ? `SKUs da classe ${filters.abcClass}`
+                : "SKUs por participação"
+          }
           subtitle={windowInfo.label}
           aside={
             <span className="sb-abc-table-context">
-              {filters.criterion.label} · {filters.days} dias
+              {filters.criterion.label} · {filters.days} dias{filters.abcClass ? ` · Classe ${filters.abcClass}` : ""}
             </span>
           }
         >

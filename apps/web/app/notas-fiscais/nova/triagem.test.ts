@@ -48,6 +48,16 @@ describe("o que não sobe", () => {
     expect(triar(arquivo("vendas.csv")).recusa).toContain("Importações");
   });
 
+  // O tipo que o navegador dá à .xlsx contém "xml" — e ela virava XML.
+  it("planilha com o tipo real do navegador continua sendo planilha", () => {
+    const xlsx = triar(
+      arquivo("estoque.xlsx", 1024, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    );
+
+    expect(xlsx.formato).toBeNull();
+    expect(xlsx.recusa).toBe("planilha vai em Importações, não aqui");
+  });
+
   it("imagem de tela não tem texto para ler", () => {
     expect(triar(arquivo("print.png")).recusa).toBe("não é XML nem PDF");
   });

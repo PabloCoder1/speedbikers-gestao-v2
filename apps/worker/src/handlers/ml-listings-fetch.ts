@@ -6,7 +6,7 @@ import { chunkItemIds, getItemsBatch, scanSellerItems } from "@sb/mercado-livre"
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
-import { listingItemSchema } from "./listing-schema.js";
+import { fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
 import { readAllPages } from "../read-all-pages.js";
 
 /**
@@ -47,6 +47,10 @@ const ITEM_ATTRIBUTES = [
   "currency_id",
   "available_quantity",
   "category_id",
+  // Foto e link da tela `/anuncios` (20260918150000).
+  "secure_thumbnail",
+  "thumbnail",
+  "permalink",
 ] as const;
 
 /** Linha de `listings` tal como o upsert em lote a envia. */
@@ -61,6 +65,8 @@ interface ListingUpsertRow {
   currency_id: string;
   available_quantity: number;
   category_id: string | null;
+  thumbnail_url: string | null;
+  permalink: string | null;
   synced_at: string;
 }
 
@@ -238,6 +244,8 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         currency_id: item.currency_id,
         available_quantity: item.available_quantity,
         category_id: item.category_id ?? null,
+        thumbnail_url: fotoDoItem(item),
+        permalink: linkDoItem(item),
         synced_at: syncedAt.toISOString(),
       });
 

@@ -272,6 +272,33 @@ export default async function EstoquePage({
 
       <KpiStrip ancora cells={celulas} />
 
+      <section className="sb-stock-insights" aria-label="Leitura rápida do estoque">
+        <article className="sb-stock-insight sb-stock-insight-primary">
+          <span className="sb-stock-insight-icon" aria-hidden="true"><Icone nome="tendencia" tamanho={16} /></span>
+          <div>
+            <span className="sb-stock-insight-label">Cobertura física</span>
+            <strong>{formatCount(confirmados)} SKUs confirmados</strong>
+            <p>Base confiável para valor e saldo local.</p>
+          </div>
+        </article>
+        <article className="sb-stock-insight sb-stock-insight-warning">
+          <span className="sb-stock-insight-icon" aria-hidden="true"><Icone nome="pulso" tamanho={16} /></span>
+          <div>
+            <span className="sb-stock-insight-label">Atenção operacional</span>
+            <strong>{formatCount(naoClassificados)} aguardando classificação</strong>
+            <p>Resolva a pendência para liberar métricas físicas.</p>
+          </div>
+        </article>
+        <article className="sb-stock-insight sb-stock-insight-neutral">
+          <span className="sb-stock-insight-icon" aria-hidden="true"><Icone nome="caixa" tamanho={16} /></span>
+          <div>
+            <span className="sb-stock-insight-label">Recorte atual</span>
+            <strong>{formatCount(total?.skus_no_recorte ?? totalCount)} SKUs monitorados</strong>
+            <p>{windowInfo.label} · dados atualizados pelo ledger.</p>
+          </div>
+        </article>
+      </section>
+
       <div className="sb-stock-workspace">
         <Panel
           title="Estoque por produto"

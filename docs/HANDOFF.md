@@ -37,6 +37,21 @@ filtros dentro do painel, busca operacional, identidade de produto e ações
 compactas por linha. As recusas métricas de D-249 permanecem intactas; a
 mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 
+`/estoque/[skuId]/ajuste` virou um fluxo operacional completo: entrada, saída e
+balanço sem sinal manual, prévia do saldo, motivo estruturado, autoria, histórico
+recente, bloqueio seguro quando saldo/permissão falha e layout responsivo. O
+núcleo está em `01d1ce7`, com validação local completa (`check`, `build`,
+`docs:check` e E2E responsivo) nesta entrega.
+
+`/full` virou fila de envio (D-380): cobertura por linha (Full ÷ venda média diária
+da janela), focos "Acabando" e "Pode enviar hoje", ordem por prioridade de envio e CSV
+do recorte. Depende da migration `20260918140000`; sem ela a tela degrada para a
+assinatura antiga com aviso.
+
+`/anuncios` ordena pela coluna, pagina com números, filtra por chips e mostra a foto do
+anúncio (D-381); a faixa sai de `get_listings_dashboard_counts` (2 leituras por visita em vez
+de 7). Migration `20260918150000`; **worker só depois dela** (grava `thumbnail_url`/`permalink`).
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
@@ -56,8 +71,8 @@ e `docs/PERFORMANCE.md`.
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
-- **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13). Falta a prova de 24 h e a
-  decisão do dono sobre `v3-reconcile-balances` (**pausado**). Entrada manual das
+- **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13); prova de 24 h ok em 18/09. Falta a
+  decisão do dono sobre `v3-reconcile-balances` (**pausado**), depois da D-352. Entrada manual das
   devoluções pela lista do ledger, não pelas notificações: 26 já voltaram sozinhas.
   Não importar planilha do UpSeller antes dessa decisão.
 - **O padrão do `gcloud` nesta máquina é `speedbikers-prod`.** Todo comando manual com
@@ -173,7 +188,7 @@ Nada disto pode ser feito por um agente.
    Dev —, o comando é PowerShell com `pnpm.cmd` e `sslmode=no-verify`, e o
    `BACKUP_AT` se calcula no restaurado, não se lê da lista.
 3b. **Conferir o saldo do estoque contra o UpSeller** — planilha nova só
-   **depois da prova de 24 h da F3 da D-351** (§13). É a segunda metade da
+   **depois da D-352 publicada e compensada** (a prova de 24 h da D-351 passou em 18/09). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
    (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
    chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
@@ -228,7 +243,7 @@ Nada disto pode ser feito por um agente.
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
-| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** a prova de 24 h da D-351 (publicada em 17/09) e os atos da seção própria |
+| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** a D-352 publicada e compensada (a D-351 foi provada em 18/09) e os atos da seção própria |
 | ~~UX final da republicação~~ | ✅ **FEITA em D-295** — pedir e executar, dois atos, no Dashboard do Anúncio. Falta o **ensaio humano** (seção própria) |
 
 **Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
@@ -261,21 +276,10 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**`/curva-abc` reorganizada em 17/09:** os filtros agora ficam compactos no
-cabeçalho e a configuração ativa aparece em um painel único; os cartões A/B/C
-expõem limites e participação visual; Full, risco e tabela ganharam hierarquia,
-links para SKU e estados mais legíveis. A página passou de 200 para 100 linhas
-por página para reduzir HTML e trabalho de SSR, sem alterar os totais e classes
-calculados no SQL sobre todo o recorte. O fluxo autenticado foi conferido com a
-seed local, inclusive a troca do critério para unidades.
+**Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**D-351 publicada em 17/09** (§13): falta a prova de 24 h e a decisão do dono sobre
-`v3-reconcile-balances` (3 SKUs com alvo negativo sem causa conhecida). Depois, na
-ordem do dono: D-352 (Full não baixa a loja) → D-362 (SKU por user product) →
-experiência de compra (captura diária, nota antes do relist e na medição). Antes de puxar item de backlog, confira a
-categoria dele em D-223 — quase todos dependem de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
-consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev só
-prova no mesmo instante** (histórico em `docs/archive/handoffs/`).
+**D-351:** provada em 18/09 (§13); `v3-reconcile-balances` segue pausado até a D-352 publicada e os 3 SKUs negativos decididos. Depois, D-362.
+**D-352 (Full não baixa a loja):** na `v3` desde 18/09 (#42), não publicada; ordem em `docs/DEPLOYMENT.md` 8.3 (migration → worker/api → varredura → compensação).
 
 ---
 

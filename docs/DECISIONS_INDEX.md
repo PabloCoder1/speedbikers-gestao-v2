@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **370** (D-001 a D-376).
+Decisões registradas: **372** (D-001 a D-380).
 
 ## Por domínio
 
@@ -106,7 +106,7 @@ Decisões registradas: **370** (D-001 a D-376).
 - **D-346** — As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
 - **D-353** — O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
 
-### estoque (28)
+### estoque (30)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -133,9 +133,11 @@ Decisões registradas: **370** (D-001 a D-376).
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
 - **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 - **D-328** — Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
+- **D-352** — A venda entregue pelo Full nao baixa o estoque da LOJA -- o pedido ganha a logistica do envio, e a venda do Full sai com um par que a anula
 - **D-358** — Cobertura e reposicao: uma leitura em vez de duas, o plano custom que faltava, e a tela que responde "o que comprar agora"
 - **D-361** — Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
 - **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
+- **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 
 ### interface (42)
 
@@ -413,3 +415,4 @@ Decisões registradas: **370** (D-001 a D-376).
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 
+- **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada (63 ms contra ~0,7 s) e mostra a foto do anuncio; worker so depois da migration `20260918150000`

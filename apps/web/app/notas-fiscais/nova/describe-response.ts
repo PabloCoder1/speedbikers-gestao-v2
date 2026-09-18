@@ -52,7 +52,17 @@ export function describeUploadResponse(status: number, payload: unknown): Upload
   // conferência que já existe em vez de deixar a pessoa achando que o envio
   // se perdeu.
   if ((status === 201 || status === 200) && documentId !== null) {
-    return { documentId, message: { tone: "soft", text: "Arquivo recebido." } };
+    // O reenvio de um arquivo que falhou na leitura volta para a fila (a api
+    // responde `retried`); o duplicado de sempre abre a conferência que existe.
+    const flags = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+    const text =
+      flags.retried === true
+        ? "Já tinha falhado na leitura — lendo de novo."
+        : flags.duplicate === true
+          ? "Já enviado antes — abre a conferência que existe."
+          : "Arquivo recebido.";
+
+    return { documentId, message: { tone: "soft", text } };
   }
 
   const code = readErrorCode(payload);

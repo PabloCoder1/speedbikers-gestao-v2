@@ -8,11 +8,14 @@
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
 
 /**
- * Cem linhas mantêm a leitura analítica sem mandar 200 linhas de tabela no
+ * Cinquenta linhas mantêm a leitura analítica sem mandar uma tabela longa no
  * HTML de cada navegação. O total e as classes continuam vindo da janela SQL
  * sobre o recorte inteiro; só a fatia visual fica menor.
  */
-export const PAGE_SIZE = 100;
+export const PAGE_SIZE = 50;
+
+export const ABC_CLASSES = ["A", "B", "C"] as const;
+export type AbcClass = (typeof ABC_CLASSES)[number];
 
 export const ABC_CRITERIA = [
   { key: "faturamento", label: "Faturamento", definitionId: "receita_bruta", format: "currency" },
@@ -37,6 +40,7 @@ export interface AbcFilters {
   criterion: AbcCriterion;
   days: number;
   onlyWithoutFull: boolean;
+  abcClass: AbcClass | null;
   page: number;
 }
 
@@ -63,6 +67,10 @@ export function resolveAbcPeriod(raw: unknown): number {
   return (ABC_PERIODS as readonly number[]).includes(parsed) ? parsed : DEFAULT_PERIOD;
 }
 
+export function resolveAbcClass(raw: unknown): AbcClass | null {
+  return typeof raw === "string" && (ABC_CLASSES as readonly string[]).includes(raw) ? (raw as AbcClass) : null;
+}
+
 export function resolveAbcFilters(query: Record<string, string | string[] | undefined>): AbcFilters {
   return {
     accountSlug: typeof query.conta === "string" && query.conta !== "" ? query.conta : null,
@@ -75,6 +83,7 @@ export function resolveAbcFilters(query: Record<string, string | string[] | unde
     // `semFull=1` liga; qualquer outra coisa desliga. A URL antiga usava a
     // mera presença do parâmetro, o que fazia `?semFull=0` LIGAR o filtro.
     onlyWithoutFull: query.semFull === "1",
+    abcClass: resolveAbcClass(query.classe),
     page: resolvePageParam(query.pagina),
   };
 }
@@ -92,6 +101,7 @@ export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>)
       criterio: next.criterion.key === ABC_CRITERIA[0].key ? null : next.criterion.key,
       dias: next.days === DEFAULT_PERIOD ? null : String(next.days),
       semFull: next.onlyWithoutFull ? "1" : null,
+      classe: next.abcClass,
     },
     override.page === undefined ? 1 : next.page,
   );

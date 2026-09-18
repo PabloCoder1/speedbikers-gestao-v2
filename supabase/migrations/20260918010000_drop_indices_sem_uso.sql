@@ -1,0 +1,155 @@
+-- ============================================================
+-- Remove DOIS indices, e so dois: `job_runs_recent_idx` e
+-- `erp_import_rows_sku_idx`.
+--
+-- `docs/PERFORMANCE.md` proibe remover indice por `idx_scan = 0`, e a triagem
+-- de D-198 nao removeu NENHUM dos 235 candidatos do Dev por um motivo unico:
+-- a janela era falsa. `pg_stat_database.stats_reset` NULO sugere "desde
+-- sempre" e sugeria errado -- o Postgres tinha reiniciado, e `n_tup_ins` de
+-- `job_runs` era 42.936 contra 307.756 linhas reais, ou seja ~23 HORAS de
+-- estatistica. Nada se conclui dai.
+--
+-- O que mudou nao e o criterio: e a JANELA, e o BANCO onde ela e lida.
+--
+-- ------------------------------------------------------------
+-- 1. A JANELA, CONFERIDA CONTRA UM NUMERO CONHECIDO
+--
+-- Producao, 2026-09-17:
+--
+--     stats_reset ......................... 2026-08-25 20:33:23+00
+--     janela .............................. 23 dias 01:12
+--
+-- A conferencia que D-198 ensinou, agora dando certo:
+--
+--                        linhas reais   n_tup_ins   criadas na janela
+--     job_runs ............... 27.635      27.635              27.635
+--     erp_import_rows ........ 26.496      26.496                   -
+--
+-- `n_tup_ins` bate com a contagem real E com o que nasceu dentro da janela:
+-- a estatistica cobre a vida INTEIRA das duas tabelas. "Zero varreduras" aqui
+-- quer dizer zero varreduras desde que a primeira linha existiu.
+--
+-- O Dev continua sem servir para isto, e vale registrar para ninguem repetir
+-- a conta la: `stats_reset` e NULO, `erp_import_rows` marca `n_tup_ins = 0`
+-- contra 30.983 linhas reais, e `job_runs_recent_idx` aparece com 8 usos
+-- lendo 1,67 milhao de tuplas -- ~209 mil linhas por varredura, a assinatura
+-- das consultas de investigacao que `docs/PERFORMANCE.md` ja avisa para nao
+-- confundir com a aplicacao. Nenhum caminho de codigo produz aquilo.
+--
+-- ------------------------------------------------------------
+-- 2. OS DOIS INDICES, E QUEM SOBRA NO LUGAR
+--
+-- `public.job_runs_recent_idx` (organization_id, finished_at desc)
+--     1.992 kB, 0 varreduras, 0 tuplas lidas em 23 dias.
+--
+--     Nasceu em 20260820130000 para "o que rodou recentemente nesta
+--     organizacao" -- um padrao de consulta que nunca chegou a existir. A web
+--     NAO le `job_runs` (RLS ligada, zero policies); quem le sao TRES RPCs
+--     `security definer` (`get_system_health`, `get_job_failures` e
+--     `get_erp_stock_cutoffs`, por `pg_get_functiondef` em producao), e
+--     nenhuma delas usa este indice:
+--
+--     `get_system_health` filtra por organizacao DENTRO de um OR com um
+--     `not exists` -- a clausula que deixa os jobs de PLATAFORMA visiveis
+--     (D-209). `explain` em producao e no Dev, os dois:
+--
+--         Seq Scan on job_runs r
+--           Filter: ((ANY (organization_id = ...)) OR (NOT (ANY (...))))
+--
+--     Um OR com `not exists` nao tem como virar Index Cond. O indice nao esta
+--     "sem uso porque a tela some": ele e ESTRUTURALMENTE inalcancavel por
+--     essa consulta.
+--
+--     O que sustenta as tres RPCs continua de pe, e medido em producao:
+--
+--       - `job_runs_last_per_type_idx` (job_type, coalesce(finished_at,
+--         started_at) desc) -- 179 usos. E o skip scan de `get_system_health`:
+--             Limit
+--               ->  Index Scan using job_runs_last_per_type_idx on job_runs r
+--                     Index Cond: (job_type = '...')
+--
+--       - `job_runs_failures_idx` (finished_at desc) where status = 'failed'
+--         -- 14 usos. E `get_job_failures`:
+--             Index Scan using job_runs_failures_idx on job_runs r
+--               Index Cond: (finished_at >= (now() - '7 days'::interval))
+--
+--       - `job_runs_reconcile_balances_done_idx` -- PARCIAL sobre as MESMAS
+--         colunas (organization_id, finished_at desc), com 2.264 usos e 8 kB.
+--         E `get_erp_stock_cutoffs`, a unica das tres com o formato exato
+--         para o qual o indice largo nasceu (organizacao + job_type + status,
+--         o mais recente primeiro, limit 1). `explain` em producao:
+--             Index Only Scan using job_runs_reconcile_balances_done_idx
+--         O padrao "por organizacao, mais recente primeiro" que de fato
+--         existe ja e servido por 8 kB; os 1.992 kB do indice largo nunca
+--         foram chamados.
+--
+-- `public.erp_import_rows_sku_idx` (batch_id, sku_key) where sku_key is not null
+--     936 kB, 0 varreduras, 0 tuplas lidas em 23 dias.
+--
+--     Nenhuma consulta do repositorio filtra por `sku_key` dentro do lote.
+--     As que existem, conferidas uma a uma:
+--
+--       - `apps/web/app/importacoes/[id]/page.tsx`: batch_id + status
+--       - `apps/worker/src/handlers/erp-import-apply.ts`: batch_id + status,
+--         e `id in (...)`
+--       - `apps/worker/src/handlers/erp-import-parse.ts`: batch_id
+--
+--     Todas cobertas por `erp_import_rows_batch_status_idx` (batch_id,
+--     status), 91 usos, ou pela chave primaria. `sku_key` aparece no codigo em
+--     `skus` e em `link_candidates`, nunca como filtro aqui.
+--
+-- Nenhum dos dois e UNIQUE nem apoia constraint ou chave estrangeira --
+-- `docs/PERFORMANCE.md` e explicito que esses nunca saem por estatistica de
+-- uso. Os UNIQUE das duas tabelas (`erp_import_rows_unique_per_batch`, as
+-- PKs) ficam onde estao.
+--
+-- ------------------------------------------------------------
+-- 3. POR QUE NAO TEM `CONCURRENTLY` AQUI
+--
+-- A intencao era `drop index concurrently`, para nao pegar ACCESS EXCLUSIVE.
+-- Nao da, e o motivo nao e opiniao: o CLI do Supabase (2.115.0, o que a CI e
+-- o workflow de producao usam) manda os comandos de cada migration num
+-- `pgconn.Batch`, que roda em pipeline -- transacao implicita. A unica saida
+-- desse pipeline e a lista `isPipelineIncompatible`
+-- (apps/cli-go/pkg/migration/file.go), e ela tem exatamente cinco padroes:
+--
+--     CREATE [UNIQUE] INDEX CONCURRENTLY
+--     REINDEX ... CONCURRENTLY
+--     VACUUM
+--     ALTER SYSTEM
+--     CLUSTER
+--
+-- `DROP INDEX CONCURRENTLY` nao esta la. Ele iria para dentro do pipeline e o
+-- Postgres o recusaria com 25001 ("cannot run inside a transaction block") --
+-- migration vermelha na CI e no `db push` de producao, nao deploy elegante.
+--
+-- O que da para fazer, e esta feito: `lock_timeout`. Um `drop index` pega
+-- ACCESS EXCLUSIVE por milissegundos (e so tirar a entrada do catalogo e
+-- desligar os arquivos; sao 1.992 kB e 936 kB), mas ESPERAR pelo lock atras de
+-- uma consulta longa enfileira todo mundo atras dele -- e `job_runs` recebe
+-- escrita do worker o tempo todo. Com `lock_timeout`, na pior hipotese a
+-- migration falha em 5 segundos e se roda de novo; sem ele, a pior hipotese e
+-- a tabela parada pelo tempo que a consulta da frente durar.
+--
+-- `set`, nao `set local`: se um dia este arquivo rodar FORA de transacao, um
+-- `SET LOCAL` seria descartado em silencio (a licao registrada em
+-- `docs/LICOES.md`) e a guarda viraria enfeite. O `reset` explicito no fim
+-- fecha o caso nos dois mundos.
+-- ============================================================
+
+set lock_timeout = '5s';
+
+-- Para voltar atras, o `create index` exato que existia:
+--
+--   create index job_runs_recent_idx
+--     on public.job_runs (organization_id, finished_at desc);
+drop index if exists public.job_runs_recent_idx;
+
+-- Para voltar atras, o `create index` exato que existia:
+--
+--   create index erp_import_rows_sku_idx
+--     on public.erp_import_rows (batch_id, sku_key)
+--     where sku_key is not null;
+drop index if exists public.erp_import_rows_sku_idx;
+
+reset lock_timeout;

@@ -7228,6 +7228,83 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
 
     expect(rows).toHaveLength(0);
   });
+
+  /*
+    A faixa saiu da lista (20260918150000): `get_listings_dashboard_counts`
+    conta as seis células numa passada, com os predicados COPIADOS da lista.
+    Este caso é o que segura a cópia — D-224 pedia célula e lista do mesmo
+    predicado, e a prova agora é o resultado, não a função.
+  */
+  it("as seis contagens da faixa batem com o total_count da lista, com e sem busca", async () => {
+    const totalDaLista = async (filtro: string, busca: string | null): Promise<number> => {
+      const rows = await asUser<{ total_count: string }>(
+        ADMIN_SB,
+        `select total_count from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+           p_search => ${busca === null ? "null" : `'${busca}'`}, p_limit => 1${filtro})`,
+      );
+
+      return Number(rows[0]?.total_count ?? 0);
+    };
+
+    for (const busca of [null, "MLB9001005"]) {
+      const [faixa] = await asUser<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", string>>(
+        ADMIN_SB,
+        `select * from public.get_listings_dashboard_counts('${ORG_SB}', p_search => ${busca === null ? "null" : `'${busca}'`})`,
+      );
+
+      expect(Number(faixa?.total)).toBe(await totalDaLista("", busca));
+      expect(Number(faixa?.active)).toBe(await totalDaLista(", p_status => 'active'", busca));
+      expect(Number(faixa?.paused)).toBe(await totalDaLista(", p_status => 'paused'", busca));
+      expect(Number(faixa?.out_of_stock)).toBe(await totalDaLista(", p_stock => 'out'", busca));
+      expect(Number(faixa?.in_full)).toBe(await totalDaLista(", p_full => 'with'", busca));
+      expect(Number(faixa?.unlinked)).toBe(await totalDaLista(", p_link_state => 'unlinked'", busca));
+    }
+  });
+
+  it("p_order ordena pela coluna pedida, nulo vai para o fim e valor desconhecido é a ordem de antes", async () => {
+    const ordem = async (order: string | null): Promise<{ item_id: string; price: string; visits: string | null }[]> =>
+      asUser(
+        ADMIN_SB,
+        `select item_id, price, visits from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+           p_search => 'MLB9001005', p_limit => 10${order === null ? "" : `, p_order => '${order}'`})`,
+      );
+
+    const [porPrecoAsc, porPrecoDesc, porVisitaAsc, padrao, lixo] = await Promise.all([
+      ordem("price_asc"),
+      ordem("price_desc"),
+      ordem("visits_asc"),
+      ordem(null),
+      ordem("drop table listings"),
+    ]);
+
+    const precos = porPrecoAsc.map((r) => Number(r.price));
+
+    expect(precos).toEqual([...precos].sort((a, b) => a - b));
+    expect(porPrecoDesc.map((r) => r.item_id)).toEqual(porPrecoAsc.map((r) => r.item_id).reverse());
+
+    // Visita ausente (anúncio que vendeu sem visita) fica no FIM mesmo em
+    // ordem crescente: ausência de dado não é o menor valor (D-067).
+    expect(porVisitaAsc.at(-1)?.visits).toBeNull();
+    expect(porVisitaAsc[0]?.visits).not.toBeNull();
+
+    // Fora da lista fechada: a ordem de antes, sem erro e sem injeção.
+    expect(lixo.map((r) => r.item_id)).toEqual(padrao.map((r) => r.item_id));
+  });
+
+  it("anon não executa get_listings_dashboard_counts", async () => {
+    await expect(asAnon(`select * from public.get_listings_dashboard_counts('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("outra organização conta zero, não os anúncios desta", async () => {
+    const [faixa] = await asUser<{ total: string }>(
+      DE_OUTRA_ORG,
+      `select total from public.get_listings_dashboard_counts('${ORG_SB}')`,
+    );
+
+    expect(Number(faixa?.total)).toBe(0);
+  });
 });
 
 // get_price_changes (20260831201544, D-172) — a Central de Precos le os
@@ -7694,6 +7771,59 @@ describe("get_fulfillment_overview (D-173, Central Full)", () => {
 
     expect(rows.filter((linha) => linha.sku_id !== null)).toHaveLength(0);
     expect(rows[0]?.facet_situation).toEqual({});
+  });
+
+  /**
+   * D-380 -- cobertura, foco e ordem. Os tres argumentos novos tem default, e
+   * as chamadas POSICIONAIS de nove argumentos acima continuam resolvendo: e o
+   * que `/skus/[skuId]` e `/anuncios/[itemId]` fazem, por nome.
+   *
+   * No cenario: variacoes tem 17 no Full e venderam 3 em 30 dias (170 dias);
+   * a ruptura vendeu 6 e tem 0 (cobertura 0); o parado nao vendeu (NULL).
+   */
+  const CALL_D380 = (extra: string) =>
+    `select * from public.get_fulfillment_overview('${ORG_SB}','${DE}','${HOJE}', null, null, null, null, 500, 0, ${extra})`;
+
+  it("cobertura e Full / venda media diaria da janela, e NULL sem venda (D-380)", async () => {
+    const rows = await asUser<{ sku_id: string; coverage_days: string | null; daily_rate: string | null }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id in ('${skuVariacoesId}','${skuRupturaId}','${skuParadoId}')`,
+    );
+    const por = new Map(rows.map((r) => [r.sku_id, r]));
+
+    expect(Number(por.get(skuVariacoesId)?.coverage_days)).toBe(170);
+    expect(Number(por.get(skuVariacoesId)?.daily_rate)).toBe(0.1);
+    expect(Number(por.get(skuRupturaId)?.coverage_days)).toBe(0);
+    expect(por.get(skuParadoId)?.coverage_days).toBeNull();
+    expect(por.get(skuParadoId)?.daily_rate).toBeNull();
+  });
+
+  it("foco 'acabando' segue o limiar recebido, e a faceta conta o conjunto antes do foco (D-380)", async () => {
+    const acabando = async (limiar: number) =>
+      asUser<{ sku_id: string | null; facet_low_coverage: string }>(
+        ADMIN_SB,
+        CALL_D380(`'acabando', null, ${String(limiar)}`),
+      );
+
+    // 170 dias nao esta acabando com o limiar de 15...
+    const com15 = await acabando(15);
+
+    expect(com15.some((r) => r.sku_id === skuVariacoesId)).toBe(false);
+
+    // ...e esta com 200. Ruptura (Full zero) nunca e "acabando": ja acabou.
+    const com200 = await acabando(200);
+
+    expect(com200.some((r) => r.sku_id === skuVariacoesId)).toBe(true);
+    expect(com200.some((r) => r.sku_id === skuRupturaId)).toBe(false);
+    expect(Number(com200[0]?.facet_low_coverage)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("prioridade de envio poe a ruptura antes do saudavel e do parado (D-380)", async () => {
+    const rows = await asUser<{ sku_id: string | null }>(ADMIN_SB, CALL_D380("null, 'prioridade', 15"));
+    const ordem = rows.map((r) => r.sku_id);
+
+    expect(ordem.indexOf(skuRupturaId)).toBeLessThan(ordem.indexOf(skuVariacoesId));
+    expect(ordem.indexOf(skuVariacoesId)).toBeLessThan(ordem.indexOf(skuParadoId));
   });
 });
 
