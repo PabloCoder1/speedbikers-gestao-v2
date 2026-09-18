@@ -4764,6 +4764,20 @@ table {
   border: 0;
 }
 
+/*
+ * A tela de carregamento POR CIMA da atual, para o `<Link>` que só troca o
+ * filtro (`components/carregando-link.tsx`). Nasce transparente e entra com o
+ * MESMO atraso do esqueleto: navegação rápida termina antes e nada pisca.
+ */
+.sb-carregando-cobertura {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--sb-ground);
+  opacity: 0;
+  animation: sb-revela 160ms ease-out 350ms forwards;
+}
+
 .sb-carregando-revela {
   display: flex;
   flex-direction: column;

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **374** (D-001 a D-383).
+Decisões registradas: **375** (D-001 a D-383).
 
 ## Por domínio
 
@@ -342,7 +342,7 @@ Decisões registradas: **374** (D-001 a D-383).
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 - **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
 
-### worker/infra (72)
+### worker/infra (73)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -415,5 +415,6 @@ Decisões registradas: **374** (D-001 a D-383).
 - **D-348** — Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
+- **D-382** — Toda pasta de `app/` com pagina tem `loading.tsx`, e a CI garante
 - **D-383** — Pente fino, lote 1: navegacao no celular, reconexao de conta com token vencido, datas de negocio, custo zero, falhas que viravam zero, paginas de erro e papeis
 

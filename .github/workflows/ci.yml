@@ -98,6 +98,13 @@ jobs:
       - name: Guarda de forma de campo e botao
         run: pnpm --filter @sb/web run check:control-styles
 
+      # So o `loading.tsx` da raiz existia, e ele so aparece quando a SECAO muda:
+      # dentro dela (`/anuncios` -> `/anuncios/MLB...`) a tela antiga congelava
+      # ate a nova chegar -- 6 de 8 navegacoes medidas em 2026-09-18. Build,
+      # typecheck e lint passam sem o arquivo. Estatico, sem banco.
+      - name: Guarda de tela de carregamento
+        run: pnpm --filter @sb/web run check:loading
+
       # O budget de contexto (HANDOFF e AGENTS) so existia como script local, e em
       # 2026-09-17 a v3 passou do limite sem nenhum PR reprovar. Guarda estatica,
       # roda em segundos e nao precisa de banco.

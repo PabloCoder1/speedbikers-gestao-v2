@@ -2045,10 +2045,24 @@ describe("get_faturamento (D-356)", () => {
 
   interface Faturamento {
     resumo: Resumo;
-    diario: { dia: string; pedidos: number; receita_bruta: number; resultado_venda: number | null }[] | null;
+    diario: {
+      dia: string;
+      pedidos: number;
+      receita_bruta: number;
+      frete_vendedor: number | null;
+      resultado_venda: number | null;
+    }[] | null;
     por_conta: { ml_account_id: string; pedidos: number; margem_venda: number | null }[] | null;
     por_sku: {
-      maior_receita: { sku_id: string; receita_bruta: number; margem_venda: number | null; custo_atual: boolean }[];
+      maior_receita: {
+        sku_id: string;
+        pedidos: number;
+        pedidos_cobertos: number;
+        receita_bruta: number;
+        custo_produtos: number | null;
+        margem_venda: number | null;
+        custo_atual: boolean;
+      }[];
       menor_margem: { sku_id: string; margem_venda: number }[];
       skus_com_venda: number;
       skus_margem_abaixo_10: number;
@@ -2056,10 +2070,10 @@ describe("get_faturamento (D-356)", () => {
     } | null;
   }
 
-  async function faturamento(usuario: string, detalhe = true): Promise<Faturamento> {
+  async function faturamento(usuario: string, detalhe = true, de = DIA, ate = DIA): Promise<Faturamento> {
     const rows = await asUser<{ get_faturamento: Faturamento }>(
       usuario,
-      `select public.get_faturamento('${DIA}','${DIA}','${CONTA_A}',${String(detalhe)})`,
+      `select public.get_faturamento('${de}','${ate}','${CONTA_A}',${String(detalhe)})`,
     );
 
     const linha = rows[0];
@@ -2152,6 +2166,257 @@ describe("get_faturamento (D-356)", () => {
     await expect(
       asAnon(`select public.get_faturamento('${DIA}','${DIA}')`),
     ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("é plpgsql, SECURITY INVOKER, com search_path vazio, plano custom e o offset 0 que prende order_items ao pedido", async () => {
+    // As guardas de plano de 20260918160000. Sem `force_custom_plan` o corpo
+    // volta ao plano genérico da sexta execução (D-305); sem o `offset 0`, o
+    // plano custom troca a busca por pedido por varredura inteira de
+    // order_items em hash join (medido: 2,1 s frio). Nenhuma das duas muda o
+    // resultado, então só o catálogo as pega. O `offset 0` é procurado numa
+    // linha só dele: o comentário que o explica, no corpo, não conta.
+    const result = await client.query<{
+      linguagem: string;
+      definer: boolean;
+      search_path_vazio: boolean;
+      plano_custom: boolean;
+      offset_zero: boolean;
+    }>(
+      `select l.lanname as linguagem, p.prosecdef as definer,
+              coalesce('search_path=""' = any(p.proconfig), false) as search_path_vazio,
+              coalesce('plan_cache_mode=force_custom_plan' = any(p.proconfig), false) as plano_custom,
+              p.prosrc ~ '\\n\\s*offset 0\\s*\\n' as offset_zero
+       from pg_proc p join pg_language l on l.oid = p.prolang
+       where p.oid = 'public.get_faturamento(date, date, uuid, boolean)'::regprocedure`,
+    );
+
+    expect(result.rows).toEqual([
+      { linguagem: "plpgsql", definer: false, search_path_vazio: true, plano_custom: true, offset_zero: true },
+    ]);
+  });
+
+  /*
+    INTERVALOS DE CUSTO, EMPATE E PEDIDO COM VÁRIOS ITENS (20260918160000).
+    A função passou a achar o custo por intervalo [changed_at, próxima
+    changed_at) e a agregar o pedido ANTES do frete. Em produção (18/09) todo
+    SKU tem UMA linha de histórico e nenhum pedido tem dois itens, então esses
+    caminhos só são exercitados aqui: cada guarda tem um pedido que muda de
+    número se ela sumir. Janela 20–22/07/2026 na CONTA_A, longe do fixture de
+    10/07 acima.
+
+    Histórico de FAT-D: 15/07 → 10, 21/07 15:00 UTC → 30, 25/07 (depois da
+    janela) → 50, e a linha do INSERT em now() → 7. FAT-E: duas linhas no
+    MESMO instante de 19/07, 40 e 45; vale a de maior id (45). KIT2 = 1×FAT-D.
+    Comissão de 10% por unidade em tudo.
+
+    | pedido | UTC         | itens                  | frete | custo | o que quebra se a guarda sumir                          |
+    |--------|-------------|------------------------|-------|-------|---------------------------------------------------------|
+    | 3101   | 20/07 15:00 | FAT-D 1×100            | 5     | 10    | sem o limite inferior, casa os quatro intervalos         |
+    | 3102   | 21/07 15:00 | FAT-D 2×100            | 6     | 2×30  | NO instante da mudança: `<=`; com `<`, cai no atual (7)  |
+    | 3103   | 22/07 15:00 | FAT-D 3×100            | 7     | 3×30  | sem o limite superior, casa 15/07 E 21/07: linha dupla   |
+    | 3104   | 20/07 16:00 | FAT-E 1×100            | 8     | 45    | sem o `h.id` no `lead()`, o empate pega 40               |
+    | 3105   | 22/07 16:00 | FAT-E 1×100 + FAT-D 1×50 | 20  | —     | vários itens: frete UMA vez e fora de `coberto`          |
+    | 3106   | 22/07 17:00 | KIT2 1×200             | 9     | 30    | sem o limite superior do kit, o componente soma 10 + 30  |
+  */
+  describe("custo por intervalo, empate de changed_at e pedido com vários itens", () => {
+    const PEDIDOS_JANELA = [9900003101, 9900003102, 9900003103, 9900003104, 9900003105, 9900003106];
+    const DE = "2026-07-20";
+    const ATE = "2026-07-22";
+
+    // Ids explícitos, longe da sequência de identidade, e `on conflict do
+    // nothing`: `sku_cost_history` é append-only, e rodar de novo sem reset
+    // não duplica o histórico. No empate, a linha de MAIOR id é gravada
+    // PRIMEIRO, para a ordem física contradizer a do id — sem o `h.id` no
+    // `lead()`, o empate sairia na ordem física e a venda pegaria 40.
+    const HISTORICO_D = ["9000000000003101", "9000000000003102", "9000000000003103"];
+    const EMPATE_MAIOR_ID = "9000000000003202";
+    const EMPATE_MENOR_ID = "9000000000003201";
+
+    let skuD = "";
+    let skuE = "";
+    let kit2 = "";
+
+    beforeAll(async () => {
+      const skus = await client.query<{ id: string; sku_key: string }>(
+        `insert into public.skus (organization_id, sku, kind, purchase_cost)
+         values ($1,'RLSTEST-FAT-D','PRODUTO',7),
+                ($1,'RLSTEST-FAT-E','PRODUTO',null),
+                ($1,'RLSTEST-FAT-KIT2','KIT',null)
+         on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+         returning id, sku_key`,
+        [ORG_SB],
+      );
+
+      skuD = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-D")?.id ?? "";
+      skuE = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-E")?.id ?? "";
+      kit2 = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-KIT2")?.id ?? "";
+
+      await client.query(
+        `insert into public.sku_cost_history
+           (id, organization_id, sku_id, previous_cost, new_cost, changed_by_role, changed_at)
+         overriding system value
+         values ($3,$1,$2,null,10,'postgres','2026-07-15 12:00:00+00'),
+                ($4,$1,$2,10,30,'postgres','2026-07-21 15:00:00+00'),
+                ($5,$1,$2,30,50,'postgres','2026-07-25 12:00:00+00')
+         on conflict (id) do nothing`,
+        [ORG_SB, skuD, ...HISTORICO_D],
+      );
+
+      for (const [id, anterior, novo] of [
+        [EMPATE_MAIOR_ID, 40, 45],
+        [EMPATE_MENOR_ID, null, 40],
+      ] as const) {
+        await client.query(
+          `insert into public.sku_cost_history
+             (id, organization_id, sku_id, previous_cost, new_cost, changed_by_role, changed_at)
+           overriding system value
+           values ($3,$1,$2,$4,$5,'postgres','2026-07-19 12:00:00+00')
+           on conflict (id) do nothing`,
+          [ORG_SB, skuE, id, anterior, novo],
+        );
+      }
+
+      await client.query(
+        `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+         values ($1,$2,1)
+         on conflict do nothing`,
+        [kit2, skuD],
+      );
+
+      await client.query(
+        `insert into public.orders
+           (id, organization_id, ml_account_id, pack_id, status, date_created,
+            date_last_updated, total_amount, currency_id)
+         values
+           ($1,$7,$8,null,'paid','2026-07-20 15:00:00+00','2026-07-20 15:05:00+00',100,'BRL'),
+           ($2,$7,$8,null,'paid','2026-07-21 15:00:00+00','2026-07-21 15:05:00+00',200,'BRL'),
+           ($3,$7,$8,null,'paid','2026-07-22 15:00:00+00','2026-07-22 15:05:00+00',300,'BRL'),
+           ($4,$7,$8,null,'paid','2026-07-20 16:00:00+00','2026-07-20 16:05:00+00',100,'BRL'),
+           ($5,$7,$8,null,'paid','2026-07-22 16:00:00+00','2026-07-22 16:05:00+00',150,'BRL'),
+           ($6,$7,$8,null,'paid','2026-07-22 17:00:00+00','2026-07-22 17:05:00+00',200,'BRL')
+         on conflict (id) do nothing`,
+        [...PEDIDOS_JANELA, ORG_SB, CONTA_A],
+      );
+
+      await client.query(
+        `insert into public.order_items
+           (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+            title, quantity, unit_price, currency_id, sku_id, sale_fee)
+         values
+           ($1,$7,$8,0,'MLB931001',null,'Fat D',1,100,'BRL',$9,10),
+           ($2,$7,$8,0,'MLB931001',null,'Fat D',2,100,'BRL',$9,10),
+           ($3,$7,$8,0,'MLB931001',null,'Fat D',3,100,'BRL',$9,10),
+           ($4,$7,$8,0,'MLB931002',null,'Fat E',1,100,'BRL',$10,10),
+           ($5,$7,$8,0,'MLB931002',null,'Fat E',1,100,'BRL',$10,10),
+           ($5,$7,$8,1,'MLB931001',null,'Fat D',1,50,'BRL',$9,5),
+           ($6,$7,$8,0,'MLB931003',null,'Fat Kit 2',1,200,'BRL',$11,20)
+         on conflict do nothing`,
+        [...PEDIDOS_JANELA, ORG_SB, CONTA_A, skuD, skuE, kit2],
+      );
+
+      await client.query(
+        `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+         values ($1,$7,$8,5,0), ($2,$7,$8,6,0), ($3,$7,$8,7,0), ($4,$7,$8,8,0), ($5,$7,$8,20,0), ($6,$7,$8,9,0)
+         on conflict (order_id) do nothing`,
+        [...PEDIDOS_JANELA, ORG_SB, CONTA_A],
+      );
+    });
+
+    afterAll(async () => {
+      await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS_JANELA]);
+      await client.query("delete from public.orders where id = any($1)", [PEDIDOS_JANELA]);
+    });
+
+    it("o custo é o do intervalo da venda: antes da mudança, NO instante dela e depois; a mudança posterior à janela não vale", async () => {
+      const dados = await faturamento(ADMIN_SB, true, DE, ATE);
+
+      // Por dia, o resultado isola cada venda coberta (receita − comissão − frete − custo):
+      // 20/07: 3101 (100 − 10 − 5 − 10) + 3104 (100 − 10 − 8 − 45) = 75 + 37
+      // 21/07: 3102, 200 − 20 − 6 − 2×30
+      // 22/07: 3103 (300 − 30 − 7 − 3×30) + 3106 (200 − 20 − 9 − 30) = 173 + 141
+      expect(dados.diario).toEqual([
+        expect.objectContaining({ dia: "2026-07-20", pedidos: 2, resultado_venda: 112 }),
+        expect.objectContaining({ dia: "2026-07-21", pedidos: 1, resultado_venda: 114 }),
+        expect.objectContaining({ dia: "2026-07-22", pedidos: 3, resultado_venda: 314 }),
+      ]);
+
+      // FAT-D nos pedidos cobertos: 10 + 2×30 + 3×30. O 3105 tem FAT-D, mas
+      // não é coberto (dois itens).
+      const porSku = new Map(dados.por_sku?.maior_receita.map((linha) => [linha.sku_id, linha]));
+
+      expect(porSku.get(skuD)).toMatchObject({ pedidos: 4, pedidos_cobertos: 3, custo_produtos: 160, custo_atual: false });
+    });
+
+    it("janela de um dia: o intervalo que começou ANTES dela vale, e os que acabaram antes ou começam depois ficam de fora sem mudar nada", async () => {
+      // `historico` só guarda os intervalos que cruzam a janela. Em 22/07,
+      // FAT-D tem [15/07, 21/07) terminado antes, [21/07, 25/07) começado
+      // antes e ainda valendo, e [25/07, …) depois. O 3103 e o componente do
+      // KIT2 precisam do do meio: um filtro que exigisse `desde >= início da
+      // janela` jogaria os dois no custo atual (7), e o dia sairia 3×7 e 7.
+      const dados = await faturamento(ADMIN_SB, true, ATE, ATE);
+
+      expect(dados.diario).toEqual([
+        expect.objectContaining({ dia: ATE, pedidos: 3, resultado_venda: 314 }),
+      ]);
+      expect(dados.resumo).toMatchObject({ pedidos_cobertos: 2, custo_produtos: 120, pedidos_custo_atual: 0 });
+    });
+
+    it("empate de changed_at no mesmo SKU: vale a linha de MAIOR id", async () => {
+      const dados = await faturamento(ADMIN_SB, true, DE, ATE);
+      const porSku = new Map(dados.por_sku?.maior_receita.map((linha) => [linha.sku_id, linha]));
+
+      expect(porSku.get(skuE)).toMatchObject({ pedidos: 2, pedidos_cobertos: 1, custo_produtos: 45, custo_atual: false });
+    });
+
+    it("kit: cada componente acha UM intervalo, e o custo é o da data da venda", async () => {
+      const dados = await faturamento(ADMIN_SB, true, DE, ATE);
+      const porSku = new Map(dados.por_sku?.maior_receita.map((linha) => [linha.sku_id, linha]));
+
+      expect(porSku.get(kit2)).toMatchObject({ pedidos: 1, pedidos_cobertos: 1, custo_produtos: 30, custo_atual: false });
+    });
+
+    it("pedido com dois itens: frete contado UMA vez, pedido com custos mas fora de coberto", async () => {
+      const { resumo, diario } = await faturamento(ADMIN_SB, true, DE, ATE);
+
+      expect(resumo).toMatchObject({
+        pedidos: 6,
+        compras: 6,
+        unidades: 10,
+        receita_bruta: 1050,
+        taxas_ml: 105,
+        // Todos têm frete e comissão.
+        pedidos_com_custos: 6,
+        // 5 + 6 + 7 + 8 + 9 + 20: o frete do 3105 entra uma vez, não uma por item.
+        frete_vendedor: 55,
+        frete_medio_pedido: 9.17,
+        margem_operacional: 890,
+        pedidos_multi_item: 1,
+        // Só o 3105 fica fora: dois itens não dividem o frete.
+        pedidos_cobertos: 5,
+        receita_coberta: 900,
+        taxas_ml_cobertas: 90,
+        frete_vendedor_coberto: 35,
+        custo_produtos: 235,
+        // 900 − 90 − 35 − 235.
+        resultado_venda: 540,
+        margem_venda: 0.6,
+        pedidos_custo_atual: 0,
+        pedidos_sem_custo: 0,
+        pedidos_sem_frete: 0,
+      });
+
+      // 22/07: 7 + 20 + 9 — o frete do pedido com dois itens, uma vez.
+      expect(diario?.find((dia) => dia.dia === "2026-07-22")).toMatchObject({ receita_bruta: 650, frete_vendedor: 36 });
+    });
+
+    it("listas: receita empatada sai em ordem de sku_id, não na do plano", async () => {
+      const dados = await faturamento(ADMIN_SB, true, DE, ATE);
+
+      // FAT-E e KIT2 somam 200 cada. O `uuid` do Postgres compara byte a byte,
+      // a mesma ordem do texto em hexadecimal minúsculo.
+      expect(dados.por_sku?.maior_receita.map((linha) => linha.sku_id)).toEqual([skuD, ...[skuE, kit2].sort()]);
+      expect(dados.por_sku?.menor_margem).toEqual([]);
+    });
   });
 });
 
@@ -3106,6 +3371,151 @@ describe("observabilidade de sincronização", () => {
         ),
       ).rejects.toThrow(/permission denied|row-level security/i);
     });
+  });
+});
+
+// fulfillment_item_absences (20260918170000) -- a marca que tira do snapshot do
+// Full o anuncio que respondeu 404/403. Mesmo desenho de RLS de
+// metric_refresh_state (D-304): quem alcanca a CONTA le, so o worker escreve.
+//
+// Nenhuma guarda de catalogo trava o ALCANCE da policy: a de GRANTs olha so
+// escrita sem policy, a de anon olha so anon, a de RLS confere so se esta
+// ligada, e a da forma escalar nao pega `using (true)`. Uma migration futura
+// que trocasse a policy por `using (true)`, ou filtrasse por organizacao em vez
+// de conta, deixaria o ANALISTA de uma conta ler as marcas das outras -- e so
+// este bloco reprovaria.
+describe("fulfillment_item_absences respeita o alcance por conta", () => {
+  // Contas proprias no padrao `rlstest%`. A marca e a permissao caem em
+  // cascata com a conta, entao o afterAll abaixo limpa tudo com um delete.
+  const CONTA_PERMITIDA = "aaaa6666-0000-4000-8000-00000000aaaa"; // ANALISTA_SB tem permissao aqui.
+  const CONTA_SEM_PERMISSAO = "bbbb6666-0000-4000-8000-00000000bbbb"; // mesma organizacao, sem permissao.
+  const CONTA_OUTRA_ORG = "dddd6666-0000-4000-8000-00000000dddd";
+  const CONTAS = [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG];
+  const DESTAS_CONTAS = `ml_account_id in ('${CONTA_PERMITIDA}','${CONTA_SEM_PERMISSAO}','${CONTA_OUTRA_ORG}')`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$4,'Ausência A','rlstest-ausencia-a','PENDING'),
+              ($2,$4,'Ausência B','rlstest-ausencia-b','PENDING'),
+              ($3,$5,'Ausência de outra organização','rlstest-ausencia-outra','PENDING')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA_PERMITIDA],
+    );
+
+    // Uma marca por conta, gravada pelo dono da conexao. O caminho do worker
+    // (service_role, upsert) tem teste proprio abaixo.
+    await client.query(
+      `insert into public.fulfillment_item_absences
+         (ml_account_id, organization_id, item_id, http_status, failures,
+          first_failed_at, last_failed_at, recheck_after)
+       values ($1,$4,'MLB900661',404,1,now(),now(),now() + interval '45 hours'),
+              ($2,$4,'MLB900662',404,1,now(),now(),now() + interval '45 hours'),
+              ($3,$5,'MLB900663',403,1,now(),now(),now() + interval '9 hours')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.ml_accounts where id = any($1)", [CONTAS]);
+  });
+
+  it("ANALISTA vê a marca da conta permitida e NÃO a da conta sem permissão, mesmo na mesma organização", async () => {
+    const rows = await asUser<{ ml_account_id: string; item_id: string }>(
+      ANALISTA_SB,
+      `select ml_account_id, item_id from public.fulfillment_item_absences
+        where ${DESTAS_CONTAS} order by item_id`,
+    );
+
+    expect(rows).toEqual([{ ml_account_id: CONTA_PERMITIDA, item_id: "MLB900661" }]);
+  });
+
+  it("ADMIN vê as marcas de todas as contas da própria organização, e só delas", async () => {
+    const rows = await asUser<{ ml_account_id: string }>(
+      ADMIN_SB,
+      `select ml_account_id from public.fulfillment_item_absences
+        where ${DESTAS_CONTAS} order by item_id`,
+    );
+
+    expect(rows.map((row) => row.ml_account_id)).toEqual([CONTA_PERMITIDA, CONTA_SEM_PERMISSAO]);
+  });
+
+  it("usuário de outra organização vê só a marca da conta dele", async () => {
+    const rows = await asUser<{ ml_account_id: string }>(
+      DE_OUTRA_ORG,
+      `select ml_account_id from public.fulfillment_item_absences where ${DESTAS_CONTAS}`,
+    );
+
+    expect(rows).toEqual([{ ml_account_id: CONTA_OUTRA_ORG }]);
+  });
+
+  it("usuário sem organização não vê marca nenhuma", async () => {
+    const rows = await asUser(SEM_ORG, `select item_id from public.fulfillment_item_absences where ${DESTAS_CONTAS}`);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon é recusado", async () => {
+    await expect(asAnon("select * from public.fulfillment_item_absences")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não insere, não atualiza e não apaga — nem o ADMIN que enxerga a marca", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.fulfillment_item_absences
+           (ml_account_id, organization_id, item_id, http_status, first_failed_at, last_failed_at, recheck_after)
+         values ('${CONTA_PERMITIDA}','${ORG_SB}','MLB900669',404,now(),now(),now() + interval '1 hour')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+
+    // Adiar o recheque por um ano esconderia o estoque Full do anúncio: é
+    // exatamente a escrita que não pode sair do navegador.
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `update public.fulfillment_item_absences set recheck_after = now() + interval '1 year'
+          where ml_account_id = '${CONTA_PERMITIDA}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      asUser(ADMIN_SB, `delete from public.fulfillment_item_absences where ml_account_id = '${CONTA_PERMITIDA}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("service_role grava e renova a marca pelo upsert do worker", async () => {
+    const rows = await asServiceRole<{ failures: number }>(
+      `insert into public.fulfillment_item_absences
+         (ml_account_id, organization_id, item_id, http_status, failures,
+          first_failed_at, last_failed_at, recheck_after)
+       values ('${CONTA_PERMITIDA}','${ORG_SB}','MLB900661',404,2,now(),now(),now() + interval '45 hours')
+       on conflict (ml_account_id, item_id) do update
+         set failures = excluded.failures,
+             last_failed_at = excluded.last_failed_at,
+             recheck_after = excluded.recheck_after
+       returning failures`,
+    );
+
+    expect(rows).toEqual([{ failures: 2 }]);
+  });
+
+  it("toda marca vence: recheck_after tem de ser depois da última falha", async () => {
+    await expect(
+      client.query(
+        `insert into public.fulfillment_item_absences
+           (ml_account_id, organization_id, item_id, http_status, first_failed_at, last_failed_at, recheck_after)
+         values ($1,$2,'MLB900668',404,now(),now(),now())`,
+        [CONTA_PERMITIDA, ORG_SB],
+      ),
+    ).rejects.toThrow(/fulfillment_item_absences_order/);
   });
 });
 
