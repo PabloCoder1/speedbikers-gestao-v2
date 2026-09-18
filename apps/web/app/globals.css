@@ -9678,7 +9678,7 @@ td.sb-pco-num-linha {
 .sb-adjust-stepper { display: flex; align-items: stretch; overflow: hidden; border: 1.5px solid var(--sb-adjust-tone); border-radius: 0.8rem; background: var(--sb-surface); }
 .sb-adjust-stepper button { width: 2.75rem; min-height: 2.75rem; border: 0; background: var(--sb-adjust-tone-soft); color: var(--sb-adjust-tone); cursor: pointer; font-size: 1.25rem; font-weight: 700; }
 .sb-adjust-stepper button:hover { filter: brightness(0.96); }
-.sb-adjust-qty { width: 7.5rem; padding: 0.55rem 0.5rem; border: 0; background: transparent; color: var(--sb-text); font: 700 1.6rem/1.2 var(--sb-sans); font-variant-numeric: tabular-nums; text-align: center; }
+.sb-adjust-qty { width: 7.5rem; height: auto; min-height: 2.75rem; padding: 0.55rem 0.5rem; border: 0; border-radius: 0; background: transparent; color: var(--sb-text); font: 700 1.6rem/1.2 var(--sb-sans); font-variant-numeric: tabular-nums; text-align: center; }
 .sb-adjust-qty:focus { outline: none; }
 .sb-adjust-stepper:focus-within { box-shadow: 0 0 0 3px var(--sb-adjust-tone-soft); }
 .sb-adjust-quick { display: flex; flex-wrap: wrap; gap: 0.4rem; }

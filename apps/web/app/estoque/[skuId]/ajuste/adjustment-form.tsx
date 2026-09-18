@@ -197,11 +197,16 @@ export function AdjustmentForm({
         <legend><span className="sb-adjust-step">3</span> {modeInfo.qtyLabel}</legend>
         <div className="sb-adjust-qty-row">
           <div className="sb-adjust-stepper">
-            <button type="button" aria-label="Diminuir 1" onClick={() => { step(-1); }}>
+            <button
+              className="sb-button sb-button-sm"
+              type="button"
+              aria-label="Diminuir 1"
+              onClick={() => { step(-1); }}
+            >
               −
             </button>
             <input
-              className="sb-adjust-qty"
+              className="sb-input sb-adjust-qty"
               name="quantity"
               inputMode="numeric"
               pattern="[0-9]*"
@@ -215,18 +220,32 @@ export function AdjustmentForm({
                 setSuccess(null);
               }}
             />
-            <button type="button" aria-label="Aumentar 1" onClick={() => { step(1); }}>
+            <button
+              className="sb-button sb-button-sm"
+              type="button"
+              aria-label="Aumentar 1"
+              onClick={() => { step(1); }}
+            >
               +
             </button>
           </div>
           <div className="sb-adjust-quick">
             {mode === "BALANCO" ? (
-              <button type="button" onClick={() => { setQuantityText(String(Math.max(0, current))); }}>
+              <button
+                className="sb-button sb-button-sm"
+                type="button"
+                onClick={() => { setQuantityText(String(Math.max(0, current))); }}
+              >
                 Usar saldo atual
               </button>
             ) : (
               QUICK_STEPS.map((amount) => (
-                <button key={amount} type="button" onClick={() => { step(amount); }}>
+                <button
+                  className="sb-button sb-button-sm"
+                  key={amount}
+                  type="button"
+                  onClick={() => { step(amount); }}
+                >
                   +{amount}
                 </button>
               ))

@@ -37,6 +37,12 @@ filtros dentro do painel, busca operacional, identidade de produto e ações
 compactas por linha. As recusas métricas de D-249 permanecem intactas; a
 mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 
+`/estoque/[skuId]/ajuste` virou um fluxo operacional completo: entrada, saída e
+balanço sem sinal manual, prévia do saldo, motivo estruturado, autoria, histórico
+recente, bloqueio seguro quando saldo/permissão falha e layout responsivo. O
+núcleo está em `01d1ce7`, com validação local completa (`check`, `build`,
+`docs:check` e E2E responsivo) nesta entrega.
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
