@@ -1231,9 +1231,15 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
     }
 
-    // 200 e não 201 no duplicado: o documento já existe, nada foi criado agora.
+    // 200 e não 201 no duplicado e no reenvio: o documento já existe, nada foi
+    // criado agora. `retried` diz ao navegador que a leitura recomeçou.
     return context.json(
-      { documentId: outcome.documentId, contentHash: outcome.contentHash, duplicate: outcome.status === "duplicate" },
+      {
+        documentId: outcome.documentId,
+        contentHash: outcome.contentHash,
+        duplicate: outcome.status === "duplicate",
+        retried: outcome.status === "retried",
+      },
       outcome.status === "created" ? 201 : 200,
     );
   });

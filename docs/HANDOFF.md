@@ -37,6 +37,12 @@ filtros dentro do painel, busca operacional, identidade de produto e ações
 compactas por linha. As recusas métricas de D-249 permanecem intactas; a
 mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 
+`/estoque/[skuId]/ajuste` virou um fluxo operacional completo: entrada, saída e
+balanço sem sinal manual, prévia do saldo, motivo estruturado, autoria, histórico
+recente, bloqueio seguro quando saldo/permissão falha e layout responsivo. O
+núcleo está em `01d1ce7`, com validação local completa (`check`, `build`,
+`docs:check` e E2E responsivo) nesta entrega.
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 
@@ -261,22 +267,10 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**`/curva-abc` reorganizada em 17/09:** os filtros agora ficam compactos no
-cabeçalho e a configuração ativa aparece em um painel único; os cartões A/B/C
-expõem limites e participação visual; Full, risco e tabela ganharam hierarquia,
-links para SKU e estados mais legíveis. A página passou de 200 para 100 linhas
-por página para reduzir HTML e trabalho de SSR, sem alterar os totais e classes
-calculados no SQL sobre todo o recorte. O fluxo autenticado foi conferido com a
-seed local, inclusive a troca do critério para unidades.
+**Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**D-351 publicada em 17/09** (§13): falta a prova de 24 h e a decisão do dono sobre
-`v3-reconcile-balances` (3 SKUs com alvo negativo sem causa conhecida). Depois, na
-ordem do dono: D-352 (Full não baixa a loja) → D-362 (SKU por user product) →
-experiência de compra (captura diária, nota antes do relist e na medição).
-**D-352 pronta na branch `fix/estoque-full-d352` em 18/09, NÃO publicada:** migration `20260918000000` → worker/api → varredura `v3-order-logistics-sweep` → compensação por psql, nessa ordem (`docs/DEPLOYMENT.md` 8.3); revisão de 6965b0e corrigida (D-352 §7); `estoque-full.integration.test.ts` rodou 8/8 num Postgres descartável, não no Supabase local. Antes de puxar item de backlog, confira a
-categoria dele em D-223 — quase todos dependem de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
-consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev só
-prova no mesmo instante** (histórico em `docs/archive/handoffs/`).
+**D-351:** prova de 24 h pendente para v3-reconcile-balances; depois, D-352 e D-362.
+**D-352 (Full não baixa a loja):** pronta na `fix/estoque-full-d352`, não publicada; ordem em `docs/DEPLOYMENT.md` 8.3 (migration → worker/api → varredura → compensação).
 
 ---
 

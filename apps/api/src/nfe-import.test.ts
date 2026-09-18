@@ -22,25 +22,59 @@ const FILE = {
  * testar a decisão de fluxo, não o Postgres real (isso é papel dos testes de
  * integração de `@sb/db`).
  */
-function fakeDb(options: { existingDocumentId?: string; insertFails?: boolean }): {
+interface ExistingDocument {
+  id: string;
+  status: string;
+  parsed_at: string | null;
+}
+
+function fakeDb(options: {
+  existingDocumentId?: string;
+  existing?: ExistingDocument;
+  insertFails?: boolean;
+  /** O `update ... where status = 'FAILED'` não acha a linha: outro reenvio chegou antes. */
+  retryLosesRace?: boolean;
+}): {
   db: NfeImportDeps["db"];
   inserted: ReturnType<typeof vi.fn>;
+  updated: ReturnType<typeof vi.fn>;
 } {
   const inserted = vi.fn();
+  const updated = vi.fn();
+
+  // `existingDocumentId` sozinho é o duplicado de sempre: um documento que foi lido.
+  const existing: ExistingDocument | null =
+    options.existing ??
+    (options.existingDocumentId === undefined
+      ? null
+      : { id: options.existingDocumentId, status: "PARSED", parsed_at: "2026-08-22T11:00:00.000Z" });
 
   const db = {
     from: () => ({
       select: () => ({
         eq: () => ({
           eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({
-                data: options.existingDocumentId === undefined ? null : { id: options.existingDocumentId },
-                error: null,
-              }),
+            maybeSingle: () => Promise.resolve({ data: existing, error: null }),
           }),
         }),
       }),
+      update: (row: unknown) => {
+        updated(row);
+
+        return {
+          eq: () => ({
+            eq: () => ({
+              select: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: options.retryLosesRace === true || existing === null ? null : { id: existing.id },
+                    error: null,
+                  }),
+              }),
+            }),
+          }),
+        };
+      },
       insert: (row: unknown) => {
         inserted(row);
 
@@ -58,28 +92,30 @@ function fakeDb(options: { existingDocumentId?: string; insertFails?: boolean })
     }),
   } as unknown as NfeImportDeps["db"];
 
-  return { db, inserted };
+  return { db, inserted, updated };
 }
 
 function deps(
-  options: { existingDocumentId?: string; insertFails?: boolean; uploadFails?: boolean } = {},
+  options: Parameters<typeof fakeDb>[0] & { uploadFails?: boolean } = {},
 ): {
   deps: NfeImportDeps;
   uploads: { path: string }[];
   enqueued: { dedupeKey: string; jobType: string }[];
   lines: string[];
   inserted: ReturnType<typeof vi.fn>;
+  updated: ReturnType<typeof vi.fn>;
 } {
   const uploads: { path: string }[] = [];
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
   const lines: string[] = [];
-  const { db, inserted } = fakeDb(options);
+  const { db, inserted, updated } = fakeDb(options);
 
   return {
     uploads,
     enqueued,
     lines,
     inserted,
+    updated,
     deps: {
       db,
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
@@ -154,6 +190,53 @@ describe("receiveNfeUpload", () => {
 
     expect(result).toMatchObject({ status: "duplicate", documentId: "doc-antigo" });
     expect(ctx.uploads).toHaveLength(0);
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  /**
+   * O caso de produção de 18/09/2026: o PDF entrou pela api antiga com
+   * extensão .xml e a leitura falhou. Reenviar o MESMO arquivo tem de ler de
+   * novo, no caminho certo — senão o hash prende o documento no erro.
+   */
+  it("reenviar arquivo cuja leitura falhou lê de novo, no caminho do formato certo", async () => {
+    const ctx = deps({ existing: { id: "doc-falhou", status: "FAILED", parsed_at: null } });
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, {
+      fileName: "NFE-4226.pdf",
+      contentType: "application/pdf",
+      body: PDF_DANFE,
+    });
+
+    expect(result).toMatchObject({ status: "retried", documentId: "doc-falhou" });
+    expect(ctx.uploads[0]?.path.endsWith(".pdf")).toBe(true);
+    expect(ctx.updated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "UPLOADED", source_format: "PDF", last_error: null }),
+    );
+    expect(ctx.inserted).not.toHaveBeenCalled();
+    // Chave NOVA: a do primeiro parse (`nfe-parse:<id>`) já foi usada na fila.
+    expect(ctx.enqueued).toEqual([
+      { jobType: "nfe.import.parse", dedupeKey: "nfe-parse:doc-falhou:2026-08-22T12:00:00.000Z" },
+    ]);
+  });
+
+  it("falha na APLICAÇÃO não relê: os vínculos humanos ficam como estão", async () => {
+    const ctx = deps({
+      existing: { id: "doc-aplicacao", status: "FAILED", parsed_at: "2026-08-22T11:00:00.000Z" },
+    });
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, FILE);
+
+    expect(result).toMatchObject({ status: "duplicate", documentId: "doc-aplicacao" });
+    expect(ctx.updated).not.toHaveBeenCalled();
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("dois reenvios juntos: quem não acha a linha em FAILED não enfileira de novo", async () => {
+    const ctx = deps({ existing: { id: "doc-falhou", status: "FAILED", parsed_at: null }, retryLosesRace: true });
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, FILE);
+
+    expect(result).toMatchObject({ status: "duplicate", documentId: "doc-falhou" });
     expect(ctx.enqueued).toHaveLength(0);
   });
 

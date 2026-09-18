@@ -136,7 +136,9 @@ Projeto de produção: **`speedbikers-prod`**, mesma região (D-350). ⚠️ O p
 
 ### Vercel: `ignoreCommand` fica no repositório, não no dashboard
 
-`apps/web/vercel.json` define `"ignoreCommand": "exit 1"` — na Vercel a lógica é invertida: **saída 1 constrói, saída 0 pula**.
+`apps/web/vercel.json` define `"ignoreCommand": "sh scripts/vercel-ignore.sh"` — na Vercel a lógica é invertida: **saída 1 constrói, saída 0 pula**.
+
+Até 18/09/2026 era `exit 1` (constrói sempre). Agora o script pula **uma** coisa só: prévia de branch de feature no projeto de **produção** (`speedbikers-prod`, identificado por `VERCEL_PROJECT_ID`). Continuam construindo todo deploy do projeto do Dev (`m71j`, onde a prévia de PR é revisada), a `fix/guardas-prod-d348` e a `v3` no projeto de produção, e qualquer deploy de produção. Medido em 17/09: 20 dos ~45 builds diários do `speedbikers-prod` eram prévias de feature que ninguém abria. A api de produção só aceita a origem `speedbikers-prod.vercel.app`, então essas prévias nem conversavam com ela. A regra falha aberta: sem as variáveis de sistema, constrói. Os casos estão em `apps/web/scripts/vercel-ignore.test.sh`, que roda na job `scripts` da CI.
 
 Está versionado de propósito. Um *Ignored Build Step* configurado só no dashboard é invisível para quem lê o repositório e **cancela deploys em silêncio** — foi exatamente o que aconteceu em 2026-08-20, quando o comando destinado ao projeto antigo da V2 foi colado no projeto da V3 e cancelou cinco deploys seguidos sem nenhum sinal no código.
 

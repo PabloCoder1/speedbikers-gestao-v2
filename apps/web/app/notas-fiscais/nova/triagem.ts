@@ -41,12 +41,24 @@ export function triar(arquivo: { name: string; size: number; type: string }): Ar
   const extensao = EXTENSAO.exec(arquivo.name)?.[1]?.toLowerCase() ?? null;
   const tipo = arquivo.type.toLowerCase();
 
+  /*
+    A extensão manda; o tipo do navegador só vale quando o nome não tem
+    extensão. Antes o tipo entrava com `includes("xml")`, e o da planilha do
+    Excel é `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+    — a `.xlsx` virava "XML", passava pela triagem e só a `api` recusava.
+  */
   const formato: "XML" | "PDF" | null =
-    extensao === "pdf" || tipo === "application/pdf"
+    extensao === "pdf"
       ? "PDF"
-      : extensao === "xml" || tipo.includes("xml")
+      : extensao === "xml"
         ? "XML"
-        : null;
+        : extensao !== null
+          ? null
+          : tipo === "application/pdf"
+            ? "PDF"
+            : tipo === "application/xml" || tipo === "text/xml"
+              ? "XML"
+              : null;
 
   const base = { nome: arquivo.name, bytes: arquivo.size, formato };
 
