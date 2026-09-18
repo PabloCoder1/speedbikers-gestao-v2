@@ -4178,6 +4178,199 @@ table {
   }
 }
 
+/* --- Copiloto e Central de Notificações: refinamento operacional --- */
+.sb-copilot-panel-body {
+  display: grid;
+  gap: var(--sb-space-4);
+}
+
+.sb-copilot-contract {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  max-width: 46rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--sb-secondary) 24%, var(--sb-border));
+  border-left: 3px solid var(--sb-secondary);
+  border-radius: var(--sb-radius);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-copilot-contract-mark {
+  display: grid;
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sb-primary);
+  color: var(--sb-accent);
+  font-size: 0.75rem;
+}
+
+.sb-copilot-contract strong {
+  display: block;
+  color: var(--sb-primary);
+  font-size: 0.75rem;
+}
+
+.sb-copilot-contract p {
+  max-width: 42rem;
+  margin: 0.25rem 0 0;
+  color: var(--sb-text-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.sb-copilot-message-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-border) transparent;
+}
+
+.sb-copilot-exchange {
+  display: grid;
+  gap: var(--sb-space-1);
+}
+
+.sb-copilot-question,
+.sb-copilot-answer {
+  line-height: 1.55;
+}
+
+.sb-copilot-question {
+  box-shadow: 0 3px 10px rgb(15 17 88 / 9%);
+}
+
+.sb-copilot-answer {
+  position: relative;
+}
+
+.sb-copilot-answer::before {
+  position: absolute;
+  top: 0.75rem;
+  left: -0.4rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-bottom: 1px solid var(--sb-border);
+  border-left: 1px solid var(--sb-border);
+  background: var(--sb-surface);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.sb-copilot-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  margin: 0;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+}
+
+.sb-copilot-tools-label {
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-bg-soft);
+  color: var(--sb-secondary);
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sb-copilot-suggestions button {
+  min-height: 2.75rem;
+  border-color: var(--sb-border);
+  background: var(--sb-surface);
+}
+
+.sb-copilot-suggestions button:hover:not(:disabled) {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-copilot-composer {
+  display: flex;
+  gap: var(--sb-space-2);
+  align-items: stretch;
+  max-width: 46rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-copilot-composer .sb-input {
+  min-height: 2.25rem;
+}
+
+.sb-notification-list {
+  display: grid;
+  gap: var(--sb-space-2);
+}
+
+.sb-notification-row {
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.sb-notification-row:hover {
+  border-color: color-mix(in srgb, var(--sb-secondary) 45%, var(--sb-border)) !important;
+  box-shadow: 0 3px 10px rgb(15 17 88 / 5%);
+}
+
+.sb-notification-row[data-state="read"] .sb-notification-content {
+  opacity: 0.82;
+}
+
+.sb-notification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.sb-notification-read-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--sb-success);
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sb-notification-read-state::before {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
+@media (max-width: 600px) {
+  .sb-copilot-contract {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .sb-copilot-composer {
+    flex-direction: column;
+  }
+
+  .sb-copilot-composer .sb-button {
+    width: 100%;
+  }
+
+  .sb-notification-row {
+    flex-direction: column;
+    gap: var(--sb-space-2) !important;
+  }
+
+  .sb-notification-row > .sb-button {
+    align-self: stretch !important;
+    justify-content: center;
+  }
+}
+
 /*
  * ENTRADA — `/login`, a única tela fora do Shell (`app/login/page.tsx`).
  *
