@@ -51,15 +51,27 @@
 -- duas chaves diferentes e o `UNIQUE` deixaria os dois estornos entrarem (+1).
 -- Com a chave neutra, o `UNIQUE` que ja existe absorve o segundo.
 --
--- Os 14 valores anteriores sao os de `20260916180200_estorno_pre_captura_e_fonte_backfill.sql`,
--- repetidos sem alteracao; `ESTORNO_FULL` e o 15o.
+-- **O CHECK e recriado INTEIRO, entao a lista parte do ULTIMO que o criou**, nao do
+-- que existia quando esta fatia comecou. Os 15 valores anteriores sao os de
+-- `20260917230000_documentos_pdf.sql` (D-375): os 14 de
+-- `20260916180200_estorno_pre_captura_e_fonte_backfill.sql` mais `SAIDA_DOCUMENTO`,
+-- repetidos sem alteracao; `ESTORNO_FULL` e o 16o. A primeira versao desta migration
+-- partiu da 20260916180200 e APAGAVA `SAIDA_DOCUMENTO`: com linha dele no banco o
+-- `add constraint` abortaria (23514); sem linha, passaria calada e todo documento de
+-- saida aplicado depois levaria 23514 no `nfe-import-apply`. O teste
+-- `packages/db/src/movement-type-check.test.ts` exige no ultimo CHECK todo tipo que o
+-- worker grava -- e a trava para a proxima migration que mexer aqui.
 alter table public.stock_movements drop constraint stock_movements_movement_type_check;
 
 alter table public.stock_movements add constraint stock_movements_movement_type_check check (movement_type in (
   'ENTRADA_NFE', 'SAIDA_NFE', 'VENDA_ML', 'CANCELAMENTO_ML', 'DEVOLUCAO_ML',
   'AJUSTE_MANUAL', 'AJUSTE_RECONCILIACAO', 'TRANSFERENCIA',
   'RESERVA', 'LIBERACAO_RESERVA', 'ENTRADA_TRANSITO', 'RECEBIMENTO_TRANSITO',
-  'ESTORNO_PRE_CAPTURA', 'ESTORNO_REVERSAO_EXCEDENTE', 'ESTORNO_FULL'
+  'ESTORNO_PRE_CAPTURA', 'ESTORNO_REVERSAO_EXCEDENTE',
+  -- D-375: saida conferida por documento NAO fiscal (20260917230000).
+  'SAIDA_DOCUMENTO',
+  -- D-352: o par da venda entregue pelo Full.
+  'ESTORNO_FULL'
 ));
 
 -- ------------------------------------------------------------
