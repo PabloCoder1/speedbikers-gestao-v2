@@ -4,7 +4,7 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { describe, expect, it } from "vitest";
 
 import type { FetchFulfillmentSnapshotsParams } from "./ml-fulfillment-fetch.js";
-import { fetchFulfillmentSnapshots, ITEM_ABSENCE_RECHECK_MS } from "./ml-fulfillment-fetch.js";
+import { fetchFulfillmentSnapshots, ITEM_ABSENCE_RECHECK_MS, itemAbsenceRecheckMs } from "./ml-fulfillment-fetch.js";
 
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -539,25 +539,87 @@ function at(hoursAfterT0: number): Date {
   return new Date(T0.getTime() + hoursAfterT0 * HOUR);
 }
 
+/**
+ * Um `timestamptz` como o PostgREST devolve: `+00:00` em vez de `Z`, e sem
+ * fração quando ela é zero ('2026-09-18T18:00:05+00:00' — medido no Dev). O
+ * fuso segue o `TimeZone` da sessão: é UTC hoje, mas um `timezone` posto no
+ * banco ou no papel (o da operação é America/Sao_Paulo) muda a saída sem
+ * mudar código. O fake gravava o texto de `toISOString()` e devolvia o mesmo
+ * texto, então comparar STRING e comparar INSTANTE davam sempre igual.
+ */
+function asPostgrestTimestamp(iso: string, offsetMinutes = 0): string {
+  const local = new Date(Date.parse(iso) + offsetMinutes * 60_000).toISOString();
+  const fraction = local.slice(20, 23).replace(/0+$/, "");
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMinutes);
+  const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+
+  return `${local.slice(0, 19)}${fraction === "" ? "" : `.${fraction}`}${offset}`;
+}
+
+/**
+ * `first_failed_at` volta para o upsert com o texto que a leitura trouxe
+ * ('...+00:00'), e o Postgres lê o mesmo instante. Comparar o texto com
+ * `toISOString()` reprovaria um valor certo.
+ */
+function instantOf(timestamp: string | undefined): number {
+  return timestamp === undefined ? Number.NaN : Date.parse(timestamp);
+}
+
 function fakeDbWithAbsences(options: {
   links: Link[];
+  /** Marcas DESTA conta (`ML_ACCOUNT_ID`). */
   absences?: AbsenceRow[];
+  /** Marcas de OUTRAS contas, na mesma tabela — só um `.eq("ml_account_id")` as separa. */
+  foreignAbsences?: AbsenceRow[];
+  /** Fuso em que o PostgREST devolve os `timestamptz` (padrão: UTC). */
+  offsetMinutes?: number;
   readError?: boolean;
   upsertError?: boolean;
   deleteError?: boolean;
 }): {
   db: FetchFulfillmentSnapshotsParams["db"];
   table: Map<string, AbsenceRow>;
+  foreign: Map<string, AbsenceRow>;
   upserts: { rows: AbsenceRow[]; options: unknown }[];
   deletes: { filters: Record<string, unknown>; ids: readonly string[] }[];
   inserted: { table: string; row: unknown }[];
 } {
   const table = new Map<string, AbsenceRow>((options.absences ?? []).map((row) => [row.item_id, row]));
+  const foreignKey = (row: { ml_account_id: string; item_id: string }): string => `${row.ml_account_id}|${row.item_id}`;
+  const foreign = new Map<string, AbsenceRow>((options.foreignAbsences ?? []).map((row) => [foreignKey(row), row]));
   const upserts: { rows: AbsenceRow[]; options: unknown }[] = [];
   const deletes: { filters: Record<string, unknown>; ids: readonly string[] }[] = [];
   const inserted: { table: string; row: unknown }[] = [];
   const ok = { data: null, error: null };
   const boom = { data: null, error: { message: "boom" } };
+
+  /** Leitura das marcas: aplica os `.eq()` de verdade e devolve o texto no formato do PostgREST. */
+  function absencesChain(filters: Record<string, unknown>): {
+    eq: (column: string, value: unknown) => ReturnType<typeof absencesChain>;
+    order: () => ReturnType<typeof absencesChain>;
+    range: (from: number, to: number) => Promise<{ data: unknown[]; error: null }>;
+  } {
+    const self = {
+      eq: (column: string, value: unknown) => absencesChain({ ...filters, [column]: value }),
+      order: () => self,
+      range: (from: number, to: number) => {
+        const rows = [...table.values(), ...foreign.values()]
+          .filter((row) => Object.entries(filters).every(([column, value]) => row[column as keyof AbsenceRow] === value))
+          .sort((a, b) => a.item_id.localeCompare(b.item_id))
+          .map((row) => ({
+            item_id: row.item_id,
+            failures: row.failures,
+            first_failed_at: asPostgrestTimestamp(row.first_failed_at, options.offsetMinutes),
+            recheck_after: asPostgrestTimestamp(row.recheck_after, options.offsetMinutes),
+          }));
+
+        return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
+      },
+    };
+
+    return self;
+  }
 
   const db = {
     from: (name: string) => ({
@@ -571,9 +633,7 @@ function fakeDbWithAbsences(options: {
             return chain({ data: null, error: { message: 'relation "fulfillment_item_absences" does not exist' } });
           }
 
-          const rows = [...table.values()].sort((a, b) => a.item_id.localeCompare(b.item_id));
-
-          return chain({ data: rows, error: null });
+          return absencesChain({});
         }
 
         return chain({ data: [], error: null });
@@ -594,7 +654,10 @@ function fakeDbWithAbsences(options: {
 
         if (options.upsertError === true) return Promise.resolve(boom);
 
-        for (const row of rows as AbsenceRow[]) table.set(row.item_id, row);
+        for (const row of rows as AbsenceRow[]) {
+          if (row.ml_account_id === ML_ACCOUNT_ID) table.set(row.item_id, row);
+          else foreign.set(foreignKey(row), row);
+        }
 
         return Promise.resolve(ok);
       },
@@ -611,8 +674,16 @@ function fakeDbWithAbsences(options: {
 
             if (options.deleteError === true) return Promise.resolve(boom);
 
-            if (filters.ml_account_id === ML_ACCOUNT_ID) {
-              for (const id of ids) table.delete(id);
+            // Sem o filtro de conta, o delete apagaria o item de TODAS as
+            // contas — o fake segue o banco e apaga de todas.
+            for (const id of ids) {
+              if (filters.ml_account_id === undefined || filters.ml_account_id === ML_ACCOUNT_ID) table.delete(id);
+
+              for (const [key, row] of foreign) {
+                if (row.item_id === id && (filters.ml_account_id === undefined || filters.ml_account_id === row.ml_account_id)) {
+                  foreign.delete(key);
+                }
+              }
             }
 
             return Promise.resolve(ok);
@@ -624,7 +695,7 @@ function fakeDbWithAbsences(options: {
     }),
   } as unknown as FetchFulfillmentSnapshotsParams["db"];
 
-  return { db, table, upserts, deletes, inserted };
+  return { db, table, foreign, upserts, deletes, inserted };
 }
 
 function scriptedClient(
@@ -684,6 +755,8 @@ const LINKS_COM_UM_MORTO: Link[] = [
   { item_id: "MLB9", sku_id: "sku-9" },
 ];
 
+const VIVOS_LINKS: Link[] = LINKS_COM_UM_MORTO.filter((link) => link.item_id !== "MLB9");
+
 const VIVOS: Record<string, ItemBehavior> = {
   MLB1: { id: "MLB1", inventory_id: "INV-1" },
   MLB2: { id: "MLB2", inventory_id: "INV-2" },
@@ -704,24 +777,36 @@ function mark(itemId: string, status: number, recheckAfter: Date, extra: Partial
 }
 
 describe("marca de ausência: item 404/403 sai da varredura até o recheque", () => {
-  it("as janelas: 403 pula uma execução de 6 h, 404 pula sete e cabe na janela de 3 dias do Full atual (D-173)", () => {
-    // 403: vence entre a 1ª (6 h) e a 2ª (12 h) execução seguinte.
-    expect(ITEM_ABSENCE_RECHECK_MS[403]).toBeGreaterThan(6 * HOUR);
-    expect(ITEM_ABSENCE_RECHECK_MS[403]).toBeLessThan(12 * HOUR);
-    // 404: vence entre 42 h e 48 h — recheque na oitava execução.
-    expect(ITEM_ABSENCE_RECHECK_MS[404]).toBeGreaterThan(42 * HOUR);
-    expect(ITEM_ABSENCE_RECHECK_MS[404]).toBeLessThan(48 * HOUR);
-    // Último snapshot bom (até 6 h antes da falha) + próxima execução depois
-    // da janela precisa caber nas 72 h do Full atual: senão um 404 falso
-    // tiraria o bucket das telas antes do recheque.
-    expect(6 * HOUR + ITEM_ABSENCE_RECHECK_MS[404] + 6 * HOUR).toBeLessThan(72 * HOUR);
+  it("as janelas: a curta pula uma execução de 6 h, a longa pula sete, e só o SEGUNDO 404 seguido usa a longa", () => {
+    // Curta: vence entre a 1ª (6 h) e a 2ª (12 h) execução seguinte.
+    expect(ITEM_ABSENCE_RECHECK_MS.short).toBeGreaterThan(6 * HOUR);
+    expect(ITEM_ABSENCE_RECHECK_MS.short).toBeLessThan(12 * HOUR);
+    // Longa: vence entre 42 h e 48 h — recheque na oitava execução.
+    expect(ITEM_ABSENCE_RECHECK_MS.long).toBeGreaterThan(42 * HOUR);
+    expect(ITEM_ABSENCE_RECHECK_MS.long).toBeLessThan(48 * HOUR);
+
+    // 403 é sempre curta; 404 só vira longa na segunda falha seguida.
+    expect(itemAbsenceRecheckMs(403, 1)).toBe(ITEM_ABSENCE_RECHECK_MS.short);
+    expect(itemAbsenceRecheckMs(403, 5)).toBe(ITEM_ABSENCE_RECHECK_MS.short);
+    expect(itemAbsenceRecheckMs(404, 1)).toBe(ITEM_ABSENCE_RECHECK_MS.short);
+    expect(itemAbsenceRecheckMs(404, 2)).toBe(ITEM_ABSENCE_RECHECK_MS.long);
+
+    // O pior caso com as execuções vizinhas capturando: último snapshot bom
+    // 6 h antes do primeiro 404, segundo 404 12 h depois, recheque na
+    // execução seguinte ao fim da janela longa. Tem de caber nas 72 h do
+    // Full atual (D-173). NÃO cobre vizinhas falhando: aí o intervalo passa
+    // de 72 h, e o texto do PERFORMANCE.md diz isso.
+    const nextRun = (ms: number): number => Math.ceil(ms / (6 * HOUR)) * 6 * HOUR;
+
+    expect(6 * HOUR + nextRun(ITEM_ABSENCE_RECHECK_MS.short) + nextRun(ITEM_ABSENCE_RECHECK_MS.long)).toBeLessThan(72 * HOUR);
   });
 
-  it("404 grava a marca e o item é PULADO nas execuções seguintes, até a janela vencer", async () => {
+  it("404: a primeira falha pula UMA execução; o segundo 404 seguido leva à janela longa e o item sai da varredura por 48 h", async () => {
     const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
     const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+    const lines: string[] = [];
 
-    const first = await runAt(state.db, client, T0);
+    const first = await runAt(state.db, client, T0, lines);
 
     expect(first).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
     expect(state.upserts).toHaveLength(1);
@@ -734,14 +819,33 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
       failures: 1,
       first_failed_at: T0.toISOString(),
       last_failed_at: T0.toISOString(),
-      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS[404]).toISOString(),
+      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS.short).toISOString(),
     });
     // Só o morto ganha marca.
     expect([...state.table.keys()]).toEqual(["MLB9"]);
 
-    // Sete execuções seguintes (6 h a 42 h): o morto não é consultado, os
+    // O aviso por item leva o status: é o campo que a conferência do
+    // PERFORMANCE.md lê (`jsonPayload.status`).
+    const warning = lines.find((line) => line.includes("fulfillment_item_fetch_failed"));
+    expect(warning).toContain('"item_id":"MLB9"');
+    expect(warning).toContain('"status":404');
+
+    // +6 h: adiado. +12 h: pergunta de novo, 404 de novo — agora a longa.
+    expect((await runAt(state.db, client, at(6))).itemsDeferred).toBe(1);
+
+    const second = await runAt(state.db, client, at(12));
+
+    expect(second.itemsFailed).toBe(1);
+    expect(state.table.get("MLB9")).toMatchObject({
+      failures: 2,
+      last_failed_at: at(12).toISOString(),
+      recheck_after: new Date(at(12).getTime() + ITEM_ABSENCE_RECHECK_MS.long).toISOString(),
+    });
+    expect(instantOf(state.table.get("MLB9")?.first_failed_at)).toBe(T0.getTime());
+
+    // Sete execuções seguintes (18 h a 54 h): o morto não é consultado, os
     // vivos são. Nenhuma marca nova, nenhuma apagada.
-    for (const hours of [6, 12, 18, 24, 30, 36, 42]) {
+    for (const hours of [18, 24, 30, 36, 42, 48, 54]) {
       const before = itemRequests().length;
       const result = await runAt(state.db, client, at(hours));
 
@@ -749,11 +853,33 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
       expect(itemRequests().slice(before).sort()).toEqual(["/items/MLB1", "/items/MLB2"]);
     }
 
-    expect(state.upserts).toHaveLength(1);
+    // Oitava (60 h, 48 h depois do segundo 404): o recheque.
+    const recheck = await runAt(state.db, client, at(60));
+
+    expect(recheck.itemsDeferred).toBe(0);
+    expect(itemRequests().filter((path) => path === "/items/MLB9")).toHaveLength(3);
+    expect(state.table.get("MLB9")?.failures).toBe(3);
     expect(state.deletes).toHaveLength(0);
   });
 
-  it("403 grava marca de janela CURTA: pula a execução de +6 h e volta a perguntar na de +12 h", async () => {
+  it("um 404 ISOLADO num anúncio vivo atrasa a captura 12 h, como um 403, e a marca sai", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const behavior: Record<string, ItemBehavior> = { ...VIVOS, MLB9: { status: 404 } };
+    const { client } = scriptedClient(behavior, { "INV-9": 4 });
+
+    await runAt(state.db, client, T0);
+    expect((await runAt(state.db, client, at(6))).itemsDeferred).toBe(1);
+
+    // O anúncio responde de novo.
+    behavior.MLB9 = { id: "MLB9", inventory_id: "INV-9" };
+
+    const back = await runAt(state.db, client, at(12));
+
+    expect(back).toEqual({ itemsProcessed: 3, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(state.table.size).toBe(0);
+  });
+
+  it("403 grava marca de janela CURTA: pula a execução de +6 h e volta a perguntar na de +12 h — e continua curta", async () => {
     const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
     const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 403 } });
 
@@ -761,7 +887,7 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
 
     expect(state.table.get("MLB9")).toMatchObject({
       http_status: 403,
-      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS[403]).toISOString(),
+      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS.short).toISOString(),
     });
 
     const six = await runAt(state.db, client, at(6));
@@ -775,6 +901,11 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
     expect(twelve.itemsDeferred).toBe(0);
     expect(twelve.itemsFailed).toBe(1);
     expect(itemRequests().filter((path) => path === "/items/MLB9")).toHaveLength(2);
+    // Segundo 403 seguido: a janela NÃO cresce — permissão muda.
+    expect(state.table.get("MLB9")).toMatchObject({
+      failures: 2,
+      recheck_after: new Date(at(12).getTime() + ITEM_ABSENCE_RECHECK_MS.short).toISOString(),
+    });
   });
 
   it("recheque vencido volta a buscar; 404 de novo RENOVA a marca, conta a falha e preserva first_failed_at", async () => {
@@ -792,10 +923,46 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
     expect(state.table.get("MLB9")).toMatchObject({
       http_status: 404,
       failures: 2,
-      first_failed_at: T0.toISOString(),
       last_failed_at: at(48).toISOString(),
-      recheck_after: new Date(at(48).getTime() + ITEM_ABSENCE_RECHECK_MS[404]).toISOString(),
+      recheck_after: new Date(at(48).getTime() + ITEM_ABSENCE_RECHECK_MS.long).toISOString(),
     });
+    expect(instantOf(state.table.get("MLB9")?.first_failed_at)).toBe(T0.getTime());
+  });
+
+  it("a leitura das marcas é por CONTA: a marca vigente do mesmo item em outra conta não adia nada aqui", async () => {
+    // A service role ignora RLS: o `.eq("ml_account_id")` da leitura é o único
+    // escopo por conta. Sem ele, a marca da conta vizinha seguraria o item
+    // desta — e o estoque Full dele sumiria sem 404 nenhum.
+    const OUTRA_CONTA = "aaaaaaaa-0000-4000-8000-000000000099";
+    const state = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      foreignAbsences: [{ ...mark("MLB2", 404, at(45)), ml_account_id: OUTRA_CONTA }],
+    });
+    const { client, itemRequests } = scriptedClient(VIVOS);
+
+    const result = await runAt(state.db, client, at(6));
+
+    expect(result.itemsDeferred).toBe(0);
+    expect(itemRequests()).toContain("/items/MLB2");
+    // E a marca da outra conta não é apagada por esta execução.
+    expect(state.foreign.size).toBe(1);
+  });
+
+  it("recheck_after é comparado como INSTANTE: o mesmo prazo devolvido com fuso -03:00 ainda segura o item", async () => {
+    // at(45) = 2026-09-20T06:00:05Z, que em -03:00 é '2026-09-20T03:00:05-03:00'.
+    // A execução de at(42) é '2026-09-20T03:00:05.000Z': como TEXTO, o prazo
+    // já teria passado ('-' < '.'); como instante, faltam 3 h.
+    const state = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      absences: [mark("MLB9", 404, at(45))],
+      offsetMinutes: -180,
+    });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+
+    const result = await runAt(state.db, client, at(42));
+
+    expect(result.itemsDeferred).toBe(1);
+    expect(itemRequests()).not.toContain("/items/MLB9");
   });
 
   it("marca que vence EXATAMENTE agora já não segura o item", async () => {
@@ -853,6 +1020,81 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
     await runAt(state.db, client, at(6));
 
     expect(itemRequests()).toHaveLength(6);
+  });
+
+  it("falha em massa é medida só sobre os itens CONSULTADOS: os adiados não diluem a razão", async () => {
+    // Quatro adiados por marca vigente e três consultados, os três falhando.
+    // Sobre os consultados é 3 de 3, massa. Se os adiados entrassem no
+    // denominador seria 3 de 7, "falha de item", e os três ganhariam marca.
+    const links: Link[] = [
+      { item_id: "MLB1", sku_id: "sku-1" },
+      { item_id: "MLB2", sku_id: "sku-2" },
+      { item_id: "MLB3", sku_id: "sku-3" },
+      { item_id: "MLB5", sku_id: "sku-5" },
+      { item_id: "MLB6", sku_id: "sku-6" },
+      { item_id: "MLB7", sku_id: "sku-7" },
+      { item_id: "MLB8", sku_id: "sku-8" },
+    ];
+    const vigentes = ["MLB5", "MLB6", "MLB7", "MLB8"].map((id) => mark(id, 404, at(45)));
+    const state = fakeDbWithAbsences({ links, absences: vigentes });
+    const { client, itemRequests } = scriptedClient({ MLB1: { status: 403 }, MLB2: { status: 403 }, MLB3: { status: 404 } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, at(6), lines);
+
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 3, itemsDeferred: 4, inventoriesShared: 0 });
+    expect(itemRequests()).toHaveLength(3);
+    expect(state.upserts).toHaveLength(0);
+    expect([...state.table.keys()].sort()).toEqual(["MLB5", "MLB6", "MLB7", "MLB8"]);
+    const warning = lines.find((line) => line.includes("fulfillment_item_absences_skipped_mass_failure"));
+    expect(warning).toContain('"items_failed":3');
+    expect(warning).toContain('"items_fetched":3');
+  });
+
+  it("401 em mais da metade, com um 404 no meio: é a conta, nada é marcado", async () => {
+    // O 401 não vira marca, mas CONTA para a guarda: três falhas em quatro
+    // consultas é a conta com problema, e o 404 do meio não é confiável.
+    const state = fakeDbWithAbsences({
+      links: [
+        { item_id: "MLB1", sku_id: "sku-1" },
+        { item_id: "MLB2", sku_id: "sku-2" },
+        { item_id: "MLB3", sku_id: "sku-3" },
+        { item_id: "MLB9", sku_id: "sku-9" },
+      ],
+    });
+    const { client } = scriptedClient({
+      MLB1: { status: 401 },
+      MLB2: { status: 401 },
+      MLB3: { id: "MLB3", inventory_id: "INV-3" },
+      MLB9: { status: 404 },
+    });
+
+    const result = await runAt(state.db, client, T0);
+
+    expect(result.itemsFailed).toBe(3);
+    expect(state.upserts).toHaveLength(0);
+    expect(state.table.size).toBe(0);
+  });
+
+  it("falha em massa na execução do RECHEQUE não renova a marca vencida", async () => {
+    // A marca venceu, o item foi perguntado de novo e a conta inteira falhou.
+    // Renovar ali daria mais 45 h a um item que talvez nem esteja morto: a
+    // marca fica como estava (vencida) e o item é perguntado na seguinte.
+    const vencida = mark("MLB9", 404, at(45), { failures: 2 });
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [vencida] });
+    const { client, itemRequests } = scriptedClient({ MLB1: { status: 403 }, MLB2: { status: 403 }, MLB9: { status: 403 } });
+
+    const result = await runAt(state.db, client, at(48));
+
+    expect(result.itemsFailed).toBe(3);
+    expect(state.upserts).toHaveLength(0);
+    expect(state.deletes).toHaveLength(0);
+    expect(state.table.get("MLB9")).toEqual(vencida);
+
+    const next = await runAt(state.db, client, at(54));
+
+    expect(next.itemsDeferred).toBe(0);
+    expect(itemRequests().filter((path) => path === "/items/MLB9")).toHaveLength(2);
   });
 
   it("metade EXATA ainda é falha de item, não de massa: a marca é gravada", async () => {
@@ -921,6 +1163,90 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
 
     expect(result.itemsProcessed).toBe(3);
     expect(lines.find((line) => line.includes("fulfillment_item_absences_not_cleared"))).toBeDefined();
+  });
+
+  it("erro retryable na fase de ESTOQUE não perde a marca: a nova tentativa já pula o morto", async () => {
+    // A marca é gravada logo depois da fase de itens, antes das chamadas de
+    // estoque. Um 503 no estoque derruba a tentativa (o job é reentregue), e a
+    // reentrega não pergunta de novo pelo anúncio que já respondeu 404.
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const itemPaths: string[] = [];
+    let stockFails = true;
+    const client = {
+      request: (options: RequestOptions<unknown>) => {
+        if (options.path.startsWith("/items/")) {
+          itemPaths.push(options.path);
+
+          if (options.path === "/items/MLB9") {
+            return Promise.reject(
+              new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /items/MLB9.", {
+                status: 404,
+                errorClass: "not_retryable",
+                url: options.path,
+              }),
+            );
+          }
+
+          const id = options.path.slice("/items/".length);
+
+          return Promise.resolve({ id, inventory_id: `INV-${id}` });
+        }
+
+        if (stockFails) {
+          return Promise.reject(new MercadoLivreApiError("indisponível", { status: 503, errorClass: "retryable", url: options.path }));
+        }
+
+        return Promise.resolve({ inventory_id: options.path.split("/")[2], available_quantity: 1 });
+      },
+    } as unknown as MercadoLivreClient;
+
+    await expect(runAt(state.db, client, T0)).rejects.toThrow(MercadoLivreApiError);
+    expect([...state.table.keys()]).toEqual(["MLB9"]);
+
+    stockFails = false;
+    itemPaths.length = 0;
+
+    const retry = await runAt(state.db, client, new Date(T0.getTime() + 60_000));
+
+    expect(retry.itemsDeferred).toBe(1);
+    expect(retry.itemsProcessed).toBe(2);
+    expect(itemPaths.sort()).toEqual(["/items/MLB1", "/items/MLB2"]);
+  });
+
+  it("marca de item que saiu dos vínculos é apagada — ninguém mais o consultaria", async () => {
+    // O MLB9 tinha marca vigente; o vínculo do sku-9 foi refeito para o MLB10.
+    // O MLB9 não está mais em `sku_listing_links`, nunca mais é buscado, e sem
+    // a poda a linha ficaria para sempre, vencida.
+    const state = fakeDbWithAbsences({
+      links: [...VIVOS_LINKS, { item_id: "MLB10", sku_id: "sku-9" }],
+      absences: [mark("MLB9", 404, at(45))],
+    });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB10: { id: "MLB10", inventory_id: "INV-10" } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, at(6), lines);
+
+    expect(result).toEqual({ itemsProcessed: 3, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(itemRequests().sort()).toEqual(["/items/MLB1", "/items/MLB10", "/items/MLB2"]);
+    expect(state.deletes).toEqual([{ filters: { ml_account_id: ML_ACCOUNT_ID }, ids: ["MLB9"] }]);
+    expect(state.table.size).toBe(0);
+    const updated = lines.find((line) => line.includes("fulfillment_item_absences_updated"));
+    expect(updated).toContain('"cleared":0');
+    expect(updated).toContain('"unlinked":1');
+  });
+
+  it("a poda não toca a marca de item ainda vinculado, adiado ou não", async () => {
+    const state = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      absences: [mark("MLB9", 404, at(45))],
+    });
+    const { client } = scriptedClient(VIVOS);
+
+    const result = await runAt(state.db, client, at(6));
+
+    expect(result.itemsDeferred).toBe(1);
+    expect(state.deletes).toHaveLength(0);
+    expect([...state.table.keys()]).toEqual(["MLB9"]);
   });
 
   it("muitos itens voltando de uma vez são apagados em lotes de 100 (o .in() vai na URL)", async () => {

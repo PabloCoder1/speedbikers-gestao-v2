@@ -76,15 +76,22 @@ import { recordDomainEvents } from "./domain-events.js";
  * marca. Três guardas mantêm isso do lado de "otimização", nunca de "estoque
  * escondido":
  *
- *   1. toda marca vence — as janelas estão em `ITEM_ABSENCE_RECHECK_MS`, e as
- *      duas cabem dentro da janela de 3 dias do "Full atual" (D-173), então o
- *      bucket de um falso 404 nunca some das telas antes do recheque;
+ *   1. toda marca vence — as janelas estão em `ITEM_ABSENCE_RECHECK_MS`. Um
+ *      404 isolado atrasa a captura 12 h, como um 403; só o segundo 404
+ *      seguido leva à janela longa (recheque em 48 h). O bucket de um falso
+ *      404 continua no "Full atual" (3 dias, D-173) enquanto as execuções
+ *      vizinhas capturarem — é atraso, não garantia contra toda sequência de
+ *      falhas;
  *   2. falha em MASSA não marca ninguém — em 16/09 21:00 as quatro contas
  *      tomaram 403 em todos os 3.220 itens de uma vez e a execução seguinte
  *      capturou normal; marcar ali teria apagado mais uma execução inteira;
  *   3. a tabela é lida e escrita em modo "falhou, segue": sem ela (erro, ou
  *      código no ar antes da migration) o worker busca todos os itens, que é
  *      o comportamento anterior.
+ *
+ * A tabela guarda só item VINCULADO: a marca de um item que saiu de
+ * `sku_listing_links` (vínculo apagado ou refeito para outro anúncio) é
+ * apagada na execução seguinte, junto com as dos itens que voltaram.
  */
 
 const itemResponseSchema = z.object({
@@ -110,25 +117,37 @@ const HOUR_MS = 3_600_000;
  * entre execuções de propósito: com um múltiplo exato de 6 h, alguns segundos
  * de atraso no disparo fariam o recheque escorregar uma execução inteira.
  *
- * - **403 — 9 h: pula UMA execução e volta na seguinte.** 403 é permissão, e
- *   permissão muda: o único 403 medido em produção (16/09 21:00) passou
- *   sozinho na execução seguinte. Janela curta porque o erro provável é o
- *   403 ser passageiro.
- * - **404 — 45 h: recheque na oitava execução (48 h).** 404 em `/items/{id}`
- *   é anúncio que não existe mais: os 356 medidos responderam 404 em 14 das
- *   15 execuções de 72 h (a outra foi 403 em massa, em todos os itens). O
- *   teto não é "quanto dá para economizar",
- *   é a janela de 3 dias do "Full atual" (D-173): último snapshot bom até 6 h
- *   antes da falha + 48 h até o recheque = 54 h < 72 h. Um 404 falso num
- *   anúncio vivo atrasa a captura, mas o bucket nunca sai das telas. Subir
- *   esta janela acima de ~60 h quebra essa garantia.
+ * - **curta — 9 h: pula UMA execução e volta na seguinte.** Vale para todo
+ *   403 e para o PRIMEIRO 404 de uma sequência. 403 é permissão, e permissão
+ *   muda: o único 403 medido em produção (16/09 21:00) passou sozinho na
+ *   execução seguinte. E um 404 isolado num anúncio vivo, se existir, custa o
+ *   mesmo atraso de um 403: 12 h.
+ * - **longa — 45 h: recheque na oitava execução (48 h)**, só a partir do
+ *   SEGUNDO 404 seguido (`failures >= 2`). 404 em `/items/{id}` é anúncio que
+ *   não existe mais: os 356 medidos responderam 404 em 14 das 15 execuções de
+ *   72 h (a outra foi 403 em massa, em todos os itens). Exigir o segundo 404
+ *   custa UMA chamada a mais por anúncio morto, uma vez, e desarma o falso
+ *   404 único.
+ *
+ * O teto da longa não é "quanto dá para economizar", é a janela de 3 dias do
+ * "Full atual" (D-173): último snapshot bom até 6 h antes do primeiro 404 +
+ * 12 h até o segundo + 48 h até o recheque = 66 h < 72 h. Isso vale enquanto
+ * as execuções vizinhas capturarem: se a anterior ao primeiro 404 também
+ * falhou, ou se a do recheque falhar, o intervalo passa de 72 h e o bucket sai
+ * do "Full atual" até a próxima captura. Subir a janela longa acima de 48 h
+ * tira a folga de vez.
  */
 export const ITEM_ABSENCE_RECHECK_MS = {
-  403: 9 * HOUR_MS,
-  404: 45 * HOUR_MS,
+  short: 9 * HOUR_MS,
+  long: 45 * HOUR_MS,
 } as const;
 
-type AbsenceStatus = keyof typeof ITEM_ABSENCE_RECHECK_MS;
+type AbsenceStatus = 403 | 404;
+
+/** A janela da marca que está sendo gravada — `failures` já conta esta falha. */
+export function itemAbsenceRecheckMs(status: AbsenceStatus, failures: number): number {
+  return status === 404 && failures >= 2 ? ITEM_ABSENCE_RECHECK_MS.long : ITEM_ABSENCE_RECHECK_MS.short;
+}
 
 /** O `.in()` vai na URL do PostgREST: lotes de 100 ids mantêm a URL curta. */
 const ABSENCE_DELETE_CHUNK = 100;
@@ -188,9 +207,9 @@ async function readItemAbsences(params: FetchFulfillmentSnapshotsParams): Promis
 }
 
 /**
- * Grava as marcas novas e apaga as dos itens que voltaram a responder. As
- * duas escritas são "falhou, segue": perder uma marca custa uma chamada a
- * mais na próxima execução, nunca um snapshot.
+ * Grava as marcas novas e apaga as dos itens que voltaram a responder ou que
+ * deixaram de estar vinculados. As duas escritas são "falhou, segue": perder
+ * uma marca custa uma chamada a mais na próxima execução, nunca um snapshot.
  */
 async function updateItemAbsences(
   params: FetchFulfillmentSnapshotsParams,
@@ -225,6 +244,7 @@ async function updateItemAbsences(
         if (itemId === null || status === null) return [];
 
         const previous = absences.get(itemId);
+        const failures = (previous?.failures ?? 0) + 1;
 
         return [
           {
@@ -232,10 +252,10 @@ async function updateItemAbsences(
             ml_account_id: params.mlAccountId,
             item_id: itemId,
             http_status: status,
-            failures: (previous?.failures ?? 0) + 1,
+            failures,
             first_failed_at: previous?.first_failed_at ?? capturedAt.toISOString(),
             last_failed_at: capturedAt.toISOString(),
-            recheck_after: new Date(capturedAt.getTime() + ITEM_ABSENCE_RECHECK_MS[status]).toISOString(),
+            recheck_after: new Date(capturedAt.getTime() + itemAbsenceRecheckMs(status, failures)).toISOString(),
           },
         ];
       });
@@ -262,8 +282,16 @@ async function updateItemAbsences(
     entry.item !== null && entry.link.item_id !== null && absences.has(entry.link.item_id) ? [entry.link.item_id] : [],
   );
 
-  for (let start = 0; start < recovered.length; start += ABSENCE_DELETE_CHUNK) {
-    const chunk = recovered.slice(start, start + ABSENCE_DELETE_CHUNK);
+  // Marca de item que não está mais em `sku_listing_links` (vínculo apagado,
+  // ou refeito para outro anúncio): o item nunca mais é consultado, então
+  // nenhuma resposta viria apagá-la, e ela ficaria vencida para sempre. Todo
+  // vínculo lido nesta execução está em `outcomes`, adiado ou não.
+  const linked = new Set(outcomes.flatMap((entry) => (entry.link.item_id === null ? [] : [entry.link.item_id])));
+  const unlinked = [...absences.keys()].filter((itemId) => !linked.has(itemId));
+  const toClear = [...recovered, ...unlinked];
+
+  for (let start = 0; start < toClear.length; start += ABSENCE_DELETE_CHUNK) {
+    const chunk = toClear.slice(start, start + ABSENCE_DELETE_CHUNK);
     const cleared = await params.db
       .from("fulfillment_item_absences")
       .delete()
@@ -279,11 +307,12 @@ async function updateItemAbsences(
     }
   }
 
-  if (marks.length > 0 || recovered.length > 0) {
+  if (marks.length > 0 || toClear.length > 0) {
     params.logger.info("fulfillment_item_absences_updated", {
       ml_account_id: params.mlAccountId,
       marked: marks.length,
       cleared: recovered.length,
+      unlinked: unlinked.length,
     });
   }
 }
