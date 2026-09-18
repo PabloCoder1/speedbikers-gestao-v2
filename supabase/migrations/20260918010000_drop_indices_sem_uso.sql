@@ -44,8 +44,10 @@
 --
 --     Nasceu em 20260820130000 para "o que rodou recentemente nesta
 --     organizacao" -- um padrao de consulta que nunca chegou a existir. A web
---     NAO le `job_runs` (RLS ligada, zero policies); quem le sao duas RPCs
---     `security definer`, e nenhuma delas pode usa-lo:
+--     NAO le `job_runs` (RLS ligada, zero policies); quem le sao TRES RPCs
+--     `security definer` (`get_system_health`, `get_job_failures` e
+--     `get_erp_stock_cutoffs`, por `pg_get_functiondef` em producao), e
+--     nenhuma delas usa este indice:
 --
 --     `get_system_health` filtra por organizacao DENTRO de um OR com um
 --     `not exists` -- a clausula que deixa os jobs de PLATAFORMA visiveis
@@ -58,7 +60,7 @@
 --     "sem uso porque a tela some": ele e ESTRUTURALMENTE inalcancavel por
 --     essa consulta.
 --
---     O que sustenta as duas RPCs continua de pe, e medido em producao:
+--     O que sustenta as tres RPCs continua de pe, e medido em producao:
 --
 --       - `job_runs_last_per_type_idx` (job_type, coalesce(finished_at,
 --         started_at) desc) -- 179 usos. E o skip scan de `get_system_health`:
@@ -73,6 +75,10 @@
 --
 --       - `job_runs_reconcile_balances_done_idx` -- PARCIAL sobre as MESMAS
 --         colunas (organization_id, finished_at desc), com 2.264 usos e 8 kB.
+--         E `get_erp_stock_cutoffs`, a unica das tres com o formato exato
+--         para o qual o indice largo nasceu (organizacao + job_type + status,
+--         o mais recente primeiro, limit 1). `explain` em producao:
+--             Index Only Scan using job_runs_reconcile_balances_done_idx
 --         O padrao "por organizacao, mais recente primeiro" que de fato
 --         existe ja e servido por 8 kB; os 1.992 kB do indice largo nunca
 --         foram chamados.
