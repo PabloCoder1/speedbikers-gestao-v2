@@ -57,8 +57,19 @@ test("ADMIN: verde exige atividade observada — nos dois sentidos; nenhuma conf
   await expect(conexaoWebhook).toContainText("nenhum webhook processado registrado");
   await expect(conexaoWebhook).not.toContainText("OK");
 
-  // Em NENHUMA das seis regiões a linha de Configuração pode ser OK.
-  for (const regiao of await page.getByRole("region").all()) {
+  /*
+    Em NENHUMA das seis integrações a linha de Configuração pode ser OK. As
+    integrações são as regiões com linha de Conexão: desde o redesenho de canais
+    (c943dff) a página abre com um destaque que também é `region` (uma
+    `<section>` com título) e não é integração — contar TODAS as regiões fazia o
+    caso procurar Configuração no destaque. O `toHaveCount(6)` segura o outro
+    lado: se uma integração sumir, ou perder a linha de Conexão, o caso reprova.
+  */
+  const integracoes = page.getByRole("region").filter({ has: page.getByRole("row", { name: /Conexão/ }) });
+
+  await expect(integracoes).toHaveCount(6);
+
+  for (const regiao of await integracoes.all()) {
     const configuracao = regiao.getByRole("row", { name: /Configuração/ });
 
     await expect(configuracao).toBeVisible();

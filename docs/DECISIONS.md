@@ -13522,3 +13522,70 @@ Capturas a 1440 px e 390 px, pagina e popup, com o banco local enriquecido para 
 
 - a migration precisa chegar a producao ANTES da promocao da web; antes disso a tela mostra o aviso e a tabela;
 - `get_listings_dashboard` e `get_link_integrity` continuam vivas: a primeira e de `/anuncios` e do caminho de degradacao, a segunda e a fonte independente da conferencia.
+
+## D-380 - Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
+
+**Contexto:** o dono pediu a `/full` "como produto", nao so aparencia. As quatro situacoes de D-265 respondem "tem ou nao tem no Full", e a pergunta de quem opera e outra: **o que mando para o Full agora?** Medido em producao em 2026-09-18 (SELECT sobre `get_fulfillment_overview`, 4 contas, janela de 30 dias): 841 fora do Full, **537 saudaveis, 448 em ruptura**, 68 parados. Dos 537 "saudaveis", **205 acabam em menos de 15 dias** no ritmo da janela e **76 em menos de 7** -- pintados de verde. Das 448 rupturas, so 13 tem saldo local.
+
+**1. COBERTURA, DECLARADA E SEM PREVISAO**
+
+`coverage_days = Full / (venda da janela / dias da janela)`, com a MESMA janela da coluna "Venda". Sem venda, `NULL` ("sem venda"), nunca um numero grande inventado. Nao ha sazonalidade, tendencia nem score -- a recusa de D-265 continua. Limiares de LEITURA: abaixo de 7 dias vermelho, abaixo de 15 amarelo (`LOW_COVERAGE_DAYS`/`CRITICAL_COVERAGE_DAYS` em `lib/full-filters.ts`; o 15 vai como `p_low_coverage_days` para a RPC e a tela escreve o mesmo numero). Continua sem sugerir QUANTO enviar: prazo de coleta, lote minimo e custo de envio nao estao no sistema.
+
+**2. A RPC GANHA FOCO, ORDEM E DUAS FACETAS -- sem quebrar os tres chamadores**
+
+Migration `20260918140000_fulfillment_coverage_and_priority`: `get_fulfillment_overview` com `p_focus` (`acabando` | `enviavel`), `p_sort` (`prioridade` | `cobertura` | `vendas` | `local` | `sku`; NULL = Full desc, a ordem antiga) e `p_low_coverage_days` (15), todos com default; retorno ganha `daily_rate`, `coverage_days`, `facet_low_coverage`, `facet_can_ship`. `/skus/[skuId]` e `/anuncios/[itemId]` chamam por NOME e seguem iguais (conferido nas duas telas). As facetas novas contam sobre `base` (antes de situacao e foco), como a de situacao, e viajam na linha-sentinela. A ordem vira `row_number()` e o select final ordena por ela -- o `left join` da sentinela nao preserva ordem sozinho. O grao por bucket, o `as materialized` e a janela de 3 dias nao mudaram; o corpo foi extraido de `20260908210000` (licao de D-259).
+
+"Prioridade de envio" (padrao da tela): ruptura primeiro, pela venda desc; depois acabando, pela cobertura asc; depois saudavel, parado, fora do Full.
+
+Medida no Dev como `authenticated` com RLS (1.918 linhas, janela de 3 dias ancorada na ultima captura do Dev, que esta pausado desde D-350): **615 ms** a versao nova com prioridade, contra **990 ms** a funcao atual na mesma sessao -- a ordenacao custa um quicksort de 409 kB. Leitura de producao pelo MCP foi recusada pela politica da maquina e nao foi contornada.
+
+**3. A TELA**
+
+Faixa de cinco celulas intacta (D-265). Abaixo, tres cartoes de acao -- "Vendendo sem Full", "Acabando em breve", "Pode enviar hoje" -- que filtram. Tabela com produto (monograma), venda com media/dia, Full com variacoes, **cobertura com barra**, local com "pode enviar", situacao, captura relativa ("ha 3 h", data no `title`) e o link para `/reposicao`. Ordem e tamanho de pagina (20/50/100/300, D-315) no painel; filtro ativo como chip com "x"; "Como ler esta tela" recolhida em `<details>` (a ressalva Full x Local continua na pagina, so nao ocupa a tela toda vez); estados vazio e de erro desenhados.
+
+Uma versao intermediaria tinha ABAS de visao no painel, alem da faixa e dos cartoes: tres controles para o mesmo filtro. Sairam.
+
+**4. CSV DO RECORTE**
+
+`/full/exportar` (route handler, sessao do usuario, RPC `security invoker`): o mesmo recorte da tela sem pagina, teto de 5.000 linhas declarado no nome do arquivo quando passa (D-131). Formato do Excel brasileiro -- BOM, `;`, virgula decimal -- e titulo que comeca com `=`, `+`, `-` ou `@` sai prefixado com `'` (injecao de formula).
+
+**5. SEM A MIGRATION, A TELA DEGRADA**
+
+Web no ar antes da migration (ela so vai a producao pelo `migrations-producao.yml`, D-334): a RPC nova responde PGRST202 e a pagina chama a assinatura antiga, calcula a cobertura com `coverageOf` (mesma formula, com teste contra os valores do seed) e mostra um aviso; focos e ordem ficam indisponiveis e as contagens deles aparecem como "--". Mesmo desenho de `/compras` e `/faturamento`.
+
+**6. VERIFICACAO**
+
+`typecheck`, `lint`, `next build` (rotas `/full` e `/full/exportar` dinamicas), unidade da web **813 verdes** (19 em `full-filters`/`full-export`), e2e `full.spec.ts` **6 verdes** (3 novos: prioridade/cobertura, foco + chip, CSV) contra `next dev` da worktree e o banco local com a migration aplicada por cima (sem `db reset`, ver sessoes paralelas). Integracao: 3 casos novos em `rls.integration.test.ts` (cobertura e NULL sem venda, foco com limiar, prioridade), deixados para a CI -- o banco local e compartilhado com outras sessoes e a suite escreve nele. Capturas a 1440 e 390 px.
+
+- a migration precisa chegar a producao para a fila de envio aparecer; antes disso a tela mostra cobertura e o aviso;
+- `20260918140000` e menor que a `20260918150000` da sessao de `/anuncios`: se a dela entrar na `v3` antes, esta precisa ser renomeada.
+- **pendente, espera o dono:** a mesma consulta leva 72 ms como `postgres` e 615 ms como `authenticated` no Dev -- a RLS das cinco tabelas custa ~8,5x. A saida desenhada e `security definer` com o escopo das policies escrito na funcao (`private.accessible_accounts()` para snapshots, metricas e contas; `private.is_member_of` para SKUs e saldo local). Nao foi aplicada: muda o modelo de seguranca da funcao e a politica da maquina a recusou como enfraquecimento -- e decisao do dono, numa fatia propria.
+
+## D-381 - `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
+
+**Contexto:** o dono pediu `/anuncios` "como produto". Em producao (18/09/2026): 4.447 anuncios em 89 paginas, uma ordem so (faturamento), "Anterior/Proxima" como unica navegacao, e **sete** chamadas de `get_listings_dashboard` por visita -- a pagina e seis com `p_limit = 1` so para ler o `total_count` das celulas (D-224). Medido como `authenticated` (ADMIN, 30 dias): 146 ms a lista, ~115 ms CADA contagem, ~0,7 s de banco por visita para seis numeros que nao dependem da janela.
+
+**1. A FAIXA SAIU DA LISTA, E O TESTE E QUEM SEGURA A PROMESSA DE D-224**
+
+`get_listings_dashboard_counts(org, conta, busca)` conta as seis celulas numa passada, sem os CTEs de venda e visitas: **63 ms** em producao, contra as seis chamadas de antes. D-224 exigia celula e lista do MESMO predicado e resolvia isso usando a mesma funcao; agora o predicado de cada celula e COPIADO da lista, e o teste de integracao "as seis contagens batem com o `total_count` da lista, com e sem busca" reprova a CI se um mudar sem o outro. A garantia passou de "mesma funcao" para "mesmo resultado, provado".
+
+**2. ORDEM**
+
+`p_order` (lista fechada `<coluna>_<asc|desc>`: faturamento, unidades, visitas, conversao, preco, estoque, Full, titulo, sincronizacao). Fora da lista cai em `revenue_desc`, a ordem de antes -- os cinco consumidores que nao passam o parametro nao mudam. Nulo (visita sem coleta, Full sem snapshot, conversao indefinida) vai para o FIM nas duas direcoes (D-067). Desempate por titulo e MLB, para duas paginas seguidas nao repetirem nem pularem anuncio. Na tela, o cabecalho e o controle (`aria-sort`), e a ordem vive em `?ordem=`.
+
+**3. FOTO E LINK DO ANUNCIO**
+
+`listings.thumbnail_url` e `listings.permalink`, nulos ate a proxima sincronizacao (6 h). `ml-listings-fetch` pede `secure_thumbnail`, `thumbnail` e `permalink` no multiget; so passa `https` do dominio esperado (`mlstatic.com`, `mercadolivre.com.br`), o resto vira nulo antes do banco. A CSP abre `img-src` so para `https://*.mlstatic.com`. Sem foto, o monograma de sempre, no mesmo quadrado.
+
+**4. A TELA**
+
+MLB, SKU e conta desceram para a linha de identidade embaixo do titulo (tres colunas a menos); filtros ativos viram chips que se desfazem, com "Limpar filtros"; paginacao numerada e tamanho de pagina (D-315); Filtros Salvos (o componente de `/vendas`); estoque do anuncio zerado destacado; acoes da linha em `.sb-icon-button` (inspecionar e abrir no ML); estados vazio e de erro com saida. "Todos" no menu de vinculo virou "Com ou sem vinculo", como os outros eixos. O corte de cabecalho x barra do painel do frame (D-242) foi mantido.
+
+**5. ORDEM DE PUBLICACAO**
+
+- **Worker so DEPOIS da migration** `20260918150000`: ele grava as duas colunas novas, e o upsert do catalogo inteiro falha sem elas.
+- A web pode ir antes: com PGRST202 ela cai na assinatura antiga (lista por faturamento, sem foto, faixa pelas seis chamadas) e avisa. Mesmo desenho de `/compras` e `/full` (D-380).
+
+**6. VERIFICACAO**
+
+Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, anon, outra organizacao. Unitarios: ordem/paginacao, foto/link, CSP. E2E local de `/anuncios` (com caso novo de ordenacao) e das gavetas: 10/10. Guardas `check:*`, `docs:check` e build de producao. Modo degradado testado no Supabase local com a funcao de contagens renomeada.

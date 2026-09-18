@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_ORDER,
+  ORDER_COLUMNS,
   PAGE_SIZE,
   SOLD_FILTERS,
   linkStateBadge,
+  nextOrder,
+  orderParam,
+  pageNumbers,
+  resolveOrder,
   resolveLinkStateFilter,
   resolvePage,
   resolveSoldFilter,
@@ -151,5 +157,54 @@ describe("período e venda em /anuncios (D-308)", () => {
 
     expect(semVenda?.label).toContain("período");
     expect(comVenda?.label).toContain("período");
+  });
+});
+
+describe("ordenação da lista (20260918150000)", () => {
+  it("lê a ordem da URL só dentro da lista fechada", () => {
+    expect(resolveOrder("units_asc")).toEqual({ column: "units", direction: "asc" });
+    expect(resolveOrder("conversion_desc")).toEqual({ column: "conversion", direction: "desc" });
+    // Coluna desconhecida, direção torta ou lixo: a ordem padrão, nunca erro.
+    expect(resolveOrder("senha_desc")).toEqual(DEFAULT_ORDER);
+    expect(resolveOrder("units_up")).toEqual(DEFAULT_ORDER);
+    expect(resolveOrder("units_desc; drop table")).toEqual(DEFAULT_ORDER);
+    expect(resolveOrder(undefined)).toEqual(DEFAULT_ORDER);
+  });
+
+  it("toda coluna que a tela oferece existe na lista que a RPC aceita", () => {
+    for (const column of ORDER_COLUMNS) {
+      expect(resolveOrder(`${column}_asc`).column).toBe(column);
+      expect(resolveOrder(`${column}_desc`).column).toBe(column);
+    }
+  });
+
+  it("a ordem padrão fica fora da URL", () => {
+    expect(orderParam(DEFAULT_ORDER)).toBeNull();
+    expect(orderParam({ column: "revenue", direction: "asc" })).toBe("revenue_asc");
+  });
+
+  it("clicar na mesma coluna inverte; numa nova, número começa do maior e título de A a Z", () => {
+    expect(nextOrder(DEFAULT_ORDER, "revenue")).toEqual({ column: "revenue", direction: "asc" });
+    expect(nextOrder(DEFAULT_ORDER, "visits")).toEqual({ column: "visits", direction: "desc" });
+    expect(nextOrder(DEFAULT_ORDER, "title")).toEqual({ column: "title", direction: "asc" });
+  });
+});
+
+describe("números da paginação", () => {
+  it("poucas páginas: todas", () => {
+    expect(pageNumbers(2, 5)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("muitas páginas: primeira, vizinhas da atual e última, com salto marcado", () => {
+    expect(pageNumbers(5, 89)).toEqual([1, "…", 4, 5, 6, "…", 89]);
+    expect(pageNumbers(1, 89)).toEqual([1, 2, "…", 89]);
+    expect(pageNumbers(89, 89)).toEqual([1, "…", 88, 89]);
+    // Vizinha que encosta na primeira não ganha "…" no meio.
+    expect(pageNumbers(3, 89)).toEqual([1, 2, 3, 4, "…", 89]);
+  });
+
+  it("a janela respeita o tamanho de página escolhido", () => {
+    expect(summarizeWindow(2, 4447, 100, 100).label).toBe("Mostrando 101 a 200 de 4.447 anúncios.");
+    expect(summarizeWindow(1, 4447, 20, 20).totalPages).toBe(223);
   });
 });
