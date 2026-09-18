@@ -13559,3 +13559,4 @@ Web no ar antes da migration (ela so vai a producao pelo `migrations-producao.ym
 
 - a migration precisa chegar a producao para a fila de envio aparecer; antes disso a tela mostra cobertura e o aviso;
 - `20260918140000` e menor que a `20260918150000` da sessao de `/anuncios`: se a dela entrar na `v3` antes, esta precisa ser renomeada.
+- **pendente, espera o dono:** a mesma consulta leva 72 ms como `postgres` e 615 ms como `authenticated` no Dev -- a RLS das cinco tabelas custa ~8,5x. A saida desenhada e `security definer` com o escopo das policies escrito na funcao (`private.accessible_accounts()` para snapshots, metricas e contas; `private.is_member_of` para SKUs e saldo local). Nao foi aplicada: muda o modelo de seguranca da funcao e a politica da maquina a recusou como enfraquecimento -- e decisao do dono, numa fatia propria.
