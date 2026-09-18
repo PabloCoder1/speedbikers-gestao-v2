@@ -860,9 +860,14 @@ export default async function SkuDashboardPage({
                     listings.slice(0, 4).map((linha) => (
                       <div key={`${linha.ml_account_id}:${linha.item_id}`} className="sb-feed-row">
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <b style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem" }}>
+                          {/* O MLB abre o Dashboard do Anúncio, como na aba Anúncios —
+                              aqui era texto (lote 3 do pente fino). */}
+                          <Link
+                            href={`/anuncios/${linha.item_id}`}
+                            style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", fontWeight: 700 }}
+                          >
                             {linha.item_id}
-                          </b>
+                          </Link>
                           <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
                             {linha.account_label ?? "conta desconhecida"}
                           </small>

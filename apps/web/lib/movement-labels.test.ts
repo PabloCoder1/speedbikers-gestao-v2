@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  movementSourceHref,
   formatQtyDelta,
   locationKindLabel,
   movementSourceLabel,
@@ -46,5 +47,14 @@ describe("vocabulário das movimentações (D-167)", () => {
     expect(formatQtyDelta(3)).toBe("+3");
     expect(formatQtyDelta(-2)).toBe("−2");
     expect(formatQtyDelta(1234)).toBe("+1.234");
+  });
+});
+
+describe("movementSourceHref (lote 3 do pente fino)", () => {
+  it("pedido de compra e nota fiscal viram link; o resto fica texto", () => {
+    expect(movementSourceHref("PURCHASE_ORDER", "abc")).toBe("/compras/abc");
+    expect(movementSourceHref("DOCUMENT", "doc-1")).toBe("/notas-fiscais/doc-1");
+    expect(movementSourceHref("ORDER", "2000012345")).toBeNull();
+    expect(movementSourceHref("PURCHASE_ORDER", null)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { readLastRelistFailureReason } from "@sb/db";
-import { isRelistRetryEligible, summarizeRelistVariations } from "@sb/domain";
+import { actionKindLabel, isRelistRetryEligible, summarizeRelistVariations } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -884,7 +884,7 @@ export default async function AnuncioPage({
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <b>{action.recommendation}</b>
                         <small>
-                          {action.kind} · {formatDateTime(action.created_at)}
+                          {actionKindLabel(action.kind)} · {formatDateTime(action.created_at)}
                         </small>
                       </span>
                       <StatusPill code={action.status} label={actionStatusLabel(action.status)} />
@@ -1458,7 +1458,7 @@ export default async function AnuncioPage({
                         <small
                           style={{ display: "block", marginTop: 3, fontSize: "0.625rem", color: "var(--sb-text-soft)" }}
                         >
-                          {decision.actions?.kind ?? "ação"} · {formatDateTime(decision.created_at)}
+                          {decision.actions?.kind === undefined ? "ação" : actionKindLabel(decision.actions.kind)} · {formatDateTime(decision.created_at)}
                         </small>
                       </span>
                       {decision.actions !== null && (

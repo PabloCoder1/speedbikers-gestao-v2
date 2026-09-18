@@ -20,6 +20,7 @@ import {
 import {
   formatQtyDelta,
   locationKindLabel,
+  movementSourceHref,
   movementSourceLabel,
   movementTypeLabel,
 } from "../../../lib/movement-labels";
@@ -390,7 +391,17 @@ export default async function MovimentacoesPage({
                         <strong className="sb-mov-primary-text">{movementSourceLabel(row.source_type, null)}</strong>
                       </td>
                       <td data-label="Referência">
-                        <span className="sb-mov-secondary-text sb-mono sb-mov-reference">{row.source_id ?? "Sem referência externa"}</span>
+                        {/* Pedido de compra e nota fiscal abrem a tela deles (lote 3 do pente fino). */}
+                        {movementSourceHref(row.source_type, row.source_id) === null ? (
+                          <span className="sb-mov-secondary-text sb-mono sb-mov-reference">{row.source_id ?? "Sem referência externa"}</span>
+                        ) : (
+                          <Link
+                            className="sb-mov-secondary-text sb-mono sb-mov-reference"
+                            href={movementSourceHref(row.source_type, row.source_id) ?? ""}
+                          >
+                            {row.source_type === "PURCHASE_ORDER" ? "Abrir pedido de compra" : "Abrir nota fiscal"}
+                          </Link>
+                        )}
                       </td>
                       <td data-label="Motivo">
                         <span className="sb-mov-secondary-text sb-mov-reason">{motivo}</span>

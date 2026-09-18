@@ -60,13 +60,13 @@ export default async function PedidoDeCompraPage({
     supabase
       .from("purchase_orders")
       .select(
-        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, suppliers(name)",
+        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, supplier_id, suppliers(name)",
       )
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("purchase_order_items")
-      .select("id, position, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, skus(is_imported)")
+      .select("id, position, sku_id, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, skus(is_imported)")
       .eq("purchase_order_id", id)
       .order("position"),
     supabase
@@ -146,6 +146,11 @@ export default async function PedidoDeCompraPage({
         meta={`Criado em ${formatDateTime(info.created_at)}`}
         acoes={
           <>
+            {info.supplier_id !== null && (
+              <Link className="sb-button" href={`/fornecedores/${info.supplier_id}`} style={acaoStyle}>
+                Ver fornecedor
+              </Link>
+            )}
             {info.status === "DRAFT" && podeOperar && (
               <Link className="sb-button" href={`/compras/${info.id}/editar`} style={acaoStyle}>
                 Editar
@@ -263,7 +268,9 @@ export default async function PedidoDeCompraPage({
                   {items.data.map((item) => (
                     <tr key={item.id}>
                       <td className="sb-mono">
-                        {item.sku_snapshot}
+                        {/* O SKU abre o dashboard dele (lote 3 do pente fino); item de
+                            texto livre, sem SKU cadastrado, continua texto. */}
+                        {item.sku_id === null ? item.sku_snapshot : <Link href={`/skus/${item.sku_id}`}>{item.sku_snapshot}</Link>}
                         {item.title_snapshot !== null && (
                           <div
                             style={{

@@ -80,3 +80,20 @@ export function formatQtyDelta(delta: number): string {
 
   return delta > 0 ? `+${formatted}` : `−${formatted}`;
 }
+
+/**
+ * Para onde a REFERÊNCIA de um movimento leva (lote 3 do pente fino, 18/09). A
+ * coluna mostrava o `source_id` cru — um uuid que ninguém consegue usar. Só
+ * vira link o que tem tela de detalhe e cujo id É o id daquela tela:
+ * `PURCHASE_ORDER` grava `po.id` (20260823160629) e `DOCUMENT` grava
+ * `documents.id` (`nfe-import-apply.ts`). Pedido do ML e reconciliação não têm
+ * tela própria — ficam texto.
+ */
+export function movementSourceHref(sourceType: string | null, sourceId: string | null): string | null {
+  if (sourceId === null || sourceId.trim() === "") return null;
+
+  if (sourceType === "PURCHASE_ORDER") return `/compras/${encodeURIComponent(sourceId)}`;
+  if (sourceType === "DOCUMENT") return `/notas-fiscais/${encodeURIComponent(sourceId)}`;
+
+  return null;
+}
