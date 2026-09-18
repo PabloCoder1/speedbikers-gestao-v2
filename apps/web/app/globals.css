@@ -15337,6 +15337,75 @@ td.sb-pco-num-linha {
 .sb-import-apply-actions { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
 .sb-import-apply-error { flex-basis: 100%; margin: 0; color: var(--sb-danger); font-size: 0.875rem; }
 
+/* PEDIDO DE COMPRA — detalhe (lote 4 do pente fino, 18/09): classes no lugar do estilo inline. */
+.sb-pod-section { margin-top: var(--sb-space-3); }
+.sb-pod-cost-note { display: block; color: var(--sb-accent-ink); font-size: 0.6875rem; }
+.sb-pod-notes { display: grid; gap: 0.2rem; margin: var(--sb-space-3) 0 0; padding: 0.75rem 1rem; border-left: 3px solid var(--sb-secondary); border-radius: var(--sb-radius-md); background: var(--sb-surface); color: var(--sb-text); font-size: 0.8125rem; white-space: pre-wrap; }
+.sb-pod-notes > span { color: var(--sb-text-soft); font-family: var(--sb-mono); font-size: 0.625rem; letter-spacing: 0.06em; }
+.sb-pod-cancelled { margin: var(--sb-space-3) 0; padding: var(--sb-space-3); border-radius: var(--sb-radius); background: var(--sb-danger-soft); color: var(--sb-danger-ink); font-size: 0.8125rem; line-height: 1.5; }
+.sb-pod-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sb-space-2); margin: var(--sb-space-3) 0; padding: var(--sb-space-3); border: 1px solid var(--sb-border); border-radius: var(--sb-radius); background: var(--sb-surface); }
+.sb-pod-actions [data-tom="perigo"] { color: var(--sb-danger); }
+.sb-pod-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sb-space-2); padding: 0.5rem 0.75rem; border-radius: var(--sb-radius-md); background: var(--sb-accent-soft); color: var(--sb-accent-ink); font-size: 0.8125rem; }
+.sb-pod-actions-error { flex-basis: 100%; margin: 0; color: var(--sb-danger); font-size: 0.875rem; }
+.sb-pod-error { margin: var(--sb-space-3) 1.25rem; color: var(--sb-danger); font-size: 0.8125rem; }
+.sb-pod-table-wrap { overflow-x: auto; }
+.sb-pod-item-title { display: block; color: var(--sb-text-soft); font-family: var(--sb-sans); font-size: 0.75rem; }
+.sb-pod-event { flex: 1; min-width: 0; }
+.sb-pod-state { display: grid; justify-items: center; gap: 0.4rem; margin-top: var(--sb-space-4); padding: 2rem 1rem; border: 1px solid var(--sb-danger); border-radius: var(--sb-radius); background: var(--sb-danger-soft); color: var(--sb-danger-ink); font-size: 0.8125rem; text-align: center; }
+
+/* DASHBOARD DO SKU (lote 4 do pente fino, 18/09): os estilos inline viraram classes, com os mesmos valores. */
+.sb-skud-bleed { margin: 0 calc(-1 * var(--sb-space-3)); }
+.sb-skud-caption { color: var(--sb-text-soft); font-size: 0.75rem; }
+.sb-skud-danger { color: var(--sb-danger); }
+.sb-skud-empty { margin: 0; padding: var(--sb-space-3); color: var(--sb-text-soft); font-size: 0.6875rem; }
+.sb-skud-footnote { margin: var(--sb-space-2) 0 0; color: var(--sb-text-soft); font-size: 0.625rem; }
+.sb-skud-grow { flex: 1; min-width: 0; }
+.sb-skud-id-link { display: block; font-family: var(--sb-mono); font-size: 0.625rem; font-weight: 700; }
+.sb-skud-lead { margin: 0 0 var(--sb-space-3); color: var(--sb-text-soft); font-size: 0.8125rem; }
+.sb-skud-link { color: var(--sb-secondary); text-decoration: none; }
+.sb-skud-list { margin: 0; padding-left: 1.1rem; font-size: 0.8125rem; line-height: 1.6; }
+.sb-skud-mb3 { margin-bottom: var(--sb-space-3); }
+.sb-skud-menu-right { right: 0; left: auto; }
+.sb-skud-meta { display: block; margin-top: 3px; color: var(--sb-text-soft); font-size: 0.625rem; }
+.sb-skud-meta-xs { display: block; margin-top: 3px; color: var(--sb-text-soft); font-size: 0.5625rem; }
+.sb-skud-min-32 { min-width: 32rem; }
+.sb-skud-min-40 { min-width: 40rem; }
+.sb-skud-min-42 { min-width: 42rem; }
+.sb-skud-min-44 { min-width: 44rem; }
+.sb-skud-min-48 { min-width: 48rem; }
+.sb-skud-mono { font-family: var(--sb-mono); }
+.sb-skud-mt0 { margin-top: 0; }
+.sb-skud-mt2 { margin-top: var(--sb-space-2); }
+.sb-skud-mt3 { margin-top: var(--sb-space-3); }
+.sb-skud-note { margin: var(--sb-space-2) 0; color: var(--sb-text-soft); font-size: 0.6875rem; }
+.sb-skud-note-top { margin: var(--sb-space-3) 0 0; color: var(--sb-text-soft); font-size: 0.6875rem; }
+.sb-skud-nowrap { white-space: nowrap; }
+.sb-skud-p { margin: 0; color: var(--sb-text-soft); font-size: 0.8125rem; }
+.sb-skud-p-top { margin: var(--sb-space-3) 0 0; font-size: 0.8125rem; }
+.sb-skud-pad { padding: var(--sb-space-2) var(--sb-space-3) var(--sb-space-3); }
+.sb-skud-right { text-align: right; white-space: nowrap; }
+.sb-skud-row { display: flex; align-items: center; gap: var(--sb-space-2); }
+.sb-skud-row-wrap { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; }
+.sb-skud-scroll { overflow-x: auto; }
+.sb-skud-small { margin: 0; color: var(--sb-text-soft); font-size: 0.75rem; }
+.sb-skud-soft { color: var(--sb-text-soft); }
+.sb-skud-sub { margin: 0 0 var(--sb-space-2); color: var(--sb-text-soft); font-size: 0.75rem; }
+.sb-skud-sub-sm { margin: 0 0 var(--sb-space-2); color: var(--sb-text-soft); font-size: 0.6875rem; }
+.sb-skud-text-soft { color: var(--sb-text-soft); font-size: 0.8125rem; }
+.sb-skud-mono-caption { color: var(--sb-text-soft); font-family: var(--sb-mono); font-size: 0.75rem; }
+.sb-skud-value { display: block; font-size: 0.625rem; }
+.sb-skud-wrap { white-space: normal; }
+.sb-skud-xs { font-size: 0.6875rem; }
+
+/* DASHBOARD DO SKU (lote 4 do pente fino, 18/09): os estilos inline viraram classes, com os mesmos valores. */
+.sb-skud-block-sm { display: block; font-size: 0.75rem; }
+.sb-skud-block-soft { display: block; margin-top: 0.5rem; color: var(--sb-text-soft); }
+.sb-skud-block-xs { display: block; color: var(--sb-text-soft); font-size: 0.625rem; }
+.sb-skud-danger-border { color: var(--sb-danger); border-color: var(--sb-danger); }
+.sb-skud-lead-mb4 { margin-bottom: var(--sb-space-4); color: var(--sb-text-soft); font-size: 0.8125rem; }
+.sb-skud-note-mb { margin-bottom: var(--sb-space-3); color: var(--sb-text-soft); font-size: 0.6875rem; }
+.sb-skud-rule { border-top: 1px solid var(--sb-border); }
+
 /* PÁGINAS DE SISTEMA (lote 1 do pente fino, 18/09) — 404 dentro do Shell e a fronteira de erro. */
 .sb-system-state { display: grid; justify-items: center; gap: 0.6rem; max-width: 36rem; margin: var(--sb-space-4) auto 0; padding: 2.5rem 1.5rem; text-align: center; }
 .sb-system-state h1, .sb-system-state h2 { margin: 0; color: var(--sb-primary); font-size: 1.15rem; letter-spacing: -0.02em; }
