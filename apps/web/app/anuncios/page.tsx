@@ -96,9 +96,9 @@ interface DashboardRow {
   conversion_rate: number | null;
   /** NULA sem snapshot de Full (D-243). */
   full_quantity: number | null;
-  /** NULA até a próxima sincronização do catálogo. */
-  thumbnail_url: string | null;
-  permalink: string | null;
+  /** NULA até a próxima sincronização; AUSENTE com o banco anterior a 20260918150000. */
+  thumbnail_url?: string | null;
+  permalink?: string | null;
   total_count: number;
 }
 
@@ -159,15 +159,26 @@ function Cabecalho({
   filters,
   numerico = false,
   dica,
+  ordena,
 }: {
   coluna: OrderColumn;
   rotulo: string;
   filters: Filters;
   numerico?: boolean;
   dica?: string;
+  /** Falso com o banco anterior a 20260918150000: o cabeçalho vira texto. */
+  ordena: boolean;
 }): ReactNode {
   const ativa = filters.order.column === coluna;
   const crescente = filters.order.direction === "asc";
+
+  if (!ordena) {
+    return (
+      <th className={numerico ? "sb-num" : undefined} title={dica}>
+        {rotulo}
+      </th>
+    );
+  }
 
   return (
     <th
@@ -248,33 +259,86 @@ export default async function AnunciosPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+  const listaSemOrdem = {
+    p_organization_id: organizationId,
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+    p_ml_account_id: selectedAccount?.id ?? null,
+    p_search: filters.search,
+    p_status: filters.status,
+    p_link_state: filters.link,
+    p_stock: filters.stock,
+    p_full: filters.full,
+    p_sold: filters.sold,
+    p_limit: filters.pageSize,
+    p_offset: (filters.page - 1) * filters.pageSize,
+  };
+
   /*
     Duas leituras em paralelo: a página e a faixa. O ESCOPO da faixa é conta +
     busca, sem os filtros de estado — cada célula É um filtro de estado, e
     contá-la já filtrada por outro daria sempre zero ou o próprio número.
   */
-  const [pagina, faixa] = await Promise.all([
-    supabase.rpc("get_listings_dashboard", {
-      p_organization_id: organizationId,
-      p_date_from: dateFrom,
-      p_date_to: dateTo,
-      p_ml_account_id: selectedAccount?.id ?? null,
-      p_search: filters.search,
-      p_status: filters.status,
-      p_link_state: filters.link,
-      p_stock: filters.stock,
-      p_full: filters.full,
-      p_sold: filters.sold,
-      p_order: orderKey(filters.order),
-      p_limit: filters.pageSize,
-      p_offset: (filters.page - 1) * filters.pageSize,
-    }),
+  const [paginaNova, faixaNova] = await Promise.all([
+    supabase.rpc("get_listings_dashboard", { ...listaSemOrdem, p_order: orderKey(filters.order) }),
     supabase.rpc("get_listings_dashboard_counts", {
       p_organization_id: organizationId,
       p_ml_account_id: selectedAccount?.id ?? null,
       p_search: filters.search,
     }),
   ]);
+
+  /*
+    BANCO AINDA SEM 20260918150000 (PGRST202). A web e a migration chegam a
+    produção por caminhos diferentes — a web pela promoção na Vercel, a
+    migration pelo `migrations-producao.yml` com duas aprovações (D-334) — e em
+    18/09 uma tela publicada antes da migration dela virou 404 (`/notas-fiscais`).
+    Aqui a tela cai na assinatura antiga: lista por faturamento, sem foto, e a
+    faixa pelas seis chamadas de antes. Mesmo desenho de `/compras` e `/full`.
+  */
+  const bancoAntigo = paginaNova.error?.code === "PGRST202" || faixaNova.error?.code === "PGRST202";
+
+  let pagina = paginaNova;
+  // Contagem em erro é `undefined` e a célula diz "—", nunca zero: D-067 vale
+  // para a faixa igual vale para a tabela. Uma leitura que falhou e vira "0 sem
+  // estoque" afirma que está tudo bem — a mentira mais cara desta tela.
+  let contagens: Partial<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", number | undefined>> =
+    faixaNova.error === null ? (faixaNova.data[0] ?? {}) : {};
+
+  if (bancoAntigo) {
+    const contar = (extra: { p_status?: string; p_stock?: string; p_full?: string; p_link_state?: string }) =>
+      supabase.rpc("get_listings_dashboard", {
+        p_organization_id: organizationId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_ml_account_id: selectedAccount?.id ?? null,
+        p_search: filters.search,
+        p_limit: 1,
+        ...extra,
+      });
+
+    const [antiga, total, ativos, pausados, semEstoque, noFull, semVinculo] = await Promise.all([
+      supabase.rpc("get_listings_dashboard", listaSemOrdem),
+      contar({}),
+      contar({ p_status: "active" }),
+      contar({ p_status: "paused" }),
+      contar({ p_stock: "out" }),
+      contar({ p_full: "with" }),
+      contar({ p_link_state: "unlinked" }),
+    ]);
+    const ler = (r: { data: { total_count: number }[] | null; error: unknown }): number | undefined =>
+      r.error === null ? (r.data?.[0]?.total_count ?? 0) : undefined;
+
+    pagina = antiga;
+    contagens = {
+      total: ler(total),
+      active: ler(ativos),
+      paused: ler(pausados),
+      out_of_stock: ler(semEstoque),
+      in_full: ler(noFull),
+      unlinked: ler(semVinculo),
+    };
+  }
 
   const { data, error } = pagina;
 
@@ -284,12 +348,6 @@ export default async function AnunciosPage({
   const totalCount = rows[0]?.total_count ?? 0;
   const window = summarizeWindow(filters.page, totalCount, rows.length, filters.pageSize);
 
-  /*
-    Contagem em erro é `null`, nunca zero: D-067 vale para a faixa igual vale
-    para a tabela. Uma leitura que falhou e vira "0 sem estoque" afirma que
-    está tudo bem — a mentira mais cara desta tela.
-  */
-  const contagens = faixa.error === null ? (faixa.data[0] ?? null) : null;
   const numero = (valor: number | undefined): string => (valor === undefined ? "—" : formatCount(valor));
 
   const celulas: KpiCellData[] = [
@@ -298,7 +356,7 @@ export default async function AnunciosPage({
       // fecha (existe `under_review`).
       label: "Anúncios monitorados",
       formula: "Total no escopo atual (conta e busca), sem filtro de estado.",
-      value: numero(contagens?.total),
+      value: numero(contagens.total),
       previous: null,
       href: buildHref(filters, NEUTRO),
       tom: "info",
@@ -306,7 +364,7 @@ export default async function AnunciosPage({
     {
       label: "Ativos",
       formula: "listings.status = 'active' no escopo atual.",
-      value: numero(contagens?.active),
+      value: numero(contagens.active),
       previous: null,
       href: buildHref(filters, { ...NEUTRO, status: "active" }),
       tom: "ok",
@@ -314,7 +372,7 @@ export default async function AnunciosPage({
     {
       label: "Pausados",
       formula: "listings.status = 'paused' no escopo atual.",
-      value: numero(contagens?.paused),
+      value: numero(contagens.paused),
       previous: null,
       href: buildHref(filters, { ...NEUTRO, status: "paused" }),
       tom: "neutro",
@@ -322,7 +380,7 @@ export default async function AnunciosPage({
     {
       label: "Sem estoque",
       formula: "listings.available_quantity = 0 — estoque DO ANÚNCIO, não o do ERP nem o do Full.",
-      value: numero(contagens?.out_of_stock),
+      value: numero(contagens.out_of_stock),
       previous: null,
       href: buildHref(filters, { ...NEUTRO, stock: "out" }),
       tom: "perigo",
@@ -330,7 +388,7 @@ export default async function AnunciosPage({
     {
       label: "No Full",
       formula: "Full do anúncio > 0 — soma do último snapshot por inventory_id nos últimos 3 dias (definição canônica D-173/D-204).",
-      value: numero(contagens?.in_full),
+      value: numero(contagens.in_full),
       previous: null,
       href: buildHref(filters, { ...NEUTRO, full: "with" }),
       tom: "info",
@@ -338,7 +396,7 @@ export default async function AnunciosPage({
     {
       label: "Sem vínculo",
       formula: "Nem por anúncio nem por variação — a fila da Central de Vinculações (D-122).",
-      value: numero(contagens?.unlinked),
+      value: numero(contagens.unlinked),
       previous: null,
       href: buildHref(filters, { ...NEUTRO, link: "unlinked" }),
       tom: "atencao",
@@ -523,6 +581,13 @@ export default async function AnunciosPage({
             </div>
           )}
 
+          {bancoAntigo && (
+            <p role="note" className="sb-an-nota">
+              Ordenação por coluna e foto dos anúncios chegam com a próxima atualização do banco; até lá a lista segue
+              por faturamento.
+            </p>
+          )}
+
           {filters.sold === "without" && (
             // A ressalva só aparece quando é ela que está em jogo. "Sem venda"
             // é ausência de MÉTRICA no período, e o recálculo só materializa
@@ -562,33 +627,33 @@ export default async function AnunciosPage({
               <table className="sb-table sb-an-tabela">
                 <thead>
                   <tr>
-                    <Cabecalho coluna="title" rotulo="Anúncio" filters={filters} />
+                    <Cabecalho coluna="title" rotulo="Anúncio" filters={filters} ordena={!bancoAntigo} />
                     <th>Status</th>
-                    <Cabecalho coluna="price" rotulo="Preço" filters={filters} numerico />
+                    <Cabecalho coluna="price" rotulo="Preço" filters={filters} ordena={!bancoAntigo} numerico />
                     <Cabecalho
                       coluna="stock"
                       rotulo="Estoque"
-                      filters={filters}
+                      filters={filters} ordena={!bancoAntigo}
                       numerico
                       dica="Estoque DO ANÚNCIO no Mercado Livre — não o do ERP nem o do Full"
                     />
                     <Cabecalho
                       coluna="full"
                       rotulo="Full"
-                      filters={filters}
+                      filters={filters} ordena={!bancoAntigo}
                       numerico
                       dica="Soma do último snapshot por bucket (inventory_id), últimos 3 dias"
                     />
-                    <Cabecalho coluna="units" rotulo="Unidades" filters={filters} numerico />
-                    <Cabecalho coluna="revenue" rotulo="Faturamento" filters={filters} numerico />
-                    <Cabecalho coluna="visits" rotulo="Visitas" filters={filters} numerico />
+                    <Cabecalho coluna="units" rotulo="Unidades" filters={filters} ordena={!bancoAntigo} numerico />
+                    <Cabecalho coluna="revenue" rotulo="Faturamento" filters={filters} ordena={!bancoAntigo} numerico />
+                    <Cabecalho coluna="visits" rotulo="Visitas" filters={filters} ordena={!bancoAntigo} numerico />
                     <th className="sb-num" title="Dias com visitas observadas na janela — a base do denominador da conversão">
                       Obs.
                     </th>
                     <Cabecalho
                       coluna="conversion"
                       rotulo="Conversão"
-                      filters={filters}
+                      filters={filters} ordena={!bancoAntigo}
                       numerico
                       dica="Pedidos dos dias com visita observada ÷ visitas — indefinida sem visita, nunca 0%"
                     />
@@ -610,14 +675,14 @@ export default async function AnunciosPage({
                               a identidade do anúncio — MLB, SKU, conta — embaixo,
                               no lugar de três colunas que só repetiam códigos. */}
                           <span className="sb-an-produto-linha">
-                            {row.thumbnail_url === null ? (
+                            {(row.thumbnail_url ?? null) === null ? (
                               <span className="sb-product-thumb sb-an-foto" aria-hidden="true">
                                 {monogramaDeProduto(row.title)}
                               </span>
                             ) : (
                               <img
                                 className="sb-an-foto"
-                                src={row.thumbnail_url}
+                                src={row.thumbnail_url ?? undefined}
                                 alt=""
                                 width={40}
                                 height={40}
@@ -689,10 +754,10 @@ export default async function AnunciosPage({
                             skuId={row.sku_id}
                             compacto
                           />
-                          {row.permalink !== null && (
+                          {(row.permalink ?? null) !== null && (
                             <a
                               className="sb-icon-button sb-an-externo"
-                              href={row.permalink}
+                              href={row.permalink ?? undefined}
                               target="_blank"
                               rel="noopener noreferrer"
                               aria-label={`Abrir ${row.item_id} no Mercado Livre`}
