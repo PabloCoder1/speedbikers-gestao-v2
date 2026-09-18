@@ -1,6 +1,7 @@
 -- ============================================================
 -- `get_faturamento` (D-356): o custo do produto sai de UMA leitura por SKU,
--- e nao de tres buscas por item. Mesma saida, byte a byte.
+-- e nao de tres buscas por item. Mesmos valores; a ordem entre empatados
+-- nas listas passa a ser por sku_id (e por conta em `por_conta`) -- item 5.
 --
 -- ------------------------------------------------------------
 -- O QUE A AUDITORIA DISSE, E O QUE A MEDICAO MOSTROU
@@ -67,6 +68,27 @@
 --    planejamento em 30 dias). Oito execucoes seguidas na mesma sessao, no
 --    Dev: 535, 495, 495, 497, 493, 497, 493, 491 ms -- sem salto na sexta.
 --
+-- 5. DESEMPATE NAS LISTAS. `maior_receita` e `menor_margem` ordenavam so
+--    pela receita (ou margem + receita coberta) antes do `limit`, e
+--    `por_conta` so pela receita. Heapsort top-N e quicksort nao sao
+--    estaveis: entre dois SKUs com a mesma receita, a ordem -- e quem entra
+--    no corte de 30 ou de 20 -- era escolha do plano, e a troca de plano
+--    generico por custom (item 4) podia muda-la. Visto em producao, 18/09:
+--    empate real em 178,27 nas posicoes 28-29. Agora `sku_id` (e
+--    `ml_account_id` em `por_conta`) fecha a ordem.
+--
+-- 6. SO OS INTERVALOS QUE CRUZAM A JANELA. Sem filtro, cada item era
+--    comparado com TODAS as mudancas do seu SKU (hash por sku_id + o filtro
+--    do intervalo): O(itens x mudancas por SKU). Hoje nao pesa (uma linha
+--    por SKU), mas cresce com o historico. Depois do `lead()`, `historico`
+--    guarda so `desde < ts_to and (ate is null or ate > ts_from)`: toda venda
+--    da janela cai num intervalo assim, e os outros nunca casariam. Medido
+--    no Dev (corpo com literais, antes e depois do filtro, como postgres,
+--    transacao desfeita) com 52 mudancas semanais por SKU, 30 dias: linhas
+--    descartadas no filtro do intervalo 1.307.691 -> 115.251 (itens) e
+--    112.302 -> 9.734 (kits), 885-903 -> 734-749 ms, os mesmos 147 mil
+--    buffers. A leitura e a ordenacao do historico dos SKUs da janela ficam.
+--
 -- Tentado e DESCARTADO: passar os pedidos da janela como array constante
 -- para ler `order_items` por `= any(...)` em bitmap (4,5 mil buffers em vez
 -- de 112 mil). A juncao do array com `order_items` sai estimada em 1 linha
@@ -77,6 +99,9 @@
 -- MEDIDO (producao, `authenticated`, ADMIN real, transacao desfeita)
 -- ------------------------------------------------------------
 --
+-- Corpo sem os itens 5 e 6 (o 6 esta medido acima; o 5 so acrescenta uma
+-- coluna as ordenacoes das listas):
+--
 --                       buffers            temp escrito      tempo
 --     7 dias        83.861 -> 29.636        31 ->   0     195-197 -> 155-168 ms
 --     30 dias      382.748 -> 140.370     2.409 -> 735    740-1.094 -> 538 ms
@@ -85,30 +110,48 @@
 -- Numeros, planos e a prova completa: docs/PERFORMANCE.md.
 --
 -- ------------------------------------------------------------
--- QUE A SAIDA NAO MUDA, CONFERIDO
+-- OS VALORES NAO MUDAM; A ORDEM DOS EMPATADOS PODE MUDAR -- CONFERIDO
 -- ------------------------------------------------------------
 --
--- Em PRODUCAO, a funcao atual contra este corpo com os parametros como
--- literais, na mesma instrucao (mesmo snapshot): `jsonb` igual E texto igual
--- (md5 do `::text`), em 7 dias, 30 dias, 90 dias, agosto inteiro, a conta GMR
--- em 30 dias, `p_detalhe = false` em 30 dias e GMR + agosto + resumo.
+-- Sem os itens 5 e 6, em PRODUCAO, a funcao atual contra este corpo com os
+-- parametros como literais, na mesma instrucao (mesmo snapshot): `jsonb`
+-- igual E texto igual (md5 do `::text`), em 7 dias, 30 dias, 90 dias, agosto
+-- inteiro, a conta GMR em 30 dias, `p_detalhe = false` em 30 dias e GMR +
+-- agosto + resumo.
+--
+-- Com o desempate (item 5), a revisao de 18/09 comparou em producao 09/09 na
+-- conta loja 1: `jsonb` e texto diferentes, e IGUAIS depois de ordenar as
+-- listas pela ordem nova -- so a ordem dos empatados em `maior_receita`
+-- mudou. Um empate em cima do corte (posicao 30 ou 20) tambem decide quem
+-- entra na lista: antes, o plano; agora, o `sku_id`.
 --
 -- O historico de custo de producao tem UMA linha por SKU (gravadas em
 -- 14/09), entao o caso "mudou de custo no meio da janela" nao aparece la.
--- Foi provado no Dev, com a funcao REAL criada em `pg_temp` e historico
--- sintetico numa transacao desfeita: mudanca antes e DENTRO da janela, custo
--- 0, custo NULL, mudanca no instante exato de 40 vendas e componentes de
--- kit -- 7d, 30d, 90d, uma conta e resumo: identicos.
+-- Foi provado no Dev com o corpo FINAL (itens 1 a 6) criado em `pg_temp`,
+-- contra a funcao atual, numa transacao desfeita: 22.321 linhas sinteticas
+-- de historico em 1.762 SKUs (mudanca antes, dentro e depois da janela,
+-- custo 0, custo NULL), mudanca no instante exato de 40 vendas, 30 pedidos
+-- com dois itens e componentes de kit. Em 7d, 30d, 90d, fevereiro (todo o
+-- historico depois da janela), um dia, uma conta e resumo, campo a campo
+-- (resumo, diario, por_conta, as duas listas e as contagens): `jsonb` e
+-- texto identicos, com e sem ordenar as listas.
 --
 -- ------------------------------------------------------------
 -- A VOLTA
 -- ------------------------------------------------------------
 --
--- A assinatura e o retorno nao mudam, entao a volta e reaplicar o
--- `create or replace function public.get_faturamento(...)` de
--- 20260915210100_faturamento_rpc.sql (o corpo que estava em producao em
--- 18/09: md5 do prosrc d1bf929b7752789f5d01004ee474bc72). O
--- `create or replace` troca `language` e os SETs; grants e comentario ficam.
+-- A assinatura e o retorno nao mudam, entao a volta e reaplicar DOIS
+-- comandos de 20260915210100_faturamento_rpc.sql (o corpo que estava em
+-- producao em 18/09: md5 do prosrc d1bf929b7752789f5d01004ee474bc72):
+--
+--   1. o `create or replace function public.get_faturamento(...)`, que troca
+--      o corpo, a `language` e os SETs (os grants ficam);
+--   2. o `comment on function public.get_faturamento(...)` logo abaixo dele.
+--      O `create or replace` NAO mexe no comentario, e o que ficaria e o
+--      deste arquivo, que descreve plpgsql e plano custom.
+--
+-- Nao reaplicar o arquivo inteiro: ele tambem faz upsert em
+-- `metric_definitions`.
 -- ============================================================
 
 create or replace function public.get_faturamento(
@@ -177,18 +220,30 @@ begin
   -- por hash em sku_id + o filtro do intervalo, que e o "ultimo new_cost com
   -- changed_at <= date_created" de D-356. Empate de changed_at: vence o
   -- maior id (o intervalo vazio [t, t) nunca casa).
+  --
+  -- So ficam os intervalos que CRUZAM a janela (item 6 do cabecalho): o
+  -- `lead()` corre sobre o historico inteiro do SKU, e o filtro vem depois,
+  -- por fora -- nao desce para dentro da janela de `lead()`, porque `desde`
+  -- e `ate` nao sao a particao. As datas sao as de `bounds` repetidas, e nao
+  -- uma segunda referencia a `bounds`: CTE citada duas vezes e materializada,
+  -- e `pedidos` deixaria de ver as datas como constantes no plano.
   historico as materialized (
-    select
-      h.sku_id,
-      h.changed_at as desde,
-      lead(h.changed_at) over (partition by h.sku_id order by h.changed_at, h.id) as ate,
-      h.new_cost
-    from public.sku_cost_history h
-    where h.sku_id in (
-      select j.sku_id from skus_janela j
-      union
-      select c.component_sku_id from componentes c
-    )
+    select t.sku_id, t.desde, t.ate, t.new_cost
+    from (
+      select
+        h.sku_id,
+        h.changed_at as desde,
+        lead(h.changed_at) over (partition by h.sku_id order by h.changed_at, h.id) as ate,
+        h.new_cost
+      from public.sku_cost_history h
+      where h.sku_id in (
+        select j.sku_id from skus_janela j
+        union
+        select c.component_sku_id from componentes c
+      )
+    ) t
+    where t.desde < ((p_date_to + 1)::timestamp at time zone 'America/Sao_Paulo')
+      and (t.ate is null or t.ate > (p_date_from::timestamp at time zone 'America/Sao_Paulo'))
   ),
   custo_kit as materialized (
     select
@@ -334,7 +389,7 @@ begin
     ) d
   ),
   por_conta as (
-    select coalesce(jsonb_agg(to_jsonb(c) order by c.receita_bruta desc), '[]'::jsonb) as j
+    select coalesce(jsonb_agg(to_jsonb(c) order by c.receita_bruta desc, c.ml_account_id), '[]'::jsonb) as j
     from (
       select
         k.ml_account_id,
@@ -382,24 +437,24 @@ begin
   por_sku as (
     select jsonb_build_object(
       'maior_receita', (
-        select coalesce(jsonb_agg(to_jsonb(x) order by x.receita_bruta desc), '[]'::jsonb)
+        select coalesce(jsonb_agg(to_jsonb(x) order by x.receita_bruta desc, x.sku_id), '[]'::jsonb)
         from (
           select b.*, s.sku, s.title
           from por_sku_base b
           join public.skus s on s.id = b.sku_id
-          order by b.receita_bruta desc
+          order by b.receita_bruta desc, b.sku_id
           limit 30
         ) x
       ),
       'menor_margem', (
-        select coalesce(jsonb_agg(to_jsonb(x) order by x.margem_venda, x.receita_coberta desc), '[]'::jsonb)
+        select coalesce(jsonb_agg(to_jsonb(x) order by x.margem_venda, x.receita_coberta desc, x.sku_id), '[]'::jsonb)
         from (
           select b.*, s.sku, s.title
           from por_sku_base b
           join public.skus s on s.id = b.sku_id
           where b.pedidos_cobertos > 0
             and b.margem_venda < 0.10
-          order by b.margem_venda, b.receita_coberta desc
+          order by b.margem_venda, b.receita_coberta desc, b.sku_id
           limit 20
         ) x
       ),
