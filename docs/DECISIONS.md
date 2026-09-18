@@ -13699,3 +13699,25 @@ Pilulas viraram `FilterMenu` (conta, tipo, status) mais tres recortes rapidos (M
 **4. VERIFICACAO**
 
 `tsc`, `eslint`, unidade da web **837 verdes**, `check:loading`, `next build`. E2E contra `next start`: busca, diagnostico, compras, pedido de compra, importacoes, nota fiscal, SKU e anuncio -- **34 verdes** -- mais `cabecalhos` e um caso novo em `busca.spec` (acha "Movimentacoes" digitando sem acento e abre com Enter). Duas armadilhas do caminho, nenhuma do codigo: o banco local foi re-semeado por outra sessao no meio (o `.seed-output.json` da worktree ficou velho e onze casos de `sku-dashboard` falharam por id), e `nota-fiscal.spec` e stateful -- o vinculo da primeira passada fica, e `documents.resolved_items` e contador proprio: restaurar so o item nao basta.
+
+## D-387 - Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
+
+**Contexto:** ultimo lote do pente fino de 18/09 (D-383, D-384, D-386). A auditoria mediu o Dashboard do SKU como a maior divida visual do sistema -- **99** `style={{}}` contra 2 a 5 nas telas redesenhadas -- e achou o detalhe do pedido de compra no padrao antigo (13 no page, 4 no painel de acoes), com uma afirmacao falsa na tela. O Copiloto, terceiro alvo do lote, ficou FORA: havia trabalho nao salvo de outra frente nele.
+
+**1. DASHBOARD DO SKU: 99 -> 3**
+
+Troca MECANICA, com os MESMOS valores: cada estilo estatico virou uma classe `.sb-skud-*` (49 classes), fundida ao `className` que o elemento ja tinha; estilo dinamico ficou (`color: cor` duas vezes, e a variavel `--sb-stat-cols`). Feito por script que so troca padrao conhecido e lista o que pulou, para nada mudar em silencio. Conferido pela captura da visao geral contra a da auditoria: identicas (a unica diferenca e o MLB ser link, de D-386). A aba Vendas ganhou o respiro que faltava entre "Por conta" e "Por dia" (os dois paineis encostavam desde antes).
+
+**2. DETALHE DO PEDIDO DE COMPRA**
+
+- **A frase falsa.** O subtitulo dizia "SKU, origem e custo TRAVADOS no momento do pedido", e a origem nao e: vem de `skus.is_imported` na hora (`purchase_order_items` nao guarda origem) -- a mesma coluna fiscal que D-129/D-139 mediram contradizendo a rota de compra. Agora: "SKU, quantidade e custo ficam gravados no pedido... A origem e a do cadastro atual do SKU", e a coluna chama "Origem (cadastro)".
+- **Quem fez.** `purchase_order_events.actor_user_id` existia e a tela nao dizia; o historico mostra o nome (`profiles`).
+- **Falha de leitura nao e 404** (D-067): um erro transitorio virava "pagina nao encontrada" e a pessoa concluia que o pedido sumiu. Agora tem estado proprio com "Tentar de novo" -- o conserto que `/notas-fiscais/[id]` ja tinha feito.
+- **Receber pede confirmacao.** "Confirmar recebimento" dava entrada no estoque num clique; agora abre "Sim, receber" / "Voltar" na propria caixa, no mesmo espirito de D-386. O motivo do cancelamento ganhou rotulo acessivel.
+- Cabecalho com "Voltar" do design system, quantidade formatada, a nota interna sobre o "layout provisorio" da exportacao saiu da tela, e o que era inline virou `.sb-pod-*` (17 -> 1, o ponto colorido do evento, que e dinamico).
+
+**3. VERIFICACAO**
+
+`tsc`, `eslint`, `next build`; e2e `sku-dashboard` + `compras` + `pedido-compra` **15 verdes** contra `next start`. A confirmacao de recebimento NAO tem caso e2e: o seed nao tem pedido `ORDERED` (o unico estado que oferece "receber"), e criar um mudaria o banco local compartilhado com outras sessoes. Capturas a 1440 px da visao geral e das abas Anuncios, Precos, Vendas e Decisoes, e do pedido.
+
+- Copiloto: fica para quando a outra frente terminar o que tem aberto nele.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **377** (D-001 a D-386).
+Decisões registradas: **378** (D-001 a D-387).
 
 ## Por domínio
 
@@ -139,7 +139,7 @@ Decisões registradas: **377** (D-001 a D-386).
 - **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 
-### interface (43)
+### interface (44)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -184,6 +184,7 @@ Decisões registradas: **377** (D-001 a D-386).
 - **D-372** — Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
 - **D-376** — Vinculacoes: a moldura que faltava e a pagina numa leitura so
 - **D-386** — Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
+- **D-387** — Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
 
 ### mercado-livre (58)
 
