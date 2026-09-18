@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { FilterMenu } from "../../components/filter-menu";
+import { FilterPill } from "../../components/filter-pill";
 import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
@@ -23,19 +24,24 @@ import {
   orderKey,
   orderParam,
   pageNumbers,
-  resolveFullFilter,
-  resolveLinkStateFilter,
-  resolveOrder,
-  resolvePage,
-  resolveSoldFilter,
-  resolveStatusFilter,
-  resolveStockFilter,
   summarizeWindow,
-  type ListingsOrder,
   type OrderColumn,
 } from "../../lib/listings-dashboard";
-import { PAGE_SIZES, buildFilterHref, resolvePageSize, type PageSize } from "../../lib/filters";
-import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../../lib/period";
+import { lastBusinessDays } from "../../lib/business-window";
+import { PAGE_SIZES } from "../../lib/filters";
+import {
+  NEUTRO,
+  QUICK_VIEWS,
+  buildListingsHref,
+  isQuickViewActive,
+  listingsParams,
+  quickViewHref,
+  recorteConversion,
+  resolveListingsFilters,
+  revenueShare,
+  type ListingsFilters,
+} from "../../lib/listings-view";
+import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
 
@@ -100,57 +106,18 @@ interface DashboardRow {
   thumbnail_url?: string | null;
   permalink?: string | null;
   total_count: number;
+  /** Somas do RECORTE inteiro, antes do limit (D-385). AUSENTES com o banco anterior. */
+  recorte_faturamento?: number | null;
+  recorte_unidades?: number | null;
+  recorte_visitas?: number | null;
+  recorte_pedidos_observados?: number | null;
 }
 
-interface Filters {
-  account: string | null;
-  status: string | null;
-  link: string;
-  stock: string;
-  full: string;
-  /** 'all' | 'with' | 'without' — venda na janela (D-308, predicado de D-259). */
-  sold: string;
-  /** Dias da janela. Muda venda/visitas/conversão e o predicado `sold` (D-308). */
-  days: number;
-  search: string | null;
-  order: ListingsOrder;
-  pageSize: PageSize;
-  page: number;
-}
+// O recorte é lido e escrito por `lib/listings-view.ts` — o mesmo módulo que o
+// CSV (`/anuncios/exportar`) usa, para a planilha nunca divergir da tela (D-385).
+type Filters = ListingsFilters;
 
-/**
- * Preserva as outras dimensões ao trocar uma — mesmo `buildHref` de
- * `/vendas`. Trocar de conta NÃO pode resetar o filtro de vínculo.
- *
- * Qualquer mudança de filtro, ordem ou tamanho volta para a página 1: manter
- * o offset seria mostrar "página 7 de 2", ou pior, uma página vazia que
- * parece "nenhum resultado".
- */
-function buildHref(current: Filters, override: Partial<Filters>): string {
-  const next = { ...current, ...override };
-
-  return buildFilterHref(
-    "/anuncios",
-    {
-      conta: next.account,
-      estado: next.status,
-      // "all" e o default de cada eixo: fica fora da URL.
-      vinculo: next.link === "all" ? null : next.link,
-      estoque: next.stock === "all" ? null : next.stock,
-      full: next.full === "all" ? null : next.full,
-      venda: next.sold === "all" ? null : next.sold,
-      // O padrão fica fora da URL: `/anuncios` continua sendo o endereço da
-      // janela de 30 dias, por faturamento, 50 por página.
-      dias: next.days === DEFAULT_PERIOD_DAYS ? null : String(next.days),
-      busca: next.search,
-      ordem: orderParam(next.order),
-      tamanho: next.pageSize === PAGE_SIZE ? null : String(next.pageSize),
-    },
-    override.page === undefined ? 1 : next.page,
-  );
-}
-
-const NEUTRO: Partial<Filters> = { status: null, link: "all", stock: "all", full: "all", sold: "all", search: null };
+const buildHref = buildListingsHref;
 
 /** Cabeçalho que ordena: o link é o próximo estado, e `aria-sort` diz o atual. */
 function Cabecalho({
@@ -234,30 +201,16 @@ export default async function AnunciosPage({
     params: row.params as Record<string, string>,
   }));
 
-  const requestedAccount = typeof query.conta === "string" ? query.conta : null;
-  const selectedAccount = accounts.find((a) => a.slug === requestedAccount) ?? null;
-
-  const filters: Filters = {
-    // Slug desconhecido cai em "todas as contas" em silêncio — mesmo
-    // tratamento de `/vendas`, não é erro de rede nem de dado.
-    account: selectedAccount?.slug ?? null,
-    status: resolveStatusFilter(query.estado),
-    link: resolveLinkStateFilter(query.vinculo),
-    stock: resolveStockFilter(query.estoque),
-    full: resolveFullFilter(query.full),
-    sold: resolveSoldFilter(query.venda),
-    days: resolvePeriodDays(query.dias),
-    search: typeof query.busca === "string" && query.busca.trim() !== "" ? query.busca.trim() : null,
-    order: resolveOrder(query.ordem),
-    pageSize: resolvePageSize(query.tamanho, PAGE_SIZE),
-    page: resolvePage(query.pagina),
-  };
+  const filters: Filters = resolveListingsFilters(
+    query,
+    accounts.map((account) => account.slug),
+  );
+  const selectedAccount = accounts.find((a) => a.slug === filters.account) ?? null;
 
   // A janela sai do filtro (D-308). `days - 1` porque o intervalo da RPC é
   // fechado nas duas pontas: "últimos 7 dias" é hoje mais seis.
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(filters.days, now);
 
   const listaSemOrdem = {
     p_organization_id: organizationId,
@@ -347,6 +300,30 @@ export default async function AnunciosPage({
   // significa zero no conjunto filtrado — a resposta certa.
   const totalCount = rows[0]?.total_count ?? 0;
   const window = summarizeWindow(filters.page, totalCount, rows.length, filters.pageSize);
+
+  /*
+    O RECORTE em números (D-385): somas do conjunto filtrado inteiro, antes do
+    limit, vindas na MESMA leitura da página. A conversão é pedidos dos dias com
+    visita ÷ visitas, somados no SQL — nunca a média das taxas das linhas
+    (D-170). Com o banco anterior a 20260918200000 as colunas não vêm, e o
+    resumo simplesmente não aparece.
+  */
+  const primeira = rows[0];
+  const recorte =
+    primeira?.recorte_faturamento === undefined || primeira.recorte_faturamento === null
+      ? null
+      : {
+          faturamento: primeira.recorte_faturamento,
+          unidades: primeira.recorte_unidades ?? 0,
+          visitas: primeira.recorte_visitas ?? null,
+          conversao: recorteConversion(primeira.recorte_pedidos_observados, primeira.recorte_visitas),
+        };
+
+  // O CSV leva o recorte da tela inteiro, sem a página (`/anuncios/exportar`).
+  const parametrosDoCsv = Object.entries(listingsParams(filters)).filter(
+    (par): par is [string, string] => par[1] !== null,
+  );
+  const exportar = `/anuncios/exportar?${new URLSearchParams(parametrosDoCsv).toString()}`;
 
   const numero = (valor: number | undefined): string => (valor === undefined ? "—" : formatCount(valor));
 
@@ -522,6 +499,21 @@ export default async function AnunciosPage({
 
       <KpiStrip ancora cells={celulas} />
 
+      {/*
+        As perguntas de todo dia, a um clique (D-385). Cada visão é uma
+        combinação de filtros que a tela já tem — nenhuma métrica nova. A
+        `FilterPill` já traz a tela de carregamento para o clique que demora
+        (D-382), e clicar na visão ativa desfaz.
+      */}
+      <nav className="sb-an-visoes" aria-label="Visões rápidas">
+        <span className="sb-an-visoes-rotulo">Visões rápidas</span>
+        {QUICK_VIEWS.map((view) => (
+          <FilterPill key={view.key} href={quickViewHref(view, filters)} active={isQuickViewActive(view, filters)}>
+            {view.label}
+          </FilterPill>
+        ))}
+      </nav>
+
       <div className="sb-an-lista">
         <Panel
           title="Anúncios monitorados"
@@ -599,6 +591,29 @@ export default async function AnunciosPage({
             </p>
           )}
 
+          {error === null && recorte !== null && (
+            <dl className="sb-an-recorte" aria-label="Resumo do recorte">
+              <div>
+                <dt>Faturamento do recorte</dt>
+                <dd>{formatCurrency(recorte.faturamento)}</dd>
+              </div>
+              <div>
+                <dt>Unidades vendidas</dt>
+                <dd>{formatCount(recorte.unidades)}</dd>
+              </div>
+              <div>
+                <dt>Visitas</dt>
+                <dd>{recorte.visitas === null ? "—" : formatCount(recorte.visitas)}</dd>
+              </div>
+              <div>
+                <dt title="Pedidos dos dias com visita observada ÷ visitas, somados no recorte — indefinida sem visita">
+                  Conversão
+                </dt>
+                <dd>{formatPercent(recorte.conversao)}</dd>
+              </div>
+            </dl>
+          )}
+
           {error !== null && (
             <div role="alert" className="sb-an-estado sb-an-estado-erro">
               <b>Não foi possível carregar os anúncios.</b>
@@ -646,10 +661,14 @@ export default async function AnunciosPage({
                     />
                     <Cabecalho coluna="units" rotulo="Unidades" filters={filters} ordena={!bancoAntigo} numerico />
                     <Cabecalho coluna="revenue" rotulo="Faturamento" filters={filters} ordena={!bancoAntigo} numerico />
-                    <Cabecalho coluna="visits" rotulo="Visitas" filters={filters} ordena={!bancoAntigo} numerico />
-                    <th className="sb-num" title="Dias com visitas observadas na janela — a base do denominador da conversão">
-                      Obs.
-                    </th>
+                    <Cabecalho
+                      coluna="visits"
+                      rotulo="Visitas"
+                      filters={filters}
+                      ordena={!bancoAntigo}
+                      numerico
+                      dica="Visitas na janela; embaixo, em quantos dias a visita foi observada — a base da conversão"
+                    />
                     <Cabecalho
                       coluna="conversion"
                       rotulo="Conversão"
@@ -667,9 +686,14 @@ export default async function AnunciosPage({
                   {rows.map((row) => {
                     const badge = linkStateBadge(row.link_state);
                     const zerado = row.available_quantity === 0;
+                    const inativo = row.status !== "active";
+                    const participacao = revenueShare(row.gross_revenue, recorte?.faturamento);
+                    const classes = [zerado ? "sb-an-linha-zerada" : "", inativo ? "sb-an-linha-inativa" : ""]
+                      .filter((classe) => classe !== "")
+                      .join(" ");
 
                     return (
-                      <tr key={row.listing_id} className={zerado ? "sb-an-linha-zerada" : undefined}>
+                      <tr key={row.listing_id} className={classes === "" ? undefined : classes}>
                         <td className="sb-an-produto">
                           {/* `.product-cell` do frame: foto (ou monograma) + nome, e
                               a identidade do anúncio — MLB, SKU, conta — embaixo,
@@ -720,24 +744,54 @@ export default async function AnunciosPage({
                             </span>
                           </span>
                         </td>
-                        <td>
+                        <td data-label="Status">
                           <StatusPill code={row.status} label={listingStatusLabel(row.status)} />
                         </td>
-                        <td className="sb-num">{formatCurrency(row.price)}</td>
-                        <td className="sb-num">
+                        <td className="sb-num" data-label="Preço">
+                          {formatCurrency(row.price)}
+                        </td>
+                        <td className="sb-num" data-label="Estoque">
                           {zerado ? <span className="sb-an-zerado">0</span> : formatCount(row.available_quantity)}
                         </td>
                         {/* NULA sem snapshot: "—", nunca "0" (D-067). */}
-                        <td className="sb-num">{row.full_quantity === null ? "—" : formatCount(row.full_quantity)}</td>
-                        <td className="sb-num">{formatCount(row.units_sold)}</td>
-                        <td className="sb-num sb-an-faturamento">{formatCurrency(row.gross_revenue)}</td>
-                        <td className="sb-num">{row.visits === null ? "—" : formatCount(row.visits)}</td>
-                        {/* Dias com coleta de visitas dentro da janela: sem ela, a
-                            taxa ao lado seria lida como se cobrisse o período todo. */}
-                        <td className="sb-num sb-an-suave" title="Dias com visitas observadas na janela">
-                          {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(filters.days)}`}
+                        <td className="sb-num" data-label="Full">
+                          {row.full_quantity === null ? "—" : formatCount(row.full_quantity)}
                         </td>
-                        <td className="sb-num">{formatPercent(row.conversion_rate)}</td>
+                        <td className="sb-num" data-label="Unidades">
+                          {formatCount(row.units_sold)}
+                        </td>
+                        {/*
+                          A barra é a PARTICIPAÇÃO da linha no faturamento do
+                          recorte — lê-se de relance quem carrega o resultado.
+                          Sem resumo (banco anterior) ou sem faturamento, não há
+                          barra, em vez de uma barra inventada.
+                        */}
+                        <td className="sb-num sb-an-faturamento" data-label="Faturamento">
+                          {formatCurrency(row.gross_revenue)}
+                          {participacao !== null && participacao > 0 && (
+                            <span
+                              className="sb-an-participacao"
+                              title={`${formatPercent(participacao)} do faturamento do recorte`}
+                            >
+                              <span style={{ width: `${String(Math.max(participacao * 100, 2))}%` }} />
+                            </span>
+                          )}
+                        </td>
+                        {/* Os dias com coleta descem para baixo das visitas: sem
+                            eles, a taxa ao lado seria lida como se cobrisse o
+                            período todo. Era a coluna "Obs.", sem nome que
+                            dissesse o que era. */}
+                        <td className="sb-num" data-label="Visitas">
+                          {row.visits === null ? "—" : formatCount(row.visits)}
+                          {row.days_observed > 0 && (
+                            <small className="sb-an-sub" title="Dias com visitas observadas na janela">
+                              {`${String(row.days_observed)}/${String(filters.days)} dias`}
+                            </small>
+                          )}
+                        </td>
+                        <td className="sb-num" data-label="Conversão">
+                          {formatPercent(row.conversion_rate)}
+                        </td>
                         <td className="sb-an-acoes">
                           {/* A gaveta: frescor, republicação e o que aconteceu —
                               o que a linha não carrega. */}
@@ -777,6 +831,10 @@ export default async function AnunciosPage({
 
           {error === null && totalCount > 0 && (
             <nav className="sb-an-paginacao" aria-label="Paginação dos anúncios">
+              <div className="sb-an-paginacao-esquerda">
+              <a className="sb-button" href={exportar} download>
+                <Icone nome="baixar" tamanho={14} /> Exportar CSV
+              </a>
               <FilterMenu
                 rotulo={`${String(filters.pageSize)} por página`}
                 opcoes={PAGE_SIZES.map((tamanho) => ({
@@ -785,6 +843,7 @@ export default async function AnunciosPage({
                   label: `${String(tamanho)} por página`,
                 }))}
               />
+              </div>
 
               {window.totalPages > 1 && (
                 <div className="sb-an-paginas">
