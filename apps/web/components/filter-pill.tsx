@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "./carregando-link";
+
 /**
  * A "pílula" de filtro, compartilhada por `/vendas`, `/anuncios`, `/estoque`,
  * `/curva-abc` e `/atendimento` (D-141).
@@ -49,6 +51,7 @@ export function FilterPill({
   return (
     <Link href={href} aria-current={active ? "true" : undefined} className={`sb-button${variante}`}>
       {children}
+      <CarregandoSeODemorar />
     </Link>
   );
 }
