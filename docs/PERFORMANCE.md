@@ -539,6 +539,16 @@ atual (some da `/reposicao` e do estoque) até a próxima captura. Um teste
 trava a conta dos 66 h; janela longa acima de 48 h empurra o recheque para
 54 h e zera a folga.
 
+A conta também pressupõe execução **pontual**. A janela conta do início
+real da tentativa que grava a marca (`capturedAt`), não do horário agendado,
+e cada janela vence 3 h antes da execução que deve perguntar de novo (9 h
+contra 12 h, 45 h contra 48 h). Se a execução que grava a marca começar com
+mais de 3 h de atraso (uma reentrega do Cloud Tasks horas depois, por
+exemplo), o recheque escorrega uma execução inteira: 6 + 12 + 54 = 72 h, sem
+folga, e o bucket sai do Full atual por alguns minutos. Em `sync_runs`
+(produção), as execuções agendadas de 14/09 a 18/09 começaram todas até
+21 s depois da hora cheia.
+
 Por que isso fica em "atraso aceitável" e não em defeito: nos 2.187 itens
 capturados nas 15 execuções de 14/09 21:00 a 18/09 09:00 (produção), **zero
 buracos** — nenhum item faltou numa execução e voltou na seguinte. 404
@@ -598,7 +608,8 @@ execução está no `reason` de `sync_runs` e no log
 -- Producao. Primeira execucao depois do deploy: falharam = 356, adiados = 0.
 -- +6 h: falharam = 0, adiados = 356. +12 h: falharam = 356 (o segundo 404).
 -- Sete seguintes: adiados = 356. +60 h (48 h depois do segundo): 356 de novo.
--- capturados igual ao de antes (2.179 em 18/09); cair e defeito.
+-- capturados nao menor que o da execucao anterior ao deploy (o numero cresce
+-- com vinculo novo: 1.967 em 17/09, 2.179 e 2.387 em 18/09); cair e defeito.
 select date_trunc('hour', started_at) as execucao,
        sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) falharam'))[1]::int, 0)) as falharam,
        sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) adiado'))[1]::int, 0)) as adiados,
@@ -641,12 +652,20 @@ Se o número de marcas for muito maior que 356 logo depois do deploy, olhar
   (`+00:00`, sem fração zero). Com os testes novos: **15 de 15** mutações
   pegas (as 9 da revisão e 6 no código novo). Impacto real do filtro de conta
   hoje é nulo — nenhum `item_id` está vinculado a mais de uma conta em
-  produção (`sku_listing_links_item_only_unique`) —, mas o teste agora
-  reprova se ele sair.
+  produção (medido em 18/09: 0 itens em mais de uma conta; nenhum índice
+  impede, porque `sku_listing_links_item_only_unique` é por
+  (conta, `item_id`)) —, mas o teste agora reprova se ele sair.
 - **Comparar `recheck_after` como texto** dá o mesmo resultado que comparar
   instante enquanto o PostgREST devolve UTC; um `timezone` no banco ou no
   papel mudaria a saída sem mudar código. `Date.parse` fica, e um teste com
   `-03:00` trava isso.
+- **O fake aplica os CHECKs da migration.** O upsert das marcas é um
+  comando só: no banco, uma linha com `http_status` fora de (403, 404)
+  derruba o lote inteiro, e as marcas legítimas da conta se perdem junto
+  (só fica o aviso `_not_recorded`). O fake gravava qualquer linha, e a
+  mutação "marca também o 400" passava com todos os testes verdes. Agora o
+  fake recusa o lote como o banco, e o teste de "não vira marca" roda com
+  400 e 401 ao lado de um 404.
 - **Marca órfã**, **segundo 404** e **o texto de "nunca some"**: acima.
 
 ## Histórico de otimizações medidas
