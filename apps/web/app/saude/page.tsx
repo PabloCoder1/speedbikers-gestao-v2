@@ -269,8 +269,26 @@ export default async function SaudePage(): Promise<ReactNode> {
           terceira leitura só para enfeitar o rótulo — e com janela de 7 dias
           brigando com a coluna "Falhas 24h" que a tabela abaixo já imprime.
         */
-        aside={<Link href="/sincronizacao">Execuções que falharam →</Link>}
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de confiabilidade">
+            <Link href="/sincronizacao">Execuções que falharam →</Link>
+            <Link href="/integracoes">Mapa de integrações →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-reliability-hero" aria-labelledby="health-hero-title">
+        <div className="sb-reliability-hero-copy">
+          <span className="sb-process-hero-kicker">RADAR DE CONFIABILIDADE</span>
+          <h2 id="health-hero-title">O que está no ar combina com o que deveria estar no ar?</h2>
+          <p>Esta leitura cruza a versão da web, a API, as migrations e a última execução de cada job para separar drift de ausência de medição.</p>
+        </div>
+        <div className={`sb-reliability-verdict sb-reliability-verdict-${verdict.toLowerCase()}`}>
+          <span>VEREDITO DA VERSÃO</span>
+          <strong>{verdict === "CURRENT" ? "Alinhada" : verdict === "OUTDATED" ? "Divergente" : "Não medida"}</strong>
+          <small>{motivoUnknown ?? `web ${webCommit ?? "—"} · api ${apiCommit ?? "—"}`}</small>
+        </div>
+      </section>
 
       {healthResult.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>

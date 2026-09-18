@@ -4287,6 +4287,129 @@ table {
   .sb-integration-legend { justify-content: flex-start; max-width: none; }
 }
 
+/* Saúde e configurações: entrada orientada à decisão, detalhe preservado abaixo. */
+.sb-reliability-hero,
+.sb-settings-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  overflow: hidden;
+  min-height: 172px;
+  margin: 0 0 16px;
+  padding: 26px 28px;
+  border: 1px solid var(--sb-border);
+  border-radius: 14px;
+  background: linear-gradient(115deg, #fff 0%, #f8f8fd 56%, #eff0ff 100%);
+  box-shadow: 0 10px 28px rgb(20 27 88 / 6%);
+}
+.sb-reliability-hero::after,
+.sb-settings-hero::after {
+  position: absolute;
+  right: -52px;
+  bottom: -104px;
+  width: 250px;
+  height: 250px;
+  border: 34px solid rgb(248 229 35 / 18%);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.sb-reliability-hero-copy,
+.sb-settings-hero-copy { position: relative; z-index: 1; max-width: 680px; }
+.sb-reliability-hero h2,
+.sb-settings-hero h2 {
+  max-width: 650px;
+  margin: 0;
+  color: var(--sb-primary);
+  font-size: clamp(21px, 2.4vw, 30px);
+  line-height: 1.1;
+  letter-spacing: -.035em;
+}
+.sb-reliability-hero p,
+.sb-settings-hero p {
+  max-width: 630px;
+  margin: 10px 0 0;
+  color: var(--sb-muted-ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.sb-reliability-verdict {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 205px;
+  padding: 16px 18px;
+  border: 1px solid var(--sb-border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 82%);
+}
+.sb-reliability-verdict span {
+  color: var(--sb-muted-ink);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.sb-reliability-verdict strong { color: var(--sb-primary); font-size: 22px; letter-spacing: -.03em; }
+.sb-reliability-verdict small { color: var(--sb-muted-ink); font-size: 10px; line-height: 1.4; }
+.sb-reliability-verdict-current { border-color: rgb(19 108 52 / 30%); background: var(--sb-success-soft); }
+.sb-reliability-verdict-current strong { color: var(--sb-success); }
+.sb-reliability-verdict-outdated { border-color: rgb(221 29 29 / 28%); background: var(--sb-danger-soft); }
+.sb-reliability-verdict-outdated strong { color: var(--sb-danger-ink); }
+.sb-reliability-verdict-unknown { border-color: rgb(128 113 0 / 28%); background: var(--sb-accent-soft); }
+.sb-reliability-verdict-unknown strong { color: var(--sb-accent-ink); }
+
+.sb-settings-hero { background: linear-gradient(115deg, #fff 0%, #f8f8fd 48%, #fff8df 100%); }
+.sb-settings-hero-rules {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 8px;
+  min-width: 300px;
+}
+.sb-settings-hero-rules span {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid rgb(23 31 111 / 12%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 80%);
+}
+.sb-settings-hero-rules b { color: var(--sb-accent-ink); font-size: 10px; }
+.sb-settings-hero-rules strong { color: var(--sb-primary); font-size: 12px; }
+.sb-settings-hero-rules small { color: var(--sb-muted-ink); font-size: 10px; }
+.sb-settings-grid .sb-panel {
+  height: 100%;
+  box-shadow: 0 5px 18px rgb(20 27 88 / 4%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.sb-settings-grid .sb-panel:hover {
+  border-color: rgb(23 31 111 / 28%);
+  box-shadow: 0 10px 24px rgb(20 27 88 / 7%);
+  transform: translateY(-2px);
+}
+.sb-settings-grid .sb-panel-head { min-height: 62px; padding: 17px 20px 14px; background: linear-gradient(90deg, #fff 0%, #fafaff 100%); }
+.sb-settings-grid .sb-panel-head h2::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 8px 2px 0;
+  border-radius: 50%;
+  background: var(--sb-secondary);
+  content: "";
+}
+.sb-settings-grid .sb-panel-body { min-height: 142px; align-content: start; }
+
+@media (max-width: 760px) {
+  .sb-reliability-hero,
+  .sb-settings-hero { align-items: flex-start; flex-direction: column; min-height: 0; padding: 20px; }
+  .sb-reliability-verdict { width: 100%; min-width: 0; }
+  .sb-settings-hero-rules { grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 0; width: 100%; }
+}
+
 /* Sincronização e importações: duas telas de processo com orientação própria. */
 .sb-process-hero {
   position: relative;
