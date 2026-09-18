@@ -134,12 +134,13 @@ test("/anuncios: vínculo por variação não é fila de trabalho, e conversão 
   const linhaSemTrafego = page.locator("tbody tr", { hasText: semTrafego?.itemId ?? "" });
 
   // …e "—" (não "0") no que nunca teve snapshot, ao lado de visitas e
-  // conversão também indefinidas. Colunas (MLB, SKU e conta desceram para a
-  // linha de identidade da primeira): Anúncio, Status, Preço, Estoque, Full,
-  // Unidades, Faturamento, Visitas, Obs., Conversão, ações.
+  // conversão também indefinidas. Colunas (MLB, SKU e conta na linha de
+  // identidade da primeira; os dias observados embaixo das visitas, D-385):
+  // Anúncio, Status, Preço, Estoque, Full, Unidades, Faturamento, Visitas,
+  // Conversão, ações.
   await expect(linhaSemTrafego.locator("td").nth(4)).toHaveText("—");
+  await expect(linhaSemTrafego.locator("td").nth(7)).toHaveText("—");
   await expect(linhaSemTrafego.locator("td").nth(8)).toHaveText("—");
-  await expect(linhaSemTrafego.locator("td").nth(9)).toHaveText("—");
 });
 
 
@@ -254,4 +255,66 @@ test("/anuncios: o cabeçalho ordena pela coluna, inverte no segundo clique e pr
 
   await expect(page.locator("tbody tr").first()).toContainText(zerado?.itemId ?? "");
   await expect(page.locator("tbody tr")).toHaveCount(ESPERADO.total);
+});
+
+
+/**
+ * VISÕES RÁPIDAS E RESUMO DO RECORTE (D-385). A visão é uma combinação de
+ * filtros que a tela já tem; o caso prova que ela vira URL (e portanto chega ao
+ * banco), que o resumo acompanha o recorte e que clicar de novo desfaz.
+ */
+test("/anuncios: a visão rápida compõe os filtros, o resumo segue o recorte e o segundo clique desfaz", async ({
+  page,
+}) => {
+  await login(page, "/anuncios");
+
+  const resumo = page.getByLabel("Resumo do recorte");
+
+  // O recorte inteiro tem venda no fixture: o faturamento não é zero.
+  await expect(resumo).toContainText("Faturamento do recorte");
+  await expect(resumo).not.toContainText("R$ 0,00");
+
+  const visoes = page.getByRole("navigation", { name: "Visões rápidas" });
+
+  await visoes.getByRole("link", { name: "Ativos sem venda" }).click();
+  await expect(page).toHaveURL(/estado=active/);
+  await expect(page).toHaveURL(/venda=without/);
+
+  // O resumo acompanha o recorte: ativos sem venda faturaram zero.
+  await expect(resumo).toContainText("R$ 0,00");
+
+  // Todo anúncio da lista é ativo — e nenhum vendeu no período.
+  const linhas = page.locator("tbody tr");
+
+  await expect(linhas.first()).toBeVisible();
+  for (const linha of await linhas.all()) {
+    await expect(linha).toContainText("Ativo");
+  }
+
+  // Clicar na visão ativa desfaz, e o recorte volta a ser o inteiro.
+  await visoes.getByRole("link", { name: "Ativos sem venda" }).click();
+  await expect(page).not.toHaveURL(/venda=without/);
+  await expect(linhas).toHaveCount(ESPERADO.total);
+});
+
+test("/anuncios: o CSV sai com o mesmo recorte e a mesma ordem da tela", async ({ page }) => {
+  await login(page, "/anuncios?estoque=out");
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: /Exportar CSV/ }).click(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(/^anuncios-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const caminho = await download.path();
+  const { readFileSync } = await import("node:fs");
+  const linhas = readFileSync(caminho, "utf-8").trim().split("\r\n");
+
+  // Cabeçalho + exatamente os anúncios sem estoque do fixture.
+  expect(linhas).toHaveLength(1 + ESPERADO.semEstoque);
+
+  const zerado = E2E_LISTINGS.find((a) => a.available === 0);
+
+  expect(linhas[1]).toContain(zerado?.itemId ?? "");
 });

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **372** (D-001 a D-380).
+Decisões registradas: **375** (D-001 a D-385).
 
 ## Por domínio
 
@@ -184,7 +184,7 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-372** — Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
 - **D-376** — Vinculacoes: a moldura que faltava e a pagina numa leitura so
 
-### mercado-livre (57)
+### mercado-livre (59)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -243,6 +243,8 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-369** — Republicacao: anuncio com variacoes em conta de user products nao republica -- o preflight trava antes de fechar e a recusa com essa causa deixa de oferecer retomada
 - **D-373** — /produtos vira o catalogo: uma leitura com contagens facetadas, atalhos do que pede acao e filtros por categoria, marca, tipo, situacao, anuncios e vendas
 - **D-375** — Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
+- **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
+- **D-385** — `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
 
 ### outros (62)
 
@@ -341,7 +343,7 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 - **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
 
-### worker/infra (71)
+### worker/infra (72)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -414,6 +416,5 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-348** — Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
+- **D-382** — Toda pasta de `app/` com pagina tem `loading.tsx`, e a CI garante
 
-- **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada (63 ms contra ~0,7 s) e mostra a foto do anuncio; worker so depois da migration `20260918150000`
-- **D-382** — Toda pasta de `app/` com pagina tem `loading.tsx` (guarda `check:loading`); "ver lista" e pilulas mostram a mesma tela por `CarregandoSeODemorar`
