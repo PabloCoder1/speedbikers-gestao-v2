@@ -13673,3 +13673,29 @@ Pilulas viraram `FilterMenu` (conta, tipo, status) mais tres recortes rapidos (M
 **5. VERIFICACAO**
 
 `tsc` e `eslint`; unidade da web **831 verdes** (novos em `support-filters` e `support-deadline`); `next build`; e2e `atendimento.spec.ts` + `home.spec.ts` **16 verdes** contra `next start`, com um teste novo (faixa com link certo e "Aguardando a loja" sem link, busca por SKU, "Meus", "Limpar filtros"). Quatro asserções antigas mudaram com a tela (texto do vazio, coluna "Prazo", janela no subtitulo do painel, rotulos do paginador). O teste de "Assumir" e stateful: numa segunda passada sem `db reset` o caso ja esta atribuido -- restaurado com `update` no banco local entre as passadas. Capturas a 1440 e 390 px sem rolagem lateral.
+
+## D-386 - Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
+
+**Contexto:** terceiro lote do pente fino de 18/09 (D-383, D-384). Tres classes de defeito que a auditoria achou espalhadas: referencias que eram texto onde havia tela de destino, uma busca universal que prometia `Enter` em cada linha e nao respondia a tecla nenhuma, e acoes irreversiveis que aconteciam no primeiro clique ou em dialogos sem Esc nem foco.
+
+**1. LIGACOES ENTRE TELAS**
+
+- `/estoque/movimentacoes`: a Referencia mostrava o `source_id` cru. `movementSourceHref` (`lib/movement-labels.ts`, com teste) leva `PURCHASE_ORDER` a `/compras/{id}` e `DOCUMENT` a `/notas-fiscais/{id}` -- conferido nos escritores: a transicao de pedido grava `po.id` (20260823160629) e `nfe-import-apply.ts` grava `documents.id`. Pedido do ML e reconciliacao nao tem tela propria e ficam texto.
+- `/compras/[id]`: o SKU de cada item abre `/skus/{id}` (item de texto livre continua texto) e ha "Ver fornecedor".
+- `/skus/[skuId]`: o MLB no painel "Anuncios vinculados" da visao geral abre o Dashboard do Anuncio -- a aba ja linkava, a visao geral nao.
+- `/diagnostico`: "Criar pedido de compra" abria um pedido EM BRANCO, ate para queda de venda. Virou "Ver reposicao deste SKU" (`/reposicao?busca=<sku>`): a tela que decide quanto comprar, de onde o pedido nasce com a quantidade sugerida. O codigo cru do evento correlato passa por `eventTypeLabel`.
+- `/anuncios/[itemId]`: o tipo das acoes e decisoes passa por `actionKindLabel`.
+
+**2. BUSCA UNIVERSAL PELO TECLADO**
+
+↑/↓ percorrem todas as linhas, Enter abre a selecionada, o mouse acompanha. A caixa ganhou o grupo **Telas**: `paginasDoMenu(papel)` (em `nav.tsx`) devolve as telas do menu com a MESMA regra de papel do menu, e `filtrarPaginas` (`lib/command-pages.ts`, com teste) casa sem acento e sem caixa, o que comeca com o texto antes do que so contem. Padrao ARIA de lista navegavel: `combobox` com `aria-activedescendant` e linhas `option` -- por isso `busca.spec` e `cabecalhos.spec` trocaram `textbox`/`button` por `combobox`/`option`. No celular, onde o trilho era a unica navegacao ate D-383, a busca e o caminho mais curto ate uma tela.
+
+**3. O QUE NAO TEM VOLTA PEDE CONFIRMACAO**
+
+- `useDialogo` (`components/use-dialogo.ts`): Esc fecha (menos enquanto grava), foco entra no diálogo -- no "Cancelar" quando a acao e destrutiva, marcado com `data-foco-inicial` -- e volta a quem abriu, pagina por tras sem rolar. Aplicado ao diálogo de republicar (o que FECHA o anuncio), ao de vincular anuncio e ao de remover vinculo.
+- `/importacoes/[id]`: "Confirmar aplicacao" aplicava no primeiro clique. Agora abre a confirmacao na propria caixa, com quantas linhas OK entram, e so "Sim, aplicar agora" chama a `api`. O texto dizia "as linhas OK acima" -- a tabela fica abaixo.
+- `/notas-fiscais/[id]`: o vinculo do item busca o SKU por codigo OU nome -- a linha da nota traz a descricao do fornecedor, quase nunca o codigo da loja. O texto passa por `termoSeguroParaOr` (`lib/postgrest-search.ts`, a regra de `vinculacoes/busca-sku.tsx`) antes de entrar no `or=`; o atraso de 200 ms e o guarda `ultimaBusca` ficaram.
+
+**4. VERIFICACAO**
+
+`tsc`, `eslint`, unidade da web **837 verdes**, `check:loading`, `next build`. E2E contra `next start`: busca, diagnostico, compras, pedido de compra, importacoes, nota fiscal, SKU e anuncio -- **34 verdes** -- mais `cabecalhos` e um caso novo em `busca.spec` (acha "Movimentacoes" digitando sem acento e abre com Enter). Duas armadilhas do caminho, nenhuma do codigo: o banco local foi re-semeado por outra sessao no meio (o `.seed-output.json` da worktree ficou velho e onze casos de `sku-dashboard` falharam por id), e `nota-fiscal.spec` e stateful -- o vinculo da primeira passada fica, e `documents.resolved_items` e contador proprio: restaurar so o item nao basta.
