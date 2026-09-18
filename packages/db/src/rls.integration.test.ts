@@ -7627,6 +7627,59 @@ describe("get_fulfillment_overview (D-173, Central Full)", () => {
     expect(rows.filter((linha) => linha.sku_id !== null)).toHaveLength(0);
     expect(rows[0]?.facet_situation).toEqual({});
   });
+
+  /**
+   * D-380 -- cobertura, foco e ordem. Os tres argumentos novos tem default, e
+   * as chamadas POSICIONAIS de nove argumentos acima continuam resolvendo: e o
+   * que `/skus/[skuId]` e `/anuncios/[itemId]` fazem, por nome.
+   *
+   * No cenario: variacoes tem 17 no Full e venderam 3 em 30 dias (170 dias);
+   * a ruptura vendeu 6 e tem 0 (cobertura 0); o parado nao vendeu (NULL).
+   */
+  const CALL_D380 = (extra: string) =>
+    `select * from public.get_fulfillment_overview('${ORG_SB}','${DE}','${HOJE}', null, null, null, null, 500, 0, ${extra})`;
+
+  it("cobertura e Full / venda media diaria da janela, e NULL sem venda (D-380)", async () => {
+    const rows = await asUser<{ sku_id: string; coverage_days: string | null; daily_rate: string | null }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id in ('${skuVariacoesId}','${skuRupturaId}','${skuParadoId}')`,
+    );
+    const por = new Map(rows.map((r) => [r.sku_id, r]));
+
+    expect(Number(por.get(skuVariacoesId)?.coverage_days)).toBe(170);
+    expect(Number(por.get(skuVariacoesId)?.daily_rate)).toBe(0.1);
+    expect(Number(por.get(skuRupturaId)?.coverage_days)).toBe(0);
+    expect(por.get(skuParadoId)?.coverage_days).toBeNull();
+    expect(por.get(skuParadoId)?.daily_rate).toBeNull();
+  });
+
+  it("foco 'acabando' segue o limiar recebido, e a faceta conta o conjunto antes do foco (D-380)", async () => {
+    const acabando = async (limiar: number) =>
+      asUser<{ sku_id: string | null; facet_low_coverage: string }>(
+        ADMIN_SB,
+        CALL_D380(`'acabando', null, ${String(limiar)}`),
+      );
+
+    // 170 dias nao esta acabando com o limiar de 15...
+    const com15 = await acabando(15);
+
+    expect(com15.some((r) => r.sku_id === skuVariacoesId)).toBe(false);
+
+    // ...e esta com 200. Ruptura (Full zero) nunca e "acabando": ja acabou.
+    const com200 = await acabando(200);
+
+    expect(com200.some((r) => r.sku_id === skuVariacoesId)).toBe(true);
+    expect(com200.some((r) => r.sku_id === skuRupturaId)).toBe(false);
+    expect(Number(com200[0]?.facet_low_coverage)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("prioridade de envio poe a ruptura antes do saudavel e do parado (D-380)", async () => {
+    const rows = await asUser<{ sku_id: string | null }>(ADMIN_SB, CALL_D380("null, 'prioridade', 15"));
+    const ordem = rows.map((r) => r.sku_id);
+
+    expect(ordem.indexOf(skuRupturaId)).toBeLessThan(ordem.indexOf(skuVariacoesId));
+    expect(ordem.indexOf(skuVariacoesId)).toBeLessThan(ordem.indexOf(skuParadoId));
+  });
 });
 
 // get_supplier_overview / get_supplier_purchased_skus (20260901111144, D-174)

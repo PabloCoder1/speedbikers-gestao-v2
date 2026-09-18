@@ -4495,13 +4495,17 @@ export type Database = {
         Args: {
           p_date_from: string
           p_date_to: string
+          // D-380: foco, ordem e limiar de cobertura -- todos com default.
+          p_focus?: string | null
           p_limit?: number
+          p_low_coverage_days?: number
           p_ml_account_id?: string | null
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
           p_situation?: string | null
           p_sku_id?: string | null
+          p_sort?: string | null
         }
         // ACRESCIMO MANUAL (D-265): a funcao ganhou `facet_situation` e uma
         // LINHA-SENTINELA. Pagina vazia devolve uma linha com TODAS as colunas
@@ -4513,6 +4517,11 @@ export type Database = {
           account_label: string | null
           buckets: number | null
           captured_at: string | null
+          // D-380: NULL sem venda na janela (cobertura infinita) e na sentinela.
+          coverage_days: number | null
+          daily_rate: number | null
+          facet_can_ship: number
+          facet_low_coverage: number
           facet_situation: Json
           full_quantity: number | null
           local_quantity: number | null

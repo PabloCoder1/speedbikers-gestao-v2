@@ -103,3 +103,62 @@ test("/full: recorte vazio esvazia a tabela e MANTÉM a faixa", async ({ page })
   // seria um julgamento sem base declarada.
   await expect(page.getByText("tem saldo no Full", { exact: false })).toBeVisible();
 });
+
+/**
+ * D-380 — a fila de envio. No seed: a anomalia vendeu 40 em 30 dias e tem ZERO
+ * no Full (ruptura, cobertura 0); o SKU de teste vendeu 5 e tem 3 no Full, ou
+ * seja 18 dias de cobertura — acima do limiar de 15, então NÃO está acabando.
+ */
+test("/full: prioridade de envio põe a ruptura primeiro e mostra a cobertura", async ({ page }) => {
+  await login(page, "/full");
+
+  await expect(page.getByRole("columnheader", { name: "Cobertura" })).toBeVisible();
+
+  const linhas = page.locator("tbody tr");
+
+  // Ordem padrão = prioridade: ruptura antes de saudável, pela venda.
+  await expect(linhas.first()).toContainText(E2E_ANOMALIA.sku);
+  await expect(linhas.first().locator(".sb-full-coverage")).toContainText("0 dias");
+  await expect(linhas.nth(1).locator(".sb-full-coverage")).toContainText("18 dias");
+});
+
+test("/full: o foco filtra no banco e o chip devolve à lista inteira", async ({ page }) => {
+  await login(page, "/full");
+
+  // Nenhum SKU do seed acaba em menos de 15 dias e tem saldo local para mandar.
+  await page.getByRole("link", { name: /Acabando em breve/ }).click();
+  await expect(page).toHaveURL(/foco=acabando/);
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+  await expect(page.locator(".sb-full-chip")).toContainText("Acabando");
+
+  // A faixa continua contando o conjunto inteiro — é navegação (D-265).
+  await expect(
+    page.locator(".sb-kpi-strip .sb-kpi", { hasText: "SKUs no Full" }).locator(".sb-kpi-value"),
+  ).toHaveText("2");
+
+  await page.getByRole("link", { name: "Remover o filtro Acabando" }).click();
+  await expect(page).toHaveURL(/\/full$/);
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+});
+
+test("/full: o CSV leva o recorte da tela, pronto para o Excel", async ({ page }) => {
+  await login(page, "/full?situacao=ruptura");
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: /Exportar CSV/ }).click(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(/^central-full-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const caminho = await download.path();
+  const { readFile } = await import("node:fs/promises");
+  const csv = await readFile(caminho, "utf8");
+  const linhas = csv.replace(/^\uFEFF/, "").trim().split("\r\n");
+
+  expect(linhas[0]).toContain("SKU;Produto;Conta;Situação");
+  // Só a ruptura: o recorte da tela, não a lista inteira.
+  expect(linhas).toHaveLength(2);
+  expect(linhas[1]).toContain(`${E2E_ANOMALIA.sku};`);
+  expect(linhas[1]).toContain(";Ruptura;40;");
+});
