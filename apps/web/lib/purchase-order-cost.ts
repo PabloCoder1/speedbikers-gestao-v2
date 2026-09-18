@@ -69,3 +69,14 @@ export function purchaseOrderCostNote(summary: PurchaseOrderCostSummary): string
 
   return `${String(summary.missingCost)} de ${String(summary.totalItems)} sem custo`;
 }
+
+/**
+ * O custo CADASTRADO do SKU que pode virar sugestão num pedido (lote 1 do pente
+ * fino, 18/09). `skus.purchase_cost = 0` é "não sabemos" na casa (D-356/D-358,
+ * e `/reposicao` já o lia assim): sugerir R$ 0,00 punha no pedido um custo
+ * inventado e baixava o total, com cara de número fechado. Zero ou negativo
+ * volta `null`, e o campo fica vazio para a pessoa preencher.
+ */
+export function registeredCost(purchaseCost: number | null): number | null {
+  return purchaseCost !== null && purchaseCost > 0 ? purchaseCost : null;
+}

@@ -18,6 +18,7 @@ import {
 import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
+import { lastBusinessDays } from "../../lib/business-window";
 
 export const metadata = { title: "Curva ABC — Speed Bikers Gestão" };
 
@@ -96,8 +97,7 @@ export default async function CurvaAbcPage({
   const selectedAccount = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
 
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(filters.days, now);
 
   // A lista de marcas vem do BANCO, nunca das linhas da página (D-194):
   // montá-la a partir do resultado paginado fazia 10 das 19 marcas nunca
@@ -401,10 +401,12 @@ export default async function CurvaAbcPage({
                       <td className="sb-num">
                         <div className="sb-abc-share">
                           <i aria-hidden="true" style={{ width: `${String(Math.min(100, row.metric_share))}%` }} />
-                          <span>{row.metric_share}%</span>
+                          {/* A RPC devolve em pontos percentuais (12.34); o número cru saía
+                              com ponto decimal. `formatPercent` recebe fração. */}
+                          <span>{formatPercent(row.metric_share / 100)}</span>
                         </div>
                       </td>
-                      <td className="sb-num">{row.cumulative_share}%</td>
+                      <td className="sb-num">{formatPercent(row.cumulative_share / 100)}</td>
                       <td className="sb-num">
                         {row.full_quantity === 0 ? (
                           <span className="sb-abc-full-empty">Sem Full</span>

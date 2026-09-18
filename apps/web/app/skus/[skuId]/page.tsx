@@ -43,6 +43,7 @@ import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
+import { lastBusinessDays } from "../../../lib/business-window";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
 
@@ -272,11 +273,10 @@ export default async function SkuDashboardPage({
   }
 
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
   // A curva ABC tem janela PRÓPRIA de 90 dias (D-140): classificação precisa
   // de sinal mais estável que a janela de 30 dias do resto da tela.
-  const abcFrom = new Date(now.getTime() - (ABC_LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const abcFrom = lastBusinessDays(ABC_LOOKBACK_DAYS, now).from;
 
   // Cada aba só dispara as consultas de que precisa (progressive disclosure
   // de verdade, não só visual); o que a aba ativa não usa vira
@@ -1336,7 +1336,10 @@ export default async function SkuDashboardPage({
           <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
             {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas sincronizações não deixa registro.{" "}
-            <strong>Não há análise de impacto</strong>: a série começa em 24/08/2026 e a mediana é de uma mudança
+            {/* A data cravada ("24/08/2026") era a da primeira organização — a mesma
+                classe que D-234 tirou de /precos. A série de cada uma começa na
+                primeira sincronização dela. */}
+            <strong>Não há análise de impacto</strong>: a série de preços ainda é curta e a mediana é de uma mudança
             por SKU — ligar preço a venda com isso seria inventar causa.
           </p>
 

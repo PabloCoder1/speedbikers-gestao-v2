@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "./purchase-order-cost";
+import { purchaseOrderCostNote, registeredCost, summarizePurchaseOrderCost } from "./purchase-order-cost";
 
 describe("valor estimado do pedido", () => {
   it("soma quantidade × custo quando todos os itens têm custo", () => {
@@ -70,5 +70,14 @@ describe("valor estimado do pedido", () => {
 
     expect(resumo.total).toBe(0);
     expect(resumo.missingCost).toBe(0);
+  });
+});
+
+describe("registeredCost", () => {
+  it("custo zero ou negativo é desconhecido, não R$ 0,00", () => {
+    expect(registeredCost(0)).toBeNull();
+    expect(registeredCost(-3)).toBeNull();
+    expect(registeredCost(null)).toBeNull();
+    expect(registeredCost(12.5)).toBe(12.5);
   });
 });

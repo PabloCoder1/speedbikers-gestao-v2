@@ -35,6 +35,7 @@ import { monogramaDeProduto } from "../../lib/initials";
 import { formatAge } from "../../lib/relative-time";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
+import { lastBusinessDays } from "../../lib/business-window";
 
 export const metadata = { title: "Central Full — Speed Bikers Gestão" };
 
@@ -128,9 +129,7 @@ export default async function FullPage({
   const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;
   const atual: FullFilters = { ...filters, account };
 
-  const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
 
   const argumentos = {
     p_organization_id: organizationId,

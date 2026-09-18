@@ -40,6 +40,7 @@ import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
 
 import { InspecaoAnuncio } from "./inspecao-anuncio";
+import { lastBusinessDays } from "../../lib/business-window";
 
 export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 
@@ -256,8 +257,7 @@ export default async function AnunciosPage({
   // A janela sai do filtro (D-308). `days - 1` porque o intervalo da RPC é
   // fechado nas duas pontas: "últimos 7 dias" é hoje mais seis.
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(filters.days, now);
 
   const listaSemOrdem = {
     p_organization_id: organizationId,

@@ -4,6 +4,7 @@ import { EXPORT_LIMIT, fullRowsToCsv } from "../../../lib/full-export";
 import { LOW_COVERAGE_DAYS, isFullRow, resolveFullFilters } from "../../../lib/full-filters";
 import { currentMembership } from "../../../lib/membership";
 import { createClient } from "../../../lib/supabase/server";
+import { lastBusinessDays } from "../../../lib/business-window";
 
 /**
  * CSV do recorte da Central Full (D-380) — mesmos filtros da tela, sem página.
@@ -26,9 +27,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
 
-  const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
 
   const { data, error } = await supabase.rpc("get_fulfillment_overview", {
     p_organization_id: membership.organizationId,
