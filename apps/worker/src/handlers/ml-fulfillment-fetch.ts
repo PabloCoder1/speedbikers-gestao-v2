@@ -65,6 +65,26 @@ import { recordDomainEvents } from "./domain-events.js";
  * dois anúncios e se apontam para o mesmo SKU — sem segunda chamada de
  * estoque, sem segunda linha, sem abortar. Não é `partial`: é a estrutura do
  * catálogo do vendedor, não um defeito de dado.
+ *
+ * **Item morto sai da varredura até o recheque (18/09/2026).** O try/catch
+ * por item resolveu a queda, mas não o custo: medido em produção, os MESMOS
+ * 356 anúncios responderam 404 em 14 das 15 execuções de 15/09 a 18/09 (a
+ * outra foi a de 403 em todos os itens) — 1.424 chamadas por dia para ouvir
+ * a mesma resposta. Agora o 404/403 de
+ * `GET /items/{id}` grava uma marca em `fulfillment_item_absences`, e o item
+ * é pulado (`itemsDeferred`) até `recheck_after`. Sucesso posterior apaga a
+ * marca. Três guardas mantêm isso do lado de "otimização", nunca de "estoque
+ * escondido":
+ *
+ *   1. toda marca vence — as janelas estão em `ITEM_ABSENCE_RECHECK_MS`, e as
+ *      duas cabem dentro da janela de 3 dias do "Full atual" (D-173), então o
+ *      bucket de um falso 404 nunca some das telas antes do recheque;
+ *   2. falha em MASSA não marca ninguém — em 16/09 21:00 as quatro contas
+ *      tomaram 403 em todos os 3.220 itens de uma vez e a execução seguinte
+ *      capturou normal; marcar ali teria apagado mais uma execução inteira;
+ *   3. a tabela é lida e escrita em modo "falhou, segue": sem ela (erro, ou
+ *      código no ar antes da migration) o worker busca todos os itens, que é
+ *      o comportamento anterior.
  */
 
 const itemResponseSchema = z.object({
@@ -80,6 +100,193 @@ const fulfillmentStockResponseSchema = z.object({
 });
 
 const MAX_CONCURRENT_ML_REQUESTS = 3;
+
+const HOUR_MS = 3_600_000;
+
+/**
+ * Quanto tempo um item que respondeu 403/404 em `GET /items/{id}` fica fora
+ * da varredura. A cadência do job é de 6 h (`infra/cloud-scheduler.sh`,
+ * `v3-fulfillment-snapshot`), e as duas janelas caem no MEIO do intervalo
+ * entre execuções de propósito: com um múltiplo exato de 6 h, alguns segundos
+ * de atraso no disparo fariam o recheque escorregar uma execução inteira.
+ *
+ * - **403 — 9 h: pula UMA execução e volta na seguinte.** 403 é permissão, e
+ *   permissão muda: o único 403 medido em produção (16/09 21:00) passou
+ *   sozinho na execução seguinte. Janela curta porque o erro provável é o
+ *   403 ser passageiro.
+ * - **404 — 45 h: recheque na oitava execução (48 h).** 404 em `/items/{id}`
+ *   é anúncio que não existe mais: os 356 medidos responderam 404 em 14 das
+ *   15 execuções de 72 h (a outra foi 403 em massa, em todos os itens). O
+ *   teto não é "quanto dá para economizar",
+ *   é a janela de 3 dias do "Full atual" (D-173): último snapshot bom até 6 h
+ *   antes da falha + 48 h até o recheque = 54 h < 72 h. Um 404 falso num
+ *   anúncio vivo atrasa a captura, mas o bucket nunca sai das telas. Subir
+ *   esta janela acima de ~60 h quebra essa garantia.
+ */
+export const ITEM_ABSENCE_RECHECK_MS = {
+  403: 9 * HOUR_MS,
+  404: 45 * HOUR_MS,
+} as const;
+
+type AbsenceStatus = keyof typeof ITEM_ABSENCE_RECHECK_MS;
+
+/** O `.in()` vai na URL do PostgREST: lotes de 100 ids mantêm a URL curta. */
+const ABSENCE_DELETE_CHUNK = 100;
+
+interface ItemAbsence {
+  item_id: string;
+  failures: number;
+  first_failed_at: string;
+  recheck_after: string;
+}
+
+type ItemResponse = z.infer<typeof itemResponseSchema>;
+
+interface ItemOutcome {
+  link: { item_id: string | null; sku_id: string };
+  item: ItemResponse | null;
+  failed: boolean;
+  /** Pulado por marca vigente em `fulfillment_item_absences`. */
+  deferred: boolean;
+  /** 403/404 NESTA execução — candidato a marca. */
+  absentStatus: AbsenceStatus | null;
+}
+
+function absenceStatusOf(error: MercadoLivreApiError): AbsenceStatus | null {
+  return error.status === 403 || error.status === 404 ? error.status : null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Marcas da conta, uma leitura por execução. Falha aqui NÃO derruba a
+ * captura: devolve vazio e o worker busca tudo, como antes da marca existir.
+ */
+async function readItemAbsences(params: FetchFulfillmentSnapshotsParams): Promise<Map<string, ItemAbsence>> {
+  try {
+    const rows = await readAllPages<ItemAbsence>((from, to) =>
+      params.db
+        .from("fulfillment_item_absences")
+        .select("item_id, failures, first_failed_at, recheck_after")
+        .eq("ml_account_id", params.mlAccountId)
+        .order("item_id")
+        .range(from, to),
+      { label: "falha ao ler fulfillment_item_absences" },
+    );
+
+    return new Map(rows.map((row) => [row.item_id, row]));
+  } catch (error) {
+    params.logger.warn("fulfillment_item_absences_unreadable", {
+      ml_account_id: params.mlAccountId,
+      reason: errorMessage(error),
+    });
+
+    return new Map();
+  }
+}
+
+/**
+ * Grava as marcas novas e apaga as dos itens que voltaram a responder. As
+ * duas escritas são "falhou, segue": perder uma marca custa uma chamada a
+ * mais na próxima execução, nunca um snapshot.
+ */
+async function updateItemAbsences(
+  params: FetchFulfillmentSnapshotsParams,
+  capturedAt: Date,
+  absences: ReadonlyMap<string, ItemAbsence>,
+  outcomes: readonly ItemOutcome[],
+): Promise<void> {
+  const fetched = outcomes.filter((entry) => !entry.deferred && entry.link.item_id !== null).length;
+  const failed = outcomes.filter((entry) => entry.failed).length;
+  const candidates = outcomes.filter((entry) => entry.absentStatus !== null);
+
+  // Mais da metade das consultas desta execução falhando não é "estes itens
+  // sumiram", é a conta (ou o Mercado Livre) com problema — 16/09 21:00, 403
+  // em 100% dos itens das quatro contas. Marcar ali pularia os mesmos itens
+  // na execução seguinte, que em 16/09 foi normal.
+  const massFailure = failed * 2 > fetched;
+
+  if (massFailure && candidates.length > 0) {
+    params.logger.warn("fulfillment_item_absences_skipped_mass_failure", {
+      ml_account_id: params.mlAccountId,
+      items_failed: failed,
+      items_fetched: fetched,
+    });
+  }
+
+  const marks = massFailure
+    ? []
+    : candidates.flatMap((entry) => {
+        const itemId = entry.link.item_id;
+        const status = entry.absentStatus;
+
+        if (itemId === null || status === null) return [];
+
+        const previous = absences.get(itemId);
+
+        return [
+          {
+            organization_id: params.organizationId,
+            ml_account_id: params.mlAccountId,
+            item_id: itemId,
+            http_status: status,
+            failures: (previous?.failures ?? 0) + 1,
+            first_failed_at: previous?.first_failed_at ?? capturedAt.toISOString(),
+            last_failed_at: capturedAt.toISOString(),
+            recheck_after: new Date(capturedAt.getTime() + ITEM_ABSENCE_RECHECK_MS[status]).toISOString(),
+          },
+        ];
+      });
+
+  if (marks.length > 0) {
+    const written = await params.db
+      .from("fulfillment_item_absences")
+      .upsert(marks, { onConflict: "ml_account_id,item_id" });
+
+    if (written.error !== null) {
+      params.logger.warn("fulfillment_item_absences_not_recorded", {
+        ml_account_id: params.mlAccountId,
+        items: marks.length,
+        reason: written.error.message,
+      });
+    }
+  }
+
+  // Marca vencida + resposta 200 = o item voltou. Apagar mantém a tabela
+  // como "o que está fora do ar AGORA": sem isto a marca vencida ficaria para
+  // sempre, e uma falha futura herdaria `failures` e `first_failed_at` de
+  // outra época.
+  const recovered = outcomes.flatMap((entry) =>
+    entry.item !== null && entry.link.item_id !== null && absences.has(entry.link.item_id) ? [entry.link.item_id] : [],
+  );
+
+  for (let start = 0; start < recovered.length; start += ABSENCE_DELETE_CHUNK) {
+    const chunk = recovered.slice(start, start + ABSENCE_DELETE_CHUNK);
+    const cleared = await params.db
+      .from("fulfillment_item_absences")
+      .delete()
+      .eq("ml_account_id", params.mlAccountId)
+      .in("item_id", chunk);
+
+    if (cleared.error !== null) {
+      params.logger.warn("fulfillment_item_absences_not_cleared", {
+        ml_account_id: params.mlAccountId,
+        items: chunk.length,
+        reason: cleared.error.message,
+      });
+    }
+  }
+
+  if (marks.length > 0 || recovered.length > 0) {
+    params.logger.info("fulfillment_item_absences_updated", {
+      ml_account_id: params.mlAccountId,
+      marked: marks.length,
+      cleared: recovered.length,
+    });
+  }
+}
 
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
@@ -125,6 +332,14 @@ export interface FetchFulfillmentSnapshotsResult {
    */
   itemsFailed: number;
   /**
+   * Item NÃO consultado nesta execução porque respondeu 404/403 numa
+   * anterior e a marca em `fulfillment_item_absences` ainda não venceu.
+   * Separado de `itemsFailed` para a queda de chamadas inúteis aparecer no
+   * log — mas continua sendo vínculo com anúncio fora do ar, então o handler
+   * o trata como `partial` do mesmo jeito.
+   */
+  itemsDeferred: number;
+  /**
    * Vínculos cujo `inventory_id` já tinha sido capturado NESTA execução por
    * outro anúncio da mesma conta (D-230). Contados e logados, nunca gravados
    * de novo — a chave única é por inventário.
@@ -161,17 +376,28 @@ export async function fetchFulfillmentSnapshots(
   // Inventário -> primeiro anúncio que o capturou nesta execução (D-230).
   const inventoriesSeen = new Map<string, { itemId: string; skuId: string }>();
 
+  const absences = await readItemAbsences(params);
+
   // A fase de rede é limitada a três chamadas simultâneas por conta. A fila
   // continua sendo o orçamento maior; isto apenas remove a espera serial do
   // catálogo sem transformar uma conta em rajada ilimitada.
-  const itemResults = await mapWithConcurrency(links, MAX_CONCURRENT_ML_REQUESTS, async (link) => {
+  const itemResults = await mapWithConcurrency(links, MAX_CONCURRENT_ML_REQUESTS, async (link): Promise<ItemOutcome> => {
     if (link.item_id === null) {
       // Não deveria acontecer (ref_kind='ITEM' garante item_id no banco,
       // constraint sku_listing_links_ref_shape) — defesa, não caminho normal.
-      return { link, item: null, failed: false };
+      return { link, item: null, failed: false, deferred: false, absentStatus: null };
     }
 
-    let item: z.infer<typeof itemResponseSchema>;
+    // Respondeu 404/403 numa execução anterior e a janela não venceu: não
+    // pergunta de novo. Sem log por item — 356 linhas iguais a cada 6 h eram
+    // parte do ruído; a contagem vai em `items_deferred`.
+    const absence = absences.get(link.item_id);
+
+    if (absence !== undefined && Date.parse(absence.recheck_after) > capturedAt.getTime()) {
+      return { link, item: null, failed: false, deferred: true, absentStatus: null };
+    }
+
+    let item: ItemResponse;
 
     try {
       item = await params.mercadoLivre.request({
@@ -190,21 +416,25 @@ export async function fetchFulfillmentSnapshots(
         params.logger.warn("fulfillment_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
           item_id: link.item_id,
+          status: error.status,
           reason: error.message,
         });
 
-        return { link, item: null, failed: true };
+        return { link, item: null, failed: true, deferred: false, absentStatus: absenceStatusOf(error) };
       }
 
       throw error;
     }
 
-    return { link, item, failed: false };
+    return { link, item, failed: false, deferred: false, absentStatus: null };
   });
+
+  await updateItemAbsences(params, capturedAt, absences, itemResults);
 
   const uniqueItems = itemResults.filter((entry) => entry.item !== null && entry.item.inventory_id !== null);
   itemsFailed += itemResults.filter((entry) => entry.failed).length;
   itemsSkipped += itemResults.filter((entry) => entry.item?.inventory_id === null).length;
+  const itemsDeferred = itemResults.filter((entry) => entry.deferred).length;
 
   const inventories = [...new Set(uniqueItems.map((entry) => entry.item?.inventory_id).filter((id): id is string => id !== null && id !== undefined))];
   const stockResults = await mapWithConcurrency(inventories, MAX_CONCURRENT_ML_REQUESTS, async (inventoryId) => {
@@ -310,5 +540,5 @@ export async function fetchFulfillmentSnapshots(
     itemsProcessed += 1;
   }
 
-  return { itemsProcessed, itemsSkipped, itemsFailed, inventoriesShared };
+  return { itemsProcessed, itemsSkipped, itemsFailed, itemsDeferred, inventoriesShared };
 }

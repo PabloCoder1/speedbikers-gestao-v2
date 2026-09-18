@@ -4,7 +4,7 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { describe, expect, it } from "vitest";
 
 import type { FetchFulfillmentSnapshotsParams } from "./ml-fulfillment-fetch.js";
-import { fetchFulfillmentSnapshots } from "./ml-fulfillment-fetch.js";
+import { fetchFulfillmentSnapshots, ITEM_ABSENCE_RECHECK_MS } from "./ml-fulfillment-fetch.js";
 
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -232,7 +232,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(0);
   });
 
@@ -242,7 +242,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
   });
 
@@ -255,7 +255,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     const snapshot = inserted.find((e) => e.table === "fulfillment_stock_snapshots")?.row;
     expect(snapshot).toMatchObject({
       organization_id: ORGANIZATION_ID,
@@ -334,7 +334,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     const snapshots = inserted.filter((e) => e.table === "fulfillment_stock_snapshots").map((e) => e.row.sku_id);
     expect(snapshots).toEqual(["sku-1", "sku-2"]);
   });
@@ -363,7 +363,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client, lines));
 
-    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 1 });
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 1 });
 
     const snapshots = inserted.filter((entry) => entry.table === "fulfillment_stock_snapshots");
 
@@ -392,7 +392,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(0);
   });
 
@@ -435,9 +435,11 @@ describe("fetchFulfillmentSnapshots", () => {
 
       const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-      expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 1, inventoriesShared: 0 });
+      expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
       expect(inserted.filter((e) => e.table === "fulfillment_stock_snapshots")).toHaveLength(1);
-      expect(inserted[0]?.row.sku_id).toBe("sku-2");
+      // Filtrado por tabela: desde a marca de ausência o 404 também grava em
+      // `fulfillment_item_absences`, e a primeira escrita já não é o snapshot.
+      expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")?.row.sku_id).toBe("sku-2");
     });
 
     it("404 ao buscar o estoque (item some entre a resolução do inventory_id e a consulta): pula só esse item", async () => {
@@ -460,7 +462,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
       const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-      expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 1, inventoriesShared: 0 });
+      expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
       expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
     });
 
@@ -500,7 +502,438 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 2012, itemsFailed: 0, inventoriesShared: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 2012, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(2012);
+  });
+});
+
+// ============================================================
+// Marca de ausência (fulfillment_item_absences) — o anúncio que respondeu
+// 404/403 sai da varredura até o recheque.
+//
+// Medido em produção de 15/09 a 18/09: os mesmos 356 anúncios responderam
+// 404 em 14 das 15 execuções (a outra foi 403 em todos os itens). Os testes
+// abaixo usam um banco fake COM
+// ESTADO para a tabela de marcas: o `upsert` de uma execução é o que a
+// execução seguinte lê. Assim "grava a marca" e "pula o item depois" são
+// afirmados pelo efeito, não pela forma da chamada.
+// ============================================================
+
+interface AbsenceRow {
+  organization_id: string;
+  ml_account_id: string;
+  item_id: string;
+  http_status: number;
+  failures: number;
+  first_failed_at: string;
+  last_failed_at: string;
+  recheck_after: string;
+}
+
+type ItemBehavior = { id: string; inventory_id: string | null } | { status: number };
+
+const HOUR = 3_600_000;
+const T0 = new Date("2026-09-18T09:00:05.000Z");
+
+function at(hoursAfterT0: number): Date {
+  return new Date(T0.getTime() + hoursAfterT0 * HOUR);
+}
+
+function fakeDbWithAbsences(options: {
+  links: Link[];
+  absences?: AbsenceRow[];
+  readError?: boolean;
+  upsertError?: boolean;
+  deleteError?: boolean;
+}): {
+  db: FetchFulfillmentSnapshotsParams["db"];
+  table: Map<string, AbsenceRow>;
+  upserts: { rows: AbsenceRow[]; options: unknown }[];
+  deletes: { filters: Record<string, unknown>; ids: readonly string[] }[];
+  inserted: { table: string; row: unknown }[];
+} {
+  const table = new Map<string, AbsenceRow>((options.absences ?? []).map((row) => [row.item_id, row]));
+  const upserts: { rows: AbsenceRow[]; options: unknown }[] = [];
+  const deletes: { filters: Record<string, unknown>; ids: readonly string[] }[] = [];
+  const inserted: { table: string; row: unknown }[] = [];
+  const ok = { data: null, error: null };
+  const boom = { data: null, error: { message: "boom" } };
+
+  const db = {
+    from: (name: string) => ({
+      select: () => {
+        if (name === "sku_listing_links") {
+          return chain({ data: options.links, error: null });
+        }
+
+        if (name === "fulfillment_item_absences") {
+          if (options.readError === true) {
+            return chain({ data: null, error: { message: 'relation "fulfillment_item_absences" does not exist' } });
+          }
+
+          const rows = [...table.values()].sort((a, b) => a.item_id.localeCompare(b.item_id));
+
+          return chain({ data: rows, error: null });
+        }
+
+        return chain({ data: [], error: null });
+      },
+      insert: (row: unknown) => {
+        inserted.push({ table: name, row });
+
+        return Promise.resolve(ok);
+      },
+      upsert: (rows: unknown, upsertOptions?: unknown) => {
+        if (name !== "fulfillment_item_absences") {
+          inserted.push({ table: name, row: rows });
+
+          return Promise.resolve(ok);
+        }
+
+        upserts.push({ rows: rows as AbsenceRow[], options: upsertOptions });
+
+        if (options.upsertError === true) return Promise.resolve(boom);
+
+        for (const row of rows as AbsenceRow[]) table.set(row.item_id, row);
+
+        return Promise.resolve(ok);
+      },
+      delete: () => {
+        const filters: Record<string, unknown> = {};
+        const builder = {
+          eq: (column: string, value: unknown) => {
+            filters[column] = value;
+
+            return builder;
+          },
+          in: (_column: string, ids: readonly string[]) => {
+            deletes.push({ filters: { ...filters }, ids });
+
+            if (options.deleteError === true) return Promise.resolve(boom);
+
+            if (filters.ml_account_id === ML_ACCOUNT_ID) {
+              for (const id of ids) table.delete(id);
+            }
+
+            return Promise.resolve(ok);
+          },
+        };
+
+        return builder;
+      },
+    }),
+  } as unknown as FetchFulfillmentSnapshotsParams["db"];
+
+  return { db, table, upserts, deletes, inserted };
+}
+
+function scriptedClient(
+  behavior: Record<string, ItemBehavior>,
+  stock: Record<string, number> = {},
+): { client: MercadoLivreClient; itemRequests: () => string[] } {
+  const requests: string[] = [];
+
+  const client = {
+    request: (options: RequestOptions<unknown>) => {
+      requests.push(options.path);
+
+      const itemMatch = /^\/items\/(.+)$/.exec(options.path);
+
+      if (itemMatch?.[1] !== undefined) {
+        const entry = behavior[itemMatch[1]] ?? { id: itemMatch[1], inventory_id: null };
+
+        if ("status" in entry) {
+          return Promise.reject(
+            new MercadoLivreApiError(`Mercado Livre respondeu ${String(entry.status)} para GET ${options.path}.`, {
+              status: entry.status,
+              errorClass: "not_retryable",
+              url: options.path,
+            }),
+          );
+        }
+
+        return Promise.resolve(entry);
+      }
+
+      const stockMatch = /^\/inventories\/(.+)\/stock\/fulfillment$/.exec(options.path);
+
+      if (stockMatch?.[1] !== undefined) {
+        return Promise.resolve({ inventory_id: stockMatch[1], available_quantity: stock[stockMatch[1]] ?? 1 });
+      }
+
+      throw new Error(`caminho inesperado no fake: ${options.path}`);
+    },
+  } as unknown as MercadoLivreClient;
+
+  return { client, itemRequests: () => requests.filter((path) => path.startsWith("/items/")) };
+}
+
+function runAt(
+  db: FetchFulfillmentSnapshotsParams["db"],
+  client: MercadoLivreClient,
+  when: Date,
+  lines: string[] = [],
+): ReturnType<typeof fetchFulfillmentSnapshots> {
+  return fetchFulfillmentSnapshots({ ...baseParams(db, client, lines), now: () => when });
+}
+
+/** Um anúncio morto no meio de dois vivos: 1 falha em 3 consultas, longe da regra de falha em massa. */
+const LINKS_COM_UM_MORTO: Link[] = [
+  { item_id: "MLB1", sku_id: "sku-1" },
+  { item_id: "MLB2", sku_id: "sku-2" },
+  { item_id: "MLB9", sku_id: "sku-9" },
+];
+
+const VIVOS: Record<string, ItemBehavior> = {
+  MLB1: { id: "MLB1", inventory_id: "INV-1" },
+  MLB2: { id: "MLB2", inventory_id: "INV-2" },
+};
+
+function mark(itemId: string, status: number, recheckAfter: Date, extra: Partial<AbsenceRow> = {}): AbsenceRow {
+  return {
+    organization_id: ORGANIZATION_ID,
+    ml_account_id: ML_ACCOUNT_ID,
+    item_id: itemId,
+    http_status: status,
+    failures: 1,
+    first_failed_at: T0.toISOString(),
+    last_failed_at: T0.toISOString(),
+    recheck_after: recheckAfter.toISOString(),
+    ...extra,
+  };
+}
+
+describe("marca de ausência: item 404/403 sai da varredura até o recheque", () => {
+  it("as janelas: 403 pula uma execução de 6 h, 404 pula sete e cabe na janela de 3 dias do Full atual (D-173)", () => {
+    // 403: vence entre a 1ª (6 h) e a 2ª (12 h) execução seguinte.
+    expect(ITEM_ABSENCE_RECHECK_MS[403]).toBeGreaterThan(6 * HOUR);
+    expect(ITEM_ABSENCE_RECHECK_MS[403]).toBeLessThan(12 * HOUR);
+    // 404: vence entre 42 h e 48 h — recheque na oitava execução.
+    expect(ITEM_ABSENCE_RECHECK_MS[404]).toBeGreaterThan(42 * HOUR);
+    expect(ITEM_ABSENCE_RECHECK_MS[404]).toBeLessThan(48 * HOUR);
+    // Último snapshot bom (até 6 h antes da falha) + próxima execução depois
+    // da janela precisa caber nas 72 h do Full atual: senão um 404 falso
+    // tiraria o bucket das telas antes do recheque.
+    expect(6 * HOUR + ITEM_ABSENCE_RECHECK_MS[404] + 6 * HOUR).toBeLessThan(72 * HOUR);
+  });
+
+  it("404 grava a marca e o item é PULADO nas execuções seguintes, até a janela vencer", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+
+    const first = await runAt(state.db, client, T0);
+
+    expect(first).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(state.upserts).toHaveLength(1);
+    expect(state.upserts[0]?.options).toEqual({ onConflict: "ml_account_id,item_id" });
+    expect(state.table.get("MLB9")).toEqual({
+      organization_id: ORGANIZATION_ID,
+      ml_account_id: ML_ACCOUNT_ID,
+      item_id: "MLB9",
+      http_status: 404,
+      failures: 1,
+      first_failed_at: T0.toISOString(),
+      last_failed_at: T0.toISOString(),
+      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS[404]).toISOString(),
+    });
+    // Só o morto ganha marca.
+    expect([...state.table.keys()]).toEqual(["MLB9"]);
+
+    // Sete execuções seguintes (6 h a 42 h): o morto não é consultado, os
+    // vivos são. Nenhuma marca nova, nenhuma apagada.
+    for (const hours of [6, 12, 18, 24, 30, 36, 42]) {
+      const before = itemRequests().length;
+      const result = await runAt(state.db, client, at(hours));
+
+      expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 1, inventoriesShared: 0 });
+      expect(itemRequests().slice(before).sort()).toEqual(["/items/MLB1", "/items/MLB2"]);
+    }
+
+    expect(state.upserts).toHaveLength(1);
+    expect(state.deletes).toHaveLength(0);
+  });
+
+  it("403 grava marca de janela CURTA: pula a execução de +6 h e volta a perguntar na de +12 h", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 403 } });
+
+    await runAt(state.db, client, T0);
+
+    expect(state.table.get("MLB9")).toMatchObject({
+      http_status: 403,
+      recheck_after: new Date(T0.getTime() + ITEM_ABSENCE_RECHECK_MS[403]).toISOString(),
+    });
+
+    const six = await runAt(state.db, client, at(6));
+
+    expect(six.itemsDeferred).toBe(1);
+    // Uma consulta só ao morto até aqui: a da execução que gravou a marca.
+    expect(itemRequests().filter((path) => path === "/items/MLB9")).toHaveLength(1);
+
+    const twelve = await runAt(state.db, client, at(12));
+
+    expect(twelve.itemsDeferred).toBe(0);
+    expect(twelve.itemsFailed).toBe(1);
+    expect(itemRequests().filter((path) => path === "/items/MLB9")).toHaveLength(2);
+  });
+
+  it("recheque vencido volta a buscar; 404 de novo RENOVA a marca, conta a falha e preserva first_failed_at", async () => {
+    const state = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      absences: [mark("MLB9", 404, at(45))],
+    });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+
+    const result = await runAt(state.db, client, at(48));
+
+    expect(result.itemsDeferred).toBe(0);
+    expect(result.itemsFailed).toBe(1);
+    expect(itemRequests()).toContain("/items/MLB9");
+    expect(state.table.get("MLB9")).toMatchObject({
+      http_status: 404,
+      failures: 2,
+      first_failed_at: T0.toISOString(),
+      last_failed_at: at(48).toISOString(),
+      recheck_after: new Date(at(48).getTime() + ITEM_ABSENCE_RECHECK_MS[404]).toISOString(),
+    });
+  });
+
+  it("marca que vence EXATAMENTE agora já não segura o item", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 403, at(9))] });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 403 } });
+
+    const result = await runAt(state.db, client, at(9));
+
+    expect(result.itemsDeferred).toBe(0);
+    expect(itemRequests()).toContain("/items/MLB9");
+  });
+
+  it("sucesso depois da marca vencida APAGA a marca e o item volta ao snapshot", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 403, at(9))] });
+    const { client } = scriptedClient({ ...VIVOS, MLB9: { id: "MLB9", inventory_id: "INV-9" } }, { "INV-9": 4 });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, at(12), lines);
+
+    expect(result).toEqual({ itemsProcessed: 3, itemsSkipped: 0, itemsFailed: 0, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(state.table.size).toBe(0);
+    expect(state.deletes).toEqual([{ filters: { ml_account_id: ML_ACCOUNT_ID }, ids: ["MLB9"] }]);
+    expect(state.upserts).toHaveLength(0);
+    expect(
+      state.inserted.filter((entry) => entry.table === "fulfillment_stock_snapshots").map((entry) => (entry.row as { item_id: string }).item_id),
+    ).toContain("MLB9");
+    expect(lines.find((line) => line.includes("fulfillment_item_absences_updated"))).toContain('"cleared":1');
+  });
+
+  it("item sem Full (inventory_id nulo) também é sucesso: a marca sai", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 404, at(45))] });
+    const { client } = scriptedClient({ ...VIVOS, MLB9: { id: "MLB9", inventory_id: null } });
+
+    const result = await runAt(state.db, client, at(48));
+
+    expect(result.itemsSkipped).toBe(1);
+    expect(state.table.size).toBe(0);
+  });
+
+  it("falha em MASSA (mais da metade das consultas) não grava marca nenhuma — 16/09 21:00", async () => {
+    // As quatro contas tomaram 403 em TODOS os itens de uma vez, e a
+    // execução seguinte capturou normal. Marcar ali pularia a execução boa.
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const { client, itemRequests } = scriptedClient({ MLB1: { status: 403 }, MLB2: { status: 403 }, MLB9: { status: 403 } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, T0, lines);
+
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 3, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(state.upserts).toHaveLength(0);
+    expect(state.table.size).toBe(0);
+    expect(lines.find((line) => line.includes("fulfillment_item_absences_skipped_mass_failure"))).toContain('"items_failed":3');
+
+    // A execução seguinte pergunta tudo de novo.
+    await runAt(state.db, client, at(6));
+
+    expect(itemRequests()).toHaveLength(6);
+  });
+
+  it("metade EXATA ainda é falha de item, não de massa: a marca é gravada", async () => {
+    const state = fakeDbWithAbsences({
+      links: [
+        { item_id: "MLB1", sku_id: "sku-1" },
+        { item_id: "MLB9", sku_id: "sku-9" },
+      ],
+    });
+    const { client } = scriptedClient({ MLB1: { id: "MLB1", inventory_id: "INV-1" }, MLB9: { status: 404 } });
+
+    await runAt(state.db, client, T0);
+
+    expect([...state.table.keys()]).toEqual(["MLB9"]);
+  });
+
+  it("outro erro não retryable (401) conta como falha mas NÃO vira marca — é da conta, não do item", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const { client } = scriptedClient({ ...VIVOS, MLB9: { status: 401 } });
+
+    const result = await runAt(state.db, client, T0);
+
+    expect(result.itemsFailed).toBe(1);
+    expect(state.upserts).toHaveLength(0);
+  });
+
+  it("marca de outro anúncio não afeta este: só o item marcado é pulado", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 404, at(45))] });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+
+    await runAt(state.db, client, at(6));
+
+    expect(itemRequests().sort()).toEqual(["/items/MLB1", "/items/MLB2"]);
+  });
+
+  it("leitura das marcas falhou (ou migration ainda não aplicada): busca TODOS os itens e avisa", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 404, at(45))], readError: true });
+    const { client, itemRequests } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, at(6), lines);
+
+    expect(result.itemsDeferred).toBe(0);
+    expect(result.itemsProcessed).toBe(2);
+    expect(itemRequests()).toHaveLength(3);
+    expect(lines.find((line) => line.includes("fulfillment_item_absences_unreadable"))).toBeDefined();
+  });
+
+  it("escrita da marca falhou: a captura termina igual, só avisa", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, upsertError: true });
+    const { client } = scriptedClient({ ...VIVOS, MLB9: { status: 404 } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, T0, lines);
+
+    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(lines.find((line) => line.includes("fulfillment_item_absences_not_recorded"))).toBeDefined();
+  });
+
+  it("apagar a marca falhou: a captura termina igual, só avisa", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO, absences: [mark("MLB9", 403, at(9))], deleteError: true });
+    const { client } = scriptedClient({ ...VIVOS, MLB9: { id: "MLB9", inventory_id: "INV-9" } });
+    const lines: string[] = [];
+
+    const result = await runAt(state.db, client, at(12), lines);
+
+    expect(result.itemsProcessed).toBe(3);
+    expect(lines.find((line) => line.includes("fulfillment_item_absences_not_cleared"))).toBeDefined();
+  });
+
+  it("muitos itens voltando de uma vez são apagados em lotes de 100 (o .in() vai na URL)", async () => {
+    const links = Array.from({ length: 250 }, (_, i) => ({ item_id: `MLB${String(1000 + i)}`, sku_id: `sku-${String(i)}` }));
+    const state = fakeDbWithAbsences({
+      links,
+      absences: links.map((link) => mark(link.item_id, 403, at(9))),
+    });
+    const { client } = scriptedClient({});
+
+    await runAt(state.db, client, at(12));
+
+    expect(state.deletes.map((entry) => entry.ids.length)).toEqual([100, 100, 50]);
+    expect(state.table.size).toBe(0);
   });
 });
