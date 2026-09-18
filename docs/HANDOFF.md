@@ -29,6 +29,8 @@
 
 `/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
+`/contas` e `/integracoes` receberam a evolução da administração de canais: resumo operacional com KPIs, estados de erro/vazio e acesso indisponível orientados, formulário de conexão mais consistente e tabelas de integração legíveis em mobile. Os dados continuam vindo das RPCs e tabelas existentes sob RLS; não houve alteração de banco, OAuth ou API. Verificação local: `pnpm run check`, `pnpm run build`, `pnpm docs:check` e inspeção autenticada das duas rotas.
+
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,

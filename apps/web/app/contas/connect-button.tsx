@@ -77,7 +77,7 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
   }
 
   return (
-    <div style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
+    <div className="sb-account-connect">
       <button
         className="sb-button sb-button-primary"
         type="button"
@@ -91,7 +91,7 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
       </button>
 
       {error !== null && (
-        <span role="alert" style={{ fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+        <span role="alert" className="sb-account-connect-error">
           {error}
         </span>
       )}
