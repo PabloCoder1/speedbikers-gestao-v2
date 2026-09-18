@@ -511,21 +511,39 @@ que a `/vinculacoes` lê. Não em `listings`: 667 dos 3.753 vínculos sem
 variação não têm linha lá — o anúncio morto é justamente o que o snapshot
 de anúncios não traz.
 
-**A regra das janelas** (`ITEM_ABSENCE_RECHECK_MS` em
-`apps/worker/src/handlers/ml-fulfillment-fetch.ts`):
+**A regra das janelas** (`ITEM_ABSENCE_RECHECK_MS` e `itemAbsenceRecheckMs`
+em `apps/worker/src/handlers/ml-fulfillment-fetch.ts`):
 
-| Status | Janela | Com a cadência de 6 h | Por quê |
+| Resposta | Janela | Com a cadência de 6 h | Por quê |
 |---|---|---|---|
-| 403 | **9 h** | pula 1 execução, pergunta de novo na seguinte | permissão muda; o único 403 medido passou sozinho em 6 h |
-| 404 | **45 h** | pula 7, recheque na 8ª (48 h) | anúncio que não existe mais; 404 em todas as 14 execuções sem 403 em massa |
+| 403 (qualquer) | **9 h** | pula 1 execução, pergunta de novo na seguinte | permissão muda; o único 403 medido passou sozinho em 6 h |
+| 1º 404 de uma sequência | **9 h** | pula 1, pergunta de novo 12 h depois | um 404 isolado num anúncio vivo custa o mesmo que um 403 |
+| 404 a partir do 2º seguido | **45 h** | pula 7, recheque na 8ª (48 h) | anúncio que não existe mais; 404 em todas as 14 execuções sem 403 em massa |
 
-As duas caem no **meio** do intervalo entre execuções: com um múltiplo exato
-de 6 h, segundos de atraso no disparo escorregariam o recheque uma execução
-inteira. O teto do 404 **não é economia, é o Full atual**: a definição
-canônica (D-173) aceita snapshot de até 3 dias. Último snapshot bom até 6 h
-antes da falha + 48 h até o recheque = 54 h < 72 h — um 404 falso num
-anúncio vivo atrasa a captura, mas o bucket nunca some das telas. Um teste
-trava essa conta; janela de 404 acima de ~60 h a quebra.
+As janelas caem no **meio** do intervalo entre execuções: com um múltiplo
+exato de 6 h, segundos de atraso no disparo escorregariam o recheque uma
+execução inteira. Exigir o segundo 404 custa **uma** chamada a mais por
+anúncio morto, uma vez (356 na execução de +12 h depois do deploy), e desarma
+o falso 404 único.
+
+**O que a regra garante é atraso, não "o bucket nunca some".** O teto da
+janela longa vem do Full atual: a definição canônica (D-173) aceita snapshot
+de até 3 dias. Com as execuções vizinhas capturando, o pior caso de um
+anúncio vivo que tome dois 404 falsos seguidos é: último snapshot bom 6 h
+antes do primeiro 404 + 12 h até o segundo + 48 h até o recheque = **66 h <
+72 h**, e o bucket continua nas telas com a quantidade de antes da falha,
+sem sinal de atraso. Se as vizinhas **também** falharem — a execução anterior
+ao primeiro 404 sem snapshot (como 16/09 21:00), ou a do recheque perdida
+por 429 ou 403 em massa —, o intervalo passa de 72 h e o bucket sai do Full
+atual (some da `/reposicao` e do estoque) até a próxima captura. Um teste
+trava a conta dos 66 h; janela longa acima de 48 h empurra o recheque para
+54 h e zera a folga.
+
+Por que isso fica em "atraso aceitável" e não em defeito: nos 2.187 itens
+capturados nas 15 execuções de 14/09 21:00 a 18/09 09:00 (produção), **zero
+buracos** — nenhum item faltou numa execução e voltou na seguinte. 404
+passageiro não foi observado; a exigência do segundo 404 é a proteção barata
+para o dia em que for.
 
 **Guardas, para o pior caso ser atraso e nunca estoque escondido:**
 
@@ -533,8 +551,16 @@ trava essa conta; janela de 404 acima de ~60 h a quebra.
   falhando é a conta (ou o Mercado Livre), não o item: 16/09 teria marcado
   3.220 itens e apagado mais uma execução inteira. Log
   `fulfillment_item_absences_skipped_mass_failure`.
+  A razão é medida só sobre os itens **consultados** (adiado não entra no
+  denominador), e o 401 conta como falha mesmo sem virar marca. Na execução
+  de recheque, falha em massa também não renova a marca vencida.
 - **Só 403 e 404 viram marca.** 401 e outros não retryable são da conta.
 - **Sucesso apaga a marca** — inclusive item que voltou sem Full.
+- **Item desvinculado leva a marca junto.** Vínculo apagado ou refeito para
+  outro anúncio tira o `item_id` de `sku_listing_links`; ele nunca mais seria
+  consultado, e a marca ficaria para sempre. A execução seguinte a apaga
+  (log `fulfillment_item_absences_updated`, campo `unlinked`), então a tabela
+  conta só item vinculado.
 - **A tabela é otimização.** Leitura ou escrita com erro loga
   (`fulfillment_item_absences_unreadable` / `_not_recorded` /
   `_not_cleared`) e segue; sem a tabela o worker busca todos os itens, como
@@ -548,10 +574,19 @@ trava essa conta; janela de 404 acima de ~60 h a quebra.
 a execução termina com `processed = 0` e houve item fora do ar — falha nesta
 execução ou adiado por marca vigente. Não muda status nem retry.
 
+- **Quem alcança a conta lê a marca; só o worker escreve.** Mesma RLS de
+  `metric_refresh_state` (D-304). Nenhuma guarda de catálogo pega uma policy
+  trocada por `using (true)` ou filtrada por organização em vez de conta; o
+  bloco `fulfillment_item_absences respeita o alcance por conta` em
+  `rls.integration.test.ts` trava isso (ANALISTA sem permissão na conta não
+  vê a marca dela, ADMIN vê, `authenticated` não insere/atualiza/apaga).
+
 **Esperado:** as 356 marcas nascem juntas na primeira execução depois do
-deploy e vencem juntas: 356 consultas a cada 48 h ≈ **178 por dia no lugar de
-1.424** (−87,5%). `items_processed` não deve mudar: anúncio 404 nunca teve
-inventário para capturar.
+deploy, com a janela curta; a execução de +12 h pergunta de novo, ouve o
+segundo 404 e as passa para a longa. Dali em diante vencem juntas: 356
+consultas a cada 48 h ≈ **178 por dia no lugar de 1.424** (−87,5%), mais
+uma rodada de 356 nas primeiras 12 h. `items_processed` não deve mudar:
+anúncio 404 nunca teve inventário para capturar.
 
 #### Como conferir depois do deploy
 
@@ -561,7 +596,8 @@ execução está no `reason` de `sync_runs` e no log
 
 ```sql
 -- Producao. Primeira execucao depois do deploy: falharam = 356, adiados = 0.
--- Sete seguintes: falharam = 0, adiados = 356. Oitava (48 h): 356 de novo.
+-- +6 h: falharam = 0, adiados = 356. +12 h: falharam = 356 (o segundo 404).
+-- Sete seguintes: adiados = 356. +60 h (48 h depois do segundo): 356 de novo.
 -- capturados igual ao de antes (2.179 em 18/09); cair e defeito.
 select date_trunc('hour', started_at) as execucao,
        sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) falharam'))[1]::int, 0)) as falharam,
@@ -571,8 +607,10 @@ from sync_runs
 where resource = 'fulfillment' and started_at >= now() - interval '3 days'
 group by 1 order by 1 desc;
 
--- As marcas: ~356 com status 404 (79/40/111/126 por conta), failures = 1
--- ate o primeiro recheque, recheck_after ~45 h depois da execucao.
+-- As marcas: ~356 com status 404 (79/40/111/126 por conta). Nas primeiras
+-- 12 h, failures = 1 e recheck_after ~9 h depois da execucao; da execucao
+-- de +12 h em diante, failures >= 2 e recheck_after ~45 h depois. So item
+-- vinculado: a marca de vinculo apagado sai na execucao seguinte.
 select ml_account_id, http_status, count(*) as marcas,
        min(recheck_after) as primeiro_recheque, max(failures) as max_falhas
 from fulfillment_item_absences
@@ -580,7 +618,7 @@ group by 1, 2 order by 1, 2;
 ```
 
 ```bash
-# 404/403 por execucao (esperado: 356 na primeira, 0 nas sete seguintes)
+# 404/403 por execucao (esperado: 356 na primeira, 0 na de +6 h, 356 na de +12 h, 0 nas sete seguintes)
 gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.message="fulfillment_item_fetch_failed" AND timestamp>="<deploy>"' \
   --project speedbikers-prod --limit 20000 --format 'value(timestamp,jsonPayload.status)'
 
@@ -591,6 +629,25 @@ gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.messa
 
 Se o número de marcas for muito maior que 356 logo depois do deploy, olhar
 `http_status`: 403 em massa deveria ter sido barrado pela guarda.
+
+#### O que a revisão mudou (18/09/2026)
+
+- **Os testes do worker não travavam o que diziam.** O fake da tabela
+  ignorava o `.eq` e devolvia o texto de `toISOString()`: 7 de 9 mutações
+  sobreviviam com todos os testes verdes — entre elas tirar o filtro de conta
+  da leitura (a service role ignora RLS, então ele é o único escopo) e mover a
+  fronteira da guarda de massa. O fake passou a aplicar o filtro, guardar
+  marca de outra conta e devolver `timestamptz` como o PostgREST
+  (`+00:00`, sem fração zero). Com os testes novos: **15 de 15** mutações
+  pegas (as 9 da revisão e 6 no código novo). Impacto real do filtro de conta
+  hoje é nulo — nenhum `item_id` está vinculado a mais de uma conta em
+  produção (`sku_listing_links_item_only_unique`) —, mas o teste agora
+  reprova se ele sair.
+- **Comparar `recheck_after` como texto** dá o mesmo resultado que comparar
+  instante enquanto o PostgREST devolve UTC; um `timezone` no banco ou no
+  papel mudaria a saída sem mudar código. `Date.parse` fica, e um teste com
+  `-03:00` trava isso.
+- **Marca órfã**, **segundo 404** e **o texto de "nunca some"**: acima.
 
 ## Histórico de otimizações medidas
 
