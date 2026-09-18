@@ -3,5 +3,5 @@
 
   "regions": ["gru1"],
 
-  "ignoreCommand": "exit 1"
+  "ignoreCommand": "sh scripts/vercel-ignore.sh"
 }
