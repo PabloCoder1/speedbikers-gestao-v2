@@ -11946,28 +11946,426 @@ td.sb-pco-num-linha {
   font-variant-numeric: tabular-nums;
 }
 
-/* ENVIO — `/notas-fiscais/nova`. */
+/*
+ * ENVIO — `/notas-fiscais/nova`.
+ *
+ * Duas colunas: o gesto (área de envio + fila) à esquerda, com a largura que a
+ * lista de arquivos precisa; o guia (formatos + o que vem depois) à direita,
+ * estreito. Abaixo de 1100px o guia desce para depois do formulário — quem
+ * está no celular quer o botão primeiro.
+ */
+.sb-nf-envio {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 1fr);
+  gap: var(--sb-space-3);
+  align-items: start;
+}
+
+.sb-nf-envio-principal {
+  padding: var(--sb-space-3);
+}
+
+.sb-nf-envio-lateral {
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-nf-envio-form {
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+/*
+ * A área de arrastar. O `<input type="file">` fica DENTRO do rótulo, escondido
+ * só visualmente (`.sb-sr-only`) — arrastar é atalho, o clique continua sendo
+ * o caminho de sempre, e o foco do teclado acende a área inteira.
+ */
+.sb-nf-solta {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2.25rem var(--sb-space-3) 1.75rem;
+  border: 1.5px dashed color-mix(in srgb, var(--sb-secondary) 40%, var(--sb-border));
+  border-radius: 0.75rem;
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--sb-secondary-soft) 0%, transparent 70%),
+    var(--sb-bg-soft);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.sb-nf-solta:hover,
+.sb-nf-solta:focus-within {
+  border-color: var(--sb-secondary);
+}
+
+.sb-nf-solta:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--sb-secondary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.sb-nf-solta-ativa {
+  border-style: solid;
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+  transform: scale(1.005);
+}
+
+.sb-nf-solta-icone {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.25rem;
+  border-radius: 0.875rem;
+  background: var(--sb-primary);
+  box-shadow: 0 8px 20px rgba(15, 17, 88, 0.18);
+  color: var(--sb-accent);
+}
+
+.sb-nf-solta > b {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-nf-solta-ou {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* O botão desenhado é um `span`: o clique é do `label`, não dele. */
+.sb-nf-solta-botao {
+  height: 2.25rem;
+  padding: 0 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.sb-nf-solta-regras {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* O selo do formato — o mesmo na área de envio e em cada linha da fila. */
+.sb-nf-selo {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: var(--sb-radius-sm);
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.sb-nf-selo-xml {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-nf-selo-pdf {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-selo-outro {
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+}
+
+/* A fila: o que foi escolhido, e o que aconteceu com cada um. */
+.sb-nf-fila {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sb-nf-fila-cabeca {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-fila-cabeca b {
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-escolhidos {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-nf-escolhido {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--sb-border);
+  border-left: 3px solid var(--sb-nf-tom, var(--sb-border));
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  animation: sb-revela 0.2s ease both;
+}
+
+.sb-nf-escolhido-enviando {
+  --sb-nf-tom: var(--sb-secondary);
+}
+
+.sb-nf-escolhido-enviado {
+  --sb-nf-tom: var(--sb-success);
+}
+
+.sb-nf-escolhido-falhou,
+.sb-nf-escolhido-recusado {
+  --sb-nf-tom: var(--sb-danger);
+  background: color-mix(in srgb, var(--sb-danger-soft) 55%, var(--sb-surface));
+}
+
+.sb-nf-escolhido-texto {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sb-nf-escolhido-nome {
+  overflow: hidden;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-escolhido-nota {
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-escolhido-falhou .sb-nf-escolhido-nota,
+.sb-nf-escolhido-recusado .sb-nf-escolhido-nota {
+  color: var(--sb-danger-ink);
+  white-space: normal;
+}
+
+.sb-nf-escolhido-abrir {
+  height: 1.75rem;
+  font-weight: 600;
+}
+
+.sb-nf-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  font-size: 0.625rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sb-nf-estado-enviando {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-nf-estado-falhou,
+.sb-nf-estado-recusado {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-girando {
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: sb-girar 0.7s linear infinite;
+}
+
+.sb-nf-remover {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: var(--sb-radius-md);
+  background: transparent;
+  color: var(--sb-text-soft);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-nf-remover:hover {
+  background: var(--sb-neutral-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-aviso {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sb-radius);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.sb-nf-aviso-soft {
+  background: var(--sb-success-soft);
+  color: var(--sb-success);
+}
+
+.sb-nf-aviso-bad {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-envio-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding-top: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-nf-envio-rodape p {
+  flex: 1 1 18rem;
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-envio-rodape p b {
+  color: var(--sb-primary);
+}
+
+.sb-nf-envio-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+}
+
+.sb-nf-envio-acoes .sb-button-primary {
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* O guia lateral: formatos e o que vem depois do envio. */
+.sb-nf-guia {
+  padding: var(--sb-space-3);
+}
+
+.sb-nf-guia-cabeca {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.875rem;
+}
+
+.sb-nf-guia-cabeca h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-nf-guia-cabeca p {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
 .sb-nf-formatos {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: var(--sb-space-2);
-  margin: 0 0 var(--sb-space-3);
+  gap: 0.25rem;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .sb-nf-formato {
   display: grid;
-  gap: 0.1875rem;
-  padding: var(--sb-space-2) var(--sb-space-3);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius);
-  background: var(--sb-surface);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-nf-formato:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.sb-nf-formato-icone {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-nf-formato-saida .sb-nf-formato-icone {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-nf-formato-neutro .sb-nf-formato-icone {
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+}
+
+.sb-nf-formato-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.5rem;
+  margin-bottom: 0.125rem;
 }
 
 .sb-nf-formato b {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--sb-primary);
+}
+
+.sb-nf-formato small {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--sb-text-soft);
+  text-transform: uppercase;
 }
 
 .sb-nf-formato span {
@@ -11976,122 +12374,670 @@ td.sb-pco-num-linha {
   color: var(--sb-text-soft);
 }
 
-.sb-nf-formato small {
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--sb-secondary);
-  text-transform: uppercase;
-}
-
-/*
- * A área de arrastar. O `<input type="file">` fica DENTRO do rótulo, visível ao
- * leitor de tela e coberto pela área — arrastar é atalho, o clique continua
- * sendo o caminho de sempre.
- */
-.sb-nf-solta {
+.sb-nf-passos {
   display: grid;
-  justify-items: center;
-  gap: 0.375rem;
-  padding: var(--sb-space-5) var(--sb-space-3);
-  border: 1px dashed color-mix(in srgb, var(--sb-secondary) 45%, var(--sb-border));
-  border-radius: var(--sb-radius);
-  background: var(--sb-surface);
-  cursor: pointer;
-  text-align: center;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.sb-nf-solta:hover,
-.sb-nf-solta:focus-within {
-  border-color: var(--sb-secondary);
+.sb-nf-passos li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
 }
 
-.sb-nf-solta-ativa {
-  border-color: var(--sb-secondary);
-  background: var(--sb-secondary-soft);
-}
-
-.sb-nf-solta b {
-  font-size: 0.875rem;
+.sb-nf-passos b {
+  display: block;
+  font-size: 0.75rem;
   color: var(--sb-primary);
 }
 
-.sb-nf-solta span {
-  max-width: 30rem;
+.sb-nf-passos li > div > span {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-passo-numero {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--sb-primary);
+  color: var(--sb-accent);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .sb-nf-envio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .sb-nf-escolhido {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .sb-nf-escolhido-abrir,
+  .sb-nf-estado {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+
+  .sb-nf-envio-acoes {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/*
+ * CONFERÊNCIA — `/notas-fiscais/[id]`.
+ *
+ * O cartão do documento junta o que antes eram três blocos soltos (cabeçalho,
+ * grade de fatos e a frase "0 de 1 itens"): identidade à esquerda, progresso
+ * do vínculo à direita, fatos embaixo. A barra de confirmação sai do meio da
+ * página e vai para o pé, presa, porque é lá que a pessoa está quando termina
+ * de vincular.
+ */
+.sb-nf-doc {
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-nf-doc-topo {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(15rem, 20rem);
+  gap: var(--sb-space-3);
+  align-items: center;
+  padding: 1.25rem var(--sb-space-3);
+  background: linear-gradient(180deg, var(--sb-bg-soft), var(--sb-surface));
+}
+
+.sb-nf-doc-arquivo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.75rem;
+  border-radius: 0.625rem;
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-nf-doc-arquivo-pdf {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-doc-arquivo small {
+  position: absolute;
+  bottom: 0.3125rem;
+  font-family: var(--sb-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sb-nf-doc-identidade {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.sb-nf-doc-identidade h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-doc-selos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-nf-doc-selos small {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-doc-progresso {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 0.625rem;
+  background: var(--sb-surface);
+}
+
+.sb-nf-doc-progresso-numeros {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.sb-nf-doc-progresso-numeros strong {
+  font-size: 1.5rem;
+  letter-spacing: -0.04em;
+  color: var(--sb-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-nf-doc-progresso-numeros strong span {
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-doc-progresso-numeros small {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-accent-ink);
+}
+
+.sb-nf-barra {
+  overflow: hidden;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-nf-barra span {
+  display: block;
+  height: 100%;
+  min-width: 0.375rem;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--sb-secondary), var(--sb-success));
+  transition: width 0.3s ease;
+}
+
+.sb-nf-doc-somas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-nf-doc-somas dt {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--sb-text-soft);
+  text-transform: uppercase;
+}
+
+.sb-nf-doc-somas dd {
+  margin: 0.125rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-nf-doc .sb-fact-grid {
+  margin: 0;
+  padding: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-nf-chave {
+  font-size: 0.6875rem;
+  word-break: break-all;
+}
+
+.sb-nf-etapas {
+  margin-bottom: var(--sb-space-3);
+}
+
+/* Lendo / falhou: o estado do documento quando não há itens para conferir. */
+.sb-nf-estado-doc {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--sb-space-3);
+  align-items: start;
+  margin-bottom: var(--sb-space-3);
+  padding: 1.25rem var(--sb-space-3);
+}
+
+.sb-nf-estado-doc h2 {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-estado-doc p {
+  margin: 0;
+  max-width: 44rem;
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--sb-text-soft);
 }
 
-/* A lista do que foi escolhido, antes de enviar. */
-.sb-nf-escolhidos {
+.sb-nf-estado-doc-icone {
   display: grid;
-  gap: 0.25rem;
-  margin: var(--sb-space-3) 0 0;
-  padding: 0;
-  list-style: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+  font-size: 1.125rem;
+  font-weight: 800;
 }
 
-.sb-nf-escolhido {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sb-space-2);
-  padding: 0.3125rem var(--sb-space-2);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius-sm);
-  background: var(--sb-surface);
-  font-size: 0.75rem;
+.sb-nf-estado-doc-icone-girando {
+  border: 3px solid var(--sb-secondary-soft);
+  border-top-color: var(--sb-secondary);
+  background: transparent;
+  animation: sb-girar 0.9s linear infinite;
 }
 
-.sb-nf-escolhido-nome {
-  overflow: hidden;
+.sb-nf-estado-doc-falha {
+  border-color: color-mix(in srgb, var(--sb-danger) 30%, var(--sb-border));
+  box-shadow: inset 3px 0 0 var(--sb-danger);
+}
+
+.sb-nf-estado-doc-falha .sb-nf-estado-doc-icone {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-estado-doc-acao {
+  align-self: center;
+  height: 2.25rem;
+  font-weight: 600;
+}
+
+.sb-nf-detalhe {
+  margin-top: 0.625rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-detalhe summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.sb-nf-detalhe code {
+  display: block;
+  margin-top: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
   font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.sb-nf-nota {
+  margin: 0 0 var(--sb-space-3);
+  padding: 0.75rem var(--sb-space-3);
+  border-radius: var(--sb-radius);
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* Itens. */
+/*
+ * Sem recorte: a lista de resultados da busca de SKU flutua sobre as linhas de
+ * baixo e, na última linha, sai do painel. `.sb-panel` recorta por padrão, e a
+ * rolagem lateral da tabela também — por isso a rolagem só liga abaixo de
+ * 1100px, onde a lista passa a abrir dentro da linha (media query no fim).
+ */
+.sb-nf-itens-painel {
+  margin-bottom: var(--sb-space-3);
+  overflow: visible;
+}
+
+.sb-nf-itens-cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sb-space-2) var(--sb-space-3);
+  padding: var(--sb-space-3);
+}
+
+.sb-nf-itens-cabeca h2 {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-nf-itens-cabeca p {
+  margin: 0;
+  max-width: 40rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-itens-contagem {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.sb-nf-contagem {
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.sb-nf-contagem b {
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-nf-contagem-pendente {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-nf-contagem-ok {
+  background: var(--sb-success-soft);
+  color: var(--sb-success);
+}
+
+.sb-nf-itens-rolagem {
+  border-radius: 0 0 var(--sb-radius) var(--sb-radius);
+}
+
+.sb-nf-itens-tabela td {
+  vertical-align: middle;
+}
+
+/* O item que ainda falta ganha a borda da cor de "atenção": é onde o olho vai. */
+.sb-nf-item-pendente td:first-child {
+  box-shadow: inset 3px 0 0 var(--sb-accent);
+}
+
+.sb-nf-item-posicao {
+  width: 2.5rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-item-produto {
+  min-width: 14rem;
+  max-width: 24rem;
+}
+
+.sb-nf-item-produto > b {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--sb-primary);
+}
+
+.sb-nf-item-produto > span {
+  display: block;
+  margin-top: 0.1875rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-item-ean {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-item-sku {
+  min-width: 19rem;
+}
+
+/* SKU vinculado: o código forte e o título em uma linha, cortado. */
+.sb-nf-sku {
+  display: grid;
+  gap: 0.0625rem;
+  min-width: 0;
+  max-width: 18rem;
+}
+
+.sb-nf-sku b {
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-sku span {
+  overflow: hidden;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sb-nf-escolhido-nota {
+.sb-nf-sku-vazio {
+  font-size: 0.75rem;
   color: var(--sb-text-soft);
-  white-space: nowrap;
 }
 
-.sb-nf-escolhido-recusado {
-  border-color: color-mix(in srgb, var(--sb-danger) 40%, var(--sb-border));
-  color: var(--sb-danger-ink);
+.sb-nf-sku-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-/* O resultado de cada arquivo, depois de enviar. */
-.sb-nf-resultados {
+.sb-nf-busca {
   display: grid;
+  gap: 0.25rem;
+}
+
+.sb-nf-busca-linha {
+  display: flex;
   gap: 0.375rem;
-  margin: var(--sb-space-3) 0 0;
-  padding: 0;
+}
+
+.sb-nf-busca-campo {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 10rem;
+}
+
+/* A lista de resultados flutua sobre a tabela em vez de empurrar a linha. */
+.sb-nf-busca-lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+.sb-nf-busca-lista ul {
+  max-height: 15rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
   list-style: none;
 }
 
-.sb-nf-resultado {
+.sb-nf-busca-lista button {
   display: grid;
-  gap: 0.125rem;
-  padding: var(--sb-space-2);
-  border: 1px solid var(--sb-border);
-  border-left: 3px solid var(--sb-nf-tom, var(--sb-border));
-  border-radius: var(--sb-radius);
-  background: var(--sb-surface);
-  font-size: 0.75rem;
+  gap: 0.0625rem;
+  width: 100%;
+  padding: 0.4375rem 0.5rem;
+  border: 0;
+  border-radius: var(--sb-radius-md);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sb-nf-resultado b {
-  font-family: var(--sb-mono);
-  font-size: 0.75rem;
+.sb-nf-busca-lista button:hover,
+.sb-nf-busca-lista button:focus-visible {
+  background: var(--sb-secondary-soft);
+  outline: none;
 }
 
-.sb-nf-resultado span {
+.sb-nf-busca-lista b {
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+}
+
+.sb-nf-busca-lista span {
+  overflow: hidden;
+  font-size: 0.625rem;
   color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-busca-vazio {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-nf-busca-escolhido {
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-nf-busca-erro {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-danger-ink);
+}
+
+.sb-nf-desvincular {
+  justify-self: start;
+  font-size: 0.625rem;
+  color: var(--sb-danger-ink);
+}
+
+/* Barra de confirmação, presa ao pé da área de conteúdo. */
+.sb-nf-confirmar {
+  position: sticky;
+  bottom: var(--sb-space-3);
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-3);
+  padding: 0.875rem 1rem 0.875rem 1.25rem;
+  border: 1px solid var(--sb-primary-border);
+  border-radius: 0.75rem;
+  background: var(--sb-primary);
+  box-shadow: var(--sb-shadow-float);
+  color: var(--sb-on-primary);
+}
+
+.sb-nf-confirmar-texto {
+  display: grid;
+  flex: 1 1 20rem;
+  gap: 0.125rem;
+}
+
+.sb-nf-confirmar-texto b {
+  font-size: 0.8125rem;
+  color: var(--sb-white);
+}
+
+.sb-nf-confirmar-texto span {
+  font-size: 0.6875rem;
   line-height: 1.45;
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-nf-confirmar .sb-button-primary {
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  border-color: var(--sb-accent);
+  background: var(--sb-accent);
+  color: var(--sb-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.sb-nf-confirmar .sb-button-primary:hover {
+  background: #fff06a;
+  color: var(--sb-primary);
+}
+
+.sb-nf-confirmar .sb-button-primary:disabled {
+  border-color: var(--sb-primary-border);
+  background: var(--sb-primary-hover);
+  color: var(--sb-on-primary-soft);
+  cursor: not-allowed;
+}
+
+.sb-nf-confirmar-pronto {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--sb-accent) 45%, transparent),
+    var(--sb-shadow-float);
+}
+
+.sb-nf-confirmar-erro {
+  margin: 0.25rem 0 0;
+  font-size: 0.6875rem;
+  color: #ffb4b4;
+}
+
+@media (max-width: 1100px) {
+  .sb-nf-doc-topo {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sb-nf-doc-progresso {
+    grid-column: 1 / -1;
+  }
+
+  .sb-nf-itens-rolagem {
+    overflow-x: auto;
+  }
+
+  .sb-nf-busca-lista {
+    position: static;
+    margin-top: 0.25rem;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .sb-nf-estado-doc {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sb-nf-estado-doc-acao {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: center;
+  }
+
+  .sb-nf-confirmar .sb-button-primary {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 1100px) {

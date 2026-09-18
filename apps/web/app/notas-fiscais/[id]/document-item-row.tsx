@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { createClient } from "../../../lib/supabase/browser";
 import { linkDocumentItem } from "../actions";
@@ -13,12 +13,27 @@ import { linkDocumentItem } from "../actions";
  * Diferente da Central de Vinculações: aqui o vínculo pode ser TROCADO
  * (`p_sku_id` na RPC aceita relink) até o documento sair de `PARSED` — não
  * há estado "fechado" por item, só por documento inteiro.
+ *
+ * A busca espera a pessoa parar de digitar (`ESPERA_MS`) e descarta resposta
+ * velha: antes cada tecla era uma consulta, e a resposta de "PN" podia chegar
+ * DEPOIS da de "PNEU" e trocar a lista certa pela errada.
  */
+
+const ESPERA_MS = 200;
 
 interface SkuResult {
   id: string;
   sku: string;
   title: string | null;
+}
+
+function SkuVinculado({ sku }: { sku: SkuResult }): ReactNode {
+  return (
+    <span className="sb-nf-sku">
+      <b className="sb-mono">{sku.sku}</b>
+      {sku.title !== null && <span title={sku.title}>{sku.title}</span>}
+    </span>
+  );
 }
 
 export function DocumentItemRow({
@@ -36,39 +51,59 @@ export function DocumentItemRow({
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SkuResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SkuResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function search(value: string): Promise<void> {
-    setQuery(value);
-    setSelected(null);
+  // Número da busca mais recente: a resposta que não for dela é descartada.
+  const ultimaBusca = useRef(0);
 
-    if (value.trim().length < 2) {
+  useEffect(() => {
+    const termo = query.trim();
+
+    if (selected !== null || termo.length < 2) {
       setResults([]);
+      setSearching(false);
 
       return;
     }
 
-    const supabase = createClient();
+    const numero = ultimaBusca.current + 1;
 
-    const { data, error: searchError } = await supabase
-      .from("skus")
-      .select("id, sku, title")
-      .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
-      .order("sku")
-      .limit(8);
+    ultimaBusca.current = numero;
+    setSearching(true);
 
-    if (searchError !== null) {
-      // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
-      // a uma busca genuinamente vazia (D-067, Nível 3).
-      setError("Não foi possível buscar SKUs — tente de novo.");
+    const espera = setTimeout(() => {
+      void (async () => {
+        const { data, error: searchError } = await createClient()
+          .from("skus")
+          .select("id, sku, title")
+          .ilike("sku_key", `%${termo.toUpperCase()}%`)
+          .order("sku")
+          .limit(8);
 
-      return;
-    }
+        if (numero !== ultimaBusca.current) return;
 
-    setResults(data);
-  }
+        setSearching(false);
+
+        if (searchError !== null) {
+          // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
+          // a uma busca genuinamente vazia (D-067, Nível 3).
+          setError("Não foi possível buscar SKUs — tente de novo.");
+
+          return;
+        }
+
+        setError(null);
+        setResults(data);
+      })();
+    }, ESPERA_MS);
+
+    return () => {
+      clearTimeout(espera);
+    };
+  }, [query, selected]);
 
   async function confirm(): Promise<void> {
     if (selected === null) return;
@@ -87,6 +122,8 @@ export function DocumentItemRow({
 
     setCurrent(selected);
     setEditing(false);
+    setSelected(null);
+    setQuery("");
     setBusy(false);
   }
 
@@ -109,26 +146,16 @@ export function DocumentItemRow({
   }
 
   if (!editable) {
-    return current === null ? (
-      <span style={{ color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>Sem vínculo</span>
-    ) : (
-      <span style={{ fontSize: "0.875rem" }}>
-        <strong>{current.sku}</strong>
-        {current.title !== null && ` — ${current.title}`}
-      </span>
-    );
+    return current === null ? <span className="sb-nf-sku-vazio">Sem vínculo</span> : <SkuVinculado sku={current} />;
   }
 
   if (current !== null && !editing) {
     return (
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.875rem" }}>
-          <strong>{current.sku}</strong>
-          {current.title !== null && ` — ${current.title}`}
-        </span>
+      <div className="sb-nf-sku-linha">
+        <SkuVinculado sku={current} />
 
         <button
-          className="sb-button"
+          className="sb-text-button"
           type="button"
           onClick={() => {
             setEditing(true);
@@ -140,19 +167,57 @@ export function DocumentItemRow({
     );
   }
 
+  const termo = query.trim();
+  const tituloEscolhido = selected?.title ?? null;
+
   return (
-    <div style={{ display: "grid", gap: "0.375rem", minWidth: "16rem" }}>
-      <div style={{ display: "flex", gap: "0.375rem", position: "relative" }}>
-        <input
-          className="sb-input sb-input-full"
-          type="text"
-          value={query}
-          onChange={(event) => {
-            void search(event.target.value);
-          }}
-          placeholder="Buscar SKU…"
-          disabled={busy}
-        />
+    <div className="sb-nf-busca">
+      <div className="sb-nf-busca-linha">
+        <div className="sb-nf-busca-campo">
+          <input
+            className="sb-input sb-input-full"
+            type="text"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setSelected(null);
+            }}
+            placeholder="Buscar SKU…"
+            aria-label="Buscar SKU para este item"
+            autoComplete="off"
+            disabled={busy}
+          />
+
+          {selected === null && termo.length >= 2 && (
+            <div className="sb-nf-busca-lista">
+              {searching && results.length === 0 && <p className="sb-nf-busca-vazio">Buscando…</p>}
+
+              {!searching && results.length === 0 && error === null && (
+                <p className="sb-nf-busca-vazio">Nenhum SKU com “{termo}”.</p>
+              )}
+
+              {results.length > 0 && (
+                <ul>
+                  {results.map((sku) => (
+                    <li key={sku.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelected(sku);
+                          setQuery(sku.sku);
+                          setResults([]);
+                        }}
+                      >
+                        <b className="sb-mono">{sku.sku}</b>
+                        {sku.title !== null && <span>{sku.title}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
 
         <button
           className="sb-button sb-button-primary"
@@ -165,12 +230,18 @@ export function DocumentItemRow({
           Vincular
         </button>
 
+        {/* Trocando um vínculo que existe: "Cancelar" desiste da troca e o SKU
+            de antes fica. Antes este botão DESVINCULAVA — quem só queria
+            desistir perdia o vínculo. Desvincular agora tem botão próprio. */}
         {current !== null && (
           <button
             className="sb-button"
             type="button"
             onClick={() => {
-              void unlink();
+              setEditing(false);
+              setSelected(null);
+              setQuery("");
+              setError(null);
             }}
             disabled={busy}
           >
@@ -179,45 +250,23 @@ export function DocumentItemRow({
         )}
       </div>
 
-      {selected !== null && (
-        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          Selecionado: <strong>{selected.sku}</strong> {selected.title !== null && `— ${selected.title}`}
-        </p>
-      )}
+      {tituloEscolhido !== null && <p className="sb-nf-busca-escolhido">{tituloEscolhido}</p>}
 
-      {selected === null && results.length > 0 && (
-        <ul
-          style={{
-            listStyle: "none",
-            margin: 0,
-            padding: 0,
-            border: "1px solid var(--sb-border)",
-            borderRadius: "var(--sb-radius)",
-            background: "var(--sb-surface)",
-            maxHeight: "10rem",
-            overflowY: "auto",
+      {current !== null && (
+        <button
+          className="sb-text-button sb-nf-desvincular"
+          type="button"
+          onClick={() => {
+            void unlink();
           }}
+          disabled={busy}
         >
-          {results.map((sku) => (
-            <li key={sku.id}>
-              <button
-                className="sb-button"
-                type="button"
-                onClick={() => {
-                  setSelected(sku);
-                  setResults([]);
-                }} style={{ display: "block", width: "100%", textAlign: "left" }}
-              >
-                <strong>{sku.sku}</strong>
-                {sku.title !== null && ` — ${sku.title}`}
-              </button>
-            </li>
-          ))}
-        </ul>
+          Desvincular {current.sku}
+        </button>
       )}
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-nf-busca-erro">
           {error}
         </p>
       )}

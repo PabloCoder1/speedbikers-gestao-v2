@@ -69,6 +69,8 @@ export interface NfeUploadRequest {
 export type NfeUploadOutcome =
   | { status: "created"; documentId: string; contentHash: string }
   | { status: "duplicate"; documentId: string; contentHash: string }
+  /** O mesmo arquivo, que tinha falhado na leitura, voltou para a fila. */
+  | { status: "retried"; documentId: string; contentHash: string }
   | { status: "rejected"; reason: string };
 
 export interface NfeImportDeps {
@@ -114,10 +116,73 @@ export async function receiveNfeUpload(
   // falhe no INSERT, depois do arquivo já estar no bucket.
   const existing = await deps.db
     .from("documents")
-    .select("id")
+    .select("id, status, parsed_at")
     .eq("organization_id", caller.organizationId)
     .eq("content_hash", contentHash)
     .maybeSingle();
+
+  const now = deps.now?.() ?? new Date();
+  const month = now.toISOString().slice(0, 7);
+
+  // Caminho endereçado pelo conteúdo, mesmo motivo de erp-import.ts. A
+  // extensão vem do formato LIDO — é ela que o worker usa para saber qual
+  // leitor abre o arquivo.
+  const storagePath = `${caller.organizationId}/${month}/${contentHash}.${formato === "PDF" ? "pdf" : "xml"}`;
+
+  /*
+    Reenviar um arquivo cuja LEITURA falhou lê de novo, em vez de devolver o
+    documento quebrado. Sem isto a idempotência prendia o arquivo no erro para
+    sempre: o hash é o mesmo, então todo reenvio caía no mesmo FAILED. Foi o que
+    aconteceu com o primeiro DANFE de produção (18/09/2026): a api anterior à
+    D-375 guardou o PDF com extensão .xml, o worker abriu como XML e falhou, e
+    reenviar depois do deploy não teria consertado nada.
+
+    Só a falha de LEITURA (`parsed_at` nulo) volta. A de aplicação já tem itens
+    e vínculos humanos, e reler por cima deles é outra conversa.
+  */
+  if (existing.data !== null && existing.data.status === "FAILED" && existing.data.parsed_at === null) {
+    await deps.store.upload(storagePath, request.body, request.contentType);
+
+    // `.eq("status", "FAILED")` é a trava: dois reenvios simultâneos não
+    // enfileiram duas leituras, porque só um deles acha a linha em FAILED.
+    const revived = await deps.db
+      .from("documents")
+      .update({ storage_path: storagePath, source_format: formato, status: "UPLOADED", last_error: null })
+      .eq("id", existing.data.id)
+      .eq("status", "FAILED")
+      .select("id")
+      .maybeSingle();
+
+    if (revived.error !== null) {
+      deps.logger.error("nfe_import_retry_not_saved", {
+        content_hash: contentHash,
+        document_id: existing.data.id,
+        reason: revived.error.message,
+      });
+
+      return { status: "rejected", reason: "não foi possível reenviar o documento para leitura" };
+    }
+
+    if (revived.data !== null) {
+      await deps.enqueuer.enqueue({
+        jobType: "nfe.import.parse",
+        organizationId: caller.organizationId,
+        // Chave nova por tentativa: a do primeiro parse já foi usada, e a fila
+        // descartaria em silêncio uma tarefa com o mesmo nome.
+        dedupeKey: `nfe-parse:${existing.data.id}:${now.toISOString()}`,
+        queue: "maintenance",
+        payload: { documentId: existing.data.id },
+      });
+
+      deps.logger.info("nfe_import_retried", {
+        document_id: existing.data.id,
+        formato,
+        content_hash: contentHash,
+      });
+
+      return { status: "retried", documentId: existing.data.id, contentHash };
+    }
+  }
 
   if (existing.data !== null) {
     deps.logger.info("nfe_import_duplicate", {
@@ -127,14 +192,6 @@ export async function receiveNfeUpload(
 
     return { status: "duplicate", documentId: existing.data.id, contentHash };
   }
-
-  const now = deps.now?.() ?? new Date();
-  const month = now.toISOString().slice(0, 7);
-
-  // Caminho endereçado pelo conteúdo, mesmo motivo de erp-import.ts. A
-  // extensão vem do formato LIDO — é ela que o worker usa para saber qual
-  // leitor abre o arquivo.
-  const storagePath = `${caller.organizationId}/${month}/${contentHash}.${formato === "PDF" ? "pdf" : "xml"}`;
 
   await deps.store.upload(storagePath, request.body, request.contentType);
 
