@@ -164,6 +164,7 @@ async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: 
 
   if (alvos.length === 0) return { ids: [], error: null };
 
+  // fila-justificada: vinculos usa os IDs descobertos pela consulta cadastro acima.
   const vinculos = await supabase
     .from("support_case_links")
     .select("support_case_id")
