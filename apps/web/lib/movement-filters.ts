@@ -32,6 +32,8 @@ export const MOVEMENT_TYPES = [
   "ESTORNO_REVERSAO_EXCEDENTE",
   // D-375: a saída conferida por documento não fiscal (pedido de saída).
   "SAIDA_DOCUMENTO",
+  // D-352: o par da venda entregue pelo Full — a unidade nunca saiu da loja.
+  "ESTORNO_FULL",
 ] as const;
 
 export const LOCATION_KINDS = ["LOCAL", "RESERVADO", "TRANSITO"] as const;

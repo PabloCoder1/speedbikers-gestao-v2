@@ -165,6 +165,18 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
 
     expect(invalidas).toEqual([]);
   });
+
+  /**
+   * A varredura da logística (D-352) não grava em `sync_runs` — não é recurso
+   * do Mercado Livre, é manutenção do ledger —, então a cadência em `job_runs`
+   * é a ÚNICA saúde dela. Sem a entrada no mapa ela sairia `sem_cadencia`, e o
+   * agendador calado deixaria a pendência da R2 aberta sem nada vermelho.
+   */
+  it("a varredura da logística tem a cadência de 6 h do agendador — calada por mais de um dia é crítico", () => {
+    expect(classifyJobFreshness("sync.order-logistics", minutesAgo(11 * 60), NOW)).toBe("ok");
+    expect(classifyJobFreshness("sync.order-logistics", minutesAgo(13 * 60), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("sync.order-logistics", minutesAgo(25 * 60), NOW)).toBe("critico");
+  });
 });
 
 describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)", () => {

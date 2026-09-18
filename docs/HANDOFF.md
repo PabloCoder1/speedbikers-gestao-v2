@@ -270,6 +270,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 **Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
 **D-351:** prova de 24 h pendente para v3-reconcile-balances; depois, D-352 e D-362.
+**D-352 (Full não baixa a loja):** pronta na `fix/estoque-full-d352`, não publicada; ordem em `docs/DEPLOYMENT.md` 8.3 (migration → worker/api → varredura → compensação).
 
 ---
 

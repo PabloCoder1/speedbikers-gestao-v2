@@ -84,6 +84,7 @@ const app = createApp({
   listingVisitsSchedule: { db, enqueuer, logger },
   adsSchedule: { db, enqueuer, logger },
   orderFinancialsSchedule: { db, enqueuer, logger },
+  orderLogisticsSchedule: { db, enqueuer, logger },
   supportQuestionsSchedule: { db, enqueuer, logger },
   supportClaimsSchedule: { db, enqueuer, logger },
   supportMessagesSchedule: { db, enqueuer, logger },

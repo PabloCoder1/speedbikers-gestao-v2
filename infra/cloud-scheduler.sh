@@ -162,6 +162,22 @@ upsert_job \
   "${API_URL}/internal/schedule/order-financials" \
   "Captura de frete do vendedor e desconto por pedido, por conta CONNECTED"
 
+# Varredura da logistica dos pedidos (D-352, R2) -- le GET /shipments/{id} dos
+# pedidos com VENDA_ML sem estorno e grava o ESTORNO_FULL que falta.
+#
+# Cadencia de 6h, e nao diaria: a varredura tem teto de 800 pedidos com ida a
+# rede por rodada (o job tem 900s) e o backlog de estreia e de 2.550 pedidos em
+# producao -- na cadencia diaria ele levaria 4 dias, e a compensacao so roda com
+# a varredura CONCLUIDA (DEPLOYMENT 8.3). Em regime permanente so sobra o pedido
+# cuja leitura do envio falhou na persistencia, e a rodada termina em segundos.
+# Minuto deslocado dos outros jobs de 6h (listings e Full as :00) para nao
+# disputar o mesmo rate limit por conta. Por CONTA.
+upsert_job \
+  "v3-order-logistics-sweep" \
+  "40 */6 * * *" \
+  "${API_URL}/internal/schedule/order-logistics" \
+  "Varredura da logistica do envio dos pedidos pendentes (D-352), por conta CONNECTED"
+
 # Mercado Ads -- Product Ads (D-363): anunciante, campanhas e metricas diarias
 # dos ultimos 90 dias, por CONTA. DIARIA as 11h: a doc de Product Ads diz que
 # as metricas sao atualizadas as 10h (GMT-3), e as 11h tambem fica depois da

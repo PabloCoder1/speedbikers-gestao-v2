@@ -9,6 +9,7 @@ import { orderSchema } from "./order-schema.js";
 import type { ParsedOrder } from "./order-schema.js";
 import { flushPageWrites, novaPagina } from "./page-writes.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
+import { createShipmentLogistics } from "./shipment-logistics.js";
 
 /**
  * Busca de pedidos por janela de data, compartilhada por `sync.orders.window`
@@ -73,6 +74,8 @@ export interface FetchOrdersWindowParams {
    * separa o evento que notifica do que só registra — ver `PersistOrderContext`.
    */
   eventSource: "sync" | "backfill";
+  /** Relógio da captura da logística (D-352). Ausente, o do sistema. */
+  now?: () => Date;
 }
 
 export interface FetchOrdersWindowResult {
@@ -121,6 +124,16 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
     mlAccountId: params.mlAccountId,
     eventSource: params.eventSource,
   };
+
+  // D-352 — a captura da logística do envio. Uma instância por janela, com o
+  // token desta conta; `persistOrder` decide, pedido a pedido, se vale a
+  // chamada, e uma leitura que falha só deixa o pedido pendente.
+  const logistics = createShipmentLogistics({
+    mercadoLivre: params.mercadoLivre,
+    accessToken: params.accessToken,
+    logger: params.logger,
+    now: params.now,
+  });
 
   for await (const page of pages) {
     // D-186 — a pagina inteira e parseada antes de persistir, para que as
@@ -182,7 +195,7 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
     const writes = novaPagina(params.organizationId);
 
     for (const order of orders) {
-      await persistOrder(params.db, context, order, params.logger, prefetch, writes);
+      await persistOrder(params.db, context, order, params.logger, prefetch, writes, logistics);
 
       dirtyMetricDates.add(toSalesMetricDate(order.date_created));
 
@@ -208,6 +221,16 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
         ml_account_id: params.mlAccountId,
         pedidos: writes.estornosPreCaptura.pedidos,
         estornos: writes.estornosPreCaptura.movimentos,
+      });
+    }
+
+    // D-352: o mesmo para o Full, em linha separada — as duas causas de estorno
+    // precisam ser contadas uma contra a outra, não somadas.
+    if (writes.estornosFull.movimentos > 0) {
+      params.logger.info("sale_deduction_estornada_full", {
+        ml_account_id: params.mlAccountId,
+        pedidos: writes.estornosFull.pedidos,
+        estornos: writes.estornosFull.movimentos,
       });
     }
   }

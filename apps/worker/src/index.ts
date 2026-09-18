@@ -23,6 +23,7 @@ import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
 import { createSyncOrderFinancialsHandler } from "./handlers/sync-order-financials.js";
+import { createSyncOrderLogisticsHandler } from "./handlers/sync-order-logistics.js";
 import { createRelistExecuteHandler } from "./handlers/relist-execute.js";
 import { createRelistPrepareHandler } from "./handlers/relist-prepare.js";
 import { createSendSupportReplyHandler } from "./handlers/send-support-reply.js";
@@ -98,6 +99,14 @@ const app = createWorkerApp({
     // Mercado Ads (D-363): anunciante, campanhas e métricas diárias de 90 dias.
     "sync.ads.campaigns": createSyncAdsCampaignsHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "sync.order-financials": createSyncOrderFinancialsHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    // D-352 (R2): fecha a pendencia do sinal do Full -- le o envio dos pedidos
+    // com VENDA_ML sem estorno e grava o ESTORNO_FULL que falta.
+    "sync.order-logistics": createSyncOrderLogisticsHandler({
       db,
       mercadoLivre,
       oauth,

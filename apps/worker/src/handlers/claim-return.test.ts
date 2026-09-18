@@ -11,6 +11,20 @@ const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const ORDER_ID = 2000009229357366;
 const CLAIM_ID = "5298178312";
 const NOW = new Date("2026-08-23T15:00:00.000Z");
+/** `occurred_at` das linhas gravadas do fake: e ele que o ESTORNO_FULL espelha (D-352). */
+const GRAVADO_EM = "2026-08-20T10:00:00.000Z";
+/**
+ * A linha de `orders` que o fake devolve por padrao: pedido pago, sem logistica
+ * capturada -- o comportamento de antes da D-352, que os testes antigos fixam.
+ * `claim-return` passou a ler `orders` SEMPRE (precisa de `logistic_type`).
+ */
+const PEDIDO_PADRAO = {
+  status: "paid",
+  date_created: "2026-08-20T09:00:00.000Z",
+  date_last_updated: "2026-08-20T09:00:00.000Z",
+  last_updated: null,
+  logistic_type: null,
+};
 
 const CLAIM_WITH_RETURN = {
   id: 5298178312,
@@ -49,7 +63,13 @@ function returnPayload(overrides: {
 interface FakeDbOptions {
   orderItemPosition?: number | null;
   /** Movimentos do pedido (`VENDA_ML` por padrão; `CANCELAMENTO_ML` com `movement_type`). */
-  saleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string; movement_type?: string }[];
+  saleMovements?: {
+    sku_id: string;
+    qty_delta: number;
+    idempotency_key: string;
+    movement_type?: string;
+    occurred_at?: string;
+  }[];
   /** `DEVOLUCAO_ML` gravadas, por `get_order_return_movements` (verificação de e6fda07, ALTA-1). */
   recordedReturns?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
   /** Simula falha da leitura das devoluções gravadas. */
@@ -64,7 +84,13 @@ interface FakeDbOptions {
    * A linha de `orders` que `claim-return` lê quando o pedido tem venda estornada
    * (reverificação de 60c7a6a, BAIXA-1). Padrão, nenhuma.
    */
-  order?: { status: string; date_created: string; date_last_updated: string; last_updated: string | null } | null;
+  order?: {
+    status: string;
+    date_created: string;
+    date_last_updated: string;
+    last_updated: string | null;
+    logistic_type?: string | null;
+  } | null;
   /** Simula falha da leitura do pedido. */
   orderReadError?: boolean;
   /** Linhas de `get_erp_stock_cutoffs`. Padrão, nenhuma. */
@@ -81,7 +107,7 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
   const position = "orderItemPosition" in options ? options.orderItemPosition : 0;
   const movements = (
     options.saleMovements ?? [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: `venda:${String(ORDER_ID)}:0` }]
-  ).map((row) => ({ movement_type: "VENDA_ML", ...row }));
+  ).map((row) => ({ movement_type: "VENDA_ML", occurred_at: GRAVADO_EM, ...row }));
 
   return {
     from: (table: string) => {
@@ -185,7 +211,7 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
               return Promise.resolve(
                 options.orderReadError === true
                   ? { data: null, error: { code: "42P01", message: "boom" } }
-                  : { data: options.order ?? null, error: null },
+                  : { data: "order" in options ? options.order : PEDIDO_PADRAO, error: null },
               );
             },
           }),
@@ -214,7 +240,11 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
           options.returnsReadError === true
             ? { data: null, error: { code: "42P01", message: "boom" } }
             : {
-                data: (options.recordedReturns ?? []).map((row) => ({ order_id: String(ORDER_ID), ...row })),
+                data: (options.recordedReturns ?? []).map((row) => ({
+                  order_id: String(ORDER_ID),
+                  occurred_at: GRAVADO_EM,
+                  ...row,
+                })),
                 error: null,
               },
         );
@@ -857,7 +887,7 @@ describe("processClaimReturn — o cancelamento que a planilha já contém (reve
 
   it("falha na leitura do pedido LANÇA, o pedido ausente LANÇA, e o corte sem a linha do SKU também", async () => {
     await expect(processa({ saleMovements: ESTORNADA, orderReadError: true, cutoffRows: PLANILHA_2 })).rejects.toThrow(
-      /status da order.*boom/,
+      /falha ao ler a order.*boom/,
     );
     await expect(processa({ saleMovements: ESTORNADA, order: null, cutoffRows: PLANILHA_2 })).rejects.toThrow(/sem linha em orders/);
     await expect(processa({ saleMovements: ESTORNADA, order: CANCELADO_ANTES, cutoffRows: [] })).rejects.toThrow(
@@ -876,5 +906,146 @@ describe("processClaimReturn — o cancelamento que a planilha já contém (reve
         cutoffRows: PLANILHA_2,
       }),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * D-352 — devolucao de pedido entregue pelo Full nao repoe a loja.
+ *
+ * O produto volta para o galpao do Mercado Livre. O saldo LOCAL nunca perdeu a
+ * unidade, entao nada volta para ele — o que sai e o par que faltava a venda.
+ */
+describe("processClaimReturn — pedido do Full (D-352)", () => {
+  const VENDA = `venda:${String(ORDER_ID)}:0`;
+  const PEDIDO_FULL = { ...PEDIDO_PADRAO, logistic_type: "fulfillment" };
+
+  function processa(options: FakeDbOptions, rpcCalls: string[] = []) {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const db = fakeDb(options, captured, rpcCalls);
+    const { client } = fakeMercadoLivre({});
+
+    return {
+      captured,
+      resultado: processClaimReturn(
+        { db, mercadoLivre: client },
+        { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+        "token",
+        CLAIM_ID,
+        NOW,
+        logger,
+      ),
+    };
+  }
+
+  it("devolucao total: nenhum DEVOLUCAO_ML, e o ESTORNO_FULL que faltava — com a origem do PEDIDO", async () => {
+    const { captured, resultado } = processa({ order: PEDIDO_FULL });
+
+    await resultado;
+
+    expect(captured.movements).toEqual([
+      expect.objectContaining({
+        movement_type: "ESTORNO_FULL",
+        qty_delta: 1,
+        sku_id: "sku-a",
+        idempotency_key: `estorno:${VENDA}`,
+        // A origem e o PEDIDO, e nao o claim: e uma venda que esta sendo
+        // estornada, e e por `source_type = 'ORDER'` que ela sera achada depois.
+        source_type: "ORDER",
+        source_id: String(ORDER_ID),
+        // Espelha o instante da VENDA gravada, nao o da devolucao.
+        occurred_at: GRAVADO_EM,
+        location_kind: "LOCAL",
+      }),
+    ]);
+  });
+
+  it("contraprova FORA do Full: a mesma devolucao grava DEVOLUCAO_ML, com a origem do CLAIM", async () => {
+    const { captured, resultado } = processa({ order: PEDIDO_PADRAO });
+
+    await resultado;
+
+    expect(captured.movements).toEqual([
+      expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1, source_type: "CLAIM", source_id: CLAIM_ID }),
+    ]);
+  });
+
+  it("venda JA estornada: nada e gravado — nem reversao, nem um segundo par", async () => {
+    const { captured, resultado } = processa({
+      order: PEDIDO_FULL,
+      saleMovements: [
+        { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+        { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_FULL" },
+      ],
+    });
+
+    await resultado;
+
+    expect(captured.movements).toEqual([]);
+  });
+
+  it("devolucao PARCIAL de pedido do Full: nada no saldo, e o evento nao pede gente", async () => {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const db = fakeDb({ order: PEDIDO_FULL }, captured);
+    const { client } = fakeMercadoLivre({ claimReturn: returnPayload({ total_quantity: "5.0", return_quantity: "2.0" }) });
+
+    await processClaimReturn(
+      { db, mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+
+    expect(captured.movements.filter((m) => m.movement_type === "DEVOLUCAO_ML")).toEqual([]);
+    expect(captured.events[0]?.after).toMatchObject({ fullLogistic: true, needsManualReview: false });
+  });
+
+  it("CANCELAMENTO_ML gravado antes de o sinal chegar: o par sai E a reversao e anulada", async () => {
+    const { captured, resultado } = processa({
+      order: PEDIDO_FULL,
+      saleMovements: [
+        { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+        { sku_id: "sku-a", qty_delta: 1, idempotency_key: `cancelamento:${VENDA}`, movement_type: "CANCELAMENTO_ML" },
+      ],
+    });
+
+    await resultado;
+
+    expect(captured.movements.map((m) => [m.movement_type, m.qty_delta, m.idempotency_key])).toEqual([
+      ["ESTORNO_FULL", 1, `estorno:${VENDA}`],
+      ["ESTORNO_REVERSAO_EXCEDENTE", -1, `estorno:cancelamento:${VENDA}`],
+    ]);
+    // -1 (venda) +1 (cancelamento gravado) +1 (estorno) -1 (anulacao) = 0.
+    const gravado = -1 + 1;
+    const novo = captured.movements.reduce((total, m) => total + Number(m.qty_delta), 0);
+
+    expect(gravado + novo).toBe(0);
+  });
+
+  it("KIT do Full: um ESTORNO_FULL por componente, nenhuma reversao", async () => {
+    const { captured, resultado } = processa({
+      order: PEDIDO_FULL,
+      saleMovements: [
+        { sku_id: "comp-1", qty_delta: -2, idempotency_key: `${VENDA}:comp-1` },
+        { sku_id: "comp-2", qty_delta: -1, idempotency_key: `${VENDA}:comp-2` },
+      ],
+    });
+
+    await resultado;
+
+    expect(captured.movements.map((m) => [m.movement_type, m.sku_id, m.qty_delta])).toEqual([
+      ["ESTORNO_FULL", "comp-1", 2],
+      ["ESTORNO_FULL", "comp-2", 1],
+    ]);
+  });
+
+  it("movimento gravado sem occurred_at legivel LANCA — o par do Full precisa saber de que lado do corte cair", async () => {
+    const { resultado } = processa({
+      order: PEDIDO_FULL,
+      saleMovements: [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA, occurred_at: "nao e data" }],
+    });
+
+    await expect(resultado).rejects.toThrow(/sem occurred_at legivel/);
   });
 });

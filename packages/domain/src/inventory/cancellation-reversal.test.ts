@@ -179,6 +179,7 @@ describe("computeCancellationMovements — o que o pedido cancelado grava (D-351
         status: "cancelled",
         dateCreated: new Date("2026-09-02T23:40:00.000Z"),
         dateClosed: FECHADO,
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt: CANCELADO,
@@ -206,6 +207,7 @@ describe("computeCancellationMovements — o que o pedido cancelado grava (D-351
     expect(resultado).toEqual({
       sales: [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: FECHADO }],
       estornos: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: FECHADO }],
+      estornosFull: [],
       excessReversalEstornos: [],
       reversals: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO }],
       alreadyReversed: [],
@@ -250,6 +252,7 @@ describe("computeCancellationMovements — o que o pedido cancelado grava (D-351
     expect(computeCancellationMovements({ ...noCorte, order })).toEqual({
       sales: [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: CORTE }],
       estornos: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: CORTE }],
+      estornosFull: [],
       excessReversalEstornos: [],
       reversals: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO }],
       alreadyReversed: [],
@@ -384,6 +387,7 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
         status: "cancelled",
         dateCreated: new Date("2026-08-31T21:00:00.000Z"),
         dateClosed: new Date("2026-08-31T21:05:29.000Z"),
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt: new Date("2026-09-15T08:40:07.000Z"),
@@ -498,7 +502,7 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
       expect(trio.sales).toHaveLength(1);
 
       const devolucao = computeReturnReversal(
-        { id: PEDIDO },
+        { id: PEDIDO, logisticType: null },
         { position: 0, totalQuantity: 1, returnQuantity: 1 },
         trio.sales,
         comoReversao(trio.reversals),
@@ -513,7 +517,7 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
 
     it("o inverso: devolução entregue primeiro, cancelamento depois — o cancelamento não devolve de novo", () => {
       const devolucao = computeReturnReversal(
-        { id: PEDIDO },
+        { id: PEDIDO, logisticType: null },
         { position: 0, totalQuantity: 1, returnQuantity: 1 },
         LEGITIMA,
         [],
@@ -678,6 +682,7 @@ describe("cancelamento — a planilha retrata a exportação, e não o corte do 
         status: "cancelled",
         dateCreated: new Date(dateClosed.getTime() - 60_000),
         dateClosed,
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt: new Date("2026-09-15T10:00:00.000Z"),
@@ -693,7 +698,7 @@ describe("cancelamento — a planilha retrata a exportação, e não o corte do 
   it("venda nunca gravada ENTRE a exportação e o parse, cancelada depois do corte: nada — a planilha não tem a venda, e o trio daria +1", () => {
     const resultado = computeCancellationMovements(entrada(NA_JANELA, new Date("2026-09-10T10:00:00.000Z")));
 
-    expect(resultado).toEqual({ sales: [], estornos: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] });
+    expect(resultado).toEqual({ sales: [], estornos: [], estornosFull: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] });
   });
 
   it("venda antes da exportação, nunca gravada, cancelada ENTRE a exportação e o parse: o trio — a planilha tem a venda e não tem a devolução", () => {
@@ -752,6 +757,7 @@ describe("a devolução depois do cancelamento que a planilha já contém (rever
         status: "cancelled",
         dateCreated: new Date("2026-09-10T14:55:00.000Z"),
         dateClosed: new Date("2026-09-10T15:00:00.000Z"),
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt,
@@ -772,7 +778,7 @@ describe("a devolução depois do cancelamento que a planilha já contém (rever
     expect(cancel.reversals).toEqual([]);
 
     const naPlanilha = cancelledInSheetKeys(pedido(), GRAVADA, ESTORNADA, () => PLANILHA_2);
-    const devolucao = computeReturnReversal({ id: PEDIDO }, ITEM, GRAVADA, [], CLAIM, DEVOLVIDO, new Set(naPlanilha));
+    const devolucao = computeReturnReversal({ id: PEDIDO, logisticType: null }, ITEM, GRAVADA, [], CLAIM, DEVOLVIDO, new Set(naPlanilha));
 
     expect(naPlanilha).toEqual([VENDA]);
     expect(devolucao.movements).toEqual([]);
@@ -789,10 +795,10 @@ describe("a devolução depois do cancelamento que a planilha já contém (rever
     expect(cancelledInSheetKeys(pedido(), GRAVADA, NAO_ESTORNADA, () => PLANILHA_2)).toEqual([]);
 
     const devolucao = computeReturnReversal(
-      { id: PEDIDO },
+      { id: PEDIDO, logisticType: null },
       ITEM,
       GRAVADA,
-      cancel.reversals.map((m) => ({ idempotencyKey: m.idempotencyKey, quantity: m.qtyDelta })),
+      cancel.reversals.map((m) => ({ idempotencyKey: m.idempotencyKey, quantity: m.qtyDelta, occurredAt: m.occurredAt })),
       CLAIM,
       DEVOLVIDO,
       new Set(),
@@ -807,7 +813,7 @@ describe("a devolução depois do cancelamento que a planilha já contém (rever
 
     expect(cancelledInSheetKeys(pedido({ occurredAt: depois }), GRAVADA, ESTORNADA, () => PLANILHA_2)).toEqual([]);
     expect(cancelamento(ESTORNADA, depois).reversals).toHaveLength(1);
-    expect(computeReturnReversal({ id: PEDIDO }, ITEM, GRAVADA, [], CLAIM, DEVOLVIDO, new Set()).movements).toHaveLength(1);
+    expect(computeReturnReversal({ id: PEDIDO, logisticType: null }, ITEM, GRAVADA, [], CLAIM, DEVOLVIDO, new Set()).movements).toHaveLength(1);
   });
 
   it("fronteira: cancelada NO instante da exportação conta como contida, como no cancelamento", () => {
@@ -874,6 +880,7 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
           status: "cancelled",
           dateCreated: new Date("2026-08-06T18:20:00.000Z"),
           dateClosed: new Date("2026-08-06T18:25:09.000Z"),
+          logisticType: null,
           items: [
             {
               position: 0,
@@ -985,6 +992,7 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
           status: "cancelled",
           dateCreated: new Date("2026-08-31T15:10:00.000Z"),
           dateClosed: new Date("2026-08-31T15:15:22.000Z"),
+          logisticType: null,
           items: [{ position: 0, quantity: 1, skuId: "sku-31f2cb17", skuKind: "PRODUTO", components: [] }],
         },
         occurredAt: CANCELADA_EM,
@@ -1037,6 +1045,7 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
         status: "cancelled",
         dateCreated: new Date("2026-09-10T11:55:00.000Z"),
         dateClosed: new Date("2026-09-10T12:00:00.000Z"),
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt: CANCELADA_EM,
@@ -1077,6 +1086,7 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
         status: "cancelled",
         dateCreated: new Date("2026-09-15T00:55:00.000Z"),
         dateClosed: new Date("2026-09-15T01:00:00.000Z"),
+        logisticType: null,
         items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
       },
       occurredAt: new Date("2026-09-15T08:40:07.000Z"),
@@ -1101,5 +1111,195 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
 
     expect(resultado.estornos).toEqual([]);
     expect(resultado.excessReversalEstornos).toEqual([]);
+  });
+});
+
+/**
+ * D-352 — pedido entregue pelo Full: nada reverte em LOCAL.
+ *
+ * A unidade nunca saiu da loja, entao nunca volta para ela. O que o
+ * cancelamento (e a devolucao) fazem e COMPLETAR o par da venda, nunca somar
+ * uma reposicao. O invariante medido em todo teste daqui: a venda gravada mais
+ * tudo o que sai soma ZERO.
+ */
+describe("computeCancellationMovements — pedido entregue pelo Full (D-352)", () => {
+  const CORTE = new Date("2026-09-14T18:42:00.000Z");
+  const FECHADO = new Date("2026-09-16T10:00:00.000Z");
+  const CANCELADO = new Date("2026-09-17T11:00:00.000Z");
+  const DEVOLVIDO = new Date("2026-09-18T12:00:00.000Z");
+  const PEDIDO = 2000018515005942;
+  const VENDA = `venda:${String(PEDIDO)}:0`;
+  const CLAIM = "5298178312";
+  const ITEM = { position: 0, totalQuantity: 1, returnQuantity: 1 };
+
+  /** O `VENDA_ML` que o worker ja gravou antes de o sinal do Full chegar. */
+  const GRAVADA: (RecordedSaleMovement & RecordedSale)[] = [
+    { skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: FECHADO, recordedAt: FECHADO },
+  ];
+
+  function entrada(overrides: Partial<CancellationMovementsInput> = {}): CancellationMovementsInput {
+    return {
+      order: {
+        id: PEDIDO,
+        status: "cancelled",
+        dateCreated: new Date("2026-09-16T09:50:00.000Z"),
+        dateClosed: FECHADO,
+        logisticType: "fulfillment",
+        items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
+      },
+      occurredAt: CANCELADO,
+      occurredAtKnown: true,
+      transition: { saleStatus: "paid", cancelledAt: CANCELADO },
+      recordedSales: GRAVADA,
+      estornadas: new Set(),
+      reversals: [],
+      cutoffFor: () => corte(CORTE),
+      ...overrides,
+    };
+  }
+
+  function soma(...listas: readonly (readonly StockMovementDraft[])[]): number {
+    return listas.flat().reduce((total, m) => total + m.qtyDelta, 0);
+  }
+
+  it("venda gravada SEM estorno: grava o ESTORNO_FULL que falta e NENHUM CANCELAMENTO_ML", () => {
+    const resultado = computeCancellationMovements(entrada());
+
+    expect(resultado.estornosFull).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: FECHADO },
+    ]);
+    expect(resultado.reversals).toEqual([]);
+    expect(resultado.estornos).toEqual([]);
+    expect(resultado.sales).toEqual([]);
+    // -1 (gravada) +1 (estorno) = 0.
+    expect(soma([{ ...GRAVADA[0] }] as StockMovementDraft[], resultado.estornosFull)).toBe(0);
+  });
+
+  it("venda JA estornada: nada sai — nem estorno de novo, nem reversao", () => {
+    const resultado = computeCancellationMovements(entrada({ estornadas: new Set([VENDA]) }));
+
+    expect(resultado).toEqual({
+      sales: [],
+      estornos: [],
+      estornosFull: [],
+      excessReversalEstornos: [],
+      reversals: [],
+      alreadyReversed: [],
+    });
+  });
+
+  it("contraprova FORA do Full: a mesma entrada reverte, como sempre", () => {
+    const resultado = computeCancellationMovements(entrada({ order: { ...entrada().order, logisticType: "cross_docking" } }));
+
+    expect(resultado.estornosFull).toEqual([]);
+    expect(resultado.reversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO },
+    ]);
+  });
+
+  it("o trio da D-351 nao sai para pedido do Full: sem venda gravada, NADA — nao ha reposicao a fazer", () => {
+    const resultado = computeCancellationMovements(
+      entrada({
+        recordedSales: [],
+        // Venda anterior ao corte e cancelada depois dele: exatamente o gate do trio.
+        order: { ...entrada().order, dateClosed: new Date(CORTE.getTime() - 60_000) },
+      }),
+    );
+
+    expect(resultado.sales).toEqual([]);
+    expect(resultado.estornos).toEqual([]);
+    expect(resultado.estornosFull).toEqual([]);
+    expect(resultado.reversals).toEqual([]);
+  });
+
+  it("KIT do Full: um ESTORNO_FULL por componente gravado, nenhuma reversao", () => {
+    const kit: (RecordedSaleMovement & RecordedSale)[] = [
+      { skuId: "comp-1", qtyDelta: -4, idempotencyKey: `${VENDA}:comp-1`, occurredAt: FECHADO, recordedAt: FECHADO },
+      { skuId: "comp-2", qtyDelta: -2, idempotencyKey: `${VENDA}:comp-2`, occurredAt: FECHADO, recordedAt: FECHADO },
+    ];
+
+    const resultado = computeCancellationMovements(entrada({ recordedSales: kit }));
+
+    expect(resultado.estornosFull.map((m) => [m.skuId, m.qtyDelta, m.idempotencyKey])).toEqual([
+      ["comp-1", 4, `estorno:${VENDA}:comp-1`],
+      ["comp-2", 2, `estorno:${VENDA}:comp-2`],
+    ]);
+    expect(resultado.reversals).toEqual([]);
+    expect(soma(kit as StockMovementDraft[], resultado.estornosFull)).toBe(0);
+  });
+
+  it("CANCELAMENTO_ML ja gravado antes de o sinal chegar: o estorno sai E a reversao e anulada — senao sobraria +1", () => {
+    const resultado = computeCancellationMovements(
+      entrada({
+        reversals: [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: CANCELADO }],
+      }),
+    );
+
+    expect(resultado.estornosFull).toHaveLength(1);
+    expect(resultado.excessReversalEstornos).toEqual([
+      { skuId: "sku-a", qtyDelta: -1, idempotencyKey: `estorno:cancelamento:${VENDA}`, occurredAt: CANCELADO },
+    ]);
+
+    const gravado: StockMovementDraft[] = [
+      { skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: FECHADO },
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO },
+    ];
+
+    expect(soma(gravado, resultado.estornosFull, resultado.excessReversalEstornos)).toBe(0);
+  });
+
+  it("a anulacao sai de novo mesmo com a venda ja estornada — e o retry que falhou entre o estorno e ela", () => {
+    const resultado = computeCancellationMovements(
+      entrada({
+        estornadas: new Set([VENDA]),
+        reversals: [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: CANCELADO }],
+      }),
+    );
+
+    expect(resultado.estornosFull).toEqual([]);
+    expect(resultado.excessReversalEstornos).toHaveLength(1);
+  });
+
+  it("reversao suprimida EM QUALQUER ORDEM: cancelamento -> devolucao e devolucao -> cancelamento dao o mesmo zero", () => {
+    // (a) o cancelamento chega primeiro e completa o par; a devolucao entregue depois nao acha o que reverter.
+    const cancelAntes = computeCancellationMovements(entrada());
+    const devolucaoDepois = computeReturnReversal(
+      { id: PEDIDO, logisticType: "fulfillment" },
+      ITEM,
+      GRAVADA,
+      [],
+      CLAIM,
+      DEVOLVIDO,
+      new Set(),
+      new Set([VENDA]),
+    );
+
+    expect(cancelAntes.estornosFull).toHaveLength(1);
+    expect(cancelAntes.reversals).toEqual([]);
+    expect(devolucaoDepois.movements).toEqual([]);
+    expect(devolucaoDepois.estornosFull).toEqual([]);
+
+    // (b) a devolucao chega primeiro; o cancelamento depois nao acrescenta nada.
+    const devolucaoAntes = computeReturnReversal(
+      { id: PEDIDO, logisticType: "fulfillment" },
+      ITEM,
+      GRAVADA,
+      [],
+      CLAIM,
+      DEVOLVIDO,
+      new Set(),
+      new Set(),
+    );
+    const cancelDepois = computeCancellationMovements(entrada({ estornadas: new Set([VENDA]) }));
+
+    expect(devolucaoAntes.estornosFull).toEqual(cancelAntes.estornosFull);
+    expect(devolucaoAntes.movements).toEqual([]);
+    expect(cancelDepois.estornosFull).toEqual([]);
+    expect(cancelDepois.reversals).toEqual([]);
+
+    const gravada = [{ ...GRAVADA[0] }] as StockMovementDraft[];
+
+    expect(soma(gravada, cancelAntes.estornosFull, devolucaoDepois.movements, devolucaoDepois.estornosFull)).toBe(0);
+    expect(soma(gravada, devolucaoAntes.estornosFull, cancelDepois.reversals, cancelDepois.estornosFull)).toBe(0);
   });
 });
