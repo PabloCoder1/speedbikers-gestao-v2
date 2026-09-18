@@ -73,6 +73,8 @@ interface FakeDbOptions {
     access_token_expires_at: string;
   } | null;
   links?: { item_id: string | null; sku_id: string }[];
+  /** Linhas de `fulfillment_item_absences` (marca de 404/403 anterior). */
+  absences?: { item_id: string; failures: number; first_failed_at: string; recheck_after: string }[];
 }
 
 const DEFAULT_ACCOUNT = { id: ML_ACCOUNT_ID, organization_id: ORGANIZATION_ID, status: "CONNECTED" };
@@ -108,6 +110,10 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         if (table === "sku_listing_links") {
           return chain({ data: links, error: null });
+        }
+
+        if (table === "fulfillment_item_absences") {
+          return chain({ data: options.absences ?? [], error: null });
         }
 
         // fulfillment_stock_snapshots (previous lookup) — sempre "nunca visto".
@@ -282,6 +288,140 @@ describe("sync.fulfillment.snapshot", () => {
     const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { status: string; reason: string | null };
     expect(syncRun.status).toBe("partial");
     expect(syncRun.reason).toContain("1");
+  });
+
+  describe("captura zero com item fora do ar: fulfillment_snapshot_zero_capture", () => {
+    // 16/09/2026 21:00 UTC, produção: 403 em todos os 3.220 itens das quatro
+    // contas, as quatro terminaram `done` com `processed = 0`, e nada nomeava
+    // "o Full desta conta ficou sem captura". O aviso dá nome ao silêncio sem
+    // mudar status nem retry.
+    function forbidden(): Promise<never> {
+      return Promise.reject(
+        new MercadoLivreApiError("Mercado Livre respondeu 403 para GET /items/x.", {
+          status: 403,
+          errorClass: "not_retryable",
+          url: "x",
+        }),
+      );
+    }
+
+    const warnOf = (lines: string[]) => lines.find((line) => line.includes("fulfillment_snapshot_zero_capture"));
+
+    it("403 em todos os itens: avisa, e o desfecho continua done/0 — sem retry, sync_runs partial", async () => {
+      const { deps: d, db, lines } = deps({
+        links: [
+          { item_id: "MLB1", sku_id: "sku-1" },
+          { item_id: "MLB2", sku_id: "sku-2" },
+        ],
+      });
+      d.mercadoLivre.request = forbidden;
+
+      const outcome = await run(d, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      const warn = warnOf(lines);
+      expect(warn).toBeDefined();
+      expect(warn).toContain('"severity":"WARNING"');
+      expect(warn).toContain('"items_failed":2');
+      expect(warn).toContain(`"job_id":"${ENVELOPE.jobId}"`);
+      expect(db.inserted.find((e) => e.table === "sync_runs")?.row).toMatchObject({ status: "partial" });
+    });
+
+    it("captura zero SEM item fora do ar (conta sem Full): nenhum aviso — é o estado normal", async () => {
+      const { deps: d, lines } = deps(
+        { links: [{ item_id: "MLB1", sku_id: "sku-1" }] },
+        { MLB1: { id: "MLB1", inventory_id: null } },
+      );
+
+      const outcome = await run(d, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(warnOf(lines)).toBeUndefined();
+    });
+
+    it("captura com item falhando mas outros capturados: nenhum aviso", async () => {
+      const { deps: d, lines } = deps({
+        links: [
+          { item_id: "MLB1", sku_id: "sku-1" },
+          { item_id: "MLB2", sku_id: "sku-2" },
+        ],
+      });
+      d.mercadoLivre.request = ((options: RequestOptions<unknown>) => {
+        if (options.path === "/items/MLB2") return forbidden();
+        if (options.path === "/items/MLB1") return Promise.resolve({ id: "MLB1", inventory_id: "INV-1" });
+
+        return Promise.resolve({ inventory_id: "INV-1", available_quantity: 3 });
+      }) as MercadoLivreClient["request"];
+
+      const outcome = await run(d, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 1 });
+      expect(warnOf(lines)).toBeUndefined();
+    });
+
+    it("captura zero com os itens só ADIADOS por marca vigente: avisa e fica partial com o motivo do adiamento", async () => {
+      const { deps: d, db, requests, lines } = deps({
+        links: [{ item_id: "MLB9", sku_id: "sku-9" }],
+        absences: [
+          {
+            item_id: "MLB9",
+            failures: 1,
+            first_failed_at: NOW.toISOString(),
+            recheck_after: new Date(NOW.getTime() + 3_600_000).toISOString(),
+          },
+        ],
+      });
+
+      const outcome = await run(d, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(requests).toHaveLength(0);
+      expect(warnOf(lines)).toContain('"items_deferred":1');
+      const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { status: string; reason: string | null };
+      expect(syncRun.status).toBe("partial");
+      expect(syncRun.reason).toBe("1 item(ns) adiado(s) por 404/403 anterior, sem nova consulta");
+    });
+  });
+
+  it("partial com falha E adiamento na mesma execução: o motivo nomeia os dois", async () => {
+    const { deps: d, db, lines } = deps({
+      links: [
+        { item_id: "MLB1", sku_id: "sku-1" },
+        { item_id: "MLB2", sku_id: "sku-2" },
+        { item_id: "MLB9", sku_id: "sku-9" },
+      ],
+      absences: [
+        {
+          item_id: "MLB9",
+          failures: 1,
+          first_failed_at: NOW.toISOString(),
+          recheck_after: new Date(NOW.getTime() + 3_600_000).toISOString(),
+        },
+      ],
+    });
+    d.mercadoLivre.request = ((options: RequestOptions<unknown>) => {
+      if (options.path === "/items/MLB2") {
+        return Promise.reject(
+          new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /items/MLB2.", {
+            status: 404,
+            errorClass: "not_retryable",
+            url: "x",
+          }),
+        );
+      }
+      if (options.path === "/items/MLB1") return Promise.resolve({ id: "MLB1", inventory_id: "INV-1" });
+
+      return Promise.resolve({ inventory_id: "INV-1", available_quantity: 3 });
+    }) as MercadoLivreClient["request"];
+
+    await run(d, lines);
+
+    const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { status: string; reason: string | null };
+    expect(syncRun.status).toBe("partial");
+    expect(syncRun.reason).toBe(
+      "1 item(ns) falharam ao consultar o Mercado Livre (404/403); 1 item(ns) adiado(s) por 404/403 anterior, sem nova consulta",
+    );
+    expect(lines.find((line) => line.includes("sync_fulfillment_snapshot_done"))).toContain('"items_deferred":1');
   });
 
   it("nunca loga access_token, refresh_token nem client_secret", async () => {

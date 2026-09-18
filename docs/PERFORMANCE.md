@@ -377,6 +377,7 @@ cardinalidade 1; o multiplicador real é o número de **pedidos** na janela.
 | O quê | Medição | Item |
 |---|---|---|
 | Webhooks sem consumidor viravam Cloud Task | `sync.webhook.received` = **243.944** de 265.276 linhas de `job_runs` (92%) | ✅ P0-C, D-179 |
+| Full perguntava a cada 6 h por anúncio que já respondeu 404 | os mesmos **356** `GET /items/{id}` com 404 em 14 de 15 execuções (a outra: 403 em tudo) = **1.424 chamadas/dia** | ⏳ marca de ausência (seção "Full: anúncio morto…" abaixo), conferir depois do deploy |
 
 Cada uma dessas linhas custou: notificação → API → Cloud Task → dispatch →
 Cloud Run → router → gravação em `job_runs` → retorno. Para nada.
@@ -475,6 +476,197 @@ venda no Dev entre as duas capturas. A comparação correta roda as duas
 definições **na mesma consulta, sobre o mesmo snapshot MVCC**: zero
 divergências em 3.175 SKUs. Num banco que recebe escrita, medir "antes" e
 "depois" em momentos diferentes compara duas coisas ao mesmo tempo.
+
+---
+
+### Full: anúncio morto sai da varredura até o recheque (18/09/2026)
+
+A tabela de 15/09 acima registrou "356 | 356" de falhas por item como
+constante conhecida. Constante era: medido em **produção** (`imvjfgna…`),
+logs `fulfillment_item_fetch_failed` do worker cruzados com `sync_runs` e
+`job_runs`, de 15/09 03:00 a 18/09 09:00 UTC:
+
+| Medida | Valor |
+|---|---|
+| execuções do snapshot do Full | 15 (cadência de 6 h + uma manual em 15/09 17:39) |
+| pares (conta, `item_id`) com 404 em `GET /items/{id}` | **356** — 79, 40, 111 e 126 por conta |
+| em quantas execuções cada par falhou com 404 | **14 de 15**; nenhum par entrou nem saiu. Na 15ª (16/09 21:00) tudo respondeu 403 |
+| chamadas que só ouvem a mesma resposta | 356 por execução, **1.424 por dia** |
+| peso na execução | 356 de ~3.753 `GET /items` (9,5%), mais ~2.179 chamadas de estoque |
+| 403 | uma vez só: 16/09 21:00, **3.220 de 3.220** itens das quatro contas em ~7 s |
+
+**Captura zero: uma execução, não duas.** A auditoria listou 14/09 18:00 e
+16/09 21:00. A de 14/09 (18:32, `processed = 0`) rodou antes da importação
+dos vínculos (18:43): zero vínculos, zero falhas — conta sem nada a capturar,
+não silêncio. A de 16/09 é o caso real: 403 em tudo, as quatro contas `done`
+com `processed = 0`, e o único sinal eram 3.220 avisos por item, iguais aos
+356 de toda execução normal. A execução seguinte (17/09 03:00) capturou
+normalmente.
+
+**Onde a marca mora: `fulfillment_item_absences`** (migration
+`20260918170000_full_item_ausente.sql`), uma linha por (conta, `item_id`).
+Não em `sku_listing_links`: é o vínculo curado, com histórico e dois
+gatilhos por linha, e a marca reescrita a cada 6 h mexeria no `updated_at`
+que a `/vinculacoes` lê. Não em `listings`: 667 dos 3.753 vínculos sem
+variação não têm linha lá — o anúncio morto é justamente o que o snapshot
+de anúncios não traz.
+
+**A regra das janelas** (`ITEM_ABSENCE_RECHECK_MS` e `itemAbsenceRecheckMs`
+em `apps/worker/src/handlers/ml-fulfillment-fetch.ts`):
+
+| Resposta | Janela | Com a cadência de 6 h | Por quê |
+|---|---|---|---|
+| 403 (qualquer) | **9 h** | pula 1 execução, pergunta de novo na seguinte | permissão muda; o único 403 medido passou sozinho em 6 h |
+| 1º 404 de uma sequência | **9 h** | pula 1, pergunta de novo 12 h depois | um 404 isolado num anúncio vivo custa o mesmo que um 403 |
+| 404 a partir do 2º seguido | **45 h** | pula 7, recheque na 8ª (48 h) | anúncio que não existe mais; 404 em todas as 14 execuções sem 403 em massa |
+
+As janelas caem no **meio** do intervalo entre execuções: com um múltiplo
+exato de 6 h, segundos de atraso no disparo escorregariam o recheque uma
+execução inteira. Exigir o segundo 404 custa **uma** chamada a mais por
+anúncio morto, uma vez (356 na execução de +12 h depois do deploy), e desarma
+o falso 404 único.
+
+**O que a regra garante é atraso, não "o bucket nunca some".** O teto da
+janela longa vem do Full atual: a definição canônica (D-173) aceita snapshot
+de até 3 dias. Com as execuções vizinhas capturando, o pior caso de um
+anúncio vivo que tome dois 404 falsos seguidos é: último snapshot bom 6 h
+antes do primeiro 404 + 12 h até o segundo + 48 h até o recheque = **66 h <
+72 h**, e o bucket continua nas telas com a quantidade de antes da falha,
+sem sinal de atraso. Se as vizinhas **também** falharem — a execução anterior
+ao primeiro 404 sem snapshot (como 16/09 21:00), ou a do recheque perdida
+por 429 ou 403 em massa —, o intervalo passa de 72 h e o bucket sai do Full
+atual (some da `/reposicao` e do estoque) até a próxima captura. Um teste
+trava a conta dos 66 h; janela longa acima de 48 h empurra o recheque para
+54 h e zera a folga.
+
+A conta também pressupõe execução **pontual**. A janela conta do início
+real da tentativa que grava a marca (`capturedAt`), não do horário agendado,
+e cada janela vence 3 h antes da execução que deve perguntar de novo (9 h
+contra 12 h, 45 h contra 48 h). Se a execução que grava a marca começar com
+mais de 3 h de atraso (uma reentrega do Cloud Tasks horas depois, por
+exemplo), o recheque escorrega uma execução inteira: 6 + 12 + 54 = 72 h, sem
+folga, e o bucket sai do Full atual por alguns minutos. Em `sync_runs`
+(produção), as execuções agendadas de 14/09 a 18/09 começaram todas até
+21 s depois da hora cheia.
+
+Por que isso fica em "atraso aceitável" e não em defeito: nos 2.187 itens
+capturados nas 15 execuções de 14/09 21:00 a 18/09 09:00 (produção), **zero
+buracos** — nenhum item faltou numa execução e voltou na seguinte. 404
+passageiro não foi observado; a exigência do segundo 404 é a proteção barata
+para o dia em que for.
+
+**Guardas, para o pior caso ser atraso e nunca estoque escondido:**
+
+- **Falha em massa não marca.** Mais da metade das consultas da execução
+  falhando é a conta (ou o Mercado Livre), não o item: 16/09 teria marcado
+  3.220 itens e apagado mais uma execução inteira. Log
+  `fulfillment_item_absences_skipped_mass_failure`.
+  A razão é medida só sobre os itens **consultados** (adiado não entra no
+  denominador), e o 401 conta como falha mesmo sem virar marca. Na execução
+  de recheque, falha em massa também não renova a marca vencida.
+- **Só 403 e 404 viram marca.** 401 e outros não retryable são da conta.
+- **Sucesso apaga a marca** — inclusive item que voltou sem Full.
+- **Item desvinculado leva a marca junto.** Vínculo apagado ou refeito para
+  outro anúncio tira o `item_id` de `sku_listing_links`; ele nunca mais seria
+  consultado, e a marca ficaria para sempre. A execução seguinte a apaga
+  (log `fulfillment_item_absences_updated`, campo `unlinked`), então a tabela
+  conta só item vinculado.
+- **A tabela é otimização.** Leitura ou escrita com erro loga
+  (`fulfillment_item_absences_unreadable` / `_not_recorded` /
+  `_not_cleared`) e segue; sem a tabela o worker busca todos os itens, como
+  antes. Por isso a ordem do deploy não importa: worker antes da migration
+  só gera o aviso de leitura a cada execução.
+- Item adiado continua `partial` em `sync_runs`: o vínculo segue apontando
+  para anúncio fora do ar, e isso não pode virar `done` limpo na Saúde da
+  Sincronização. O motivo passa a separar "falharam" de "adiado(s)".
+
+**Aviso de captura zero:** `fulfillment_snapshot_zero_capture` (warn) quando
+a execução termina com `processed = 0` e houve item fora do ar — falha nesta
+execução ou adiado por marca vigente. Não muda status nem retry.
+
+- **Quem alcança a conta lê a marca; só o worker escreve.** Mesma RLS de
+  `metric_refresh_state` (D-304). Nenhuma guarda de catálogo pega uma policy
+  trocada por `using (true)` ou filtrada por organização em vez de conta; o
+  bloco `fulfillment_item_absences respeita o alcance por conta` em
+  `rls.integration.test.ts` trava isso (ANALISTA sem permissão na conta não
+  vê a marca dela, ADMIN vê, `authenticated` não insere/atualiza/apaga).
+
+**Esperado:** as 356 marcas nascem juntas na primeira execução depois do
+deploy, com a janela curta; a execução de +12 h pergunta de novo, ouve o
+segundo 404 e as passa para a longa. Dali em diante vencem juntas: 356
+consultas a cada 48 h ≈ **178 por dia no lugar de 1.424** (−87,5%), mais
+uma rodada de 356 nas primeiras 12 h. `items_processed` não deve mudar:
+anúncio 404 nunca teve inventário para capturar.
+
+#### Como conferir depois do deploy
+
+`job_runs` não guarda `itemsFailed` — só `processed`. A contagem por
+execução está no `reason` de `sync_runs` e no log
+`sync_fulfillment_snapshot_done` (`items_failed`, `items_deferred`).
+
+```sql
+-- Producao. Primeira execucao depois do deploy: falharam = 356, adiados = 0.
+-- +6 h: falharam = 0, adiados = 356. +12 h: falharam = 356 (o segundo 404).
+-- Sete seguintes: adiados = 356. +60 h (48 h depois do segundo): 356 de novo.
+-- capturados nao menor que o da execucao anterior ao deploy (o numero cresce
+-- com vinculo novo: 1.967 em 17/09, 2.179 e 2.387 em 18/09); cair e defeito.
+select date_trunc('hour', started_at) as execucao,
+       sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) falharam'))[1]::int, 0)) as falharam,
+       sum(coalesce((regexp_match(reason, '(\d+) item\(ns\) adiado'))[1]::int, 0)) as adiados,
+       sum(items_processed) as capturados
+from sync_runs
+where resource = 'fulfillment' and started_at >= now() - interval '3 days'
+group by 1 order by 1 desc;
+
+-- As marcas: ~356 com status 404 (79/40/111/126 por conta). Nas primeiras
+-- 12 h, failures = 1 e recheck_after ~9 h depois da execucao; da execucao
+-- de +12 h em diante, failures >= 2 e recheck_after ~45 h depois. So item
+-- vinculado: a marca de vinculo apagado sai na execucao seguinte.
+select ml_account_id, http_status, count(*) as marcas,
+       min(recheck_after) as primeiro_recheque, max(failures) as max_falhas
+from fulfillment_item_absences
+group by 1, 2 order by 1, 2;
+```
+
+```bash
+# 404/403 por execucao (esperado: 356 na primeira, 0 na de +6 h, 356 na de +12 h, 0 nas sete seguintes)
+gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.message="fulfillment_item_fetch_failed" AND timestamp>="<deploy>"' \
+  --project speedbikers-prod --limit 20000 --format 'value(timestamp,jsonPayload.status)'
+
+# Tem de ser vazio depois da migration aplicada (senao o worker esta buscando tudo)
+gcloud logging read 'resource.labels.service_name="worker" AND jsonPayload.message="fulfillment_item_absences_unreadable" AND timestamp>="<deploy>"' \
+  --project speedbikers-prod --limit 20
+```
+
+Se o número de marcas for muito maior que 356 logo depois do deploy, olhar
+`http_status`: 403 em massa deveria ter sido barrado pela guarda.
+
+#### O que a revisão mudou (18/09/2026)
+
+- **Os testes do worker não travavam o que diziam.** O fake da tabela
+  ignorava o `.eq` e devolvia o texto de `toISOString()`: 7 de 9 mutações
+  sobreviviam com todos os testes verdes — entre elas tirar o filtro de conta
+  da leitura (a service role ignora RLS, então ele é o único escopo) e mover a
+  fronteira da guarda de massa. O fake passou a aplicar o filtro, guardar
+  marca de outra conta e devolver `timestamptz` como o PostgREST
+  (`+00:00`, sem fração zero). Com os testes novos: **15 de 15** mutações
+  pegas (as 9 da revisão e 6 no código novo). Impacto real do filtro de conta
+  hoje é nulo — nenhum `item_id` está vinculado a mais de uma conta em
+  produção (medido em 18/09: 0 itens em mais de uma conta; nenhum índice
+  impede, porque `sku_listing_links_item_only_unique` é por
+  (conta, `item_id`)) —, mas o teste agora reprova se ele sair.
+- **Comparar `recheck_after` como texto** dá o mesmo resultado que comparar
+  instante enquanto o PostgREST devolve UTC; um `timezone` no banco ou no
+  papel mudaria a saída sem mudar código. `Date.parse` fica, e um teste com
+  `-03:00` trava isso.
+- **O fake aplica os CHECKs da migration.** O upsert das marcas é um
+  comando só: no banco, uma linha com `http_status` fora de (403, 404)
+  derruba o lote inteiro, e as marcas legítimas da conta se perdem junto
+  (só fica o aviso `_not_recorded`). O fake gravava qualquer linha, e a
+  mutação "marca também o 400" passava com todos os testes verdes. Agora o
+  fake recusa o lote como o banco, e o teste de "não vira marca" roda com
+  400 e 401 ao lado de um 404.
+- **Marca órfã**, **segundo 404** e **o texto de "nunca some"**: acima.
 
 ## Histórico de otimizações medidas
 
@@ -997,3 +1189,58 @@ Migration: `supabase/migrations/20260918010000_drop_indices_sem_uso.sql`.
 ### `/reposicao`: duas leituras de ~490 ms viram uma de ~255 ms (D-358)
 
 Dev, `authenticated` real, 16/09/2026, 8 execuções. `get_purchase_suggestions` e `get_purchase_state_counts` custavam ~490 ms cada (2.420 ms a frio), e o corpo com literais, 218 ms — plano genérico de `language sql` com `SET` (D-305/D-307). A tela chamava as duas, e as contagens classificavam o catálogo inteiro de novo. Depois (funções em `pg_temp`, transação desfeita): sugestão em plpgsql com plano custom 198–202 ms, com md5 idêntico nas 3.284 linhas; `get_replenishment_overview`, uma leitura para página + contagens + investimento, 251–260 ms. Peças do corpo: curva ABC 82 ms, Full 34 ms, tendência 17 ms, histórico 10 ms — a curva é o próximo alvo, se precisar.
+
+### `/faturamento`: o custo do produto por SKU, não por item (18/09/2026)
+
+Produção (`imvjfgnaprqsfjlnsyev`), `authenticated` com o ADMIN real, cada medida numa transação desfeita, uma por vez. Migration `20260918160000_faturamento_sem_varredura.sql` (o carimbo segue a última migration da `v3`: o `db push` da CI recusa versão menor que a última aplicada); consultas e saídas guardadas fora do repositório, na pasta da auditoria de 18/09 (`auditoria2/fat`).
+
+**A premissa da auditoria não se confirmou.** Ela leu "+331 mil `seq_tup_read` em `orders` e `order_items`" numa chamada de 7 dias. Remedido com `pg_stat_user_tables` antes e depois de UMA chamada: `seq_scan` e `seq_tup_read` das duas tabelas não se mexeram, e `idx_scan` de `order_items` subiu 5.420. O delta veio de outra leitura no mesmo intervalo — `seq_tup_read` de produção é compartilhado com todo o tráfego, como o aviso de D-198 diz do Dev. O corpo já chegava a `orders` pelo `orders_date_created_idx` e a `order_items` pela chave do pedido.
+
+**O custo era outro.** O corpo com `$1..$4` em `prepare` + `force_generic_plan` (é como a `language sql` planeja), 30 dias, 27.880 pedidos:
+
+| Nó | Buffers |
+|---|---:|
+| `orders` pela data | 27.364 |
+| `order_items`, uma busca por pedido | 111.545 |
+| `skus`, uma busca por **item** | 65.759 |
+| `sku_cost_history`, uma por item | 46.520 |
+| kit (componentes + skus + histórico), por item | 60.722 |
+| `order_financials`, uma busca por pedido (tabela de 117 páginas) | 64.708 |
+| sort externo (2,9 MB) + HashAggregate em 21 lotes (3,6 MB em disco) | — |
+
+Quase dois terços (238 mil) eram o `LATERAL` de custo e o frete, buscados item a item em tabelas que cabem inteiras em memória.
+
+**O que mudou.** (1) `historico` lê `sku_cost_history` só dos SKUs da janela e dos componentes dos kits deles, e vira intervalos `[changed_at, próxima changed_at)` com `lead()`; o item acha o seu por hash em `sku_id` + o filtro do intervalo — o mesmo "último `new_cost` com `changed_at <= date_created`" de D-356. (2) O pedido é agregado antes do frete, e `order_financials` entra uma vez, por hash; somem as duas janelas (`count(*) over`, `row_number()`) e o sort externo. (3) `order_items` continua pela chave do pedido, e um `offset 0` no `LATERAL` garante: com a estimativa certa, o planejador **prefere varrer `order_items` inteira** em hash join — medido, 331.771 linhas, 7.119 páginas do disco, 2,1 s com cache frio. (4) `plpgsql` + `force_custom_plan` (D-305/D-319); no Dev, oito execuções seguidas na mesma sessão: 535, 495, 495, 497, 493, 497, 493, 491 ms, sem salto na sexta (a atual: 727–741 ms). (5) As listas desempatam por `sku_id` (e `por_conta` por `ml_account_id`): heapsort top-N e quicksort não são estáveis, e entre dois SKUs com a mesma receita a ordem, e quem entra no corte de 30 ou de 20, era escolha do plano; produção tinha um empate real em 178,27 nas posições 28–29. (6) `historico` só guarda os intervalos que cruzam a janela (`desde < fim` e `ate` nulo ou `> início`), filtrados por fora do `lead()`. Sem isso, cada item era comparado com todas as mudanças do seu SKU, e o custo crescia com o histórico. Hoje não pesa (uma linha por SKU). No Dev, com 52 mudanças semanais sintéticas por SKU e 30 dias (corpo com literais, como `postgres`, transação desfeita), as linhas descartadas no filtro do intervalo caíram de 1.307.691 para 115.251 nos itens e de 112.302 para 9.734 nos kits: 885–903 ms viraram 734–749 ms, com os mesmos 147 mil buffers. A leitura e a ordenação do histórico dos SKUs da janela continuam.
+
+A tabela abaixo mede o corpo sem os itens 5 e 6:
+
+| Janela | Buffers | Temp escrito (blocos) | Tempo |
+|---|---:|---:|---:|
+| 7 dias, antes | 83.861 | 31 | 195–197 ms |
+| 7 dias, depois | 29.636 | 0 | 155–168 ms |
+| 30 dias, antes | 382.748 | 2.409 | 740–1.094 ms |
+| 30 dias, depois | 140.370 | 735 | 538 ms (529 + 9 de planejamento) |
+| 30 dias, só resumo, antes | 379.173 | 2.409 | 680 ms |
+| 30 dias, só resumo, depois | 139.866 | 734 | 432 ms |
+
+"Antes" é o `SELECT` da função (o corpo roda sem instrumentar os nós); "depois" é o corpo novo com os parâmetros como literais, que é o plano custom que a `plpgsql` monta, com `timing off`. `pg_stat_statements` registrava a antiga, via PostgREST, a 1,7–1,8 s de média e 353–386 mil blocos por chamada — a tela chama duas vezes (período e anterior, este só com o resumo), e as duas caem na mesma proporção.
+
+**Prova de números — a tela de dinheiro do dono.** Os valores não mudam. A ordem entre empatados nas listas pode mudar (item 5). Em produção, a função atual contra o corpo sem os itens 5 e 6, com literais, na MESMA instrução (mesmo snapshot), comparando `jsonb` e o texto (`md5` do `::text`, que também pega escala de numeric):
+
+| Cenário | `jsonb` | Texto |
+|---|---|---|
+| 7 dias (12–18/09) | igual | igual |
+| 30 dias (20/08–18/09) | igual | igual |
+| 90 dias (21/06–18/09) | igual | igual |
+| agosto inteiro | igual | igual |
+| conta GMR, 30 dias | igual | igual |
+| `p_detalhe = false`, 30 dias | igual | igual |
+| GMR + agosto + `p_detalhe = false` | igual | igual |
+
+Com o desempate, a revisão de 18/09 comparou em produção 09/09 na conta loja 1: `jsonb` e texto **diferentes**, e **iguais** depois de ordenar as listas pela ordem nova. Só a ordem dos empatados em `maior_receita` mudou. Um empate em cima do corte (posição 30 ou 20) também decide quem entra na lista: antes decidia o plano, agora decide o `sku_id`. A comparação campo a campo do corpo **final** (itens 1 a 6) em produção não foi refeita nesta rodada, porque a leitura de produção não estava disponível para a sessão.
+
+O histórico de custo de produção tem **uma linha por SKU**, todas de 14/09, então "o custo mudou no meio da janela" não aparece lá. Isso foi provado no Dev, primeiro com a versão sem os itens 5 e 6 (4.615 linhas sintéticas; a migration aplicada e desfeita deu o mesmo `md5` da atual em 7d, 30d, resumo e conta). Depois, com o corpo **final** em `pg_temp` contra a função atual, numa transação desfeita, com 22.321 linhas sintéticas em 1.762 SKUs (mudança antes, dentro e depois da janela, custo 0 e NULL), mudança no instante exato de 40 vendas, 30 pedidos com dois itens e componentes de kit. Em 7d, 30d, 90d, fevereiro (todo o histórico depois da janela), um dia, uma conta e resumo, comparando campo a campo (resumo, diário, por conta, as duas listas e as contagens), `jsonb` e texto deram idênticos, com e sem ordenar as listas. O fixture do teste de integração, rodado lá, deu os números que o teste espera. A migration final, aplicada e desfeita no Dev, passou pelas guardas de catálogo do teste e fez oito execuções seguidas de 30 dias em 507–574 ms (como `postgres`), sem salto na sexta. A outra diferença possível, também documentada, é o empate de `changed_at` no mesmo SKU: a nova escolhe o maior `id`, e a antiga pegava o que o plano entregasse primeiro. Produção: zero empates.
+
+**Tentado e descartado.** Passar os pedidos da janela como array constante (plpgsql em dois passos) para ler `order_items` por `= any(...)` em bitmap: 4.492 buffers e 29 ms isolado, contra 112 mil. Mas a junção do array com `order_items` sai estimada em **1 linha** (o `unnest` não tem estatística), o resto do plano vira nested loop sobre CTE, e a chamada estourou 120 s no Dev. Relendo `orders` por `id = any(...)` a estimativa ficou em 152 para 28.611 reais. Estimativa frágil numa tela de dinheiro não compensa 100 mil buffers.
+
+**O que sobra.** Das 140 mil, 111 mil são as buscas de `order_items` por pedido (4 por pedido) e 27 mil a leitura de `orders`: o índice `(organization_id, date_created)` é percorrido desde o começo, porque a consulta não tem a organização (a RLS filtra por conta). Um índice de `orders` por data que cubra as colunas lidas cortaria as 27 mil para centenas, ao custo de escrita em toda gravação de pedido — decisão para medir antes, não para esta fatia.
