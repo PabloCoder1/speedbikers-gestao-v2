@@ -13649,3 +13649,27 @@ O cartao "Em mediacao" da Home (a lista de `/atendimento` nao tem filtro de medi
 
 - a reconexao so funciona depois do deploy da api -- ato do dono (deploy de producao e bloqueado para o agente);
 - lotes 2 a 4 do pente fino: Caixa de Entrada; ligacoes entre telas, busca por teclado e confirmacoes; limpeza visual de `/skus/[skuId]`, `/compras/[id]` e do Copiloto.
+
+## D-384 - Pente fino, lote 2: Caixa de Entrada com faixa clicavel, busca, "Meus", mediacao e prazo com leitura; metricas de SAC ligadas a fila
+
+**Contexto:** o pente fino de 18/09 (D-383) achou a Caixa de Entrada abaixo do padrao das telas redesenhadas: tres fileiras de pilulas, um numero so no topo, o status do Mercado Livre cru ("UNANSWERED"), a coluna de prazo so com a data e nenhum jeito de achar a propria fila ou um caso citado pelo cliente entre 900+ abertos. As metricas de SAC eram cartoes estilizados a mao, sem ligacao com a fila e com legendas para desenvolvedor ("D-107", "due_at").
+
+**1. FAIXA CLICAVEL, COM A FONTE CANONICA**
+
+A faixa usa `get_support_metrics` (METRICS 5B) -- a MESMA leitura de /atendimento/metricas, entao os dois lugares nao podem discordar. Cada numero abre a fila que conta: "Prazo vencido" -> `?prazo=vencido`, "Vence em 24 h" -> `?prazo=24h`, "Em mediacao" -> `?mediacao=1`, "Meus abertos" -> `?meus=1` (contagem propria com `head`). **"Aguardando a loja" nao e link, de proposito**: a regra compara duas colunas da linha (`last_inbound_at > last_outbound_at`), o filtro do PostgREST nao expressa isso sem migration, e um link abriria uma fila que nao bate com o numero. A faixa conta a organizacao inteira e e navegacao (parte do recorte limpo); o numero do recorte e o subtitulo do painel (D-236).
+
+**2. FILTROS NOVOS (`lib/support-filters.ts`)**
+
+`prazo` deixou de ser booleano: `risco` (o de sempre, D-115 -- continua valendo para os Filtros Salvos), `vencido` e `24h`, as duas metades que a metrica conta. `meus` (`assignee_id` = quem ve; sem saber quem ve, a fila fica vazia com aviso, nunca "todos"), `mediacao` (`is_mediation`, faceta do claim, D-084) e `busca`. A busca e classificada por funcao pura com teste: so digitos procura o numero do caso E o do pedido; `MLB...` o anuncio; o resto e codigo de SKU. Cada ramo usa indice que ja existia (`support_case_links_{order,sku,listing}_idx`) e nenhum le a base inteira; teto de 500 casos.
+
+**3. A FILA**
+
+Pilulas viraram `FilterMenu` (conta, tipo, status) mais tres recortes rapidos (Meus, Prazo em risco, Mediacao) e "Limpar filtros". O prazo ganhou leitura (`lib/support-deadline.ts`): "vencido ha 3 h" em vermelho e a linha com borda, "vence em 5 h" em amarelo, com os limites de `get_support_metrics`. A coluna "SLA" virou "Prazo". O status cru do Mercado Livre e traduzido (`supportExternalStatusLabel`, valores medidos no Dev: `UNANSWERED`, `ANSWERED`, `BANNED`, `active`, `blocked`, `opened`, `closed`; valor novo degrada para o cru). Botao "Abrir" por linha, paginador com "Pagina X de Y", estados vazio/erro/pagina-alem-do-fim desenhados. Ficou: ordem por `last_activity_at` sem prometer priorizacao (D-267), o recorte e a pagina viajando com o caso (D-286/D-289) e a triagem por RPC (D-094).
+
+**4. METRICAS E TEMPLATES**
+
+/atendimento/metricas usa a faixa do design system, os numeros de "agora" abrem a fila, e as legendas falam com o operador. Em /atendimento/templates, "Apagar" pede confirmacao na propria linha ("Sim, apagar" / "Cancelar") -- antes o primeiro clique apagava. O cartao "Em mediacao" da Home passa a abrir `?mediacao=1` (abria todas as reclamacoes; ficou pendente em D-383).
+
+**5. VERIFICACAO**
+
+`tsc` e `eslint`; unidade da web **831 verdes** (novos em `support-filters` e `support-deadline`); `next build`; e2e `atendimento.spec.ts` + `home.spec.ts` **16 verdes** contra `next start`, com um teste novo (faixa com link certo e "Aguardando a loja" sem link, busca por SKU, "Meus", "Limpar filtros"). Quatro asserções antigas mudaram com a tela (texto do vazio, coluna "Prazo", janela no subtitulo do painel, rotulos do paginador). O teste de "Assumir" e stateful: numa segunda passada sem `db reset` o caso ja esta atribuido -- restaurado com `update` no banco local entre as passadas. Capturas a 1440 e 390 px sem rolagem lateral.
