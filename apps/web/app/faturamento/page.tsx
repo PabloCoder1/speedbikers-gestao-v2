@@ -5,6 +5,7 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando";
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate } from "../../lib/format";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
@@ -202,12 +203,20 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
       </Suspense>
 
-      <Suspense fallback={<CarregandoBloco rotulo="campanhas do Mercado Ads" />}>
-        <CampanhasAds
-          leitura={Promise.resolve(leituraAds)}
-          periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
-        />
-      </Suspense>
+      <section id="ads" className="sb-ads" aria-label="Mercado Ads">
+        <Suspense
+          fallback={
+            <Panel title="Mercado Ads — campanhas" subtitle="Carregando investimento e campanhas do período">
+              <CarregandoBloco rotulo="campanhas do Mercado Ads" />
+            </Panel>
+          }
+        >
+          <CampanhasAds
+            leitura={Promise.resolve(leituraAds)}
+            periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+          />
+        </Suspense>
+      </section>
 
       {/*
         A CALCULADORA DE PREÇO (D-359). Fora do Suspense dos números: ela não
