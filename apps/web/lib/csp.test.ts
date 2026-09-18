@@ -39,9 +39,13 @@ describe("montarCsp", () => {
     );
   });
 
-  it("img-src abre só o Supabase, para as fotos de perfil (D-354)", () => {
-    expect(diretiva(montarCsp(base), "img-src")).toBe("img-src 'self' data: blob: https://projeto.supabase.co");
-    expect(diretiva(montarCsp({ ...base, supabaseUrl: "" }), "img-src")).toBe("img-src 'self' data: blob:");
+  it("img-src abre o Supabase (fotos de perfil, D-354) e o CDN do Mercado Livre (miniatura do anúncio)", () => {
+    expect(diretiva(montarCsp(base), "img-src")).toBe(
+      "img-src 'self' data: blob: https://projeto.supabase.co https://*.mlstatic.com",
+    );
+    expect(diretiva(montarCsp({ ...base, supabaseUrl: "" }), "img-src")).toBe(
+      "img-src 'self' data: blob: https://*.mlstatic.com",
+    );
   });
 
   it("no ambiente local, http vira ws — é o Realtime do Supabase da suíte", () => {

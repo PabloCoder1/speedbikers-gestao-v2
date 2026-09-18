@@ -13152,3 +13152,354 @@ td.sb-pco-num-linha {
     max-width: 11rem;
   }
 }
+
+/*
+ * ANÚNCIOS — `/anuncios` (passe de produto de 18/09/2026).
+ *
+ * A tabela perdeu três colunas que só repetiam códigos (MLB, SKU, conta), que
+ * desceram para a linha de identidade embaixo do título, e ganhou a foto do
+ * anúncio, cabeçalhos que ordenam, chips de filtro que se desfazem e
+ * paginação numerada. Tudo com os tokens da casa — nenhuma cor nova.
+ */
+.sb-an-lista {
+  margin-top: var(--sb-space-3);
+}
+
+/* Quatro menus de estado na barra do painel: em tela estreita eles quebram
+   linha, em vez de empurrar a página para o lado. */
+.sb-an-lista .sb-panel-aside {
+  flex-wrap: wrap;
+}
+
+.sb-an-busca {
+  position: relative;
+  display: flex;
+  gap: 0.375rem;
+}
+
+.sb-an-busca .sb-input {
+  min-width: 13rem;
+  padding-left: 1.75rem;
+}
+
+.sb-an-busca-icone {
+  position: absolute;
+  top: 50%;
+  left: 0.5625rem;
+  display: grid;
+  color: var(--sb-text-soft);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Filtros ativos, como chips: cada um se desfaz sozinho. */
+.sb-an-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem var(--sb-space-3) 0;
+}
+
+.sb-an-chips-rotulo {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-an-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.5rem;
+  padding: 0 0.375rem 0 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--sb-secondary) 30%, var(--sb-border));
+  border-radius: 999px;
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sb-an-chip span {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.sb-an-chip:hover span {
+  background: var(--sb-secondary);
+  color: var(--sb-white);
+}
+
+.sb-an-limpar {
+  margin-left: 0.25rem;
+  font-size: 0.6875rem;
+}
+
+.sb-an-nota {
+  margin: 0.5rem var(--sb-space-3) 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* Tabela. */
+/* `position: relative` é o que prende o `.sb-sr-only` do cabeçalho "Ações":
+   sem ancestral posicionado ele (absoluto) escapa do recorte do painel e
+   alarga a página inteira no celular. */
+.sb-an-rolagem {
+  position: relative;
+  margin-top: var(--sb-space-3);
+  overflow-x: auto;
+}
+
+.sb-an-tabela th {
+  white-space: nowrap;
+}
+
+.sb-an-tabela td {
+  vertical-align: middle;
+}
+
+.sb-an-ordem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-an-ordem:hover,
+.sb-an-ordem:focus-visible {
+  color: var(--sb-secondary);
+}
+
+.sb-an-ordem-seta {
+  font-size: 0.625rem;
+  opacity: 0.35;
+}
+
+.sb-an-ordem-ativa {
+  color: var(--sb-primary);
+  font-weight: 700;
+}
+
+.sb-an-ordem-ativa .sb-an-ordem-seta {
+  color: var(--sb-secondary);
+  opacity: 1;
+}
+
+.sb-an-produto {
+  min-width: 17rem;
+  max-width: 26rem;
+}
+
+.sb-an-produto-linha {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* A foto e o monograma ocupam o MESMO quadrado: a linha não pula quando a
+   sincronização ainda não trouxe a foto. */
+.sb-an-foto {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--sb-table-rule);
+  border-radius: 0.5rem;
+  background: var(--sb-white);
+  object-fit: contain;
+}
+
+.sb-an-produto-texto {
+  display: grid;
+  gap: 0.1875rem;
+  min-width: 0;
+}
+
+.sb-an-titulo {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sb-an-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3125rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-an-meta a.sb-mono {
+  text-decoration: none;
+}
+
+.sb-an-meta a.sb-mono:hover {
+  text-decoration: underline;
+}
+
+.sb-an-faturamento {
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+.sb-an-suave {
+  color: var(--sb-text-soft);
+}
+
+/* Estoque DO ANÚNCIO zerado: é o que para a venda, e a linha diz isso. */
+.sb-an-zerado {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+  font-weight: 700;
+  text-align: center;
+}
+
+.sb-an-linha-zerada td:first-child {
+  box-shadow: inset 3px 0 0 var(--sb-danger);
+}
+
+.sb-an-acoes {
+  white-space: nowrap;
+}
+
+.sb-an-acoes > * {
+  vertical-align: middle;
+}
+
+/* Ações da linha: a família `.sb-icon-button`, em linha e menor que a do topo. */
+.sb-an-inspecionar,
+.sb-an-externo {
+  display: inline-grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-an-externo {
+  margin-left: 0.25rem;
+}
+
+.sb-an-inspecionar:hover,
+.sb-an-inspecionar:focus-visible,
+.sb-an-externo:hover,
+.sb-an-externo:focus-visible {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+/* Estados sem tabela: vazio e erro. */
+.sb-an-estado {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  margin: var(--sb-space-3);
+  padding: var(--sb-space-5) var(--sb-space-3);
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+  text-align: center;
+}
+
+.sb-an-estado b {
+  font-size: 0.8125rem;
+  color: var(--sb-primary);
+}
+
+.sb-an-estado-erro {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--sb-danger) 35%, var(--sb-border));
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+/* Paginação numerada, no pé do painel. */
+.sb-an-paginacao {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sb-space-2);
+  padding: 0.75rem var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-an-paginas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sb-an-paginas [aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sb-an-pagina {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.375rem;
+  border-radius: var(--sb-radius-md);
+  color: var(--sb-primary);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.sb-an-pagina:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-an-pagina-atual {
+  background: var(--sb-primary);
+  color: var(--sb-white);
+  font-weight: 700;
+}
+
+.sb-an-pagina-atual:hover {
+  background: var(--sb-primary);
+}
+
+.sb-an-salto {
+  padding: 0 0.25rem;
+  color: var(--sb-text-soft);
+}
+
+@media (max-width: 760px) {
+  .sb-an-busca {
+    width: 100%;
+  }
+
+  .sb-an-busca .sb-input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .sb-an-produto {
+    min-width: 16rem;
+  }
+
+  .sb-an-paginacao {
+    justify-content: center;
+  }
+}
