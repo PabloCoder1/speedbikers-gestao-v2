@@ -1188,6 +1188,60 @@ export type Database = {
           },
         ]
       }
+      // CORRECAO MANUAL (classe D-213): bloco escrito a mao no formato do
+      // gerador -- a migration `20260918170000_full_item_ausente` so existe no
+      // repositorio ate ser aplicada no Dev, e a CLI nao regenera este arquivo.
+      fulfillment_item_absences: {
+        Row: {
+          created_at: string
+          failures: number
+          first_failed_at: string
+          http_status: number
+          item_id: string
+          last_failed_at: string
+          ml_account_id: string
+          organization_id: string
+          recheck_after: string
+        }
+        Insert: {
+          created_at?: string
+          failures?: number
+          first_failed_at: string
+          http_status: number
+          item_id: string
+          last_failed_at: string
+          ml_account_id: string
+          organization_id: string
+          recheck_after: string
+        }
+        Update: {
+          created_at?: string
+          failures?: number
+          first_failed_at?: string
+          http_status?: number
+          item_id?: string
+          last_failed_at?: string
+          ml_account_id?: string
+          organization_id?: string
+          recheck_after?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fulfillment_item_absences_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fulfillment_item_absences_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fulfillment_stock_snapshots: {
         Row: {
           captured_at: string
