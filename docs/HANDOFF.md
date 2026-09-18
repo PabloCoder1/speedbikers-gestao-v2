@@ -52,6 +52,8 @@ assinatura antiga com aviso.
 anúncio (D-381); a faixa sai de `get_listings_dashboard_counts` (2 leituras por visita em vez
 de 7). Migration `20260918150000`; **worker só depois dela** (grava `thumbnail_url`/`permalink`).
 
+Página nova precisa de `loading.tsx` (D-382, guarda `check:loading`).
+
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
 

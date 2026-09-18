@@ -416,3 +416,4 @@ Decisões registradas: **372** (D-001 a D-380).
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 
 - **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada (63 ms contra ~0,7 s) e mostra a foto do anuncio; worker so depois da migration `20260918150000`
+- **D-382** — Toda pasta de `app/` com pagina tem `loading.tsx` (guarda `check:loading`); "ver lista" e pilulas mostram a mesma tela por `CarregandoSeODemorar`
