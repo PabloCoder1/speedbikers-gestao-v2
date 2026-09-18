@@ -20,8 +20,14 @@
 --   3. **varredura `v3-order-logistics-sweep` CONCLUIDA**: o `logistic_type` e o unico
 --      sinal que este arquivo le, e pedido sem ele nao entra em lugar nenhum. O bloco
 --      NAO aborta por pendencia -- um envio que o Mercado Livre nao devolve travaria a
---      correcao dos outros 2.549 pedidos --, mas EMITE NOTICE com quantos pedidos
---      continuam sem decisao. Zero ali e a prova de que a varredura terminou;
+--      correcao dos outros pedidos --, mas EMITE NOTICE com quantos pedidos continuam
+--      sem decisao. Zero ali e a prova de que a varredura terminou. "Sem decisao" e o
+--      MESMO universo da varredura: pedido sem captura com `VENDA_ML` sem estorno OU
+--      estornada pela D-351 (`ESTORNO_PRE_CAPTURA`). A segunda metade importa: a venda
+--      do Full pre-capturada soma zero, mas o cancelamento ou a devolucao dela so e
+--      anulado (aqui, na parte 2, ou pela propria varredura) depois que o sinal chega.
+--      Antes da revisao de 6965b0e o NOTICE contava so a primeira metade e dizia
+--      "nenhum pedido pendente" com esses pedidos de fora;
 --   4. `v3-reconcile-balances` AINDA pausado -- como na F3 da D-351, a organizacao que ja
 --      reconciliou nao e compensada (ver "QUAIS ORGANIZACOES"), e despausar antes tiraria a
 --      de producao da lista.
@@ -55,6 +61,9 @@
 --             `DEVOLUCAO_ML` (origem do CLAIM, pedido DENTRO da chave
 --             `devolucao:<claim>:<venda>`) de venda ESTORNADA de pedido do Full -- pelo
 --             `ESTORNO_FULL` da parte 1 ou pelo `ESTORNO_PRE_CAPTURA` que ja estava la.
+--             O segundo ramo so e alcancado porque a varredura tambem le o envio da
+--             venda pre-capturada (revisao de 6965b0e); ela mesma ja anula a reversao
+--             ao capturar, e este arquivo e a rede para o que tiver ficado aberto.
 --   anulacao = `ESTORNO_REVERSAO_EXCEDENTE` com a quantidade INTEIRA da reversao, o sinal, o
 --             SKU, o local e a origem da VENDA, a chave neutra `estorno:<chave da reversao>`
 --             e o `occurred_at` ESPELHADO da reversao. O tipo e a chave sao os MESMOS da
@@ -260,8 +269,10 @@ begin
     raise exception 'compensacao_d352: o CHECK de stock_movements.movement_type ainda nao aceita ESTORNO_FULL -- aplique a migration 20260918000000 antes (cabecalho, PRE-REQUISITO 1)';
   end if;
 
-  -- PRE-REQUISITO 3, declarado e NAO fatal: quantos pedidos com venda sem estorno continuam
-  -- sem o sinal. Zero = a varredura terminou e esta rodada cobre o universo inteiro.
+  -- PRE-REQUISITO 3, declarado e NAO fatal: quantos pedidos continuam sem o sinal, no
+  -- MESMO universo da varredura -- venda sem estorno, ou estornada pela D-351. Zero = a
+  -- varredura terminou e esta rodada cobre o universo inteiro. A venda com
+  -- `ESTORNO_FULL` fica de fora: ele so e gravado com o pedido ja capturado.
   select count(distinct m.source_id) into v_sem_decisao
   from public.stock_movements m
   join public.orders o
@@ -275,10 +286,11 @@ begin
     and not exists (
       select 1 from public.stock_movements e
       where e.idempotency_key = 'estorno:' || m.idempotency_key
+        and e.movement_type = 'ESTORNO_FULL'
     );
 
   if v_sem_decisao > 0 then
-    raise notice 'compensacao_d352: % pedido(s) com VENDA_ML sem estorno continuam SEM o sinal da logistica -- a varredura v3-order-logistics-sweep ainda nao terminou, e eles NAO sao compensados nesta rodada (cabecalho, PRE-REQUISITO 3)',
+    raise notice 'compensacao_d352: % pedido(s) com VENDA_ML continuam SEM o sinal da logistica (venda sem estorno ou estornada pela D-351) -- a varredura v3-order-logistics-sweep ainda nao terminou, e eles NAO sao compensados nesta rodada (cabecalho, PRE-REQUISITO 3)',
       v_sem_decisao;
   else
     raise notice 'compensacao_d352: nenhum pedido pendente do sinal -- a varredura cobriu o universo';
@@ -346,9 +358,12 @@ begin
   raise notice 'compensacao_d352: % reversoes de pedido do Full anuladas inteiras', v_anulacoes;
 
   -- RESIDUO, declarado linha a linha: a anulacao parcial da D-351 que o UNIQUE impede completar.
+  -- `trim_scale`: `qty_delta` e numeric(14,3), e "faltam 1.000 un." se le como MIL em
+  -- portugues -- exatamente onde o dono vai decidir o que fazer com o numero.
   for r in select * from d352_residuo loop
     raise notice 'compensacao_d352: RESIDUO -- pedido %, reversao % de % un. ja tem anulacao parcial de % un. (D-351 §12); faltam % un. e a chave neutra impede uma segunda anulacao -- decisao do dono',
-      r.source_id, r.chave_reversao, r.quantidade_reversao, r.ja_anulado, r.quantidade_reversao - r.ja_anulado;
+      r.source_id, r.chave_reversao, trim_scale(r.quantidade_reversao), trim_scale(r.ja_anulado),
+      trim_scale(r.quantidade_reversao - r.ja_anulado);
   end loop;
 
   -- PROVA 1: nada afetado sem par e nenhuma reversao de pedido do Full sem anulacao.

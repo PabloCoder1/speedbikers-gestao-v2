@@ -21,7 +21,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *    de `reconciled_at` de `get_erp_stock_cutoffs` (o `AJUSTE_RECONCILIACAO` e a rodada
  *    concluida em `job_runs`, que pega a reconciliacao que nao gravou ajuste nenhum);
  *  - a anulacao PARCIAL que a D-351 §12 gravou vira residuo declarado, e nao um numero
- *    errado em silencio.
+ *    errado em silencio;
+ *  - o pedido sem sinal com a venda JA estornada pela D-351 conta como pendente no NOTICE
+ *    (revisao de 6965b0e, ALTA): ele soma zero hoje, mas o cancelamento dele so e anulado
+ *    depois que o sinal chega;
+ *  - a captura gravada nao volta a nula nem troca de valor (trigger
+ *    `orders_logistica_congelada`, revisao de 6965b0e, BAIXA).
  *
  * **Nada e mutado depois de inserido.** `stock_movements` recusa UPDATE e DELETE por
  * trigger (`stock_movements_no_update`/`_no_delete`, `20260902194500`), entao cada forma
@@ -43,6 +48,7 @@ const ORG_RECONCILIADA = randomUUID();
 const ORG_RODADA = randomUUID();
 const ORG_COBERTO = randomUUID();
 const ORG_RESIDUO = randomUUID();
+const ORG_PENDENTE = randomUUID();
 const ADMIN = randomUUID();
 const PREFIXO = `d352-${ORG_FULL.slice(0, 8)}`;
 
@@ -62,6 +68,7 @@ let skuReconciliada = "";
 let skuRodada = "";
 let skuCoberto = "";
 let skuResiduo = "";
+let skuPendente = "";
 
 async function umId(sql: string, params: unknown[]): Promise<string> {
   const result = await client.query<{ id: string }>(sql, params);
@@ -117,9 +124,10 @@ async function snapshot(organizationId: string, skuId: string, disponivel: numbe
 }
 
 /**
- * Um pedido com a logistica JA capturada — a forma em que a varredura
- * `sync.order-logistics` o deixa. Com `capturado = false`, o pedido continua PENDENTE
- * (as duas colunas nulas), que e o estado de quem a varredura ainda nao visitou.
+ * Um pedido com a logistica JA capturada — o primeiro passo da varredura
+ * `sync.order-logistics`, que carimba a captura ANTES de qualquer movimento. Com
+ * `capturado = false`, o pedido continua PENDENTE (as duas colunas nulas), que e o
+ * estado de quem a varredura ainda nao visitou.
  */
 async function pedido(
   organizationId: string,
@@ -257,12 +265,14 @@ beforeAll(async () => {
   await novaOrganizacao(ORG_RODADA, "rodada");
   await novaOrganizacao(ORG_COBERTO, "coberto");
   await novaOrganizacao(ORG_RESIDUO, "residuo");
+  await novaOrganizacao(ORG_PENDENTE, "pendente");
 
   skuFull = await novoSku(ORG_FULL, "full");
   skuReconciliada = await novoSku(ORG_RECONCILIADA, "full");
   skuRodada = await novoSku(ORG_RODADA, "full");
   skuCoberto = await novoSku(ORG_COBERTO, "full");
   skuResiduo = await novoSku(ORG_RESIDUO, "full");
+  skuPendente = await novoSku(ORG_PENDENTE, "full");
 
   await snapshot(ORG_FULL, skuFull, 20);
   await snapshot(ORG_RECONCILIADA, skuReconciliada, 20);
@@ -275,6 +285,7 @@ beforeAll(async () => {
   const contaRodada = await novaConta(ORG_RODADA, "rod", 3523);
   const contaCoberto = await novaConta(ORG_COBERTO, "cob", 3524);
   const contaResiduo = await novaConta(ORG_RESIDUO, "res", 3525);
+  const contaPendente = await novaConta(ORG_PENDENTE, "pen", 3526);
 
   // 1: Full, venda sem par -> ESTORNO_FULL espelhado.
   await pedido(ORG_FULL, contaFull, PEDIDO + 1, "fulfillment");
@@ -295,7 +306,10 @@ beforeAll(async () => {
   await movimento(ORG_FULL, skuFull, "ESTORNO_FULL", 1, `estorno:${chave(4)}`, em(5), String(PEDIDO + 4));
 
   // 5: Full com ESTORNO_PRE_CAPTURA (D-351) e cancelamento -> NAO ganha segundo estorno,
-  // mas a reversao e anulada inteira.
+  // mas a reversao e anulada inteira. E um estado que a varredura DEIXA desde a revisao de
+  // 6965b0e: ela le o envio tambem da venda pre-capturada, carimba a captura primeiro e so
+  // depois grava a anulacao -- se a anulacao falhar, o pedido fica assim ate a rodada
+  // seguinte, e a compensacao que rodar nesse meio tempo o fecha.
   await pedido(ORG_FULL, contaFull, PEDIDO + 5, "fulfillment", true, "cancelled");
   await movimento(ORG_FULL, skuFull, "VENDA_ML", -1, chave(5), em(5), String(PEDIDO + 5));
   await movimento(ORG_FULL, skuFull, "ESTORNO_PRE_CAPTURA", 1, `estorno:${chave(5)}`, em(5), String(PEDIDO + 5));
@@ -361,6 +375,14 @@ beforeAll(async () => {
     em(40),
     String(PEDIDO + 9),
   );
+
+  // Pedido SEM sinal com a venda ja estornada pela D-351 e cancelada depois do corte: soma
+  // +1 hoje e nao e compensado aqui (sem sinal, nunca presumir Full) -- mas CONTA como
+  // pendente, porque a varredura ainda vai ler o envio dele.
+  await pedido(ORG_PENDENTE, contaPendente, PEDIDO + 12, null, false, "cancelled");
+  await movimento(ORG_PENDENTE, skuPendente, "VENDA_ML", -1, chave(12), em(5), String(PEDIDO + 12));
+  await movimento(ORG_PENDENTE, skuPendente, "ESTORNO_PRE_CAPTURA", 1, `estorno:${chave(12)}`, em(5), String(PEDIDO + 12));
+  await movimento(ORG_PENDENTE, skuPendente, "CANCELAMENTO_ML", 1, `cancelamento:${chave(12)}`, em(30), String(PEDIDO + 12));
 
   // Anulacao da D-351 que cobre MENOS que a reversao (R = 2, E = 1): o UNIQUE impede
   // completar, e o caso vira residuo DECLARADO.
@@ -459,9 +481,7 @@ describe("compensacao D-352 (packages/db/scripts, fora das migrations)", () => {
       expect(avisos).toContain("compensacao_d352: 3 estornos de venda do Full gravados");
       expect(avisos).toContain("compensacao_d352: 3 reversoes de pedido do Full anuladas inteiras");
       // O pedido 3 ainda nao tem sinal: a varredura nao terminou, e isso e DECLARADO.
-      expect(avisos.some((aviso) => aviso.includes("1 pedido(s) com VENDA_ML sem estorno continuam SEM o sinal"))).toBe(
-        true,
-      );
+      expect(avisos.some((aviso) => aviso.includes("1 pedido(s) com VENDA_ML continuam SEM o sinal"))).toBe(true);
 
       // Segunda execucao: nada novo, e nenhuma assercao quebra.
       const segunda: string[] = [];
@@ -558,6 +578,82 @@ describe("compensacao D-352 (packages/db/scripts, fora das migrations)", () => {
       // E o bloco TERMINA: a assercao final exclui o pedido do residuo em vez de abortar a
       // correcao dos outros por causa dele.
       expect(avisos).toContain("compensacao_d352: 0 estornos de venda do Full gravados");
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("pedido sem sinal com a venda JA estornada pela D-351 conta como pendente — e nao e compensado (revisao de 6965b0e, ALTA)", async () => {
+    await client.query("begin");
+
+    try {
+      const avisos: string[] = [];
+
+      await rodarCompensacao(ORG_PENDENTE, avisos);
+
+      // Antes da revisao o NOTICE contava so venda SEM estorno e dizia "nenhum pedido
+      // pendente" -- com o +1 deste pedido de pe e fora de toda conta.
+      expect(avisos.some((aviso) => aviso.includes("1 pedido(s) com VENDA_ML continuam SEM o sinal"))).toBe(true);
+      expect(avisos).not.toContain("compensacao_d352: nenhum pedido pendente do sinal -- a varredura cobriu o universo");
+      // Sem sinal, nada: nunca presumir Full (R2).
+      expect(indexadoPorChave(await movimentosDe(ORG_PENDENTE)).has(`estorno:cancelamento:${chave(12)}`)).toBe(false);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
+
+describe("a captura da logistica so nasce uma vez (trigger orders_logistica_congelada, D-352 R5)", () => {
+  async function logisticaDe(id: number): Promise<{ logistic_type: string | null; capturado: boolean }> {
+    const result = await client.query<{ logistic_type: string | null; capturado: boolean }>(
+      `select logistic_type, logistic_captured_at is not null as capturado from public.orders where id = $1`,
+      [id],
+    );
+    const linha = result.rows[0];
+
+    if (linha === undefined) {
+      throw new Error(`pedido ${String(id)} sumiu`);
+    }
+
+    return linha;
+  }
+
+  it("o upsert do pedido que leu a linha ANTES da varredura nao apaga a captura dela", async () => {
+    await client.query("begin");
+
+    try {
+      // A forma do upsert de `persist-order.ts`: DO UPDATE com as duas colunas nulas.
+      await client.query(
+        `insert into public.orders (id, organization_id, ml_account_id, status, date_created, date_last_updated,
+                                    total_amount, currency_id, logistic_type, logistic_captured_at)
+         select id, organization_id, ml_account_id, status, date_created, now(), total_amount, currency_id, null, null
+           from public.orders where id = $1
+         on conflict (id) do update
+           set logistic_type = excluded.logistic_type,
+               logistic_captured_at = excluded.logistic_captured_at,
+               date_last_updated = excluded.date_last_updated`,
+        [PEDIDO + 4],
+      );
+
+      expect(await logisticaDe(PEDIDO + 4)).toEqual({ logistic_type: "fulfillment", capturado: true });
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("captura gravada nao troca de valor, e a pendente ainda recebe a primeira", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query(`update public.orders set logistic_type = 'fulfillment' where id = $1`, [PEDIDO + 2]);
+      await client.query(
+        `update public.orders set logistic_type = 'fulfillment', logistic_captured_at = now()
+          where id = $1 and logistic_captured_at is null`,
+        [PEDIDO + 3],
+      );
+
+      expect(await logisticaDe(PEDIDO + 2)).toEqual({ logistic_type: "cross_docking", capturado: true });
+      expect(await logisticaDe(PEDIDO + 3)).toEqual({ logistic_type: "fulfillment", capturado: true });
     } finally {
       await client.query("rollback");
     }
