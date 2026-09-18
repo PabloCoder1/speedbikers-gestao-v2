@@ -19,8 +19,8 @@
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | 17/09: worker `worker-00010-twb` e api `api-00009-wqx` em `c2cbd15` (D-351 e D-364; volta: `worker-00009-rkb`/`api-00008-jkr` em `b4f52f3`, só D-351). Vercel Production `dpl_3TtUDhnjDsVjJcvSp8zHASsXJQxX` (`c2cbd15`). Webhooks só em produção; Dev pausado (D-350). `v3-reconcile-balances` **pausado** até a prova de 24 h da F3 e a decisão do dono (D-351 §13). |
-| **Migrations** | **183 em produção** (17/09), a última `20260917150000` (D-366), com as cinco da D-351 (`20260916180000`..`180400`). Migration com versão menor que a última aplicada é recusada pelo `db push` sem `--include-all`: renomeie antes do merge (D-351 §11). Dev pela CI no push da `v3`; **produção só por `migrations-producao.yml`**, duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome precisa ser um **instante válido**: `...240000` quebrou `get_system_health` (D-307) |
+| **Produção** | 18/09: worker `worker-00015-r4m` e api `api-00013-k4l` em `5d17028` (guardas: D-352, Full sem refetch, foto do anúncio, D-383; volta: `worker-00014-c8z`/`api-00012-t9g` em `0e5626e`). Worker e api saem da **guardas**, nunca da `v3`: o 86afa36 (matriz/filial) só entra na `v3` pelo #46. Vercel Production `dpl_3TtUDhnjDsVjJcvSp8zHASsXJQxX` (`c2cbd15`). Webhooks só em produção; Dev pausado (D-350). `v3-reconcile-balances` **despausado** em 18/09 (1ª rodada 19/09 06:00 BRT; D-352 §8). |
+| **Migrations** | **199 em produção** (18/09), a última `20260918170000` (Full), com a D-352 (`20260918000000`) e o /faturamento (`160000`). Migration com versão menor que a última aplicada é recusada pelo `db push` sem `--include-all`: renomeie antes do merge (D-351 §11). Dev pela CI no push da `v3`; **produção só por `migrations-producao.yml`**, duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome precisa ser um **instante válido**: `...240000` quebrou `get_system_health` (D-307) |
 | **Frente atual** | **Performance promovida para `v3`** (`aa847f5`, `54385ef`, `7ae7741`, `abc67dd`): Full com concorrência limitada e leitura paginada de snapshots, visitas em lote, busca com debounce/ordenação de respostas, Copiloto sob demanda, membership compartilhado por request, margem/ranking de Vendas sob `Suspense`, diretório de contas com refresh antecipado, vitals por rota e cache de build sensível a `.env*`. Check, build e `docs:check` passam. Produção verificada em `f88e0b2`: worker `worker-00005-pcz`, API `api-00004-n7c` (100% do tráfego, health confirmado), Vercel `dpl_4D8FTefUk3PueEJgsdyZVDBmqbmi`. Full medido, primeira amostra autenticada de navegador e seis RPCs de Vendas medidas com RLS: `docs/PERFORMANCE.md`. Restam telemetria de retries HTTP, coletor oficial de Web Vitals e amostra representativa. |
 
 ### O que está pronto
@@ -74,10 +74,10 @@ e `docs/PERFORMANCE.md`.
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
-- **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13); prova de 24 h ok em 18/09. Falta a
-  decisão do dono sobre `v3-reconcile-balances` (**pausado**), depois da D-352. Entrada manual das
+- **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13), provada em 18/09; D-352 publicada em 18/09 (§8) e
+  `v3-reconcile-balances` despausado pelo dono. Entrada manual das
   devoluções pela lista do ledger, não pelas notificações: 26 já voltaram sozinhas.
-  Não importar planilha do UpSeller antes dessa decisão.
+  Não importar planilha do UpSeller antes de ler a 1ª rodada da reconciliação.
 - **O padrão do `gcloud` nesta máquina é `speedbikers-prod`.** Todo comando manual com
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
@@ -191,7 +191,7 @@ Nada disto pode ser feito por um agente.
    Dev —, o comando é PowerShell com `pnpm.cmd` e `sslmode=no-verify`, e o
    `BACKUP_AT` se calcula no restaurado, não se lê da lista.
 3b. **Conferir o saldo do estoque contra o UpSeller** — planilha nova só
-   **depois da D-352 publicada e compensada** (a prova de 24 h da D-351 passou em 18/09). É a segunda metade da
+   **depois da 1ª rodada da `v3-reconcile-balances`** (19/09; D-351 e D-352 publicadas). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
    (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
    chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
@@ -246,7 +246,7 @@ Nada disto pode ser feito por um agente.
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
-| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** a D-352 publicada e compensada (a D-351 foi provada em 18/09) e os atos da seção própria |
+| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** ler a 1ª rodada da reconciliação (19/09) e os atos da seção própria |
 | ~~UX final da republicação~~ | ✅ **FEITA em D-295** — pedir e executar, dois atos, no Dashboard do Anúncio. Falta o **ensaio humano** (seção própria) |
 
 **Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
@@ -281,8 +281,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**D-351:** provada em 18/09 (§13); `v3-reconcile-balances` segue pausado até a D-352 publicada e os 3 SKUs negativos decididos. Depois, D-362.
-**D-352 (Full não baixa a loja):** na `v3` desde 18/09 (#42), não publicada; ordem em `docs/DEPLOYMENT.md` 8.3 (migration → worker/api → varredura → compensação).
+**Estoque:** D-351 (§13) e D-352 (§8) publicadas em produção; reconciliação despausada em 18/09 (16 SKUs com alvo LOCAL negativo, -81). Próximo: D-362.
 
 ---
 
