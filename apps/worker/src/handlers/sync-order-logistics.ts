@@ -14,50 +14,61 @@ import type { JobOutcome } from "../job-outcome.js";
 import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
-import { createShipmentLogistics } from "./shipment-logistics.js";
+import { classifyShipmentFailure, readShipmentLogistic } from "./shipment-logistics.js";
+import type { CapturedLogistic } from "./shipment-logistics.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
- * `sync.order-logistics` (D-352, R2) — a varredura que FECHA a pendência.
+ * `sync.order-logistics` (D-352, R2 e R3) — a varredura que faz o sinal chegar.
  *
  * `persist-order.ts` só lê o envio do pedido que está passando por ele agora, e
- * uma leitura que falha (ou um pedido persistido antes desta fatia) deixa o
- * pedido PENDENTE: a venda baixou a loja e o `ESTORNO_FULL` não foi gravado
- * porque ninguém sabia se ela era do Full. R2 diz o que fazer com isso — "quando
- * o sinal chegar `fulfillment`, grava o `ESTORNO_FULL` que falta" — e este job é
- * quem faz o sinal chegar. Sem ele a pendência é permanente, porque o pedido
- * antigo nunca mais volta à janela de `sync.orders.window`.
+ * só quando a resposta muda uma linha naquele momento. Todo o resto fica
+ * PENDENTE — as duas colunas de logística nulas — e é este job que lê o envio
+ * deles. Sem ele a pendência é permanente, porque o pedido antigo nunca mais
+ * volta à janela de `sync.orders.window`.
  *
- * **O universo é o LEDGER, não a tabela de pedidos.** A pendência é "`VENDA_ML`
- * sem par de estorno": em produção, 2.667 linhas em 2.550 pedidos dentro de um
- * ledger de 8.832 movimentos — contra 331 mil linhas em `orders`. Varrer
- * `orders` por `logistic_captured_at is null` seria varrer a tabela inteira atrás
- * de um conjunto 130x menor, e pediria o índice que a migration
- * `20260918000000` documentadamente NÃO criou. O ledger é lido inteiro, paginado
- * (D-131), e cada rodada nasce sabendo exatamente o que falta.
+ * **O universo é o LEDGER, não a tabela de pedidos** (331 mil linhas em `orders`
+ * contra ~9 mil movimentos em 17/09, e sem o índice que a migration
+ * `20260918000000` documentadamente não criou). Entra todo pedido com `VENDA_ML`
+ * em um destes dois estados:
  *
- * **Progresso por EXISTÊNCIA DE VALOR (D-156).** O checkpoint é
- * `orders.logistic_captured_at`: capturado, o pedido sai do conjunto "precisa
- * ler o envio" para sempre, e nenhuma re-tentativa do Cloud Tasks repete a
- * chamada. Mas ele NÃO é o critério da varredura — o critério é a venda sem
- * estorno. Um pedido já capturado como `fulfillment` cujo `ESTORNO_FULL` não
- * chegou a ser gravado (falha entre as duas escritas) continua aparecendo aqui e
- * é fechado SEM nenhuma ida à rede, com o valor PERSISTIDO (R5: a decisão é
- * função pura do campo gravado).
+ *  1. **ABERTO** — uma venda sem estorno, ou uma reversão (`CANCELAMENTO_ML`,
+ *     `DEVOLUCAO_ML`) sem a anulação `estorno:<chave da reversão>`. Lido se o
+ *     pedido ainda não tem captura ou se ela é `fulfillment` (a pendência de
+ *     R2, e o fechamento que ficou pela metade).
+ *  2. **SÓ FALTA O SINAL** — nada aberto, mas alguma venda estornada pela
+ *     D-351 (`ESTORNO_PRE_CAPTURA`) num pedido sem captura. A venda soma zero
+ *     hoje, e é exatamente por isso que ninguém lia o envio dela: o gate de
+ *     `persist-order` pula a venda até o corte. Mas o cancelamento ou a
+ *     devolução que vier depois precisa do sinal para não voltar +1 à loja
+ *     (R3), e sem este estado o pedido do Full pré-capturado nunca o recebia
+ *     (revisão de 6965b0e, ALTA). Lido só se ainda não tem captura.
  *
- * **As escrita saem na ordem que sobrevive a uma falha no meio:** os movimentos
- * ANTES da captura. Carimbar `logistic_captured_at` primeiro e falhar no estorno
- * tiraria o pedido da lista de "precisa ler" com a venda ainda baixando a loja —
- * e, como a venda continuaria sem estorno, a rodada seguinte o pegaria de novo,
- * agora pelo ramo sem rede. As duas ordens se autocorrigem; esta gasta uma
- * chamada a menos.
+ * O pedido fechado cujos estornos são todos `ESTORNO_FULL` fica de fora: esse
+ * tipo só é gravado com o pedido já capturado como `fulfillment`.
  *
- * **Custo.** Uma chamada `GET /shipments/{id}` por pedido pendente, com o mesmo
- * espaçamento de `sync-order-financials.ts` (que já faz
- * `GET /shipments/{id}/costs` ~963 vezes por dia). O teto por rodada existe
- * porque o backlog inicial é grande e o job tem 900 s: 2.550 pedidos a ~150 ms
- * de espaçamento mais a latência de cada chamada passariam do timeout, e um job
- * que morre no meio não é mais rápido que quatro que terminam.
+ * **As escritas saem na ordem que sobrevive a uma falha no meio: a CAPTURA
+ * primeiro, as anulações, o `ESTORNO_FULL` por último.** A captura carimbada é a
+ * decisão (R5); tudo o que vem depois deriva dela, e o que falhar depois dela
+ * deixa o pedido ABERTO e capturado como `fulfillment`, que a rodada seguinte
+ * fecha SEM ida à rede (a anulação repetida cai no `UNIQUE`). A ordem antiga —
+ * estorno, anulação, captura — perdia os dois últimos passos para sempre: com o
+ * estorno já gravado, a venda saía do universo "venda sem par" e a anulação
+ * que faltava nunca era refeita (revisão de 6965b0e, MÉDIA).
+ *
+ * **Política de erro da leitura** (`classifyShipmentFailure`): 429/5xx
+ * esgotados, 401 e erro de transporte PARAM a rodada — a falha é da conta, e
+ * seguir gastaria 4 tentativas com backoff por pedido na cota que o webhook usa;
+ * a fila repete. 404 é resposta definitiva (envio inexistente): carimba a
+ * captura com o tipo nulo e a venda baixa a loja. O resto (400, 403, corpo fora
+ * do contrato) fica pendente e volta na próxima rodada, contado em `falhas`.
+ *
+ * **Custo.** Uma chamada `GET /shipments/{id}` por pedido sem captura, com o
+ * mesmo espaçamento de `sync-order-financials.ts` (que já faz
+ * `GET /shipments/{id}/costs` ~963 vezes por dia). Dois tetos por rodada: 800
+ * chamadas e 7 min de rede — o prazo padrão do Cloud Tasks para alvo HTTP é
+ * 10 min (`enqueue.ts` não define `dispatchDeadline`), e uma rodada que passa
+ * dele é reentregue enquanto ainda roda.
  *
  * **Sem `sync_runs`.** `sync_runs.resource` é o vocabulário dos RECURSOS do
  * Mercado Livre (`orders`, `listings`, `fulfillment`, ...), com CHECK no banco;
@@ -75,25 +86,37 @@ const payloadSchema = z.object({ mlAccountId: z.uuid() });
  *
  * Com 800 pedidos e 150 ms de espaçamento são 120 s só de espera; somando a
  * latência medida de uma chamada ao Mercado Livre (~300 ms), a rodada fica em
- * ~6 min contra os 900 s do timeout do worker — a mesma folga de 2x que
- * `sync.fulfillment.snapshot` já usa (266–323 s medidos, `docs/PERFORMANCE.md`).
- * O backlog de 2.550 pedidos fecha em 4 rodadas, ou seja, em um dia na cadência
- * de 6 h. O ramo SEM rede (já capturado, estorno faltando) não conta para o
- * teto: ele não gasta chamada nenhuma.
+ * ~6 min. O ramo SEM rede (já capturado como `fulfillment`, com algo aberto)
+ * não conta para o teto: ele não gasta chamada nenhuma.
  */
 const PEDIDOS_POR_RODADA = 800;
+
+/**
+ * Teto de TEMPO de rede por rodada. O de 800 chamadas supõe ~450 ms por pedido;
+ * uma API lenta o transformaria em 15 min. Com 7 min de rede e o resto da rodada
+ * sem chamada nenhuma, ela termina dentro dos 10 min do prazo padrão do Cloud
+ * Tasks — depois dele a task é reentregue com a primeira execução ainda rodando.
+ */
+const ORCAMENTO_DE_REDE_MS = 7 * 60_000;
 
 /** Mesmo espaçamento de `sync-order-financials` — ~6-7 chamadas/s no pior caso. */
 const INTER_ORDER_DELAY_MS = 150;
 
-/**
- * Ids por consulta de `orders` e por chamada da RPC das devoluções: metade do
- * teto do PostgREST, que devolve 1.000 linhas SEM erro (D-131).
- */
+/** Ids por consulta de `orders`: metade do teto do PostgREST, que devolve 1.000 linhas SEM erro (D-131). */
 const PEDIDOS_POR_CONSULTA = 200;
 
 /** A cada quantos pedidos sai uma linha de progresso — a rodada é longa demais para um log só no fim. */
 const PEDIDOS_POR_PAGINA_DE_LOG = 100;
+
+/** Os tipos que a varredura lê: as vendas, as reversões delas e os três estornos. */
+const TIPOS_LIDOS = [
+  "VENDA_ML",
+  "CANCELAMENTO_ML",
+  "DEVOLUCAO_ML",
+  "ESTORNO_PRE_CAPTURA",
+  "ESTORNO_FULL",
+  "ESTORNO_REVERSAO_EXCEDENTE",
+];
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -109,7 +132,9 @@ export interface SyncOrderLogisticsDeps {
 }
 
 interface MovimentoDoLedger {
-  /** `stock_movements.source_id` é `text` ANULÁVEL no schema — ver `lerPendencias`. */
+  /** `stock_movements.source_type` também é anulável no schema. */
+  source_type: string | null;
+  /** `stock_movements.source_id` é `text` ANULÁVEL no schema — ver `pedidoDe`. */
   source_id: string | null;
   sku_id: string;
   qty_delta: number;
@@ -119,15 +144,13 @@ interface MovimentoDoLedger {
 }
 
 /**
- * O pedido de um movimento, ou `null` quando a origem não é um id de pedido
- * legível.
+ * O pedido de um id em texto, ou `null` quando ele não é um id legível.
  *
  * `source_id` é `text` anulável, e o `in("id", ...)` de `orders` espera número:
  * `Number(null)` é 0 e `Number("x")` é NaN, e qualquer um dos dois levaria a
  * varredura a pedir um pedido que não existe — ou, pior, um que existe e não é
  * este. Mesma defesa do `case when m.source_id ~ '^[0-9]{1,18}$'` da
- * compensação. Um `VENDA_ML` de origem ilegível não é decidível aqui de jeito
- * nenhum: sem pedido não há envio para ler.
+ * compensação.
  *
  * **O id real do Mercado Livre tem 16 dígitos** (`2000018515005942`, lido em
  * 17/09). O teto é o do NÚMERO, não o de dígitos: `orders.id` chega ao worker
@@ -136,33 +159,50 @@ interface MovimentoDoLedger {
  * ~2,0e15 de hoje) todo id cabe; depois disso o movimento sai como ilegível —
  * pendente, baixando a loja, o lado conservador — em vez de ler o envio errado.
  */
-function pedidoDe(sourceId: string | null): string | null {
-  if (sourceId === null || !/^[0-9]{1,16}$/u.test(sourceId)) {
+function pedidoDe(id: string | null): string | null {
+  if (id === null || !/^[0-9]{1,16}$/u.test(id)) {
     return null;
   }
 
-  return Number.isSafeInteger(Number(sourceId)) ? sourceId : null;
-}
-
-interface PedidoPendente {
-  id: number;
-  shipping_id: number | null;
-  logistic_type: string | null;
-  logistic_captured_at: string | null;
+  return Number.isSafeInteger(Number(id)) ? id : null;
 }
 
 /**
- * As vendas sem par de um pedido, e o que já foi revertido delas.
- *
- * A venda gravada anda como `StockMovementDraft` — a mesma forma que
- * `fullEstornoOf` recebe — porque ela JÁ É a linha que o estorno espelha. O
- * `RecordedSale` do domínio existe para o caminho oposto (procurar a linha
- * gravada a partir de um rascunho novo) e aqui só faria carregar um
- * `recordedAt` que ninguém consulta.
+ * O pedido de uma `DEVOLUCAO_ML`. Ela é gravada com a origem do CLAIM, e o
+ * pedido só aparece DENTRO da chave (`devolucao:<claim>:venda:<pedido>:...`) — o
+ * mesmo `split_part(idempotency_key, ':', 4)` de `get_order_return_movements`.
  */
-interface Pendencia {
+function pedidoDaDevolucao(chave: string): string | null {
+  const casou = /^devolucao:[^:]+:venda:([^:]+):/u.exec(chave);
+
+  return casou === null ? null : pedidoDe(casou[1] ?? null);
+}
+
+interface PedidoNoLedger {
+  /**
+   * Os `VENDA_ML` do pedido. A venda gravada anda como `StockMovementDraft` — a
+   * forma que `fullEstornoOf` recebe — porque ela JÁ É a linha que o estorno
+   * espelha.
+   */
   readonly vendas: StockMovementDraft[];
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` gravados, com o instante que a anulação espelha. */
   readonly reversoes: TimedRecordedReversal[];
+}
+
+interface Ledger {
+  readonly pedidos: Map<string, PedidoNoLedger>;
+  /** A chave de todo estorno gravado (`estorno:<chave do movimento>`), com o tipo dele. */
+  readonly estornos: Map<string, string>;
+}
+
+/** O que está aberto num pedido, lido do ledger. */
+interface Situacao {
+  /** Vendas sem estorno. */
+  readonly semPar: StockMovementDraft[];
+  /** Reversões de venda do pedido sem a anulação `estorno:<chave da reversão>`. */
+  readonly reversoesAbertas: TimedRecordedReversal[];
+  /** Alguma venda do pedido foi estornada pela D-351. */
+  readonly preCapturada: boolean;
 }
 
 function emLotes<T>(itens: readonly T[], tamanho: number): T[][] {
@@ -175,49 +215,72 @@ function emLotes<T>(itens: readonly T[], tamanho: number): T[][] {
   return lotes;
 }
 
+function doPedido(pedidos: Map<string, PedidoNoLedger>, pedido: string): PedidoNoLedger {
+  const existente = pedidos.get(pedido);
+
+  if (existente !== undefined) {
+    return existente;
+  }
+
+  const novo: PedidoNoLedger = { vendas: [], reversoes: [] };
+
+  pedidos.set(pedido, novo);
+
+  return novo;
+}
+
 /**
- * As vendas sem estorno do ledger inteiro da organização, por pedido.
- *
- * Lê `VENDA_ML`, os dois estornos de venda e o `CANCELAMENTO_ML` na MESMA
- * varredura: separar em consultas por tipo custaria três paginações do mesmo
- * conjunto. As devoluções ficam de fora daqui de propósito — elas são gravadas
- * com a origem do CLAIM, e o pedido só aparece DENTRO da chave
- * (`devolucao:<claim>:<venda>`), então quem as acha é a RPC
- * `get_order_return_movements` (e só para os poucos pedidos que voltarem
- * `fulfillment`).
+ * As vendas, as reversões e os estornos do ledger inteiro da organização, numa
+ * varredura paginada (D-131): separar por tipo custaria seis paginações do mesmo
+ * conjunto. As devoluções vêm junto — antes eram lidas pela RPC
+ * `get_order_return_movements` só para os pedidos que voltavam `fulfillment`, e
+ * a varredura não sabia se um pedido capturado tinha devolução sem anulação.
  */
-async function lerPendencias(db: AdminClient, organizationId: string): Promise<Map<string, Pendencia>> {
+async function lerLedger(db: AdminClient, organizationId: string): Promise<Ledger> {
   const linhas = await readAllPages<MovimentoDoLedger>(
     (from, to) =>
       db
         .from("stock_movements")
-        .select("source_id, sku_id, qty_delta, idempotency_key, occurred_at, movement_type, id")
+        .select("source_type, source_id, sku_id, qty_delta, idempotency_key, occurred_at, movement_type, id")
         .eq("organization_id", organizationId)
-        .eq("source_type", "ORDER")
-        .in("movement_type", ["VENDA_ML", "ESTORNO_PRE_CAPTURA", "ESTORNO_FULL", "CANCELAMENTO_ML"])
+        .in("movement_type", TIPOS_LIDOS)
         // Ordenação estável obrigatória (D-131): `id` é a PK.
         .order("id")
         .range(from, to),
     { label: "falha ao ler stock_movements" },
   );
 
-  const estornadas = new Set<string>();
-  const vendasPorPedido = new Map<string, StockMovementDraft[]>();
-  const reversoesPorPedido = new Map<string, TimedRecordedReversal[]>();
+  const pedidos = new Map<string, PedidoNoLedger>();
+  const estornos = new Map<string, string>();
 
   for (const linha of linhas) {
-    const pedido = pedidoDe(linha.source_id);
-
-    if (linha.movement_type === "ESTORNO_PRE_CAPTURA" || linha.movement_type === "ESTORNO_FULL") {
-      // As duas causas respondem a MESMA pergunta: esta venda já foi anulada?
-      // A chave é neutra, e o prefixo `estorno:` é conferido por `estornoKeyOf`
-      // do outro lado — aqui basta guardar a chave inteira.
-      estornadas.add(linha.idempotency_key);
+    if (linha.movement_type.startsWith("ESTORNO_")) {
+      // Os três respondem a MESMA pergunta — "este movimento já foi anulado?" —
+      // pela chave neutra `estorno:<chave do movimento>`.
+      estornos.set(linha.idempotency_key, linha.movement_type);
 
       continue;
     }
 
+    if (linha.movement_type === "DEVOLUCAO_ML") {
+      const pedido = pedidoDaDevolucao(linha.idempotency_key);
+
+      if (pedido !== null) {
+        doPedido(pedidos, pedido).reversoes.push({
+          idempotencyKey: linha.idempotency_key,
+          quantity: linha.qty_delta,
+          occurredAt: new Date(linha.occurred_at),
+        });
+      }
+
+      continue;
+    }
+
+    const pedido = linha.source_type === "ORDER" ? pedidoDe(linha.source_id) : null;
+
     if (pedido === null) {
+      // Um `VENDA_ML` de origem ilegível não é decidível aqui de jeito nenhum:
+      // sem pedido não há envio para ler.
       continue;
     }
 
@@ -225,114 +288,81 @@ async function lerPendencias(db: AdminClient, organizationId: string): Promise<M
       // A chave é conferida: um cancelamento que não diz qual venda reverteu
       // faria a anulação sair com a chave errada, e o `UNIQUE` não a pegaria.
       revertedSaleKeyOf(linha.idempotency_key);
-      reversoesPorPedido.set(pedido, [
-        ...(reversoesPorPedido.get(pedido) ?? []),
-        {
-          idempotencyKey: linha.idempotency_key,
-          quantity: linha.qty_delta,
-          occurredAt: new Date(linha.occurred_at),
-        },
-      ]);
+      doPedido(pedidos, pedido).reversoes.push({
+        idempotencyKey: linha.idempotency_key,
+        quantity: linha.qty_delta,
+        occurredAt: new Date(linha.occurred_at),
+      });
 
       continue;
     }
 
-    vendasPorPedido.set(pedido, [
-      ...(vendasPorPedido.get(pedido) ?? []),
-      {
-        skuId: linha.sku_id,
-        qtyDelta: linha.qty_delta,
-        idempotencyKey: linha.idempotency_key,
-        occurredAt: new Date(linha.occurred_at),
-      },
-    ]);
-  }
-
-  const pendencias = new Map<string, Pendencia>();
-
-  for (const [pedido, vendas] of vendasPorPedido) {
-    const semPar = vendas.filter((venda) => !estornadas.has(estornoKeyOf(venda.idempotencyKey)));
-
-    if (semPar.length > 0) {
-      pendencias.set(pedido, { vendas: semPar, reversoes: reversoesPorPedido.get(pedido) ?? [] });
-    }
-  }
-
-  return pendencias;
-}
-
-/**
- * As `DEVOLUCAO_ML` gravadas dos pedidos, pela mesma RPC que `persist-order.ts`
- * usa. Lida para os pedidos que `lerPedidos` devolveu — os que ainda podem ser
- * do Full —, numa chamada por lote: quais deles são `fulfillment` só se sabe
- * DEPOIS da ida à rede, e pedir por pedido seria uma consulta por venda.
- */
-async function lerDevolucoes(
-  db: AdminClient,
-  organizationId: string,
-  orderIds: readonly string[],
-): Promise<Map<string, TimedRecordedReversal[]>> {
-  const porPedido = new Map<string, TimedRecordedReversal[]>();
-
-  if (orderIds.length === 0) {
-    return porPedido;
-  }
-
-  for (const lote of emLotes([...new Set(orderIds)], PEDIDOS_POR_CONSULTA)) {
-    const resultado = await db.rpc("get_order_return_movements", {
-      p_organization_id: organizationId,
-      p_order_ids: lote,
+    doPedido(pedidos, pedido).vendas.push({
+      skuId: linha.sku_id,
+      qtyDelta: linha.qty_delta,
+      idempotencyKey: linha.idempotency_key,
+      occurredAt: new Date(linha.occurred_at),
     });
-
-    if (resultado.error !== null) {
-      // "Não li" nunca vira "não houve devolução": sem a devolução, a anulação
-      // dela não sairia e o saldo ficaria +R (o lado perigoso).
-      throw new Error(`falha ao ler get_order_return_movements: ${resultado.error.message}`);
-    }
-
-    for (const row of resultado.data) {
-      revertedSaleKeyOf(row.idempotency_key);
-      porPedido.set(row.order_id, [
-        ...(porPedido.get(row.order_id) ?? []),
-        {
-          idempotencyKey: row.idempotency_key,
-          quantity: row.qty_delta,
-          occurredAt: new Date(row.occurred_at),
-        },
-      ]);
-    }
   }
 
-  return porPedido;
+  return { pedidos, estornos };
+}
+
+function situacaoDe(pedido: PedidoNoLedger, estornos: ReadonlyMap<string, string>): Situacao {
+  const chavesDasVendas = new Set(pedido.vendas.map((venda) => venda.idempotencyKey));
+
+  return {
+    semPar: pedido.vendas.filter((venda) => !estornos.has(estornoKeyOf(venda.idempotencyKey))),
+    reversoesAbertas: pedido.reversoes.filter(
+      (reversao) =>
+        chavesDasVendas.has(revertedSaleKeyOf(reversao.idempotencyKey)) &&
+        !estornos.has(estornoKeyOf(reversao.idempotencyKey)),
+    ),
+    preCapturada: pedido.vendas.some(
+      (venda) => estornos.get(estornoKeyOf(venda.idempotencyKey)) === "ESTORNO_PRE_CAPTURA",
+    ),
+  };
+}
+
+interface PedidoPendente {
+  id: number;
+  shipping_id: number | null;
+  logistic_type: string | null;
+  logistic_captured_at: string | null;
 }
 
 /**
- * Os pedidos pendentes desta CONTA, com o que já está gravado de logística.
+ * Os pedidos desta CONTA, com o que já está gravado de logística.
  *
- * **Só os que ainda podem ser do Full:** sem captura (R2, falta ler o envio) ou
- * capturados como `fulfillment` (o estorno não chegou a ser gravado). O pedido
- * já decidido como NÃO-Full fica de fora — a venda dele é legítima e continua
- * "sem par" para sempre, então sem este filtro o conjunto cresceria com cada
- * venda da loja, cada rodada pagaria a RPC das devoluções por ele e o
- * `pendentes` do log nunca chegaria a zero.
+ * `abertos` pede os que ainda podem ser do Full: sem captura (falta ler o envio)
+ * ou capturados como `fulfillment` (algo ficou aberto). O pedido já decidido
+ * como NÃO-Full fica de fora — a venda dele é legítima e continua "sem par"
+ * para sempre, e sem o filtro `pendentes` nunca chegaria a zero.
+ *
+ * `soSemCaptura` pede só os que não têm captura: é o estado 2 do cabeçalho, em
+ * que o pedido já capturado — Full ou não — não tem nada a fazer.
  */
 async function lerPedidos(
   db: AdminClient,
   mlAccountId: string,
   orderIds: readonly string[],
+  filtro: "abertos" | "soSemCaptura",
 ): Promise<PedidoPendente[]> {
   const pedidos: PedidoPendente[] = [];
 
   for (const lote of emLotes(orderIds, PEDIDOS_POR_CONSULTA)) {
-    const resultado = await db
+    const consulta = db
       .from("orders")
       .select("id, shipping_id, logistic_type, logistic_captured_at")
-      .eq("ml_account_id", mlAccountId)
-      .or("logistic_captured_at.is.null,logistic_type.eq.fulfillment")
-      // `orders.id` é número; o id veio de `source_id`, que é texto. A conversão
-      // é segura porque `pedidoDe` já recusou o que não for dígito ou não
-      // couber no inteiro seguro.
-      .in("id", lote.map(Number));
+      .eq("ml_account_id", mlAccountId);
+    const filtrada =
+      filtro === "abertos"
+        ? consulta.or("logistic_captured_at.is.null,logistic_type.eq.fulfillment")
+        : consulta.is("logistic_captured_at", null);
+    // `orders.id` é número; o id veio de `source_id`, que é texto. A conversão
+    // é segura porque `pedidoDe` já recusou o que não for dígito ou não
+    // couber no inteiro seguro.
+    const resultado = await filtrada.in("id", lote.map(Number));
 
     if (resultado.error !== null) {
       throw new Error(`falha ao ler orders: ${resultado.error.message}`);
@@ -341,35 +371,59 @@ async function lerPedidos(
     pedidos.push(...resultado.data);
   }
 
-  // Ordem determinística: a rodada seguinte continua de onde esta parou, e o
-  // teto por rodada não sorteia quem fica para trás.
-  return pedidos.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return pedidos;
 }
 
 /**
- * Os movimentos que fecham um pedido do Full: o `ESTORNO_FULL` de cada venda sem
- * par e a anulação de TODA reversão já gravada dessas vendas (R3 — numa venda
- * que nunca saiu da loja, toda unidade devolvida é excesso).
+ * Os movimentos que fecham um pedido do Full: a anulação de TODA reversão aberta
+ * das vendas dele (R3 — numa venda que nunca saiu da loja, toda unidade devolvida
+ * é excesso, esteja a venda estornada pela D-351 ou não) e o `ESTORNO_FULL` de
+ * cada venda sem par.
  *
- * As duas listas vêm das MESMAS funções do domínio que `computeSaleDeductions`
- * usa no caminho do pedido novo — é o que garante que a varredura e a
- * persistência calculem a mesma linha para o mesmo pedido.
+ * As duas listas vêm das MESMAS funções do domínio que `computeSaleDeductions` e
+ * `cancelamentoDoFull` usam — é o que garante que a varredura e a persistência
+ * calculem a mesma linha, com a mesma chave, para o mesmo pedido.
  */
-function movimentosDoFull(pendencia: Pendencia): {
-  estornos: StockMovementDraft[];
-  anulacoes: StockMovementDraft[];
-} {
-  const estornos: StockMovementDraft[] = [];
-  const anulacoes: StockMovementDraft[] = [];
-
-  for (const venda of pendencia.vendas) {
+function movimentosDoFull(
+  pedido: PedidoNoLedger,
+  situacao: Situacao,
+): { estornos: StockMovementDraft[]; anulacoes: StockMovementDraft[] } {
+  return {
     // Sem `recordedSale`: a venda que chega aqui JÁ É a linha gravada, então o
     // espelho (SKU, quantidade e data) sai dela mesma.
-    estornos.push(fullEstornoOf(venda));
-    anulacoes.push(...fullReversalEstornosOf(venda, pendencia.reversoes));
-  }
+    estornos: situacao.semPar.map((venda) => fullEstornoOf(venda)),
+    anulacoes: pedido.vendas.flatMap((venda) => fullReversalEstornosOf(venda, situacao.reversoesAbertas)),
+  };
+}
 
-  return { estornos, anulacoes };
+interface Contagem {
+  pendentes: number;
+  capturados: number;
+  full: number;
+  estornos: number;
+  anulacoes: number;
+  sem_envio: number;
+  envio_inexistente: number;
+  falhas: number;
+  adiados: number;
+  concorrentes: number;
+  restantes: number;
+}
+
+function contagemZerada(): Contagem {
+  return {
+    pendentes: 0,
+    capturados: 0,
+    full: 0,
+    estornos: 0,
+    anulacoes: 0,
+    sem_envio: 0,
+    envio_inexistente: 0,
+    falhas: 0,
+    adiados: 0,
+    concorrentes: 0,
+    restantes: 0,
+  };
 }
 
 export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): JobHandler {
@@ -381,7 +435,8 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
     }
 
     const { mlAccountId } = parsed.data;
-    const now = deps.now?.() ?? new Date();
+    const agora = (): Date => deps.now?.() ?? new Date();
+    const now = agora();
     const sleep = deps.sleep ?? defaultSleep;
 
     const account = await deps.db
@@ -401,46 +456,50 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
     }
 
     const organizationId = account.data.organization_id;
-    const pendencias = await lerPendencias(deps.db, organizationId);
+    const ledger = await lerLedger(deps.db, organizationId);
+    const situacoes = new Map<string, Situacao>();
+    const abertos: string[] = [];
+    const soSemCaptura: string[] = [];
 
-    if (pendencias.size === 0) {
-      context.logger.info("sync_order_logistics_done", {
-        ml_account_id: mlAccountId,
-        pendentes: 0,
-        capturados: 0,
-        full: 0,
-        estornos: 0,
-        anulacoes: 0,
-        sem_envio: 0,
-        falhas: 0,
-        adiados: 0,
-        restantes: 0,
-      });
+    for (const [pedido, noLedger] of ledger.pedidos) {
+      if (noLedger.vendas.length === 0) {
+        // Reversão sem venda gravada: nada a espelhar, e nenhuma decisão a tomar.
+        continue;
+      }
 
-      return { status: "done", processed: 0 };
+      const situacao = situacaoDe(noLedger, ledger.estornos);
+
+      situacoes.set(pedido, situacao);
+
+      if (situacao.semPar.length > 0 || situacao.reversoesAbertas.length > 0) {
+        abertos.push(pedido);
+      } else if (situacao.preCapturada) {
+        soSemCaptura.push(pedido);
+      }
     }
 
-    const pedidos = await lerPedidos(deps.db, mlAccountId, [...pendencias.keys()]);
+    const contagem = contagemZerada();
+    const resumo = (extra: Record<string, unknown> = {}): void => {
+      context.logger.info("sync_order_logistics_done", { ml_account_id: mlAccountId, ...contagem, ...extra });
+    };
+
+    const pedidos = [
+      ...(await lerPedidos(deps.db, mlAccountId, abertos, "abertos")),
+      ...(await lerPedidos(deps.db, mlAccountId, soSemCaptura, "soSemCaptura")),
+      // Ordem determinística: a rodada seguinte continua de onde esta parou, e o
+      // teto por rodada não sorteia quem fica para trás.
+    ].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
     if (pedidos.length === 0) {
-      // O ledger tem venda sem par, mas de OUTRA conta da mesma organização (a
-      // varredura da conta dela fecha) ou de pedido já decidido como NÃO-Full
-      // (a venda é legítima). Nenhum dos dois é falha, e somem do log como zero.
-      context.logger.info("sync_order_logistics_done", {
-        ml_account_id: mlAccountId,
-        pendentes: 0,
-        capturados: 0,
-        full: 0,
-        estornos: 0,
-        anulacoes: 0,
-        sem_envio: 0,
-        falhas: 0,
-        adiados: 0,
-        restantes: 0,
-      });
+      // Nada aberto que ainda possa ser do Full, ou o que está aberto é de OUTRA
+      // conta da mesma organização (a varredura da conta dela fecha). Nenhum dos
+      // dois é falha.
+      resumo();
 
       return { status: "done", processed: 0 };
     }
+
+    contagem.pendentes = pedidos.length;
 
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
 
@@ -448,58 +507,37 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
 
-    const logistics = createShipmentLogistics({
-      mercadoLivre: deps.mercadoLivre,
-      accessToken: tokenResult.accessToken,
-      logger: context.logger,
-      ...(deps.now === undefined ? {} : { now: deps.now }),
-    });
+    const { accessToken } = tokenResult;
 
-    // As devoluções de todos os pendentes desta conta, numa leitura só: a RPC é
-    // por lote de pedidos, e descobrir quais são `fulfillment` acontece DEPOIS
-    // da ida à rede — pedir de novo por pedido seria uma consulta por venda.
-    const devolucoes = await lerDevolucoes(
-      deps.db,
-      organizationId,
-      pedidos.map((pedido) => String(pedido.id)),
-    );
-
-    let capturados = 0;
-    let full = 0;
-    let estornosGravados = 0;
-    let anulacoesGravadas = 0;
-    let semEnvio = 0;
-    let falhas = 0;
-    let adiados = 0;
+    const inicioDaRede = now.getTime();
     let lidosDaRede = 0;
     let processados = 0;
 
     for (const pedido of pedidos) {
-      const pendencia = pendencias.get(String(pedido.id));
+      const noLedger = ledger.pedidos.get(String(pedido.id));
+      const situacao = situacoes.get(String(pedido.id));
 
-      if (pendencia === undefined) {
+      if (noLedger === undefined || situacao === undefined) {
         continue;
       }
 
       let logisticType: OrderLogisticType = pedido.logistic_type;
-      let capturadoEm: string | null = pedido.logistic_captured_at;
 
-      if (capturadoEm === null) {
+      if (pedido.logistic_captured_at === null) {
         // R5: só se lê o envio de quem ainda não decidiu. Quem já tem captura
         // fecha com o valor PERSISTIDO, sem rede.
         if (pedido.shipping_id === null) {
           // Sem a chave do envio não há o que ler. Fica pendente e DECLARADO —
           // nunca escondido numa contagem de sucesso.
-          semEnvio += 1;
+          contagem.sem_envio += 1;
 
           continue;
         }
 
-        if (lidosDaRede >= PEDIDOS_POR_RODADA) {
-          // `continue`, e não `break`: o teto é de CHAMADAS, e o pedido já
-          // capturado mais adiante na lista fecha sem nenhuma. Com `break`, ele
-          // esperaria o backlog inteiro de leituras passar na frente.
-          adiados += 1;
+        if (lidosDaRede >= PEDIDOS_POR_RODADA || agora().getTime() - inicioDaRede >= ORCAMENTO_DE_REDE_MS) {
+          // `continue`, e não `break`: os tetos são de REDE, e o pedido já
+          // capturado mais adiante na lista fecha sem chamada nenhuma.
+          contagem.adiados += 1;
 
           continue;
         }
@@ -510,63 +548,105 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
 
         lidosDaRede += 1;
 
-        const capturada = await logistics.read(pedido.shipping_id, pedido.id);
+        let capturada: CapturedLogistic;
 
-        if (capturada === null) {
-          // `createShipmentLogistics` já registrou o motivo. O pedido continua
-          // pendente e volta na próxima rodada — nunca presumir Full (R2).
-          falhas += 1;
+        try {
+          capturada = await readShipmentLogistic(
+            { mercadoLivre: deps.mercadoLivre, accessToken, now: agora },
+            pedido.shipping_id,
+          );
+        } catch (error) {
+          const acao = classifyShipmentFailure(error);
+          const motivo = error instanceof Error ? error.message : String(error);
 
-          continue;
-        }
+          if (acao === "interromper") {
+            // A falha é da conta ou da rede: o próximo pedido falharia igual, e
+            // cada um gastaria as tentativas do cliente na cota que o webhook
+            // usa. O que já foi gravado fica — tudo aqui é idempotente.
+            context.logger.warn("sync_order_logistics_interrompida", {
+              ml_account_id: mlAccountId,
+              order_id: pedido.id,
+              motivo,
+            });
+            contagem.restantes = pedidos.length - processados;
+            resumo({ interrompida: true });
 
-        logisticType = capturada.logisticType;
-        capturadoEm = capturada.capturedAt.toISOString();
-      }
+            return {
+              status: "failed",
+              retryable: true,
+              reason: `leitura do envio interrompida no pedido ${String(pedido.id)}: ${motivo}`,
+            };
+          }
 
-      if (isFullLogistic(logisticType)) {
-        full += 1;
+          if (acao === "pular") {
+            // Do envio, e sem prova de que seja definitiva: pendente, volta na
+            // próxima rodada. Nunca presumir Full (R2).
+            context.logger.warn("order_logistic_leitura_falhou", {
+              order_id: pedido.id,
+              shipping_id: pedido.shipping_id,
+              motivo,
+            });
+            contagem.falhas += 1;
 
-        const { estornos, anulacoes } = movimentosDoFull({
-          vendas: pendencia.vendas,
-          reversoes: [...pendencia.reversoes, ...(devolucoes.get(String(pedido.id)) ?? [])],
-        });
+            continue;
+          }
 
-        // ANTES da captura: uma falha aqui deixa o pedido pendente (a venda
-        // segue sem estorno) e a rodada seguinte o refaz — pelo ramo sem rede
-        // se a captura já estiver gravada, ou lendo o envio de novo se não.
-        await recordStockMovements(deps.db, { organizationId }, estornos, "ESTORNO_FULL", {
-          type: "ORDER",
-          id: String(pedido.id),
-        });
-
-        estornosGravados += estornos.length;
-
-        if (anulacoes.length > 0) {
-          await recordStockMovements(deps.db, { organizationId }, anulacoes, "ESTORNO_REVERSAO_EXCEDENTE", {
-            type: "ORDER",
-            id: String(pedido.id),
+          // 404: o envio não existe, e não há sinal a esperar. É RESPOSTA — a
+          // captura é carimbada com o tipo nulo e a venda baixa a loja.
+          context.logger.warn("order_logistic_envio_inexistente", {
+            order_id: pedido.id,
+            shipping_id: pedido.shipping_id,
           });
-
-          anulacoesGravadas += anulacoes.length;
+          contagem.envio_inexistente += 1;
+          capturada = { logisticType: null, capturedAt: agora() };
         }
-      }
 
-      if (pedido.logistic_captured_at === null) {
-        // O carimbo só nasce uma vez (R5): o `is null` no WHERE impede que uma
-        // rodada concorrente, ou uma releitura divergente, reescreva a decisão
-        // com que o par já foi gravado.
+        // 1. A CAPTURA, antes de qualquer movimento: ela é a decisão (R5), e o
+        // que falhar daqui em diante deixa o pedido capturado e ABERTO, que a
+        // rodada seguinte fecha sem rede. O `is null` impede que uma rodada
+        // concorrente, ou uma releitura divergente, reescreva a decisão.
         const gravado = await deps.db
           .from("orders")
-          .update({ logistic_type: logisticType, logistic_captured_at: capturadoEm })
+          .update({ logistic_type: capturada.logisticType, logistic_captured_at: capturada.capturedAt.toISOString() })
           .eq("id", pedido.id)
-          .is("logistic_captured_at", null);
+          .is("logistic_captured_at", null)
+          .select("id");
 
         if (gravado.error !== null) {
           throw new Error(`falha ao gravar a logistica do pedido ${String(pedido.id)}: ${gravado.error.message}`);
         }
 
-        capturados += 1;
+        if (gravado.data.length === 0) {
+          // Outro escritor carimbou entre a leitura do pedido e aqui. A decisão
+          // que vale é a DELE (R5), e ela não está na mão: a rodada seguinte o
+          // encontra capturado e decide pelo valor gravado.
+          contagem.concorrentes += 1;
+
+          continue;
+        }
+
+        contagem.capturados += 1;
+        logisticType = capturada.logisticType;
+      }
+
+      if (isFullLogistic(logisticType)) {
+        contagem.full += 1;
+
+        const { estornos, anulacoes } = movimentosDoFull(noLedger, situacao);
+        const origem = { type: "ORDER", id: String(pedido.id) };
+
+        // 2. As anulações. 3. O `ESTORNO_FULL` por ÚLTIMO: enquanto ele não
+        // entra, a venda continua sem par e o pedido continua ABERTO — é o que
+        // traz de volta a rodada que falhou no meio.
+        if (anulacoes.length > 0) {
+          await recordStockMovements(deps.db, { organizationId }, anulacoes, "ESTORNO_REVERSAO_EXCEDENTE", origem);
+          contagem.anulacoes += anulacoes.length;
+        }
+
+        if (estornos.length > 0) {
+          await recordStockMovements(deps.db, { organizationId }, estornos, "ESTORNO_FULL", origem);
+          contagem.estornos += estornos.length;
+        }
       }
 
       processados += 1;
@@ -575,9 +655,9 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
         context.logger.info("sync_order_logistics_pagina", {
           ml_account_id: mlAccountId,
           processados,
-          full,
-          estornos: estornosGravados,
-          falhas,
+          full: contagem.full,
+          estornos: contagem.estornos,
+          falhas: contagem.falhas,
         });
       }
     }
@@ -585,20 +665,8 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
     // Quantos pedidos desta conta continuam sem decisão depois desta rodada: o
     // número que diz se a varredura está avançando, e o único que o dono precisa
     // ver cair até zero antes da compensação.
-    const restantes = pedidos.length - processados;
-
-    context.logger.info("sync_order_logistics_done", {
-      ml_account_id: mlAccountId,
-      pendentes: pedidos.length,
-      capturados,
-      full,
-      estornos: estornosGravados,
-      anulacoes: anulacoesGravadas,
-      sem_envio: semEnvio,
-      falhas,
-      adiados,
-      restantes,
-    });
+    contagem.restantes = pedidos.length - processados;
+    resumo();
 
     return { status: "done", processed: processados };
   };
