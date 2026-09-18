@@ -24,8 +24,6 @@
 
 ### O que está pronto
 
-`/estoque/movimentacoes` recebeu a reconstrução da experiência operacional: cabeçalho e faixa de indicadores do Design System, filtros agrupados com busca por referência, estados de erro e vazio explícitos, paginação preservada e tabela responsiva com dimensões separadas de movimento, local, origem, referência, motivo e responsável. A tela segue somente leitura e as consultas continuam em RPCs paginadas sob RLS; a migration `20260918125153` alinha busca por referência e datas inclusivas entre extrato e indicadores. Verificação local: `pnpm run check`, `pnpm run build`, `pnpm docs:check` e inspeção visual autenticada em desktop.
-
 `/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
 `/copiloto` e `/notificacoes` receberam acabamento de produto na mesma branch: o Copiloto agora explicita o contrato de dados autorizados, fontes consultadas e estado de consulta, com composição responsiva e sem alterar o SSE; a Central ganhou linhas mais escaneáveis, estado lido/não lido acessível, metadata semântica e CTA responsivo. Não houve alteração de banco, API ou dependência. Verificação: `check` 29/29, build web, `docs:check`, cinco guardas e E2E do Copiloto 8/8; a suíte de notificações passou 4/4 na primeira execução e precisa de reset do seed local antes de repetir, conforme D-225.
@@ -43,12 +41,9 @@ filtros dentro do painel, busca operacional, identidade de produto e ações
 compactas por linha. As recusas métricas de D-249 permanecem intactas; a
 mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 
-`/full` virou fila de envio (D-380): cobertura por linha (Full ÷ venda média diária
-da janela), focos "Acabando" e "Pode enviar hoje", ordem por prioridade de envio e CSV
-do recorte. Depende da migration `20260918140000`; sem ela a tela degrada para a
-assinatura antiga com aviso.
-
 `/anuncios`: D-381 (ordem, faixa numa passada, foto). **Worker só depois de `20260918150000`.**
+
+Entregas de tela fechadas em 18/09 (ajuste de estoque, `/full` D-380, `/estoque/movimentacoes`): `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`.
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.

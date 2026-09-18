@@ -13589,3 +13589,50 @@ MLB, SKU e conta desceram para a linha de identidade embaixo do titulo (tres col
 **6. VERIFICACAO**
 
 Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, anon, outra organizacao. Unitarios: ordem/paginacao, foto/link, CSP. E2E local de `/anuncios` (com caso novo de ordenacao) e das gavetas: 10/10. Guardas `check:*`, `docs:check` e build de producao. Modo degradado testado no Supabase local com a funcao de contagens renomeada.
+
+## D-383 - Pente fino, lote 1: navegacao no celular, reconexao de conta com token vencido, datas de negocio, custo zero, falhas que viravam zero, paginas de erro e papeis
+
+**Contexto:** o dono pediu um pente fino no sistema inteiro (18/09). As 48 telas foram abertas e fotografadas a 1440 e 390 px contra `next start` e o banco local (todas 200, nenhuma com rolagem lateral no celular), e o codigo de cada uma foi lido em tres frentes paralelas. Os achados foram agrupados em quatro lotes; este e o primeiro, o de defeito com impacto e correcao curta. Os tres P1 foram conferidos no codigo e na captura antes de corrigir.
+
+**1. P1 -- NAVEGACAO NO CELULAR E NO TABLET**
+
+Abaixo de 850 px o trilho escondia todos os itens menos o ativo (`.sb-nav-link:not([aria-current="page"])` com `display: none`), e o rodape (Sugestoes, conta) junto: a unica navegacao virava a busca. Agora ficam todos os glifos; o texto sai so da VISTA (recorte de 1 px, continua sendo o nome acessivel do link) e o `title` do link da o rotulo no hover. Grupo recolhido no desktop nao some no trilho (`::details-content`).
+
+**2. P1 -- RECONECTAR CONTA COM TOKEN VENCIDO (web + api)**
+
+`/contas` avisava "token vencido... ate ela ser reautorizada" e nao havia botao: o Conectar so existia para conta desconectada, e a api recusava toda conta `CONNECTED`. `startConnect` passa a aceitar a conta conectada cuja credencial PAROU -- a mesma regra do cartao (`access_token_expires_at < now()`), ou nenhuma credencial -- e continua recusando a saudavel e a que ele nao conseguiu ler. `completeConnect` ganhou a conferencia que faltava: conta que ja tem `seller_id` so aceita o MESMO usuario do Mercado Livre; outro seller e recusado ANTES de gravar credencial e sem `markError`. Sem isso, reautorizar logado na loja errada gravaria os tokens dela nesta linha e o sistema sincronizaria a loja errada em silencio. A tela mostra "Reconectar" so para ADMIN e so na conta parada. **Precisa de deploy da api** para funcionar; antes dele, o botao devolve a mensagem da api ("conta ja conectada").
+
+**3. P1 -- PREVISAO DO PEDIDO NA PAGINA DO FORNECEDOR**
+
+`formatDateTime` sobre `expected_at` (data de negocio gravada a meia-noite UTC) mostrava "dia anterior, 21h" -- o defeito que D-365 corrigiu em `/compras/[id]`. Agora `formatBusinessDate`.
+
+**4. DATAS DE NEGOCIO**
+
+Seis lugares montavam a janela de metrica com `toISOString().slice(0, 10)` -- o dia em UTC: depois das 21h de Brasilia a janela de 30 dias andava um dia. `lib/business-window.ts` (`lastBusinessDays`) usa `toSalesMetricDate`/`shiftBusinessDate` de `@sb/domain`, como `/diagnostico` e `/faturamento` ja faziam, em `/skus/[skuId]`, `/anuncios`, `/anuncios/[itemId]`, `/curva-abc`, `/full` e `/full/exportar`. A aba Precos do SKU e `/precos` continuam com os limites em UTC por serem instantes (`timestamptz`), nao dias; nao mudaram nesta fatia.
+
+**5. CUSTO ZERO NAO E CUSTO CONHECIDO**
+
+O pedido de compra sugeria `skus.purchase_cost = 0` como custo (R$ 0,00 marcado como sugestao) e baixava o total. `registeredCost` (`lib/purchase-order-cost.ts`) devolve `null` para zero ou negativo -- como `/reposicao` ja lia -- nos quatro pontos que pre-preenchem custo.
+
+**6. FALHA NAO VIRA ZERO (D-067)**
+
+`/estoque`: `get_stock_summary` que falhava deixava a faixa em "Reservado 0 / Full 0" como medida; agora as celulas dizem "--" com aviso. Home: o grafico que falhava dizia "nenhum dia com metrica"; agora diz que nao carregou. `/sincronizacao` NAO mudou: o autor escolheu de proposito mostrar um erro unico quando qualquer das cinco leituras falha, para nunca exibir tela parcial como completa.
+
+**7. PAGINAS DE ERRO E 404**
+
+Nao havia `not-found.tsx` nem `error.tsx`: link velho e `notFound()` das telas de detalhe mostravam a pagina crua do Next, sem menu. O 404 fica dentro do `Shell`; a fronteira de erro e componente de cliente (sem `Shell`, que le a sessao no servidor), com "Tentar de novo" (`retry` -- nesta versao do Next nao e `reset`) e o `digest` para ligar o relato ao log.
+
+**8. NAO OFERECER O QUE O BANCO VAI RECUSAR**
+
+Todas as escritas de pedido de compra passam por `private.check_purchase_order_writer` (ADMIN/GESTOR, conferido no Dev). "Novo pedido", a barra de selecao de `/reposicao`, o novo/editar pedido e o painel de acoes do pedido deixam de aparecer para os outros papeis (`lib/purchase-order-permission.ts`); o pedido segue legivel. Em `/contas`, cadastrar e conectar conta so para ADMIN (RLS e api). "Saude do Sistema" sai do menu de quem nao e ADMIN (`get_system_health` so responde a ADMIN). O cartao "Acoes de impacto alto" da Home abre `/acoes?prioridade=alta`, o mesmo recorte que conta. Curva ABC formata participacao com `formatPercent` ("12,3%", era "12.34%"). A aba Precos do SKU perdeu a data cravada "24/08/2026" (classe D-234).
+
+**9. FORA DESTE LOTE, E POR QUE**
+
+O cartao "Em mediacao" da Home (a lista de `/atendimento` nao tem filtro de mediacao) vai com o redesenho da Caixa de Entrada, lote 2. `/notificacoes` e `/copiloto` ficaram de fora: tinham trabalho de outra frente em andamento.
+
+**10. VERIFICACAO**
+
+`tsc` e `eslint` em `apps/web` e `apps/api`; unidade da web **825 verdes** (novos: `business-window`, `registeredCost`, `podeOperarCompras`) e da api **406 verdes** (5 novos em `ml-accounts.test.ts`: conectada saudavel recusada, vencida e sem credencial aceitas, leitura falha recusa, seller diferente recusado sem gravar nada, mesmo seller aceito); `next build`; `docs:check`. O `HANDOFF.md` estava em 25,5 KB depois de `9c92d7d`: os paragrafos fechados de `/full` (D-380) e `/estoque/movimentacoes` foram MOVIDOS, nao apagados, para `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`, com um ponteiro.
+
+- a reconexao so funciona depois do deploy da api -- ato do dono (deploy de producao e bloqueado para o agente);
+- lotes 2 a 4 do pente fino: Caixa de Entrada; ligacoes entre telas, busca por teclado e confirmacoes; limpeza visual de `/skus/[skuId]`, `/compras/[id]` e do Copiloto.
