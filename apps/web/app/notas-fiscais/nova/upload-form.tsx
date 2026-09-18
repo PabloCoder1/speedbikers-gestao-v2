@@ -244,7 +244,7 @@ export function UploadForm(): ReactNode {
         </span>
         <input
           ref={entrada}
-          className="sb-sr-only"
+          className="sb-input sb-sr-only"
           type="file"
           multiple
           accept=".xml,.pdf,application/xml,text/xml,application/pdf"
@@ -298,7 +298,7 @@ export function UploadForm(): ReactNode {
 
                   {!enviando && item.estado !== "enviado" && (
                     <button
-                      className="sb-nf-remover"
+                      className="sb-button sb-nf-remover"
                       type="button"
                       aria-label={`Tirar ${item.triado.nome} da lista`}
                       onClick={() => {

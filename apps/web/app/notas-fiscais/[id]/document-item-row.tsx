@@ -201,6 +201,7 @@ export function DocumentItemRow({
                   {results.map((sku) => (
                     <li key={sku.id}>
                       <button
+                        className="sb-button"
                         type="button"
                         onClick={() => {
                           setSelected(sku);
