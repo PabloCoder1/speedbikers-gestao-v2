@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "./carregando-link";
 import { TOM, type Tom } from "./tone";
 
 /**
@@ -126,6 +127,7 @@ export function KpiStrip({
           {cell.href !== undefined && (
             <Link className="sb-kpi-link" href={cell.href} style={TOM[cell.tom ?? "info"]}>
               ver lista
+              <CarregandoSeODemorar />
             </Link>
           )}
         </div>

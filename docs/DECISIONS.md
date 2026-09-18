@@ -13589,3 +13589,16 @@ MLB, SKU e conta desceram para a linha de identidade embaixo do titulo (tres col
 **6. VERIFICACAO**
 
 Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, anon, outra organizacao. Unitarios: ordem/paginacao, foto/link, CSP. E2E local de `/anuncios` (com caso novo de ordenacao) e das gavetas: 10/10. Guardas `check:*`, `docs:check` e build de producao. Modo degradado testado no Supabase local com a funcao de contagens renomeada.
+
+## D-382 - Toda pasta de `app/` com pagina tem `loading.tsx`, e a CI garante
+
+**Contexto:** o dono pediu que toda tela mostre a tela de carregamento quando demora. So existia `app/loading.tsx`, e um `loading.tsx` so entra quando o segmento em que ele mora troca de filho: trocar de SECAO (`/vendas` -> `/anuncios`) mostrava; navegar DENTRO dela (`/anuncios` -> `/anuncios/MLB...`, `/estoque` -> movimentacoes e ajuste, `/notas-fiscais` -> nova) congelava a tela antiga ate a nova chegar. E o "ver lista" da faixa de KPIs e as pilulas de filtro (`<Link>` para a mesma pagina com outro `?filtro`) nao mudam segmento nenhum.
+
+**Medido** num build de producao local, com 2,5 s de espera DENTRO das paginas (o servidor manda o fallback na hora e o conteudo depois, como numa consulta lenta real -- atrasar a resposta inteira na rede nao serve, porque ai nem o fallback chega): antes, 5 de 9 navegacoes sem tela de carregamento; depois, 9 de 9.
+
+**Decisao:**
+1. Cada pasta de `app/` com pagina (nela ou abaixo) tem um `loading.tsx` de uma linha que reexporta o da raiz -- uma tela de carregamento so no app. `/cobertura` fica de fora: so redireciona (D-288).
+2. `check:loading` (`apps/web/scripts/check-loading.mjs`) no job estatico da CI: pasta com pagina e sem `loading.tsx` reprova. Build, typecheck e lint passam sem o arquivo; e a falta que ninguem ve em teste rapido.
+3. `CarregandoSeODemorar` (`components/carregando-link.tsx`) dentro dos `<Link>` de `KpiStrip` e `FilterPill`: com `useLinkStatus`, cobre a tela com a mesma `CarregandoTela` enquanto a navegacao pende -- por portal no `body` (a tela tem links; link dentro de link e HTML invalido), com o clique parado na cobertura e o mesmo atraso de 350 ms do esqueleto.
+
+**O que continua fora:** `<Link>` para a mesma pagina com outro `?filtro` escrito FORA desses dois componentes nao ganha a cobertura sozinho -- quem escrever um usa `CarregandoSeODemorar` dentro dele. `<a>` comum recarrega a pagina e o `loading.tsx` aparece pelo streaming.
