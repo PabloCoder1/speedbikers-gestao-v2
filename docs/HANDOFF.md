@@ -10,7 +10,6 @@
 
 ## Estado
 
-
 | | |
 |---|---|
 | **Atualizado em** | 2026-09-17 |
@@ -29,7 +28,6 @@
 
 `/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
-
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,
@@ -42,20 +40,12 @@ filtros dentro do painel, busca operacional, identidade de produto e ações
 compactas por linha. As recusas métricas de D-249 permanecem intactas; a
 mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 
-`/estoque/[skuId]/ajuste` virou um fluxo operacional completo: entrada, saída e
-balanço sem sinal manual, prévia do saldo, motivo estruturado, autoria, histórico
-recente, bloqueio seguro quando saldo/permissão falha e layout responsivo. O
-núcleo está em `01d1ce7`, com validação local completa (`check`, `build`,
-`docs:check` e E2E responsivo) nesta entrega.
-
 `/full` virou fila de envio (D-380): cobertura por linha (Full ÷ venda média diária
 da janela), focos "Acabando" e "Pode enviar hoje", ordem por prioridade de envio e CSV
 do recorte. Depende da migration `20260918140000`; sem ela a tela degrada para a
 assinatura antiga com aviso.
 
-`/anuncios` ordena pela coluna, pagina com números, filtra por chips e mostra a foto do
-anúncio (D-381); a faixa sai de `get_listings_dashboard_counts` (2 leituras por visita em vez
-de 7). Migration `20260918150000`; **worker só depois dela** (grava `thumbnail_url`/`permalink`).
+`/anuncios`: D-381 (ordem, faixa numa passada, foto). **Worker só depois de `20260918150000`.**
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
