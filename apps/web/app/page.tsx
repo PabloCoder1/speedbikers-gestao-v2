@@ -406,7 +406,9 @@ export default async function HomePage({
     {
       label: "Em mediação",
       caption: "com representante do Mercado Livre; subconjunto dos atendimentos abertos",
-      href: "/atendimento?canal=CLAIM",
+      // O cartão conta `is_mediation` entre os abertos; a lista abria TODAS as
+      // reclamações. `?mediacao=1` existe desde o lote 2 do pente fino (18/09).
+      href: "/atendimento?mediacao=1",
       cta: "Ver mediações",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "caso em disputa" : "casos em disputa"}`,
       count: mediations.count,

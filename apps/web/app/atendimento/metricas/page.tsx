@@ -1,8 +1,10 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
+import { Voltar } from "../../../components/voltar";
 import { formatCount } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/server";
 
@@ -16,6 +18,12 @@ export const dynamic = "force-dynamic";
  *
  * Tudo agregado em SQL (`get_support_metrics`, security invoker — a RLS
  * decide o escopo). Janela fixa de 7 dias nesta fatia, sem seletor.
+ *
+ * Lote 2 do pente fino (D-384, 18/09): os cartões soltos e estilizados à mão
+ * viraram a faixa do design system, e os números de "agora" abrem a fila que
+ * contam na Caixa de Entrada — a MESMA leitura, então lista e número batem.
+ * As legendas perderam o jargão de desenvolvimento ("D-107", "due_at", o
+ * caminho do documento): quem lê é o operador.
  */
 
 const PERIOD_DAYS = 7;
@@ -42,31 +50,6 @@ interface SupportMetricsRow {
   mediana_primeira_resposta_horas: number | null;
 }
 
-interface Tile {
-  label: string;
-  value: string;
-  caption: string;
-  emphasis?: boolean;
-}
-
-function MetricTile({ tile }: { tile: Tile }): ReactNode {
-  return (
-    <div
-      style={{
-        padding: "var(--sb-space-3)",
-        borderRadius: "var(--sb-radius)",
-        border: "1px solid var(--sb-border)",
-        borderLeft: `3px solid ${tile.emphasis === true ? "var(--sb-danger)" : "var(--sb-primary)"}`,
-        background: "var(--sb-surface)",
-      }}
-    >
-      <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{tile.label}</div>
-      <div style={{ fontSize: "1.5rem", fontWeight: 600, margin: "0.125rem 0" }}>{tile.value}</div>
-      <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{tile.caption}</div>
-    </div>
-  );
-}
-
 export default async function MetricasSacPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -74,71 +57,137 @@ export default async function MetricasSacPage(): Promise<ReactNode> {
   const error = result.error;
   const data = result.data as SupportMetricsRow | null;
 
+  const cabecalho = (
+    <PageTitle
+      eyebrow="ATENDIMENTO / OPERAÇÃO"
+      title="Métricas de SAC"
+      subtitle="O retrato da fila agora e o fluxo dos últimos 7 dias. O tempo de resolução ainda fica de fora: os relógios de abertura e de resolução não são comparáveis."
+      aside={<Voltar href="/atendimento" rotulo="Caixa de Entrada" />}
+      compacto
+    />
+  );
+
   if (error !== null || data === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Métricas de SAC</h1>
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível calcular as métricas{error === null ? "" : `: ${error.message}`}.
+        {cabecalho}
+        <p role="alert" className="sb-inbox-note sb-inbox-note-danger">
+          Não foi possível calcular as métricas agora. Tente recarregar a página.
         </p>
       </Shell>
     );
   }
 
-  const agora: Tile[] = [
-    { label: "Atendimentos abertos", value: formatCount(data.abertos_total), caption: `perguntas ${String(data.abertos_question)} · mensagens ${String(data.abertos_message)} · reclamações ${String(data.abertos_claim)}` },
-    { label: "Aguardando a loja", value: formatCount(data.aguardando_loja), caption: "a bola está conosco", emphasis: data.aguardando_loja > 0 },
-    { label: "Em mediação", value: formatCount(data.mediacoes_abertas), caption: "representante do ML no caso", emphasis: data.mediacoes_abertas > 0 },
-    { label: "Prazos nas próximas 24h", value: formatCount(data.prazos_proximas_24h), caption: "prazo remoto real (D-107)", emphasis: data.prazos_proximas_24h > 0 },
-    { label: "Prazos vencidos", value: formatCount(data.prazos_vencidos), caption: "ativos com due_at no passado", emphasis: data.prazos_vencidos > 0 },
-  ];
-
-  const periodo: Tile[] = [
-    { label: "Novas perguntas", value: formatCount(data.novos_question), caption: `últimos ${String(PERIOD_DAYS)} dias` },
-    { label: "Novas conversas", value: formatCount(data.novos_message), caption: `últimos ${String(PERIOD_DAYS)} dias` },
-    { label: "Novas reclamações", value: formatCount(data.novos_claim), caption: "série confiável a partir de 28/08 — antes é backfill" },
-    { label: "Resolvidos", value: formatCount(data.resolvidos_periodo), caption: `últimos ${String(PERIOD_DAYS)} dias` },
+  const agora: KpiCellData[] = [
     {
-      label: "Primeira resposta (mediana)",
-      value: data.mediana_primeira_resposta_horas === null ? "—" : `${String(data.mediana_primeira_resposta_horas)} h`,
-      caption: "perguntas e mensagens; reclamações fora (transcript é piso)",
+      label: "Atendimentos abertos",
+      formula: "Atendimentos com status interno diferente de Resolvido.",
+      value: formatCount(data.abertos_total),
+      previous: null,
+      ressalva: `perguntas ${formatCount(data.abertos_question)} · mensagens ${formatCount(data.abertos_message)} · reclamações ${formatCount(data.abertos_claim)}`,
+      href: "/atendimento",
+      tom: "neutro",
+    },
+    {
+      label: "Aguardando a loja",
+      formula: "Pergunta sem resposta, ou conversa/reclamação em que o cliente falou por último.",
+      value: formatCount(data.aguardando_loja),
+      previous: null,
+      ressalva: "a próxima resposta é nossa",
+      tom: "atencao",
+      ...(data.aguardando_loja > 0 ? { destaque: "atencao" as const } : {}),
+    },
+    {
+      label: "Em mediação",
+      formula: "Reclamações abertas com mediação do Mercado Livre.",
+      value: formatCount(data.mediacoes_abertas),
+      previous: null,
+      ressalva: "o Mercado Livre entrou no caso",
+      href: "/atendimento?mediacao=1",
+      tom: "perigo",
+      ...(data.mediacoes_abertas > 0 ? { destaque: "perigo" as const } : {}),
+    },
+    {
+      label: "Vence em 24 h",
+      formula: "Prazos ativos do Mercado Livre que vencem nas próximas 24 horas.",
+      value: formatCount(data.prazos_proximas_24h),
+      previous: null,
+      ressalva: "prazo informado pelo Mercado Livre",
+      href: "/atendimento?prazo=24h",
+      tom: "atencao",
+    },
+    {
+      label: "Prazo vencido",
+      formula: "Prazos ativos do Mercado Livre com a data no passado.",
+      value: formatCount(data.prazos_vencidos),
+      previous: null,
+      ressalva: "prazo do Mercado Livre já passou",
+      href: "/atendimento?prazo=vencido",
+      tom: "perigo",
+      ...(data.prazos_vencidos > 0 ? { destaque: "perigo" as const } : {}),
     },
   ];
 
-  const grid: React.CSSProperties = {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "var(--sb-space-3)",
-    marginBottom: "var(--sb-space-4)",
-  };
+  const periodo: KpiCellData[] = [
+    {
+      label: "Novas perguntas",
+      formula: `Perguntas criadas nos últimos ${String(PERIOD_DAYS)} dias.`,
+      value: formatCount(data.novos_question),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Novas conversas",
+      formula: `Conversas pós-venda criadas nos últimos ${String(PERIOD_DAYS)} dias.`,
+      value: formatCount(data.novos_message),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Novas reclamações",
+      formula: `Reclamações criadas nos últimos ${String(PERIOD_DAYS)} dias.`,
+      value: formatCount(data.novos_claim),
+      previous: null,
+      // O histórico anterior a 28/08 veio de carga retroativa, não do fluxo vivo.
+      ressalva: "série confiável desde 28/08",
+      tom: "neutro",
+    },
+    {
+      label: "Resolvidos",
+      formula: `Atendimentos marcados como resolvidos nos últimos ${String(PERIOD_DAYS)} dias.`,
+      value: formatCount(data.resolvidos_periodo),
+      previous: null,
+      tom: "ok",
+    },
+    {
+      label: "Primeira resposta (mediana)",
+      formula: "Mediana do tempo entre a primeira mensagem do cliente e a primeira resposta da loja.",
+      value:
+        data.mediana_primeira_resposta_horas === null
+          ? "—"
+          : `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(data.mediana_primeira_resposta_horas)} h`,
+      previous: null,
+      ressalva: "perguntas e mensagens; reclamações ficam fora",
+      tom: "neutro",
+    },
+  ];
 
   return (
     <Shell>
-      <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem" }}>
-        <Link href="/atendimento" style={{ color: "var(--sb-secondary)" }}>
-          ← Caixa de Entrada
-        </Link>
-      </p>
+      {cabecalho}
 
-      <PageTitle
-        eyebrow="ATENDIMENTO / OPERAÇÃO"
-        title="Métricas de SAC"
-        subtitle="Definições canônicas em docs/METRICS.md §5B. Tempo de resolução fica de fora por enquanto: os relógios de criação e resolução não são comparáveis ainda."
-        compacto
-      />
+      <Panel title="Agora" subtitle="A fila neste momento, em todas as contas. Os números com link abrem a fila que contam.">
+        <div className="sb-panel-body">
+          <KpiStrip ancora cells={agora} />
+        </div>
+      </Panel>
 
-      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1rem" }}>Agora</h2>
-      <div style={grid}>
-        {agora.map((tile) => (
-          <MetricTile key={tile.label} tile={tile} />
-        ))}
-      </div>
-
-      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1rem" }}>Últimos {PERIOD_DAYS} dias</h2>
-      <div style={grid}>
-        {periodo.map((tile) => (
-          <MetricTile key={tile.label} tile={tile} />
-        ))}
+      <div className="sb-inbox-section">
+        <Panel title={`Últimos ${String(PERIOD_DAYS)} dias`} subtitle="O que entrou e o que saiu da fila no período.">
+          <div className="sb-panel-body">
+            <KpiStrip cells={periodo} />
+          </div>
+        </Panel>
       </div>
     </Shell>
   );

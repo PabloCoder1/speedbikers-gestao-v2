@@ -22,6 +22,9 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
   const [body, setBody] = useState(template.body);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Apagar não tem volta: pede um segundo clique, na própria linha (lote 2 do
+  // pente fino, 18/09 — antes o primeiro clique já apagava).
+  const [confirmando, setConfirmando] = useState(false);
 
   async function run(action: () => Promise<TemplateActionResult>): Promise<void> {
     setBusy(true);
@@ -41,16 +44,7 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
   }
 
   return (
-    <li
-      style={{
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        padding: "var(--sb-space-3)",
-        display: "grid",
-        gap: "var(--sb-space-2)",
-        background: "var(--sb-surface)",
-      }}
-    >
+    <li className="sb-template-row">
       {editing ? (
         <>
           <input className="sb-input" aria-label="Nome do template" value={name} maxLength={80} onChange={(event) => { setName(event.target.value); }} />
@@ -62,7 +56,7 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
             maxLength={2000}
             onChange={(event) => { setBody(event.target.value); }}
           />
-          <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
+          <div className="sb-template-actions">
             <button className="sb-button" type="button" disabled={busy} onClick={() => void run(() => updateTemplate(template.id, name, body))}>
               {busy ? "Salvando…" : "Salvar"}
             </button>
@@ -83,17 +77,31 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
         </>
       ) : (
         <>
-          <strong style={{ fontSize: "0.9375rem" }}>{template.name}</strong>
-          <p style={{ margin: 0, fontSize: "0.875rem", whiteSpace: "pre-wrap", color: "var(--sb-text-soft)" }}>
-            {template.body}
-          </p>
-          {canManage && (
-            <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
+          <strong className="sb-template-name">{template.name}</strong>
+          <p className="sb-template-body">{template.body}</p>
+          {canManage && !confirmando && (
+            <div className="sb-template-actions">
               <button className="sb-button" type="button" disabled={busy} onClick={() => { setEditing(true); }}>
                 Editar
               </button>
-              <button className="sb-button" type="button" disabled={busy} onClick={() => void run(() => deleteTemplate(template.id))}>
-                {busy ? "…" : "Apagar"}
+              <button className="sb-button sb-template-danger" type="button" disabled={busy} onClick={() => { setConfirmando(true); }}>
+                Apagar
+              </button>
+            </div>
+          )}
+          {canManage && confirmando && (
+            <div className="sb-template-confirm" role="group" aria-label="Confirmar exclusão">
+              <span>Apagar “{template.name}”? Não dá para desfazer.</span>
+              <button
+                className="sb-button sb-template-danger"
+                type="button"
+                disabled={busy}
+                onClick={() => void run(() => deleteTemplate(template.id))}
+              >
+                {busy ? "Apagando…" : "Sim, apagar"}
+              </button>
+              <button className="sb-button" type="button" disabled={busy} onClick={() => { setConfirmando(false); }}>
+                Cancelar
               </button>
             </div>
           )}
@@ -101,7 +109,7 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
       )}
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+        <p role="alert" className="sb-template-error">
           {error}
         </p>
       )}

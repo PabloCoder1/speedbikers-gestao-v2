@@ -15283,6 +15283,49 @@ td.sb-pco-num-linha {
   }
 }
 
+/* CAIXA DE ENTRADA (lote 2 do pente fino, 18/09) — busca, recortes rápidos e prazo com leitura. */
+.sb-inbox-note { margin: var(--sb-space-3) 0 0; padding: 0.6rem 0.9rem; border-radius: var(--sb-radius-md); background: var(--sb-secondary-soft); color: var(--sb-primary); font-size: 0.75rem; }
+.sb-inbox-note-danger { background: var(--sb-danger-soft); color: var(--sb-danger-ink); }
+.sb-panel .sb-inbox-note { margin: var(--sb-space-2) 1.25rem 0; }
+.sb-inbox-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; padding: var(--sb-space-3) 1.25rem 0; }
+.sb-inbox-search { position: relative; display: flex; flex: 1 1 22rem; align-items: center; gap: 0.4rem; max-width: 34rem; }
+.sb-inbox-search .sb-input { flex: 1 1 14rem; min-width: 0; padding-left: 2rem; }
+.sb-inbox-search-icon { position: absolute; top: 0; left: 0.7rem; display: grid; height: 2.25rem; place-items: center; color: var(--sb-text-soft); pointer-events: none; }
+.sb-inbox-toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.sb-inbox-table-wrap { overflow-x: auto; margin-top: var(--sb-space-3); }
+.sb-inbox-table td { vertical-align: top; }
+.sb-inbox-case { font-weight: 700; }
+.sb-inbox-facets { display: block; margin-top: 0.15rem; color: var(--sb-danger); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.sb-inbox-meta { display: block; margin-top: 0.15rem; color: var(--sb-text-soft); font-size: 0.6875rem; overflow-wrap: anywhere; }
+.sb-inbox-muted { color: var(--sb-text-soft); }
+.sb-inbox-nowrap { white-space: nowrap; }
+.sb-inbox-reply { display: block; margin-top: 0.25rem; }
+.sb-inbox-deadline { white-space: nowrap; }
+.sb-inbox-deadline-pill { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.6875rem; font-weight: 700; }
+.sb-inbox-deadline-perigo { background: var(--sb-danger-soft); color: var(--sb-danger-ink); }
+.sb-inbox-deadline-atencao { background: var(--sb-accent-soft); color: var(--sb-accent-ink); }
+.sb-inbox-row-late td:first-child { box-shadow: inset 3px 0 0 var(--sb-danger); }
+.sb-inbox-open { min-height: 2rem; white-space: nowrap; }
+.sb-inbox-state { display: grid; justify-items: center; gap: 0.35rem; margin: var(--sb-space-4) 1.25rem; padding: 2rem 1rem; border: 1px dashed var(--sb-border); border-radius: var(--sb-radius); color: var(--sb-text-soft); font-size: 0.75rem; text-align: center; }
+.sb-inbox-state strong { color: var(--sb-primary); font-size: 0.875rem; }
+.sb-inbox-state-icon { display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border-radius: 999px; background: var(--sb-neutral-soft); color: var(--sb-primary); }
+.sb-inbox-state-error { border-style: solid; border-color: var(--sb-danger); background: var(--sb-danger-soft); color: var(--sb-danger-ink); }
+.sb-inbox-state-error strong { color: var(--sb-danger-ink); }
+.sb-inbox-section { margin-top: var(--sb-space-4); }
+.sb-template-row { display: grid; gap: var(--sb-space-2); padding: var(--sb-space-3); border: 1px solid var(--sb-border); border-radius: var(--sb-radius); background: var(--sb-surface); }
+.sb-template-name { color: var(--sb-primary); font-size: 0.9375rem; }
+.sb-template-body { margin: 0; color: var(--sb-text-soft); font-size: 0.875rem; white-space: pre-wrap; }
+.sb-template-actions { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
+.sb-template-danger { color: var(--sb-danger); }
+.sb-template-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sb-space-2); padding: 0.6rem 0.75rem; border-radius: var(--sb-radius-md); background: var(--sb-danger-soft); color: var(--sb-danger-ink); font-size: 0.8125rem; }
+.sb-template-error { margin: 0; color: var(--sb-danger); font-size: 0.8125rem; }
+.sb-inbox-pages { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: var(--sb-space-3) 1.25rem; border-top: 1px solid var(--sb-border); color: var(--sb-text-soft); font-size: 0.75rem; }
+
+@media (max-width: 640px) {
+  .sb-inbox-toolbar { padding-inline: 1rem; }
+  .sb-panel .sb-inbox-note { margin-inline: 1rem; }
+}
+
 /* PÁGINAS DE SISTEMA (lote 1 do pente fino, 18/09) — 404 dentro do Shell e a fronteira de erro. */
 .sb-system-state { display: grid; justify-items: center; gap: 0.6rem; max-width: 36rem; margin: var(--sb-space-4) auto 0; padding: 2.5rem 1.5rem; text-align: center; }
 .sb-system-state h1, .sb-system-state h2 { margin: 0; color: var(--sb-primary); font-size: 1.15rem; letter-spacing: -0.02em; }
