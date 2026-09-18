@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { PageTitle } from "../../../../components/page-title";
+import { AcessoRestrito } from "../../../../components/acesso-restrito";
 import { Shell } from "../../../../components/shell";
+import { podeOperarCompras } from "../../../../lib/purchase-order-permission";
+import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import type { DraftItem } from "../../novo/item-row";
 import { PurchaseOrderForm } from "../../novo/purchase-order-form";
@@ -26,6 +29,14 @@ export default async function EditarPedidoDeCompraPage({
   params: Promise<{ id: string }>;
 }): Promise<ReactNode> {
   const { id } = await params;
+
+  // `update_purchase_order_draft` só aceita ADMIN/GESTOR: sem isto, os outros
+  // papéis editavam o rascunho inteiro e eram recusados no "Salvar".
+  const membership = await currentMembership();
+
+  if (!podeOperarCompras(membership.role)) {
+    return <AcessoRestrito titulo="Editar pedido de compra" papel="ADMIN ou GESTOR" />;
+  }
 
   const supabase = await createClient();
 

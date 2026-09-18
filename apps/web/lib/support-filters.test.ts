@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { isPageBeyondEnd } from "./filters";
-import { buildSupportHref, resolveSupportFilters, type SupportFilters } from "./support-filters";
+import {
+  buildSupportHref,
+  classifySupportSearch,
+  resolveSupportFilters,
+  type SupportFilters,
+} from "./support-filters";
 
 /**
  * Os filtros da Caixa de Entrada (D-289).
@@ -17,7 +22,10 @@ const LIMPOS: SupportFilters = {
   account: null,
   channel: null,
   status: "abertos",
-  prazo: false,
+  prazo: null,
+  mine: false,
+  mediation: false,
+  search: null,
   page: 1,
 };
 
@@ -39,7 +47,10 @@ describe("resolveSupportFilters", () => {
       account: "loja-x",
       channel: "CLAIM",
       status: "EM_ATENDIMENTO",
-      prazo: true,
+      prazo: "risco",
+      mine: false,
+      mediation: false,
+      search: null,
       page: 3,
     });
   });
@@ -55,9 +66,24 @@ describe("resolveSupportFilters", () => {
     expect(resolveSupportFilters({ pagina: "2.9" }).page).toBe(2);
   });
 
-  it("`prazo` só liga com o valor exato que a tela escreve", () => {
-    expect(resolveSupportFilters({ prazo: "risco" }).prazo).toBe(true);
-    expect(resolveSupportFilters({ prazo: "sim" }).prazo).toBe(false);
+  it("`prazo` só aceita os três recortes que a tela escreve", () => {
+    expect(resolveSupportFilters({ prazo: "risco" }).prazo).toBe("risco");
+    expect(resolveSupportFilters({ prazo: "vencido" }).prazo).toBe("vencido");
+    expect(resolveSupportFilters({ prazo: "24h" }).prazo).toBe("24h");
+    expect(resolveSupportFilters({ prazo: "sim" }).prazo).toBeNull();
+  });
+
+  it("meus, mediação e busca (lote 2 do pente fino)", () => {
+    expect(resolveSupportFilters({ meus: "1", mediacao: "1", busca: "  2000012345 " })).toMatchObject({
+      mine: true,
+      mediation: true,
+      search: "2000012345",
+    });
+    expect(resolveSupportFilters({ meus: "sim", mediacao: "0", busca: "   " })).toMatchObject({
+      mine: false,
+      mediation: false,
+      search: null,
+    });
   });
 });
 
@@ -67,7 +93,7 @@ describe("buildSupportHref", () => {
   });
 
   it("trocar um filtro preserva os outros E volta à página 1", () => {
-    const atual: SupportFilters = { account: "loja-x", channel: "CLAIM", status: "NOVO", prazo: true, page: 7 };
+    const atual: SupportFilters = { ...LIMPOS, account: "loja-x", channel: "CLAIM", status: "NOVO", prazo: "risco", page: 7 };
 
     const href = buildSupportHref(atual, { channel: "QUESTION" });
 
@@ -102,5 +128,19 @@ describe("isPageBeyondEnd", () => {
     expect(isPageBeyondEnd({ code: "PGRST301" })).toBe(false);
     expect(isPageBeyondEnd(null)).toBe(false);
     expect(isPageBeyondEnd(undefined)).toBe(false);
+  });
+});
+
+describe("filtros novos na URL e a busca (lote 2 do pente fino)", () => {
+  it("meus, mediação e busca entram na URL e voltam à página 1", () => {
+    const href = buildSupportHref({ ...LIMPOS, page: 4 }, { mine: true, mediation: true, search: "MLB123" });
+
+    expect(href).toBe("/atendimento?meus=1&mediacao=1&busca=MLB123");
+  });
+
+  it("classifica o texto da busca", () => {
+    expect(classifySupportSearch("2000012345")).toEqual({ kind: "numero", value: "2000012345" });
+    expect(classifySupportSearch("mlb800000001")).toEqual({ kind: "anuncio", value: "MLB800000001" });
+    expect(classifySupportSearch("E2E-SKU-001")).toEqual({ kind: "sku", value: "E2E-SKU-001" });
   });
 });

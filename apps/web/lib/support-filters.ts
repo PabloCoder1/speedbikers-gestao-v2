@@ -46,14 +46,30 @@ export type InternalStatus = (typeof INTERNAL_STATUSES)[number];
  */
 export type StatusFilter = "abertos" | "todos" | InternalStatus;
 
+/**
+ * Recortes de prazo (lote 2 do pente fino, 18/09). `risco` é o de sempre
+ * (D-115: vence nas próximas 24h OU já venceu) e continua valendo para os
+ * Filtros Salvos; `vencido` e `24h` separam as duas metades, que são as duas
+ * contagens de `get_support_metrics` — clicar no número abre a mesma fila.
+ */
+export const PRAZO_FILTERS = ["risco", "vencido", "24h"] as const;
+
+export type PrazoFilter = (typeof PRAZO_FILTERS)[number];
+
 export interface SupportFilters {
   /** Slug da conta ML. Não é conjunto fechado: os slugs vêm do banco, e a
    *  página descarta o que não pertencer à organização ao montar a chamada. */
   account: string | null;
   channel: Channel | null;
   status: StatusFilter;
-  /** Prazo ATIVO vencendo nas próximas 24h — ou já vencido (D-115). */
-  prazo: boolean;
+  /** Recorte por prazo ATIVO; `null` é sem recorte. */
+  prazo: PrazoFilter | null;
+  /** Só os casos atribuídos a quem está vendo (`assignee_id`). */
+  mine: boolean;
+  /** Só reclamações em mediação (`is_mediation`, faceta do claim — D-084). */
+  mediation: boolean;
+  /** Número do caso, do pedido, MLB do anúncio ou código do SKU. */
+  search: string | null;
   page: number;
 }
 
@@ -81,12 +97,26 @@ function resolveChannel(raw: string | null): Channel | null {
   return null;
 }
 
+function resolvePrazo(raw: string | null): PrazoFilter | null {
+  return raw !== null && (PRAZO_FILTERS as readonly string[]).includes(raw) ? (raw as PrazoFilter) : null;
+}
+
+/** Busca em branco é ausência de busca; o teto de 80 caracteres protege o `ilike`. */
+function resolveSearch(raw: string | null): string | null {
+  const texto = raw?.trim() ?? "";
+
+  return texto === "" ? null : texto.slice(0, 80);
+}
+
 export function resolveSupportFilters(query: Record<string, string | string[] | undefined>): SupportFilters {
   return {
     account: readParam(query.account),
     channel: resolveChannel(readParam(query.canal)),
     status: resolveStatus(readParam(query.status)),
-    prazo: readParam(query.prazo) === "risco",
+    prazo: resolvePrazo(readParam(query.prazo)),
+    mine: readParam(query.meus) === "1",
+    mediation: readParam(query.mediacao) === "1",
+    search: resolveSearch(readParam(query.busca)),
     page: resolvePageParam(query.pagina),
   };
 }
@@ -114,10 +144,33 @@ export function buildSupportHref(current: SupportFilters, override: Partial<Supp
       account: next.account,
       canal: next.channel,
       status: next.status === "abertos" ? null : next.status,
-      prazo: next.prazo ? "risco" : null,
+      prazo: next.prazo,
+      meus: next.mine ? "1" : null,
+      mediacao: next.mediation ? "1" : null,
+      busca: next.search,
     },
     override.page === undefined ? 1 : next.page,
   );
 }
 
 export { summarizePagedWindow };
+
+/**
+ * Como a busca da Caixa de Entrada interpreta o texto (lote 2 do pente fino).
+ * Função pura para o critério ter teste: só dígitos pode ser o número do caso
+ * OU do pedido; `MLB...` é anúncio; o resto é código de SKU.
+ */
+export type SupportSearchKind =
+  | { kind: "numero"; value: string }
+  | { kind: "anuncio"; value: string }
+  | { kind: "sku"; value: string };
+
+export function classifySupportSearch(search: string): SupportSearchKind {
+  const texto = search.trim();
+
+  if (/^\d+$/.test(texto)) return { kind: "numero", value: texto };
+
+  if (/^mlb\d+$/i.test(texto)) return { kind: "anuncio", value: texto.toUpperCase() };
+
+  return { kind: "sku", value: texto };
+}

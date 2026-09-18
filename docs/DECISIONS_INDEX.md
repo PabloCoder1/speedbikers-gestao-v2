@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **375** (D-001 a D-385).
+Decisões registradas: **379** (D-001 a D-387).
 
 ## Por domínio
 
@@ -139,7 +139,7 @@ Decisões registradas: **375** (D-001 a D-385).
 - **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 
-### interface (42)
+### interface (44)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -183,6 +183,8 @@ Decisões registradas: **375** (D-001 a D-385).
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 - **D-372** — Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
 - **D-376** — Vinculacoes: a moldura que faltava e a pagina numa leitura so
+- **D-386** — Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
+- **D-387** — Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
 
 ### mercado-livre (59)
 
@@ -315,7 +317,7 @@ Decisões registradas: **375** (D-001 a D-385).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (25)
+### vendas/métricas (26)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -342,8 +344,9 @@ Decisões registradas: **375** (D-001 a D-385).
 - **D-351** — A venda anterior a planilha do UpSeller passa a ser gravada e estornada -- o corte vira o instante da exportacao, e o backfill deixa de notificar
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 - **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
+- **D-384** — Pente fino, lote 2: Caixa de Entrada com faixa clicavel, busca, "Meus", mediacao e prazo com leitura; metricas de SAC ligadas a fila
 
-### worker/infra (72)
+### worker/infra (73)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -417,4 +420,5 @@ Decisões registradas: **375** (D-001 a D-385).
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
 - **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 - **D-382** — Toda pasta de `app/` com pagina tem `loading.tsx`, e a CI garante
+- **D-383** — Pente fino, lote 1: navegacao no celular, reconexao de conta com token vencido, datas de negocio, custo zero, falhas que viravam zero, paginas de erro e papeis
 

@@ -146,7 +146,11 @@ export default async function EstoquePage({
     .map((r) => r.supplier_brand)
     .filter((brand): brand is string => typeof brand === "string" && brand.trim() !== "");
 
-  const total = resumo.data;
+  // Lote 1 do pente fino (18/09): a falha do resumo era lida como zero -- a
+  // faixa dizia "Reservado 0" e "Full 0" como medida. Falhou, a célula diz
+  // "—" e a tela avisa, como /estoque/movimentacoes já fazia (D-067).
+  const resumoFalhou = resumo.error !== null;
+  const total = resumoFalhou ? null : resumo.data;
 
   /*
     A faixa do frame `Inventory` tem SEIS células. A conferência célula a
@@ -234,6 +238,10 @@ export default async function EstoquePage({
     },
   ];
 
+  const celulasExibidas: readonly KpiCellData[] = resumoFalhou
+    ? celulas.map((celula) => ({ ...celula, value: "—", ressalva: "resumo indisponível agora" }))
+    : celulas;
+
   const rotuloMarca = filters.brand ?? "Todas as marcas";
   const filtrosAtivos = [
     filters.brand === null ? null : `marca ${filters.brand}`,
@@ -270,14 +278,21 @@ export default async function EstoquePage({
         }
       />
 
-      <KpiStrip ancora cells={celulas} />
+      <KpiStrip ancora cells={celulasExibidas} />
+
+      {resumoFalhou && (
+        <p role="alert" className="sb-adjust-alert">
+          Não foi possível carregar o resumo do estoque agora — os totais acima ficam em branco. A tabela abaixo
+          continua valendo.
+        </p>
+      )}
 
       <section className="sb-stock-insights" aria-label="Leitura rápida do estoque">
         <article className="sb-stock-insight sb-stock-insight-primary">
           <span className="sb-stock-insight-icon" aria-hidden="true"><Icone nome="tendencia" tamanho={16} /></span>
           <div>
             <span className="sb-stock-insight-label">Cobertura física</span>
-            <strong>{formatCount(confirmados)} SKUs confirmados</strong>
+            <strong>{resumoFalhou ? "—" : formatCount(confirmados)} SKUs confirmados</strong>
             <p>Base confiável para valor e saldo local.</p>
           </div>
         </article>
@@ -285,7 +300,7 @@ export default async function EstoquePage({
           <span className="sb-stock-insight-icon" aria-hidden="true"><Icone nome="pulso" tamanho={16} /></span>
           <div>
             <span className="sb-stock-insight-label">Atenção operacional</span>
-            <strong>{formatCount(naoClassificados)} aguardando classificação</strong>
+            <strong>{resumoFalhou ? "—" : formatCount(naoClassificados)} aguardando classificação</strong>
             <p>Resolva a pendência para liberar métricas físicas.</p>
           </div>
         </article>

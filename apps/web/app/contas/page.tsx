@@ -5,6 +5,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
+import { Icone } from "../../components/icons";
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { TOM, tomDeStatus } from "../../components/tone";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
@@ -53,12 +55,25 @@ export default async function ContasPage(): Promise<ReactNode> {
 
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+  // Conectar e reconectar são só ADMIN na api (`POST /v1/ml-accounts/connect`)
+  // e cadastrar conta é só ADMIN na RLS: os outros papéis não veem os botões.
+  const ehAdmin = membership.role === "ADMIN";
 
   if (organizationId === null) {
     return (
       <Shell>
         <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Contas Mercado Livre" compacto />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <Panel title="Acesso indisponível">
+          <div className="sb-channel-empty">
+            <span className="sb-channel-empty-icon" aria-hidden="true">
+              <Icone nome="etiqueta" tamanho={20} />
+            </span>
+            <div>
+              <strong>Sua conta ainda não pertence a uma organização.</strong>
+              <p>Peça a um administrador para concluir o vínculo antes de gerenciar contas do Mercado Livre.</p>
+            </div>
+          </div>
+        </Panel>
       </Shell>
     );
   }
@@ -70,6 +85,39 @@ export default async function ContasPage(): Promise<ReactNode> {
   const accounts = data ?? [];
 
   const agora = new Date();
+  const connectedCount = accounts.filter((account) => account.status === "CONNECTED").length;
+  const attentionCount = accounts.filter((account) => account.status === "PENDING").length;
+  const errorCount = accounts.filter((account) => account.status === "ERROR" || account.status === "REVOKED").length;
+  const accountKpis: KpiCellData[] = [
+    {
+      label: "Contas cadastradas",
+      formula: "Contas Mercado Livre visíveis para esta organização.",
+      value: formatCount(accounts.length),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Conectadas",
+      formula: "Contas com autorização CONNECTED registrada.",
+      value: formatCount(connectedCount),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Aguardando conexão",
+      formula: "Contas cadastradas que ainda precisam concluir o OAuth.",
+      value: formatCount(attentionCount),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Requerem atenção",
+      formula: "Contas em ERROR ou REVOKED que precisam de nova verificação humana.",
+      value: formatCount(errorCount),
+      previous: null,
+      tom: "neutro",
+    },
+  ];
 
   return (
     <Shell>
@@ -82,16 +130,53 @@ export default async function ContasPage(): Promise<ReactNode> {
         title="Contas Mercado Livre"
         subtitle="Conexões, permissões e disponibilidade de dados por operação."
         compacto
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de canais">
+            <Link href="/integracoes">Mapa de integrações →</Link>
+            <Link href="/sincronizacao">Saúde da sincronização →</Link>
+          </nav>
+        }
       />
 
+      <section className="sb-channel-hero sb-channel-hero-accounts" aria-labelledby="contas-hero-title">
+        <div className="sb-channel-hero-copy">
+          <span className="sb-channel-hero-kicker">CENTRAL DE CANAIS</span>
+          <h2 id="contas-hero-title">Toda loja conectada, com o pulso da operação à vista.</h2>
+          <p>Veja rapidamente o que está conectado, o que foi sincronizado e onde uma reautorização pode destravar o fluxo.</p>
+        </div>
+        <div className="sb-channel-hero-flow" aria-label="Fluxo da conta Mercado Livre">
+          <span><Icone nome="tomada" tamanho={17} /> Conectar</span>
+          <i aria-hidden="true">→</i>
+          <span><Icone nome="pulso" tamanho={17} /> Sincronizar</span>
+          <i aria-hidden="true">→</i>
+          <span><Icone nome="tendencia" tamanho={17} /> Operar</span>
+        </div>
+      </section>
+
+      <KpiStrip cells={accountKpis} />
+
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar as contas: {sanitizeErrorText(error.message)}
-        </p>
+        <div className="sb-channel-error" role="alert">
+          <span className="sb-channel-error-icon" aria-hidden="true">
+            <Icone nome="pulso" tamanho={18} />
+          </span>
+          <div>
+            <strong>Não foi possível carregar as contas agora.</strong>
+            <p>{sanitizeErrorText(error.message) ?? "A leitura falhou neste carregamento."}</p>
+          </div>
+        </div>
       )}
 
       {error === null && accounts.length === 0 && (
-        <p className="sb-empty">Nenhuma conta cadastrada ainda.</p>
+        <div className="sb-channel-empty sb-channel-empty-panel">
+          <span className="sb-channel-empty-icon" aria-hidden="true">
+            <Icone nome="etiqueta" tamanho={20} />
+          </span>
+          <div>
+            <strong>Nenhuma conta cadastrada ainda.</strong>
+            <p>Cadastre o identificador da loja abaixo e conclua o login no Mercado Livre para iniciar as sincronizações.</p>
+          </div>
+        </div>
       )}
 
       {accounts.length > 0 && (
@@ -137,7 +222,7 @@ export default async function ContasPage(): Promise<ReactNode> {
 
                   <div>
                     <h2>{account.label}</h2>
-                    <span className="sb-mono" style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+                    <span className="sb-mono sb-account-meta">
                       {account.seller_id === null ? account.slug : `${account.slug} · ${String(account.seller_id)}`}
                     </span>
                   </div>
@@ -195,17 +280,7 @@ export default async function ContasPage(): Promise<ReactNode> {
                 </dl>
 
                 {credencialParada && (
-                  <p
-                    role="alert"
-                    style={{
-                      ...TOM.perigo,
-                      margin: "var(--sb-space-2) 0 0",
-                      padding: "var(--sb-space-2)",
-                      borderRadius: "var(--sb-radius)",
-                      fontSize: "0.6875rem",
-                      lineHeight: 1.5,
-                    }}
-                  >
+                  <p role="alert" className="sb-account-warning" style={TOM.perigo}>
                     Token vencido numa conta conectada — a renovação automática parou. As sincronizações
                     desta conta vão falhar até ela ser reautorizada.
                   </p>
@@ -214,14 +289,7 @@ export default async function ContasPage(): Promise<ReactNode> {
                 {account.status === "ERROR" && account.last_error !== null && (
                   // Sanitizado (D-232): a Central oculta este mesmo texto e aponta para
                   // cá — a "última linha antes da tela" tem de ser a mesma nas duas.
-                  <p
-                    style={{
-                      margin: "var(--sb-space-2) 0 0",
-                      color: "var(--sb-danger)",
-                      fontSize: "0.6875rem",
-                      lineHeight: 1.5,
-                    }}
-                  >
+                  <p className="sb-account-error">
                     {sanitizeErrorText(account.last_error)}
                   </p>
                 )}
@@ -229,14 +297,18 @@ export default async function ContasPage(): Promise<ReactNode> {
                 <footer>
                   {/* O "Ver saúde da conta →" do frame, apontando para a tela
                       DONA do frescor por conta (D-224: um dado, um dono). */}
-                  <Link
-                    href="/sincronizacao"
-                    style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)", textDecoration: "none" }}
-                  >
+                  <Link href="/sincronizacao" className="sb-account-health-link">
                     Ver saúde da conta →
                   </Link>
 
-                  {!conectada && <ConnectButton mlAccountId={account.id} label={account.label} />}
+                  {ehAdmin && !conectada && <ConnectButton mlAccountId={account.id} label={account.label} />}
+                  {/* O aviso de token vencido pedia reautorização e não havia
+                      botão: ele só existia para conta desconectada (lote 1 do
+                      pente fino, 18/09). A api aceita reautorizar SÓ esta conta
+                      parada, e só com o mesmo usuário do Mercado Livre. */}
+                  {ehAdmin && credencialParada && (
+                    <ConnectButton mlAccountId={account.id} label={account.label} reconectar />
+                  )}
                 </footer>
               </section>
             );
@@ -244,16 +316,18 @@ export default async function ContasPage(): Promise<ReactNode> {
         </div>
       )}
 
-      <div style={{ marginTop: "var(--sb-space-3)" }}>
-        <Panel
-          title="Conectar conta"
-          subtitle="Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill de história começa sozinho."
-        >
-          <div className="sb-panel-body">
-            <NewAccountForm />
-          </div>
-        </Panel>
-      </div>
+      {ehAdmin && (
+        <div className="sb-account-create">
+          <Panel
+            title="Conectar conta"
+            subtitle="Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill de história começa sozinho."
+          >
+            <div className="sb-panel-body">
+              <NewAccountForm />
+            </div>
+          </Panel>
+        </div>
+      )}
     </Shell>
   );
 }

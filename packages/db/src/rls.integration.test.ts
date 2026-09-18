@@ -3706,6 +3706,36 @@ describe("get_stock_movements_summary (D-252)", () => {
     expect(Number(semFiltro[0]?.movimentacoes)).toBeGreaterThan(3);
   });
 
+  it("inclui o dia final inteiro no fuso de negócio, igual à tabela", async () => {
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'MOVDAYTEST','PRODUTO') returning id`,
+      [ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values ($1,$2::uuid,'LOCAL',1,'ENTRADA_NFE','DOCUMENT','movday-ref','movday:fim-do-dia','2026-09-18 23:30:00-03')`,
+      [ORG_SB, sku.rows[0]?.id],
+    );
+
+    const rows = await asUser<{ movimentacoes: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}','2026-09-18','2026-09-18',null,null,null,'MOVDAYTEST')`,
+    );
+
+    expect(Number(rows[0]?.movimentacoes)).toBe(1);
+  });
+
+  it("encontra uma referência externa exata, não apenas SKU ou título", async () => {
+    const rows = await asUser<{ movimentacoes: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}',null,null,null,null,null,'movsum-doc')`,
+    );
+
+    expect(Number(rows[0]?.movimentacoes)).toBe(3);
+  });
+
   it("anon nao executa get_stock_movements_summary", async () => {
     await expect(
       asAnon(`select * from public.get_stock_movements_summary('${ORG_SB}')`),
@@ -12641,6 +12671,16 @@ describe("movimentações — get_stock_movements (D-167)", () => {
 
     expect(pagina2).toHaveLength(1);
     expect(pagina2[0]).toMatchObject({ movement_type: "AJUSTE_MANUAL", total_count: "3" });
+  });
+
+  it("busca também pela referência externa exata", async () => {
+    const rows = await asUser<{ movement_type: string; source_id: string | null; total_count: string }>(
+      ATOR_MOV,
+      `select movement_type, source_id, total_count
+       from public.get_stock_movements('${ORG_SB}', 50, 0, '9911001')`,
+    );
+
+    expect(rows).toEqual([{ movement_type: "VENDA_ML", source_id: "9911001", total_count: "1" }]);
   });
 
   it("usuário de outra organização não vê os movimentos; anon é recusado", async () => {

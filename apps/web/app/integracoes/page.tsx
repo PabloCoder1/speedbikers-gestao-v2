@@ -6,6 +6,8 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import type { PillTone } from "../../components/state-pill";
+import { Icone } from "../../components/icons";
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { apiBaseUrl, fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
 import { describeIntegrations } from "../../lib/integrations";
@@ -67,16 +69,16 @@ const DIMENSION_LABEL = {
 function DimensionRow({ label, dimension }: { label: string; dimension: Dimension | null }): ReactNode {
   return (
     <tr>
-      <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>{label}</td>
+      <td data-label="Dimensão" className="sb-integration-dimension">{label}</td>
       {dimension === null ? (
         // Dimensão que não se aplica (planilha não tem "conexão", webhook não
         // tem "sincronização") — dito, em vez de um estado inventado.
-        <td colSpan={3} style={{ color: "var(--sb-muted-ink)" }}>
+        <td data-label="Estado" colSpan={3} className="sb-integration-not-applicable">
           — não se aplica
         </td>
       ) : (
         <>
-          <td>
+          <td data-label="Estado">
             <StatePill tone={STATE_TONE[dimension.state]} />
           </td>
           {/*
@@ -88,8 +90,8 @@ function DimensionRow({ label, dimension }: { label: string; dimension: Dimensio
             captura mostrou, comendo o fim da observação do Supabase. Coluna
             alinhada não vale texto perdido em silêncio.
           */}
-          <td style={{ whiteSpace: "normal" }}>{dimension.detail}</td>
-          <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
+          <td data-label="O que foi observado" className="sb-integration-detail">{dimension.detail}</td>
+          <td data-label="Quando" className="sb-integration-when">
             {dimension.observedAt === null ? "—" : formatDateTime(dimension.observedAt)}
           </td>
         </>
@@ -109,10 +111,14 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
     // "Não consegui ler" e "não é membro" são respostas diferentes (D-067).
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Integrações</h1>
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível ler sua organização: {sanitizeErrorText(membership.error.message)}
-        </p>
+        <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Integrações" compacto />
+        <div className="sb-channel-error" role="alert">
+          <span className="sb-channel-error-icon" aria-hidden="true"><Icone nome="pulso" tamanho={18} /></span>
+          <div>
+            <strong>Não foi possível ler sua organização.</strong>
+            <p>{sanitizeErrorText(membership.error.message) ?? "A leitura falhou neste carregamento."}</p>
+          </div>
+        </div>
       </Shell>
     );
   }
@@ -122,8 +128,16 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Integrações</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Integrações" compacto />
+        <Panel title="Acesso indisponível">
+          <div className="sb-channel-empty">
+            <span className="sb-channel-empty-icon" aria-hidden="true"><Icone nome="tomada" tamanho={20} /></span>
+            <div>
+              <strong>Sua conta ainda não pertence a uma organização.</strong>
+              <p>Peça a um administrador para concluir o vínculo antes de consultar as integrações.</p>
+            </div>
+          </div>
+        </Panel>
       </Shell>
     );
   }
@@ -205,6 +219,45 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         : null,
     api: { configured: apiBaseUrl() !== null, health: apiHealth },
   });
+  const dimensions = cards.flatMap((card) => [card.connection, card.sync, card.configuration]).filter(
+    (dimension): dimension is Dimension => dimension !== null,
+  );
+  const okCount = dimensions.filter((dimension) => dimension.state === "ok").length;
+  const attentionCount = dimensions.filter((dimension) => dimension.state === "atencao").length;
+  const errorCount = dimensions.filter((dimension) => dimension.state === "erro").length;
+  const notObservedCount = dimensions.filter((dimension) =>
+    ["sem_atividade", "nao_configurado", "nao_verificavel"].includes(dimension.state),
+  ).length;
+  const integrationKpis: KpiCellData[] = [
+    {
+      label: "Integrações monitoradas",
+      formula: "Integrações compostas a partir das fontes reais do produto.",
+      value: String(cards.length),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Dimensões OK",
+      formula: "Dimensões com atividade recente observada.",
+      value: String(okCount),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Em atenção ou erro",
+      formula: "Dimensões que precisam de acompanhamento operacional.",
+      value: String(attentionCount + errorCount),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Sem leitura conclusiva",
+      formula: "Dimensões sem atividade, não configuradas ou não verificáveis pela aplicação.",
+      value: String(notObservedCount),
+      previous: null,
+      tom: "neutro",
+    },
+  ];
 
   // Erro de leitura aparece, sanitizado — nunca escondido atrás de um card
   // "Não verificável" sem que a página diga que FALHOU (D-067).
@@ -227,7 +280,26 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS"
         title="Integrações"
         subtitle="Conexões, credenciais e escopos que movimentam sua operação — cada uma respondida em três perguntas separadas, porque uma resposta não prova a outra."
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de canais">
+            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/saude">Saúde do sistema →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-channel-hero sb-channel-hero-integrations" aria-labelledby="integracoes-hero-title">
+        <div className="sb-channel-hero-copy">
+          <span className="sb-channel-hero-kicker">RADAR OPERACIONAL</span>
+          <h2 id="integracoes-hero-title">Um mapa claro do que está vivo, parado ou fora do alcance.</h2>
+          <p>Os cards abaixo separam conexão, sincronização e configuração para você agir na tela certa, com a evidência mais recente.</p>
+        </div>
+        <div className="sb-integration-legend" aria-label="Dimensões monitoradas">
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-connection" />Conexão</span>
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-sync" />Sincronização</span>
+          <span><b className="sb-integration-legend-dot sb-integration-legend-dot-config" />Configuração</span>
+        </div>
+      </section>
 
       {/*
         O VOCABULÁRIO DAS PÍLULAS, no bloco de ressalva do frame.
@@ -236,9 +308,9 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         significa, e definição não é subtítulo: sem ela, "Observado" e "Sem
         atividade" parecem sinônimos e o cartão inteiro fica ilegível.
       */}
-      <div className="sb-note" style={{ marginBottom: "var(--sb-space-3)" }}>
+      <div className="sb-note sb-integration-note">
         <span>COMO LER OS ESTADOS</span>
-        <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", lineHeight: 1.6 }}>
+        <p>
           <strong>OK</strong> só aparece com atividade observada e recente. <strong>Observado</strong> é
           atividade sem régua de frescor (uso sob demanda), com a data ao lado. <strong>Sem atividade</strong> é
           o que nunca rodou. <strong>Não verificável</strong> quer dizer que não há coletor daqui — e a linha diz
@@ -246,10 +318,16 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         </p>
       </div>
 
+      <KpiStrip cells={integrationKpis} />
+
       {falhas.length > 0 && (
-        <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
-          Leituras que falharam neste carregamento: {falhas.join(" · ")}
-        </p>
+        <div className="sb-channel-error" role="alert">
+          <span className="sb-channel-error-icon" aria-hidden="true"><Icone nome="pulso" tamanho={18} /></span>
+          <div>
+            <strong>Algumas leituras falharam neste carregamento.</strong>
+            <p>{falhas.join(" · ")}</p>
+          </div>
+        </div>
       )}
 
       {/*
@@ -266,7 +344,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         ser lida na horizontal — que é a única coisa que ela faz bem. É a mesma
         classe de D-265: o desenho particiona bem um conteúdo que não é o nosso.
       */}
-      <div style={{ display: "grid", gap: "var(--sb-space-3)" }}>
+      <div className="sb-integration-grid">
         {cards.map((card) => (
           <Panel
             key={card.id}
@@ -281,7 +359,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
                 Contas ML, reprocessar importação é em Importações. O botão
                 sugeriria que o ato mora aqui, e ele não mora.
               */
-              <span style={{ fontSize: "0.6875rem", whiteSpace: "nowrap" }}>
+              <span className="sb-integration-links">
                 {card.links.map((link, index) => (
                   <span key={link.href}>
                     {index > 0 && " · "}
@@ -291,7 +369,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
               </span>
             }
           >
-            <div style={{ overflowX: "auto" }}>
+            <div className="sb-integration-table-wrap">
               {/*
                 `tableLayout: "fixed"` NÃO é redundante com o `colgroup`: em
                 layout automático a largura declarada é sugestão, e o navegador
@@ -299,7 +377,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
                 cartão do Supabase, cuja observação de configuração é a mais
                 longa das dezoito — ele saiu desalinhado dos outros cinco.
               */}
-              <table className="sb-table" style={{ tableLayout: "fixed" }}>
+              <table className="sb-table sb-integration-table">
                 {/*
                   LARGURAS FIXAS, e o motivo é a pilha.
 
@@ -334,7 +412,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         ))}
       </div>
 
-      <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
+      <p className="sb-integration-footnote">
         {/*
           O "Nova integração" do frame não entra: não existe fluxo de
           provisionamento de conector, e criá-lo seria feature, não composição —

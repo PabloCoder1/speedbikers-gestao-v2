@@ -28,6 +28,7 @@ import {
   type VisaoCompras,
 } from "../../lib/purchase-orders-overview";
 import { currentMembership } from "../../lib/request-membership";
+import { podeOperarCompras } from "../../lib/purchase-order-permission";
 import { createClient } from "../../lib/supabase/server";
 
 export const metadata = { title: "Pedidos de Compra — Speed Bikers Gestão" };
@@ -121,6 +122,7 @@ export default async function ComprasPage({
 
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+  const podeOperar = podeOperarCompras(membership.role);
 
   if (organizationId === null) {
     return (
@@ -224,9 +226,11 @@ export default async function ComprasPage({
             <Link className="sb-button" href="/reposicao">
               Sugestão de compra
             </Link>
-            <Link className="sb-button sb-button-primary" href="/compras/novo">
-              Novo Pedido
-            </Link>
+            {podeOperar && (
+              <Link className="sb-button sb-button-primary" href="/compras/novo">
+                Novo Pedido
+              </Link>
+            )}
           </>
         }
       />
@@ -248,9 +252,11 @@ export default async function ComprasPage({
             <Link className="sb-button sb-button-primary" href="/reposicao">
               Ver sugestão de compra
             </Link>
-            <Link className="sb-button" href="/compras/novo">
-              Criar pedido do zero
-            </Link>
+            {podeOperar && (
+              <Link className="sb-button" href="/compras/novo">
+                Criar pedido do zero
+              </Link>
+            )}
           </div>
         </div>
       )}

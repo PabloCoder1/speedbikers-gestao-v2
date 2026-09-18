@@ -5,6 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { Icone } from "../../../components/icons";
 import { TOM } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDay } from "../../../lib/format";
+import { registeredCost } from "../../../lib/purchase-order-cost";
 import { createClient } from "../../../lib/supabase/browser";
 
 import { subtotal } from "./rascunho";
@@ -218,7 +219,7 @@ export function ItemRow({
   function select(sku: SkuResult): void {
     // Custo cadastrado entra como SUGESTÃO editável (D-149) — só com o campo
     // vazio ou ainda com a sugestão anterior, nunca por cima do digitado.
-    const shouldSuggest = sku.purchase_cost !== null && (item.unitCost === "" || item.unitCostSuggested === true);
+    const shouldSuggest = registeredCost(sku.purchase_cost) !== null && (item.unitCost === "" || item.unitCostSuggested === true);
 
     onChange({
       ...item,
@@ -333,7 +334,7 @@ export function ItemRow({
                     >
                       <span className="sb-pco-resultado-topo">
                         <b>{sku.sku}</b>
-                        <span>{sku.purchase_cost === null ? "sem custo" : formatCurrency(sku.purchase_cost)}</span>
+                        <span>{registeredCost(sku.purchase_cost) === null ? "sem custo" : formatCurrency(sku.purchase_cost)}</span>
                       </span>
                       <span className="sb-pco-resultado-titulo">{sku.title ?? "sem título"}</span>
                       <span className="sb-pco-resultado-meta">

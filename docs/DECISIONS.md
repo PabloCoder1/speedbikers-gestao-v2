@@ -13612,6 +13612,77 @@ Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, 
 
 **O que continua fora:** `<Link>` para a mesma pagina com outro `?filtro` escrito FORA desses dois componentes nao ganha a cobertura sozinho -- quem escrever um usa `CarregandoSeODemorar` dentro dele. `<a>` comum recarrega a pagina e o `loading.tsx` aparece pelo streaming.
 
+## D-383 - Pente fino, lote 1: navegacao no celular, reconexao de conta com token vencido, datas de negocio, custo zero, falhas que viravam zero, paginas de erro e papeis
+
+**Contexto:** o dono pediu um pente fino no sistema inteiro (18/09). As 48 telas foram abertas e fotografadas a 1440 e 390 px contra `next start` e o banco local (todas 200, nenhuma com rolagem lateral no celular), e o codigo de cada uma foi lido em tres frentes paralelas. Os achados foram agrupados em quatro lotes; este e o primeiro, o de defeito com impacto e correcao curta. Os tres P1 foram conferidos no codigo e na captura antes de corrigir.
+
+**1. P1 -- NAVEGACAO NO CELULAR E NO TABLET**
+
+Abaixo de 850 px o trilho escondia todos os itens menos o ativo (`.sb-nav-link:not([aria-current="page"])` com `display: none`), e o rodape (Sugestoes, conta) junto: a unica navegacao virava a busca. Agora ficam todos os glifos; o texto sai so da VISTA (recorte de 1 px, continua sendo o nome acessivel do link) e o `title` do link da o rotulo no hover. Grupo recolhido no desktop nao some no trilho (`::details-content`).
+
+**2. P1 -- RECONECTAR CONTA COM TOKEN VENCIDO (web + api)**
+
+`/contas` avisava "token vencido... ate ela ser reautorizada" e nao havia botao: o Conectar so existia para conta desconectada, e a api recusava toda conta `CONNECTED`. `startConnect` passa a aceitar a conta conectada cuja credencial PAROU -- a mesma regra do cartao (`access_token_expires_at < now()`), ou nenhuma credencial -- e continua recusando a saudavel e a que ele nao conseguiu ler. `completeConnect` ganhou a conferencia que faltava: conta que ja tem `seller_id` so aceita o MESMO usuario do Mercado Livre; outro seller e recusado ANTES de gravar credencial e sem `markError`. Sem isso, reautorizar logado na loja errada gravaria os tokens dela nesta linha e o sistema sincronizaria a loja errada em silencio. A tela mostra "Reconectar" so para ADMIN e so na conta parada. **Precisa de deploy da api** para funcionar; antes dele, o botao devolve a mensagem da api ("conta ja conectada").
+
+**3. P1 -- PREVISAO DO PEDIDO NA PAGINA DO FORNECEDOR**
+
+`formatDateTime` sobre `expected_at` (data de negocio gravada a meia-noite UTC) mostrava "dia anterior, 21h" -- o defeito que D-365 corrigiu em `/compras/[id]`. Agora `formatBusinessDate`.
+
+**4. DATAS DE NEGOCIO**
+
+Seis lugares montavam a janela de metrica com `toISOString().slice(0, 10)` -- o dia em UTC: depois das 21h de Brasilia a janela de 30 dias andava um dia. `lib/business-window.ts` (`lastBusinessDays`) usa `toSalesMetricDate`/`shiftBusinessDate` de `@sb/domain`, como `/diagnostico` e `/faturamento` ja faziam, em `/skus/[skuId]`, `/anuncios`, `/anuncios/[itemId]`, `/curva-abc`, `/full` e `/full/exportar`. A aba Precos do SKU e `/precos` continuam com os limites em UTC por serem instantes (`timestamptz`), nao dias; nao mudaram nesta fatia.
+
+**5. CUSTO ZERO NAO E CUSTO CONHECIDO**
+
+O pedido de compra sugeria `skus.purchase_cost = 0` como custo (R$ 0,00 marcado como sugestao) e baixava o total. `registeredCost` (`lib/purchase-order-cost.ts`) devolve `null` para zero ou negativo -- como `/reposicao` ja lia -- nos quatro pontos que pre-preenchem custo.
+
+**6. FALHA NAO VIRA ZERO (D-067)**
+
+`/estoque`: `get_stock_summary` que falhava deixava a faixa em "Reservado 0 / Full 0" como medida; agora as celulas dizem "--" com aviso. Home: o grafico que falhava dizia "nenhum dia com metrica"; agora diz que nao carregou. `/sincronizacao` NAO mudou: o autor escolheu de proposito mostrar um erro unico quando qualquer das cinco leituras falha, para nunca exibir tela parcial como completa.
+
+**7. PAGINAS DE ERRO E 404**
+
+Nao havia `not-found.tsx` nem `error.tsx`: link velho e `notFound()` das telas de detalhe mostravam a pagina crua do Next, sem menu. O 404 fica dentro do `Shell`; a fronteira de erro e componente de cliente (sem `Shell`, que le a sessao no servidor), com "Tentar de novo" (`retry` -- nesta versao do Next nao e `reset`) e o `digest` para ligar o relato ao log.
+
+**8. NAO OFERECER O QUE O BANCO VAI RECUSAR**
+
+Todas as escritas de pedido de compra passam por `private.check_purchase_order_writer` (ADMIN/GESTOR, conferido no Dev). "Novo pedido", a barra de selecao de `/reposicao`, o novo/editar pedido e o painel de acoes do pedido deixam de aparecer para os outros papeis (`lib/purchase-order-permission.ts`); o pedido segue legivel. Em `/contas`, cadastrar e conectar conta so para ADMIN (RLS e api). "Saude do Sistema" sai do menu de quem nao e ADMIN (`get_system_health` so responde a ADMIN). O cartao "Acoes de impacto alto" da Home abre `/acoes?prioridade=alta`, o mesmo recorte que conta. Curva ABC formata participacao com `formatPercent` ("12,3%", era "12.34%"). A aba Precos do SKU perdeu a data cravada "24/08/2026" (classe D-234).
+
+**9. FORA DESTE LOTE, E POR QUE**
+
+O cartao "Em mediacao" da Home (a lista de `/atendimento` nao tem filtro de mediacao) vai com o redesenho da Caixa de Entrada, lote 2. `/notificacoes` e `/copiloto` ficaram de fora: tinham trabalho de outra frente em andamento.
+
+**10. VERIFICACAO**
+
+`tsc` e `eslint` em `apps/web` e `apps/api`; unidade da web **825 verdes** (novos: `business-window`, `registeredCost`, `podeOperarCompras`) e da api **406 verdes** (5 novos em `ml-accounts.test.ts`: conectada saudavel recusada, vencida e sem credencial aceitas, leitura falha recusa, seller diferente recusado sem gravar nada, mesmo seller aceito); `next build`; `docs:check`. O `HANDOFF.md` estava em 25,5 KB depois de `9c92d7d`: os paragrafos fechados de `/full` (D-380) e `/estoque/movimentacoes` foram MOVIDOS, nao apagados, para `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`, com um ponteiro.
+
+- a reconexao so funciona depois do deploy da api -- ato do dono (deploy de producao e bloqueado para o agente);
+- lotes 2 a 4 do pente fino: Caixa de Entrada; ligacoes entre telas, busca por teclado e confirmacoes; limpeza visual de `/skus/[skuId]`, `/compras/[id]` e do Copiloto.
+
+## D-384 - Pente fino, lote 2: Caixa de Entrada com faixa clicavel, busca, "Meus", mediacao e prazo com leitura; metricas de SAC ligadas a fila
+
+**Contexto:** o pente fino de 18/09 (D-383) achou a Caixa de Entrada abaixo do padrao das telas redesenhadas: tres fileiras de pilulas, um numero so no topo, o status do Mercado Livre cru ("UNANSWERED"), a coluna de prazo so com a data e nenhum jeito de achar a propria fila ou um caso citado pelo cliente entre 900+ abertos. As metricas de SAC eram cartoes estilizados a mao, sem ligacao com a fila e com legendas para desenvolvedor ("D-107", "due_at").
+
+**1. FAIXA CLICAVEL, COM A FONTE CANONICA**
+
+A faixa usa `get_support_metrics` (METRICS 5B) -- a MESMA leitura de /atendimento/metricas, entao os dois lugares nao podem discordar. Cada numero abre a fila que conta: "Prazo vencido" -> `?prazo=vencido`, "Vence em 24 h" -> `?prazo=24h`, "Em mediacao" -> `?mediacao=1`, "Meus abertos" -> `?meus=1` (contagem propria com `head`). **"Aguardando a loja" nao e link, de proposito**: a regra compara duas colunas da linha (`last_inbound_at > last_outbound_at`), o filtro do PostgREST nao expressa isso sem migration, e um link abriria uma fila que nao bate com o numero. A faixa conta a organizacao inteira e e navegacao (parte do recorte limpo); o numero do recorte e o subtitulo do painel (D-236).
+
+**2. FILTROS NOVOS (`lib/support-filters.ts`)**
+
+`prazo` deixou de ser booleano: `risco` (o de sempre, D-115 -- continua valendo para os Filtros Salvos), `vencido` e `24h`, as duas metades que a metrica conta. `meus` (`assignee_id` = quem ve; sem saber quem ve, a fila fica vazia com aviso, nunca "todos"), `mediacao` (`is_mediation`, faceta do claim, D-084) e `busca`. A busca e classificada por funcao pura com teste: so digitos procura o numero do caso E o do pedido; `MLB...` o anuncio; o resto e codigo de SKU. Cada ramo usa indice que ja existia (`support_case_links_{order,sku,listing}_idx`) e nenhum le a base inteira; teto de 500 casos.
+
+**3. A FILA**
+
+Pilulas viraram `FilterMenu` (conta, tipo, status) mais tres recortes rapidos (Meus, Prazo em risco, Mediacao) e "Limpar filtros". O prazo ganhou leitura (`lib/support-deadline.ts`): "vencido ha 3 h" em vermelho e a linha com borda, "vence em 5 h" em amarelo, com os limites de `get_support_metrics`. A coluna "SLA" virou "Prazo". O status cru do Mercado Livre e traduzido (`supportExternalStatusLabel`, valores medidos no Dev: `UNANSWERED`, `ANSWERED`, `BANNED`, `active`, `blocked`, `opened`, `closed`; valor novo degrada para o cru). Botao "Abrir" por linha, paginador com "Pagina X de Y", estados vazio/erro/pagina-alem-do-fim desenhados. Ficou: ordem por `last_activity_at` sem prometer priorizacao (D-267), o recorte e a pagina viajando com o caso (D-286/D-289) e a triagem por RPC (D-094).
+
+**4. METRICAS E TEMPLATES**
+
+/atendimento/metricas usa a faixa do design system, os numeros de "agora" abrem a fila, e as legendas falam com o operador. Em /atendimento/templates, "Apagar" pede confirmacao na propria linha ("Sim, apagar" / "Cancelar") -- antes o primeiro clique apagava. O cartao "Em mediacao" da Home passa a abrir `?mediacao=1` (abria todas as reclamacoes; ficou pendente em D-383).
+
+**5. VERIFICACAO**
+
+`tsc` e `eslint`; unidade da web **831 verdes** (novos em `support-filters` e `support-deadline`); `next build`; e2e `atendimento.spec.ts` + `home.spec.ts` **16 verdes** contra `next start`, com um teste novo (faixa com link certo e "Aguardando a loja" sem link, busca por SKU, "Meus", "Limpar filtros"). Quatro asserções antigas mudaram com a tela (texto do vazio, coluna "Prazo", janela no subtitulo do painel, rotulos do paginador). O teste de "Assumir" e stateful: numa segunda passada sem `db reset` o caso ja esta atribuido -- restaurado com `update` no banco local entre as passadas. Capturas a 1440 e 390 px sem rolagem lateral.
+
 ## D-385 - `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
 
 **Contexto:** depois de D-381 (ordem, foto, faixa numa passada), o dono pediu a tela "por completo". A tela dizia QUANTOS anuncios o filtro pega, nunca QUANTO eles vendem: "os que estao sem estoque faturaram quanto?" pedia somar 89 paginas a mao. As perguntas de todo dia (vendendo sem estoque, pausados que venderam) pediam dois menus cada. Nao havia como levar o recorte para uma planilha. E no celular a tabela de 11 colunas so rolava de lado.
@@ -13629,3 +13700,51 @@ Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, 
 **6. CELULAR** -- abaixo de 760px cada anuncio vira cartao: a tabela continua tabela no HTML (leitor de tela e testes leem igual) e cada celula vira "rotulo -- valor" pelo `data-label`.
 
 **Janela de datas:** `lastBusinessDays` (D-383), copia identica da guardas, para tela e CSV usarem a mesma janela de negocio.
+
+## D-386 - Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
+
+**Contexto:** terceiro lote do pente fino de 18/09 (D-383, D-384). Tres classes de defeito que a auditoria achou espalhadas: referencias que eram texto onde havia tela de destino, uma busca universal que prometia `Enter` em cada linha e nao respondia a tecla nenhuma, e acoes irreversiveis que aconteciam no primeiro clique ou em dialogos sem Esc nem foco.
+
+**1. LIGACOES ENTRE TELAS**
+
+- `/estoque/movimentacoes`: a Referencia mostrava o `source_id` cru. `movementSourceHref` (`lib/movement-labels.ts`, com teste) leva `PURCHASE_ORDER` a `/compras/{id}` e `DOCUMENT` a `/notas-fiscais/{id}` -- conferido nos escritores: a transicao de pedido grava `po.id` (20260823160629) e `nfe-import-apply.ts` grava `documents.id`. Pedido do ML e reconciliacao nao tem tela propria e ficam texto.
+- `/compras/[id]`: o SKU de cada item abre `/skus/{id}` (item de texto livre continua texto) e ha "Ver fornecedor".
+- `/skus/[skuId]`: o MLB no painel "Anuncios vinculados" da visao geral abre o Dashboard do Anuncio -- a aba ja linkava, a visao geral nao.
+- `/diagnostico`: "Criar pedido de compra" abria um pedido EM BRANCO, ate para queda de venda. Virou "Ver reposicao deste SKU" (`/reposicao?busca=<sku>`): a tela que decide quanto comprar, de onde o pedido nasce com a quantidade sugerida. O codigo cru do evento correlato passa por `eventTypeLabel`.
+- `/anuncios/[itemId]`: o tipo das acoes e decisoes passa por `actionKindLabel`.
+
+**2. BUSCA UNIVERSAL PELO TECLADO**
+
+↑/↓ percorrem todas as linhas, Enter abre a selecionada, o mouse acompanha. A caixa ganhou o grupo **Telas**: `paginasDoMenu(papel)` (em `nav.tsx`) devolve as telas do menu com a MESMA regra de papel do menu, e `filtrarPaginas` (`lib/command-pages.ts`, com teste) casa sem acento e sem caixa, o que comeca com o texto antes do que so contem. Padrao ARIA de lista navegavel: `combobox` com `aria-activedescendant` e linhas `option` -- por isso `busca.spec` e `cabecalhos.spec` trocaram `textbox`/`button` por `combobox`/`option`. No celular, onde o trilho era a unica navegacao ate D-383, a busca e o caminho mais curto ate uma tela.
+
+**3. O QUE NAO TEM VOLTA PEDE CONFIRMACAO**
+
+- `useDialogo` (`components/use-dialogo.ts`): Esc fecha (menos enquanto grava), foco entra no diálogo -- no "Cancelar" quando a acao e destrutiva, marcado com `data-foco-inicial` -- e volta a quem abriu, pagina por tras sem rolar. Aplicado ao diálogo de republicar (o que FECHA o anuncio), ao de vincular anuncio e ao de remover vinculo.
+- `/importacoes/[id]`: "Confirmar aplicacao" aplicava no primeiro clique. Agora abre a confirmacao na propria caixa, com quantas linhas OK entram, e so "Sim, aplicar agora" chama a `api`. O texto dizia "as linhas OK acima" -- a tabela fica abaixo.
+- `/notas-fiscais/[id]`: o vinculo do item busca o SKU por codigo OU nome -- a linha da nota traz a descricao do fornecedor, quase nunca o codigo da loja. O texto passa por `termoSeguroParaOr` (`lib/postgrest-search.ts`, a regra de `vinculacoes/busca-sku.tsx`) antes de entrar no `or=`; o atraso de 200 ms e o guarda `ultimaBusca` ficaram.
+
+**4. VERIFICACAO**
+
+`tsc`, `eslint`, unidade da web **837 verdes**, `check:loading`, `next build`. E2E contra `next start`: busca, diagnostico, compras, pedido de compra, importacoes, nota fiscal, SKU e anuncio -- **34 verdes** -- mais `cabecalhos` e um caso novo em `busca.spec` (acha "Movimentacoes" digitando sem acento e abre com Enter). Duas armadilhas do caminho, nenhuma do codigo: o banco local foi re-semeado por outra sessao no meio (o `.seed-output.json` da worktree ficou velho e onze casos de `sku-dashboard` falharam por id), e `nota-fiscal.spec` e stateful -- o vinculo da primeira passada fica, e `documents.resolved_items` e contador proprio: restaurar so o item nao basta.
+
+## D-387 - Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
+
+**Contexto:** ultimo lote do pente fino de 18/09 (D-383, D-384, D-386). A auditoria mediu o Dashboard do SKU como a maior divida visual do sistema -- **99** `style={{}}` contra 2 a 5 nas telas redesenhadas -- e achou o detalhe do pedido de compra no padrao antigo (13 no page, 4 no painel de acoes), com uma afirmacao falsa na tela. O Copiloto, terceiro alvo do lote, ficou FORA: havia trabalho nao salvo de outra frente nele.
+
+**1. DASHBOARD DO SKU: 99 -> 3**
+
+Troca MECANICA, com os MESMOS valores: cada estilo estatico virou uma classe `.sb-skud-*` (49 classes), fundida ao `className` que o elemento ja tinha; estilo dinamico ficou (`color: cor` duas vezes, e a variavel `--sb-stat-cols`). Feito por script que so troca padrao conhecido e lista o que pulou, para nada mudar em silencio. Conferido pela captura da visao geral contra a da auditoria: identicas (a unica diferenca e o MLB ser link, de D-386). A aba Vendas ganhou o respiro que faltava entre "Por conta" e "Por dia" (os dois paineis encostavam desde antes).
+
+**2. DETALHE DO PEDIDO DE COMPRA**
+
+- **A frase falsa.** O subtitulo dizia "SKU, origem e custo TRAVADOS no momento do pedido", e a origem nao e: vem de `skus.is_imported` na hora (`purchase_order_items` nao guarda origem) -- a mesma coluna fiscal que D-129/D-139 mediram contradizendo a rota de compra. Agora: "SKU, quantidade e custo ficam gravados no pedido... A origem e a do cadastro atual do SKU", e a coluna chama "Origem (cadastro)".
+- **Quem fez.** `purchase_order_events.actor_user_id` existia e a tela nao dizia; o historico mostra o nome (`profiles`).
+- **Falha de leitura nao e 404** (D-067): um erro transitorio virava "pagina nao encontrada" e a pessoa concluia que o pedido sumiu. Agora tem estado proprio com "Tentar de novo" -- o conserto que `/notas-fiscais/[id]` ja tinha feito.
+- **Receber pede confirmacao.** "Confirmar recebimento" dava entrada no estoque num clique; agora abre "Sim, receber" / "Voltar" na propria caixa, no mesmo espirito de D-386. O motivo do cancelamento ganhou rotulo acessivel.
+- Cabecalho com "Voltar" do design system, quantidade formatada, a nota interna sobre o "layout provisorio" da exportacao saiu da tela, e o que era inline virou `.sb-pod-*` (17 -> 1, o ponto colorido do evento, que e dinamico).
+
+**3. VERIFICACAO**
+
+`tsc`, `eslint`, `next build`; e2e `sku-dashboard` + `compras` + `pedido-compra` **15 verdes** contra `next start`. A confirmacao de recebimento NAO tem caso e2e: o seed nao tem pedido `ORDERED` (o unico estado que oferece "receber"), e criar um mudaria o banco local compartilhado com outras sessoes. Capturas a 1440 px da visao geral e das abas Anuncios, Precos, Vendas e Decisoes, e do pedido.
+
+- Copiloto: fica para quando a outra frente terminar o que tem aberto nele.

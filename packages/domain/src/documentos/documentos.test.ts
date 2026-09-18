@@ -137,6 +137,24 @@ describe("DANFE", () => {
     expect(resultado.ok && resultado.valor.direcao).toBe("SAIDA");
   });
 
+  // Matriz e filial são o mesmo estoque (decisão do dono, 18/09/2026): a raiz
+  // do CNPJ decide, não o número inteiro.
+  it("destinatário é OUTRO estabelecimento da casa: ainda é entrada", () => {
+    const resultado = lerDanfe(danfeFixture(), "12345678000271");
+
+    expect(resultado.ok && resultado.valor.direcao).toBe("ENTRADA");
+  });
+
+  it("transferência entre estabelecimentos da casa é ENTRADA", () => {
+    const transferencia = danfeFixture().map((l) =>
+      l.texto === "98.765.432/0001-55" ? linha([[7, "12.345.678/0002-71"]], { y: l.y }) : l,
+    );
+
+    const resultado = lerDanfe(transferencia, CNPJ_PROPRIO);
+
+    expect(resultado.ok && resultado.valor.direcao).toBe("ENTRADA");
+  });
+
   it("sem o CNPJ da organização no documento, recusa em vez de adivinhar a direção", () => {
     const resultado = lerDanfe(danfeFixture(), "11111111000111");
 

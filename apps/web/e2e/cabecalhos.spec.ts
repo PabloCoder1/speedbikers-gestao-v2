@@ -99,8 +99,8 @@ test("CSP: login, tela autenticada, Realtime e busca rodam sem uma violação se
 
   const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
 
-  await caixa.getByRole("textbox", { name: "Buscar" }).fill("E2E");
-  await expect(caixa.getByRole("button").filter({ hasText: "E2E" }).first()).toBeVisible();
+  await caixa.getByRole("combobox", { name: "Buscar" }).fill("E2E");
+  await expect(caixa.getByRole("option").filter({ hasText: "E2E" }).first()).toBeVisible();
 
   expect(violacoes).toEqual([]);
 });

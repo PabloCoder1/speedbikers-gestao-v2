@@ -38,6 +38,7 @@ export function ActionsPanel({
   const [error, setError] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
+  const [showReceivePrompt, setShowReceivePrompt] = useState(false);
 
   const actions = availablePurchaseOrderActions(status as PurchaseOrderStatus);
 
@@ -64,18 +65,7 @@ export function ActionsPanel({
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--sb-space-2)",
-        alignItems: "flex-start",
-        flexWrap: "wrap",
-        margin: "var(--sb-space-3) 0",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-      }}
-    >
+    <div className="sb-pod-actions">
       {actions.includes("APPROVE") && (
         <button
           className="sb-button sb-button-primary"
@@ -102,17 +92,45 @@ export function ActionsPanel({
         </button>
       )}
 
-      {actions.includes("RECEIVE") && (
+      {/* Receber dá ENTRADA no estoque local e tira do trânsito — pede um
+          segundo clique, na própria caixa (lote 4 do pente fino, 18/09). */}
+      {actions.includes("RECEIVE") && !showReceivePrompt && (
         <button
           className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {
-            void run(() => receivePurchaseOrder(purchaseOrderId));
+            setShowReceivePrompt(true);
           }}
         >
           Confirmar recebimento
         </button>
+      )}
+
+      {actions.includes("RECEIVE") && showReceivePrompt && (
+        <div className="sb-pod-confirm" role="group" aria-label="Confirmar recebimento">
+          <span>Receber o pedido dá entrada de todos os itens no estoque local. Não dá para desfazer por aqui.</span>
+          <button
+            className="sb-button sb-button-primary"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void run(() => receivePurchaseOrder(purchaseOrderId));
+            }}
+          >
+            {busy ? "Recebendo…" : "Sim, receber"}
+          </button>
+          <button
+            className="sb-button"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setShowReceivePrompt(false);
+            }}
+          >
+            Voltar
+          </button>
+        </div>
       )}
 
       {actions.includes("CANCEL") && !showCancelPrompt && (
@@ -122,16 +140,18 @@ export function ActionsPanel({
           disabled={busy}
           onClick={() => {
             setShowCancelPrompt(true);
-          }} style={{ color: "var(--sb-danger)" }}
+          }}
+          data-tom="perigo"
         >
           Cancelar pedido
         </button>
       )}
 
       {actions.includes("CANCEL") && showCancelPrompt && (
-        <div style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center", flexWrap: "wrap" }}>
+        <div className="sb-pod-confirm" role="group" aria-label="Confirmar cancelamento">
           <input
             className="sb-input"
+            aria-label="Motivo do cancelamento (opcional)"
             value={cancelReason}
             onChange={(event) => {
               setCancelReason(event.target.value);
@@ -162,7 +182,7 @@ export function ActionsPanel({
       )}
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.875rem", color: "var(--sb-danger)", flexBasis: "100%" }}>
+        <p role="alert" className="sb-pod-actions-error">
           {error}
         </p>
       )}

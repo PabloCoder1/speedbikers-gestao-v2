@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icone } from "../../../components/icons";
 import { ProcessSteps } from "../../../components/process-steps";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
+import { registeredCost } from "../../../lib/purchase-order-cost";
 import { createClient } from "../../../lib/supabase/browser";
 import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
 import { Canais } from "../../fornecedores/canais";
@@ -356,7 +357,7 @@ export function PurchaseOrderForm({
       }
 
       catalogados += 1;
-      const sugerido = l.custo === null && sku.purchase_cost !== null;
+      const sugerido = l.custo === null && registeredCost(sku.purchase_cost) !== null;
 
       return {
         ...base,
@@ -366,7 +367,7 @@ export function PurchaseOrderForm({
         isImported: sku.is_imported,
         supplierBrand: sku.supplier_brand,
         quantityOrdered: quantidade,
-        unitCost: l.custo !== null ? String(l.custo) : sku.purchase_cost === null ? "" : String(sku.purchase_cost),
+        unitCost: l.custo !== null ? String(l.custo) : registeredCost(sku.purchase_cost) === null ? "" : String(sku.purchase_cost),
         unitCostSuggested: sugerido,
       };
     });

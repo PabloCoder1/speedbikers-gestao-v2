@@ -219,6 +219,7 @@ export default async function NotificacoesPage({
       */}
       {error === null && (
         <div
+          className="sb-notification-filters"
           style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}
         >
           <FilterPill href={buildNotificationHref(filters, { state: "todas" })} active={!soNaoLidas}>
@@ -256,7 +257,7 @@ export default async function NotificacoesPage({
               {soNaoLidas ? "Nenhuma não lida — a caixa está limpa." : "Nenhuma notificação ainda."}
             </p>
           ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            <ul className="sb-notification-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {rows.map((row) => (
                 <NotificationRow key={row.id} notification={row} />
               ))}

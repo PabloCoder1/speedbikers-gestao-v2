@@ -65,11 +65,32 @@ export async function startConnect(
     return { status: "not_found" };
   }
 
-  if (account.data.status === "CONNECTED") {
-    return { status: "rejected", reason: "conta já conectada" };
-  }
-
   const now = deps.now?.() ?? new Date();
+
+  // REAUTORIZAR conta conectada só quando a credencial dela parou (lote 1 do
+  // pente fino, 18/09). /contas avisava "token vencido… até ela ser
+  // reautorizada" e não tinha como: esta função recusava toda conta CONNECTED.
+  // "Parou" é a mesma regra do cartão da tela (`get_ml_account_cards`:
+  // `access_token_expires_at < now()`) — ou nenhuma credencial gravada. Conta
+  // saudável continua recusada: reconectar à toa só abre a janela de trocar a
+  // loja de lugar (ver a conferência do seller em `completeConnect`).
+  if (account.data.status === "CONNECTED") {
+    const credential = await deps.db
+      .from("ml_credentials")
+      .select("access_token_expires_at")
+      .eq("ml_account_id", mlAccountId)
+      .maybeSingle();
+
+    const parada =
+      credential.error === null &&
+      (credential.data === null || new Date(credential.data.access_token_expires_at).getTime() < now.getTime());
+
+    if (!parada) {
+      return { status: "rejected", reason: "conta já conectada" };
+    }
+
+    deps.logger.info("ml_oauth_reconnect_started", { ml_account_id: mlAccountId });
+  }
   const expiresAt = new Date(now.getTime() + STATE_TTL_MS);
   // 32 bytes de entropia, sem caracteres que precisem de escape em querystring.
   const state = randomBytes(32).toString("base64url");
@@ -196,6 +217,38 @@ export async function completeConnect(
     await markError(deps, mlAccountId, reason);
 
     return { status: "rejected", reason: "não foi possível concluir a autorização com o Mercado Livre" };
+  }
+
+  // A MESMA LOJA. Numa reconexão, o ADMIN pode estar logado no Mercado Livre
+  // com OUTRA conta; sem esta conferência, os tokens da outra loja seriam
+  // gravados nesta linha e o sistema passaria a sincronizar a loja errada em
+  // silêncio. Conta que já tem `seller_id` só aceita o mesmo usuário do ML.
+  // Recusa ANTES de gravar qualquer credencial, e sem `markError`: a conta
+  // continua como estava.
+  const existing = await deps.db.from("ml_accounts").select("seller_id").eq("id", mlAccountId).maybeSingle();
+
+  if (existing.error !== null) {
+    deps.logger.error("ml_account_seller_check_failed", {
+      ml_account_id: mlAccountId,
+      reason: existing.error.message,
+    });
+
+    return { status: "rejected", reason: "não foi possível conferir a conta; tente de novo" };
+  }
+
+  const sellerAtual = existing.data?.seller_id ?? null;
+
+  if (sellerAtual !== null && sellerAtual !== token.user_id) {
+    deps.logger.warn("ml_oauth_seller_mismatch", {
+      ml_account_id: mlAccountId,
+      expected_seller_id: sellerAtual,
+      received_seller_id: token.user_id,
+    });
+
+    return {
+      status: "rejected",
+      reason: "a conta autorizada no Mercado Livre não é a desta loja — entre com o usuário da própria loja",
+    };
   }
 
   const accessTokenExpiresAt = new Date(now.getTime() + token.expires_in * 1000);

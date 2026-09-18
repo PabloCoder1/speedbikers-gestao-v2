@@ -1,5 +1,5 @@
 import { readLastRelistFailureReason } from "@sb/db";
-import { isRelistRetryEligible, summarizeRelistVariations } from "@sb/domain";
+import { actionKindLabel, isRelistRetryEligible, summarizeRelistVariations } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -25,6 +25,7 @@ import { checarAnuncio, horasDesde, idadeRelativa, SYNC_VELHO_HORAS } from "./ch
 import { CopiarMlb } from "./copiar-mlb";
 import { RelistPanel } from "./relist-panel";
 import { precisaDasVariacoesDoRetrato } from "./republicacao";
+import { lastBusinessDays } from "../../../lib/business-window";
 
 /**
  * O endereço público do anúncio. O Mercado Livre resolve `MLB-<número>` para a
@@ -214,8 +215,7 @@ export default async function AnuncioPage({
   const row = listing.data;
 
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
 
   const needsSummary = tab === "visao-geral" || tab === "vendas" || tab === "trafego";
   const needsFull = tab === "visao-geral" || tab === "full";
@@ -884,7 +884,7 @@ export default async function AnuncioPage({
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <b>{action.recommendation}</b>
                         <small>
-                          {action.kind} · {formatDateTime(action.created_at)}
+                          {actionKindLabel(action.kind)} · {formatDateTime(action.created_at)}
                         </small>
                       </span>
                       <StatusPill code={action.status} label={actionStatusLabel(action.status)} />
@@ -1458,7 +1458,7 @@ export default async function AnuncioPage({
                         <small
                           style={{ display: "block", marginTop: 3, fontSize: "0.625rem", color: "var(--sb-text-soft)" }}
                         >
-                          {decision.actions?.kind ?? "ação"} · {formatDateTime(decision.created_at)}
+                          {decision.actions?.kind === undefined ? "ação" : actionKindLabel(decision.actions.kind)} · {formatDateTime(decision.created_at)}
                         </small>
                       </span>
                       {decision.actions !== null && (

@@ -45,26 +45,22 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   */
   if (resposta.error?.code === "PGRST202") {
     return (
-      <section id="ads" className="sb-ads">
-        <Panel title="Mercado Ads" subtitle={periodo}>
-          <p className="sb-empty">
-            A análise de campanhas do Mercado Ads ainda está sendo ativada neste ambiente — os dados aparecem depois da
-            primeira sincronização.
-          </p>
-        </Panel>
-      </section>
+      <Panel title="Mercado Ads" subtitle={periodo}>
+        <p className="sb-empty">
+          A análise de campanhas do Mercado Ads ainda está sendo ativada neste ambiente — os dados aparecem depois da
+          primeira sincronização.
+        </p>
+      </Panel>
     );
   }
 
   if (resposta.error !== null) {
     return (
-      <section id="ads" className="sb-ads">
-        <Panel title="Mercado Ads" subtitle={periodo}>
-          <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
-            Não foi possível carregar as campanhas: {resposta.error.message}
-          </p>
-        </Panel>
-      </section>
+      <Panel title="Mercado Ads" subtitle={periodo}>
+        <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
+          Não foi possível carregar as campanhas: {resposta.error.message}
+        </p>
+      </Panel>
     );
   }
 
@@ -72,13 +68,11 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
 
   if (visao === null) {
     return (
-      <section id="ads" className="sb-ads">
-        <Panel title="Mercado Ads" subtitle={periodo}>
-          <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
-            A leitura das campanhas voltou fora do contrato esperado — nada é mostrado para não exibir número errado.
-          </p>
-        </Panel>
-      </section>
+      <Panel title="Mercado Ads" subtitle={periodo}>
+        <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
+          A leitura das campanhas voltou fora do contrato esperado — nada é mostrado para não exibir número errado.
+        </p>
+      </Panel>
     );
   }
 
@@ -126,8 +120,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   const semNada = campanhas.length === 0;
 
   return (
-    <section id="ads" className="sb-ads" aria-label="Mercado Ads">
-      <Panel
+    <Panel
         title="Mercado Ads — campanhas"
         subtitle={`${periodo} · Product Ads, sincronizado da API oficial do Mercado Livre${visao.sincronizadoEm === null ? "" : ` em ${formatDateTime(visao.sincronizadoEm)}`}`}
         aside={
@@ -207,8 +200,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
             </div>
           </>
         )}
-      </Panel>
-    </section>
+    </Panel>
   );
 }
 

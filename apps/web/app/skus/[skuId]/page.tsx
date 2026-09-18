@@ -43,6 +43,7 @@ import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
+import { lastBusinessDays } from "../../../lib/business-window";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
 
@@ -142,7 +143,7 @@ function StockBoxes({
   };
 }): ReactNode {
   return (
-    <div className="sb-stat-grid" style={{ marginBottom: "var(--sb-space-3)" }}>
+    <div className="sb-stat-grid sb-skud-mb3">
       {[
         { rotulo: "Local", valor: dashboard.local_quantity, nota: "saldo físico da organização" },
         { rotulo: "Reservado", valor: dashboard.reservado_quantity, nota: "comprometido com pedido" },
@@ -272,11 +273,10 @@ export default async function SkuDashboardPage({
   }
 
   const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
   // A curva ABC tem janela PRÓPRIA de 90 dias (D-140): classificação precisa
   // de sinal mais estável que a janela de 30 dias do resto da tela.
-  const abcFrom = new Date(now.getTime() - (ABC_LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const abcFrom = lastBusinessDays(ABC_LOOKBACK_DAYS, now).from;
 
   // Cada aba só dispara as consultas de que precisa (progressive disclosure
   // de verdade, não só visual); o que a aba ativa não usa vira
@@ -727,8 +727,8 @@ export default async function SkuDashboardPage({
             {coverage?.is_ruptura === true && (
               <Link
                 href={`/reposicao?busca=${encodeURIComponent(sku.data.sku)}`}
-                className="sb-button"
-                style={{ color: "var(--sb-danger)", borderColor: "var(--sb-danger)" }}
+                className="sb-button sb-skud-danger-border"
+               
               >
                 Sem saldo local
                 <span className="sb-status" style={TOM.perigo}>
@@ -744,7 +744,7 @@ export default async function SkuDashboardPage({
                   ⌄
                 </span>
               </summary>
-              <div className="sb-menu-panel" style={{ right: 0, left: "auto" }}>
+              <div className="sb-menu-panel sb-skud-menu-right">
                 <Link className="sb-menu-item" href={`/estoque/${skuId}/ajuste`}>
                   Ajustar estoque
                 </Link>
@@ -772,7 +772,7 @@ export default async function SkuDashboardPage({
       {tab === "visao-geral" && (
         <>
           {dashboardResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar o resumo: {dashboardResult.error.message}
             </p>
           )}
@@ -847,30 +847,35 @@ export default async function SkuDashboardPage({
                     listingsResult.error !== null ? "não foi possível carregar" : resumoDeAnuncios(listings.length)
                   }
                   aside={
-                    <Link href={`/skus/${skuId}?aba=anuncios`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`}>
                       Ver aba →
                     </Link>
                   }
                 >
                   {listings.length === 0 ? (
-                    <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                    <p className="sb-skud-empty">
                       Nenhum anúncio vinculado a este SKU.
                     </p>
                   ) : (
                     listings.slice(0, 4).map((linha) => (
                       <div key={`${linha.ml_account_id}:${linha.item_id}`} className="sb-feed-row">
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <b style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem" }}>
+                        <span className="sb-skud-grow">
+                          {/* O MLB abre o Dashboard do Anúncio, como na aba Anúncios —
+                              aqui era texto (lote 3 do pente fino). */}
+                          <Link className="sb-skud-id-link"
+                            href={`/anuncios/${linha.item_id}`}
+                           
+                          >
                             {linha.item_id}
-                          </b>
-                          <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
+                          </Link>
+                          <small className="sb-skud-meta-xs">
                             {linha.account_label ?? "conta desconhecida"}
                           </small>
                         </span>
-                        <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          <b style={{ display: "block", fontSize: "0.625rem" }}>{formatCurrency(linha.price)}</b>
+                        <span className="sb-skud-right">
+                          <b className="sb-skud-value">{formatCurrency(linha.price)}</b>
                           {linha.status === null ? (
-                            <small style={{ color: "var(--sb-text-soft)" }}>não sincronizado</small>
+                            <small className="sb-skud-soft">não sincronizado</small>
                           ) : (
                             <StatusPill code={linha.status} label={listingStatusLabel(linha.status)} />
                           )}
@@ -888,13 +893,13 @@ export default async function SkuDashboardPage({
                       : `${formatCount(decisions.length)} registrada(s) para este SKU`
                   }
                   aside={
-                    <Link href={`/skus/${skuId}?aba=decisoes`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`}>
                       Ver aba →
                     </Link>
                   }
                 >
                   {decisions.length === 0 ? (
-                    <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                    <p className="sb-skud-empty">
                       Nenhuma decisão registrada. Uma decisão nasce em <Link href="/acoes">Ações</Link>, e é ela que
                       permite medir o depois contra o antes.
                     </p>
@@ -925,7 +930,7 @@ export default async function SkuDashboardPage({
                           <span aria-hidden="true" className="sb-avatar sb-avatar-feed">
                             {autor.monograma}
                           </span>
-                          <span style={{ flex: 1, minWidth: 0 }}>
+                          <span className="sb-skud-grow">
                             <b>
                               {acao.kindLabel}
                               {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
@@ -949,7 +954,7 @@ export default async function SkuDashboardPage({
 
       {tab === "vendas" && (
         <>
-          <div className="sb-section-label" style={{ marginTop: 0 }}>
+          <div className="sb-section-label sb-skud-mt0">
             <span>Vendas do SKU</span>
             <span className="sb-section-note">últimos {LOOKBACK_DAYS} dias, somadas entre as contas no banco</span>
           </div>
@@ -964,7 +969,7 @@ export default async function SkuDashboardPage({
           */}
 
           {salesResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar as vendas: {salesResult.error.message}
             </p>
           )}
@@ -975,12 +980,12 @@ export default async function SkuDashboardPage({
 
           {salesResult.error === null && salesTotal !== null && (
             <>
-              <div style={{ marginBottom: "var(--sb-space-3)" }}>
+              <div className="sb-skud-mb3">
                 <KpiStrip ancora cells={salesCells(salesTotal)} />
               </div>
 
               {salesTotal.units_sold === 0 && (
-                <p style={{ color: "var(--sb-text-soft)", fontSize: "0.6875rem", marginBottom: "var(--sb-space-3)" }}>
+                <p className="sb-skud-note-mb">
                   Nenhuma venda válida contabilizada para este SKU no período. É o que o recálculo registrou: um
                   pedido ainda não reconciliado, ou vendido por anúncio sem vínculo com este SKU, não entra aqui.
                 </p>
@@ -988,8 +993,8 @@ export default async function SkuDashboardPage({
 
               {salesByAccount.length > 0 && (
                   <Panel title="Por conta" subtitle="Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias diárias.">
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="sb-table" style={{ minWidth: "44rem" }}>
+                  <div className="sb-skud-scroll">
+                    <table className="sb-table sb-skud-min-44">
                       <thead>
                         <tr>
                           <th>Conta</th>
@@ -1023,9 +1028,10 @@ export default async function SkuDashboardPage({
               )}
 
               {salesByDay.length > 0 && (
+                <div className="sb-skud-mt3">
                   <Panel title="Por dia" subtitle="Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas). Duas contas no mesmo dia viram uma linha só.">
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="sb-table" style={{ minWidth: "32rem" }}>
+                  <div className="sb-skud-scroll">
+                    <table className="sb-table sb-skud-min-32">
                       <thead>
                         <tr>
                           <th>Dia</th>
@@ -1040,7 +1046,7 @@ export default async function SkuDashboardPage({
                           <tr key={linha.metric_date ?? "dia"}>
                             {/* `metric_date` é DATA DE NEGÓCIO (YYYY-MM-DD): formatar por
                                 string, nunca por `new Date` (deslocaria o dia civil). */}
-                            <td style={{ whiteSpace: "nowrap" }}>
+                            <td className="sb-skud-nowrap">
                               {linha.metric_date === null ? "—" : formatBusinessDate(linha.metric_date)}
                             </td>
                             <td className="sb-num">{formatCount(linha.units_sold)}</td>
@@ -1053,10 +1059,11 @@ export default async function SkuDashboardPage({
                     </table>
                   </div>
                 </Panel>
+                </div>
               )}
 
               {salesTotal.last_computed_at !== null && (
-                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                <p className="sb-skud-small">
                   Última mudança entre as linhas mostradas: {formatDateTime(salesTotal.last_computed_at)}.
                 </p>
               )}
@@ -1068,14 +1075,14 @@ export default async function SkuDashboardPage({
       {tab === "estoque" && (
         <>
           {dashboardResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar o resumo: {dashboardResult.error.message}
             </p>
           )}
 
           {dashboard !== null && (
             <>
-              <div className="sb-section-label" style={{ marginTop: 0 }}>
+              <div className="sb-section-label sb-skud-mt0">
                 <span>Saldo por local</span>
                 <span className="sb-section-note">
                   os quatro estados do ledger — nenhum deles é a soma dos outros
@@ -1088,19 +1095,19 @@ export default async function SkuDashboardPage({
                 title="Simulador de cobertura"
                 subtitle="Premissas pré-preenchidas com o saldo local e a venda média medida; mudar qualquer uma delas muda só a simulação, nunca o dado."
                 aside={
-                  <Link href={`/estoque/${skuId}/ajuste`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                  <Link className="sb-skud-link" href={`/estoque/${skuId}/ajuste`}>
                     Ajustar estoque →
                   </Link>
                 }
               >
-                <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
+                <div className="sb-skud-pad">
                   <SimulatorPanel
                     asOf={dateTo}
                     initialStockQuantity={coverage?.local_quantity ?? 0}
                     initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
                   />
 
-                  <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                  <p className="sb-skud-footnote">
                     Todo ajuste manual de estoque exige motivo e fica no ledger — ele é movimento auditável, não
                     correção silenciosa.
                   </p>
@@ -1125,18 +1132,18 @@ export default async function SkuDashboardPage({
           <div className="sb-panel-body">
 
           {listingsResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar os anúncios: {listingsResult.error.message}
             </p>
           )}
 
           {listingsResult.error === null && listings.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)" }}>Nenhum anúncio vinculado a este SKU.</p>
+            <p className="sb-skud-soft">Nenhum anúncio vinculado a este SKU.</p>
           )}
 
           {listingsResult.error === null && listings.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table" style={{ minWidth: "48rem" }}>
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-48">
                 <thead>
                   <tr>
                     <th>Conta</th>
@@ -1162,14 +1169,8 @@ export default async function SkuDashboardPage({
                             sincronizado: o que falta é a linha de `listings`,
                             não o vínculo. A tela mostra o MLB e diz o resto.
                           */}
-                          {listing.title ?? <span style={{ color: "var(--sb-text-soft)" }}>ainda não sincronizado</span>}
-                          <div
-                            style={{
-                              fontFamily: "var(--sb-mono)",
-                              color: "var(--sb-text-soft)",
-                              fontSize: "0.75rem",
-                            }}
-                          >
+                          {listing.title ?? <span className="sb-skud-soft">ainda não sincronizado</span>}
+                          <div className="sb-skud-mono-caption">
                             <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
                           </div>
                         </td>
@@ -1193,9 +1194,9 @@ export default async function SkuDashboardPage({
                           {listing.available_quantity === null ? "—" : formatCount(listing.available_quantity)}
                         </td>
                         <td className="sb-num">{formatCurrency(listing.price)}</td>
-                        <td style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{acao.rotuloForma}</td>
+                        <td className="sb-skud-caption">{acao.rotuloForma}</td>
                         <td>
-                          <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+                          <span className="sb-skud-row">
                             <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`}>
                               Ver
                             </Link>
@@ -1206,7 +1207,7 @@ export default async function SkuDashboardPage({
                                 a tela diz isso em vez de mostrar um botão que
                                 a RPC recusaria com "vinculo nao encontrado".
                               */
-                              <span title={acao.motivoSemAcao ?? undefined} style={{ fontSize: "0.6875rem" }}>
+                              <span className="sb-skud-xs" title={acao.motivoSemAcao ?? undefined}>
                                 —
                               </span>
                             ) : (
@@ -1232,7 +1233,7 @@ export default async function SkuDashboardPage({
             se lê como defeito.
           */}
           {listingsResult.error === null && (
-            <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+            <p className="sb-skud-note-top">
               Conta como vinculado o anúncio que aponta para este SKU pela última sincronização <strong>ou</strong>{" "}
               que tem linha de vínculo — a mesma régua de <Link href="/vinculacoes">Vinculações</Link> e de{" "}
               <Link href="/produtos">Produtos</Link>. Estoque e preço são os da última sincronização do anúncio.
@@ -1246,28 +1247,28 @@ export default async function SkuDashboardPage({
         <Panel title="Full por conta">
           <div className="sb-panel-body">
 
-          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          <p className="sb-skud-lead">
             Saldo no Full de cada conta, somado por bucket de variação — o grão que D-173 mediu como certo. O
             estoque LOCAL aparece em coluna separada de propósito: são quatro estados com autoridades
             diferentes, e somá-los daria um número que não existe.
           </p>
 
           {fullResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar o Full: {fullResult.error.message}
             </p>
           )}
 
           {fullResult.error === null && full.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)" }}>
+            <p className="sb-skud-soft">
               Nenhuma conta com snapshot recente de Full para este SKU. Ausência de snapshot não é o mesmo que
               saldo zero — é a falta do dado.
             </p>
           )}
 
           {fullResult.error === null && full.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table" style={{ minWidth: "40rem" }}>
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-40">
                 <thead>
                   <tr>
                     <th>Conta</th>
@@ -1303,7 +1304,7 @@ export default async function SkuDashboardPage({
                           compilador (D-192/D-206): a consulta é DIRIGIDA pelo snapshot —
                           `vendas` e `saldo_local` é que entram por left join —, então
                           toda linha devolvida tem `captured_at`. O nulo é inalcançável. */}
-                      <td style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                      <td className="sb-skud-text-soft">
                         {formatDateTime(linha.captured_at)}
                       </td>
                     </tr>
@@ -1333,15 +1334,18 @@ export default async function SkuDashboardPage({
             linhas — e é aí que ela mais importa, porque a lista cheia parece
             completa. Ela morava só no ramo `prices.length === 0`.
           */}
-          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          <p className="sb-skud-lead">
             Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
             {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas sincronizações não deixa registro.{" "}
-            <strong>Não há análise de impacto</strong>: a série começa em 24/08/2026 e a mediana é de uma mudança
+            {/* A data cravada ("24/08/2026") era a da primeira organização — a mesma
+                classe que D-234 tirou de /precos. A série de cada uma começa na
+                primeira sincronização dela. */}
+            <strong>Não há análise de impacto</strong>: a série de preços ainda é curta e a mediana é de uma mudança
             por SKU — ligar preço a venda com isso seria inventar causa.
           </p>
 
           {pricesResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar as mudanças de preço: {pricesResult.error.message}
             </p>
           )}
@@ -1354,8 +1358,8 @@ export default async function SkuDashboardPage({
           )}
 
           {pricesResult.error === null && prices.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table" style={{ minWidth: "42rem" }}>
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-42">
                 <thead>
                   <tr>
                     <th>Quando</th>
@@ -1375,7 +1379,7 @@ export default async function SkuDashboardPage({
 
                     return (
                       <tr key={linha.event_id}>
-                        <td style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                        <td className="sb-skud-text-soft">
                           {formatDateTime(linha.occurred_at)}
                         </td>
                         <td>
@@ -1385,7 +1389,7 @@ export default async function SkuDashboardPage({
                               verdade. Mostrar o MLB sem título é mais honesto do que
                               esconder a linha (contrato de D-172). */}
                           {linha.title !== null && (
-                            <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{linha.title}</div>
+                            <div className="sb-skud-text-soft">{linha.title}</div>
                           )}
                         </td>
                         <td>{linha.account_label}</td>
@@ -1452,12 +1456,12 @@ export default async function SkuDashboardPage({
             </div>
           </div>
 
-          <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+          <p className="sb-skud-sub-sm">
             O custo usado num pedido de compra é editável no próprio pedido e nunca altera este cadastro.
           </p>
 
           {costHistoryResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar o histórico de custo: {costHistoryResult.error.message}
             </p>
           )}
@@ -1467,8 +1471,8 @@ export default async function SkuDashboardPage({
           )}
 
           {costHistoryResult.error === null && costHistory.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table" style={{ minWidth: "32rem" }}>
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-32">
                 <thead>
                   <tr>
                     <th>Quando</th>
@@ -1480,11 +1484,11 @@ export default async function SkuDashboardPage({
                 <tbody>
                   {costHistory.map((entry) => (
                     <tr key={entry.id}>
-                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.changed_at)}</td>
+                      <td className="sb-skud-nowrap">{formatDateTime(entry.changed_at)}</td>
                       {/* `De` vazio = primeiro registro (o SKU nasceu com custo). */}
                       <td className="sb-num">{formatCurrency(entry.previous_cost)}</td>
                       <td className="sb-num">{formatCurrency(entry.new_cost)}</td>
-                      <td style={{ color: "var(--sb-text-soft)" }}>
+                      <td className="sb-skud-soft">
                         {entry.changed_by_role === "service_role"
                           ? "importação (worker)"
                           : entry.changed_by_role === "postgres"
@@ -1501,7 +1505,7 @@ export default async function SkuDashboardPage({
           </div>
         </Panel>
 
-        <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <div className="sb-skud-mt3">
           <Panel title="Linha do tempo">
             <div className="sb-panel-body">
           {/*
@@ -1513,13 +1517,13 @@ export default async function SkuDashboardPage({
           */}
 
           {timelineResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar a linha do tempo: {timelineResult.error.message}
             </p>
           )}
 
           {timelineResult.error === null && timeline.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
+            <p className="sb-skud-lead-mb4">
               Nenhum evento registrado para este SKU — a linha do tempo nasce dos eventos de domínio (webhook e
               reconciliações) e só enxerga o que o sistema registrou.
             </p>
@@ -1528,12 +1532,12 @@ export default async function SkuDashboardPage({
           {timelineResult.error === null && timeline.length > 0 && (
             <>
               {timeline.length >= TIMELINE_LIMIT && (
-                <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                <p className="sb-skud-sub">
                   Mostrando os {TIMELINE_LIMIT} eventos mais recentes.
                 </p>
               )}
-              <div style={{ overflowX: "auto" }}>
-                <table className="sb-table" style={{ minWidth: "48rem" }}>
+              <div className="sb-skud-scroll">
+                <table className="sb-table sb-skud-min-48">
                   <thead>
                     <tr>
                       <th>Quando</th>
@@ -1545,7 +1549,7 @@ export default async function SkuDashboardPage({
                   <tbody>
                     {timeline.map((entry) => (
                       <tr key={entry.id}>
-                        <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.occurred_at)}</td>
+                        <td className="sb-skud-nowrap">{formatDateTime(entry.occurred_at)}</td>
                         <td>
                           <span
                             style={
@@ -1560,10 +1564,10 @@ export default async function SkuDashboardPage({
                           </span>
                         </td>
                         <td>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
-                        <td style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                        <td className="sb-skud-text-soft">
                           {entityLabel(entry.entity_type)}
                           {entry.entity_type !== "sku" && (
-                            <span style={{ fontFamily: "ui-monospace, monospace" }}> {entry.entity_id}</span>
+                            <span className="sb-skud-mono"> {entry.entity_id}</span>
                           )}
                           {entry.account_label !== null && <> · {entry.account_label}</>}
                         </td>
@@ -1596,7 +1600,7 @@ export default async function SkuDashboardPage({
                 : `${String(diagnostico.anuncios)} anúncio(s) · ${String(diagnostico.contas)} conta(s) · ${String(diagnostico.problemas.length)} problema(s)`
             }
             aside={
-              <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+              <span className="sb-skud-row">
                 {/*
                   O SELETOR DE ESCOPO, na URL. As opções saem dos anúncios
                   deste SKU, então conta nova aparece sozinha — o pedido do
@@ -1691,7 +1695,7 @@ export default async function SkuDashboardPage({
                 mesma daria 0% e pareceria medição.
               */}
               {comparacaoDeConta !== null && (
-                <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.8125rem" }}>
+                <p className="sb-skud-p-top">
                   Preço médio nesta conta: <strong>{formatCurrency(comparacaoDeConta.daConta)}</strong> · nas demais:{" "}
                   <strong>{formatCurrency(comparacaoDeConta.dasOutras)}</strong> ·{" "}
                   <strong>
@@ -1704,7 +1708,7 @@ export default async function SkuDashboardPage({
             </div>
           </Panel>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div className="sb-skud-mt3">
             <Panel
               title="Problemas encontrados"
               subtitle={
@@ -1715,7 +1719,7 @@ export default async function SkuDashboardPage({
             >
               <div className="sb-panel-body">
                 {diagnostico.problemas.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                  <p className="sb-skud-p">
                     Nenhuma das verificações acendeu. Isso não quer dizer "tudo certo em tudo": quer dizer que as
                     condições que esta tela sabe julgar não foram satisfeitas.
                   </p>
@@ -1723,18 +1727,18 @@ export default async function SkuDashboardPage({
                   [...diagnostico.problemas]
                     .sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "critico" ? -1 : 1))
                     .map((problema) => (
-                      <div key={problema.chave} className="sb-drawer-card" style={{ marginBottom: "var(--sb-space-3)" }}>
-                        <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+                      <div key={problema.chave} className="sb-drawer-card sb-skud-mb3">
+                        <span className="sb-skud-row">
                           <span className="sb-status" style={TOM[NIVEL[problema.nivel].tom]}>
                             {NIVEL[problema.nivel].rotulo}
                           </span>
                           <b>{problema.titulo}</b>
                           {problema.onde !== null && (
-                            <small style={{ color: "var(--sb-text-soft)" }}>{problema.onde}</small>
+                            <small className="sb-skud-soft">{problema.onde}</small>
                           )}
                         </span>
 
-                        <dl className="sb-fact-grid" style={{ marginTop: "var(--sb-space-2)" }}>
+                        <dl className="sb-fact-grid sb-skud-mt2">
                           <div>
                             <dt>Problema</dt>
                             <dd>{problema.problema}</dd>
@@ -1754,7 +1758,7 @@ export default async function SkuDashboardPage({
                           um palpite, e é o primeiro que alguém vai querer
                           conferir quando discordar do selo.
                         */}
-                        <small style={{ display: "block", marginTop: "0.5rem", color: "var(--sb-text-soft)" }}>
+                        <small className="sb-skud-block-soft">
                           acendeu por: {problema.regua}
                         </small>
                       </div>
@@ -1773,13 +1777,13 @@ export default async function SkuDashboardPage({
             pior do que limite nenhum: ensina que a ausência significa "tudo
             coberto".
           */}
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div className="sb-skud-mt3">
               <Panel
                 title="O que esta tela NÃO julga"
                 subtitle="cada linha é uma pergunta que a fonte não responde — dizer isso é o que impede a tela de responder errado"
               >
                 <div className="sb-panel-body">
-                  <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8125rem", lineHeight: 1.6 }}>
+                  <ul className="sb-skud-list">
                     {diagnostico.semRegua.map((linha) => (
                       <li key={linha}>{linha}</li>
                     ))}
@@ -1796,7 +1800,7 @@ export default async function SkuDashboardPage({
               </Panel>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div className="sb-skud-mt3">
             <DiagnosisPanel skuId={sku.data.id} />
           </div>
         </>
@@ -1813,7 +1817,7 @@ export default async function SkuDashboardPage({
             e 30 dias depois. Comparação BRUTA lado a lado, nunca uma % de
             "resultado" — e "depois" não é "por causa".
           */}
-          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          <p className="sb-skud-lead">
             Cada decisão nasce de uma ação da <Link href="/acoes">Central de Ações</Link> e guarda um retrato do
             SKU no momento — venda de 7 dias, preço médio e estoque local. O job de medição refaz o mesmo retrato 7,
             15 e 30 dias depois. A comparação é <strong>lado a lado, bruta</strong>: nenhuma porcentagem de
@@ -1821,16 +1825,16 @@ export default async function SkuDashboardPage({
           </p>
 
           {decisionsResult.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+            <p className="sb-skud-danger" role="alert">
               Não foi possível carregar as decisões: {decisionsResult.error.message}
             </p>
           )}
 
           {decisionsResult.error === null && decisions.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)" }}>
+            <p className="sb-skud-soft">
               Nenhuma decisão registrada para este SKU.{" "}
               {openActionsResult.error !== null && (
-                <span role="alert" style={{ color: "var(--sb-danger)" }}>
+                <span className="sb-skud-danger" role="alert">
                   Não foi possível contar as ações abertas: {openActionsResult.error.message}
                 </span>
               )}
@@ -1847,7 +1851,7 @@ export default async function SkuDashboardPage({
           )}
 
           {decisionsResult.error === null && decisions.length > 0 && (
-            <div style={{ margin: "0 calc(-1 * var(--sb-space-3))" }}>
+            <div className="sb-skud-bleed">
               {decisions.map((decision) => {
                 // A visão normalizada da ação (`describeActionEvidence` é total
                 // para qualquer `kind`, D-116) — a mesma que a Central usa.
@@ -1865,11 +1869,11 @@ export default async function SkuDashboardPage({
                     em tabela — em vez de cinco parágrafos iguais. A comparação
                     continua bruta e lado a lado (D-228).
                   */
-                  <article key={decision.id} className="sb-panel-body" style={{ borderTop: "1px solid var(--sb-border)" }}>
-                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <b style={{ display: "block", fontSize: "0.75rem" }}>{decision.decision}</b>
-                        <small style={{ display: "block", marginTop: 3, fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                  <article key={decision.id} className="sb-panel-body sb-skud-rule">
+                    <div className="sb-skud-row-wrap">
+                      <span className="sb-skud-grow">
+                        <b className="sb-skud-block-sm">{decision.decision}</b>
+                        <small className="sb-skud-meta">
                           {acao.kindLabel}
                           {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
                           {/* O autor também aqui (D-320): o painel da visão geral não pode dizer mais que a aba dona. */}
@@ -1880,7 +1884,7 @@ export default async function SkuDashboardPage({
                       <StatusPill code={decision.actions.status} label={actionStatusLabel(decision.actions.status)} />
                     </div>
 
-                    <p style={{ margin: "var(--sb-space-2) 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+                    <p className="sb-skud-note">
                       Recomendação da ação: {decision.actions.recommendation}
                     </p>
 
@@ -1893,25 +1897,25 @@ export default async function SkuDashboardPage({
                       </thead>
                       <tbody>
                         <tr>
-                          <td style={{ whiteSpace: "nowrap" }}>No momento da decisão</td>
-                          <td style={{ whiteSpace: "normal" }}>{formatDecisionSnapshot(decision.baseline_snapshot)}</td>
+                          <td className="sb-skud-nowrap">No momento da decisão</td>
+                          <td className="sb-skud-wrap">{formatDecisionSnapshot(decision.baseline_snapshot)}</td>
                         </tr>
                         {medidas.map((medida) => (
                           <tr key={medida.window_days}>
-                            <td style={{ whiteSpace: "nowrap" }}>
+                            <td className="sb-skud-nowrap">
                               {outcomeWindowLabel(medida.window_days)}
-                              <span style={{ display: "block", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                              <span className="sb-skud-block-xs">
                                 {formatDateTime(medida.measured_at)}
                               </span>
                             </td>
-                            <td style={{ whiteSpace: "normal" }}>{formatDecisionSnapshot(medida.outcome_snapshot)}</td>
+                            <td className="sb-skud-wrap">{formatDecisionSnapshot(medida.outcome_snapshot)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
 
                     {pendentes.length > 0 && (
-                      <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                      <p className="sb-skud-footnote">
                         Ainda sem medição: {pendentes.map(outcomeWindowLabel).join(", ")}.
                       </p>
                     )}

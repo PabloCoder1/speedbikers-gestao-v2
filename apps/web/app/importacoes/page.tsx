@@ -100,6 +100,21 @@ export default async function ImportacoesPage({
         }
       />
 
+      <section className="sb-process-hero sb-process-hero-import" aria-labelledby="import-hero-title">
+        <div className="sb-process-hero-copy">
+          <span className="sb-process-hero-kicker">PIPELINE DO CATÁLOGO</span>
+          <h2 id="import-hero-title">Cada arquivo tem uma trilha segura antes de alterar o catálogo.</h2>
+          <p>Envie a planilha, revise as linhas sinalizadas e só então aplique. O histórico mantém a evidência de cada lote para auditoria.</p>
+        </div>
+        <div className="sb-process-steps" aria-label="Etapas da importação">
+          <span><b>01</b><strong>Enviar</strong><small>Arquivo UpSeller</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>02</b><strong>Conferir</strong><small>Linhas e alertas</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>03</b><strong>Aplicar</strong><small>Catálogo atualizado</small></span>
+        </div>
+      </section>
+
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar: {error.message}
@@ -161,7 +176,7 @@ export default async function ImportacoesPage({
 
           {rows.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
+              <table className="sb-table sb-import-table">
                 <thead>
                   <tr>
                     <th>Arquivo</th>

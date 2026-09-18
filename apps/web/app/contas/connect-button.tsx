@@ -26,7 +26,16 @@ interface ErrorResponse {
   error: { code: string; message?: string };
 }
 
-export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; label: string }): ReactNode {
+export function ConnectButton({
+  mlAccountId,
+  label,
+  reconectar = false,
+}: {
+  mlAccountId: string;
+  label: string;
+  /** Conta conectada com a credencial parada: o mesmo fluxo, com o nome certo. */
+  reconectar?: boolean;
+}): ReactNode {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +86,7 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
   }
 
   return (
-    <div style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
+    <div className="sb-account-connect">
       <button
         className="sb-button sb-button-primary"
         type="button"
@@ -85,13 +94,13 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
           void connect();
         }}
         disabled={busy}
-        aria-label={`Conectar ${label} ao Mercado Livre`}
+        aria-label={`${reconectar ? "Reconectar" : "Conectar"} ${label} ao Mercado Livre`}
       >
-        {busy ? "Abrindo o Mercado Livre…" : "Conectar"}
+        {busy ? "Abrindo o Mercado Livre…" : reconectar ? "Reconectar" : "Conectar"}
       </button>
 
       {error !== null && (
-        <span role="alert" style={{ fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+        <span role="alert" className="sb-account-connect-error">
           {error}
         </span>
       )}

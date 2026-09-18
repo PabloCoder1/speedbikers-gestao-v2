@@ -1,4 +1,4 @@
-import { digitos, numeroBr, type DocumentoLido, type ItemLido, type LeituraDocumento, type LinhaPdf } from "./tipos.js";
+import { digitos, mesmaEmpresa, numeroBr, type DocumentoLido, type ItemLido, type LeituraDocumento, type LinhaPdf } from "./tipos.js";
 
 /**
  * O DANFE em PDF (D-375) — o papel da NF-e.
@@ -243,19 +243,23 @@ export function lerDanfe(linhas: readonly LinhaPdf[], cnpjProprio: string): Leit
     return { ok: false, motivo: "o DANFE foi lido, mas nenhum item foi reconhecido na tabela de produtos" };
   }
 
-  const proprio = digitos(cnpjProprio);
   const cnpjs = acharCnpjs(linhas);
   const emitente = cnpjs[0] ?? null;
+  // Pela RAIZ do CNPJ: matriz e filial são o mesmo estoque (`mesmaEmpresa`).
+  const daCasa = (cnpj: string | null): boolean => mesmaEmpresa(cnpj, cnpjProprio);
 
-  if (proprio === "" || !cnpjs.includes(proprio)) {
+  if (!cnpjs.some(daCasa)) {
     return {
       ok: false,
       motivo: "o CNPJ da organização não aparece neste DANFE — sem ele não dá para decidir entrada ou saída",
     };
   }
 
-  // Emitente somos nós = saída; senão, entrada (D-053).
-  const direcao = emitente === proprio ? "SAIDA" : "ENTRADA";
+  // Um CNPJ da casa DEPOIS do emitente é o destinatário: entrada — inclusive
+  // na transferência entre matriz e filial, em que o emitente também é da casa
+  // (decisão do dono, 18/09/2026). Senão, o CNPJ da casa que achamos acima é o
+  // do emitente: saída (D-053).
+  const direcao = cnpjs.slice(1).some(daCasa) ? "ENTRADA" : "SAIDA";
   // "Nº. 000.000.022" -> "22": o zero à esquerda é enfeite de impressão.
   const numeroBruto = /N[º°ºo]?\.?\s*([\d.]{3,})/i.exec(texto)?.[1]?.replace(/\./g, "") ?? null;
   const numero = numeroBruto === null ? null : (numeroBruto.replace(/^0+/, "") || numeroBruto);

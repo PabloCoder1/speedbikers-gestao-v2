@@ -25,6 +25,7 @@ import { idadeDaLeitura, lerVisaoReposicao, posicaoCobertura } from "../../lib/r
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 
+import { podeOperarCompras } from "../../lib/purchase-order-permission";
 import { SelecaoPedido } from "./selecao-pedido";
 
 export const metadata = { title: "Cobertura e reposição — Speed Bikers Gestão" };
@@ -614,7 +615,13 @@ export default async function ReposicaoPage({
                   </div>
                 </form>
 
-                <SelecaoPedido formId="rep-pedido" />
+                {/* A seleção vira pedido de compra, e só ADMIN/GESTOR cria pedido
+                    (`check_purchase_order_writer`) — lote 1 do pente fino, 18/09. */}
+                {podeOperarCompras(membership.role) ? (
+                  <SelecaoPedido formId="rep-pedido" />
+                ) : (
+                  <p className="sb-rep-rodape">Pedidos de compra são criados por ADMIN ou GESTOR.</p>
+                )}
               </>
             )}
           </Panel>

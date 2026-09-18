@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { TOM, tomDeRelist } from "../../../components/tone";
+import { useDialogo } from "../../../components/use-dialogo";
 import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
 import {
@@ -494,10 +495,14 @@ function Confirmacao({
 }): ReactNode {
   const [ciente, setCiente] = useState(false);
   const travado = exigirCiencia !== undefined && !ciente;
+  // Esc, foco no Cancelar e rolagem travada (lote 3 do pente fino): este é o
+  // diálogo que FECHA o anúncio — Enter por reflexo não pode confirmar.
+  const dialogo = useDialogo<HTMLDivElement>(true, onCancel);
 
   return (
     <div className="sb-backdrop" onClick={onCancel}>
       <div
+        ref={dialogo}
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
@@ -525,7 +530,7 @@ function Confirmacao({
         )}
 
         <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)", justifyContent: "flex-end" }}>
-          <button type="button" className="sb-button" onClick={onCancel}>
+          <button type="button" className="sb-button" onClick={onCancel} data-foco-inicial>
             Cancelar
           </button>
           <button
