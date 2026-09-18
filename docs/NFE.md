@@ -1,6 +1,6 @@
 # NF-e / XML — Speed Bikers Gestão V3
 
-> Dono documental de: layout oficial da Nota Fiscal Eletrônica, mapeamento de campos e regras de importação de documento fiscal.
+> Dono documental de: layout oficial da Nota Fiscal Eletrônica, mapeamento de campos e regras de importação de documento fiscal — **e, desde D-375, dos três layouts de PDF que a V3 lê** (DANFE, Pedido de Saída do UpSeller, envio ao Full): seção 4.
 > Status: **fluxo completo (upload → parse → conferência → confirmação → aplicação) implementado em 2026-08-22; validado contra o PRIMEIRO XML real de fornecedor no mesmo dia** — achado um erro real (direção do movimento, D-053) e corrigido antes de existir qualquer código de aplicação (nenhum `stock_movements` errado chegou a ser gravado). Falta validar contra um segundo fornecedor para separar "layout oficial" de "peculiaridade deste emissor".
 
 ---
@@ -109,6 +109,47 @@ A partir de 2026, o bloco `imposto` de cada item pode conter um grupo novo `IBSC
 - **Múltiplos fornecedores, formatos variados**: só um fornecedor visto até agora (Plasmoto). O parser trata `NCM`/`CFOP` como opcionais (`null` quando ausentes) por precaução, mas só um SEGUNDO XML real de outro fornecedor mostra o que de fato varia entre sistemas emissores.
 - **Encoding**: o XML real recebido é UTF-8 (`<?xml version="1.0" encoding="UTF-8"?>`), confirmado. Um fornecedor que exporte em ISO-8859-1 (Latin-1, comum em sistemas legados brasileiros) ainda seria um risco não testado.
 - **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` — importa para decidir se o upload é sempre manual (um arquivo por vez, como implementado: `POST /v1/nfe-imports`, `apps/api/src/nfe-import.ts`, tela `notas-fiscais/nova`) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). A rota de upload de um arquivo existe desde 2026-08-22; o suporte a lote é que depende desta resposta.
+
+---
+
+## 4. Documentos em PDF — DANFE, Pedido de Saída e envio ao Full (D-375)
+
+**Status: lido e em produção desde 2026-09-17, contra UM arquivo real de cada layout.** O XML continua sendo o caminho preferido — é o único conferido pela SEFAZ — e a tela diz isso. O PDF entrou porque, na operação real, às vezes só o papel chega.
+
+Os quatro layouts que a V3 lê, e o que decide cada um:
+
+| `document_type` | Origem | Como é reconhecido | O que traz |
+| --- | --- | --- | --- |
+| `NFE` | XML da NF-e | `<NFe>`/`<nfeProc>` nos primeiros bytes | tudo (chave, CFOP, valores) |
+| `DANFE_PDF` | o papel da mesma nota | o título "DANFE"/"DOCUMENTO AUXILIAR DA NOTA FISCAL" | itens, valores, chave, CNPJs |
+| `SAIDA_UPSELLER_PDF` | "Pedido de Saída" do UpSeller | o título "Pedido de Saída" | SKU e quantidade — **sem valor** |
+| `ENVIO_FULL_ML_PDF` | instruções de preparação (ML) | o título de preparação de envio | SKU e quantidade — **sem valor** |
+
+**O tipo sai do CONTEÚDO, nunca do nome do arquivo.** A extensão decide apenas qual leitor abre (bytes ou XML); o nome pode ter sido trocado no caminho.
+
+### 4.1 Extração de texto do PDF — o que foi medido nos arquivos reais
+
+Sem dependência nova: `zlib` do Node (`apps/worker/src/documentos/pdf-texto.ts`), inflate dos streams de conteúdo, `ToUnicode` (bfchar/bfrange) e os operadores `Tj/TJ/Tm/Td/TD/T*`. Três comportamentos medidos, cada um com um teste:
+
+1. **stream de imagem inflado vira lixo** — filtrado pela proporção de caracteres imprimíveis (> 0,85);
+2. **o Chrome parte a mesma palavra em vários pedaços posicionados** ("EST" + "OQUE LOJA") — as células de uma linha são coladas SEM espaço, e a separação entre colunas fica no `x`;
+3. **o PDF impresso pelo Chrome inverte o eixo vertical** — ordenar por `y` punha o rodapé antes do cabeçalho; a ordem das linhas é a do ARQUIVO.
+
+Um PDF que seja imagem digitalizada não tem texto para ler: a leitura falha com "envie o XML da nota ou o PDF original" em vez de gravar um documento sem itens.
+
+### 4.2 Ausência de valor é estado normal
+
+`document_items.unit`, `unit_value` e `total_value` são ANULÁVEIS desde D-375: documento de separação não tem preço. Gravar zero afirmaria "de graça" (a distinção de D-254), e a tela mostra "sem valor".
+
+### 4.3 Envio ao Full não gera movimento
+
+Envio ao Full é **transferência**, não saída — a mercadoria continua sendo nossa, guardada no centro do Mercado Livre. O documento é lido e conferido, mas a aplicação é recusada em duas camadas (`confirmNfeApply` e o worker) até o Full ter representação própria (D-352). Saída por documento NÃO fiscal (o Pedido de Saída) é gravada como `SAIDA_DOCUMENTO`, nunca como `SAIDA_NFE`: nota nenhuma foi emitida.
+
+### 4.4 O que continua pendente
+
+- **um segundo emissor de DANFE**: a tabela de itens é achada pelos rótulos do cabeçalho, e a ordem de "VALOR UNIT"/"TOTAL" já variou dentro do mesmo layout. Um segundo arquivo real separa "layout regulado" de "peculiaridade deste emissor";
+- **DANFE de mais de uma página de itens** com continuação de descrição atravessando a página: o leitor trata continuação dentro da página;
+- **ISO-8859-1 no XML** segue não testado (seção 3).
 
 ---
 

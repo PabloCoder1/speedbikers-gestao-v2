@@ -12,11 +12,13 @@
  * `documents.operation_type` já são colunas exibidas, e filtrar por elas faz a
  * barra prometer só o que a tabela cumpre.
  *
- * **Não há busca aqui, e a ausência é do frame.** A variação `purchases` do
- * mesmo `ProcessScreen` traz um campo ("Buscar PC, fornecedor...") e a `nfe`
- * NÃO — o cabeçalho do painel dela tem só "Filtros ⌄". Inventar o campo seria
- * inventar; e, de quebra, uma busca multi-coluna exigiria `.or()` do PostgREST,
- * cuja sintaxe é string e aceitaria vírgula e parêntese vindos da URL.
+ * **A busca existe desde D-375**, e o que a destravou foi o banco, não o
+ * desenho: `get_documents_overview` recebe `p_search` e faz o `ilike` dentro do
+ * SQL. Antes dela, buscar em várias colunas exigiria `.or()` do PostgREST —
+ * sintaxe em string, que aceitaria vírgula e parêntese vindos da URL.
+ *
+ * A terceira dimensão, também de D-375, é o TIPO do documento: a tela deixou de
+ * receber só XML de NF-e e agora recebe DANFE, pedido de saída e envio ao Full.
  */
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
@@ -49,6 +51,30 @@ export const DOCUMENT_STATUSES = [
 
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
+/**
+ * `documents.document_type` — o layout lido (D-375).
+ *
+ * `NFE` é o XML; os outros três são PDF. A lista é FECHADA pelo mesmo motivo
+ * dos estados: tipo inventado na URL cai em "todos", nunca vai ao banco.
+ */
+export const DOCUMENT_TYPES = ["NFE", "DANFE_PDF", "SAIDA_UPSELLER_PDF", "ENVIO_FULL_ML_PDF"] as const;
+
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+/** O nome curto de cada layout, do jeito que a operação chama. */
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  NFE: "NF-e (XML)",
+  DANFE_PDF: "DANFE (PDF)",
+  SAIDA_UPSELLER_PDF: "Pedido de saída",
+  ENVIO_FULL_ML_PDF: "Envio ao Full",
+};
+
+export function documentTypeLabel(raw: string | null): string {
+  if (raw === null) return "Em leitura";
+
+  return (DOCUMENT_TYPE_LABELS as Record<string, string>)[raw] ?? raw;
+}
+
 /** `documents.operation_type` — a direção do movimento que a nota gera. */
 export const OPERATION_TYPES = ["ENTRADA", "SAIDA"] as const;
 
@@ -57,6 +83,8 @@ export type OperationType = (typeof OPERATION_TYPES)[number];
 export interface DocumentFilters {
   status: DocumentStatus | null;
   operation: OperationType | null;
+  type: DocumentType | null;
+  search: string | null;
   page: number;
 }
 
@@ -72,12 +100,25 @@ export function resolveOperationType(raw: unknown): OperationType | null {
   return (OPERATION_TYPES as readonly string[]).includes(raw) ? (raw as OperationType) : null;
 }
 
+/** Mesma leitura de `purchase-order-filters`: vazio e só-espaço viram nulo. */
+function lerBusca(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
+export function resolveDocumentType(raw: unknown): DocumentType | null {
+  if (typeof raw !== "string") return null;
+
+  return (DOCUMENT_TYPES as readonly string[]).includes(raw) ? (raw as DocumentType) : null;
+}
+
 export function resolveDocumentFilters(
   query: Record<string, string | string[] | undefined>,
 ): DocumentFilters {
   return {
     status: resolveDocumentStatus(query.estado),
     operation: resolveOperationType(query.direcao),
+    type: resolveDocumentType(query.tipo),
+    search: lerBusca(query.busca),
     page: resolvePageParam(query.pagina),
   };
 }
@@ -95,6 +136,8 @@ export function buildDocumentHref(
       // sendo a mesma página de sempre.
       estado: next.status,
       direcao: next.operation,
+      tipo: next.type,
+      busca: next.search,
     },
     override.page === undefined ? 1 : next.page,
   );

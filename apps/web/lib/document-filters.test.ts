@@ -5,6 +5,7 @@ import {
   buildDocumentHref,
   resolveDocumentFilters,
   resolveDocumentStatus,
+  resolveDocumentType,
   resolveOperationType,
   summarizeDocumentWindow,
   type DocumentFilters,
@@ -13,6 +14,8 @@ import {
 const base: DocumentFilters = {
   status: null,
   operation: null,
+  type: null,
+  search: null,
   page: 1,
 };
 
@@ -35,6 +38,19 @@ describe("estado e direção", () => {
     expect(resolveDocumentStatus(42)).toBeNull();
   });
 
+  /**
+   * Os quatro layouts de D-375. Tipo inventado na URL cai em "todos" pelo mesmo
+   * motivo do estado: zero linhas não se distingue de filtro sem resultado.
+   */
+  it("tipo aceita só os quatro layouts lidos", () => {
+    for (const tipo of ["NFE", "DANFE_PDF", "SAIDA_UPSELLER_PDF", "ENVIO_FULL_ML_PDF"]) {
+      expect(resolveDocumentType(tipo)).toBe(tipo);
+    }
+
+    expect(resolveDocumentType("NFSE")).toBeNull();
+    expect(resolveDocumentType("EM_LEITURA")).toBeNull();
+  });
+
   it("direção aceita só as duas do domínio", () => {
     expect(resolveOperationType("ENTRADA")).toBe("ENTRADA");
     expect(resolveOperationType("SAIDA")).toBe("SAIDA");
@@ -43,18 +59,30 @@ describe("estado e direção", () => {
 });
 
 describe("resolução da URL", () => {
-  it("lê as duas dimensões mais a página", () => {
-    const filtros = resolveDocumentFilters({ estado: "PARSED", direcao: "ENTRADA", pagina: "3" });
+  it("lê as quatro dimensões mais a página", () => {
+    const filtros = resolveDocumentFilters({
+      estado: "PARSED",
+      direcao: "ENTRADA",
+      tipo: "DANFE_PDF",
+      busca: "OUT12467",
+      pagina: "3",
+    });
 
-    expect(filtros).toEqual({ status: "PARSED", operation: "ENTRADA", page: 3 });
+    expect(filtros).toEqual({
+      status: "PARSED",
+      operation: "ENTRADA",
+      type: "DANFE_PDF",
+      search: "OUT12467",
+      page: 3,
+    });
   });
 
-  /**
-   * O frame da `nfe` não tem campo de busca — só "Filtros ⌄" — e um parâmetro
-   * que a tela não oferece não pode virar recorte silencioso pela URL.
-   */
+  it("busca em branco é ausência de busca, não busca por vazio", () => {
+    expect(resolveDocumentFilters({ busca: "   " })).toEqual(base);
+  });
+
   it("parâmetro que a tela não tem é ignorado", () => {
-    expect(resolveDocumentFilters({ busca: "nota-1" })).toEqual(base);
+    expect(resolveDocumentFilters({ ordem: "valor" })).toEqual(base);
   });
 });
 
@@ -64,7 +92,7 @@ describe("href", () => {
   });
 
   it("preserva as outras dimensões ao trocar uma", () => {
-    const atual: DocumentFilters = { status: "PARSED", operation: "ENTRADA", page: 4 };
+    const atual: DocumentFilters = { ...base, status: "PARSED", operation: "ENTRADA", page: 4 };
 
     expect(buildDocumentHref(atual, { status: "APPLIED" })).toBe(
       "/notas-fiscais?estado=APPLIED&direcao=ENTRADA",
@@ -76,7 +104,7 @@ describe("href", () => {
    * usuário lê como "nenhum resultado" — a regra de `buildFilterHref`.
    */
   it("trocar de filtro volta para a página 1; paginar preserva o recorte", () => {
-    const atual: DocumentFilters = { status: "PARSED", operation: null, page: 4 };
+    const atual: DocumentFilters = { ...base, status: "PARSED", page: 4 };
 
     expect(buildDocumentHref(atual, { operation: "SAIDA" })).toBe(
       "/notas-fiscais?estado=PARSED&direcao=SAIDA",

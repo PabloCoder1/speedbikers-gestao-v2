@@ -13325,3 +13325,95 @@ Capturas a 1440 px e 390 px (popup em tela cheia, sem rolagem lateral) com a res
 - **migration precisa chegar a producao antes da promocao da web**; antes disso o popup abre sem sugestao ("Sem sugestao agora") e a busca funciona -- nada quebra;
 - ordem das migrations combinada: `20260917190000` (D-373) antes desta `20260917200000`;
 - a D-362 deve acrescentar `vinculo_via` nas leituras de vinculo: a tela ja ignora coluna desconhecida.
+
+## D-375 - Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
+
+**Contexto:** pedido do dono: "melhore a tela /notas-fiscais ... deixe ela mais bonita, rapida e util ... essa tela tem que dar pra dar entrada e saida, tanto por xml tanto por pdf", com quatro arquivos reais: o XML e o DANFE da MESMA nota de entrada, o "Pedido de Saida" impresso do UpSeller e as "instrucoes de preparacao" de um envio ao Full do Mercado Livre. A tela existia desde D18/D-253 e aceitava **so XML de NF-e**, um arquivo por vez; o copy dizia "Envie o XML, nao o PDF/DANFE".
+
+**1. QUATRO LAYOUTS, UMA FORMA (`packages/domain/src/documentos/*`, `apps/worker/src/documentos/pdf-texto.ts`)**
+
+O tipo sai do **conteudo**, nunca do nome do arquivo (`Imprimir - UpSeller.pdf` chega renomeado):
+
+- `NFE` -- o XML, caminho **preferido**: e o unico conferido pela SEFAZ. Parser de sempre (D-053), so traduzido para a forma comum;
+- `DANFE_PDF` -- a tabela de produtos e achada pelos ROTULOS do cabecalho, por pagina (CODIGO/DESCRICAO/NCM/CFOP/UN/QUANT, com "VALOR UNIT"/"TOTAL" buscados na vizinhanca porque a ordem varia por emissor); chave exigida em ONZE blocos de quatro e CNPJ so COM pontuacao -- sem isso o protocolo de autorizacao virava "chave" e "CNPJ do emitente" (medido no arquivo real);
+- `SAIDA_UPSELLER_PDF` -- cabecalho "# SKU Estante Qtd."; a coluna do SKU e uma FAIXA, nao proximidade (o rotulo fica a esquerda do valor); a descricao vem na linha seguinte;
+- `ENVIO_FULL_ML_PDF` -- quantidade numa coluna a direita, casada por proximidade vertical; se UM produto ficar sem quantidade, o documento INTEIRO e recusado.
+
+**Extracao de PDF sem dependencia nova** (`zlib` do Node, no worker): inflate dos streams, `ToUnicode` (bfchar/bfrange), operadores `Tj/TJ/Tm/Td/TD/T*`. Tres achados que mudaram o codigo: stream de imagem inflado vira lixo (filtro por proporcao de caracteres imprimiveis), o Chrome parte a MESMA palavra em varios pedacos (colar sem espaco; a coluna fica no `x`) e o PDF impresso pelo Chrome INVERTE o eixo vertical (ordenar por `y` punha o rodape antes do cabecalho -- a ordem e a do arquivo). O dominio continua puro: ele recebe as linhas ja posicionadas, como o XML ja chegava convertido.
+
+**2. BANCO (migration `20260917230000`)**
+
+- `documents.document_type` aceita os quatro layouts e passa a ser **ANULAVEL**: ate o parse, o tipo nao e conhecido, e nascer "NFE" seria mentir. O formato (`source_format` XML|PDF), esse sim, e sabido no upload -- e e ele que a tela mostra enquanto a leitura nao terminou;
+- `document_items.unit`, `unit_value` e `total_value` viram anulaveis: **pedido de separacao nao tem preco**, e gravar zero se leria como "de graca" (D-254);
+- `documents.reference` -- a linha que situa quem confere ("Armazem ESTOQUE LOJA · ENVIO FULL #77375684 CONTA 1");
+- `stock_movements.movement_type` ganha **`SAIDA_DOCUMENTO`**: saida conferida por documento NAO fiscal nao pode ser gravada como `SAIDA_NFE`, que afirmaria uma nota que ninguem emitiu;
+- `get_documents_overview` -- a tela numa leitura: pagina (com unidades e valor por documento), total filtrado, contagens por estado/direcao/tipo (tipo nulo aparece como `EM_LEITURA`) e resumo (em conferencia, em leitura, falhas, aplicados/entradas/saidas de 30 dias, itens sem vinculo). `security invoker` -- a policy de `documents` (ADMIN/GESTOR) continua sendo quem autoriza; `force_custom_plan` (D-319). Contagens respeitam a busca e ignoram os recortes (D-250).
+
+**3. O ENVIO AO FULL NAO DA BAIXA** -- combinado com a frente da D-352 antes de tocar o ledger. Envio ao Full e **transferencia**, nao saida: a mercadoria continua nossa, no centro do Mercado Livre. Gravar como saida simples faria a unidade desaparecer do sistema. O documento e lido e conferido; `confirmNfeApply` recusa ("transferencia, nao saida"), o worker recusa de novo (dupla checagem) e a tela de conferencia explica em vez de oferecer um botao que a `api` vai negar. A baixa passa a existir quando o Full tiver representacao propria (D-352).
+
+**4. AS TELAS**
+
+`/notas-fiscais` -- titulo **"Notas e Documentos"** (era "NF-e / Entradas"; o frame de D18 era um esboco, e o que mudou nao foi o gosto, foi o que a tela FAZ): quatro cartoes (esperando conferencia, em leitura, falhas, aplicados em 30 dias), os sete estados do ciclo como filtro com contagem, menus de tipo e direcao, busca por numero/chave/emitente/arquivo/referencia, e tabela de oito colunas com **proximo passo** por linha ("Vincular 3 de 44", "Conferido · aplicar", "Envio ao Full · sem baixa"). Valor ausente sai "sem valor", nunca "R$ 0".
+
+`/notas-fiscais/nova` -- **varios arquivos**, XML e PDF, arrastar e soltar (a area e um `<label>`: o clique cai no input nativo); quatro cartoes dizendo o que a leitura sabe ler ANTES do envio; um resultado por arquivo, e um recusado nao interrompe os outros. Triagem no navegador e de **cortesia** e erra para o lado de deixar passar -- quem decide e a `api`, pelos bytes (`%PDF-` / `<NFe`). Teto do PDF: 20 MB (quatro vezes o do XML, que e texto).
+
+`/notas-fiscais/:id` -- tipo e referencia na grade de fatos, valores anulaveis mudos, "voltar" como botao (D-367) e o aviso do Full.
+
+**Enquanto a migration nao chega ao banco** (a web da branch principal vai ao ar antes dela, D-363): PGRST202 cai na consulta antiga em `documents` -- sem cartoes, sem tipo e sem valor, nunca em erro.
+
+**Verificacao**
+
+- `typecheck`, `lint` e `test` de todos os pacotes (dominio 591, web 771, api 396, worker 699, db 25) e os quatro guardas `check:*`;
+- 11 testes de layout no dominio e 8 do extrator no worker, com PDFs montados em memoria -- **os arquivos reais nao entram no repositorio** (`docs/NFE.md`); um teste sintetico do pedido de saida achou um bug real: sem "Operador:" no papel, a regex do armazem engolia o documento inteiro;
+- os quatro arquivos reais, conferidos por script: DANFE 44 itens / R$ 237.515,28 (igual ao total do XML) / chave 4226...8331; UpSeller OUT12467, BAU05 x 20; ML #77036991, 40 itens, 574 unidades;
+- integracao local `-t "D-375"`: 9 de 9 (resumo do ciclo, tipo nulo como EM_LEITURA, documento sem valor somando zero com unidades intactas, contagens ignorando o recorte, busca pela referencia, ANALISTA/outra organizacao sem linha, anon recusado, `SAIDA_DOCUMENTO` baixando o saldo pela trigger e tipo fora do CHECK ainda recusado).
+
+**Impacto:** `supabase/migrations/20260917230000_documentos_pdf.sql`; `packages/domain/src/documentos/*`; `apps/worker/src/documentos/pdf-texto.ts`, `apps/worker/src/documento-reader.ts` (era `nfe-xml-reader.ts`), `handlers/nfe-import-{parse,apply}.ts`; `apps/api/src/nfe-import.ts`; `apps/web/app/notas-fiscais/**`, `apps/web/lib/{document-filters,documents-overview,movement-labels,movement-filters}.ts`, `components/nav.tsx`, `app/globals.css` (`sb-nf-*`); `packages/db/src/{types,rls.integration.test}.ts`; `docs/NFE.md`.
+## D-376 - Vinculacoes: a moldura que faltava e a pagina numa leitura so
+
+**Contexto:** o dono, depois da D-374: "melhore de novo a tela de vincular; voce deixou mais facil vincular, porem nao mexeu na qualidade visual da tela, deixe ela mais bonita e mais rapida". Ele estava certo nas duas metades, e as duas tinham a mesma causa: a D-374 trocou o JEITO de vincular e nao encostou na moldura nem nas leituras.
+
+**1. A METADE VISUAL -- esta era a ultima tela de estoque na gramatica antiga**
+
+`/reposicao` (D-358), `/compras` (D-365), `/fornecedores` (D-366) e `/produtos` (D-373) ja usavam o resumo (`sb-rep-resumo`) e os cartoes de recorte (`sb-rep-estado`). `/vinculacoes` continuava com a faixa de KPI (`KpiStrip`) e dois menus suspensos -- o desenho anterior. Nao era feia por acidente: era de outra epoca, e o dono estava comparando com as telas do lado.
+
+O que mudou, e por que cada peca:
+
+- **Resumo com a pergunta certa.** A primeira coisa da tela agora e RECEITA SEM VINCULO (Dev: R$ 490 mil em 30 dias, de 231 anuncios) -- porque o que esta em jogo nao e "quantos faltam", e sim "quanto esta entrando sem baixar estoque". Depois: catalogo vinculado com barra e a ressalva de D-122 escrita ("1.422 deles por variacao -- tem `sku_id` nulo e estao ligados"), falta vincular, e a fila do ERP.
+- **Cartoes de recorte, um clique.** "Vendeu sem vinculo" e a intersecao de estado e venda: nos menus suspensos eram DOIS cliques em dois menus diferentes para chegar ao trabalho principal da tela. Agora e um cartao, com a contagem dentro, e clicar de novo volta para "Todos".
+- **Contas como selos**, nao menu: sao quatro, e cada uma leva o numero de anuncios sem vinculo. O selo de duas letras aparece tambem na linha da tabela, na comparacao e no popup -- e a mesma cor nos quatro lugares.
+- **O tom do selo sai da POSICAO da conta na lista, nao de um hash do id.** A primeira versao usava hash: com quatro contas em seis tons, a chance de duas cairem na mesma cor passa de 60%, e duas contas com o mesmo selo e pior que selo nenhum.
+- **A tabela** perdeu a coluna "Conta" (virou selo junto do MLB, devolvendo a largura ao titulo) e ganhou a RECEITA embaixo das unidades: "vendeu 124" e "vendeu R$ 36 mil sem baixar estoque" pedem urgencias diferentes. `table-layout: fixed` com proporcao declarada -- antes o titulo parava num `max-width` de 28rem e sobravam ~340px de branco ate a coluna seguinte.
+
+**2. A METADE RAPIDA -- `get_listings_link_overview` (migration `20260917220000`)**
+
+Medido como `authenticated`, org com 4.447 anuncios. **A medicao e de PRODUCAO, e a primeira versao desta decisao dizia "Dev" -- erro meu, corrigido depois:** eu vinha consultando `imvjfgnaprqsfjlnsyev`, que e o `speedbikers-prod`, achando que era o Dev (`nmgccyqquwxecqffsidr`). Os numeros valem e ate valem mais por serem de producao; o que estava errado era a etiqueta, e etiqueta trocada em medicao e a semente de conclusao errada. Como se pegou: a CI acusou uma migration remota ausente no repositorio e eu diagnostiquei a versao errada, porque estava lendo o banco errado. Nada ficou em producao -- todo prototipo rodou dentro de `begin ... rollback`, e a ausencia foi conferida em `pg_proc` depois.
+
+| | |
+|---|---|
+| a lista (50 sem vinculo) | `get_listings_dashboard` **180,5 ms** |
+| as 4 contagens da faixa | `get_listings_dashboard` x4 **531,5 ms** |
+| comparacao entre contas | `get_link_integrity` **1.305,8 ms** |
+
+**712 ms de banco so no bloco principal**, porque cada celula repetia a MESMA funcao pesada com `p_limit => 1`. O padrao de D-242 (a celula sai do predicado da lista) esta certo -- ele so pressupoe que a funcao seja barata, e `get_listings_dashboard` monta metricas, visitas e o ultimo snapshot de Full a cada chamada.
+
+A funcao nova faz esse trabalho UMA vez e devolve pagina + contagens + uma linha por conta: **91,4 ms a frio e 78,3 ms quente**. Ela NAO traz visitas nem conversao (a tela nao mostra as duas, e o join com `daily_listing_visits` era parte do custo) e NAO traz a fonte independente de venda.
+
+**Conferido antes de trocar:** as contagens batem com as de hoje sem diferenca nenhuma (4.447 / 3.976 / 471 / 231) e as colunas de catalogo por conta batem com `get_link_integrity` linha a linha (1.065/948/117/89,0 ...). `por_conta` sai de `ml_accounts` com left join, e nao do agrupamento dos anuncios: agrupando, a conta recem-conectada sem anuncio DESAPARECIA da comparacao, e "nao aparece" se le como "nao existe". Ela entra com zeros e percentual NULO (D-254) -- foi um teste de integracao que pegou isso.
+
+**3. A COMPARACAO CHEGA COM A PAGINA; SO A CONFERENCIA ESPERA**
+
+`get_link_integrity` conta venda a partir de `order_items`, um caminho que nao passa pelo pipeline de metricas -- e por isso a tela mostra as duas fontes (D-128). O que ela tinha de exclusivo era isso; as colunas de catalogo agora vem da leitura unica. Entao a tabela da comparacao chega junto com o resto, e dentro de `Suspense` fica so um paragrafo: "Conferido pelos pedidos... sao N anuncios e R$ X", nomeando a divergencia com o catalogo em vez de escondê-la. Em D-374 a comparacao inteira esperava 1,3 s.
+
+**4. SEM A LEITURA NOVA, A TELA DIZ ISSO**
+
+`lerVisaoVinculacoes` recusa a resposta INTEIRA quando um campo falta (o desenho de `replenishment-overview`/`suppliers-overview`), e a pagina cai num caminho que mostra a tabela e o popup -- que e o trabalho -- com um aviso de que os cartoes nao estao disponiveis neste banco. **Nao remonta os cartoes com as cinco chamadas antigas**: a receita sem vinculo so existe somada no SQL, e soma-la linha a linha no JS seria exatamente o que a casa nao faz. Vale para o Preview do PR antes de a migration entrar na `v3` (D-025).
+
+**5. VERIFICACAO**
+
+`typecheck`, `lint` (nos OITO pacotes -- rodar so em `apps/web` deixou passar um `Number()` redundante em `packages/db` que a CI reprovou), `next build`, os quatro guardas e `docs:check`. Unidade da web: **777 verdes**, 15 novos (`vinculacoes-visao.test.ts` -- o leitor recusando resposta fora do contrato, o percentual nulo, os tons por posicao, as iniciais "S1"/"S2"). Integracao: 4 casos novos, verdes duas vezes seguidas sem `db reset` (o id da CONTA leva sufixo por execucao: com conta fixa, 4 anuncios viravam 12 na terceira rodada). E2E: `vinculacoes` (7, um novo) e `sku-dashboard` (9) e `anuncios` (5), **21 verdes** contra `next start` e o seed.
+
+Capturas a 1440 px e 390 px, pagina e popup, com o banco local enriquecido para 77 anuncios em 4 contas -- o seed tem 5, que nao mostra o desenho. `scrollWidth == clientWidth` nos quatro casos. Uma armadilha do caminho: a primeira medicao acusou rolagem lateral de 607px, e era o `next start` servindo o CSS de um build anterior (chunk com 500) -- **`next start` so depois do `next build`, sempre**.
+
+- a migration precisa chegar a producao ANTES da promocao da web; antes disso a tela mostra o aviso e a tabela;
+- `get_listings_dashboard` e `get_link_integrity` continuam vivas: a primeira e de `/anuncios` e do caminho de degradacao, a segunda e a fonte independente da conferencia.

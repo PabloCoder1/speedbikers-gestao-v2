@@ -24,6 +24,7 @@ interface Captured {
 function fakeDeps(options: {
   status?: string;
   operationType?: string | null;
+  documentType?: string | null;
   issueDate?: string | null;
   totalItems?: number | null;
   resolvedItems?: number | null;
@@ -55,7 +56,9 @@ function fakeDeps(options: {
                           status: options.status ?? "APPLYING",
                           organization_id: ORG_ID,
                           operation_type: "operationType" in options ? options.operationType : "ENTRADA",
+                          document_type: options.documentType ?? "NFE",
                           issue_date: "issueDate" in options ? options.issueDate : "2026-08-20T10:00:00.000Z",
+                          created_at: "2026-09-17T09:00:00.000Z",
                           total_items: "totalItems" in options ? options.totalItems : items.length,
                           resolved_items: "resolvedItems" in options ? options.resolvedItems : items.length,
                         },
@@ -246,5 +249,58 @@ describe("aplicação da NF-e conferida", () => {
       `nfe:${DOCUMENT_ID}:0`,
       `nfe:${DOCUMENT_ID}:1`,
     ]);
+  });
+});
+
+describe("saída por documento não fiscal (D-375)", () => {
+  it("pedido de saída do UpSeller grava SAIDA_DOCUMENTO — nota nenhuma foi emitida", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      documentType: "SAIDA_UPSELLER_PDF",
+    });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "done" });
+    expect(captured.movements[0]).toMatchObject({ movement_type: "SAIDA_DOCUMENTO", qty_delta: -19 });
+  });
+
+  it("DANFE em PDF é nota: continua SAIDA_NFE", async () => {
+    const { deps, captured, lines } = fakeDeps({ operationType: "SAIDA", documentType: "DANFE_PDF" });
+
+    await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(captured.movements[0]).toMatchObject({ movement_type: "SAIDA_NFE" });
+  });
+
+  /**
+   * A regra que a frente do Full pediu: o envio ao Full é TRANSFERÊNCIA. Gravar
+   * como saída faria a unidade desaparecer do sistema — o documento fica
+   * conferido e a baixa espera D-352.
+   */
+  it("envio ao Full NÃO gera movimento: volta para conferência com o motivo", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      documentType: "ENVIO_FULL_ML_PDF",
+    });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.movements).toHaveLength(0);
+    expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "PARSED" });
+    expect(String(captured.documentUpdates.at(-1)?.last_error)).toContain("transferência");
+  });
+
+  it("documento sem data de emissão usa a data de chegada, não inventa uma", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      documentType: "SAIDA_UPSELLER_PDF",
+      issueDate: null,
+    });
+
+    await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(captured.movements[0]).toMatchObject({ occurred_at: "2026-09-17T09:00:00.000Z" });
   });
 });

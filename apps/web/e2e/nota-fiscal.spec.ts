@@ -52,16 +52,24 @@ test("vincula um item da NF-e a um SKU pela tela de conferência", async ({ page
 });
 
 /**
- * O histórico (`/notas-fiscais`), migrado em D-253. O que este caso protege é
- * a frase da janela — a tela lia 50 notas e não dizia que eram 50 (classe
- * D-131) — e que o filtro recorta a BASE, não a janela já cortada (D-236).
+ * A fila (`/notas-fiscais`), migrada em D-253 e refeita em D-375. O que este
+ * caso protege é a frase da janela — a tela lia 50 notas e não dizia que eram
+ * 50 (classe D-131) —, que o filtro recorta a BASE e não a janela já cortada
+ * (D-236), e que o resumo de D-375 sai da mesma leitura.
  */
-test("o histórico de NF-e declara a janela, e o filtro recorta a base", async ({ page }) => {
+test("a fila de documentos declara a janela, e o filtro recorta a base", async ({ page }) => {
   await login(page, "/notas-fiscais");
 
-  await expect(page.getByRole("heading", { name: "NF-e / Entradas", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Notas e Documentos", level: 1 })).toBeVisible();
 
-  const painel = page.getByRole("region", { name: "Histórico de Notas" });
+  // O resumo: a nota do seed está em PARSED, esperando conferência.
+  await expect(page.getByRole("region", { name: "Resumo dos documentos" })).toContainText(
+    "Esperando conferência",
+  );
+
+  // `exact`: sem ele, "Documentos" tambem casa com a regiao "Resumo dos
+  // documentos" — o nome acessivel e comparado por trecho.
+  const painel = page.getByRole("region", { name: "Documentos", exact: true });
 
   await expect(painel).toContainText("1 nota.");
 

@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/browser";
+import { iniciaisDaConta, TONS_DE_CONTA } from "../../lib/vinculacoes-visao";
 import {
   lerSugestoesDoAnuncio,
   planejarVinculo,
@@ -64,6 +65,18 @@ export type ModoVincular =
 export interface ContaOpcao {
   readonly id: string;
   readonly label: string;
+}
+
+/**
+ * O tom do selo da conta, pela POSIÇÃO dela na lista que a página passou — a
+ * mesma regra de `tonsDasContas`, para o selo do popup ter a cor do selo da
+ * tabela. Conta que não está na lista (não deveria acontecer) cai no primeiro
+ * tom em vez de sumir.
+ */
+function tomDaConta(contas: readonly ContaOpcao[], mlAccountId: string): number {
+  const posicao = contas.findIndex((c) => c.id === mlAccountId);
+
+  return posicao < 0 ? 0 : posicao % TONS_DE_CONTA;
 }
 
 type Carga =
@@ -269,7 +282,16 @@ export function VincularDialog({
                 <Link className="sb-mono" href={`/anuncios/${anuncio.itemId}`} target="_blank">
                   {anuncio.itemId} ↗
                 </Link>
-                <span>{anuncio.accountLabel}</span>
+                {/*
+                  O MESMO selo da tabela (D-376): o tom sai da posição da conta
+                  na lista que a página passou, então a cor aqui é a cor de lá.
+                */}
+                <span className="sb-vnc-conta-celula">
+                  <span className="sb-vnc-selo" data-tom={tomDaConta(contas, anuncio.mlAccountId)} aria-hidden="true">
+                    {iniciaisDaConta(anuncio.accountLabel)}
+                  </span>
+                  {anuncio.accountLabel}
+                </span>
                 {anuncio.price !== null && <span>{formatCurrency(anuncio.price)}</span>}
                 {anuncio.unitsSold !== null && <span>{formatCount(anuncio.unitsSold)} vendido(s) em 30 dias</span>}
               </p>
