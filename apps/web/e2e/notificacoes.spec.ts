@@ -42,6 +42,30 @@ test("/notificacoes: a janela e as não lidas vêm de contagem própria, não da
     ele desaparecer com milhares ainda por ler (D-183).
   */
   await expect(page.getByRole("button", { name: /Marcar todas/i })).toBeVisible();
+
+  // A ação em lote pede confirmação e informa o alcance antes de escrever.
+  await page.getByRole("button", { name: /Marcar todas/i }).click();
+  const confirmacao = page.getByRole("group", { name: "Confirmar leitura de todas as notificações" });
+
+  await expect(confirmacao).toContainText("Marcar 2 notificações como lidas?");
+  await confirmacao.getByRole("button", { name: "Cancelar" }).click();
+  await expect(page.getByRole("button", { name: /Marcar todas/i })).toBeVisible();
+});
+
+test("/notificacoes/preferencias: explica o alcance e permanece utilizável no mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, "/notificacoes/preferencias");
+
+  await expect(page.getByRole("heading", { name: "Preferências de Notificação", level: 1 })).toBeVisible();
+  await expect(page.getByText(/Controla só o alerta em tempo real/)).toBeVisible();
+  await expect(page.getByText(/em empate, vale a mais restritiva/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Adicionar preferência" })).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+
+  expect(hasHorizontalOverflow).toBe(false);
 });
 
 test("/notificacoes: o detalhe do frame não entrou, e o motivo é a falta de fonte", async ({ page }) => {

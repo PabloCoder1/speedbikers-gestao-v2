@@ -25,6 +25,8 @@
 
 ### O que está pronto
 
+`/copiloto` e `/notificacoes`: UX responsiva, cancelamento/retry, SSE ordenado, confirmação da leitura em lote e preferências validadas por escopo com desempate determinístico. Sem migration. `check`, build, `docs:check` e E2E 167/167 verdes.
+
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,

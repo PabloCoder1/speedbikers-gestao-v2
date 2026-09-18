@@ -532,24 +532,15 @@ export async function runSkuReplenishment(
 ): Promise<SkuReplenishmentOutput> {
   const hoje = toSalesMetricDate(new Date());
 
-  const [linhas, configuracoes] = await Promise.all([
-    userClient.rpc("get_purchase_suggestions", {
-      p_organization_id: organizationId,
-      p_date_to: hoje,
-      p_search: input.sku,
-      p_limit: 20,
-    }),
-    userClient
-      .from("replenishment_settings")
-      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note"),
-  ]);
+  const linhas = await userClient.rpc("get_purchase_suggestions", {
+    p_organization_id: organizationId,
+    p_date_to: hoje,
+    p_search: input.sku,
+    p_limit: 20,
+  });
 
   if (linhas.error !== null) {
     throw new CopilotToolError(linhas.error.message);
-  }
-
-  if (configuracoes.error !== null) {
-    throw new CopilotToolError(configuracoes.error.message);
   }
 
   // `data` nao e anulavel depois da checagem de erro; o lint acusa a condicao
@@ -562,7 +553,44 @@ export async function runSkuReplenishment(
     );
   }
 
-  const settings: ReplenishmentSetting[] = configuracoes.data.map((linha) => ({
+  /*
+   * Só três regras podem decidir este SKU: a do próprio SKU, a marca e o
+   * padrão. Ler a tabela inteira era incorreto sob o teto de 1.000 linhas do
+   * PostgREST: justamente uma regra específica podia ficar fora da resposta.
+   * As três buscas são independentes, limitadas pela unicidade do schema e
+   * rodam em paralelo sob a mesma RLS.
+   */
+  const settingColumns =
+    "supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note";
+  const [skuSetting, brandSetting, defaultSetting] = await Promise.all([
+    userClient.from("replenishment_settings").select(settingColumns).eq("sku_id", alvo.sku_id).limit(1),
+    userClient
+      .from("replenishment_settings")
+      .select(settingColumns)
+      .eq("supplier_brand", alvo.supplier_brand)
+      .is("sku_id", null)
+      .limit(1),
+    userClient
+      .from("replenishment_settings")
+      .select(settingColumns)
+      .is("sku_id", null)
+      .is("supplier_brand", null)
+      .limit(1),
+  ]);
+
+  const settingsError = skuSetting.error ?? brandSetting.error ?? defaultSetting.error;
+
+  if (settingsError !== null) {
+    throw new CopilotToolError(settingsError.message);
+  }
+
+  const configuracoes = [
+    ...(skuSetting.data ?? []),
+    ...(brandSetting.data ?? []),
+    ...(defaultSetting.data ?? []),
+  ];
+
+  const settings: ReplenishmentSetting[] = configuracoes.map((linha) => ({
     supplierBrand: linha.supplier_brand,
     skuId: linha.sku_id,
     leadTimeDays: linha.lead_time_days,

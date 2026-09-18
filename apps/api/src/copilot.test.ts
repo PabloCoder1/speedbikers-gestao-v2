@@ -452,8 +452,9 @@ describe("handleCopilotQuery", () => {
 function fakeStockClient(input: {
   suggestions: { data: unknown; error: { message: string } | null };
   settings: { data: unknown; error: { message: string } | null };
-}): { userClient: UserClient; calls: RpcCall[] } {
+}): { userClient: UserClient; calls: RpcCall[]; settingLimits: number[] } {
   const calls: RpcCall[] = [];
+  const settingLimits: number[] = [];
 
   const client = {
     rpc: vi.fn((name: string, args: Record<string, unknown>) => {
@@ -461,10 +462,23 @@ function fakeStockClient(input: {
 
       return Promise.resolve(input.suggestions);
     }),
-    from: vi.fn(() => ({ select: () => Promise.resolve(input.settings) })),
+    from: vi.fn(() => {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        limit: (value: number) => {
+          settingLimits.push(value);
+
+          return Promise.resolve(input.settings);
+        },
+      };
+
+      return chain;
+    }),
   };
 
-  return { userClient: client as unknown as UserClient, calls };
+  return { userClient: client as unknown as UserClient, calls, settingLimits };
 }
 
 const LINHA_SKU = {
@@ -502,7 +516,7 @@ const CONFIG_PADRAO = {
 
 describe("runSkuReplenishment (D-293)", () => {
   it("compõe o veredito pelas peças canônicas e devolve a decomposição inteira", async () => {
-    const { userClient, calls } = fakeStockClient({
+    const { userClient, calls, settingLimits } = fakeStockClient({
       suggestions: { data: [LINHA_SKU], error: null },
       settings: { data: [CONFIG_PADRAO], error: null },
     });
@@ -512,6 +526,7 @@ describe("runSkuReplenishment (D-293)", () => {
     expect(calls[0]?.name).toBe("get_purchase_suggestions");
     expect(calls[0]?.args.p_organization_id).toBe("org-1");
     expect(calls[0]?.args.p_search).toBe("SB-001");
+    expect(settingLimits).toEqual([1, 1, 1]);
 
     // Os mesmos números que `/reposicao` mostra, porque é a MESMA composição.
     expect(result.usableStock).toBe(45);
