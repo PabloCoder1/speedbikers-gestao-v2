@@ -96,8 +96,9 @@ alter table public.stock_movements add constraint stock_movements_movement_type_
 --
 -- Uma vez capturado, o valor NAO e reescrito por releitura divergente (R5): o
 -- worker carrega o valor gravado no upsert do pedido e registra a divergencia
--- no log. O ledger e append-only; uma decisao que muda de ideia depois de
--- gravar o par deixaria o saldo com a metade de dois desenhos diferentes.
+-- no log, e o trigger da secao 3 garante o mesmo no banco. O ledger e
+-- append-only; uma decisao que muda de ideia depois de gravar o par deixaria o
+-- saldo com a metade de dois desenhos diferentes.
 alter table public.orders
   add column logistic_type text,
   add column logistic_captured_at timestamptz;
@@ -108,10 +109,48 @@ comment on column public.orders.logistic_type is
 comment on column public.orders.logistic_captured_at is
   'Quando a V3 leu o envio deste pedido (D-352). NULO = sinal nunca lido, e o pedido fica pendente do ESTORNO_FULL. Preenchido = lido, e logistic_type é a resposta (mesmo nula). Nunca reescrito por releitura (R5).';
 
--- **Sem indice, e isto e uma escolha medida.** O unico consumidor destas duas
--- colunas nesta fatia e `persist-order.ts`, que le o pedido pela PRIMARY KEY
--- (`orders.id`, por pedido ou por `in (...)` de uma pagina) e nunca varre por
--- `logistic_type` nem por `logistic_captured_at is null`. Um indice parcial aqui
--- seria escrita a mais em 331 mil linhas para uma consulta que nao existe. A
--- varredura dos pendentes -- se vier -- e outra fatia, e o indice nasce com ela,
--- com a consulta dela na mao.
+-- **Sem indice, e isto e uma escolha medida.** Os consumidores destas duas
+-- colunas leem o pedido pela PRIMARY KEY: `persist-order.ts` (por pedido ou por
+-- `in (...)` de uma pagina) e a varredura `sync-order-logistics.ts`, que parte do
+-- LEDGER e so depois pede os pedidos por `in (...)`. Nenhum varre `orders` por
+-- `logistic_type` nem por `logistic_captured_at is null`, e um indice parcial aqui
+-- seria escrita a mais em 331 mil linhas para uma consulta que nao existe.
+
+-- ------------------------------------------------------------
+-- 3. A captura so nasce uma vez -- no banco, e nao so no worker (R5)
+-- ------------------------------------------------------------
+-- A varredura carimba com `update ... where logistic_captured_at is null`, mas o
+-- upsert de `orders` em `persist-order.ts` e `DO UPDATE` com o valor que ELE leu
+-- no comeco da execucao. Se a varredura carimbar entre essa leitura e o upsert
+-- (uma pagina da janela horaria, ou o webhook de um pedido cancelado que nao le o
+-- envio), o upsert regrava as duas colunas NULAS por cima -- e o pedido volta a
+-- "sinal nunca lido" com o `ESTORNO_FULL` ja no ledger. A janela e de segundos,
+-- mas o estado que ela deixa e o pior: o cancelamento seguinte sai pelo caminho
+-- nao-Full e devolve +1 a loja (revisao de 6965b0e, BAIXA).
+--
+-- O trigger fecha a corrida sem mexer no lote da pagina (o PostgREST exige as
+-- MESMAS colunas em todas as linhas de um upsert, entao omitir as duas so no
+-- pedido que nao leu o envio nao e uma opcao): captura gravada nunca volta a
+-- nula, e nunca troca de valor. Quem precisar corrigir uma captura a mao (nao ha
+-- fluxo para isso) desabilita o trigger na mesma transacao, de proposito.
+create function private.orders_logistica_congelada()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if old.logistic_captured_at is not null then
+    new.logistic_type := old.logistic_type;
+    new.logistic_captured_at := old.logistic_captured_at;
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function private.orders_logistica_congelada is
+  'D-352 (R5): a captura da logistica do envio so nasce uma vez. Captura gravada nunca volta a nula nem troca de valor -- nem pelo upsert do pedido que leu a linha antes de a varredura carimbar.';
+
+create trigger orders_logistica_congelada
+  before update of logistic_type, logistic_captured_at on public.orders
+  for each row execute function private.orders_logistica_congelada();
