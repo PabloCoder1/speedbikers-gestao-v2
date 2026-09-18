@@ -109,3 +109,22 @@ export function numeroBr(bruto: string | undefined): number | null {
 export function digitos(bruto: string | null | undefined): string {
   return (bruto ?? "").replace(/\D/g, "");
 }
+
+/**
+ * Os dois CNPJs são da MESMA empresa — mesma raiz, os 8 primeiros dígitos.
+ *
+ * A Speed Bikers tem dois estabelecimentos, a matriz `27.810.945/0001-25` e a
+ * filial `27.810.945/0002-06`, e fornecedores faturam para os dois. O estoque
+ * do sistema é UM só (decisão do dono, 18/09/2026): nota para qualquer um dos
+ * dois é da casa. Comparar o CNPJ inteiro fazia a nota endereçada à matriz
+ * falhar na leitura ("nem emitente nem destinatário correspondem"), porque a
+ * organização está cadastrada com o da filial.
+ *
+ * CPF (11 dígitos) nunca é da mesma empresa: sem os 14 dígitos não há raiz.
+ */
+export function mesmaEmpresa(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = digitos(a);
+  const y = digitos(b);
+
+  return x.length === 14 && y.length === 14 && x.slice(0, 8) === y.slice(0, 8);
+}

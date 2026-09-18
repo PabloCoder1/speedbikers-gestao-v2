@@ -139,6 +139,40 @@ describe("parseNfeXmlObject", () => {
       expect(!result.ok && result.reason).toContain("nem emitente");
     });
 
+    /*
+      Matriz (0001-25) e filial (0002-06) são o MESMO estoque (decisão do dono,
+      18/09/2026). A organização está cadastrada com a filial; fornecedor que
+      fatura para a matriz fazia a leitura falhar.
+    */
+    it("nota de fornecedor para a MATRIZ é entrada, com a organização cadastrada na filial", () => {
+      const nfe = baseNfe();
+      nfe.NFe.infNFe.dest = { CNPJ: "27810945000125", xNome: "SPEED BIKERS MOTOPECAS LTDA" };
+
+      const result = parseNfeXmlObject({ nfeProc: nfe }, OWN_CNPJ);
+
+      expect(result.ok && result.value.operationType).toBe("ENTRADA");
+    });
+
+    it("transferência entre filial e matriz é ENTRADA — o modelo real de 18/09 (0002-06 → 0001-25)", () => {
+      const nfe = baseNfe();
+      nfe.NFe.infNFe.emit = { CNPJ: "27810945000206", xNome: "SPEED BIKERS MOTOPECAS LTDA" };
+      nfe.NFe.infNFe.dest = { CNPJ: "27810945000125", xNome: "SPEED BIKERS MOTOPECAS LTDA" };
+
+      const result = parseNfeXmlObject({ nfeProc: nfe }, OWN_CNPJ);
+
+      expect(result.ok && result.value.operationType).toBe("ENTRADA");
+    });
+
+    it("venda da matriz para cliente é SAÍDA", () => {
+      const nfe = baseNfe();
+      nfe.NFe.infNFe.emit = { CNPJ: "27810945000125", xNome: "SPEED BIKERS MOTOPECAS LTDA" };
+      nfe.NFe.infNFe.dest = { CNPJ: "99999999000199", xNome: "Cliente Qualquer" };
+
+      const result = parseNfeXmlObject({ nfeProc: nfe }, OWN_CNPJ);
+
+      expect(result.ok && result.value.operationType).toBe("SAIDA");
+    });
+
     it("CNPJ com máscara (pontuação) compara igual a CNPJ só com dígitos", () => {
       const nfe = baseNfe();
       nfe.NFe.infNFe.dest = { CNPJ: "27.810.945/0002-06", xNome: "Speed Bikers Comercio LTDA" };
