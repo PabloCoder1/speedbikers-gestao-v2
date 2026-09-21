@@ -13629,3 +13629,15 @@ Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, 
 **6. CELULAR** -- abaixo de 760px cada anuncio vira cartao: a tabela continua tabela no HTML (leitor de tela e testes leem igual) e cada celula vira "rotulo -- valor" pelo `data-label`.
 
 **Janela de datas:** `lastBusinessDays` (D-383), copia identica da guardas, para tela e CSV usarem a mesma janela de negocio.
+
+## D-388 - Devolucao com `orders: null` nao derruba mais a notificacao do claim
+
+**Contexto:** entre 19 e 20/09/2026 a producao registrou 10 execucoes de `sync.webhook.received` falhadas, todas com a mesma razao: `resposta fora do contrato esperado: expected array, received null` no caminho `orders`. Sao tres claims (5579918680, 5580068124, 5580432380). O `GET /post-purchase/v2/claims/{id}/returns` respondeu `"orders": null`, e `claimReturnSchema` exigia array -- o ZodError subia antes de qualquer decisao de estoque e marcava a execucao como `failed` com `retryable: false`. Nenhuma retentativa resolveria: o defeito era do nosso contrato, nao da resposta.
+
+**1. O CONTRATO ACEITA A AUSENCIA** -- `orders` virou `.nullable().optional()`, com a mesma leitura que `related_entities` ganhou em D-109: ausencia significa DESCONHECIDO, nunca "nenhum item". O caso real vira teste de contrato no proprio `claim-return.test.ts`, porque o fake do Mercado Livre nos testes nao valida schema e sozinho nunca pegaria a regressao.
+
+**2. QUEM DECIDE E O HANDLER** -- `claim-return` le `claimReturn.orders ?? []`. Devolucao ainda nao entregue segue o caminho de sempre. Entregue e sem lista de itens: `processed = 0` e `logger.warn("claim_return_sem_orders")`, sem derrubar a notificacao. Nao virar `failed` e de proposito (D-202): repetir a chamada nao inventa a lista, e a falha custava a notificacao inteira. A projecao de atendimento ja rodou antes do early return (D-104), entao o claim continua aparecendo na Caixa de Entrada -- o caminho humano dessa devolucao.
+
+**O que este conserto NAO faz:** nao reverte estoque de uma devolucao entregue cuja lista veio nula; sem pedido e item nao ha o que reverter, e inventar a posicao seria pior. O que muda e que a notificacao para de morrer, o resto do fluxo do claim acontece, e a perda fica visivel no log em vez de escondida numa falha generica de contrato.
+
+**Verificacao:** `pnpm run check` (29/29, 831 testes do worker) e `pnpm run build` (8/8) na worktree. O efeito em producao depende do deploy do worker a partir da `fix/guardas-prod-d348`.

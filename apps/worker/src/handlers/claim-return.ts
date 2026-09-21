@@ -426,9 +426,24 @@ export async function processClaimReturn(
     return 0;
   }
 
+  // `orders` pode vir ausente ou `null` (ver `claimReturnSchema`). Aqui a
+  // devolução JÁ está `delivered`, então a lista vazia não é rotina: sem ela
+  // não há pedido nem item para reverter, e o estoque segue deduzido. Não
+  // virar `failed` é de propósito (D-202): repetir a chamada não inventa a
+  // lista, e a falha derrubava a notificação inteira sem retentativa útil. O
+  // claim continua aberto na Caixa de Entrada pela projeção acima, que é o
+  // caminho humano para essa devolução.
+  const returnedOrders = claimReturn.orders ?? [];
+
+  if (returnedOrders.length === 0) {
+    logger.warn("claim_return_sem_orders", { claim_id: claimId, return_status: claimReturn.status });
+
+    return 0;
+  }
+
   let processed = 0;
 
-  for (const returnedOrder of claimReturn.orders) {
+  for (const returnedOrder of returnedOrders) {
     const variationId = returnedOrder.variation_id != null ? String(returnedOrder.variation_id) : null;
 
     const position = await loadOrderItemPosition(deps.db, returnedOrder.order_id, returnedOrder.item_id, variationId);
