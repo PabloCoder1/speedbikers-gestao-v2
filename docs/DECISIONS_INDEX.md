@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **375** (D-001 a D-385).
+Decisões registradas: **376** (D-001 a D-388).
 
 ## Por domínio
 
-### atendimento (49)
+### atendimento (50)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -67,6 +67,7 @@ Decisões registradas: **375** (D-001 a D-385).
 - **D-340** — A correcao de D-339 foi publicada, piorou o topico que importa, e voltou -- a media melhorou e escondia isso
 - **D-367** — Novo fornecedor: a prévia que acompanha o que se digita, o duplicado avisado antes de salvar e o cadastro que diz o que falta
 - **D-370** — Logo do fornecedor, e o cadastro de D-367 sem a barra que cobria os campos nem o "voltar" sublinhado
+- **D-388** — Devolucao com `orders: null` nao derruba mais a notificacao do claim
 
 ### banco/rls (35)
 
