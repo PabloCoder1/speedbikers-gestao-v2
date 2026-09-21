@@ -70,6 +70,7 @@ Ferramenta nova exige: schema tipado, verificação de permissão, teste, e entr
 | `sales_summary` | Série temporal | Vendas de um período — mesma `get_sales_summary` de `/vendas`, geral ou por conta |
 | `sales_period_comparison` | Comparação | O mesmo período contra o período anterior de igual tamanho (`previousBusinessDateRange`, `@sb/domain`) |
 | `sales_account_comparison` | Comparação | O mesmo período, lado a lado entre 2 e 10 contas |
+| `sales_sku_declines` | Comparação | Produtos que mais caíram contra a janela anterior equivalente, por unidades ou receita |
 
 Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita.
 

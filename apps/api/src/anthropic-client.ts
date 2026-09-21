@@ -66,6 +66,8 @@ export interface AnthropicClient {
     system: string;
     messages: PlanMessage[];
     tools: PlanToolDefinition[];
+    /** Força uma ferramenta quando a intenção é inequívoca; evita o planner trocar SKU por consolidado. */
+    toolChoice?: string;
     maxTokens: number;
     onText: (delta: string) => void;
   }) => Promise<PlanResult>;
@@ -107,7 +109,7 @@ export function createAnthropicClient(apiKey: string): AnthropicClient {
       return { text, costUsd };
     },
 
-    plan: async ({ system, messages, tools, maxTokens, onText }) => {
+    plan: async ({ system, messages, tools, maxTokens, toolChoice, onText }) => {
       const stream = client.messages.stream({
         model: MODEL,
         max_tokens: maxTokens,
@@ -117,6 +119,7 @@ export function createAnthropicClient(apiKey: string): AnthropicClient {
         // arquivo é o único autorizado a conhecer os tipos do SDK.
         messages: messages as MessageParam[],
         tools: tools as Tool[],
+        ...(toolChoice === undefined ? {} : { tool_choice: { type: "tool" as const, name: toolChoice } }),
       });
 
       stream.on("text", (delta) => {

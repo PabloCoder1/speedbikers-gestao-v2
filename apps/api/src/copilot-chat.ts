@@ -4,6 +4,7 @@ import {
   listingPerformanceInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
+  salesSkuDeclinesInputSchema,
   salesSummaryInputSchema,
   skuReplenishmentInputSchema,
 } from "@sb/contracts";
@@ -17,6 +18,7 @@ import {
   runSalesAccountComparison,
   runSalesPeriodComparison,
   runSalesSummary,
+  runSalesSkuDeclines,
   runSkuReplenishment,
 } from "./copilot.js";
 
@@ -82,6 +84,19 @@ const MAX_TOKENS = 1_024;
 const DATE_PROPERTY = { type: "string", description: "Data YYYY-MM-DD" };
 
 /**
+ * Quando a pergunta pede explicitamente os produtos/SKUs que caíram, escolher
+ * o consolidado é objetivamente errado. A data e a conta continuam sendo
+ * extraídas pelo planner, mas a ferramenta deixa de ser uma aposta do modelo.
+ */
+function forcedToolForMessage(message: string): "sales_sku_declines" | undefined {
+  const normalized = message.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const asksForProduct = /\b(produto|produtos|sku|skus|item|itens)\b/.test(normalized);
+  const asksForDecline = /\b(queda|quedas|caiu|ca[ií]ram|vendeu menos|venderam menos|perdeu receita)\b/.test(normalized);
+
+  return asksForProduct && asksForDecline ? "sales_sku_declines" : undefined;
+}
+
+/**
  * As MESMAS três ferramentas determinísticas de D-077, traduzidas para o
  * formato de tool use. A narração de diagnóstico e as gerações de D-112
  * ficam FORA do chat de propósito: são contextuais (têm botão onde o dado
@@ -127,6 +142,22 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
         mlAccountIds: { type: "array", items: { type: "string" }, description: "UUIDs das contas (da lista do contexto)" },
       },
       required: ["dateFrom", "dateTo", "mlAccountIds"],
+    },
+  },
+  {
+    name: "sales_sku_declines",
+    description:
+      "Lista os produtos com MAIOR QUEDA entre o período pedido e o período anterior de igual tamanho. Retorna SKU, título, unidades, receita e variação dos dois períodos. Use para 'qual produto caiu?', 'quais itens venderam menos?' ou 'onde perdemos receita'. Não use para atribuir a causa de uma queda.",
+    input_schema: {
+      type: "object",
+      properties: {
+        dateFrom: DATE_PROPERTY,
+        dateTo: DATE_PROPERTY,
+        mlAccountId: { type: "string", description: "UUID da conta; omita para o consolidado" },
+        orderBy: { type: "string", enum: ["units", "revenue"], description: "Ordenar por queda de unidades (padrão) ou receita" },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Quantidade de produtos; padrão 10" },
+      },
+      required: ["dateFrom", "dateTo"],
     },
   },
   /*
@@ -181,6 +212,7 @@ const RUNNERS: Record<string, ChatToolRunner> = {
   sales_summary: { schema: salesSummaryInputSchema, run: runSalesSummary },
   sales_period_comparison: { schema: salesPeriodComparisonInputSchema, run: runSalesPeriodComparison },
   sales_account_comparison: { schema: salesAccountComparisonInputSchema, run: runSalesAccountComparison },
+  sales_sku_declines: { schema: salesSkuDeclinesInputSchema, run: runSalesSkuDeclines },
   sku_replenishment: { schema: skuReplenishmentInputSchema, run: runSkuReplenishment },
   listing_performance: { schema: listingPerformanceInputSchema, run: runListingPerformance },
 };
@@ -219,7 +251,7 @@ function buildSystemPrompt(
       : "(nenhuma conta acessível)";
 
   return [
-    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados de vendas do Mercado Livre.",
+    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados da operação no Mercado Livre.",
     `Hoje é ${today} (fuso America/Sao_Paulo). Use esta data para calcular períodos como "últimos 7 dias".`,
     "Contas Mercado Livre que este usuário pode consultar (rótulo: UUID):",
     accountList,
@@ -228,7 +260,8 @@ function buildSystemPrompt(
     "- Responda SOMENTE com base nos resultados das ferramentas. Nunca invente número, conta ou período.",
     "- Sempre diga qual período e qual conta (ou consolidado) a resposta cobre.",
     "- Valores monetários em reais (R$). Seja conciso.",
-    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
+    "- Para 'qual produto caiu' ou 'quais venderam menos', use sales_sku_declines. Ele só devolve quedas reais contra o período anterior equivalente; informe os dois períodos e não atribua causa sem evidência específica.",
+    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, quedas por produto, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
     "- Número ausente NÃO é zero: cobertura, estado e sugestão vêm nulos sob recusa (sem configuração de reposição, saldo sentinela, histórico incompleto), e conversão vem nula quando não houve visita. Diga a recusa em vez de preencher a lacuna.",
     "- Perguntas sobre um dia ainda em andamento podem estar incompletas — as métricas fecham por dia.",
   ].join("\n");
@@ -258,12 +291,14 @@ export async function runCopilotChat(
 
     const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];
+    const forcedTool = forcedToolForMessage(request.message);
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
       const result = await deps.anthropic.plan({
         system,
         messages,
         tools: CHAT_TOOLS,
+        ...(round === 0 && forcedTool !== undefined ? { toolChoice: forcedTool } : {}),
         maxTokens: MAX_TOKENS,
         onText: (delta) => {
           void emit({ type: "text", delta });

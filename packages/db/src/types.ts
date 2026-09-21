@@ -5041,6 +5041,30 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_sales_sku_declines: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_previous_date_from: string
+          p_previous_date_to: string
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_order_by?: string
+        }
+        Returns: {
+          current_gross_revenue: number
+          current_units_sold: number
+          gross_revenue_delta: number
+          orders_delta: number
+          previous_gross_revenue: number
+          previous_units_sold: number
+          sku: string
+          sku_id: string
+          title: string | null
+          units_change_pct: number | null
+          units_delta: number
+        }[]
+      }
       get_sales_summary: {
         Args: {
           p_date_from: string
