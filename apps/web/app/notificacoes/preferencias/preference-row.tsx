@@ -32,11 +32,17 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
   const [enabled, setEnabled] = useState(preference.enabled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [removed, setRemoved] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const eventLabel = preference.eventType === null ? "Todos os tipos" : eventTypeLabel(preference.eventType);
+  const accountLabel = preference.accountLabel ?? "Todas as contas";
+  const scopeLabel = `${eventLabel}, ${accountLabel}`;
 
   async function save(next: { minSeverity: string; enabled: boolean }): Promise<void> {
     setBusy(true);
     setError(null);
+    setSuccess(null);
 
     const result = await updatePreference(preference.id, next);
 
@@ -50,11 +56,13 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
 
     setMinSeverity(next.minSeverity);
     setEnabled(next.enabled);
+    setSuccess("Preferência atualizada.");
   }
 
   async function handleDelete(): Promise<void> {
     setBusy(true);
     setError(null);
+    setSuccess(null);
 
     const result = await deletePreference(preference.id);
 
@@ -73,11 +81,12 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
 
   return (
     <tr>
-      <td>{preference.eventType === null ? "Todos os tipos" : eventTypeLabel(preference.eventType)}</td>
-      <td>{preference.accountLabel ?? "Todas as contas"}</td>
-      <td>
+      <td data-label="Tipo de evento">{eventLabel}</td>
+      <td data-label="Conta">{accountLabel}</td>
+      <td data-label="Severidade mínima">
         <select
           className="sb-input"
+          aria-label={`Severidade mínima para ${scopeLabel}`}
           value={minSeverity}
           disabled={busy}
           onChange={(event) => {
@@ -91,10 +100,11 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           ))}
         </select>
       </td>
-      <td>
+      <td data-label="Estado">
         <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", cursor: "pointer" }}>
           <input
             type="checkbox"
+            aria-label={`Preferência ativa para ${scopeLabel}`}
             checked={enabled}
             disabled={busy}
             onChange={(event) => {
@@ -104,21 +114,55 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           {enabled ? "Ativa" : "Desativada"}
         </label>
       </td>
-      <td>
-        <button
-          className="sb-button"
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            void handleDelete();
-          }}
-        >
-          Remover
-        </button>
+      <td data-label="Ações" className="sb-notification-preference-actions">
+        {!confirmingRemoval ? (
+          <button
+            className="sb-button"
+            type="button"
+            disabled={busy}
+            aria-label={`Remover preferência: ${scopeLabel}`}
+            onClick={() => {
+              setConfirmingRemoval(true);
+              setError(null);
+              setSuccess(null);
+            }}
+          >
+            Remover
+          </button>
+        ) : (
+          <div className="sb-notification-preference-remove" role="group" aria-label={`Confirmar remoção: ${scopeLabel}`}>
+            <span>Remover esta regra?</span>
+            <button
+              className="sb-button sb-button-danger"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void handleDelete();
+              }}
+            >
+              {busy ? "Removendo…" : "Remover"}
+            </button>
+            <button
+              className="sb-button"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setConfirmingRemoval(false);
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
 
         {error !== null && (
-          <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+          <p className="sb-notification-preference-feedback is-error" role="alert">
             {error}
+          </p>
+        )}
+        {success !== null && (
+          <p className="sb-notification-preference-feedback is-success" role="status">
+            {success}
           </p>
         )}
       </td>

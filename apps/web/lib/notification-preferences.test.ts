@@ -74,4 +74,34 @@ describe("shouldNotify", () => {
     ).toBe(false);
     expect(shouldNotify(rules, { eventType: "stock.depleted", mlAccountId: CONTA_A, severity: "critico" })).toBe(true);
   });
+
+  it("empate entre regra por evento e por conta escolhe a mais restritiva, sem depender da ordem", () => {
+    const porEvento: NotificationPreferenceRule = {
+      eventType: "listing.price.changed",
+      mlAccountId: null,
+      minSeverity: "informativo",
+      enabled: true,
+    };
+    const porConta: NotificationPreferenceRule = {
+      eventType: null,
+      mlAccountId: CONTA_A,
+      minSeverity: "critico",
+      enabled: true,
+    };
+    const event = { eventType: "listing.price.changed", mlAccountId: CONTA_A, severity: "importante" };
+
+    expect(shouldNotify([porEvento, porConta], event)).toBe(false);
+    expect(shouldNotify([porConta, porEvento], event)).toBe(false);
+  });
+
+  it("regra desativada vence um empate de especificidade", () => {
+    const rules: NotificationPreferenceRule[] = [
+      { eventType: "listing.price.changed", mlAccountId: null, minSeverity: "informativo", enabled: true },
+      { eventType: null, mlAccountId: CONTA_A, minSeverity: "informativo", enabled: false },
+    ];
+
+    expect(shouldNotify(rules, { eventType: "listing.price.changed", mlAccountId: CONTA_A, severity: "critico" })).toBe(
+      false,
+    );
+  });
 });

@@ -60,6 +60,9 @@ export function NotificationRow({ notification }: { notification: NotificationRo
 
   return (
     <li
+      className="sb-notification-row"
+      data-state={isUnread ? "unread" : "read"}
+      aria-label={`${isUnread ? "Não lida" : "Lida"}: ${eventTypeLabel(notification.eventType)}`}
       style={{
         display: "flex",
         gap: "var(--sb-space-3)",
@@ -82,7 +85,7 @@ export function NotificationRow({ notification }: { notification: NotificationRo
         marginBottom: "var(--sb-space-2)",
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="sb-notification-content" style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
           <StatusPill code={notification.severity} label={severityLabel(notification.severity)} />
 
@@ -109,8 +112,9 @@ export function NotificationRow({ notification }: { notification: NotificationRo
           {diff !== null && <span style={{ marginLeft: "0.5rem" }}>{diff}</span>}
         </div>
 
-        <div style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-          {formatDateTime(notification.occurredAt)}
+        <div className="sb-notification-meta" style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+          <time dateTime={notification.occurredAt}>{formatDateTime(notification.occurredAt)}</time>
+          {!isUnread && <span className="sb-notification-read-state">Lida</span>}
         </div>
 
         {error !== null && (

@@ -25,10 +25,12 @@ export function NewPreferenceForm({
   const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   async function handleSubmit(): Promise<void> {
     setBusy(true);
     setError(null);
+    setSuccess(null);
 
     const result = await createPreference({
       eventType: eventType === ALL_TYPES ? null : eventType,
@@ -49,6 +51,7 @@ export function NewPreferenceForm({
     setAccountId(ALL_ACCOUNTS);
     setMinSeverity("informativo");
     setEnabled(true);
+    setSuccess("Preferência adicionada.");
     router.refresh();
   }
 
@@ -58,18 +61,14 @@ export function NewPreferenceForm({
         event.preventDefault();
         void handleSubmit();
       }}
-      style={{
-        display: "flex",
-        gap: "var(--sb-space-2)",
-        alignItems: "flex-end",
-        flexWrap: "wrap",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        background: "var(--sb-surface)",
-        padding: "var(--sb-space-3)",
-      }}
+      className="sb-notification-preference-form"
     >
-      <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
+      <div className="sb-notification-preference-form-heading">
+        <strong>Nova regra</strong>
+        <span>Combine tipo e conta; deixe ambos em “Todos” para criar a regra geral.</span>
+      </div>
+
+      <label className="sb-notification-preference-field">
         Tipo de evento
         <select
           className="sb-input"
@@ -87,7 +86,7 @@ export function NewPreferenceForm({
         </select>
       </label>
 
-      <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
+      <label className="sb-notification-preference-field">
         Conta
         <select
           className="sb-input"
@@ -105,7 +104,7 @@ export function NewPreferenceForm({
         </select>
       </label>
 
-      <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
+      <label className="sb-notification-preference-field">
         Severidade mínima
         <select
           className="sb-input"
@@ -122,7 +121,7 @@ export function NewPreferenceForm({
         </select>
       </label>
 
-      <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", paddingBottom: "0.375rem" }}>
+      <label className="sb-notification-preference-toggle">
         <input
           type="checkbox"
           checked={enabled}
@@ -142,8 +141,13 @@ export function NewPreferenceForm({
       </button>
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, width: "100%", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+        <p className="sb-notification-preference-feedback is-error" role="alert">
           {error}
+        </p>
+      )}
+      {success !== null && (
+        <p className="sb-notification-preference-feedback is-success" role="status">
+          {success}
         </p>
       )}
     </form>

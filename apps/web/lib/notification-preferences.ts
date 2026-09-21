@@ -31,6 +31,7 @@ export function shouldNotify(
 ): boolean {
   let best: NotificationPreferenceRule | null = null;
   let bestScore = -1;
+  let bestRestriction = -1;
 
   for (const rule of rules) {
     const eventMatches = rule.eventType === null || rule.eventType === event.eventType;
@@ -39,10 +40,15 @@ export function shouldNotify(
     if (!eventMatches || !accountMatches) continue;
 
     const score = (rule.eventType !== null ? 1 : 0) + (rule.mlAccountId !== null ? 1 : 0);
+    // Evento e conta têm a mesma especificidade quando apenas um deles está
+    // preenchido. Nesse empate semântico vence a regra mais restritiva, nunca
+    // a que por acaso foi criada primeiro: desativada > maior severidade.
+    const restriction = rule.enabled ? (SEVERITY_RANK[rule.minSeverity] ?? 1) : 4;
 
-    if (score > bestScore) {
+    if (score > bestScore || (score === bestScore && restriction > bestRestriction)) {
       best = rule;
       bestScore = score;
+      bestRestriction = restriction;
     }
   }
 
