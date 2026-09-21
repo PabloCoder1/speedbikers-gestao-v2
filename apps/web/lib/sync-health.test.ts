@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  calculateBackfillProgress,
   classifyJobFreshness,
   classifyResourceFreshness,
   failureRateLabel,
@@ -8,6 +9,55 @@ import {
   RECONCILIATION_RESOURCE,
   resourceLabel,
 } from "./sync-health";
+
+describe("calculateBackfillProgress", () => {
+  const NOW = new Date("2026-09-21T12:00:00Z");
+  const CONNECTED_AT = "2026-08-21T12:00:00Z";
+
+  it("só declara 100% quando o cursor alcançou a conexão", () => {
+    expect(calculateBackfillProgress(CONNECTED_AT, CONNECTED_AT, NOW)).toMatchObject({
+      percent: 100,
+      state: "complete",
+    });
+
+    expect(calculateBackfillProgress(CONNECTED_AT, "2026-08-20T12:00:00Z", NOW)).toMatchObject({
+      percent: 99,
+      state: "in_progress",
+    });
+  });
+
+  it("preserva 100% para uma conta antiga cujo backfill já terminou", () => {
+    const antiga = "2025-01-10T12:00:00Z";
+
+    expect(calculateBackfillProgress(antiga, antiga, NOW)).toMatchObject({
+      percent: 100,
+      state: "complete",
+    });
+  });
+
+  it("mostra zero quando ainda não começou, sem confundir com indisponível", () => {
+    expect(calculateBackfillProgress(CONNECTED_AT, null, NOW)).toMatchObject({
+      percent: 0,
+      state: "not_started",
+    });
+    expect(calculateBackfillProgress(null, null, NOW)).toEqual({
+      percent: null,
+      state: "unavailable",
+      targetFrom: null,
+    });
+  });
+
+  it("calcula o avanço sobre a janela recuperável de 365 dias", () => {
+    const targetFrom = new Date(NOW.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const connectedAt = new Date(CONNECTED_AT);
+    const halfway = new Date((targetFrom.getTime() + connectedAt.getTime()) / 2).toISOString();
+
+    expect(calculateBackfillProgress(CONNECTED_AT, halfway, NOW)).toMatchObject({
+      percent: 50,
+      state: "in_progress",
+    });
+  });
+});
 
 const NOW = new Date("2026-08-30T12:00:00Z");
 

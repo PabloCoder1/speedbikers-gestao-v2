@@ -13,9 +13,9 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-17 |
-| **Branch** | `v3` (D-354 em produção; D-356 na `v3`). D-357 a D-359 na `v3`/principal; D-363 (Mercado Ads) em produção: migration `20260916165243`, `api-00007-j6r`, `worker-00008-4jm`, job `v3-ads-campaigns-sync` (11h); primeira rodada real 2026-09-16 com 3 contas gravadas |
-| **HEAD conhecido** | `cf824a7` na `v3` — merge do PR #9 (D-356 `/faturamento`). Migrations chegam ao Dev pela CI só depois do merge. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
+| **Atualizado em** | 2026-09-21 |
+| **Branch** | `feat/sincronizacao-confianca`, baseada na `v3`; entrega da leitura de confiança e cobertura por conta em `/sincronizacao`. |
+| **HEAD conhecido** | Base `e45c71a` na `v3` — correção do worker para devolução sem `orders` (D-388). Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
@@ -51,6 +51,11 @@ assinatura antiga com aviso.
 `/anuncios` ordena pela coluna, pagina com números, filtra por chips e mostra a foto do
 anúncio (D-381); a faixa sai de `get_listings_dashboard_counts` (2 leituras por visita em vez
 de 7). Migration `20260918150000`; **worker só depois dela** (grava `thumbnail_url`/`permalink`).
+
+`/sincronizacao` resume por conta conexão, confiança, frescor, falhas e a
+cobertura do histórico de pedidos. A métrica usa a janela recuperável de 365
+dias e só chega a 100% no fim do backfill; definição em `docs/METRICS.md`.
+Migration `20260921114355` aplicada só no Dev. E2E 7/7 e visual responsivo.
 
 Página nova precisa de `loading.tsx` (D-382, guarda `check:loading`).
 `/anuncios`: resumo do recorte, visões rápidas, CSV e cartões no celular (D-385, migration `20260918200000`).
