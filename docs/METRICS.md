@@ -360,6 +360,19 @@ total e um quarto do faturamento some sem explicação.
 
 ---
 
+## 5H. Indicadores operacionais de sincronização
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `cobertura_historico_pedidos` | Cobertura do histórico de pedidos | `clamp((backfill_covered_until − (agora − 365 dias)) / (connected_at − (agora − 365 dias)), 0%, 99%)`; vira **100% somente** quando `backfill_covered_until >= connected_at` | `ml_accounts.backfill_covered_until`, `ml_accounts.connected_at`; retenção de 365 dias do handler `backfill.orders` | Estimativa da janela histórica de **pedidos** recuperável no Mercado Livre. Não mede anúncios, visitas, Full, Ads nem a saúde atual dos jobs; esses sinais aparecem separados. Sem `connected_at`, o valor é NULL, nunca 0% |
+
+Granularidade: conta Mercado Livre. O cálculo usa os dois cursores escalares da
+conta; não agrega linhas de negócio no JavaScript. O valor é inteiro de
+propósito: o cursor é exato, mas a borda da retenção anda com o tempo, então
+casas decimais dariam precisão falsa.
+
+---
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

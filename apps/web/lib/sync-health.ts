@@ -17,6 +17,70 @@
 export type SyncVerdict = "ok" | "atencao" | "critico" | "nunca" | "sem_cadencia";
 
 /**
+ * O backfill de pedidos percorre a janela que o Mercado Livre ainda permite
+ * recuperar: no máximo 365 dias antes do início da carga. O worker usa a
+ * mesma janela em `handlers/backfill-orders.ts` e avança o cursor em blocos
+ * de sete dias.
+ *
+ * A porcentagem é deliberadamente inteira: o cursor é exato, mas o início da
+ * janela anda com a retenção da API. Casas decimais dariam uma precisão que o
+ * contrato remoto não oferece.
+ */
+export const ORDER_BACKFILL_RETENTION_DAYS = 365;
+
+export interface BackfillProgress {
+  readonly percent: number | null;
+  readonly state: "unavailable" | "not_started" | "in_progress" | "complete";
+  readonly targetFrom: string | null;
+}
+
+export function calculateBackfillProgress(
+  connectedAt: string | null,
+  coveredUntil: string | null,
+  now: Date,
+): BackfillProgress {
+  if (connectedAt === null) {
+    return { percent: null, state: "unavailable", targetFrom: null };
+  }
+
+  const connectedAtMs = new Date(connectedAt).getTime();
+  const targetFromMs = now.getTime() - ORDER_BACKFILL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const targetFrom = new Date(targetFromMs).toISOString();
+  const totalMs = connectedAtMs - targetFromMs;
+
+  if (!Number.isFinite(connectedAtMs)) {
+    return { percent: null, state: "unavailable", targetFrom };
+  }
+
+  const coveredUntilMs = coveredUntil === null ? null : new Date(coveredUntil).getTime();
+
+  if (coveredUntilMs !== null && !Number.isFinite(coveredUntilMs)) {
+    return { percent: null, state: "unavailable", targetFrom };
+  }
+
+  if (coveredUntilMs !== null && coveredUntilMs >= connectedAtMs) {
+    return { percent: 100, state: "complete", targetFrom };
+  }
+
+  if (totalMs <= 0) {
+    return { percent: null, state: "unavailable", targetFrom };
+  }
+
+  if (coveredUntilMs === null) {
+    return { percent: 0, state: "not_started", targetFrom };
+  }
+
+  const coveredMs = Math.max(0, coveredUntilMs - targetFromMs);
+  const percent = Math.min(99, Math.max(0, Math.round((coveredMs / totalMs) * 100)));
+
+  return {
+    percent,
+    state: percent === 0 ? "not_started" : "in_progress",
+    targetFrom,
+  };
+}
+
+/**
  * Cada recurso do canal de RECONCILIAÇÃO, com o nome que a tela mostra e a
  * cadência contra a qual o frescor é julgado — **um dono só** (D-224, D-273).
  *
