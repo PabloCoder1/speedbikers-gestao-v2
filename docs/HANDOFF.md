@@ -24,9 +24,10 @@
 
 ### O que está pronto
 
-`/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
+`/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
+sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
 
-Copiloto/Notificações: refino visual; sem banco/API. `check` 29/29 e build verdes.
+`/precos` está pronta para integração na branch de produção `fix/guardas-prod-d348`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
 D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
 título/foto, só alerta queda conjunta de vendas e visitas sem outro fator

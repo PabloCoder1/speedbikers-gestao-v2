@@ -15,9 +15,11 @@
 
 export const KNOWLEDGE_KINDS = ["COMPATIBILIDADE", "ESPECIFICACAO", "POLITICA", "OUTRO"] as const;
 export const KNOWLEDGE_SOURCES = ["CONFIRMACAO_INTERNA", "FABRICANTE", "DOCUMENTACAO", "ATENDIMENTO"] as const;
+export const KNOWLEDGE_STATUSES = ["SUGERIDO", "VALIDADO", "REJEITADO", "OBSOLETO"] as const;
 
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
 export type KnowledgeSource = (typeof KNOWLEDGE_SOURCES)[number];
+export type KnowledgeStatus = (typeof KNOWLEDGE_STATUSES)[number];
 
 /**
  * Rótulos humanos dos três vocabulários desta tela.
