@@ -270,6 +270,21 @@ describe("contexto de tela (D-293)", () => {
 
     expect(nomes).toContain("sku_replenishment");
     expect(nomes).toContain("listing_performance");
+    expect(nomes).toContain("sales_sku_declines");
+  });
+
+  it("oferece uma consulta própria para descobrir produtos que caíram", async () => {
+    const { plan } = await run([finalText("ok")]);
+    const tool = (plan.mock.calls[0]?.[0]?.tools ?? []).find((candidate) => candidate.name === "sales_sku_declines");
+
+    expect(tool?.description).toMatch(/MAIOR QUEDA/);
+    expect(tool?.input_schema.required).toEqual(["dateFrom", "dateTo"]);
+  });
+
+  it("força a consulta por SKU quando a pergunta pede produtos que caíram", async () => {
+    const { plan } = await run([finalText("ok")], "Quais produtos da GMR caíram nos últimos 7 dias?");
+
+    expect(plan.mock.calls[0]?.[0]?.toolChoice).toBe("sales_sku_declines");
   });
 
   /* `ai_runs` registra QUE houve contexto, nunca o id — o id é dado do usuário. */

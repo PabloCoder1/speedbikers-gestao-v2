@@ -24,6 +24,8 @@
 
 ### O que está pronto
 
+SKU queda:ferramenta;migração pendente
+
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
 

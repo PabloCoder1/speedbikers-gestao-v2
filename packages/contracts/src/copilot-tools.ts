@@ -64,6 +64,29 @@ export const salesAccountComparisonOutputSchema = z.object({
 });
 export type SalesAccountComparisonOutput = z.infer<typeof salesAccountComparisonOutputSchema>;
 
+/** Produtos cuja venda caiu contra a janela anterior de mesmo tamanho. */
+export const salesSkuDeclinesInputSchema = z.object({
+  dateFrom: dateSchema,
+  dateTo: dateSchema,
+  mlAccountId: z.uuid().optional(),
+  orderBy: z.enum(["units", "revenue"]).default("units"),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+export type SalesSkuDeclinesInput = z.infer<typeof salesSkuDeclinesInputSchema>;
+
+export const salesSkuDeclinesOutputSchema = z.object({
+  previousRange: z.object({ dateFrom: dateSchema, dateTo: dateSchema }),
+  orderBy: z.enum(["units", "revenue"]),
+  rows: z.array(z.object({
+    skuId: z.uuid(), sku: z.string(), title: z.string().nullable(),
+    previousUnitsSold: z.number().int(), currentUnitsSold: z.number().int(),
+    unitsDelta: z.number().int(), unitsChangePct: z.number().nullable(),
+    previousGrossRevenue: z.number(), currentGrossRevenue: z.number(),
+    grossRevenueDelta: z.number(), ordersDelta: z.number().int(),
+  })),
+});
+export type SalesSkuDeclinesOutput = z.infer<typeof salesSkuDeclinesOutputSchema>;
+
 /**
  * Diagnóstico (`docs/COPILOT.md` secao 4, categoria "Diagnóstico"; D-082):
  * narra em texto o contrato de `diagnoseSalesAnomaly` (`@sb/domain`,
@@ -180,6 +203,7 @@ export const COPILOT_TOOL_NAMES = [
   "sales_summary",
   "sales_period_comparison",
   "sales_account_comparison",
+  "sales_sku_declines",
   // Segunda leva (D-293): as ferramentas alem de venda.
   "sku_replenishment",
   "listing_performance",

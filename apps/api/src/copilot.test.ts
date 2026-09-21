@@ -11,6 +11,7 @@ import {
   runNarrateSkuDiagnosis,
   runSalesAccountComparison,
   runSalesPeriodComparison,
+  runSalesSkuDeclines,
   runListingPerformance,
   runSalesSummary,
   runSkuReplenishment,
@@ -159,6 +160,27 @@ describe("runSalesAccountComparison", () => {
     expect(calls).toHaveLength(2);
     expect(calls.every((call) => call.args.p_date_from === "2026-08-01")).toBe(true);
     expect(result.accounts.map((account) => account.mlAccountId)).toEqual(["acc-1", "acc-2"]);
+  });
+});
+
+describe("runSalesSkuDeclines", () => {
+  it("compara contra a janela anterior e preserva as quedas que o SQL ordenou", async () => {
+    const rpc = vi.fn(() => Promise.resolve({
+      data: [{
+        sku_id: "11111111-1111-4111-8111-111111111111", sku: "SB-001", title: "Pneu 29",
+        previous_units_sold: 20, current_units_sold: 5, units_delta: -15, units_change_pct: -0.75,
+        previous_gross_revenue: 2000, current_gross_revenue: 500, gross_revenue_delta: -1500, orders_delta: -10,
+      }], error: null,
+    }));
+
+    const result = await runSalesSkuDeclines({ rpc } as unknown as UserClient, {
+      dateFrom: "2026-08-15", dateTo: "2026-08-24", orderBy: "units", limit: 10,
+    });
+
+    expect(rpc).toHaveBeenCalledWith("get_sales_sku_declines", expect.objectContaining({
+      p_previous_date_from: "2026-08-05", p_previous_date_to: "2026-08-14", p_order_by: "units",
+    }));
+    expect(result.rows[0]).toMatchObject({ sku: "SB-001", unitsDelta: -15, unitsChangePct: -0.75 });
   });
 });
 

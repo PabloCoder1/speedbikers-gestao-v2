@@ -20,6 +20,8 @@ import type {
   SalesAccountComparisonOutput,
   SalesPeriodComparisonInput,
   SalesPeriodComparisonOutput,
+  SalesSkuDeclinesInput,
+  SalesSkuDeclinesOutput,
   SalesSummary,
   SalesSummaryInput,
   SalesSummaryOutput,
@@ -33,6 +35,7 @@ import {
   skuReplenishmentInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
+  salesSkuDeclinesInputSchema,
   salesSummaryInputSchema,
   structureFeatureSuggestionInputSchema,
   suggestSupportReplyInputSchema,
@@ -181,6 +184,37 @@ export async function runSalesAccountComparison(
   );
 
   return { accounts };
+}
+
+/** Quedas por produto, agregadas e ordenadas no SQL antes do limite. */
+export async function runSalesSkuDeclines(
+  userClient: UserClient,
+  input: SalesSkuDeclinesInput,
+): Promise<SalesSkuDeclinesOutput> {
+  const previousRange = previousBusinessDateRange(input.dateFrom, input.dateTo);
+  const { data, error } = await userClient.rpc("get_sales_sku_declines", {
+    p_date_from: input.dateFrom,
+    p_date_to: input.dateTo,
+    p_previous_date_from: previousRange.from,
+    p_previous_date_to: previousRange.to,
+    ...(input.mlAccountId === undefined ? {} : { p_ml_account_id: input.mlAccountId }),
+    p_order_by: input.orderBy,
+    p_limit: input.limit,
+  });
+
+  if (error !== null) throw new CopilotToolError(error.message);
+
+  return {
+    previousRange: { dateFrom: previousRange.from, dateTo: previousRange.to },
+    orderBy: input.orderBy,
+    rows: data.map((row) => ({
+      skuId: row.sku_id, sku: row.sku, title: row.title,
+      previousUnitsSold: row.previous_units_sold, currentUnitsSold: row.current_units_sold,
+      unitsDelta: row.units_delta, unitsChangePct: row.units_change_pct,
+      previousGrossRevenue: row.previous_gross_revenue, currentGrossRevenue: row.current_gross_revenue,
+      grossRevenueDelta: row.gross_revenue_delta, ordersDelta: row.orders_delta,
+    })),
+  };
 }
 
 /**
@@ -389,6 +423,10 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
       llmUsed: false,
       costUsd: null,
     }),
+  },
+  sales_sku_declines: {
+    inputSchema: salesSkuDeclinesInputSchema,
+    run: async (userClient, input) => ({ data: await runSalesSkuDeclines(userClient, input), llmUsed: false, costUsd: null }),
   },
   sku_replenishment: {
     inputSchema: skuReplenishmentInputSchema,
