@@ -25,6 +25,11 @@
 
 ### O que está pronto
 
+Diagnóstico do anúncio acompanha título/foto e compara 7 dias antes/depois;
+só alerta queda conjunta de vendas e visitas sem preço, estoque ou status como
+concorrente. Migration `20260921130000` pendente no Dev; captura de descrição
+no endpoint próprio do ML ainda pendente.
+
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,

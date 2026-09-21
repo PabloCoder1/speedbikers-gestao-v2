@@ -9,6 +9,7 @@ function snapshot(overrides: Partial<ListingSnapshot> = {}): ListingSnapshot {
   return {
     itemId: "MLB123",
     title: "Kit relação Honda CG 160",
+    pictureFingerprint: "foto-a",
     status: "active",
     price: 399.9,
     availableQuantity: 10,
@@ -85,6 +86,18 @@ describe("detectListingEvents", () => {
         occurredAt: SYNCED_AT,
       },
     ]);
+  });
+
+  it("foto mudou: emite listing.picture.changed sem expor URLs", () => {
+    const events = detectListingEvents(snapshot({ pictureFingerprint: "foto-a" }), snapshot({ pictureFingerprint: "foto-b" }), SYNCED_AT);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "listing.picture.changed",
+        before: { pictureFingerprint: "foto-a" },
+        after: { pictureFingerprint: "foto-b" },
+      }),
+    );
   });
 
   it("status active -> paused: emite listing.status.paused com severidade importante", () => {

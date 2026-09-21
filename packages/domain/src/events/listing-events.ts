@@ -36,6 +36,8 @@ import type { DomainEventDraft } from "./order-events.js";
 export interface ListingSnapshot {
   readonly itemId: string;
   readonly title: string;
+  /** Fingerprint determinístico das fotos, nunca a URL exposta à interface. */
+  readonly pictureFingerprint: string | null;
   readonly status: string;
   readonly price: number;
   readonly availableQuantity: number;
@@ -97,6 +99,29 @@ export function detectListingEvents(
       entityId: current.itemId,
       before: { title: previous.title },
       after: { title: current.title },
+      severity: EVENT_SEVERITY[eventType] ?? "informativo",
+      source: "sync",
+      dedupKey: `${eventType}:${current.itemId}:${syncedAtKey}`,
+      occurredAt: syncedAt,
+    });
+  }
+
+  // A miniatura pode ser regenerada pelo ML sem troca real de foto. Por isso o
+  // sync compara o fingerprint da coleção `pictures`, não `thumbnail_url`.
+  // `null` na primeira leitura do campo não é prova de remoção de foto.
+  if (
+    previous.pictureFingerprint !== null &&
+    current.pictureFingerprint !== null &&
+    current.pictureFingerprint !== previous.pictureFingerprint
+  ) {
+    const eventType = "listing.picture.changed";
+
+    events.push({
+      eventType,
+      entityType: "listing",
+      entityId: current.itemId,
+      before: { pictureFingerprint: previous.pictureFingerprint },
+      after: { pictureFingerprint: current.pictureFingerprint },
       severity: EVENT_SEVERITY[eventType] ?? "informativo",
       source: "sync",
       dedupKey: `${eventType}:${current.itemId}:${syncedAtKey}`,
