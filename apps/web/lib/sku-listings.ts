@@ -35,6 +35,8 @@ export interface LinhaDeAnuncio {
   readonly title: string | null;
   readonly status: string | null;
   readonly price: number | null;
+  /** Preço com campanha ativa do Mercado Livre (D-389). `null` sem promoção — nunca 0. */
+  readonly promotional_price: number | null;
   readonly available_quantity: number | null;
   readonly synced_at: string | null;
   readonly vinculo_forma: string;
@@ -79,6 +81,8 @@ export interface AnuncioDoSku {
   readonly title: string | null;
   readonly status: string | null;
   readonly price: number | null;
+  /** Preço com campanha ativa do Mercado Livre (D-389). `null` sem promoção — nunca 0. */
+  readonly promotional_price: number | null;
   readonly available_quantity: number | null;
   readonly synced_at: string | null;
   readonly vinculo_forma: string;

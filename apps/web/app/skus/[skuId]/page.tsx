@@ -1677,14 +1677,21 @@ export default async function SkuDashboardPage({
                 </div>
 
                 <div className="sb-stat">
-                  <span className="sb-stat-label">Preço anunciado</span>
+                  {/*
+                    "Preço ao comprador", não "Preço anunciado" (D-389): o
+                    número é o EFETIVO — promocional quando o anúncio tem
+                    campanha ativa do Mercado Livre, senão o cadastrado. O
+                    rótulo antigo prometia o valor cadastrado e a dispersão
+                    calculada aqui não era mais esse número.
+                  */}
+                  <span className="sb-stat-label">Preço ao comprador</span>
                   <b className="sb-stat-value">
                     {diagnostico.precos === null ? "—" : formatCurrency(diagnostico.precos.media)}
                   </b>
                   <span className="sb-stat-note">
                     {diagnostico.precos === null
                       ? "nenhum preço sincronizado"
-                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% sobre o menor (teto ${String(TETO_DISPERSAO_PCT)}%)`}
+                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% sobre o menor (teto ${String(TETO_DISPERSAO_PCT)}%) · já considera promoção ativa do Mercado Livre`}
                   </span>
                 </div>
               </div>
@@ -1801,7 +1808,7 @@ export default async function SkuDashboardPage({
           </div>
 
           <div className="sb-skud-mt3">
-            <DiagnosisPanel skuId={sku.data.id} />
+            <DiagnosisPanel skuId={sku.data.id} problemasDeAnuncio={diagnostico.problemas.length} />
           </div>
         </>
       )}

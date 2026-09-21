@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **380** (D-001 a D-388).
+Decisões registradas: **381** (D-001 a D-389).
 
 ## Por domínio
 
-### atendimento (50)
+### atendimento (51)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -68,6 +68,7 @@ Decisões registradas: **380** (D-001 a D-388).
 - **D-367** — Novo fornecedor: a prévia que acompanha o que se digita, o duplicado avisado antes de salvar e o cadastro que diz o que falta
 - **D-370** — Logo do fornecedor, e o cadastro de D-367 sem a barra que cobria os campos nem o "voltar" sublinhado
 - **D-388** — Devolucao com `orders: null` nao derruba mais a notificacao do claim
+- **D-389** — O diagnostico do SKU compara preco COM promocao, nao o cadastrado
 
 ### banco/rls (35)
 

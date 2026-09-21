@@ -17,6 +17,7 @@ const BASE: AnuncioDoSku = {
   title: "Kit Relação",
   status: "active",
   price: 189.9,
+  promotional_price: null,
   available_quantity: 12,
   synced_at: "2026-09-11T10:41:00.000Z",
   vinculo_forma: "item_inteiro",
