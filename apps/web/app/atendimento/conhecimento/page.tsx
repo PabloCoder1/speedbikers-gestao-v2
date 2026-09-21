@@ -1,200 +1,143 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
+import { isPageBeyondEnd, summarizePagedWindow } from "../../../lib/filters";
 import { formatCount, formatPercent } from "../../../lib/format";
+import {
+  buildKnowledgeHref,
+  KNOWLEDGE_KINDS,
+  KNOWLEDGE_PAGE_SIZE,
+  KNOWLEDGE_SOURCES,
+  KNOWLEDGE_STATUSES,
+  resolveKnowledgeFilters,
+} from "../../../lib/knowledge-filters";
+import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
+import { KNOWLEDGE_KIND_LABEL, KNOWLEDGE_SOURCE_LABEL, KNOWLEDGE_STATUS_LABEL } from "./constants";
 import { KnowledgeRow, type KnowledgeRowData } from "./knowledge-row";
 import { NewKnowledgeForm } from "./new-knowledge-form";
-import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Base de Conhecimento — Speed Bikers Gestão" };
-
 export const dynamic = "force-dynamic";
 
-/**
- * Base de Conhecimento Validada (Fase 7B, D-071/D-113) pelo frame
- * `SupportScreen` na variante de conhecimento (D28, D-268).
- *
- * Qualquer membro sugere; ADMIN/GESTOR validam. SÓ o que está VALIDADO vira
- * evidência do Copiloto na sugestão de resposta — a lista deixa os quatro
- * estados visíveis de propósito, porque rejeitar/obsoletar preserva o
- * histórico da decisão em vez de apagá-lo.
- *
- * **O frame mostra DOIS estados, e são quatro.** Ele desenha "Validado" e
- * "Sugerido"; a `check` da tabela conhece também `REJEITADO` e `OBSOLETO`, e
- * escondê-los apagaria justamente o histórico que a tabela existe para
- * preservar — é a mesma correção que D-265 fez na Central Full.
- *
- * **E o "92% validados" do frame é o número mais delicado da tela.** Ele
- * pressupõe base com conteúdo; a tabela tem **zero linhas no Dev**. Percentual
- * sobre zero é INDEFINIDO, não 0% (D-067), e é assim que a tela o trata.
- */
-
-/** Teto de linhas. A base cresce por escrita humana; 200 é folgado hoje. */
-const ROW_LIMIT = 200;
-
-export default async function ConhecimentoPage(): Promise<ReactNode> {
+/** A base é curadoria humana; apenas VALIDADO pode fundamentar o Copiloto. */
+export default async function ConhecimentoPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const query = await searchParams;
+  const filters = resolveKnowledgeFilters(query);
   const supabase = await createClient();
+  const offset = (filters.page - 1) * KNOWLEDGE_PAGE_SIZE;
 
-  /*
-    As três leituras não dependem umas das outras.
+  let entriesQuery = supabase
+    .from("knowledge_entries")
+    .select("id, kind, content, note, source, status, updated_at, confirmed_by, skus(sku)", { count: "exact" })
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + KNOWLEDGE_PAGE_SIZE - 1);
 
-    Os PERFIS saem junto de propósito: `confirmed_by` referencia `auth.users`,
-    não `profiles`, então não há embed possível — e buscar os nomes depois, a
-    partir dos ids das linhas, seria leitura em fila (D-195). A equipe é
-    pequena; trazê-la inteira em paralelo custa uma viagem que já estava
-    acontecendo.
-  */
-  const [entriesResult, membershipResult, profilesResult] = await Promise.all([
-    supabase
-      .from("knowledge_entries")
-      .select("id, kind, content, note, source, status, updated_at, confirmed_by, skus(sku)", {
-        count: "exact",
-      })
-      .order("updated_at", { ascending: false })
-      .limit(ROW_LIMIT),
+  if (filters.status !== null) entriesQuery = entriesQuery.eq("status", filters.status);
+  if (filters.kind !== null) entriesQuery = entriesQuery.eq("kind", filters.kind);
+  if (filters.source !== null) entriesQuery = entriesQuery.eq("source", filters.source);
+  if (filters.search !== null) entriesQuery = entriesQuery.ilike("content", `%${filters.search}%`);
+
+  const [entriesResult, membership, totalResult, validatedResult, suggestedResult, obsoleteResult] = await Promise.all([
+    entriesQuery,
     currentMembership(),
-    supabase.from("profiles").select("id, full_name"),
+    supabase.from("knowledge_entries").select("id", { count: "exact", head: true }),
+    supabase.from("knowledge_entries").select("id", { count: "exact", head: true }).eq("status", "VALIDADO"),
+    supabase.from("knowledge_entries").select("id", { count: "exact", head: true }).eq("status", "SUGERIDO"),
+    supabase.from("knowledge_entries").select("id", { count: "exact", head: true }).eq("status", "OBSOLETO"),
   ]);
 
-  const role = membershipResult.role;
-  const canManage = role === "ADMIN" || role === "GESTOR";
-
-  const nomePorId = new Map(
-    (profilesResult.data ?? []).map((perfil) => [perfil.id, perfil.full_name] as const),
-  );
-
-  const entradas = entriesResult.data ?? [];
-
-  const rows: KnowledgeRowData[] = entradas.map((row) => ({
-    id: row.id,
-    kind: row.kind,
-    content: row.content,
-    note: row.note,
-    source: row.source,
-    status: row.status,
-    skuCode: row.skus?.sku ?? null,
-    confirmedByName: row.confirmed_by === null ? null : (nomePorId.get(row.confirmed_by) ?? null),
-    updatedAt: row.updated_at,
+  const entries = entriesResult.data ?? [];
+  const confirmedIds = [...new Set(entries.flatMap((entry) => (entry.confirmed_by === null ? [] : [entry.confirmed_by])))];
+  const profilesResult = confirmedIds.length === 0
+    ? { data: [], error: null }
+    : await supabase.from("profiles").select("id, full_name").in("id", confirmedIds);
+  const nameById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.full_name] as const));
+  const canManage = membership.role === "ADMIN" || membership.role === "GESTOR";
+  const rows: KnowledgeRowData[] = entries.map((entry) => ({
+    id: entry.id, kind: entry.kind, content: entry.content, note: entry.note, source: entry.source, status: entry.status,
+    skuCode: entry.skus?.sku ?? null,
+    confirmedByName: entry.confirmed_by === null ? null : (nameById.get(entry.confirmed_by) ?? null),
+    updatedAt: entry.updated_at,
   }));
 
-  const total = entriesResult.count ?? entradas.length;
+  const total = totalResult.error === null ? (totalResult.count ?? 0) : null;
+  const validated = validatedResult.error === null ? (validatedResult.count ?? 0) : null;
+  const pending = suggestedResult.error === null ? (suggestedResult.count ?? 0) : null;
+  const obsolete = obsoleteResult.error === null ? (obsoleteResult.count ?? 0) : null;
+  const validationRate = validated === null || total === null || total === 0 ? null : validated / total;
+  const pageBeyondEnd = isPageBeyondEnd(entriesResult.error);
+  const listError = pageBeyondEnd ? null : (entriesResult.error?.message ?? profilesResult.error?.message ?? null);
+  const window = summarizePagedWindow({
+    page: filters.page, totalCount: entriesResult.count ?? entries.length, rowsOnPage: rows.length, pageSize: KNOWLEDGE_PAGE_SIZE,
+    noun: { singular: "conhecimento", plural: "conhecimentos" }, emptyLabel: "Nenhum conhecimento neste recorte.", trailing: ", por atualização mais recente",
+  });
+  const hasFilters = filters.status !== null || filters.kind !== null || filters.source !== null || filters.search !== null;
 
-  /*
-    OS TRÊS NÚMEROS DO FRAME, e o segundo é o delicado.
+  return <Shell>
+    <PageTitle
+      eyebrow="ATENDIMENTO / CONHECIMENTO"
+      title="Base de Conhecimento"
+      subtitle="A fonte revisada que sustenta atendimento, operação e respostas do Copiloto."
+      aside={<><Link className="sb-button" href="/atendimento">← Caixa de Entrada</Link><NewKnowledgeForm /></>}
+    />
 
-    As contagens por estado saem das linhas JÁ CARREGADAS, o que é exato
-    enquanto a busca é completa. Quando ela trunca, as duas derivadas viram
-    desconhecidas em vez de erradas: contar 200 de 900 e chamar de percentual
-    da base seria pior do que não mostrar.
+    <div className="sb-stat-grid" style={{ marginBottom: "var(--sb-space-3)" }}>
+      <div className="sb-stat"><span className="sb-stat-label">Conhecimentos registrados</span><b className="sb-stat-value">{total === null ? "—" : formatCount(total)}</b><span className="sb-stat-note">todos os estados, inclusive rejeitados e obsoletos</span></div>
+      <div className="sb-stat"><span className="sb-stat-label">Validados pela equipe</span><b className="sb-stat-value">{formatPercent(validationRate)}</b><span className="sb-stat-note">validados ÷ total, com rejeitados e obsoletos no denominador</span></div>
+      <div className="sb-stat"><span className="sb-stat-label">Aguardando revisão</span><b className="sb-stat-value">{pending === null ? "—" : formatCount(pending)}</b><span className="sb-stat-note">sugeridos, à espera de ADMIN ou GESTOR</span></div>
+      <div className="sb-stat"><span className="sb-stat-label">Fora de uso</span><b className="sb-stat-value">{obsolete === null ? "—" : formatCount(obsolete)}</b><span className="sb-stat-note">histórico preservado; não entra como evidência</span></div>
+    </div>
 
-    E `null` sobre base vazia não é 0%: "nenhum conhecimento validado" e
-    "nenhum conhecimento" são estados diferentes, e `formatPercent(null)`
-    imprime "—" (D-067).
-  */
-  const completa = entradas.length === total;
-  const validados = completa ? rows.filter((r) => r.status === "VALIDADO").length : null;
-  const aguardando = completa ? rows.filter((r) => r.status === "SUGERIDO").length : null;
-  const taxaValidados = validados === null || total === 0 ? null : validados / total;
-
-  return (
-    <Shell>
-      <PageTitle
-        eyebrow="ATENDIMENTO / OPERAÇÃO"
-        title="Base de Conhecimento"
-        subtitle="Respostas confiáveis para a equipe e o Copiloto."
-        aside={
-          <Link href="/atendimento" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
-            ← Caixa de Entrada
-          </Link>
-        }
-      />
-
-      <div className="sb-stat-grid" style={{ marginBottom: "var(--sb-space-3)" }}>
-        <div className="sb-stat">
-          <span className="sb-stat-label">Conhecimentos registrados</span>
-          <b className="sb-stat-value">{formatCount(total)}</b>
-          <span className="sb-stat-note">todos os estados, inclusive rejeitados e obsoletos</span>
-        </div>
-
-        <div className="sb-stat">
-          <span className="sb-stat-label">Validados pela equipe</span>
-          <b className="sb-stat-value">{formatPercent(taxaValidados)}</b>
-          <span className="sb-stat-note">
-            {total === 0
-              ? "sem base registrada — indefinido, não 0%"
-              : "validados ÷ total, com rejeitados e obsoletos no denominador"}
-          </span>
-        </div>
-
-        <div className="sb-stat">
-          <span className="sb-stat-label">Aguardando revisão</span>
-          <b className="sb-stat-value">{aguardando === null ? "—" : formatCount(aguardando)}</b>
-          <span className="sb-stat-note">sugeridos, à espera de ADMIN ou GESTOR</span>
+    <Panel
+      title={filters.status === "SUGERIDO" ? "Revisão pendente" : "Conhecimentos"}
+      subtitle={rows.length > 0 ? window.label : "Só o que está VALIDADO vira evidência do Copiloto."}
+      aside={<>
+        <FilterMenu rotulo={filters.status === null ? "Todos os estados" : (KNOWLEDGE_STATUS_LABEL[filters.status] ?? filters.status)} opcoes={[
+          { href: buildKnowledgeHref(filters, { status: null }), label: "Todos os estados", ativo: filters.status === null },
+          ...KNOWLEDGE_STATUSES.map((status) => ({ href: buildKnowledgeHref(filters, { status }), label: KNOWLEDGE_STATUS_LABEL[status] ?? status, ativo: filters.status === status })),
+        ]} />
+        <FilterMenu rotulo={filters.kind === null ? "Todos os tipos" : (KNOWLEDGE_KIND_LABEL[filters.kind] ?? filters.kind)} opcoes={[
+          { href: buildKnowledgeHref(filters, { kind: null }), label: "Todos os tipos", ativo: filters.kind === null },
+          ...KNOWLEDGE_KINDS.map((kind) => ({ href: buildKnowledgeHref(filters, { kind }), label: KNOWLEDGE_KIND_LABEL[kind] ?? kind, ativo: filters.kind === kind })),
+        ]} />
+        <FilterMenu rotulo={filters.source === null ? "Todas as fontes" : (KNOWLEDGE_SOURCE_LABEL[filters.source] ?? filters.source)} opcoes={[
+          { href: buildKnowledgeHref(filters, { source: null }), label: "Todas as fontes", ativo: filters.source === null },
+          ...KNOWLEDGE_SOURCES.map((source) => ({ href: buildKnowledgeHref(filters, { source }), label: KNOWLEDGE_SOURCE_LABEL[source] ?? source, ativo: filters.source === source })),
+        ]} />
+      </>}
+    >
+      <div className="sb-knowledge-toolbar">
+        <form method="get" action="/atendimento/conhecimento" className="sb-knowledge-search" role="search">
+          {filters.status !== null && <input type="hidden" name="status" value={filters.status} />}
+          {filters.kind !== null && <input type="hidden" name="tipo" value={filters.kind} />}
+          {filters.source !== null && <input type="hidden" name="fonte" value={filters.source} />}
+          <input className="sb-input" type="search" name="busca" defaultValue={filters.search ?? ""} placeholder="Buscar no fato registrado" aria-label="Buscar no fato registrado" />
+          <button className="sb-button" type="submit">Buscar</button>
+        </form>
+        <div className="sb-knowledge-actions">
+          {pending !== null && pending > 0 && filters.status !== "SUGERIDO" && <Link className="sb-button" href={buildKnowledgeHref(filters, { status: "SUGERIDO" })}>Revisar {formatCount(pending)} sugestões</Link>}
+          {hasFilters && <Link className="sb-text-button" href="/atendimento/conhecimento">Limpar filtros</Link>}
         </div>
       </div>
 
-      {entriesResult.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar o conhecimento: {entriesResult.error.message}
-        </p>
-      )}
-
-      {entriesResult.error === null && (
-        <Panel
-          title="Conhecimentos"
-          subtitle="Compatibilidade, especificação, política e outros — só o que está VALIDADO vira evidência do Copiloto."
-        >
-          {rows.length === 0 ? (
-            <p className="sb-empty">
-              Nenhum conhecimento registrado ainda. O primeiro nasce no formulário abaixo, como{" "}
-              <strong>Sugerido</strong>, e vira evidência do Copiloto só depois de um ADMIN ou GESTOR validar.
-            </p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Tipo</th>
-                    <th>Conhecimento</th>
-                    <th>Fonte</th>
-                    {/* As duas colunas que o frame acrescenta e o esquema já
-                        sustentava — nenhuma das duas era buscada antes. */}
-                    <th>Confirmado por</th>
-                    <th>Atualizado</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((entry) => (
-                    <KnowledgeRow key={entry.id} entry={entry} canManage={canManage} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {!completa && (
-            <p style={{ margin: "var(--sb-space-2) 1.25rem", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-              Mostrando {formatCount(entradas.length)} de {formatCount(total)}, por atualização mais recente —
-              e por isso os dois números derivados acima aparecem como “—”: contá-los sobre parte da base seria
-              chamar de percentual da base o que é percentual da página.
-            </p>
-          )}
-        </Panel>
-      )}
-
-      {/* O "Novo conhecimento" que o frame põe no cabeçalho já existia como
-          formulário. Fica onde está: ele é o caminho de escrita da tela, não
-          um atalho de barra. */}
-      <section style={{ marginTop: "var(--sb-space-4)" }}>
-        <h2 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.9375rem" }}>Registrar conhecimento</h2>
-        <NewKnowledgeForm />
-      </section>
-    </Shell>
-  );
+      {listError !== null && <div role="alert" className="sb-knowledge-state sb-knowledge-state-error"><strong>Não foi possível carregar os conhecimentos.</strong><span>{listError}</span><Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page })}>Tentar de novo</Link></div>}
+      {pageBeyondEnd && <div className="sb-knowledge-state"><strong>Esta página não existe neste recorte.</strong><span>O conjunto mudou ou o link é antigo.</span><Link className="sb-button" href={buildKnowledgeHref(filters, { page: 1 })}>Voltar à primeira página</Link></div>}
+      {listError === null && !pageBeyondEnd && rows.length === 0 && <div className="sb-knowledge-state"><strong>{hasFilters ? "Nenhum conhecimento com estes filtros" : "A base ainda não tem conhecimentos"}</strong><span>{hasFilters ? "Troque o recorte ou limpe os filtros para ver outros registros." : "Registre um fato como sugerido; ele só vira evidência após a validação humana."}</span></div>}
+      {listError === null && !pageBeyondEnd && rows.length > 0 && <div style={{ overflowX: "auto" }}><table className="sb-table"><thead><tr><th>SKU</th><th>Tipo</th><th>Conhecimento</th><th>Fonte</th><th>Confirmado por</th><th>Atualizado</th><th>Status</th></tr></thead><tbody>{rows.map((entry) => <KnowledgeRow key={entry.id} entry={entry} canManage={canManage} />)}</tbody></table></div>}
+      {listError === null && !pageBeyondEnd && window.totalPages > 1 && <nav className="sb-knowledge-pages" aria-label="Páginas da base de conhecimento">
+        {filters.page > 1 ? <Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page - 1 })}>‹ Anterior</Link> : <span />}
+        <span>Página {formatCount(filters.page)} de {formatCount(window.totalPages)}</span>
+        {filters.page < window.totalPages ? <Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page + 1 })}>Próxima ›</Link> : <span />}
+      </nav>}
+    </Panel>
+  </Shell>;
 }
