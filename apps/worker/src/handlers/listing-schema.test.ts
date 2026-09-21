@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import { fingerprintDaDescricao, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
 
 const ITEM = {
   id: "MLB5021016752",
@@ -43,5 +43,28 @@ describe("foto e link do anúncio (/anuncios, 20260918150000)", () => {
     expect(linkDoItem({ permalink: "https://produto.mercadolivre.com.br/MLB-5021016752-bau-traseiro" })).toBe(
       "https://produto.mercadolivre.com.br/MLB-5021016752-bau-traseiro",
     );
+  });
+});
+
+describe("fingerprintDaDescricao (D-390)", () => {
+  it("mesmo texto produz o mesmo hash, texto diferente produz hash diferente", () => {
+    const a = fingerprintDaDescricao("Descrição original do anúncio.");
+    const b = fingerprintDaDescricao("Descrição original do anúncio.");
+    const c = fingerprintDaDescricao("Descrição editada do anúncio.");
+
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  it("null (sem descrição própria) não vira hash de string vazia", () => {
+    expect(fingerprintDaDescricao(null)).toBeNull();
+    expect(fingerprintDaDescricao(null)).not.toBe(fingerprintDaDescricao(""));
+  });
+
+  it("nunca grava o texto em si — só o hash", () => {
+    const hash = fingerprintDaDescricao("Texto que não pode aparecer no evento.");
+
+    expect(hash).not.toContain("Texto que não pode aparecer no evento.");
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
 });

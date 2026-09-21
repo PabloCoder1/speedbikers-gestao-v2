@@ -30,7 +30,9 @@ Copiloto/Notificações: refino visual; sem banco/API. `check` 29/29 e build ver
 
 D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
 título/foto, só alerta queda conjunta de vendas e visitas sem outro fator
-concorrente (migration `20260921130000`). D-389: diagnóstico do SKU usa o
+concorrente (migration `20260921130000`). A captura de descrição por hash,
+sem reconsulta quando o item não mudou, está na migration `20260921144813`
+e aguarda CI/publicação. D-389: diagnóstico do SKU usa o
 preço EFETIVO (promocional se há campanha ativa do ML, senão o cadastrado —
 migration `20260921121405`). As duas em Dev e produção desde 21/09.
 

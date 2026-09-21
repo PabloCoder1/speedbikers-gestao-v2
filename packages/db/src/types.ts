@@ -1714,6 +1714,10 @@ export type Database = {
           // ambiente, mesmo raciocinio de delete_supplier/get_erp_stock_cutoffs
           // logo abaixo). NULO sem promocao ativa do Mercado Livre -- nunca 0.
           promotional_price: number | null
+          // D-390, migration 20260921144813: CORRECAO MANUAL, mesma razao.
+          // Hash SHA-256 da descricao, nunca o texto -- NULO sem leitura.
+          description_fingerprint: string | null
+          description_source_updated_at: string | null
           sku_id: string | null
           status: string
           synced_at: string
@@ -1734,6 +1738,8 @@ export type Database = {
           price: number
           picture_fingerprint?: string | null
           promotional_price?: number | null
+          description_fingerprint?: string | null
+          description_source_updated_at?: string | null
           sku_id?: string | null
           status: string
           synced_at?: string
@@ -1754,6 +1760,8 @@ export type Database = {
           price?: number
           picture_fingerprint?: string | null
           promotional_price?: number | null
+          description_fingerprint?: string | null
+          description_source_updated_at?: string | null
           sku_id?: string | null
           status?: string
           synced_at?: string

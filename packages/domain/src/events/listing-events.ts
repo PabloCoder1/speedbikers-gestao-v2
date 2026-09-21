@@ -38,6 +38,8 @@ export interface ListingSnapshot {
   readonly title: string;
   /** Fingerprint determinístico das fotos, nunca a URL exposta à interface. */
   readonly pictureFingerprint: string | null;
+  /** Hash SHA-256 da descrição (D-390), nunca o texto em si. */
+  readonly descriptionFingerprint: string | null;
   readonly status: string;
   readonly price: number;
   readonly availableQuantity: number;
@@ -122,6 +124,29 @@ export function detectListingEvents(
       entityId: current.itemId,
       before: { pictureFingerprint: previous.pictureFingerprint },
       after: { pictureFingerprint: current.pictureFingerprint },
+      severity: EVENT_SEVERITY[eventType] ?? "informativo",
+      source: "sync",
+      dedupKey: `${eventType}:${current.itemId}:${syncedAtKey}`,
+      occurredAt: syncedAt,
+    });
+  }
+
+  // Mesma lógica da foto: só compara quando os DOIS lados foram lidos.
+  // `null` na primeira leitura do campo (item recém-visto, ou sem
+  // descrição própria) não é prova de remoção — é ausência de dado.
+  if (
+    previous.descriptionFingerprint !== null &&
+    current.descriptionFingerprint !== null &&
+    current.descriptionFingerprint !== previous.descriptionFingerprint
+  ) {
+    const eventType = "listing.description.changed";
+
+    events.push({
+      eventType,
+      entityType: "listing",
+      entityId: current.itemId,
+      before: { descriptionFingerprint: previous.descriptionFingerprint },
+      after: { descriptionFingerprint: current.descriptionFingerprint },
       severity: EVENT_SEVERITY[eventType] ?? "informativo",
       source: "sync",
       dedupKey: `${eventType}:${current.itemId}:${syncedAtKey}`,

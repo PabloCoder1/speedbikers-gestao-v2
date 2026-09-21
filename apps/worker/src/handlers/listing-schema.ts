@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 /**
@@ -22,6 +24,9 @@ export const listingItemSchema = z.object({
   thumbnail: z.string().nullable().optional(),
   permalink: z.string().nullable().optional(),
   pictures: z.array(z.object({ id: z.string() })).nullable().optional(),
+  // Gatilho para reler a descrição no endpoint separado. Pode faltar no
+  // payload real, por isso não bloqueia a sincronização do catálogo.
+  last_updated: z.string().nullable().optional(),
 });
 
 export type ParsedListingItem = z.infer<typeof listingItemSchema>;
@@ -74,4 +79,20 @@ export function fingerprintDasFotos(item: Pick<ParsedListingItem, "pictures">): 
   if (item.pictures === null || item.pictures === undefined || item.pictures.length === 0) return null;
 
   return item.pictures.map((picture) => picture.id).sort().join(":");
+}
+
+/**
+ * A descrição (D-390) vem de `GET /items/{item_id}/description`, um recurso
+ * à parte do item — nunca do multiget. Diferente da foto (que tem IDs
+ * estáveis para comparar), a descrição só tem o texto em si, e o texto NUNCA
+ * é gravado: nem no evento, nem em `listings` — o hash é só para detectar
+ * "mudou", igual ao fingerprint de foto faz com o conteúdo da imagem.
+ *
+ * `null` para descrição ausente (item sem descrição própria) — hash de string
+ * vazia seria um valor válido e colidiria com "não lido ainda".
+ */
+export function fingerprintDaDescricao(plainText: string | null): string | null {
+  if (plainText === null) return null;
+
+  return createHash("sha256").update(plainText, "utf8").digest("hex");
 }

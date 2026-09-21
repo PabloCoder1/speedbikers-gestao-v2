@@ -10,6 +10,7 @@ function snapshot(overrides: Partial<ListingSnapshot> = {}): ListingSnapshot {
     itemId: "MLB123",
     title: "Kit relação Honda CG 160",
     pictureFingerprint: "foto-a",
+    descriptionFingerprint: "descricao-a",
     status: "active",
     price: 399.9,
     availableQuantity: 10,
@@ -98,6 +99,32 @@ describe("detectListingEvents", () => {
         after: { pictureFingerprint: "foto-b" },
       }),
     );
+  });
+
+  it("descrição mudou: emite listing.description.changed sem expor o texto", () => {
+    const events = detectListingEvents(
+      snapshot({ descriptionFingerprint: "descricao-a" }),
+      snapshot({ descriptionFingerprint: "descricao-b" }),
+      SYNCED_AT,
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "listing.description.changed",
+        before: { descriptionFingerprint: "descricao-a" },
+        after: { descriptionFingerprint: "descricao-b" },
+      }),
+    );
+  });
+
+  it("descrição sem leitura anterior (null) não emite evento — ausência não é remoção", () => {
+    const events = detectListingEvents(
+      snapshot({ descriptionFingerprint: null }),
+      snapshot({ descriptionFingerprint: "descricao-b" }),
+      SYNCED_AT,
+    );
+
+    expect(events.map((event) => event.eventType)).not.toContain("listing.description.changed");
   });
 
   it("status active -> paused: emite listing.status.paused com severidade importante", () => {

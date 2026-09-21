@@ -5,6 +5,7 @@ import type { MercadoLivreClient } from "@sb/mercado-livre";
 import {
   chunkItemIds,
   effectivePromotionalPrice,
+  getItemDescription,
   getItemPromotions,
   getItemsBatch,
   scanSellerItems,
@@ -12,7 +13,7 @@ import {
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
-import { fingerprintDasFotos, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import { fingerprintDaDescricao, fingerprintDasFotos, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
 import type { ParsedListingItem } from "./listing-schema.js";
 import { readAllPages } from "../read-all-pages.js";
 
@@ -78,6 +79,9 @@ interface ListingUpsertRow {
   available_quantity: number;
   category_id: string | null;
   picture_fingerprint: string | null;
+  /** Hash SHA-256 da descrição (D-390) — nunca o texto. `null` sem descrição própria. */
+  description_fingerprint: string | null;
+  description_source_updated_at: string | null;
   thumbnail_url: string | null;
   permalink: string | null;
   synced_at: string;
@@ -155,11 +159,13 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     price: number;
     available_quantity: number;
     picture_fingerprint: string | null;
+    description_fingerprint: string | null;
+    description_source_updated_at: string | null;
   }>(
     (from, to) =>
       params.db
         .from("listings")
-        .select("item_id, title, status, price, available_quantity, picture_fingerprint")
+        .select("item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at")
         .eq("ml_account_id", params.mlAccountId)
         // `listings_account_item_unique (ml_account_id, item_id)` — com a
         // conta já fixada no filtro, `item_id` é ordenação estável.
@@ -169,8 +175,10 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   );
 
   const previousByItem = new Map<string, ListingSnapshot>();
+  const previousListingRowsByItem = new Map<string, (typeof previousRows)[number]>();
 
   for (const row of previousRows) {
+    previousListingRowsByItem.set(row.item_id, row);
     previousByItem.set(row.item_id, {
       itemId: row.item_id,
       title: row.title,
@@ -178,6 +186,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       price: row.price,
       availableQuantity: row.available_quantity,
       pictureFingerprint: row.picture_fingerprint,
+      descriptionFingerprint: row.description_fingerprint,
     });
   }
 
@@ -241,34 +250,64 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       itensValidos.push(parsed.data);
     }
 
-    // PREÇO PROMOCIONAL (D-389) — só para anúncios ATIVOS: pausado/encerrado
-    // não roda campanha do Mercado Livre (docs/MERCADO_LIVRE.md secao 2.8), e
-    // pedir promoção de 4.447 anúncios por conta a cada 6h para os 90% que
-    // nunca têm uma seria custo sem uso. Em PARALELO dentro do lote de 20 — em
+    // ENRIQUECIMENTO POR ITEM — preço promocional (D-389) e descrição
+    // (D-390) — só para anúncios ATIVOS: pausado/encerrado não roda campanha
+    // (docs/MERCADO_LIVRE.md secao 2.8), e um anúncio parado não tem venda
+    // nem visita nova para o diagnóstico de D-390 comparar. Pedir os dois
+    // para 4.447 anúncios por conta a cada 6h, para os que nunca mudam, seria
+    // custo sem uso. As DUAS chamadas de um mesmo item correm juntas
+    // (Promise.all interno), e os itens do lote correm em PARALELO — em
     // série, cada chamada extra multiplicaria o tempo do multiget inteiro.
     //
-    // Uma falha AQUI não derruba o item: `promotional_price` fica nulo (o
-    // mesmo que "sem promoção" no resto do sistema) e o log guarda o motivo —
-    // a sincronização do catálogo é o que importa, a promoção é enriquecimento.
+    // Uma falha AQUI não derruba o item: o campo correspondente fica nulo (o
+    // mesmo que "sem promoção"/"sem descrição lida" no resto do sistema) e o
+    // log guarda o motivo — a sincronização do catálogo é o que importa,
+    // estes dois são enriquecimento.
     const precoPromocionalPorItem = new Map<string, number | null>();
+    const fingerprintDescricaoPorItem = new Map<string, string | null>();
+    const descricaoAtualizadaEmPorItem = new Map<string, string | null>();
 
     await Promise.all(
       itensValidos
         .filter((item) => item.status === "active")
         .map(async (item) => {
-          try {
-            const promocoes = await getItemPromotions({
-              client: params.mercadoLivre,
-              itemId: item.id,
-              accessToken: params.accessToken,
-            });
+          const previous = previousByItem.get(item.id) ?? null;
+          const previousRow = previousListingRowsByItem.get(item.id) ?? null;
+          const shouldFetchDescription =
+            !previousListingRowsByItem.has(item.id) ||
+            previousRow?.description_source_updated_at === null ||
+            previousRow?.description_source_updated_at === undefined ||
+            item.last_updated !== previousRow.description_source_updated_at;
 
-            precoPromocionalPorItem.set(item.id, effectivePromotionalPrice(promocoes));
-          } catch (error) {
+          const [promocao, descricao] = await Promise.all([
+            getItemPromotions({ client: params.mercadoLivre, itemId: item.id, accessToken: params.accessToken })
+              .then((promocoes) => ({ ok: true as const, value: effectivePromotionalPrice(promocoes) }))
+              .catch((error: unknown) => ({ ok: false as const, error })),
+            shouldFetchDescription
+              ? getItemDescription({ client: params.mercadoLivre, itemId: item.id, accessToken: params.accessToken })
+                  .then((plainText) => ({ ok: true as const, value: fingerprintDaDescricao(plainText) }))
+                  .catch((error: unknown) => ({ ok: false as const, error }))
+              : Promise.resolve({ ok: true as const, value: previous?.descriptionFingerprint ?? null }),
+          ]);
+
+          if (promocao.ok) {
+            precoPromocionalPorItem.set(item.id, promocao.value);
+          } else {
             params.logger.warn("listing_promotion_fetch_failed", {
               ml_account_id: params.mlAccountId,
               item_id: item.id,
-              reason: error instanceof Error ? error.message : "erro desconhecido",
+              reason: promocao.error instanceof Error ? promocao.error.message : "erro desconhecido",
+            });
+          }
+
+          if (descricao.ok) {
+            fingerprintDescricaoPorItem.set(item.id, descricao.value);
+            descricaoAtualizadaEmPorItem.set(item.id, item.last_updated ?? previousRow?.description_source_updated_at ?? null);
+          } else {
+            params.logger.warn("listing_description_fetch_failed", {
+              ml_account_id: params.mlAccountId,
+              item_id: item.id,
+              reason: descricao.error instanceof Error ? descricao.error.message : "erro desconhecido",
             });
           }
         }),
@@ -299,6 +338,8 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         available_quantity: item.available_quantity,
         category_id: item.category_id ?? null,
         picture_fingerprint: fingerprintDasFotos(item),
+        description_fingerprint: fingerprintDescricaoPorItem.get(item.id) ?? null,
+        description_source_updated_at: descricaoAtualizadaEmPorItem.get(item.id) ?? null,
         thumbnail_url: fotoDoItem(item),
         permalink: linkDoItem(item),
         synced_at: syncedAt.toISOString(),
@@ -312,6 +353,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           price: item.price,
           availableQuantity: item.available_quantity,
           pictureFingerprint: fingerprintDasFotos(item),
+          descriptionFingerprint: fingerprintDescricaoPorItem.get(item.id) ?? null,
         },
         previous: previousByItem.get(item.id) ?? null,
       });
