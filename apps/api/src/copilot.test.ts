@@ -13,6 +13,7 @@ import {
   runSalesPeriodComparison,
   runSalesSkuDeclines,
   runListingPerformance,
+  runResolveCatalogEntity,
   runSalesSummary,
   runSkuReplenishment,
 } from "./copilot.js";
@@ -181,6 +182,66 @@ describe("runSalesSkuDeclines", () => {
       p_previous_date_from: "2026-08-05", p_previous_date_to: "2026-08-14", p_order_by: "units",
     }));
     expect(result.rows[0]).toMatchObject({ sku: "SB-001", unitsDelta: -15, unitsChangePct: -0.75 });
+  });
+});
+
+describe("runResolveCatalogEntity", () => {
+  function fakeCatalogClient(options: {
+    skus?: { sku: string; title: string | null }[];
+    listings?: { item_id: string; title: string; ml_account_id: string; status: string }[];
+  }): UserClient {
+    return {
+      from: (table: string) => {
+        const rows = table === "skus" ? options.skus ?? [] : options.listings ?? [];
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          limit: () => Promise.resolve({ data: rows, error: null }),
+        };
+
+        return chain;
+      },
+    } as unknown as UserClient;
+  }
+
+  it("reconhece código numérico como SKU sem depender da palavra SKU", async () => {
+    const result = await runResolveCatalogEntity(fakeCatalogClient({ skus: [{ sku: "13014", title: "Câmara 29" }] }), {
+      identifier: "13014",
+    });
+
+    expect(result).toEqual({
+      identifier: "13014",
+      resolution: "SKU",
+      candidates: [{ kind: "SKU", identifier: "13014", title: "Câmara 29", mlAccountId: null, status: null }],
+    });
+  });
+
+  it("trata MLB como anúncio mesmo se existir SKU com o mesmo texto", async () => {
+    const result = await runResolveCatalogEntity(
+      fakeCatalogClient({
+        skus: [{ sku: "MLB123", title: "Não deve ser consultado" }],
+        listings: [{ item_id: "MLB123", title: "Anúncio", ml_account_id: "11111111-1111-4111-8111-111111111111", status: "active" }],
+      }),
+      { identifier: "mlb123" },
+    );
+
+    expect(result.resolution).toBe("LISTING");
+    expect(result.candidates).toEqual([
+      { kind: "LISTING", identifier: "MLB123", title: "Anúncio", mlAccountId: "11111111-1111-4111-8111-111111111111", status: "active" },
+    ]);
+  });
+
+  it("devolve ambiguidade, em vez de escolher silenciosamente", async () => {
+    const result = await runResolveCatalogEntity(
+      fakeCatalogClient({
+        skus: [{ sku: "13014", title: "SKU" }],
+        listings: [{ item_id: "13014", title: "Anúncio", ml_account_id: "11111111-1111-4111-8111-111111111111", status: "active" }],
+      }),
+      { identifier: "13014" },
+    );
+
+    expect(result.resolution).toBe("AMBIGUO");
+    expect(result.candidates).toHaveLength(2);
   });
 });
 

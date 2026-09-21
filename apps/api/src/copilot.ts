@@ -12,6 +12,8 @@ import type {
   CopilotToolName,
   ListingPerformanceInput,
   ListingPerformanceOutput,
+  ResolveCatalogEntityInput,
+  ResolveCatalogEntityOutput,
   NarrateActionInput,
   NarrateActionOutput,
   NarrateSkuDiagnosisInput,
@@ -32,6 +34,7 @@ import {
   listingPerformanceInputSchema,
   narrateActionInputSchema,
   narrateSkuDiagnosisInputSchema,
+  resolveCatalogEntityInputSchema,
   skuReplenishmentInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
@@ -428,6 +431,14 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
     inputSchema: salesSkuDeclinesInputSchema,
     run: async (userClient, input) => ({ data: await runSalesSkuDeclines(userClient, input), llmUsed: false, costUsd: null }),
   },
+  resolve_catalog_entity: {
+    inputSchema: resolveCatalogEntityInputSchema,
+    run: async (userClient, input) => ({
+      data: await runResolveCatalogEntity(userClient, input),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
   sku_replenishment: {
     inputSchema: skuReplenishmentInputSchema,
     run: async (userClient, input, _deps, caller) => ({
@@ -563,6 +574,53 @@ export async function handleCopilotQuery(
  * refeito aqui: pedir "SB-001" e receber a linha de "SB-0010" seria responder
  * sobre outro produto com toda a confiança do mundo.
  */
+/**
+ * Resolve o código digitado antes de o planner escolher SKU ou anúncio.
+ * São duas leituras exatas, pequenas e sob a RLS do chamador; não há busca
+ * ampla nem inferência do modelo. `sku_key` é a identidade normalizada do
+ * catálogo, enquanto `item_id` preserva o MLB. Se um código existir nos dois
+ * lugares, a ambiguidade volta explicitamente para o Copiloto.
+ */
+export async function runResolveCatalogEntity(
+  userClient: UserClient,
+  input: ResolveCatalogEntityInput,
+): Promise<ResolveCatalogEntityOutput> {
+  const identifier = input.identifier.trim();
+  const isMlb = /^MLB\d+$/i.test(identifier);
+
+  const [skus, listings] = await Promise.all([
+    isMlb
+      ? Promise.resolve({ data: [], error: null })
+      : userClient.from("skus").select("sku, title").eq("sku_key", identifier.toUpperCase()).limit(2),
+    userClient.from("listings").select("item_id, title, ml_account_id, status").eq("item_id", identifier.toUpperCase()).limit(2),
+  ]);
+
+  if (skus.error !== null) throw new CopilotToolError(skus.error.message);
+  if (listings.error !== null) throw new CopilotToolError(listings.error.message);
+
+  const candidates = [
+    ...skus.data.map((sku) => ({ kind: "SKU" as const, identifier: sku.sku, title: sku.title, mlAccountId: null, status: null })),
+    ...listings.data.map((listing) => ({
+      kind: "LISTING" as const,
+      identifier: listing.item_id,
+      title: listing.title,
+      mlAccountId: listing.ml_account_id,
+      status: listing.status,
+    })),
+  ];
+
+  return {
+    identifier,
+    resolution:
+      candidates.length === 0
+        ? "NAO_ENCONTRADO"
+        : candidates.length === 1
+          ? candidates[0]?.kind === "SKU" ? "SKU" : "LISTING"
+          : "AMBIGUO",
+    candidates,
+  };
+}
+
 export async function runSkuReplenishment(
   userClient: UserClient,
   input: SkuReplenishmentInput,

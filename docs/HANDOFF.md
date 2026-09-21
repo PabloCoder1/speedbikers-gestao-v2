@@ -24,7 +24,7 @@
 
 ### O que está pronto
 
-SKU/visitas:tool;migração pendente
+SKU/ML;visitas;migração
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.

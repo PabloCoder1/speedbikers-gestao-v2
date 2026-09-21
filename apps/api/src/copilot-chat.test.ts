@@ -271,6 +271,7 @@ describe("contexto de tela (D-293)", () => {
     expect(nomes).toContain("sku_replenishment");
     expect(nomes).toContain("listing_performance");
     expect(nomes).toContain("sales_sku_declines");
+    expect(nomes).toContain("resolve_catalog_entity");
   });
 
   it("oferece uma consulta própria para descobrir produtos que caíram", async () => {
@@ -285,6 +286,18 @@ describe("contexto de tela (D-293)", () => {
     const { plan } = await run([finalText("ok")], "Quais produtos da GMR caíram nos últimos 7 dias?");
 
     expect(plan.mock.calls[0]?.[0]?.toolChoice).toBe("sales_sku_declines");
+  });
+
+  it("resolve um código numérico antes de supor que ele é anúncio ou SKU", async () => {
+    const { plan } = await run([finalText("ok")], "como está o 13014 na GMR?");
+
+    expect(plan.mock.calls[0]?.[0]?.toolChoice).toBe("resolve_catalog_entity");
+  });
+
+  it("reconhece MLB digitado sem exigir que a pessoa explique que é anúncio", async () => {
+    const { plan } = await run([finalText("ok")], "e as vendas do mlb123456?");
+
+    expect(plan.mock.calls[0]?.[0]?.toolChoice).toBe("resolve_catalog_entity");
   });
 
   /* `ai_runs` registra QUE houve contexto, nunca o id — o id é dado do usuário. */

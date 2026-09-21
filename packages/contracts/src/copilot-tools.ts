@@ -87,6 +87,29 @@ export const salesSkuDeclinesOutputSchema = z.object({
 });
 export type SalesSkuDeclinesOutput = z.infer<typeof salesSkuDeclinesOutputSchema>;
 
+/** Resolve um identificador digitado para SKU, anúncio ML ou ambiguidade sob RLS. */
+export const resolveCatalogEntityInputSchema = z.object({
+  identifier: z.string().trim().min(1).max(80),
+});
+export type ResolveCatalogEntityInput = z.infer<typeof resolveCatalogEntityInputSchema>;
+
+const catalogEntityCandidateSchema = z.object({
+  kind: z.enum(["SKU", "LISTING"]),
+  /** Código que a próxima ferramenta deve receber: SKU ou MLB. */
+  identifier: z.string(),
+  title: z.string().nullable(),
+  /** Só anúncios pertencem a uma conta Mercado Livre. */
+  mlAccountId: z.uuid().nullable(),
+  status: z.string().nullable(),
+});
+
+export const resolveCatalogEntityOutputSchema = z.object({
+  identifier: z.string(),
+  resolution: z.enum(["SKU", "LISTING", "AMBIGUO", "NAO_ENCONTRADO"]),
+  candidates: z.array(catalogEntityCandidateSchema).max(4),
+});
+export type ResolveCatalogEntityOutput = z.infer<typeof resolveCatalogEntityOutputSchema>;
+
 /**
  * Diagnóstico (`docs/COPILOT.md` secao 4, categoria "Diagnóstico"; D-082):
  * narra em texto o contrato de `diagnoseSalesAnomaly` (`@sb/domain`,
@@ -204,6 +227,7 @@ export const COPILOT_TOOL_NAMES = [
   "sales_period_comparison",
   "sales_account_comparison",
   "sales_sku_declines",
+  "resolve_catalog_entity",
   // Segunda leva (D-293): as ferramentas alem de venda.
   "sku_replenishment",
   "listing_performance",

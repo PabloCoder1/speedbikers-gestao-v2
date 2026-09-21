@@ -71,10 +71,13 @@ Ferramenta nova exige: schema tipado, verificação de permissão, teste, e entr
 | `sales_period_comparison` | Comparação | O mesmo período contra o período anterior de igual tamanho (`previousBusinessDateRange`, `@sb/domain`) |
 | `sales_account_comparison` | Comparação | O mesmo período, lado a lado entre 2 e 10 contas |
 | `sales_sku_declines` | Comparação | Produtos que mais caíram contra a janela anterior equivalente, por unidades ou receita |
+| `resolve_catalog_entity` | Consulta pontual | Resolve automaticamente um código digitado como SKU ou anúncio ML sob RLS; `MLB…` é anúncio e colisão vira ambiguidade, nunca palpite |
 
 Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita.
 
 `listing_performance` devolve a cobertura de visitas (`SEM_COBERTURA`, `PARCIAL`, `COMPLETA`) junto do valor. Sem dia observado, visitas são desconhecidas — nunca “0 visitas”.
+
+Antes de consultar dados de um código que veio na pergunta, o chat força `resolve_catalog_entity`: `13014` pode ser SKU ou anúncio e só segue após a leitura exata; `MLB…` é tratado como anúncio. O resultado entrega a conta do anúncio para a próxima ferramenta. Duas correspondências são `AMBIGUO`, para não trocar entidade silenciosamente.
 
 **`narrate_sku_diagnosis` implementada em 2026-08-25 (D-082)** — categoria "Diagnóstico", primeira (e única, nesta fatia) ferramenta que chama LLM de verdade. Não produz diagnóstico: recebe o contrato de `diagnoseSalesAnomaly` (`@sb/domain`, D-063/D-078) já calculado pelo chamador e pede ao Claude Haiku 4.5 para narrar em português, citando só o que está no contrato (`apps/api/src/copilot.ts`, prompt em `DIAGNOSIS_NARRATION_SYSTEM_PROMPT`). A `api` revalida sob RLS que o usuário alcança o `skuId` antes de narrar, mas não recalcula o diagnóstico — evita duplicar a agregação pesada de `get_sku_sales_baseline`/`domain_events`, que já roda em `apps/web` (D-078). Botão "Narrar com IA" em `apps/web/app/skus/[skuId]/diagnosis-panel.tsx`, só aparece quando há anomalia — fetch client-side direto para a `api` (mesmo padrão de `confirm-apply-form.tsx`: sessão do navegador, `access_token` no header `Authorization`), porque a chave da Anthropic só existe em `apps/api`/Secret Manager, nunca na Vercel.
 
