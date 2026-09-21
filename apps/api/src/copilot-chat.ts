@@ -180,7 +180,7 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
   {
     name: "listing_performance",
     description:
-      "Desempenho de UM anúncio no período: visitas, unidades vendidas, pedidos, receita e conversão, mais preço e situação do cadastro. Conversão NULA significa que não houve visita no período — nunca 0%. Não responde histórico de exposição (o dado de tráfego por dia não existe no sistema).",
+      "Desempenho de UM anúncio no período: visitas, unidades vendidas, pedidos, receita e conversão, mais preço e situação do cadastro. `visitsCoverage` informa se visitas têm cobertura completa, parcial ou nenhuma: SEM_COBERTURA significa que visitas são desconhecidas, não zero. Conversão NULA significa que não há denominador observado. Não atribua pausa/inatividade sem usar o status retornado.",
     input_schema: {
       type: "object",
       properties: {
@@ -261,6 +261,8 @@ function buildSystemPrompt(
     "- Sempre diga qual período e qual conta (ou consolidado) a resposta cobre.",
     "- Valores monetários em reais (R$). Seja conciso.",
     "- Para 'qual produto caiu' ou 'quais venderam menos', use sales_sku_declines. Ele só devolve quedas reais contra o período anterior equivalente; informe os dois períodos e não atribua causa sem evidência específica.",
+    "- Em listing_performance, SEM_COBERTURA significa que a coleta de visitas não cobriu a janela: diga que visitas são desconhecidas, nunca '0 visitas' ou 'falta de tráfego'. PARCIAL exige declarar quantos dias foram observados. Só trate visitas como zero sob cobertura observada.",
+    "- Não sugira que um anúncio está pausado, inativo ou sem visibilidade sem o status retornado pela ferramenta; hipótese não é fato.",
     "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, quedas por produto, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
     "- Número ausente NÃO é zero: cobertura, estado e sugestão vêm nulos sob recusa (sem configuração de reposição, saldo sentinela, histórico incompleto), e conversão vem nula quando não houve visita. Diga a recusa em vez de preencher a lacuna.",
     "- Perguntas sobre um dia ainda em andamento podem estar incompletas — as métricas fecham por dia.",

@@ -688,17 +688,29 @@ export async function runListingPerformance(
     throw new CopilotToolError(cadastro.error.message);
   }
 
+  // Datas ISO civis: UTC impede que o fuso do processo transforme uma janela
+  // de 7 dias em 6/8 na virada de horário. `days_observed` é a prova de que
+  // `visits = 0` veio do ML, não do coalesce da RPC sobre conjunto vazio.
+  const daysRequested = Math.floor(
+    (Date.parse(`${input.dateTo}T00:00:00Z`) - Date.parse(`${input.dateFrom}T00:00:00Z`)) / 86_400_000,
+  ) + 1;
+  const daysObserved = resumo.data.days_observed;
+  const visitsCoverage =
+    daysObserved === 0 ? "SEM_COBERTURA" : daysObserved < daysRequested ? "PARCIAL" : "COMPLETA";
+
   return {
     itemId: input.itemId,
     title: cadastro.data?.title ?? null,
     status: cadastro.data?.status ?? null,
     price: cadastro.data?.price ?? null,
     availableQuantity: cadastro.data?.available_quantity ?? null,
-    visits: resumo.data.visits,
+    visits: daysObserved === 0 ? null : resumo.data.visits,
     unitsSold: resumo.data.units_sold,
     ordersCount: resumo.data.orders_count,
     grossRevenue: resumo.data.gross_revenue,
     conversion: resumo.data.conversion,
-    daysObserved: resumo.data.days_observed,
+    daysObserved,
+    daysRequested,
+    visitsCoverage,
   };
 }

@@ -640,6 +640,7 @@ describe("runListingPerformance (D-293)", () => {
     expect(calls[0]?.args.p_organization_id).toBe("org-1");
     expect(result.visits).toBe(120);
     expect(result.conversion).toBe(0.05);
+    expect(result.visitsCoverage).toBe("COMPLETA");
     expect(result.title).toBe("Pneu 29");
     expect(result.price).toBe(150);
   });
@@ -647,7 +648,7 @@ describe("runListingPerformance (D-293)", () => {
   /* Sem visita não há denominador: conversão é NULA, nunca 0% (D-123). */
   it("conversão nula atravessa como nula", async () => {
     const { userClient } = fakeListingClient({
-      summary: { data: { ...RESUMO, visits: 0, conversion: null }, error: null },
+      summary: { data: { ...RESUMO, visits: 0, conversion: null, days_observed: 0 }, error: null },
       listing: { data: null, error: null },
     });
 
@@ -658,7 +659,10 @@ describe("runListingPerformance (D-293)", () => {
     );
 
     expect(result.conversion).toBeNull();
-    expect(result.visits).toBe(0);
+    expect(result.visits).toBeNull();
+    expect(result.visitsCoverage).toBe("SEM_COBERTURA");
+    expect(result.daysObserved).toBe(0);
+    expect(result.daysRequested).toBe(30);
     // Anúncio fora do cadastro não inventa título nem preço.
     expect(result.title).toBeNull();
     expect(result.price).toBeNull();

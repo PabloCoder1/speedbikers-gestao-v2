@@ -298,12 +298,17 @@ export const listingPerformanceOutputSchema = z.object({
   status: z.string().nullable(),
   price: z.number().nullable(),
   availableQuantity: z.number().nullable(),
-  visits: z.number(),
+  /** Nulo quando nenhum dia de visitas foi capturado — ausência não é zero. */
+  visits: z.number().nullable(),
   unitsSold: z.number(),
   ordersCount: z.number(),
   grossRevenue: z.number(),
   /** NULO sem visita no período — conversão sem denominador não é 0% (D-123). */
   conversion: z.number().nullable(),
-  daysObserved: z.number(),
+  /** Dias com retorno da fonte de visitas dentro da janela solicitada. */
+  daysObserved: z.number().int().nonnegative(),
+  daysRequested: z.number().int().positive(),
+  /** Cobertura da fonte, para não narrar lacuna de coleta como falta de tráfego. */
+  visitsCoverage: z.enum(["SEM_COBERTURA", "PARCIAL", "COMPLETA"]),
 });
 export type ListingPerformanceOutput = z.infer<typeof listingPerformanceOutputSchema>;
