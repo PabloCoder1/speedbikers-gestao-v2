@@ -21,6 +21,7 @@ const anuncio = (over: Partial<AnuncioDoSku> = {}): AnuncioDoSku => ({
   title: "Farol",
   status: "active",
   price: 100,
+  promotional_price: null,
   available_quantity: 5,
   synced_at: "2026-09-11T17:00:00.000Z",
   vinculo_forma: "item_inteiro",
@@ -144,8 +145,53 @@ describe("diagnosticarSku", () => {
 
     const problema = d.problemas.find((p) => p.chave === "dispersao-de-preco");
 
-    expect(problema?.regua).toBe("(maior − menor) ÷ menor > 10% (teto da organização)");
+    expect(problema?.regua).toBe(
+      "(maior − menor) ÷ menor > 10% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado)",
+    );
     expect(problema?.problema).toContain("sobre o menor preço");
+    expect(problema?.problema).not.toContain("campanha ativa");
+  });
+
+  /*
+    D-389 — O CASO REAL QUE MOTIVOU A MUDANÇA: 64,90 cadastrado e 41,90
+    cadastrado seriam 55% de dispersão, muito acima do teto. Com o segundo em
+    campanha ativa do Mercado Livre levando ao MESMO 41,90 na vitrine, os dois
+    preços EFETIVOS empatam — dispersão zero, sem selo.
+  */
+  it("preço efetivo (promocional) apaga a dispersão que só existia no cadastrado", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [
+          anuncio({ price: 41.9, promotional_price: null }),
+          anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 64.9, promotional_price: 41.9 }),
+        ],
+      }),
+    );
+
+    expect(d.precos?.menor).toBe(41.9);
+    expect(d.precos?.maior).toBe(41.9);
+    expect(d.precos?.dispersaoPct).toBe(0);
+    expect(d.problemas.map((p) => p.chave)).not.toContain("dispersao-de-preco");
+    expect(d.nivel).toBe("ok");
+  });
+
+  it("dispersão real sobrevive à promoção quando o efetivo ainda diverge, e a frase avisa da campanha", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [
+          anuncio({ price: 41.9, promotional_price: null }),
+          // Campanha ativa, mas o preço com desconto ainda está bem acima do outro anúncio.
+          anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 99.9, promotional_price: 89.9 }),
+        ],
+      }),
+    );
+
+    const problema = d.problemas.find((p) => p.chave === "dispersao-de-preco");
+
+    expect(d.precos?.menor).toBe(41.9);
+    expect(d.precos?.maior).toBe(89.9);
+    expect(problema).toBeDefined();
+    expect(problema?.problema).toContain("campanha ativa do Mercado Livre já considerada");
   });
 
   it("NO teto não acende — o limite é estritamente maior que 10%", () => {
@@ -206,5 +252,19 @@ describe("compararPrecoDaConta", () => {
 
   it("sem outra conta não há comparação — `null`, nunca 0%", () => {
     expect(compararPrecoDaConta([anuncio()], "c1")).toBeNull();
+  });
+
+  it("usa o preço EFETIVO (D-389) — a conta com promoção ativa entra pelo preço com desconto", () => {
+    const r = compararPrecoDaConta(
+      [
+        anuncio({ ml_account_id: "c1", price: 64.9, promotional_price: 41.9 }),
+        anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 41.9 }),
+      ],
+      "c1",
+    );
+
+    expect(r?.daConta).toBe(41.9);
+    expect(r?.dasOutras).toBe(41.9);
+    expect(r?.diferencaPct).toBe(0);
   });
 });

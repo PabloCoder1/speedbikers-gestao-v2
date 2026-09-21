@@ -2,11 +2,18 @@ import type { AdminClient } from "@sb/db";
 import { detectListingEvents } from "@sb/domain";
 import type { ListingSnapshot } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
-import { chunkItemIds, getItemsBatch, scanSellerItems } from "@sb/mercado-livre";
+import {
+  chunkItemIds,
+  effectivePromotionalPrice,
+  getItemPromotions,
+  getItemsBatch,
+  scanSellerItems,
+} from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
 import { fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import type { ParsedListingItem } from "./listing-schema.js";
 import { readAllPages } from "../read-all-pages.js";
 
 /**
@@ -62,6 +69,8 @@ interface ListingUpsertRow {
   title: string;
   status: string;
   price: number;
+  /** Preço com campanha ativa do Mercado Livre (D-389). `null` sem promoção — nunca 0. */
+  promotional_price: number | null;
   currency_id: string;
   available_quantity: number;
   category_id: string | null;
@@ -196,8 +205,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       attributes: ITEM_ATTRIBUTES,
     });
 
-    const rows: ListingUpsertRow[] = [];
-    const pending: { current: ListingSnapshot; previous: ListingSnapshot | null }[] = [];
+    const itensValidos: ParsedListingItem[] = [];
 
     for (const entry of entries) {
       // O envelope verbose carrega o código POR ITEM: um anúncio removido
@@ -224,7 +232,46 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         continue;
       }
 
-      const item = parsed.data;
+      itensValidos.push(parsed.data);
+    }
+
+    // PREÇO PROMOCIONAL (D-389) — só para anúncios ATIVOS: pausado/encerrado
+    // não roda campanha do Mercado Livre (docs/MERCADO_LIVRE.md secao 2.8), e
+    // pedir promoção de 4.447 anúncios por conta a cada 6h para os 90% que
+    // nunca têm uma seria custo sem uso. Em PARALELO dentro do lote de 20 — em
+    // série, cada chamada extra multiplicaria o tempo do multiget inteiro.
+    //
+    // Uma falha AQUI não derruba o item: `promotional_price` fica nulo (o
+    // mesmo que "sem promoção" no resto do sistema) e o log guarda o motivo —
+    // a sincronização do catálogo é o que importa, a promoção é enriquecimento.
+    const precoPromocionalPorItem = new Map<string, number | null>();
+
+    await Promise.all(
+      itensValidos
+        .filter((item) => item.status === "active")
+        .map(async (item) => {
+          try {
+            const promocoes = await getItemPromotions({
+              client: params.mercadoLivre,
+              itemId: item.id,
+              accessToken: params.accessToken,
+            });
+
+            precoPromocionalPorItem.set(item.id, effectivePromotionalPrice(promocoes));
+          } catch (error) {
+            params.logger.warn("listing_promotion_fetch_failed", {
+              ml_account_id: params.mlAccountId,
+              item_id: item.id,
+              reason: error instanceof Error ? error.message : "erro desconhecido",
+            });
+          }
+        }),
+    );
+
+    const rows: ListingUpsertRow[] = [];
+    const pending: { current: ListingSnapshot; previous: ListingSnapshot | null }[] = [];
+
+    for (const item of itensValidos) {
       const skuId = skuByItem.get(item.id) ?? null;
 
       if (skuId === null) {
@@ -241,6 +288,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         title: item.title,
         status: item.status,
         price: item.price,
+        promotional_price: precoPromocionalPorItem.get(item.id) ?? null,
         currency_id: item.currency_id,
         available_quantity: item.available_quantity,
         category_id: item.category_id ?? null,

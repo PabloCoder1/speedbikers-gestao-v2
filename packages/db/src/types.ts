@@ -1708,6 +1708,11 @@ export type Database = {
           ml_account_id: string
           organization_id: string
           price: number
+          // D-389, migration 20260921120000 (aplicada no Dev; CORRECAO MANUAL
+          // porque a CLI so regenera este arquivo depois de aplicada em todo
+          // ambiente, mesmo raciocinio de delete_supplier/get_erp_stock_cutoffs
+          // logo abaixo). NULO sem promocao ativa do Mercado Livre -- nunca 0.
+          promotional_price: number | null
           sku_id: string | null
           status: string
           synced_at: string
@@ -1726,6 +1731,7 @@ export type Database = {
           ml_account_id: string
           organization_id: string
           price: number
+          promotional_price?: number | null
           sku_id?: string | null
           status: string
           synced_at?: string
@@ -1744,6 +1750,7 @@ export type Database = {
           ml_account_id?: string
           organization_id?: string
           price?: number
+          promotional_price?: number | null
           sku_id?: string | null
           status?: string
           synced_at?: string
@@ -5334,6 +5341,8 @@ export type Database = {
           listing_id: string
           ml_account_id: string
           price: number
+          // D-389: CORRECAO MANUAL, mesma razao do bloco de listings acima.
+          promotional_price: number
           status: string
           synced_at: string
           title: string

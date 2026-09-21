@@ -13641,3 +13641,27 @@ Integracao (CI): contagens = lista, ordem com nulo no fim e valor desconhecido, 
 **O que este conserto NAO faz:** nao reverte estoque de uma devolucao entregue cuja lista veio nula; sem pedido e item nao ha o que reverter, e inventar a posicao seria pior. O que muda e que a notificacao para de morrer, o resto do fluxo do claim acontece, e a perda fica visivel no log em vez de escondida numa falha generica de contrato.
 
 **Verificacao:** `pnpm run check` (29/29, 831 testes do worker) e `pnpm run build` (8/8) na worktree. O efeito em producao depende do deploy do worker a partir da `fix/guardas-prod-d348`.
+
+## D-389 - O diagnostico do SKU compara preco COM promocao, nao o cadastrado
+
+**Contexto:** o dono reportou o diagnostico "Precos muito diferentes entre os anuncios" (D-317/D-318) acendendo para pares de anuncio que, na pratica, custam o mesmo: um cadastrado a R$ 64,90 e outro a R$ 41,90 com campanha ativa do Mercado Livre levando ao mesmo R$ 41,90 na vitrine. `listings.price` sempre foi o preco CADASTRADO -- nenhuma tabela ou coluna deste esquema guardava o preco COM promocao, e o webhook `seller-promotions` do Mercado Livre chega e e descartado sem consumidor desde a Fase 0 (25.850 notificacoes, zero processadas, `docs/PERFORMANCE.md`).
+
+**1. O CONTRATO FOI MEDIDO AO VIVO, NAO ADIVINHADO** -- `GET /seller-promotions/items/{item_id}?app_version=v2` (ja citado em `docs/MERCADO_LIVRE.md` secao 2.8 como endpoint existente, nunca consumido) devolve um ARRAY de campanhas do item. Confirmado em 2026-09-21 contra a conta real "Speedbikers (loja 1)" do Dev, item MLB1384467402 (cadastrado R$ 370,69):
+
+```json
+[
+  {"type":"SELLER_CAMPAIGN","status":"started","price":249.99,"original_price":370.69,...},
+  {"type":"PRICE_DISCOUNT","status":"candidate","price":0,"original_price":370.69,...},
+  {"type":"DEAL","status":"candidate","price":0,"original_price":370.69,...}
+]
+```
+
+So `status:"started"` e promocao REALMENTE no ar; `"candidate"` e campanha que o vendedor pode ativar e nao ativou, e vem com `price: 0` -- ler a primeira entrada do array sem filtrar por status teria produzido "preco promocional: R$ 0,00". Os outros tres itens testados (mesma conta, mesmo token) devolveram 403 "Caller don't have permissions to access this item": e o item FORA de qualquer campanha, nao falha de permissao do app -- `getItemPromotions` (`@sb/mercado-livre`) trata 403 como `[]`, nunca como erro.
+
+**2. `listings.promotional_price`** (migration `20260921120000`) -- numeric, nulo por padrao. `ml-listings-fetch.ts` chama `getItemPromotions` so para anuncios ATIVOS (pausado/encerrado nao roda campanha) e grava `effectivePromotionalPrice(promocoes)`: o MENOR `price` entre as entradas `started`, ou nulo sem nenhuma. `get_sku_listings` (20260911190000) passou a expor a coluna -- precisou dropar e recriar por causa do `returns table`.
+
+**3. O DIAGNOSTICO USA O PRECO EFETIVO** -- `apps/web/lib/sku-diagnostico.ts`: `precoEfetivo(anuncio) = anuncio.promotional_price ?? anuncio.price`, usado tanto na dispersao (`problemas`) quanto no card "Preco anunciado" e na comparacao entre contas (`compararPrecoDaConta`). O preco CADASTRADO continua sendo o que a tela usa em outros lugares (ex.: `/anuncios`) -- este ajuste e so onde a pergunta e "quanto o SKU custa de verdade", que e exatamente a pergunta do diagnostico de dispersao.
+
+**O que fica de fora:** o webhook `seller-promotions` continua sem consumidor -- o preco promocional so atualiza na sincronizacao periodica de catalogo (6 h), nao em tempo real quando uma campanha comeca ou termina. Virar evento (`listing.promotion.started`/`.ended`, ja catalogados em `packages/domain/src/events/catalog.ts` sem implementacao) fica para quando o dono pedir a fatia.
+
+**Verificacao:** testes novos de `@sb/mercado-livre` (`promotions.test.ts`, contrato real incluindo o caso 403 e o filtro `candidate`/`price:0`) e de `sku-diagnostico.test.ts` (dispersao some com preco efetivo igual, `compararPrecoDaConta` com preco efetivo). Migration aplicada no Dev (`nmgccyqq...`) e testada contra a RPC nova.
