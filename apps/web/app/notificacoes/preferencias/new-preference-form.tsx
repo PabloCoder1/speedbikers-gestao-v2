@@ -1,7 +1,8 @@
 "use client";
 
+import type { EventSeverity } from "@sb/domain";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { eventTypeLabel, severityLabel } from "../../../lib/labels";
 import { createPreference } from "./actions";
@@ -11,11 +12,33 @@ const SEVERITY_OPTIONS = ["informativo", "importante", "critico"];
 const ALL_TYPES = "";
 const ALL_ACCOUNTS = "";
 
+/**
+ * Agrupa o catálogo por domínio (`listing`, `stock`, `order`…) só para o
+ * `<optgroup>` — o mesmo catálogo achatado do `page.tsx` fica difícil de
+ * escanear com 23 linhas soltas. Rótulo que o prefixo não prevê cai em
+ * "Outros" em vez de sumir, mesmo raciocínio de degradar sem quebrar de
+ * `lib/labels.ts`.
+ */
+const CATEGORY_LABEL: Record<string, string> = {
+  listing: "Anúncio",
+  stock: "Estoque",
+  order: "Pedido",
+  sync: "Sincronização",
+  ai: "Inteligência artificial",
+  support: "Atendimento",
+};
+
+function categoryOf(eventType: string): string {
+  return CATEGORY_LABEL[eventType.split(".")[0] ?? ""] ?? "Outros";
+}
+
 export function NewPreferenceForm({
   eventTypes,
+  eventSeverity,
   accounts,
 }: {
   eventTypes: string[];
+  eventSeverity: Readonly<Record<string, EventSeverity>>;
   accounts: { id: string; label: string }[];
 }): ReactNode {
   const router = useRouter();
@@ -25,6 +48,20 @@ export function NewPreferenceForm({
   const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const groups = useMemo(() => {
+    const byCategory = new Map<string, string[]>();
+
+    for (const type of eventTypes) {
+      const category = categoryOf(type);
+
+      byCategory.set(category, [...(byCategory.get(category) ?? []), type]);
+    }
+
+    return [...byCategory.entries()];
+  }, [eventTypes]);
+
+  const defaultSeverity = eventType === ALL_TYPES ? null : (eventSeverity[eventType] ?? null);
 
   async function handleSubmit(): Promise<void> {
     setBusy(true);
@@ -63,10 +100,6 @@ export function NewPreferenceForm({
         gap: "var(--sb-space-2)",
         alignItems: "flex-end",
         flexWrap: "wrap",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        background: "var(--sb-surface)",
-        padding: "var(--sb-space-3)",
       }}
     >
       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
@@ -79,10 +112,14 @@ export function NewPreferenceForm({
           }}
         >
           <option value={ALL_TYPES}>Todos os tipos</option>
-          {eventTypes.map((type) => (
-            <option key={type} value={type}>
-              {eventTypeLabel(type)}
-            </option>
+          {groups.map(([category, types]) => (
+            <optgroup key={category} label={category}>
+              {types.map((type) => (
+                <option key={type} value={type}>
+                  {eventTypeLabel(type)}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </label>
@@ -120,6 +157,11 @@ export function NewPreferenceForm({
             </option>
           ))}
         </select>
+        {defaultSeverity !== null && (
+          <small style={{ color: "var(--sb-text-soft)", fontWeight: 400 }}>
+            Padrão deste evento: {severityLabel(defaultSeverity)}
+          </small>
+        )}
       </label>
 
       <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", paddingBottom: "0.375rem" }}>
@@ -133,12 +175,8 @@ export function NewPreferenceForm({
         Ativa
       </label>
 
-      <button
-        className="sb-button sb-button-primary"
-        type="submit"
-        disabled={busy}
-      >
-        Adicionar preferência
+      <button className="sb-button sb-button-primary" type="submit" disabled={busy}>
+        {busy ? "Adicionando…" : "Adicionar preferência"}
       </button>
 
       {error !== null && (
