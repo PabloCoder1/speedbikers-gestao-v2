@@ -42,6 +42,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 export function DiagnosisPanel({
   skuId,
   embutido = false,
+  problemasDeAnuncio = 0,
 }: {
   skuId: string;
   /*
@@ -53,6 +54,19 @@ export function DiagnosisPanel({
     um cartão aninhado. Na aba do SKU a moldura continua: lá ele é a seção.
   */
   embutido?: boolean;
+  /*
+    Contagem de "Problemas encontrados" (D-317, `diagnosticarSku` — anúncio
+    sem estoque, preço disperso, catálogo velho etc.) já visível ACIMA deste
+    painel, na mesma aba. Motor completamente diferente: este componente
+    julga só o VOLUME DE VENDAS de ontem contra o baseline (D-078); aquele
+    julga o anúncio. Sem esta contagem, "nenhuma anomalia detectada" aparece
+    logo abaixo de uma lista de problemas reais e lê-se como contradição — o
+    veredito de vendas normais não apaga nem resolve o que o painel de cima
+    já mostrou. Só o dono do painel de cima sabe esse número (a lista de
+    `ProblemaDoSku` não sai daqui), então ele chega por prop; o default 0
+    mantém `/diagnostico` (que não tem essa lista) do jeito que já era.
+  */
+  problemasDeAnuncio?: number;
 }): ReactNode {
   const [result, setResult] = useState<SkuDiagnosisResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -180,12 +194,26 @@ export function DiagnosisPanel({
       {result !== null && result.ok && result.status === "insufficient_sample" && (
         <p className="sb-empty">
           Histórico insuficiente para comparar — menos de 4 ocorrências do mesmo dia da semana com venda calculada.
+          {problemasDeAnuncio > 0 && (
+            <>
+              {" "}
+              Isto julga só o volume de vendas: não resolve o(s) {problemasDeAnuncio} problema(s) de anúncio listado(s)
+              acima.
+            </>
+          )}
         </p>
       )}
 
       {result !== null && result.ok && result.status === "no_anomaly" && (
         <p className="sb-empty">
-          Venda de ontem dentro do padrão esperado para o mesmo dia da semana — nenhuma anomalia detectada.
+          Venda de ontem dentro do padrão esperado para o mesmo dia da semana — nenhuma anomalia de vendas detectada.
+          {problemasDeAnuncio > 0 && (
+            <>
+              {" "}
+              Isto não é &ldquo;tudo certo&rdquo;: é só o volume de vendas. O(s) {problemasDeAnuncio} problema(s) de
+              anúncio listado(s) acima continua(m) sem solução.
+            </>
+          )}
         </p>
       )}
 

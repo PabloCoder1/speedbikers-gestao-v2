@@ -161,6 +161,10 @@ function fakeClient(options: {
   scanPages: { results: string[]; scroll_id?: string | null }[];
   bodies?: Record<string, Record<string, unknown>>;
   codes?: Record<string, number>;
+  /** Promoções por item_id (D-389) — item ausente do mapa devolve `[]` (sem promoção), como o Mercado Livre faz para item fora de campanha. */
+  promotions?: Record<string, unknown[]>;
+  /** item_id -> erro a lançar na chamada de promoção, para testar que a falha não derruba o item. */
+  promotionErrors?: Record<string, Error>;
 }): { client: MercadoLivreClient; requests: RequestOptions<unknown>[] } {
   const requests: RequestOptions<unknown>[] = [];
   let scanIndex = 0;
@@ -184,6 +188,17 @@ function fakeClient(options: {
         }));
 
         return Promise.resolve(request.schema.parse(entries));
+      }
+
+      if (request.path.startsWith("/seller-promotions/items/")) {
+        const itemId = request.path.replace("/seller-promotions/items/", "");
+        const erro = options.promotionErrors?.[itemId];
+
+        if (erro !== undefined) {
+          return Promise.reject(erro);
+        }
+
+        return Promise.resolve(request.schema.parse(options.promotions?.[itemId] ?? []));
       }
 
       throw new Error(`chamada inesperada: ${request.path}`);
@@ -402,5 +417,89 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     expect(String(multiget?.searchParams?.attributes)).toContain("available_quantity");
     expect(String(multiget?.searchParams?.attributes)).not.toContain("descriptions");
+  });
+
+  /*
+    PREÇO PROMOCIONAL (D-389). O motivo inteiro da fatia: um anúncio a R$
+    64,90 e outro do mesmo SKU a R$ 41,90 com campanha ativa do Mercado Livre
+    (que leva ao MESMO R$ 41,90 na vitrine) acendiam "preços muito
+    diferentes" no diagnóstico do SKU — dispersão que só existia no papel.
+  */
+  describe("preço promocional", () => {
+    it("anúncio ATIVO com campanha 'started' grava o preço com desconto, não o cadastrado", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active", price: 370.69 }) },
+        promotions: {
+          MLB1: [
+            { type: "SELLER_CAMPAIGN", status: "started", price: 249.99, original_price: 370.69 },
+            { type: "PRICE_DISCOUNT", status: "candidate", price: 0, original_price: 370.69 },
+          ],
+        },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.upserted[0]).toMatchObject({ price: 370.69, promotional_price: 249.99 });
+    });
+
+    it("campanha só 'candidate' (price 0, ainda não ativada) NÃO vira preço promocional", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active", price: 100 }) },
+        promotions: { MLB1: [{ type: "DEAL", status: "candidate", price: 0, original_price: 100 }] },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.upserted[0]).toMatchObject({ price: 100, promotional_price: null });
+    });
+
+    it("sem promoção nenhuma (item fora de qualquer campanha) o preço promocional fica nulo", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+    });
+
+    it("anúncio PAUSADO não chama o endpoint de promoções — pausado não roda campanha", async () => {
+      const fake = fakeDb({});
+      const { client, requests } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "paused" }) },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(requests.some((r) => r.path.startsWith("/seller-promotions/"))).toBe(false);
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+    });
+
+    it("falha ao consultar promoção não derruba o item — só fica sem preço promocional, com aviso no log", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+        promotionErrors: { MLB1: new Error("boom 500") },
+      });
+
+      const lines: string[] = [];
+      const result = await fetchListings({
+        ...params(fake.db, client),
+        logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      });
+
+      expect(result.itemsProcessed).toBe(1);
+      expect(result.itemsFailed).toBe(0);
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+      expect(lines.join()).toContain("listing_promotion_fetch_failed");
+    });
   });
 });

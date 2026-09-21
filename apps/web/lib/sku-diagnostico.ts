@@ -136,6 +136,22 @@ function endereco(anuncio: AnuncioDoSku): string {
   return `${anuncio.account_label ?? "conta desconhecida"} · ${anuncio.item_id}`;
 }
 
+/**
+ * O preço que o COMPRADOR paga agora (D-389): o promocional, quando o
+ * anúncio está numa campanha ativa do Mercado Livre, senão o cadastrado.
+ *
+ * Sem isto, um anúncio a R$ 64,90 e outro do mesmo SKU a R$ 41,90 com
+ * campanha ativa levando ao mesmo R$ 41,90 na vitrine acendiam "preços
+ * muito diferentes" — dispersão que só existia no papel, nunca na compra.
+ * `promotional_price` já chega NULO (nunca 0) sem promoção em andamento
+ * (`listings.promotional_price`, `getItemPromotions`/`effectivePromotionalPrice`
+ * em `@sb/mercado-livre` — "candidate" do Mercado Livre vem com price 0 e é
+ * descartado antes de chegar aqui).
+ */
+function precoEfetivo(anuncio: AnuncioDoSku): number | null {
+  return anuncio.promotional_price ?? anuncio.price;
+}
+
 export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku {
   const { anuncios, estoqueInterno, acoesAbertas, agora } = entrada;
 
@@ -271,7 +287,12 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
     configurado em lugar nenhum do esquema, e D-148 é explícita sobre não
     inventar a constante. O número aparece; o selo espera a régua.
   */
-  const precosLidos = anuncios.map((a) => a.price).filter((p): p is number => p !== null);
+  const precosLidos = anuncios.map((a) => precoEfetivo(a)).filter((p): p is number => p !== null);
+
+  // Quantos anúncios entraram com o promocional em vez do cadastrado — só
+  // para a frase do problema poder dizer que a promoção JÁ foi descontada,
+  // em vez de deixar quem lê achar que a tela esqueceu dela.
+  const comPromocaoAtiva = anuncios.filter((a) => a.promotional_price !== null).length;
 
   let precos: RetratoDePrecos | null = null;
 
@@ -291,6 +312,11 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
       DISPERSÃO ACIMA DO TETO — atenção, e não crítico: preço diferente entre
       anúncios não impede a venda, ele corrói margem e confunde quem compara.
       O crítico desta tela é reservado para o que PARA a venda.
+
+      O preço comparado aqui é o EFETIVO (D-389: promocional quando há
+      campanha ativa do Mercado Livre, senão o cadastrado) — "promoção que
+      não foi desfeita" deixou de ser causa candidata porque promoção ativa
+      já está descontada antes de chegar nesta conta.
     */
     if (precosLidos.length > 1 && precos.dispersaoPct > TETO_DISPERSAO_PCT) {
       problemas.push({
@@ -298,12 +324,11 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
         titulo: "Preços muito diferentes entre os anúncios",
         nivel: "atencao",
         onde: null,
-        problema: `O mesmo SKU está anunciado de ${precos.menor.toFixed(2)} a ${precos.maior.toFixed(2)} — ${String(precos.dispersaoPct).replace(".", ",")}% sobre o menor preço, acima do teto de ${String(TETO_DISPERSAO_PCT)}% da organização.`,
-        causa:
-          "Reajuste aplicado em parte dos anúncios, promoção que não foi desfeita, ou preço de conta nova que nunca foi alinhado.",
+        problema: `O mesmo SKU chega ao comprador de ${precos.menor.toFixed(2)} a ${precos.maior.toFixed(2)} — ${String(precos.dispersaoPct).replace(".", ",")}% sobre o menor preço, acima do teto de ${String(TETO_DISPERSAO_PCT)}% da organização.${comPromocaoAtiva > 0 ? ` (${String(comPromocaoAtiva)} anúncio(s) com campanha ativa do Mercado Livre já considerada no valor.)` : ""}`,
+        causa: "Reajuste aplicado em parte dos anúncios, ou preço de conta nova que nunca foi alinhado.",
         recomendacao:
           "Conferir em Preços qual anúncio está fora da faixa e alinhar — ou registrar que a diferença é proposital.",
-        regua: `(maior − menor) ÷ menor > ${String(TETO_DISPERSAO_PCT)}% (teto da organização)`,
+        regua: `(maior − menor) ÷ menor > ${String(TETO_DISPERSAO_PCT)}% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado)`,
       });
     }
   }
@@ -374,8 +399,11 @@ export function compararPrecoDaConta(
   anuncios: readonly AnuncioDoSku[],
   mlAccountId: string,
 ): { daConta: number; dasOutras: number; diferencaPct: number } | null {
-  const daConta = anuncios.filter((a) => a.ml_account_id === mlAccountId).map((a) => a.price);
-  const dasOutras = anuncios.filter((a) => a.ml_account_id !== mlAccountId).map((a) => a.price);
+  // Preço EFETIVO (D-389), a mesma razão da dispersão: comparar o cadastrado
+  // desta conta contra uma promoção ativa de outra é medir contra o que o
+  // comprador não paga.
+  const daConta = anuncios.filter((a) => a.ml_account_id === mlAccountId).map((a) => precoEfetivo(a));
+  const dasOutras = anuncios.filter((a) => a.ml_account_id !== mlAccountId).map((a) => precoEfetivo(a));
 
   const validos = (lista: (number | null)[]): number[] => lista.filter((p): p is number => p !== null);
 

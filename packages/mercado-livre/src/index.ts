@@ -108,6 +108,9 @@ export type {
   SellerItemsScanPage,
 } from "./items.js";
 
+export { effectivePromotionalPrice, getItemPromotions, sellerPromotionEntrySchema, sellerPromotionsSchema } from "./promotions.js";
+export type { GetItemPromotionsOptions, SellerPromotionEntry } from "./promotions.js";
+
 export { USER_PRODUCT_SELLER_TAG, fetchIsUserProductSeller, userTagsSchema } from "./users.js";
 export type { FetchUserProductSellerOptions } from "./users.js";
 
