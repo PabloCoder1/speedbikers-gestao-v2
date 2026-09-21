@@ -20,11 +20,5 @@
 alter table public.listings
   add column description_fingerprint text;
 
-alter table public.listings
-  add column description_source_updated_at timestamptz;
-
 comment on column public.listings.description_fingerprint is
   'Hash SHA-256 da descricao do anuncio (GET /items/{id}/description, plain_text), usado so para detectar troca editorial. NULO sem descricao propria lida ainda -- nunca o texto em si.';
-
-comment on column public.listings.description_source_updated_at is
-  'last_updated do item quando a descricao foi lida; evita chamar GET /items/{id}/description a cada sincronizacao sem mudanca.';
