@@ -12,7 +12,7 @@ import {
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
-import { fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import { fingerprintDasFotos, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
 import type { ParsedListingItem } from "./listing-schema.js";
 import { readAllPages } from "../read-all-pages.js";
 
@@ -58,6 +58,9 @@ const ITEM_ATTRIBUTES = [
   "secure_thumbnail",
   "thumbnail",
   "permalink",
+  // Identificadores estáveis para o diff de foto; não usar thumbnail, que o
+  // Mercado Livre pode regenerar sem alteração editorial.
+  "pictures",
 ] as const;
 
 /** Linha de `listings` tal como o upsert em lote a envia. */
@@ -74,6 +77,7 @@ interface ListingUpsertRow {
   currency_id: string;
   available_quantity: number;
   category_id: string | null;
+  picture_fingerprint: string | null;
   thumbnail_url: string | null;
   permalink: string | null;
   synced_at: string;
@@ -150,11 +154,12 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     status: string;
     price: number;
     available_quantity: number;
+    picture_fingerprint: string | null;
   }>(
     (from, to) =>
       params.db
         .from("listings")
-        .select("item_id, title, status, price, available_quantity")
+        .select("item_id, title, status, price, available_quantity, picture_fingerprint")
         .eq("ml_account_id", params.mlAccountId)
         // `listings_account_item_unique (ml_account_id, item_id)` — com a
         // conta já fixada no filtro, `item_id` é ordenação estável.
@@ -172,6 +177,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       status: row.status,
       price: row.price,
       availableQuantity: row.available_quantity,
+      pictureFingerprint: row.picture_fingerprint,
     });
   }
 
@@ -292,6 +298,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         currency_id: item.currency_id,
         available_quantity: item.available_quantity,
         category_id: item.category_id ?? null,
+        picture_fingerprint: fingerprintDasFotos(item),
         thumbnail_url: fotoDoItem(item),
         permalink: linkDoItem(item),
         synced_at: syncedAt.toISOString(),
@@ -304,6 +311,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           status: item.status,
           price: item.price,
           availableQuantity: item.available_quantity,
+          pictureFingerprint: fingerprintDasFotos(item),
         },
         previous: previousByItem.get(item.id) ?? null,
       });

@@ -12,14 +12,14 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-17 |
-| **Branch** | `v3` (D-354 em produção; D-356 na `v3`). D-357 a D-359 na `v3`/principal; D-363 (Mercado Ads) em produção: migration `20260916165243`, `api-00007-j6r`, `worker-00008-4jm`, job `v3-ads-campaigns-sync` (11h); primeira rodada real 2026-09-16 com 3 contas gravadas |
-| **HEAD conhecido** | `cf824a7` na `v3` — merge do PR #9 (D-356 `/faturamento`). Migrations chegam ao Dev pela CI só depois do merge. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
+| **Atualizado em** | 2026-09-21 |
+| **Branch** | `fix/guardas-prod-d348` (principal), com `v3` mesclada de volta em 21/09 trazendo D-388 a D-390 (sincronização, preço promocional do SKU, análise pós-alteração editorial). |
+| **HEAD conhecido** | `v3` em `c714104` — merge do PR #60 (D-390). Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | 18/09: worker `worker-00015-r4m` e api `api-00013-k4l` em `5d17028` (guardas: D-352, Full sem refetch, foto do anúncio, D-383; volta: `worker-00014-c8z`/`api-00012-t9g` em `0e5626e`). Worker e api saem da **guardas**, nunca da `v3`: o 86afa36 (matriz/filial) só entra na `v3` pelo #46. Vercel Production `dpl_3TtUDhnjDsVjJcvSp8zHASsXJQxX` (`c2cbd15`). Webhooks só em produção; Dev pausado (D-350). `v3-reconcile-balances` **despausado** em 18/09 (1ª rodada 19/09 06:00 BRT; D-352 §8). |
-| **Migrations** | **199 em produção** (18/09), a última `20260918170000` (Full), com a D-352 (`20260918000000`) e o /faturamento (`160000`). Migration com versão menor que a última aplicada é recusada pelo `db push` sem `--include-all`: renomeie antes do merge (D-351 §11). Dev pela CI no push da `v3`; **produção só por `migrations-producao.yml`**, duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome precisa ser um **instante válido**: `...240000` quebrou `get_system_health` (D-307) |
+| **Produção** | 21/09: worker `worker-00016-wff` em `c714104` (D-389/D-390); api `api-00013-k4l` segue em `5d17028` (não mudou). Volta do worker: `worker-00015-r4m`/`5d17028`. Worker e api saem da `fix/guardas-prod-d348`, nunca da `v3` direto. Vercel Production ainda precisa ser promovido pós-merge desta leva. Webhooks só em produção; Dev pausado (D-350). |
+| **Migrations** | **202 em produção** (21/09) — as três novas desde 18/09: `20260921114355` (cobertura do histórico de sincronização), `20260921121405` (preço promocional do SKU, D-389), `20260921130000` (análise pós-alteração editorial, D-390). Migration com versão menor que a última aplicada é recusada pelo `db push` sem `--include-all`: renomeie antes do merge (D-351 §11). Dev pela CI no push da `v3`; **produção só por `migrations-producao.yml`**, duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome precisa ser um **instante válido**: `...240000` quebrou `get_system_health` (D-307) |
 | **Frente atual** | **Performance promovida para `v3`** (`aa847f5`, `54385ef`, `7ae7741`, `abc67dd`): Full com concorrência limitada e leitura paginada de snapshots, visitas em lote, busca com debounce/ordenação de respostas, Copiloto sob demanda, membership compartilhado por request, margem/ranking de Vendas sob `Suspense`, diretório de contas com refresh antecipado, vitals por rota e cache de build sensível a `.env*`. Check, build e `docs:check` passam. Produção verificada em `f88e0b2`: worker `worker-00005-pcz`, API `api-00004-n7c` (100% do tráfego, health confirmado), Vercel `dpl_4D8FTefUk3PueEJgsdyZVDBmqbmi`. Full medido, primeira amostra autenticada de navegador e seis RPCs de Vendas medidas com RLS: `docs/PERFORMANCE.md`. Restam telemetria de retries HTTP, coletor oficial de Web Vitals e amostra representativa. |
 
 ### O que está pronto
@@ -28,6 +28,11 @@
 
 Copiloto/Notificações: refino visual; sem banco/API. `check` 29/29 e build verdes.
 
+D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
+título/foto, só alerta queda conjunta de vendas e visitas sem outro fator
+concorrente (migration `20260921130000`). D-389: diagnóstico do SKU usa o
+preço EFETIVO (promocional se há campanha ativa do ML, senão o cadastrado —
+migration `20260921121405`). As duas em Dev e produção desde 21/09.
 
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
@@ -44,6 +49,10 @@ mudança é de hierarquia e velocidade percebida, sem inventar agregado.
 `/anuncios`: D-381 (ordem, faixa numa passada, foto). **Worker só depois de `20260918150000`.**
 
 Entregas de tela fechadas em 18/09 (ajuste de estoque, `/full` D-380, `/estoque/movimentacoes`): `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`.
+
+`/sincronizacao` resume por conta conexão, confiança, frescor, falhas e a
+cobertura do histórico de pedidos (365 dias, 100% só no fim do backfill;
+`docs/METRICS.md`). Migration `20260921114355` em Dev e produção.
 
 Página nova precisa de `loading.tsx` (D-382, guarda `check:loading`).
 `/anuncios`: resumo do recorte, visões rápidas, CSV e cartões no celular (D-385, migration `20260918200000`).

@@ -88,6 +88,24 @@ test("/sincronizacao: frescor e cobertura são coisas diferentes, e a tela mostr
   await expect(visitas).toContainText("429 Too Many Requests");
 });
 
+test("/sincronizacao: mostra o percentual por conta sem prometer confiança total", async ({ page }) => {
+  await login(page, "/sincronizacao");
+
+  const resumo = page.getByRole("region", { name: "Confiança dos dados por conta" });
+
+  await expect(resumo).toBeVisible();
+  await expect(resumo.getByText("Histórico de pedidos extraído")).toBeVisible();
+  await expect(resumo.getByText("64%", { exact: true })).toBeVisible();
+
+  const progresso = resumo.getByRole("progressbar", { name: /Histórico de pedidos extraído/ });
+  await expect(progresso).toHaveAttribute("aria-valuenow", "64");
+
+  // O seed também tem visitas atrasadas e uma falha recente. A porcentagem do
+  // backfill nunca apaga esse sinal nem vira um selo genérico de confiança.
+  await expect(resumo.getByText("Dados exigem atenção")).toBeVisible();
+  await expect(resumo.getByText(/Confira o detalhamento antes de decidir/)).toBeVisible();
+});
+
 test("/sincronizacao: o que o frame desenha e a tela recusa não aparece", async ({ page }) => {
   await login(page, "/sincronizacao");
 

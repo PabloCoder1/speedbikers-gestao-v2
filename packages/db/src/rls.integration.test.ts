@@ -295,6 +295,7 @@ describe("catálogo de métricas", () => {
       // As cinco de D-356 (METRICS 5F) e as cinco de Ads de D-363 entram na
       // lista em ordem alfabética.
       "acos",
+      "cobertura_historico_pedidos",
       "comissao_percentual",
       "custo_produtos_vendidos",
       "desconto_vendedor",

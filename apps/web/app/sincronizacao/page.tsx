@@ -1,17 +1,23 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill, type PillTone } from "../../components/state-pill";
-import { TOM, tomDeStatus } from "../../components/tone";
-import { formatCount, formatDateTime } from "../../lib/format";
+import { tomDeStatus } from "../../components/tone";
+import { formatCount, formatDateTime, formatDay } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone, runStatusLabel } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
-import { classifyResourceFreshness, failureRateLabel, resourceLabel } from "../../lib/sync-health";
+import {
+  calculateBackfillProgress,
+  classifyResourceFreshness,
+  failureRateLabel,
+  resourceLabel,
+} from "../../lib/sync-health";
 import type { SyncVerdict } from "../../lib/sync-health";
 import { currentMembership } from "../../lib/request-membership";
 
@@ -39,7 +45,8 @@ export const dynamic = "force-dynamic";
  *    limiar para os dois carimbaria "atrasada" uma sincronização saudável.
  * 2. **Backfill** (finito): "não rodou nas últimas 24h" é o estado normal de
  *    um backfill concluído. Mostra o cursor (`backfill_covered_until`) e a
- *    conclusão — nunca um selo de atraso, nunca uma porcentagem inventada.
+ *    conclusão e a cobertura estimada contra a janela recuperável de 365
+ *    dias. O percentual só chega a 100 quando o cursor alcança a conexão.
  * 3. **Processamento nosso** (métricas recalculadas): o ML pode estar em dia
  *    e o recálculo parado — é onde os gargalos aparecem (PRD 2026-08-28).
  */
@@ -136,7 +143,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const [accountsResult, healthResult, processingResult, eventsResult, failuresResult] = await Promise.all([
     supabase
       .from("ml_accounts")
-      .select("id, label, slug, status, last_error, backfill_covered_until")
+      .select("id, label, slug, status, last_error, connected_at, backfill_covered_until")
       .order("label", { ascending: true }),
     supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
     supabase.rpc("get_processing_health", { p_organization_id: organizationId }),
@@ -190,6 +197,58 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     row,
     verdict: classifyResourceFreshness(row.resource, row.channel, row.last_success_at, now),
   }));
+
+  const contas = accounts.map((account) => {
+    const recursos = vereditos.filter(({ row }) => row.ml_account_id === account.id);
+    const progresso = calculateBackfillProgress(account.connected_at, account.backfill_covered_until, now);
+    const processamento = processing.find((row) => row.ml_account_id === account.id) ?? null;
+    const emDia = recursos.filter(({ verdict }) => verdict === "ok").length;
+    const criticos = recursos.filter(({ verdict }) => verdict === "critico").length;
+    const nunca = recursos.filter(({ verdict }) => verdict === "nunca" || verdict === "sem_cadencia").length;
+    const falhas24h = recursos.reduce((total, { row }) => total + row.failed_24h, 0);
+    const itens24h = recursos.reduce((total, { row }) => total + row.items_24h, 0);
+    const ultimoSucesso = recursos.reduce<string | null>((maisRecente, { row }) => {
+      if (row.last_success_at === null) return maisRecente;
+      if (maisRecente === null) return row.last_success_at;
+      return new Date(row.last_success_at).getTime() > new Date(maisRecente).getTime()
+        ? row.last_success_at
+        : maisRecente;
+    }, null);
+
+    let confianca: PillTone;
+    let orientacao: string;
+
+    if (account.status !== "CONNECTED") {
+      confianca = { tom: "perigo", label: "Sincronização interrompida" };
+      orientacao = "A conexão precisa ser restabelecida antes de usar os dados desta conta como atuais.";
+    } else if (criticos > 0 || falhas24h > 0) {
+      confianca = { tom: "perigo", label: "Dados exigem atenção" };
+      orientacao = `${formatCount(criticos)} ${criticos === 1 ? "recurso atrasado" : "recursos atrasados"} e ${formatCount(falhas24h)} ${falhas24h === 1 ? "falha" : "falhas"} nas últimas 24h. Confira o detalhamento antes de decidir.`;
+    } else if (progresso.state !== "complete") {
+      confianca = { tom: "atencao", label: "Histórico em carregamento" };
+      orientacao = "Os dados recentes podem estar em dia, mas o histórico de pedidos ainda não foi percorrido por completo.";
+    } else if (nunca > 0) {
+      confianca = { tom: "atencao", label: "Cobertura parcial" };
+      orientacao = `${formatCount(nunca)} ${nunca === 1 ? "recurso ainda não tem" : "recursos ainda não têm"} sucesso registrado. Use somente as áreas já sincronizadas.`;
+    } else {
+      confianca = { tom: "ok", label: "Base pronta para análise" };
+      orientacao = "O histórico recuperável de pedidos foi percorrido e os recursos monitorados estão em dia.";
+    }
+
+    return {
+      account,
+      recursos,
+      progresso,
+      processamento,
+      emDia,
+      criticos,
+      falhas24h,
+      itens24h,
+      ultimoSucesso,
+      confianca,
+      orientacao,
+    };
+  });
 
   const quantos = (v: SyncVerdict): string =>
     formatCount(vereditos.filter((item) => item.verdict === v).length);
@@ -257,7 +316,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       <PageTitle
         eyebrow="ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS"
         title="Sincronização"
-        subtitle="Por conta e por recurso, contra a cadência real de cada job. Reconciliação é permanente (o indicador é frescor); backfill é finito (o indicador é o cursor); e o recálculo de métricas é trabalho nosso, medido em separado."
+        subtitle="Veja primeiro se os dados de cada conta estão prontos para análise. Depois, investigue frescor, histórico, processamento e falhas sem misturar sinais diferentes."
         aside={
           <nav className="sb-channel-nav" aria-label="Navegação de dados e processamentos">
             <Link href="/contas">Contas Mercado Livre →</Link>
@@ -289,58 +348,133 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
 
       {error === null && (
         <>
-          <KpiStrip cells={celulas} />
+          <nav className="sb-sync-nav" aria-label="Seções da sincronização">
+            <a href="#contas"><Icone nome="loja" tamanho={14} /> Contas</a>
+            <a href="#recursos"><Icone nome="sincronizar" tamanho={14} /> Recursos</a>
+            <a href="#historico"><Icone nome="barras" tamanho={14} /> Histórico</a>
+            <a href="#processamento"><Icone nome="ciclo" tamanho={14} /> Processamento</a>
+            <a href="#falhas"><Icone nome="pulso" tamanho={14} /> Falhas</a>
+          </nav>
 
-          <div className="sb-sync-sections">
-          <div>
-            <Panel
-              title="Contas conectadas"
-              subtitle="O estado da conexão de cada conta. Conta revogada não sincroniza, e a linha da tabela abaixo continua existindo — por isso as duas coisas aparecem separadas."
-            >
-              <div className="sb-panel-body">
-                <ul
-                  style={{
-                    listStyle: "none",
-                    padding: 0,
-                    margin: 0,
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "var(--sb-space-2)",
-                  }}
-                >
-                  {accounts.map((account) => {
-                    const tone = {
-                      tom: tomDeStatus(statusTone(account.status)),
-                      label: mlAccountStatusLabel(account.status),
-                    };
-
-                    return (
-                      <li
-                        key={account.id}
-                        style={{
-                          border: "1px solid var(--sb-border)",
-                          borderLeft: `3px solid ${TOM[tone.tom].color}`,
-                          borderRadius: "var(--sb-radius)",
-                          padding: "0.375rem 0.75rem",
-                          fontSize: "0.75rem",
-                          display: "flex",
-                          gap: "var(--sb-space-2)",
-                          alignItems: "baseline",
-                        }}
-                      >
-                        <strong>{account.label}</strong>
-                        <StatePill tone={tone} />
-                        {account.status === "ERROR" && account.last_error !== null && (
-                          <span style={{ color: "var(--sb-danger)" }}>{sanitizeErrorText(account.last_error)}</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+          <section id="contas" className="sb-sync-overview" aria-labelledby="sync-overview-title">
+            <div className="sb-sync-section-head">
+              <div>
+                <span className="sb-eyebrow">LEITURA RÁPIDA</span>
+                <h2 id="sync-overview-title">Confiança dos dados por conta</h2>
+                <p>
+                  O percentual mede somente o histórico de pedidos recuperável no Mercado Livre. A situação ao lado
+                  combina conexão, frescor e falhas para evitar um “100%” enganoso.
+                </p>
               </div>
-            </Panel>
+              <span className="sb-sync-window">janela histórica: até 12 meses</span>
+            </div>
+
+            {contas.length === 0 && (
+              <div className="sb-sync-empty">
+                Nenhuma conta Mercado Livre cadastrada. Conecte uma conta para começar a medir a cobertura.
+              </div>
+            )}
+
+            <div className="sb-sync-account-grid">
+              {contas.map((conta) => {
+                const progressoLabel =
+                  conta.progresso.percent === null
+                    ? "Não mensurável"
+                    : `${String(conta.progresso.percent)}%`;
+                const connectionTone: PillTone = {
+                  tom: tomDeStatus(statusTone(conta.account.status)),
+                  label: mlAccountStatusLabel(conta.account.status),
+                };
+
+                return (
+                  <article className="sb-sync-account" key={conta.account.id} data-tone={conta.confianca.tom}>
+                    <header className="sb-sync-account-head">
+                      <div className="sb-sync-account-name">
+                        <span className="sb-sync-account-icon"><Icone nome="loja" tamanho={17} /></span>
+                        <div>
+                          <h3>{conta.account.label}</h3>
+                          <span>@{conta.account.slug}</span>
+                        </div>
+                      </div>
+                      <div className="sb-sync-account-pills">
+                        <StatePill tone={connectionTone} />
+                        <StatePill tone={conta.confianca} />
+                      </div>
+                    </header>
+
+                    <div className="sb-sync-progress-copy">
+                      <div>
+                        <span>Histórico de pedidos extraído</span>
+                        <strong>{progressoLabel}</strong>
+                        <code className="sb-sync-metric-id">cobertura_historico_pedidos</code>
+                      </div>
+                      <small>
+                        {conta.progresso.state === "complete"
+                          ? "Todo o período recuperável foi percorrido"
+                          : conta.account.backfill_covered_until === null
+                            ? "A carga histórica ainda não começou"
+                            : `carregado até ${formatDay(conta.account.backfill_covered_until)}`}
+                      </small>
+                    </div>
+
+                    {conta.progresso.percent === null ? (
+                      <div className="sb-sync-progress sb-sync-progress-unknown" aria-label="Progresso não mensurável" />
+                    ) : (
+                      <div
+                        className="sb-sync-progress"
+                        role="progressbar"
+                        aria-label={`Histórico de pedidos extraído de ${conta.account.label}`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={conta.progresso.percent}
+                      >
+                        <span style={{ width: `${String(conta.progresso.percent)}%` }} />
+                      </div>
+                    )}
+
+                    <p className="sb-sync-guidance">{conta.orientacao}</p>
+
+                    <dl className="sb-sync-account-facts">
+                      <div>
+                        <dt>Recursos em dia</dt>
+                        <dd>{formatCount(conta.emDia)} de {formatCount(conta.recursos.length)}</dd>
+                      </div>
+                      <div>
+                        <dt>Itens nas últimas 24h</dt>
+                        <dd>{formatCount(conta.itens24h)}</dd>
+                      </div>
+                      <div>
+                        <dt>Falhas nas últimas 24h</dt>
+                        <dd className={conta.falhas24h > 0 ? "sb-sync-danger" : undefined}>{formatCount(conta.falhas24h)}</dd>
+                      </div>
+                      <div>
+                        <dt>Último sucesso</dt>
+                        <dd>{formatDateTime(conta.ultimoSucesso)}</dd>
+                      </div>
+                      <div>
+                        <dt>Métricas calculadas até</dt>
+                        <dd>{conta.processamento?.latest_metric_date ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Conectada em</dt>
+                        <dd>{formatDateTime(conta.account.connected_at)}</dd>
+                      </div>
+                    </dl>
+
+                    {conta.account.status === "ERROR" && conta.account.last_error !== null && (
+                      <p className="sb-sync-account-error">{sanitizeErrorText(conta.account.last_error)}</p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <div id="recursos" className="sb-sync-section-anchor">
+            <KpiStrip cells={celulas} />
           </div>
 
+          <div className="sb-sync-sections">
           <div>
             <Panel
               title="Sincronização contínua"
@@ -417,10 +551,10 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div>
+          <div id="historico" className="sb-sync-section-anchor" style={{ marginTop: "var(--sb-space-3)" }}>
             <Panel
               title="Backfill"
-              subtitle="Histórico, e portanto FINITO: não ter rodado nas últimas 24h é o estado normal de um backfill concluído. Por isso aqui não há selo de atraso nem porcentagem — o indicador é o cursor."
+              subtitle="Carga finita do histórico de pedidos. A porcentagem estima quanto da janela recuperável de até 12 meses já foi percorrido; o cursor mostra a evidência concreta."
             >
               <div style={{ overflowX: "auto" }}>
                 <table className="sb-table">
@@ -429,6 +563,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                       <th>Conta</th>
                       <th>Recurso</th>
                       <th>Última execução</th>
+                      <th>Progresso</th>
                       <th>Coberto até</th>
                       <th>Status</th>
                     </tr>
@@ -436,17 +571,26 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                   <tbody>
                     {backfill.map((row) => {
                       const account = accounts.find((a) => a.id === row.ml_account_id);
+                      const progresso = calculateBackfillProgress(
+                        account?.connected_at ?? null,
+                        account?.backfill_covered_until ?? null,
+                        now,
+                      );
 
                       return (
                         <tr key={`${row.ml_account_id}:${row.resource}:bf`}>
                           <td>{row.account_label}</td>
                           <td>{resourceLabel(row.resource)}</td>
                           <td>{formatDateTime(row.last_run_at)}</td>
+                          <td>
+                            {progresso.percent === null ? "Não mensurável" : `${String(progresso.percent)}%`}
+                          </td>
                           {/*
                             `backfill_covered_until` era gravado e nunca lido — o
                             "ganho barato" do ROADMAP. É o cursor real: até onde a
-                            história já foi puxada, sem inventar porcentagem
-                            (não existe denominador confiável para "quanto falta").
+                            história já foi puxada. A porcentagem usa a janela
+                            recuperável de 365 dias; o cursor continua exposto
+                            porque é a evidência concreta do avanço.
                           */}
                           <td>{formatDateTime(account?.backfill_covered_until ?? null)}</td>
                           <td>{row.last_run_status === null ? "—" : runStatusLabel(row.last_run_status)}</td>
@@ -467,7 +611,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div>
+          <div id="processamento" className="sb-sync-section-anchor" style={{ marginTop: "var(--sb-space-3)" }}>
             <Panel
               title="Métricas recalculadas"
               subtitle="Dado processado por nós. O Mercado Livre pode estar em dia e o recálculo parado — é onde os gargalos aparecem."
@@ -504,7 +648,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div>
+          <div id="eventos" className="sb-sync-section-anchor" style={{ marginTop: "var(--sb-space-3)" }}>
             <Panel
               title="Eventos recentes"
               subtitle="As 30 mudanças mais recentes registradas pelo próprio banco em domain_events."
@@ -553,7 +697,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
-          <div>
+          <div id="falhas" className="sb-sync-section-anchor" style={{ marginTop: "var(--sb-space-3)" }}>
             <Panel
               title="Execuções que falharam"
               subtitle={`Agrupadas por job e por MOTIVO, nos últimos ${String(FAILURE_WINDOW_DAYS)} dias. Corridas de quatro ou mais dígitos viram # na assinatura do motivo — assim o código HTTP sobrevive e o id da entidade não fragmenta a lista. No Dev isso reduz 473 falhas de 170 motivos a 16 linhas.`}

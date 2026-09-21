@@ -340,6 +340,9 @@ async function main(): Promise<void> {
         status: "CONNECTED",
         seller_id: ML_SELLER_ID,
         connected_at: new Date().toISOString(),
+        // 64% da janela recuperável de 365 dias. Mantém a leitura rápida de
+        // `/sincronizacao` determinística e prova que parcial não vira 100%.
+        backfill_covered_until: new Date(Date.now() - 131 * 24 * 60 * 60 * 1000).toISOString(),
       },
       { onConflict: "organization_id,slug" },
     )

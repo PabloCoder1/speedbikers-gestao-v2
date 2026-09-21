@@ -4534,12 +4534,18 @@ table {
 .sb-import-table td:first-child { min-width: 260px; }
 
 @media (min-width: 1180px) {
-  .sb-sync-sections > div:first-child,
-  .sb-sync-sections > div:nth-child(2) { grid-column: span 1; }
+  /*
+    "Contas conectadas" (D-389, leitura de confiança por conta) saiu de
+    dentro de `.sb-sync-sections` e virou a seção `sb-sync-overview` acima
+    da grade — os seis painéis viraram cinco, e os índices deslizaram um
+    para trás: Sincronização contínua (1) ocupa a linha inteira; Backfill
+    (2) e Métricas recalculadas (3) dividem a linha; Eventos (4) e Falhas
+    (5) voltam a ocupar a linha inteira.
+  */
   .sb-sync-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  .sb-sync-sections > div:nth-child(2),
-  .sb-sync-sections > div:nth-child(5),
-  .sb-sync-sections > div:nth-child(6) { grid-column: 1 / -1; }
+  .sb-sync-sections > div:nth-child(1),
+  .sb-sync-sections > div:nth-child(4),
+  .sb-sync-sections > div:nth-child(5) { grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -15655,3 +15661,325 @@ td.sb-pco-num-linha {
 .sb-system-state-code { padding: 0.2rem 0.5rem; border-radius: var(--sb-radius-sm); background: var(--sb-neutral-soft); color: var(--sb-neutral-ink); font-family: var(--sb-mono); font-size: 0.6875rem; }
 .sb-system-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
 .sb-system-error-page { display: grid; min-height: 100vh; place-items: center; padding: 1rem; background: var(--sb-ground, var(--sb-bg-soft)); }
+/*
+ * SINCRONIZAÇÃO — leitura operacional por conta.
+ *
+ * O percentual tem um dono visual (a barra do histórico de pedidos) e não
+ * colore o cartão inteiro. O estado composto continua na pílula: conexão,
+ * frescor e falhas podem exigir atenção mesmo com o backfill em 100%.
+ */
+.sb-sync-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: calc(var(--sb-space-2) * -1) 0 var(--sb-space-3);
+}
+
+.sb-sync-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  text-decoration: none;
+}
+
+.sb-sync-nav a:hover {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-sync-nav a:focus-visible {
+  outline: 2px solid var(--sb-secondary);
+  outline-offset: 2px;
+}
+
+.sb-sync-overview {
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-sync-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sb-space-3);
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-sync-section-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.sb-sync-section-head p {
+  max-width: 52rem;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-window {
+  flex: none;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-surface);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-sync-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sb-sync-account {
+  min-width: 0;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-top: 3px solid var(--sb-secondary);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-sync-account[data-tone="ok"] {
+  border-top-color: var(--sb-success);
+}
+
+.sb-sync-account[data-tone="atencao"] {
+  border-top-color: var(--sb-accent-ink);
+}
+
+.sb-sync-account[data-tone="perigo"] {
+  border-top-color: var(--sb-danger);
+}
+
+.sb-sync-account-head,
+.sb-sync-account-name,
+.sb-sync-account-pills {
+  display: flex;
+  align-items: center;
+}
+
+.sb-sync-account-head {
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+}
+
+.sb-sync-account-name {
+  min-width: 0;
+  gap: 0.625rem;
+}
+
+.sb-sync-account-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-sync-account-name h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-sync-account-name span {
+  display: block;
+  margin-top: 0.125rem;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-account-pills {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.sb-sync-progress-copy {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-3);
+}
+
+.sb-sync-progress-copy span,
+.sb-sync-progress-copy small {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-progress-copy strong {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--sb-primary);
+}
+
+.sb-sync-metric-id {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-sync-progress-copy small {
+  max-width: 15rem;
+  text-align: right;
+}
+
+.sb-sync-progress {
+  overflow: hidden;
+  height: 0.5rem;
+  margin-top: 0.625rem;
+  border-radius: 999px;
+  background: var(--sb-secondary-soft);
+}
+
+.sb-sync-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sb-secondary);
+}
+
+.sb-sync-progress-unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--sb-neutral-soft),
+    var(--sb-neutral-soft) 0.375rem,
+    var(--sb-surface) 0.375rem,
+    var(--sb-surface) 0.75rem
+  );
+}
+
+.sb-sync-guidance {
+  margin: var(--sb-space-3) 0;
+  padding: 0.625rem 0.75rem;
+  border-left: 3px solid var(--sb-border);
+  background: var(--sb-ground);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-account[data-tone="ok"] .sb-sync-guidance { border-left-color: var(--sb-success); }
+.sb-sync-account[data-tone="atencao"] .sb-sync-guidance { border-left-color: var(--sb-accent-ink); }
+.sb-sync-account[data-tone="perigo"] .sb-sync-guidance { border-left-color: var(--sb-danger); }
+
+.sb-sync-account-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--sb-table-rule);
+  border-radius: var(--sb-radius-md);
+  overflow: hidden;
+}
+
+.sb-sync-account-facts > div {
+  min-width: 0;
+  padding: 0.625rem;
+  box-shadow: 1px 0 0 var(--sb-table-rule), 0 1px 0 var(--sb-table-rule);
+}
+
+.sb-sync-account-facts dt {
+  margin-bottom: 0.25rem;
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-account-facts dd {
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-sync-danger {
+  color: var(--sb-danger-ink) !important;
+}
+
+.sb-sync-account-error,
+.sb-sync-empty {
+  margin: var(--sb-space-2) 0 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sb-radius-md);
+  font-size: 0.6875rem;
+}
+
+.sb-sync-account-error {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-sync-empty {
+  margin: 0;
+  border: 1px dashed var(--sb-border);
+  background: var(--sb-surface);
+  color: var(--sb-text-soft);
+}
+
+.sb-sync-section-anchor {
+  scroll-margin-top: var(--sb-space-3);
+}
+
+@media (max-width: 1100px) {
+  .sb-sync-account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .sb-sync-section-head,
+  .sb-sync-account-head,
+  .sb-sync-progress-copy {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sb-sync-window {
+    align-self: flex-start;
+  }
+
+  .sb-sync-account-pills {
+    justify-content: flex-start;
+  }
+
+  .sb-sync-progress-copy small {
+    max-width: none;
+    text-align: left;
+  }
+
+  .sb-sync-account-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

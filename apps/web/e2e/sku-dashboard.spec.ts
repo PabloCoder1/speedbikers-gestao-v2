@@ -369,7 +369,9 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
     o dono decidiu o teto (10% sobre o menor, por organização, D-318) e ela
     virou verificação — o número continua ao lado, com o teto junto.
   */
-  await expect(saude.locator(".sb-stat", { hasText: "Preço anunciado" })).toContainText("sobre o menor (teto 10%)");
+  // "Preço ao comprador" (D-389): o número é o EFETIVO — promocional quando
+  // há campanha ativa do Mercado Livre, senão o cadastrado.
+  await expect(saude.locator(".sb-stat", { hasText: "Preço ao comprador" })).toContainText("sobre o menor (teto 10%)");
 
   const problemas = page.getByRole("region", { name: "Problemas encontrados" });
 

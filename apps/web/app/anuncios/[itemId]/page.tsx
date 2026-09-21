@@ -185,6 +185,17 @@ interface DecisionRow {
   actions: { kind: string; status: string; recommendation: string } | null;
 }
 
+interface ContentChangeAnalysisRow {
+  occurred_at: string;
+  content_changed: string[];
+  baseline_units: number;
+  outcome_units: number;
+  baseline_visits: number | null;
+  outcome_visits: number | null;
+  verdict: string;
+  blocked_reason: string | null;
+}
+
 export default async function AnuncioPage({
   params,
   searchParams,
@@ -228,6 +239,7 @@ export default async function AnuncioPage({
   const needsPrices = tab === "preco";
   const needsRelists = tab === "historico";
   const needsDecisions = tab === "decisoes";
+  const needsContentAnalysis = tab === "diagnostico";
 
   const [
     summaryResult,
@@ -240,6 +252,7 @@ export default async function AnuncioPage({
     pricesResult,
     relistsResult,
     decisionsResult,
+    contentAnalysisResult,
     /*
       O PAPEL, para a aba Histórico decidir se oferece o disparo (D-295). Entra
       no `Promise.all` que já existe: em fila seria uma ida somada ao custo da
@@ -376,6 +389,13 @@ export default async function AnuncioPage({
           .order("created_at", { ascending: false })
           .limit(20)
       : Promise.resolve({ data: null, error: null }),
+    needsContentAnalysis
+      ? supabase.rpc("get_listing_content_change_analysis", {
+          p_organization_id: row.organization_id,
+          p_ml_account_id: row.ml_account_id,
+          p_item_id: row.item_id,
+        })
+      : Promise.resolve({ data: null, error: null }),
     needsRelists ? currentMembership() : Promise.resolve(null),
   ]);
 
@@ -394,6 +414,7 @@ export default async function AnuncioPage({
   */
   const full = fullResult.data !== null && isFullRow(fullResult.data) ? fullResult.data : null;
   const timeline = (timelineResult.data ?? []) as unknown as TimelineEventRow[];
+  const contentAnalysis = (contentAnalysisResult.data ?? []) as ContentChangeAnalysisRow[];
   const actions = actionsResult.data ?? [];
   const daily = (dailyResult.data ?? []) as unknown as DiaMetricaRow[];
   const visits = (visitsResult.data ?? []) as unknown as DiaVisitaRow[];
@@ -1394,7 +1415,7 @@ export default async function AnuncioPage({
         )}
 
         {tab === "diagnostico" && (
-          <Panel title="Diagnóstico de venda" subtitle="por que esta aba não calcula nada aqui">
+          <Panel title="Diagnóstico pós-alteração" subtitle="7 dias completos antes e depois; alerta só com evidência suficiente">
             {/*
               RECUSA HONESTA. O diagnóstico de venda anômala (D-078) compara a
               venda de ontem com o mesmo dia da semana usando
@@ -1404,6 +1425,40 @@ export default async function AnuncioPage({
               de invenção que D-023 proíbe.
             */}
             <div className="sb-panel-body" style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+              {contentAnalysis.length === 0 ? (
+                <p style={{ margin: "0 0 var(--sb-space-3)" }}>
+                  Nenhuma alteração de título, foto ou descrição completou ainda uma janela de 7 dias para análise.
+                </p>
+              ) : (
+                <div style={{ display: "grid", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
+                  {contentAnalysis.map((analysis) => {
+                    const labels = analysis.content_changed.map(eventTypeLabel).join(" + ");
+                    const alert = analysis.verdict === "alert";
+
+                    return (
+                      <article
+                        key={`${analysis.occurred_at}:${analysis.content_changed.join(",")}`}
+                        style={{ borderLeft: `3px solid ${alert ? "var(--sb-danger)" : "var(--sb-border)"}`, paddingLeft: "var(--sb-space-2)" }}
+                      >
+                        <b style={{ color: alert ? "var(--sb-danger-ink)" : "var(--sb-text)" }}>
+                          {alert ? `Alerta: anúncio entrou em queda após ${labels.toLowerCase()}.` : labels}
+                        </b>
+                        <p style={{ margin: "0.25rem 0 0" }}>
+                          Alteração em {formatBusinessDate(analysis.occurred_at)} · vendas {formatCount(analysis.baseline_units)} → {formatCount(analysis.outcome_units)}
+                          {analysis.baseline_visits !== null && analysis.outcome_visits !== null
+                            ? ` · visitas ${formatCount(analysis.baseline_visits)} → ${formatCount(analysis.outcome_visits)}`
+                            : ""}
+                          . {analysis.blocked_reason ?? "Sem alteração de preço, estoque ou status na janela."}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+              <p style={{ margin: "0 0 var(--sb-space-2)" }}>
+                O alerta exige queda de pelo menos 30% em unidades e 25% em visitas, amostra mínima e ausência de preço,
+                estoque ou status como explicação concorrente. Se duas partes do conteúdo mudaram juntas, o sistema não culpa uma só.
+              </p>
               <p style={{ margin: "0 0 var(--sb-space-2)" }}>
                 O diagnóstico de venda anômala compara a venda de ontem com o mesmo dia da semana sobre a{" "}
                 <strong>baseline do SKU</strong>. Não existe baseline por anúncio, e aplicar a mesma fórmula ao
