@@ -21,6 +21,7 @@ export const listingItemSchema = z.object({
   secure_thumbnail: z.string().nullable().optional(),
   thumbnail: z.string().nullable().optional(),
   permalink: z.string().nullable().optional(),
+  pictures: z.array(z.object({ id: z.string() })).nullable().optional(),
 });
 
 export type ParsedListingItem = z.infer<typeof listingItemSchema>;
@@ -62,4 +63,15 @@ export function fotoDoItem(item: Pick<ParsedListingItem, "secure_thumbnail" | "t
 /** O endereço público do anúncio. */
 export function linkDoItem(item: Pick<ParsedListingItem, "permalink">): string | null {
   return enderecoConfiavel(item.permalink, "mercadolivre.com.br");
+}
+
+/**
+ * A ordem e as URLs das imagens podem mudar sem uma edição editorial. A lista
+ * de IDs é o identificador estável devolvido pelo ML para detectar troca real
+ * de foto, sem gravar URL nem conteúdo da imagem no evento.
+ */
+export function fingerprintDasFotos(item: Pick<ParsedListingItem, "pictures">): string | null {
+  if (item.pictures === null || item.pictures === undefined || item.pictures.length === 0) return null;
+
+  return item.pictures.map((picture) => picture.id).sort().join(":");
 }

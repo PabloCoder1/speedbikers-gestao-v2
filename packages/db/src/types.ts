@@ -1708,6 +1708,7 @@ export type Database = {
           ml_account_id: string
           organization_id: string
           price: number
+          picture_fingerprint: string | null
           // D-389, migration 20260921120000 (aplicada no Dev; CORRECAO MANUAL
           // porque a CLI so regenera este arquivo depois de aplicada em todo
           // ambiente, mesmo raciocinio de delete_supplier/get_erp_stock_cutoffs
@@ -1731,6 +1732,7 @@ export type Database = {
           ml_account_id: string
           organization_id: string
           price: number
+          picture_fingerprint?: string | null
           promotional_price?: number | null
           sku_id?: string | null
           status: string
@@ -1750,6 +1752,7 @@ export type Database = {
           ml_account_id?: string
           organization_id?: string
           price?: number
+          picture_fingerprint?: string | null
           promotional_price?: number | null
           sku_id?: string | null
           status?: string
@@ -4619,6 +4622,21 @@ export type Database = {
           purchases_count: number
           units_sold: number
           visits: number
+        }[]
+      }
+      get_listing_content_change_analysis: {
+        Args: { p_item_id: string; p_ml_account_id: string; p_organization_id: string }
+        Returns: {
+          baseline_units: number
+          baseline_visits: number | null
+          blocked_reason: string | null
+          content_changed: string[]
+          occurred_at: string
+          outcome_units: number
+          outcome_visits: number | null
+          units_change_ratio: number | null
+          verdict: string
+          visits_change_ratio: number | null
         }[]
       }
       get_listing_sales: {
