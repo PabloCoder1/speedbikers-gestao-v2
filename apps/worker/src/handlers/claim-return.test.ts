@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ProcessClaimReturnDeps } from "./claim-return.js";
 import { processClaimReturn } from "./claim-return.js";
+import { claimReturnSchema } from "./claim-schema.js";
 
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -1047,5 +1048,93 @@ describe("processClaimReturn — pedido do Full (D-352)", () => {
     });
 
     await expect(resultado).rejects.toThrow(/sem occurred_at legivel/);
+  });
+});
+
+/**
+ * Medido em produção entre 19 e 20/09/2026: `GET /post-purchase/v2/claims/{id}
+ * /returns` respondeu `"orders": null` para três claims e o ZodError derrubou 10
+ * execuções de `sync.webhook.received`, todas com `retryable: false`. O contrato
+ * era nosso; a resposta, do Mercado Livre.
+ */
+describe("processClaimReturn — devolução sem a lista de itens", () => {
+  /**
+   * `CLAIM_WITH_RETURN` não tem carimbo de tempo, então a projeção de atendimento
+   * sempre avisa que pulou o case. O que estes testes observam é o outro aviso.
+   */
+  const semOrders = (
+    avisos: { evento: string; campos: Record<string, unknown> }[],
+  ): { evento: string; campos: Record<string, unknown> }[] =>
+    avisos.filter((aviso) => aviso.evento === "claim_return_sem_orders");
+
+  it("o contrato aceita `orders: null` — era aqui que o ZodError nascia", () => {
+    const resposta = claimReturnSchema.parse({ ...returnPayload({}), orders: null });
+
+    expect(resposta.orders).toBeNull();
+    expect(claimReturnSchema.parse(returnPayload({})).orders).toHaveLength(1);
+  });
+
+  function processar(claimReturn: Record<string, unknown>): {
+    resultado: Promise<number>;
+    captured: Captured;
+    avisos: { evento: string; campos: Record<string, unknown> }[];
+  } {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const avisos: { evento: string; campos: Record<string, unknown> }[] = [];
+    const { client } = fakeMercadoLivre({ claimReturn });
+
+    const resultado = processClaimReturn(
+      { db: fakeDb({}, captured), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      {
+        ...logger,
+        warn: (evento: string, campos: Record<string, unknown> = {}) => {
+          avisos.push({ evento, campos });
+        },
+      },
+    );
+
+    return { resultado, captured, avisos };
+  }
+
+  it("entregue com `orders: null`: processa zero, avisa, e NÃO derruba a notificação", async () => {
+    const { resultado, captured, avisos } = processar({ ...returnPayload({}), orders: null });
+
+    await expect(resultado).resolves.toBe(0);
+    expect(captured.movements).toHaveLength(0);
+    expect(semOrders(avisos)).toEqual([
+      { evento: "claim_return_sem_orders", campos: { claim_id: CLAIM_ID, return_status: "delivered" } },
+    ]);
+  });
+
+  it("entregue com a lista vazia: mesmo caminho — lista vazia não é 'nada a devolver' silencioso", async () => {
+    const { resultado, captured, avisos } = processar({ ...returnPayload({}), orders: [] });
+
+    await expect(resultado).resolves.toBe(0);
+    expect(captured.movements).toHaveLength(0);
+    expect(semOrders(avisos).map((a) => a.evento)).toEqual(["claim_return_sem_orders"]);
+  });
+
+  it("sem o campo `orders` e ainda não entregue: continua o caso de sempre, sem aviso", async () => {
+    const naoEntregue = { ...returnPayload({ status: "shipped" }) };
+
+    delete naoEntregue.orders;
+
+    const { resultado, captured, avisos } = processar(naoEntregue);
+
+    await expect(resultado).resolves.toBe(0);
+    expect(captured.movements).toHaveLength(0);
+    expect(semOrders(avisos)).toHaveLength(0);
+  });
+
+  it("contraprova: com a lista preenchida, a reversão continua acontecendo", async () => {
+    const { resultado, captured, avisos } = processar(returnPayload({}));
+
+    await expect(resultado).resolves.toBe(1);
+    expect(captured.movements.map((m) => m.movement_type)).toEqual(["DEVOLUCAO_ML"]);
+    expect(semOrders(avisos)).toHaveLength(0);
   });
 });

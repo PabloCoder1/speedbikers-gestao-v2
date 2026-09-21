@@ -94,7 +94,19 @@ export const claimReturnSchema = z.object({
   claim_id: z.number(),
   /** "delivered" = produto fisicamente de volta — o gatilho da reversão de estoque. */
   status: z.string(),
-  orders: z.array(claimReturnOrderSchema),
+  /**
+   * Itens devolvidos. **Pode vir `null`**, e a ausência significa DESCONHECIDO,
+   * nunca "nenhum item" — mesma leitura que `related_entities` recebeu em D-109.
+   *
+   * Medido em produção: entre 19 e 20/09/2026, `GET /post-purchase/v2/claims/
+   * {id}/returns` respondeu `"orders": null` para três claims (5579918680,
+   * 5580068124, 5580432380). Como o campo era obrigatório, o ZodError derrubava
+   * a notificação inteira com `retryable: false` — 10 execuções de
+   * `sync.webhook.received` falharam e nenhuma repetição iria resolver, porque o
+   * defeito estava no nosso contrato, não na resposta. Quem trata a lista vazia
+   * é `claim-return`.
+   */
+  orders: z.array(claimReturnOrderSchema).nullable().optional(),
 });
 
 export type ParsedClaimReturn = z.infer<typeof claimReturnSchema>;
