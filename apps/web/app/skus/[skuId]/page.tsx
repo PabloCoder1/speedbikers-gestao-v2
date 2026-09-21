@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { CopilotContextBeacon } from "../../../components/copilot-context";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
 import { PageTitle } from "../../../components/page-title";
@@ -849,6 +850,7 @@ export default async function SkuDashboardPage({
                   aside={
                     <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`}>
                       Ver aba →
+                      <CarregandoSeODemorar />
                     </Link>
                   }
                 >
@@ -895,6 +897,7 @@ export default async function SkuDashboardPage({
                   aside={
                     <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`}>
                       Ver aba →
+                      <CarregandoSeODemorar />
                     </Link>
                   }
                 >
@@ -1625,6 +1628,7 @@ export default async function SkuDashboardPage({
                 )}
                 <Link href={`/skus/${skuId}?aba=diagnostico${contaEscopo === null ? "" : `&escopo=${contaEscopo.id}`}`}>
                   Reler agora →
+                  <CarregandoSeODemorar />
                 </Link>
               </span>
             }

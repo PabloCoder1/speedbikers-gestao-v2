@@ -3,6 +3,7 @@ import type { CorrelatedEvent, SalesAnomalyDiagnosis } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
@@ -361,6 +362,7 @@ export default async function DiagnosticoPage({
                     */}
                     <strong>{formatCurrency(impacto)}</strong>
                   </span>
+                  <CarregandoSeODemorar />
                 </Link>
               );
             })}

@@ -8,6 +8,7 @@ import type {
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -322,6 +323,7 @@ export default async function ReposicaoPage({
                         ? `${COMPACTO.format(dado.investimento)} · ${formatCount(dado.unidades)} un`
                         : ESTADOS[estado].descricao}
                   </small>
+                  <CarregandoSeODemorar />
                 </Link>
               );
             })}
@@ -335,6 +337,7 @@ export default async function ReposicaoPage({
               <span className="sb-rep-estado-rotulo">Sem estado</span>
               <strong>{formatCount(contagem.get("SEM_ESTADO")?.skus ?? 0)}</strong>
               <small>sem configuração, estoque virtual, histórico ou amostra</small>
+              <CarregandoSeODemorar />
             </Link>
           </nav>
 
@@ -370,6 +373,7 @@ export default async function ReposicaoPage({
                 {filtroAtivo && (
                   <Link className="sb-button" href="/reposicao">
                     Limpar filtros
+                    <CarregandoSeODemorar />
                   </Link>
                 )}
                 {windowInfo.totalPages > 1 && (
@@ -377,6 +381,7 @@ export default async function ReposicaoPage({
                     {filters.page > 1 && (
                       <Link className="sb-button" href={buildReplenishmentHref(filters, { page: filters.page - 1 })}>
                         ‹ Anterior
+                        <CarregandoSeODemorar />
                       </Link>
                     )}
                     <span>
@@ -385,6 +390,7 @@ export default async function ReposicaoPage({
                     {filters.page < windowInfo.totalPages && (
                       <Link className="sb-button" href={buildReplenishmentHref(filters, { page: filters.page + 1 })}>
                         Próxima ›
+                        <CarregandoSeODemorar />
                       </Link>
                     )}
                   </span>
