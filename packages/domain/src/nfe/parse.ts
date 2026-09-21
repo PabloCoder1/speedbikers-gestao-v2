@@ -28,6 +28,8 @@
  * afeta este parser: acesso é por NOME de propriedade, nunca por posição.
  */
 
+import { mesmaEmpresa } from "../documentos/tipos.js";
+
 export interface ParsedNfeItem {
   readonly position: number;
   /** Código do produto NO FORNECEDOR — texto livre, sem padrão entre emissores (`docs/NFE.md` secao 3). */
@@ -90,10 +92,6 @@ function decimal(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function onlyDigits(value: string): string {
-  return value.replace(/\D/g, "");
-}
-
 /**
  * Decide ENTRADA/SAIDA comparando `emit`/`dest` do XML contra o CNPJ da
  * PRÓPRIA organização — não `ide/tpNF` sozinho.
@@ -114,21 +112,21 @@ function resolveOperationType(
   destCnpj: string | null,
   ownCnpj: string,
 ): { ok: true; value: "ENTRADA" | "SAIDA" } | { ok: false; reason: string } {
-  const own = onlyDigits(ownCnpj);
-  const emit = onlyDigits(emitCnpj);
-  const dest = destCnpj === null ? null : onlyDigits(destCnpj);
-
-  if (dest !== null && dest === own) {
+  // Pela RAIZ do CNPJ, não pelo CNPJ inteiro: matriz e filial são o mesmo
+  // estoque (`mesmaEmpresa`). O destinatário vem primeiro de propósito — na
+  // transferência entre os dois estabelecimentos, emitente E destinatário são
+  // da casa, e o dono decidiu que ela é ENTRADA (18/09/2026).
+  if (mesmaEmpresa(destCnpj, ownCnpj)) {
     return { ok: true, value: "ENTRADA" };
   }
 
-  if (emit === own) {
+  if (mesmaEmpresa(emitCnpj, ownCnpj)) {
     return { ok: true, value: "SAIDA" };
   }
 
   return {
     ok: false,
-    reason: `nem emitente (${emitCnpj}) nem destinatário (${destCnpj ?? "ausente"}) correspondem ao CNPJ da organização`,
+    reason: `nem emitente (${emitCnpj}) nem destinatário (${destCnpj ?? "ausente"}) são da empresa da organização`,
   };
 }
 

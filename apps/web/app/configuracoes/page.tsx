@@ -146,7 +146,26 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / ORGANIZAÇÃO"
         title="Configurações"
         subtitle="Onde cada configuração mora, se já está feita e quem pode alterar. Esta página não edita nada: cada seção leva para a tela dona, que é a única que valida e grava — assim não existe uma segunda cópia para divergir. As contagens vêm do banco, sob a sua permissão."
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de administração">
+            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/integracoes">Integrações →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-settings-hero" aria-labelledby="settings-hero-title">
+        <div className="sb-settings-hero-copy">
+          <span className="sb-process-hero-kicker">MAPA DE ADMINISTRAÇÃO</span>
+          <h2 id="settings-hero-title">Encontre a configuração certa sem procurar no lugar errado.</h2>
+          <p>O hub mostra o estado de cada área e encaminha você para a tela que realmente valida e grava a mudança.</p>
+        </div>
+        <div className="sb-settings-hero-rules" aria-label="Regras de configuração">
+          <span><b>01</b><strong>Consultar</strong><small>Estado atual</small></span>
+          <span><b>02</b><strong>Entender</strong><small>Quem altera</small></span>
+          <span><b>03</b><strong>Acessar</strong><small>Tela responsável</small></span>
+        </div>
+      </section>
 
       {overview.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
@@ -173,7 +192,7 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
            feito?" — passaria a exigir um clique por seção. É o critério de
            D-269: detalhe que não acrescenta campo não entra.
       */}
-      <div className="sb-pair-grid">
+      <div className="sb-pair-grid sb-settings-grid">
         {secoes.map((secao) => (
           <Panel key={secao.id} title={secao.label} aside={<StatePill tone={STATE_TONE[secao.state]} />}>
             <div className="sb-panel-body" style={{ display: "grid", gap: "0.5rem" }}>

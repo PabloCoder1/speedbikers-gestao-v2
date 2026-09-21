@@ -238,6 +238,10 @@ export function CopilotChat({
     <div style={{ display: "grid", gap: "var(--sb-space-3)", ...(compacto ? {} : { maxWidth: "46rem" }) }}>
       <div
         ref={listRef}
+        className="sb-copilot-message-list"
+        role="log"
+        aria-live="polite"
+        aria-label="Histórico da conversa"
         style={{
           display: exchanges.length === 0 ? "none" : "grid",
           gap: "var(--sb-space-3)",
@@ -246,8 +250,9 @@ export function CopilotChat({
         }}
       >
         {exchanges.map((exchange, index) => (
-          <div key={index} style={{ display: "grid", gap: "var(--sb-space-1)" }}>
+          <article className="sb-copilot-exchange" key={index} aria-label={`Pergunta ${String(index + 1)}`}>
             <p
+              className="sb-copilot-question"
               style={{
                 margin: 0,
                 justifySelf: "end",
@@ -263,12 +268,15 @@ export function CopilotChat({
             </p>
 
             {exchange.tools.length > 0 && (
-              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+              <p className="sb-copilot-tools" aria-label="Fontes consultadas">
+                <span className="sb-copilot-tools-label">Fontes consultadas</span>
                 {exchange.tools.map((tool) => TOOL_LABEL[tool] ?? tool).join(" · ")}
               </p>
             )}
 
             <div
+              className="sb-copilot-answer"
+              aria-label={exchange.status === "error" ? "Erro na resposta" : "Resposta do Copiloto"}
               style={{
                 background: "var(--sb-surface)",
                 border: "1px solid var(--sb-border)",
@@ -280,9 +288,9 @@ export function CopilotChat({
                 color: exchange.status === "error" ? "var(--sb-danger)" : "inherit",
               }}
             >
-              {exchange.answer.length > 0 ? exchange.answer : exchange.status === "streaming" ? "…" : ""}
+              {exchange.answer.length > 0 ? exchange.answer : exchange.status === "streaming" ? "Consultando os dados…" : ""}
             </div>
-          </div>
+          </article>
         ))}
       </div>
 
@@ -318,7 +326,7 @@ export function CopilotChat({
             O que dá para perguntar
           </span>
 
-          <div
+          <div className="sb-copilot-suggestions"
             style={{
               display: "grid",
               gap: "0.5rem",
@@ -362,7 +370,7 @@ export function CopilotChat({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
+      <div className="sb-copilot-composer" role="group" aria-label="Enviar pergunta ao Copiloto">
         <input
           className="sb-input"
           aria-label="Pergunta ao Copiloto"
@@ -375,9 +383,11 @@ export function CopilotChat({
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              event.preventDefault();
               void ask();
             }
-          }} style={{ flex: 1 }}
+          }}
+          style={{ flex: 1 }}
         />
         <button
           className="sb-button sb-button-primary"

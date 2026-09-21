@@ -227,6 +227,25 @@ const SUPPORT_CHANNEL: Record<string, string> = {
   CLAIM: "Reclamação",
 };
 
+/**
+ * `support_cases.external_status` — o status CRU do Mercado Livre, que a fila
+ * mostrava como veio ("UNANSWERED"). Valores medidos no Dev em 18/09 (lote 2 do
+ * pente fino): perguntas em MAIÚSCULAS, conversas e reclamações em minúsculas.
+ * Valor novo que o ML inventar degrada para o cru (`lookup`), nunca some.
+ */
+const SUPPORT_EXTERNAL_STATUS: Record<string, string> = {
+  UNANSWERED: "sem resposta no ML",
+  ANSWERED: "respondida no ML",
+  CLOSED_UNANSWERED: "fechada sem resposta",
+  UNDER_REVIEW: "em revisão no ML",
+  BANNED: "removida pelo ML",
+  DELETED: "apagada",
+  active: "conversa ativa",
+  blocked: "conversa bloqueada",
+  opened: "aberta no ML",
+  closed: "encerrada no ML",
+};
+
 /** `support_cases.internal_status` — cinco valores de D-084. Não existe `FECHADO` interno. */
 const SUPPORT_INTERNAL_STATUS: Record<string, string> = {
   NOVO: "Novo",
@@ -419,6 +438,7 @@ export const supportChannelLabel = (code: string): string => lookup(SUPPORT_CHAN
 export const supportInternalStatusLabel = (code: string): string => lookup(SUPPORT_INTERNAL_STATUS, code);
 export const supportPriorityLabel = (code: string): string => lookup(SUPPORT_PRIORITY, code);
 export const supportReplyStateLabel = (code: string): string => lookup(SUPPORT_REPLY_STATE, code);
+export const supportExternalStatusLabel = (code: string): string => lookup(SUPPORT_EXTERNAL_STATUS, code);
 export const supportBodyStateLabel = (code: string): string => lookup(SUPPORT_BODY_STATE, code);
 export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_SENDER_KIND, code);
 export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);

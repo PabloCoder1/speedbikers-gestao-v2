@@ -69,7 +69,11 @@ function chain<T>(result: T): {
 }
 
 interface FakeDbOptions {
-  accountLookup?: { data: { id: string; status: string } | null; error: { message: string } | null };
+  accountLookup?: {
+    data: { id: string; status: string; seller_id?: number | null } | null;
+    error: { message: string } | null;
+  };
+  credentialLookup?: { data: { access_token_expires_at: string } | null; error: { message: string } | null };
   stateInsertFails?: boolean;
   claimedState?: {
     data: {
@@ -98,7 +102,9 @@ function fakeDb(options: FakeDbOptions = {}): {
     from: (table: string) => ({
       select: () =>
         chain(
-          options.accountLookup ?? { data: { id: "acc-1", status: "PENDING" }, error: null },
+          table === "ml_credentials"
+            ? (options.credentialLookup ?? { data: null, error: null })
+            : (options.accountLookup ?? { data: { id: "acc-1", status: "PENDING" }, error: null }),
         ),
       insert: (row: unknown) => {
         inserted.push({ table, row });
@@ -212,12 +218,47 @@ describe("startConnect", () => {
     expect(outcome.status).toBe("not_found");
   });
 
-  it("recusa reconectar uma conta já CONNECTED", async () => {
-    const { deps: d } = deps({ dbOptions: { accountLookup: { data: { id: "acc-1", status: "CONNECTED" }, error: null } } });
+  it("recusa reconectar uma conta CONNECTED com a credencial em dia", async () => {
+    const { deps: d } = deps({
+      dbOptions: {
+        accountLookup: { data: { id: "acc-1", status: "CONNECTED" }, error: null },
+        credentialLookup: { data: { access_token_expires_at: "2026-08-21T15:00:00.000Z" }, error: null },
+      },
+    });
 
     const outcome = await startConnect(d, CALLER, "acc-1");
 
     expect(outcome).toEqual({ status: "rejected", reason: "conta já conectada" });
+  });
+
+  /**
+   * Lote 1 do pente fino (18/09): /contas mandava reautorizar a conta com o
+   * token vencido e a api recusava toda conta CONNECTED — beco sem saída.
+   */
+  it("permite REAUTORIZAR uma conta CONNECTED cujo token venceu, ou que ficou sem credencial", async () => {
+    const vencida = deps({
+      dbOptions: {
+        accountLookup: { data: { id: "acc-1", status: "CONNECTED" }, error: null },
+        credentialLookup: { data: { access_token_expires_at: "2026-08-21T11:59:59.000Z" }, error: null },
+      },
+    });
+    const semCredencial = deps({
+      dbOptions: { accountLookup: { data: { id: "acc-1", status: "CONNECTED" }, error: null } },
+    });
+
+    expect((await startConnect(vencida.deps, CALLER, "acc-1")).status).toBe("redirect");
+    expect((await startConnect(semCredencial.deps, CALLER, "acc-1")).status).toBe("redirect");
+  });
+
+  it("na dúvida sobre a credencial (erro de leitura), não reabre a conta conectada", async () => {
+    const { deps: d } = deps({
+      dbOptions: {
+        accountLookup: { data: { id: "acc-1", status: "CONNECTED" }, error: null },
+        credentialLookup: { data: null, error: { message: "boom" } },
+      },
+    });
+
+    expect(await startConnect(d, CALLER, "acc-1")).toEqual({ status: "rejected", reason: "conta já conectada" });
   });
 
   it("permite reconectar uma conta PENDING, REVOKED ou ERROR", async () => {
@@ -391,6 +432,36 @@ describe("completeConnect", () => {
       connected_at: NOW.toISOString(),
       last_error: null,
     });
+  });
+
+  /**
+   * Reconexão com o usuário ERRADO do Mercado Livre: sem esta recusa, os tokens
+   * da outra loja iam para esta linha e o sistema sincronizava a loja errada.
+   */
+  it("recusa, sem gravar credencial nem marcar erro, quando o seller autorizado não é o da conta", async () => {
+    const { deps: d, db } = deps({
+      dbOptions: { accountLookup: { data: { id: "acc-1", status: "CONNECTED", seller_id: 111 }, error: null } },
+    });
+
+    const outcome = await completeConnect(d, { state: "s", code: "c" });
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      reason: "a conta autorizada no Mercado Livre não é a desta loja — entre com o usuário da própria loja",
+    });
+    expect(db.upserted).toHaveLength(0);
+    expect(db.updated.filter((u) => u.table === "ml_accounts")).toHaveLength(0);
+  });
+
+  it("aceita a reconexão do MESMO seller", async () => {
+    const { deps: d, db } = deps({
+      dbOptions: {
+        accountLookup: { data: { id: "acc-1", status: "CONNECTED", seller_id: TOKEN_RESPONSE_BODY.user_id }, error: null },
+      },
+    });
+
+    expect(await completeConnect(d, { state: "s", code: "c" })).toEqual({ status: "connected", mlAccountId: "acc-1" });
+    expect(db.upserted).toHaveLength(1);
   });
 
   it("dispara o backfill de história ao conectar — sem ele, pedidos anteriores à conexão nunca apareceriam", async () => {

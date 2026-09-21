@@ -5,7 +5,10 @@ import { PageTitle } from "../../../components/page-title";
 import { Shell } from "../../../components/shell";
 import { Voltar } from "../../../components/voltar";
 import { currentMembership } from "../../../lib/request-membership";
+import { podeOperarCompras } from "../../../lib/purchase-order-permission";
+import { AcessoRestrito } from "../../../components/acesso-restrito";
 import { createClient } from "../../../lib/supabase/server";
+import { registeredCost } from "../../../lib/purchase-order-cost";
 import { lerVisaoFornecedores } from "../../../lib/suppliers-overview";
 import { parseReplenishmentPrefill } from "./prefill";
 import { PurchaseOrderForm, type FornecedorOpcao } from "./purchase-order-form";
@@ -45,6 +48,12 @@ export default async function NovoPedidoDeCompraPage({
         <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
+  }
+
+  // O formulário inteiro para quem `create_purchase_order` vai recusar no fim
+  // seria trabalho jogado fora — mesmo gate de /fornecedores/novo.
+  if (!podeOperarCompras(membership.role)) {
+    return <AcessoRestrito titulo="Novo pedido de compra" papel="ADMIN ou GESTOR" />;
   }
 
   // A ponte cobertura→pedido (D-151): `/reposicao` manda `sku=<uuid>:<qtd>`
@@ -134,8 +143,8 @@ export default async function NovoPedidoDeCompraPage({
         isImported: sku.is_imported,
         supplierBrand: sku.supplier_brand,
         quantityOrdered: String(p.quantity),
-        unitCost: sku.purchase_cost === null ? "" : String(sku.purchase_cost),
-        unitCostSuggested: sku.purchase_cost !== null,
+        unitCost: registeredCost(sku.purchase_cost) === null ? "" : String(sku.purchase_cost),
+        unitCostSuggested: registeredCost(sku.purchase_cost) !== null,
       },
     ];
   });

@@ -2,6 +2,7 @@ import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
+import { fingerprintDaDescricao } from "./listing-schema.js";
 import type { FetchListingsParams } from "./ml-listings-fetch.js";
 import { fetchListings } from "./ml-listings-fetch.js";
 
@@ -21,6 +22,9 @@ interface PreviousRow {
   status: string;
   price: number;
   available_quantity: number;
+  /** Opcional: casos que não testam foto/descrição não precisam declarar. */
+  picture_fingerprint?: string | null;
+  description_fingerprint?: string | null;
 }
 
 /** Fake encadeável: `.eq()`/`.is()` devolvem a si mesmos e o `await` resolve. */
@@ -165,6 +169,10 @@ function fakeClient(options: {
   promotions?: Record<string, unknown[]>;
   /** item_id -> erro a lançar na chamada de promoção, para testar que a falha não derruba o item. */
   promotionErrors?: Record<string, Error>;
+  /** Descrição (plain_text) por item_id (D-390) — item ausente do mapa devolve string vazia. */
+  descriptions?: Record<string, string>;
+  /** item_id -> erro a lançar na chamada de descrição, para testar que a falha não derruba o item. */
+  descriptionErrors?: Record<string, Error>;
 }): { client: MercadoLivreClient; requests: RequestOptions<unknown>[] } {
   const requests: RequestOptions<unknown>[] = [];
   let scanIndex = 0;
@@ -199,6 +207,19 @@ function fakeClient(options: {
         }
 
         return Promise.resolve(request.schema.parse(options.promotions?.[itemId] ?? []));
+      }
+
+      if (request.path.startsWith("/items/") && request.path.endsWith("/description")) {
+        const itemId = request.path.replace("/items/", "").replace("/description", "");
+        const erro = options.descriptionErrors?.[itemId];
+
+        if (erro !== undefined) {
+          return Promise.reject(erro);
+        }
+
+        return Promise.resolve(
+          request.schema.parse({ plain_text: options.descriptions?.[itemId] ?? "" }),
+        );
       }
 
       throw new Error(`chamada inesperada: ${request.path}`);
@@ -500,6 +521,110 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
       expect(result.itemsFailed).toBe(0);
       expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
       expect(lines.join()).toContain("listing_promotion_fetch_failed");
+    });
+  });
+
+  /*
+    DESCRIÇÃO (D-390). Completa o diagnóstico de queda pós-alteração
+    editorial: título e foto já emitiam evento de troca; descrição ficava de
+    fora porque não vem no multiget — é um recurso à parte do Mercado Livre.
+  */
+  describe("descrição", () => {
+    it("anúncio ATIVO grava o hash da descrição, nunca o texto", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+        descriptions: { MLB1: "Descrição real do anúncio, com detalhes do produto." },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      const gravado = fake.upserted[0];
+
+      expect(gravado?.description_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify(gravado)).not.toContain("Descrição real do anúncio");
+    });
+
+    it("descrição sem leitura anterior (NULO) não vira evento de troca — ausência não é remoção", async () => {
+      const fake = fakeDb({
+        previous: [
+          {
+            item_id: "MLB1",
+            title: "Anúncio MLB1",
+            status: "active",
+            price: 100,
+            available_quantity: 5,
+            description_fingerprint: null,
+          },
+        ],
+      });
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+        descriptions: { MLB1: "Primeira descrição lida." },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.domainEvents.map((e) => e.event_type)).not.toContain("listing.description.changed");
+    });
+
+    it("descrição que já tinha fingerprint gravado e mudou de verdade emite listing.description.changed", async () => {
+      const fake = fakeDb({
+        previous: [
+          {
+            item_id: "MLB1",
+            title: "Anúncio MLB1",
+            status: "active",
+            price: 100,
+            available_quantity: 5,
+            description_fingerprint: fingerprintDaDescricao("Descrição antiga do anúncio."),
+          },
+        ],
+      });
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+        descriptions: { MLB1: "Descrição nova, editada de verdade." },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.domainEvents.map((e) => e.event_type)).toContain("listing.description.changed");
+    });
+
+    it("anúncio PAUSADO não chama o endpoint de descrição", async () => {
+      const fake = fakeDb({});
+      const { client, requests } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "paused" }) },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(requests.some((r) => r.path.endsWith("/description"))).toBe(false);
+      expect(fake.upserted[0]).toMatchObject({ description_fingerprint: null });
+    });
+
+    it("falha ao consultar descrição não derruba o item — só fica sem fingerprint, com aviso no log", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active" }) },
+        descriptionErrors: { MLB1: new Error("boom 500") },
+      });
+
+      const lines: string[] = [];
+      const result = await fetchListings({
+        ...params(fake.db, client),
+        logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      });
+
+      expect(result.itemsProcessed).toBe(1);
+      expect(result.itemsFailed).toBe(0);
+      expect(fake.upserted[0]).toMatchObject({ description_fingerprint: null });
+      expect(lines.join()).toContain("listing_description_fetch_failed");
     });
   });
 });

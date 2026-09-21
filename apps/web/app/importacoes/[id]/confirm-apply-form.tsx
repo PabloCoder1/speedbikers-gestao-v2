@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { formatCount } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/browser";
 
 /**
@@ -14,15 +15,21 @@ import { createClient } from "../../../lib/supabase/browser";
  *
  * O clique chama a `api`, nunca escreve na tabela direto do navegador: a
  * transição de status fica num lugar só, com validação.
+ *
+ * Lote 3 do pente fino (18/09): aplicar é irreversível e acontecia no
+ * PRIMEIRO clique. Agora o botão abre a confirmação na própria caixa, com
+ * quantas linhas entram, e só o segundo clique chama a `api`. O texto dizia
+ * "as linhas OK acima", e a tabela fica ABAIXO desta caixa.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export function ConfirmApplyForm({ batchId }: { batchId: string }): ReactNode {
+export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows: number | null }): ReactNode {
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
 
   async function confirm(): Promise<void> {
     setBusy(true);
@@ -69,37 +76,62 @@ export function ConfirmApplyForm({ batchId }: { batchId: string }): ReactNode {
     router.refresh();
   }
 
+  const linhas = okRows === null ? "As linhas OK" : `${formatCount(okRows)} ${okRows === 1 ? "linha OK" : "linhas OK"}`;
+
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--sb-space-3)",
-        alignItems: "center",
-        flexWrap: "wrap",
-        margin: "var(--sb-space-3) 0",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-      }}
-    >
-      <p style={{ margin: 0, fontSize: "0.875rem", flex: "1 1 20rem" }}>
-        As linhas <strong>OK</strong> acima entram no catálogo, nos vínculos e no estoque. Ignoradas e
-        inválidas ficam de fora. Isto não pode ser desfeito com um novo envio do mesmo arquivo.
+    <div className={`sb-import-apply${confirmando ? " is-confirming" : ""}`}>
+      <p className="sb-import-apply-text">
+        {confirmando ? (
+          <>
+            <strong>Confirmar a aplicação?</strong> {linhas} da tabela abaixo entram no catálogo, nos vínculos e no
+            estoque. Não dá para desfazer, nem reenviando o mesmo arquivo.
+          </>
+        ) : (
+          <>
+            As linhas <strong>OK</strong> da tabela abaixo entram no catálogo, nos vínculos e no estoque. Ignoradas e
+            inválidas ficam de fora. Isto não pode ser desfeito com um novo envio do mesmo arquivo.
+          </>
+        )}
       </p>
 
-      <button
-        className="sb-button sb-button-primary"
-        type="button"
-        onClick={() => {
-          void confirm();
-        }}
-        disabled={busy}
-      >
-        {busy ? "Confirmando…" : "Confirmar aplicação"}
-      </button>
+      {confirmando ? (
+        <div className="sb-import-apply-actions">
+          <button
+            className="sb-button"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setConfirmando(false);
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            className="sb-button sb-button-primary"
+            type="button"
+            onClick={() => {
+              void confirm();
+            }}
+            disabled={busy}
+          >
+            {busy ? "Aplicando…" : "Sim, aplicar agora"}
+          </button>
+        </div>
+      ) : (
+        <button
+          className="sb-button sb-button-primary"
+          type="button"
+          onClick={() => {
+            setError(null);
+            setConfirmando(true);
+          }}
+        >
+          Confirmar aplicação
+        </button>
+      )}
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, fontSize: "0.875rem", color: "var(--sb-danger)", flexBasis: "100%" }}>
+        <p role="alert" className="sb-import-apply-error">
           {error}
         </p>
       )}

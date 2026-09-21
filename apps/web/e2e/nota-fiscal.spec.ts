@@ -39,7 +39,8 @@ test("vincula um item da NF-e a um SKU pela tela de conferência", async ({ page
     "0 de 1 vinculados",
   );
 
-  await page.getByPlaceholder("Buscar SKU…").fill(seed.skuCode);
+  // O campo também busca pelo NOME do SKU desde o lote 3 do pente fino.
+  await page.getByPlaceholder(/Buscar SKU/).fill(seed.skuCode);
   await page.getByRole("button", { name: new RegExp(seed.skuCode) }).click();
   await page.getByRole("button", { name: "Vincular", exact: true }).click();
 

@@ -406,7 +406,9 @@ export default async function HomePage({
     {
       label: "Em mediação",
       caption: "com representante do Mercado Livre; subconjunto dos atendimentos abertos",
-      href: "/atendimento?canal=CLAIM",
+      // O cartão conta `is_mediation` entre os abertos; a lista abria TODAS as
+      // reclamações. `?mediacao=1` existe desde o lote 2 do pente fino (18/09).
+      href: "/atendimento?mediacao=1",
       cta: "Ver mediações",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "caso em disputa" : "casos em disputa"}`,
       count: mediations.count,
@@ -416,7 +418,8 @@ export default async function HomePage({
     {
       label: "Ações de impacto alto",
       caption: "severidade alta, ordenadas por impacto financeiro estimado",
-      href: "/acoes",
+      // O cartão conta só severidade alta; a lista abre no MESMO recorte.
+      href: "/acoes?prioridade=alta",
       cta: "Ver ações",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "ação de severidade alta aberta" : "ações de severidade alta abertas"}`,
       count: acoesAltas.count,
@@ -647,7 +650,13 @@ export default async function HomePage({
           }
         >
           <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
-            {pontos.length === 0 ? (
+            {/* Lote 1 do pente fino (18/09): a leitura que FALHA dizia "nenhum dia
+                com métrica" — erro lido como ausência de dado (D-067). */}
+            {serieDiaria.error !== null ? (
+              <p role="alert" style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.6875rem" }}>
+                Não foi possível carregar o faturamento diário agora. Os indicadores acima não dependem deste gráfico.
+              </p>
+            ) : pontos.length === 0 ? (
               <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
                 Nenhum dia com métrica calculada nesta janela — o recálculo só materializa dias tocados pela
                 reconciliação, e não fabrica zero.

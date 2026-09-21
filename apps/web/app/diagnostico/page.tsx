@@ -14,6 +14,7 @@ import {
   selectDiagnosis,
 } from "../../lib/diagnostic-filters";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
+import { eventTypeLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
 import { DiagnosisPanel } from "../skus/[skuId]/diagnosis-panel";
@@ -349,7 +350,8 @@ export default async function DiagnosticoPage({
                   />
                   <b>
                     {linha?.sku}
-                    {causa !== undefined ? ` · ${causa.eventType}` : ""}
+                    {/* O código cru do evento ("listing.price.changed") vira rótulo (lote 3). */}
+                    {causa !== undefined ? ` · ${eventTypeLabel(causa.eventType)}` : ""}
                   </b>
                   <span>
                     Confiança {diagnosis.confianca === "alta" ? "Alta" : "Média"}
@@ -473,8 +475,15 @@ export default async function DiagnosticoPage({
               <Link className="sb-button" href={`/skus/${selecionado.escopo.skuId}`}>
                 Ver o SKU
               </Link>
-              <Link className="sb-button sb-button-primary" href="/compras/novo">
-                Criar pedido de compra
+              {/* Abria um pedido EM BRANCO, até para queda de venda. A tela que
+                  decide quanto comprar deste SKU é a reposição — o link leva a
+                  ela já filtrada, e o pedido nasce de lá com a quantidade
+                  sugerida (lote 3 do pente fino). */}
+              <Link
+                className="sb-button sb-button-primary"
+                href={`/reposicao?busca=${encodeURIComponent(skuLookup.get(selecionado.escopo.skuId)?.sku ?? "")}`}
+              >
+                Ver reposição deste SKU
               </Link>
             </div>
           </section>

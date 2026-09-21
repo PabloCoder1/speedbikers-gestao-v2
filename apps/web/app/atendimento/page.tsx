@@ -1,7 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FilterMenu } from "../../components/filter-menu";
 import { FilterPill } from "../../components/filter-pill";
+import { Icone } from "../../components/icons";
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -10,24 +13,27 @@ import { isPageBeyondEnd } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
   supportChannelLabel,
+  supportExternalStatusLabel,
   supportInternalStatusLabel,
   supportPriorityLabel,
   supportReplyStateLabel,
 } from "../../lib/labels";
+import { currentMembership } from "../../lib/request-membership";
 import type { SupportCaseLinkRow } from "../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../lib/support-case-reference";
+import { describeDeadline } from "../../lib/support-deadline";
 import {
   CHANNELS,
   INTERNAL_STATUSES,
   PAGE_SIZE,
   buildSupportHref,
+  classifySupportSearch,
   resolveSupportFilters,
   summarizePagedWindow,
   type SupportFilters,
 } from "../../lib/support-filters";
 import { createClient } from "../../lib/supabase/server";
 import { TriageCell } from "./triage-cell";
-import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 
@@ -36,33 +42,35 @@ export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Caixa de Entrada do Atendimento (Fase 7B, D-090) — a primeira tela do SAC.
+ * Caixa de Entrada do Atendimento (Fase 7B, D-090), redesenhada no lote 2 do
+ * pente fino (D-384, 18/09).
  *
- * Até aqui a ingestão de Perguntas funcionava (D-087/D-088/D-089) e ninguém
- * conseguia VER o que tinha sido ingerido. Esta tela é só leitura: lista
- * `support_cases` sob RLS, com filtro por conta, tipo e status.
+ * **Uma tela, não seis** (D-084): perguntas, mensagens, reclamações, mediações e
+ * devoluções são recortes da mesma fila — mediação e devolução são FACETAS do
+ * claim. **Leitura direta do Supabase** sob RLS (Modelo A, D-012); a triagem
+ * passa por RPC (`triage_support_case`, D-094) porque escreve o caso e o evento
+ * na mesma transação.
  *
- * **Leitura direta do Supabase, sem rota na `api`** (Modelo A, D-012) — é
- * exatamente a categoria que `docs/ARCHITECTURE.md` secao 4 descreve: read
- * model indexado, nenhum segredo envolvido.
+ * O que o lote 2 mudou, e por quê:
  *
- * **A triagem, ao contrário, passa por RPC** (D-094, `triage_support_case`):
- * ela atualiza `support_cases` E acrescenta `support_case_events` na MESMA
- * transação (D-084), e duas escritas separadas do navegador não teriam como
- * ser atômicas. É a exceção deliberada ao padrão de escrita desta tela.
+ * - **Faixa de indicadores clicável**, com as contagens canônicas de
+ *   `get_support_metrics` (METRICS 5B) — a MESMA fonte de /atendimento/metricas,
+ *   para os dois lugares nunca discordarem. Cada número abre a fila que ele
+ *   conta. "Aguardando a loja" NÃO é link: a regra compara duas colunas da
+ *   linha (`last_inbound_at > last_outbound_at`), e o filtro do PostgREST não
+ *   expressa isso sem migration — um link abriria uma fila que não bate com o
+ *   número.
+ * - **"Meus"**, **"Mediação"**, **prazo vencido / vence em 24 h** e **busca** por
+ *   número do caso, pedido, MLB ou SKU. Com 900+ abertos, sem isso não havia
+ *   como achar a própria fila nem um caso citado pelo cliente.
+ * - **Prazo com leitura**: "vencido há 3 h" em vermelho, "vence em 5 h" em
+ *   amarelo — a coluna mostrava só a data.
+ * - **Status do ML traduzido** ("UNANSWERED" virou "sem resposta no ML").
+ * - Três fileiras de pílulas viraram menus; as ações da tela viraram botões.
  *
- * **A fila PAGINA desde D-289.** Ela mostrava as 100 mais recentes e mais
- * nada: com 929 abertos no Dev, 829 casos não tinham como ser alcançados por
- * esta tela — nenhum filtro daqui separa "os 100 mais recentes" do resto, e a
- * frase honesta de D-267 ("100 de 929") só tornava a falta visível. O
- * vocabulário (conta, canal, status, prazo, página) mudou para
- * `lib/support-filters.ts`, sobre a mecânica que oito telas já usam.
- *
- * **Uma tela, não seis.** `docs/PRODUCT_REQUIREMENTS.md` lista "Perguntas",
- * "Mensagens", "Reclamações", "Mediações" e "Devoluções" como grupos da
- * Central — mas D-084 já decidiu que são FILTROS sobre a mesma projeção, não
- * cases separados (mediação e devolução são facetas do claim). Rotas
- * separadas duplicariam a mesma tabela cinco vezes.
+ * A ordem segue `last_activity_at desc` e a tela NÃO afirma priorização por
+ * prazo ou risco (D-267): o topo da lista não é "o mais urgente", e dizer isso
+ * faria o operador confiar no que não acontece.
  */
 
 interface SupportCaseRow {
@@ -83,17 +91,21 @@ interface SupportCaseRow {
   support_case_deadlines: { due_at: string | null; status: string }[] | null;
 }
 
+interface SupportMetricsRow {
+  abertos_total: number;
+  aguardando_loja: number;
+  mediacoes_abertas: number;
+  prazos_proximas_24h: number;
+  prazos_vencidos: number;
+}
+
+/** Teto da busca: é recorte para achar um caso, não para listar a base. */
+const SEARCH_LIMIT = 500;
+
 /**
- * O prazo VIGENTE de um caso — o `ACTIVE` que vence primeiro.
- *
- * Um caso pode ter mais de um prazo (2.059 para 2.840 casos no Dev, então menos
- * de um em média, mas nada impede dois). Escolher o mais próximo em TypeScript
- * não é a agregação que `AGENTS.md` proíbe: as linhas já vieram do banco no
- * mesmo `select`, e é o mesmo que `resolveSupportCaseReference` faz com os
- * vínculos logo ao lado.
- *
- * `null` quando não há prazo ativo — e a célula mostra "—", nunca uma data
- * inventada nem um "no prazo" que ninguém mediu.
+ * O prazo VIGENTE de um caso — o `ACTIVE` que vence primeiro. Escolher em
+ * TypeScript não é a agregação que `AGENTS.md` proíbe: as linhas vieram no
+ * mesmo `select`. `null` quando não há prazo ativo — "—", nunca "no prazo".
  */
 function prazoVigente(linhas: SupportCaseRow["support_case_deadlines"]): string | null {
   if (linhas === null) return null;
@@ -114,6 +126,58 @@ function facets(row: SupportCaseRow): string[] {
   return result;
 }
 
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * A busca vira uma lista de ids de caso. Cada ramo usa um índice que já existe
+ * (`support_case_links_{order,sku,listing}_idx`, D-085) e nenhum lê a base
+ * inteira: SKU e anúncio primeiro acham o cadastro, depois o vínculo.
+ */
+async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: string[]; error: string | null }> {
+  const termo = classifySupportSearch(search);
+  const ids = new Set<string>();
+
+  if (termo.kind === "numero") {
+    const [casos, pedidos] = await Promise.all([
+      supabase.from("support_cases").select("id").eq("external_case_id", termo.value).limit(50),
+      supabase.from("support_case_links").select("support_case_id").eq("order_id", Number(termo.value)).limit(SEARCH_LIMIT),
+    ]);
+
+    if (casos.error !== null || pedidos.error !== null) {
+      return { ids: [], error: (casos.error ?? pedidos.error)?.message ?? "falha na busca" };
+    }
+
+    for (const linha of casos.data) ids.add(linha.id);
+    for (const linha of pedidos.data) ids.add(linha.support_case_id);
+
+    return { ids: [...ids], error: null };
+  }
+
+  const cadastro =
+    termo.kind === "anuncio"
+      ? await supabase.from("listings").select("id").eq("item_id", termo.value).limit(20)
+      : await supabase.from("skus").select("id").ilike("sku", `%${termo.value}%`).limit(50);
+
+  if (cadastro.error !== null) return { ids: [], error: cadastro.error.message };
+
+  const alvos = cadastro.data.map((linha) => linha.id);
+
+  if (alvos.length === 0) return { ids: [], error: null };
+
+  // fila-justificada: vinculos usa os IDs descobertos pela consulta cadastro acima.
+  const vinculos = await supabase
+    .from("support_case_links")
+    .select("support_case_id")
+    .in(termo.kind === "anuncio" ? "listing_id" : "sku_id", alvos)
+    .limit(SEARCH_LIMIT);
+
+  if (vinculos.error !== null) return { ids: [], error: vinculos.error.message };
+
+  for (const linha of vinculos.data) ids.add(linha.support_case_id);
+
+  return { ids: [...ids], error: null };
+}
+
 export default async function AtendimentoPage({
   searchParams,
 }: {
@@ -121,92 +185,56 @@ export default async function AtendimentoPage({
 }): Promise<ReactNode> {
   const query = await searchParams;
   const supabase = await createClient();
+  const filters: SupportFilters = resolveSupportFilters(query);
 
-  // Três leituras que nada devem umas às outras, juntas desde D-195: eram
-  // três idas ao banco em fila antes da primeira linha aparecer.
-  //
-  // - `getUser()` só serve para a `TriageCell` distinguir "Você" de outro
-  //   responsável — a autorização real acontece dentro da RPC, nunca a partir
-  //   deste id. Ele revalida o token e custa uma ida inteira; quem barra a
-  //   rota é o `proxy.ts`, que já chamou `getUser()` nesta requisição.
-  // - a organização vem da RLS em toda leitura; este `select` existe para
-  //   distinguir "sem organização" de "falha de leitura" (D-067).
-  // - as contas alimentam o seletor e não dependem de nenhuma das outras.
-  const [{ data: auth }, membership, accountsResult] = await Promise.all([
+  // Leituras independentes, juntas (D-195). `getUser()` só serve para "Você"
+  // e para o filtro "Meus" — a autorização real é da RLS e da RPC de triagem.
+  const [{ data: auth }, membership, accountsResult, metricsResult] = await Promise.all([
     supabase.auth.getUser(),
     currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
+    supabase.rpc("get_support_metrics", { p_days: 7 }).maybeSingle(),
   ]);
 
   const viewerId = auth.user?.id ?? null;
 
-  // Falha de leitura e "sem organização" são coisas diferentes (D-067,
-  // Nível 3): a segunda é cadastro, a primeira é erro transitório.
-  if (membership.error !== null) {
+  // Falha de leitura e "sem organização" são coisas diferentes (D-067).
+  if (membership.error !== null || membership.organizationId == null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível verificar sua organização. Tente recarregar a página.
+        <PageTitle eyebrow="ATENDIMENTO / OPERAÇÃO" title="Caixa de Entrada" />
+        <p role={membership.error !== null ? "alert" : undefined} className="sb-empty">
+          {membership.error !== null
+            ? "Não foi possível verificar sua organização. Tente recarregar a página."
+            : "Sua conta não está associada a nenhuma organização."}
         </p>
       </Shell>
     );
   }
 
-  if (membership.organizationId == null) {
-    return (
-      <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          Sua conta não está associada a nenhuma organização.
-        </p>
-      </Shell>
-    );
-  }
-
-  /*
-    O vocabulário desta tela mora em `lib/support-filters.ts` desde D-289 —
-    incluindo `pagina`, que é a dimensão nova. O filtro de SLA (D-115,
-    destravado por D-107) continua sendo só cases com prazo ATIVO vencendo nas
-    próximas 24h, ou já vencido.
-  */
-  const filters: SupportFilters = resolveSupportFilters(query);
-  const { channel, status, prazo: prazoRisco } = filters;
-
+  const { channel, status, prazo } = filters;
   const accounts = accountsResult.data ?? [];
   const selectedAccount = accounts.find((account) => account.slug === filters.account) ?? null;
 
-  // O embed de `support_case_links` atravessa a FK COMPOSTA
-  // (support_case_id, organization_id, ml_account_id) — é ela que garante que
-  // um vínculo nunca pertence a outra conta (D-085). Sem filtro explícito por
-  // organização: a RLS (`has_account_access(ml_account_id)`) já restringe, e
-  // duplicar a regra aqui seria a segunda fonte de verdade que D-012 evita.
-  // O `!inner` do embed de prazos SÓ entra quando o filtro está ativo:
-  // como inner join, ele excluiria da listagem normal todo case sem prazo.
+  // "Meus" sem saber quem está vendo não pode virar "todos": fila vazia é a
+  // resposta honesta, e o aviso abaixo diz por quê.
+  const semViewer = filters.mine && viewerId === null;
+
+  const busca = filters.search === null ? null : await casosDaBusca(supabase, filters.search);
+
+  /*
+    O embed de `support_case_links` atravessa a FK COMPOSTA (D-085). Prazo vem
+    SEMPRE (D-267); `!inner` só quando o recorte de prazo está ligado, porque
+    como inner join ele excluiria da listagem normal todo caso sem prazo.
+  */
   const baseSelect =
     "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))";
+  const embedPrazo = prazo === null ? "support_case_deadlines(due_at, status)" : "support_case_deadlines!inner(due_at, status)";
 
-  /*
-    O prazo passa a vir SEMPRE (D-267). Antes ele só era embutido quando o
-    filtro "prazo em risco" estava ligado — servia para recortar e nunca
-    aparecia. `due_at` existe em 2.059 prazos no Dev, e o frame pede a coluna
-    SLA: o dado estava lá, invisível.
-
-    `!inner` continua só no caso do filtro, porque ali o embed É o predicado.
-  */
-  const embedPrazo = prazoRisco
-    ? "support_case_deadlines!inner(due_at, status)"
-    : "support_case_deadlines(due_at, status)";
-
-  /*
-    `count: "exact"` na MESMA viagem, e agora `.range()` no lugar do `.limit()`
-    (D-289). D-267 declarou a janela ("100 de 929") e deixou escrito que a
-    paginação ficava como dívida, não como "quando justificar" — o volume já
-    justificava. Sem as páginas 2 em diante, os outros 829 abertos do Dev eram
-    inalcançáveis por esta tela: nenhum filtro daqui separa "os 100 mais
-    recentes" do resto.
-  */
   const desde = (filters.page - 1) * PAGE_SIZE;
+  const agora = new Date();
+  const agoraIso = agora.toISOString();
+  const em24h = new Date(agora.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
   let casesQuery = supabase
     .from("support_cases")
@@ -214,21 +242,21 @@ export default async function AtendimentoPage({
     .order("last_activity_at", { ascending: false })
     .range(desde, desde + PAGE_SIZE - 1);
 
-  if (prazoRisco) {
-    const em24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  if (prazo !== null) {
+    casesQuery = casesQuery.eq("support_case_deadlines.status", "ACTIVE");
 
-    casesQuery = casesQuery
-      .eq("support_case_deadlines.status", "ACTIVE")
-      .lte("support_case_deadlines.due_at", em24h);
+    if (prazo === "risco") casesQuery = casesQuery.lte("support_case_deadlines.due_at", em24h);
+    if (prazo === "vencido") casesQuery = casesQuery.lt("support_case_deadlines.due_at", agoraIso);
+    if (prazo === "24h") {
+      casesQuery = casesQuery.gte("support_case_deadlines.due_at", agoraIso).lt("support_case_deadlines.due_at", em24h);
+    }
   }
 
-  if (selectedAccount !== null) {
-    casesQuery = casesQuery.eq("ml_account_id", selectedAccount.id);
-  }
-
-  if (channel !== null) {
-    casesQuery = casesQuery.eq("channel", channel);
-  }
+  if (selectedAccount !== null) casesQuery = casesQuery.eq("ml_account_id", selectedAccount.id);
+  if (channel !== null) casesQuery = casesQuery.eq("channel", channel);
+  if (filters.mediation) casesQuery = casesQuery.eq("is_mediation", true);
+  if (filters.mine && viewerId !== null) casesQuery = casesQuery.eq("assignee_id", viewerId);
+  if (busca !== null) casesQuery = casesQuery.in("id", busca.ids.length === 0 ? ["00000000-0000-0000-0000-000000000000"] : busca.ids);
 
   if (status === "abertos") {
     casesQuery = casesQuery.neq("internal_status", "RESOLVIDO");
@@ -236,26 +264,30 @@ export default async function AtendimentoPage({
     casesQuery = casesQuery.eq("internal_status", status);
   }
 
-  const casesResult = await casesQuery;
-  const cases = (casesResult.data ?? []) as unknown as SupportCaseRow[];
+  // "Meus abertos" para a faixa — uma contagem com `head`, sem trazer linha.
+  const [casesResult, meusResult] = await Promise.all([
+    semViewer || busca?.error != null ? Promise.resolve(null) : casesQuery,
+    viewerId === null
+      ? Promise.resolve(null)
+      : supabase
+          .from("support_cases")
+          .select("id", { count: "exact", head: true })
+          .eq("assignee_id", viewerId)
+          .neq("internal_status", "RESOLVIDO"),
+  ]);
+
+  const cases = (casesResult?.data ?? []) as unknown as SupportCaseRow[];
 
   /*
-    PÁGINA QUE PASSOU DO FIM NÃO É FALHA DE LEITURA — e o PostgREST não as
-    distingue sozinho: ele devolve **416 `PGRST103`** com `count` nulo (medido).
-    Um `?pagina=9` guardado nos Filtros Salvos depois que a fila encolheu cairia
-    aqui, e a tela pintaria "Não foi possível carregar" em vermelho para um
-    pedido legítimo. A resposta certa é dizer que a página não existe e
-    oferecer a volta — sem inventar total nenhum, porque nesta resposta não
-    veio total.
+    Página que passou do fim não é falha de leitura: o PostgREST devolve 416
+    `PGRST103` com `count` nulo (medido, D-289). A tela diz que a página não
+    existe e oferece a volta.
   */
-  const paginaVazia = isPageBeyondEnd(casesResult.error);
-  const error = paginaVazia ? accountsResult.error : (casesResult.error ?? accountsResult.error);
+  const paginaVazia = isPageBeyondEnd(casesResult?.error ?? null);
+  const erroLista = busca?.error ?? (paginaVazia ? null : (casesResult?.error?.message ?? null));
+  const erro = erroLista ?? accountsResult.error?.message ?? null;
 
-  /*
-    A JANELA DECLARADA (D-267) agora sabe em que página está: "Mostrando 101 a
-    200 de 929", não mais "100 de 929" fixo.
-  */
-  const totalCount = casesResult.count ?? cases.length;
+  const totalCount = casesResult?.count ?? cases.length;
   const janela = summarizePagedWindow({
     page: filters.page,
     totalCount,
@@ -267,287 +299,408 @@ export default async function AtendimentoPage({
   });
 
   const current = filters;
+  const limpo: Partial<SupportFilters> = {
+    account: null,
+    channel: null,
+    status: "abertos",
+    prazo: null,
+    mine: false,
+    mediation: false,
+    search: null,
+  };
+
+  const metrics = metricsResult.error === null ? (metricsResult.data as SupportMetricsRow | null) : null;
+  const numero = (valor: number | undefined): string => (metrics === null || valor === undefined ? "—" : formatCount(valor));
+
+  /*
+    A faixa conta a ORGANIZAÇÃO inteira (é a leitura de `get_support_metrics`,
+    que não recebe conta), e é navegação: cada célula abre a fila dela a partir
+    do recorte limpo. É por isso que ela não segue os filtros da tabela — o
+    número do painel abaixo é o do recorte (D-236).
+  */
+  const celulas: KpiCellData[] = [
+    {
+      label: "Abertos",
+      formula: "Atendimentos com status interno diferente de Resolvido, em todas as contas.",
+      value: numero(metrics?.abertos_total),
+      previous: null,
+      href: buildSupportHref(current, limpo),
+      tom: "neutro",
+    },
+    {
+      label: "Aguardando a loja",
+      formula: "Pergunta sem resposta, ou conversa/reclamação em que o cliente falou por último.",
+      value: numero(metrics?.aguardando_loja),
+      previous: null,
+      ressalva: "pergunta sem resposta ou cliente falou por último",
+      tom: "atencao",
+      ...(metrics !== null && metrics.aguardando_loja > 0 ? { destaque: "atencao" as const } : {}),
+    },
+    {
+      label: "Prazo vencido",
+      formula: "Prazos ativos do Mercado Livre com a data no passado.",
+      value: numero(metrics?.prazos_vencidos),
+      previous: null,
+      href: buildSupportHref(current, { ...limpo, prazo: "vencido" }),
+      tom: "perigo",
+      ...(metrics !== null && metrics.prazos_vencidos > 0 ? { destaque: "perigo" as const } : {}),
+    },
+    {
+      label: "Vence em 24 h",
+      formula: "Prazos ativos do Mercado Livre que vencem nas próximas 24 horas.",
+      value: numero(metrics?.prazos_proximas_24h),
+      previous: null,
+      href: buildSupportHref(current, { ...limpo, prazo: "24h" }),
+      tom: "atencao",
+    },
+    {
+      label: "Em mediação",
+      formula: "Reclamações abertas com mediação do Mercado Livre.",
+      value: numero(metrics?.mediacoes_abertas),
+      previous: null,
+      href: buildSupportHref(current, { ...limpo, mediation: true }),
+      tom: "perigo",
+    },
+    {
+      label: "Meus abertos",
+      formula: "Atendimentos abertos atribuídos a você.",
+      value: meusResult?.error !== null ? "—" : formatCount(meusResult.count ?? 0),
+      previous: null,
+      href: buildSupportHref(current, { ...limpo, mine: true }),
+      tom: "info",
+    },
+  ];
+
+  const rotuloConta = selectedAccount?.label ?? "Todas as contas";
+  const rotuloTipo = channel === null ? "Todos os tipos" : supportChannelLabel(channel);
+  const rotuloStatus =
+    status === "abertos" ? "Abertos" : status === "todos" ? "Todos os status" : supportInternalStatusLabel(status);
+
+  const recorteAtivo =
+    filters.account !== null ||
+    channel !== null ||
+    status !== "abertos" ||
+    prazo !== null ||
+    filters.mine ||
+    filters.mediation ||
+    filters.search !== null;
 
   return (
     <Shell>
       <PageTitle
         eyebrow="ATENDIMENTO / OPERAÇÃO"
         title="Caixa de Entrada"
-        subtitle={
-          <>
-            {/* Corrigido em D-111 — dizia "só perguntas são sincronizadas",
-                congelado de D-090; os três canais sincronizam desde D-097/D-108. */}
-            Perguntas, mensagens pós-venda e reclamações das contas Mercado Livre.
-          </>
-        }
+        subtitle="Perguntas, mensagens pós-venda e reclamações das contas Mercado Livre, numa fila só."
         aside={
           <>
-            <Link href="/atendimento/templates" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
-              Templates de resposta
+            <Link className="sb-button" href="/atendimento/metricas">
+              <Icone nome="barras" tamanho={14} /> Métricas
             </Link>
-            <Link href="/atendimento/conhecimento" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
-              Base de Conhecimento
+            <Link className="sb-button" href="/atendimento/templates">
+              <Icone nome="mensagem" tamanho={14} /> Templates
             </Link>
-            <Link href="/atendimento/metricas" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
-              Métricas
+            <Link className="sb-button" href="/atendimento/conhecimento">
+              <Icone nome="livro" tamanho={14} /> Base de conhecimento
             </Link>
           </>
         }
       />
 
-      {/*
-        O `support-overview` do frame: um selo, UM número e uma nota — não é
-        faixa de KPIs. Ele trata cada fila como tela própria, e o número dele é
-        o daquela fila; aqui é o do RECORTE ATUAL, que é exatamente o que a
-        tabela mostra, para cabeçalho e corpo não discordarem (D-236).
+      <KpiStrip ancora cells={celulas} />
 
-        A legenda do frame ("Fila priorizada por prazo, risco e cliente") NÃO
-        entrou: a fila ordena por `last_activity_at desc`, não por prazo nem
-        risco. Afirmar priorização que não acontece é pior do que não dizer
-        nada, porque o operador confiaria no topo da lista.
-      */}
-      {error === null && !paginaVazia && (
-        <div className="sb-stat" style={{ marginBottom: "var(--sb-space-3)", maxWidth: "24rem" }}>
-          <span className="sb-stat-label">No recorte</span>
-          <b className="sb-stat-value">{formatCount(totalCount)}</b>
-          <span className="sb-stat-note">{janela.label}</span>
-        </div>
-      )}
-
-      {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar os atendimentos: {error.message}
+      {metricsResult.error !== null && (
+        <p role="alert" className="sb-inbox-note sb-inbox-note-danger">
+          Os indicadores acima não carregaram agora — a fila abaixo continua valendo.
         </p>
       )}
 
-      {accountsResult.error === null && accounts.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-          <FilterPill href={buildSupportHref(current, { account: null })} active={selectedAccount === null}>
-            Todas as contas
-          </FilterPill>
-          {accounts.map((account) => (
-            <FilterPill
-              key={account.id}
-              href={buildSupportHref(current, { account: account.slug })} active={selectedAccount?.id === account.id}
-            >
-              {account.label}
-            </FilterPill>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-        <FilterPill href={buildSupportHref(current, { channel: null })} active={channel === null}>
-          Todos os tipos
-        </FilterPill>
-        {CHANNELS.map((code) => (
-          <FilterPill key={code} href={buildSupportHref(current, { channel: code })} active={channel === code}>
-            {supportChannelLabel(code)}
-          </FilterPill>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-4)" }}>
-        <FilterPill href={buildSupportHref(current, { status: "abertos" })} active={status === "abertos"}>
-          Abertos
-        </FilterPill>
-        {INTERNAL_STATUSES.map((code) => (
-          <FilterPill key={code} href={buildSupportHref(current, { status: code })} active={status === code}>
-            {supportInternalStatusLabel(code)}
-          </FilterPill>
-        ))}
-        <FilterPill href={buildSupportHref(current, { status: "todos" })} active={status === "todos"}>
-          Todos
-        </FilterPill>
-        <FilterPill href={buildSupportHref(current, { prazo: !prazoRisco })} active={prazoRisco} tone="danger">
-          ⏱ Prazo em risco
-        </FilterPill>
-      </div>
-
-      {/*
-        A PÁGINA QUE NÃO EXISTE tem texto próprio, e o motivo é que ela não é
-        "fila vazia": o recorte pode estar cheio, e só esta página passou do
-        fim. Mandar de volta à primeira é a única ação útil daqui.
-      */}
-      {paginaVazia && (
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          Esta página não existe neste recorte — a fila encolheu ou o link é antigo.{" "}
-          <Link href={buildSupportHref(current, { page: 1 })}>Voltar à primeira página</Link>.
-        </p>
-      )}
-
-      {error === null && !paginaVazia && cases.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          {status === "abertos" && channel === null && selectedAccount === null
-            ? "Nenhum atendimento em aberto. A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."
-            : "Nenhum atendimento com esses filtros."}
-        </p>
-      )}
-
-      {error === null && cases.length > 0 && (
+      <div className="sb-inbox-section">
         <Panel
           title="Fila de atendimentos"
-          subtitle="Prazo, tipo, produto e conta visíveis antes de abrir o caso."
+          // A janela só quando há linha: vazia, o estado abaixo já diz o que houve.
+          {...(cases.length > 0 ? { subtitle: janela.label } : {})}
+          aside={
+            <>
+              {accountsResult.error === null && accounts.length > 1 && (
+                <FilterMenu
+                  rotulo={rotuloConta}
+                  opcoes={[
+                    { href: buildSupportHref(current, { account: null }), label: "Todas as contas", ativo: selectedAccount === null },
+                    ...accounts.map((account) => ({
+                      href: buildSupportHref(current, { account: account.slug }),
+                      label: account.label,
+                      ativo: selectedAccount?.id === account.id,
+                    })),
+                  ]}
+                />
+              )}
+              <FilterMenu
+                rotulo={rotuloTipo}
+                opcoes={[
+                  { href: buildSupportHref(current, { channel: null }), label: "Todos os tipos", ativo: channel === null },
+                  ...CHANNELS.map((code) => ({
+                    href: buildSupportHref(current, { channel: code }),
+                    label: supportChannelLabel(code),
+                    ativo: channel === code,
+                  })),
+                ]}
+              />
+              <FilterMenu
+                rotulo={rotuloStatus}
+                opcoes={[
+                  { href: buildSupportHref(current, { status: "abertos" }), label: "Abertos", ativo: status === "abertos" },
+                  ...INTERNAL_STATUSES.map((code) => ({
+                    href: buildSupportHref(current, { status: code }),
+                    label: supportInternalStatusLabel(code),
+                    ativo: status === code,
+                  })),
+                  { href: buildSupportHref(current, { status: "todos" }), label: "Todos os status", ativo: status === "todos" },
+                ]}
+              />
+            </>
+          }
         >
-          <div style={{ overflowX: "auto" }}>
-            <table className="sb-table">
-              <thead>
-                <tr>
-                  <th>Prioridade</th>
-                  {/*
-                    O frame trata Perguntas, Mensagens, Reclamações, Devoluções
-                    e Mediações como CINCO telas. Aqui são cinco recortes de uma
-                    fila só — e essa decisão não é desta fatia: **D-084 já a
-                    tomou**, porque mediação e devolução são FACETAS do claim,
-                    não canais próprios. O cabeçalho deste arquivo diz isso
-                    desde então ("uma tela, não seis").
+          <div className="sb-inbox-toolbar">
+            <form method="get" action="/atendimento" className="sb-inbox-search" role="search">
+              {/* GET nativo só envia os campos do form: as outras dimensões vão escondidas. */}
+              {filters.account !== null && <input type="hidden" name="account" value={filters.account} />}
+              {channel !== null && <input type="hidden" name="canal" value={channel} />}
+              {status !== "abertos" && <input type="hidden" name="status" value={status} />}
+              {prazo !== null && <input type="hidden" name="prazo" value={prazo} />}
+              {filters.mine && <input type="hidden" name="meus" value="1" />}
+              {filters.mediation && <input type="hidden" name="mediacao" value="1" />}
+              <span className="sb-inbox-search-icon" aria-hidden="true">
+                <Icone nome="lupa" tamanho={14} />
+              </span>
+              <input
+                className="sb-input"
+                type="search"
+                name="busca"
+                defaultValue={filters.search ?? ""}
+                placeholder="Nº do caso, pedido, MLB ou SKU"
+                aria-label="Buscar por número do caso, pedido, anúncio (MLB) ou SKU"
+              />
+              <button className="sb-button" type="submit">
+                Buscar
+              </button>
+            </form>
 
-                    Por isso o tipo precisa ser coluna: com as cinco filas
-                    juntas, sem ela a linha não diz de qual veio.
-                  */}
-                  <th>Tipo</th>
-                  <th>Conta</th>
-                  <th>Produto / referência</th>
-                  {/*
-                    A coluna que o frame acrescenta e que o dado já sustentava
-                    sem aparecer: `due_at` existe em 2.059 prazos no Dev e até
-                    aqui só servia de filtro.
-                  */}
-                  <th>SLA</th>
-                  <th>Status</th>
-                  {/*
-                    Onde o frame põe "Responsável". A célula é maior que o
-                    rótulo dele: `TriageCell` controla prioridade E atribuição
-                    na mesma escrita atômica (D-094), então o cabeçalho diz o
-                    que ela é de verdade.
-                  */}
-                  <th>Triagem</th>
-                  <th>Última atividade</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cases.map((row) => {
-                  const reference = resolveSupportCaseReference(row.support_case_links);
-                  const rowFacets = facets(row);
-                  const prazo = prazoVigente(row.support_case_deadlines);
-
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
-                      </td>
-
-                      <td>
-                        {/*
-                          O RECORTE VIAJA COM O CASO (D-286).
-
-                          Abrir um atendimento e voltar devolvia a fila sem
-                          filtro nenhum: quem recortou "prazo em risco +
-                          reclamação + Loja X" entre **943 casos abertos**
-                          recomeçava do zero a cada caso lido. É a única coisa
-                          que o inbox de três colunas do frame realmente
-                          protege, e ela custa um parâmetro — não uma tela.
-                        */}
-                        <Link
-                          href={`/atendimento/${row.id}?volta=${encodeURIComponent(
-                            /*
-                              A PÁGINA VIAJA JUNTO (D-289). `buildSupportHref`
-                              volta à página 1 quando um FILTRO muda — conjunto
-                              novo, começo novo —, e aqui nada mudou: passar
-                              `page` de propósito é o que impede que ler o caso
-                              da página 7 devolva a pessoa à 1.
-                            */
-                            buildSupportHref(current, { page: current.page }),
-                          )}`}
-                        >
-                          {supportChannelLabel(row.channel)}
-                        </Link>
-                        {rowFacets.length > 0 && <div className="sb-mono">{rowFacets.join(" · ")}</div>}
-                        <div className="sb-mono">
-                          #{row.external_case_id}
-                          {row.external_status !== null && ` · ${row.external_status}`}
-                        </div>
-                      </td>
-
-                      <td>{row.ml_accounts?.label ?? "—"}</td>
-
-                      <td>
-                        {reference === null ? (
-                          "—"
-                        ) : (
-                          <>
-                            {reference.href === null ? (
-                              <span>{reference.code}</span>
-                            ) : (
-                              <Link href={reference.href}>{reference.code}</Link>
-                            )}
-                            {reference.title !== null && <div className="sb-mono">{reference.title}</div>}
-                          </>
-                        )}
-                      </td>
-
-                      {/* Sem prazo ativo é "—", nunca "no prazo": ninguém mediu isso. */}
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {prazo === null ? <span style={{ color: "var(--sb-text-soft)" }}>—</span> : formatDateTime(prazo)}
-                      </td>
-
-                      <td>
-                        <StatusPill
-                          code={row.internal_status}
-                          label={supportInternalStatusLabel(row.internal_status)}
-                        />
-                        <div style={{ marginTop: "0.25rem" }}>
-                          <StatusPill
-                            code={row.remote_reply_state}
-                            label={supportReplyStateLabel(row.remote_reply_state)}
-                          />
-                        </div>
-                      </td>
-
-                      <td>
-                        <TriageCell
-                          triage={{
-                            id: row.id,
-                            internalStatus: row.internal_status,
-                            priority: row.priority,
-                            assigneeId: row.assignee_id,
-                            assigneeName: row.profiles?.full_name ?? null,
-                            viewerId,
-                          }}
-                        />
-                      </td>
-
-                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(row.last_activity_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="sb-inbox-toggles" aria-label="Recortes rápidos">
+              <FilterPill href={buildSupportHref(current, { mine: !filters.mine })} active={filters.mine}>
+                Meus
+              </FilterPill>
+              <FilterPill
+                href={buildSupportHref(current, { prazo: prazo === "risco" ? null : "risco" })}
+                active={prazo === "risco"}
+                tone="danger"
+              >
+                Prazo em risco
+              </FilterPill>
+              <FilterPill href={buildSupportHref(current, { mediation: !filters.mediation })} active={filters.mediation}>
+                Mediação
+              </FilterPill>
+              {recorteAtivo && (
+                <Link className="sb-text-button" href={buildSupportHref(current, limpo)}>
+                  Limpar filtros
+                </Link>
+              )}
+            </div>
           </div>
-        </Panel>
-      )}
 
-      {/*
-        O PAGINADOR — mesma forma de `/precos` e `/curva-abc`: duas pílulas, e
-        só quando há mais de uma página. Sem salto para página arbitrária de
-        propósito: a fila ordena por atividade recente e muda embaixo de quem
-        lê, então "página 7" não é um lugar estável — anterior e próxima são o
-        que se pode prometer.
-      */}
-      {error === null && !paginaVazia && janela.totalPages > 1 && (
-        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
-          {filters.page > 1 && (
-            <FilterPill href={buildSupportHref(current, { page: filters.page - 1 })} active={false}>
-              ← Anterior
-            </FilterPill>
+          {(prazo === "vencido" || prazo === "24h") && (
+            <p className="sb-inbox-note">
+              <strong>{prazo === "vencido" ? "Prazo vencido" : "Vence em 24 h"}</strong>:{" "}
+              {prazo === "vencido"
+                ? "casos com prazo ativo do Mercado Livre já no passado."
+                : "casos com prazo ativo do Mercado Livre nas próximas 24 horas."}
+            </p>
           )}
-          {filters.page < janela.totalPages && (
-            <FilterPill href={buildSupportHref(current, { page: filters.page + 1 })} active={false}>
-              Próxima →
-            </FilterPill>
+
+          {semViewer && (
+            <p className="sb-inbox-note">Não foi possível identificar quem está vendo — o recorte “Meus” fica vazio.</p>
           )}
-        </div>
-      )}
+
+          {erro !== null && (
+            <div role="alert" className="sb-inbox-state sb-inbox-state-error">
+              <strong>Não foi possível carregar os atendimentos.</strong>
+              <span>{erro}</span>
+              <Link className="sb-button" href={buildSupportHref(current, { page: current.page })}>
+                Tentar de novo
+              </Link>
+            </div>
+          )}
+
+          {/* Página além do fim não é "fila vazia": o recorte pode estar cheio. */}
+          {paginaVazia && erro === null && (
+            <div className="sb-inbox-state">
+              <strong>Esta página não existe neste recorte.</strong>
+              <span>A fila encolheu ou o link é antigo.</span>
+              <Link className="sb-button" href={buildSupportHref(current, { page: 1 })}>
+                Voltar à primeira página
+              </Link>
+            </div>
+          )}
+
+          {erro === null && !paginaVazia && cases.length === 0 && (
+            <div className="sb-inbox-state">
+              <span className="sb-inbox-state-icon" aria-hidden="true">
+                <Icone nome="bandeja" tamanho={20} />
+              </span>
+              <strong>{recorteAtivo ? "Nenhum atendimento com estes filtros" : "Nenhum atendimento em aberto"}</strong>
+              <span>
+                {recorteAtivo
+                  ? filters.search !== null
+                    ? "A busca procura o número do caso, o número do pedido, o MLB do anúncio ou o código do SKU."
+                    : "Troque o recorte ou limpe os filtros."
+                  : "A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."}
+              </span>
+            </div>
+          )}
+
+          {erro === null && cases.length > 0 && (
+            <div className="sb-inbox-table-wrap">
+              <table className="sb-table sb-inbox-table">
+                <thead>
+                  <tr>
+                    <th>Prioridade</th>
+                    <th>Tipo</th>
+                    <th>Conta</th>
+                    <th>Produto / referência</th>
+                    <th>Prazo</th>
+                    <th>Status</th>
+                    {/* `TriageCell` controla prioridade E atribuição na mesma escrita (D-094). */}
+                    <th>Triagem</th>
+                    <th>Última atividade</th>
+                    <th aria-label="Abrir" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cases.map((row) => {
+                    const reference = resolveSupportCaseReference(row.support_case_links);
+                    const rowFacets = facets(row);
+                    const prazoDoCaso = prazoVigente(row.support_case_deadlines);
+                    const leituraPrazo = prazoDoCaso === null ? null : describeDeadline(prazoDoCaso, agora);
+                    /*
+                      O RECORTE E A PÁGINA VIAJAM COM O CASO (D-286, D-289): quem
+                      abre um caso da página 7 de "Prazo em risco + Loja X" volta
+                      para lá, não para o começo da fila.
+                    */
+                    const hrefCaso = `/atendimento/${row.id}?volta=${encodeURIComponent(
+                      buildSupportHref(current, { page: current.page }),
+                    )}`;
+
+                    return (
+                      <tr key={row.id} className={leituraPrazo?.tone === "perigo" ? "sb-inbox-row-late" : undefined}>
+                        <td>
+                          <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
+                        </td>
+
+                        <td>
+                          <Link className="sb-inbox-case" href={hrefCaso}>
+                            {supportChannelLabel(row.channel)}
+                          </Link>
+                          {rowFacets.length > 0 && <span className="sb-inbox-facets">{rowFacets.join(" · ")}</span>}
+                          <span className="sb-inbox-meta">
+                            <span className="sb-mono">#{row.external_case_id}</span>
+                            {row.external_status !== null && ` · ${supportExternalStatusLabel(row.external_status)}`}
+                          </span>
+                        </td>
+
+                        <td>{row.ml_accounts?.label ?? "—"}</td>
+
+                        <td>
+                          {reference === null ? (
+                            <span className="sb-inbox-muted">—</span>
+                          ) : (
+                            <>
+                              {reference.href === null ? (
+                                <span>{reference.code}</span>
+                              ) : (
+                                <Link href={reference.href}>{reference.code}</Link>
+                              )}
+                              {reference.title !== null && <span className="sb-inbox-meta">{reference.title}</span>}
+                            </>
+                          )}
+                        </td>
+
+                        {/* Sem prazo ativo é "—", nunca "no prazo": ninguém mediu isso. */}
+                        <td className="sb-inbox-deadline">
+                          {prazoDoCaso === null || leituraPrazo === null ? (
+                            <span className="sb-inbox-muted">—</span>
+                          ) : (
+                            <>
+                              {leituraPrazo.relative !== null && (
+                                <span className={`sb-inbox-deadline-pill sb-inbox-deadline-${leituraPrazo.tone}`}>
+                                  {leituraPrazo.relative}
+                                </span>
+                              )}
+                              <span className="sb-inbox-meta">{formatDateTime(prazoDoCaso)}</span>
+                            </>
+                          )}
+                        </td>
+
+                        <td>
+                          <StatusPill code={row.internal_status} label={supportInternalStatusLabel(row.internal_status)} />
+                          <span className="sb-inbox-reply">
+                            <StatusPill code={row.remote_reply_state} label={supportReplyStateLabel(row.remote_reply_state)} />
+                          </span>
+                        </td>
+
+                        <td>
+                          <TriageCell
+                            triage={{
+                              id: row.id,
+                              internalStatus: row.internal_status,
+                              priority: row.priority,
+                              assigneeId: row.assignee_id,
+                              assigneeName: row.profiles?.full_name ?? null,
+                              viewerId,
+                            }}
+                          />
+                        </td>
+
+                        <td className="sb-inbox-nowrap">{formatDateTime(row.last_activity_at)}</td>
+
+                        <td>
+                          <Link className="sb-button sb-inbox-open" href={hrefCaso} aria-label={`Abrir o caso #${row.external_case_id}`}>
+                            Abrir
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/*
+            Anterior e próxima, sem salto para página arbitrária: a fila ordena
+            por atividade recente e muda embaixo de quem lê (D-289).
+          */}
+          {erro === null && !paginaVazia && janela.totalPages > 1 && (
+            <nav className="sb-inbox-pages" aria-label="Páginas">
+              {filters.page > 1 ? (
+                <Link className="sb-button" href={buildSupportHref(current, { page: filters.page - 1 })}>
+                  ‹ Anterior
+                </Link>
+              ) : (
+                <span />
+              )}
+              <span>
+                Página {formatCount(filters.page)} de {formatCount(janela.totalPages)}
+              </span>
+              {filters.page < janela.totalPages ? (
+                <Link className="sb-button" href={buildSupportHref(current, { page: filters.page + 1 })}>
+                  Próxima ›
+                </Link>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )}
+        </Panel>
+      </div>
     </Shell>
   );
 }

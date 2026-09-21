@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
+import { filtrarPaginas } from "../lib/command-pages";
 import { searchEntityLabel, textoDasEntidadesBuscaveis } from "../lib/labels";
 import { createClient } from "../lib/supabase/browser";
+import { paginasDoMenu } from "./nav";
 
 /**
  * Busca universal / Command Palette (Fase 5B, `docs/PRODUCT_REQUIREMENTS.md`
@@ -56,7 +58,24 @@ function agrupar(results: readonly SearchResult[]): { tipo: string; linhas: Sear
   return grupos;
 }
 
-export function CommandPalette({ organizationId }: { organizationId: string | null }): ReactNode {
+/**
+ * Uma linha navegável da caixa: tela do menu ou resultado da RPC. O índice
+ * PLANO é o que as setas percorrem (lote 3 do pente fino, 18/09) — antes o `↵`
+ * de cada linha prometia um Enter que não fazia nada.
+ */
+interface ItemNavegavel {
+  href: string;
+  indice: number;
+}
+
+export function CommandPalette({
+  organizationId,
+  papel = null,
+}: {
+  organizationId: string | null;
+  /** Mesma regra do menu para as telas: quem não é ADMIN não vê as telas de ADMIN. */
+  papel?: string | null;
+}): ReactNode {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -66,6 +85,8 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   const sequence = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ativo, setAtivo] = useState(0);
+  const paginas = useMemo(() => paginasDoMenu(papel), [papel]);
 
   const invalidate = useCallback(() => {
     sequence.current += 1;
@@ -108,6 +129,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   function search(value: string): void {
     invalidate();
     setQuery(value);
+    setAtivo(0);
     setSearchError(null);
     setResults([]);
     setSearching(false);
@@ -197,6 +219,34 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   }
 
   const grupos = agrupar(results);
+  const paginasAchadas = filtrarPaginas(paginas, query);
+
+  // A ordem das setas é a ordem da tela: telas primeiro, depois cada grupo.
+  const navegaveis: ItemNavegavel[] = [
+    ...paginasAchadas.map((pagina, indice) => ({ href: pagina.href, indice })),
+    ...grupos.flatMap((grupo) => grupo.linhas).map((linha, i) => ({ href: linha.href, indice: paginasAchadas.length + i })),
+  ];
+  const selecionado = navegaveis.length === 0 ? -1 : Math.min(ativo, navegaveis.length - 1);
+  const idDaLinha = (indice: number): string => `sb-command-opcao-${String(indice)}`;
+
+  function aoTeclar(event: ReactKeyboardEvent<HTMLInputElement>): void {
+    if (navegaveis.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setAtivo((atual) => (atual + 1) % navegaveis.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setAtivo((atual) => (atual - 1 + navegaveis.length) % navegaveis.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const alvo = navegaveis[selecionado];
+
+      if (alvo !== undefined) go(alvo.href);
+    }
+  }
+
+  let proximoIndice = paginasAchadas.length;
 
   return (
     <>
@@ -229,6 +279,11 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
             className="sb-command-field"
             type="text"
             autoFocus
+            role="combobox"
+            aria-expanded={navegaveis.length > 0}
+            aria-controls="sb-command-lista"
+            aria-activedescendant={selecionado >= 0 ? idDaLinha(selecionado) : undefined}
+            onKeyDown={aoTeclar}
             value={query}
             onChange={(event) => {
               search(event.target.value);
@@ -249,35 +304,79 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
 
         {searching && <p role="status" className="sb-empty">Buscando…</p>}
 
-        {!searching && searchError === null && query.trim().length >= 2 && results.length === 0 && (
+        {!searching && searchError === null && query.trim().length >= 2 && results.length === 0 && paginasAchadas.length === 0 && (
           <p className="sb-empty">Nada encontrado para “{query.trim()}”.</p>
         )}
 
-        {searchError === null && query.trim().length < 2 && (
-          <p className="sb-empty">Digite ao menos duas letras. A busca alcança {textoDasEntidadesBuscaveis()}.</p>
+        {searchError === null && query.trim().length < 2 && paginasAchadas.length === 0 && (
+          <p className="sb-empty">
+            Digite o nome de uma tela ou ao menos duas letras de um registro. A busca alcança{" "}
+            {textoDasEntidadesBuscaveis()}. Use ↑ ↓ e Enter.
+          </p>
         )}
 
-        {grupos.map((grupo) => (
-          <div key={grupo.tipo}>
-            <span className="sb-command-label">{searchEntityLabel(grupo.tipo)}</span>
-            {grupo.linhas.map((result, index) => (
-              <button
-                key={`${result.href}:${String(index)}`}
-                type="button"
-                className="sb-command-row"
-                onClick={() => {
-                  go(result.href);
-                }}
-              >
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <b>{result.label}</b>
-                  {result.sublabel !== "" && <small>{result.sublabel}</small>}
-                </span>
-                <kbd>↵</kbd>
-              </button>
-            ))}
-          </div>
-        ))}
+        <div id="sb-command-lista" role="listbox" aria-label="Resultados">
+          {paginasAchadas.length > 0 && (
+            <div role="group" aria-label="Telas">
+              <span className="sb-command-label">Telas</span>
+              {paginasAchadas.map((pagina, indice) => (
+                <button
+                  key={pagina.href}
+                  id={idDaLinha(indice)}
+                  type="button"
+                  role="option"
+                  aria-selected={indice === selecionado}
+                  className={`sb-command-row${indice === selecionado ? " is-active" : ""}`}
+                  onMouseEnter={() => {
+                    setAtivo(indice);
+                  }}
+                  onClick={() => {
+                    go(pagina.href);
+                  }}
+                >
+                  <span className="sb-command-row-text">
+                    <b>{pagina.label}</b>
+                    <small>{pagina.grupo}</small>
+                  </span>
+                  <kbd>↵</kbd>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {grupos.map((grupo) => (
+            <div key={grupo.tipo} role="group" aria-label={searchEntityLabel(grupo.tipo)}>
+              <span className="sb-command-label">{searchEntityLabel(grupo.tipo)}</span>
+              {grupo.linhas.map((result, index) => {
+                const indice = proximoIndice;
+                proximoIndice += 1;
+
+                return (
+                  <button
+                    key={`${result.href}:${String(index)}`}
+                    id={idDaLinha(indice)}
+                    type="button"
+                    role="option"
+                    aria-selected={indice === selecionado}
+                    className={`sb-command-row${indice === selecionado ? " is-active" : ""}`}
+                    onMouseEnter={() => {
+                      setAtivo(indice);
+                    }}
+                    onClick={() => {
+                      go(result.href);
+                    }}
+                  >
+                    <span className="sb-command-row-text">
+                      <b>{result.label}</b>
+                      {result.sublabel !== "" && <small>{result.sublabel}</small>}
+                    </span>
+                    <kbd>↵</kbd>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </section>
     </div>
     </>

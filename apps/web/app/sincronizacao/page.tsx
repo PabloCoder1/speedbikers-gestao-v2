@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Icone } from "../../components/icons";
@@ -316,7 +317,28 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS"
         title="Sincronização"
         subtitle="Veja primeiro se os dados de cada conta estão prontos para análise. Depois, investigue frescor, histórico, processamento e falhas sem misturar sinais diferentes."
+        aside={
+          <nav className="sb-channel-nav" aria-label="Navegação de dados e processamentos">
+            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/importacoes">Histórico de importações →</Link>
+          </nav>
+        }
       />
+
+      <section className="sb-process-hero sb-process-hero-sync" aria-labelledby="sync-hero-title">
+        <div className="sb-process-hero-copy">
+          <span className="sb-process-hero-kicker">CENTRAL DE SAÚDE DOS DADOS</span>
+          <h2 id="sync-hero-title">O dado percorre três etapas até virar decisão.</h2>
+          <p>Use o frescor para acompanhar o que roda continuamente, o cursor para entender o histórico e o recálculo para confirmar que a aplicação processou o que chegou.</p>
+        </div>
+        <div className="sb-process-steps" aria-label="Etapas da sincronização">
+          <span><b>01</b><strong>Capturar</strong><small>Mercado Livre</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>02</b><strong>Completar</strong><small>Backfill histórico</small></span>
+          <i aria-hidden="true">→</i>
+          <span><b>03</b><strong>Processar</strong><small>Métricas internas</small></span>
+        </div>
+      </section>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -452,7 +474,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             <KpiStrip cells={celulas} />
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <div className="sb-sync-sections">
+          <div>
             <Panel
               title="Sincronização contínua"
               subtitle="Dado puxado do Mercado Livre. O veredito compara a idade do último sucesso com a cadência DAQUELE recurso — pedidos a cada hora, visitas uma vez por dia."
@@ -749,6 +772,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                 )}
               </div>
             </Panel>
+          </div>
+
           </div>
 
           {/*

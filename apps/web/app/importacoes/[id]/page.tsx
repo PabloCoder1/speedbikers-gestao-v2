@@ -205,7 +205,7 @@ export default async function ConferenciaPage({
         </p>
       )}
 
-      {info.status === "PARSED" && <ConfirmApplyForm batchId={info.id} />}
+      {info.status === "PARSED" && <ConfirmApplyForm batchId={info.id} okRows={info.ok_rows} />}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel

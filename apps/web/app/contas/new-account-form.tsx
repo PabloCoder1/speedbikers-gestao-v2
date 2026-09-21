@@ -38,19 +38,8 @@ export function NewAccountForm(): ReactNode {
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "flex-end",
-        gap: "var(--sb-space-2)",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        marginBottom: "var(--sb-space-4)",
-      }}
-    >
-      <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+    <div className="sb-account-form">
+      <label className="sb-account-form-field">
         Rótulo
         <input
           className="sb-input"
@@ -60,11 +49,11 @@ export function NewAccountForm(): ReactNode {
             setLabel(event.target.value);
           }}
           placeholder="Speedbikers (loja 1)"
-          disabled={busy} style={{ width: "16rem" }}
+          disabled={busy}
         />
       </label>
 
-      <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+      <label className="sb-account-form-field">
         Identificador (nomeia a fila interna)
         <input
           className="sb-input sb-mono"
@@ -74,7 +63,7 @@ export function NewAccountForm(): ReactNode {
             setSlug(event.target.value.toLowerCase());
           }}
           placeholder="speedbikers-loja-1"
-          disabled={busy} style={{ width: "14rem" }}
+          disabled={busy}
         />
       </label>
 
@@ -90,7 +79,7 @@ export function NewAccountForm(): ReactNode {
       </button>
 
       {error !== null && (
-        <p role="alert" style={{ margin: 0, width: "100%", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-account-form-error">
           {error}
         </p>
       )}

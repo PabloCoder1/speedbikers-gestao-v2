@@ -80,7 +80,7 @@ test("filtro por tipo sem dado mostra estado vazio, não erro", async ({ page })
   // de parecer falha.
   await login(page, "/atendimento?canal=CLAIM");
 
-  await expect(page.getByText("Nenhum atendimento com esses filtros.")).toBeVisible();
+  await expect(page.getByText("Nenhum atendimento com estes filtros")).toBeVisible();
 
   // Asserção pelo TEXTO do banner, não por `getByRole("alert")`: o Next.js
   // mantém um `#__next-route-announcer__` com `role="alert"` em toda página
@@ -225,14 +225,16 @@ test("/atendimento: a janela é declarada, o SLA aparece e a ordem não é prome
     Dev; a diferença entre 100 de 101 e 100 de 929 é a diferença entre "vi quase
     tudo" e "vi 11%".
   */
-  await expect(page.locator(".sb-stat-note")).toContainText("atendimento");
+  // Desde o lote 2 do pente fino a janela é o subtítulo do painel da fila.
+  await expect(page.getByRole("region", { name: "Fila de atendimentos" }).locator(".sb-panel-head p")).toContainText("atendimento");
   await expect(page.getByText(/Mostrando os 100 atendimentos/)).toHaveCount(0);
 
   /*
     A COLUNA QUE O DADO JÁ SUSTENTAVA SEM APARECER. `due_at` existe em 2.059
     prazos no Dev e até aqui só servia de filtro.
   */
-  await expect(page.getByRole("columnheader", { name: "SLA" })).toBeVisible();
+  // "SLA" virou "Prazo" no lote 2 do pente fino, com vencido/vence em destacados.
+  await expect(page.getByRole("columnheader", { name: "Prazo" })).toBeVisible();
 
   /*
     AS DUAS RECUSAS. "Cliente" não tem fonte, e a legenda do frame afirma uma
@@ -332,6 +334,40 @@ test("/atendimento: com uma página só, o paginador não aparece", async ({ pag
     banco e passou a vir da contagem da página.
   */
   await expect(page.locator("tbody tr").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Próxima →" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "← Anterior" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Próxima ›" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "‹ Anterior" })).toHaveCount(0);
+});
+
+/**
+ * Lote 2 do pente fino (18/09): a faixa clicável, a busca e os recortes rápidos.
+ * "Aguardando a loja" NÃO é link de propósito — a regra compara duas colunas da
+ * linha, e um link abriria uma fila que não bate com o número.
+ */
+test("/atendimento: faixa de indicadores, busca por SKU e recortes rápidos", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, "/atendimento");
+
+  const faixa = page.locator(".sb-kpi-strip");
+
+  await expect(faixa.locator(".sb-kpi", { hasText: "Prazo vencido" }).getByRole("link")).toHaveAttribute(
+    "href",
+    /prazo=vencido/,
+  );
+  await expect(faixa.locator(".sb-kpi", { hasText: "Aguardando a loja" }).getByRole("link")).toHaveCount(0);
+
+  // A busca da FILA — o topo tem a busca global, com outro botão "Buscar".
+  const buscaDaFila = page.locator(".sb-inbox-search");
+
+  await buscaDaFila.getByRole("searchbox").fill(seed.skuCode);
+  await buscaDaFila.getByRole("button", { name: "Buscar" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`busca=${seed.skuCode}`));
+  await expect(page.getByRole("row", { name: new RegExp(seed.supportOpenExternalId) })).toBeVisible();
+
+  await page.getByRole("link", { name: "Meus", exact: true }).click();
+  await expect(page).toHaveURL(/meus=1/);
+
+  await page.getByRole("link", { name: "Limpar filtros" }).click();
+  await expect(page).toHaveURL(/\/atendimento$/);
 });

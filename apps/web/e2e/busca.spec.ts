@@ -72,10 +72,36 @@ test("busca do shell: o gatilho cabe sem cortar a promessa, e a caixa diz tudo o
 
   expect(perfilAntes).not.toBeNull();
   expect(perfilDepois?.x, "o bloco do perfil não se desloca ao abrir a busca").toBe(perfilAntes?.x);
+  // Desde o lote 3 do pente fino a caixa também acha TELAS e anda pelo teclado.
   await expect(caixa.getByText(/A busca alcança/)).toHaveText(
-    "Digite ao menos duas letras. A busca alcança SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e.",
+    "Digite o nome de uma tela ou ao menos duas letras de um registro. A busca alcança SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e. Use ↑ ↓ e Enter.",
   );
 
-  await caixa.getByRole("textbox", { name: "Buscar" }).fill(E2E_SKU_CODE);
-  await expect(caixa.getByRole("button", { name: new RegExp(E2E_SKU_CODE) }).first()).toBeVisible();
+  // Campo e linhas no padrão de lista navegável (combobox + option), lote 3.
+  await caixa.getByRole("combobox", { name: "Buscar" }).fill(E2E_SKU_CODE);
+  await expect(caixa.getByRole("option", { name: new RegExp(E2E_SKU_CODE) }).first()).toBeVisible();
+});
+
+/**
+ * Lote 3 do pente fino (18/09): a busca acha a TELA pelo nome (sem acento) e
+ * anda pelo teclado — o `↵` de cada linha prometia um Enter que não fazia nada.
+ */
+test("busca do shell: acha a tela pelo nome e abre com Enter", async ({ page }) => {
+  await login(page, "/");
+
+  // Pelo gatilho, como o caso acima: o atalho de teclado só vale depois da
+  // hidratação, e apertá-lo cedo demais não abre nada.
+  await page.getByRole("button", { name: /Buscar SKU, anúncio, NF-e/ }).click();
+
+  const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
+  const campo = caixa.getByRole("combobox", { name: "Buscar" });
+
+  await campo.fill("movimentacoes");
+  await expect(caixa.getByRole("option", { name: /Movimentações/ })).toBeVisible();
+
+  // A primeira linha já vem selecionada; Enter abre.
+  await expect(caixa.getByRole("option", { name: /Movimentações/ })).toHaveAttribute("aria-selected", "true");
+  await campo.press("Enter");
+
+  await expect(page).toHaveURL(/\/estoque\/movimentacoes$/);
 });

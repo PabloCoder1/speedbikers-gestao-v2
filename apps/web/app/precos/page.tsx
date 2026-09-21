@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { FilterPill, FilterSubmit } from "../../components/filter-pill";
 import { FilterMenu } from "../../components/filter-menu";
+import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -32,6 +33,18 @@ import { currentMembership } from "../../lib/request-membership";
 export const metadata = { title: "Histórico de Preços — Speed Bikers Gestão" };
 
 export const dynamic = "force-dynamic";
+
+function recorteLabel(filters: ReturnType<typeof resolvePriceFilters>): string {
+  const partes = [
+    filters.direction === null ? null : priceDirectionLabel(filters.direction),
+    filters.account === null ? null : "uma conta selecionada",
+    filters.search === null ? null : `busca “${filters.search}”`,
+    filters.dateFrom === null ? null : `desde ${filters.dateFrom.split("-").reverse().join("/")}`,
+    filters.dateTo === null ? null : `até ${filters.dateTo.split("-").reverse().join("/")}`,
+  ].filter((parte): parte is string => parte !== null);
+
+  return partes.length === 0 ? "Todos os anúncios" : partes.join(" · ");
+}
 
 /**
  * Histórico de Preços (`/precos`) pelo frame `IntelligenceScreen
@@ -78,8 +91,22 @@ export default async function PrecosPage({
   if (organizationId === null) {
     return (
       <Shell>
-        <PageTitle eyebrow="INTELIGÊNCIA / PREÇOS" title="Histórico de Preços" />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle
+          eyebrow="INTELIGÊNCIA / PREÇOS"
+          title="Histórico de Preços"
+          subtitle="Histórico e análise das alterações de preço observadas nos anúncios."
+        />
+        <Panel title="Acesso indisponível">
+          <div className="sb-price-empty">
+            <span className="sb-price-empty-icon" aria-hidden="true">
+              <Icone nome="etiqueta" tamanho={20} />
+            </span>
+            <div>
+              <strong>Sua conta ainda não pertence a uma organização.</strong>
+              <p>Peça a um administrador para concluir o vínculo antes de consultar o histórico de preços.</p>
+            </div>
+          </div>
+        </Panel>
       </Shell>
     );
   }
@@ -197,6 +224,10 @@ export default async function PrecosPage({
     account === null
       ? "Todas as contas"
       : ((accounts.data ?? []).find((row) => row.id === account)?.label ?? "Conta");
+  const filtrosAtivos = [filters.direction, account, filters.search, filters.dateFrom, filters.dateTo].filter(
+    (value) => value !== null,
+  ).length;
+  const recorte = recorteLabel({ ...filters, account });
 
   return (
     <Shell>
@@ -222,6 +253,7 @@ export default async function PrecosPage({
 
       <KpiStrip cells={celulas} />
 
+      <div className="sb-price-workspace">
       <Panel
         title="Alterações observadas"
         subtitle={janela.label}
@@ -262,7 +294,7 @@ export default async function PrecosPage({
           que o sistema "apresentará tendências ... após 7 dias da mudança", e
           nada calcula isso. A frase abaixo diz por que não dá, sem prazo.
         */}
-        <div className="sb-note" style={{ margin: "var(--sb-space-3) 1.25rem 0" }}>
+        <div className="sb-note sb-price-note">
           <span>DADOS INSUFICIENTES PARA ANÁLISE CAUSAL</span>
           <p>
             Esta tela mostra <strong>o que mudou</strong>, não o efeito da mudança. Afirmar impacto exigiria
@@ -274,63 +306,84 @@ export default async function PrecosPage({
           </p>
         </div>
 
-        <form
-          method="get"
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "0.375rem",
-            margin: "var(--sb-space-3) 1.25rem",
-            fontSize: "0.8125rem",
-          }}
-        >
+        <form method="get" action="/precos" className="sb-price-toolbar" aria-label="Filtrar histórico de preços">
           {/* GET nativo só envia os campos do form — preservar as dimensões de menu. */}
           {filters.direction !== null && <input type="hidden" name="direcao" value={filters.direction} />}
           {account !== null && <input type="hidden" name="conta" value={account} />}
-          <input
-            className="sb-input"
-            type="search"
-            name="busca"
-            defaultValue={filters.search ?? ""}
-            placeholder="Buscar SKU, MLB ou título"
-            aria-label="Buscar por MLB, SKU ou título"
-            style={{ minWidth: "14rem" }}
-          />
+          <label className="sb-price-field sb-price-search">
+            <span>Buscar</span>
+            <span className="sb-price-input-shell">
+              <Icone nome="lupa" tamanho={14} />
+              <input
+                className="sb-input"
+                type="search"
+                name="busca"
+                defaultValue={filters.search ?? ""}
+                placeholder="SKU, MLB ou título"
+                aria-label="Buscar por MLB, SKU ou título"
+              />
+            </span>
+          </label>
           {/*
             O frame não desenha filtro de data — mas ele EXISTE e recorta de
             verdade. O Design Contract manda remover conteúdo incompatível com
             o frame, não funcionalidade que ele deixou de desenhar.
           */}
-          <input
-            className="sb-input"
-            type="date"
-            name="de"
-            defaultValue={filters.dateFrom ?? undefined}
-            aria-label="Data inicial"
-          />
-          <span style={{ color: "var(--sb-text-soft)" }}>até</span>
-          <input
-            className="sb-input"
-            type="date"
-            name="ate"
-            defaultValue={filters.dateTo ?? undefined}
-            aria-label="Data final"
-          />
-          <FilterSubmit>Filtrar</FilterSubmit>
+          <div className="sb-price-dates" role="group" aria-label="Período do preço">
+            <label className="sb-price-field">
+              <span>De</span>
+              <input className="sb-input" type="date" name="de" defaultValue={filters.dateFrom ?? undefined} />
+            </label>
+            <label className="sb-price-field">
+              <span>Até</span>
+              <input className="sb-input" type="date" name="ate" defaultValue={filters.dateTo ?? undefined} />
+            </label>
+          </div>
+          <div className="sb-price-toolbar-actions">
+            {filtrosAtivos > 0 && (
+              <Link className="sb-button" href="/precos">
+                Limpar {filtrosAtivos === 1 ? "filtro" : `${String(filtrosAtivos)} filtros`}
+              </Link>
+            )}
+            <FilterSubmit>Aplicar filtros</FilterSubmit>
+          </div>
         </form>
 
         {error !== null && (
-          <p role="alert" style={{ margin: "0 1.25rem var(--sb-space-3)", color: "var(--sb-danger)" }}>
-            Não foi possível carregar as mudanças de preço: {error.message}
-          </p>
+          <div className="sb-price-error" role="alert">
+            <span className="sb-price-error-icon" aria-hidden="true">
+              <Icone nome="pulso" tamanho={18} />
+            </span>
+            <div>
+              <strong>Não foi possível carregar o histórico agora.</strong>
+              <p>Seus filtros foram preservados. Tente novamente; nenhum preço foi alterado.</p>
+            </div>
+            <Link className="sb-button" href={buildPriceHref(filters, { page: filters.page })}>
+              Tentar novamente
+            </Link>
+          </div>
         )}
 
-        {error === null && rows.length === 0 && <p className="sb-empty">{janela.label}</p>}
+        {error === null && rows.length === 0 && (
+          <div className="sb-price-empty">
+            <span className="sb-price-empty-icon" aria-hidden="true">
+              <Icone nome="tendencia" tamanho={20} />
+            </span>
+            <div>
+              <strong>Nenhuma alteração de preço encontrada.</strong>
+              <p>
+                {filtrosAtivos > 0
+                  ? "Revise ou remova os filtros para ampliar a busca."
+                  : "Quando um anúncio tiver uma alteração observada, ela aparecerá aqui."}
+              </p>
+            </div>
+            {filtrosAtivos > 0 && <Link className="sb-button" href="/precos">Limpar filtros</Link>}
+          </div>
+        )}
 
         {error === null && rows.length > 0 && (
-          <div style={{ overflowX: "auto" }}>
-            <table className="sb-table">
+          <div className="sb-price-table-wrap">
+            <table className="sb-table sb-price-table">
               <thead>
                 <tr>
                   <th>Data / Hora</th>
@@ -352,7 +405,9 @@ export default async function PrecosPage({
 
                   return (
                     <tr key={row.event_id}>
-                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(row.occurred_at)}</td>
+                      <td data-label="Data e hora">
+                        <time dateTime={row.occurred_at}>{formatDateTime(row.occurred_at)}</time>
+                      </td>
 
                       {/*
                         O frame junta título, SKU e MLB numa célula só. A conta
@@ -361,11 +416,11 @@ export default async function PrecosPage({
                         com "Todas as contas", não dá para saber de quem é a
                         alteração.
                       */}
-                      <td>
-                        {row.title ?? (
-                          <span style={{ color: "var(--sb-text-soft)" }}>anúncio fora do catálogo</span>
-                        )}
-                        <div className="sb-mono">
+                      <td data-label="Anúncio" className="sb-price-product">
+                        <strong className="sb-price-title">
+                          {row.title ?? <span className="sb-price-missing">anúncio fora do catálogo</span>}
+                        </strong>
+                        <div className="sb-mono sb-price-meta">
                           {row.sku_id !== null && row.sku !== null ? (
                             <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
                           ) : (
@@ -378,18 +433,22 @@ export default async function PrecosPage({
                         </div>
                       </td>
 
-                      <td className="sb-num" style={{ textDecoration: "line-through", color: "var(--sb-text-soft)" }}>
+                      <td data-label="Preço anterior" className="sb-num sb-price-before">
                         {formatCurrency(row.price_before)}
                       </td>
-                      <td className="sb-num" style={{ fontWeight: 600 }}>
+                      <td data-label="Preço atual" className="sb-num sb-price-current">
                         {formatCurrency(row.price_after)}
                       </td>
-                      <td className="sb-num" style={{ color: cor }}>
+                      <td data-label="Variação R$" className="sb-num">
+                        <span className="sb-price-delta" style={{ color: cor }}>
                         {subiu ? "+" : ""}
                         {formatCurrency(row.delta)}
+                        </span>
                       </td>
-                      <td className="sb-num" style={{ color: cor, fontWeight: 600 }}>
+                      <td data-label="Variação %" className="sb-num">
+                        <span className="sb-price-delta" style={{ color: cor }}>
                         {row.delta_ratio === null ? "—" : `${subiu ? "+" : ""}${formatPercent(row.delta_ratio)}`}
+                        </span>
                       </td>
 
                       {/*
@@ -397,7 +456,7 @@ export default async function PrecosPage({
                         variação era distinguida por COR e sinal. O rótulo é a
                         pista textual que a casa exige de todo estado.
                       */}
-                      <td>
+                      <td data-label="Direção">
                         <span className="sb-status" style={{ color: cor, borderColor: cor }}>
                           {subiu ? "AUMENTO" : "REDUÇÃO"}
                         </span>
@@ -410,9 +469,15 @@ export default async function PrecosPage({
           </div>
         )}
       </Panel>
+      <div className="sb-price-recap" aria-label="Recorte atual">
+        <span>RECORTE</span>
+        <strong>{recorte}</strong>
+        <small>{formatCount(totalCount)} {totalCount === 1 ? "alteração" : "alterações"} encontradas</small>
+      </div>
+      </div>
 
       {error === null && janela.totalPages > 1 && (
-        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
+        <nav className="sb-price-pagination" aria-label="Paginação do histórico de preços">
           {filters.page > 1 && (
             <FilterPill href={buildPriceHref(filters, { page: filters.page - 1 })} active={false}>
               ← Anterior
@@ -423,7 +488,7 @@ export default async function PrecosPage({
               Próxima →
             </FilterPill>
           )}
-        </div>
+        </nav>
       )}
     </Shell>
   );

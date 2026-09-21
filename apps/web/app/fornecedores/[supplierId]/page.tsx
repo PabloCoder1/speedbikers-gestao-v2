@@ -8,7 +8,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
-import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
@@ -329,7 +329,10 @@ export default async function FornecedorPage({
                     <td>
                       <StatusPill code={order.status} label={purchaseOrderStatusLabel(order.status)} />
                     </td>
-                    <td>{order.expected_at === null ? "—" : formatDateTime(order.expected_at)}</td>
+                    {/* Data de negócio gravada à meia-noite UTC: `formatDateTime` a mostrava
+                        como "dia anterior, 21h" (o mesmo defeito que D-365 corrigiu em
+                        /compras/[id]). */}
+                    <td>{order.expected_at === null ? "—" : formatBusinessDate(order.expected_at.slice(0, 10))}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(order.created_at)}</td>
                   </tr>
                 ))}
