@@ -40,3 +40,6 @@ export type {
 } from "./rows.js";
 export * from "./apply.js";
 export { resolveStockExportInstant } from "./export-instant.js";
+
+export { resolveSupplierBrand } from "./supplier-brand.js";
+export type { SupplierBrandInput, SupplierBrandOrigin, SupplierBrandResult } from "./supplier-brand.js";
