@@ -40,10 +40,13 @@ import { currentMembership } from "../lib/request-membership";
  * - **Menu de perfil** (chevron no `.profile`): esconderia o "Sair" atrás de um
  *   dropdown que não foi desenhado. O perfil é informação e o "Sair" fica
  *   visível.
- * - **Botão flutuante do Copiloto**: seria um terceiro caminho para uma rota
- *   que já está no menu e no topbar.
  * - **Botão de recolher a sidebar** (`.collapse`): adiado — ele é o que faz
  *   sentido do trilho de 58px, e trilho pede estado de cliente.
+ *
+ * O **botão flutuante do Copiloto** saiu desta lista em D-377. Ele era recusado
+ * por ser "um terceiro caminho para uma rota que já está no menu e no topbar" —
+ * e a recusa dependia dos outros dois existirem. Agora ele é o caminho ÚNICO: o
+ * ✦ saiu da barra de topo e o item saiu do menu lateral.
  *
  * Tudo registrado em `docs/DESIGN_IMPLEMENTATION.md`.
  */
@@ -177,14 +180,6 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <CommandPalette organizationId={organizationId} papel={role} />
 
           <div className="sb-top-actions">
-            {/*
-              O ✦ deixou de ser LINK e virou o gatilho da gaveta (D-294) — que
-              é o que o frame sempre desenhou: o Copiloto abre por cima da tela
-              em que você está, e a tela cheia continua alcançável pelo rodapé
-              dela. Perguntar sobre o SKU aberto deixou de custar sair dele.
-            */}
-            <CopilotLauncher />
-
             <Link
               href="/notificacoes"
               className="sb-icon-button"
@@ -236,6 +231,14 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
         <main className="sb-content">{children}</main>
       </div>
+
+      {/*
+        O gatilho do Copiloto (D-377) é irmão do shell, não filho da barra de
+        topo: ele é `position: fixed` e a barra é `overflow`-sensível. Vive ao
+        lado dos toasts porque os dois disputam o mesmo canto — e é a pilha de
+        toasts que sobe, pela altura dele (`.sb-toast-pilha`).
+      */}
+      <CopilotLauncher />
 
       <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
     </div>

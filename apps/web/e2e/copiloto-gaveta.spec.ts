@@ -19,8 +19,18 @@ import { readSeedOutput } from "./seed-output.js";
  * que ele continua recusando. A conversa tem teste próprio em `apps/api`.
  */
 
-test("a gaveta abre de qualquer tela pelo ✦ da barra de topo", async ({ page }) => {
+test("a gaveta abre de qualquer tela pelo botão flutuante do canto", async ({ page }) => {
   await login(page, "/produtos?estado=todos");
+
+  /*
+    D-377: o gatilho saiu da barra de topo e virou o flutuante do canto, e o
+    item do Copiloto saiu do menu lateral — é o ÚNICO caminho para a conversa
+    agora. Este teste guarda as duas metades: que o botão abre, e que o menu
+    não tem mais o item (o link para a tela cheia mora no rodapé da gaveta).
+  */
+  await expect(
+    page.getByRole("navigation", { name: "Navegação principal" }).getByRole("link", { name: "Copiloto" }),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: "Copiloto" }).click();
 
@@ -117,4 +127,63 @@ test("o contexto some ao sair da tela que o publicou", async ({ page }) => {
 
   await expect(gaveta).toContainText("Nenhum");
   await expect(gaveta).not.toContainText(E2E_LISTING_TRAFFIC.itemId);
+});
+
+/*
+  O BOTÃO NO CELULAR (D-377).
+
+  A regra base do `.sb-content` reserva o rodapé que o botão ocupa, e os dois
+  breakpoints do shell escreviam o `padding` na forma ABREVIADA de um valor só
+  — o que apagava a reserva sem dizer nada. Enquanto os 80px guardavam espaço
+  para uma barra de seleção que nunca foi construída, apagá-los não custava; a
+  partir do botão, custa a última linha de TODA tela abaixo de 1150px.
+
+  É um defeito que volta sozinho na próxima vez que alguém mexer no
+  espaçamento, e não aparece em teste que não mede: o botão continua clicável
+  por cima do conteúdo, só esconde o que está embaixo.
+*/
+test("no celular o botão encolhe e continua sem cobrir a última linha", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await login(page, "/");
+
+  await expect(page.getByRole("region", { name: "Atenção necessária" })).toBeVisible();
+
+  const botao = page.getByRole("button", { name: "Copiloto" });
+
+  await expect(botao).toBeVisible();
+
+  // 48px no celular, contra os 56 do desktop — e acima do alvo mínimo de toque.
+  const caixa = await botao.boundingBox();
+
+  expect(caixa).not.toBeNull();
+  expect(caixa?.width).toBe(48);
+  expect(caixa?.height).toBeGreaterThanOrEqual(44);
+
+  // Rolar até o fim é onde a última linha encosta no botão.
+  await page.evaluate(() => {
+    const main = document.querySelector(".sb-content");
+
+    if (main !== null) main.scrollTop = main.scrollHeight;
+  });
+
+  const folga = await page.evaluate(() => {
+    const fab = document.querySelector(".sb-copilot-fab")?.getBoundingClientRect();
+    const main = document.querySelector(".sb-content");
+
+    if (fab === undefined || main === null) return null;
+
+    let maisBaixo = 0;
+
+    for (const el of main.querySelectorAll("*")) {
+      const r = el.getBoundingClientRect();
+
+      if (r.width > 0 && r.height > 0 && r.bottom > maisBaixo) maisBaixo = r.bottom;
+    }
+
+    return fab.top - maisBaixo;
+  });
+
+  expect(folga).not.toBeNull();
+  expect(folga ?? -1).toBeGreaterThanOrEqual(0);
 });

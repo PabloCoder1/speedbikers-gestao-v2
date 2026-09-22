@@ -17,9 +17,30 @@ const CopilotChat = dynamic(() => import("../app/copiloto/chat").then((module) =
  * A GAVETA DO COPILOTO (D-294) — o último item aberto da frente visual.
  *
  * O frame nunca teve uma TELA de Copiloto: ele desenha uma gaveta de 420px à
- * direita, aberta de qualquer página pelo ✦ da barra de topo (D-276). Ela
- * ficou adiada até a pré-condição existir, e a pré-condição foi paga em D-293:
- * a rota recebe contexto de tela, e há ferramenta de estoque e de anúncio.
+ * direita, aberta de qualquer página (D-276). Ela ficou adiada até a
+ * pré-condição existir, e a pré-condição foi paga em D-293: a rota recebe
+ * contexto de tela, e há ferramenta de estoque e de anúncio.
+ *
+ * ## O GATILHO: o botão flutuante do canto (D-377)
+ *
+ * O frame sempre desenhou um botão flutuante, e o `Shell` o recusava com um
+ * motivo que era verdadeiro: "seria um TERCEIRO caminho para uma rota que já
+ * está no menu e no topbar". O pedido do dono foi tirar o Copiloto da barra e
+ * pôr no canto, e a recusa cai junto com a premissa — o flutuante não SOMA a
+ * um terceiro caminho, ele substitui os dois. O ✦ saiu da barra de topo, o
+ * item saiu do menu lateral, e sobrou um gatilho só.
+ *
+ * O que isso compra, além do espaço nas duas barras: o botão não rola com a
+ * página e não depende da barra de topo caber, então a pergunta fica à mesma
+ * distância em toda tela — que é a única coisa que uma conversa sobre "a tela
+ * em que estou" pode prometer.
+ *
+ * Ele fica ABAIXO da camada flutuante (`--sb-z-flutuante`, 15 contra os 20 do
+ * `.sb-backdrop`): com a gaveta aberta, o vidro passa por cima dele em vez de
+ * deixá-lo boiando sobre o próprio painel que ele abriu.
+ *
+ * A tela cheia `/copiloto` continua existindo e continua no `Ctrl+K`
+ * (`PAGINAS_FORA_DO_MENU`, em `nav.tsx`) — o rodapé da gaveta leva a ela.
  *
  * ## O que ela é, e o que ela continua não sendo
  *
@@ -77,9 +98,14 @@ export function CopilotLauncher(): ReactNode {
 
   return (
     <>
+      {/*
+        `aria-label="Copiloto"` e `type="button"` são os MESMOS de quando ele
+        morava na barra: o que mudou foi onde ele é desenhado, não o que ele é.
+        A suíte de e2e localiza por papel e nome, e continua achando.
+      */}
       <button
         type="button"
-        className="sb-icon-button"
+        className="sb-copilot-fab"
         title="Copiloto"
         aria-label="Copiloto"
         aria-expanded={aberta}

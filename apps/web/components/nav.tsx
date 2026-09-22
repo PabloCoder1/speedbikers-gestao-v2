@@ -32,8 +32,9 @@ import { Icone, type NomeDoIcone } from "./icons";
  * - **Estoque** e **Compras** se separam — o saldo e a reposição de um lado,
  *   o pedido, o fornecedor e a nota do outro;
  * - **Catálogo** é o cadastro (Produtos e Vinculações);
- * - **Copiloto** sobe para Visão geral, ao lado da Central de Ações: é por onde
- *   se pergunta, não uma análise de um assunto só;
+ * - **Copiloto** sai do menu e vira o botão flutuante do canto (D-377): ele não
+ *   é um assunto ao lado dos outros, é o que se pergunta SOBRE o assunto aberto
+ *   — e o menu é para onde se vai, não para com quem se fala;
  * - **Sugestões** sai do menu e vai para o rodapé, onde o frame tinha a "Central
  *   de ajuda": é canal com quem constrói o sistema, não uma tela de operação.
  *
@@ -66,7 +67,6 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "Home", href: "/", icone: "home" },
       { label: "Central de Ações", href: "/acoes", icone: "alvo" },
       { label: "Diagnóstico", href: "/diagnostico", icone: "pulso" },
-      { label: "Copiloto", href: "/copiloto", icone: "brilho" },
     ],
   },
   {
@@ -309,6 +309,19 @@ export function SidebarRodapeLink({
 }
 
 /**
+ * Telas que EXISTEM e não estão no menu, mas que a busca precisa achar.
+ *
+ * Uma só, por enquanto: a tela cheia do Copiloto. D-377 tirou o item do menu
+ * porque a conversa passou a abrir pelo botão flutuante, e o efeito colateral
+ * seria mudo — `paginasDoMenu` alimenta o `Ctrl+K`, então a rota viraria uma
+ * tela alcançável por UM link no rodapé de uma gaveta. Sair da barra é decisão
+ * de composição; sumir da busca seria outra decisão, que ninguém tomou.
+ */
+const PAGINAS_FORA_DO_MENU: readonly { label: string; href: string; grupo: string }[] = [
+  { label: "Copiloto", href: "/copiloto", grupo: "Visão geral" },
+];
+
+/**
  * As telas do menu que este papel alcança, como lista plana — para a busca
  * (`CommandPalette`) oferecer "ir para a tela" com EXATAMENTE a regra do menu
  * (lote 3 do pente fino, 18/09). No celular a busca é a navegação mais rápida,
@@ -317,9 +330,12 @@ export function SidebarRodapeLink({
 export function paginasDoMenu(papel: string | null): { label: string; href: string; grupo: string }[] {
   const ehAdmin = papel === "ADMIN";
 
-  return NAV_GROUPS.flatMap((group) =>
-    group.items
-      .filter((item) => item.somenteAdmin !== true || ehAdmin)
-      .map((item) => ({ label: item.label, href: item.href, grupo: group.title })),
-  );
+  return [
+    ...NAV_GROUPS.flatMap((group) =>
+      group.items
+        .filter((item) => item.somenteAdmin !== true || ehAdmin)
+        .map((item) => ({ label: item.label, href: item.href, grupo: group.title })),
+    ),
+    ...PAGINAS_FORA_DO_MENU,
+  ];
 }

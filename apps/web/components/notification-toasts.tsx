@@ -236,20 +236,15 @@ export function NotificationToasts({
 
   if (toasts.length === 0) return null;
 
+  /*
+    A pilha virou CLASSE em D-377 (`.sb-toast-pilha`): o canto inferior direito
+    deixou de ser só dela quando o Copiloto ganhou o botão flutuante, e a folga
+    que os separa é medida pela altura DELE. Em estilo inline aqui, a medida
+    ficaria longe do que a produz e as duas iam se desencontrar na primeira vez
+    que o botão mudasse de tamanho.
+  */
   return (
-    <div
-      style={{
-        position: "fixed",
-        right: "var(--sb-space-4)",
-        bottom: "var(--sb-space-4)",
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--sb-space-2)",
-        zIndex: 200,
-        width: "22rem",
-        maxWidth: "calc(100vw - 2 * var(--sb-space-4))",
-      }}
-    >
+    <div className="sb-toast-pilha">
       {toasts.map((toast) => {
         const href = toast.count === 1 ? (entityHref(toast.entityType, toast.entityId) ?? "/notificacoes") : "/notificacoes";
 

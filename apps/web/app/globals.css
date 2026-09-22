@@ -290,9 +290,17 @@ body {
   flex: 1;
   min-width: 0;
   overflow: auto;
-  /* `.content{padding:31px 36px 80px}` — o 80px inferior existe para a
-     barra de selecao/flutuante nao cobrir a ultima linha. */
-  padding: 31px 36px 80px;
+  /*
+    `.content{padding:31px 36px 80px}` — o 80px inferior existia para a "barra
+    de selecao/flutuante nao cobrir a ultima linha". A barra de seleção nunca
+    foi construída, e até D-377 esses 80px reservavam espaço para nada.
+
+    Agora reservam para ALGO: o botão do Copiloto. Por isso viraram o token
+    (`--sb-fab-espaco` + folga), que calha em 80px no desktop — a medida do
+    frame estava certa, só não tinha dono. Quem muda o tamanho do botão move
+    este rodapé junto, sem saber que ele existe.
+  */
+  padding: 31px 36px calc(var(--sb-fab-espaco) + var(--sb-space-2));
   /*
    * O CHÃO, e ele é do `<main>` — não do `body` (D-285).
    *
@@ -620,6 +628,128 @@ body {
   border-left: 1px solid var(--sb-border);
 }
 
+/*
+  O BOTÃO FLUTUANTE DO COPILOTO (D-377) — o `.copilot-fab` do frame, que o
+  Shell recusava enquanto o ✦ estava na barra de topo e o item no menu lateral.
+  Com os dois fora, ele deixou de ser um terceiro caminho e virou o único.
+
+  Ele é NAVY CHEIO, e não o `.sb-icon-button` transparente de onde veio: sobre
+  o chão cinza, um ícone sem fundo no meio da tela não lê como alvo de clique —
+  lê como respingo. O botão flutuante é o único controle desta casa que não tem
+  barra em volta para dizer que ele é um controle, então a forma tem que dizer
+  sozinha.
+
+  As duas medidas: 56px é o alvo de toque confortável no celular (o mínimo é
+  44), e `--sb-space-4` de folga alinha a margem dele com a dos toasts, que
+  disputam o mesmo canto.
+
+  ## TRÊS medidas que precisam concordar, e um token só
+
+  O botão ocupa um pedaço do canto, e outras DUAS coisas têm que saber o
+  tamanho desse pedaço: a pilha de toasts, que sobe por cima dele, e o rodapé
+  do `.sb-content`, que precisa rolar mais um tanto para a última linha da
+  tela não morrer embaixo do botão.
+
+  Em três números soltos, a primeira mudança de tamanho desencontraria os três
+  — que é a classe de defeito de "um dado, um dono" (D-224). Então o tamanho e
+  a folga são tokens, e `--sb-fab-espaco` é o que eles somam: da borda de baixo
+  da janela até o topo do botão. Quem precisa desviar dele soma a própria
+  folga e pronto.
+*/
+:root {
+  --sb-fab-size: 56px;
+  --sb-fab-inset: var(--sb-space-4);
+  --sb-fab-espaco: calc(var(--sb-fab-size) + var(--sb-fab-inset));
+}
+
+.sb-copilot-fab {
+  position: fixed;
+  right: var(--sb-fab-inset);
+  bottom: var(--sb-fab-inset);
+  /* ABAIXO da camada flutuante (`.sb-backdrop`, z-index 20), como o
+     `.sb-cfg-aviso`: com a gaveta aberta, o vidro passa POR CIMA do botão. Sem
+     isso ele boiaria sobre o próprio painel que acabou de abrir. */
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  width: var(--sb-fab-size);
+  height: var(--sb-fab-size);
+  border: 0;
+  border-radius: 999px;
+  background: var(--sb-primary);
+  box-shadow: var(--sb-shadow-float);
+  color: var(--sb-white);
+  font-size: 1.375rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease-out, transform 120ms ease-out;
+}
+
+.sb-copilot-fab:hover {
+  background: var(--sb-secondary);
+  transform: translateY(-1px);
+}
+
+/*
+  No CELULAR ele encolhe — 48px, e encostado mais na quina.
+
+  Não é economia de pixel: em 360px de largura, 56px mais 24px de folga comem
+  22% da largura da tela num canto onde as telas desta casa põem paginação e
+  botão de ação de tabela. 48px continua acima do alvo mínimo de toque (44), e
+  é a medida que o Material usa para o FAB pequeno pelo mesmo motivo.
+
+  Os 850px são o mesmo ponto onde a sidebar vira trilho: é onde esta casa já
+  decidiu que a tela ficou estreita.
+*/
+@media (max-width: 850px) {
+  :root {
+    --sb-fab-size: 48px;
+    --sb-fab-inset: var(--sb-space-3);
+  }
+
+  .sb-copilot-fab {
+    font-size: 1.125rem;
+  }
+}
+
+/*
+  O TOQUE não tem `:hover`, e o navegador emula um que GRUDA: o botão ficaria
+  com a cor de hover depois do toque, até tocarem em outro lugar. `any-hover`
+  pergunta se existe algum apontador capaz de pairar — no celular, nenhum.
+*/
+@media (any-hover: none) {
+  .sb-copilot-fab:hover {
+    background: var(--sb-primary);
+    transform: none;
+  }
+
+  .sb-copilot-fab:active {
+    background: var(--sb-secondary);
+    transform: scale(0.94);
+  }
+}
+
+/*
+  A pilha de toasts SOBE pela altura do botão. Antes de D-377 nada dividia este
+  canto; agora o toast de notificação nasceria embaixo do Copiloto, e o botão
+  cobriria a primeira linha dele: o título da notificação e o "×" que a fecha.
+
+  Quem cede é o toast, não o botão: o botão está sempre lá e o toast é
+  passageiro, então mover o passageiro não move nada que o olho já tenha
+  aprendido onde fica.
+*/
+.sb-toast-pilha {
+  position: fixed;
+  right: var(--sb-fab-inset);
+  bottom: calc(var(--sb-fab-espaco) + var(--sb-space-2));
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-2);
+  width: 22rem;
+  max-width: calc(100vw - 2 * var(--sb-fab-inset));
+}
+
 .sb-profile {
   display: flex;
   align-items: center;
@@ -666,8 +796,15 @@ body {
     width: 215px;
   }
 
+  /*
+    O rodapé do botão SOBREVIVE ao breakpoint (D-377). Este `padding` era
+    abreviado e de um valor só, então apagava os 80px de baixo que a regra base
+    reservava — sem o botão isso não custava nada, e com ele a última linha de
+    toda tela morria embaixo do Copiloto a partir de 1150px. Vale o mesmo 20px
+    de baixo.
+  */
   .sb-content {
-    padding: 25px;
+    padding: 25px 25px calc(var(--sb-fab-espaco) + var(--sb-space-2));
   }
 
   .sb-topbar {
@@ -755,8 +892,11 @@ body {
     padding: 0 1.125rem;
   }
 
+  /* O mesmo do breakpoint de cima: o rodapé do botão não pode ser apagado pela
+     forma abreviada. Aqui o botão já encolheu para 48px, então o token vale
+     menos — e o conteúdo devolve a diferença. */
   .sb-content {
-    padding: 20px;
+    padding: 20px 20px calc(var(--sb-fab-espaco) + var(--sb-space-2));
   }
 }
 
