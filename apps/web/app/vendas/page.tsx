@@ -3,6 +3,7 @@ import { businessDateRangeLength, classifySyncFreshness, previousBusinessDateRan
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando";
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import type { SavedFilter } from "../../components/saved-filters";
 import Link from "next/link";
 import { SavedFilters } from "../../components/saved-filters";
@@ -822,6 +823,7 @@ async function VendasContent({
                   aria-current={option.key === metric.key ? "true" : undefined}
                 >
                   {option.label}
+                  <CarregandoSeODemorar />
                 </Link>
               ))}
             </div>

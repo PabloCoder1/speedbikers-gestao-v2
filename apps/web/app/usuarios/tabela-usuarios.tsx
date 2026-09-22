@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Avatar } from "../../components/avatar";
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { Icone } from "../../components/icons";
 import { TOM } from "../../components/tone";
 import { MEMBER_STATUSES, buildMemberHref, memberStatusLabel, type MemberFilters, type MemberStatus } from "../../lib/member-filters";
@@ -226,6 +227,7 @@ export function FiltroDeStatus({
         >
           {opcao.rotulo}
           <span className="sb-pilula-conta">{opcao.conta}</span>
+          <CarregandoSeODemorar />
         </Link>
       ))}
     </nav>

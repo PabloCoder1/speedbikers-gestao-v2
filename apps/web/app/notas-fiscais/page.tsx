@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -302,6 +303,7 @@ export default async function NotasFiscaisPage({
                   ? "todos os itens vinculados · falta aplicar"
                   : `${plural(visao.resumo.itens_sem_vinculo, "item sem SKU", "itens sem SKU")} para vincular`}
             </span>
+            <CarregandoSeODemorar />
           </Link>
 
           <div className="sb-rep-destaque">
@@ -326,6 +328,7 @@ export default async function NotasFiscaisPage({
             <span className="sb-rep-destaque-nota">
               {visao.resumo.falhas === 0 ? "nenhum arquivo recusado" : "ver o motivo e reenviar · ver"}
             </span>
+            <CarregandoSeODemorar />
           </Link>
 
           <div className="sb-rep-destaque">
@@ -356,6 +359,7 @@ export default async function NotasFiscaisPage({
             <span className="sb-rep-estado-rotulo">Todos</span>
             <strong>{naBusca === null ? "—" : formatCount(naBusca)}</strong>
             <small>{filters.search === null ? "todos os documentos" : `com "${filters.search}"`}</small>
+            <CarregandoSeODemorar />
           </Link>
 
           {DOCUMENT_STATUSES.map((estado) => {
@@ -373,6 +377,7 @@ export default async function NotasFiscaisPage({
                 <span className="sb-rep-estado-rotulo">{batchStatusLabel(estado)}</span>
                 <strong>{visao === null ? "—" : formatCount(n ?? 0)}</strong>
                 <small>{DESCRICAO_ESTADO[estado] ?? ""}</small>
+                <CarregandoSeODemorar />
               </Link>
             );
           })}
@@ -448,6 +453,7 @@ export default async function NotasFiscaisPage({
               {filtroAtivo && (
                 <Link className="sb-button" href="/notas-fiscais">
                   Limpar filtros
+                  <CarregandoSeODemorar />
                 </Link>
               )}
 
@@ -456,6 +462,7 @@ export default async function NotasFiscaisPage({
                   {filters.page > 1 && (
                     <Link className="sb-button" href={buildDocumentHref(filters, { page: filters.page - 1 })}>
                       ‹ Anterior
+                      <CarregandoSeODemorar />
                     </Link>
                   )}
                   <span>
@@ -464,6 +471,7 @@ export default async function NotasFiscaisPage({
                   {filters.page < janela.totalPages && (
                     <Link className="sb-button" href={buildDocumentHref(filters, { page: filters.page + 1 })}>
                       Próxima ›
+                      <CarregandoSeODemorar />
                     </Link>
                   )}
                 </span>

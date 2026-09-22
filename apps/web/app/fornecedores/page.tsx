@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { Icone } from "../../components/icons";
 import { PageTitle } from "../../components/page-title";
@@ -235,6 +236,7 @@ export default async function FornecedoresPage({
                   </em>
                 )}
               </span>
+              <CarregandoSeODemorar />
             </Link>
 
             <div
@@ -292,6 +294,7 @@ export default async function FornecedoresPage({
                   <span className="sb-rep-estado-rotulo">{recorte.rotulo}</span>
                   <strong>{formatCount(contagemDe(visao.contagens, recorte.chave))}</strong>
                   <small>{recorte.descricao}</small>
+                  <CarregandoSeODemorar />
                 </Link>
               );
             })}
@@ -318,6 +321,7 @@ export default async function FornecedoresPage({
                 {filtroAtivo && (
                   <Link className="sb-button" href="/fornecedores">
                     Limpar filtros
+                    <CarregandoSeODemorar />
                   </Link>
                 )}
                 <FilterMenu
@@ -338,6 +342,7 @@ export default async function FornecedoresPage({
                         })}
                       >
                         ‹ Anterior
+                        <CarregandoSeODemorar />
                       </Link>
                     )}
                     <span>
@@ -351,6 +356,7 @@ export default async function FornecedoresPage({
                         })}
                       >
                         Próxima ›
+                        <CarregandoSeODemorar />
                       </Link>
                     )}
                   </span>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -299,6 +300,7 @@ export default async function ComprasPage({
                   : `maior atraso ${plural(visao.atrasados.maiorAtrasoDias, "dia", "dias")} · ${valorCompacto(visao.atrasados)}`}
                 {filters.overdue ? " · mostrando só estes" : visao.atrasados.pedidos > 0 ? " · ver" : ""}
               </span>
+              <CarregandoSeODemorar />
             </Link>
 
             <div
@@ -345,6 +347,7 @@ export default async function ComprasPage({
             <span className="sb-rep-estado-rotulo">Todos</span>
             <strong>{pedidosNaBusca === null ? "—" : formatCount(pedidosNaBusca)}</strong>
             <small>{filters.search === null ? "todos os pedidos" : `com "${filters.search}"`}</small>
+            <CarregandoSeODemorar />
           </Link>
 
           {PURCHASE_ORDER_STATUSES.map((estado) => {
@@ -366,6 +369,7 @@ export default async function ComprasPage({
                     ? `${compacto(dado.valor)}${dado.sem_custo > 0 ? " · parcial" : ""}`
                     : DESCRICAO_ESTADO[estado]}
                 </small>
+                <CarregandoSeODemorar />
               </Link>
             );
           })}
@@ -381,6 +385,7 @@ export default async function ComprasPage({
               {filtroAtivo && (
                 <Link className="sb-button" href="/compras">
                   Limpar filtros
+                  <CarregandoSeODemorar />
                 </Link>
               )}
               {janela.totalPages > 1 && (
@@ -388,6 +393,7 @@ export default async function ComprasPage({
                   {filters.page > 1 && (
                     <Link className="sb-button" href={buildPurchaseOrderHref(filters, { page: filters.page - 1 })}>
                       ‹ Anterior
+                      <CarregandoSeODemorar />
                     </Link>
                   )}
                   <span>
@@ -396,6 +402,7 @@ export default async function ComprasPage({
                   {filters.page < janela.totalPages && (
                     <Link className="sb-button" href={buildPurchaseOrderHref(filters, { page: filters.page + 1 })}>
                       Próxima ›
+                      <CarregandoSeODemorar />
                     </Link>
                   )}
                 </span>

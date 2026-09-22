@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "./carregando-link";
 import { TOM, type Tom } from "./tone";
 
 /**
@@ -147,6 +148,7 @@ export function ObjectHeader({
           {abas.map((aba) => (
             <Link key={aba.href} href={aba.href} aria-current={aba.active ? "page" : undefined}>
               {aba.label}
+              <CarregandoSeODemorar />
             </Link>
           ))}
         </nav>

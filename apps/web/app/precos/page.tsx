@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import Link from "next/link";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterPill, FilterSubmit } from "../../components/filter-pill";
 import { FilterMenu } from "../../components/filter-menu";
 import { Icone } from "../../components/icons";
@@ -343,6 +344,7 @@ export default async function PrecosPage({
             {filtrosAtivos > 0 && (
               <Link className="sb-button" href="/precos">
                 Limpar {filtrosAtivos === 1 ? "filtro" : `${String(filtrosAtivos)} filtros`}
+                <CarregandoSeODemorar />
               </Link>
             )}
             <FilterSubmit>Aplicar filtros</FilterSubmit>
@@ -360,6 +362,7 @@ export default async function PrecosPage({
             </div>
             <Link className="sb-button" href={buildPriceHref(filters, { page: filters.page })}>
               Tentar novamente
+              <CarregandoSeODemorar />
             </Link>
           </div>
         )}

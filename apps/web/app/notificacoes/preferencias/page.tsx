@@ -40,6 +40,24 @@ interface PreferenceQueryRow {
   ml_accounts: { label: string } | null;
 }
 
+// "A regra mais específica vence" (o texto da tela) só é fácil de conferir de
+// olho se a ordem da tabela bater com a regra: as duas cunhas (tipo de
+// evento, conta) primeiro, a severidade mais alta como desempate. Sem isso a
+// tabela ficava em ordem de criação — quem chegou primeiro, sem relação com
+// quem realmente vence.
+const SEVERITY_RANK: Record<string, number> = { informativo: 0, importante: 1, critico: 2 };
+
+function specificity(row: PreferenceRowData): number {
+  return (row.eventType === null ? 0 : 1) + (row.accountLabel === null ? 0 : 1);
+}
+
+function byPrecedence(a: PreferenceRowData, b: PreferenceRowData): number {
+  return (
+    specificity(b) - specificity(a) ||
+    (SEVERITY_RANK[b.minSeverity] ?? 0) - (SEVERITY_RANK[a.minSeverity] ?? 0)
+  );
+}
+
 export default async function PreferenciasPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -54,13 +72,15 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
   const error = preferencesResult.error ?? accountsResult.error;
   const accounts = accountsResult.data ?? [];
 
-  const rows: PreferenceRowData[] = ((preferencesResult.data ?? []) as PreferenceQueryRow[]).map((row) => ({
-    id: row.id,
-    eventType: row.event_type,
-    accountLabel: row.ml_accounts?.label ?? null,
-    minSeverity: row.min_severity,
-    enabled: row.enabled,
-  }));
+  const rows: PreferenceRowData[] = ((preferencesResult.data ?? []) as PreferenceQueryRow[])
+    .map((row) => ({
+      id: row.id,
+      eventType: row.event_type,
+      accountLabel: row.ml_accounts?.label ?? null,
+      minSeverity: row.min_severity,
+      enabled: row.enabled,
+    }))
+    .sort(byPrecedence);
 
   const eventTypes = Object.keys(EVENT_SEVERITY);
 
@@ -73,14 +93,17 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
         compacto
       />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)", maxWidth: "42rem" }}>
-        Controla só o alerta em tempo real (o toast) — o histórico completo continua sempre na Central de
-        Notificações, mesmo pro que estiver desativado ou abaixo da severidade mínima aqui. Sem nenhuma regra, todo
-        evento vira toast por padrão.
-      </p>
+      <div className="sb-note" style={{ marginBottom: "var(--sb-space-3)", maxWidth: "42rem" }}>
+        <span>SÓ CONTROLA O TOAST</span>
+        <p>
+          Estas regras filtram apenas o alerta em tempo real. O histórico completo continua sempre na Central de
+          Notificações, mesmo para o que estiver desativado ou abaixo da severidade mínima aqui. Sem nenhuma regra,
+          todo evento vira toast por padrão.
+        </p>
+      </div>
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-note sb-note-perigo">
           Não foi possível carregar: {error.message}
         </p>
       )}
@@ -89,7 +112,7 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
         <>
           <Panel
             title="Regras de alerta"
-            subtitle="A regra mais específica vence; sem nenhuma, todo evento vira toast."
+            subtitle="Da mais específica para a mais geral — é nessa ordem que uma regra vence a outra."
           >
             {rows.length === 0 && (
               <p className="sb-empty">Nenhuma preferência configurada — todo evento vira toast por padrão.</p>
@@ -104,7 +127,9 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
                       <th>Conta</th>
                       <th>Severidade mínima</th>
                       <th>Estado</th>
-                      <th>Ações</th>
+                      <th>
+                        <span className="sb-sr-only">Ações</span>
+                      </th>
                     </tr>
                   </thead>
 
@@ -119,7 +144,12 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
           </Panel>
 
           <div style={{ marginTop: "var(--sb-space-3)" }}>
-            <NewPreferenceForm eventTypes={eventTypes} accounts={accounts} />
+            <Panel
+              title="Nova regra"
+              subtitle="Deixe tipo de evento ou conta em aberto para uma regra mais abrangente."
+            >
+              <NewPreferenceForm eventTypes={eventTypes} eventSeverity={EVENT_SEVERITY} accounts={accounts} />
+            </Panel>
           </div>
         </>
       )}

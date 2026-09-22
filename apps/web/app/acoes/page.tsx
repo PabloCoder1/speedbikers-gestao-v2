@@ -2,6 +2,7 @@ import { actionKindLabel, describeActionEvidence } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import {
@@ -242,6 +243,7 @@ export default async function AcoesPage({
               href={buildActionsHref(filters, { severity: "todas", kind: null })}
             >
               Todas as ações <span>{formatCount(abertas)}</span>
+              <CarregandoSeODemorar />
             </Link>
 
             {/*
@@ -257,6 +259,7 @@ export default async function AcoesPage({
                 href={buildActionsHref(filters, { severity: chave })}
               >
                 {rotulo} <span>{formatCount(readFacet(facetas?.facet_severity, chave))}</span>
+                <CarregandoSeODemorar />
               </Link>
             ))}
 
@@ -276,6 +279,7 @@ export default async function AcoesPage({
                 href={buildActionsHref(filters, { kind: filters.kind === key ? null : key })}
               >
                 {actionKindLabel(key)} <span>{formatCount(count)}</span>
+                <CarregandoSeODemorar />
               </Link>
             ))}
           </nav>
@@ -315,11 +319,13 @@ export default async function AcoesPage({
                 {filters.page > 1 && (
                   <Link className="sb-button" href={buildActionsHref(filters, { page: filters.page - 1 })}>
                     ← Anterior
+                    <CarregandoSeODemorar />
                   </Link>
                 )}
                 {filters.page < janela.totalPages && (
                   <Link className="sb-button" href={buildActionsHref(filters, { page: filters.page + 1 })}>
                     Próxima →
+                    <CarregandoSeODemorar />
                   </Link>
                 )}
               </div>

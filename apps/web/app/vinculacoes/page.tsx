@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -349,6 +350,7 @@ export default async function VinculacoesPage({
               </>
             )}
           </span>
+          <CarregandoSeODemorar />
         </Link>
 
         <div className="sb-rep-destaque">
@@ -378,6 +380,7 @@ export default async function VinculacoesPage({
             {formatCount(contagens.vendidos_sem_vinculo)} venderam e {formatCount(contagens.parados_sem_vinculo)} estão
             parados
           </span>
+          <CarregandoSeODemorar />
         </Link>
 
         <div className="sb-rep-destaque">
@@ -414,6 +417,7 @@ export default async function VinculacoesPage({
               <span className="sb-rep-estado-rotulo">{recorte.rotulo}</span>
               <strong>{formatCount(recorte.conta(contagens))}</strong>
               <small>{recorte.descricao}</small>
+              <CarregandoSeODemorar />
             </Link>
           );
         })}
@@ -428,6 +432,7 @@ export default async function VinculacoesPage({
             aria-current={contaEscolhida === null ? "true" : undefined}
           >
             Todas as contas
+            <CarregandoSeODemorar />
           </Link>
           {accounts.map((a) => {
             const marcada = contaEscolhida?.id === a.id;
@@ -447,6 +452,7 @@ export default async function VinculacoesPage({
                 {naComparacao !== null && naComparacao.sem_vinculo > 0 && (
                   <em>{formatCount(naComparacao.sem_vinculo)}</em>
                 )}
+                <CarregandoSeODemorar />
               </Link>
             );
           })}
@@ -482,6 +488,7 @@ export default async function VinculacoesPage({
                 <span>Nenhum anúncio neste recorte.</span>
                 <Link className="sb-button" href="/vinculacoes">
                   Limpar filtros
+                  <CarregandoSeODemorar />
                 </Link>
               </>
             ) : (
@@ -502,6 +509,7 @@ export default async function VinculacoesPage({
             {filters.page > 1 && (
               <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page - 1 })}>
                 ‹ Anterior
+                <CarregandoSeODemorar />
               </Link>
             )}
             <span>
@@ -510,6 +518,7 @@ export default async function VinculacoesPage({
             {filters.page < window.totalPages && (
               <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page + 1 })}>
                 Próxima ›
+                <CarregandoSeODemorar />
               </Link>
             )}
           </nav>
@@ -651,6 +660,7 @@ function ComparacaoDeCatalogo({
                         })}
                       >
                         {linha.account_label}
+                        <CarregandoSeODemorar />
                       </Link>
                     )}
                     {selecionada && <small className="sb-vnc-mudo">em foco</small>}

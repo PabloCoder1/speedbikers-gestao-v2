@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterPill } from "../../components/filter-pill";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -234,7 +235,11 @@ export default async function NotificacoesPage({
       {paginaVazia && (
         <p style={{ color: "var(--sb-text-soft)" }}>
           Esta página não existe neste recorte — a lista encolheu ou o link é antigo.{" "}
-          <Link href={buildNotificationHref(filters, { page: 1 })}>Voltar à primeira página</Link>.
+          <Link href={buildNotificationHref(filters, { page: 1 })}>
+            Voltar à primeira página
+            <CarregandoSeODemorar />
+          </Link>
+          .
         </p>
       )}
 

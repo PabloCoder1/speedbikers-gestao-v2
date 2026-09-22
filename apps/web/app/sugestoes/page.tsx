@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterPill } from "../../components/filter-pill";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
@@ -164,6 +165,7 @@ export default async function SugestoesPage({
                   {row.authorName ?? "Autor desconhecido"}
                   <span>{formatDateTime(row.createdAt)}</span>
                 </span>
+                <CarregandoSeODemorar />
               </Link>
             ))}
           </section>

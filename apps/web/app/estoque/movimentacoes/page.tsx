@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
 import { Icone } from "../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
@@ -287,6 +288,7 @@ export default async function MovimentacoesPage({
             {filtrosAtivos > 0 && (
               <Link className="sb-button" href="/estoque/movimentacoes">
                 Limpar {filtrosAtivos === 1 ? "filtro" : `${String(filtrosAtivos)} filtros`}
+                <CarregandoSeODemorar />
               </Link>
             )}
             <button className="sb-button sb-button-primary" type="submit">
@@ -312,6 +314,7 @@ export default async function MovimentacoesPage({
             </div>
             <Link className="sb-button" href={buildMovementHref(filters, { page: filters.page })}>
               Tentar novamente
+              <CarregandoSeODemorar />
             </Link>
           </div>
         )}
@@ -337,6 +340,7 @@ export default async function MovimentacoesPage({
                 href={paginaForaDoRecorte ? buildMovementHref(filters, { page: 1 }) : "/estoque/movimentacoes"}
               >
                 {paginaForaDoRecorte ? "Ir para a primeira página" : "Limpar filtros"}
+                <CarregandoSeODemorar />
               </Link>
             )}
           </div>
@@ -426,11 +430,13 @@ export default async function MovimentacoesPage({
               {filters.page > 1 && (
                 <Link className="sb-button" href={buildMovementHref(filters, { page: filters.page - 1 })} rel="prev">
                   ‹ Anterior
+                  <CarregandoSeODemorar />
                 </Link>
               )}
               {filters.page < window.totalPages && (
                 <Link className="sb-button" href={buildMovementHref(filters, { page: filters.page + 1 })} rel="next">
                   Próxima ›
+                  <CarregandoSeODemorar />
                 </Link>
               )}
             </div>

@@ -1,15 +1,10 @@
--- A busca do extrato agora aceita tambem a referencia externa EXATA que o
--- usuario normalmente cola (pedido, documento, reclamacao ou compra). O
--- indice existente `(organization_id, source_type, source_id)` continua sendo
--- util quando a origem esta filtrada; sem origem, a medicao no Dev (240.653
--- linhas) ficou em 79 ms, abaixo do orcamento de 2 s da tela e sem justificar
--- outro indice pago em toda escrita do ledger.
+-- A migration original de 20260918125153 foi aplicada no Dev depois de
+-- migrations mais novas, mas nunca chegou a producao. O `db push` recusa
+-- inserir esse historico fora de ordem; por isso o mesmo corpo e republicado
+-- aqui, com versao posterior a todas as migrations ja publicadas.
 --
--- A faixa de KPIs tinha uma semantica de periodo diferente da tabela: recebia
--- `timestamptz` e tratava `ate` como limite exclusivo, enquanto o ledger trata
--- as datas como dias civis inclusivos de America/Sao_Paulo. Mantemos a
--- assinatura (evita overload no PostgREST e preserva consumidores), mas
--- convertemos os parametros vindos da UI para o mesmo intervalo do ledger.
+-- Mantem a busca por referencia externa exata e faz tabela e KPIs usarem os
+-- mesmos dias civis inclusivos de America/Sao_Paulo.
 
 create or replace function public.get_stock_movements(
   p_organization_id uuid,
