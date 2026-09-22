@@ -198,21 +198,22 @@ export default async function PerguntasPage({
   // Uma contagem por aba, no MESMO recorte de conta — os números da faixa de
   // abas têm de bater com o que cada uma mostra (D-236), nunca ser a
   // organização inteira enquanto a lista está filtrada por conta.
-  const contagens = await Promise.all(
-    STATUS_TABS.map((candidateTab) => {
-      let contagemQuery = supabase
-        .from("support_cases")
-        .select("id", { count: "exact", head: true })
-        .eq("channel", "QUESTION")
-        .or(recorte(candidateTab.statuses, candidateTab.semStatusAqui));
+  const [contagens, questionsResult] = await Promise.all([
+    Promise.all(
+      STATUS_TABS.map((candidateTab) => {
+        let contagemQuery = supabase
+          .from("support_cases")
+          .select("id", { count: "exact", head: true })
+          .eq("channel", "QUESTION")
+          .or(recorte(candidateTab.statuses, candidateTab.semStatusAqui));
 
-      if (selectedAccount !== null) contagemQuery = contagemQuery.eq("ml_account_id", selectedAccount.id);
+        if (selectedAccount !== null) contagemQuery = contagemQuery.eq("ml_account_id", selectedAccount.id);
 
-      return contagemQuery;
-    }),
-  );
-
-  const questionsResult = await questionsQuery;
+        return contagemQuery;
+      }),
+    ),
+    questionsQuery,
+  ]);
   const questions = (questionsResult.data ?? []) as unknown as QuestionRow[];
   const total = questionsResult.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
