@@ -271,6 +271,14 @@ const TRACOS = {
       <path d="M9 16h6" />
     </>
   ),
+  // Perguntas de pré-venda (/atendimento/perguntas), do Lucide (circle-help).
+  duvida: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.2 9.2a2.8 2.8 0 0 1 5.4.9c0 1.9-2.8 2.4-2.8 4.4" />
+      <path d="M12 17.5h.01" />
+    </>
+  ),
 } as const;
 
 export type NomeDoIcone = keyof typeof TRACOS;

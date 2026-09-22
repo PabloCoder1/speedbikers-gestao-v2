@@ -115,6 +115,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     title: "Atendimento",
     items: [
       { label: "Caixa de Entrada", href: "/atendimento", icone: "bandeja" },
+      { label: "Perguntas", href: "/atendimento/perguntas", icone: "duvida" },
       { label: "Base de Conhecimento", href: "/atendimento/conhecimento", icone: "livro" },
     ],
   },
