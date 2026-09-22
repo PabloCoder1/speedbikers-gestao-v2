@@ -33,7 +33,7 @@ test("/conhecimento: os três números do topo, e o percentual tem denominador d
   await login(page, "/atendimento/conhecimento");
 
   await expect(page.getByRole("heading", { name: "Base de Conhecimento", level: 1 })).toBeVisible();
-  await expect(page.getByText("ATENDIMENTO / OPERAÇÃO")).toBeVisible();
+  await expect(page.getByText("ATENDIMENTO / CONHECIMENTO")).toBeVisible();
 
   const painel = page.locator(".sb-stat-grid");
 
@@ -95,4 +95,18 @@ test("/conhecimento: 'Confirmado por' só existe onde houve confirmação", asyn
   await expect(linhaSugerida.getByRole("button", { name: "Rejeitar" })).toBeVisible();
   await expect(linhaValidada.getByRole("button", { name: "Tornar obsoleto" })).toBeVisible();
   await expect(linhaValidada.getByRole("button", { name: "Validar" })).toHaveCount(0);
+});
+test("/conhecimento: revisao, filtros e novo registro ficam acessiveis", async ({ page }) => {
+  await login(page, "/atendimento/conhecimento");
+
+  await expect(page.getByRole("link", { name: "Revisar 1 sugestões" })).toBeVisible();
+  await page.getByRole("link", { name: "Revisar 1 sugestões" }).click();
+  await expect(page.getByRole("heading", { name: "Revisão pendente", level: 2 })).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "Buscar no fato registrado" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Novo conhecimento" }).click();
+  await expect(page.getByRole("dialog", { name: "Enviar para validação" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("sugerido");
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

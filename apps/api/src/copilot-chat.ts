@@ -2,8 +2,10 @@ import { recordAiRun } from "@sb/db";
 import { toSalesMetricDate } from "@sb/domain";
 import {
   listingPerformanceInputSchema,
+  resolveCatalogEntityInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
+  salesSkuDeclinesInputSchema,
   salesSummaryInputSchema,
   skuReplenishmentInputSchema,
 } from "@sb/contracts";
@@ -14,9 +16,11 @@ import type { Caller } from "./auth.js";
 import type { CopilotDeps } from "./copilot.js";
 import {
   runListingPerformance,
+  runResolveCatalogEntity,
   runSalesAccountComparison,
   runSalesPeriodComparison,
   runSalesSummary,
+  runSalesSkuDeclines,
   runSkuReplenishment,
 } from "./copilot.js";
 
@@ -82,6 +86,33 @@ const MAX_TOKENS = 1_024;
 const DATE_PROPERTY = { type: "string", description: "Data YYYY-MM-DD" };
 
 /**
+ * Quando a pergunta pede explicitamente os produtos/SKUs que caíram, escolher
+ * o consolidado é objetivamente errado. A data e a conta continuam sendo
+ * extraídas pelo planner, mas a ferramenta deixa de ser uma aposta do modelo.
+ */
+function identifierInMessage(message: string): string | undefined {
+  const mlb = /\bMLB\d+\b/i.exec(message)?.[0];
+  if (mlb !== undefined) return mlb.toUpperCase();
+
+  const explicitSku = /\bsku\s*(?:#|:)?\s*([A-Za-z0-9][A-Za-z0-9._/-]{0,79})\b/i.exec(message)?.[1];
+  if (explicitSku !== undefined) return explicitSku;
+
+  // Códigos numéricos longos (como 13014) e alfanuméricos são candidatos;
+  // datas curtas, valores e palavras comuns não entram aqui.
+  return /\b(?:\d{4,}|[A-Za-z]+[A-Za-z0-9._/-]*\d[A-Za-z0-9._/-]*)\b/.exec(message)?.[0];
+}
+
+function forcedToolForMessage(message: string): "resolve_catalog_entity" | "sales_sku_declines" | undefined {
+  if (identifierInMessage(message) !== undefined) return "resolve_catalog_entity";
+
+  const normalized = message.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const asksForProduct = /\b(produto|produtos|sku|skus|item|itens)\b/.test(normalized);
+  const asksForDecline = /\b(queda|quedas|caiu|ca[ií]ram|vendeu menos|venderam menos|perdeu receita)\b/.test(normalized);
+
+  return asksForProduct && asksForDecline ? "sales_sku_declines" : undefined;
+}
+
+/**
  * As MESMAS três ferramentas determinísticas de D-077, traduzidas para o
  * formato de tool use. A narração de diagnóstico e as gerações de D-112
  * ficam FORA do chat de propósito: são contextuais (têm botão onde o dado
@@ -129,6 +160,32 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
       required: ["dateFrom", "dateTo", "mlAccountIds"],
     },
   },
+  {
+    name: "sales_sku_declines",
+    description:
+      "Lista os produtos com MAIOR QUEDA entre o período pedido e o período anterior de igual tamanho. Retorna SKU, título, unidades, receita e variação dos dois períodos. Use para 'qual produto caiu?', 'quais itens venderam menos?' ou 'onde perdemos receita'. Não use para atribuir a causa de uma queda.",
+    input_schema: {
+      type: "object",
+      properties: {
+        dateFrom: DATE_PROPERTY,
+        dateTo: DATE_PROPERTY,
+        mlAccountId: { type: "string", description: "UUID da conta; omita para o consolidado" },
+        orderBy: { type: "string", enum: ["units", "revenue"], description: "Ordenar por queda de unidades (padrão) ou receita" },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Quantidade de produtos; padrão 10" },
+      },
+      required: ["dateFrom", "dateTo"],
+    },
+  },
+  {
+    name: "resolve_catalog_entity",
+    description:
+      "Resolve um código digitado como SKU ou anúncio Mercado Livre antes de consultar dados. Use primeiro quando a pergunta trouxer um identificador (ex.: 13014, SB-001 ou MLB123). LISTING traz mlAccountId; AMBIGUO exige declarar a ambiguidade ou usar a conta explicitada. MLB é sempre anúncio, nunca SKU.",
+    input_schema: {
+      type: "object",
+      properties: { identifier: { type: "string", description: "Código exato digitado pelo usuário" } },
+      required: ["identifier"],
+    },
+  },
   /*
     AS DUAS FERRAMENTAS ALÉM DE VENDA (D-293). A descrição de cada uma diz o
     que ela NÃO responde — é o que impede o modelo de escolher a ferramenta
@@ -149,7 +206,7 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
   {
     name: "listing_performance",
     description:
-      "Desempenho de UM anúncio no período: visitas, unidades vendidas, pedidos, receita e conversão, mais preço e situação do cadastro. Conversão NULA significa que não houve visita no período — nunca 0%. Não responde histórico de exposição (o dado de tráfego por dia não existe no sistema).",
+      "Desempenho de UM anúncio no período: visitas, unidades vendidas, pedidos, receita e conversão, mais preço e situação do cadastro. `visitsCoverage` informa se visitas têm cobertura completa, parcial ou nenhuma: SEM_COBERTURA significa que visitas são desconhecidas, não zero. Conversão NULA significa que não há denominador observado. Não atribua pausa/inatividade sem usar o status retornado.",
     input_schema: {
       type: "object",
       properties: {
@@ -181,6 +238,8 @@ const RUNNERS: Record<string, ChatToolRunner> = {
   sales_summary: { schema: salesSummaryInputSchema, run: runSalesSummary },
   sales_period_comparison: { schema: salesPeriodComparisonInputSchema, run: runSalesPeriodComparison },
   sales_account_comparison: { schema: salesAccountComparisonInputSchema, run: runSalesAccountComparison },
+  sales_sku_declines: { schema: salesSkuDeclinesInputSchema, run: runSalesSkuDeclines },
+  resolve_catalog_entity: { schema: resolveCatalogEntityInputSchema, run: runResolveCatalogEntity },
   sku_replenishment: { schema: skuReplenishmentInputSchema, run: runSkuReplenishment },
   listing_performance: { schema: listingPerformanceInputSchema, run: runListingPerformance },
 };
@@ -219,7 +278,7 @@ function buildSystemPrompt(
       : "(nenhuma conta acessível)";
 
   return [
-    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados de vendas do Mercado Livre.",
+    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados da operação no Mercado Livre.",
     `Hoje é ${today} (fuso America/Sao_Paulo). Use esta data para calcular períodos como "últimos 7 dias".`,
     "Contas Mercado Livre que este usuário pode consultar (rótulo: UUID):",
     accountList,
@@ -228,7 +287,11 @@ function buildSystemPrompt(
     "- Responda SOMENTE com base nos resultados das ferramentas. Nunca invente número, conta ou período.",
     "- Sempre diga qual período e qual conta (ou consolidado) a resposta cobre.",
     "- Valores monetários em reais (R$). Seja conciso.",
-    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
+    "- Para 'qual produto caiu' ou 'quais venderam menos', use sales_sku_declines. Ele só devolve quedas reais contra o período anterior equivalente; informe os dois períodos e não atribua causa sem evidência específica.",
+    "- Quando a pergunta trouxer um código (por exemplo 13014, SB-001 ou MLB123), use resolve_catalog_entity ANTES de outra ferramenta. SKU usa sku_replenishment; LISTING usa listing_performance com o mlAccountId retornado. AMBIGUO não é licença para adivinhar: mostre a ambiguidade ou use somente a conta que o usuário explicitou. MLB é sempre anúncio.",
+    "- Em listing_performance, SEM_COBERTURA significa que a coleta de visitas não cobriu a janela: diga que visitas são desconhecidas, nunca '0 visitas' ou 'falta de tráfego'. PARCIAL exige declarar quantos dias foram observados. Só trate visitas como zero sob cobertura observada.",
+    "- Não sugira que um anúncio está pausado, inativo ou sem visibilidade sem o status retornado pela ferramenta; hipótese não é fato.",
+    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, quedas por produto, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
     "- Número ausente NÃO é zero: cobertura, estado e sugestão vêm nulos sob recusa (sem configuração de reposição, saldo sentinela, histórico incompleto), e conversão vem nula quando não houve visita. Diga a recusa em vez de preencher a lacuna.",
     "- Perguntas sobre um dia ainda em andamento podem estar incompletas — as métricas fecham por dia.",
   ].join("\n");
@@ -258,12 +321,14 @@ export async function runCopilotChat(
 
     const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];
+    const forcedTool = forcedToolForMessage(request.message);
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
       const result = await deps.anthropic.plan({
         system,
         messages,
         tools: CHAT_TOOLS,
+        ...(round === 0 && forcedTool !== undefined ? { toolChoice: forcedTool } : {}),
         maxTokens: MAX_TOKENS,
         onText: (delta) => {
           void emit({ type: "text", delta });

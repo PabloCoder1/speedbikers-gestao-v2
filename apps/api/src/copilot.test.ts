@@ -11,7 +11,9 @@ import {
   runNarrateSkuDiagnosis,
   runSalesAccountComparison,
   runSalesPeriodComparison,
+  runSalesSkuDeclines,
   runListingPerformance,
+  runResolveCatalogEntity,
   runSalesSummary,
   runSkuReplenishment,
 } from "./copilot.js";
@@ -159,6 +161,87 @@ describe("runSalesAccountComparison", () => {
     expect(calls).toHaveLength(2);
     expect(calls.every((call) => call.args.p_date_from === "2026-08-01")).toBe(true);
     expect(result.accounts.map((account) => account.mlAccountId)).toEqual(["acc-1", "acc-2"]);
+  });
+});
+
+describe("runSalesSkuDeclines", () => {
+  it("compara contra a janela anterior e preserva as quedas que o SQL ordenou", async () => {
+    const rpc = vi.fn(() => Promise.resolve({
+      data: [{
+        sku_id: "11111111-1111-4111-8111-111111111111", sku: "SB-001", title: "Pneu 29",
+        previous_units_sold: 20, current_units_sold: 5, units_delta: -15, units_change_pct: -0.75,
+        previous_gross_revenue: 2000, current_gross_revenue: 500, gross_revenue_delta: -1500, orders_delta: -10,
+      }], error: null,
+    }));
+
+    const result = await runSalesSkuDeclines({ rpc } as unknown as UserClient, {
+      dateFrom: "2026-08-15", dateTo: "2026-08-24", orderBy: "units", limit: 10,
+    });
+
+    expect(rpc).toHaveBeenCalledWith("get_sales_sku_declines", expect.objectContaining({
+      p_previous_date_from: "2026-08-05", p_previous_date_to: "2026-08-14", p_order_by: "units",
+    }));
+    expect(result.rows[0]).toMatchObject({ sku: "SB-001", unitsDelta: -15, unitsChangePct: -0.75 });
+  });
+});
+
+describe("runResolveCatalogEntity", () => {
+  function fakeCatalogClient(options: {
+    skus?: { sku: string; title: string | null }[];
+    listings?: { item_id: string; title: string; ml_account_id: string; status: string }[];
+  }): UserClient {
+    return {
+      from: (table: string) => {
+        const rows = table === "skus" ? options.skus ?? [] : options.listings ?? [];
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          limit: () => Promise.resolve({ data: rows, error: null }),
+        };
+
+        return chain;
+      },
+    } as unknown as UserClient;
+  }
+
+  it("reconhece código numérico como SKU sem depender da palavra SKU", async () => {
+    const result = await runResolveCatalogEntity(fakeCatalogClient({ skus: [{ sku: "13014", title: "Câmara 29" }] }), {
+      identifier: "13014",
+    });
+
+    expect(result).toEqual({
+      identifier: "13014",
+      resolution: "SKU",
+      candidates: [{ kind: "SKU", identifier: "13014", title: "Câmara 29", mlAccountId: null, status: null }],
+    });
+  });
+
+  it("trata MLB como anúncio mesmo se existir SKU com o mesmo texto", async () => {
+    const result = await runResolveCatalogEntity(
+      fakeCatalogClient({
+        skus: [{ sku: "MLB123", title: "Não deve ser consultado" }],
+        listings: [{ item_id: "MLB123", title: "Anúncio", ml_account_id: "11111111-1111-4111-8111-111111111111", status: "active" }],
+      }),
+      { identifier: "mlb123" },
+    );
+
+    expect(result.resolution).toBe("LISTING");
+    expect(result.candidates).toEqual([
+      { kind: "LISTING", identifier: "MLB123", title: "Anúncio", mlAccountId: "11111111-1111-4111-8111-111111111111", status: "active" },
+    ]);
+  });
+
+  it("devolve ambiguidade, em vez de escolher silenciosamente", async () => {
+    const result = await runResolveCatalogEntity(
+      fakeCatalogClient({
+        skus: [{ sku: "13014", title: "SKU" }],
+        listings: [{ item_id: "13014", title: "Anúncio", ml_account_id: "11111111-1111-4111-8111-111111111111", status: "active" }],
+      }),
+      { identifier: "13014" },
+    );
+
+    expect(result.resolution).toBe("AMBIGUO");
+    expect(result.candidates).toHaveLength(2);
   });
 });
 
@@ -618,6 +701,7 @@ describe("runListingPerformance (D-293)", () => {
     expect(calls[0]?.args.p_organization_id).toBe("org-1");
     expect(result.visits).toBe(120);
     expect(result.conversion).toBe(0.05);
+    expect(result.visitsCoverage).toBe("COMPLETA");
     expect(result.title).toBe("Pneu 29");
     expect(result.price).toBe(150);
   });
@@ -625,7 +709,7 @@ describe("runListingPerformance (D-293)", () => {
   /* Sem visita não há denominador: conversão é NULA, nunca 0% (D-123). */
   it("conversão nula atravessa como nula", async () => {
     const { userClient } = fakeListingClient({
-      summary: { data: { ...RESUMO, visits: 0, conversion: null }, error: null },
+      summary: { data: { ...RESUMO, visits: 0, conversion: null, days_observed: 0 }, error: null },
       listing: { data: null, error: null },
     });
 
@@ -636,7 +720,10 @@ describe("runListingPerformance (D-293)", () => {
     );
 
     expect(result.conversion).toBeNull();
-    expect(result.visits).toBe(0);
+    expect(result.visits).toBeNull();
+    expect(result.visitsCoverage).toBe("SEM_COBERTURA");
+    expect(result.daysObserved).toBe(0);
+    expect(result.daysRequested).toBe(30);
     // Anúncio fora do cadastro não inventa título nem preço.
     expect(result.title).toBeNull();
     expect(result.price).toBeNull();

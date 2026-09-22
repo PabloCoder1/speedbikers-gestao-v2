@@ -64,6 +64,52 @@ export const salesAccountComparisonOutputSchema = z.object({
 });
 export type SalesAccountComparisonOutput = z.infer<typeof salesAccountComparisonOutputSchema>;
 
+/** Produtos cuja venda caiu contra a janela anterior de mesmo tamanho. */
+export const salesSkuDeclinesInputSchema = z.object({
+  dateFrom: dateSchema,
+  dateTo: dateSchema,
+  mlAccountId: z.uuid().optional(),
+  orderBy: z.enum(["units", "revenue"]).default("units"),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+export type SalesSkuDeclinesInput = z.infer<typeof salesSkuDeclinesInputSchema>;
+
+export const salesSkuDeclinesOutputSchema = z.object({
+  previousRange: z.object({ dateFrom: dateSchema, dateTo: dateSchema }),
+  orderBy: z.enum(["units", "revenue"]),
+  rows: z.array(z.object({
+    skuId: z.uuid(), sku: z.string(), title: z.string().nullable(),
+    previousUnitsSold: z.number().int(), currentUnitsSold: z.number().int(),
+    unitsDelta: z.number().int(), unitsChangePct: z.number().nullable(),
+    previousGrossRevenue: z.number(), currentGrossRevenue: z.number(),
+    grossRevenueDelta: z.number(), ordersDelta: z.number().int(),
+  })),
+});
+export type SalesSkuDeclinesOutput = z.infer<typeof salesSkuDeclinesOutputSchema>;
+
+/** Resolve um identificador digitado para SKU, anúncio ML ou ambiguidade sob RLS. */
+export const resolveCatalogEntityInputSchema = z.object({
+  identifier: z.string().trim().min(1).max(80),
+});
+export type ResolveCatalogEntityInput = z.infer<typeof resolveCatalogEntityInputSchema>;
+
+const catalogEntityCandidateSchema = z.object({
+  kind: z.enum(["SKU", "LISTING"]),
+  /** Código que a próxima ferramenta deve receber: SKU ou MLB. */
+  identifier: z.string(),
+  title: z.string().nullable(),
+  /** Só anúncios pertencem a uma conta Mercado Livre. */
+  mlAccountId: z.uuid().nullable(),
+  status: z.string().nullable(),
+});
+
+export const resolveCatalogEntityOutputSchema = z.object({
+  identifier: z.string(),
+  resolution: z.enum(["SKU", "LISTING", "AMBIGUO", "NAO_ENCONTRADO"]),
+  candidates: z.array(catalogEntityCandidateSchema).max(4),
+});
+export type ResolveCatalogEntityOutput = z.infer<typeof resolveCatalogEntityOutputSchema>;
+
 /**
  * Diagnóstico (`docs/COPILOT.md` secao 4, categoria "Diagnóstico"; D-082):
  * narra em texto o contrato de `diagnoseSalesAnomaly` (`@sb/domain`,
@@ -180,6 +226,8 @@ export const COPILOT_TOOL_NAMES = [
   "sales_summary",
   "sales_period_comparison",
   "sales_account_comparison",
+  "sales_sku_declines",
+  "resolve_catalog_entity",
   // Segunda leva (D-293): as ferramentas alem de venda.
   "sku_replenishment",
   "listing_performance",
@@ -274,12 +322,17 @@ export const listingPerformanceOutputSchema = z.object({
   status: z.string().nullable(),
   price: z.number().nullable(),
   availableQuantity: z.number().nullable(),
-  visits: z.number(),
+  /** Nulo quando nenhum dia de visitas foi capturado — ausência não é zero. */
+  visits: z.number().nullable(),
   unitsSold: z.number(),
   ordersCount: z.number(),
   grossRevenue: z.number(),
   /** NULO sem visita no período — conversão sem denominador não é 0% (D-123). */
   conversion: z.number().nullable(),
-  daysObserved: z.number(),
+  /** Dias com retorno da fonte de visitas dentro da janela solicitada. */
+  daysObserved: z.number().int().nonnegative(),
+  daysRequested: z.number().int().positive(),
+  /** Cobertura da fonte, para não narrar lacuna de coleta como falta de tráfego. */
+  visitsCoverage: z.enum(["SEM_COBERTURA", "PARCIAL", "COMPLETA"]),
 });
 export type ListingPerformanceOutput = z.infer<typeof listingPerformanceOutputSchema>;

@@ -12,6 +12,8 @@ import type {
   CopilotToolName,
   ListingPerformanceInput,
   ListingPerformanceOutput,
+  ResolveCatalogEntityInput,
+  ResolveCatalogEntityOutput,
   NarrateActionInput,
   NarrateActionOutput,
   NarrateSkuDiagnosisInput,
@@ -20,6 +22,8 @@ import type {
   SalesAccountComparisonOutput,
   SalesPeriodComparisonInput,
   SalesPeriodComparisonOutput,
+  SalesSkuDeclinesInput,
+  SalesSkuDeclinesOutput,
   SalesSummary,
   SalesSummaryInput,
   SalesSummaryOutput,
@@ -30,9 +34,11 @@ import {
   listingPerformanceInputSchema,
   narrateActionInputSchema,
   narrateSkuDiagnosisInputSchema,
+  resolveCatalogEntityInputSchema,
   skuReplenishmentInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
+  salesSkuDeclinesInputSchema,
   salesSummaryInputSchema,
   structureFeatureSuggestionInputSchema,
   suggestSupportReplyInputSchema,
@@ -181,6 +187,37 @@ export async function runSalesAccountComparison(
   );
 
   return { accounts };
+}
+
+/** Quedas por produto, agregadas e ordenadas no SQL antes do limite. */
+export async function runSalesSkuDeclines(
+  userClient: UserClient,
+  input: SalesSkuDeclinesInput,
+): Promise<SalesSkuDeclinesOutput> {
+  const previousRange = previousBusinessDateRange(input.dateFrom, input.dateTo);
+  const { data, error } = await userClient.rpc("get_sales_sku_declines", {
+    p_date_from: input.dateFrom,
+    p_date_to: input.dateTo,
+    p_previous_date_from: previousRange.from,
+    p_previous_date_to: previousRange.to,
+    ...(input.mlAccountId === undefined ? {} : { p_ml_account_id: input.mlAccountId }),
+    p_order_by: input.orderBy,
+    p_limit: input.limit,
+  });
+
+  if (error !== null) throw new CopilotToolError(error.message);
+
+  return {
+    previousRange: { dateFrom: previousRange.from, dateTo: previousRange.to },
+    orderBy: input.orderBy,
+    rows: data.map((row) => ({
+      skuId: row.sku_id, sku: row.sku, title: row.title,
+      previousUnitsSold: row.previous_units_sold, currentUnitsSold: row.current_units_sold,
+      unitsDelta: row.units_delta, unitsChangePct: row.units_change_pct,
+      previousGrossRevenue: row.previous_gross_revenue, currentGrossRevenue: row.current_gross_revenue,
+      grossRevenueDelta: row.gross_revenue_delta, ordersDelta: row.orders_delta,
+    })),
+  };
 }
 
 /**
@@ -390,6 +427,18 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
       costUsd: null,
     }),
   },
+  sales_sku_declines: {
+    inputSchema: salesSkuDeclinesInputSchema,
+    run: async (userClient, input) => ({ data: await runSalesSkuDeclines(userClient, input), llmUsed: false, costUsd: null }),
+  },
+  resolve_catalog_entity: {
+    inputSchema: resolveCatalogEntityInputSchema,
+    run: async (userClient, input) => ({
+      data: await runResolveCatalogEntity(userClient, input),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
   sku_replenishment: {
     inputSchema: skuReplenishmentInputSchema,
     run: async (userClient, input, _deps, caller) => ({
@@ -525,6 +574,53 @@ export async function handleCopilotQuery(
  * refeito aqui: pedir "SB-001" e receber a linha de "SB-0010" seria responder
  * sobre outro produto com toda a confiança do mundo.
  */
+/**
+ * Resolve o código digitado antes de o planner escolher SKU ou anúncio.
+ * São duas leituras exatas, pequenas e sob a RLS do chamador; não há busca
+ * ampla nem inferência do modelo. `sku_key` é a identidade normalizada do
+ * catálogo, enquanto `item_id` preserva o MLB. Se um código existir nos dois
+ * lugares, a ambiguidade volta explicitamente para o Copiloto.
+ */
+export async function runResolveCatalogEntity(
+  userClient: UserClient,
+  input: ResolveCatalogEntityInput,
+): Promise<ResolveCatalogEntityOutput> {
+  const identifier = input.identifier.trim();
+  const isMlb = /^MLB\d+$/i.test(identifier);
+
+  const [skus, listings] = await Promise.all([
+    isMlb
+      ? Promise.resolve({ data: [], error: null })
+      : userClient.from("skus").select("sku, title").eq("sku_key", identifier.toUpperCase()).limit(2),
+    userClient.from("listings").select("item_id, title, ml_account_id, status").eq("item_id", identifier.toUpperCase()).limit(2),
+  ]);
+
+  if (skus.error !== null) throw new CopilotToolError(skus.error.message);
+  if (listings.error !== null) throw new CopilotToolError(listings.error.message);
+
+  const candidates = [
+    ...skus.data.map((sku) => ({ kind: "SKU" as const, identifier: sku.sku, title: sku.title, mlAccountId: null, status: null })),
+    ...listings.data.map((listing) => ({
+      kind: "LISTING" as const,
+      identifier: listing.item_id,
+      title: listing.title,
+      mlAccountId: listing.ml_account_id,
+      status: listing.status,
+    })),
+  ];
+
+  return {
+    identifier,
+    resolution:
+      candidates.length === 0
+        ? "NAO_ENCONTRADO"
+        : candidates.length === 1
+          ? candidates[0]?.kind === "SKU" ? "SKU" : "LISTING"
+          : "AMBIGUO",
+    candidates,
+  };
+}
+
 export async function runSkuReplenishment(
   userClient: UserClient,
   input: SkuReplenishmentInput,
@@ -650,17 +746,29 @@ export async function runListingPerformance(
     throw new CopilotToolError(cadastro.error.message);
   }
 
+  // Datas ISO civis: UTC impede que o fuso do processo transforme uma janela
+  // de 7 dias em 6/8 na virada de horário. `days_observed` é a prova de que
+  // `visits = 0` veio do ML, não do coalesce da RPC sobre conjunto vazio.
+  const daysRequested = Math.floor(
+    (Date.parse(`${input.dateTo}T00:00:00Z`) - Date.parse(`${input.dateFrom}T00:00:00Z`)) / 86_400_000,
+  ) + 1;
+  const daysObserved = resumo.data.days_observed;
+  const visitsCoverage =
+    daysObserved === 0 ? "SEM_COBERTURA" : daysObserved < daysRequested ? "PARCIAL" : "COMPLETA";
+
   return {
     itemId: input.itemId,
     title: cadastro.data?.title ?? null,
     status: cadastro.data?.status ?? null,
     price: cadastro.data?.price ?? null,
     availableQuantity: cadastro.data?.available_quantity ?? null,
-    visits: resumo.data.visits,
+    visits: daysObserved === 0 ? null : resumo.data.visits,
     unitsSold: resumo.data.units_sold,
     ordersCount: resumo.data.orders_count,
     grossRevenue: resumo.data.gross_revenue,
     conversion: resumo.data.conversion,
-    daysObserved: resumo.data.days_observed,
+    daysObserved,
+    daysRequested,
+    visitsCoverage,
   };
 }
