@@ -546,11 +546,17 @@ Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem v
 - **Riscos:** permissões cloud excessivas, cache mascarando drift, tela stale e vazamento de IDs.
 - **Fora da primeira versão:** deploy, migration, rollback ou recriação de scheduler pela UI.
 
-#### Administração → Configurações — B/C
+#### Administração → Configurações — B/C — 🟡 PRIMEIRA VERSÃO em 2026-09-03 (D-233; os dois interruptores do frame recusados em D-275); recomposta em 2026-09-22 (D-391)
+
+`/configuracoes` (nav ADMINISTRAÇÃO): as sete áreas do item — `Organização | Reposição | Notificações | Mercado Livre | IA/Copiloto | Operação | Preferências` — cada uma com o que existe hoje (contado NO BANCO por `get_settings_overview`, numa chamada só e sob a RLS de quem pergunta), o que a área abrange, a consequência quando há uma, quem altera e para onde ir. **A decisão que o item deixava em aberto está tomada do lado de APONTAR** (D-233), e o que a torna segura é a tela não saber editar: zero formulário, zero botão, zero server action — um dado, um dono (D-224), sem cópia divergente porque não há cópia.
+
+**D-391 recompôs a leitura:** as áreas saem em zonas rotuladas por **presença de configuração** (SEM CONFIGURAÇÃO AINDA / COM CONFIGURAÇÃO / NÃO FOI POSSÍVEL LER), de modo que o que falta configurar abre a tela — a ordem de `describeSettings` continua a deste item, e o teste de unidade a prende. Cada cartão passou a dizer o que a área INCLUI no vocabulário literal da tela dona (guardado por `check:settings-vocabulary`), quem altera em segunda pessoa e a consequência quando há uma: cinco frases tiradas dos 16 campos que a RPC já devolve, cada uma terminando na ação e na tela que a resolve. A camada `hero` saiu (173px da primeira dobra em 1440px, 328px em 390px, para repetir o subtítulo) e a grade deixou de rolar para o lado no celular.
+
+- **Falta (segunda versão):** mostrar o CNPJ da organização em LEITURA — nulo derruba toda importação de nota sem retry e nenhuma tela do produto exibe o campo — e a regra por marca que não alcança nenhum SKU ativo, que é o que o selo verde de Reposição ainda esconde; contar filtros salvos por tela. As três exigem migration, e por isso ficaram fora da primeira versão. **Editar nome/CNPJ segue recusado aqui** (seria a primeira policy de escrita em `organizations`, e o CNPJ decide a direção de toda nota), e os dois interruptores do frame continuam sem onde gravar (D-275).
 
 - **Objetivo/problema:** dar entrada coerente às configurações distribuídas sem duplicar verdade.
 - **Reutiliza:** reposição, preferências de notificação, contas ML, orçamento do Copiloto e organização.
-- **Falta:** landing com `Organização | Reposição | Notificações | Mercado Livre | IA/Copiloto | Operação | Preferências`; decidir entre embutir ou apontar para a tela dona.
+- **Falta:** nada da primeira versão — a landing com as sete áreas está no ar desde 2026-09-03 e a escolha entre embutir e apontar está decidida em D-233 (apontar). O que resta é a segunda versão, acima.
 - **Definition of Done:** um dono por configuração; links/permissões corretos; zero cópia divergente; ausência/erro; acessibilidade.
 - **Riscos:** tabela genérica sem semântica, UI/regra duplicada e controle sem autorização.
 - **Fora da primeira versão:** mover tudo, flags genéricas e edição de secrets.

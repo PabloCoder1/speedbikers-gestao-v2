@@ -1044,6 +1044,76 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**D-391 — /CONFIGURAÇÕES ABRE NO QUE FALTA** — o pedido do usuário foi deixar a
+tela mais intuitiva. Ela continua um hub que APONTA (D-233): zero formulário,
+zero botão, zero server action, uma chamada de banco. O que mudou é composição,
+ordem e texto.
+
+### A composição, de cima para baixo
+
+- **`PageTitle` compacto**, com o veredito no subtítulo ("2 das 7 áreas ainda
+  não têm configuração"), contado sobre o MESMO array que imprime os cartões e
+  com o mesmo predicado da primeira zona — assim placar e ordem não têm como
+  discordar. Com a leitura falhada o veredito some, em vez de virar zero;
+- **faixa de seis células** (`--sb-kpi-cols:6`), na primeira dobra, com a mesma
+  aritmética de antes e a **ressalva VISÍVEL** ao lado de cada número
+  (METRICS 5C.2): a fórmula canônica continua no `title`, mas `title` não
+  existe no toque nem no teclado. Nenhuma célula tem `tom` — `KpiStrip` só o lê
+  no ramo de célula com `href`, e aqui nenhuma tem;
+- **três zonas** `<section aria-labelledby>` rotuladas por um `.sb-eyebrow`
+  visível: SEM CONFIGURAÇÃO AINDA, COM CONFIGURAÇÃO e NÃO FOI POSSÍVEL LER (só
+  quando há). Zona vazia não renderiza, e a ordem DENTRO de cada zona continua
+  a do ROADMAP. A tela deixou de usar `.sb-pair-grid`.
+
+### A anatomia do cartão
+
+`Panel` com o nome da área e a `StatePill` no `aside` — é assim que o e2e
+localiza cada região. O corpo é `.sb-settings-body`, com quatro ou cinco
+blocos, **todos por classe, zero `style` inline** (eram nove, quatro deles
+repetidos sete vezes dentro do `map`):
+
+1. `.sb-settings-resumo` — o estado medido;
+2. `.sb-settings-aviso` (sobre `.sb-note.sb-note-atencao`), só quando há
+   consequência, e **sem `role="alert"`**: é estado permanente da página, não
+   evento que acabou de acontecer;
+3. `.sb-settings-inclui` — "Inclui: …", no vocabulário literal da tela dona,
+   guardado por `check:settings-vocabulary`;
+4. `.sb-settings-quem` — "Quem altera: …", em segunda pessoa;
+5. `nav.sb-channel-nav.sb-settings-links` — os links como chips de 34px, a
+   mesma gramática do `aside` de /integracoes e /contas, no lugar do texto de
+   12px separado por " · " que não tinha área de toque.
+
+### A camada hero saiu desta tela
+
+`.sb-settings-hero` era a terceira cópia de um bloco idêntico ao
+`.sb-process-hero` até o gradiente (D-232) e cobrava 173px da primeira dobra em
+1440px — 328px em 390px — para repetir o que o subtítulo diz em duas frases.
+Saiu das quatro listas de seletor, do gradiente próprio, do bloco
+`-hero-rules` e do `@media (max-width: 760px)`; **`.sb-reliability-hero` ficou,
+porque /saude ainda a usa**. Saiu junto o `aside` do `PageTitle`: os dois links
+dele já aparecem dentro dos cartões de Mercado Livre e de IA, na mesma dobra.
+
+A grade passou a `repeat(auto-fill, minmax(min(17rem, 100%), 1fr))`: o `min()`
+tira o piso rígido que transbordava para o lado numa caixa útil de 302px, e
+17rem — não 18rem — devolve a segunda coluna ao tablet em 860px. O realce de
+`hover` entrou em `@media (hover: hover)` e perdeu o `translateY`, porque
+`Panel` é `<section aria-label>` e não clica; o piso de 142px no corpo saiu,
+já que o cartão agora tem de duas a cinco linhas conforme a área. O
+`loading.tsx` da pasta deixou de delegar ao esqueleto genérico (quatro células
+e uma tabela) e passou a desenhar a forma real: seis células com a linha da
+ressalva, rótulo de zona e cartões em grade.
+
+**Verificação:** `check` 29/29 com 874 testes de unidade, `build` 8/8, as seis
+guardas da web (inclusive a nova `check:settings-vocabulary`) e `docs:check`.
+Remedido no harness, com o `globals.css` desta árvore e o HTML que a página
+emite, nas sete larguras: **332/332 em 390px e 302/302 em 360px** (eram 340/332
+e 340/302 — rolagem lateral que o `<html>` não mostrava, porque quem rola é o
+`.sb-content`), 2 colunas em 768, 849 e 860 e 3 em 1280 e 1440, e o primeiro
+cartão inteiro dentro da dobra de 812px no celular. O e2e ganhou quatro casos e
+roda na CI.
+
+## Fatias anteriores
+
 **D-356 — /FATURAMENTO E /VENDAS ENXUTO** — o pedido do usuário: `/vendas` mostrava
 informação demais, e o dinheiro de cada venda não tinha tela.
 
@@ -1082,8 +1152,6 @@ antes, e os números chegam por streaming.
 da web e `docs:check`. Prévia local com dados sintéticos a 1440px: sem rolagem
 horizontal, as 30 colunas das duas faixas alinhadas e o rótulo de 10% fora das
 barras. As integrações e o e2e rodam na CI.
-
-## Fatias anteriores
 
 **A18 — A LEGENDA DO GRÁFICO NO CABEÇALHO DO PAINEL (D-327)** — o último item de
 desenho em aberto, registrado desde A2. O frame põe a legenda à direita do título
