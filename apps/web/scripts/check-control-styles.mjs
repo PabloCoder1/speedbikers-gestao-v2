@@ -53,6 +53,7 @@ const CLASSES = [
   "sb-command-row",
   "sb-command-input",
   "sb-command-field",
+  "sb-reply-template-item",
   "sb-inbox-filter",
   "sb-diagnostic-item",
   "sb-menu-remove",
@@ -137,11 +138,12 @@ function fimDaTag(texto, inicio) {
  * docstring de `filter-pill.tsx` — um guarda que lê prosa como se fosse JSX
  * acusa por nada, e guarda que berra por nada é como a acusação verdadeira
  * deixa de ser lida. Os blocos `/* … *\/` somem antes da leitura; as linhas
- * `//` ficam, porque não carregam JSX nesta casa e apagá-las por regex
- * mutilaria URL dentro de string.
+ * Comentários de linha que começam a linha também somem. Eles não carregam
+ * JSX, mas podem documentar uma tag literal; deixá-los passar pelo scanner
+ * criou um falso positivo em `reply-form.tsx`.
  */
 function semComentarios(texto) {
-  return texto.replace(/\/\*[\s\S]*?\*\//g, "");
+  return texto.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[\t ]*\/\/.*$/gm, "");
 }
 
 function controles(bruto) {
@@ -283,6 +285,11 @@ const CASOS = [
     nome: "a palavra <button> dentro de comentario nao e interface",
     fonte: `/** O gemeo em <button> do FilterPill. */
 export function X() { return null; }`,
+    acusa: 0,
+  },
+  {
+    nome: "tag em comentario de linha nao e interface",
+    fonte: `// O seletor usa <select> quando ha modelos.\nexport function X() { return null; }`,
     acusa: 0,
   },
   {
