@@ -68,7 +68,7 @@ describe("Reposição (D-144: sem configuração aplicável, a sugestão recusa 
     const r = section(base(), "reposicao");
 
     expect(r.state).toBe("parcial");
-    expect(r.summary).toContain("sem padrão da organização");
+    expect(r.summary).toContain("Sem padrão da organização");
     expect(r.summary).toContain("1 regra por marca");
     expect(r.summary).toContain("recusa número");
   });
@@ -82,7 +82,7 @@ describe("Reposição (D-144: sem configuração aplicável, a sugestão recusa 
     vazio.replenishment_brand = 0;
     expect(section(vazio, "reposicao")).toMatchObject({
       state: "nao_configurado",
-      summary: "nenhuma política cadastrada — a sugestão de compra recusa número até haver uma",
+      summary: "Nenhuma política cadastrada — a sugestão de compra recusa número até haver uma.",
     });
   });
 });
@@ -92,13 +92,13 @@ describe("as outras seções", () => {
     const o = section(base(), "organizacao");
 
     expect(o.state).toBe("configurado");
-    expect(o.summary).toBe("Speed Bikers (speed-bikers) — 1 membro, 1 ADMIN");
+    expect(o.summary).toBe("Speed Bikers (speed-bikers) — 1 membro, 1 ADMIN.");
     expect(o.editors).toContain("não editável na interface");
     expect(o.links).toEqual([{ label: "Usuários", href: "/usuarios" }]);
   });
 
   it("Notificações: a regra geral aparece com o mínimo; desligada é dita; sem preferência é não configurado", () => {
-    expect(section(base(), "notificacoes").summary).toBe("1 regra sua; regra geral: mínimo critico");
+    expect(section(base(), "notificacoes").summary).toBe("1 regra sua; regra geral: mínimo Crítico.");
 
     const desligada = base();
     desligada.notification_global_enabled = false;
@@ -111,12 +111,12 @@ describe("as outras seções", () => {
   });
 
   it("Mercado Livre: todas conectadas é configurado; uma fora é PARCIAL, com a contagem; e aponta para Contas e Integrações", () => {
-    expect(section(base(), "mercado_livre")).toMatchObject({ state: "configurado", summary: "4 de 4 contas conectadas" });
+    expect(section(base(), "mercado_livre")).toMatchObject({ state: "configurado", summary: "4 de 4 contas conectadas." });
     expect(section(base(), "mercado_livre").links.map((l) => l.href)).toEqual(["/contas", "/integracoes"]);
 
     const umaFora = base();
     umaFora.ml_accounts_connected = 3;
-    expect(section(umaFora, "mercado_livre")).toMatchObject({ state: "parcial", summary: "3 de 4 contas conectadas" });
+    expect(section(umaFora, "mercado_livre")).toMatchObject({ state: "parcial", summary: "3 de 4 contas conectadas." });
 
     const nenhuma = base();
     nenhuma.ml_accounts_total = 0;
@@ -142,18 +142,29 @@ describe("as outras seções", () => {
     comDado.reply_templates = 3;
     comDado.knowledge_entries = 5;
     comDado.knowledge_validated = 2;
-    expect(section(comDado, "operacao").summary).toBe("3 templates; 5 entradas de conhecimento (2 validada(s))");
+    expect(section(comDado, "operacao").summary).toBe("3 templates; 5 entradas de conhecimento (2 validadas).");
   });
 
-  it("Preferências: filtros salvos são do usuário, e a tela dona é Vendas", () => {
-    expect(section(base(), "preferencias")).toMatchObject({ state: "nao_configurado", summary: "nenhum filtro salvo seu" });
+  it("Preferências: filtros salvos são do usuário, e as telas donas são DUAS — sem dizer 'em Vendas'", () => {
+    expect(section(base(), "preferencias")).toMatchObject({ state: "nao_configurado", summary: "Nenhum filtro salvo seu." });
 
     const comFiltros = base();
     comFiltros.saved_filters_mine = 2;
+
+    /*
+      `saved_filters_mine` conta sem filtrar `screen`, e `SavedFilters` está
+      montado em /vendas E em /anúncios: "2 filtros salvos seus em Vendas"
+      ficaria falso no primeiro filtro salvo do outro lado. Com zero filtros o
+      defeito dorme — este caso é o despertador.
+    */
     expect(section(comFiltros, "preferencias")).toMatchObject({
       state: "configurado",
-      summary: "2 filtros salvos seus em Vendas",
-      links: [{ label: "Vendas", href: "/vendas" }],
+      summary: "2 filtros salvos seus.",
+      links: [
+        { label: "Vendas", href: "/vendas" },
+        { label: "Anúncios", href: "/anuncios" },
+      ],
     });
+    expect(section(comFiltros, "preferencias").summary).not.toContain("em Vendas");
   });
 });
