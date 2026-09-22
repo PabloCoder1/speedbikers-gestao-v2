@@ -14,6 +14,7 @@ import {
   parseOriginCode,
   skuKey,
 } from "./normalize.js";
+import { resolveSupplierBrand } from "./supplier-brand.js";
 
 /**
  * Mapeamento das linhas exportadas pelo UpSeller para registros normalizados.
@@ -86,6 +87,8 @@ export interface UpsellerProduct {
   erpProductCode: string | null;
   erpSpu: string | null;
   brand: string | null;
+  /** Marca REAL do fornecedor, pela cascata de D-390. `null` = sem evidência. */
+  supplierBrand: string | null;
   categoryRaw: string | null;
   isDiscontinued: boolean;
   isActive: boolean;
@@ -117,6 +120,17 @@ export function mapProductRow(
 
   const category = parseCategory(at(row, index, "Categorias"));
 
+  // A marca REAL não sai de uma coluna só (D-390): `Categorias` é marca em
+  // 1.037 das 3.074 linhas e tipo de peça nas outras. A cascata está em
+  // `supplier-brand.ts`; aqui só entregamos as quatro fontes que ela lê.
+  const supplierBrand = resolveSupplierBrand({
+    sku,
+    title: at(row, index, "Título"),
+    brandColumn: at(row, index, "Marca"),
+    categories: at(row, index, "Categorias"),
+    description: at(row, index, "Descrição do Anúncio"),
+  });
+
   return {
     ok: true,
     value: {
@@ -126,6 +140,7 @@ export function mapProductRow(
       erpProductCode: cell(at(row, index, "Código do Produto")),
       erpSpu: cell(at(row, index, "SPU")),
       brand: category.brand,
+      supplierBrand: supplierBrand.brand,
       categoryRaw: category.categoryRaw,
       isDiscontinued: category.isDiscontinued,
       isActive: parseFlag(at(row, index, "O produto está ativo"), true),

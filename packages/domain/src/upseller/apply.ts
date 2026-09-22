@@ -50,6 +50,15 @@ export interface SkuUpsert {
   erp_product_code: string | null;
   erp_spu: string | null;
   brand: string | null;
+  /**
+   * Marca REAL do fornecedor (D-390), `null` quando a planilha não prova qual é.
+   *
+   * Quem grava precisa tratar o `null` como "não sei", nunca como "apague":
+   * apagar faria a marca piscar a cada planilha que deixasse de citar o nome.
+   */
+  supplier_brand: string | null;
+  /** `DERIVED` sempre que houver marca — edição de gente grava `MANUAL` e mora fora daqui. */
+  supplier_brand_source: "DERIVED" | null;
   category_raw: string | null;
   is_discontinued: boolean;
   is_active: boolean;
@@ -79,6 +88,7 @@ export function readSkuUpsert(payload: unknown): ReadResult<SkuUpsert> {
   // `origin_code` tem check 0..8 no banco. Um valor fora disso derrubaria o
   // INSERT do lote inteiro; descartar o campo preserva o resto da linha.
   const origin = numberOrNull(source, "originCode");
+  const supplierBrand = str(source, "supplierBrand");
 
   return {
     ok: true,
@@ -88,6 +98,8 @@ export function readSkuUpsert(payload: unknown): ReadResult<SkuUpsert> {
       erp_product_code: str(source, "erpProductCode"),
       erp_spu: str(source, "erpSpu"),
       brand: str(source, "brand"),
+      supplier_brand: supplierBrand,
+      supplier_brand_source: supplierBrand === null ? null : "DERIVED",
       category_raw: str(source, "categoryRaw"),
       is_discontinued: bool(source, "isDiscontinued"),
       // Ausente significa ativo: o ERP só marca o contrário.
