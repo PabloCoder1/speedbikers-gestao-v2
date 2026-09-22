@@ -35,7 +35,7 @@ async function headers(mode: "WITH_VALUES" | "WITHOUT_VALUES"): Promise<unknown[
   return Array.from({ length: row.cellCount }, (_, index) => {
     const value = row.getCell(index + 1).value;
     return typeof value === "string" ? value : "";
-  }).slice(1);
+  });
 }
 
 describe("Excel do pedido de compra", () => {

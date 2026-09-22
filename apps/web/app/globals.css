@@ -15823,6 +15823,7 @@ td.sb-pco-num-linha {
 .sb-pod-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sb-space-2); padding: 0.5rem 0.75rem; border-radius: var(--sb-radius-md); background: var(--sb-accent-soft); color: var(--sb-accent-ink); font-size: 0.8125rem; }
 .sb-pod-actions-error { flex-basis: 100%; margin: 0; color: var(--sb-danger); font-size: 0.875rem; }
 .sb-purchase-export { position: relative; }
+.sb-object:has(.sb-purchase-export[open]) { overflow: visible; }
 .sb-purchase-export > summary { list-style: none; cursor: pointer; }
 .sb-purchase-export > summary::-webkit-details-marker { display: none; }
 .sb-purchase-export[open] > summary { border-color: var(--sb-primary); }
