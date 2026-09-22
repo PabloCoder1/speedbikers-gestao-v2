@@ -17,6 +17,7 @@ import { podeOperarCompras } from "../../../lib/purchase-order-permission";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
+import { ExportActions } from "./export-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -177,12 +178,7 @@ export default async function PedidoDeCompraPage({
               </Link>
             )}
 
-            <a className="sb-button" href={`/compras/${info.id}/export/xlsx`}>
-              Exportar Excel
-            </a>
-            <a className="sb-button" href={`/compras/${info.id}/export/pdf`}>
-              Exportar PDF
-            </a>
+            <ExportActions purchaseOrderId={info.id} />
           </>
         }
       >

@@ -3,6 +3,7 @@ import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf
 import { formatBusinessDate, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../../lib/labels";
 import type { PurchaseOrderExportData } from "./load";
+import { includesPurchaseOrderValues, type PurchaseOrderExportMode } from "./mode";
 import { buildExportRows, computeExportTotal } from "./rows";
 
 const PAGE_WIDTH = 595.28;
@@ -16,7 +17,8 @@ const WHITE = rgb(1, 1, 1);
 const BORDER = rgb(0.85, 0.86, 0.88);
 
 // [SKU, Descrição, Origem, Quantidade, Custo unitário, Subtotal]
-const COLUMN_WIDTHS = [90, 155, 55, 40, 85, 90] as const;
+const COLUMNS_WITH_VALUES = [90, 155, 55, 40, 85, 90] as const;
+const COLUMNS_WITHOUT_VALUES = [115, 285, 80, 60] as const;
 
 interface Fonts {
   regular: PDFFont;
@@ -29,7 +31,9 @@ interface Fonts {
  * a lista for maior que isso — o único pedido real conhecido tinha 5 itens,
  * D-040): mesmo raciocínio de "modelo provisório" do `workbook.ts`.
  */
-export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Promise<Uint8Array> {
+export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData, mode: PurchaseOrderExportMode): Promise<Uint8Array> {
+  const includeValues = includesPurchaseOrderValues(mode);
+  const columnWidths = includeValues ? COLUMNS_WITH_VALUES : COLUMNS_WITHOUT_VALUES;
   const doc = await PDFDocument.create();
   doc.setTitle(`Pedido de compra #${String(data.orderNumber)}`);
   doc.setProducer("Speed Bikers Gestão");
@@ -67,7 +71,7 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
     ["CNPJ/documento do fornecedor", data.supplierDocument ?? "—"],
     ["CNPJ da organização", data.organizationCnpj ?? "—"],
     ["Destino", data.destinationWarehouseName ?? "—"],
-    ["Moeda", data.currency],
+    ...(includeValues ? [["Moeda", data.currency] as [string, string]] : []),
     ["Criado em", formatDateTime(data.createdAt)],
     ["Previsão de entrega", data.expectedAt === null ? "—" : formatBusinessDate(data.expectedAt.slice(0, 10))],
   ];
@@ -89,7 +93,8 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
   y -= 10;
 
   const headers = ["SKU", "Descrição", "Origem", "Qtd.", "Custo unit.", "Subtotal"];
-  drawTableHeader(page, fonts, MARGIN, y, headers);
+  const visibleHeaders = includeValues ? headers : headers.slice(0, 4);
+  drawTableHeader(page, fonts, MARGIN, y, visibleHeaders, columnWidths);
   y -= ROW_HEIGHT;
 
   const itemRows = buildExportRows(data.items);
@@ -99,7 +104,7 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
 
     if (brokePage) {
       // Página nova começou no meio da tabela: repete o cabeçalho.
-      drawTableHeader(page, fonts, MARGIN, y, headers);
+      drawTableHeader(page, fonts, MARGIN, y, visibleHeaders, columnWidths);
       y -= ROW_HEIGHT;
     }
 
@@ -110,15 +115,17 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
       String(item.quantity),
       item.unitCost === null ? "—" : formatCurrency(item.unitCost),
       item.subtotal === null ? "—" : formatCurrency(item.subtotal),
-    ]);
+    ], columnWidths);
     y -= ROW_HEIGHT;
   }
 
-  ensureSpace(30);
-  y -= 10;
-  const totalX = MARGIN + COLUMN_WIDTHS.slice(0, 4).reduce((sum, w) => sum + w, 0);
-  text("Total", totalX, 11, true);
-  text(formatCurrency(computeExportTotal(itemRows)), totalX + COLUMN_WIDTHS[4], 11, true);
+  if (includeValues) {
+    ensureSpace(30);
+    y -= 10;
+    const totalX = MARGIN + columnWidths.slice(0, 4).reduce((sum, width) => sum + width, 0);
+    text("Total", totalX, 11, true);
+    text(formatCurrency(computeExportTotal(itemRows)), totalX + (columnWidths[4] ?? 0), 11, true);
+  }
 
   ensureSpace(40);
   y -= 30;
@@ -133,21 +140,21 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
   return doc.save();
 }
 
-function drawTableHeader(page: PDFPage, fonts: Fonts, x0: number, y: number, headers: string[]): void {
+function drawTableHeader(page: PDFPage, fonts: Fonts, x0: number, y: number, headers: string[], columnWidths: readonly number[]): void {
   let x = x0;
-  const totalWidth = COLUMN_WIDTHS.reduce((sum, w) => sum + w, 0);
+  const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
 
   page.drawRectangle({ x: x0, y: y - ROW_HEIGHT + 5, width: totalWidth, height: ROW_HEIGHT, color: DARK });
 
   headers.forEach((label, index) => {
     page.drawText(label, { x: x + 4, y: y - 10, size: 9, font: fonts.bold, color: WHITE });
-    x += COLUMN_WIDTHS[index] ?? 0;
+    x += columnWidths[index] ?? 0;
   });
 }
 
-function drawTableRow(page: PDFPage, fonts: Fonts, x0: number, y: number, values: string[]): void {
+function drawTableRow(page: PDFPage, fonts: Fonts, x0: number, y: number, values: string[], columnWidths: readonly number[]): void {
   let x = x0;
-  const totalWidth = COLUMN_WIDTHS.reduce((sum, w) => sum + w, 0);
+  const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
 
   page.drawLine({
     start: { x: x0, y: y - ROW_HEIGHT + 5 },
@@ -156,8 +163,8 @@ function drawTableRow(page: PDFPage, fonts: Fonts, x0: number, y: number, values
     color: BORDER,
   });
 
-  values.forEach((value, index) => {
-    const width = COLUMN_WIDTHS[index] ?? 0;
+  values.slice(0, columnWidths.length).forEach((value, index) => {
+    const width = columnWidths[index] ?? 0;
     const truncated = truncateToWidth(value, width, fonts.regular, 8);
     page.drawText(truncated, { x: x + 4, y: y - 10, size: 8, font: fonts.regular, color: DARK });
     x += width;
