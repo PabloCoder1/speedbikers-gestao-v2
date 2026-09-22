@@ -42,6 +42,15 @@ export interface ReplyFormProps {
   remoteReplyBlockReason: string | null;
   /** Templates da organização (D-111), lidos sob RLS pelo Server Component pai. */
   templates: ReplyTemplateOption[];
+  /**
+   * Como os templates aparecem: `"select"` (padrão, `/atendimento/[caseId]`)
+   * é o menu suspenso original. `"sidebar"` é a barra lateral com busca do
+   * `/atendimento/perguntas` — mesma inserção (`inserirTemplate` abaixo), só
+   * muda a apresentação. Nasce como opção, não substituição, porque a tela de
+   * caso único continua caber melhor no menu — a barra lateral pede a largura
+   * que só o cartão de pergunta tem.
+   */
+  templatesLayout?: "select" | "sidebar";
 }
 
 type Estado =
@@ -55,6 +64,7 @@ export function ReplyForm({
   remoteReplyState,
   remoteReplyBlockReason,
   templates,
+  templatesLayout = "select",
 }: ReplyFormProps): ReactNode {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -67,6 +77,8 @@ export function ReplyForm({
   // final que o humano confirmou, lado a lado.
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  // Só usado no layout "sidebar" — filtra a lista, não a busca no servidor.
+  const [templateSearch, setTemplateSearch] = useState("");
 
   const restante = LIMITE - text.length;
   const vazio = text.trim().length === 0;
@@ -139,8 +151,42 @@ export function ReplyForm({
     }
   }
 
-  return (
-    <div style={{ display: "grid", gap: "var(--sb-space-2)", maxWidth: "48rem" }}>
+  /**
+   * Inserir é PRÉ-PREENCHER, nunca enviar (D-111): a pessoa edita e confirma
+   * como sempre. Texto novo = tentativa nova. Compartilhada pelos dois
+   * layouts — o `<select>` e a barra lateral chamam a mesma função, então as
+   * duas telas erram (ou acertam) juntas, nunca uma sem a outra.
+   */
+  function inserirTemplate(template: ReplyTemplateOption): void {
+    const result = applyTemplate(text, template.body, LIMITE);
+
+    if (!result.applied) {
+      setEstado({
+        kind: "error",
+        message: "O template não coube no limite de caracteres junto do que já está escrito.",
+      });
+
+      return;
+    }
+
+    setText(result.text);
+    setRequestId(crypto.randomUUID());
+
+    if (estado.kind === "error") {
+      setEstado({ kind: "idle" });
+    }
+  }
+
+  const termoBusca = templateSearch.trim().toLowerCase();
+  const templatesFiltrados =
+    termoBusca === ""
+      ? templates
+      : templates.filter(
+          (template) => template.name.toLowerCase().includes(termoBusca) || template.body.toLowerCase().includes(termoBusca),
+        );
+
+  const compor = (
+    <div style={{ display: "grid", gap: "var(--sb-space-2)", minWidth: 0 }}>
       {remoteReplyState === "BLOCKED" && (
         <p style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
           O Mercado Livre indicou que esta pergunta não aceita resposta
@@ -231,7 +277,7 @@ export function ReplyForm({
         )}
       </div>
 
-      {templates.length > 0 && (
+      {templatesLayout === "select" && templates.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
           <label htmlFor="template" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Inserir template
@@ -244,29 +290,7 @@ export function ReplyForm({
             onChange={(event) => {
               const template = templates.find((candidate) => candidate.id === event.target.value);
 
-              if (template === undefined) {
-                return;
-              }
-
-              // Inserir é PRÉ-PREENCHER, nunca enviar (D-111): a pessoa
-              // edita e confirma como sempre. Texto novo = tentativa nova.
-              const result = applyTemplate(text, template.body, LIMITE);
-
-              if (!result.applied) {
-                setEstado({
-                  kind: "error",
-                  message: "O template não coube no limite de caracteres junto do que já está escrito.",
-                });
-
-                return;
-              }
-
-              setText(result.text);
-              setRequestId(crypto.randomUUID());
-
-              if (estado.kind === "error") {
-                setEstado({ kind: "idle" });
-              }
+              if (template !== undefined) inserirTemplate(template);
             }} style={{ maxWidth: "18rem" }}
           >
             <option value="">Escolher…</option>
@@ -325,6 +349,66 @@ export function ReplyForm({
           {estado.message}
         </p>
       )}
+    </div>
+  );
+
+  if (templatesLayout === "select") {
+    return <div style={{ maxWidth: "48rem" }}>{compor}</div>;
+  }
+
+  // Layout "sidebar" (/atendimento/perguntas): a barra de templates fica ao
+  // lado do texto, com busca — o mesmo `inserirTemplate` de cima, só que
+  // clicado num cartão em vez de escolhido num `<select>`.
+  return (
+    <div className="sb-reply-sidebar-layout">
+      {compor}
+
+      <aside className="sb-reply-templates" aria-label="Modelos de resposta">
+        <span className="sb-eyebrow">MODELOS DE RESPOSTA</span>
+
+        {templates.length === 0 ? (
+          <p className="sb-inbox-muted" style={{ fontSize: "0.8125rem" }}>
+            Nenhum modelo cadastrado ainda.
+          </p>
+        ) : (
+          <>
+            <input
+              className="sb-input"
+              type="search"
+              placeholder="Procurar modelo…"
+              value={templateSearch}
+              onChange={(event) => {
+                setTemplateSearch(event.target.value);
+              }}
+              aria-label="Procurar modelo de resposta"
+            />
+
+            {templatesFiltrados.length === 0 ? (
+              <p className="sb-inbox-muted" style={{ fontSize: "0.8125rem" }}>
+                Nenhum modelo bate com a busca.
+              </p>
+            ) : (
+              <ul className="sb-reply-templates-list">
+                {templatesFiltrados.map((template) => (
+                  <li key={template.id}>
+                    <button
+                      type="button"
+                      className="sb-reply-template-item"
+                      disabled={enviando || estado.kind === "queued"}
+                      onClick={() => {
+                        inserirTemplate(template);
+                      }}
+                    >
+                      <b>{template.name}</b>
+                      <span>{template.body}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </aside>
     </div>
   );
 }
