@@ -255,6 +255,64 @@ describe("aplicação — produtos", () => {
   });
 });
 
+/**
+ * A marca do fornecedor passou a vir da planilha (D-390), e o que protege a
+ * escolha humana deixou de ser a ausência do campo: agora é
+ * `supplier_brand_source`. Estes quatro casos são a trava dessa fronteira.
+ */
+describe("aplicação — marca do fornecedor (D-390)", () => {
+  function skuExistente(extra: FakeRow): FakeRow {
+    return { id: "sku-1", organization_id: ORG, sku: "PI150", sku_key: "PI150", kind: "PRODUTO", ...extra };
+  }
+
+  it("SKU novo nasce com a marca derivada da planilha", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch()],
+      erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel", supplierBrand: "NAVETEC" })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.skus?.[0]).toMatchObject({ supplier_brand: "NAVETEC", supplier_brand_source: "DERIVED" });
+  });
+
+  it("marca escolhida à mão NÃO é sobrescrita pela planilha", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch()],
+      erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel", supplierBrand: "NAVETEC" })],
+      skus: [skuExistente({ supplier_brand: "PLASMOTO", supplier_brand_source: "MANUAL" })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.skus?.[0]).toMatchObject({ supplier_brand: "PLASMOTO", supplier_brand_source: "MANUAL" });
+  });
+
+  it("marca derivada de um import anterior é corrigida pelo novo", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch()],
+      erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel", supplierBrand: "RT" })],
+      skus: [skuExistente({ supplier_brand: "OFF RACER", supplier_brand_source: "DERIVED" })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.skus?.[0]).toMatchObject({ supplier_brand: "RT", supplier_brand_source: "DERIVED" });
+  });
+
+  it("planilha sem evidência não APAGA a marca que já existe", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch()],
+      erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
+      skus: [skuExistente({ supplier_brand: "OFF RACER", supplier_brand_source: "DERIVED" })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.skus?.[0]).toMatchObject({ supplier_brand: "OFF RACER", supplier_brand_source: "DERIVED" });
+  });
+});
+
 describe("aplicação — kits", () => {
   it("cria o contêiner do kit e o componente, quando o componente já existe", async () => {
     const { db, tables } = createFakeDb({

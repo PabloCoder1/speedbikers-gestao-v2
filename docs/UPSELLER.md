@@ -89,15 +89,19 @@ Todos os componentes de kit **existem** no catálogo — a integridade referenci
 
 ### Não confiável hoje
 
-**A coluna `Marca` está vazia em 90%** (3.086 de 3.415) e os 23 valores existentes têm duplicata por caixa. **Ela não é a fonte de marca** — a marca vem de `Categorias` (D-039).
+**A coluna `Marca` está vazia em 90%** (3.086 de 3.415 em 20/08/2026; 2.893 de 3.074 em 22/09). Os valores existentes têm duplicata por caixa e grafia. Ela **não serve sozinha**, mas quando está preenchida é a fonte mais forte que o arquivo tem: nas 66 linhas em que ela contradiz `Categorias`, o título ou a descrição desempatam a favor dela 6 vezes e a favor de `Categorias` nenhuma (D-390).
 
 **`Categorias` tem 64 valores** e carrega três coisas diferentes ao mesmo tempo:
 
-1. **Marca** — `NAVETEC`, `OFFRACER`, `PLASMOTO`. É daqui que a marca sai (D-039), não da coluna `Marca`.
-2. **Linha de produto**, com hierarquia por seta — `MANETE→XRE/BROS/TORNADO`, `MANETE→FAZER 250`.
+1. **Marca** — `NAVETEC`, `OFFRACER`, `PLASMOTO`. **1.037 das 3.074 linhas** (22/09).
+2. **Linha de produto**, com hierarquia por seta — `MANETE→XRE/BROS/TORNADO`, `MANETE→FAZER 250`. **2.037 linhas**, dois terços do arquivo.
 3. **`ESTOQUE INATIVO`** — **não é lixo.** Marca produto em encerramento, cujo estoque está sendo zerado para deixar de ser trabalhado. Vira coluna própria (`is_discontinued`).
 
-Apenas as categorias puramente numéricas (`999`) são ruído.
+Apenas as categorias puramente numéricas (`999`, 261 linhas) e `OCUPADO` (10) são ruído.
+
+**Daí a marca NÃO sair de uma coluna só (D-390).** Tratar `Categorias` como marca carimbou 2.393 SKUs de produção com `OFFRACER` — inclusive 20 que têm `RT PARTS` escrito no próprio título — e 254 com um status no lugar da marca. `resolveSupplierBrand` lê, nesta ordem: `Categorias` quando é marca → coluna `Marca` → `"Marca: X"` na `Descrição do Anúncio` → marca no título ou prefixo `off`/`kitoff` do código → linha de produto conhecida → o balde `999`. Medido no export de 22/09: **2.553 das 3.074 linhas (83,1%)** recebem marca, e as 521 restantes ficam vazias de propósito.
+
+**A ordem entre as duas primeiras etapas foi medida contra a declaração do dono.** Em 22/09 ele exportou o catálogo em **20 arquivos, um por valor de `Categorias`**, chamando cada um de marca — 1.016 SKUs. Com a coluna `Marca` na frente, a cascata batia com ele em **77,6%**; com `Categorias` na frente, **99,5%**. O `999` é o balde "sem categoria" (261 linhas) e ele o declarou Off Racer; o conteúdo confirma (Guidão 28mm, Retrovisor Tomok 2, Peso e Tampa de Guidão).
 
 **`Unidade` tem 11 valores com duplicata semântica:** `UN` (2.492), `PAR` (441), `KIT` (275), `PC` (60), `UNID` (33), `PECAS` (16), `PA` (3). `UN`/`UNID` e `PC`/`PECAS`/`PA` são a mesma coisa escrita de formas diferentes. Precisa de normalização na importação.
 

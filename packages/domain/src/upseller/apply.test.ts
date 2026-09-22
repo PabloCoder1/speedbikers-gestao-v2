@@ -181,20 +181,27 @@ describe("recusa antes do banco, e não pelo banco", () => {
   });
 });
 
-describe("as colunas de CURADORIA são imunes ao importador (D-133)", () => {
+describe("as colunas de CURADORIA são imunes ao importador (D-133, revisto em D-390)", () => {
   // ESTE TESTE É UMA TRAVA, não uma verificação de rotina.
   //
-  // Quatro colunas de `skus` só podem ser preenchidas por gente:
-  // `stock_is_virtual` (D-127), `supplier_brand` (D-129) e as duas datas de
-  // decisão (D-133). A imunidade delas ao importador é INCIDENTAL — vem de
+  // A imunidade da curadoria ao importador é INCIDENTAL — vem de
   // `applyProducts` fazer `.update(item.record)`, um UPDATE parcial com as
   // chaves que `readSkuUpsert` devolve. Basta alguém acrescentar um campo a
   // `SkuUpsert` sem pensar nisto para a curadoria começar a ser apagada a
   // cada planilha, EM SILÊNCIO: o import continua verde e a decisão humana
   // some.
   //
-  // Foi exatamente esse mecanismo que obrigou D-129 a criar `supplier_brand`
-  // em vez de corrigir `brand` — o importador sobrescreve `brand` sempre.
+  // **D-390 moveu `supplier_brand` de lado, de propósito.** A marca agora sai
+  // da planilha por uma cascata de evidência (`supplier-brand.ts`), porque a
+  // marcação em lote de 14/09 carimbou 2.393 SKUs como `OFFRACER` — 20 deles
+  // com `RT PARTS` escrito no próprio título — e 254 com status no lugar da
+  // marca. O que protege a decisão humana deixou de ser a AUSÊNCIA do campo e
+  // passou a ser `supplier_brand_source`: o worker só escreve quando a fonte
+  // atual NÃO é `MANUAL` (`comMarcaDoFornecedor`, com teste próprio em
+  // `erp-import-apply.test.ts`).
+  //
+  // `stock_is_virtual` continua fora do alcance do importador (D-127): não
+  // existe sinal derivável, a hipótese foi testada e reprovada.
   //
   // Se você está aqui porque este teste ficou vermelho: confira se a coluna
   // nova é mesmo do ERP. Se for, acrescente a chave à lista abaixo. Se for
@@ -216,6 +223,8 @@ describe("as colunas de CURADORIA são imunes ao importador (D-133)", () => {
     "purchase_cost",
     "retail_price",
     "sku",
+    "supplier_brand",
+    "supplier_brand_source",
     "title",
     "unit",
     "weight_g",
@@ -226,8 +235,6 @@ describe("as colunas de CURADORIA são imunes ao importador (D-133)", () => {
     "stock_is_virtual",
     "stock_is_virtual_set_at",
     "stock_is_virtual_set_by",
-    "supplier_brand",
-    "supplier_brand_source",
     "supplier_brand_set_at",
     "supplier_brand_set_by",
   ];
@@ -246,5 +253,19 @@ describe("as colunas de CURADORIA são imunes ao importador (D-133)", () => {
     for (const curada of CURADAS) {
       expect(escritas.has(curada)).toBe(false);
     }
+  });
+
+  it("sem marca resolvida, os dois campos saem nulos — quem decide não apagar é o worker", () => {
+    const read = readSkuUpsert({ sku: "ABC-1", title: "Peça" });
+
+    expect(read.ok && read.value.supplier_brand).toBeNull();
+    expect(read.ok && read.value.supplier_brand_source).toBeNull();
+  });
+
+  it("com marca resolvida, a fonte sai DERIVED — nunca MANUAL", () => {
+    const read = readSkuUpsert({ sku: "ABC-1", title: "Peça", supplierBrand: "OFF RACER" });
+
+    expect(read.ok && read.value.supplier_brand).toBe("OFF RACER");
+    expect(read.ok && read.value.supplier_brand_source).toBe("DERIVED");
   });
 });
