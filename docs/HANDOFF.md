@@ -13,7 +13,7 @@
 | | |
 |---|---|
 | **Atualizado em** | 2026-09-22 |
-| **Branch** | `fix/guardas-prod-d348` (principal), com `v3` mesclada de volta em 21/09 trazendo D-388 a D-390 (sincronização, preço promocional do SKU, análise pós-alteração editorial). |
+| **Branch** | `main` (principal; era `fix/guardas-prod-d348`, renomeada em 23/09, e a V2 antiga virou `v2-legacy`), com `v3` mesclada de volta em 21/09 trazendo D-388 a D-390 (sincronização, preço promocional do SKU, análise pós-alteração editorial). |
 | **HEAD conhecido** | `v3` em `c714104` — merge do PR #60 (D-390). Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |

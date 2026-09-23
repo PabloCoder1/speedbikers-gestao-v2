@@ -30,7 +30,9 @@ caso "producao, previa de feature: pula" 0 \
   VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=feat/qualquer-coisa
 
 # O que CONSTROI no projeto de producao.
-caso "producao, previa da guardas: constroi (e a que o dono promove)" 1 \
+caso "producao, previa da main: constroi (e a que o dono promove)" 1 \
+  VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=main
+caso "producao, previa do nome antigo da main (guardas): constroi" 1 \
   VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=fix/guardas-prod-d348
 caso "producao, previa da v3: constroi" 1 \
   VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=v3
@@ -40,6 +42,8 @@ caso "producao, previa sem branch (deploy pela CLI): constroi" 1 \
   VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview
 
 # Nome parecido nao passa por igual.
+caso "producao, branch com prefixo da main: pula" 0 \
+  VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=main-x
 caso "producao, branch com prefixo da guardas: pula" 0 \
   VERCEL_PROJECT_ID="${PROD}" VERCEL_ENV=preview VERCEL_GIT_COMMIT_REF=fix/guardas-prod-d348-x
 caso "producao, branch que so contem v3: pula" 0 \
