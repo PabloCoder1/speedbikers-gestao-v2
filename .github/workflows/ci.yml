@@ -105,6 +105,14 @@ jobs:
       - name: Guarda de tela de carregamento
         run: pnpm --filter @sb/web run check:loading
 
+      # /configuracoes e um hub que APONTA (D-233): a linha "Inclui: ..." e a
+      # unica coisa da tela que nao e numero do banco nem link -- e prosa sobre
+      # o que mora em OUTRA tela. Trocar um rotulo na tela dona nao quebra nada
+      # aqui: o hub passa a ensinar uma palavra que nao existe mais, com build,
+      # typecheck e e2e verdes. Estatica, sem banco.
+      - name: Guarda de vocabulario do hub de configuracoes
+        run: pnpm --filter @sb/web run check:settings-vocabulary
+
       # O budget de contexto (HANDOFF e AGENTS) so existia como script local, e em
       # 2026-09-17 a v3 passou do limite sem nenhum PR reprovar. Guarda estatica,
       # roda em segundos e nao precisa de banco.
