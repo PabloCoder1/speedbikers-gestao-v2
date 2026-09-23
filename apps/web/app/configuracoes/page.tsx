@@ -273,19 +273,25 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     no `title` como texto canônico, mas `title` não existe no toque nem no
     teclado. Nenhuma célula tem `tom` — `KpiStrip` só o lê para pintar o chip
     "ver lista", e aqui nenhuma célula tem `href`.
+
+    Cada ressalva cabe em UMA linha da célula em 390px (113px de texto, Inter
+    10px). Medido com a folha que o build emite: com as ressalvas de duas e
+    três linhas o primeiro cartão da zona 1 terminava em 863px do topo do
+    `.sb-content`, fora da dobra de 812; com uma linha, em 803. A faixa não
+    desce para o rodapé (veto do plano) — quem encolhe é a ressalva.
   */
   const celulas: KpiCellData[] = [
     {
       label: "Seções",
       formula: "As áreas de configuração que o sistema tem. É o mesmo conjunto dos cartões abaixo.",
-      ressalva: "o mesmo conjunto dos cartões abaixo",
+      ressalva: "os cartões abaixo",
       value: formatCount(secoes.length),
       previous: null,
     },
     {
       label: "Configuradas",
       formula: "A seção tem tudo o que precisa para o sistema agir sobre ela.",
-      ressalva: "presença de configuração, não saúde",
+      ressalva: "presença, não saúde",
       value: quantasSabidas("configurado"),
       previous: null,
     },
@@ -299,7 +305,7 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     {
       label: "Não configuradas",
       formula: "Nada gravado ainda — e o resumo da seção diz a consequência disso.",
-      ressalva: "o cartão diz a consequência",
+      ressalva: "o cartão diz o efeito",
       value: quantasSabidas("nao_configurado"),
       previous: null,
     },
@@ -313,7 +319,7 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     {
       label: "Indisponíveis",
       formula: "A leitura falhou. Ausência de resposta não é ausência de configuração (D-067).",
-      ressalva: "falha de leitura não é ausência",
+      ressalva: "falha, não ausência",
       value: quantas("indisponivel"),
       previous: null,
     },
