@@ -428,4 +428,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-394** — Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
 - **D-395** — Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
 - **D-396** — Recuperacao de 90 dias de frete: um dia por pedaco na fila backfill, com o mesmo laco da varredura diaria
+- **D-397** — Detector de frete: cinco comparacoes pontuadas por anuncio e faixa de preco, com o motivo escrito a partir dos numeros
 

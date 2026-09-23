@@ -16578,3 +16578,166 @@ td.sb-pco-num-linha {
 .sb-cadastro-tabela td form {
   display: inline;
 }
+
+/*
+  Detector de frete (D-397). Um cartão por anúncio, sem moldura nova: fio
+  entre cartões, como as linhas da tabela. O "por que" é um <details> — abre
+  no clique, sem JavaScript — e cada motivo leva o peso do sinal à esquerda,
+  em mono, para o olho somar os pontos antes de ler a frase.
+*/
+.sb-frete-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-frete-lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-frete-alerta {
+  display: grid;
+  gap: var(--sb-space-2);
+  padding: var(--sb-space-3) 0;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-frete-alerta:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.sb-frete-cabeca {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sb-space-2);
+}
+
+.sb-frete-cabeca > .sb-status {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.sb-frete-titulo {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.sb-frete-titulo strong {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.sb-frete-titulo span {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.sb-frete-pontos {
+  flex: none;
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-frete-numeros {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--sb-space-2);
+  margin: 0;
+}
+
+.sb-frete-numeros dt {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-table-head-ink);
+}
+
+.sb-frete-numeros dd {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-frete-numeros small {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-frete-porque summary {
+  width: fit-content;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+}
+
+.sb-frete-porque ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: var(--sb-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-frete-porque li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sb-space-2);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.sb-frete-peso {
+  flex: none;
+  min-width: 1.75rem;
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-frete-sugestao {
+  margin: var(--sb-space-2) 0 0;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.sb-frete-metodo ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0 0 var(--sb-space-3);
+  padding-left: 1.1rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.sb-frete-metodo p {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 850px) {
+  .sb-frete-numeros {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .sb-frete-numeros {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sb-frete-pontos {
+    display: none;
+  }
+}

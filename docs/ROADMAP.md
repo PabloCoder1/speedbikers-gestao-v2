@@ -669,7 +669,8 @@ Pedido do dono em 23/09: uma central que diga o que aconteceu, onde há problema
 - [x] **Frete: recuperar 90 dias** — job `backfill.order-financials` na fila `backfill`, um dia por pedaço, auto-encadeado, com o mesmo laço de captura da varredura diária; disparo manual por `POST /internal/backfill/order-financials` — ✔ código 2026-09-23 · D-396
 - [ ] **Frete: gravar subsídio e frete do comprador** da mesma resposta de `/shipments/{id}/costs` (hoje só `senders[].cost`) — antes, conferir a forma da resposta numa amostra real
 - [ ] **Ads: sinais e recomendações** por campanha (gasto sem venda, ROAS abaixo do alvo, CPC em alta com conversão em queda, espaço para escalar), no tom "vale revisar"
-- [ ] **Detector de frete**: frete ÷ preço, pares de categoria e faixa de preço, histórico do SKU; níveis com o motivo escrito
+- [x] **Detector de frete** — `get_detector_frete` e `/central/frete`: histórico do anúncio, outros anúncios do mesmo SKU, pares da categoria do Mercado Livre na faixa de preço, frete ÷ preço contra o p95 da faixa e margem; quatro níveis com o motivo escrito e o frete a mais estimado; painel na central — ✔ código 2026-09-23 · D-397. Migration `20260923190000`
+- [ ] **Frete: medidas do anúncio** — gravar as dimensões e o peso declarados em `GET /items/{id}` (`shipping.dimensions`) para o detector comparar produtos de tamanho parecido e apontar a medida suspeita (hoje peso em 22 de 973 SKUs)
 - [ ] **Produtos**: rankings de lucro, margem, volume, frete e prejuízo, com drill-down
 - [ ] **Central de alertas**: detectores do worker gravando em `actions` com tipos novos, e a lista "o que precisa da minha atenção" na central
 - [ ] **Limites do tom e amostras mínimas nas configurações** (hoje provisórios em código, D-148)

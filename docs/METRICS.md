@@ -440,6 +440,37 @@ Granularidade: `organization`. `security invoker`: quem não vê uma conta não 
 
 Comparação entre períodos (5I): o imposto é de polaridade **neutra** (acompanha a receita pela alíquota); o lucro segue a regra do resultado em reais (coberturas a até 5 p.p.); a margem de contribuição, a amostra mínima de 20 pedidos cobertos, e os dois exigem o Ads comparável.
 
+## 5L. Detector de frete (D-397) — DEFINIDAS E IMPLEMENTADAS
+
+> A tela `/central/frete` (e o painel "Frete" da central) aponta os anúncios cujo frete destoa do próprio histórico, dos outros anúncios do mesmo produto, dos pares da categoria ou do preço, e escreve o motivo com os números de cada comparação. Tudo sai de `get_detector_frete(organização, hoje)`; o texto é montado em `apps/web/lib/detector-frete.ts` a partir dos números da RPC, sem modelo de linguagem.
+
+**Grão:** anúncio × faixa de preço **do pedido** (até R$ 40, 40–79, 79–120, 120–200, 200–400, acima de 400). O frete muda de patamar com o preço — medido em produção em 23/09: mediana de R$ 7,15 abaixo de R$ 40, R$ 8,45 de R$ 40 a 79, R$ 14,45 de R$ 79 a 120 —, então um anúncio que vende dos dois lados de uma faixa é comparado em cada uma separadamente. O SKU da linha é o mais frequente nos pedidos do anúncio.
+
+**Janelas:** "atual" são os 14 dias até ontem; "antes", os 76 dias anteriores (90 no total, o que D-396 recuperou). Hoje fica de fora — o frete do dia ainda não foi capturado.
+
+**Entra:** pedido válido (5.2) com frete observado (D-165), uma linha e **uma unidade**, fora do Flex (`self_service`, frete ~zero). Linha com 3 pedidos ou mais na janela atual. **Não entra:** pedido sem frete observado (não vira zero), duas unidades ou mais (o frete é do pacote), Flex.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `nivel_anomalia_frete` | Nível de anomalia de frete | soma dos pontos dos cinco sinais abaixo; 0 normal, 1–2 atenção, 3–4 provável problema, 5+ forte indício | O nível é indício, não diagnóstico: a tela escreve o motivo de cada ponto e sugere o que conferir ("vale conferir", nunca uma ordem) |
+| `frete_excedente_estimado` | Frete a mais (14 dias) | `Σ frete da janela atual − referência × pedidos`; referência = frete de antes do anúncio, dos outros anúncios do mesmo SKU ou dos pares, a primeira que pontuou; o total soma os alertas provável e forte | Alerta só por proporção ou margem não tem referência: sem excedente (NULL, nunca 0) |
+
+**Os cinco sinais** (medianas dos 14 dias contra a referência):
+
+| Sinal | Compara com | 1 ponto | 2 pontos | 3 pontos | Mínimo |
+|---|---|---|---|---|---|
+| Histórico | o próprio anúncio na janela de antes, mesma faixa | +15% ou 3× o desvio absoluto mediano do anúncio, o que for maior | +40% | +80% | 5 pedidos antes; +R$ 1 |
+| Mesmo produto | outros anúncios do mesmo SKU na mesma faixa (mediana) | +15% | +40% | +80% | 3 pedidos em cada; +R$ 1 |
+| Pares | produtos da mesma categoria do Mercado Livre e faixa (um valor por produto) | +50% e z robusto ≥ 3 | +100% e z ≥ 4 | +200% e z ≥ 6 | 6 produtos; +R$ 2 |
+| Proporção | frete ÷ preço contra o p95 da faixa | acima do p95 e ≥ 25% | ≥ 1,5× o p95 e ≥ 30% | ≥ 2× o p95 e ≥ 40% | — |
+| Margem | margem dos pedidos cobertos (custo de `get_faturamento`, D-356) | vende no prejuízo com frete ≥ 10% do preço; ou o frete subiu ≥ 5 p.p. do preço e a margem caiu junto (quando conhecida) | deixou de dar resultado (margem > 0 antes, ≤ 0 agora) com o frete explicando ao menos metade da queda | — | 5 cobertos antes, 3 agora |
+
+z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desvio zero, qualquer valor acima da mediana conta como fora da dispersão. Os limiares dos pares são mais altos que os do mesmo produto porque a categoria mistura tamanhos — faróis contra lanternas.
+
+**Por que estas referências e não outras** (medido em produção, 30 dias até 23/09): o frete de um anúncio é quase fixo (coeficiente de variação mediano de 1% a 3%), então 15% já é fora do normal; 225 SKUs vendem por mais de um anúncio e em 31 o frete difere mais de 15% entre eles — mesmo produto, frete diferente, o indício mais direto de medida cadastrada errada; a categoria do ERP (`skus.category_raw`) não é categoria de produto (mistura fornecedor e situação), e a do Mercado Livre (`listings.category_id`) cobre 1.864 de 1.865 anúncios vendidos; **peso e dimensões** estão cadastrados em 22 de 973 SKUs vendidos — a comparação por peso não existe, e a tela diz quantos têm.
+
+**A margem é a de `get_faturamento`.** As CTEs de custo foram copiadas sem mudança (histórico com vigência, kits pelos componentes); o teste de integração confere a igualdade nos mesmos pedidos.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
