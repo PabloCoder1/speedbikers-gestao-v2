@@ -6100,6 +6100,19 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      // CORRECAO MANUAL (classe D-213): bloco escrito a mao no formato do
+      // gerador -- a migration `20260923150000_notificacoes_triagem` (D-393) so
+      // existe no repositorio ate a CI aplica-la no Dev, e a CLI nao regenera
+      // este arquivo antes disso. Os tres argumentos sao anulaveis COM
+      // significado ("sem recorte nesta dimensao"), a classe de D-133.
+      mark_notifications_read: {
+        Args: {
+          p_event_type_prefix?: string | null
+          p_ml_account_id?: string | null
+          p_severity?: string | null
+        }
+        Returns: number
+      }
       mark_purchase_order_ordered: {
         Args: { p_expected_at?: string; p_id: string }
         Returns: {
