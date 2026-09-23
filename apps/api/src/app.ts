@@ -33,6 +33,7 @@ import { triggerAdsCampaignsSync } from "./ads-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
 import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
+import { DIAS_MAXIMOS, triggerOrderFinancialsBackfill } from "./order-financials-backfill.js";
 import type { OrderLogisticsScheduleDeps } from "./order-logistics-schedule.js";
 import { triggerOrderLogisticsSweep } from "./order-logistics-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
@@ -525,6 +526,39 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const outcome = await triggerOrderFinancialsSweep(orderFinancialsSchedule);
 
     return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Recuperação do frete anterior à varredura diária (D-396). Disparo UNICO,
+  // manual, nao agendado: enfileira o primeiro pedaço de cada conta na fila
+  // `backfill`, e o worker encadeia o resto. Corpo opcional:
+  // `{ "dias": 90, "conta": "<slug>" }` -- `conta` ensaia numa conta so.
+  // Usa as mesmas dependencias da varredura diaria (banco, fila, log).
+  // --------------------------------------------------------------------
+  app.post("/internal/backfill/order-financials", async (context) => {
+    const deps = dependencies.orderFinancialsSchedule;
+
+    if (deps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const corpo: unknown = await context.req.json().catch(() => ({}));
+    // A varredura diária cobre os últimos 7 dias; abaixo de 8 não sobra nada para recuperar.
+    const parsed = z
+      .object({
+        dias: z.number().int().min(8).max(DIAS_MAXIMOS).default(90),
+        conta: z.string().min(1).max(60).optional(),
+      })
+      .safeParse(corpo ?? {});
+
+    if (!parsed.success) {
+      return context.json({ error: { code: "invalid_body", issues: parsed.error.issues.map((i) => i.message) } }, 400);
+    }
+
+    const { dias, conta } = parsed.data;
+    const opcoes = conta === undefined ? { dias } : { dias, conta };
+
+    return context.json(await triggerOrderFinancialsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------

@@ -1816,3 +1816,67 @@ describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
     });
   });
 });
+
+describe("POST /internal/backfill/order-financials (D-396)", () => {
+  const aceitaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),
+  };
+
+  function appComDeps(enqueued: EnqueueRequest[]) {
+    return createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      orderFinancialsSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () =>
+                Promise.resolve({ data: [{ id: "acc-1", organization_id: "org-1", slug: "speedbikers-loja-1" }], error: null }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => new Date("2026-09-23T15:00:00.000Z"),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({ taskName: "t", deduplicated: false, envelope: {} as never });
+          },
+        },
+      },
+    });
+  }
+
+  it("exige OIDC e responde 503 sem as dependências", async () => {
+    const recusa = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: { verify: () => Promise.resolve({ ok: false, reason: "token inválido" }) },
+    });
+    const semDeps = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    expect((await recusa.request("/internal/backfill/order-financials", { method: "POST" })).status).toBe(401);
+    expect((await semDeps.request("/internal/backfill/order-financials", { method: "POST" })).status).toBe(503);
+  });
+
+  it("sem corpo recupera 90 dias: um pedaço inicial por conta na fila backfill", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const response = await appComDeps(enqueued).request("/internal/backfill/order-financials", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ accountsScanned: 1, enqueued: 1, limite: "2026-06-25T15:00:00.000Z" });
+    expect(enqueued[0]).toMatchObject({ jobType: "backfill.order-financials", queue: "backfill" });
+  });
+
+  it("recusa menos de 8 dias: a varredura diária já cobre os últimos 7", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const response = await appComDeps(enqueued).request("/internal/backfill/order-financials", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dias: 5 }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(enqueued).toHaveLength(0);
+  });
+});
