@@ -207,14 +207,21 @@ export default async function NotificacoesPage({
     diferença está escrita nos rótulos e na ressalva de cada célula, não
     subentendida: "na Central" numa, "neste recorte" na outra.
 
-    As três contagens da faixa custam pouco porque todas passam pelo índice
-    parcial de não lidas (`user_id, created_at where read_at is null`): medido
-    como `authenticated`, 24 ms cada.
+    As contagens da faixa custam pouco porque todas passam pelo índice parcial
+    de não lidas (`user_id, created_at where read_at is null`): medido como
+    `authenticated`, 24 ms cada.
+
+    **Sem recorte, a primeira célula NÃO pede consulta própria**: "não lidas na
+    Central" e "não lidas no recorte" são o mesmo conjunto, e mandar as duas
+    seria pagar duas idas pelo mesmo número. `null` aqui quer dizer "reusa a do
+    recorte", não "não sei" — a distinção que D-131 cobra de toda contagem.
   */
-  const naoLidasGerais = supabase
-    .from("notification_recipients")
-    .select("notification_id", { count: "exact", head: true })
-    .is("read_at", null);
+  const naoLidasGerais = temRecorte
+    ? supabase
+        .from("notification_recipients")
+        .select("notification_id", { count: "exact", head: true })
+        .is("read_at", null)
+    : null;
 
   const naoLidasCriticas = supabase
     .from("notification_recipients")
@@ -242,7 +249,7 @@ export default async function NotificacoesPage({
     listQuery,
     contagemDoRecorte,
     naoLidasDoRecorte,
-    naoLidasGerais,
+    naoLidasGerais ?? Promise.resolve(null),
     naoLidasCriticas,
     naoLidasImportantes,
     contasQuery,
@@ -326,7 +333,9 @@ export default async function NotificacoesPage({
   // diz que não sabe em vez de inventar o tamanho da página.
   const totalCount = totalResult.count;
   const unreadRecorte = unreadRecorteResult.count;
-  const unreadGeral = unreadGeralResult.count;
+  // `null` do ramo sem recorte é "o mesmo conjunto", não "não sei" — e o
+  // `null` de uma contagem que veio continua sendo recusa (D-131).
+  const unreadGeral = unreadGeralResult === null ? unreadRecorte : unreadGeralResult.count;
   const criticasNaoLidas = criticasResult.count;
   const importantesNaoLidas = importantesResult.count;
 
