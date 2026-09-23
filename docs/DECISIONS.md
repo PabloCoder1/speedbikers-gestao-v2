@@ -13975,3 +13975,31 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 **Verificacao:** 6 testes do job novo (pedaco de um dia, checkpoint, encadeamento, parada no limite, conta desconectada, 429 no meio preservando o gravado, payload invalido), 3 do disparo e 3 da rota; `check` e `build`.
 
 **Impacto:** `apps/worker/src/handlers/{backfill-order-financials,sync-order-financials}.ts` e testes, `apps/worker/src/index.ts`, `apps/api/src/{order-financials-backfill,app}.ts` e testes, `docs/{API,ROADMAP,HANDOFF,DECISIONS}.md`.
+
+## D-397 - Detector de frete: cinco comparacoes pontuadas por anuncio e faixa de preco, com o motivo escrito a partir dos numeros
+
+**Contexto:** o pedido do dono (D-394, secoes 7 e 8) quer apontar produto com frete cadastrado errado, alta repentina, frete desproporcional ao preco, frete comendo a margem e produto que deixou de ser rentavel depois de um aumento de frete -- e nao "apenas regras fixas": comparar com o historico, com produtos parecidos em categoria, peso, dimensoes e faixa de preco, em quatro niveis (normal, atencao, provavel problema, forte indicio), mostrando o porque. D-396 recuperou os 90 dias de frete que a comparacao exige.
+
+**1. O QUE FOI MEDIDO ANTES DE DESENHAR** (producao, 30 dias ate 23/09):
+- todo pedido tem uma linha e 98% tem uma unidade: o frete do pedido e o do anuncio (regra de 5E);
+- o frete de um anuncio e quase fixo -- coeficiente de variacao mediano de 1% a 3%, ~2 valores distintos em 30 dias;
+- o frete muda de patamar com a faixa de preco (R$ 7,15 abaixo de R$ 40, R$ 8,45 de R$ 40 a 79, R$ 14,45 de R$ 79 a 120) -- "frete ÷ preco acima de 30%" como regra fixa apontaria quase todo item barato: abaixo de R$ 40, 21% e a mediana;
+- 225 SKUs vendem por mais de um anuncio, e em 31 o frete difere mais de 15%;
+- peso cadastrado em 22 de 973 SKUs vendidos -- a comparacao por peso e dimensoes pedida NAO e viavel hoje;
+- `skus.category_raw` nao e categoria de produto (mistura fornecedor, situacao e grupo de peca); a categoria do Mercado Livre em `listings.category_id` cobre 1.864 de 1.865 anuncios vendidos.
+
+**2. O GRAO E ANUNCIO × FAIXA DE PRECO DO PEDIDO.** O frete e do anuncio (medidas declaradas); a faixa e a de cada pedido, porque no prototipo um preco rondando R$ 79 misturava dois fretes e parecia alta. O SKU da linha e o mais frequente -- no prototipo, pedidos antigos sem vinculo partiam o mesmo anuncio em duas linhas.
+
+**3. CINCO SINAIS, 0 A 3 PONTOS CADA, SOMADOS** (tabela em METRICS 5L): historico do proprio anuncio (limiar adaptado a dispersao do anuncio), outros anuncios do mesmo SKU, pares da categoria do Mercado Livre na mesma faixa (mediana e desvio absoluto mediano, com limiares mais altos porque a categoria mistura tamanhos), frete ÷ preco contra o p95 da faixa e margem. Nivel pela soma: 1-2 atencao, 3-4 provavel, 5+ forte. Cada sinal devolve os numeros que o fizeram pontuar; a tela escreve o motivo com eles e so com eles.
+
+**4. A MARGEM E A DE `get_faturamento`.** As CTEs de custo foram copiadas sem mudanca, e o teste de integracao confere a igualdade nos mesmos pedidos -- duplicacao guardada por teste, nao silenciosa. Extrair o custo para uma funcao comum mexeria no plano ajustado de `get_faturamento` (D-356); fica para quando as duas precisarem mudar juntas.
+
+**5. O QUE O PROTOTIPO CORRIGIU** (tres rodadas em producao, so leitura): pares pela categoria do ERP puseram baus de 45 l contra pecas pequenas do mesmo fornecedor (trocado pela categoria do ML); faixa pela mediana do anuncio criou falsa alta num preco rondando R$ 79 (trocada pela faixa do pedido); o ponto "o frete tirou margem" saia com a margem igual nas duas janelas (agora exige a margem caindo junto, quando conhecida). Resultado com o historico ainda curto: 783 linhas, 1 forte indicio, 5 provaveis, 38 em atencao, R$ 2.325 de frete a mais em 14 dias, 0,51 s.
+
+**6. O TOM.** Sugestao por evidencia: frete diferente para o mesmo produto -> "vale conferir as medidas e o peso da embalagem neste anuncio e compara-los com os do anuncio que paga menos"; historico ou categoria -> medidas que mudaram ou estao maiores; so proporcao ou margem -> preco ou forma de envio. Nenhuma frase afirma regra do Mercado Livre que a documentacao do repositorio nao registra.
+
+**Fora desta fatia:** medidas declaradas do anuncio (`shipping.dimensions` de `GET /items/{id}`) para comparar por tamanho -- item proprio no ROADMAP; alertas gravados em `actions` (central de alertas).
+
+**Verificacao:** 8 testes de integracao com a conta feita a mao (um caso por sinal, exclusoes, igualdade de margem com `get_faturamento`, RLS e anon), 14 testes do leitor e dos motivos, e2e da tela e do painel; `check`, `build`, `docs:check`.
+
+**Impacto:** `supabase/migrations/20260923190000_detector_de_frete.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/lib/detector-frete{,.test}.ts`, `apps/web/app/central/{frete/*,sinal-frete.tsx,page.tsx}`, `apps/web/app/globals.css`, `apps/web/e2e/central.spec.ts`, `docs/{METRICS,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.

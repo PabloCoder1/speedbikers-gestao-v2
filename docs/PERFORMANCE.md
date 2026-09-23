@@ -1257,3 +1257,7 @@ Dev (`nmgccyqquwxecqffsidr`), `authenticated` com um ADMIN real, tudo numa trans
 O imposto custa **~48 ms (+12%)** em 30 dias: a CTE `aliquotas` é minúscula (uma linha por vigência) e entra por um `left join` de intervalo; o resto são seis agregados a mais sobre os mesmos pedidos. Estável até a oitava execução. A meta lê ~130 linhas do rollup diário e não pesa.
 
 Conferência dos números no mesmo ensaio: 1–9/09 a 6% deu imposto de R$ 54.103,53 sobre R$ 901.725,43 (exato) e o coberto de R$ 45.736,60 sobre R$ 762.276,60; em 7–13/09, com a alíquota trocando no dia 10, `aliquota_unica` saiu NULL e o imposto somou cada pedido pela sua.
+
+### `/central/frete`: o detector de frete (D-397, 23/09/2026)
+
+Produção (`imvjfgnaprqsfjlnsyev`), **como `postgres`**, o corpo da função como `SELECT` de leitura, 90 dias até 22/09 com a recuperação de D-396 ainda em curso (frete observado desde ~01/09): **0,51 s** (`clock_timestamp() − statement_timestamp()`), 783 linhas anúncio × faixa. Pendente: medir a função publicada como `authenticated` depois que a recuperação terminar — com 90 dias inteiros de frete os pedidos da janela triplicam, e a RLS pode mudar o plano (o precedente de 60 s escondidos atrás de 4,5 s como `postgres`). A tela e o painel da central carregam a RPC por streaming, fora do caminho dos indicadores.

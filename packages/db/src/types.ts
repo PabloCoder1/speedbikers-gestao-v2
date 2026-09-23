@@ -4331,6 +4331,15 @@ export type Database = {
       // CORRECAO MANUAL (D-351, verificacao de e6fda07): mesma razao do bloco acima --
       // `20260916180400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
       // ser aplicada, e a CLI nao regenera este arquivo.
+      get_detector_frete: {
+        Args: {
+          p_hoje?: string
+          p_organization_id: string
+        }
+        // D-397: jsonb com janela, resumo, faixas e alertas. A forma tipada
+        // mora em apps/web/lib/detector-frete.ts.
+        Returns: Json
+      }
       get_meta_do_mes: {
         Args: {
           p_hoje?: string

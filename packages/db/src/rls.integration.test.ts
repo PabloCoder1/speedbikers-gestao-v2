@@ -302,6 +302,8 @@ describe("catálogo de métricas", () => {
       "custo_produtos_vendidos",
       "desconto_vendedor",
       "esperado_meta",
+      // D-397 (METRICS 5L): o detector de frete.
+      "frete_excedente_estimado",
       "frete_medio_pedido",
       "frete_vendedor",
       "imposto_estimado",
@@ -311,6 +313,7 @@ describe("catálogo de métricas", () => {
       "margem_operacional_pedido",
       "margem_venda",
       "meta_diaria_necessaria",
+      "nivel_anomalia_frete",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
@@ -14917,5 +14920,314 @@ describe("metas e imposto — monthly_goals, tax_rates e get_meta_do_mes (D-395)
 
   it("anon é recusado", async () => {
     await expect(asAnon(`select public.get_meta_do_mes('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/**
+ * Detector de frete (D-397): um caso por sinal, com a conta feita à mão.
+ *
+ * Visto de 01/06/2023: "atual" é 18/05 a 31/05 e "antes" é 03/03 a 17/05. Tudo
+ * na CONTA_A, 2023 longe dos outros fixtures. Faixa de R$ 40 a 79, categoria
+ * MLB9990001, salvo onde dito:
+ *
+ * | anúncio            | SKU    | preço | frete antes → atual | papel                                    |
+ * |--------------------|--------|-------|---------------------|------------------------------------------|
+ * | MLB9700100..119    | P1-P20 | 50    | — → 8 (3 pedidos)   | pares normais: mediana 8, MAD 0          |
+ * | MLB9700001         | H      | 50    | 10 (6) → 20 (4)     | histórico +100%, pares +150%, margem     |
+ * | MLB9700011 / 012   | I      | 50    | — → 8 / 12 (3 + 3)  | o 012 paga 50% a mais que o irmão        |
+ * | MLB9700021         | X      | 78    | — → 30 (3)          | pares +275%                              |
+ * | MLB9700031         | D      | 100   | 15 (6) → 35 (4)     | R$ 79 a 120, MLB9990002: deixou de dar   |
+ * |                    |        |       |                     | resultado (margem 15% → −5%)             |
+ * | MLB9700041         | R      | 10    | — → 8 (3)           | até R$ 40: vende no prejuízo             |
+ *
+ * Frete ÷ preço na faixa de R$ 40 a 79: 21 × 0,16, 0,24 (I-012), 0,3846 (X),
+ * 0,40 (H) → p95 = 0,24 + 0,85 × 0,1446 = 0,3629: X e H passam, 1 ponto cada.
+ * Pontos: H 3+2+1+1 = 7 forte; D 3+2 = 5 forte; X 3+1 = 4 e I-012 2+1 = 3
+ * prováveis; R 1 atenção. Ficam de fora do H: um pedido Flex (frete 0), um de
+ * duas unidades (frete 50), um sem frete observado e um cancelado.
+ */
+describe("get_detector_frete (D-397)", () => {
+  const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
+  const BASE = 9900900000;
+
+  interface Venda {
+    sku: string;
+    anuncio: string;
+    preco: number;
+    comissao: number;
+    frete: number | null;
+    quando: string;
+    quantidade?: number;
+    status?: string;
+    logistica?: string;
+  }
+
+  const vendas: Venda[] = [];
+  const antes = (dia: number): string => `2023-04-${String(dia).padStart(2, "0")} 15:00:00+00`;
+  const atual = (dia: number): string => `2023-05-${String(dia).padStart(2, "0")} 15:00:00+00`;
+
+  for (let p = 1; p <= 20; p += 1) {
+    for (const dia of [20, 21, 22]) {
+      vendas.push({
+        sku: `P${String(p)}`,
+        anuncio: `MLB97001${String(p - 1).padStart(2, "0")}`,
+        preco: 50,
+        comissao: 5,
+        frete: 8,
+        quando: atual(dia),
+      });
+    }
+  }
+
+  for (const dia of [3, 5, 7, 9, 11, 13]) {
+    vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 10, quando: antes(dia) });
+    vendas.push({ sku: "D", anuncio: "MLB9700031", preco: 100, comissao: 10, frete: 15, quando: antes(dia) });
+  }
+
+  for (const dia of [20, 21, 22, 23]) {
+    vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 20, quando: atual(dia) });
+    vendas.push({ sku: "D", anuncio: "MLB9700031", preco: 100, comissao: 10, frete: 35, quando: atual(dia) });
+  }
+
+  // O que nunca entra: Flex, duas unidades, sem frete observado, cancelado.
+  vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 0, quando: atual(24), logistica: "self_service" });
+  vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 50, quando: atual(24), quantidade: 2 });
+  vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: null, quando: atual(25) });
+  vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 90, quando: atual(25), status: "cancelled" });
+
+  for (const dia of [20, 21, 22]) {
+    vendas.push({ sku: "I", anuncio: "MLB9700011", preco: 50, comissao: 5, frete: 8, quando: atual(dia) });
+    vendas.push({ sku: "I", anuncio: "MLB9700012", preco: 50, comissao: 5, frete: 12, quando: atual(dia) });
+    vendas.push({ sku: "X", anuncio: "MLB9700021", preco: 78, comissao: 8, frete: 30, quando: atual(dia) });
+    vendas.push({ sku: "R", anuncio: "MLB9700041", preco: 10, comissao: 1, frete: 8, quando: atual(dia) });
+  }
+
+  const PEDIDOS = vendas.map((_, i) => BASE + i);
+  const ANUNCIOS = [...new Set(vendas.map((v) => v.anuncio))];
+  const CUSTO: Record<string, number> = { D: 60, R: 3 };
+  const skuIds = new Map<string, string>();
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta A','rlstest-conta-a',111,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const codigos = [...new Set(vendas.map((v) => v.sku))];
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       select $1, 'RLSTEST-FRETE-' || c.codigo, 'PRODUTO', c.custo
+       from unnest($2::text[], $3::numeric[]) as c(codigo, custo)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku_key`,
+      [ORG_SB, codigos, codigos.map((c) => CUSTO[c] ?? 20)],
+    );
+
+    for (const row of skus.rows) skuIds.set(row.sku_key.replace("RLSTEST-FRETE-", ""), row.id);
+
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, category_id)
+       select $1, $2, a, 'Frete ' || a, 'active', 50, 'BRL', 5,
+              case when a = 'MLB9700031' then 'MLB9990002' when a = 'MLB9700041' then 'MLB9990003' else 'MLB9990001' end
+       from unnest($3::text[]) as a
+       on conflict on constraint listings_account_item_unique do update set category_id = excluded.category_id`,
+      [ORG_SB, CONTA, ANUNCIOS],
+    );
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id, logistic_type)
+       select v.id, $1, $2, null, v.status, v.quando, v.quando, v.total, 'BRL', v.logistica
+       from unnest($3::bigint[], $4::text[], $5::timestamptz[], $6::numeric[], $7::text[])
+         as v(id, status, quando, total, logistica)
+       on conflict (id) do nothing`,
+      [
+        ORG_SB,
+        CONTA,
+        PEDIDOS,
+        vendas.map((v) => v.status ?? "paid"),
+        vendas.map((v) => v.quando),
+        vendas.map((v) => v.preco * (v.quantidade ?? 1)),
+        vendas.map((v) => v.logistica ?? null),
+      ],
+    );
+
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       select v.id, $1, $2, 0, v.anuncio, null, 'Frete ' || v.anuncio, v.quantidade, v.preco, 'BRL', v.sku_id, v.comissao
+       from unnest($3::bigint[], $4::text[], $5::int[], $6::numeric[], $7::uuid[], $8::numeric[])
+         as v(id, anuncio, quantidade, preco, sku_id, comissao)
+       on conflict do nothing`,
+      [
+        ORG_SB,
+        CONTA,
+        PEDIDOS,
+        vendas.map((v) => v.anuncio),
+        vendas.map((v) => v.quantidade ?? 1),
+        vendas.map((v) => v.preco),
+        vendas.map((v) => skuIds.get(v.sku) ?? null),
+        vendas.map((v) => v.comissao),
+      ],
+    );
+
+    const comFrete = vendas.flatMap((v, i) => (v.frete === null ? [] : [{ id: PEDIDOS[i] ?? 0, frete: v.frete }]));
+
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       select f.id, $1, $2, f.frete, 0
+       from unnest($3::bigint[], $4::numeric[]) as f(id, frete)
+       on conflict (order_id) do nothing`,
+      [ORG_SB, CONTA, comFrete.map((f) => f.id), comFrete.map((f) => f.frete)],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.listings where ml_account_id = $1 and item_id = any($2)", [CONTA, ANUNCIOS]);
+  });
+
+  interface Alerta {
+    anuncio: string;
+    nivel: string;
+    pontos: number;
+    faixa: string;
+    pedidos_atual: number;
+    pedidos_antes: number;
+    frete_atual: number;
+    frete_antes: number | null;
+    frete_irmaos: number | null;
+    frete_pares: number | null;
+    pares: number | null;
+    razao_p95: number | null;
+    margem_atual: number | null;
+    margem_antes: number | null;
+    excesso: number | null;
+    mudou_em: string | null;
+    sinais: Record<string, number | boolean>;
+  }
+
+  interface Detector {
+    janela: Record<string, string>;
+    resumo: Record<string, number | null>;
+    alertas: Alerta[];
+  }
+
+  async function detector(usuario: string): Promise<Detector> {
+    const rows = await asUser<{ r: Detector }>(usuario, `select public.get_detector_frete('${ORG_SB}', date '2023-06-01') as r`);
+    const linha = rows[0];
+
+    if (linha === undefined) throw new Error("get_detector_frete não devolveu linha");
+
+    return linha.r;
+  }
+
+  function alerta(d: Detector, anuncio: string): Alerta {
+    const a = d.alertas.find((x) => x.anuncio === anuncio);
+
+    if (a === undefined) throw new Error(`sem alerta para ${anuncio}`);
+
+    return a;
+  }
+
+  it("janela de 14 dias até ontem contra os 76 anteriores, e a contagem por nível", async () => {
+    const d = await detector(ADMIN_SB);
+
+    expect(d.janela).toEqual({ inicio: "2023-03-03", corte: "2023-05-18", fim: "2023-05-31" });
+    // 20 pares + H + dois anúncios de I + X + D + R.
+    expect(d.resumo).toMatchObject({ analisados: 26, forte: 2, provavel: 2, atencao: 1, normal: 21 });
+    // H 80 − 4 × 10, D 140 − 4 × 15, X 90 − 3 × 8, I-012 36 − 3 × 8.
+    expect(d.resumo.excesso_14_dias).toBe(198);
+    expect(d.alertas.map((a) => a.anuncio)).toEqual(["MLB9700001", "MLB9700031", "MLB9700021", "MLB9700012", "MLB9700041"]);
+  });
+
+  it("histórico, pares, proporção e margem somam no H — e Flex, duas unidades, sem frete e cancelado ficam de fora", async () => {
+    const h = alerta(await detector(ADMIN_SB), "MLB9700001");
+
+    expect(h).toMatchObject({
+      nivel: "forte",
+      pontos: 7,
+      faixa: "40_79",
+      pedidos_atual: 4,
+      pedidos_antes: 6,
+      frete_atual: 20,
+      frete_antes: 10,
+      frete_pares: 8,
+      pares: 23,
+      razao_p95: 0.3629,
+      margem_antes: 0.3,
+      margem_atual: 0.1,
+      excesso: 40,
+      mudou_em: "2023-05-20",
+    });
+    expect(h.sinais).toMatchObject({ historico: 3, irmaos: 0, pares: 2, proporcao: 1, margem: 1, frete_tirou_margem: true });
+  });
+
+  it("mesmo produto, outro anúncio: o que paga mais pontua, o que paga menos não", async () => {
+    const d = await detector(ADMIN_SB);
+    const caro = alerta(d, "MLB9700012");
+
+    expect(caro).toMatchObject({ nivel: "provavel", pontos: 3, frete_irmaos: 8, excesso: 12 });
+    expect(caro.sinais).toMatchObject({ irmaos: 2, pares: 1 });
+    expect(d.alertas.some((a) => a.anuncio === "MLB9700011")).toBe(false);
+  });
+
+  it("pares: 275% acima da mediana da categoria na faixa", async () => {
+    const x = alerta(await detector(ADMIN_SB), "MLB9700021");
+
+    expect(x).toMatchObject({ nivel: "provavel", pontos: 4, frete_pares: 8, excesso: 66 });
+    expect(x.sinais).toMatchObject({ pares: 3, proporcao: 1, historico: 0 });
+  });
+
+  it("deixou de dar resultado com o frete explicando a queda", async () => {
+    const dd = alerta(await detector(ADMIN_SB), "MLB9700031");
+
+    expect(dd).toMatchObject({ nivel: "forte", pontos: 5, faixa: "79_120", margem_antes: 0.15, margem_atual: -0.05, pares: null });
+    expect(dd.sinais).toMatchObject({ historico: 3, margem: 2, deixou_de_ser_rentavel: true });
+  });
+
+  it("vende no prejuízo com o frete levando 80% do preço: atenção", async () => {
+    const r = alerta(await detector(ADMIN_SB), "MLB9700041");
+
+    expect(r).toMatchObject({ nivel: "atencao", pontos: 1, faixa: "ate_40", margem_atual: -0.2, excesso: null });
+    expect(r.sinais).toMatchObject({ prejuizo: true, margem: 1, proporcao: 0 });
+  });
+
+  /**
+   * A margem do detector é a de `get_faturamento` nos mesmos pedidos: as CTEs
+   * de custo foram copiadas sem mudança (cabeçalho da migration). Se uma regra
+   * de custo mudar numa função e não na outra, este teste quebra.
+   */
+  it("a margem é a mesma de get_faturamento nos mesmos pedidos", async () => {
+    const dd = alerta(await detector(ADMIN_SB), "MLB9700031");
+    const skuD = skuIds.get("D");
+
+    for (const [de, ate, esperada] of [
+      ["2023-05-18", "2023-05-31", dd.margem_atual],
+      ["2023-03-03", "2023-05-17", dd.margem_antes],
+    ] as const) {
+      const rows = await asUser<{ r: { por_sku: { maior_receita: { sku_id: string; margem_venda: number | null }[] } } }>(
+        ADMIN_SB,
+        `select public.get_faturamento('${de}','${ate}','${CONTA}',true) as r`,
+      );
+      const linha = rows[0]?.r.por_sku.maior_receita.find((s) => s.sku_id === skuD);
+
+      expect(linha?.margem_venda, `${de} a ${ate}`).toBe(esperada);
+    }
+  });
+
+  it("outra organização não vê nada; anon é recusado", async () => {
+    const outra = await asUser<{ r: Detector }>(
+      DE_OUTRA_ORG,
+      `select public.get_detector_frete('${ORG_SB}', date '2023-06-01') as r`,
+    );
+
+    expect(outra[0]?.r.resumo).toMatchObject({ analisados: 0, forte: 0 });
+    expect(outra[0]?.r.alertas).toEqual([]);
+    await expect(asAnon(`select public.get_detector_frete('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });

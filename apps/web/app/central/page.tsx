@@ -12,6 +12,7 @@ import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { AVISO } from "../faturamento/numeros";
 import { Indicadores } from "./indicadores";
+import { SinalDoFrete } from "./sinal-frete";
 
 export const metadata = { title: "Central do negócio — Speed Bikers Gestão" };
 
@@ -26,8 +27,9 @@ export const dynamic = "force-dynamic";
  * indicadores com comparação e tom, os períodos do negócio (hoje, ontem, mês
  * atual, mês anterior) e o resumo automático. A segunda (D-395) trouxe a meta
  * do mês com a projeção de fechamento e o imposto, com o lucro após imposto e
- * Ads. Frete, sinais de Ads e alertas vêm nas seguintes (`docs/ROADMAP.md`,
- * trilha 5J).
+ * Ads. A terceira (D-397), o detector de frete, entra aqui como um painel com
+ * os anúncios que pedem revisão. Sinais de Ads e alertas vêm nas seguintes
+ * (`docs/ROADMAP.md`, trilha 5J).
  *
  * **As mesmas consultas de `/faturamento`.** `get_faturamento` e
  * `get_ads_overview`, sem detalhe, para o período atual e o anterior, mais
@@ -113,6 +115,13 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
       : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId }));
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
 
+  // O detector de frete é da organização e dos últimos 14 dias: não depende do
+  // período nem da conta. Sai junto com as outras leituras e chega sozinho.
+  const leituraFrete =
+    membership.organizationId === null
+      ? null
+      : Promise.resolve(supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId }));
+
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoAtual = periodoDaUrl(periodo);
   const diasCompletos = periodo.preset === "7d" || periodo.preset === "15d" || periodo.preset === "30d" || (periodo.preset === "mes" && !periodo.emAndamento);
@@ -179,6 +188,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
               Metas e imposto
             </Link>
 
+            <Link className="sb-button" href="/central/frete">
+              Detector de frete
+            </Link>
+
             <Link className="sb-button" href={contaSlug === null ? "/faturamento" : `/faturamento?account=${encodeURIComponent(contaSlug)}`}>
               Faturamento detalhado
             </Link>
@@ -200,6 +213,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
 
       <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" />}>
         <Indicadores leituras={leituras} leituraMeta={leituraMeta} periodo={periodo} podeEditar={podeEditar} />
+      </Suspense>
+
+      <Suspense fallback={<CarregandoBloco rotulo="detector de frete" />}>
+        <SinalDoFrete leitura={leituraFrete} />
       </Suspense>
     </>
   );

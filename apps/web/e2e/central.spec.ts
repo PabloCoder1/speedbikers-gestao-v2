@@ -125,3 +125,45 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
   await page.getByRole("button", { name: /^Remover a alíquota de / }).first().click();
   await expect(page.getByText("Nenhuma alíquota cadastrada.")).toBeVisible();
 });
+
+/**
+ * Detector de frete (D-397): a tela abre, o resumo tem os quatro números e o
+ * frete a mais, o filtro de nível viaja pela URL, e a central aponta para ela.
+ * Os alertas não são afirmados — o seed não tem 90 dias de frete; lista vazia
+ * com o motivo é estado legítimo. Num banco sem a migration a tela diz "sendo
+ * ativado" e o teste para aí.
+ */
+test("/central/frete: resumo, filtro de nível e o caminho a partir da central", async ({ page }) => {
+  await login(page, "/central/frete");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Detector de frete" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a função de D-397");
+  }
+
+  await expect(page.getByText(/Não foi possível carregar o detector/)).toHaveCount(0);
+  await expect(page.getByText(/formato que esta tela não reconhece/)).toHaveCount(0);
+  await expect(page.locator(".sb-kpi-strip .sb-kpi-label")).toHaveText([
+    "Forte indício",
+    "Provável problema",
+    "Atenção",
+    "Analisados",
+    "Frete a mais (14 dias)",
+  ]);
+  await expect(page.getByRole("region", { name: "Anúncios para revisar" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Como o detector decide" })).toBeVisible();
+
+  await page.getByRole("link", { name: /^Forte indício \(/ }).click();
+  await expect(page).toHaveURL(/nivel=forte/);
+  await expect(page.getByRole("region", { name: "Anúncios para revisar" }).getByText("Só forte indício.")).toBeVisible();
+
+  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+
+  const frete = page.getByRole("region", { name: "Frete", exact: true });
+
+  await expect(frete).toBeVisible();
+  await frete.getByRole("link", { name: "Abrir o detector" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Detector de frete" })).toBeVisible();
+});
