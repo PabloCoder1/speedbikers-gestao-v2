@@ -73,7 +73,7 @@ export const dynamic = "force-dynamic";
  * | linhas tocadas para montar 100 | 54.306 | 100 |
  *
  * O motivo é a ORDEM: com a lista de destinatários na raiz e o índice novo
- * `(user_id, created_at desc)` (migration `20260923170000`), o planejador anda
+ * `(user_id, created_at desc)` (migration `20260923200000`), o planejador anda
  * pela ordem e para na centésima linha, em vez de materializar tudo e ordenar
  * no fim. **E é a mesma ordem**: `private.fan_out_notification` grava a
  * notificação e os destinatários na mesma transação, e `now()` é o instante da

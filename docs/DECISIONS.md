@@ -13893,7 +13893,7 @@ O e2e ganhou cinco casos (sem rolagem lateral em 390px medindo o `.sb-content`; 
 
 **Contexto:** D-269 (D29) recusou o botao "Filtrar" do frame com uma frase honesta -- "e funcionalidade, nao composicao" -- e deixou UMA candidata registrada com numero: 8.350 nao lidas de 42.511. D-290 entregou essa, mais a paginacao. Severidade, tipo e conta continuaram fora porque "nenhum numero os pediu". Esta fatia mede os tres, e mede tambem a consulta.
 
-Migration `20260923170000_notificacoes_triagem.sql`: um indice e uma funcao. Nada destrutivo.
+Migration `20260923200000_notificacoes_triagem.sql`: um indice e uma funcao. Nada destrutivo.
 
 **O carimbo nasceu `20260923150000` e teve de mudar — e o motivo e a licao mais util desta fatia.** Quatro frentes trabalhavam no repositorio no mesmo dia, e duas escolheram o mesmo "proximo numero redondo depois de `20260922150000`": esta e `20260923150000_support_reply_claim_recipient_audit`, da frente de atendimento.
 
@@ -13902,6 +13902,10 @@ Migration `20260923170000_notificacoes_triagem.sql`: um indice e uma funcao. Nad
 A primeira leitura — "quem esta commitado fica, quem esta solto renumera" — era certa no procedimento e **errada no efeito**. Renomear o deles exigiria corrigir tambem a linha ja gravada no `schema_migrations` do Dev; renomear este nao exige nada. **Quem move e quem pode mover sem cirurgia no historico**, e o historico do BANCO manda no numero, nao a ordem de chegada ao repositorio.
 
 `170000` e nao `160000` para deixar um degrau de folga: a frente de atendimento usa passos de 10000 e ainda pode acrescentar um sexto arquivo.
+
+**E depois ele subiu de novo, por OUTRO motivo — ordem, nao colisao.** Enquanto esta fatia esperava o merge, a frente de frete entrou na `main` com `20260923190000` (D-397). O `db push` sem `--include-all` recusa versao MENOR que a ultima aplicada no remoto: com o `190000` aplicado no Dev primeiro, o `170000` viraria passado e nao subiria nunca. Carimbo final: **`20260923200000`**.
+
+**As duas mudancas de carimbo tem causas diferentes, e vale distinguir**, porque o conserto e o mesmo mas o gatilho nao: a primeira foi **colisao de chave** (duas frentes escolheram o mesmo numero, e o Dev ja tinha registrado o da outra); a segunda foi **ordem** (alguem publicou um numero maior antes de mim). A primeira se detecta consultando `schema_migrations`; a segunda, sabendo o que as outras frentes tem em voo — foi a sessao da frente de frete que avisou, e o combinado foi: quem estiver pronto para mergear primeiro nao mexe em nada; quem ficar para tras re-carimba. **A licao operacional e que carimbo de migration nao e propriedade de quem escreveu o arquivo: e uma posicao numa fila compartilhada, e a fila muda enquanto o PR espera revisao.**
 
 E o atalho que o proprio CLI sugere (`supabase migration repair --status reverted`) **nao serve**: marcaria como revertidas cinco migrations que estao aplicadas de fato, e o `db push` seguinte tentaria recria-las sobre objetos existentes. A regra continua sendo a da memoria de sessoes paralelas: aplicar por cima, nunca reparar para tras.
 
@@ -14010,7 +14014,7 @@ O estado passou a viver em `data-state`/`data-tom` e a aparencia em `globals.css
 
 ---
 
-**Impacto:** `supabase/migrations/20260923170000_notificacoes_triagem.sql` (novo), `apps/web/app/notificacoes/page.tsx`, `notification-row.tsx`, `mark-all-button.tsx`, `actions.ts`, `apps/web/lib/notification-filters.ts` (+teste), `apps/web/lib/format.ts` (`businessDayOf`, `formatWeekday`), `apps/web/app/globals.css`, `apps/web/e2e/notificacoes.spec.ts`, `packages/db/src/types.ts` (assinatura da RPC, CORRECAO MANUAL da classe D-213), `docs/NOTIFICATIONS.md`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/PERFORMANCE.md`, `docs/HANDOFF.md`.
+**Impacto:** `supabase/migrations/20260923200000_notificacoes_triagem.sql` (novo), `apps/web/app/notificacoes/page.tsx`, `notification-row.tsx`, `mark-all-button.tsx`, `actions.ts`, `apps/web/lib/notification-filters.ts` (+teste), `apps/web/lib/format.ts` (`businessDayOf`, `formatWeekday`), `apps/web/app/globals.css`, `apps/web/e2e/notificacoes.spec.ts`, `packages/db/src/types.ts` (assinatura da RPC, CORRECAO MANUAL da classe D-213), `docs/NOTIFICATIONS.md`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/PERFORMANCE.md`, `docs/HANDOFF.md`.
 
 **Verificacao, local:** `check` 29/29 (typecheck, lint, 898 testes de unidade da web), `build` 8/8, `docs:check`; guardas `waterfalls` (131 arquivos), `server-actions` (23 modulos), `table-styles` (33 telas), `control-styles` (355 controles), `loading` (51 pastas) e **`check:embeds` contra o PostgREST local (37 projecoes, todas aceitas)** -- o embed de DOIS niveis com `!inner` e novo e precisava de servidor de verdade para valer. O filtro embutido tambem foi exercitado direto no PostgREST local (severidade, `like` de familia, conta inexistente, e `Range` alem do fim devolvendo **200 vazio** sem `count`, confirmando a medicao de D-290 na raiz nova). **e2e 8/8**, rodado numa porta propria (3100, `E2E_BASE_URL`) contra o Supabase local ja de pe, sem `db reset` -- havia sessoes paralelas usando o banco e a porta 3000, e resetar apagaria o estado delas (memoria `sessoes-paralelas`). A migration foi aplicada ao banco local pelo arquivo inteiro, de uma passada, antes de rodar. Capturas a 1440px e 390px.
 

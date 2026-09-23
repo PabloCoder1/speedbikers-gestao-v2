@@ -64,7 +64,7 @@ export async function markNotificationRead(notificationId: string): Promise<Noti
  *   caso mais comum fora da dependência é o que impede a fatia de chegar com o
  *   botão principal quebrado.
  * - **Com recorte** quem escreve é `public.mark_notifications_read`
- *   (`security invoker`, migration `20260923170000`), porque o filtro mora num
+ *   (`security invoker`, migration `20260923200000`), porque o filtro mora num
  *   JOIN com `domain_events` e um `update` do PostgREST não junta tabela. A
  *   alternativa sem função seria ler as ids de mil em mil — o teto do
  *   PostgREST — e mandar catorze updates, com um teto para estourar em
