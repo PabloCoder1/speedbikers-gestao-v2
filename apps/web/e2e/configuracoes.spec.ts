@@ -149,7 +149,7 @@ test("/configuracoes: em 390px a tela não rola para o lado", async ({ page }) =
  * `describeSettings` devolve na ordem do ROADMAP (Organização primeiro,
  * Reposição em segundo, e o teste de unidade prende isso). A TELA imprime por
  * presença de configuração: com o seed — nenhuma política de reposição e a
- * organização com nome —, Reposição está na zona "SEM CONFIGURAÇÃO AINDA" e
+ * organização com nome —, Reposição está na zona "FALTA CONFIGURAR" e
  * Organização na "COM CONFIGURAÇÃO", então a segunda do array aparece ACIMA da
  * primeira. Comparar `y` é o que distingue reordenar de só rotular.
  */
@@ -158,7 +158,7 @@ test("/configuracoes: a área sem configuração aparece ACIMA da área que já 
 
   // Nome exato, nunca substring: "Configuradas" mora dentro de "Não
   // configuradas", e é assim que o locator já pegou duas células uma vez.
-  await expect(page.getByRole("region", { name: "SEM CONFIGURAÇÃO AINDA" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "FALTA CONFIGURAR", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "COM CONFIGURAÇÃO", exact: true })).toBeVisible();
 
   const semConfiguracao = page.getByRole("region", { name: "Reposição" });
@@ -221,8 +221,70 @@ test("/configuracoes: o ADMIN único da organização é dito no cartão, com a 
   await expect(aviso).toBeVisible();
   await expect(aviso).toHaveText(/^Só uma pessoa é ADMIN\./);
 
+  /*
+    O seed tem um GESTOR, e GESTOR escreve na reposição
+    (`replenishment_settings_*_admin` usa ADMIN e GESTOR): a frase não pode
+    dizer que sem ADMIN "ninguém altera reposição". É justamente o seed que a
+    tornava falsa.
+  */
+  await expect(aviso).not.toHaveText(/reposição/);
+
   // A regra da frase: termina na ação e na tela onde ela se faz. Alarme que o
-  // dono não pode apagar vira mobília.
+  // dono não pode apagar vira mobília. Quem entra no seed é ADMIN — por isso
+  // a ação, e não o "peça a um ADMIN que…" de quem não pode promover.
   await expect(aviso).toHaveText(/promova um segundo ADMIN em Usuários\.$/);
   await expect(organizacao.getByRole("link", { name: "Usuários" })).toBeVisible();
+});
+
+/**
+ * O VEREDITO DO SUBTÍTULO E A FAIXA SÃO UM PLACAR SÓ.
+ *
+ * O subtítulo contava a zona 1 inteira como "não têm configuração", e a faixa
+ * separava "Não configuradas" de "Parciais": com uma conta ML fora, os dois
+ * discordavam na mesma dobra. Aqui a asserção não depende do seed — lê os
+ * dois números da faixa e exige que o subtítulo diga exatamente esses, com as
+ * mesmas palavras. As combinações (0, 1, N e parcial) estão no teste de
+ * unidade de `vereditoDe`; este caso prova a FIAÇÃO na tela.
+ */
+test("/configuracoes: o veredito do subtítulo diz os mesmos números que a faixa", async ({ page }) => {
+  await login(page, "/configuracoes");
+
+  const faixa = page.locator(".sb-kpi-strip");
+  const valor = async (rotulo: string): Promise<number> =>
+    Number(
+      await faixa
+        .locator(".sb-kpi")
+        .filter({ has: page.locator(".sb-kpi-label", { hasText: new RegExp(`^${rotulo}$`) }) })
+        .locator(".sb-kpi-value")
+        .innerText(),
+    );
+
+  const naoConfiguradas = await valor("Não configuradas");
+  const parciais = await valor("Parciais");
+
+  // O veredito é o `<strong>` do subtítulo, logo abaixo do h1.
+  const veredito = (
+    await page
+      .locator(".sb-page-title")
+      .filter({ has: page.getByRole("heading", { level: 1, name: "Configurações" }) })
+      .locator("p strong")
+      .innerText()
+  ).trim();
+
+  if (naoConfiguradas === 0 && parciais === 0) {
+    expect(veredito).toBe("As 7 áreas têm configuração.");
+    return;
+  }
+
+  if (naoConfiguradas > 0) {
+    expect(veredito).toMatch(new RegExp(`^${String(naoConfiguradas)} das 7 áreas ainda não (tem|têm) configuração`));
+  } else {
+    expect(veredito).not.toContain("ainda não");
+  }
+
+  if (parciais > 0) {
+    expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das 7 áreas )?(tem|têm) configuração parcial\\.$`));
+  } else {
+    expect(veredito).not.toContain("parcial");
+  }
 });
