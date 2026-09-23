@@ -18,7 +18,7 @@ REF_FICTICIO="refproducaoficticio0"
 DEV_REF="nmgccyqquwxecqffsidr"
 
 ORIGEM_OK=(
-  "REF_DO_WORKFLOW=refs/heads/v3"
+  "REF_DO_WORKFLOW=refs/heads/main"
   "POLITICA_BRANCH=protegidas"
   "REVISORES=1"
   "CI_CONCLUSAO=success"
@@ -76,9 +76,9 @@ passa "origem completa" origem "as mesmas migrations já aplicadas no Dev" "${OR
 passa "origem com política de branch personalizada" origem "restrito a branches (personalizada)" "${ORIGEM_OK[@]}" "POLITICA_BRANCH=personalizada"
 
 # --- origem: de onde veio o disparo
-recusa "origem sem nenhuma variável" origem "só rodam a partir da v3"
-recusa "disparo a partir da main" origem "só rodam a partir da v3" "${ORIGEM_OK[@]}" "REF_DO_WORKFLOW=refs/heads/main"
-recusa "disparo a partir de outra branch" origem "só rodam a partir da v3" "${ORIGEM_OK[@]}" "REF_DO_WORKFLOW=refs/heads/v3-experimento"
+recusa "origem sem nenhuma variável" origem "só rodam a partir da main"
+recusa "disparo a partir da v3 (aposentada)" origem "só rodam a partir da main" "${ORIGEM_OK[@]}" "REF_DO_WORKFLOW=refs/heads/v3"
+recusa "disparo a partir de outra branch" origem "só rodam a partir da main" "${ORIGEM_OK[@]}" "REF_DO_WORKFLOW=refs/heads/main-experimento"
 
 # --- origem: o ambiente é a trava de verdade
 recusa "ambiente inexistente" origem "não existe no repositório" "${ORIGEM_OK[@]}" "POLITICA_BRANCH=ausente" "REVISORES=0"
@@ -87,9 +87,9 @@ recusa "ambiente sem revisor" origem "sem revisor obrigatório" "${ORIGEM_OK[@]}
 recusa "revisores ilegível" origem "sem revisor obrigatório" "${ORIGEM_OK[@]}" "REVISORES=null"
 
 # --- origem: o commit
-recusa "CI falhou" origem "A CI deste commit na v3 não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=failure"
-recusa "CI ainda rodando" origem "A CI deste commit na v3 não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=pendente"
-recusa "commit sem CI" origem "A CI deste commit na v3 não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=ausente"
+recusa "CI falhou" origem "A CI deste commit na main não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=failure"
+recusa "CI ainda rodando" origem "A CI deste commit na main não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=pendente"
+recusa "commit sem CI" origem "A CI deste commit na main não passou" "${ORIGEM_OK[@]}" "CI_CONCLUSAO=ausente"
 recusa "Dev não migrado" origem "não foram aplicadas no Dev" "${ORIGEM_OK[@]}" "MIGRATIONS_DEV=skipped"
 
 # --- alvo: o caminho feliz, sem vazar segredo

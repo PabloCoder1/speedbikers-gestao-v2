@@ -13,10 +13,10 @@
 # Uso:
 #
 #   bash infra/guarda-migrations-producao.sh origem
-#     REF_DO_WORKFLOW   github.ref do disparo (tem de ser refs/heads/v3)
+#     REF_DO_WORKFLOW   github.ref do disparo (tem de ser refs/heads/main)
 #     POLITICA_BRANCH   protegidas | personalizada | nenhuma | ausente
 #     REVISORES         quantos revisores obrigatórios o ambiente `producao` tem
-#     CI_CONCLUSAO      conclusão da CI (push ou dispatch na v3) deste commit
+#     CI_CONCLUSAO      conclusão da CI (push ou dispatch na main) deste commit
 #     MIGRATIONS_DEV    conclusão do job que aplicou as migrations no Dev
 #
 #   bash infra/guarda-migrations-producao.sh alvo
@@ -45,9 +45,9 @@ DEV_SUPABASE_PROJECT_REF="$(
 [ -n "${DEV_SUPABASE_PROJECT_REF}" ] || fail "Não consegui ler o ref do Dev em ${LIB}."
 
 origem() {
-  [ "${REF_DO_WORKFLOW:-}" = "refs/heads/v3" ] ||
-    fail "As migrations de produção só rodam a partir da v3 (o disparo veio de '${REF_DO_WORKFLOW:-}')."
-  ok "disparo a partir da v3"
+  [ "${REF_DO_WORKFLOW:-}" = "refs/heads/main" ] ||
+    fail "As migrations de produção só rodam a partir da main (o disparo veio de '${REF_DO_WORKFLOW:-}')."
+  ok "disparo a partir da main"
 
   case "${POLITICA_BRANCH:-}" in
     ausente)
@@ -66,7 +66,7 @@ origem() {
   ok "ambiente com ${REVISORES} revisor(es) obrigatório(s)"
 
   [ "${CI_CONCLUSAO:-}" = "success" ] ||
-    fail "A CI deste commit na v3 não passou (conclusão: '${CI_CONCLUSAO:-}'). Migration de código que não passou na esteira não vai para produção."
+    fail "A CI deste commit na main não passou (conclusão: '${CI_CONCLUSAO:-}'). Migration de código que não passou na esteira não vai para produção."
   ok "CI deste commit verde"
 
   [ "${MIGRATIONS_DEV:-}" = "success" ] ||

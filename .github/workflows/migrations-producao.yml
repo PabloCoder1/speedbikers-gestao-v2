@@ -7,7 +7,7 @@ name: Migrations de produção
 #
 # Três jobs, em fila:
 #
-# 1. `origem`, sem segredo nenhum: recusa se o disparo não veio da v3, se o
+# 1. `origem`, sem segredo nenhum: recusa se o disparo não veio da main, se o
 #    ambiente `producao` não tem revisor obrigatório nem restrição de branch,
 #    ou se a CI deste mesmo commit não passou e não aplicou no Dev.
 # 2. `plano`, com o ambiente `producao` (1ª aprovação): confere o alvo e
@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   origem:
-    name: origem — v3, ambiente travado, CI verde e Dev já migrado
+    name: origem — main, ambiente travado, CI verde e Dev já migrado
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -66,7 +66,7 @@ jobs:
             POLITICA_BRANCH=ausente
           fi
 
-          run_id="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&branch=v3&per_page=20" \
+          run_id="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&branch=main&per_page=20" \
             --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")] | first | .id // "ausente"')"
           if [ "${run_id}" = "ausente" ]; then
             CI_CONCLUSAO=ausente

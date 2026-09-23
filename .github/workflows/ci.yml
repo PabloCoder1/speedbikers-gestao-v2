@@ -1,12 +1,12 @@
 name: CI
 
-# Nenhum merge na v3 sem esta esteira verde. Ver docs/DEPLOYMENT.md secao 7.
+# Nenhum merge na main sem esta esteira verde. Ver docs/DEPLOYMENT.md secao 7.
 on:
   push:
-    branches: [v3, main]
+    branches: [main]
   pull_request:
-    branches: [v3]
-  # Disparo manual: em 2026-08-26 um push na v3 simplesmente NAO criou
+    branches: [main]
+  # Disparo manual: em 2026-08-26 um push na branch principal simplesmente NAO criou
   # execucao (so o check da Vercel apareceu no commit), deixando codigo no
   # repositorio sem esteira e uma migration sem aplicar no Supabase Dev.
   # Sem este gatilho, a unica saida seria um commit vazio so para acordar a
@@ -323,10 +323,10 @@ jobs:
     # `workflow_dispatch` entra junto de `push` porque sem ele o disparo manual
     # ficava pela metade -- foi o que aconteceu em 2026-08-26, quando um push
     # nao criou execucao e o dispatch de recuperacao rodou tudo MENOS aplicar a
-    # migration. Um dispatch na v3 e um ato deliberado de quem tem acesso ao
+    # migration. Um dispatch na main e um ato deliberado de quem tem acesso ao
     # repositorio, mesma confianca de um push.
     if: >-
-      github.ref == 'refs/heads/v3'
+      github.ref == 'refs/heads/main'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     # Uma execução por vez. Duas aplicando migration no mesmo banco em paralelo
@@ -428,7 +428,7 @@ jobs:
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
 
-      # D-334: migrations-producao.yml só aplica a partir da v3, com o ambiente
+      # D-334: migrations-producao.yml só aplica a partir da main, com o ambiente
       # travado (revisor e restrição de branch) e o mesmo commit já verde e já
       # aplicado no Dev. Uma guarda que só roda no dia de aplicar em produção
       # seria descoberta quebrada justamente nesse dia.

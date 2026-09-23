@@ -5,10 +5,10 @@
 # O que pula: previa de branch de feature no projeto de PRODUCAO
 # (speedbikers-prod). So isso. Continuam construindo:
 #
-#   - todo deploy do projeto do Dev (speedbikers-gestao-v2-m71j), que e onde
-#     a previa de PR e usada para revisar contra o banco do Dev;
-#   - no projeto de producao, a fix/guardas-prod-d348 (e a previa DELA que o
-#     dono promove para producao, D-348) e a v3;
+#   - todo deploy de qualquer outro projeto Vercel ligado a este repositorio
+#     (a regra so olha o projeto de producao, pelo VERCEL_PROJECT_ID);
+#   - no projeto de producao, a main (e a previa DELA que o
+#     dono promove para producao, D-348);
 #   - qualquer deploy de producao.
 #
 # Por que: medido em 17/09, o speedbikers-prod fazia ~45 builds por dia, 20
@@ -26,10 +26,10 @@ PROJETO_PRODUCAO="prj_P0cBsZLO50eoZ2OIbjFP0vqV9k6p"
 
 if [ "${VERCEL_PROJECT_ID:-}" = "${PROJETO_PRODUCAO}" ] && [ "${VERCEL_ENV:-}" = "preview" ]; then
   case "${VERCEL_GIT_COMMIT_REF:-}" in
-    fix/guardas-prod-d348 | v3 | "")
+    main | "")
       ;;
     *)
-      echo "speedbikers-prod: previa de '${VERCEL_GIT_COMMIT_REF}' nao e construida (so fix/guardas-prod-d348 e v3)."
+      echo "speedbikers-prod: previa de '${VERCEL_GIT_COMMIT_REF}' nao e construida (so a main)."
       exit 0
       ;;
   esac
