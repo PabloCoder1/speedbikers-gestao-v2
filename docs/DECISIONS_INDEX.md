@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **386** (D-001 a D-395).
+Decisões registradas: **387** (D-001 a D-396).
 
 ## Por domínio
 
@@ -350,7 +350,7 @@ Decisões registradas: **386** (D-001 a D-395).
 - **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
 - **D-384** — Pente fino, lote 2: Caixa de Entrada com faixa clicavel, busca, "Meus", mediacao e prazo com leitura; metricas de SAC ligadas a fila
 
-### worker/infra (76)
+### worker/infra (77)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -428,4 +428,5 @@ Decisões registradas: **386** (D-001 a D-395).
 - **D-390** — A marca do fornecedor sai de uma cascata de evidencia, e o importador passa a manter
 - **D-394** — Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
 - **D-395** — Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
+- **D-396** — Recuperacao de 90 dias de frete: um dia por pedaco na fila backfill, com o mesmo laco da varredura diaria
 

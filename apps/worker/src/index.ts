@@ -7,6 +7,7 @@ import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
 import { createEnqueuer } from "./enqueue.js";
 import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.js";
+import { createBackfillOrderFinancialsHandler } from "./handlers/backfill-order-financials.js";
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createCheckAiBudgetHandler } from "./handlers/check-ai-budget.js";
 import { createDetectSalesAnomalyActionsHandler } from "./handlers/detect-sales-anomaly-actions.js";
@@ -103,6 +104,15 @@ const app = createWorkerApp({
       mercadoLivre,
       oauth,
       encryptionKey,
+    }),
+    // D-396: os 90 dias de frete anteriores à varredura diária, um dia por
+    // pedaço, na fila `backfill` e auto-encadeado como `backfill.orders`.
+    "backfill.order-financials": createBackfillOrderFinancialsHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+      enqueuer,
     }),
     // D-352 (R2): fecha a pendencia do sinal do Full -- le o envio dos pedidos
     // com VENDA_ML sem estorno e grava o ESTORNO_FULL que falta.

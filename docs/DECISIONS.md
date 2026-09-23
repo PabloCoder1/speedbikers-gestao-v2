@@ -13972,3 +13972,27 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 **Nao verificado localmente:** o caminho feliz visual (meta cadastrada, barra de progresso), porque aplicar a migration no Supabase local compartilhado foi recusado pelo classificador do modo automatico. O e2e do cadastro pula num banco sem as tabelas e roda na CI, que aplica todas as migrations.
 
 **Impacto:** migration `20260923100100`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/central/{page,indicadores,meta}.tsx`, `apps/web/app/central/metas/{page,actions,formularios,loading}.tsx`, `apps/web/lib/{central-meta,metas-imposto,central-indicadores,faturamento}.ts` e testes, `apps/web/e2e/central.spec.ts`, `apps/web/app/globals.css`, `docs/{METRICS,DATABASE,PERFORMANCE,ROADMAP,HANDOFF,DECISIONS}.md`.
+
+## D-396 - Recuperacao de 90 dias de frete: um dia por pedaco na fila backfill, com o mesmo laco da varredura diaria
+
+**ATUALIZA D-165; nao a substitui.** D-165 decidiu "sem backfill alem da janela" porque nao havia L0 de onde reconstruir taxa. Para o FRETE isso nao vale: `GET /shipments/{id}/costs` responde para envios antigos, e em producao 100% dos pedidos validos dos ultimos 100 dias tem `orders.shipping_id` (medido em 23/09 -- o backfill de pedidos grava o campo). O que faltava era so rodar a captura para tras.
+
+**Contexto:** a Central do negocio (D-394/D-395) mediu o custo da decisao: resultado, margem e lucro apos imposto e Ads existem so nos pedidos com frete, e em producao o frete comeca em 14/09/2026 -- num periodo de 30 dias, ~30% da receita. O Ads da contribuicao e rateado por essa cobertura. O dono escolheu recuperar 90 dias (auditoria de D-394).
+
+**1. O DESENHO E O DE `backfill.orders`.**
+- fila `backfill` (1/s, 2 simultaneas), NUNCA a fila da conta: a sincronizacao em tempo real nao disputa com a historia, e a fila da conta aceita 10 simultaneas -- varios pedacos de uma conta nela bateriam no rate limit;
+- um DIA por pedaco: a maior conta vende ~330 pedidos por dia, duas chamadas por pedido com 150 ms entre pedidos, ~4 min por pedaco, folgado no timeout de 15 min do worker;
+- cada pedaco, ao terminar, enfileira o dia anterior ate o limite. Uma conta nunca tem dois pedacos ao mesmo tempo; duas contas rodam em paralelo pela concorrencia da fila;
+- progresso por existencia de linha (D-156): repetir pula o que ja foi gravado, inclusive o que a varredura diaria ja capturou.
+
+**2. O LACO DE CAPTURA E UM SO.** `capturarCustosDosPedidos` saiu de `sync-order-financials.ts` e serve aos dois jobs: 4xx definitivo grava NULL ("nao observado", nunca zero), resposta fora do contrato nao grava e e contada (D-229), 429/5xx propaga e a fila repete o pedaco. Os 11 testes da varredura diaria passaram sem mudanca depois da extracao.
+
+**3. O DISPARO E MANUAL, NAO AGENDADO.** `POST /internal/backfill/order-financials` (OIDC como as demais `/internal/*`), corpo opcional `{ dias, conta }`. O primeiro pedaco comeca onde a varredura diaria termina (agora - 7 dias). `conta` existe para ensaiar numa conta antes das outras. Deduplicado por conta + dia de inicio + dias.
+
+**4. O QUE NAO ENTRA.** Subsidio de frete e frete do comprador (`receiver`, descontos em `senders[]`) vem na mesma resposta de `/costs`, mas a forma nao foi conferida numa amostra real; gravar sem conferir seria inventar campo. Fica como item proprio no ROADMAP.
+
+**Custo estimado em producao:** ~69 mil pedidos validos entre 25/06 e 16/09 nas quatro contas, ~138 mil chamadas. Com dois pedacos simultaneos, ~6 h.
+
+**Verificacao:** 6 testes do job novo (pedaco de um dia, checkpoint, encadeamento, parada no limite, conta desconectada, 429 no meio preservando o gravado, payload invalido), 3 do disparo e 3 da rota; `check` e `build`.
+
+**Impacto:** `apps/worker/src/handlers/{backfill-order-financials,sync-order-financials}.ts` e testes, `apps/worker/src/index.ts`, `apps/api/src/{order-financials-backfill,app}.ts` e testes, `docs/{API,ROADMAP,HANDOFF,DECISIONS}.md`.

@@ -26,12 +26,11 @@
 
 SKU/ML;visitas;migração
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923100000` e `20260923100100`; próximas fatias na trilha 5J.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923100000` e `20260923100100`; D-396 recupera 90 dias de frete (`backfill.order-financials`, disparo manual). Próximas fatias na trilha 5J.
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
 
-`/atendimento/templates` (D-392): orçamento da caixa, busca, autor/data, duplicar.
 
 `/precos` está pronta para integração na branch de produção `main`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
