@@ -203,7 +203,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
       </Suspense>
 
-      <section id="ads" className="sb-ads" aria-label="Mercado Ads">
+      <section id="ads" className="sb-campanhas-ml" aria-label="Mercado Ads">
         <Suspense
           fallback={
             <Panel title="Mercado Ads — campanhas" subtitle="Carregando investimento e campanhas do período">

@@ -57,7 +57,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   if (resposta.error !== null) {
     return (
       <Panel title="Mercado Ads" subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
+        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
           Não foi possível carregar as campanhas: {resposta.error.message}
         </p>
       </Panel>
@@ -69,7 +69,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   if (visao === null) {
     return (
       <Panel title="Mercado Ads" subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-ads-aviso">
+        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
           A leitura das campanhas voltou fora do contrato esperado — nada é mostrado para não exibir número errado.
         </p>
       </Panel>
@@ -141,15 +141,15 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
           </p>
         ) : (
           <>
-            <div className="sb-ads-faixa">
+            <div className="sb-campanhas-ml-faixa">
               <KpiStrip cells={celulas} />
             </div>
 
-            <div className="sb-ads-corpo">
-              <div className="sb-ads-coluna">
-                <h3 className="sb-ads-titulo">Investimento × vendas por dia</h3>
+            <div className="sb-campanhas-ml-corpo">
+              <div className="sb-campanhas-ml-coluna">
+                <h3 className="sb-campanhas-ml-titulo">Investimento × vendas por dia</h3>
                 <BarrasAds dias={diario} />
-                <p className="sb-ads-nota">
+                <p className="sb-campanhas-ml-nota">
                   {formatCount(resumo.cliques)} cliques · {formatCount(resumo.impressoes)} impressões · CTR{" "}
                   {formatPercent(resumo.ctr)} · CPC {formatCurrency(resumo.cpc)} · {formatCount(resumo.unidades)} unidades
                   vendidas por Ads. ROAS é venda sobre investimento, não lucro: com margem de 20%, um ROAS abaixo de 5
@@ -157,11 +157,11 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
                 </p>
               </div>
 
-              <div className="sb-ads-coluna">
-                <h3 className="sb-ads-titulo">
+              <div className="sb-campanhas-ml-coluna">
+                <h3 className="sb-campanhas-ml-titulo">
                   Campanhas <small>por investimento</small>
                 </h3>
-                <ol className="sb-fat-lista sb-ads-lista" aria-label="Campanhas por investimento">
+                <ol className="sb-fat-lista sb-campanhas-ml-lista" aria-label="Campanhas por investimento">
                   {campanhas.map((campanha, indice) => {
                     const status = rotuloStatusCampanha(campanha.status);
                     const estrategia = rotuloEstrategia(campanha.estrategia);
@@ -173,7 +173,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
                         </span>
 
                         <span className="sb-fat-produto">
-                          <strong className="sb-ads-nome" title={campanha.nome}>
+                          <strong className="sb-campanhas-ml-nome" title={campanha.nome}>
                             {campanha.nome}
                           </strong>
                           <span className="sb-faturamento-sku">
@@ -210,7 +210,7 @@ function EstadoDasContas({ contas }: { contas: readonly ContaAds[] }): ReactNode
   if (pendentes.length === 0) return null;
 
   return (
-    <ul className="sb-ads-contas">
+    <ul className="sb-campanhas-ml-contas">
       {pendentes.map((conta) => (
         <li key={conta.ml_account_id}>
           <b>{conta.conta}</b>
@@ -238,19 +238,19 @@ function BarrasAds({ dias }: { dias: readonly DiaAds[] }): ReactNode {
   const altura = (valor: number): string => `${Math.max(valor > 0 ? 2 : 0, (valor / maximo) * 100).toFixed(1)}%`;
 
   return (
-    <div className="sb-ads-barras" role="img" aria-label="Investimento e vendas com Ads por dia">
+    <div className="sb-campanhas-ml-barras" role="img" aria-label="Investimento e vendas com Ads por dia">
       {dias.map((dia) => (
         <div
           key={dia.dia}
-          className="sb-ads-dia"
+          className="sb-campanhas-ml-dia"
           title={`${formatBusinessDate(dia.dia)} · investimento ${formatCurrency(dia.investimento)} · vendas ${formatCurrency(dia.receita_ads)}`}
         >
-          <i className="sb-ads-barra-venda" style={{ height: altura(dia.receita_ads) }} />
-          <i className="sb-ads-barra-custo" style={{ height: altura(dia.investimento) }} />
+          <i className="sb-campanhas-ml-barra-venda" style={{ height: altura(dia.receita_ads) }} />
+          <i className="sb-campanhas-ml-barra-custo" style={{ height: altura(dia.investimento) }} />
         </div>
       ))}
-      <span className="sb-ads-legenda" aria-hidden="true">
-        <i className="sb-ads-barra-venda" /> vendas com Ads <i className="sb-ads-barra-custo" /> investimento
+      <span className="sb-campanhas-ml-legenda" aria-hidden="true">
+        <i className="sb-campanhas-ml-barra-venda" /> vendas com Ads <i className="sb-campanhas-ml-barra-custo" /> investimento
       </span>
     </div>
   );
