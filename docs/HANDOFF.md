@@ -29,6 +29,11 @@ SKU/ML;visitas;migração
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
 
+`/atendimento/templates` (D-392): mede o ORÇAMENTO DA CAIXA (ocupação, selo
+`APERTADO` acima de 1.500), busca por nome e texto, autor/data, duplicar e o
+primeiro e2e da tela. Sem migration. A contagem de USO é da sessão de
+`/atendimento/perguntas`, dona do caminho de inserção; esta tela só vai ler.
+
 `/precos` está pronta para integração na branch de produção `main`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
 D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
