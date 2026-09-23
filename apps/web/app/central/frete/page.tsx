@@ -158,34 +158,36 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
             : `Só ${NIVEL[nivel].rotulo.toLowerCase()}.`
         }
       >
-        <div className="sb-frete-filtros">
-          <FilterPill href={hrefDoNivel(null)} active={nivel === null}>
-            Todos ({formatCount(detector.alertas.length)})
-          </FilterPill>
-          {NIVEIS_DA_LISTA.map((n) => (
-            <FilterPill key={n} href={hrefDoNivel(n)} active={nivel === n}>
-              {NIVEL[n].rotulo} ({formatCount(detector.resumo[n])})
+        <div className="sb-panel-body">
+          <div className="sb-frete-filtros">
+            <FilterPill href={hrefDoNivel(null)} active={nivel === null}>
+              Todos ({formatCount(detector.alertas.length)})
             </FilterPill>
-          ))}
-        </div>
-
-        {detector.alertas.length === 200 && (
-          <p className="sb-central-motivo">A lista mostra os 200 primeiros; os totais acima contam todos.</p>
-        )}
-
-        {alertas.length === 0 ? (
-          <p className="sb-empty">
-            {nivel === null
-              ? "Nenhum anúncio destoa: o frete de todos está dentro do próprio histórico, do mesmo produto, da categoria e da faixa de preço."
-              : "Nenhum anúncio neste nível."}
-          </p>
-        ) : (
-          <ol className="sb-frete-lista">
-            {alertas.map((alerta) => (
-              <CartaoDoAlerta key={`${alerta.anuncio}:${alerta.faixa}`} alerta={alerta} janela={janela} />
+            {NIVEIS_DA_LISTA.map((n) => (
+              <FilterPill key={n} href={hrefDoNivel(n)} active={nivel === n}>
+                {NIVEL[n].rotulo} ({formatCount(detector.resumo[n])})
+              </FilterPill>
             ))}
-          </ol>
-        )}
+          </div>
+
+          {detector.alertas.length === 200 && (
+            <p className="sb-central-motivo">A lista mostra os 200 primeiros; os totais acima contam todos.</p>
+          )}
+
+          {alertas.length === 0 ? (
+            <p className="sb-empty">
+              {nivel === null
+                ? "Nenhum anúncio destoa: o frete de todos está dentro do próprio histórico, do mesmo produto, da categoria e da faixa de preço."
+                : "Nenhum anúncio neste nível."}
+            </p>
+          ) : (
+            <ol className="sb-frete-lista">
+              {alertas.map((alerta) => (
+                <CartaoDoAlerta key={`${alerta.anuncio}:${alerta.faixa}`} alerta={alerta} janela={janela} />
+              ))}
+            </ol>
+          )}
+        </div>
       </Panel>
 
       <ComoDecide detector={detector} />
@@ -332,7 +334,7 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
       title="Como o detector decide"
       subtitle="Cinco comparações, cada uma de 0 a 3 pontos; o nível é a soma. Os números de cada motivo são os da própria comparação."
     >
-      <div className="sb-frete-metodo">
+      <div className="sb-panel-body sb-frete-metodo">
         <ul>
           <li>
             <strong>Histórico do anúncio</strong> — frete mediano dos últimos 14 dias contra o dos dias anteriores, na
