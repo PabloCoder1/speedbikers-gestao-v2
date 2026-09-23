@@ -12,6 +12,7 @@ import {
   type ContaAds,
   type DiaAds,
 } from "../../lib/ads";
+import { listarDatas } from "../../lib/central-indicadores";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 
 interface RespostaAds {
@@ -118,6 +119,9 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   ];
 
   const semNada = campanhas.length === 0;
+  // D-398: dias do período que chegaram com gasto e sem venda atribuída.
+  const diasDoPeriodo = new Set(diario.map((d) => d.dia));
+  const pendentes = visao.diasPendentes.filter((dia) => diasDoPeriodo.has(dia));
 
   return (
     <Panel
@@ -144,6 +148,13 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
             <div className="sb-campanhas-ml-faixa">
               <KpiStrip cells={celulas} />
             </div>
+
+            {pendentes.length > 0 && (
+              <p className="sb-campanhas-ml-nota" role="note">
+                Vendas com Ads de {listarDatas(pendentes)} ainda não consolidadas pelo Mercado Livre: nesses dias só o gasto
+                e os cliques chegaram. Vendas, ROAS e ACOS do período ficam abaixo do real até a próxima sincronização.
+              </p>
+            )}
 
             <div className="sb-campanhas-ml-corpo">
               <div className="sb-campanhas-ml-coluna">

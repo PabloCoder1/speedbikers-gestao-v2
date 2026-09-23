@@ -57,6 +57,12 @@ export interface CoberturaAds {
   readonly completa: boolean;
   /** Último dia com métrica, para a ressalva ("Ads até 21/09"). */
   readonly ate: string | null;
+  /**
+   * D-398: os dias do período com gasto que o Mercado Livre ainda não
+   * consolidou (venda atribuída pendente). Com algum, ROAS, ACOS e vendas com
+   * Ads não são julgados; o investimento continua valendo.
+   */
+  readonly pendentes: readonly string[];
 }
 
 export interface EntradaCentral {
@@ -92,15 +98,22 @@ export const AMOSTRA_MINIMA = 20;
 /** Diferença de cobertura acima da qual somas de pedidos cobertos deixam de ser comparáveis. */
 export const COBERTURA_TOLERADA = 0.05;
 
-/** O diário de Ads cobre `[from, to]` do primeiro ao último dia? */
-export function coberturaDoAds(diario: readonly DiaAds[], from: string, to: string): CoberturaAds {
-  if (diario.length === 0) return { completa: false, ate: null };
+/** O diário de Ads cobre `[from, to]` do primeiro ao último dia? E que dias dele a venda ainda não consolidou? */
+export function coberturaDoAds(
+  diario: readonly DiaAds[],
+  from: string,
+  to: string,
+  diasPendentes: readonly string[] = [],
+): CoberturaAds {
+  const pendentes = diasPendentes.filter((dia) => dia >= from && dia <= to);
+
+  if (diario.length === 0) return { completa: false, ate: null, pendentes };
 
   // O diário vem ordenado por dia da RPC; min/max aqui não soma nada.
   const primeiro = diario[0]?.dia ?? null;
   const ultimo = diario[diario.length - 1]?.dia ?? null;
 
-  return { completa: primeiro !== null && ultimo !== null && primeiro <= from && ultimo >= to, ate: ultimo };
+  return { completa: primeiro !== null && ultimo !== null && primeiro <= from && ultimo >= to, ate: ultimo, pendentes };
 }
 
 function cobertura(r: ResumoFaturamento): number | null {
@@ -217,6 +230,16 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
           : !e.coberturaAdsAnterior.completa
             ? "o período anterior não tem Ads de todos os dias"
             : null;
+
+  // A venda atribuída chega depois do gasto (D-398): com dia pendente, o que
+  // depende da venda espera; investimento e TACoS seguem com `semAds`.
+  const semVendasAds =
+    semAds ??
+    (e.coberturaAdsAtual.pendentes.length > 0
+      ? `vendas com Ads de ${listarDatas(e.coberturaAdsAtual.pendentes)} ainda não consolidadas pelo Mercado Livre`
+      : e.coberturaAdsAnterior.pendentes.length > 0
+        ? "o período anterior tem vendas com Ads ainda não consolidadas"
+        : null);
 
   const impA = e.impostoAtual;
   const impP = e.impostoAnterior;
@@ -467,7 +490,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
         comparado: valor(ads?.receita_ads ?? null, adsP?.receita_ads ?? null, "moeda", "maior-melhor"),
         ressalva: "atribuição do Mercado Livre",
       },
-      semAds,
+      semVendasAds,
       false,
     ),
     comparar(
@@ -482,7 +505,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
         comparado: valor(ads?.roas ?? null, adsP?.roas ?? null, "razao", "maior-melhor"),
         ressalva: "venda sobre investimento, não lucro",
       },
-      semAds,
+      semVendasAds,
       false,
     ),
     comparar(
@@ -497,7 +520,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
         comparado: fracao(ads?.acos ?? null, adsP?.acos ?? null, "menor-melhor"),
         ressalva: null,
       },
-      semAds,
+      semVendasAds,
       false,
     ),
     comparar(
@@ -541,6 +564,15 @@ function pontos(fracao: number): string {
 }
 
 const ROAS = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** "21/09/2026 e 22/09/2026": dias de negócio numa frase. */
+export function listarDatas(dias: readonly string[]): string {
+  const datas = dias.map(formatBusinessDate);
+
+  if (datas.length <= 1) return datas.join("");
+
+  return `${datas.slice(0, -1).join(", ")} e ${datas[datas.length - 1] ?? ""}`;
+}
 
 /** O mesmo formato de `/faturamento` (`campanhas-ads.tsx`): "4,20x". */
 export function formatRoas(roas: number | null): string {
@@ -782,6 +814,10 @@ export function montarResumo(
       }
 
       frase += ".";
+
+      if (rv === null && e.coberturaAdsAtual.pendentes.length > 0) {
+        frase += ` O ROAS espera as vendas com Ads de ${listarDatas(e.coberturaAdsAtual.pendentes)}, que o Mercado Livre ainda não consolidou.`;
+      }
 
       const tv = tacos?.variacao ?? null;
 

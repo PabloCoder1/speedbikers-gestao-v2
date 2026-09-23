@@ -14003,3 +14003,26 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 **Verificacao:** 8 testes de integracao com a conta feita a mao (um caso por sinal, exclusoes, igualdade de margem com `get_faturamento`, RLS e anon), 14 testes do leitor e dos motivos, e2e da tela e do painel; `check`, `build`, `docs:check`.
 
 **Impacto:** `supabase/migrations/20260923190000_detector_de_frete.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/lib/detector-frete{,.test}.ts`, `apps/web/app/central/{frete/*,sinal-frete.tsx,page.tsx}`, `apps/web/app/globals.css`, `apps/web/e2e/central.spec.ts`, `docs/{METRICS,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.
+
+## D-398 - Sinais de Ads por campanha na semana consolidada, e o dia de Ads que o Mercado Livre ainda nao consolidou fora dos julgamentos
+
+**Contexto:** o pedido do dono (D-394, secoes 9 a 12) quer um painel de Ads com CPC, CTR, conversao, CPA, lucro e margem depois do Ads; alertas (critico, ROAS abaixo da meta, atencao, escalando bem); recomendacoes pela combinacao dos sinais; e nunca "pause imediatamente". D-363 ja grava 90 dias de metricas por campanha.
+
+**1. O QUE FOI MEDIDO** (producao, 23/09, sync das 11h):
+- 65 campanhas nas 4 contas, 37 ativas, todas com `roas_target`, `acos_target` e `budget`, estrategia PROFITABILITY; 97 dias de metrica. O `budget` e **diario**: o gasto do dia bate exatamente nele;
+- **21/09 e 22/09 chegaram com gasto e cliques em todas as campanhas e venda zero** (22/09 tambem com impressao zero), enquanto 23/09, parcial, ja tinha venda. Nenhum dia mais antigo tem o padrao: a regravacao dos 90 dias corrige depois. Consequencia no que ja estava no ar: o ROAS de "ontem" saia zero e todo periodo ate ontem, subestimado, na central e no faturamento;
+- semana de 14 a 20/09: 51 campanhas com gasto, nenhuma sem venda nem com ROAS < 1, 7 abaixo de 80% da meta, **25 abaixo da meta por qualquer margem** (oscilacao normal de estrategia com alvo), 3 com CPC subindo e conversao caindo, 6 com gasto subindo e ROAS caindo, 6 no teto acima da meta.
+
+**2. DIA PENDENTE:** dia antes de hoje, com gasto, depois do ultimo dia com venda atribuida E impressao, somando as contas do recorte. `get_ads_overview` devolve `dias_pendentes` (campo opcional para a web, que chega antes da migration). A central nao compara vendas com Ads, ROAS nem ACOS com dia pendente no periodo e diz por que; investimento, TACoS e lucro apos Ads seguem, porque o gasto e conhecido. O faturamento avisa.
+
+**3. `get_sinais_ads`:** semana = 7 dias ate o ultimo consolidado, contra os 7 anteriores. Niveis na ordem: pausada (fora dos alertas: quem pausou ja agiu -- no prototipo, 16 campanhas pausadas gastaram na quinzena e duas cairiam em "abaixo da meta"), critico, abaixo da meta (80% da meta da propria campanha), atencao, oportunidade de escala, normal. CTR e conversao contra a **mediana das campanhas da empresa** na semana. Limiares em METRICS 5M.
+
+**4. MARGEM COMO PREMISSA:** a API nao diz que produtos cada campanha vendeu. O lucro estimado aplica a margem media da empresa na semana (apos imposto quando ha aliquota), e a tela diz isso em tres lugares (celula, tabela, metodo). Sem margem, nada e estimado. Em escala, margem apos Ads < 10% troca a sugestao por "nao aumentar antes de revisar custos".
+
+**5. O TOM:** "considere reduzir", "vale revisar", "avaliar pausa caso o comportamento permaneca", "evitar escalar por enquanto", "avaliar aumento gradual" -- o teste confere que nenhuma sugestao contem "pause".
+
+**Fora desta fatia:** conjunto, anuncio e produto (a API por anuncio foi desligada em 05/2026); orcamento historico por dia (so o da ultima leitura); calendario comercial.
+
+**Verificacao:** 4 testes de integracao novos (uma campanha por nivel com a conta feita a mao, a semana que fecha no ultimo dia consolidado, `dias_pendentes` de `get_ads_overview` contra o hoje real, RLS e anon) mais os 4 de D-363; 12 do leitor e dos textos; 4 novos da central (pendentes seguram ROAS e nao o lucro; frase do resumo); 1 do leitor de `get_ads_overview`; e2e da tela. Prototipo em producao: 5 abaixo da meta, 4 em atencao, 6 de escala, 20 normais e 16 pausadas, em 9 ms.
+
+**Impacto:** `supabase/migrations/20260923195000_sinais_de_ads.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/lib/{sinais-ads,ads,central-indicadores}.ts` e testes, `apps/web/app/central/{ads/*,sinal-ads.tsx,page.tsx,indicadores.tsx,sinal-frete.tsx,frete/page.tsx}`, `apps/web/app/faturamento/campanhas-ads.tsx`, `apps/web/app/globals.css` (cartoes de sinal renomeados de `sb-frete-*` para `sb-sinal-*`, compartilhados), `apps/web/e2e/central.spec.ts`, `docs/*`.

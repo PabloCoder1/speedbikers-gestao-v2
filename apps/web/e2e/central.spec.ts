@@ -167,3 +167,41 @@ test("/central/frete: resumo, filtro de nível e o caminho a partir da central",
   await frete.getByRole("link", { name: "Abrir o detector" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Detector de frete" })).toBeVisible();
 });
+
+/**
+ * Sinais de Ads (D-398): a central leva à tela, a tela abre sem erro e, com
+ * semana consolidada, mostra os níveis e a tabela. O seed não tem Ads, então o
+ * caminho normal aqui é o vazio com o motivo — estado legítimo.
+ */
+test("/central/ads: abre a partir da central, sem erro, com o motivo quando não há semana consolidada", async ({ page }) => {
+  await login(page, "/central");
+
+  await page.getByRole("link", { name: "Sinais de Ads", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Sinais de Ads" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a função de D-398");
+  }
+
+  await expect(page.getByText(/Não foi possível carregar os sinais de Ads/)).toHaveCount(0);
+  await expect(page.getByText(/formato que esta tela não reconhece/)).toHaveCount(0);
+
+  const vazio = page.getByText(/Nenhuma semana de Ads consolidada/);
+
+  if ((await vazio.count()) > 0) {
+    await expect(vazio).toBeVisible();
+
+    return;
+  }
+
+  await expect(page.locator(".sb-kpi-strip .sb-kpi-label")).toHaveText([
+    "Crítico",
+    "ROAS abaixo da meta",
+    "Atenção",
+    "Oportunidade de escala",
+    "ROAS da semana",
+    "Lucro estimado após Ads",
+  ]);
+  await expect(page.getByRole("region", { name: "Todas as campanhas da semana" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Como os sinais são decididos" })).toBeVisible();
+});

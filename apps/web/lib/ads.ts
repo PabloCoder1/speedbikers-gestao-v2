@@ -67,6 +67,12 @@ export interface VisaoAds {
   readonly diario: readonly DiaAds[];
   readonly contas: readonly ContaAds[];
   readonly sincronizadoEm: string | null;
+  /**
+   * D-398: dias fechados que o Mercado Livre publicou com gasto e sem venda
+   * atribuída — a venda chega na regravação seguinte. ROAS, ACOS e vendas com
+   * Ads desses dias ainda não valem. Vazio num banco sem a migration de D-398.
+   */
+  readonly diasPendentes: readonly string[];
 }
 
 type Obj = Record<string, unknown>;
@@ -151,7 +157,12 @@ export function lerVisaoAds(dado: unknown): VisaoAds | null {
     contas.push(item as unknown as ContaAds);
   }
 
-  return { resumo, campanhas, diario, contas, sincronizadoEm: dado.sincronizado_em };
+  // Opcional: a web chega à produção antes de a migration de D-398 passar pelo workflow.
+  const pendentes = dado.dias_pendentes ?? [];
+
+  if (!Array.isArray(pendentes) || !pendentes.every((d): d is string => typeof d === "string")) return null;
+
+  return { resumo, campanhas, diario, contas, sincronizadoEm: dado.sincronizado_em, diasPendentes: pendentes };
 }
 
 /**

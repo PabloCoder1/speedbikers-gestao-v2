@@ -299,6 +299,11 @@ describe("catálogo de métricas", () => {
       "atingimento_meta",
       "cobertura_historico_pedidos",
       "comissao_percentual",
+      // D-398 (METRICS 5M): os sinais de Ads.
+      "conversao_ads",
+      "cpa_ads",
+      "cpc_ads",
+      "ctr_ads",
       "custo_produtos_vendidos",
       "desconto_vendedor",
       "esperado_meta",
@@ -308,12 +313,14 @@ describe("catálogo de métricas", () => {
       "frete_vendedor",
       "imposto_estimado",
       "investimento_ads",
+      "lucro_estimado_apos_ads",
       "margem_apos_imposto",
       "margem_contribuicao",
       "margem_operacional_pedido",
       "margem_venda",
       "meta_diaria_necessaria",
       "nivel_anomalia_frete",
+      "nivel_sinal_ads",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
@@ -334,6 +341,7 @@ describe("catálogo de métricas", () => {
       "taxas_ml",
       "ticket_medio",
       "unidades_vendidas",
+      "uso_orcamento_ads",
       "valor_cancelado",
       // D-394 (METRICS 5I): a variação entre períodos da Central do negócio.
       "variacao_percentual_periodo",
@@ -15229,5 +15237,211 @@ describe("get_detector_frete (D-397)", () => {
     expect(outra[0]?.r.resumo).toMatchObject({ analisados: 0, forte: 0 });
     expect(outra[0]?.r.alertas).toEqual([]);
     await expect(asAnon(`select public.get_detector_frete('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/**
+ * Sinais de Ads (D-398): uma campanha por nível, com a conta feita à mão.
+ *
+ * Visto de 01/06/2023. 30 e 31/05 têm gasto e nenhuma venda (e 31/05 nenhuma
+ * impressão): são os dias que o Mercado Livre ainda não consolidou, e a semana
+ * fecha em 29/05 — atual 23 a 29/05, anterior 16 a 22/05. Por dia:
+ *
+ * | campanha | status | orçamento | meta | atual: gasto, venda, un., cliques, impressões | anterior        | nível          |
+ * |----------|--------|-----------|------|-----------------------------------------------|-----------------|----------------|
+ * | 920001   | ativa  | 20        | 10   | 10, 0, 0, 20, 1000                            | 10, 100, 1, …   | crítico        |
+ * | 920002   | ativa  | 100       | 10   | 50, 250, 1, 10, 10000 (CTR 0,1%)              | igual           | abaixo da meta |
+ * | 920003   | ativa  | 200       | 10   | 75, 900, 1, 25, 5000 (CPC 3, conv. 4%)        | 60, 900, 3, 30  | atenção        |
+ * | 920004   | ativa  | 50        | 10   | 50, 750, 2, 40, 8000 (no teto)                | igual           | escala         |
+ * | 920005   | pausada| 30        | 10   | 20, 0, 0, 10, 2000                            | igual           | pausada        |
+ * | 920006   | ativa  | 100       | 10   | 40, 440, 2, 30, 6000                          | igual           | normal         |
+ *
+ * CTR mediano 0,5% (0,1%, 0,5% ×4, 2%); conversão mediana 4,5% (0, 0, 4%, 5%,
+ * 6,7%, 10%). Semana: investimento 1.715, vendas 16.380, ROAS 9,55.
+ */
+describe("get_sinais_ads e dias pendentes de Ads (D-398)", () => {
+  const CONTA_SINAIS = "dddd9999-0000-4000-8000-0000000000b6";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de sinais','adstest-sinais','PENDING')
+       on conflict do nothing`,
+      [CONTA_SINAIS, ORG_SB],
+    );
+    await client.query(
+      `insert into public.ads_campaigns (organization_id, ml_account_id, campaign_id, name, status, strategy, budget, roas_target)
+       values ($1,$2,920001,'Crítica','active','PROFITABILITY',20,10),
+              ($1,$2,920002,'Abaixo da meta','active','PROFITABILITY',100,10),
+              ($1,$2,920003,'Atenção','active','PROFITABILITY',200,10),
+              ($1,$2,920004,'Escala','active','PROFITABILITY',50,10),
+              ($1,$2,920005,'Pausada','paused','PROFITABILITY',30,10),
+              ($1,$2,920006,'Normal','active','PROFITABILITY',100,10)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_SINAIS],
+    );
+    // As semanas: (campanha, gasto, venda, unidades, cliques, impressões) atual e anterior.
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount, total_amount, direct_units, indirect_units, units)
+       select $1, $2, c.campanha, d::date,
+              case when d::date >= date '2023-05-23' then c.cliques else c.cliques_ant end,
+              case when d::date >= date '2023-05-23' then c.impressoes else c.impressoes_ant end,
+              case when d::date >= date '2023-05-23' then c.gasto else c.gasto_ant end,
+              case when d::date >= date '2023-05-23' then c.venda else c.venda_ant end, 0,
+              case when d::date >= date '2023-05-23' then c.venda else c.venda_ant end,
+              case when d::date >= date '2023-05-23' then c.unidades else c.unidades_ant end, 0,
+              case when d::date >= date '2023-05-23' then c.unidades else c.unidades_ant end
+       from (values
+         (920001, 10, 0, 0, 20, 1000, 10, 100, 1, 20, 1000),
+         (920002, 50, 250, 1, 10, 10000, 50, 250, 1, 10, 10000),
+         (920003, 75, 900, 1, 25, 5000, 60, 900, 3, 30, 5000),
+         (920004, 50, 750, 2, 40, 8000, 50, 750, 2, 40, 8000),
+         (920005, 20, 0, 0, 10, 2000, 20, 0, 0, 10, 2000),
+         (920006, 40, 440, 2, 30, 6000, 40, 440, 2, 30, 6000)
+       ) as c(campanha, gasto, venda, unidades, cliques, impressoes, gasto_ant, venda_ant, unidades_ant, cliques_ant, impressoes_ant)
+       cross join generate_series(timestamp '2023-05-16', timestamp '2023-05-29', interval '1 day') d
+       on conflict do nothing`,
+      [ORG_SB, CONTA_SINAIS],
+    );
+    // 30 e 31/05: gasto sem venda (e 31/05 sem impressão) — o que o Mercado Livre ainda não consolidou.
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount, total_amount, direct_units, indirect_units, units)
+       values ($1,$2,920004,'2023-05-30',40,8000,50,0,0,0,0,0,0),
+              ($1,$2,920004,'2023-05-31',40,0,50,0,0,0,0,0,0),
+              ($1,$2,920006,'2023-05-31',30,0,40,0,0,0,0,0,0)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_SINAIS],
+    );
+    // Para get_ads_overview, que olha o hoje de verdade: anteontem e ontem pendentes, antes disso consolidado.
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount, total_amount, direct_units, indirect_units, units)
+       select $1, $2, 920006, (now() at time zone 'America/Sao_Paulo')::date - d.k, 30, d.impressoes, 40, d.venda, 0, d.venda, d.un, 0, d.un
+       from (values (3, 6000, 440, 2), (2, 6000, 0, 0), (1, 0, 0, 0), (0, 3000, 200, 1)) as d(k, impressoes, venda, un)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_SINAIS],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.daily_ads_campaign_metrics where ml_account_id = $1", [CONTA_SINAIS]);
+    await client.query("delete from public.ads_campaigns where ml_account_id = $1", [CONTA_SINAIS]);
+  });
+
+  interface Campanha {
+    campaign_id: number;
+    nivel: string;
+    roas: number | null;
+    uso_orcamento: number | null;
+    dias_no_teto: number;
+    cpc: number | null;
+    cpc_anterior: number | null;
+    conversao: number | null;
+    sinais: Record<string, boolean>;
+  }
+
+  interface Sinais {
+    janela: { inicio: string; fim: string; anterior_inicio: string; anterior_fim: string; dias_pendentes: string[] };
+    referencias: { ctr_mediano: number; conversao_mediana: number };
+    resumo: Record<string, number | null>;
+    campanhas: Campanha[];
+  }
+
+  async function sinais(usuario: string): Promise<Sinais> {
+    const rows = await asUser<{ r: Sinais }>(usuario, `select public.get_sinais_ads('${ORG_SB}', date '2023-06-01') as r`);
+    const linha = rows[0];
+
+    if (linha === undefined) throw new Error("get_sinais_ads não devolveu linha");
+
+    return linha.r;
+  }
+
+  function campanha(s: Sinais, id: number): Campanha {
+    const c = s.campanhas.find((x) => x.campaign_id === id);
+
+    if (c === undefined) throw new Error(`sem a campanha ${String(id)}`);
+
+    return c;
+  }
+
+  it("a semana fecha no último dia consolidado e diz quais dias ficaram pendentes", async () => {
+    const s = await sinais(ADMIN_SB);
+
+    expect(s.janela).toEqual({
+      inicio: "2023-05-23",
+      fim: "2023-05-29",
+      anterior_inicio: "2023-05-16",
+      anterior_fim: "2023-05-22",
+      dias_pendentes: ["2023-05-30", "2023-05-31"],
+    });
+    expect(s.referencias).toEqual({ ctr_mediano: 0.005, conversao_mediana: 0.045 });
+    expect(s.resumo).toMatchObject({
+      campanhas: 6,
+      critico: 1,
+      abaixo_meta: 1,
+      atencao: 1,
+      escala: 1,
+      normal: 1,
+      pausada: 1,
+      investimento: 1715,
+      receita_ads: 16380,
+      roas: 9.55,
+    });
+    expect(s.campanhas.map((c) => c.campaign_id)).toEqual([920001, 920002, 920003, 920004, 920006, 920005]);
+  });
+
+  it("um nível por campanha, com os sinais que o fizeram", async () => {
+    const s = await sinais(ADMIN_SB);
+
+    expect(campanha(s, 920001)).toMatchObject({ nivel: "critico", sinais: { sem_venda: true } });
+    expect(campanha(s, 920002)).toMatchObject({
+      nivel: "abaixo_meta",
+      roas: 5,
+      sinais: { abaixo_da_meta: true, ctr_baixo: true, conversao_baixa: false },
+    });
+    expect(campanha(s, 920003)).toMatchObject({
+      nivel: "atencao",
+      cpc: 3,
+      cpc_anterior: 2,
+      conversao: 0.04,
+      sinais: { cpc_sobe_conversao_cai: true, gasto_sobe_roas_cai: true, abaixo_da_meta: false },
+    });
+    expect(campanha(s, 920004)).toMatchObject({
+      nivel: "escala",
+      roas: 15,
+      uso_orcamento: 1,
+      dias_no_teto: 7,
+      sinais: { no_teto_acima_da_meta: true },
+    });
+    // Gastou sem vender, mas está pausada: quem pausou já agiu.
+    expect(campanha(s, 920005)).toMatchObject({ nivel: "pausada", sinais: { sem_venda: true } });
+    expect(campanha(s, 920006).nivel).toBe("normal");
+  });
+
+  it("get_ads_overview devolve os dias fechados que chegaram sem venda", async () => {
+    const [datas] = await asUser<{ anteontem: string; ontem: string }>(
+      ADMIN_SB,
+      `select to_char((now() at time zone 'America/Sao_Paulo')::date - 2, 'YYYY-MM-DD') as anteontem,
+              to_char((now() at time zone 'America/Sao_Paulo')::date - 1, 'YYYY-MM-DD') as ontem`,
+    );
+    const [linha] = await asUser<{ v: { dias_pendentes: string[] } }>(
+      ADMIN_SB,
+      `select public.get_ads_overview(current_date - 30, current_date, '${CONTA_SINAIS}') as v`,
+    );
+
+    expect(linha?.v.dias_pendentes).toEqual([datas?.anteontem, datas?.ontem]);
+  });
+
+  it("outra organização não vê campanha nenhuma; anon é recusado", async () => {
+    const outra = await asUser<{ r: Sinais }>(
+      DE_OUTRA_ORG,
+      `select public.get_sinais_ads('${ORG_SB}', date '2023-06-01') as r`,
+    );
+
+    expect(outra[0]?.r.campanhas).toEqual([]);
+    expect(outra[0]?.r.janela.fim).toBeNull();
+    await expect(asAnon(`select public.get_sinais_ads('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });
