@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
+import { Icone, type NomeDoIcone } from "../../components/icons";
 import { StatusPill } from "../../components/status-pill";
+import { tomDeStatus, type Tom } from "../../components/tone";
 import { formatDateTime } from "../../lib/format";
-import { eventTypeLabel, severityLabel } from "../../lib/labels";
+import { eventTypeLabel, severityLabel, statusTone } from "../../lib/labels";
 import { entityHref, entityLabel, formatEventDiff } from "../../lib/event-format";
 import { markNotificationRead } from "./actions";
 
@@ -16,6 +18,24 @@ import { markNotificationRead } from "./actions";
  *
  * Leitura de `before`/`after`/entidade compartilhada com os toasts em tempo
  * real (`lib/event-format.ts`, item 5) — mesmo evento, mesma leitura.
+ *
+ * ## O que D-393 mudou na LINHA, e por quê
+ *
+ * A lista tinha **uma** pista de severidade: a pílula de texto. Numa parede de
+ * cem linhas em que 25,4% da base é crítica e 60,4% é o mesmo aviso de rotina
+ * (`listing.available_quantity.changed`, medido no Dev), ler cem pílulas é o
+ * trabalho que a tela deveria poupar. Agora a severidade também é **a cor do
+ * fio à esquerda** e o tipo é um **ícone de família** — duas pistas que o olho
+ * pega sem ler, com a pílula intacta para quem lê e para o leitor de tela.
+ *
+ * **A cor nunca anda sozinha** (mesma regra de `status-pill.tsx`): o fio e o
+ * ícone repetem o que a pílula já diz em palavras, e o `aria-label` do `<li>`
+ * carrega estado e tipo. Nada aqui é informação que só existe em cor.
+ *
+ * **Aparência saiu do `style` e foi para `globals.css`**, endereçada por
+ * `data-state`/`data-tom`. Era `style` inline com `!important` do outro lado
+ * para o hover vencer; com atributo de dado, a folha manda sozinha — e cem
+ * linhas param de carregar cem objetos de estilo para o cliente.
  */
 
 export interface NotificationRowData {
@@ -30,6 +50,50 @@ export interface NotificationRowData {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   accountLabel: string | null;
+  /**
+   * "há 3 h" do FATO, já calculado NO SERVIDOR.
+   *
+   * Não é preciosismo: `formatAge` lê o relógio, e um componente cliente que o
+   * chamasse no render devolveria no navegador um texto diferente do que o
+   * servidor mandou — o descasamento de hidratação que o React acusa em
+   * vermelho. O instante absoluto continua no `<time>` ao lado; isto é só o
+   * atalho de leitura.
+   */
+  idade: string | null;
+}
+
+/**
+ * O ÍCONE POR FAMÍLIA — o prefixo antes do primeiro ponto do `event_type`.
+ *
+ * Fica aqui, e não em `lib/`, porque tem **um** consumidor. A regra de
+ * contenção do projeto (`docs/ARCHITECTURE.md` §1) é que algo vira peça
+ * compartilhada quando o segundo aparece; os toasts são o candidato natural, e
+ * o dia em que eles quiserem o mesmo ícone é o dia de mover isto para
+ * `lib/event-format.ts`, junto do resto da leitura de evento.
+ *
+ * Família desconhecida cai em `pulso` — genérico de propósito: inventar um
+ * ícone específico para um evento que ninguém catalogou seria afirmar sobre
+ * ele mais do que se sabe.
+ */
+function iconeDaFamilia(eventType: string): NomeDoIcone {
+  const familia = eventType.split(".")[0];
+
+  switch (familia) {
+    case "listing":
+      return "etiqueta";
+    case "stock":
+      return "caixa";
+    case "order":
+      return "carrinho";
+    case "support":
+      return "mensagem";
+    case "sync":
+      return "sincronizar";
+    case "ai":
+      return "lampada";
+    default:
+      return "pulso";
+  }
 }
 
 export function NotificationRow({ notification }: { notification: NotificationRowData }): ReactNode {
@@ -40,6 +104,15 @@ export function NotificationRow({ notification }: { notification: NotificationRo
   const isUnread = readAt === null;
   const diff = formatEventDiff(notification.eventType, notification.before, notification.after);
   const href = entityHref(notification.entityType, notification.entityId);
+  const rotulo = eventTypeLabel(notification.eventType);
+  const alvo = `${entityLabel(notification.entityType)} ${notification.entityId}`;
+
+  /*
+    O MESMO tom da pílula, pela MESMA função. `tone.ts` é o dono único dos
+    cinco tons desde D-246, e o fio à esquerda não pode ser a sexta cópia do
+    mapa — se um dia "importante" deixar de ser âmbar, as duas mudam juntas.
+  */
+  const tom: Tom = tomDeStatus(statusTone(notification.severity));
 
   async function handleMarkRead(): Promise<void> {
     setBusy(true);
@@ -62,63 +135,48 @@ export function NotificationRow({ notification }: { notification: NotificationRo
     <li
       className="sb-notification-row"
       data-state={isUnread ? "unread" : "read"}
-      aria-label={`${isUnread ? "Não lida" : "Lida"}: ${eventTypeLabel(notification.eventType)}`}
-      style={{
-        display: "flex",
-        gap: "var(--sb-space-3)",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderLeft: isUnread ? "3px solid var(--sb-primary)" : "3px solid transparent",
-        borderRadius: "var(--sb-radius)",
-        /*
-          NÃO LIDA é o cartão branco; LIDA recua para o chão (D-285).
-
-          A linha era `--sb-surface` contra `transparent`, e o passo cinza
-          deveria ligá-la sozinho — foi o que o item 8 da lista de
-          pré-requisitos prometeu. **Não ligou, e o motivo é a árvore:** a lista
-          mora DENTRO de um `.sb-panel` branco, então o `transparent` da lida
-          mostrava o painel, não o chão. Com `--sb-ground` explícito o recuo
-          existe, e o realce que estava escrito no código desde sempre aparece
-          na tela pela primeira vez.
-        */
-        background: isUnread ? "var(--sb-surface)" : "var(--sb-ground)",
-        marginBottom: "var(--sb-space-2)",
-      }}
+      data-tom={tom}
+      aria-label={`${isUnread ? "Não lida" : "Lida"}: ${rotulo}`}
     >
-        <div className="sb-notification-content" style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
+      <span className="sb-notification-icon" aria-hidden="true">
+        <Icone nome={iconeDaFamilia(notification.eventType)} tamanho={16} />
+      </span>
+
+      <div className="sb-notification-content">
+        <div className="sb-notification-head">
           <StatusPill code={notification.severity} label={severityLabel(notification.severity)} />
 
-          <span style={{ fontWeight: isUnread ? 700 : 500, fontSize: "0.875rem" }}>
-            {eventTypeLabel(notification.eventType)}
-          </span>
+          <span className="sb-notification-title">{rotulo}</span>
 
           {notification.accountLabel !== null && (
-            <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{notification.accountLabel}</span>
+            <span className="sb-notification-account">{notification.accountLabel}</span>
           )}
         </div>
 
-        <div style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}>
+        <p className="sb-notification-body">
           {href !== null ? (
-            <Link href={href} style={{ color: "var(--sb-primary)" }}>
-              {entityLabel(notification.entityType)} {notification.entityId}
+            <Link className="sb-notification-target" href={href}>
+              {alvo}
             </Link>
           ) : (
-            <span style={{ color: "var(--sb-text-soft)" }}>
-              {entityLabel(notification.entityType)} {notification.entityId}
-            </span>
+            <span className="sb-notification-target sb-notification-target-mudo">{alvo}</span>
           )}
 
-          {diff !== null && <span style={{ marginLeft: "0.5rem" }}>{diff}</span>}
-        </div>
+          {diff !== null && <span className="sb-notification-diff">{diff}</span>}
+        </p>
 
-        <div className="sb-notification-meta" style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+        <div className="sb-notification-meta">
+          {/* O instante do FATO, não o do aviso — a mesma escolha de `/acoes`
+              (a idade do fato, D-355). O cabeçalho do grupo acima diz o dia em
+              que a notificação CHEGOU, e os dois podem não ser o mesmo dia:
+              medido, 541 das 54.306 têm o fato num dia e a chegada em outro. */}
           <time dateTime={notification.occurredAt}>{formatDateTime(notification.occurredAt)}</time>
+          {notification.idade !== null && <span>{notification.idade}</span>}
           {!isUnread && <span className="sb-notification-read-state">Lida</span>}
         </div>
 
         {error !== null && (
-          <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+          <p role="alert" className="sb-notification-error">
             {error}
           </p>
         )}
@@ -126,14 +184,19 @@ export function NotificationRow({ notification }: { notification: NotificationRo
 
       {isUnread && (
         <button
-          className="sb-button"
+          className="sb-button sb-notification-mark"
           type="button"
           disabled={busy}
+          /* O nome acessível COMEÇA pelo texto visível (WCAG 2.5.3) e continua
+             com o que distingue este botão dos outros noventa e nove da
+             página — sem isso, um leitor de tela anuncia cem vezes a mesma
+             coisa e nenhuma delas diz qual. */
+          aria-label={`Marcar como lida: ${rotulo} — ${alvo}`}
           onClick={() => {
             void handleMarkRead();
-          }} style={{ alignSelf: "flex-start" }}
+          }}
         >
-          Marcar como lida
+          {busy ? "Marcando…" : "Marcar como lida"}
         </button>
       )}
     </li>

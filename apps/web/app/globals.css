@@ -1107,6 +1107,23 @@ body {
   grid-column: auto / -1;
 }
 
+/*
+  FAIXA DE TRÊS CÉLULAS NO DEGRAU DE DUAS COLUNAS (D-393, achado de captura).
+
+  A regra acima resolve a grade de cinco em três. Com TRÊS células em duas
+  colunas ela não alcança: `grid-column-end: -1` com início automático vale
+  span 1, então a terceira encosta na coluna 2 e deixa a coluna 1 vazia — um
+  buraco do tamanho de uma célula, visto na captura de `/notificacoes` a 390px.
+  Aqui a última ocupa a linha inteira, que é o que o comentário acima sempre
+  disse querer. `:has` limita o alcance à faixa que tem exatamente três: as de
+  quatro, cinco e seis continuam como estavam.
+*/
+@media (max-width: 850px) {
+  .sb-kpi-strip:has(> .sb-kpi:nth-child(3):last-child) > .sb-kpi:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
 .sb-kpi-strip-ancora .sb-kpi:first-child {
   /* `linear-gradient(135deg,#0E1259,#3F44A6)` do export, nos dois tokens. */
   background: linear-gradient(135deg, var(--sb-primary), var(--sb-secondary));
@@ -5446,22 +5463,232 @@ table {
   min-height: 2.25rem;
 }
 
-.sb-notification-list {
+/*
+ * CENTRAL DE NOTIFICAÇÕES (D-393).
+ *
+ * A linha tinha `style` inline e a folha precisava de `!important` para o
+ * hover vencer — dois donos do mesmo pixel. Agora o estado vive em atributo de
+ * dado (`data-state` = lida/não lida, `data-tom` = severidade) e a folha manda
+ * sozinha. De quebra, cem linhas param de mandar cem objetos de estilo para o
+ * cliente.
+ *
+ * **Nenhuma cor nova**: os cinco tons são os de `components/tone.ts`, que é o
+ * dono único deles desde D-246, lidos aqui pelos mesmos tokens.
+ */
+.sb-notification-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-3);
+  padding: var(--sb-space-2) var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+  border-bottom: 1px solid var(--sb-table-rule);
+  background: var(--sb-bg-soft);
+}
+
+.sb-notification-limpar {
+  margin-left: auto;
+}
+
+.sb-notification-dias {
+  display: grid;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-3);
+}
+
+.sb-notification-dia {
   display: grid;
   gap: var(--sb-space-2);
 }
 
+/*
+ * O CABEÇALHO DO DIA — e o dia é o da CHEGADA, não o do fato.
+ *
+ * A sobrancelha monoespaçada é a mesma forma de `.sb-eyebrow`: numa parede
+ * cronológica, o que o olho procura primeiro é "de quando é isto", e a
+ * alternância mono/sans é o que dá a cara do desenho (Design Contract).
+ */
+.sb-notification-dia-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  margin: 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--sb-table-rule);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sb-secondary);
+}
+
+.sb-notification-dia-conta {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--sb-muted-ink);
+}
+
+.sb-notification-list {
+  display: grid;
+  gap: var(--sb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .sb-notification-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-left-width: 3px;
+  border-radius: var(--sb-radius);
   transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.sb-notification-row:hover {
-  border-color: color-mix(in srgb, var(--sb-secondary) 45%, var(--sb-border)) !important;
-  box-shadow: 0 3px 10px rgb(15 17 88 / 5%);
+/*
+ * NÃO LIDA é o cartão branco; LIDA recua para o chão (D-285).
+ *
+ * O `transparent` da lida mostrava o PAINEL, não o chão — a lista mora dentro
+ * de um `.sb-panel` branco —, e por isso o realce que estava escrito no código
+ * desde sempre nunca apareceu na tela. Com `--sb-ground` explícito ele existe.
+ */
+.sb-notification-row[data-state="unread"] {
+  background: var(--sb-surface);
+}
+
+.sb-notification-row[data-state="read"] {
+  background: var(--sb-ground);
 }
 
 .sb-notification-row[data-state="read"] .sb-notification-content {
   opacity: 0.82;
+}
+
+.sb-notification-row:hover {
+  border-color: color-mix(in srgb, var(--sb-secondary) 45%, var(--sb-border));
+  box-shadow: 0 3px 10px rgb(15 17 88 / 5%);
+}
+
+/*
+ * O FIO DA ESQUERDA É A SEVERIDADE, e nunca a única pista dela: a pílula de
+ * texto continua na linha e o `aria-label` do item carrega estado e tipo. Cor
+ * sozinha não informa — cerca de 8% dos homens não distinguem vermelho de
+ * verde, e a regra vale aqui como vale em `status-pill.tsx`.
+ *
+ * `informativo` cai no tom neutro de propósito: é o nível que NÃO deve
+ * competir visualmente com importante e crítico, a mesma decisão que
+ * `statusTone` já tomava devolvendo `null` para ele.
+ */
+.sb-notification-row[data-tom="perigo"] {
+  border-left-color: var(--sb-danger);
+}
+
+.sb-notification-row[data-tom="atencao"] {
+  border-left-color: var(--sb-accent-ink);
+}
+
+.sb-notification-row[data-tom="ok"] {
+  border-left-color: var(--sb-success);
+}
+
+.sb-notification-row[data-tom="info"] {
+  border-left-color: var(--sb-secondary);
+}
+
+.sb-notification-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+}
+
+.sb-notification-row[data-tom="perigo"] .sb-notification-icon {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-notification-row[data-tom="atencao"] .sb-notification-icon {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-notification-row[data-tom="ok"] .sb-notification-icon {
+  background: var(--sb-success-soft);
+  color: var(--sb-success);
+}
+
+.sb-notification-row[data-tom="info"] .sb-notification-icon {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-notification-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+}
+
+.sb-notification-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.sb-notification-row[data-state="unread"] .sb-notification-title {
+  font-weight: 700;
+}
+
+.sb-notification-account {
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sb-muted-ink);
+}
+
+.sb-notification-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.sb-notification-target {
+  color: var(--sb-primary);
+  font-weight: 500;
+}
+
+.sb-notification-target-mudo {
+  color: var(--sb-text-soft);
+  font-weight: 400;
+}
+
+/* O antes → depois em mono: é número comparado a número, e a largura fixa do
+   dígito é o que deixa os dois lados alinhados na vertical entre linhas. */
+.sb-notification-diff {
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-text-soft);
 }
 
 .sb-notification-meta {
@@ -5469,6 +5696,14 @@ table {
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-notification-meta time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .sb-notification-read-state {
@@ -5490,6 +5725,145 @@ table {
   content: "";
 }
 
+.sb-notification-error {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--sb-danger);
+}
+
+.sb-notification-mark {
+  flex: none;
+  align-self: flex-start;
+}
+
+/*
+ * A CONFIRMAÇÃO DA ESCRITA EM LOTE — vinda do trabalho aberto no PR #53 e
+ * preservada inteira. Um clique que marca milhares de linhas é irreversível
+ * pela interface: o número vem antes do "Confirmar", e o recorte vem junto.
+ */
+.sb-notification-mark-all-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+  font-size: 0.6875rem;
+  color: var(--sb-primary);
+}
+
+.sb-notification-mark-all-nota {
+  width: 100%;
+  color: var(--sb-text-soft);
+  font-size: 0.625rem;
+}
+
+.sb-notification-mark-all-error {
+  width: 100%;
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-danger);
+}
+
+.sb-notification-error-bloco {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-danger-soft);
+}
+
+.sb-notification-error-bloco > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  color: var(--sb-danger-ink);
+}
+
+.sb-notification-error-bloco > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-notification-error-bloco strong {
+  color: var(--sb-primary);
+}
+
+.sb-notification-error-bloco p {
+  margin: 0.25rem 0 0;
+  max-width: 42rem;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+}
+
+.sb-notification-vazio {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 7rem;
+  padding: var(--sb-space-4);
+}
+
+.sb-notification-vazio > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--sb-radius);
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-notification-vazio > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-notification-vazio strong {
+  color: var(--sb-primary);
+}
+
+.sb-notification-vazio p {
+  margin: 0.25rem 0 0;
+  max-width: 42rem;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+}
+
+.sb-notification-vazio-pagina {
+  margin: 0 0 var(--sb-space-3);
+  color: var(--sb-text-soft);
+  font-size: 0.75rem;
+}
+
+.sb-notification-paginador {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+  margin-top: var(--sb-space-3);
+}
+
+/* "Página 3 de 544" — o paginador não salta para página arbitrária, mas quem
+   está na 3 precisa saber que existem 544. O número é o mesmo da janela. */
+.sb-notification-pagina {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--sb-muted-ink);
+}
+
 @media (max-width: 600px) {
   .sb-copilot-contract {
     padding: 0.625rem 0.75rem;
@@ -5505,12 +5879,22 @@ table {
 
   .sb-notification-row {
     flex-direction: column;
-    gap: var(--sb-space-2) !important;
+    gap: var(--sb-space-2);
   }
 
-  .sb-notification-row > .sb-button {
-    align-self: stretch !important;
+  /* O `!important` caiu junto com o `style` inline da linha (D-393): sem dois
+     donos do mesmo pixel, a media query vence por ordem, como deve. */
+  .sb-notification-mark {
+    align-self: stretch;
     justify-content: center;
+  }
+
+  .sb-notification-dias {
+    padding: var(--sb-space-2);
+  }
+
+  .sb-notification-limpar {
+    margin-left: 0;
   }
 }
 
