@@ -114,3 +114,177 @@ test("/configuracoes: a faixa conta as sete seções, e as partes fecham com o t
   // Leitura que falha não vira "não configurado" (D-067).
   expect(indisponiveis).toBe(0);
 });
+
+/**
+ * O CELULAR NÃO ROLA PARA O LADO — e quem rola aqui é o `.sb-content`, não o
+ * `<html>`.
+ *
+ * A varredura de D-383 abriu as 48 telas a 390px e registrou "nenhuma com
+ * rolagem lateral no celular"; esta tinha 340 contra 332 de caixa útil. O
+ * `<html>` fica do tamanho da janela — quem tem `overflow: auto` é o
+ * `<main>` —, então medir o documento, que é o que o caso de
+ * /estoque/[skuId]/ajuste faz, não alcança este defeito: o piso rígido da
+ * grade transbordava DENTRO do `.sb-content`.
+ */
+test("/configuracoes: em 390px a tela não rola para o lado", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 812 });
+
+  await login(page, "/configuracoes");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Configurações" })).toBeVisible();
+  // A grade só se mede depois que os cartões chegaram.
+  await expect(page.getByRole("region", { name: "Reposição" })).toBeVisible();
+
+  const largura = await page.locator(".sb-content").evaluate((elemento) => ({
+    rolagem: elemento.scrollWidth,
+    visivel: elemento.clientWidth,
+  }));
+
+  expect(largura.rolagem).toBeLessThanOrEqual(largura.visivel);
+});
+
+/**
+ * A ORDEM POR ZONA — a única coisa desta fatia que só se prova RODANDO.
+ *
+ * `describeSettings` devolve na ordem do ROADMAP (Organização primeiro,
+ * Reposição em segundo, e o teste de unidade prende isso). A TELA imprime por
+ * presença de configuração: com o seed — nenhuma política de reposição e a
+ * organização com nome —, Reposição está na zona "FALTA CONFIGURAR" e
+ * Organização na "COM CONFIGURAÇÃO", então a segunda do array aparece ACIMA da
+ * primeira. Comparar `y` é o que distingue reordenar de só rotular.
+ */
+test("/configuracoes: a área sem configuração aparece ACIMA da área que já tem", async ({ page }) => {
+  await login(page, "/configuracoes");
+
+  // Nome exato, nunca substring: "Configuradas" mora dentro de "Não
+  // configuradas", e é assim que o locator já pegou duas células uma vez.
+  await expect(page.getByRole("region", { name: "FALTA CONFIGURAR", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "COM CONFIGURAÇÃO", exact: true })).toBeVisible();
+
+  const semConfiguracao = page.getByRole("region", { name: "Reposição" });
+  const comConfiguracao = page.getByRole("region", { name: "Organização" });
+
+  // A premissa de cada uma, dita antes de comparar: sem isto um seed diferente
+  // faria este caso falhar sem explicar por quê.
+  await expect(semConfiguracao.getByText("Não configurado")).toBeVisible();
+  await expect(comConfiguracao.getByText("Configurado", { exact: true })).toBeVisible();
+
+  const caixaSemConfiguracao = await semConfiguracao.boundingBox();
+  const caixaComConfiguracao = await comConfiguracao.boundingBox();
+
+  if (caixaSemConfiguracao === null || caixaComConfiguracao === null) {
+    throw new Error("as duas regiões precisam estar visíveis para comparar a ordem na tela");
+  }
+
+  expect(caixaSemConfiguracao.y).toBeLessThan(caixaComConfiguracao.y);
+});
+
+/**
+ * "INCLUI:" É O VOCABULÁRIO DA TELA DONA, caractere a caractere.
+ *
+ * `check:settings-vocabulary` confere que os termos existem em
+ * `/reposicao/configuracoes`; este caso confere a outra ponta — que eles
+ * chegam à tela, na linha do cartão certo. Os dois juntos fecham o ciclo: a
+ * guarda fica vermelha se a tela dona renomear o rótulo, e este caso fica
+ * vermelho se o hub parar de imprimi-lo.
+ */
+test("/configuracoes: o cartão diz o que a área abrange, com a palavra da tela dona", async ({ page }) => {
+  await login(page, "/configuracoes");
+
+  const inclui = page.getByRole("region", { name: "Reposição" }).locator(".sb-settings-inclui");
+
+  await expect(inclui).toHaveText("Inclui: Prazo do fornecedor, Cobertura desejada, Segurança, Teto.");
+});
+
+/**
+ * O ADMIN ÚNICO É DITO NO CARTÃO, e é o único risco operacional que o seed
+ * tem.
+ *
+ * O seed monta DOIS membros (o ADMIN do login e o GESTOR de D-232) e um ADMIN
+ * só — `usuarios.spec.ts` afirma as mesmas duas pessoas. A condição do aviso é
+ * exatamente essa: um ADMIN com mais gente na organização. Com `members_total`
+ * igual a 1 o aviso não dispararia (seria o dono sozinho, e aviso sem ação vira
+ * mobília) e este caso teria de virar o de "Quem altera" em segunda pessoa.
+ *
+ * O aviso NÃO leva `role="alert"` de propósito — é estado permanente da
+ * página, não evento —, então o que se localiza é o parágrafo do cartão.
+ */
+test("/configuracoes: o ADMIN único da organização é dito no cartão, com a saída", async ({ page }) => {
+  await login(page, "/configuracoes");
+
+  const organizacao = page.getByRole("region", { name: "Organização" });
+
+  await expect(organizacao.getByText("2 membros, 1 ADMIN")).toBeVisible();
+
+  const aviso = organizacao.locator(".sb-settings-aviso");
+
+  await expect(aviso).toBeVisible();
+  await expect(aviso).toHaveText(/^Só uma pessoa é ADMIN\./);
+
+  /*
+    O seed tem um GESTOR, e GESTOR escreve na reposição
+    (`replenishment_settings_*_admin` usa ADMIN e GESTOR): a frase não pode
+    dizer que sem ADMIN "ninguém altera reposição". É justamente o seed que a
+    tornava falsa.
+  */
+  await expect(aviso).not.toHaveText(/reposição/);
+
+  // A regra da frase: termina na ação e na tela onde ela se faz. Alarme que o
+  // dono não pode apagar vira mobília. Quem entra no seed é ADMIN — por isso
+  // a ação, e não o "peça a um ADMIN que…" de quem não pode promover.
+  await expect(aviso).toHaveText(/promova um segundo ADMIN em Usuários\.$/);
+  await expect(organizacao.getByRole("link", { name: "Usuários" })).toBeVisible();
+});
+
+/**
+ * O VEREDITO DO SUBTÍTULO E A FAIXA SÃO UM PLACAR SÓ.
+ *
+ * O subtítulo contava a zona 1 inteira como "não têm configuração", e a faixa
+ * separava "Não configuradas" de "Parciais": com uma conta ML fora, os dois
+ * discordavam na mesma dobra. Aqui a asserção não depende do seed — lê os
+ * dois números da faixa e exige que o subtítulo diga exatamente esses, com as
+ * mesmas palavras. As combinações (0, 1, N e parcial) estão no teste de
+ * unidade de `vereditoDe`; este caso prova a FIAÇÃO na tela.
+ */
+test("/configuracoes: o veredito do subtítulo diz os mesmos números que a faixa", async ({ page }) => {
+  await login(page, "/configuracoes");
+
+  const faixa = page.locator(".sb-kpi-strip");
+  const valor = async (rotulo: string): Promise<number> =>
+    Number(
+      await faixa
+        .locator(".sb-kpi")
+        .filter({ has: page.locator(".sb-kpi-label", { hasText: new RegExp(`^${rotulo}$`) }) })
+        .locator(".sb-kpi-value")
+        .innerText(),
+    );
+
+  const naoConfiguradas = await valor("Não configuradas");
+  const parciais = await valor("Parciais");
+
+  // O veredito é o `<strong>` do subtítulo, logo abaixo do h1.
+  const veredito = (
+    await page
+      .locator(".sb-page-title")
+      .filter({ has: page.getByRole("heading", { level: 1, name: "Configurações" }) })
+      .locator("p strong")
+      .innerText()
+  ).trim();
+
+  if (naoConfiguradas === 0 && parciais === 0) {
+    expect(veredito).toBe("As 7 áreas têm configuração.");
+    return;
+  }
+
+  if (naoConfiguradas > 0) {
+    expect(veredito).toMatch(new RegExp(`^${String(naoConfiguradas)} das 7 áreas ainda não (tem|têm) configuração`));
+  } else {
+    expect(veredito).not.toContain("ainda não");
+  }
+
+  if (parciais > 0) {
+    expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das 7 áreas )?(tem|têm) configuração parcial\\.$`));
+  } else {
+    expect(veredito).not.toContain("parcial");
+  }
+});
