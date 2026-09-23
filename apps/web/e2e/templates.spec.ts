@@ -132,3 +132,22 @@ test("templates: o texto longo avisa que não cabe junto de um rascunho", async 
 
   await apagar(page, nomeLongo);
 });
+
+test("templates: a busca do topo acha a tela, que não está na barra lateral", async ({ page }) => {
+  await login(page, "/");
+
+  // A tela não é item de menu — é onde se MANTÉM o texto, não uma tela de
+  // operação do dia. Quem sabe o nome dela precisa achá-la digitando, e até a
+  // D-392 a busca não a conhecia.
+  await page.getByRole("button", { name: /Buscar SKU, anúncio, NF-e/ }).click();
+
+  const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
+  const campo = caixa.getByRole("combobox", { name: "Buscar" });
+
+  await campo.fill("templates");
+  await expect(caixa.getByRole("option", { name: /Templates de resposta/ })).toBeVisible();
+  await campo.press("Enter");
+
+  await expect(page).toHaveURL(/\/atendimento\/templates$/);
+  await expect(page.getByRole("heading", { name: "Templates de resposta", level: 1 })).toBeVisible();
+});
