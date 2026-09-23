@@ -109,6 +109,7 @@ export default async function ContasPage(): Promise<ReactNode> {
       value: formatCount(attentionCount),
       previous: null,
       tom: "neutro",
+      ...(attentionCount > 0 ? { destaque: "atencao" as const } : {}),
     },
     {
       label: "Requerem atenção",
@@ -116,6 +117,7 @@ export default async function ContasPage(): Promise<ReactNode> {
       value: formatCount(errorCount),
       previous: null,
       tom: "neutro",
+      ...(errorCount > 0 ? { destaque: "perigo" as const } : {}),
     },
   ];
 
@@ -214,7 +216,12 @@ export default async function ContasPage(): Promise<ReactNode> {
             const credencialParada = conectada && account.token_expired === true;
 
             return (
-              <section className="sb-account-card" key={account.id} aria-label={account.label}>
+              <section
+                className="sb-account-card"
+                key={account.id}
+                aria-label={account.label}
+                style={{ ["--sb-account-accent" as string]: TOM[tone.tom].color }}
+              >
                 <div className="sb-account-head">
                   <span className="sb-account-logo" aria-hidden="true">
                     ML
@@ -297,7 +304,11 @@ export default async function ContasPage(): Promise<ReactNode> {
                 <footer>
                   {/* O "Ver saúde da conta →" do frame, apontando para a tela
                       DONA do frescor por conta (D-224: um dado, um dono). */}
-                  <Link href="/sincronizacao" className="sb-account-health-link">
+                  <Link
+                    href="/sincronizacao#contas"
+                    className="sb-account-health-link"
+                    aria-label={`Ver saúde da conta ${account.label}`}
+                  >
                     Ver saúde da conta →
                   </Link>
 
