@@ -6101,7 +6101,7 @@ export type Database = {
         }
       }
       // CORRECAO MANUAL (classe D-213): bloco escrito a mao no formato do
-      // gerador -- a migration `20260923150000_notificacoes_triagem` (D-393) so
+      // gerador -- a migration `20260923170000_notificacoes_triagem` (D-393) so
       // existe no repositorio ate a CI aplica-la no Dev, e a CLI nao regenera
       // este arquivo antes disso. Os tres argumentos sao anulaveis COM
       // significado ("sem recorte nesta dimensao"), a classe de D-133.

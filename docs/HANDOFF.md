@@ -25,7 +25,7 @@
 ### O que está pronto
 
 `/notificacoes` (D-393): triagem por severidade/família/conta; 556 ms → 63 ms; migration
-`20260923150000`. PR #53 mexe nos mesmos arquivos.
+`20260923170000` (saiu de `150000`, já usado no Dev). PR #53 mexe nos mesmos arquivos.
 
 `/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. Próxima: notificação dos alertas (5J), depois do #77.
 
