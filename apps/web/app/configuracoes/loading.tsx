@@ -1,17 +1,26 @@
 import type { ReactNode } from "react";
 
+import { CarregandoTela } from "../../components/carregando";
+
 /**
- * O carregamento de `/configuracoes`, com a FORMA DESTA tela.
+ * O carregamento de `/configuracoes`, com a FORMA DESTA tela DENTRO da
+ * moldura do app.
  *
- * As outras pastas reexportam `app/loading.tsx`, e por baixo dele mora
+ * **A moldura é a de `CarregandoTela`, e não é opcional.** O `Shell` mora
+ * dentro de cada página, não num layout (`app/layout.tsx` só tem o `<body>`):
+ * o `loading.tsx` de uma pasta é o fallback de Suspense que substitui a
+ * página INTEIRA. Um esqueleto só com o miolo apagava a sidebar e a barra
+ * superior a cada clique em "Configurações" — tela em branco nos primeiros
+ * 350ms (`.sb-carregando-revela` nasce transparente) e depois um esqueleto
+ * colado na borda, sem o `padding` do `.sb-content`, com a grade calculando
+ * cinco colunas na largura da janela em vez de três na do conteúdo.
+ *
+ * **O miolo é desta tela.** Por baixo das outras pastas mora
  * `CarregandoConteudo`: título, faixa de QUATRO células e UM painel com seis
  * linhas de tabela. Esta tela tem seis células, duas ou três zonas rotuladas e
- * sete cartões em grade — o salto de layout não era risco, era certeza: a
- * faixa mudava de largura por célula e a tabela inteira virava grade.
- *
- * O idioma é o mesmo de `components/carregando.tsx` (`.sb-esqueleto`,
- * `.sb-carregando-revela`, `role="status"`), e o componente compartilhado não
- * é tocado: ele veste 49 telas e a forma específica de uma não é assunto dele.
+ * sete cartões em grade — o salto de layout era certeza. Quem veste a moldura
+ * é o componente compartilhado, que recebe este miolo como `children`; as
+ * outras 49 telas continuam recebendo o genérico, sem mudança.
  *
  * **Não inventa dado.** Nenhuma barra carrega número, rótulo ou contagem; o
  * que ela reproduz é a GEOMETRIA — quantas células, quantas colunas, quantas
@@ -81,7 +90,7 @@ function Zona({ cartoes }: { cartoes: number }): ReactNode {
   );
 }
 
-export default function Loading(): ReactNode {
+function Miolo(): ReactNode {
   return (
     <div className="sb-carregando" role="status">
       <span className="sb-sr-only">Carregando as configurações…</span>
@@ -110,5 +119,13 @@ export default function Loading(): ReactNode {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Loading(): ReactNode {
+  return (
+    <CarregandoTela>
+      <Miolo />
+    </CarregandoTela>
   );
 }
