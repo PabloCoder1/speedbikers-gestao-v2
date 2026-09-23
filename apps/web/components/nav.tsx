@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Icone, type NomeDoIcone } from "./icons";
 
@@ -190,6 +190,43 @@ function gravarRecolhidos(recolhidos: ReadonlySet<string>): void {
   }
 }
 
+/**
+ * A ROLAGEM do menu, guardada FORA do componente.
+ *
+ * O `Shell` mora dentro de cada página — e o esqueleto de `carregando.tsx`
+ * redesenha a mesma moldura —, então toda navegação desmonta esta `<nav>` e
+ * monta outra no lugar. A nova nasce no topo, e era isso que jogava a lista
+ * para cima a cada clique: quem escolhia "Configurações", no fim do menu, caía
+ * na tela certa mas com o menu no começo; se a tela era a errada, tinha que
+ * descer tudo de novo para corrigir.
+ *
+ * Um módulo vive enquanto a ABA vive: o valor atravessa a troca de tela e morre
+ * no recarregamento, que é justamente quando começar do topo é o certo. Não é
+ * `localStorage` (a preferência de recolhimento é, e por isso tem chave): a
+ * posição da barra é do momento, não uma escolha para lembrar amanhã.
+ */
+let rolagemDoMenu = 0;
+
+/**
+ * Guarda a posição — MENOS quando quem a mudou foi o navegador.
+ *
+ * Entre uma tela e outra passa o esqueleto de `carregando.tsx`, e o menu dele
+ * não conhece o PAPEL: os itens de ADMIN ficam de fora por esse instante, a
+ * lista encurta e o navegador apara a rolagem para o novo fim. Isso dispara um
+ * `scroll` como qualquer outro — medido, o menu voltava 119px a cada clique,
+ * que é a altura dos dois itens que faltavam.
+ *
+ * A regra separa os dois casos: encurtou (a rolagem parou no fim da lista e
+ * é MENOR do que a guardada) não sobrescreve nada. Guardar um valor grande
+ * demais não faz mal — ele volta a ser aparado na hora de repor, e aparado no
+ * fim é exatamente onde a pessoa estava.
+ */
+function guardarRolagem(menu: HTMLElement): void {
+  const noFim = menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 1;
+
+  if (!noFim || menu.scrollTop > rolagemDoMenu) rolagemDoMenu = menu.scrollTop;
+}
+
 export function SidebarNav({
   contagens,
   papel,
@@ -205,10 +242,35 @@ export function SidebarNav({
   const pathname = usePathname();
   const ehAdmin = papel === "ADMIN";
   const [recolhidos, setRecolhidos] = useState<ReadonlySet<string>>(() => new Set());
+  const menu = useRef<HTMLElement | null>(null);
+
+  /**
+   * Repõe a posição na MESMA pintura em que a `<nav>` entra no DOM.
+   *
+   * É `ref` de função e não `useEffect` de propósito: o efeito roda depois do
+   * navegador desenhar, e o menu apareceria no topo por um quadro antes de
+   * pular para o lugar — trocaria um salto por um tremor. A `ref` roda na
+   * montagem, antes da pintura, e a lista já nasce onde estava.
+   */
+  const fixarMenu = useCallback((elemento: HTMLElement | null) => {
+    menu.current = elemento;
+
+    if (elemento !== null) elemento.scrollTop = rolagemDoMenu;
+  }, []);
 
   useEffect(() => {
     setRecolhidos(lerRecolhidos());
   }, []);
+
+  /**
+   * Os grupos nascem TODOS abertos e só recolhem no efeito acima: a lista
+   * encolhe DEPOIS da montagem, e o navegador apara a rolagem junto com ela.
+   * Repor a posição a cada mudança de recolhimento devolve o que a poda tirou;
+   * quando não há nada a devolver, escrever o mesmo número não faz nada.
+   */
+  useEffect(() => {
+    if (menu.current !== null) menu.current.scrollTop = rolagemDoMenu;
+  }, [recolhidos]);
 
   const grupos = NAV_GROUPS.map((group) => ({
     ...group,
@@ -232,7 +294,14 @@ export function SidebarNav({
   }
 
   return (
-    <nav aria-label="Navegação principal" className="sb-nav">
+    <nav
+      aria-label="Navegação principal"
+      className="sb-nav"
+      ref={fixarMenu}
+      onScroll={(event) => {
+        guardarRolagem(event.currentTarget);
+      }}
+    >
       {grupos.map((group) => {
         const temAtivo = group.items.some((item) => estaAtivo(item.href, pathname, todos));
         // O grupo da tela atual nunca nasce recolhido: o destaque não pode
