@@ -132,7 +132,11 @@ function celulasDaProjecao(m: MetaDoMes): KpiCellData[] {
       value: formatCurrency(p.ritmo),
       previous: null,
       ...contraAMeta(p.ritmo, m.meta),
-      ...(m.meta === null ? {} : { destaque: p.ritmo >= m.meta ? ("ok" as const) : ("atencao" as const) }),
+      // A cor do cenário central é a do veredito: no caminho, em risco (só o
+      // otimista alcança) ou improvável (nem ele).
+      ...(m.meta === null
+        ? {}
+        : { destaque: p.ritmo >= m.meta ? ("ok" as const) : p.otimista >= m.meta ? ("atencao" as const) : ("perigo" as const) }),
     },
     {
       metricId: "projecao_fechamento_mes",

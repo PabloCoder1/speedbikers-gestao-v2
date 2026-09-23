@@ -108,7 +108,9 @@ export function KpiStrip({
   return (
     <div className={classes} style={{ ["--sb-kpi-cols" as string]: String(cells.length) }}>
       {cells.map((cell) => (
-        <div className="sb-kpi" key={cell.metricId ?? cell.label} title={cell.formula}>
+        // O id da métrica pode repetir na mesma faixa (os três cenários da
+        // projeção são a mesma métrica, D-395); o rótulo não repete.
+        <div className="sb-kpi" key={`${cell.metricId ?? ""}:${cell.label}`} title={cell.formula}>
           <span
             className="sb-kpi-label"
             style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
