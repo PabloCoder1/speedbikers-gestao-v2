@@ -295,21 +295,33 @@ describe("catálogo de métricas", () => {
       // As cinco de D-356 (METRICS 5F) e as cinco de Ads de D-363 entram na
       // lista em ordem alfabética.
       "acos",
+      // D-395 (METRICS 5J e 5K): meta, projeção, imposto e contribuição.
+      "atingimento_meta",
       "cobertura_historico_pedidos",
       "comissao_percentual",
       "custo_produtos_vendidos",
       "desconto_vendedor",
+      "esperado_meta",
       "frete_medio_pedido",
       "frete_vendedor",
+      "imposto_estimado",
       "investimento_ads",
+      "margem_apos_imposto",
+      "margem_contribuicao",
       "margem_operacional_pedido",
       "margem_venda",
+      "meta_diaria_necessaria",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
       "preco_medio_praticado",
+      "projecao_fechamento_mes",
+      "projecao_sazonal_mes",
       "receita_ads",
       "receita_bruta",
+      "receita_media_diaria",
+      "resultado_apos_imposto",
+      "resultado_contribuicao",
       "resultado_venda",
       "roas",
       "skus_distintos_vendidos",
@@ -320,6 +332,9 @@ describe("catálogo de métricas", () => {
       "ticket_medio",
       "unidades_vendidas",
       "valor_cancelado",
+      // D-394 (METRICS 5I): a variação entre períodos da Central do negócio.
+      "variacao_percentual_periodo",
+      "variacao_pontos_percentuais",
       "visitas",
     ]);
   });
@@ -2161,6 +2176,40 @@ describe("get_faturamento (D-356)", () => {
     const { resumo } = await faturamento(DE_OUTRA_ORG);
 
     expect(resumo).toMatchObject({ pedidos: 0, receita_bruta: 0, margem_venda: null, resultado_venda: null });
+  });
+
+  it("D-395: imposto pela alíquota do dia — NULL sem alíquota, e resultado após imposto nos cobertos", async () => {
+    // Sem alíquota nenhuma para a organização: o imposto não existe, e isso não é zero.
+    const sem = (await faturamento(ADMIN_SB, false)).resumo;
+
+    expect(sem).toMatchObject({ pedidos_sem_aliquota: 4, imposto_estimado: null, resultado_apos_imposto: null });
+
+    await client.query(
+      "insert into public.tax_rates (organization_id, valid_from, rate) values ($1, date '2026-07-01', 0.06)",
+      [ORG_SB],
+    );
+
+    try {
+      const com = (await faturamento(ADMIN_SB, false)).resumo;
+
+      expect(com).toMatchObject({
+        pedidos_sem_aliquota: 0,
+        aliquota_unica: 0.06,
+        // 6% sobre os 280 válidos e sobre os 180 cobertos.
+        imposto_estimado: 16.8,
+        imposto_coberto: 10.8,
+        // 30 − 10,80; e ÷ 180.
+        resultado_apos_imposto: 19.2,
+        margem_apos_imposto: 0.1067,
+        // Os campos de D-356 não mudam.
+        resultado_venda: 30,
+        margem_venda: 0.1667,
+      });
+    } finally {
+      await client.query("delete from public.tax_rates where organization_id = $1 and valid_from = date '2026-07-01'", [
+        ORG_SB,
+      ]);
+    }
   });
 
   it("anon é recusado", async () => {
@@ -7028,7 +7077,7 @@ describe("hub de configuracoes: quem altera bate com as policies (D-233)", () =>
   }
 
   it("reposição, templates e conhecimento: ADMIN e GESTOR escrevem", async () => {
-    for (const tabela of ["replenishment_settings", "reply_templates", "knowledge_entries"]) {
+    for (const tabela of ["replenishment_settings", "reply_templates", "knowledge_entries", "monthly_goals", "tax_rates"]) {
       const escrita = await politicas(tabela, ["a", "w", "d"]);
 
       expect(escrita.length, tabela).toBeGreaterThan(0);
@@ -14704,5 +14753,169 @@ describe("get_documents_overview e SAIDA_DOCUMENTO (D-375)", () => {
         [ORG_SB, skuId, `d375:invalido:${RUN}`],
       ),
     ).rejects.toThrow(/movement_type/);
+  });
+});
+
+/**
+ * Metas e imposto (D-395): as duas tabelas de configuração e a projeção.
+ *
+ * O fixture da projeção é calculado à mão: 8 semanas completas antes de
+ * 15/03/2024 com R$ 1.000 por dia e R$ 400 aos domingos, mais o parcial de
+ * hoje (R$ 300). Com isso o domingo pesa 400 ÷ (6.400 ÷ 7) = 0,4375 e os
+ * outros dias 1,09375; o ritmo de 7, 14 e 28 dias é o mesmo (914,29 por dia
+ * "médio"), e os 17 dias que faltam em março (14 dias úteis e 3 domingos)
+ * somam 16,625 de fator: 12.800 + 914,2857 × 16,625 = 28.000 exatos. 2024 fica
+ * longe de todo outro fixture, e o afterAll apaga o que entrou.
+ */
+describe("metas e imposto — monthly_goals, tax_rates e get_meta_do_mes (D-395)", () => {
+  const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta A','rlstest-conta-a',111,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.daily_account_metrics
+         (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       select $1, $2, d::date, 1,
+              case when d::date = date '2024-03-15' then 300 when extract(isodow from d) = 7 then 400 else 1000 end,
+              1, 1
+       from generate_series(timestamp '2024-01-19', timestamp '2024-03-15', interval '1 day') d
+       on conflict (ml_account_id, metric_date) do nothing`,
+      [ORG_SB, CONTA],
+    );
+
+    await client.query(
+      `insert into public.monthly_goals (organization_id, month, revenue_goal)
+       values ($1, date '2024-03-01', 31000)
+       on conflict (organization_id, month) do update set revenue_goal = excluded.revenue_goal`,
+      [ORG_SB],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query(
+      "delete from public.daily_account_metrics where ml_account_id = $1 and metric_date between date '2024-01-19' and date '2024-03-15'",
+      [CONTA],
+    );
+    await client.query("delete from public.monthly_goals where organization_id = $1 and month < date '2025-01-01'", [
+      ORG_SB,
+    ]);
+  });
+
+  async function metaDoMes(usuario: string, mes: string | null = null): Promise<Record<string, unknown>> {
+    const rows = await asUser<{ r: Record<string, unknown> }>(
+      usuario,
+      `select public.get_meta_do_mes('${ORG_SB}', ${mes === null ? "null" : `date '${mes}'`}, date '2024-03-15') as r`,
+    );
+
+    const linha = rows[0];
+
+    if (linha === undefined) throw new Error("get_meta_do_mes não devolveu linha");
+
+    return linha.r;
+  }
+
+  it("realizado, ritmo contra a meta e projeção pelo perfil semanal", async () => {
+    const m = await metaDoMes(ADMIN_SB);
+
+    expect(m).toMatchObject({
+      mes: "2024-03-01",
+      situacao: "em_curso",
+      meta: 31000,
+      realizado: 13100,
+      realizado_ate_ontem: 12800,
+      realizado_hoje: 300,
+      dias_no_mes: 31,
+      dias_completos: 14,
+      dias_restantes: 17,
+      atingimento: 0.4226,
+      faltam: 17900,
+      // 31.000 × 14 ÷ 30,625: dois domingos entre os 14 dias completos.
+      esperado_ate_ontem: 14171.43,
+      diferenca_ritmo: -1371.43,
+      media_diaria: 914.29,
+      meta_diaria_necessaria: 1070.59,
+      aumento_necessario: 0.171,
+      perfil_semanal: true,
+      ritmos: { sete: 914.29, catorze: 914.29, vinte_oito: 914.29 },
+      projecao: { ritmo: 28000, conservador: 28000, otimista: 28000 },
+      ano_anterior: null,
+      dias_sem_venda: 0,
+    });
+
+    expect(m.fatores).toEqual(
+      expect.arrayContaining([
+        { dia_semana: 1, fator: 1.094 },
+        { dia_semana: 7, fator: 0.438 },
+      ]),
+    );
+  });
+
+  it("mês encerrado sem meta: realizado inteiro e nada de ritmo ou projeção", async () => {
+    // Fevereiro de 2024: 29 dias, 4 domingos.
+    const m = await metaDoMes(ADMIN_SB, "2024-02-01");
+
+    expect(m).toMatchObject({
+      situacao: "encerrado",
+      meta: null,
+      realizado: 26600,
+      atingimento: null,
+      projecao: null,
+      esperado_ate_ontem: null,
+    });
+  });
+
+  it("outra organização não vê receita nem meta — e sem histórico não há projeção", async () => {
+    const m = await metaDoMes(DE_OUTRA_ORG);
+
+    expect(m).toMatchObject({ meta: null, realizado: 0, projecao: null, inicio_historico: null });
+  });
+
+  it("membro lê a meta; outra organização não; ANALISTA não grava meta nem alíquota", async () => {
+    const lidas = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      "select id from public.monthly_goals where month = date '2024-03-01'",
+    );
+
+    expect(lidas).toHaveLength(1);
+    expect(
+      await asUser(DE_OUTRA_ORG, "select id from public.monthly_goals where month = date '2024-03-01'"),
+    ).toHaveLength(0);
+
+    await expect(
+      asUser(ANALISTA_SB, `insert into public.monthly_goals (organization_id, month, revenue_goal) values ('${ORG_SB}', date '2024-04-01', 1)`),
+    ).rejects.toThrow(/row-level security/i);
+    await expect(
+      asUser(ANALISTA_SB, `insert into public.tax_rates (organization_id, valid_from, rate) values ('${ORG_SB}', date '2024-01-01', 0.06)`),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("ADMIN grava alíquota; a mesma vigência duas vezes é recusada, e alíquota de 100% também", async () => {
+    const gravadas = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `insert into public.tax_rates (organization_id, valid_from, rate) values ('${ORG_SB}', date '2024-01-01', 0.06) returning id`,
+    );
+
+    expect(gravadas).toHaveLength(1);
+
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.tax_rates (organization_id, valid_from, rate)
+         values ('${ORG_SB}', date '2024-01-02', 0.06), ('${ORG_SB}', date '2024-01-02', 0.07)`,
+      ),
+    ).rejects.toThrow(/duplicate key/i);
+    await expect(
+      asUser(ADMIN_SB, `insert into public.tax_rates (organization_id, valid_from, rate) values ('${ORG_SB}', date '2024-01-03', 1)`),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
+  it("anon é recusado", async () => {
+    await expect(asAnon(`select public.get_meta_do_mes('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });

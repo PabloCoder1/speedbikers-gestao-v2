@@ -97,6 +97,32 @@ const COMPLETO = {
   },
 };
 
+/** Os campos de imposto do fixture de integração de D-395: 6% sobre 280 e sobre os 180 cobertos. */
+const IMPOSTO = {
+  pedidos_sem_aliquota: 0,
+  aliquota_unica: 0.06,
+  imposto_estimado: 16.8,
+  imposto_coberto: 10.8,
+  resultado_apos_imposto: 19.2,
+  margem_apos_imposto: 0.1067,
+};
+
+describe("o imposto de D-395 no resumo", () => {
+  it("sem os campos, o banco ainda não calcula imposto: o bloco é null e o resto é lido", () => {
+    const lido = lerFaturamento(COMPLETO);
+
+    expect(lido?.imposto).toBeNull();
+    expect(lido?.resumo.receita_bruta).toBe(280);
+  });
+
+  it("com os campos, eles são lidos e conferidos", () => {
+    const lido = lerFaturamento({ ...COMPLETO, resumo: { ...RESUMO, ...IMPOSTO } });
+
+    expect(lido?.imposto).toEqual(IMPOSTO);
+    expect(lerFaturamento({ ...COMPLETO, resumo: { ...RESUMO, ...IMPOSTO, imposto_coberto: null } })?.imposto?.imposto_coberto).toBeNull();
+  });
+});
+
 describe("lerFaturamento", () => {
   it("lê a resposta completa", () => {
     const lido = lerFaturamento(COMPLETO);
@@ -140,6 +166,8 @@ describe("lerFaturamento", () => {
     expect(lerFaturamento({ ...COMPLETO, resumo: { ...RESUMO, pedidos: "muitos" } })).toBeNull();
     expect(lerFaturamento({ ...COMPLETO, por_sku: { ...COMPLETO.por_sku, maior_receita: [{ ...SKU, custo_atual: "sim" }] } })).toBeNull();
     expect(lerFaturamento({ resumo: RESUMO })).toBeNull();
+    // O imposto (D-395): presente e fora do formato também recusa a resposta.
+    expect(lerFaturamento({ ...COMPLETO, resumo: { ...RESUMO, ...IMPOSTO, imposto_estimado: "muito" } })).toBeNull();
     expect(lerFaturamento(null)).toBeNull();
     expect(lerFaturamento([])).toBeNull();
   });

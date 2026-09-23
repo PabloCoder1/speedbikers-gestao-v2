@@ -1131,6 +1131,16 @@ body {
   color: var(--sb-muted-ink);
 }
 
+/* A variação contra o período anterior (D-394): chip no tom da polaridade. */
+.sb-kpi-var {
+  padding: 0.0625rem 0.3125rem;
+  border-radius: var(--sb-radius-sm);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /*
   O chip "ver lista" do `.ops-metric` do Figma: `width: max-content` para ele
   medir a palavra e não a coluna, e `justify-self: start` porque a célula é um
@@ -8714,16 +8724,16 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
  * MERCADO ADS no /faturamento (D-363). Reaproveita a lista `.sb-fat-*` das
  * caixas de produtos (rolagem própria, sem rolagem lateral).
  */
-.sb-ads {
+.sb-campanhas-ml {
   margin-top: var(--sb-space-4);
   scroll-margin-top: var(--sb-space-4);
 }
 
-.sb-ads-aviso {
+.sb-campanhas-ml-aviso {
   margin: var(--sb-space-3);
 }
 
-.sb-ads-contas {
+.sb-campanhas-ml-contas {
   display: grid;
   gap: 0.375rem;
   margin: var(--sb-space-3) var(--sb-space-3) 0;
@@ -8736,34 +8746,34 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   color: var(--sb-text);
 }
 
-.sb-ads-faixa {
+.sb-campanhas-ml-faixa {
   margin-top: var(--sb-space-3);
 }
 
-.sb-ads-corpo {
+.sb-campanhas-ml-corpo {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--sb-space-3);
   padding: var(--sb-space-3);
 }
 
-.sb-ads-coluna {
+.sb-campanhas-ml-coluna {
   min-width: 0;
 }
 
-.sb-ads-titulo {
+.sb-campanhas-ml-titulo {
   margin: 0 0 var(--sb-space-2);
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--sb-primary);
 }
 
-.sb-ads-titulo small {
+.sb-campanhas-ml-titulo small {
   font-weight: 500;
   color: var(--sb-text-soft);
 }
 
-.sb-ads-barras {
+.sb-campanhas-ml-barras {
   position: relative;
   display: flex;
   align-items: flex-end;
@@ -8775,7 +8785,7 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   background-size: 100% 25%;
 }
 
-.sb-ads-dia {
+.sb-campanhas-ml-dia {
   display: flex;
   flex: 1;
   align-items: flex-end;
@@ -8786,26 +8796,26 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   border-radius: 2px;
 }
 
-.sb-ads-dia:hover {
+.sb-campanhas-ml-dia:hover {
   background: var(--sb-bg-soft);
 }
 
-.sb-ads-dia i {
+.sb-campanhas-ml-dia i {
   display: block;
   width: 45%;
   max-width: 0.625rem;
   border-radius: 2px 2px 0 0;
 }
 
-.sb-ads-barra-venda {
+.sb-campanhas-ml-barra-venda {
   background: var(--sb-secondary);
 }
 
-.sb-ads-barra-custo {
+.sb-campanhas-ml-barra-custo {
   background: var(--sb-accent-ink);
 }
 
-.sb-ads-legenda {
+.sb-campanhas-ml-legenda {
   position: absolute;
   bottom: 0.125rem;
   left: 0;
@@ -8816,25 +8826,25 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   color: var(--sb-text-soft);
 }
 
-.sb-ads-legenda i {
+.sb-campanhas-ml-legenda i {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 2px;
 }
 
-.sb-ads-nota {
+.sb-campanhas-ml-nota {
   margin: var(--sb-space-2) 0 0;
   font-size: 0.6875rem;
   line-height: 1.5;
   color: var(--sb-text-soft);
 }
 
-.sb-ads-lista {
+.sb-campanhas-ml-lista {
   margin-top: 0;
 }
 
-.sb-ads-nome {
+.sb-campanhas-ml-nome {
   display: block;
   overflow: hidden;
   font-size: 0.75rem;
@@ -8843,12 +8853,12 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   white-space: nowrap;
 }
 
-.sb-ads-lista .sb-fat-detalhe .sb-status {
+.sb-campanhas-ml-lista .sb-fat-detalhe .sb-status {
   margin-right: 0.25rem;
 }
 
 @media (max-width: 1150px) {
-  .sb-ads-corpo {
+  .sb-campanhas-ml-corpo {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -16685,4 +16695,166 @@ td.sb-pco-num-linha {
   .sb-sync-account-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/*
+  Central do negócio (D-394). O resumo é texto corrido à esquerda e as duas
+  listas de sinais à direita; em tela estreita tudo empilha. Sem moldura nova:
+  o painel já é a superfície.
+*/
+.sb-central-resumo {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--sb-space-4);
+}
+
+.sb-central-frases p {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.sb-central-listas {
+  display: grid;
+  gap: var(--sb-space-3);
+  align-content: start;
+}
+
+.sb-central-sinais h3 {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sb-central-sinais ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-central-sinais li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sb-space-2);
+  font-size: 0.75rem;
+}
+
+.sb-central-sinais li > :first-child {
+  flex: none;
+}
+
+.sb-central-sinais p {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.sb-central-bloco {
+  margin-top: var(--sb-space-4);
+}
+
+.sb-central-tabela {
+  overflow-x: auto;
+}
+
+.sb-central-tabela table {
+  min-width: 640px;
+}
+
+.sb-central-motivo {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+@media (max-width: 850px) {
+  .sb-central-resumo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+  Meta do mês (D-395). A barra é a única peça nova: o realizado em navy, como
+  a célula âncora, e um traço na tinta de atenção marcando o esperado até
+  ontem — o olho compara a ponta da barra com o traço antes de ler número.
+*/
+.sb-meta {
+  display: grid;
+  gap: var(--sb-space-2);
+}
+
+.sb-meta-frase {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.sb-meta-ritmo {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sb-meta-barra {
+  position: relative;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--sb-bg-soft);
+  box-shadow: inset 0 0 0 1px var(--sb-border);
+}
+
+.sb-meta-barra-feito {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sb-primary), var(--sb-secondary));
+}
+
+.sb-meta-barra-esperado {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--sb-accent-ink);
+}
+
+.sb-meta-barra-legenda {
+  margin: 0.375rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* Cadastro de metas e imposto (D-395): formulário em grade, ações numa linha só. */
+.sb-cadastro-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--sb-space-3);
+  align-items: start;
+  margin-bottom: var(--sb-space-4);
+}
+
+.sb-cadastro-acoes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sb-space-3);
+}
+
+.sb-cadastro-ok {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--sb-success);
+}
+
+.sb-cadastro-tabela {
+  width: 100%;
+}
+
+.sb-cadastro-tabela td form {
+  display: inline;
 }

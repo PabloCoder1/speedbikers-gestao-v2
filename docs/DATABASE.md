@@ -44,6 +44,7 @@ support         support_cases · support_messages · support_case_links · suppo
                 reply_templates                           (Fase 7B, D-111 — implementada)
                 knowledge_entries                         (Fase 7B — conceitual)
 meta            metric_definitions
+goals-tax       monthly_goals · tax_rates                (D-395 — meta do mês e alíquota com vigência)
 ```
 
 `metric_definitions` é a exceção global deliberada à D-031: metadado canônico, idêntico entre organizações, espelhado de `docs/METRICS.md` e alterado somente por migration. Usuário autenticado só lê se tiver vínculo com alguma organização; `anon` não lê e nenhum papel da aplicação escreve.

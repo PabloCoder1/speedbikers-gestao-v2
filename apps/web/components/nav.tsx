@@ -65,6 +65,8 @@ const NAV_GROUPS: readonly NavGroup[] = [
     title: "Visão geral",
     items: [
       { label: "Home", href: "/", icone: "home" },
+      // D-394: o período em números, comparado com o anterior, e o que mudou em texto.
+      { label: "Central do negócio", href: "/central", icone: "lampada" },
       { label: "Central de Ações", href: "/acoes", icone: "alvo" },
       { label: "Diagnóstico", href: "/diagnostico", icone: "pulso" },
     ],

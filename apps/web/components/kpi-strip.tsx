@@ -23,11 +23,10 @@ import { TOM, type Tom } from "./tone";
  * ## O que esta faixa carrega além do Figma, e por quê
  *
  * O `.kpi` do Figma tem três linhas: rótulo, valor e uma **variação
- * percentual**. Aqui a terceira linha é o **valor do período anterior**, não a
- * variação: `variacao_percentual_periodo` está pendente de definição em
- * `docs/METRICS.md` 5.4, e D-023 proíbe exibir número sintetizado sem
- * `metric_definitions` por trás. Os dois valores lado a lado dizem a mesma
- * coisa sem inventar a terceira.
+ * percentual**. Aqui a terceira linha é o **valor do período anterior**. A
+ * variação só entra quando a tela a passa em `variacao` — ela foi definida em
+ * D-394 (`docs/METRICS.md` 5I, com tom pela polaridade de cada indicador), e as
+ * telas anteriores a isso continuam mostrando só os dois valores lado a lado.
  *
  * E cada célula mostra o **id da métrica** em monoespaçado, mais a **ressalva**
  * quando existe. A ressalva é exigência de `docs/METRICS.md` 5C.2 — "visível ao
@@ -82,6 +81,13 @@ export interface KpiCellData {
    * pede destaque recebe.
    */
   readonly destaque?: Tom;
+  /**
+   * A variação contra o período anterior ("↑ 12,8%", "↓ 2,1 p.p."), num chip
+   * no tom que a polaridade do indicador deu (D-394). É chip, e não tinta no
+   * texto, porque a célula âncora é navy: o fundo suave do tom é o que mantém
+   * o contraste nas duas superfícies.
+   */
+  readonly variacao?: { readonly texto: string; readonly tom: Tom; readonly titulo: string };
 }
 
 export function KpiStrip({
@@ -102,7 +108,9 @@ export function KpiStrip({
   return (
     <div className={classes} style={{ ["--sb-kpi-cols" as string]: String(cells.length) }}>
       {cells.map((cell) => (
-        <div className="sb-kpi" key={cell.metricId ?? cell.label} title={cell.formula}>
+        // O id da métrica pode repetir na mesma faixa (os três cenários da
+        // projeção são a mesma métrica, D-395); o rótulo não repete.
+        <div className="sb-kpi" key={`${cell.metricId ?? ""}:${cell.label}`} title={cell.formula}>
           <span
             className="sb-kpi-label"
             style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
@@ -115,6 +123,12 @@ export function KpiStrip({
           >
             {cell.value}
           </strong>
+
+          {cell.variacao !== undefined && (
+            <span className="sb-kpi-var" style={TOM[cell.variacao.tom]} title={cell.variacao.titulo}>
+              {cell.variacao.texto}
+            </span>
+          )}
 
           {cell.previous !== null && (
             <span className="sb-kpi-prev">período anterior: {cell.previous}</span>
