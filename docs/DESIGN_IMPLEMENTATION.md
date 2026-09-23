@@ -1086,7 +1086,7 @@ repetidos sete vezes dentro do `map`):
 ### A camada hero saiu desta tela
 
 `.sb-settings-hero` era a terceira cópia de um bloco idêntico ao
-`.sb-process-hero` até o gradiente (D-232) e cobrava 173px da primeira dobra em
+`.sb-process-hero` até o gradiente (D-232) e cobrava 193px da primeira dobra em
 1440px — 328px em 390px — para repetir o que o subtítulo diz em duas frases.
 Saiu das quatro listas de seletor, do gradiente próprio, do bloco
 `-hero-rules` e do `@media (max-width: 760px)`; **`.sb-reliability-hero` ficou,
@@ -1105,12 +1105,22 @@ ressalva, rótulo de zona e cartões em grade.
 
 **Verificação:** `check` 29/29 com 874 testes de unidade, `build` 8/8, as seis
 guardas da web (inclusive a nova `check:settings-vocabulary`) e `docs:check`.
-Remedido no harness, com o `globals.css` desta árvore e o HTML que a página
-emite, nas sete larguras: **332/332 em 390px e 302/302 em 360px** (eram 340/332
-e 340/302 — rolagem lateral que o `<html>` não mostrava, porque quem rola é o
-`.sb-content`), 2 colunas em 768, 849 e 860 e 3 em 1280 e 1440, e o primeiro
-cartão inteiro dentro da dobra de 812px no celular. O e2e ganhou quatro casos e
-roda na CI.
+Remedido no harness, com a folha que o `next build` desta árvore emite (o
+`globals.css` inteiro e a Inter do `next/font`) e o HTML que a página emite, nas
+sete larguras: **332/332 em 390px e 302/302 em 360px** (eram 340/332 e 340/302 —
+rolagem lateral que o `<html>` não mostrava, porque quem rola é o
+`.sb-content`), 2 colunas em 768, 849 e 860 e 3 em 1280 e 1440.
+
+**A primeira medição da dobra estava otimista.** O harness anterior recortava
+13 faixas de linhas do `globals.css` — nenhuma com o `padding` de
+`.sb-panel-body` — e media em `system-ui`: dava o primeiro cartão da zona 1
+terminando em 778 de 812px em 390px. Com a folha inteira ele terminava em 863.
+O remédio foi o que o plano previa, e não descer a faixa: **cada ressalva da
+faixa cabe agora numa linha da célula** em 390px, e o cartão termina em **803**
+— 9px de folga, o número a vigiar na próxima mudança de texto. A conta é do
+topo do `.sb-content`; acima dele há 78px de barra superior, então na tela do
+celular a última fileira de chips desse cartão fica logo abaixo da primeira
+rolagem. O e2e ganhou quatro casos e roda na CI.
 
 ## Fatias anteriores
 

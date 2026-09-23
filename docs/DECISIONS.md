@@ -13816,7 +13816,7 @@ So `status:"started"` e promocao REALMENTE no ar; `"candidate"` e campanha que o
 **Contexto:** o pedido do dono foi deixar a tela mais intuitiva. A leitura mediu quatro coisas antes de qualquer desenho:
 
 - as sete areas saiam na ordem fixa do ROADMAP, entao o que ja estava pronto ocupava a primeira dobra e o que faltava configurar ficava embaixo;
-- uma camada `hero` custava **173px** da primeira dobra em 1440px e **328px** em 390px para dizer, em tres cartuchos numerados, o que o subtitulo diz em duas frases;
+- uma camada `hero` custava **193px** da primeira dobra em 1440px e **328px** em 390px para dizer, em tres cartuchos numerados, o que o subtitulo diz em duas frases;
 - em 390px a tela **rolava para o lado** (340 contra 332 de caixa util), e a varredura de D-383 registrou "nenhuma com rolagem lateral no celular": o `<html>` fica do tamanho da janela, porque quem tem `overflow: auto` e o `.sb-content` — medir o documento, que e o que o caso de /estoque/[skuId]/ajuste faz, nao alcanca este defeito;
 - a RPC ja devolvia 16 campos e a tela usava alguns para CONTAR e nenhum para dizer CONSEQUENCIA: um ADMIN unico numa organizacao de quatro pessoas aparecia como selo verde.
 
@@ -13832,7 +13832,7 @@ Isto contraria a ordem fixa que D-275 manteve, e o contra-argumento e medido, na
 
 **2. A CAMADA HERO SAI DESTA TELA, E ELA NUNCA TEVE DECISAO**
 
-Entrou no commit `74d1578` ("feat(admin): melhorar saude e configuracoes"), sem D-NNN e sem linha em documento nenhum — `grep sb-settings-hero docs/` nao devolve nada. Era a terceira copia de um bloco identico ao `.sb-process-hero` ate o gradiente (D-232 par. 3: a terceira copia e o sinal de parar) e cobrava os 173px/328px acima para repetir o subtitulo. **`.sb-reliability-hero` FICA**: /saude ainda a usa, e o seletor saiu so das listas em que os dois apareciam juntos.
+Entrou no commit `74d1578` ("feat(admin): melhorar saude e configuracoes"), sem D-NNN e sem linha em documento nenhum — `grep sb-settings-hero docs/` nao devolve nada. Era a terceira copia de um bloco identico ao `.sb-process-hero` ate o gradiente (D-232 par. 3: a terceira copia e o sinal de parar) e cobrava os 193px/328px acima para repetir o subtitulo. **`.sb-reliability-hero` FICA**: /saude ainda a usa, e o seletor saiu so das listas em que os dois apareciam juntos.
 
 Saem junto o `aside` do `PageTitle` (os dois links dele ja aparecem dentro dos cartoes de Mercado Livre e de IA, na mesma dobra) e os nove estilos inline do `map`. O subtitulo passa a dar o VEREDITO ("2 das 7 areas ainda nao tem configuracao"), contado sobre o mesmo array dos cartoes; com a leitura falhada ele some em vez de virar zero, porque veredito nao se inventa (D-067). A faixa de seis celulas fica onde esta, com a mesma aritmetica, e ganha a RESSALVA VISIVEL ao lado de cada numero (METRICS 5C.2): a formula canonica continua no `title`, mas `title` nao existe no toque nem no teclado.
 
@@ -13863,7 +13863,7 @@ Junto com o aviso, o cartao passa a dizer o que a area INCLUI, no vocabulario LI
 - **Cobertura do catalogo por regra de reposicao: 5,1 ms** — mais que a RPC inteira, e a pergunta e de /reposicao, nao do hub.
 - **`skus_without_rule`** — duplicaria em SQL a resolucao canonica SKU -> MARCA -> PADRAO de `packages/domain/src/purchasing/replenishment-policy.ts`, que `docs/ARCHITECTURE.md` manda derivar com teste de equivalencia; e a frase ficaria FALSA assim que existe padrao da organizacao, que producao tem desde 2026-09-22 12:35.
 - **As oito idades por area** ("configurado ha N dias") — a organizacao foi criada em 2026-09-14: "ha 8 dias" num sistema de 8 dias nao informa nada.
-- **Reusar `.sb-reliability-verdict`** no lugar do veredito no subtitulo — ele so existe DENTRO da camada `hero` que esta fatia remove; reusa-lo seria manter o bloco de 173px para exibir uma frase.
+- **Reusar `.sb-reliability-verdict`** no lugar do veredito no subtitulo — ele so existe DENTRO da camada `hero` que esta fatia remove; reusa-lo seria manter o bloco de 193px para exibir uma frase.
 - **`minmax(min(18rem, 100%), 1fr)`** — em 860px a caixa util e 580px e 2x288+16 = 592 nao cabe; com 17rem, 2x272+16 = 560 devolve a segunda coluna ao tablet.
 - **"Indisponiveis: 7"** no ramo de falha — sao 6 indisponiveis e 1 nao editavel, porque `describeSettings` monta a IA fora do ramo `o === null`. Com 7 a faixa somaria 8 num total de 7.
 
@@ -13871,7 +13871,9 @@ Junto com o aviso, o cartao passa a dizer o que a area INCLUI, no vocabulario LI
 
 **Verificacao:** `check` 29/29 (typecheck, lint e **874** testes de unidade da web, eram 857), `build` 8/8, e as seis guardas — `waterfalls` (130 arquivos), `server-actions`, `table-styles`, `control-styles` (353 controles), `loading` (51 pastas) e a nova `settings-vocabulary` (14 termos em 9 telas donas), esta ultima com prova negativa feita: renomear "Cobertura desejada" na tela dona deixa a esteira vermelha.
 
-A composicao foi **remedida depois de escrita**, com o `globals.css` desta arvore e o HTML que a pagina emite, nas sete larguras (1440, 1280, 860, 849, 768, 390 e 360): **332/332 em 390px e 302/302 em 360px** (eram 340/332 e 340/302), 2 colunas em 768, 849 e 860 e 3 em 1280 e 1440, e em 390px o primeiro cartao comeca em 521 e termina em 778 — dentro da dobra de 812. As ressalvas nao precisaram encurtar, e a folga de 34px em 390px e o numero a vigiar na proxima mudanca de texto.
+A composicao foi **remedida depois de escrita**, com a folha que o `next build` desta arvore EMITE (o `globals.css` inteiro e a Inter do `next/font`) e o HTML que a pagina emite, nas sete larguras (1440, 1280, 860, 849, 768, 390 e 360): **332/332 em 390px e 302/302 em 360px** (eram 340/332 e 340/302), 2 colunas em 768, 849 e 860 e 3 em 1280 e 1440.
+
+**A primeira medicao da dobra estava otimista, e a correcao mudou o texto da faixa.** O harness anterior recortava 13 faixas de linhas do `globals.css` — nenhuma com `.sb-panel-body { padding: var(--sb-space-3) }`, que vale para o corpo de todo cartao — e media em `system-ui`; por isso dava o primeiro cartao da zona 1 terminando em 778 de 812 em 390px e o hero com 173px em 1440. Com a folha inteira o hero tem 193px e o cartao terminava em **863**, fora da dobra. O remedio foi o que o plano previa para esse caso, e nao descer a faixa para o rodape: **as ressalvas encurtaram ate caber numa linha da celula** em 390px ("os cartoes abaixo", "presenca, nao saude", "o cartao diz o efeito", "falha, nao ausencia"; "parte feita, parte nao" e "mora fora do produto" ja cabiam), e o cartao passou a terminar em **803** — folga de 9px, o numero a vigiar na proxima mudanca de texto. A formula canonica de cada celula continua inteira no `title`. Essas medidas contam do topo do `.sb-content`: acima dele ha 78px de barra superior, entao na tela do celular a ultima fileira de chips desse cartao fica logo abaixo da primeira rolagem.
 
 O e2e ganhou quatro casos (sem rolagem lateral em 390px medindo o `.sb-content`; a area sem configuracao acima da area com configuracao por `boundingBox().y`; a linha "Inclui:" com o termo literal no cartao de Reposicao; o aviso de ADMIN unico dentro da regiao Organizacao), e os tres antigos ficaram INTOCADOS. **Eles nao rodaram na maquina desta sessao**: o Supabase local estava de pe com sessoes paralelas em /anuncios, /copiloto e marca do fornecedor, e Playwright so conta depois de `db reset` + seed (memoria `e2e-reset-before-run`) — resetar apagaria o estado delas. Rodam na CI.
 
