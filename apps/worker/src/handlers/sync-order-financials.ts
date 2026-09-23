@@ -101,7 +101,7 @@ export interface SyncOrderFinancialsDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
-interface OrderToSweep {
+export interface OrderToSweep {
   id: number;
   shipping_id: number | null;
 }
@@ -126,6 +126,129 @@ async function fetchOptionalCost<T>(
   }
 }
 
+export interface ResultadoDaCaptura {
+  itemsProcessed: number;
+  itemsSkipped: number;
+  itemsWithoutShipping: number;
+  itemsShapeUnknown: number;
+}
+
+/**
+ * O laço de captura, pedido a pedido — o MESMO para a varredura diária e para
+ * a recuperação de histórico (`backfill.order-financials`, D-396). Quem chama
+ * escolhe os pedidos e o checkpoint; aqui só se busca, grava e conta.
+ *
+ * Erro retryable (429/5xx) PROPAGA: o que já foi gravado fica, e a próxima
+ * tentativa pula pelo checkpoint (D-156). Resposta 200 fora do contrato é
+ * falha do pedido, não da varredura: conta, não grava e segue (D-229).
+ */
+export async function capturarCustosDosPedidos(params: {
+  deps: SyncOrderFinancialsDeps;
+  context: HandlerContext;
+  mlAccountId: string;
+  organizationId: string;
+  accessToken: string;
+  orders: readonly OrderToSweep[];
+  alreadyCaptured: ReadonlySet<number>;
+}): Promise<ResultadoDaCaptura> {
+  const { deps, context, mlAccountId, organizationId, accessToken, orders, alreadyCaptured } = params;
+  const sleep = deps.sleep ?? defaultSleep;
+
+  let itemsProcessed = 0;
+  let itemsSkipped = 0;
+  let itemsWithoutShipping = 0;
+  let itemsShapeUnknown = 0;
+  let requestsMade = 0;
+
+  for (const order of orders) {
+    if (alreadyCaptured.has(order.id)) {
+      itemsSkipped += 1;
+
+      continue;
+    }
+
+    if (requestsMade > 0) {
+      await sleep(INTER_ORDER_DELAY_MS);
+    }
+
+    requestsMade += 1;
+
+    let shippingCost: number | null = null;
+    let sellerDiscount: number | null;
+
+    try {
+      if (order.shipping_id === null) {
+        itemsWithoutShipping += 1;
+      } else {
+        shippingCost = await fetchOptionalCost(
+          () =>
+            deps.mercadoLivre.request({
+              method: "GET",
+              path: `/shipments/${String(order.shipping_id)}/costs`,
+              accessToken,
+              schema: shipmentCostsSchema,
+            }),
+          (payload) => payload.senders.reduce((total, sender) => total + sender.cost, 0),
+        );
+      }
+
+      sellerDiscount = await fetchOptionalCost(
+        () =>
+          deps.mercadoLivre.request({
+            method: "GET",
+            path: `/orders/${String(order.id)}/discounts`,
+            accessToken,
+            schema: orderDiscountsSchema,
+          }),
+        sumSellerDiscount,
+      );
+    } catch (error) {
+      // Resposta 200 FORA do contrato (D-229). O cliente HTTP valida com
+      // `schema.parse` e deixa o ZodError cru propagar; até aqui ele caía
+      // no catch de fora como "retryable", o Cloud Tasks repetia 8 vezes
+      // e o dia inteiro da conta morria no primeiro pedido cuja resposta o
+      // schema não conhecia — nenhuma repetição muda o corpo que o
+      // Mercado Livre devolve. É falha PERMANENTE deste pedido, não da
+      // varredura: registra, pula SEM gravar linha (sem checkpoint, ele
+      // volta amanhã e é capturado quando o schema for corrigido) e
+      // segue para o próximo. Gravar NULL aqui queimaria o pedido para
+      // sempre (D-156: progresso por existência de linha).
+      if (error instanceof ZodError) {
+        itemsShapeUnknown += 1;
+        context.logger.warn("sync_order_financials_shape_unknown", {
+          ml_account_id: mlAccountId,
+          order_id: order.id,
+          issues: error.issues.map((issue) => `${issue.path.map(String).join(".")}: ${issue.message}`),
+        });
+
+        continue;
+      }
+
+      throw error;
+    }
+
+    const inserted = await deps.db.from("order_financials").upsert(
+      {
+        order_id: order.id,
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        seller_shipping_cost: shippingCost,
+        seller_discount: sellerDiscount,
+        captured_at: (deps.now?.() ?? new Date()).toISOString(),
+      },
+      { onConflict: "order_id", ignoreDuplicates: true },
+    );
+
+    if (inserted.error !== null) {
+      throw new Error(`falha ao gravar order_financials: ${inserted.error.message}`);
+    }
+
+    itemsProcessed += 1;
+  }
+
+  return { itemsProcessed, itemsSkipped, itemsWithoutShipping, itemsShapeUnknown };
+}
+
 export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
@@ -136,7 +259,6 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
 
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
-    const sleep = deps.sleep ?? defaultSleep;
 
     const account = await deps.db
       .from("ml_accounts")
@@ -213,98 +335,18 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
     // paginar a tabela inteira; o Set decide por pedido.
     const alreadyCaptured = new Set(captured.map((row) => row.order_id));
 
-    let itemsProcessed = 0;
-    let itemsSkipped = 0;
-    let itemsWithoutShipping = 0;
-    let itemsShapeUnknown = 0;
-    let requestsMade = 0;
+    let resultado: ResultadoDaCaptura;
 
     try {
-      for (const order of orders) {
-        if (alreadyCaptured.has(order.id)) {
-          itemsSkipped += 1;
-
-          continue;
-        }
-
-        if (requestsMade > 0) {
-          await sleep(INTER_ORDER_DELAY_MS);
-        }
-
-        requestsMade += 1;
-
-        let shippingCost: number | null = null;
-        let sellerDiscount: number | null = null;
-
-        try {
-          if (order.shipping_id === null) {
-            itemsWithoutShipping += 1;
-          } else {
-            shippingCost = await fetchOptionalCost(
-              () =>
-                deps.mercadoLivre.request({
-                  method: "GET",
-                  path: `/shipments/${String(order.shipping_id)}/costs`,
-                  accessToken,
-                  schema: shipmentCostsSchema,
-                }),
-              (payload) => payload.senders.reduce((total, sender) => total + sender.cost, 0),
-            );
-          }
-
-          sellerDiscount = await fetchOptionalCost(
-            () =>
-              deps.mercadoLivre.request({
-                method: "GET",
-                path: `/orders/${String(order.id)}/discounts`,
-                accessToken,
-                schema: orderDiscountsSchema,
-              }),
-            sumSellerDiscount,
-          );
-        } catch (error) {
-          // Resposta 200 FORA do contrato (D-229). O cliente HTTP valida com
-          // `schema.parse` e deixa o ZodError cru propagar; até aqui ele caía
-          // no catch de fora como "retryable", o Cloud Tasks repetia 8 vezes
-          // e o dia inteiro da conta morria no primeiro pedido cuja resposta o
-          // schema não conhecia — nenhuma repetição muda o corpo que o
-          // Mercado Livre devolve. É falha PERMANENTE deste pedido, não da
-          // varredura: registra, pula SEM gravar linha (sem checkpoint, ele
-          // volta amanhã e é capturado quando o schema for corrigido) e
-          // segue para o próximo. Gravar NULL aqui queimaria o pedido para
-          // sempre (D-156: progresso por existência de linha).
-          if (error instanceof ZodError) {
-            itemsShapeUnknown += 1;
-            context.logger.warn("sync_order_financials_shape_unknown", {
-              ml_account_id: mlAccountId,
-              order_id: order.id,
-              issues: error.issues.map((issue) => `${issue.path.map(String).join(".")}: ${issue.message}`),
-            });
-
-            continue;
-          }
-
-          throw error;
-        }
-
-        const inserted = await deps.db.from("order_financials").upsert(
-          {
-            order_id: order.id,
-            organization_id: organizationId,
-            ml_account_id: mlAccountId,
-            seller_shipping_cost: shippingCost,
-            seller_discount: sellerDiscount,
-            captured_at: (deps.now?.() ?? new Date()).toISOString(),
-          },
-          { onConflict: "order_id", ignoreDuplicates: true },
-        );
-
-        if (inserted.error !== null) {
-          throw new Error(`falha ao gravar order_financials: ${inserted.error.message}`);
-        }
-
-        itemsProcessed += 1;
-      }
+      resultado = await capturarCustosDosPedidos({
+        deps,
+        context,
+        mlAccountId,
+        organizationId,
+        accessToken,
+        orders,
+        alreadyCaptured,
+      });
     } catch (error) {
       // Retryable no meio da lista: o progresso já persistiu; a próxima
       // tentativa pula pelo checkpoint. Registrar a falha com honestidade.
@@ -331,6 +373,7 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       return { status: "failed", retryable: errorClass !== "not_retryable", reason };
     }
 
+    const { itemsProcessed, itemsSkipped, itemsWithoutShipping, itemsShapeUnknown } = resultado;
     const finishedAt = deps.now?.() ?? new Date();
 
     // `partial` quando algum pedido ficou fora do contrato: o trabalho que
