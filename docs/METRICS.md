@@ -110,7 +110,9 @@ atualizado_em      data da última revisão desta definição
 
 ### 5.4 Derivadas e comparativas — definição pendente da Fase 5B
 
-`variacao_percentual_periodo` · `comparacao_periodo_anterior` · `curva_abc` · `tendencia` · `vendas_perdidas_estimadas`
+`curva_abc` · `tendencia` · `vendas_perdidas_estimadas`
+
+> **`variacao_percentual_periodo` e `comparacao_periodo_anterior` saíram desta seção em 2026-09-23 (D-394)**, com `variacao_pontos_percentuais`: as definições, as janelas e o tom estão em **5I**.
 
 `vendas_perdidas_estimadas` é **estimativa com premissa explícita**, nunca apresentada como fato. A premissa aparece junto do número.
 
@@ -359,6 +361,51 @@ total e um quarto do faturamento some sem explicação.
 **Grão de SKU existe** para as cinco, pela mesma razão: com uma linha por pedido, frete, desconto e custo do pedido são os do produto. **Não há recorte de marca** na tela de faturamento: a marca é do item, e o frete não decompõe (5E).
 
 ---
+
+## 5I. Comparação entre períodos e tom da variação (D-394) — DEFINIDAS E IMPLEMENTADAS
+
+> A Central do negócio (`/central`) mostra cada indicador contra o período anterior. Os números são os de 5.2, 5F e 5G, lidos das mesmas RPCs de `/faturamento` (`get_faturamento` e `get_ads_overview`, sem detalhe) para os dois períodos. Esta seção define só a comparação.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `variacao_percentual_periodo` | Variação percentual | `(atual − anterior) ÷ anterior` | NULL com anterior ≤ 0 ou ausente — a tela mostra só a seta e a diferença, nunca "+∞" nem 0% |
+| `variacao_pontos_percentuais` | Variação em pontos percentuais | `fração_atual − fração_anterior` | Para métricas que já são fração: margem, participações, ACOS, TACoS. "−2,1 p.p.", nunca "−10%" sobre uma porcentagem |
+
+Granularidades: `account` e `organization`.
+
+**`comparacao_periodo_anterior` — a janela anterior** (sai de 5.4):
+
+| Período atual | Janela anterior |
+|---|---|
+| Hoje (em andamento) | Ontem inteiro |
+| Ontem | Anteontem |
+| Últimos 7, 15 e 30 dias — **até ontem** | Os N dias imediatamente anteriores |
+| Mês atual — dia 1 até **ontem** | Os mesmos dias do mês anterior, limitados ao fim dele |
+| Mês anterior | O mês antes dele, inteiro |
+| Personalizado | A janela imediatamente anterior, do mesmo tamanho |
+
+As janelas móveis da Central terminam **ontem**: comparar um dia em andamento com um dia inteiro poria ~1/N do volume a menos no período atual sem que nada tivesse piorado. As telas antigas (`/vendas`, `/faturamento`) continuam com "últimos N dias até hoje".
+
+**O que se compara.** Comissão e custo sobem junto com a receita, então são comparados pela **participação**: `comissao_percentual` (5F) e `custo_produtos_vendidos ÷ receita coberta`, em pontos percentuais. O valor em reais continua à vista.
+
+**Quando a comparação vale** — fora destes casos a tela escreve o motivo no lugar da variação:
+
+- **Somas de pedidos cobertos** (`resultado_venda` em reais): só com coberturas (`receita coberta ÷ receita bruta`) a até **5 p.p.** uma da outra. Comparar 31% com 95% mede a captura do frete, não o negócio.
+- **Razões de pedidos cobertos** (`margem_venda`, participação do custo, `frete_medio_pedido`): **20 pedidos** no mínimo em cada período.
+- **Ads**: o diário (`get_ads_overview.diario`) precisa ter linha no primeiro e no último dia dos dois períodos. O Mercado Livre fecha o dia às 10h do dia seguinte, então "Hoje" nunca compara Ads.
+
+**O tom da variação.** Cada indicador tem **polaridade**: maior é melhor (receita, pedidos, ticket, unidades, resultado, margem, vendas com Ads, ROAS), menor é melhor (frete médio, participação da comissão e do custo, ACOS, TACoS) ou **neutra** (investimento em Ads, que não é bom nem ruim por si — quem julga é ROAS e TACoS).
+
+| Movimento | Valor (relativo) | Fração (p.p.) | Tom |
+|---|---|---|---|
+| Zona neutra | abaixo de 2% | abaixo de 0,5 p.p. | neutro (⚪) |
+| A favor da polaridade | 2% ou mais | 0,5 p.p. ou mais | ok (🟢) |
+| Contra, moderado | 2% a 10% | 0,5 a 2 p.p. | atenção (🟡) |
+| Contra, forte | 10% ou mais | 2 p.p. ou mais | perigo (🔴) |
+
+Os limites são **provisórios** (D-148: limiar é decisão do dono) e vão para a tela de configurações numa fatia seguinte. Com o dia em andamento, os indicadores de **volume** (faturamento, pedidos, unidades, resultado) mostram a variação sem tom; as razões continuam julgadas.
+
+**O resumo em texto** é montado desses mesmos números, sem modelo de linguagem, e só afirma o que eles sustentam. A queda ou alta da margem é repartida entre comissão, frete e custo **exatamente**: nos pedidos cobertos, `margem = 1 − (comissão + frete + custo) ÷ receita coberta`, e a tela confere essa identidade (tolerância de 0,1 p.p.) nos dois períodos antes de atribuir qualquer ponto — se não fechar, não atribui.
 
 ## 5H. Indicadores operacionais de sincronização
 

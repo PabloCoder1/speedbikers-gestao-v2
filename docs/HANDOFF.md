@@ -26,6 +26,8 @@
 
 SKU/ML;visitas;migração
 
+`/central` (D-394, `feat/central-negocio`): primeira fatia da central de inteligência — indicadores contra o período anterior com tom pela polaridade, janelas que terminam ontem e resumo em texto. Sem RPC nova; migration `20260923183000` só de catálogo. Próximas fatias: ROADMAP trilha 5J.
+
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
 

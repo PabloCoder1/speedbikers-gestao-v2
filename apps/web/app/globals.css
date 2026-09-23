@@ -1131,6 +1131,16 @@ body {
   color: var(--sb-muted-ink);
 }
 
+/* A variação contra o período anterior (D-394): chip no tom da polaridade. */
+.sb-kpi-var {
+  padding: 0.0625rem 0.3125rem;
+  border-radius: var(--sb-radius-sm);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /*
   O chip "ver lista" do `.ops-metric` do Figma: `width: max-content` para ele
   medir a palavra e não a coluna, e `justify-self: start` porque a célula é um
@@ -16404,5 +16414,84 @@ td.sb-pco-num-linha {
 
   .sb-sync-account-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+  Central do negócio (D-394). O resumo é texto corrido à esquerda e as duas
+  listas de sinais à direita; em tela estreita tudo empilha. Sem moldura nova:
+  o painel já é a superfície.
+*/
+.sb-central-resumo {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--sb-space-4);
+}
+
+.sb-central-frases p {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.sb-central-listas {
+  display: grid;
+  gap: var(--sb-space-3);
+  align-content: start;
+}
+
+.sb-central-sinais h3 {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sb-central-sinais ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-central-sinais li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sb-space-2);
+  font-size: 0.75rem;
+}
+
+.sb-central-sinais li > :first-child {
+  flex: none;
+}
+
+.sb-central-sinais p {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.sb-central-bloco {
+  margin-top: var(--sb-space-4);
+}
+
+.sb-central-tabela {
+  overflow-x: auto;
+}
+
+.sb-central-tabela table {
+  min-width: 640px;
+}
+
+.sb-central-motivo {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+@media (max-width: 850px) {
+  .sb-central-resumo {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

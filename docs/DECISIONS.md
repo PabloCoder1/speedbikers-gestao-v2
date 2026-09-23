@@ -13888,3 +13888,33 @@ A composicao foi **remedida depois de escrita**, com a folha que o `next build` 
 O e2e ganhou cinco casos (sem rolagem lateral em 390px medindo o `.sb-content`; a area sem configuracao acima da area com configuracao por `boundingBox().y`; a linha "Inclui:" com o termo literal no cartao de Reposicao; o aviso de ADMIN unico dentro da regiao Organizacao, sem a palavra "reposicao"; o veredito do subtitulo com os mesmos numeros das celulas "Nao configuradas" e "Parciais", lidos da faixa para valer com qualquer seed), e os tres antigos ficaram INTOCADOS. **Eles nao rodaram na maquina desta sessao**: o Supabase local estava de pe com sessoes paralelas em /anuncios, /copiloto e marca do fornecedor, e Playwright so conta depois de `db reset` + seed (memoria `e2e-reset-before-run`) — resetar apagaria o estado delas. Rodam na CI.
 
 **Impacto:** `apps/web/app/configuracoes/page.tsx`, `apps/web/app/configuracoes/loading.tsx`, `apps/web/components/carregando.tsx` (so a prop `children`, compativel), `apps/web/scripts/check-loading.mjs`, `apps/web/app/globals.css` (so a vizinhanca contigua desta tela: aviso em 13px, chips sem `:hover` no toque, movimento reduzido escopado em `.sb-settings-links`), `apps/web/lib/settings-hub.ts`, `apps/web/lib/settings-hub.test.ts`, `apps/web/e2e/configuracoes.spec.ts`, `apps/web/scripts/check-settings-vocabulary.mjs` (novo), `apps/web/package.json`, `.github/workflows/ci.yml`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/ROADMAP.md`.
+
+## D-394 - Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
+
+**Contexto:** o dono pediu em 23/09 uma "central de inteligencia do negocio" (KPIs com comparacao, meta, projecao, rentabilidade por canal e produto, detector de frete, Ads com alertas e recomendacoes, central de alertas) e exigiu auditoria antes de codigo. A auditoria, lida na `main` e no Dev, achou:
+
+- `/faturamento` (D-356, D-363) ja calcula receita, comissao, frete, custo, resultado e margem com cobertura declarada, e o Ads por campanha;
+- o frete por pedido so existe desde 14/09/2026 em producao (D-165: varredura de 7 dias, sem backfill); peso cadastrado em 58 de 3.554 SKUs no Dev; Ads so por campanha (a API por anuncio foi desligada em 05/2026); nenhum imposto, custo fixo ou meta cadastrados; so Mercado Livre como canal;
+- `variacao_percentual_periodo` estava pendente em METRICS 5.4, e por D-023 nenhuma tela podia mostrar "+12,8%".
+
+Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; imposto como **aliquota unica sobre o faturamento, com vigencia**; **recuperar 90 dias de frete**; **so Mercado Livre** por enquanto.
+
+**1. TELA NOVA `/central`, E NAO A HOME.** A Visao Geral segue o frame `Home` do Figma e e operacional (estoque, atendimento, notificacoes); a central e comercial. Criar a rota preserva o que funciona e deixa para depois a pergunta "qual abre primeiro". Item "Central do negocio" no grupo Visao geral do menu.
+
+**2. NENHUMA CONSULTA NOVA.** Quatro leituras em paralelo: `get_faturamento` (sem detalhe) e `get_ads_overview` para o periodo atual e o anterior. Os numeros batem com `/faturamento` por construcao; a tela acrescenta a comparacao.
+
+**3. AS JANELAS TERMINAM ONTEM.** Os presets de `lib/period.ts` vao ate hoje, e comparar um dia em andamento com um dia inteiro poe ~1/N do volume a menos sem que nada piore. A central tem presets proprios (`lib/central-periodo.ts`): hoje (contra ontem, marcado em andamento), ontem, 7/15/30 dias e mes atual ate ontem, mes anterior, personalizado. Mes atual compara com os mesmos dias do mes anterior. As outras telas nao mudam.
+
+**4. A COR VEM DA POLARIDADE, NAO DO SINAL.** Cada indicador declara maior-melhor, menor-melhor ou neutra (investimento em Ads). Zona neutra de 2% (0,5 p.p.), atencao ate 10% (2 p.p.), perigo acima. Limites provisorios por D-148, a caminho das configuracoes. Comissao e custo sao comparados pela participacao na receita. Com o dia em andamento, o volume mostra a variacao sem tom.
+
+**5. COMPARACAO QUE NAO VALE NAO APARECE, E O MOTIVO SIM.** Resultado em reais so com coberturas a ate 5 p.p.; razoes de pedidos cobertos com 20 pedidos em cada lado; Ads so com o diario cobrindo os dois periodos inteiros. Fora disso a celula diz por que nao compara.
+
+**6. O RESUMO E MONTADO DOS NUMEROS, SEM LLM.** Faturamento, resultado (com o contraste "mesmo com o faturamento em alta"), margem e Ads. A variacao da margem e repartida EXATAMENTE entre comissao, frete e custo (identidade conferida nos dois periodos, tolerancia de 0,1 p.p.); sem a identidade, nada e atribuido. Listas "Pede atencao" e "Melhorou" saem das mesmas variacoes.
+
+**7. CATALOGO.** `variacao_percentual_periodo` e `variacao_pontos_percentuais` entram em `metric_definitions` (migration `20260923183000`, so catalogo) e em METRICS 5I, com a janela anterior (`comparacao_periodo_anterior`) e a tabela do tom. A tela nao le o catalogo em tempo de execucao: funciona antes de a migration chegar a producao.
+
+**Verificacao:** 34 testes de unidade novos (`central-periodo`, `variacao`, `central-indicadores`); lista do catalogo atualizada no teste de integracao; `typecheck` e `lint` da web.
+
+**Fatias seguintes (ROADMAP, trilha 5J):** meta mensal e projecao; aliquota de imposto com vigencia e lucro apos imposto; recuperacao de 90 dias de frete; sinais e recomendacoes de Ads; detector de frete; rankings de produto; central de alertas sobre `actions`.
+
+**Impacto:** `apps/web/app/central/{page,indicadores,loading}.tsx`, `apps/web/lib/{central-periodo,variacao,central-indicadores}.ts` e testes, `apps/web/components/{kpi-strip,nav}.tsx`, `apps/web/app/globals.css`, migration `20260923183000`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,HANDOFF,DECISIONS}.md`.

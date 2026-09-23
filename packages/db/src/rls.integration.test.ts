@@ -320,6 +320,9 @@ describe("catálogo de métricas", () => {
       "ticket_medio",
       "unidades_vendidas",
       "valor_cancelado",
+      // D-394 (METRICS 5I): a variação entre períodos da Central do negócio.
+      "variacao_percentual_periodo",
+      "variacao_pontos_percentuais",
       "visitas",
     ]);
   });
