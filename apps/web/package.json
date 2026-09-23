@@ -16,7 +16,8 @@
     "check:server-actions": "node scripts/check-server-actions.mjs",
     "check:table-styles": "node scripts/check-table-styles.mjs",
     "check:control-styles": "node scripts/check-control-styles.mjs",
-    "check:loading": "node scripts/check-loading.mjs"
+    "check:loading": "node scripts/check-loading.mjs",
+    "check:settings-vocabulary": "node scripts/check-settings-vocabulary.mjs"
   },
   "dependencies": {
     "@sb/db": "workspace:*",
