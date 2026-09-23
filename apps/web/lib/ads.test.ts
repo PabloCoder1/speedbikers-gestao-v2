@@ -68,6 +68,17 @@ describe("lerVisaoAds", () => {
   });
 });
 
+describe("dias de Ads pendentes (D-398)", () => {
+  it("ausente num banco sem a migration vira lista vazia; presente é lida; inválida recusa a resposta", () => {
+    expect(lerVisaoAds(resposta)?.diasPendentes).toEqual([]);
+    expect(lerVisaoAds({ ...resposta, dias_pendentes: ["2026-09-21", "2026-09-22"] })?.diasPendentes).toEqual([
+      "2026-09-21",
+      "2026-09-22",
+    ]);
+    expect(lerVisaoAds({ ...resposta, dias_pendentes: [21] })).toBeNull();
+  });
+});
+
 describe("tomDoRoas", () => {
   it("abaixo de 1 é perigo, abaixo do alvo é atenção, no alvo é ok, sem investimento é neutro", () => {
     expect(tomDoRoas(0.8, 5)).toBe("perigo");

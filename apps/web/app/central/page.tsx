@@ -12,6 +12,7 @@ import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { AVISO } from "../faturamento/numeros";
 import { Indicadores } from "./indicadores";
+import { SinalDeAds } from "./sinal-ads";
 import { SinalDoFrete } from "./sinal-frete";
 
 export const metadata = { title: "Central do negócio — Speed Bikers Gestão" };
@@ -28,7 +29,8 @@ export const dynamic = "force-dynamic";
  * atual, mês anterior) e o resumo automático. A segunda (D-395) trouxe a meta
  * do mês com a projeção de fechamento e o imposto, com o lucro após imposto e
  * Ads. A terceira (D-397), o detector de frete, entra aqui como um painel com
- * os anúncios que pedem revisão. Sinais de Ads e alertas vêm nas seguintes
+ * os anúncios que pedem revisão; a quarta (D-398), os sinais de Ads por
+ * campanha, como outro. A central de alertas vem na seguinte
  * (`docs/ROADMAP.md`, trilha 5J).
  *
  * **As mesmas consultas de `/faturamento`.** `get_faturamento` e
@@ -121,6 +123,11 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     membership.organizationId === null
       ? null
       : Promise.resolve(supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId }));
+  // Os sinais de Ads usam a semana que o Mercado Livre já consolidou, não o período da central.
+  const leituraAds =
+    membership.organizationId === null
+      ? null
+      : Promise.resolve(supabase.rpc("get_sinais_ads", { p_organization_id: membership.organizationId }));
 
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoAtual = periodoDaUrl(periodo);
@@ -192,6 +199,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
               Detector de frete
             </Link>
 
+            <Link className="sb-button" href="/central/ads">
+              Sinais de Ads
+            </Link>
+
             <Link className="sb-button" href={contaSlug === null ? "/faturamento" : `/faturamento?account=${encodeURIComponent(contaSlug)}`}>
               Faturamento detalhado
             </Link>
@@ -217,6 +228,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
 
       <Suspense fallback={<CarregandoBloco rotulo="detector de frete" />}>
         <SinalDoFrete leitura={leituraFrete} />
+      </Suspense>
+
+      <Suspense fallback={<CarregandoBloco rotulo="sinais de Ads" />}>
+        <SinalDeAds leitura={leituraAds} />
       </Suspense>
     </>
   );

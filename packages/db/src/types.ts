@@ -4340,6 +4340,15 @@ export type Database = {
         // mora em apps/web/lib/detector-frete.ts.
         Returns: Json
       }
+      get_sinais_ads: {
+        Args: {
+          p_hoje?: string
+          p_organization_id: string
+        }
+        // D-398: jsonb com janela (e dias pendentes), referencias, resumo e
+        // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
+        Returns: Json
+      }
       get_meta_do_mes: {
         Args: {
           p_hoje?: string

@@ -80,15 +80,15 @@ export async function SinalDoFrete({ leitura }: { leitura: PromiseLike<RespostaC
 
         {primeiros.length > 0 && (
           <div className="sb-central-bloco">
-            <ul className="sb-frete-lista">
+            <ul className="sb-sinal-lista">
               {primeiros.map((a) => {
                 const [motivo] = motivosDoAlerta(a, janela);
 
                 return (
-                  <li key={`${a.anuncio}:${a.faixa}`} className="sb-frete-alerta">
-                    <div className="sb-frete-cabeca">
+                  <li key={`${a.anuncio}:${a.faixa}`} className="sb-sinal-alerta">
+                    <div className="sb-sinal-cabeca">
                       <StatePill tone={{ tom: NIVEL[a.nivel].tom, label: NIVEL[a.nivel].rotulo }} />
-                      <div className="sb-frete-titulo">
+                      <div className="sb-sinal-titulo">
                         <strong>{a.titulo}</strong>
                         {motivo !== undefined && <span>{motivo.texto}</span>}
                       </div>

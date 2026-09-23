@@ -71,7 +71,7 @@ function ads(parcial: Partial<ResumoAds> = {}): ResumoAds {
   };
 }
 
-const COMPLETA = { completa: true, ate: "2026-09-22" };
+const COMPLETA = { completa: true, ate: "2026-09-22", pendentes: [] };
 
 /** 6% sobre a receita do fixture: 600 de imposto, resultado 2.500 − 600 = 1.900, margem 19%. */
 function imposto(parcial: Partial<ImpostoDoPeriodo> = {}): ImpostoDoPeriodo {
@@ -171,7 +171,7 @@ describe("montarIndicadores", () => {
   });
 
   it("Ads sem o período inteiro no diário não compara, e diz até quando há dado", () => {
-    const lista = montarIndicadores(entrada({ coberturaAdsAtual: { completa: false, ate: "2026-09-21" } }));
+    const lista = montarIndicadores(entrada({ coberturaAdsAtual: { completa: false, ate: "2026-09-21", pendentes: [] } }));
     const investimento = indicador(lista, "investimento");
 
     expect(investimento.variacao).toBeNull();
@@ -221,7 +221,7 @@ describe("imposto e lucro após imposto e Ads (D-395)", () => {
   });
 
   it("Ads incompleto segura o lucro; sem conta com Product Ads, o zero é legítimo", () => {
-    const incompleto = { completa: false, ate: "2026-09-21" };
+    const incompleto = { completa: false, ate: "2026-09-21", pendentes: [] };
 
     expect(
       indicador(montarIndicadores(entrada({ impostoAtual: imposto(), coberturaAdsAtual: incompleto })), "lucro").valor,
@@ -242,9 +242,54 @@ describe("coberturaDoAds", () => {
       { dia: "2026-09-22", investimento: 10, receita_ads: 50 },
     ];
 
-    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-22")).toEqual({ completa: true, ate: "2026-09-22" });
-    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-23")).toEqual({ completa: false, ate: "2026-09-22" });
-    expect(coberturaDoAds([], "2026-09-01", "2026-09-22")).toEqual({ completa: false, ate: null });
+    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-22")).toEqual({ completa: true, ate: "2026-09-22", pendentes: [] });
+    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-23")).toEqual({ completa: false, ate: "2026-09-22", pendentes: [] });
+    expect(coberturaDoAds([], "2026-09-01", "2026-09-22")).toEqual({ completa: false, ate: null, pendentes: [] });
+  });
+
+  it("guarda só os dias pendentes que caem no período (D-398)", () => {
+    const diario = [
+      { dia: "2026-09-01", investimento: 10, receita_ads: 50 },
+      { dia: "2026-09-22", investimento: 10, receita_ads: 0 },
+    ];
+
+    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-22", ["2026-09-21", "2026-09-22"]).pendentes).toEqual([
+      "2026-09-21",
+      "2026-09-22",
+    ]);
+    expect(coberturaDoAds(diario, "2026-09-01", "2026-09-20", ["2026-09-21", "2026-09-22"]).pendentes).toEqual([]);
+  });
+});
+
+describe("dias de Ads ainda não consolidados (D-398)", () => {
+  const PENDENTE = { completa: true, ate: "2026-09-22", pendentes: ["2026-09-21", "2026-09-22"] };
+
+  it("ROAS, ACOS e vendas com Ads esperam; investimento, TACoS e lucro seguem", () => {
+    const lista = montarIndicadores(entrada({ coberturaAdsAtual: PENDENTE, impostoAtual: imposto(), impostoAnterior: imposto() }));
+
+    for (const id of ["roas", "acos", "receita_ads"]) {
+      expect(indicador(lista, id).variacao, id).toBeNull();
+      expect(indicador(lista, id).semComparacao, id).toBe(
+        "vendas com Ads de 21/09/2026 e 22/09/2026 ainda não consolidadas pelo Mercado Livre",
+      );
+    }
+
+    expect(indicador(lista, "investimento").variacao).not.toBeNull();
+    expect(indicador(lista, "tacos").variacao).not.toBeNull();
+    expect(indicador(lista, "lucro").valor).not.toBeNull();
+  });
+
+  it("período anterior com dia pendente também segura o ROAS", () => {
+    const lista = montarIndicadores(entrada({ coberturaAdsAnterior: PENDENTE }));
+
+    expect(indicador(lista, "roas").semComparacao).toBe("o período anterior tem vendas com Ads ainda não consolidadas");
+  });
+
+  it("o resumo diz por que o ROAS não foi comparado", () => {
+    const e = entrada({ coberturaAdsAtual: PENDENTE });
+    const r = texto(montarResumo(montarIndicadores(e), e, "30d"));
+
+    expect(r.frases.some((f) => f.includes("O ROAS espera as vendas com Ads de 21/09/2026 e 22/09/2026"))).toBe(true);
   });
 });
 

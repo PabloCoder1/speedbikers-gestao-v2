@@ -159,7 +159,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
         }
       >
         <div className="sb-panel-body">
-          <div className="sb-frete-filtros">
+          <div className="sb-sinal-filtros">
             <FilterPill href={hrefDoNivel(null)} active={nivel === null}>
               Todos ({formatCount(detector.alertas.length)})
             </FilterPill>
@@ -181,7 +181,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
                 : "Nenhum anúncio neste nível."}
             </p>
           ) : (
-            <ol className="sb-frete-lista">
+            <ol className="sb-sinal-lista">
               {alertas.map((alerta) => (
                 <CartaoDoAlerta key={`${alerta.anuncio}:${alerta.faixa}`} alerta={alerta} janela={janela} />
               ))}
@@ -251,22 +251,22 @@ function CartaoDoAlerta({ alerta: a, janela }: { alerta: AlertaDeFrete; janela: 
   const motivos = motivosDoAlerta(a, janela);
 
   return (
-    <li className="sb-frete-alerta">
-      <div className="sb-frete-cabeca">
+    <li className="sb-sinal-alerta">
+      <div className="sb-sinal-cabeca">
         <StatePill tone={{ tom: nivel.tom, label: nivel.rotulo }} />
-        <div className="sb-frete-titulo">
+        <div className="sb-sinal-titulo">
           <strong>{a.titulo}</strong>
           <span>
             {a.sku ?? "sem SKU vinculado"} · <Link href={`/anuncios/${a.anuncio}`}>{a.anuncio}</Link> · {a.conta} ·
             preço {ROTULO_DA_FAIXA[a.faixa]}
           </span>
         </div>
-        <span className="sb-frete-pontos" title="soma dos pontos dos cinco sinais">
+        <span className="sb-sinal-pontos" title="soma dos pontos dos cinco sinais">
           {a.pontos} {a.pontos === 1 ? "ponto" : "pontos"}
         </span>
       </div>
 
-      <dl className="sb-frete-numeros">
+      <dl className="sb-sinal-numeros">
         <div>
           <dt>Preço</dt>
           <dd>{formatCurrency(a.preco_atual)}</dd>
@@ -300,17 +300,17 @@ function CartaoDoAlerta({ alerta: a, janela }: { alerta: AlertaDeFrete; janela: 
         </div>
       </dl>
 
-      <details className="sb-frete-porque">
+      <details className="sb-sinal-porque">
         <summary>Por que o sistema apontou</summary>
         <ul>
           {motivos.map((m) => (
             <li key={m.sinal}>
-              <span className="sb-frete-peso">+{m.pontos}</span>
+              <span className="sb-sinal-peso">+{m.pontos}</span>
               <span>{m.texto}</span>
             </li>
           ))}
         </ul>
-        <p className="sb-frete-sugestao">{sugestaoDoAlerta(a)}</p>
+        <p className="sb-sinal-sugestao">{sugestaoDoAlerta(a)}</p>
       </details>
     </li>
   );
@@ -334,7 +334,7 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
       title="Como o detector decide"
       subtitle="Cinco comparações, cada uma de 0 a 3 pontos; o nível é a soma. Os números de cada motivo são os da própria comparação."
     >
-      <div className="sb-panel-body sb-frete-metodo">
+      <div className="sb-panel-body sb-sinal-metodo">
         <ul>
           <li>
             <strong>Histórico do anúncio</strong> — frete mediano dos últimos 14 dias contra o dos dias anteriores, na

@@ -471,6 +471,35 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 **A margem é a de `get_faturamento`.** As CTEs de custo foram copiadas sem mudança (histórico com vigência, kits pelos componentes); o teste de integração confere a igualdade nos mesmos pedidos.
 
+## 5M. Sinais de Ads por campanha (D-398) — DEFINIDAS E IMPLEMENTADAS
+
+> A tela `/central/ads` (e o painel "Ads" da central) aponta as campanhas do Mercado Ads que pedem análise ou têm espaço para crescer, e mostra a tabela de todas as campanhas da semana. Tudo sai de `get_sinais_ads(organização, hoje)`; o texto (o que aconteceu, a possível interpretação, o que vale revisar) é montado em `apps/web/lib/sinais-ads.ts` só com os números da RPC.
+
+**O dia consolidado.** O Mercado Livre publica o gasto e os cliques do dia antes da venda atribuída (medido em 23/09: 21/09 e 22/09 chegaram com gasto em todas as campanhas e venda zero; 22/09 também com impressão zero; nenhum dia mais antigo tem o padrão). **Dia pendente** = dia antes de hoje, com gasto, depois do último dia com venda atribuída **e** impressão, somando as contas do recorte. `get_ads_overview` devolve `dias_pendentes`; com algum no período, a central não compara vendas com Ads, ROAS nem ACOS (5I) — o investimento, o TACoS e o lucro após Ads seguem, porque o gasto desses dias é conhecido — e o `/faturamento` avisa.
+
+**A semana:** os 7 dias até o último dia consolidado, contra os 7 anteriores. Hoje nunca entra.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `ctr_ads` | CTR do Ads | cliques ÷ impressões | Sem impressão: NULL |
+| `cpc_ads` | CPC do Ads | investimento ÷ cliques | Sem clique: NULL |
+| `conversao_ads` | Conversão do Ads | unidades atribuídas ÷ cliques | É unidade por clique, não conversão de pedido |
+| `cpa_ads` | Custo por venda do Ads | investimento ÷ unidades atribuídas | Sem unidade: NULL |
+| `uso_orcamento_ads` | Uso do orçamento | investimento da semana ÷ 7 ÷ orçamento diário; dias no teto = dias com gasto ≥ 90% do orçamento | O orçamento é o da última leitura da campanha (`budget` é diário: o gasto do dia bate nele) |
+| `nivel_sinal_ads` | Sinal da campanha | tabela abaixo, na ordem | Sinal para análise, não decisão: a tela nunca diz "pause" |
+| `lucro_estimado_apos_ads` | Lucro estimado após Ads | vendas com Ads × margem média da empresa na semana − investimento; margem após Ads = margem − ACOS; ROAS de equilíbrio = 1 ÷ margem | **Premissa declarada**: a API não diz que produtos cada campanha vendeu (D-363); a margem é a após imposto quando há alíquota, senão a da venda (5F/5K). Sem margem conhecida: NULL |
+
+| Nível | Regra (semana atual; "antes" = a anterior) |
+|---|---|
+| Pausada | campanha que não está ativa — quem pausou já agiu; fica fora dos alertas e na tabela |
+| Crítico | gasto ≥ max(R$ 50, orçamento diário) sem nenhuma unidade vendida; ou ROAS < 1 com R$ 50 ou mais |
+| ROAS abaixo da meta | ROAS < 80% do `roas_target` da própria campanha, R$ 50 ou mais. Abaixo por pouco é a oscilação de uma estratégia que mira o alvo (medido: 25 de 51 campanhas abaixo por qualquer margem numa semana boa) |
+| Atenção | CPC +20% com conversão −15% (100 cliques nas duas semanas); ou gasto +20% com ROAS −15% (R$ 100 antes) |
+| Oportunidade de escala | ativa, ROAS ≥ meta, uso ≥ 90% ou 4 de 7 dias no teto, 5 unidades ou mais |
+| Normal | o resto |
+
+**Interpretação** (só em crítico e abaixo da meta): CTR < 70% da mediana das campanhas da empresa na semana (com 1.000 impressões) → criativo ou oferta; conversão < 60% da mediana (com 100 cliques) → página ou produto. Medianas das próprias campanhas, não número fixo. Em escala, margem após Ads < 10% troca "avaliar aumento gradual" por "não aumentar antes de revisar custos".
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

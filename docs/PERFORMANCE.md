@@ -1261,3 +1261,7 @@ Conferência dos números no mesmo ensaio: 1–9/09 a 6% deu imposto de R$ 54.10
 ### `/central/frete`: o detector de frete (D-397, 23/09/2026)
 
 Produção (`imvjfgnaprqsfjlnsyev`), **como `postgres`**, o corpo da função como `SELECT` de leitura, 90 dias até 22/09 com a recuperação de D-396 ainda em curso (frete observado desde ~01/09): **0,51 s** (`clock_timestamp() − statement_timestamp()`), 783 linhas anúncio × faixa. Pendente: medir a função publicada como `authenticated` depois que a recuperação terminar — com 90 dias inteiros de frete os pedidos da janela triplicam, e a RLS pode mudar o plano (o precedente de 60 s escondidos atrás de 4,5 s como `postgres`). A tela e o painel da central carregam a RPC por streaming, fora do caminho dos indicadores.
+
+### `/central/ads`: os sinais de Ads (D-398, 23/09/2026)
+
+Produção, como `postgres`, o corpo de `get_sinais_ads` como `SELECT` de leitura (semana 14–20/09, 51 campanhas): **9 ms**. As tabelas de Ads têm ~6 mil linhas (65 campanhas × 97 dias); a tela ainda chama `get_faturamento` da mesma semana, sem detalhe, para a margem média (~0,4 s em 30 dias no Dev, D-395). O detector de frete (D-397), medido no Dev como `authenticated` depois do merge: 1.257 ms na primeira chamada e 290–304 ms nas sete seguintes, sem salto na sexta (750 linhas, 3 semanas de frete).
