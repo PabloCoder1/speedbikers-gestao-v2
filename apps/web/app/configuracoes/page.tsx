@@ -11,7 +11,7 @@ import type { PillTone } from "../../components/state-pill";
 import { formatCount } from "../../lib/format";
 import { currentMembership } from "../../lib/request-membership";
 import { sanitizeErrorText } from "../../lib/sanitize";
-import { describeSettings, quemAltera, zonaDe } from "../../lib/settings-hub";
+import { describeSettings, incluiPara, placarDe, quemAltera, vereditoDe, zonaDe } from "../../lib/settings-hub";
 import type { SettingsSection, SettingState } from "../../lib/settings-hub";
 import { createClient } from "../../lib/supabase/server";
 
@@ -36,15 +36,17 @@ export const dynamic = "force-dynamic";
  * ## A composição, e o que cada parte responde
  *
  * 1. **O subtítulo dá o veredito**, computado sobre o MESMO array que imprime
- *    os cartões: "2 das 7 áreas ainda não têm configuração". Sem leitura não
- *    há veredito — a frase some, não vira zero (D-067).
+ *    os cartões e com as MESMAS duas contagens da faixa ("1 das 7 áreas ainda
+ *    não tem configuração e 2 têm configuração parcial"). Sem leitura não há
+ *    veredito — a frase some, não vira zero (D-067). Quem calcula é
+ *    `vereditoDe`, peça pura com teste.
  * 2. **A faixa é o único placar da tela**, na primeira dobra, com a ressalva
  *    de cada célula VISÍVEL ao lado do número (METRICS 5C.2): o `title` de
  *    antes não existia no toque nem no teclado.
  * 3. **As áreas são impressas em ZONAS rotuladas por presença de
- *    configuração** — o mesmo critério que a pílula do cartão já afirma, para
+ *    configuração** — cada rótulo verdadeiro para as pílulas que abriga, para
  *    que zona e pílula não tenham como se contradizer. Nenhum rótulo afirma
- *    saúde: "SEM CONFIGURAÇÃO AINDA" não promete que o resto está bem. A ordem
+ *    saúde: "FALTA CONFIGURAR" não promete que o resto está bem. A ordem
  *    DENTRO de cada zona continua a do ROADMAP, que `describeSettings` fixa.
  *
  * O que a tela responde de verdade continua sendo a pergunta que hoje exige
@@ -71,9 +73,16 @@ const STATE_TONE: Record<SettingState, PillTone> = {
  * As três zonas. O rótulo afirma PRESENÇA de configuração e nada mais: a
  * saúde de cada área é assunto da tela dona, e prometê-la aqui seria cobrir
  * uma regra morta com um selo verde. Zona vazia não renderiza.
+ *
+ * A zona 1 abriga `nao_configurado` E `parcial`, e o rótulo tem de ser
+ * verdadeiro para os dois: "SEM CONFIGURAÇÃO AINDA" punha "Mercado Livre ·
+ * Parcial · 3 de 4 contas conectadas" debaixo de uma frase que dizia que a
+ * área não tinha configuração nenhuma. "FALTA CONFIGURAR" vale para as duas
+ * pílulas — falta tudo, ou falta parte — e não contém o nome de nenhuma das
+ * sete áreas (o e2e localiza região por nome, e o nome casa por pedaço).
  */
 const ZONAS = [
-  { numero: 1, id: "cfg-zona-sem", rotulo: "SEM CONFIGURAÇÃO AINDA" },
+  { numero: 1, id: "cfg-zona-sem", rotulo: "FALTA CONFIGURAR" },
   { numero: 2, id: "cfg-zona-com", rotulo: "COM CONFIGURAÇÃO" },
   { numero: 3, id: "cfg-zona-erro", rotulo: "NÃO FOI POSSÍVEL LER" },
 ] as const;
@@ -86,6 +95,10 @@ const ZONAS = [
  * renderização transforma a única informação de risco da tela em ruído.
  */
 function Cartao({ secao, papel }: { secao: SettingsSection; papel: string | null }): ReactNode {
+  // Só os termos que QUEM OLHA vai achar na tela dona: "Convites pendentes"
+  // e "Conectar conta" existem, mas só para ADMIN.
+  const termos = incluiPara(secao, papel);
+
   return (
     <Panel title={secao.label} aside={<StatePill tone={STATE_TONE[secao.state]} />}>
       <div className="sb-panel-body sb-settings-body">
@@ -93,9 +106,11 @@ function Cartao({ secao, papel }: { secao: SettingsSection; papel: string | null
 
         {secao.aviso !== null && <p className="sb-note sb-note-atencao sb-settings-aviso">{secao.aviso}</p>}
 
-        <p className="sb-settings-inclui">
-          <strong>Inclui:</strong> {secao.inclui.map((termo) => termo.termo).join(", ")}.
-        </p>
+        {termos.length > 0 && (
+          <p className="sb-settings-inclui">
+            <strong>Inclui:</strong> {termos.map((termo) => termo.termo).join(", ")}.
+          </p>
+        )}
 
         <p className="sb-settings-quem">
           <strong>Quem altera:</strong> {quemAltera(secao, papel)}
@@ -149,22 +164,15 @@ function Zonas({ secoes, papel }: { secoes: SettingsSection[]; papel: string | n
 }
 
 /**
- * O veredito, contado sobre o mesmo array dos cartões e com o mesmo predicado
- * da zona 1. Com a leitura falhada sobra só a regra da tela: **veredito não se
- * inventa** (D-067), e "0 das 7" seria a invenção mais fácil de todas.
+ * O veredito, contado sobre o mesmo array dos cartões e com as mesmas duas
+ * contagens da faixa (`vereditoDe`). Sem leitura sobra só a regra da tela:
+ * **veredito não se inventa** (D-067), e "0 das 7" seria a invenção mais fácil
+ * de todas.
  */
-function Subtitulo({ secoes, houveFalha }: { secoes: SettingsSection[]; houveFalha: boolean }): ReactNode {
-  if (houveFalha) return APONTA;
+function Subtitulo({ secoes, semLeitura }: { secoes: SettingsSection[]; semLeitura: boolean }): ReactNode {
+  const veredito = vereditoDe(secoes, semLeitura);
 
-  const total = String(secoes.length);
-  const semConfig = secoes.filter((secao) => zonaDe(secao.state) === 1).length;
-
-  const veredito =
-    semConfig === 0
-      ? `As ${total} áreas têm configuração.`
-      : semConfig === 1
-        ? `1 das ${total} áreas ainda não tem configuração.`
-        : `${String(semConfig)} das ${total} áreas ainda não têm configuração.`;
+  if (veredito === null) return APONTA;
 
   return (
     <>
@@ -232,31 +240,29 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
   // Uma chamada: todas as contagens no banco (D-185), sob a RLS de quem pergunta.
   const overview = await supabase.rpc("get_settings_overview", { p_organization_id: organizationId }).maybeSingle();
 
-  const houveFalha = overview.error !== null;
-  const secoes = describeSettings(overview.error === null ? overview.data : null);
-
-  const quantas = (estado: SettingState): string =>
-    formatCount(secoes.filter((secao) => secao.state === estado).length);
+  /*
+    Três formas de "não li", tratadas do mesmo jeito pela faixa e pelo
+    veredito: o erro; `maybeSingle()` sobre zero linhas, que devolve `data`
+    nulo SEM erro; e a organização que a RLS esconde, que a RPC devolve com
+    nome NULL e todas as contagens em zero (`describeSettings` a trata como
+    leitura ausente).
+  */
+  const lida = overview.error === null ? overview.data : null;
+  const semLeitura = (lida?.organization_name ?? null) === null;
+  const secoes = describeSettings(lida, membership.role);
 
   /*
     O TRAVESSÃO NO RAMO DE FALHA.
 
     Sem a leitura, "Configuradas", "Parciais" e "Não configuradas" são
     desconhecidas — e zero ali não é neutro: lê-se como "nada está
-    configurado", que é o oposto do que aconteceu. `formatCount(null)` devolve
-    "—", a convenção da casa para "não medido" (D-067).
-
-    As outras três continuam números porque continuam SABIDAS: "Seções" é o
-    tamanho do conjunto, e `describeSettings(null)` monta a IA fora do ramo de
-    falha (ela é "não editável aqui" com ou sem banco) e as outras seis como
-    indisponíveis. É por isso que o total continua fechando em 7 — e por isso
-    "Indisponíveis: 7" seria errado.
-
-    Nota registrada: neste ramo a invariante "as cinco partes somam o total"
-    não se aplica, porque três das partes deixam de ser número. É escolha
-    consciente; o e2e roda com banco semeado e não exercita este ramo.
+    configurado", que é o oposto do que aconteceu. `placarDe` as devolve
+    `null`, e `formatCount(null)` imprime "—", a convenção da casa para "não
+    medido" (D-067). As outras três continuam números porque continuam
+    SABIDAS — o porquê, e a invariante que deixa de valer neste ramo, estão em
+    `placarDe`.
   */
-  const quantasSabidas = (estado: SettingState): string => (houveFalha ? formatCount(null) : quantas(estado));
+  const placar = placarDe(secoes, semLeitura);
 
   /*
     SEIS células: o total e as CINCO partes, contadas sobre o mesmo array que
@@ -275,52 +281,67 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     "ver lista", e aqui nenhuma célula tem `href`.
 
     Cada ressalva cabe em UMA linha da célula em 390px (113px de texto, Inter
-    10px). Medido com a folha que o build emite: com as ressalvas de duas e
-    três linhas o primeiro cartão da zona 1 terminava em 863px do topo do
-    `.sb-content`, fora da dobra de 812; com uma linha, em 803. A faixa não
-    desce para o rodapé (veto do plano) — quem encolhe é a ressalva.
+    10px): com as de duas e três linhas a faixa crescia e empurrava a primeira
+    zona. A faixa não desce para o rodapé (veto do plano) — quem encolhe é a
+    ressalva.
+
+    A DOBRA NÃO FECHA NO CELULAR, e o número tem de ser lido na coordenada
+    certa. Acima do `.sb-content` há 78px de barra superior, então a dobra de
+    812px da janela fica em 734px do topo do conteúdo. Medido em 2026-09-23
+    com a folha do build e o HTML real da página: com os dados de produção o
+    primeiro cartão da zona 1 (Operação) termina em 914px da janela — 102px
+    abaixo da dobra; com os do seed (Reposição primeiro), em 820 — 8px
+    abaixo. A medida anterior (803 "de 812") comparava a coordenada do
+    conteúdo com a altura da janela.
+
+    As ressalvas são frases que se sustentam sozinhas no toque, onde o `title`
+    não existe: "nada gravado ainda" no lugar de "o cartão diz o efeito" (que
+    era falso — "Nenhum filtro salvo seu." não diz efeito nenhum), "leitura que
+    falhou" no lugar de "falha, não ausência". E a fórmula de "Configuradas"
+    deixou de afirmar saúde ("tem tudo o que precisa para o sistema agir")
+    logo ao lado da ressalva que diz "presença, não saúde".
   */
   const celulas: KpiCellData[] = [
     {
       label: "Seções",
       formula: "As áreas de configuração que o sistema tem. É o mesmo conjunto dos cartões abaixo.",
       ressalva: "os cartões abaixo",
-      value: formatCount(secoes.length),
+      value: formatCount(placar.secoes),
       previous: null,
     },
     {
       label: "Configuradas",
-      formula: "A seção tem tudo o que precisa para o sistema agir sobre ela.",
+      formula: "Há configuração gravada; se ela está boa é assunto da tela dona.",
       ressalva: "presença, não saúde",
-      value: quantasSabidas("configurado"),
+      value: formatCount(placar.configuradas),
       previous: null,
     },
     {
       label: "Parciais",
       formula: "Configurada em parte: uma conta de várias, uma política de algumas.",
       ressalva: "parte feita, parte não",
-      value: quantasSabidas("parcial"),
+      value: formatCount(placar.parciais),
       previous: null,
     },
     {
       label: "Não configuradas",
-      formula: "Nada gravado ainda — e o resumo da seção diz a consequência disso.",
-      ressalva: "o cartão diz o efeito",
-      value: quantasSabidas("nao_configurado"),
+      formula: "Nada gravado ainda na tela dona. Quando isso tem consequência, o cartão a diz.",
+      ressalva: "nada gravado ainda",
+      value: formatCount(placar.naoConfiguradas),
       previous: null,
     },
     {
       label: "Não editáveis aqui",
       formula: "Mora fora do produto (deploy, painel do Mercado Livre): nem configurado nem por configurar.",
       ressalva: "mora fora do produto",
-      value: quantas("nao_editavel"),
+      value: formatCount(placar.naoEditaveis),
       previous: null,
     },
     {
       label: "Indisponíveis",
-      formula: "A leitura falhou. Ausência de resposta não é ausência de configuração (D-067).",
-      ressalva: "falha, não ausência",
-      value: quantas("indisponivel"),
+      formula: "A leitura falhou. Ausência de resposta não é ausência de configuração.",
+      ressalva: "leitura que falhou",
+      value: formatCount(placar.indisponiveis),
       previous: null,
     },
   ];
@@ -330,7 +351,7 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
       <PageTitle
         eyebrow={EYEBROW}
         title="Configurações"
-        subtitle={<Subtitulo secoes={secoes} houveFalha={houveFalha} />}
+        subtitle={<Subtitulo secoes={secoes} semLeitura={semLeitura} />}
         compacto
       />
 
