@@ -6,7 +6,9 @@
 --
 -- 1. `monthly_goals` -- a meta de faturamento de cada mes, da organizacao
 --    inteira. Uma linha por mes; escrita ADMIN/GESTOR, leitura de membro
---    (o padrao de replenishment_settings, D-144, com has_org_role de 20260901135046).
+--    (o padrao de replenishment_settings, D-144: leitura pela forma de CONJUNTO
+--    de D-181, `organization_id in (select private.accessible_orgs())`, e escrita
+--    por has_org_role de 20260901135046).
 --
 -- 2. `tax_rates` -- a aliquota efetiva sobre o faturamento, com vigencia: a
 --    linha vale de `valid_from` ate a proxima. Mudar a aliquota e criar uma
@@ -61,7 +63,7 @@ alter table public.monthly_goals enable row level security;
 
 create policy monthly_goals_select_member
   on public.monthly_goals for select to authenticated
-  using (private.is_member_of(organization_id));
+  using (organization_id in (select private.accessible_orgs()));
 
 create policy monthly_goals_insert_admin
   on public.monthly_goals for insert to authenticated
@@ -105,7 +107,7 @@ alter table public.tax_rates enable row level security;
 
 create policy tax_rates_select_member
   on public.tax_rates for select to authenticated
-  using (private.is_member_of(organization_id));
+  using (organization_id in (select private.accessible_orgs()));
 
 create policy tax_rates_insert_admin
   on public.tax_rates for insert to authenticated
