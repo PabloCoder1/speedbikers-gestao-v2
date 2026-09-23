@@ -1051,19 +1051,21 @@ ordem e texto.
 
 ### A composição, de cima para baixo
 
-- **`PageTitle` compacto**, com o veredito no subtítulo ("2 das 7 áreas ainda
-  não têm configuração"), contado sobre o MESMO array que imprime os cartões e
-  com o mesmo predicado da primeira zona — assim placar e ordem não têm como
-  discordar. Com a leitura falhada o veredito some, em vez de virar zero;
+- **`PageTitle` compacto**, com o veredito no subtítulo ("1 das 7 áreas ainda
+  não tem configuração e 2 têm configuração parcial"), contado sobre o MESMO
+  array que imprime os cartões e com as MESMAS duas contagens das células
+  "Não configuradas" e "Parciais" (`vereditoDe`) — assim subtítulo e faixa não
+  têm como discordar. Sem leitura o veredito some, em vez de virar zero;
 - **faixa de seis células** (`--sb-kpi-cols:6`), na primeira dobra, com a mesma
   aritmética de antes e a **ressalva VISÍVEL** ao lado de cada número
   (METRICS 5C.2): a fórmula canônica continua no `title`, mas `title` não
   existe no toque nem no teclado. Nenhuma célula tem `tom` — `KpiStrip` só o lê
   no ramo de célula com `href`, e aqui nenhuma tem;
 - **três zonas** `<section aria-labelledby>` rotuladas por um `.sb-eyebrow`
-  visível: SEM CONFIGURAÇÃO AINDA, COM CONFIGURAÇÃO e NÃO FOI POSSÍVEL LER (só
-  quando há). Zona vazia não renderiza, e a ordem DENTRO de cada zona continua
-  a do ROADMAP. A tela deixou de usar `.sb-pair-grid`.
+  visível: FALTA CONFIGURAR (não configurado e parcial — o rótulo é
+  verdadeiro para as duas pílulas), COM CONFIGURAÇÃO e NÃO FOI POSSÍVEL LER
+  (só quando há). Zona vazia não renderiza, e a ordem DENTRO de cada zona
+  continua a do ROADMAP. A tela deixou de usar `.sb-pair-grid`.
 
 ### A anatomia do cartão
 
@@ -1074,14 +1076,20 @@ repetidos sete vezes dentro do `map`):
 
 1. `.sb-settings-resumo` — o estado medido;
 2. `.sb-settings-aviso` (sobre `.sb-note.sb-note-atencao`), só quando há
-   consequência, e **sem `role="alert"`**: é estado permanente da página, não
-   evento que acabou de acontecer;
+   consequência, **sem `role="alert"`** (é estado permanente da página, não
+   evento que acabou de acontecer) e no corpo do resumo, 13px — em 11px a
+   única frase de risco da tela ficava abaixo do estado que ela qualifica. O
+   fim da frase depende do papel: a ação para quem pode, "peça a um ADMIN
+   que…" para quem não pode;
 3. `.sb-settings-inclui` — "Inclui: …", no vocabulário literal da tela dona,
-   guardado por `check:settings-vocabulary`;
-4. `.sb-settings-quem` — "Quem altera: …", em segunda pessoa;
+   guardado por `check:settings-vocabulary`, sem os termos que a tela dona só
+   mostra a ADMIN quando quem olha não é ADMIN;
+4. `.sb-settings-quem` — "Quem altera: …", em segunda pessoa, com a cláusula
+   da policy que os papéis não dizem ("qualquer membro pode sugerir…");
 5. `nav.sb-channel-nav.sb-settings-links` — os links como chips de 34px, a
    mesma gramática do `aside` de /integracoes e /contas, no lugar do texto de
-   12px separado por " · " que não tinha área de toque.
+   12px separado por " · " que não tinha área de toque. No toque
+   (`hover: none`) o `:hover` global dos chips não gruda mais.
 
 ### A camada hero saiu desta tela
 
@@ -1100,10 +1108,14 @@ tira o piso rígido que transbordava para o lado numa caixa útil de 302px, e
 `Panel` é `<section aria-label>` e não clica; o piso de 142px no corpo saiu,
 já que o cartão agora tem de duas a cinco linhas conforme a área. O
 `loading.tsx` da pasta deixou de delegar ao esqueleto genérico (quatro células
-e uma tabela) e passou a desenhar a forma real: seis células com a linha da
-ressalva, rótulo de zona e cartões em grade.
+e uma tabela) e passou a desenhar a forma desta tela — seis células com a
+linha da ressalva, rótulo de zona e cartões em grade — **dentro da moldura de
+`CarregandoTela`**, que recebe o miolo como `children`. A primeira versão
+desenhava só o miolo e, como o `Shell` mora dentro da página, apagava a
+sidebar e a barra superior a cada navegação para cá; `check:loading` agora
+reprova esse caso.
 
-**Verificação:** `check` 29/29 com 874 testes de unidade, `build` 8/8, as seis
+**Verificação:** `check` 29/29 com 888 testes de unidade, `build` 8/8, as seis
 guardas da web (inclusive a nova `check:settings-vocabulary`) e `docs:check`.
 Remedido no harness, com a folha que o `next build` desta árvore emite (o
 `globals.css` inteiro e a Inter do `next/font`) e o HTML que a página emite, nas
@@ -1116,11 +1128,18 @@ rolagem lateral que o `<html>` não mostrava, porque quem rola é o
 `.sb-panel-body` — e media em `system-ui`: dava o primeiro cartão da zona 1
 terminando em 778 de 812px em 390px. Com a folha inteira ele terminava em 863.
 O remédio foi o que o plano previa, e não descer a faixa: **cada ressalva da
-faixa cabe agora numa linha da célula** em 390px, e o cartão termina em **803**
-— 9px de folga, o número a vigiar na próxima mudança de texto. A conta é do
-topo do `.sb-content`; acima dele há 78px de barra superior, então na tela do
-celular a última fileira de chips desse cartão fica logo abaixo da primeira
-rolagem. O e2e ganhou quatro casos e roda na CI.
+faixa cabe agora numa linha da célula** em 390px, e o cartão passou a terminar
+em 803 do topo do `.sb-content`.
+
+**E essa conta também estava na coordenada errada: a dobra NÃO fecha no
+celular.** 803 é medido do topo do conteúdo e 812 é a altura da janela; acima
+do conteúdo há 78px de barra superior. Remedido na janela, com o HTML real da
+página dentro da moldura e a folha do build, em 390x812: com os dados de
+produção o primeiro cartão da zona 1 (Operação) termina em **914px, 102 abaixo
+da dobra**; com os do seed (Reposição primeiro), em 820. O critério (c) do
+passo 0 fica registrado como não cumprido (D-391), e a escolha entre aceitar
+isso ou devolver ressalvas mais claras é do dono. O e2e ganhou cinco casos e
+roda na CI.
 
 ## Fatias anteriores
 
