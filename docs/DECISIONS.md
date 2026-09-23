@@ -13888,3 +13888,66 @@ A composicao foi **remedida depois de escrita**, com a folha que o `next build` 
 O e2e ganhou cinco casos (sem rolagem lateral em 390px medindo o `.sb-content`; a area sem configuracao acima da area com configuracao por `boundingBox().y`; a linha "Inclui:" com o termo literal no cartao de Reposicao; o aviso de ADMIN unico dentro da regiao Organizacao, sem a palavra "reposicao"; o veredito do subtitulo com os mesmos numeros das celulas "Nao configuradas" e "Parciais", lidos da faixa para valer com qualquer seed), e os tres antigos ficaram INTOCADOS. **Eles nao rodaram na maquina desta sessao**: o Supabase local estava de pe com sessoes paralelas em /anuncios, /copiloto e marca do fornecedor, e Playwright so conta depois de `db reset` + seed (memoria `e2e-reset-before-run`) — resetar apagaria o estado delas. Rodam na CI.
 
 **Impacto:** `apps/web/app/configuracoes/page.tsx`, `apps/web/app/configuracoes/loading.tsx`, `apps/web/components/carregando.tsx` (so a prop `children`, compativel), `apps/web/scripts/check-loading.mjs`, `apps/web/app/globals.css` (so a vizinhanca contigua desta tela: aviso em 13px, chips sem `:hover` no toque, movimento reduzido escopado em `.sb-settings-links`), `apps/web/lib/settings-hub.ts`, `apps/web/lib/settings-hub.test.ts`, `apps/web/e2e/configuracoes.spec.ts`, `apps/web/scripts/check-settings-vocabulary.mjs` (novo), `apps/web/package.json`, `.github/workflows/ci.yml`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/ROADMAP.md`.
+
+## D-394 - Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
+
+**Contexto:** o dono pediu em 23/09 uma "central de inteligencia do negocio" (KPIs com comparacao, meta, projecao, rentabilidade por canal e produto, detector de frete, Ads com alertas e recomendacoes, central de alertas) e exigiu auditoria antes de codigo. A auditoria, lida na `main` e no Dev, achou:
+
+- `/faturamento` (D-356, D-363) ja calcula receita, comissao, frete, custo, resultado e margem com cobertura declarada, e o Ads por campanha;
+- o frete por pedido so existe desde 14/09/2026 em producao (D-165: varredura de 7 dias, sem backfill); peso cadastrado em 58 de 3.554 SKUs no Dev; Ads so por campanha (a API por anuncio foi desligada em 05/2026); nenhum imposto, custo fixo ou meta cadastrados; so Mercado Livre como canal;
+- `variacao_percentual_periodo` estava pendente em METRICS 5.4, e por D-023 nenhuma tela podia mostrar "+12,8%".
+
+Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; imposto como **aliquota unica sobre o faturamento, com vigencia**; **recuperar 90 dias de frete**; **so Mercado Livre** por enquanto.
+
+**1. TELA NOVA `/central`, E NAO A HOME.** A Visao Geral segue o frame `Home` do Figma e e operacional (estoque, atendimento, notificacoes); a central e comercial. Criar a rota preserva o que funciona e deixa para depois a pergunta "qual abre primeiro". Item "Central do negocio" no grupo Visao geral do menu.
+
+**2. NENHUMA CONSULTA NOVA.** Quatro leituras em paralelo: `get_faturamento` (sem detalhe) e `get_ads_overview` para o periodo atual e o anterior. Os numeros batem com `/faturamento` por construcao; a tela acrescenta a comparacao.
+
+**3. AS JANELAS TERMINAM ONTEM.** Os presets de `lib/period.ts` vao ate hoje, e comparar um dia em andamento com um dia inteiro poe ~1/N do volume a menos sem que nada piore. A central tem presets proprios (`lib/central-periodo.ts`): hoje (contra ontem, marcado em andamento), ontem, 7/15/30 dias e mes atual ate ontem, mes anterior, personalizado. Mes atual compara com os mesmos dias do mes anterior. As outras telas nao mudam.
+
+**4. A COR VEM DA POLARIDADE, NAO DO SINAL.** Cada indicador declara maior-melhor, menor-melhor ou neutra (investimento em Ads). Zona neutra de 2% (0,5 p.p.), atencao ate 10% (2 p.p.), perigo acima. Limites provisorios por D-148, a caminho das configuracoes. Comissao e custo sao comparados pela participacao na receita. Com o dia em andamento, o volume mostra a variacao sem tom.
+
+**5. COMPARACAO QUE NAO VALE NAO APARECE, E O MOTIVO SIM.** Resultado em reais so com coberturas a ate 5 p.p.; razoes de pedidos cobertos com 20 pedidos em cada lado; Ads so com o diario cobrindo os dois periodos inteiros. Fora disso a celula diz por que nao compara.
+
+**6. O RESUMO E MONTADO DOS NUMEROS, SEM LLM.** Faturamento, resultado (com o contraste "mesmo com o faturamento em alta"), margem e Ads. A variacao da margem e repartida EXATAMENTE entre comissao, frete e custo (identidade conferida nos dois periodos, tolerancia de 0,1 p.p.); sem a identidade, nada e atribuido. Listas "Pede atencao" e "Melhorou" saem das mesmas variacoes.
+
+**7. CATALOGO.** `variacao_percentual_periodo` e `variacao_pontos_percentuais` entram em `metric_definitions` (migration `20260923100000`, so catalogo) e em METRICS 5I, com a janela anterior (`comparacao_periodo_anterior`) e a tabela do tom. A tela nao le o catalogo em tempo de execucao: funciona antes de a migration chegar a producao.
+
+**Verificacao:** 34 testes de unidade novos (`central-periodo`, `variacao`, `central-indicadores`); lista do catalogo atualizada no teste de integracao; `typecheck` e `lint` da web.
+
+**Fatias seguintes (ROADMAP, trilha 5J):** meta mensal e projecao; aliquota de imposto com vigencia e lucro apos imposto; recuperacao de 90 dias de frete; sinais e recomendacoes de Ads; detector de frete; rankings de produto; central de alertas sobre `actions`.
+
+**Impacto:** `apps/web/app/central/{page,indicadores,loading}.tsx`, `apps/web/lib/{central-periodo,variacao,central-indicadores}.ts` e testes, `apps/web/components/{kpi-strip,nav}.tsx`, `apps/web/app/globals.css`, migration `20260923100000`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,HANDOFF,DECISIONS}.md`.
+
+## D-395 - Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
+
+**Contexto:** segunda fatia da central (D-394), pedida pelo dono em 23/09 ("pode seguir com meta, projecao e imposto"). Na auditoria de D-394 ele escolheu o imposto como **aliquota unica sobre o faturamento, com vigencia**. Nao havia tabela de meta, de aliquota nem de configuracao financeira, e `margem_contribuicao` esperava imposto e Ads desde METRICS 5.5.
+
+**1. DUAS TABELAS DE CONFIGURACAO, O PADRAO DE D-144.** `monthly_goals` (uma meta por mes, da organizacao) e `tax_rates` (a aliquota vale de `valid_from` ate a proxima). Leitura de membro, escrita ADMIN/GESTOR por `has_org_role` (a funcao de 20260901135046 -- a prova local da migration pegou a primeira versao usando o `has_role(text[])` que ja nao existe), zero linhas semeadas. As duas gravacoes da tela sao UPSERT pela chave natural: cadastrar de novo o mesmo mes corrige.
+
+**2. O IMPOSTO ENTRA EM `get_faturamento`, PEDIDO A PEDIDO.** A alternativa -- aliquota x receita na web -- erraria todo periodo que atravessa uma mudanca de aliquota, e uma RPC separada duplicaria a regra do pedido coberto. O corpo e o de 20260918160000 com quatro acrescimos: `organization_id` ate `classificado`, a CTE `aliquotas` em intervalos, o `left join` pelo dia de negocio e seis campos no resumo. **Algum pedido sem aliquota torna o total NULL**, nunca parcial. Custo medido: +48 ms (+12%) em 30 dias, estavel ate a oitava execucao (PERFORMANCE). A web aceita a resposta sem os campos novos (o bloco vira `null` = "este banco ainda nao calcula imposto"): a `main` publica antes do workflow de migrations.
+
+**3. O LUCRO APOS IMPOSTO E ADS RATEIA O ADS PELA RECEITA COBERTA.** O resultado so existe nos pedidos cobertos; o Ads e do periodo inteiro. Subtrair tudo dos cobertos culparia 84% dos pedidos pelo Ads de 100%. `resultado_contribuicao = resultado_apos_imposto − investimento_ads x (receita coberta / receita bruta)`, e a margem sai `margem_apos_imposto − TACoS`. A premissa e dita na tela e some quando a cobertura chega a 100% (a recuperacao de 90 dias de frete, proxima fatia, e o que a leva la). Sem o Ads do periodo inteiro no diario, o lucro fica NULL -- exceto quando nenhuma conta tem Product Ads habilitado, e ai zero e fato.
+
+**4. A PROJECAO PONDERA O DIA DA SEMANA E DIZ A TENDENCIA COMO FAIXA.** Pedido do dono: "nao so multiplicacao simples". Em `get_meta_do_mes`, tudo em SQL:
+- fator de cada dia da semana = media daquele dia nas 8 semanas completas / media dos sete (no Dev: seg 1,14 ... sab 0,82, dom 0,71);
+- ritmo = receita dos ultimos N dias / soma dos fatores (N = 7, 14, 28);
+- projecao = realizado ate ontem + ritmo x fatores dos dias restantes. Ritmo atual usa 28 dias; conservador e otimista, o menor e o maior ritmo entre 7, 14 e 28 -- a tendencia recente como faixa, sem inventar percentil;
+- esperado ate ontem = meta x fatores dos dias completos / fatores do mes: o domingo fraco nao conta como atraso;
+- o mesmo mes do ano anterior entra como conferencia (so com o mes inteiro no historico), nao como motor: ha um ano de dado.
+**Nao entram**, e a tela diz: datas comerciais (nao ha calendario -- item novo no ROADMAP) e o parcial de hoje (entra pela media do dia da semana). Sem historico, a projecao e NULL -- a primeira versao gerava 56 dias de venda zero porque `greatest` ignora NULL, e a prova local pegou.
+
+**5. A META E DA EMPRESA E DO MES CORRENTE.** Nao muda com a conta nem com o periodo escolhidos na central; o cabecalho da secao diz isso. O veredito (no caminho / em risco / improvavel / atingida) sai de `lib/central-meta.ts` e vira sinal na lista "Pede atencao" do resumo.
+
+**6. CATALOGO.** Onze definicoes novas (METRICS 5J e 5K), na mesma migration.
+
+**7. O CARIMBO DAS DUAS MIGRATIONS VEM ANTES DAS PENDENTES DAS OUTRAS SESSOES.** Eram `20260923183000` (D-394) e `20260923203000`, e viraram `20260923100000` e `20260923100100`. O `db push` recusa versao menor que a ultima aplicada no remoto, e havia migrations de outras frentes ainda sem merge com carimbo entre as duas pontas (`20260923110000` a `20260923150000`). Aplicadas primeiro com o carimbo antigo, as minhas deixariam as delas "fora de ordem" -- o conserto conhecido e renomear o arquivo e reparar o marcador (o caso de `20260918125153`). Com o carimbo menor, as delas entram depois sem conflito. Achado no caminho: `20260923150000` esta em DOIS arquivos de frentes diferentes (triagem de notificacoes e auditoria de resposta de reclamacao); avisado as sessoes donas.
+
+**Verificacao:**
+- migration aplicada no Postgres local numa transacao desfeita (aplica sobre todas as anteriores);
+- ensaio no Dev com dados reais, transacao desfeita: imposto exato (R$ 54.103,53 = 6% de R$ 901.725,43), troca de aliquota no meio do periodo, meta de teste com projecao entre R$ 2,94 mi e R$ 3,02 mi e referencia sazonal de R$ 2,57 mi;
+- o fixture de integracao da projecao foi calculado a mao (R$ 28.000 exatos) e conferido no Postgres local antes da CI;
+- 59 testes de unidade da central em cinco arquivos e 2 novos na leitura do faturamento, 7 casos de integracao novos, e2e de `/central` e `/central/metas`.
+**Nao verificado localmente:** o caminho feliz visual (meta cadastrada, barra de progresso), porque aplicar a migration no Supabase local compartilhado foi recusado pelo classificador do modo automatico. O e2e do cadastro pula num banco sem as tabelas e roda na CI, que aplica todas as migrations.
+
+**Impacto:** migration `20260923100100`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/central/{page,indicadores,meta}.tsx`, `apps/web/app/central/metas/{page,actions,formularios,loading}.tsx`, `apps/web/lib/{central-meta,metas-imposto,central-indicadores,faturamento}.ts` e testes, `apps/web/e2e/central.spec.ts`, `apps/web/app/globals.css`, `docs/{METRICS,DATABASE,PERFORMANCE,ROADMAP,HANDOFF,DECISIONS}.md`.

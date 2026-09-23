@@ -2042,6 +2042,54 @@ export type Database = {
           },
         ]
       }
+      monthly_goals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          month: string
+          note: string | null
+          organization_id: string
+          revenue_goal: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month: string
+          note?: string | null
+          organization_id: string
+          revenue_goal: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          month?: string
+          note?: string | null
+          organization_id?: string
+          revenue_goal?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_goals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_goals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_preferences: {
         Row: {
           created_at: string
@@ -4066,6 +4114,54 @@ export type Database = {
           },
         ]
       }
+      tax_rates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          organization_id: string
+          rate: number
+          updated_at: string
+          valid_from: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          organization_id: string
+          rate: number
+          updated_at?: string
+          valid_from: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          organization_id?: string
+          rate?: number
+          updated_at?: string
+          valid_from?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tax_rates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tax_rates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_account_permissions: {
         Row: {
           created_at: string
@@ -4235,6 +4331,16 @@ export type Database = {
       // CORRECAO MANUAL (D-351, verificacao de e6fda07): mesma razao do bloco acima --
       // `20260916180400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
       // ser aplicada, e a CLI nao regenera este arquivo.
+      get_meta_do_mes: {
+        Args: {
+          p_hoje?: string
+          p_mes?: string
+          p_organization_id: string
+        }
+        // D-395: jsonb com meta, realizado, ritmo e projecao. A forma tipada
+        // mora em apps/web/lib/central-meta.ts.
+        Returns: Json
+      }
       get_order_return_movements: {
         Args: { p_order_ids: string[]; p_organization_id: string }
         Returns: {
