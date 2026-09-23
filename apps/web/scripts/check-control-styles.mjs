@@ -50,6 +50,11 @@ const CLASSES = [
   "sb-nav-link",
   "sb-nav-label",
   "sb-icon-button",
+  // O botao flutuante do Copiloto (D-377): forma propria no design system
+  // (`.sb-copilot-fab` em globals.css, com estado de hover e recorte no
+  // celular), nao um `.sb-button` com aparencia por cima. Ficou de fora ate
+  // 23/09 porque a branch de entao nao rodava esta esteira.
+  "sb-copilot-fab",
   "sb-command-row",
   "sb-command-input",
   "sb-command-field",
