@@ -4673,8 +4673,10 @@ table {
 .sb-settings-body { display: grid; gap: var(--sb-space-2); align-content: start; }
 .sb-settings-body p { margin: 0; }
 .sb-settings-resumo { font-size: 0.8125rem; line-height: 1.5; }
-/* Só a métrica do bloco: o tom âmbar vem de `.sb-note-atencao`. */
-.sb-settings-aviso { font-size: 0.6875rem; line-height: 1.5; }
+/* Só a métrica do bloco: o tom âmbar vem de `.sb-note-atencao`. O corpo é o
+   do resumo, não o de "Inclui:": é a única frase de risco da tela, e em 11px
+   ela ficava tipograficamente abaixo do estado que ela qualifica. */
+.sb-settings-aviso { font-size: 0.8125rem; line-height: 1.5; }
 .sb-settings-inclui,
 .sb-settings-quem { color: var(--sb-text-soft); font-size: 0.6875rem; line-height: 1.5; }
 /* Os chips alinham à ESQUERDA: dentro do cartão eles são o caminho, não a
@@ -4682,10 +4684,23 @@ table {
 .sb-settings-links { justify-content: flex-start; gap: var(--sb-space-1); margin-top: var(--sb-space-1); }
 
 /* O arquivo tem treze blocos de movimento reduzido e nenhum cobria os chips
-   desta tela — o `translateY` do hover é movimento como qualquer outro. */
+   desta tela — o `translateY` do hover é movimento como qualquer outro.
+   Escopado em `.sb-settings-links`: `.sb-channel-nav` veste também /contas,
+   /integracoes, /saude e /sincronizacao, e a regra deles não é assunto desta
+   tela. */
 @media (prefers-reduced-motion: reduce) {
-  .sb-channel-nav a { transition: none; }
-  .sb-channel-nav a:hover { transform: none; }
+  .sb-settings-links a { transition: none; }
+  .sb-settings-links a:hover { transform: none; }
+}
+/* No toque o `:hover` de `.sb-channel-nav a` não passa, GRUDA: o chip tocado
+   ficava lilás e 1px acima ao voltar para a tela. É o mesmo defeito que o
+   cartão desta tela já não tem; aqui o chip volta ao repouso. */
+@media (hover: none) {
+  .sb-settings-links a:hover {
+    border-color: var(--sb-border);
+    background: var(--sb-surface);
+    transform: none;
+  }
 }
 
 @media (max-width: 760px) {
