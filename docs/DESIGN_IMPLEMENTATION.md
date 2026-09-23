@@ -1044,6 +1044,67 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**D-393 — /NOTIFICAÇÕES DEIXOU DE SER UMA PAREDE CRONOLÓGICA.** O "Filtrar" do
+frame, que D-269 recusou por ser funcionalidade sem número, entrou — porque os
+números chegaram, medidos no Dev como `authenticated`: 54.306 notificações,
+**544 páginas de 100**, **13.810 críticas (25,4%)** espalhadas por elas, e
+**60,4% da caixa num tipo só** (`listing.available_quantity.changed`).
+
+### O que entrou, e em que forma
+
+- **Três `FilterMenu`** — Severidade, Tipo e Conta — no `aside` do painel, como
+  em `/precos`. Não um botão "Filtrar" genérico: ele não diz o que filtra.
+  **Tipo é FAMÍLIA** (o prefixo antes do primeiro ponto: seis, contra 24 tipos
+  no catálogo) — um menu de 24 opções troca o problema de achar na lista pelo
+  de achar no menu.
+- **As duas pílulas de D-290 continuam pílulas**, dentro do painel, com
+  "Limpar N filtros" à direita: lido/não lido é o interruptor que se alterna o
+  tempo todo, e escondê-lo num dropdown seria dois cliques no gesto mais
+  frequente da tela.
+- **`KpiStrip` de três células, cada uma um LINK** para o recorte que a contou
+  ("Não lidas", "Críticas não lidas", "Importantes não lidas"). **Não contradiz
+  D-269**, que registrou que o frame não dá resumo a esta variação: o que entrou
+  não é resumo, é navegação — a pergunta de D-265. A faixa conta a CENTRAL
+  INTEIRA e o painel conta o RECORTE, e a diferença está escrita na ressalva
+  ("em toda a Central, não no recorte") e no subtítulo ("recorte: …"), nunca
+  subentendida (D-236).
+- **Cabeçalho de dia** na lista, e o dia é o da **chegada** — agrupar pelo fato
+  faria o cabeçalho voltar no tempo no meio da página: 541 das 54.306 têm os
+  dois em dias civis diferentes, com atraso de até 32 dias.
+- **A linha ganhou duas pistas de leitura**: o fio à esquerda na cor da
+  severidade e um ícone por família. A pílula de texto continua — cor nunca
+  anda sozinha —, e `informativo` fica neutro de propósito, como `statusTone`
+  já decidia devolvendo `null`.
+- **Estado vazio e erro recuperáveis**, na forma de `/precos` (ícone, frase,
+  saída).
+
+### O que só a captura acharia (de novo)
+
+**Faixa de TRÊS células deixa um buraco a 390px.** `.sb-kpi:last-child
+{ grid-column: auto / -1 }` foi escrita para cinco em três colunas, e o
+comentário dela diz "a última ocupa o resto da linha" — mas `grid-column-end:
+-1` com início automático vale span 1, então a terceira encosta na coluna 2 e
+deixa a coluna 1 vazia. Nenhum teste veria. A correção é escopada por
+`:has(> .sb-kpi:nth-child(3):last-child)`: as faixas de quatro, cinco e seis
+ficam como estavam, porque a regra delas não está errada — está incompleta
+para um caso que não existia.
+
+E o contraste de D-285 foi **medido no `getComputedStyle`, não olhado**: linha
+lida `rgb(244,245,250)` (`--sb-ground`), não lida `rgb(255,255,255)`. Depois de
+a aparência sair do `style` inline para `data-state`/`data-tom` em
+`globals.css`, o realce continua de pé — e o `!important` que existia para o
+hover vencer o inline caiu junto.
+
+### O que continua fora
+
+Período (o Dev inteiro cabe em 21 dias; "últimos 7" devolveria zero), busca por
+entidade (o Dashboard do Anúncio já é dono dessa pergunta, D-224), origem
+automática × manual (`source` tem dois valores e nenhum é de usuário), seletor
+de tamanho de página, e o painel de detalhe do frame — a recusa de D-269
+intacta, com o e2e que a afirma.
+
+---
+
 **D-391 — /CONFIGURAÇÕES ABRE NO QUE FALTA** — o pedido do usuário foi deixar a
 tela mais intuitiva. Ela continua um hub que APONTA (D-233): zero formulário,
 zero botão, zero server action, uma chamada de banco. O que mudou é composição,
@@ -1822,7 +1883,9 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   42.411 fora da primeira página eram o mesmo beco de D-289), e a fatia
   **corrigiu D-289**: o 416 do PostgREST exige `count: exact` na mesma consulta
   — sem `count` o pedido volta 200 vazio, e aí quem sabe da página inexistente
-  é a aritmética.
+  é a aritmética. **As outras três dimensões entraram em D-393**, quando os
+  números apareceram: 13.810 críticas de 54.306 e 60,4% da caixa num tipo só.
+  Período continua fora, agora com número próprio.
 - ~~**Lista de execuções que FALHARAM**~~ — **FEITA** (D-291), com migration.
   A RPC `get_job_failures` é a janela: `job_runs` continua com RLS e zero
   policies, e quem lê é uma função `security definer` com autorização ADMIN

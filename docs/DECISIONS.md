@@ -13889,6 +13889,121 @@ O e2e ganhou cinco casos (sem rolagem lateral em 390px medindo o `.sb-content`; 
 
 **Impacto:** `apps/web/app/configuracoes/page.tsx`, `apps/web/app/configuracoes/loading.tsx`, `apps/web/components/carregando.tsx` (so a prop `children`, compativel), `apps/web/scripts/check-loading.mjs`, `apps/web/app/globals.css` (so a vizinhanca contigua desta tela: aviso em 13px, chips sem `:hover` no toque, movimento reduzido escopado em `.sb-settings-links`), `apps/web/lib/settings-hub.ts`, `apps/web/lib/settings-hub.test.ts`, `apps/web/e2e/configuracoes.spec.ts`, `apps/web/scripts/check-settings-vocabulary.mjs` (novo), `apps/web/package.json`, `.github/workflows/ci.yml`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/ROADMAP.md`.
 
+## D-393 - A Central de Notificacoes deixou de ser uma parede cronologica: os numeros que D-269 pediu chegaram, e a raiz da consulta estava errada
+
+**Contexto:** D-269 (D29) recusou o botao "Filtrar" do frame com uma frase honesta -- "e funcionalidade, nao composicao" -- e deixou UMA candidata registrada com numero: 8.350 nao lidas de 42.511. D-290 entregou essa, mais a paginacao. Severidade, tipo e conta continuaram fora porque "nenhum numero os pediu". Esta fatia mede os tres, e mede tambem a consulta.
+
+Migration `20260923150000_notificacoes_triagem.sql`: um indice e uma funcao. Nada destrutivo.
+
+---
+
+**1. OS NUMEROS QUE FALTAVAM, medidos no Dev como `authenticated`**
+
+Medido em 2026-09-23 contra `nmgccyqquwxecqffsidr`, no usuario com a caixa cheia (e sob a RLS, nao como `postgres`: a licao de D-305→D-307 e da memoria `measure-rpc-as-authenticated`):
+
+| | |
+|---|---|
+| a caixa | **54.306 notificacoes**, 13.398 nao lidas, **544 paginas de 100** |
+| severidade | **13.810 criticas (25,4%)**, 5.755 importantes, 34.741 informativas |
+| tipo | **`listing.available_quantity.changed` sozinho e 32.783 (60,4%)** |
+| conta | 11.011 / 10.693 / 10.087 / 9.726 nas quatro, mais **12.789 sem conta** (evento organizacional, todos `stock.balance.diverged`) |
+
+**Tres em cada cinco linhas da Central sao o mesmo aviso de rotina**, e as criticas mais antigas (25 a 29/08) estavam a 544 paginas de distancia. E a doenca que `docs/NOTIFICATIONS.md` §9 ja nomeia sobre a V2 -- "cinco mil alertas nao sao cinco mil problemas, sao uma tela que ninguem abre" --, e o remedio ja estava listado como pendencia em §7 desde 2026-08-24: "filtro por severidade, conta e periodo".
+
+**Entraram tres dimensoes, como MENU (`FilterMenu`), nao como pilula.** O recorte de nao lidas de D-290 continua em pilula porque e o interruptor que se alterna o tempo todo; esconder o mais frequente dentro de um dropdown seria trocar um clique por dois. O "Filtrar" do frame virou tres menus NOMEADOS -- um botao generico nao diz o que filtra.
+
+**Tipo entrou como FAMILIA, nao como tipo cru.** `EVENT_TYPE` tem 24 entradas; um menu de 24 opcoes troca o problema de achar na lista pelo de achar no menu. Seis familias (`listing`, `stock`, `order`, `support`, `sync`, `ai`) cobrem as treze que a base produz e respondem a pergunta que se faz em voz alta. `sync` e `ai` tem zero linha no Dev e entram assim mesmo: opcao que hoje devolve vazio responde "nao houve"; opcao que nao existe nao responde nada.
+
+---
+
+**2. O DEFEITO DE PERFORMANCE QUE A FATIA ACHOU SEM PROCURAR: 556 ms -> 63 ms**
+
+A consulta tinha `notifications` na raiz e o destinatario embutido, ordenando por `notifications.created_at`. Medido como `authenticated`:
+
+| | antes | depois |
+|---|---:|---:|
+| primeira pagina, sem recorte | **556 ms** | **63 ms** |
+| linhas materializadas para montar 100 | 54.306 | 100 |
+| pagina profunda (offset 40.000) | 480 ms | 480 ms |
+| recorte de severidade, cache quente | 259 ms | 55 ms |
+
+O plano de antes: `Seq Scan` em `domain_events` (89.767 linhas, a RLS nao usa indice ali), `Hash Join`, e um `top-N heapsort` sobre as **54.306** linhas do usuario. Nao havia como andar pela ordem, entao ele montava tudo e jogava fora 54.206.
+
+**A correcao e de RAIZ, nao de indice sozinho:** a consulta passou a sair de `notification_recipients`, que e a tabela cuja linha a tela de fato mostra (lido e estado POR PESSOA), com a notificacao e o evento embutidos. Com o indice novo `(user_id, created_at desc)` o planejador anda pelo indice na ordem ja ordenada e **para na centesima linha**.
+
+`notification_recipients` ja tinha um indice `(user_id, created_at desc)` -- mas **parcial**, `where read_at is null` (D-073). Ele serve o recorte de nao lidas e nao serve "todas", que e o padrao da tela. Os dois convivem: o parcial e menor e continua sendo o melhor para o recorte dele.
+
+**Ordenar pelo `created_at` do DESTINATARIO e a mesma ordem, e nao por coincidencia.** `private.fan_out_notification` insere a notificacao e os destinatarios na MESMA transacao, e `now()` e o instante da transacao, nao da linha. Conferido nas **66.932** linhas: zero diferenca, delta maximo 0,000000 s.
+
+A pagina profunda nao melhorou (o planejador volta ao hash join acima de ~40 mil de offset) e isso fica registrado: quem chega la vem de link antigo, nao de navegacao -- o paginador so oferece anterior e proxima.
+
+---
+
+**3. `mark_notifications_read` -- a escrita em lote que respeita o recorte**
+
+Com filtros, "marcar todas" passaria a mentir: quem filtra "Anuncio" e clica apagaria junto as criticas de estoque que estava deixando por ler de proposito. E e o caso real -- 60,4% da base e uma familia so.
+
+O filtro mora num JOIN com `domain_events`, e um `update` do PostgREST nao junta tabela. A alternativa sem funcao seria ler as ids de mil em mil (o teto do PostgREST) e mandar catorze updates, com um teto para estourar em silencio: a classe de D-183.
+
+A funcao e `security invoker` -- a RLS de `notification_recipients` e a de `domain_events` continuam valendo dentro dela, e ela nao ganha poder nenhum; o `user_id = auth.uid()` explicito e defesa em profundidade. Provado em transacao revertida no Dev: marcou **10 criticas**, depois **660 de anuncio**, depois **102 de resto** (= as 772 nao lidas daquele usuario), e as outras duas pessoas ficaram intactas em 7.798 e 4.828.
+
+**A acao tem DOIS caminhos, e a divisao nao e acidental.** Sem recorte a escrita continua sendo o `update` direto de sempre -- alem de ja provado, e o que continua funcionando na PREVIA do PR, porque a CI nunca aplica migration em PR (D-025) e a funcao so existe no Dev depois do merge. Com recorte, a funcao. Deixar o caso mais comum fora da dependencia e o que impede a fatia de chegar com o botao principal quebrado.
+
+**Valor fora da lista RECUSA, nunca alarga.** Na tela, `?severidade=xpto` cai em "todas" e o pior que acontece e ver linhas demais. Na Server Action o mesmo silencio transformaria "marcar as criticas" em "marcar tudo", que e escrita irreversivel pela interface. Por isso os dois lados leem os MESMOS validadores e a acao devolve erro em vez de ampliar.
+
+**A confirmacao em dois passos veio do PR #53 (`feat/copiloto-notificacoes`), aberto e conflitante desde 18/09, e esta preservada inteira** -- mesmo `role="group"`, mesmo rotulo, mesma frase. O que esta fatia acrescentou foi o recorte no texto e o rodape "O resto da Central continua por ler". O PR #53 continua dono de `/notificacoes/preferencias`, do Copiloto e dos toasts, intocados aqui.
+
+---
+
+**4. A FAIXA DE TRIAGEM, e por que ela NAO contradiz D-269**
+
+D-269 registrou que o frame nao da resumo a esta variacao (`{!isNotifications && !isIdeas && ...}` no `CentralScreen`), e isso continua verdade. O que entrou nao e o resumo do frame: e **navegacao**, a pergunta que D-265 manda fazer -- "a faixa conta o mesmo conjunto da tabela, ou e navegacao?". Tres celulas, cada uma um LINK para o recorte exato que a contou, como o chip "ver lista" das outras telas. Sem ela, as dez criticas nao lidas desta base continuam invisiveis atras de 544 paginas.
+
+**A faixa conta a CENTRAL INTEIRA; a janela do painel conta o RECORTE** -- dois conjuntos na mesma tela, que e a armadilha de D-236. A diferenca esta escrita, nao subentendida: a ressalva da primeira celula diz "em toda a Central, nao no recorte", e o subtitulo do painel diz "recorte: ...". As tres contagens custam 24 ms cada porque passam pelo indice parcial de nao lidas.
+
+---
+
+**5. O QUE A CAPTURA ACHOU, e nenhum teste acharia**
+
+**Faixa de TRES celulas deixa um buraco no degrau de duas colunas.** `.sb-kpi:last-child { grid-column: auto / -1 }` foi escrita para cinco celulas em tres colunas, e o comentario dela diz "a ultima ocupa o resto da linha" -- mas `grid-column-end: -1` com inicio automatico vale span 1, entao a terceira encosta na coluna 2 e deixa a coluna 1 vazia. Visto a 390px, e so na captura. A correcao e escopada por `:has(> .sb-kpi:nth-child(3):last-child)`: as faixas de quatro, cinco e seis continuam exatamente como estavam, porque a regra delas nao esta errada -- esta incompleta para um caso que nao existia.
+
+**O contraste lido/nao lido foi MEDIDO no `getComputedStyle`, nao olhado:** linha lida `rgb(244,245,250)` (`--sb-ground`), nao lida `rgb(255,255,255)` -- o realce de D-285 esta de pe depois da reescrita.
+
+---
+
+**6. O AGRUPAMENTO POR DIA, e o dia e o da CHEGADA**
+
+A lista ganhou cabecalho de dia ("Hoje", "Ontem", "sexta-feira, 12/09/2026"). O dia e o da **chegada** (`notification_recipients.created_at`, que e a chave da ordem), nao o do fato: agrupar pelo `occurred_at` faria o cabecalho VOLTAR NO TEMPO no meio da pagina. Nao e hipotese -- medido, **541 das 54.306** tem o fato num dia civil e a chegada em outro, com atraso maximo de **32 dias**. A linha continua dizendo o instante do fato (a idade do FATO, nao a do aviso), e quando os dois discordam a diferenca fica visivel em vez de escondida.
+
+**"Hoje" e "Ontem" existem porque agora ha como calcula-los sem mentir.** `lib/relative-time.ts` se recusa a produzi-los desde sempre, e a razao dele esta certa: "hoje" so existe dentro de um fuso, e foi `toISOString()` que deslocou um historico inteiro em D-260. O que faltava era a ponte -- `businessDayOf` (novo em `lib/format.ts`) emite `YYYY-MM-DD` em `America/Sao_Paulo` por `Intl`, e os DOIS lados da comparacao saem dela. O dia da semana sai do INSTANTE da primeira linha do grupo, nunca de `new Date("2026-09-14")`, que seria meia-noite UTC -- ou seja, o dia anterior em Sao Paulo.
+
+---
+
+**7. O QUE FICOU DE FORA, com numero**
+
+- **Periodo** -- o Dev inteiro cabe em **21 dias** (24/08 a 14/09; nada depois porque o ambiente esta pausado desde D-350). "Ultimos 7 dias" devolveria zero e se leria como tela quebrada. Fica registrado como candidata, do mesmo jeito que D-269 registrou "nao lidas".
+- **Busca por entidade** -- "o que aconteceu com o MLB..." ja tem dono: o Dashboard do Anuncio e o diagnostico do SKU leem `domain_events` pela entidade. Seria o segundo dono da mesma pergunta (D-224).
+- **Origem automatica x manual** (`docs/NOTIFICATIONS.md` §7) -- `domain_events.source` tem DOIS valores nesta base, `sync` (41.517) e `system` (12.789), e nenhum evento de usuario. O filtro existiria com um lado sempre vazio. §7 pede a distincao "quando a origem puder ser identificada"; hoje ela e sempre automatica.
+- **Seletor de tamanho de pagina** (`PAGE_SIZES`, D-315) -- numa lista cujo problema medido e ACHAR, 300 linhas por pagina e mais do mesmo. Quem responde "nao acho nada" sao os recortes.
+- **O painel de detalhe do frame** -- recusa de D-269 intacta, com o e2e que a afirma: ele repete os campos da linha e acrescenta "Impacto estimado R$ 8.400", e `notifications` tem QUATRO colunas.
+- **`grid-column` das faixas de 4, 5 e 6 celulas** -- ver o item 5.
+
+---
+
+**8. A LINHA, e por que a aparencia saiu do `style`**
+
+A linha tinha UMA pista de severidade: a pilula de texto. Numa parede de cem linhas em que um quarto da base e critica, ler cem pilulas e o trabalho que a tela deveria poupar. Agora a severidade e tambem **a cor do fio a esquerda** e a familia e um **icone**, com a pilula intacta -- cor nunca anda sozinha, e o `aria-label` do item carrega estado e tipo. `informativo` fica no tom neutro de proposito, a mesma decisao que `statusTone` ja tomava devolvendo `null` para ele.
+
+O estado passou a viver em `data-state`/`data-tom` e a aparencia em `globals.css`. Era `style` inline com `!important` do outro lado para o hover vencer -- dois donos do mesmo pixel --, e cem linhas mandavam cem objetos de estilo para o cliente.
+
+**O nome acessivel do botao por linha comeca pelo texto visivel e continua com o que o distingue** ("Marcar como lida: Preco do anuncio alterado -- Anuncio MLB..."): eram cem botoes com o mesmo nome, e nenhum dizia qual.
+
+---
+
+**Impacto:** `supabase/migrations/20260923150000_notificacoes_triagem.sql` (novo), `apps/web/app/notificacoes/page.tsx`, `notification-row.tsx`, `mark-all-button.tsx`, `actions.ts`, `apps/web/lib/notification-filters.ts` (+teste), `apps/web/lib/format.ts` (`businessDayOf`, `formatWeekday`), `apps/web/app/globals.css`, `apps/web/e2e/notificacoes.spec.ts`, `packages/db/src/types.ts` (assinatura da RPC, CORRECAO MANUAL da classe D-213), `docs/NOTIFICATIONS.md`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/PERFORMANCE.md`, `docs/HANDOFF.md`.
+
+**Verificacao, local:** `check` 29/29 (typecheck, lint, 898 testes de unidade da web), `build` 8/8, `docs:check`; guardas `waterfalls` (131 arquivos), `server-actions` (23 modulos), `table-styles` (33 telas), `control-styles` (355 controles), `loading` (51 pastas) e **`check:embeds` contra o PostgREST local (37 projecoes, todas aceitas)** -- o embed de DOIS niveis com `!inner` e novo e precisava de servidor de verdade para valer. O filtro embutido tambem foi exercitado direto no PostgREST local (severidade, `like` de familia, conta inexistente, e `Range` alem do fim devolvendo **200 vazio** sem `count`, confirmando a medicao de D-290 na raiz nova). **e2e 8/8**, rodado numa porta propria (3100, `E2E_BASE_URL`) contra o Supabase local ja de pe, sem `db reset` -- havia sessoes paralelas usando o banco e a porta 3000, e resetar apagaria o estado delas (memoria `sessoes-paralelas`). A migration foi aplicada ao banco local pelo arquivo inteiro, de uma passada, antes de rodar. Capturas a 1440px e 390px.
+
 ## D-394 - Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
 
 **Contexto:** o dono pediu em 23/09 uma "central de inteligencia do negocio" (KPIs com comparacao, meta, projecao, rentabilidade por canal e produto, detector de frete, Ads com alertas e recomendacoes, central de alertas) e exigiu auditoria antes de codigo. A auditoria, lida na `main` e no Dev, achou:

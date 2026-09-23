@@ -24,22 +24,18 @@
 
 ### O que está pronto
 
-SKU/ML;visitas;migração
+`/notificacoes` (D-393): triagem por severidade/família/conta; 556 ms → 63 ms; migration
+`20260923150000`. PR #53 mexe nos mesmos arquivos.
 
 `/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. Próxima: notificação dos alertas (5J), depois do #77.
 
-`/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
-sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
+`/atendimento/conhecimento`: filtros, paginação e modal — já na `main` (`4c34bc68`).
 
 `/precos` está pronta para integração na branch de produção `main`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
-D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
-título/foto, só alerta queda conjunta de vendas e visitas sem outro fator
-concorrente (migration `20260921130000`). A captura de descrição por hash,
-sem reconsulta quando o item não mudou, está na migration `20260921144813`
-e aguarda CI/publicação. D-389: diagnóstico do SKU usa o
-preço EFETIVO (promocional se há campanha ativa do ML, senão o cadastrado —
-migration `20260921121405`). As duas em Dev e produção desde 21/09.
+Diagnóstico do anúncio e do SKU: D-389 e D-390, migrations `20260921121405`, `20260921130000` e
+`20260921144813` — **as três aplicadas no Dev** (conferido em 23/09; a linha anterior dizia que a
+de hash aguardava publicação, e não aguardava mais).
 
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
