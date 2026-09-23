@@ -93,8 +93,39 @@ export interface ProdutosDoFaturamento {
   readonly skusMargemNegativa: number;
 }
 
+/**
+ * O imposto do período (D-395), pela alíquota vigente no dia de cada pedido.
+ *
+ * Os campos chegam no resumo de `get_faturamento` só depois da migration
+ * `20260923203000`. A web da `main` vai ao ar antes de a migration passar pelo
+ * workflow de produção, então a AUSÊNCIA dos campos não é contrato quebrado:
+ * é "este banco ainda não calcula imposto", e o bloco inteiro vira `null`.
+ * Presentes, eles são conferidos como os demais — um só fora do formato recusa
+ * a resposta inteira.
+ */
+export interface ImpostoDoPeriodo {
+  readonly pedidos_sem_aliquota: number;
+  /** A alíquota, quando uma só vale para todos os pedidos do período. */
+  readonly aliquota_unica: number | null;
+  /** NULL quando algum pedido do período não tem alíquota: nunca parcial. */
+  readonly imposto_estimado: number | null;
+  readonly imposto_coberto: number | null;
+  readonly resultado_apos_imposto: number | null;
+  readonly margem_apos_imposto: number | null;
+}
+
+const IMPOSTO_ANULAVEIS = [
+  "aliquota_unica",
+  "imposto_estimado",
+  "imposto_coberto",
+  "resultado_apos_imposto",
+  "margem_apos_imposto",
+] as const;
+
 export interface Faturamento {
   readonly resumo: ResumoFaturamento;
+  /** `null` quando o banco ainda não tem o imposto de D-395. */
+  readonly imposto: ImpostoDoPeriodo | null;
   /** `null` quando a leitura foi pedida sem detalhe (o período anterior). */
   readonly diario: readonly DiaFaturamento[] | null;
   readonly porConta: readonly ContaFaturamento[] | null;
@@ -194,9 +225,11 @@ export function lerFaturamento(valor: unknown): Faturamento | null {
   try {
     const raiz = registro(valor);
     const produtos = raiz.por_sku === null ? null : registro(raiz.por_sku);
+    const resumo = registro(raiz.resumo);
 
     return {
-      resumo: campos(registro(raiz.resumo), RESUMO_CONTAGENS, RESUMO_ANULAVEIS),
+      resumo: campos(resumo, RESUMO_CONTAGENS, RESUMO_ANULAVEIS),
+      imposto: "pedidos_sem_aliquota" in resumo ? campos(resumo, ["pedidos_sem_aliquota"], IMPOSTO_ANULAVEIS) : null,
       diario:
         raiz.diario === null
           ? null

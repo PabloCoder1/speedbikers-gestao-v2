@@ -663,8 +663,9 @@ Pedidos do dono em 16/09/2026, depois de `/faturamento` (D-356). Não reabre mar
 Pedido do dono em 23/09: uma central que diga o que aconteceu, onde há problema e oportunidade, se a meta sai e o que olhar a seguir. Auditoria e decisões do dono em D-394 (aliquota única com vigência, 90 dias de frete recuperados, só Mercado Livre por enquanto). Tela `/central`; `/faturamento` segue como o detalhe.
 
 - [x] **Indicadores com comparação e tom** (faturamento, pedidos, ticket, unidades, resultado, margem, custo, comissão, frete, Ads), presets hoje/ontem/7/15/30 dias/mês atual/mês anterior terminando ontem, tabela de comparação e resumo em texto com a decomposição exata da margem — ✔ código 2026-09-23 · D-394. Migration `20260923183000` (só catálogo) a caminho de produção
-- [ ] **Meta mensal e projeção de fechamento** — tabela de metas, esperado até hoje ponderado por dia da semana, projeção com cenários pelos resíduos das últimas semanas
-- [ ] **Alíquota de imposto com vigência** e lucro após imposto (`margem_contribuicao`, METRICS 5.5)
+- [x] **Meta mensal e projeção de fechamento** — `monthly_goals`, `get_meta_do_mes`: esperado até ontem ponderado pelo dia da semana, projeção em três cenários (menor, atual e maior ritmo entre 1, 2 e 4 semanas) e o mesmo mês do ano anterior quando há histórico; cadastro em `/central/metas` — ✔ código 2026-09-23 · D-395
+- [x] **Alíquota de imposto com vigência** e lucro após imposto e Ads (`tax_rates`, imposto pedido a pedido em `get_faturamento`, `margem_contribuicao` de METRICS 5K) — ✔ código 2026-09-23 · D-395. Migration `20260923203000` a caminho de produção
+- [ ] **Calendário de datas comerciais** para a projeção (Black Friday, Dia dos Pais) — hoje a projeção declara que não os considera
 - [ ] **Frete: recuperar 90 dias** pela varredura de `sync.order-financials` com janela parametrizada, e gravar subsídio e frete do comprador da mesma resposta
 - [ ] **Ads: sinais e recomendações** por campanha (gasto sem venda, ROAS abaixo do alvo, CPC em alta com conversão em queda, espaço para escalar), no tom "vale revisar"
 - [ ] **Detector de frete**: frete ÷ preço, pares de categoria e faixa de preço, histórico do SKU; níveis com o motivo escrito

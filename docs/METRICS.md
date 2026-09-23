@@ -118,7 +118,7 @@ atualizado_em      data da última revisão desta definição
 
 ### 5.5 Dependentes de fonte ainda não confirmada
 
-`margem_contribuicao`
+> **`margem_contribuicao` saiu desta seção em 2026-09-23 (D-395)**: imposto (alíquota com vigência) e Ads têm fonte, e a definição está em **5K**.
 
 > **`investimento_ads`, `receita_ads` e `acos` saíram desta seção em 2026-09-16 (D-363)**, com `roas` e `tacos`: a fonte (API oficial de Product Ads) foi confirmada e as definições estão em **5G**.
 
@@ -406,6 +406,39 @@ As janelas móveis da Central terminam **ontem**: comparar um dia em andamento c
 Os limites são **provisórios** (D-148: limiar é decisão do dono) e vão para a tela de configurações numa fatia seguinte. Com o dia em andamento, os indicadores de **volume** (faturamento, pedidos, unidades, resultado) mostram a variação sem tom; as razões continuam julgadas.
 
 **O resumo em texto** é montado desses mesmos números, sem modelo de linguagem, e só afirma o que eles sustentam. A queda ou alta da margem é repartida entre comissão, frete e custo **exatamente**: nos pedidos cobertos, `margem = 1 − (comissão + frete + custo) ÷ receita coberta`, e a tela confere essa identidade (tolerância de 0,1 p.p.) nos dois períodos antes de atribuir qualquer ponto — se não fechar, não atribui.
+
+## 5J. Meta do mês e projeção de fechamento (D-395) — DEFINIDAS E IMPLEMENTADAS
+
+> A Central do negócio mostra a meta do mês corrente, da empresa inteira, contra o realizado, e projeta o fechamento. Tudo sai de `get_meta_do_mes(organização, mês, hoje)`, sobre `daily_account_metrics` (receita bruta das vendas válidas, 5.2) e `monthly_goals`. A meta é da organização: não muda com a conta nem com o período escolhidos na central, e a tela diz isso.
+
+**O perfil semanal.** Cada dia da semana tem um fator: a média daquele dia nas 8 semanas completas até ontem, dividida pela média dos sete. Dia sem linha dentro do histórico é dia sem venda (o rollup só grava dia com venda); antes do primeiro dia com venda não há dia nenhum. Com menos de duas observações de cada dia da semana, todo fator vale 1 e a tela diz que o perfil é plano.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `atingimento_meta` | Atingimento da meta | `realizado ÷ meta`; faltam = `max(meta − realizado, 0)` | Realizado inclui hoje até a última atualização do resumo diário (a cada hora). Sem meta: NULL |
+| `esperado_meta` | Esperado até ontem | `meta × Σ fator dos dias completos ÷ Σ fator do mês`; ritmo = `realizado até ontem − esperado` | O domingo fraco não conta como atraso. Abaixo do esperado até 5% é atenção; mais que isso, perigo |
+| `receita_media_diaria` | Média diária do mês | `realizado até ontem ÷ dias completos` | Hoje fica fora (em andamento) |
+| `meta_diaria_necessaria` | Meta diária necessária | `max(meta − realizado até ontem, 0) ÷ dias restantes (hoje incluído)`; aumento = `meta diária ÷ média diária − 1` | Média simples, como o dono pediu; a projeção é que pondera o dia da semana |
+| `projecao_fechamento_mes` | Projeção de fechamento | `realizado até ontem + ritmo × Σ fator dos dias restantes`; ritmo = `receita ÷ Σ fator` dos últimos 28 dias completos. Conservador e otimista: o menor e o maior ritmo entre 7, 14 e 28 dias | **Eventos comerciais não entram** (não há calendário). Hoje entra pela média do dia da semana, não pelo parcial. Sem 7 dias completos de histórico: NULL |
+| `projecao_sazonal_mes` | Pelo mesmo mês do ano anterior | `realizado até ontem × receita do mês inteiro no ano anterior ÷ receita do mesmo mês até o mesmo dia` | Só quando o histórico cobre o mês inteiro do ano anterior. Conferência sazonal, não motor |
+
+**O veredito do mês** (`lib/central-meta.ts`): no caminho quando o ritmo atual fecha acima da meta; em risco quando só o otimista fecha; improvável quando nem o otimista fecha; sem projeção (histórico curto), pelo ritmo contra o esperado. Mês encerrado: atingida ou não pelo realizado.
+
+Granularidade: `organization`. `security invoker`: quem não vê uma conta não vê a receita dela, e o realizado contra a meta da empresa fica menor — o caso é de um usuário com permissão parcial, não do ADMIN.
+
+## 5K. Imposto e margem de contribuição (D-395) — DEFINIDAS E IMPLEMENTADAS
+
+> O dono escolheu **uma alíquota efetiva sobre o faturamento, com vigência** (`tax_rates`). `get_faturamento` aplica, pedido a pedido, a alíquota vigente no dia de negócio da venda. Sai de 5.5 a `margem_contribuicao`, que esperava imposto e Ads.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `imposto_estimado` | Imposto estimado | `SUM(receita do pedido × alíquota vigente no dia)`, todas as vendas válidas | Algum pedido do período sem alíquota torna o total **NULL**, nunca parcial. Estimativa pela alíquota efetiva, não a apuração da guia |
+| `resultado_apos_imposto` | Resultado após imposto | `resultado_venda − imposto dos mesmos pedidos cobertos` | Mesmo subconjunto coberto de 5F |
+| `margem_apos_imposto` | Margem após imposto | `resultado_apos_imposto ÷ receita coberta` | idem |
+| `resultado_contribuicao` | Lucro após imposto e Ads | `resultado_apos_imposto − investimento_ads × (receita coberta ÷ receita bruta)` | **O Ads entra rateado pela participação da receita coberta** (premissa declarada; some com cobertura de 100%). Custos fixos ficam fora. Sem o Ads do período inteiro no diário: NULL — exceto quando nenhuma conta tem Product Ads habilitado, e aí o zero é fato |
+| `margem_contribuicao` | Margem de contribuição | `resultado_contribuicao ÷ receita coberta` = `margem_apos_imposto − TACoS` | É contribuição, não lucro líquido: aluguel, folha e embalagem não estão no sistema |
+
+Comparação entre períodos (5I): o imposto é de polaridade **neutra** (acompanha a receita pela alíquota); o lucro segue a regra do resultado em reais (coberturas a até 5 p.p.); a margem de contribuição, a amostra mínima de 20 pedidos cobertos, e os dois exigem o Ads comparável.
 
 ## 5H. Indicadores operacionais de sincronização
 

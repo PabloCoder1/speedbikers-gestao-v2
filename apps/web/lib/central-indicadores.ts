@@ -1,7 +1,8 @@
 import type { Tom } from "../components/tone";
 import type { DiaAds, ResumoAds } from "./ads";
-import { participacao, type ResumoFaturamento } from "./faturamento";
+import { participacao, type ImpostoDoPeriodo, type ResumoFaturamento } from "./faturamento";
 import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
+import { formatarAliquota } from "./metas-imposto";
 import { avaliarVariacao, type Escala, type Polaridade, type Variacao } from "./variacao";
 
 /**
@@ -24,7 +25,7 @@ import { avaliarVariacao, type Escala, type Polaridade, type Variacao } from "./
 
 export type Formato = "moeda" | "contagem" | "percentual" | "razao";
 
-export type GrupoIndicador = "vendas" | "rentabilidade" | "ads";
+export type GrupoIndicador = "vendas" | "resultado" | "custos" | "ads";
 
 export interface Comparado {
   readonly atual: number | null;
@@ -67,6 +68,18 @@ export interface EntradaCentral {
   readonly coberturaAdsAtual: CoberturaAds;
   readonly coberturaAdsAnterior: CoberturaAds;
   readonly emAndamento: boolean;
+  /**
+   * O imposto de D-395. `null` quando o banco ainda não o calcula (a web vai
+   * ao ar antes da migration) — diferente de "sem alíquota", que vem dentro.
+   */
+  readonly impostoAtual: ImpostoDoPeriodo | null;
+  readonly impostoAnterior: ImpostoDoPeriodo | null;
+  /**
+   * Nenhuma conta tem Product Ads habilitado: aí investimento zero é fato, e
+   * o lucro após Ads existe sem o diário do Ads. Conta ainda não verificada
+   * NÃO conta — zero sem ter perguntado é chute.
+   */
+  readonly adsZeroLegitimo: boolean;
 }
 
 /**
@@ -118,6 +131,55 @@ function motivoDaAmostra(atual: number, anterior: number): string | null {
 
 const ANDAMENTO = "dia em andamento: o volume ainda cresce e não é julgado";
 
+/** O investimento em Ads que entra no lucro: só com o período inteiro no diário, ou zero legítimo. */
+function adsDoPeriodo(ads: ResumoAds | null, cobertura: CoberturaAds, zeroLegitimo: boolean): number | null {
+  if (zeroLegitimo) return 0;
+  if (ads === null || !cobertura.completa) return null;
+
+  return ads.investimento;
+}
+
+export interface Contribuicao {
+  /** `resultado_contribuicao`: resultado após imposto − Ads rateado pela receita coberta. */
+  readonly resultado: number | null;
+  /** `margem_contribuicao`: o mesmo ÷ receita coberta (= margem após imposto − TACoS). */
+  readonly margem: number | null;
+}
+
+/**
+ * Lucro após imposto e Ads (METRICS 5K). O resultado após imposto só existe
+ * nos pedidos cobertos, e o Ads é do período inteiro: subtrair tudo dos
+ * cobertos culparia 84% dos pedidos pelo Ads de 100%. O Ads entra rateado
+ * pela participação da receita coberta — premissa declarada na tela, e que
+ * some quando a cobertura chega a 100%.
+ */
+export function contribuicao(
+  f: ResumoFaturamento,
+  imposto: ImpostoDoPeriodo | null,
+  investimentoAds: number | null,
+): Contribuicao {
+  const apos = imposto?.resultado_apos_imposto ?? null;
+  const coberta = f.receita_coberta;
+
+  if (apos === null || investimentoAds === null || coberta === null || coberta <= 0 || f.receita_bruta <= 0) {
+    return { resultado: null, margem: null };
+  }
+
+  const resultado = Math.round((apos - (investimentoAds * coberta) / f.receita_bruta) * 100) / 100;
+
+  return { resultado, margem: resultado / coberta };
+}
+
+/** Por que não há imposto, quando não há. */
+function motivoDoImposto(imposto: ImpostoDoPeriodo | null): string | null {
+  if (imposto === null) return "o imposto ainda não é calculado neste ambiente";
+  if (imposto.imposto_estimado === null && imposto.pedidos_sem_aliquota > 0) {
+    return `sem alíquota cadastrada para ${String(imposto.pedidos_sem_aliquota)} pedidos — cadastre em Metas e imposto`;
+  }
+
+  return null;
+}
+
 export function montarIndicadores(e: EntradaCentral): Indicador[] {
   const a = e.atual;
   const p = e.anterior;
@@ -155,6 +217,19 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
           : !e.coberturaAdsAnterior.completa
             ? "o período anterior não tem Ads de todos os dias"
             : null;
+
+  const impA = e.impostoAtual;
+  const impP = e.impostoAnterior;
+  const motivoImposto = motivoDoImposto(impA);
+  const investimentoAtual = adsDoPeriodo(ads, e.coberturaAdsAtual, e.adsZeroLegitimo);
+  const cA = contribuicao(a, impA, investimentoAtual);
+  const cP =
+    p === null ? null : contribuicao(p, impP, adsDoPeriodo(adsP, e.coberturaAdsAnterior, e.adsZeroLegitimo));
+  const motivoLucro =
+    motivoImposto ??
+    (investimentoAtual === null
+      ? "espera o Ads do período inteiro (o Mercado Livre fecha o dia às 10h do dia seguinte)"
+      : null);
 
   const valor = (
     atual: number | null,
@@ -234,7 +309,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
     comparar(
       {
         id: "resultado",
-        grupo: "rentabilidade",
+        grupo: "resultado",
         metricId: "resultado_venda",
         label: "Resultado da venda",
         formula: "receita − comissão − frete do vendedor − custo dos produtos, sobre pedidos cobertos",
@@ -252,7 +327,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
     comparar(
       {
         id: "margem",
-        grupo: "rentabilidade",
+        grupo: "resultado",
         metricId: "margem_venda",
         label: "Margem sobre a venda",
         formula: "resultado_venda ÷ receita dos mesmos pedidos cobertos",
@@ -266,8 +341,58 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
     ),
     comparar(
       {
+        id: "imposto",
+        grupo: "resultado",
+        metricId: "imposto_estimado",
+        label: "Imposto estimado",
+        formula: "SUM(receita do pedido × alíquota vigente no dia da venda), sobre todas as vendas válidas",
+        valor: impA?.imposto_estimado ?? null,
+        formato: "moeda",
+        // Imposto acompanha a receita pela alíquota: subir não é bom nem ruim por si.
+        comparado: valor(impA?.imposto_estimado ?? null, impP?.imposto_estimado ?? null, "moeda", "neutra"),
+        ressalva:
+          motivoImposto ??
+          (impA?.aliquota_unica == null
+            ? "alíquota do dia de cada pedido"
+            : `alíquota de ${formatarAliquota(impA.aliquota_unica)} sobre o faturamento`),
+      },
+      semAnterior ?? motivoImposto,
+      volume,
+    ),
+    comparar(
+      {
+        id: "lucro",
+        grupo: "resultado",
+        metricId: "resultado_contribuicao",
+        label: "Lucro após imposto e Ads",
+        formula: "resultado após imposto − investimento em Ads × (receita coberta ÷ receita bruta), sobre pedidos cobertos",
+        valor: cA.resultado,
+        formato: "moeda",
+        comparado: valor(cA.resultado, cP?.resultado ?? null, "moeda", "maior-melhor"),
+        ressalva: motivoLucro ?? "sem custos fixos · Ads rateado pela receita coberta",
+      },
+      amostraCoberta ?? coberturaDiferente ?? motivoLucro ?? (e.adsZeroLegitimo ? null : semAds),
+      volume,
+    ),
+    comparar(
+      {
+        id: "contribuicao",
+        grupo: "resultado",
+        metricId: "margem_contribuicao",
+        label: "Margem de contribuição",
+        formula: "lucro após imposto e Ads ÷ receita coberta = margem após imposto − TACoS",
+        valor: cA.margem,
+        formato: "percentual",
+        comparado: fracao(cA.margem, cP?.margem ?? null, "maior-melhor"),
+        ressalva: "é contribuição, não lucro líquido: custos fixos ficam fora",
+      },
+      amostraCoberta ?? motivoLucro ?? (e.adsZeroLegitimo ? null : semAds),
+      false,
+    ),
+    comparar(
+      {
         id: "custo",
-        grupo: "rentabilidade",
+        grupo: "custos",
         metricId: "custo_produtos_vendidos",
         label: "Custo dos produtos",
         formula: "SUM(quantidade × custo na data da venda), sobre pedidos cobertos; comparado pela participação na receita coberta",
@@ -287,7 +412,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
     comparar(
       {
         id: "comissao",
-        grupo: "rentabilidade",
+        grupo: "custos",
         metricId: "taxas_ml",
         label: "Comissão do Mercado Livre",
         formula: "SUM(order_items.sale_fee × quantity); comparada pela participação na receita (comissao_percentual)",
@@ -302,7 +427,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
     comparar(
       {
         id: "frete",
-        grupo: "rentabilidade",
+        grupo: "custos",
         metricId: "frete_medio_pedido",
         label: "Frete médio por pedido",
         formula: "frete_vendedor ÷ pedidos com frete observado",
@@ -615,6 +740,24 @@ export function montarResumo(
 
       frases.push(frase);
     }
+  }
+
+  // 3b. Depois do imposto e do Ads.
+  const contrib = porId(indicadores, "contribuicao");
+
+  if (contrib !== undefined && contrib.valor !== null) {
+    const aliquota = e.impostoAtual?.aliquota_unica ?? null;
+    const v = contrib.variacao;
+    const imposto = aliquota === null ? "" : ` (${formatarAliquota(aliquota)})`;
+    const antes = v === null ? "" : `, contra ${formatPercent(v.anterior)} no período anterior`;
+
+    frases.push(`Depois do imposto${imposto} e do Ads, a margem de contribuição foi de ${formatPercent(contrib.valor)}${antes}.`);
+  } else if (
+    e.impostoAtual !== null &&
+    e.impostoAtual.imposto_estimado === null &&
+    e.impostoAtual.pedidos_sem_aliquota > 0
+  ) {
+    frases.push("Sem alíquota de imposto cadastrada para o período: o lucro após imposto e Ads não é calculado.");
   }
 
   // 4. Ads.

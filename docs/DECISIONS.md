@@ -13918,3 +13918,34 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 **Fatias seguintes (ROADMAP, trilha 5J):** meta mensal e projecao; aliquota de imposto com vigencia e lucro apos imposto; recuperacao de 90 dias de frete; sinais e recomendacoes de Ads; detector de frete; rankings de produto; central de alertas sobre `actions`.
 
 **Impacto:** `apps/web/app/central/{page,indicadores,loading}.tsx`, `apps/web/lib/{central-periodo,variacao,central-indicadores}.ts` e testes, `apps/web/components/{kpi-strip,nav}.tsx`, `apps/web/app/globals.css`, migration `20260923183000`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,HANDOFF,DECISIONS}.md`.
+
+## D-395 - Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
+
+**Contexto:** segunda fatia da central (D-394), pedida pelo dono em 23/09 ("pode seguir com meta, projecao e imposto"). Na auditoria de D-394 ele escolheu o imposto como **aliquota unica sobre o faturamento, com vigencia**. Nao havia tabela de meta, de aliquota nem de configuracao financeira, e `margem_contribuicao` esperava imposto e Ads desde METRICS 5.5.
+
+**1. DUAS TABELAS DE CONFIGURACAO, O PADRAO DE D-144.** `monthly_goals` (uma meta por mes, da organizacao) e `tax_rates` (a aliquota vale de `valid_from` ate a proxima). Leitura de membro, escrita ADMIN/GESTOR por `has_org_role` (a funcao de 20260901135046 -- a prova local da migration pegou a primeira versao usando o `has_role(text[])` que ja nao existe), zero linhas semeadas. As duas gravacoes da tela sao UPSERT pela chave natural: cadastrar de novo o mesmo mes corrige.
+
+**2. O IMPOSTO ENTRA EM `get_faturamento`, PEDIDO A PEDIDO.** A alternativa -- aliquota x receita na web -- erraria todo periodo que atravessa uma mudanca de aliquota, e uma RPC separada duplicaria a regra do pedido coberto. O corpo e o de 20260918160000 com quatro acrescimos: `organization_id` ate `classificado`, a CTE `aliquotas` em intervalos, o `left join` pelo dia de negocio e seis campos no resumo. **Algum pedido sem aliquota torna o total NULL**, nunca parcial. Custo medido: +48 ms (+12%) em 30 dias, estavel ate a oitava execucao (PERFORMANCE). A web aceita a resposta sem os campos novos (o bloco vira `null` = "este banco ainda nao calcula imposto"): a `main` publica antes do workflow de migrations.
+
+**3. O LUCRO APOS IMPOSTO E ADS RATEIA O ADS PELA RECEITA COBERTA.** O resultado so existe nos pedidos cobertos; o Ads e do periodo inteiro. Subtrair tudo dos cobertos culparia 84% dos pedidos pelo Ads de 100%. `resultado_contribuicao = resultado_apos_imposto − investimento_ads x (receita coberta / receita bruta)`, e a margem sai `margem_apos_imposto − TACoS`. A premissa e dita na tela e some quando a cobertura chega a 100% (a recuperacao de 90 dias de frete, proxima fatia, e o que a leva la). Sem o Ads do periodo inteiro no diario, o lucro fica NULL -- exceto quando nenhuma conta tem Product Ads habilitado, e ai zero e fato.
+
+**4. A PROJECAO PONDERA O DIA DA SEMANA E DIZ A TENDENCIA COMO FAIXA.** Pedido do dono: "nao so multiplicacao simples". Em `get_meta_do_mes`, tudo em SQL:
+- fator de cada dia da semana = media daquele dia nas 8 semanas completas / media dos sete (no Dev: seg 1,14 ... sab 0,82, dom 0,71);
+- ritmo = receita dos ultimos N dias / soma dos fatores (N = 7, 14, 28);
+- projecao = realizado ate ontem + ritmo x fatores dos dias restantes. Ritmo atual usa 28 dias; conservador e otimista, o menor e o maior ritmo entre 7, 14 e 28 -- a tendencia recente como faixa, sem inventar percentil;
+- esperado ate ontem = meta x fatores dos dias completos / fatores do mes: o domingo fraco nao conta como atraso;
+- o mesmo mes do ano anterior entra como conferencia (so com o mes inteiro no historico), nao como motor: ha um ano de dado.
+**Nao entram**, e a tela diz: datas comerciais (nao ha calendario -- item novo no ROADMAP) e o parcial de hoje (entra pela media do dia da semana). Sem historico, a projecao e NULL -- a primeira versao gerava 56 dias de venda zero porque `greatest` ignora NULL, e a prova local pegou.
+
+**5. A META E DA EMPRESA E DO MES CORRENTE.** Nao muda com a conta nem com o periodo escolhidos na central; o cabecalho da secao diz isso. O veredito (no caminho / em risco / improvavel / atingida) sai de `lib/central-meta.ts` e vira sinal na lista "Pede atencao" do resumo.
+
+**6. CATALOGO.** Onze definicoes novas (METRICS 5J e 5K), na mesma migration.
+
+**Verificacao:**
+- migration aplicada no Postgres local numa transacao desfeita (aplica sobre todas as anteriores);
+- ensaio no Dev com dados reais, transacao desfeita: imposto exato (R$ 54.103,53 = 6% de R$ 901.725,43), troca de aliquota no meio do periodo, meta de teste com projecao entre R$ 2,94 mi e R$ 3,02 mi e referencia sazonal de R$ 2,57 mi;
+- o fixture de integracao da projecao foi calculado a mao (R$ 28.000 exatos) e conferido no Postgres local antes da CI;
+- 59 testes de unidade da central em cinco arquivos e 2 novos na leitura do faturamento, 7 casos de integracao novos, e2e de `/central` e `/central/metas`.
+**Nao verificado localmente:** o caminho feliz visual (meta cadastrada, barra de progresso), porque aplicar a migration no Supabase local compartilhado foi recusado pelo classificador do modo automatico. O e2e do cadastro pula num banco sem as tabelas e roda na CI, que aplica todas as migrations.
+
+**Impacto:** migration `20260923203000`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/central/{page,indicadores,meta}.tsx`, `apps/web/app/central/metas/{page,actions,formularios,loading}.tsx`, `apps/web/lib/{central-meta,metas-imposto,central-indicadores,faturamento}.ts` e testes, `apps/web/e2e/central.spec.ts`, `apps/web/app/globals.css`, `docs/{METRICS,DATABASE,PERFORMANCE,ROADMAP,HANDOFF,DECISIONS}.md`.

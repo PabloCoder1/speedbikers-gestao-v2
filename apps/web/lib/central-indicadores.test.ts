@@ -10,7 +10,7 @@ import {
   type Indicador,
   type ResumoCentral,
 } from "./central-indicadores";
-import type { ResumoFaturamento } from "./faturamento";
+import type { ImpostoDoPeriodo, ResumoFaturamento } from "./faturamento";
 
 /**
  * Um período com cobertura total: 100 pedidos, todos cobertos. Receita 10.000,
@@ -73,6 +73,28 @@ function ads(parcial: Partial<ResumoAds> = {}): ResumoAds {
 
 const COMPLETA = { completa: true, ate: "2026-09-22" };
 
+/** 6% sobre a receita do fixture: 600 de imposto, resultado 2.500 − 600 = 1.900, margem 19%. */
+function imposto(parcial: Partial<ImpostoDoPeriodo> = {}): ImpostoDoPeriodo {
+  return {
+    pedidos_sem_aliquota: 0,
+    aliquota_unica: 0.06,
+    imposto_estimado: 600,
+    imposto_coberto: 600,
+    resultado_apos_imposto: 1_900,
+    margem_apos_imposto: 0.19,
+    ...parcial,
+  };
+}
+
+const SEM_ALIQUOTA = imposto({
+  pedidos_sem_aliquota: 100,
+  aliquota_unica: null,
+  imposto_estimado: null,
+  imposto_coberto: null,
+  resultado_apos_imposto: null,
+  margem_apos_imposto: null,
+});
+
 function entrada(parcial: Partial<EntradaCentral> = {}): EntradaCentral {
   return {
     atual: resumo(),
@@ -82,6 +104,9 @@ function entrada(parcial: Partial<EntradaCentral> = {}): EntradaCentral {
     coberturaAdsAtual: COMPLETA,
     coberturaAdsAnterior: COMPLETA,
     emAndamento: false,
+    impostoAtual: null,
+    impostoAnterior: null,
+    adsZeroLegitimo: false,
     ...parcial,
   };
 }
@@ -166,6 +191,47 @@ describe("montarIndicadores", () => {
 
     expect(indicador(lista, "receita").variacao).toBeNull();
     expect(indicador(lista, "receita").semComparacao).toBe("o período anterior não carregou");
+  });
+});
+
+describe("imposto e lucro após imposto e Ads (D-395)", () => {
+  it("o Ads entra rateado pela receita coberta, e a margem de contribuição é margem após imposto − TACoS", () => {
+    // Cobertura de 80%: dos 500 de Ads, 400 caem nos pedidos cobertos.
+    const lista = montarIndicadores(
+      entrada({ atual: resumo({ receita_bruta: 12_500 }), impostoAtual: imposto(), impostoAnterior: imposto() }),
+    );
+
+    expect(indicador(lista, "lucro").valor).toBe(1_500);
+    expect(indicador(lista, "contribuicao").valor).toBeCloseTo(0.15);
+    expect(indicador(lista, "imposto").ressalva).toBe("alíquota de 6% sobre o faturamento");
+  });
+
+  it("sem alíquota cadastrada: imposto e lucro em branco, com o caminho para cadastrar", () => {
+    const lista = montarIndicadores(entrada({ impostoAtual: SEM_ALIQUOTA, impostoAnterior: SEM_ALIQUOTA }));
+
+    expect(indicador(lista, "imposto").valor).toBeNull();
+    expect(indicador(lista, "imposto").ressalva).toContain("cadastre em Metas e imposto");
+    expect(indicador(lista, "lucro").valor).toBeNull();
+  });
+
+  it("banco sem o imposto de D-395: diz que ainda não é calculado, e não que falta alíquota", () => {
+    const lista = montarIndicadores(entrada());
+
+    expect(indicador(lista, "imposto").ressalva).toBe("o imposto ainda não é calculado neste ambiente");
+  });
+
+  it("Ads incompleto segura o lucro; sem conta com Product Ads, o zero é legítimo", () => {
+    const incompleto = { completa: false, ate: "2026-09-21" };
+
+    expect(
+      indicador(montarIndicadores(entrada({ impostoAtual: imposto(), coberturaAdsAtual: incompleto })), "lucro").valor,
+    ).toBeNull();
+
+    const semAds = montarIndicadores(
+      entrada({ impostoAtual: imposto(), adsAtual: null, coberturaAdsAtual: incompleto, adsZeroLegitimo: true }),
+    );
+
+    expect(indicador(semAds, "lucro").valor).toBe(1_900);
   });
 });
 
@@ -269,6 +335,23 @@ describe("montarResumo", () => {
     expect(r.frases).toContain(
       "A margem sobre a venda caiu de 25,0% para 24,0%. Pesou: frete (−2,0 p.p.). Compensou em parte: custo dos produtos (+1,0 p.p.).",
     );
+  });
+
+  it("depois do imposto e do Ads: a margem de contribuição contra a do período anterior", () => {
+    const e = entrada({
+      impostoAtual: imposto(),
+      impostoAnterior: imposto({ resultado_apos_imposto: 2_000, margem_apos_imposto: 0.2 }),
+    });
+    const r = texto(montarResumo(montarIndicadores(e), e, "30d"));
+
+    expect(r.frases).toContain("Depois do imposto (6%) e do Ads, a margem de contribuição foi de 14,0%, contra 15,0% no período anterior.");
+  });
+
+  it("sem alíquota, o resumo diz que o lucro após imposto não é calculado", () => {
+    const e = entrada({ impostoAtual: SEM_ALIQUOTA });
+    const r = texto(montarResumo(montarIndicadores(e), e, "30d"));
+
+    expect(r.frases).toContain("Sem alíquota de imposto cadastrada para o período: o lucro após imposto e Ads não é calculado.");
   });
 
   it("saindo do zero não diz 'estável' nem inventa porcentagem", () => {

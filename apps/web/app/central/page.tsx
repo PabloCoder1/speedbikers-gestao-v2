@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../lib/central-periodo";
 import { formatBusinessDate } from "../../lib/format";
+import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { AVISO } from "../faturamento/numeros";
 import { Indicadores } from "./indicadores";
@@ -23,12 +24,14 @@ export const dynamic = "force-dynamic";
  *
  * **Primeira fatia da central de inteligência** pedida pelo dono em 23/09: os
  * indicadores com comparação e tom, os períodos do negócio (hoje, ontem, mês
- * atual, mês anterior) e o resumo automático. Meta, projeção, frete, sinais de
- * Ads e alertas vêm nas fatias seguintes (`docs/ROADMAP.md`, trilha 5J).
+ * atual, mês anterior) e o resumo automático. A segunda (D-395) trouxe a meta
+ * do mês com a projeção de fechamento e o imposto, com o lucro após imposto e
+ * Ads. Frete, sinais de Ads e alertas vêm nas seguintes (`docs/ROADMAP.md`,
+ * trilha 5J).
  *
- * **Nenhuma consulta nova.** São as mesmas `get_faturamento` e
- * `get_ads_overview` de `/faturamento`, sem detalhe, para o período atual e o
- * anterior — quatro leituras em paralelo. Os números batem com a tela de
+ * **As mesmas consultas de `/faturamento`.** `get_faturamento` e
+ * `get_ads_overview`, sem detalhe, para o período atual e o anterior, mais
+ * `get_meta_do_mes` — cinco leituras em paralelo. Os números batem com a tela de
  * faturamento por construção; o que esta tela acrescenta é a comparação, com
  * as regras de `docs/METRICS.md` 5I.
  */
@@ -102,6 +105,14 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     supabase.rpc("get_ads_overview", { p_date_from: periodo.anterior.from, p_date_to: periodo.anterior.to, ...contaFiltro }),
   ]);
 
+  // A meta é da organização e do mês corrente: não depende do período nem da conta.
+  const membership = await currentMembership();
+  const leituraMeta =
+    membership.organizationId === null
+      ? null
+      : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId }));
+  const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
+
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoAtual = periodoDaUrl(periodo);
   const diasCompletos = periodo.preset === "7d" || periodo.preset === "15d" || periodo.preset === "30d" || (periodo.preset === "mes" && !periodo.emAndamento);
@@ -164,6 +175,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
               </form>
             </FilterMenu>
 
+            <Link className="sb-button" href="/central/metas">
+              Metas e imposto
+            </Link>
+
             <Link className="sb-button" href={contaSlug === null ? "/faturamento" : `/faturamento?account=${encodeURIComponent(contaSlug)}`}>
               Faturamento detalhado
             </Link>
@@ -184,7 +199,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
       )}
 
       <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" />}>
-        <Indicadores leituras={leituras} periodo={periodo} />
+        <Indicadores leituras={leituras} leituraMeta={leituraMeta} periodo={periodo} podeEditar={podeEditar} />
       </Suspense>
     </>
   );

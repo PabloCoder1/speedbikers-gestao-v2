@@ -3,7 +3,8 @@ import { expect, test } from "@playwright/test";
 import { login } from "./helpers.js";
 
 /**
- * `/central` (D-394) — os indicadores contra o período anterior e o resumo.
+ * `/central` (D-394, D-395) — os indicadores contra o período anterior, a meta
+ * do mês e o resumo.
  *
  * Os números não são afirmados: o seed não tem custo cadastrado nem Ads, e
  * resultado, margem e Ads saem SEM comparação, com o motivo — que é justamente
@@ -19,11 +20,20 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
     page.getByRole("navigation", { name: "Navegação principal" }).getByRole("link", { name: "Central do negócio" }),
   ).toBeVisible();
 
-  for (const regiao of ["Resumo do período", "Vendas", "Rentabilidade", "Mercado Ads", "Comparação completa"]) {
+  for (const regiao of [
+    "Resumo do período",
+    "Meta e projeção",
+    "Vendas",
+    "Resultado e lucro",
+    "Custos da venda",
+    "Mercado Ads",
+    "Comparação completa",
+  ]) {
     await expect(page.getByRole("region", { name: regiao })).toBeVisible();
   }
 
   await expect(page.getByText("Não foi possível carregar o período")).toHaveCount(0);
+  await expect(page.getByText("Não foi possível carregar a meta")).toHaveCount(0);
   await expect(page.getByText(/formato que esta tela não reconhece/)).toHaveCount(0);
   await expect(page.getByText("O período anterior não carregou")).toHaveCount(0);
 
@@ -64,4 +74,54 @@ test("/central: personalizado inválido avisa e cai no padrão", async ({ page }
 
   await expect(page.getByRole("alert").filter({ hasText: "Período personalizado inválido" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+});
+
+/**
+ * Metas e imposto (D-395): o ADMIN do seed cadastra a meta do mês e a
+ * alíquota, e a central passa a mostrar a meta. Num banco sem a migration a
+ * tela diz "sendo ativado" e o teste para aí — é o estado da produção entre o
+ * merge e o workflow de migrations, e ele também não pode quebrar.
+ */
+test("/central/metas: cadastrar meta e alíquota aparece na central, e remover limpa", async ({ page }) => {
+  await login(page, "/central/metas");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Metas e imposto" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem as tabelas de D-395");
+  }
+
+  const meta = page.getByRole("form", { name: "Cadastrar meta do mês" });
+
+  await meta.getByLabel("Meta de faturamento (R$)").fill("1.234.567,89");
+  await meta.getByRole("button", { name: "Salvar meta" }).click();
+  await expect(meta.getByRole("status")).toHaveText("Meta salva.");
+  await expect(page.getByRole("cell", { name: /1\.234\.567,89/ })).toBeVisible();
+
+  const aliquota = page.getByRole("form", { name: "Cadastrar alíquota de imposto" });
+
+  await aliquota.getByLabel("Alíquota efetiva (%)").fill("6,5");
+  await aliquota.getByRole("button", { name: "Salvar alíquota" }).click();
+  await expect(aliquota.getByRole("status")).toHaveText("Alíquota salva.");
+  await expect(page.getByText(/Hoje vale 6,5% sobre o faturamento/)).toBeVisible();
+
+  // Valor inválido volta com o erro no campo, sem gravar.
+  await aliquota.getByLabel("Alíquota efetiva (%)").fill("150");
+  await aliquota.getByRole("button", { name: "Salvar alíquota" }).click();
+  await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica entre 0% e 100%.");
+
+  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+
+  const secaoMeta = page.getByRole("region", { name: "Meta e projeção" });
+
+  await expect(secaoMeta.getByRole("progressbar", { name: "Realizado da meta do mês" })).toBeVisible();
+  await expect(secaoMeta.getByText(/1\.234\.567,89/).first()).toBeVisible();
+
+  // Limpa o que o teste gravou, pela própria tela.
+  await page.goto("/central/metas");
+  await page.getByRole("button", { name: /^Remover a meta de / }).first().click();
+  await expect(page.getByRole("cell", { name: /1\.234\.567,89/ })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Remover a alíquota de / }).first().click();
+  await expect(page.getByText("Nenhuma alíquota cadastrada.")).toBeVisible();
 });

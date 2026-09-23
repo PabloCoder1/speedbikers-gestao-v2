@@ -4,6 +4,7 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { Panel } from "../../components/panel";
 import { StatePill } from "../../components/state-pill";
 import type { Tom } from "../../components/tone";
+import { lerMetaDoMes, situacaoDaMeta, type MetaDoMes } from "../../lib/central-meta";
 import { lerVisaoAds, type VisaoAds } from "../../lib/ads";
 import {
   coberturaDoAds,
@@ -20,6 +21,7 @@ import { lerFaturamento } from "../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
 import { LIMITES_DA_VARIACAO, textoDaVariacao } from "../../lib/variacao";
 import { AVISO, type RespostaRpc } from "../faturamento/numeros";
+import { SecaoMeta } from "./meta";
 
 function formatar(valor: number | null, formato: Formato): string {
   switch (formato) {
@@ -102,10 +104,11 @@ function celula(i: Indicador): KpiCellData {
 const GRUPOS: readonly { readonly id: GrupoIndicador; readonly titulo: string; readonly nota: string }[] = [
   { id: "vendas", titulo: "Vendas", nota: "todos os pedidos válidos do período" },
   {
-    id: "rentabilidade",
-    titulo: "Rentabilidade",
-    nota: "resultado, margem e custo só nos pedidos cobertos: frete observado, custo conhecido e um produto",
+    id: "resultado",
+    titulo: "Resultado e lucro",
+    nota: "nos pedidos cobertos: frete observado, custo conhecido e um produto; imposto pela alíquota do dia",
   },
+  { id: "custos", titulo: "Custos da venda", nota: "comissão e custo comparados pela participação na receita" },
   { id: "ads", titulo: "Mercado Ads", nota: "Product Ads, pela atribuição do Mercado Livre" },
 ];
 
@@ -177,18 +180,68 @@ function TabelaDeComparacao({ indicadores }: { indicadores: readonly Indicador[]
   );
 }
 
+/** A resposta da RPC com o código do PostgREST, para distinguir "função ausente" de erro. */
+export interface RespostaComCodigo {
+  data: unknown;
+  error: { message: string; code?: string } | null;
+}
+
 /**
- * Tudo que depende das quatro leituras — fora da página para ela só cuidar de
+ * A meta lida, ou o motivo de não ter meta. PGRST202 (função ausente) não é
+ * erro: a web da `main` chega à produção antes de a migration passar pelo
+ * workflow, e a tela diz que a meta está sendo ativada — o precedente de D-363.
+ */
+function lerMeta(resposta: RespostaComCodigo | null): { meta: MetaDoMes | null; indisponivel: string | null } {
+  if (resposta === null) return { meta: null, indisponivel: "Sessão sem organização: a meta não pode ser lida." };
+
+  if (resposta.error !== null) {
+    return {
+      meta: null,
+      indisponivel:
+        resposta.error.code === "PGRST202"
+          ? "A meta e a projeção estão sendo ativadas neste ambiente."
+          : `Não foi possível carregar a meta: ${resposta.error.message}`,
+    };
+  }
+
+  const meta = lerMetaDoMes(resposta.data);
+
+  return meta === null
+    ? { meta: null, indisponivel: "A meta veio num formato que esta tela não reconhece — nada foi mostrado." }
+    : { meta, indisponivel: null };
+}
+
+/** A meta vira sinal no resumo: em risco ou improvável pede atenção; no caminho, melhora. */
+function sinalDaMeta(meta: MetaDoMes | null): Sinal | null {
+  if (meta?.situacao !== "em_curso" || meta.meta === null) return null;
+
+  const leitura = situacaoDaMeta(meta);
+
+  if (leitura.tom !== "perigo" && leitura.tom !== "atencao" && leitura.tom !== "ok") return null;
+
+  return { tom: leitura.tom, texto: `Meta do mês — ${leitura.rotulo}`, indicador: "meta" };
+}
+
+/**
+ * Tudo que depende das leituras — fora da página para ela só cuidar de
  * filtro e streaming, como `faturamento/numeros.tsx`.
  */
 export async function Indicadores({
   leituras,
+  leituraMeta,
   periodo,
+  podeEditar,
 }: {
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
+  leituraMeta: Promise<RespostaComCodigo> | null;
   periodo: PeriodoCentral;
+  podeEditar: boolean;
 }): Promise<ReactNode> {
-  const [atualResult, anteriorResult, adsResult, adsAnteriorResult] = await leituras;
+  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta] = await Promise.all([
+    leituras,
+    leituraMeta,
+  ]);
+  const { meta, indisponivel } = lerMeta(respostaMeta);
 
   if (atualResult.error !== null) {
     return (
@@ -211,7 +264,8 @@ export async function Indicadores({
 
   // Falha do período anterior ou do Ads não vira zero (D-067): a comparação
   // sai, e cada indicador diz por quê.
-  const anterior = anteriorResult.error === null ? (lerFaturamento(anteriorResult.data)?.resumo ?? null) : null;
+  const faturamentoAnterior = anteriorResult.error === null ? lerFaturamento(anteriorResult.data) : null;
+  const anterior = faturamentoAnterior?.resumo ?? null;
   const ads: VisaoAds | null = adsResult.error === null ? lerVisaoAds(adsResult.data) : null;
   const adsAnterior: VisaoAds | null = adsAnteriorResult.error === null ? lerVisaoAds(adsAnteriorResult.data) : null;
 
@@ -223,10 +277,16 @@ export async function Indicadores({
     coberturaAdsAtual: coberturaDoAds(ads?.diario ?? [], periodo.atual.from, periodo.atual.to),
     coberturaAdsAnterior: coberturaDoAds(adsAnterior?.diario ?? [], periodo.anterior.from, periodo.anterior.to),
     emAndamento: periodo.emAndamento,
+    impostoAtual: atual.imposto,
+    impostoAnterior: faturamentoAnterior?.imposto ?? null,
+    adsZeroLegitimo: ads !== null && ads.contas.length > 0 && ads.contas.every((c) => c.ads === "nao_habilitado"),
   };
 
   const indicadores = montarIndicadores(entrada);
   const resumo = montarResumo(indicadores, entrada, periodo.preset);
+  const sinalMeta = sinalDaMeta(meta);
+  const atencao = sinalMeta !== null && sinalMeta.tom !== "ok" ? [sinalMeta, ...resumo.atencao] : resumo.atencao;
+  const melhoras = sinalMeta !== null && sinalMeta.tom === "ok" ? [sinalMeta, ...resumo.melhoras] : resumo.melhoras;
 
   return (
     <>
@@ -250,13 +310,15 @@ export async function Indicadores({
           <div className="sb-central-listas">
             <ListaDeSinais
               titulo="Pede atenção"
-              sinais={resumo.atencao}
+              sinais={atencao}
               vazio="Nenhum indicador piorou além da zona neutra."
             />
-            <ListaDeSinais titulo="Melhorou" sinais={resumo.melhoras} vazio="Nenhum indicador melhorou além da zona neutra." />
+            <ListaDeSinais titulo="Melhorou" sinais={melhoras} vazio="Nenhum indicador melhorou além da zona neutra." />
           </div>
         </div>
       </Panel>
+
+      <SecaoMeta meta={meta} indisponivel={indisponivel} podeEditar={podeEditar} />
 
       {GRUPOS.map((grupo, indice) => (
         <section key={grupo.id} aria-label={grupo.titulo}>

@@ -1244,3 +1244,16 @@ O histórico de custo de produção tem **uma linha por SKU**, todas de 14/09, e
 **Tentado e descartado.** Passar os pedidos da janela como array constante (plpgsql em dois passos) para ler `order_items` por `= any(...)` em bitmap: 4.492 buffers e 29 ms isolado, contra 112 mil. Mas a junção do array com `order_items` sai estimada em **1 linha** (o `unnest` não tem estatística), o resto do plano vira nested loop sobre CTE, e a chamada estourou 120 s no Dev. Relendo `orders` por `id = any(...)` a estimativa ficou em 152 para 28.611 reais. Estimativa frágil numa tela de dinheiro não compensa 100 mil buffers.
 
 **O que sobra.** Das 140 mil, 111 mil são as buscas de `order_items` por pedido (4 por pedido) e 27 mil a leitura de `orders`: o índice `(organization_id, date_created)` é percorrido desde o começo, porque a consulta não tem a organização (a RLS filtra por conta). Um índice de `orders` por data que cubra as colunas lidas cortaria as 27 mil para centenas, ao custo de escrita em toda gravação de pedido — decisão para medir antes, não para esta fatia.
+
+### `/faturamento` e `/central`: o imposto por pedido e a meta do mês (D-395, 23/09/2026)
+
+Dev (`nmgccyqquwxecqffsidr`), `authenticated` com um ADMIN real, tudo numa transação desfeita: a migration `20260923203000` aplicada dentro dela, duas alíquotas e uma meta de teste, e oito execuções seguidas na mesma sessão (a sexta é onde o plano genérico entraria, D-305).
+
+| Função | Janela | Antes | Depois |
+|---|---|---|---|
+| `get_faturamento` (sem detalhe) | 30 dias (15/08–13/09) | 819 (fria), 398, 395, 400, 396, 395, 394, 394 ms | 456, 444, 445, 441, 444, 443, 442, 443 ms |
+| `get_meta_do_mes` | setembro, visto de 14/09 | — (nova) | 7,9 (fria), 3,3, 2,6, 2,6, 2,5, 2,4, 2,5, 2,5 ms |
+
+O imposto custa **~48 ms (+12%)** em 30 dias: a CTE `aliquotas` é minúscula (uma linha por vigência) e entra por um `left join` de intervalo; o resto são seis agregados a mais sobre os mesmos pedidos. Estável até a oitava execução. A meta lê ~130 linhas do rollup diário e não pesa.
+
+Conferência dos números no mesmo ensaio: 1–9/09 a 6% deu imposto de R$ 54.103,53 sobre R$ 901.725,43 (exato) e o coberto de R$ 45.736,60 sobre R$ 762.276,60; em 7–13/09, com a alíquota trocando no dia 10, `aliquota_unica` saiu NULL e o imposto somou cada pedido pela sua.
