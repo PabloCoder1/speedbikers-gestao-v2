@@ -7,7 +7,9 @@ import { SidebarNav } from "./nav";
  * O CARREGAMENTO do app — três tamanhos, um idioma só.
  *
  * - `CarregandoTela`: o fallback de `app/loading.tsx`. Redesenha a moldura
- *   porque o `Shell` mora dentro de cada página e some junto com ela.
+ *   porque o `Shell` mora dentro de cada página e some junto com ela. Tela
+ *   com forma própria passa o miolo como `children` (`/configuracoes`) — a
+ *   moldura vem sempre.
  * - `CarregandoConteudo`: o miolo da tela (título, faixa de KPIs, painel), para
  *   quando a moldura real já está de pé e só o conteúdo espera.
  * - `CarregandoBloco`: um painel dentro de uma tela montada (ranking, margem,
@@ -90,7 +92,14 @@ export function CarregandoBloco({ rotulo }: { rotulo: string }): ReactNode {
   );
 }
 
-export function CarregandoTela(): ReactNode {
+/**
+ * `children` é o miolo, quando a tela tem forma própria: sem ele sai o
+ * `CarregandoConteudo` genérico, que é o que as outras telas recebem. A
+ * MOLDURA não é opcional — o `loading.tsx` de uma pasta substitui a página
+ * inteira, `Shell` incluído, e um esqueleto sem ela apaga a sidebar e a barra
+ * superior a cada navegação para aquela tela.
+ */
+export function CarregandoTela({ children }: { children?: ReactNode } = {}): ReactNode {
   return (
     <div className="sb-shell">
       <aside className="sb-sidebar">
@@ -132,9 +141,7 @@ export function CarregandoTela(): ReactNode {
           <span aria-hidden="true" className="sb-carregando-progresso sb-carregando-revela" />
         </header>
 
-        <main className="sb-content">
-          <CarregandoConteudo />
-        </main>
+        <main className="sb-content">{children ?? <CarregandoConteudo />}</main>
       </div>
     </div>
   );
