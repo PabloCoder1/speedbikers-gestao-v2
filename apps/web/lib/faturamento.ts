@@ -97,7 +97,7 @@ export interface ProdutosDoFaturamento {
  * O imposto do período (D-395), pela alíquota vigente no dia de cada pedido.
  *
  * Os campos chegam no resumo de `get_faturamento` só depois da migration
- * `20260923203000`. A web da `main` vai ao ar antes de a migration passar pelo
+ * `20260923100100`. A web da `main` vai ao ar antes de a migration passar pelo
  * workflow de produção, então a AUSÊNCIA dos campos não é contrato quebrado:
  * é "este banco ainda não calcula imposto", e o bloco inteiro vira `null`.
  * Presentes, eles são conferidos como os demais — um só fora do formato recusa

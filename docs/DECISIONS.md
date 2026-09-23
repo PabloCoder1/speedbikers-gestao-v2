@@ -13911,13 +13911,13 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 
 **6. O RESUMO E MONTADO DOS NUMEROS, SEM LLM.** Faturamento, resultado (com o contraste "mesmo com o faturamento em alta"), margem e Ads. A variacao da margem e repartida EXATAMENTE entre comissao, frete e custo (identidade conferida nos dois periodos, tolerancia de 0,1 p.p.); sem a identidade, nada e atribuido. Listas "Pede atencao" e "Melhorou" saem das mesmas variacoes.
 
-**7. CATALOGO.** `variacao_percentual_periodo` e `variacao_pontos_percentuais` entram em `metric_definitions` (migration `20260923183000`, so catalogo) e em METRICS 5I, com a janela anterior (`comparacao_periodo_anterior`) e a tabela do tom. A tela nao le o catalogo em tempo de execucao: funciona antes de a migration chegar a producao.
+**7. CATALOGO.** `variacao_percentual_periodo` e `variacao_pontos_percentuais` entram em `metric_definitions` (migration `20260923100000`, so catalogo) e em METRICS 5I, com a janela anterior (`comparacao_periodo_anterior`) e a tabela do tom. A tela nao le o catalogo em tempo de execucao: funciona antes de a migration chegar a producao.
 
 **Verificacao:** 34 testes de unidade novos (`central-periodo`, `variacao`, `central-indicadores`); lista do catalogo atualizada no teste de integracao; `typecheck` e `lint` da web.
 
 **Fatias seguintes (ROADMAP, trilha 5J):** meta mensal e projecao; aliquota de imposto com vigencia e lucro apos imposto; recuperacao de 90 dias de frete; sinais e recomendacoes de Ads; detector de frete; rankings de produto; central de alertas sobre `actions`.
 
-**Impacto:** `apps/web/app/central/{page,indicadores,loading}.tsx`, `apps/web/lib/{central-periodo,variacao,central-indicadores}.ts` e testes, `apps/web/components/{kpi-strip,nav}.tsx`, `apps/web/app/globals.css`, migration `20260923183000`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,HANDOFF,DECISIONS}.md`.
+**Impacto:** `apps/web/app/central/{page,indicadores,loading}.tsx`, `apps/web/lib/{central-periodo,variacao,central-indicadores}.ts` e testes, `apps/web/components/{kpi-strip,nav}.tsx`, `apps/web/app/globals.css`, migration `20260923100000`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,HANDOFF,DECISIONS}.md`.
 
 ## D-395 - Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
 
@@ -13941,6 +13941,8 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 
 **6. CATALOGO.** Onze definicoes novas (METRICS 5J e 5K), na mesma migration.
 
+**7. O CARIMBO DAS DUAS MIGRATIONS VEM ANTES DAS PENDENTES DAS OUTRAS SESSOES.** Eram `20260923183000` (D-394) e `20260923203000`, e viraram `20260923100000` e `20260923100100`. O `db push` recusa versao menor que a ultima aplicada no remoto, e havia migrations de outras frentes ainda sem merge com carimbo entre as duas pontas (`20260923110000` a `20260923150000`). Aplicadas primeiro com o carimbo antigo, as minhas deixariam as delas "fora de ordem" -- o conserto conhecido e renomear o arquivo e reparar o marcador (o caso de `20260918125153`). Com o carimbo menor, as delas entram depois sem conflito. Achado no caminho: `20260923150000` esta em DOIS arquivos de frentes diferentes (triagem de notificacoes e auditoria de resposta de reclamacao); avisado as sessoes donas.
+
 **Verificacao:**
 - migration aplicada no Postgres local numa transacao desfeita (aplica sobre todas as anteriores);
 - ensaio no Dev com dados reais, transacao desfeita: imposto exato (R$ 54.103,53 = 6% de R$ 901.725,43), troca de aliquota no meio do periodo, meta de teste com projecao entre R$ 2,94 mi e R$ 3,02 mi e referencia sazonal de R$ 2,57 mi;
@@ -13948,4 +13950,4 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 - 59 testes de unidade da central em cinco arquivos e 2 novos na leitura do faturamento, 7 casos de integracao novos, e2e de `/central` e `/central/metas`.
 **Nao verificado localmente:** o caminho feliz visual (meta cadastrada, barra de progresso), porque aplicar a migration no Supabase local compartilhado foi recusado pelo classificador do modo automatico. O e2e do cadastro pula num banco sem as tabelas e roda na CI, que aplica todas as migrations.
 
-**Impacto:** migration `20260923203000`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/central/{page,indicadores,meta}.tsx`, `apps/web/app/central/metas/{page,actions,formularios,loading}.tsx`, `apps/web/lib/{central-meta,metas-imposto,central-indicadores,faturamento}.ts` e testes, `apps/web/e2e/central.spec.ts`, `apps/web/app/globals.css`, `docs/{METRICS,DATABASE,PERFORMANCE,ROADMAP,HANDOFF,DECISIONS}.md`.
+**Impacto:** migration `20260923100100`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/central/{page,indicadores,meta}.tsx`, `apps/web/app/central/metas/{page,actions,formularios,loading}.tsx`, `apps/web/lib/{central-meta,metas-imposto,central-indicadores,faturamento}.ts` e testes, `apps/web/e2e/central.spec.ts`, `apps/web/app/globals.css`, `docs/{METRICS,DATABASE,PERFORMANCE,ROADMAP,HANDOFF,DECISIONS}.md`.

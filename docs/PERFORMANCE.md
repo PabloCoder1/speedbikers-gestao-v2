@@ -1247,7 +1247,7 @@ O histórico de custo de produção tem **uma linha por SKU**, todas de 14/09, e
 
 ### `/faturamento` e `/central`: o imposto por pedido e a meta do mês (D-395, 23/09/2026)
 
-Dev (`nmgccyqquwxecqffsidr`), `authenticated` com um ADMIN real, tudo numa transação desfeita: a migration `20260923203000` aplicada dentro dela, duas alíquotas e uma meta de teste, e oito execuções seguidas na mesma sessão (a sexta é onde o plano genérico entraria, D-305).
+Dev (`nmgccyqquwxecqffsidr`), `authenticated` com um ADMIN real, tudo numa transação desfeita: a migration `20260923100100` aplicada dentro dela, duas alíquotas e uma meta de teste, e oito execuções seguidas na mesma sessão (a sexta é onde o plano genérico entraria, D-305).
 
 | Função | Janela | Antes | Depois |
 |---|---|---|---|

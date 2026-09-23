@@ -26,7 +26,7 @@
 
 SKU/ML;visitas;migração
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923183000` e `20260923203000`; próximas fatias na trilha 5J.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923100000` e `20260923100100`; próximas fatias na trilha 5J.
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
