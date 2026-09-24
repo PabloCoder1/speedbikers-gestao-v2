@@ -14045,3 +14045,17 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** integracao com 12 produtos numa faixa (+5% em dez, +45% num, +18% noutro): o de +45% vira +38% sobre o esperado (atencao), o de +18% sai; 16 testes do leitor e dos motivos; `check`. Em producao, como `authenticated`, com os 90 dias completos, a versao de D-397 fez 4,4 s na primeira chamada e 1,2 s nas sete seguintes, sem salto na sexta.
 
 **Impacto:** `supabase/migrations/20260923195500_detector_frete_desconta_mudanca_geral.sql`, `apps/web/lib/detector-frete{,.test}.ts`, `apps/web/app/central/frete/page.tsx`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.
+
+## D-401 - O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
+
+**CORRIGE D-398.** Visto em producao em 24/09 as 8h50, antes do sync das 11h: a regra de D-398 ("ultimo dia antes de hoje com venda atribuida e impressao") tomou 23/09 como consolidado. Mas 23/09 era o **retrato parcial** gravado pelo sync de 23/09 as 11h15, quando ainda era o dia corrente -- por isso ja tinha venda. Com 23/09 "consolidado", 21/09 e 22/09 (venda zero, ainda nao consolidados) entraram na semana dos sinais: 2 campanhas criticas e 29 abaixo da meta que nao existem, ROAS da semana 10,09 contra 16,84. Na central, o ROAS de um periodo ate ontem saia subestimado sem aviso, porque nenhum dia era dado como pendente.
+
+**1. A REGRA:** consolidado = o dia foi gravado por um sync **posterior ao fim dele** (`metric_date` menor que a data de `synced_at` em Sao Paulo), com venda atribuida **e** impressao, somando as contas do recorte. Pendentes = os dias com gasto depois do ultimo consolidado: os que chegaram sem venda **e** o retrato parcial do dia do sync. O sync diario regrava os 90 dias (D-363), entao todo dia anterior ao sync tem `synced_at` posterior a ele.
+
+**2. NA MESMA PRODUCAO, COM A REGRA NOVA:** a semana fecha em 20/09 e 21, 22 e 23/09 ficam pendentes. Depois do sync das 11h de cada dia, o normal passa a ser "ontem e anteontem pendentes" ate o Mercado Livre atribuir as vendas.
+
+**3. O RESTO DE D-398 NAO MUDA:** niveis, limiares, textos, o que a central e o faturamento fazem com dia pendente. So as duas funcoes sao recriadas.
+
+**Verificacao:** 2 testes de integracao novos, que falham na regra de D-398 (medido: `fim` 29/06 em vez de 26/06; `dias_pendentes` vazio em vez de anteontem e ontem) e passam na nova: o retrato parcial do dia do sync e os dias sem venda ficam pendentes, e a semana fecha antes deles; `get_ads_overview` contra o hoje real poe o dia do sync entre os pendentes mesmo com venda. Os 4 de D-398 seguem iguais. Suite inteira (839) num Supabase isolado com todas as migrations. A regra nova foi conferida so leitura contra os dados de producao antes de escrever.
+
+**Impacto:** `supabase/migrations/20260923195800_ads_dia_consolidado_pela_data_do_sync.sql`, `packages/db/src/rls.integration.test.ts`, `apps/web/app/central/ads/page.tsx` (frase do metodo), `docs/{METRICS,DECISIONS,DECISIONS_INDEX,HANDOFF,ROADMAP}.md`.

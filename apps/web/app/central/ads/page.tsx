@@ -517,8 +517,8 @@ function ComoDecide({ sinais, margem }: { sinais: SinaisAds; margem: MargemDaSem
           <strong>Premissas:</strong> o lucro estimado aplica a {margem.rotulo}
           {margem.valor === null ? "" : ` (${formatPercent(margem.valor)})`} às vendas de cada campanha, porque a API de
           Product Ads não diz que produtos cada campanha vendeu. O orçamento é o da última leitura da campanha. O
-          Mercado Livre publica o gasto e os cliques do dia antes das vendas atribuídas: dias com gasto e sem venda
-          consolidada ficam de fora até a sincronização seguinte.
+          Mercado Livre publica o gasto e os cliques do dia antes das vendas atribuídas, e o dia em que a sincronização
+          roda chega pela metade: esses dias ficam de fora até uma sincronização posterior com a venda atribuída.
         </p>
       </div>
     </Panel>

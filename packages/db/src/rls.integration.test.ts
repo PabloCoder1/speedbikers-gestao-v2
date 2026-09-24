@@ -15497,3 +15497,91 @@ describe("get_sinais_ads e dias pendentes de Ads (D-398)", () => {
     await expect(asAnon(`select public.get_sinais_ads('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });
+
+/**
+ * D-401: o dia de Ads consolidado olha a DATA DO SYNC. O cenário de produção
+ * em 24/09/2026 antes do sync das 11h: o último sync rodou em 29/06 (aqui) e
+ * gravou 29/06 como retrato parcial COM venda, 27 e 28/06 com venda zero, e os
+ * dias até 26/06 consolidados. Visto de 30/06, a semana fecha em 26/06, e 27,
+ * 28 e 29/06 ficam pendentes -- a regra de D-398 fechava em 29/06 e punha os
+ * dois dias sem venda dentro da semana.
+ */
+describe("dia de Ads consolidado pela data do sync (D-401)", () => {
+  const CONTA_PARCIAL = "dddd9999-0000-4000-8000-0000000000b7";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do sync parcial','adstest-parcial','PENDING')
+       on conflict do nothing`,
+      [CONTA_PARCIAL, ORG_SB],
+    );
+    await client.query(
+      `insert into public.ads_campaigns (organization_id, ml_account_id, campaign_id, name, status, strategy, budget, roas_target)
+       values ($1,$2,920101,'Parcial','active','PROFITABILITY',100,10)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_PARCIAL],
+    );
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount,
+          total_amount, direct_units, indirect_units, units, synced_at)
+       select $1, $2, 920101, d::date, 30, case when d::date = date '2023-06-28' then 0 else 6000 end, 40,
+              case when d::date in (date '2023-06-27', date '2023-06-28') then 0 else 400 end, 0,
+              case when d::date in (date '2023-06-27', date '2023-06-28') then 0 else 400 end,
+              case when d::date in (date '2023-06-27', date '2023-06-28') then 0 else 2 end, 0,
+              case when d::date in (date '2023-06-27', date '2023-06-28') then 0 else 2 end,
+              timestamptz '2023-06-29 11:15:00-03'
+       from generate_series(timestamp '2023-06-13', timestamp '2023-06-29', interval '1 day') d
+       on conflict do nothing`,
+      [ORG_SB, CONTA_PARCIAL],
+    );
+    // Para get_ads_overview, que olha o hoje de verdade: o sync de ontem às
+    // 11h15 gravou ontem parcial COM venda, anteontem sem venda e o dia antes
+    // consolidado. Pela regra de D-398 não haveria dia pendente nenhum.
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount,
+          total_amount, direct_units, indirect_units, units, synced_at)
+       select $1, $2, 920101, (now() at time zone 'America/Sao_Paulo')::date - d.k, 30, 6000, 40, d.venda, 0, d.venda, d.un, 0, d.un,
+              (((now() at time zone 'America/Sao_Paulo')::date - 1) + time '11:15') at time zone 'America/Sao_Paulo'
+       from (values (3, 400, 2), (2, 0, 0), (1, 300, 1)) as d(k, venda, un)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_PARCIAL],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.daily_ads_campaign_metrics where ml_account_id = $1", [CONTA_PARCIAL]);
+    await client.query("delete from public.ads_campaigns where ml_account_id = $1", [CONTA_PARCIAL]);
+  });
+
+  it("o retrato parcial do dia do sync e os dias sem venda ficam pendentes; a semana fecha antes deles", async () => {
+    const [linha] = await asUser<{ r: { janela: Record<string, unknown>; resumo: { roas: number | null } } }>(
+      ADMIN_SB,
+      `select public.get_sinais_ads('${ORG_SB}', date '2023-06-30') as r`,
+    );
+
+    expect(linha?.r.janela).toMatchObject({
+      inicio: "2023-06-20",
+      fim: "2023-06-26",
+      dias_pendentes: ["2023-06-27", "2023-06-28", "2023-06-29"],
+    });
+    // 400 ÷ 40 todo dia da semana: os dias sem venda não entram.
+    expect(linha?.r.resumo.roas).toBe(10);
+  });
+
+  it("get_ads_overview põe o dia do sync entre os pendentes, mesmo com venda", async () => {
+    const [datas] = await asUser<{ anteontem: string; ontem: string }>(
+      ADMIN_SB,
+      `select to_char((now() at time zone 'America/Sao_Paulo')::date - 2, 'YYYY-MM-DD') as anteontem,
+              to_char((now() at time zone 'America/Sao_Paulo')::date - 1, 'YYYY-MM-DD') as ontem`,
+    );
+    const [linha] = await asUser<{ v: { dias_pendentes: string[] } }>(
+      ADMIN_SB,
+      `select public.get_ads_overview(current_date - 30, current_date, '${CONTA_PARCIAL}') as v`,
+    );
+
+    expect(linha?.v.dias_pendentes).toEqual([datas?.anteontem, datas?.ontem]);
+  });
+});
