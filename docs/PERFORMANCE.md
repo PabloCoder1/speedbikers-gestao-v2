@@ -1270,6 +1270,10 @@ Produção, como `postgres`, o corpo de `get_sinais_ads` como `SELECT` de leitur
 
 Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos` como `SELECT` de leitura (30 dias até 23/09 contra os 30 anteriores, 1.188 SKUs vendidos): **1,8 s** numa chamada. É o custo de `get_faturamento` com detalhe (~0,9 s em 30 dias no Dev, D-400) sobre o dobro de pedidos: os dois períodos numa passada só. A tela lê uma vez por ordem e página, por streaming; a central não chama o ranking. Se incomodar, o caminho é o mesmo do detector (D-397): um resumo diário por SKU, não mexer nas ordens.
 
+### Alertas da central em `actions` (D-403, 24/09/2026)
+
+`sincronizar_alertas_central` no Dev, como `postgres` (a função é só do `service_role`), numa transação desfeita, com os dados do Dev até 14/09: **1,4 s** para os três detectores e o ciclo de vida -- 3 alertas de frete e 10 produtos no prejuízo; Ads fora (sem semana consolidada no Dev). É a soma do detector de frete (~1,2 s em produção) com uma página do ranking; roda uma vez por dia e por organização, às 8h, sem ninguém esperando.
+
 ### Recuperação de 90 dias de frete (D-396) e o detector com o histórico inteiro (D-399, 24/09/2026)
 
 **A recuperação, em produção (23/09):** disparada às 15:34 (ensaio na `sbmotos` às 15:31), a última conta terminou às 20:01 — **~4,5 h** para as quatro, com dois pedaços simultâneos na fila `backfill`. 83 pedaços de um dia por conta, todos `done`; 72.572 pedidos gravados com frete, **nenhum NULL** (4xx), nenhum fora do contrato, **nenhum 429** na sincronização normal durante a rodada. Um pedaço da maior conta levou ~50 s. Os 432 pedidos válidos sem frete de 25/06 a 16/09 são todos de 25/06, antes do limite do disparo (18:31): do limite em diante, a cobertura é de 100%.
