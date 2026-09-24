@@ -13,7 +13,15 @@ import {
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
-import { fingerprintDaDescricao, fingerprintDasFotos, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import {
+  fingerprintDaDescricao,
+  fingerprintDasFotos,
+  fotoDoItem,
+  linkDoItem,
+  listingItemSchema,
+  medidasDeclaradas,
+} from "./listing-schema.js";
+import { lerMedidas } from "./shipment-package.js";
 import type { ParsedListingItem } from "./listing-schema.js";
 import { readAllPages } from "../read-all-pages.js";
 
@@ -62,6 +70,10 @@ const ITEM_ATTRIBUTES = [
   // Identificadores estáveis para o diff de foto; não usar thumbnail, que o
   // Mercado Livre pode regenerar sem alteração editorial.
   "pictures",
+  // D-405: a sonda das medidas declaradas (`shipping.dimensions`). Os
+  // atributos `SELLER_PACKAGE_*` ficam de fora: `attributes` traz o bloco
+  // inteiro de dezenas de atributos por item, a cada 6 h.
+  "shipping",
 ] as const;
 
 /** Linha de `listings` tal como o upsert em lote a envia. */
@@ -210,6 +222,9 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   let itemsWithoutLink = 0;
   /** Distribuição de status observada — responde a pergunta 1 da 2.14. */
   const statusSeen = new Map<string, number>();
+  let itensComMedidas = 0;
+  let itensComMedidasLegiveis = 0;
+  let exemploDeMedidaIlegivel: string | null = null;
 
   // Fase 2 — hidratação em lotes de 20 (máximo documentado).
   for (const chunk of chunkItemIds(discovered)) {
@@ -325,6 +340,17 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
       statusSeen.set(item.status, (statusSeen.get(item.status) ?? 0) + 1);
 
+      // D-405: a sonda — quantos anúncios declaram medidas, e quantas delas
+      // têm a forma do envio. Só contagem: o valor não é gravado ainda.
+      const declaradas = medidasDeclaradas(item);
+
+      if (declaradas !== null) {
+        itensComMedidas += 1;
+
+        if (lerMedidas(declaradas) !== null) itensComMedidasLegiveis += 1;
+        else exemploDeMedidaIlegivel ??= declaradas.slice(0, 60);
+      }
+
       rows.push({
         organization_id: params.organizationId,
         ml_account_id: params.mlAccountId,
@@ -406,6 +432,9 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     items_without_link: itemsWithoutLink,
     links_known: skuByItem.size,
     status_seen: Object.fromEntries(statusSeen),
+    itens_com_medidas: itensComMedidas,
+    itens_com_medidas_legiveis: itensComMedidasLegiveis,
+    exemplo_de_medida_ilegivel: exemploDeMedidaIlegivel,
   });
 
   return { itemsDiscovered: discovered.length, itemsProcessed, itemsFailed, itemsWithoutLink };

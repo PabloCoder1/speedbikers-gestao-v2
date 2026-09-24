@@ -27,6 +27,10 @@ export const listingItemSchema = z.object({
   // Gatilho para reler a descrição no endpoint separado. Pode faltar no
   // payload real, por isso não bloqueia a sincronização do catálogo.
   last_updated: z.string().nullable().optional(),
+  // D-405: só para a sonda de `shipping.dimensions` (medidas declaradas no
+  // anúncio). `unknown`: a forma não é conhecida por leitura real ainda, e um
+  // campo novo não pode reprovar o anúncio inteiro.
+  shipping: z.unknown().optional(),
 });
 
 export type ParsedListingItem = z.infer<typeof listingItemSchema>;
@@ -63,6 +67,21 @@ function enderecoConfiavel(bruto: string | null | undefined, dominio: string): s
 /** A miniatura do item: `secure_thumbnail` primeiro, `thumbnail` como reserva. */
 export function fotoDoItem(item: Pick<ParsedListingItem, "secure_thumbnail" | "thumbnail">): string | null {
   return enderecoConfiavel(item.secure_thumbnail, "mlstatic.com") ?? enderecoConfiavel(item.thumbnail, "mlstatic.com");
+}
+
+/**
+ * As medidas declaradas no anúncio em `shipping.dimensions` (D-405), no mesmo
+ * formato do envio (`"AxBxC,peso"`, cm e gramas). `null` quando o campo não
+ * veio ou não tem essa forma. Por ora só alimenta a sonda do log.
+ */
+export function medidasDeclaradas(item: Pick<ParsedListingItem, "shipping">): string | null {
+  const shipping = item.shipping;
+
+  if (typeof shipping !== "object" || shipping === null) return null;
+
+  const dimensions = (shipping as Record<string, unknown>).dimensions;
+
+  return typeof dimensions === "string" && dimensions.trim() !== "" ? dimensions : null;
 }
 
 /** O endereço público do anúncio. */

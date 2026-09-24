@@ -2905,6 +2905,66 @@ export type Database = {
           },
         ]
       }
+      shipment_packages: {
+        Row: {
+          captured_at: string
+          dimensions_origin: string | null
+          dimensions_raw: string | null
+          item_id: string | null
+          items_in_shipment: number
+          largest_side_cm: number | null
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          shipping_id: number
+          volume_cm3: number | null
+          weight_g: number | null
+        }
+        Insert: {
+          captured_at: string
+          dimensions_origin?: string | null
+          dimensions_raw?: string | null
+          item_id?: string | null
+          items_in_shipment: number
+          largest_side_cm?: number | null
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          shipping_id: number
+          volume_cm3?: number | null
+          weight_g?: number | null
+        }
+        Update: {
+          captured_at?: string
+          dimensions_origin?: string | null
+          dimensions_raw?: string | null
+          item_id?: string | null
+          items_in_shipment?: number
+          largest_side_cm?: number | null
+          ml_account_id?: string
+          order_id?: number
+          organization_id?: string
+          shipping_id?: number
+          volume_cm3?: number | null
+          weight_g?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_packages_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_packages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_components: {
         Row: {
           component_sku_id: string

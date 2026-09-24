@@ -10,6 +10,7 @@ import {
   readShipmentLogistic,
   shipmentSchema,
 } from "./shipment-logistics.js";
+import type { PacoteDoEnvio } from "./shipment-package.js";
 
 /**
  * D-352 — a leitura do envio.
@@ -41,7 +42,11 @@ function fakeClient(responder: (options: RequestOptions<unknown>) => unknown): {
   return { client, requests };
 }
 
-function leitor(responder: (options: RequestOptions<unknown>) => unknown, linhas: string[] = []) {
+function leitor(
+  responder: (options: RequestOptions<unknown>) => unknown,
+  linhas: string[] = [],
+  aoLerPacote?: (orderId: number, shippingId: number, pacote: PacoteDoEnvio) => Promise<void>,
+) {
   const { client, requests } = fakeClient(responder);
 
   return {
@@ -52,12 +57,13 @@ function leitor(responder: (options: RequestOptions<unknown>) => unknown, linhas
       accessToken: "token-de-teste",
       logger: createLogger({}, { sink: (line) => linhas.push(line) }),
       now: () => AGORA,
+      aoLerPacote,
     }),
   };
 }
 
 describe("shipmentSchema", () => {
-  it("le logistic_type e IGNORA o resto do envio — a resposta real tem dezenas de campos", () => {
+  it("le logistic_type e shipping_items (D-405), e IGNORA o resto do envio — a resposta real tem dezenas de campos", () => {
     // Recorte do envio 48041052940, lido de verdade em 17/09.
     const real = {
       id: 48_041_052_940,
@@ -72,7 +78,10 @@ describe("shipmentSchema", () => {
       shipping_items: [{ id: "MLB1382501176", quantity: 1 }],
     };
 
-    expect(shipmentSchema.parse(real)).toEqual({ logistic_type: "fulfillment" });
+    expect(shipmentSchema.parse(real)).toEqual({
+      logistic_type: "fulfillment",
+      shipping_items: [{ id: "MLB1382501176", quantity: 1 }],
+    });
   });
 
   it("aceita cross_docking e qualquer outro valor — o vocabulario e do Mercado Livre", () => {
@@ -86,6 +95,70 @@ describe("shipmentSchema", () => {
   });
 });
 
+describe("o pacote do envio na mesma leitura (D-405)", () => {
+  /** O item do envio 48041052940, lido de verdade em 17/09 (Full). */
+  const ENVIO_REAL = {
+    logistic_type: "fulfillment",
+    shipping_items: [
+      {
+        item_ponderation: null,
+        quantity: 1,
+        dimensions_source: { origin: "fd", id: "MLB2059908767__1" },
+        id: "MLB2059908767",
+        bundle: null,
+        dimensions: "4.0x13.0x26.0,240.0",
+      },
+    ],
+  };
+
+  it("devolve o pacote e entrega ao gancho, sem mudar a logística", async () => {
+    const recebidos: [number, number, PacoteDoEnvio][] = [];
+    const { logistics } = leitor(
+      () => ENVIO_REAL,
+      [],
+      (orderId, shippingId, pacote) => {
+        recebidos.push([orderId, shippingId, pacote]);
+
+        return Promise.resolve();
+      },
+    );
+
+    const capturada = await logistics.read(48_041_052_940, 2_000_018_515_005_942);
+
+    expect(capturada?.logisticType).toBe("fulfillment");
+    expect(capturada?.pacote).toEqual({
+      itens: 1,
+      itemId: "MLB2059908767",
+      medidas: "4.0x13.0x26.0,240.0",
+      pesoG: 240,
+      volumeCm3: 1352,
+      maiorLadoCm: 26,
+      origem: "fd",
+    });
+    expect(recebidos).toHaveLength(1);
+    expect(recebidos[0]?.[0]).toBe(2_000_018_515_005_942);
+    expect(recebidos[0]?.[1]).toBe(48_041_052_940);
+  });
+
+  it("o gancho que falha é registrado e engolido: a logística volta igual", async () => {
+    const linhas: string[] = [];
+    const { logistics } = leitor(
+      () => ENVIO_REAL,
+      linhas,
+      () => Promise.reject(new Error("banco fora")),
+    );
+
+    await expect(logistics.read(1, 2)).resolves.toMatchObject({ logisticType: "fulfillment" });
+    expect(linhas.join("")).toContain("shipment_package_nao_gravado");
+  });
+
+  it("shipping_items numa forma estranha não reprova o envio: a logística é lida, o pacote fica nulo", async () => {
+    const { logistics } = leitor(() => ({ logistic_type: "cross_docking", shipping_items: "não é lista" }));
+
+    await expect(logistics.read(1, 2)).resolves.toEqual({ logisticType: "cross_docking", capturedAt: AGORA, pacote: null });
+  });
+});
+
 describe("createShipmentLogistics", () => {
   it("chama GET /shipments/{id} com o token da conta e devolve o valor cru", async () => {
     const { logistics, requests } = leitor(() => ({ logistic_type: "fulfillment" }));
@@ -93,6 +166,7 @@ describe("createShipmentLogistics", () => {
     await expect(logistics.read(48_041_052_940, 2_000_018_515_005_942)).resolves.toEqual({
       logisticType: "fulfillment",
       capturedAt: AGORA,
+      pacote: null,
     });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
@@ -105,7 +179,7 @@ describe("createShipmentLogistics", () => {
   it("envio sem logistic_type volta com valor NULO e captura carimbada — leu, e nao disse", async () => {
     const { logistics } = leitor(() => ({}));
 
-    await expect(logistics.read(1, 2)).resolves.toEqual({ logisticType: null, capturedAt: AGORA });
+    await expect(logistics.read(1, 2)).resolves.toEqual({ logisticType: null, capturedAt: AGORA, pacote: null });
   });
 
   it("falha do Mercado Livre volta NULO e registra — nunca lanca, nunca derruba o job", async () => {
@@ -160,7 +234,7 @@ describe("readShipmentLogistic + classifyShipmentFailure (a varredura, D-352)", 
 
     await expect(
       readShipmentLogistic({ mercadoLivre: client, accessToken: "t", now: () => AGORA }, 1),
-    ).resolves.toEqual({ logisticType: "fulfillment", capturedAt: AGORA });
+    ).resolves.toEqual({ logisticType: "fulfillment", capturedAt: AGORA, pacote: null });
   });
 
   it("429 e 5xx esgotados, e o retryable_eventual, PARAM a rodada — a falha e da conta, nao do envio", () => {

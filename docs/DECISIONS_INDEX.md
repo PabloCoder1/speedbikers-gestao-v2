@@ -436,4 +436,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
+- **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 

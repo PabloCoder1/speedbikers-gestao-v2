@@ -11,6 +11,7 @@ import { ensureAccessToken } from "./ml-token.js";
 import { orderSchema } from "./order-schema.js";
 import { persistOrder } from "./persist-order.js";
 import { createShipmentLogistics } from "./shipment-logistics.js";
+import { gravarPacoteDoEnvio } from "./shipment-package.js";
 
 /**
  * Fast Path do webhook — `sync.webhook.received`, achado em revisão
@@ -170,6 +171,9 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       return classifyFetchFailure(error, "erro desconhecido ao buscar o pedido");
     }
 
+    // Fora do gancho: dentro da função, o TypeScript perde o estreitamento de `account.data`.
+    const organizationId = account.data.organization_id;
+
     await persistOrder(
       deps.db,
       // D-351: pedido que chega pelo webhook e notícia de agora — `sync`, notifica.
@@ -189,6 +193,18 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
         accessToken: tokenResult.accessToken,
         logger: context.logger,
         now: () => now,
+        // D-405: as medidas do pacote vêm na MESMA leitura do envio.
+        aoLerPacote: async (orderId, shippingId, pacote) => {
+          await gravarPacoteDoEnvio(
+            deps.db,
+            { organizationId, mlAccountId },
+            orderId,
+            shippingId,
+            pacote,
+            context.logger,
+            now,
+          );
+        },
       }),
     );
 
