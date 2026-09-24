@@ -19,6 +19,7 @@ import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
+import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-visits-snapshot.js";
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
@@ -176,6 +177,7 @@ const app = createWorkerApp({
     "maintenance.check-ai-budget": createCheckAiBudgetHandler({ db, budgetUsd: env.AI_MONTHLY_BUDGET_USD }),
     "diagnostics.detect-sales-anomalies": createDetectSalesAnomalyActionsHandler({ db }),
     "diagnostics.detect-support-patterns": createDetectSupportPatternActionsHandler({ db }),
+    "diagnostics.sync-central-alerts": createSyncCentralAlertsHandler({ db }),
     "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
     ...nfeHandlers,
   }),

@@ -166,9 +166,10 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "maintenance.reconcile-balances": 1440, // v3-reconcile-balances: "0 6 * * *"
   "maintenance.verify-ledger-integrity": 1440, // v3-verify-ledger-integrity: "30 6 * * *"
   "maintenance.check-ai-budget": 1440, // v3-check-ai-budget: "0 9 * * *"
-  // Um scheduler só (v3-detect-sales-anomalies, "0 8 * * *") enfileira os dois.
+  // Um scheduler só (v3-detect-sales-anomalies, "0 8 * * *") enfileira os três.
   "diagnostics.detect-sales-anomalies": 1440,
   "diagnostics.detect-support-patterns": 1440,
+  "diagnostics.sync-central-alerts": 1440, // D-403
   "diagnostics.measure-decision-outcomes": 1440, // v3-measure-decision-outcomes: "30 8 * * *"
 };
 

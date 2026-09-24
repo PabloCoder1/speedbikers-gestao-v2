@@ -54,13 +54,13 @@ function deps(
 }
 
 describe("triggerSalesAnomalyActionsDetection", () => {
-  it("enfileira as DUAS detecções diárias para cada organização (D-116)", async () => {
+  it("enfileira os TRÊS diagnósticos diários para cada organização (D-116, D-403)", async () => {
     const { deps: d, enqueued } = deps();
 
     const outcome = await triggerSalesAnomalyActionsDetection(d);
 
-    expect(outcome).toEqual({ organizationsScanned: 2, enqueued: 4, deduplicated: 0 });
-    expect(enqueued).toHaveLength(4);
+    expect(outcome).toEqual({ organizationsScanned: 2, enqueued: 6, deduplicated: 0 });
+    expect(enqueued).toHaveLength(6);
     expect(enqueued[0]).toMatchObject({
       jobType: "diagnostics.detect-sales-anomalies",
       organizationId: "org-1",
@@ -72,6 +72,13 @@ describe("triggerSalesAnomalyActionsDetection", () => {
       jobType: "diagnostics.detect-support-patterns",
       organizationId: "org-1",
       dedupeKey: "detect-support-patterns:org-1:2026-08-23",
+    });
+    expect(enqueued[2]).toMatchObject({
+      jobType: "diagnostics.sync-central-alerts",
+      organizationId: "org-1",
+      queue: "maintenance",
+      dedupeKey: "sync-central-alerts:org-1:2026-08-23",
+      payload: { organizationId: "org-1" },
     });
   });
 
@@ -88,8 +95,8 @@ describe("triggerSalesAnomalyActionsDetection", () => {
 
     const outcome = await triggerSalesAnomalyActionsDetection(d);
 
-    // org-2 deduplica os DOIS jobs dela; org-1 enfileira os dois.
-    expect(outcome).toEqual({ organizationsScanned: 2, enqueued: 2, deduplicated: 2 });
+    // org-2 deduplica os TRÊS jobs dela; org-1 enfileira os três.
+    expect(outcome).toEqual({ organizationsScanned: 2, enqueued: 3, deduplicated: 3 });
   });
 
   it("devolve zero sem lançar quando a listagem de organizações falha", async () => {

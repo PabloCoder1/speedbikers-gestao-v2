@@ -235,6 +235,7 @@ export type Database = {
           evidence: Json
           id: string
           kind: string
+          last_detected_on: string | null
           ml_account_id: string | null
           mlb_id: string | null
           organization_id: string
@@ -242,6 +243,7 @@ export type Database = {
           severity: string
           sku_id: string | null
           status: string
+          subject_key: string | null
           updated_at: string
         }
         Insert: {
@@ -254,6 +256,7 @@ export type Database = {
           evidence: Json
           id?: string
           kind: string
+          last_detected_on?: string | null
           ml_account_id?: string | null
           mlb_id?: string | null
           organization_id: string
@@ -261,6 +264,7 @@ export type Database = {
           severity: string
           sku_id?: string | null
           status?: string
+          subject_key?: string | null
           updated_at?: string
         }
         Update: {
@@ -273,6 +277,7 @@ export type Database = {
           evidence?: Json
           id?: string
           kind?: string
+          last_detected_on?: string | null
           ml_account_id?: string | null
           mlb_id?: string | null
           organization_id?: string
@@ -280,6 +285,7 @@ export type Database = {
           severity?: string
           sku_id?: string | null
           status?: string
+          subject_key?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4349,6 +4355,15 @@ export type Database = {
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
       }
+      sincronizar_alertas_central: {
+        Args: {
+          p_hoje?: string
+          p_organization_id: string
+        }
+        // D-403: jsonb com hoje, fontes, detectados por tipo e as contagens
+        // do ciclo de vida. Só o worker chama (service_role).
+        Returns: Json
+      }
       get_ranking_produtos: {
         Args: {
           p_anterior_from?: string
@@ -4359,6 +4374,7 @@ export type Database = {
           p_ml_account_id?: string
           p_offset?: number
           p_ordem?: string
+          p_organization_id?: string
         }
         // D-402: jsonb com periodo, ordem, resumo, total e a pagina de itens.
         // A forma tipada mora em apps/web/lib/ranking-produtos.ts.

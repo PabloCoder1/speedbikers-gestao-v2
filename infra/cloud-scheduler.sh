@@ -237,7 +237,9 @@ upsert_job \
 # DIARIA, depois dos jobs acima: o diagnostico usa daily_sku_metrics/
 # domain_events de ONTEM, que ja estao completos a qualquer hora do dia
 # seguinte -- 8h so evita competir por recurso com reconcile-balances (6h) e
-# verify-ledger-integrity (6h30). Por ORGANIZACAO (D-006).
+# verify-ledger-integrity (6h30). Por ORGANIZACAO (D-006). O mesmo gatilho
+# enfileira tres jobs: anomalia de venda, padrao de reclamacao (D-116) e os
+# alertas da central em actions (D-403).
 upsert_job \
   "v3-detect-sales-anomalies" \
   "0 8 * * *" \

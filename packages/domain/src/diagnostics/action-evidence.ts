@@ -5,6 +5,8 @@
  * banco e sem contrato compartilhado com a interface. Cada `kind` de ação
  * escreve uma forma diferente: `venda_anomala` (D-064) traz direção, z-score e
  * causas candidatas; `reclamacoes_recorrentes` (D-116) não traz nenhum desses.
+ * Os três da central persistida (D-403) — `frete_anomalo`, `ads_campanha` e
+ * `produto_prejuizo` — gravam só `evidencias`, com o texto pronto no banco.
  *
  * A Central de Ações lia essa coluna com um cast direto para a forma da
  * anomalia de venda e acessava `causas_candidatas.length` sem guarda — a
@@ -50,7 +52,18 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   venda_anomala: "Venda anômala",
   reclamacoes_recorrentes: "Reclamações recorrentes",
   republicacao: "Republicação",
+  frete_anomalo: "Frete anômalo",
+  ads_campanha: "Campanha de Ads",
+  produto_prejuizo: "Produto no prejuízo",
 };
+
+/** Os `kind` que são problema por definição, sem direção a ler. */
+const PROBLEMAS: ReadonlySet<string> = new Set([
+  "reclamacoes_recorrentes",
+  "frete_anomalo",
+  "ads_campanha",
+  "produto_prejuizo",
+]);
 
 /**
  * Rótulo humano de um `kind` de ação.
@@ -138,9 +151,10 @@ function toneFor(kind: string, direcao: "queda" | "alta" | null): ActionTone {
   if (direcao === "queda") return "problema";
   if (direcao === "alta") return "oportunidade";
 
-  // Sem direção, o `kind` decide. Padrão de reclamação é problema por
-  // definição; um `kind` desconhecido não recebe cor que afirme nada.
-  return kind === "reclamacoes_recorrentes" ? "problema" : "neutro";
+  // Sem direção, o `kind` decide. Padrão de reclamação e os alertas da
+  // central (D-403) são problema por definição; um `kind` desconhecido não
+  // recebe cor que afirme nada.
+  return PROBLEMAS.has(kind) ? "problema" : "neutro";
 }
 
 export function describeActionEvidence(kind: string, raw: unknown): ActionEvidenceView {

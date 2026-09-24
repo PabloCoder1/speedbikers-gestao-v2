@@ -197,7 +197,7 @@ export default async function AcoesPage({
         formatAge(row.created_at, agora) ??
         (row.created_at === null ? "—" : formatBusinessDate(row.created_at)),
       decisions: decisionsByAction.get(row.id) ?? [],
-      shortcuts: actionShortcuts({ kind: row.kind ?? "", skuId: row.sku_id, sku: row.sku }),
+      shortcuts: actionShortcuts({ kind: row.kind ?? "", skuId: row.sku_id, sku: row.sku, mlbId: row.mlb_id }),
     }),
   );
 
