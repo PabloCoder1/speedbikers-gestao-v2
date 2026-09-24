@@ -16752,3 +16752,39 @@ td.sb-pco-num-linha {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/*
+  Ranking de produtos (D-402). A tabela é a da central, com 9 colunas — as
+  variações contra o anterior moram embaixo da receita e da margem — e rola
+  sozinha abaixo disso; a coluna que ordena ganha peso, e o nome do produto
+  corta em uma linha. As frases do resumo são uma lista simples, com o link.
+*/
+.sb-central-tabela .sb-rank-tabela {
+  min-width: 920px;
+}
+
+.sb-rank-tabela .sb-entity {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-rank-tabela .sb-rank-ordenada {
+  font-weight: 700;
+  color: var(--sb-text);
+}
+
+.sb-rank-frases {
+  display: grid;
+  gap: var(--sb-space-2);
+  margin: 0;
+  padding-left: var(--sb-space-5);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.sb-rank-frases a {
+  white-space: nowrap;
+}

@@ -205,3 +205,40 @@ test("/central/ads: abre a partir da central, sem erro, com o motivo quando não
   await expect(page.getByRole("region", { name: "Todas as campanhas da semana" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Como os sinais são decididos" })).toBeVisible();
 });
+
+test("/central/produtos: abre da central com o mesmo recorte, e a ordem mora na URL", async ({ page }) => {
+  await login(page, "/central?p=7d");
+
+  await page.getByRole("link", { name: "Ranking de produtos", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Ranking de produtos" })).toBeVisible();
+  await expect(page).toHaveURL(/\/central\/produtos\?p=7d/);
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a função de D-402");
+  }
+
+  await expect(page.getByText(/Não foi possível carregar o ranking/)).toHaveCount(0);
+  await expect(page.getByText(/formato que esta tela não reconhece/)).toHaveCount(0);
+  await expect(page.locator(".sb-kpi-strip .sb-kpi-label")).toHaveText([
+    "Produtos vendidos",
+    "Resultado das vendas",
+    "No prejuízo",
+    "Metade do resultado",
+    "Cresceram 30% ou mais",
+  ]);
+
+  // O seed vende há dois dias: os 7 dias até ontem têm produto, e cada um abre o dashboard do SKU.
+  const lista = page.getByRole("region", { name: "Maior faturamento" });
+
+  await expect(lista).toBeVisible();
+  await expect(lista.locator("tbody tr").first()).toBeVisible();
+  await expect(lista.locator("tbody tr").first().getByRole("link")).toHaveAttribute("href", /^\/skus\//);
+
+  // Sem custo cadastrado no seed, ninguém tem resultado: a lista do prejuízo diz que está vazia, não "0".
+  await page.getByRole("navigation", { name: "Ordem do ranking" }).getByRole("link", { name: "No prejuízo" }).click();
+  await expect(page).toHaveURL(/ordem=prejuizo/);
+  await expect(page).toHaveURL(/p=7d/);
+  await expect(page.getByRole("region", { name: "No prejuízo" })).toBeVisible();
+  await expect(page.getByText("Nenhum produto vendeu com prejuízo neste período.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Como o ranking é calculado" })).toBeVisible();
+});

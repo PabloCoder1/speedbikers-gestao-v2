@@ -502,6 +502,20 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 **Interpretação** (só em crítico e abaixo da meta): CTR < 70% da mediana das campanhas da empresa na semana (com 1.000 impressões) → criativo ou oferta; conversão < 60% da mediana (com 100 cliques) → página ou produto. Medianas das próprias campanhas, não número fixo. Em escala, margem após Ads < 10% troca "avaliar aumento gradual" por "não aumentar antes de revisar custos".
 
+## 5N. Ranking de produtos (D-402) — DEFINIDAS E IMPLEMENTADAS
+
+> A tela `/central/produtos` ordena os produtos vendidos no período por receita, resultado, margem, volume, frete, prejuízo, crescimento ou queda de margem, contra o período anterior da central (5I). Tudo sai de `get_ranking_produtos`; as frases do resumo são montadas em `apps/web/lib/ranking-produtos.ts` só com os números da RPC.
+
+**Os números de cada produto são os de `get_faturamento` (5F):** receita bruta, comissão, frete do vendedor, custo na data da venda; resultado e margem só nos pedidos cobertos (frete observado, custo conhecido, uma linha de item). Imposto por SKU só quando todo pedido coberto dele tem alíquota (5K). **Ads por produto não existe** na API (D-363).
+
+**Quem entra em cada ordem:** receita e volume, todo SKU vendido; lucro e menor margem, os com resultado; maior margem, 3 pedidos cobertos ou mais; frete, os com frete; prejuízo, resultado < 0; crescimento, 5 pedidos ou mais nos dois períodos; queda de margem, 5 cobertos nos dois e margem menor que antes.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `variacao_receita_produto` | Crescimento da receita do produto | receita do SKU no período ÷ receita no anterior − 1 | Só com 5 pedidos nos dois períodos; senão NULL, nunca 0. A contagem de "cresceram 30% ou mais" sai ao lado da variação da receita de todos os produtos — medido no Dev: crescer 30% em 30 dias é comum (um terço dos comparáveis) |
+| `variacao_margem_produto` | Variação da margem do produto | margem do SKU no período − margem no anterior, em p.p. | Só com 5 pedidos cobertos nos dois períodos; "queda" no resumo = −5 p.p. ou mais |
+| `concentracao_resultado` | SKUs que fazem metade do resultado | menor N tal que os N SKUs de maior resultado somam metade do resultado de todos | Sem resultado total positivo: NULL. É resultado da venda, sem imposto, Ads nem custos fixos |
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

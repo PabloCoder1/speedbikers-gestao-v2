@@ -672,7 +672,7 @@ Pedido do dono em 23/09: uma central que diga o que aconteceu, onde há problema
 - [ ] **Ads por anúncio ou produto**: a API por anúncio foi desligada em 05/2026 (D-363); lucro por campanha só com a margem média até existir essa atribuição
 - [x] **Detector de frete** — `get_detector_frete` e `/central/frete`: histórico do anúncio, outros anúncios do mesmo SKU, pares da categoria do Mercado Livre na faixa de preço, frete ÷ preço contra o p95 da faixa e margem; quatro níveis com o motivo escrito e o frete a mais estimado; painel na central — ✔ código 2026-09-23 · D-397. Migration `20260923190000`. Com os 90 dias recuperados, o histórico passa a descontar a mudança geral da faixa (a tabela do ML subiu ~5% em 24/08) — ✔ 2026-09-24 · D-399, migration `20260923195500`
 - [ ] **Frete: medidas do anúncio** — gravar as dimensões e o peso declarados em `GET /items/{id}` (`shipping.dimensions`) para o detector comparar produtos de tamanho parecido e apontar a medida suspeita (hoje peso em 22 de 973 SKUs)
-- [ ] **Produtos**: rankings de lucro, margem, volume, frete e prejuízo, com drill-down
+- [x] **Produtos: rankings** — `get_ranking_produtos` e `/central/produtos`: faturamento, lucro, maior e menor margem, volume, frete, prejuízo, crescimento e queda de margem contra o período anterior da central, paginados (um mês passa de mil SKUs), com o resumo em frases e o caminho para o dashboard do SKU; Ads por produto não existe na API — ✔ código 2026-09-24 · D-402. Migration `20260923195900`
 - [ ] **Central de alertas**: detectores do worker gravando em `actions` com tipos novos, e a lista "o que precisa da minha atenção" na central
 - [ ] **Limites do tom e amostras mínimas nas configurações** (hoje provisórios em código, D-148)
 

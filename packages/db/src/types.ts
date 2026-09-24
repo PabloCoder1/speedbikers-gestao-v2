@@ -4349,6 +4349,21 @@ export type Database = {
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
       }
+      get_ranking_produtos: {
+        Args: {
+          p_anterior_from?: string
+          p_anterior_to?: string
+          p_date_from: string
+          p_date_to: string
+          p_limite?: number
+          p_ml_account_id?: string
+          p_offset?: number
+          p_ordem?: string
+        }
+        // D-402: jsonb com periodo, ordem, resumo, total e a pagina de itens.
+        // A forma tipada mora em apps/web/lib/ranking-produtos.ts.
+        Returns: Json
+      }
       get_meta_do_mes: {
         Args: {
           p_hoje?: string
