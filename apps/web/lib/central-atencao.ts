@@ -73,6 +73,8 @@ export interface EntradaDaAtencao {
   /** O indicador de margem da central (`montarIndicadores`), com a variação já julgada. */
   readonly margem: Indicador | null;
   readonly meta: MetaDoMes | null;
+  /** O atraso da meta que ainda é atenção (D-408); sem ele, o padrão. */
+  readonly atrasoDaMeta?: number;
   /** "nos últimos 30 dias", "em setembro até ontem"… — como a central chama o período. */
   readonly periodo: string;
   /** O `/faturamento` do mesmo período e conta, onde está a lista de menor margem. */
@@ -168,7 +170,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  const ritmo = e.meta === null ? null : ritmoDaMeta(e.meta);
+  const ritmo = e.meta === null ? null : ritmoDaMeta(e.meta, e.atrasoDaMeta);
 
   if (ritmo !== null && (ritmo.tom === "perigo" || ritmo.tom === "atencao")) {
     itens.push({

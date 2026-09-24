@@ -1,5 +1,6 @@
 import type { Tom } from "../components/tone";
 import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
+import { LIMITES_PADRAO } from "./limites-central";
 import { rotuloDoMes } from "./metas-imposto";
 
 /**
@@ -258,7 +259,7 @@ export interface LeituraDaMeta {
  * - **em curso sem projeção** (histórico curto): pelo ritmo contra o esperado;
  * - **sem meta**: a projeção continua valendo, e a tela diz que falta a meta.
  */
-export function situacaoDaMeta(m: MetaDoMes): LeituraDaMeta {
+export function situacaoDaMeta(m: MetaDoMes, atrasoDaMeta: number = LIMITES_PADRAO.atrasoDaMeta): LeituraDaMeta {
   const nome = rotuloDoMes(m.mes);
 
   if (m.situacao === "futuro") {
@@ -314,7 +315,7 @@ export function situacaoDaMeta(m: MetaDoMes): LeituraDaMeta {
     };
   }
 
-  const ritmo = ritmoDaMeta(m);
+  const ritmo = ritmoDaMeta(m, atrasoDaMeta);
 
   return ritmo === null
     ? { tom: "neutro", rotulo: "sem projeção", frase: "Sem histórico suficiente para projetar o mês." }
@@ -323,11 +324,14 @@ export function situacaoDaMeta(m: MetaDoMes): LeituraDaMeta {
 
 /**
  * "R$ 18.500,00 acima do ritmo necessário" ou "abaixo", contra o esperado
- * até ontem ponderado pelo dia da semana. Abaixo até 5% do esperado é
- * atenção; mais que isso, perigo. `null` no dia 1 (nada completo ainda) e
- * sem meta.
+ * até ontem ponderado pelo dia da semana. Abaixo até `atrasoDaMeta` do
+ * esperado (5% por padrão, da organização desde D-408) é atenção; mais que
+ * isso, perigo. `null` no dia 1 (nada completo ainda) e sem meta.
  */
-export function ritmoDaMeta(m: MetaDoMes): { tom: Tom; texto: string } | null {
+export function ritmoDaMeta(
+  m: MetaDoMes,
+  atrasoDaMeta: number = LIMITES_PADRAO.atrasoDaMeta,
+): { tom: Tom; texto: string } | null {
   if (m.situacao !== "em_curso" || m.diferenca_ritmo === null || m.esperado_ate_ontem === null) return null;
   if (m.dias_completos === null || m.dias_completos === 0) return null;
 
@@ -338,7 +342,7 @@ export function ritmoDaMeta(m: MetaDoMes): { tom: Tom; texto: string } | null {
   const relativa = m.esperado_ate_ontem > 0 ? -m.diferenca_ritmo / m.esperado_ate_ontem : 1;
 
   return {
-    tom: relativa <= 0.05 ? "atencao" : "perigo",
+    tom: relativa <= atrasoDaMeta ? "atencao" : "perigo",
     texto: `${formatCurrency(-m.diferenca_ritmo)} abaixo do ritmo necessário`,
   };
 }

@@ -16507,3 +16507,80 @@ describe("order_financials: quem paga o frete (D-407)", () => {
     }
   });
 });
+
+/**
+ * Limites da central (D-408): quem é da organização lê; só ADMIN e GESTOR
+ * gravam; os CHECKs guardam as mesmas regras do formulário.
+ */
+describe("central_thresholds: os limites da central (D-408)", () => {
+  afterAll(async () => {
+    await client.query("delete from public.central_thresholds where organization_id = any($1)", [[ORG_SB, ORG_OUTRA]]);
+  });
+
+  it("ADMIN grava e relê; os padrões preenchem o que não foi dito", async () => {
+    const rows = await asUser<Record<string, string>>(
+      ADMIN_SB,
+      `with gravado as (
+         insert into public.central_thresholds (organization_id, change_neutral, change_strong)
+         values ('${ORG_SB}', 0.03, 0.15)
+         returning *
+       )
+       select change_neutral::text, change_strong::text, points_neutral::text, points_strong::text,
+              goal_delay_warning::text, margin_after_ads_low::text, min_orders_sample::text
+       from gravado`,
+    );
+
+    expect(rows).toEqual([
+      {
+        change_neutral: "0.0300",
+        change_strong: "0.1500",
+        points_neutral: "0.0050",
+        points_strong: "0.0200",
+        goal_delay_warning: "0.0500",
+        margin_after_ads_low: "0.1000",
+        min_orders_sample: "20",
+      },
+    ]);
+  });
+
+  it("ANALISTA lê a linha da organização mas não grava; a outra organização não vê", async () => {
+    await client.query(
+      `insert into public.central_thresholds (organization_id, min_orders_sample) values ($1, 30)
+       on conflict (organization_id) do update set min_orders_sample = excluded.min_orders_sample`,
+      [ORG_SB],
+    );
+
+    const lido = await asUser<{ min_orders_sample: number }>(
+      ANALISTA_SB,
+      `select min_orders_sample from public.central_thresholds where organization_id = '${ORG_SB}'`,
+    );
+    const outra = await asUser(DE_OUTRA_ORG, `select 1 from public.central_thresholds where organization_id = '${ORG_SB}'`);
+
+    expect(lido).toEqual([{ min_orders_sample: 30 }]);
+    expect(outra).toEqual([]);
+    await expect(
+      asUser(ANALISTA_SB, `update public.central_thresholds set min_orders_sample = 5 where organization_id = '${ORG_SB}' returning 1`),
+    ).resolves.toEqual([]);
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.central_thresholds (organization_id) values ('${ORG_OUTRA}')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("forte acima do estável, amostra de 1 a 1.000 e nada negativo -- as regras do formulário", async () => {
+    for (const valores of [
+      "change_neutral = 0.10, change_strong = 0.10",
+      "points_neutral = 0.03, points_strong = 0.02",
+      "min_orders_sample = 0",
+      "min_orders_sample = 1001",
+      "margin_after_ads_low = -0.01",
+      "goal_delay_warning = 0",
+    ]) {
+      await expect(
+        client.query(`update public.central_thresholds set ${valores} where organization_id = $1`, [ORG_SB]),
+      ).rejects.toThrow(/check constraint/i);
+    }
+  });
+});

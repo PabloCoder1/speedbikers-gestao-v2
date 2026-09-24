@@ -135,6 +135,43 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
 });
 
 /**
+ * Limites da central (D-408): o ADMIN muda os limites, a central passa a dizer
+ * que julga com os da empresa (e com o número novo), e "voltar aos padrões"
+ * desfaz. Forte igual ao estável volta com o erro no campo, sem gravar. Num
+ * banco sem a migration a tela diz "sendo ativado" e o teste para aí.
+ */
+test("/central/limites: salvar muda o que a central diz, e voltar aos padrões desfaz", async ({ page }) => {
+  await login(page, "/central/limites");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Limites da central" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a tabela de D-408");
+  }
+
+  await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
+
+  const form = page.getByRole("form", { name: "Limites da central" });
+
+  await form.getByLabel("Variação forte (%)").fill("2");
+  await form.getByRole("button", { name: "Salvar limites" }).click();
+  await expect(form.getByRole("alert")).toHaveText("A variação forte precisa ser maior que a estável.");
+
+  await form.getByLabel("Variação forte (%)").fill("15");
+  await form.getByLabel("Amostra mínima (pedidos)").fill("30");
+  await form.getByRole("button", { name: "Salvar limites" }).click();
+  await expect(form.getByRole("status")).toHaveText("Limites salvos. A central já julga com eles.");
+
+  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+  await expect(page.getByText(/com 30 pedidos ou mais nos dois períodos\. Limites da empresa/)).toBeVisible();
+
+  await page.goto("/central/limites");
+  await page.getByRole("button", { name: "Voltar aos padrões" }).click();
+  await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
+});
+
+/**
  * Detector de frete (D-397): a tela abre, o resumo tem os quatro números e o
  * frete a mais, o filtro de nível viaja pela URL, e a central aponta para ela.
  * Os alertas não são afirmados — o seed não tem 90 dias de frete; lista vazia

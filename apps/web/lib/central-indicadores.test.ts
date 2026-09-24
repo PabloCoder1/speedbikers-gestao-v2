@@ -11,6 +11,7 @@ import {
   type ResumoCentral,
 } from "./central-indicadores";
 import type { ImpostoDoPeriodo, ResumoFaturamento } from "./faturamento";
+import { LIMITES_PADRAO } from "./limites-central";
 
 /**
  * Um período com cobertura total: 100 pedidos, todos cobertos. Receita 10.000,
@@ -158,6 +159,16 @@ describe("montarIndicadores", () => {
 
     expect(indicador(lista, "margem").variacao).toBeNull();
     expect(indicador(lista, "margem").semComparacao).toContain("menos de 20 pedidos cobertos");
+  });
+
+  it("a amostra mínima é a da organização (D-408): com 5, oito pedidos já comparam", () => {
+    const limites = { ...LIMITES_PADRAO, amostraMinima: 5, personalizados: true };
+    const lista = montarIndicadores(entrada({ atual: resumo({ pedidos_cobertos: 8 }) }), limites);
+
+    expect(indicador(lista, "margem").semComparacao).toBeNull();
+    expect(indicador(montarIndicadores(entrada({ atual: resumo({ pedidos_cobertos: 4 }) }), limites), "margem").semComparacao).toContain(
+      "menos de 5 pedidos cobertos",
+    );
   });
 
   it("dia em andamento: volume sem julgamento, razões julgadas", () => {

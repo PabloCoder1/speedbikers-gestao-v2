@@ -438,6 +438,53 @@ export type Database = {
           },
         ]
       }
+      central_thresholds: {
+        Row: {
+          change_neutral: number
+          change_strong: number
+          created_at: string
+          goal_delay_warning: number
+          margin_after_ads_low: number
+          min_orders_sample: number
+          organization_id: string
+          points_neutral: number
+          points_strong: number
+          updated_at: string
+        }
+        Insert: {
+          change_neutral?: number
+          change_strong?: number
+          created_at?: string
+          goal_delay_warning?: number
+          margin_after_ads_low?: number
+          min_orders_sample?: number
+          organization_id: string
+          points_neutral?: number
+          points_strong?: number
+          updated_at?: string
+        }
+        Update: {
+          change_neutral?: number
+          change_strong?: number
+          created_at?: string
+          goal_delay_warning?: number
+          margin_after_ads_low?: number
+          min_orders_sample?: number
+          organization_id?: string
+          points_neutral?: number
+          points_strong?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "central_thresholds_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_account_metrics: {
         Row: {
           average_selling_price: number | null

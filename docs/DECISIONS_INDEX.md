@@ -439,4 +439,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
+- **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
 

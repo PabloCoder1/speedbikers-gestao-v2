@@ -403,7 +403,7 @@ As janelas móveis da Central terminam **ontem**: comparar um dia em andamento c
 | Contra, moderado | 2% a 10% | 0,5 a 2 p.p. | atenção (🟡) |
 | Contra, forte | 10% ou mais | 2 p.p. ou mais | perigo (🔴) |
 
-Os limites são **provisórios** (D-148: limiar é decisão do dono) e vão para a tela de configurações numa fatia seguinte. Com o dia em andamento, os indicadores de **volume** (faturamento, pedidos, unidades, resultado) mostram a variação sem tom; as razões continuam julgadas.
+Os números da tabela são os **padrões**; cada organização muda os seus em `/central/limites` (D-148: limiar é decisão do dono; `central_thresholds`, D-408), e a nota "Como ler" da central mostra os que estão em uso. O mesmo vale para a amostra mínima de pedidos (20), o atraso da meta que ainda é atenção (5%) e a margem depois do Ads baixa para escalar (10%). Com o dia em andamento, os indicadores de **volume** (faturamento, pedidos, unidades, resultado) mostram a variação sem tom; as razões continuam julgadas.
 
 **O resumo em texto** é montado desses mesmos números, sem modelo de linguagem, e só afirma o que eles sustentam. A queda ou alta da margem é repartida entre comissão, frete e custo **exatamente**: nos pedidos cobertos, `margem = 1 − (comissão + frete + custo) ÷ receita coberta`, e a tela confere essa identidade (tolerância de 0,1 p.p.) nos dois períodos antes de atribuir qualquer ponto — se não fechar, não atribui.
 

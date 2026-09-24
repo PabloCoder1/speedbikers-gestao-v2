@@ -30,7 +30,7 @@ function contraAMeta(valor: number, meta: number | null): { ressalva?: string } 
   return { ressalva: diferenca >= 0 ? `${comSinal(diferenca)} acima da meta` : `${comSinal(diferenca)} até a meta` };
 }
 
-function celulasDaMeta(m: MetaDoMes): KpiCellData[] {
+function celulasDaMeta(m: MetaDoMes, atrasoDaMeta: number): KpiCellData[] {
   const celulas: KpiCellData[] = [
     {
       label: "Meta do mês",
@@ -67,7 +67,7 @@ function celulasDaMeta(m: MetaDoMes): KpiCellData[] {
 
   if (m.situacao !== "em_curso") return celulas;
 
-  const ritmo = ritmoDaMeta(m);
+  const ritmo = ritmoDaMeta(m, atrasoDaMeta);
 
   if (m.esperado_ate_ontem !== null) {
     celulas.push({
@@ -211,11 +211,14 @@ export function SecaoMeta({
   meta,
   indisponivel,
   podeEditar,
+  atrasoDaMeta,
 }: {
   meta: MetaDoMes | null;
   /** Texto do motivo quando a leitura não veio (função ausente, erro, contrato). */
   indisponivel: string | null;
   podeEditar: boolean;
+  /** O atraso contra o esperado que ainda é atenção (D-408). */
+  atrasoDaMeta: number;
 }): ReactNode {
   const cabecalho = (
     <div className="sb-section-label">
@@ -233,8 +236,8 @@ export function SecaoMeta({
     );
   }
 
-  const leitura = situacaoDaMeta(meta);
-  const ritmo = ritmoDaMeta(meta);
+  const leitura = situacaoDaMeta(meta, atrasoDaMeta);
+  const ritmo = ritmoDaMeta(meta, atrasoDaMeta);
   const nomeDoMes = rotuloDoMes(meta.mes);
   const diaDoMes = meta.dias_completos === null ? null : meta.dias_completos + 1;
   const projecao = celulasDaProjecao(meta);
@@ -275,7 +278,7 @@ export function SecaoMeta({
       </Panel>
 
       <div className="sb-central-bloco">
-        <KpiStrip cells={celulasDaMeta(meta)} />
+        <KpiStrip cells={celulasDaMeta(meta, atrasoDaMeta)} />
       </div>
 
       {meta.situacao === "em_curso" && (

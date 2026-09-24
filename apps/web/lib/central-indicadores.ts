@@ -4,7 +4,8 @@ import type { PeriodoCentral } from "./central-periodo";
 import { participacao, type Faturamento, type ImpostoDoPeriodo, type ResumoFaturamento } from "./faturamento";
 import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
 import { formatarAliquota } from "./metas-imposto";
-import { avaliarVariacao, type Escala, type Polaridade, type Variacao } from "./variacao";
+import { LIMITES_PADRAO, type LimitesDaCentral } from "./limites-central";
+import { avaliarVariacao, type Escala, type LimitesDaVariacao, type Polaridade, type Variacao } from "./variacao";
 
 /**
  * Os indicadores da Central do negócio (D-394) e o resumo em texto.
@@ -89,13 +90,6 @@ export interface EntradaCentral {
   readonly adsZeroLegitimo: boolean;
 }
 
-/**
- * Abaixo disto uma razão de pedidos cobertos é ruído: com 8 pedidos, um frete
- * fora da curva move a margem inteira. Provisório como os limites do tom
- * (D-148), e declarado na tela quando corta a comparação.
- */
-export const AMOSTRA_MINIMA = 20;
-
 /** Diferença de cobertura acima da qual somas de pedidos cobertos deixam de ser comparáveis. */
 export const COBERTURA_TOLERADA = 0.05;
 
@@ -125,10 +119,13 @@ function comparar(
   base: Omit<Indicador, "variacao" | "semComparacao">,
   semComparacao: string | null,
   semJulgamento: boolean,
+  limites: LimitesDaVariacao,
 ): Indicador {
   const c = base.comparado;
   const variacao =
-    semComparacao === null ? avaliarVariacao(c.atual, c.anterior, c.polaridade, c.escala, { semJulgamento }) : null;
+    semComparacao === null
+      ? avaliarVariacao(c.atual, c.anterior, c.polaridade, c.escala, { semJulgamento, limites })
+      : null;
 
   // Sem um dos lados, a comparação não existe — e a tela diz por quê, em vez de mostrar só "—".
   const motivo =
@@ -137,10 +134,15 @@ function comparar(
   return { ...base, variacao, semComparacao: motivo };
 }
 
-function motivoDaAmostra(atual: number, anterior: number): string | null {
-  if (atual >= AMOSTRA_MINIMA && anterior >= AMOSTRA_MINIMA) return null;
+/**
+ * Abaixo da amostra mínima uma razão de pedidos cobertos é ruído: com 8
+ * pedidos, um frete fora da curva move a margem inteira. O número é da
+ * organização (D-408), e a tela diz quando ele corta a comparação.
+ */
+function motivoDaAmostra(atual: number, anterior: number, minimo: number): string | null {
+  if (atual >= minimo && anterior >= minimo) return null;
 
-  return `menos de ${String(AMOSTRA_MINIMA)} pedidos cobertos em um dos períodos (${String(atual)} × ${String(anterior)})`;
+  return `menos de ${String(minimo)} pedidos cobertos em um dos períodos (${String(atual)} × ${String(anterior)})`;
 }
 
 const ANDAMENTO = "dia em andamento: o volume ainda cresce e não é julgado";
@@ -225,14 +227,17 @@ export function entradaDaCentral(
   };
 }
 
-export function montarIndicadores(e: EntradaCentral): Indicador[] {
+export function montarIndicadores(e: EntradaCentral, limites: LimitesDaCentral = LIMITES_PADRAO): Indicador[] {
   const a = e.atual;
   const p = e.anterior;
   const semAnterior = p === null ? "o período anterior não carregou" : null;
   const volume = e.emAndamento;
+  const julgar = (base: Omit<Indicador, "variacao" | "semComparacao">, sem: string | null, semJulgamento: boolean): Indicador =>
+    comparar(base, sem, semJulgamento, limites.variacao);
+  const minimo = limites.amostraMinima;
 
-  const amostraCoberta = p === null ? semAnterior : motivoDaAmostra(a.pedidos_cobertos, p.pedidos_cobertos);
-  const amostraFrete = p === null ? semAnterior : motivoDaAmostra(a.pedidos_com_custos, p.pedidos_com_custos);
+  const amostraCoberta = p === null ? semAnterior : motivoDaAmostra(a.pedidos_cobertos, p.pedidos_cobertos, minimo);
+  const amostraFrete = p === null ? semAnterior : motivoDaAmostra(a.pedidos_com_custos, p.pedidos_com_custos, minimo);
 
   // Somas de pedidos cobertos (o resultado em reais) só se comparam com
   // coberturas parecidas: 31% contra 95% da receita mediria a captura do
@@ -301,7 +306,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
   ): Comparado => ({ atual, anterior, formato: "percentual", escala: "fracao", polaridade, rotulo });
 
   return [
-    comparar(
+    julgar(
       {
         id: "receita",
         grupo: "vendas",
@@ -316,7 +321,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior,
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "pedidos",
         grupo: "vendas",
@@ -331,7 +336,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior,
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "ticket",
         grupo: "vendas",
@@ -346,7 +351,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "unidades",
         grupo: "vendas",
@@ -361,7 +366,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior,
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "resultado",
         grupo: "resultado",
@@ -379,7 +384,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraCoberta ?? coberturaDiferente,
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "margem",
         grupo: "resultado",
@@ -394,7 +399,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraCoberta,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "imposto",
         grupo: "resultado",
@@ -414,7 +419,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior ?? motivoImposto,
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "lucro",
         grupo: "resultado",
@@ -429,7 +434,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraCoberta ?? coberturaDiferente ?? motivoLucro ?? (e.adsZeroLegitimo ? null : semAds),
       volume,
     ),
-    comparar(
+    julgar(
       {
         id: "contribuicao",
         grupo: "resultado",
@@ -444,7 +449,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraCoberta ?? motivoLucro ?? (e.adsZeroLegitimo ? null : semAds),
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "custo",
         grupo: "custos",
@@ -464,7 +469,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraCoberta,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "comissao",
         grupo: "custos",
@@ -479,7 +484,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAnterior,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "frete",
         grupo: "custos",
@@ -494,7 +499,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       amostraFrete,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "investimento",
         grupo: "ads",
@@ -510,7 +515,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semAds,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "receita_ads",
         grupo: "ads",
@@ -525,7 +530,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semVendasAds,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "roas",
         grupo: "ads",
@@ -540,7 +545,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semVendasAds,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "acos",
         grupo: "ads",
@@ -555,7 +560,7 @@ export function montarIndicadores(e: EntradaCentral): Indicador[] {
       semVendasAds,
       false,
     ),
-    comparar(
+    julgar(
       {
         id: "tacos",
         grupo: "ads",

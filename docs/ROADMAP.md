@@ -678,7 +678,8 @@ Pedido do dono em 23/09: uma central que diga o que aconteceu, onde há problema
 - [x] **"O que precisa da sua atenção"** no topo da central: crítico, atenção, otimização e escala, juntando Ads (D-398), frete (D-397/D-399), produtos com margem negativa ou abaixo de 10% (`get_faturamento.por_sku`), margem geral e ritmo da meta, cada item com o caminho para o recorte; fonte que falha sai da lista e é dita — ✔ código 2026-09-24 · D-400 (sem migration)
 - [x] **Central de alertas persistida** — `sincronizar_alertas_central` grava por dia em `actions` o frete provável/forte, a campanha crítica/abaixo da meta e o produto no prejuízo em 30 dias, um episódio por assunto: atualiza o aberto, respeita o que uma pessoa fechou, encerra o que sumiu há 3 dias e abre um novo quando volta; `/acoes` mostra os tipos com atalhos para a tela de cada um — ✔ código 2026-09-24 · D-403. Migration `20260923195930`
 - [ ] **Notificação dos alertas da central** — episódio novo de severidade alta vira notificação; depende da central de notificações refeita (PR #77) e de um evento sem conta para o alerta de produto (`domain_events.ml_account_id` é obrigatório)
-- [ ] **Limites do tom e amostras mínimas nas configurações** (hoje provisórios em código, D-148)
+- [x] **Limites do tom e amostras mínimas nas configurações** — `central_thresholds` e `/central/limites`: variação estável e forte (valor e pontos), atraso da meta, margem depois do Ads e amostra mínima, por organização; sem linha, os padrões de antes — ✔ código 2026-09-24 · D-408. Migration `20260923195957`
+- [ ] **Limites que moram no SQL** — a margem de 10% de `get_faturamento`, os cortes dos sinais de Ads e as pontuações do detector de frete lendo `central_thresholds`
 
 ---
 
