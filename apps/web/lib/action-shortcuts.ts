@@ -21,6 +21,7 @@ export function actionShortcuts(input: {
   kind: string;
   skuId: string | null;
   sku: string | null;
+  mlbId?: string | null;
 }): ActionShortcut[] {
   const shortcuts: ActionShortcut[] = [];
 
@@ -53,6 +54,26 @@ export function actionShortcuts(input: {
 
   if (input.kind === "reclamacoes_recorrentes") {
     shortcuts.push({ label: "Caixa de Entrada", href: "/atendimento" });
+  }
+
+  // Os alertas da central (D-403) abrem a tela que os explica. O detector de
+  // frete e os sinais de Ads não têm filtro por anúncio ou campanha — o link
+  // leva à lista inteira, sem fingir um filtro; o anúncio tem página própria.
+  if (input.kind === "frete_anomalo") {
+    if (input.mlbId != null) {
+      shortcuts.push({ label: "Anúncio", href: `/anuncios/${encodeURIComponent(input.mlbId)}` });
+    }
+
+    shortcuts.push({ label: "Detector de frete", href: "/central/frete" });
+  }
+
+  if (input.kind === "ads_campanha") {
+    shortcuts.push({ label: "Sinais de Ads", href: "/central/ads" });
+  }
+
+  // O ranking abre nos últimos 30 dias até ontem: a mesma janela do alerta.
+  if (input.kind === "produto_prejuizo") {
+    shortcuts.push({ label: "Ranking: no prejuízo", href: "/central/produtos?ordem=prejuizo" });
   }
 
   return shortcuts;

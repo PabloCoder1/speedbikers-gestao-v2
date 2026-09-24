@@ -15294,6 +15294,65 @@ describe("get_detector_frete (D-397)", () => {
     expect(outra[0]?.r.alertas).toEqual([]);
     await expect(asAnon(`select public.get_detector_frete('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
+
+  it("D-403: a sincronização grava provável e forte como ações, uma por anúncio e faixa", async () => {
+    try {
+      const {
+        rows: [linha],
+      } = await client.query<{ r: { fontes: string[]; detectados: Record<string, number>; criadas: number } }>(
+        "select public.sincronizar_alertas_central($1, date '2023-06-01') as r",
+        [ORG_SB],
+      );
+
+      expect(linha?.r.fontes).toContain("frete_anomalo");
+      // Os dois de atenção (MLB9700211, MLB9700041) ficam só na tela.
+      expect(linha?.r.detectados.frete_anomalo).toBe(4);
+
+      const { rows } = await client.query<{
+        mlb_id: string;
+        severity: string;
+        confidence: string;
+        impacto: string | null;
+        dedup_key: string;
+        subject_key: string;
+        status: string;
+        ultima: string;
+        evidence: { nivel: string; evidencias: { descricao: string }[]; primeira_deteccao: string };
+      }>(
+        `select mlb_id, severity, confidence, estimated_impact_brl::text as impacto, dedup_key, subject_key, status,
+                to_char(last_detected_on, 'YYYY-MM-DD') as ultima, evidence
+         from public.actions
+         where organization_id = $1 and kind = 'frete_anomalo'
+         order by mlb_id`,
+        [ORG_SB],
+      );
+
+      expect(rows.map((r) => [r.mlb_id, r.severity, r.confidence, r.impacto])).toEqual([
+        ["MLB9700001", "alta", "alta", "40.00"],
+        ["MLB9700012", "media", "media", "12.00"],
+        ["MLB9700021", "media", "media", "66.00"],
+        ["MLB9700031", "alta", "alta", "80.00"],
+      ]);
+
+      const h = rows[0];
+
+      expect(h).toMatchObject({
+        subject_key: "MLB9700001:40_79",
+        dedup_key: "frete_anomalo:MLB9700001:40_79:2023-06-01",
+        status: "novo",
+        ultima: "2023-06-01",
+      });
+      expect(h?.evidence.primeira_deteccao).toBe("2023-06-01");
+      expect(h?.evidence.evidencias.map((e) => e.descricao)).toEqual([
+        "Frete médio de R$ 20,00 nos últimos 14 dias até 31/05/2023 (4 pedidos, preço de R$ 40 a R$ 79).",
+        "Pelo histórico do próprio anúncio, o esperado seria R$ 10,00.",
+        "Produtos da mesma categoria na faixa pagam R$ 8,00 (23 produtos).",
+        "Forte indício de frete errado (7 pontos no detector de frete).",
+      ]);
+    } finally {
+      await client.query("delete from public.actions where organization_id = $1 and subject_key is not null", [ORG_SB]);
+    }
+  });
 });
 
 /**
@@ -15852,5 +15911,241 @@ describe("get_ranking_produtos (D-402)", () => {
     await expect(asAnon("select public.get_ranking_produtos('2023-03-11', '2023-03-20')")).rejects.toThrow(
       /permission denied/i,
     );
+  });
+});
+
+/**
+ * Alertas da central em `actions` (D-403): o ciclo de vida de um episódio,
+ * rodando a sincronização dia a dia de 10/08 a 02/09/2023, como o job diário.
+ *
+ * Três campanhas (meta de ROAS 10) e um produto no prejuízo:
+ *
+ * | campanha | 01–15/08           | 16–20/08      | 21–27/08      | 28/08–10/09   |
+ * |----------|--------------------|---------------|---------------|---------------|
+ * | 940001   | R$ 60/dia sem venda (até 20/08)    | R$ 40 → R$ 600 por dia        |
+ * | 940002   | R$ 40 → R$ 600 todos os dias (a base: a semana consolida)          |
+ * | 940003   | R$ 50 → R$ 250     | R$ 50 → R$ 600 (até 27/08)    | R$ 50 → R$ 250 |
+ *
+ * - 940001 nasce crítica em 10/08; uma pessoa resolve em 11/08; a condição
+ *   continua até 25/08 (a semana só sai de "abaixo da meta" com 2 dias ruins
+ *   ou menos) -- e ela NÃO reabre;
+ * - 940003 nasce abaixo da meta em 10/08, é detectada até 18/08 (5 dias ruins
+ *   na semana), e o sistema encerra em 21/08, 3 dias depois; volta em 02/09
+ *   (5 dias ruins de novo) como episódio NOVO;
+ * - o SKU vende 3 vezes no prejuízo em 05/08: R$ 100 − 10 − 15 − 90 = −15 cada.
+ */
+describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
+  const CONTA_AL = "dddd9999-0000-4000-8000-0000000000d1";
+  const PEDIDOS = [9904200001, 9904200002, 9904200003];
+
+  async function sincronizar(dia: string): Promise<Record<string, unknown>> {
+    const { rows } = await client.query<{ r: Record<string, unknown> }>(
+      "select public.sincronizar_alertas_central($1, $2::date) as r",
+      [ORG_SB, dia],
+    );
+
+    return rows[0]?.r ?? {};
+  }
+
+  interface Acao {
+    id: string;
+    subject_key: string;
+    severity: string;
+    status: string;
+    dedup_key: string;
+    impacto: string | null;
+    ultima: string;
+    evidence: {
+      evidencias: { descricao: string }[];
+      primeira_deteccao: string;
+      ultima_deteccao: string;
+      encerramento?: { em: string; por: string; motivo: string };
+    };
+  }
+
+  async function acoes(kind: string): Promise<Acao[]> {
+    const { rows } = await client.query<Acao>(
+      `select id, subject_key, severity, status, dedup_key, estimated_impact_brl::text as impacto,
+              to_char(last_detected_on, 'YYYY-MM-DD') as ultima, evidence
+       from public.actions
+       where organization_id = $1 and kind = $2 and subject_key is not null
+       order by subject_key, created_at`,
+      [ORG_SB, kind],
+    );
+
+    return rows;
+  }
+
+  function dias(de: string, ate: string): string[] {
+    const lista: string[] = [];
+
+    for (let d = new Date(`${de}T12:00:00Z`); d <= new Date(`${ate}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+      lista.push(d.toISOString().slice(0, 10));
+    }
+
+    return lista;
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do ciclo','rlstest-ciclo','PENDING')
+       on conflict do nothing`,
+      [CONTA_AL, ORG_SB],
+    );
+    await client.query(
+      `insert into public.ads_campaigns (organization_id, ml_account_id, campaign_id, name, status, strategy, budget, roas_target)
+       values ($1,$2,940001,'Crítica','active','PROFITABILITY',50,10),
+              ($1,$2,940002,'Base','active','PROFITABILITY',100,10),
+              ($1,$2,940003,'Abaixo','active','PROFITABILITY',100,10)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_AL],
+    );
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount,
+          total_amount, direct_units, indirect_units, units)
+       select $1, $2, c.campanha, d::date, 20, 1000, c.custo, c.venda, 0, c.venda, c.unidades, 0, c.unidades
+       from generate_series(timestamp '2023-08-01', timestamp '2023-09-10', interval '1 day') d
+       cross join lateral (values
+         (940001, case when d::date <= date '2023-08-20' then 60 else 40 end,
+                  case when d::date <= date '2023-08-20' then 0 else 600 end,
+                  case when d::date <= date '2023-08-20' then 0 else 3 end),
+         (940002, 40, 600, 3),
+         (940003, 50,
+                  case when d::date <= date '2023-08-15' or d::date >= date '2023-08-28' then 250 else 600 end,
+                  case when d::date <= date '2023-08-15' or d::date >= date '2023-08-28' then 1 else 3 end)
+       ) as c(campanha, custo, venda, unidades)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_AL],
+    );
+
+    const {
+      rows: [sku],
+    } = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1,'RLSTEST-AL-PREJUIZO','PRODUTO',90)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id`,
+      [ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.orders (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+       select p, $2, $3, null, 'paid', timestamptz '2023-08-05 15:00:00+00', timestamptz '2023-08-05 15:00:00+00', 100, 'BRL'
+       from unnest($1::bigint[]) p
+       on conflict (id) do nothing`,
+      [PEDIDOS, ORG_SB, CONTA_AL],
+    );
+    await client.query(
+      `insert into public.order_items (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+                                      title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       select p, $2, $3, 0, 'MLB9420001', null, 'Prejuízo', 1, 100, 'BRL', $4, 10
+       from unnest($1::bigint[]) p
+       on conflict do nothing`,
+      [PEDIDOS, ORG_SB, CONTA_AL, sku?.id],
+    );
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       select p, $2, $3, 15, 0 from unnest($1::bigint[]) p
+       on conflict (order_id) do nothing`,
+      [PEDIDOS, ORG_SB, CONTA_AL],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = $1 and subject_key is not null", [ORG_SB]);
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.daily_ads_campaign_metrics where ml_account_id = $1", [CONTA_AL]);
+    await client.query("delete from public.ads_campaigns where ml_account_id = $1", [CONTA_AL]);
+  });
+
+  it("nasce uma ação por assunto, com a evidência escrita, e rodar de novo no mesmo dia não duplica", async () => {
+    const r = await sincronizar("2023-08-10");
+
+    expect(r.fontes).toEqual(expect.arrayContaining(["ads_campanha", "produto_prejuizo"]));
+    expect(r).toMatchObject({ criadas: 3, atualizadas: 0, encerradas: 0 });
+
+    const ads = await acoes("ads_campanha");
+
+    expect(ads.map((a) => [a.subject_key, a.severity, a.impacto, a.status])).toEqual([
+      // Sem venda nenhuma: tudo o que gastou.
+      [`${CONTA_AL}:940001`, "alta", "420.00", "novo"],
+      // R$ 350 investidos para R$ 1.750 de venda: a meta 10 pediria R$ 175.
+      [`${CONTA_AL}:940003`, "media", "175.00", "novo"],
+    ]);
+    expect(ads[1]?.dedup_key).toBe(`ads_campanha:${CONTA_AL}:940003:2023-08-10`);
+    expect(ads[1]?.evidence.evidencias.map((e) => e.descricao)).toEqual([
+      'Campanha "Abaixo" (Conta do ciclo), semana de 03/08/2023 a 09/08/2023: R$ 350,00 investidos e R$ 1.750,00 em vendas atribuídas (7 unidades).',
+      "ROAS 5,00 contra a meta de 10,00 da campanha.",
+      "Na semana anterior: ROAS 5,00, com R$ 100,00 investidos.",
+    ]);
+
+    const [produto] = await acoes("produto_prejuizo");
+
+    expect(produto).toMatchObject({ severity: "alta", impacto: "45.00", status: "novo" });
+    expect(produto?.evidence.evidencias[0]?.descricao).toBe(
+      "De 11/07/2023 a 09/08/2023: 3 pedidos cobertos, R$ 300,00 de receita e resultado de -R$ 45,00 (margem -15,0%).",
+    );
+
+    expect(await sincronizar("2023-08-10")).toMatchObject({ criadas: 0, atualizadas: 3 });
+    expect(await acoes("ads_campanha")).toHaveLength(2);
+  });
+
+  it("resolvida por uma pessoa, não reabre enquanto a condição continua", async () => {
+    await sincronizar("2023-08-11");
+
+    const [critica] = await acoes("ads_campanha");
+
+    await asUserPersist(ADMIN_SB, `select public.update_action_status('${critica?.id ?? ""}', 'resolvido')`);
+
+    for (const dia of dias("2023-08-12", "2023-08-24")) await sincronizar(dia);
+
+    const depois = (await acoes("ads_campanha")).filter((a) => a.subject_key.endsWith(":940001"));
+
+    // Uma linha só: resolvida, com a continuidade anotada até o último dia detectado.
+    expect(depois).toHaveLength(1);
+    expect(depois[0]).toMatchObject({ status: "resolvido", ultima: "2023-08-24" });
+    expect(depois[0]?.evidence.encerramento).toBeUndefined();
+  });
+
+  it("três dias sem detecção, o sistema encerra e diz por quê", async () => {
+    const [abaixo] = (await acoes("ads_campanha")).filter((a) => a.subject_key.endsWith(":940003"));
+
+    // Detectada até 18/08; 19 e 20 ainda abertas; 21/08 encerra.
+    expect(abaixo).toMatchObject({ status: "resolvido", ultima: "2023-08-18" });
+    expect(abaixo?.evidence.encerramento).toMatchObject({ em: "2023-08-21", por: "sistema" });
+    expect(abaixo?.evidence.encerramento?.motivo).toMatch(/saiu do nível crítico e de ROAS abaixo da meta/);
+  });
+
+  it("a condição que volta depois do encerramento é um episódio novo", async () => {
+    for (const dia of dias("2023-08-25", "2023-09-02")) await sincronizar(dia);
+
+    const episodios = (await acoes("ads_campanha")).filter((a) => a.subject_key.endsWith(":940003"));
+
+    expect(episodios.map((a) => [a.status, a.dedup_key])).toEqual([
+      ["resolvido", `ads_campanha:${CONTA_AL}:940003:2023-08-10`],
+      ["novo", `ads_campanha:${CONTA_AL}:940003:2023-09-02`],
+    ]);
+    // A que uma pessoa resolveu segue resolvida: a condição sumiu em 26/08 e não voltou.
+    expect((await acoes("ads_campanha")).filter((a) => a.subject_key.endsWith(":940001"))).toMatchObject([
+      { status: "resolvido", ultima: "2023-08-25" },
+    ]);
+  });
+
+  it("fonte sem dado não encerra nada: sem semana de Ads consolidada, os episódios ficam como estão", async () => {
+    // 2023-12-01: nenhum dia de Ads nos 21 anteriores.
+    const r = await sincronizar("2023-12-01");
+
+    expect(r.fontes).not.toContain("ads_campanha");
+    expect((await acoes("ads_campanha")).filter((a) => a.status === "novo")).toHaveLength(1);
+  });
+
+  it("só o worker chama: membro autenticado e anon são recusados", async () => {
+    await expect(asUser(ADMIN_SB, `select public.sincronizar_alertas_central('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(asAnon(`select public.sincronizar_alertas_central('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });

@@ -67,6 +67,30 @@ describe("describeActionEvidence", () => {
     expect(view.causas).toEqual([]);
   });
 
+  it("os alertas da central (D-403) são problema, com rótulo e a evidência escrita no banco", () => {
+    const evidencia = {
+      nivel: "forte",
+      evidencias: [
+        { tipo: "frete_atual", descricao: "Frete médio de R$ 35,00 nos últimos 14 dias até 31/05/2023." },
+        { tipo: "historico", descricao: "Pelo histórico do próprio anúncio, o esperado seria R$ 15,00." },
+      ],
+      detector: { anuncio: "MLB9700031" },
+    };
+
+    for (const [kind, rotulo] of [
+      ["frete_anomalo", "Frete anômalo"],
+      ["ads_campanha", "Campanha de Ads"],
+      ["produto_prejuizo", "Produto no prejuízo"],
+    ] as const) {
+      const view = describeActionEvidence(kind, evidencia);
+
+      expect(view.kindLabel).toBe(rotulo);
+      expect(view.tone).toBe("problema");
+      expect(view.direcaoLabel).toBeNull();
+      expect(view.evidencias.map((e) => e.tipo)).toEqual(["frete_atual", "historico"]);
+    }
+  });
+
   it("um kind novo do worker degrada, nunca quebra", () => {
     const view = describeActionEvidence("ruptura_prevista", { evidencias: [] });
 

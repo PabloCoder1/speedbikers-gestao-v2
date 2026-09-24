@@ -50,6 +50,21 @@ describe("actionShortcuts", () => {
     expect(actionShortcuts({ kind: "venda_anomala", skuId: null, sku: null })).toEqual([]);
   });
 
+  it("alertas da central (D-403): a tela que explica cada um, e o anúncio quando há", () => {
+    expect(actionShortcuts({ kind: "frete_anomalo", skuId: SKU_ID, sku: "X", mlbId: "MLB9700031" })).toEqual([
+      { label: "Dashboard do SKU", href: `/skus/${SKU_ID}` },
+      { label: "Anúncio", href: "/anuncios/MLB9700031" },
+      { label: "Detector de frete", href: "/central/frete" },
+    ]);
+    expect(actionShortcuts({ kind: "ads_campanha", skuId: null, sku: null })).toEqual([
+      { label: "Sinais de Ads", href: "/central/ads" },
+    ]);
+    expect(actionShortcuts({ kind: "produto_prejuizo", skuId: SKU_ID, sku: "X" })).toContainEqual({
+      label: "Ranking: no prejuízo",
+      href: "/central/produtos?ordem=prejuizo",
+    });
+  });
+
   it("kind desconhecido degrada para os atalhos genéricos do SKU", () => {
     expect(actionShortcuts({ kind: "novo_kind_do_worker", skuId: SKU_ID, sku: "X" })).toEqual([
       { label: "Dashboard do SKU", href: `/skus/${SKU_ID}` },

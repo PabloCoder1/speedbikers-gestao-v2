@@ -52,8 +52,13 @@ export async function triggerSalesAnomalyActionsDetection(
   // organização — handlers separados (falha e retry independentes), zero
   // job novo no Scheduler. O critério: ambas são "diagnóstico diário por
   // organização", e um 14º job do Scheduler só duplicaria cron e rota para
-  // o mesmo momento do dia.
-  const jobs = ["diagnostics.detect-sales-anomalies", "diagnostics.detect-support-patterns"] as const;
+  // o mesmo momento do dia. D-403 acrescenta o terceiro pelo mesmo critério:
+  // os alertas da central persistidos em `actions`, também por organização.
+  const jobs = [
+    "diagnostics.detect-sales-anomalies",
+    "diagnostics.detect-support-patterns",
+    "diagnostics.sync-central-alerts",
+  ] as const;
 
   for (const organization of organizations.data) {
     for (const jobType of jobs) {
