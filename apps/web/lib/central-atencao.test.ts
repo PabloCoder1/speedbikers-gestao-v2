@@ -113,6 +113,7 @@ const META_ATRASADA: MetaDoMes = {
   projecao: null,
   ano_anterior: null,
   dias_sem_venda: 0,
+  datas_comerciais: [],
 };
 
 function entrada(parcial: Partial<EntradaDaAtencao> = {}): EntradaDaAtencao {

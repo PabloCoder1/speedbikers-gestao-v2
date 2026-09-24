@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { lerMetaDoMes, ritmoDaMeta, situacaoDaMeta, type MetaDoMes } from "./central-meta";
+import {
+  fraseDaDataComercial,
+  lerMetaDoMes,
+  ritmoDaMeta,
+  situacaoDaMeta,
+  type DataComercial,
+  type MetaDoMes,
+} from "./central-meta";
 
 /**
  * A resposta real de `get_meta_do_mes` no Dev (ensaio de 23/09 numa transação
@@ -47,6 +54,40 @@ const RESPOSTA = {
   meta_diaria_necessaria: 90912.91,
 };
 
+/** O caso do teste de integração de D-406: a Black Friday de 2022 medida na de 2021. */
+const BLACK_FRIDAY: DataComercial = {
+  nome: "Black Friday",
+  data: "2022-11-25",
+  inicio: "2022-11-21",
+  fim: "2022-11-28",
+  medida_em: "2021-11-26",
+  medido: true,
+  efeito: 0.1875,
+  efeito_no_mes: 0.05,
+  dias: [
+    { dia: "2022-11-21", fator: 1 },
+    { dia: "2022-11-22", fator: 1 },
+    { dia: "2022-11-23", fator: 1 },
+    { dia: "2022-11-24", fator: 1 },
+    { dia: "2022-11-25", fator: 2 },
+    { dia: "2022-11-26", fator: 1 },
+    { dia: "2022-11-27", fator: 1 },
+    { dia: "2022-11-28", fator: 1.5 },
+  ],
+};
+
+const CARNAVAL_SEM_HISTORICO: DataComercial = {
+  nome: "Carnaval",
+  data: "2022-03-01",
+  inicio: "2022-02-25",
+  fim: "2022-03-02",
+  medida_em: "2021-02-16",
+  medido: false,
+  efeito: null,
+  efeito_no_mes: null,
+  dias: [],
+};
+
 function meta(parcial: Partial<MetaDoMes> = {}): MetaDoMes {
   const lida = lerMetaDoMes(RESPOSTA);
 
@@ -81,6 +122,72 @@ describe("lerMetaDoMes", () => {
     expect(lerMetaDoMes({ ...RESPOSTA, meta: "muita" })).toBeNull();
     expect(lerMetaDoMes({ ...RESPOSTA, projecao: { ritmo: 1 } })).toBeNull();
     expect(lerMetaDoMes(null)).toBeNull();
+  });
+
+  it("sem datas comerciais na resposta (banco anterior a D-406), lê a lista vazia", () => {
+    expect(lerMetaDoMes(RESPOSTA)?.datas_comerciais).toEqual([]);
+  });
+
+  it("lê as datas comerciais e recusa uma fora do formato", () => {
+    const m = lerMetaDoMes({ ...RESPOSTA, datas_comerciais: [BLACK_FRIDAY, CARNAVAL_SEM_HISTORICO] });
+
+    expect(m?.datas_comerciais).toEqual([BLACK_FRIDAY, CARNAVAL_SEM_HISTORICO]);
+    expect(lerMetaDoMes({ ...RESPOSTA, datas_comerciais: null })).toBeNull();
+    expect(lerMetaDoMes({ ...RESPOSTA, datas_comerciais: [{ ...BLACK_FRIDAY, medido: "sim" }] })).toBeNull();
+    expect(lerMetaDoMes({ ...RESPOSTA, datas_comerciais: [{ ...BLACK_FRIDAY, dias: [{ dia: "2022-11-25" }] }] })).toBeNull();
+  });
+});
+
+describe("fraseDaDataComercial", () => {
+  it("diz a janela contra um dia normal, o pico e quanto a data soma ao mês", () => {
+    expect(legivel(fraseDaDataComercial(BLACK_FRIDAY))).toBe(
+      "Black Friday (25/11): medida na de 2021, a janela de 21/11 a 28/11 vende 19% acima de um dia normal, com pico de +100% em 25/11 — soma cerca de 5% ao mês.",
+    );
+  });
+
+  it("para baixo, diz o pior dia e quanto a data tira do mês", () => {
+    const natal: DataComercial = {
+      nome: "Natal e Ano Novo",
+      data: "2026-12-25",
+      inicio: "2026-12-22",
+      fim: "2027-01-04",
+      medida_em: "2025-12-25",
+      medido: true,
+      efeito: -0.4521,
+      efeito_no_mes: -0.1834,
+      dias: [
+        { dia: "2026-12-24", fator: 0.41 },
+        { dia: "2026-12-25", fator: 0.35 },
+      ],
+    };
+
+    expect(legivel(fraseDaDataComercial(natal))).toBe(
+      "Natal e Ano Novo (25/12): medida na de 2025, a janela de 22/12 a 04/01 vende 45% abaixo de um dia normal, com o pior dia a −65% em 25/12 — tira cerca de 18% do mês.",
+    );
+  });
+
+  it("efeito pequeno não inventa pico nem peso no mês", () => {
+    const consumidor: DataComercial = {
+      ...BLACK_FRIDAY,
+      nome: "Dia do Consumidor",
+      data: "2026-03-15",
+      inicio: "2026-03-12",
+      fim: "2026-03-16",
+      medida_em: "2025-03-15",
+      efeito: 0.003,
+      efeito_no_mes: 0.001,
+      dias: [{ dia: "2026-03-15", fator: 1.04 }],
+    };
+
+    expect(legivel(fraseDaDataComercial(consumidor))).toBe(
+      "Dia do Consumidor (15/03): medida na de 2025, a janela de 12/03 a 16/03 vende como um dia normal.",
+    );
+  });
+
+  it("sem a ocorrência anterior no histórico, diz que a projeção não a considera", () => {
+    expect(fraseDaDataComercial(CARNAVAL_SEM_HISTORICO)).toBe(
+      "Carnaval (01/03): a de 2021 (16/02) ficou fora do histórico — sem efeito medido, a projeção não a considera.",
+    );
   });
 });
 

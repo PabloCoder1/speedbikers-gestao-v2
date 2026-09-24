@@ -16476,6 +16476,14 @@ td.sb-pco-num-linha {
   margin-top: var(--sb-space-4);
 }
 
+/* As datas comerciais do mês dentro da nota da projeção (D-406): o corpo de `.sb-note p`. */
+.sb-meta-datas {
+  margin: 0.4375rem 0;
+  padding-left: 1rem;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
 .sb-central-tabela {
   overflow-x: auto;
 }

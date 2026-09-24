@@ -6,6 +6,7 @@ import { Panel } from "../../components/panel";
 import { StatePill } from "../../components/state-pill";
 import { TOM } from "../../components/tone";
 import {
+  fraseDaDataComercial,
   ritmoDaMeta,
   rotuloDoDiaDaSemana,
   situacaoDaMeta,
@@ -301,13 +302,25 @@ export function SecaoMeta({
               {meta.perfil_semanal ? ":" : " — ainda sem histórico para isso, todos os dias pesam igual."}{" "}
               {meta.perfil_semanal &&
                 meta.fatores.map((f) => `${rotuloDoDiaDaSemana(f.dia_semana)} ${FATOR.format(f.fator)}`).join(" · ")}
-              {meta.perfil_semanal && "."} O ritmo atual é a venda das últimas 4 semanas ajustada por esses pesos;
+              {meta.perfil_semanal && "."} Os dias de uma data comercial têm o peso multiplicado pelo efeito medido no
+              ano anterior, dia a dia. O ritmo atual é a venda das últimas 4 semanas ajustada por esses pesos;
               conservador e otimista são o menor e o maior ritmo entre 1, 2 e 4 semanas. O realizado até ontem mais o
               ritmo aplicado aos dias que faltam dá o fechamento.
             </p>
+            {meta.datas_comerciais.length > 0 ? (
+              <ul className="sb-meta-datas" aria-label="Datas comerciais do mês">
+                {meta.datas_comerciais.map((d) => (
+                  <li key={`${d.nome}:${d.data}`}>{fraseDaDataComercial(d)}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>
+                <strong>Datas comerciais:</strong> nenhuma neste mês. O calendário cobre Carnaval, Dia do Consumidor, Dia
+                das Mães, Dia dos Pais, Black Friday e Natal e Ano Novo.
+              </p>
+            )}
             <p>
-              <strong>Não entram:</strong> datas comerciais (Black Friday, Dia dos Pais) — o sistema ainda não tem
-              calendário de eventos — e o parcial de hoje, que entra pela média do dia da semana.
+              <strong>Não entra:</strong> o parcial de hoje, que entra pela média do dia da semana.
             </p>
           </div>
         </div>

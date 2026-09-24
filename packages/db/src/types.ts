@@ -4447,8 +4447,9 @@ export type Database = {
           p_mes?: string
           p_organization_id: string
         }
-        // D-395: jsonb com meta, realizado, ritmo e projecao. A forma tipada
-        // mora em apps/web/lib/central-meta.ts.
+        // D-395: jsonb com meta, realizado, ritmo e projecao (e, desde D-406,
+        // as datas comerciais do mes). A forma tipada mora em
+        // apps/web/lib/central-meta.ts.
         Returns: Json
       }
       get_order_return_movements: {

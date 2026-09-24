@@ -437,4 +437,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
+- **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 

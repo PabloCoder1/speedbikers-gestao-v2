@@ -1,5 +1,5 @@
 import type { Tom } from "../components/tone";
-import { formatCurrency, formatPercent } from "./format";
+import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
 import { rotuloDoMes } from "./metas-imposto";
 
 /**
@@ -32,6 +32,32 @@ export interface FatorDoDia {
   readonly fator: number;
 }
 
+/** Um dia da janela de uma data comercial e o efeito medido no ano anterior (1 = dia normal). */
+export interface DiaDaData {
+  readonly dia: string;
+  readonly fator: number;
+}
+
+/**
+ * Uma data comercial que toca o mês (D-406). O efeito é medido dia a dia na
+ * ocorrência do ano anterior, contra a média do mesmo dia da semana nas 4
+ * semanas antes dela; sem essa ocorrência no histórico, `medido` é falso e a
+ * data não pesa na projeção.
+ */
+export interface DataComercial {
+  readonly nome: string;
+  readonly data: string;
+  readonly inicio: string;
+  readonly fim: string;
+  readonly medida_em: string;
+  readonly medido: boolean;
+  /** A variação média dos dias da janela contra um dia normal. */
+  readonly efeito: number | null;
+  /** Quanto a data muda o mês inteiro. */
+  readonly efeito_no_mes: number | null;
+  readonly dias: readonly DiaDaData[];
+}
+
 export interface MetaDoMes {
   readonly mes: string;
   readonly fim: string;
@@ -57,6 +83,8 @@ export interface MetaDoMes {
   readonly projecao: ProjecaoDoMes | null;
   readonly ano_anterior: AnoAnterior | null;
   readonly dias_sem_venda: number;
+  /** D-406. Vazio também quando o banco ainda não tem o calendário. */
+  readonly datas_comerciais: readonly DataComercial[];
 }
 
 class ForaDoContrato extends Error {}
@@ -124,6 +152,29 @@ const NUMEROS_ANULAVEIS = [
   "aumento_necessario",
 ] as const;
 
+function lerDataComercial(valor: unknown): DataComercial {
+  const d = registro(valor);
+
+  if (typeof d.medido !== "boolean") throw new ForaDoContrato("medido");
+  if (!Array.isArray(d.dias)) throw new ForaDoContrato("dias");
+
+  return {
+    nome: texto(d, "nome"),
+    data: texto(d, "data"),
+    inicio: texto(d, "inicio"),
+    fim: texto(d, "fim"),
+    medida_em: texto(d, "medida_em"),
+    medido: d.medido,
+    efeito: numeroOuNulo(d, "efeito"),
+    efeito_no_mes: numeroOuNulo(d, "efeito_no_mes"),
+    dias: d.dias.map((x: unknown) => {
+      const dia = registro(x);
+
+      return { dia: texto(dia, "dia"), fator: numero(dia, "fator") };
+    }),
+  };
+}
+
 /** `null` = resposta fora do contrato. */
 export function lerMetaDoMes(valor: unknown): MetaDoMes | null {
   try {
@@ -174,6 +225,15 @@ export function lerMetaDoMes(valor: unknown): MetaDoMes | null {
       projecao,
       ano_anterior: anoAnterior,
       dias_sem_venda: numero(r, "dias_sem_venda"),
+      // Ausente = banco anterior a D-406 (a web chega antes da migration): lista vazia.
+      datas_comerciais:
+        "datas_comerciais" in r
+          ? (() => {
+              if (!Array.isArray(r.datas_comerciais)) throw new ForaDoContrato("datas_comerciais");
+
+              return r.datas_comerciais.map(lerDataComercial);
+            })()
+          : [],
     };
   } catch (erro) {
     if (erro instanceof ForaDoContrato) return null;
@@ -295,4 +355,57 @@ const DIA_DA_SEMANA: Readonly<Record<number, string>> = {
 
 export function rotuloDoDiaDaSemana(isodow: number): string {
   return DIA_DA_SEMANA[isodow] ?? String(isodow);
+}
+
+const INTEIRO = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
+
+/** "25/11" de "2022-11-25". */
+function diaEMes(data: string): string {
+  return formatBusinessDate(data).slice(0, 5);
+}
+
+function contraDiaNormal(fracao: number): string {
+  if (Math.round(fracao * 100) === 0) return "como um dia normal";
+
+  return `${INTEIRO.format(Math.abs(fracao))} ${fracao > 0 ? "acima" : "abaixo"} de um dia normal`;
+}
+
+/**
+ * A frase de uma data comercial (D-406), só com os números medidos: a janela
+ * contra um dia normal, o dia de maior efeito (para cima ou para baixo) e quanto
+ * a data muda o mês. Sem medição, diz por quê e que a projeção não a considera.
+ */
+export function fraseDaDataComercial(d: DataComercial): string {
+  const quando = `${d.nome} (${diaEMes(d.data)})`;
+  const anoMedido = d.medida_em.slice(0, 4);
+
+  if (!d.medido) {
+    return `${quando}: a de ${anoMedido} (${diaEMes(d.medida_em)}) ficou fora do histórico — sem efeito medido, a projeção não a considera.`;
+  }
+
+  const janela = `a janela de ${diaEMes(d.inicio)} a ${diaEMes(d.fim)}`;
+  const efeito = d.efeito === null ? "sem efeito calculado" : `vende ${contraDiaNormal(d.efeito)}`;
+  let frase = `${quando}: medida na de ${anoMedido}, ${janela} ${efeito}`;
+
+  const pico = d.dias.reduce<DiaDaData | null>(
+    (maior, dia) => (maior === null || Math.abs(dia.fator - 1) > Math.abs(maior.fator - 1) ? dia : maior),
+    null,
+  );
+
+  if (pico !== null && Math.abs(pico.fator - 1) >= 0.1) {
+    const variacao = INTEIRO.format(Math.abs(pico.fator - 1));
+
+    frase +=
+      pico.fator > 1
+        ? `, com pico de +${variacao} em ${diaEMes(pico.dia)}`
+        : `, com o pior dia a −${variacao} em ${diaEMes(pico.dia)}`;
+  }
+
+  if (d.efeito_no_mes !== null && Math.round(d.efeito_no_mes * 100) !== 0) {
+    const noMes = INTEIRO.format(Math.abs(d.efeito_no_mes));
+
+    frase += d.efeito_no_mes > 0 ? ` — soma cerca de ${noMes} ao mês` : ` — tira cerca de ${noMes} do mês`;
+  }
+
+  return `${frase}.`;
 }
