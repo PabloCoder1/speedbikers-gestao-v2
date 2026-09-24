@@ -1,0 +1,11 @@
+# O topo do HANDOFF até 22/09/2026
+
+Saiu do `HANDOFF.md` em 24/09 por ser história (regra de D-177): as linhas de estado que ainda falavam da `v3`, da contagem de migrations de 22/09 e da frente de performance já entregue. O estado corrente está no `HANDOFF.md`.
+
+| Campo | Valor até 22/09 |
+|---|---|
+| **Atualizado em** | 2026-09-22 |
+| **HEAD conhecido** | `v3` em `c714104` — merge do PR #60 (D-390). Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
+| **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |
+| **Migrations** | Produção: **202** (22/09). `20260918125153` estava fora de ordem; o mesmo SQL virou `20260922150000` e o marcador antigo foi reparado **só no Dev**. Aguarda CI normal da `v3`, depois `migrations-producao.yml` (duas aprovações). Sem `--include-all`; nunca MCP. |
+| **Frente atual** | **Performance promovida para `v3`** (`aa847f5`, `54385ef`, `7ae7741`, `abc67dd`): Full com concorrência limitada e leitura paginada de snapshots, visitas em lote, busca com debounce/ordenação de respostas, Copiloto sob demanda, membership compartilhado por request, margem/ranking de Vendas sob `Suspense`, diretório de contas com refresh antecipado, vitals por rota e cache de build sensível a `.env*`. Check, build e `docs:check` passam. Produção verificada em `f88e0b2`: worker `worker-00005-pcz`, API `api-00004-n7c` (100% do tráfego, health confirmado), Vercel `dpl_4D8FTefUk3PueEJgsdyZVDBmqbmi`. Full medido, primeira amostra autenticada de navegador e seis RPCs de Vendas medidas com RLS: `docs/PERFORMANCE.md`. Restam telemetria de retries HTTP, coletor oficial de Web Vitals e amostra representativa. |

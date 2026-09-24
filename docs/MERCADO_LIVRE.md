@@ -806,6 +806,10 @@ falharia e o pedido ficaria pendente por um valor que a V3 já trata como "não 
 
 ---
 
+### As medidas do pacote na mesma leitura (D-405)
+
+A mesma resposta traz `shipping_items[]`, e cada item leva `dimensions` como texto -- `"4.0x19.0x26.0,710.0"`: três lados em cm e o peso em gramas -- e `dimensions_source.origin`. Nos 4 envios lidos em 17/09/2026: `"bmp"` no que saiu da loja, `"fd"` nos três do Full; o `dimensions` do topo do envio veio **nulo** nos quatro. A doc (FAQ "Items — Shipping attributes and dimensions", 05/2026) confirma as unidades e que, no ME2/Full, parte das medidas é definida pela logística do Mercado Livre. No anúncio, as medidas declaradas moram em `shipping.dimensions` (mesmo formato) e nos atributos `SELLER_PACKAGE_HEIGHT/WIDTH/LENGTH/WEIGHT`; a V3 só pede `shipping`, como sonda (D-405).
+
 ## 3. Estratégia de sincronização
 
 Aprovada e independente dos detalhes de endpoint. Três canais com papéis que nunca se confundem:

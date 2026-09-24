@@ -14129,3 +14129,21 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** integracao -- so a fonte pedida roda, o episodio de outra fonte fica como estava, fonte desconhecida e lista vazia sao recusadas; a suite do ciclo de vida de D-403 segue igual (sem `p_fontes`). 4 testes do handler: as tres chamadas na ordem, uma que estoura o tempo nao impede as outras e o job volta para a fila, resposta fora do contrato nao e repetida.
 
 **Impacto:** `supabase/migrations/20260923195945_alertas_da_central_por_fonte.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.
+
+## D-405 - As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
+
+**Contexto:** o detector de frete (D-397) aponta o anuncio cujo frete destoa, mas nao diz QUE medida esta errada: peso e dimensoes estao cadastrados em 22 de 973 SKUs vendidos. O ROADMAP pedia as medidas declaradas em `GET /items/{id}` (`shipping.dimensions`).
+
+**1. O QUE A LEITURA REAL MOSTROU.** Os 4 envios lidos de verdade em 17/09 (D-352) trazem, em `shipping_items[]`, `dimensions` como texto (`"4.0x19.0x26.0,710.0"`: tres lados em cm e o peso em gramas) e `dimensions_source.origin` -- `"bmp"` no envio que saiu da loja, `"fd"` nos tres do Full. O `dimensions` do topo do envio veio NULO nos quatro. Sao as medidas que o Mercado Livre usou NAQUELE envio, as que definem o frete cobrado -- mais direto para o detector do que o que o anuncio declara. E a doc (FAQ "Shipping attributes and dimensions", 05/2026) confirma cm e gramas, e que no ME2/Full parte das medidas e da logistica do Mercado Livre.
+
+**2. CUSTO ZERO DE API.** `GET /shipments/{id}` ja e lido por pedido que vai deduzir e pela varredura de logistica, so para `logistic_type` (D-352). `shipping_items` entra no schema como `unknown` e e lido a parte (`pacoteDoEnvio`): forma inesperada vira `null`, nunca um `ZodError` que deixaria o pedido pendente de logistica.
+
+**3. UMA TABELA A PARTE, NUNCA NO CAMINHO DO ESTOQUE.** `shipment_packages` (uma linha por pedido), gravada por um gancho opcional da leitura do envio (`aoLerPacote`) e pela varredura. A gravacao registra a falha e segue: perder uma medida nao pode parar a baixa. `persist-order` nao muda. Sem chave estrangeira para `orders` -- no caminho do pedido o envio e lido ANTES de o pedido ser gravado. Com mais de um item no envio, o pacote e de todos: so a contagem entra. RLS pela forma de conjunto (D-181); escrita so do worker.
+
+**4. O ANUNCIO, PRIMEIRO COMO SONDA.** O multiget de anuncios passa a pedir `shipping` (pequeno) e o log `listings_catalog_probe` conta quantos anuncios trazem `shipping.dimensions` legivel -- sem gravar ainda, a licao de D-109: medir antes de construir em cima. `attributes` (onde moram os `SELLER_PACKAGE_*`) fica de fora: e o bloco inteiro de dezenas de atributos por item, em ~17 mil anuncios a cada 6 h.
+
+**Fora desta fatia:** o detector usar as medidas (pares de tamanho parecido; declarado contra cobrado; o motivo "medida suspeita"), que depende de ver a cobertura real; e o historico, que exigiria reler dezenas de milhares de envios -- as medidas comecam a partir do deploy.
+
+**Verificacao:** as 4 medidas reais lidas em teste; forma invalida, zero e mais de um item; o gancho chamado e a falha dele engolida sem mudar a logistica; `shipping_items` estranho nao reprova o envio; a varredura grava o pacote sem movimento e conta no resumo; a sonda do anuncio; integracao da tabela (alcance por conta, outra organizacao, escrita so do worker, positivos). Suite inteira (857) num Supabase isolado.
+
+**Impacto:** `supabase/migrations/20260923195950_medidas_do_pacote_do_envio.sql`, `apps/worker/src/handlers/{shipment-package,shipment-logistics,sync-order-logistics,ml-orders-fetch,webhook-received,ml-listings-fetch,listing-schema}.ts` e testes, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`.

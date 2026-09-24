@@ -3,6 +3,8 @@ import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 import { ZodError, z } from "zod";
 
+import { pacoteDoEnvio, type PacoteDoEnvio } from "./shipment-package.js";
+
 /**
  * A logística do ENVIO de um pedido (D-352) — o sinal que diz se a venda saiu
  * do galpão do Mercado Livre (Full) ou da loja.
@@ -45,6 +47,10 @@ import { ZodError, z } from "zod";
  */
 export const shipmentSchema = z.object({
   logistic_type: z.string().nullable().optional(),
+  // D-405: as medidas do pacote, lidas À PARTE por `pacoteDoEnvio`. `unknown`
+  // de propósito: uma forma inesperada aqui não pode reprovar o envio inteiro
+  // e deixar o pedido pendente de logística.
+  shipping_items: z.unknown().optional(),
 });
 
 export interface CapturedLogistic {
@@ -52,6 +58,8 @@ export interface CapturedLogistic {
   readonly logisticType: string | null;
   /** Quando a V3 leu o envio: vira `orders.logistic_captured_at`. */
   readonly capturedAt: Date;
+  /** D-405: o pacote do envio, da MESMA leitura. Ausente quando o envio não foi lido (404). */
+  readonly pacote?: PacoteDoEnvio | null;
 }
 
 /**
@@ -77,6 +85,12 @@ export interface ShipmentLogisticsDeps {
   accessToken: string;
   logger: Logger;
   now?: (() => Date) | undefined;
+  /**
+   * D-405: quem recebe o pacote do envio lido, para gravar. Opcional: sem ele a
+   * leitura segue igual. Chamado DEPOIS da leitura bem-sucedida, e uma falha
+   * dele é registrada e engolida — nunca muda a resposta da logística.
+   */
+  aoLerPacote?: ((orderId: number, shippingId: number, pacote: PacoteDoEnvio) => Promise<void>) | undefined;
 }
 
 /**
@@ -95,7 +109,11 @@ export async function readShipmentLogistic(
     schema: shipmentSchema,
   });
 
-  return { logisticType: shipment.logistic_type ?? null, capturedAt: deps.now?.() ?? new Date() };
+  return {
+    logisticType: shipment.logistic_type ?? null,
+    capturedAt: deps.now?.() ?? new Date(),
+    pacote: pacoteDoEnvio(shipment.shipping_items),
+  };
 }
 
 /**
@@ -139,8 +157,10 @@ export function createShipmentLogistics(deps: ShipmentLogisticsDeps): ShipmentLo
   return {
     now,
     read: async (shippingId, orderId) => {
+      let capturada: CapturedLogistic;
+
       try {
-        return await readShipmentLogistic(deps, shippingId);
+        capturada = await readShipmentLogistic(deps, shippingId);
       } catch (error) {
         // Registrado, nunca fatal: o pedido sai pendente e a próxima janela
         // tenta de novo. O `order_id` vai junto porque é por ele que a
@@ -153,6 +173,19 @@ export function createShipmentLogistics(deps: ShipmentLogisticsDeps): ShipmentLo
 
         return null;
       }
+
+      if (capturada.pacote != null && deps.aoLerPacote !== undefined) {
+        try {
+          await deps.aoLerPacote(orderId, shippingId, capturada.pacote);
+        } catch (error) {
+          deps.logger.warn("shipment_package_nao_gravado", {
+            order_id: orderId,
+            motivo: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      return capturada;
     },
   };
 }

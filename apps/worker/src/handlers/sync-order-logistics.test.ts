@@ -132,6 +132,7 @@ interface FakeOptions {
 function fakeDb(options: FakeOptions): {
   db: SyncOrderLogisticsDeps["db"];
   movimentos: Record<string, unknown>[];
+  pacotes: Record<string, unknown>[];
   updates: UpdateChamada[];
   ledger: MovimentoRow[];
   orders: OrderRow[];
@@ -140,6 +141,7 @@ function fakeDb(options: FakeOptions): {
   const ledger = [...(options.ledger ?? [])];
   const orders = (options.orders ?? []).map((row) => ({ ...row }));
   const movimentos: Record<string, unknown>[] = [];
+  const pacotes: Record<string, unknown>[] = [];
   const updates: UpdateChamada[] = [];
   const consultasDeOrders: { filtro: string; ids: number[] }[] = [];
 
@@ -302,6 +304,13 @@ function fakeDb(options: FakeOptions): {
         return self;
       },
       upsert: (row: Record<string, unknown>) => {
+        // D-405: as medidas do pacote do envio, fora do ledger.
+        if (table === "shipment_packages") {
+          pacotes.push(row);
+
+          return Promise.resolve({ error: null });
+        }
+
         if (options.falhaNoMovimento?.(row) === true) {
           return Promise.resolve({ error: { message: "canceling statement due to statement timeout", code: "57014" } });
         }
@@ -320,7 +329,7 @@ function fakeDb(options: FakeOptions): {
     },
   } as unknown as SyncOrderLogisticsDeps["db"];
 
-  return { db, movimentos, updates, ledger, orders, consultasDeOrders };
+  return { db, movimentos, updates, ledger, orders, consultasDeOrders, pacotes };
 }
 
 /** `FALHA` = o Mercado Livre respondeu 500 depois das tentativas; `null` = respondeu e não disse a logística. */
@@ -334,7 +343,10 @@ function erroDoMl(status: number, errorClass: "retryable" | "not_retryable"): Me
   });
 }
 
-function fakeClient(logisticaPorEnvio: Record<string, string | null | typeof FALHA | Error>): {
+function fakeClient(
+  logisticaPorEnvio: Record<string, string | null | typeof FALHA | Error>,
+  itensPorEnvio: Record<string, unknown> = {},
+): {
   client: MercadoLivreClient;
   calls: string[];
 } {
@@ -357,7 +369,9 @@ function fakeClient(logisticaPorEnvio: Record<string, string | null | typeof FAL
 
       // Passa pelo `schema.parse` como o cliente real: um corpo fora do
       // contrato lançaria o mesmo ZodError aqui.
-      return Promise.resolve(request.schema.parse({ logistic_type: resposta ?? null }));
+      return Promise.resolve(
+        request.schema.parse({ logistic_type: resposta ?? null, shipping_items: itensPorEnvio[envio] }),
+      );
     },
   } as unknown as MercadoLivreClient;
 
@@ -414,6 +428,47 @@ function somaDoPedido(ledger: MovimentoRow[], orderId: number): number {
 }
 
 describe("sync.order-logistics (D-352, R2)", () => {
+  it("D-405: a mesma leitura grava as medidas do pacote, sem movimento, e conta no resumo", async () => {
+    const { db, movimentos, pacotes } = fakeDb({
+      ledger: [venda(9002, "SKU-B", 1, "2026-09-12T18:00:00.000Z")],
+      orders: [{ id: 9002, shipping_id: 5002, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client } = fakeClient(
+      { "5002": "cross_docking" },
+      {
+        "5002": [
+          {
+            id: "MLB1382501176",
+            quantity: 1,
+            dimensions: "4.0x19.0x26.0,710.0",
+            dimensions_source: { origin: "bmp", id: "MLB1382501176__1" },
+          },
+        ],
+      },
+    );
+
+    const { lines } = await run(db, client);
+
+    expect(movimentos).toEqual([]);
+    expect(pacotes).toEqual([
+      {
+        order_id: 9002,
+        organization_id: ORGANIZATION_ID,
+        ml_account_id: ML_ACCOUNT_ID,
+        shipping_id: 5002,
+        item_id: "MLB1382501176",
+        items_in_shipment: 1,
+        dimensions_raw: "4.0x19.0x26.0,710.0",
+        weight_g: 710,
+        volume_cm3: 1976,
+        largest_side_cm: 26,
+        dimensions_origin: "bmp",
+        captured_at: NOW.toISOString(),
+      },
+    ]);
+    expect(resumo(lines)).toMatchObject({ capturados: 1, pacotes: 1 });
+  });
+
   it("pedido pendente do Full: grava o ESTORNO_FULL espelhado e carimba a captura", async () => {
     const { db, movimentos, updates } = fakeDb({
       ledger: [venda(9001, "SKU-A", 2, "2026-09-12T18:00:00.000Z")],

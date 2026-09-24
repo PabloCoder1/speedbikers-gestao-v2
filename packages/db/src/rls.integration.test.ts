@@ -16168,3 +16168,110 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
     await expect(asAnon(`select public.sincronizar_alertas_central('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 });
+
+/**
+ * shipment_packages (D-405) — as medidas do pacote de cada envio. Mesmo alcance
+ * de `orders`/`order_financials`: quem alcança a CONTA lê; só o worker escreve
+ * (service_role, upsert na chave do pedido).
+ */
+describe("shipment_packages respeita o alcance por conta (D-405)", () => {
+  const CONTA_PERMITIDA = "aaaa7777-0000-4000-8000-00000000aaaa"; // ANALISTA_SB tem permissão aqui.
+  const CONTA_SEM_PERMISSAO = "bbbb7777-0000-4000-8000-00000000bbbb"; // mesma organização, sem permissão.
+  const CONTA_OUTRA_ORG = "dddd7777-0000-4000-8000-00000000dddd";
+  const CONTAS = [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG];
+  const PEDIDOS = [9905770001, 9905770002, 9905770003];
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$4,'Pacote A','rlstest-pacote-a','PENDING'),
+              ($2,$4,'Pacote B','rlstest-pacote-b','PENDING'),
+              ($3,$5,'Pacote de outra organização','rlstest-pacote-outra','PENDING')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA_PERMITIDA],
+    );
+    await client.query(
+      `insert into public.shipment_packages
+         (order_id, organization_id, ml_account_id, shipping_id, item_id, items_in_shipment,
+          dimensions_raw, weight_g, volume_cm3, largest_side_cm, dimensions_origin, captured_at)
+       values ($1,$7,$4,48040752377,'MLB1382501176',1,'4.0x19.0x26.0,710.0',710,1976,26,'bmp',now()),
+              ($2,$7,$5,48041052940,'MLB2059908767',1,'4.0x13.0x26.0,240.0',240,1352,26,'fd',now()),
+              ($3,$8,$6,48041074562,null,2,null,null,null,null,null,now())
+       on conflict do nothing`,
+      [...PEDIDOS, CONTA_PERMITIDA, CONTA_SEM_PERMISSAO, CONTA_OUTRA_ORG, ORG_SB, ORG_OUTRA],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.ml_accounts where id = any($1)", [CONTAS]);
+  });
+
+  it("ANALISTA vê o pacote da conta permitida e NÃO o da outra conta, mesmo na mesma organização", async () => {
+    const rows = await asUser<{ order_id: string }>(
+      ANALISTA_SB,
+      `select order_id::text from public.shipment_packages where order_id = any('{${PEDIDOS.join(",")}}') order by order_id`,
+    );
+
+    expect(rows.map((r) => r.order_id)).toEqual([String(PEDIDOS[0])]);
+  });
+
+  it("ADMIN vê as duas contas da organização; a outra organização, nada", async () => {
+    const admin = await asUser<{ order_id: string }>(
+      ADMIN_SB,
+      `select order_id::text from public.shipment_packages where order_id = any('{${PEDIDOS.join(",")}}') order by order_id`,
+    );
+    const outra = await asUser<{ order_id: string }>(
+      DE_OUTRA_ORG,
+      `select order_id::text from public.shipment_packages where order_id in (${String(PEDIDOS[0])}, ${String(PEDIDOS[1])})`,
+    );
+
+    expect(admin.map((r) => r.order_id)).toEqual([String(PEDIDOS[0]), String(PEDIDOS[1])]);
+    expect(outra).toEqual([]);
+  });
+
+  it("membro autenticado e anon não gravam; o worker grava e regrava na chave do pedido", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.shipment_packages (order_id, organization_id, ml_account_id, shipping_id, items_in_shipment, captured_at)
+         values (9905770099, '${ORG_SB}', '${CONTA_PERMITIDA}', 1, 1, now())`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.shipment_packages limit 1")).rejects.toThrow(/permission denied/i);
+
+    await client.query("begin");
+
+    try {
+      await client.query("set local role service_role");
+      await client.query(
+        `insert into public.shipment_packages (order_id, organization_id, ml_account_id, shipping_id, items_in_shipment, weight_g, captured_at)
+         values ($1, $2, $3, 1, 1, 500, now())
+         on conflict (order_id) do update set weight_g = excluded.weight_g`,
+        [PEDIDOS[0], ORG_SB, CONTA_PERMITIDA],
+      );
+      const { rows } = await client.query<{ weight_g: string }>(
+        "select weight_g::text from public.shipment_packages where order_id = $1",
+        [PEDIDOS[0]],
+      );
+
+      expect(rows[0]?.weight_g).toBe("500");
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("peso, volume e lado precisam ser positivos: zero não é medida", async () => {
+    await expect(
+      client.query(
+        `insert into public.shipment_packages (order_id, organization_id, ml_account_id, shipping_id, items_in_shipment, weight_g, captured_at)
+         values (9905770098, $1, $2, 1, 1, 0, now())`,
+        [ORG_SB, CONTA_PERMITIDA],
+      ),
+    ).rejects.toThrow(/check constraint/i);
+  });
+});

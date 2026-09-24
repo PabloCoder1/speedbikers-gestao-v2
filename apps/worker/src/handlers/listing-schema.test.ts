@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fingerprintDaDescricao, fotoDoItem, linkDoItem, listingItemSchema } from "./listing-schema.js";
+import { fingerprintDaDescricao, fotoDoItem, linkDoItem, listingItemSchema, medidasDeclaradas } from "./listing-schema.js";
 
 const ITEM = {
   id: "MLB5021016752",
@@ -66,5 +66,21 @@ describe("fingerprintDaDescricao (D-390)", () => {
 
     expect(hash).not.toContain("Texto que não pode aparecer no evento.");
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("medidasDeclaradas (D-405, a sonda do anúncio)", () => {
+  it("lê shipping.dimensions quando vem como texto", () => {
+    const item = listingItemSchema.parse({ ...ITEM, shipping: { mode: "me2", dimensions: "10x20x30,500" } });
+
+    expect(medidasDeclaradas(item)).toBe("10x20x30,500");
+  });
+
+  it("sem shipping, com dimensions nulo, vazio ou fora de forma: nulo — e o anúncio continua válido", () => {
+    for (const shipping of [undefined, null, "me2", { mode: "me2" }, { dimensions: null }, { dimensions: "  " }, { dimensions: 7 }]) {
+      const item = listingItemSchema.parse({ ...ITEM, shipping });
+
+      expect(medidasDeclaradas(item)).toBeNull();
+    }
   });
 });

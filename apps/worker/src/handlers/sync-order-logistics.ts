@@ -16,6 +16,7 @@ import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { classifyShipmentFailure, readShipmentLogistic } from "./shipment-logistics.js";
 import type { CapturedLogistic } from "./shipment-logistics.js";
+import { gravarPacoteDoEnvio } from "./shipment-package.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
@@ -408,6 +409,8 @@ interface Contagem {
   adiados: number;
   concorrentes: number;
   restantes: number;
+  /** D-405: pacotes de envio gravados da mesma leitura. */
+  pacotes: number;
 }
 
 function contagemZerada(): Contagem {
@@ -423,6 +426,7 @@ function contagemZerada(): Contagem {
     adiados: 0,
     concorrentes: 0,
     restantes: 0,
+    pacotes: 0,
   };
 }
 
@@ -599,6 +603,23 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
           });
           contagem.envio_inexistente += 1;
           capturada = { logisticType: null, capturedAt: agora() };
+        }
+
+        // D-405: as medidas do pacote vieram na mesma leitura. Gravar não
+        // decide nada e nunca lança: uma falha só fica no log.
+        if (
+          capturada.pacote != null &&
+          (await gravarPacoteDoEnvio(
+            deps.db,
+            { organizationId, mlAccountId },
+            pedido.id,
+            pedido.shipping_id,
+            capturada.pacote,
+            context.logger,
+            capturada.capturedAt,
+          ))
+        ) {
+          contagem.pacotes += 1;
         }
 
         // 1. A CAPTURA, antes de qualquer movimento: ela é a decisão (R5), e o

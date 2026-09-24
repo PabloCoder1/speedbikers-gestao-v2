@@ -10,6 +10,7 @@ import type { ParsedOrder } from "./order-schema.js";
 import { flushPageWrites, novaPagina } from "./page-writes.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
 import { createShipmentLogistics } from "./shipment-logistics.js";
+import { gravarPacoteDoEnvio } from "./shipment-package.js";
 
 /**
  * Busca de pedidos por janela de data, compartilhada por `sync.orders.window`
@@ -133,6 +134,10 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
     accessToken: params.accessToken,
     logger: params.logger,
     now: params.now,
+    // D-405: as medidas do pacote vêm na MESMA leitura; gravar não custa chamada.
+    aoLerPacote: async (orderId, shippingId, pacote) => {
+      await gravarPacoteDoEnvio(params.db, context, orderId, shippingId, pacote, params.logger, params.now?.());
+    },
   });
 
   for await (const page of pages) {
