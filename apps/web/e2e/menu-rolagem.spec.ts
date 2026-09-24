@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { login } from "./helpers.js";
 
@@ -17,12 +17,28 @@ import { login } from "./helpers.js";
  */
 const MENU = "nav.sb-nav";
 
+/**
+ * O menu REAL, e não o do esqueleto. `carregando.tsx` desenha o mesmo menu sem
+ * saber o papel -- sem os itens de ADMIN, mais curto -- e por um instante os
+ * dois convivem. Rolar antes disso rola o do esqueleto: em 24/09 a CI da main
+ * mediu `scrollTop` 0 ali ("Sem rolagem não há o que testar"). O usuário do
+ * e2e é ADMIN, e "Saúde do Sistema" só existe no menu real.
+ */
+async function menuReal(page: Page): Promise<Locator> {
+  await expect.poll(async () => page.locator(MENU).count()).toBe(1);
+
+  const menu = page.locator(MENU);
+
+  await menu.locator('a[href="/saude"]').waitFor();
+
+  return menu;
+}
+
 test.describe("rolagem do menu lateral", () => {
   test("clicar num item do FIM do menu não sobe a lista", async ({ page }) => {
     await login(page, "/vendas");
 
-    const menu = page.locator(MENU);
-    await menu.waitFor();
+    const menu = await menuReal(page);
 
     await menu.evaluate((elemento) => {
       elemento.scrollTop = elemento.scrollHeight;
@@ -45,8 +61,7 @@ test.describe("rolagem do menu lateral", () => {
   test("posição no MEIO do menu se mantém, e o recarregamento volta ao topo", async ({ page }) => {
     await login(page, "/vendas");
 
-    const menu = page.locator(MENU);
-    await menu.waitFor();
+    const menu = await menuReal(page);
 
     await menu.evaluate((elemento) => {
       elemento.scrollTop = 300;
