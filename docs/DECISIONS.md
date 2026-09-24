@@ -14058,6 +14058,8 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **4. CUSTO.** Contar produtos com margem negativa pede `get_faturamento` COM detalhe (~0,9 s no Dev em 30 dias, contra ~0,4 s sem). Leitura separada e em paralelo, por streaming: os indicadores nao esperam por ela. As outras quatro leituras sao as que a pagina ja fazia.
 
+**5. O CAMINHO DE CADA ITEM.** Ads abre `/central/ads` no nivel; frete, `/central/frete` no nivel; margem geral e meta, as ancoras do resumo e da meta; produtos, o ranking de D-402 no mesmo recorte da central -- margem negativa na ordem "no prejuizo" (o mesmo conjunto: resultado < 0), entre 0% e 10% na "menor margem".
+
 **Fora desta fatia:** persistir os alertas em `actions` (historico, notificacao, "resolvido") -- item proprio no ROADMAP.
 
 **Verificacao:** 6 testes da lista (ordem, frases com numero e caminho, fonte ausente, contagem zero, meta ate 5%), os 27 dos indicadores sem mudanca depois da extracao, e2e do painel na central; `check`, `build`.

@@ -123,7 +123,7 @@ function entrada(parcial: Partial<EntradaDaAtencao> = {}): EntradaDaAtencao {
     margem: MARGEM_EM_QUEDA,
     meta: META_ATRASADA,
     periodo: "entre 25/08/2026 e 23/09/2026",
-    hrefFaturamento: "/faturamento?from=2026-08-25&to=2026-09-23",
+    hrefRanking: "/central/produtos?p=30d",
     ...parcial,
   };
 }
@@ -161,7 +161,12 @@ describe("montarAtencao", () => {
       "A margem sobre a venda caiu 3,7 p.p. contra o período anterior entre 25/08/2026 e 23/09/2026.",
     );
     expect(texto("Meta", "atencao")).toBe("A meta do mês está R$ 1.000,00 abaixo do ritmo necessário.");
-    expect(itens.find((i) => i.categoria === "Produtos")?.href).toBe("/faturamento?from=2026-08-25&to=2026-09-23");
+    expect(itens.find((i) => i.categoria === "Produtos" && i.severidade === "critico")?.href).toBe(
+      "/central/produtos?p=30d&ordem=prejuizo",
+    );
+    expect(itens.find((i) => i.categoria === "Produtos" && i.severidade === "otimizacao")?.href).toBe(
+      "/central/produtos?p=30d&ordem=menor_margem",
+    );
     expect(itens.find((i) => i.categoria === "Ads" && i.severidade === "oportunidade")?.href).toBe("/central/ads?nivel=escala");
   });
 

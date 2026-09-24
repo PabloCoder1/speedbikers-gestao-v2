@@ -45,7 +45,7 @@ export async function Atencao({
   leituraAds,
   leituraProdutos,
   periodo,
-  hrefFaturamento,
+  hrefRanking,
 }: {
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
   leituraMeta: Leitura;
@@ -53,7 +53,7 @@ export async function Atencao({
   leituraAds: Leitura;
   leituraProdutos: PromiseLike<RespostaComCodigo>;
   periodo: PeriodoCentral;
-  hrefFaturamento: string;
+  hrefRanking: string;
 }): Promise<ReactNode> {
   const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, respostaFrete, respostaAds, respostaProdutos] =
     await Promise.all([leituras, leituraMeta, leituraFrete, leituraAds, leituraProdutos]);
@@ -76,7 +76,7 @@ export async function Atencao({
     margem,
     meta,
     periodo: textoDoPeriodo(periodo),
-    hrefFaturamento,
+    hrefRanking,
   });
   const contagem = contarPorSeveridade(itens);
 

@@ -76,7 +76,8 @@ export interface EntradaDaAtencao {
   /** "nos últimos 30 dias", "em setembro até ontem"… — como a central chama o período. */
   readonly periodo: string;
   /** O `/faturamento` do mesmo período e conta, onde está a lista de menor margem. */
-  readonly hrefFaturamento: string;
+  /** O ranking de produtos (D-402) no recorte da central; o item acrescenta a ordem. */
+  readonly hrefRanking: string;
 }
 
 function plural(n: number, um: string, varios: string): string {
@@ -84,6 +85,11 @@ function plural(n: number, um: string, varios: string): string {
 }
 
 /** A lista, do mais grave para a oportunidade; dentro do nível, o que tem mais itens primeiro. */
+/** A mesma lista do ranking, noutra ordem: "prejuizo" são os de margem negativa, "menor_margem" começa por eles. */
+function comOrdem(href: string, ordem: "prejuizo" | "menor_margem"): string {
+  return `${href}${href.includes("?") ? "&" : "?"}ordem=${ordem}`;
+}
+
 export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
   const itens: ItemDeAtencao[] = [];
   const ads = e.sinaisAds?.resumo ?? null;
@@ -105,7 +111,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
       categoria: "Produtos",
       quantidade: e.produtos.skusMargemNegativa,
       texto: `${plural(e.produtos.skusMargemNegativa, "produto vendeu", "produtos venderam")} com margem negativa ${e.periodo}.`,
-      href: e.hrefFaturamento,
+      href: comOrdem(e.hrefRanking, "prejuizo"),
     });
   }
 
@@ -203,7 +209,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
         categoria: "Produtos",
         quantidade: apertados,
         texto: `${plural(apertados, "produto vendeu", "produtos venderam")} com margem entre 0% e 10% ${e.periodo}.`,
-        href: e.hrefFaturamento,
+        href: comOrdem(e.hrefRanking, "menor_margem"),
       });
     }
   }

@@ -140,9 +140,6 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
       p_detalhe: true,
     }),
   );
-  const hrefFaturamento = `/faturamento?from=${periodo.atual.from}&to=${periodo.atual.to}${
-    contaSlug === null ? "" : `&account=${encodeURIComponent(contaSlug)}`
-  }`;
 
   // Os sinais de Ads usam a semana que o Mercado Livre já consolidou, não o período da central.
   const leituraAds =
@@ -255,7 +252,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraAds={leituraAds}
           leituraProdutos={leituraProdutos}
           periodo={periodo}
-          hrefFaturamento={hrefFaturamento}
+          hrefRanking={hrefDoRanking(periodoAtual, contaSlug)}
         />
       </Suspense>
 
