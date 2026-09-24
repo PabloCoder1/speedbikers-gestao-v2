@@ -21,7 +21,7 @@ const DATA = /^(\d{4})-(\d{2})-(\d{2})$/;
  *   ("2.800" → 2800) — é assim que se escreve dinheiro no Brasil;
  * - qualquer outro ponto é decimal ("6.5").
  */
-function numeroDigitado(texto: string): number | null {
+export function numeroDigitado(texto: string): number | null {
   const limpo = texto.replace(/R\$/gi, "").replace(/%/g, "").replace(/\s/g, "");
 
   if (limpo === "" || !/^[\d.,]+$/.test(limpo)) return null;

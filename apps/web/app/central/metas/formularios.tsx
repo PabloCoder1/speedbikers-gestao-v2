@@ -11,7 +11,7 @@ const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
  * pelo `aria-describedby`, como em `reposicao/configuracoes/gaveta-regra.tsx`,
  * para o nome acessível do campo continuar sendo o rótulo.
  */
-function Campo({
+export function Campo({
   nome,
   rotulo,
   dica,
@@ -46,7 +46,7 @@ function Campo({
   );
 }
 
-function Mensagem({ resultado }: { resultado: ResultadoDoCadastro }): ReactNode {
+export function Mensagem({ resultado }: { resultado: ResultadoDoCadastro }): ReactNode {
   if (resultado.mensagem === null) return null;
 
   return (

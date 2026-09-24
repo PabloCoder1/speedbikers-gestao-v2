@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
@@ -19,7 +20,8 @@ import {
 import type { PeriodoCentral } from "../../lib/central-periodo";
 import { lerFaturamento } from "../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
-import { LIMITES_DA_VARIACAO, textoDaVariacao } from "../../lib/variacao";
+import type { LimitesDaCentral } from "../../lib/limites-central";
+import { textoDaVariacao } from "../../lib/variacao";
 import { AVISO, type RespostaRpc } from "../faturamento/numeros";
 import { SecaoMeta } from "./meta";
 
@@ -212,10 +214,10 @@ function lerMeta(resposta: RespostaComCodigo | null): { meta: MetaDoMes | null; 
 }
 
 /** A meta vira sinal no resumo: em risco ou improvável pede atenção; no caminho, melhora. */
-function sinalDaMeta(meta: MetaDoMes | null): Sinal | null {
+function sinalDaMeta(meta: MetaDoMes | null, atrasoDaMeta: number): Sinal | null {
   if (meta?.situacao !== "em_curso" || meta.meta === null) return null;
 
-  const leitura = situacaoDaMeta(meta);
+  const leitura = situacaoDaMeta(meta, atrasoDaMeta);
 
   if (leitura.tom !== "perigo" && leitura.tom !== "atencao" && leitura.tom !== "ok") return null;
 
@@ -229,17 +231,20 @@ function sinalDaMeta(meta: MetaDoMes | null): Sinal | null {
 export async function Indicadores({
   leituras,
   leituraMeta,
+  leituraLimites,
   periodo,
   podeEditar,
 }: {
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
   leituraMeta: Promise<RespostaComCodigo> | null;
+  leituraLimites: Promise<LimitesDaCentral>;
   periodo: PeriodoCentral;
   podeEditar: boolean;
 }): Promise<ReactNode> {
-  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta] = await Promise.all([
+  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites] = await Promise.all([
     leituras,
     leituraMeta,
+    leituraLimites,
   ]);
   const { meta, indisponivel } = lerMeta(respostaMeta);
 
@@ -271,9 +276,9 @@ export async function Indicadores({
 
   const entrada = entradaDaCentral(atual, faturamentoAnterior, ads, adsAnterior, periodo);
 
-  const indicadores = montarIndicadores(entrada);
+  const indicadores = montarIndicadores(entrada, limites);
   const resumo = montarResumo(indicadores, entrada, periodo.preset);
-  const sinalMeta = sinalDaMeta(meta);
+  const sinalMeta = sinalDaMeta(meta, limites.atrasoDaMeta);
   const atencao = sinalMeta !== null && sinalMeta.tom !== "ok" ? [sinalMeta, ...resumo.atencao] : resumo.atencao;
   const melhoras = sinalMeta !== null && sinalMeta.tom === "ok" ? [sinalMeta, ...resumo.melhoras] : resumo.melhoras;
 
@@ -308,7 +313,7 @@ export async function Indicadores({
         </div>
       </Panel>
 
-      <SecaoMeta meta={meta} indisponivel={indisponivel} podeEditar={podeEditar} />
+      <SecaoMeta meta={meta} indisponivel={indisponivel} podeEditar={podeEditar} atrasoDaMeta={limites.atrasoDaMeta} />
 
       {GRUPOS.map((grupo, indice) => (
         <section key={grupo.id} aria-label={grupo.titulo}>
@@ -338,11 +343,13 @@ export async function Indicadores({
             que sobem são ruins; investimento em Ads não é julgado sozinho — quem julga é o ROAS e o TACoS.
           </p>
           <p>
-            Movimentos menores que {formatPercent(LIMITES_DA_VARIACAO.valor.neutro)} (ou{" "}
-            {PONTOS.format(LIMITES_DA_VARIACAO.fracao.neutro * 100)} p.p. nas porcentagens) são tratados como estáveis.
-            Contra o indicador, até {formatPercent(LIMITES_DA_VARIACAO.valor.forte)} (
-            {PONTOS.format(LIMITES_DA_VARIACAO.fracao.forte * 100)} p.p.) é atenção; acima disso, piora forte. Os
-            limites são provisórios e vão para as configurações.
+            Movimentos menores que {formatPercent(limites.variacao.valor.neutro)} (ou{" "}
+            {PONTOS.format(limites.variacao.fracao.neutro * 100)} p.p. nas porcentagens) são tratados como estáveis.
+            Contra o indicador, até {formatPercent(limites.variacao.valor.forte)} (
+            {PONTOS.format(limites.variacao.fracao.forte * 100)} p.p.) é atenção; acima disso, piora forte. Margens e
+            médias só se comparam com {formatCount(limites.amostraMinima)} pedidos ou mais nos dois períodos.{" "}
+            {limites.personalizados ? "Limites da empresa" : "Limites padrão"} —{" "}
+            <Link href="/central/limites">ver e ajustar</Link>.
           </p>
           <p>
             Resultado e margem só existem nos pedidos com frete gravado (desde 14/09/2026), custo conhecido e um produto.

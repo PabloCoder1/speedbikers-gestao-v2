@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../lib/central-periodo";
 import { formatBusinessDate } from "../../lib/format";
+import { carregarLimites } from "../../lib/limites-central";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { AVISO } from "../faturamento/numeros";
@@ -122,6 +123,9 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
       ? null
       : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId }));
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
+  // D-408: os limites que julgam os números, da organização. Nunca rejeita:
+  // sem linha ou com erro, os padrões.
+  const leituraLimites = carregarLimites(supabase, membership.organizationId);
 
   // O detector de frete é da organização e dos últimos 14 dias: não depende do
   // período nem da conta. Sai junto com as outras leituras e chega sozinho.
@@ -213,6 +217,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
               Metas e imposto
             </Link>
 
+            <Link className="sb-button" href="/central/limites">
+              Limites
+            </Link>
+
             <Link className="sb-button" href="/central/frete">
               Detector de frete
             </Link>
@@ -251,13 +259,20 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraFrete={leituraFrete}
           leituraAds={leituraAds}
           leituraProdutos={leituraProdutos}
+          leituraLimites={leituraLimites}
           periodo={periodo}
           hrefRanking={hrefDoRanking(periodoAtual, contaSlug)}
         />
       </Suspense>
 
       <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" />}>
-        <Indicadores leituras={leituras} leituraMeta={leituraMeta} periodo={periodo} podeEditar={podeEditar} />
+        <Indicadores
+          leituras={leituras}
+          leituraMeta={leituraMeta}
+          leituraLimites={leituraLimites}
+          periodo={periodo}
+          podeEditar={podeEditar}
+        />
       </Suspense>
 
       <Suspense fallback={<CarregandoBloco rotulo="detector de frete" />}>

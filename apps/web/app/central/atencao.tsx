@@ -15,6 +15,7 @@ import {
 import { entradaDaCentral, montarIndicadores, type Indicador } from "../../lib/central-indicadores";
 import { lerMetaDoMes } from "../../lib/central-meta";
 import type { PeriodoCentral } from "../../lib/central-periodo";
+import type { LimitesDaCentral } from "../../lib/limites-central";
 import { lerDetectorFrete } from "../../lib/detector-frete";
 import { lerFaturamento, type ProdutosDoFaturamento } from "../../lib/faturamento";
 import { formatBusinessDate } from "../../lib/format";
@@ -44,6 +45,7 @@ export async function Atencao({
   leituraFrete,
   leituraAds,
   leituraProdutos,
+  leituraLimites,
   periodo,
   hrefRanking,
 }: {
@@ -52,15 +54,22 @@ export async function Atencao({
   leituraFrete: Leitura;
   leituraAds: Leitura;
   leituraProdutos: PromiseLike<RespostaComCodigo>;
+  leituraLimites: Promise<LimitesDaCentral>;
   periodo: PeriodoCentral;
   hrefRanking: string;
 }): Promise<ReactNode> {
-  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, respostaFrete, respostaAds, respostaProdutos] =
-    await Promise.all([leituras, leituraMeta, leituraFrete, leituraAds, leituraProdutos]);
+  const [
+    [atualResult, anteriorResult, adsResult, adsAnteriorResult],
+    respostaMeta,
+    respostaFrete,
+    respostaAds,
+    respostaProdutos,
+    limites,
+  ] = await Promise.all([leituras, leituraMeta, leituraFrete, leituraAds, leituraProdutos, leituraLimites]);
 
   const faltam: string[] = [];
 
-  const margem = margemDoPeriodo(atualResult, anteriorResult, adsResult, adsAnteriorResult, periodo);
+  const margem = margemDoPeriodo(atualResult, anteriorResult, adsResult, adsAnteriorResult, periodo, limites);
 
   if (margem === null) faltam.push("margem geral");
 
@@ -75,6 +84,7 @@ export async function Atencao({
     produtos,
     margem,
     meta,
+    atrasoDaMeta: limites.atrasoDaMeta,
     periodo: textoDoPeriodo(periodo),
     hrefRanking,
   });
@@ -158,6 +168,7 @@ function margemDoPeriodo(
   adsResult: RespostaRpc,
   adsAnteriorResult: RespostaRpc,
   periodo: PeriodoCentral,
+  limites: LimitesDaCentral,
 ): Indicador | null {
   const atual = atualResult.error === null ? lerFaturamento(atualResult.data) : null;
 
@@ -166,7 +177,7 @@ function margemDoPeriodo(
   const anterior = anteriorResult.error === null ? lerFaturamento(anteriorResult.data) : null;
   const ads = adsResult.error === null ? lerVisaoAds(adsResult.data) : null;
   const adsAnterior = adsAnteriorResult.error === null ? lerVisaoAds(adsAnteriorResult.data) : null;
-  const indicadores = montarIndicadores(entradaDaCentral(atual, anterior, ads, adsAnterior, periodo));
+  const indicadores = montarIndicadores(entradaDaCentral(atual, anterior, ads, adsAnterior, periodo), limites);
 
   return indicadores.find((i) => i.id === "margem") ?? null;
 }

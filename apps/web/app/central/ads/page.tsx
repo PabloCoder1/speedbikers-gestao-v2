@@ -11,6 +11,7 @@ import { StatePill } from "../../../components/state-pill";
 import { formatRoas, listarDatas } from "../../../lib/central-indicadores";
 import { lerFaturamento } from "../../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../lib/format";
+import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import {
   estimar,
@@ -159,7 +160,11 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
     );
   }
 
-  const margem = await margemDaSemana(supabase, janela.inicio, janela.fim);
+  const [margem, limites] = await Promise.all([
+    margemDaSemana(supabase, janela.inicio, janela.fim),
+    carregarLimites(supabase, membership.organizationId),
+  ]);
+  const margemBaixa = limites.margemAposAdsBaixa;
   const comSinal = sinais.campanhas.filter((c) => (NIVEIS_COM_SINAL as readonly string[]).includes(c.nivel));
   const lista = nivel === null ? comSinal : comSinal.filter((c) => c.nivel === nivel);
 
@@ -208,7 +213,13 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
           ) : (
             <ol className="sb-sinal-lista">
               {lista.map((c) => (
-                <CartaoDaCampanha key={`${c.ml_account_id}:${String(c.campaign_id)}`} campanha={c} sinais={sinais} margem={margem} />
+                <CartaoDaCampanha
+                  key={`${c.ml_account_id}:${String(c.campaign_id)}`}
+                  campanha={c}
+                  sinais={sinais}
+                  margem={margem}
+                  margemBaixa={margemBaixa}
+                />
               ))}
             </ol>
           )}
@@ -217,7 +228,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
 
       <TabelaDeCampanhas sinais={sinais} margem={margem} />
 
-      <ComoDecide sinais={sinais} margem={margem} />
+      <ComoDecide sinais={sinais} margem={margem} margemBaixa={margemBaixa} />
     </>
   );
 }
@@ -330,13 +341,15 @@ function CartaoDaCampanha({
   campanha: c,
   sinais,
   margem,
+  margemBaixa,
 }: {
   campanha: CampanhaSinal;
   sinais: SinaisAds;
   margem: MargemDaSemana;
+  margemBaixa: number;
 }): ReactNode {
   const nivel = NIVEL_ADS[c.nivel];
-  const leitura = lerCampanhaSinal(c, sinais.referencias, margem.valor);
+  const leitura = lerCampanhaSinal(c, sinais.referencias, margem.valor, margemBaixa);
   const { lucro } = estimar(c, margem.valor);
 
   return (
@@ -481,7 +494,15 @@ function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: Marg
   );
 }
 
-function ComoDecide({ sinais, margem }: { sinais: SinaisAds; margem: MargemDaSemana }): ReactNode {
+function ComoDecide({
+  sinais,
+  margem,
+  margemBaixa,
+}: {
+  sinais: SinaisAds;
+  margem: MargemDaSemana;
+  margemBaixa: number;
+}): ReactNode {
   const { referencias } = sinais;
 
   return (
@@ -505,7 +526,9 @@ function ComoDecide({ sinais, margem }: { sinais: SinaisAds; margem: MargemDaSem
           </li>
           <li>
             <strong>Oportunidade de escala</strong> — campanha ativa, ROAS na meta ou acima, usando 90% do orçamento diário
-            em média ou no teto em 4 dos 7 dias, com 5 unidades vendidas ou mais.
+            em média ou no teto em 4 dos 7 dias, com 5 unidades vendidas ou mais. Com a margem estimada depois do Ads
+            abaixo de {formatPercent(margemBaixa)}, a sugestão é revisar custos antes de aumentar o orçamento (
+            <Link href="/central/limites">limite ajustável</Link>).
           </li>
         </ul>
         <p>

@@ -17,6 +17,7 @@
  */
 import type { Tom } from "../components/tone";
 import { formatRoas } from "./central-indicadores";
+import { LIMITES_PADRAO } from "./limites-central";
 import { formatCurrency, formatPercent } from "./format";
 
 export type NivelAds = "critico" | "abaixo_meta" | "atencao" | "escala" | "normal" | "pausada";
@@ -337,8 +338,6 @@ export function roasDeEquilibrio(margem: number | null): number | null {
   return margem === null || margem <= 0 ? null : 1 / margem;
 }
 
-/** Abaixo disto a margem depois do Ads é "baixa" para escalar — provisório, como os limites do tom (D-148). */
-export const MARGEM_APOS_ADS_BAIXA = 0.1;
 
 // ── texto ──────────────────────────────────────────────────────────────────
 
@@ -359,9 +358,15 @@ export interface LeituraDaCampanha {
 
 /**
  * O texto de uma campanha com sinal. `margem` é a margem média da empresa no
- * período (ou `null`); `ref` são as medianas da semana.
+ * período (ou `null`); `ref` são as medianas da semana; `margemBaixa`, a
+ * margem depois do Ads abaixo da qual escalar não é recomendado (D-408).
  */
-export function lerCampanhaSinal(c: CampanhaSinal, ref: SinaisAds["referencias"], margem: number | null): LeituraDaCampanha {
+export function lerCampanhaSinal(
+  c: CampanhaSinal,
+  ref: SinaisAds["referencias"],
+  margem: number | null,
+  margemBaixa: number = LIMITES_PADRAO.margemAposAdsBaixa,
+): LeituraDaCampanha {
   const s = c.sinais;
   const motivos: string[] = [];
 
@@ -414,7 +419,7 @@ export function lerCampanhaSinal(c: CampanhaSinal, ref: SinaisAds["referencias"]
     );
   }
 
-  return { motivos, interpretacao: interpretar(c, ref), sugestao: sugerir(c, margem) };
+  return { motivos, interpretacao: interpretar(c, ref), sugestao: sugerir(c, margem, margemBaixa) };
 }
 
 function interpretar(c: CampanhaSinal, ref: SinaisAds["referencias"]): string | null {
@@ -442,7 +447,7 @@ function interpretar(c: CampanhaSinal, ref: SinaisAds["referencias"]): string | 
   return null;
 }
 
-function sugerir(c: CampanhaSinal, margem: number | null): string {
+function sugerir(c: CampanhaSinal, margem: number | null, margemBaixa: number): string {
   const s = c.sinais;
 
   if (c.nivel === "critico") {
@@ -470,7 +475,7 @@ function sugerir(c: CampanhaSinal, margem: number | null): string {
   if (c.nivel === "escala") {
     const { margemAposAds } = estimar(c, margem);
 
-    if (margemAposAds !== null && margemAposAds < MARGEM_APOS_ADS_BAIXA) {
+    if (margemAposAds !== null && margemAposAds < margemBaixa) {
       return (
         `Apesar do bom retorno publicitário, a margem estimada depois do Ads é de ${formatPercent(margemAposAds)}. ` +
         "Não aumentar o orçamento antes de revisar custos, preço, frete e comissão."

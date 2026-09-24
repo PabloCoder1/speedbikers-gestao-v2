@@ -22,13 +22,14 @@ export type Polaridade = "maior-melhor" | "menor-melhor" | "neutra";
  */
 export type Escala = "valor" | "fracao";
 
+export type LimitesDaVariacao = Readonly<Record<Escala, { readonly neutro: number; readonly forte: number }>>;
+
 /**
- * Os cortes do tom. **Padrões provisórios** até a tela de configurações
- * receber os limites (D-148: limiar é decisão do dono, não constante): abaixo
- * de `neutro` o movimento é ruído; contra a polaridade, até `forte` é atenção
- * e a partir dele é perigo.
+ * Os cortes do tom: abaixo de `neutro` o movimento é ruído; contra a
+ * polaridade, até `forte` é atenção e a partir dele é perigo. Estes são os
+ * PADRÕES; a organização muda os seus em `/central/limites` (D-148, D-408).
  */
-export const LIMITES_DA_VARIACAO: Readonly<Record<Escala, { readonly neutro: number; readonly forte: number }>> = {
+export const LIMITES_DA_VARIACAO: LimitesDaVariacao = {
   valor: { neutro: 0.02, forte: 0.1 },
   fracao: { neutro: 0.005, forte: 0.02 },
 };
@@ -57,6 +58,8 @@ export interface OpcoesDaVariacao {
    * um dia que só não acabou.
    */
   readonly semJulgamento?: boolean;
+  /** Os cortes da organização (D-408); sem eles, os padrões. */
+  readonly limites?: LimitesDaVariacao;
 }
 
 /** `null` quando falta um dos lados — sem os dois não existe comparação, e isso não é zero. */
@@ -76,7 +79,7 @@ export function avaliarVariacao(
   // A grandeza que decide o tom: relativa para valor, pontos para fração. Um
   // valor sem relativa (anterior zero ou negativo) não tem como ser julgado.
   const grandeza = escala === "fracao" ? Math.abs(diferenca) : relativa === null ? null : Math.abs(relativa);
-  const limites = LIMITES_DA_VARIACAO[escala];
+  const limites = (opcoes.limites ?? LIMITES_DA_VARIACAO)[escala];
   const relevante = grandeza !== null && grandeza >= limites.neutro;
 
   let tom: Tom = "neutro";

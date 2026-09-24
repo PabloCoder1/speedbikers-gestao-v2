@@ -231,6 +231,13 @@ describe("ritmoDaMeta", () => {
     expect(ritmoDaMeta(meta({ diferenca_ritmo: -100_000 }))?.tom).toBe("perigo");
   });
 
+  it("o atraso que ainda é atenção é o da organização (D-408)", () => {
+    // 50 mil abaixo de um esperado de ~1,19 milhão: ~4,2%. Atenção no padrão (5%), perigo com 3%.
+    expect(ritmoDaMeta(meta({ diferenca_ritmo: -50_000 }), 0.03)?.tom).toBe("perigo");
+    expect(situacaoDaMeta(meta({ projecao: null, diferenca_ritmo: -50_000 }), 0.03).tom).toBe("perigo");
+    expect(situacaoDaMeta(meta({ projecao: null, diferenca_ritmo: -50_000 })).tom).toBe("atencao");
+  });
+
   it("no dia 1 não há ritmo a medir", () => {
     expect(ritmoDaMeta(meta({ dias_completos: 0 }))).toBeNull();
     expect(ritmoDaMeta(meta({ situacao: "encerrado" }))).toBeNull();

@@ -16476,6 +16476,23 @@ td.sb-pco-num-linha {
   margin-top: var(--sb-space-4);
 }
 
+/* Os limites da central para quem só lê (D-408): rótulo, valor e a dica com o padrão. */
+.sb-limites-lista {
+  display: grid;
+  gap: var(--sb-space-3);
+  margin: 0;
+}
+
+.sb-limites-lista dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sb-limites-lista dd {
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+}
+
 /* As datas comerciais do mês dentro da nota da projeção (D-406): o corpo de `.sb-note p`. */
 .sb-meta-datas {
   margin: 0.4375rem 0;
