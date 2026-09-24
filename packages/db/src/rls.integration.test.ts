@@ -16410,3 +16410,100 @@ describe("calendário de datas comerciais na meta do mês (D-406)", () => {
     expect(m).toMatchObject({ situacao: "encerrado", realizado: 28000 });
   });
 });
+
+/**
+ * Quem paga o frete (D-407): as quatro colunas novas de `order_financials`
+ * seguem a tabela -- quem alcança a conta lê, só o worker grava, uma vez.
+ */
+describe("order_financials: quem paga o frete (D-407)", () => {
+  const CONTA_FRETE = "aaaa4077-0000-4000-8000-00000000f407";
+  const PEDIDOS = [9904070001, 9904070002];
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do frete','rlstest-frete-d407','PENDING')
+       on conflict do nothing`,
+      [CONTA_FRETE, ORG_SB],
+    );
+    await client.query(
+      `insert into public.orders (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+       select p, $2, $3, null, 'paid', timestamptz '2026-09-24 15:00:00+00', timestamptz '2026-09-24 15:00:00+00', 685.99, 'BRL'
+       from unnest($1::bigint[]) p
+       on conflict (id) do nothing`,
+      [PEDIDOS, ORG_SB, CONTA_FRETE],
+    );
+    // A resposta real de um envio Full (24/09): 78,90 cheio = 0 + 24,80 do
+    // comprador bancados + 27,05 do vendedor + 27,05 de desconto dele.
+    await client.query(
+      `insert into public.order_financials
+         (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount,
+          shipping_list_cost, seller_shipping_subsidy, buyer_shipping_cost, buyer_shipping_subsidy)
+       values ($1, $2, $3, 27.05, 0, 78.9, 27.05, 0, 24.8)
+       on conflict (order_id) do nothing`,
+      [PEDIDOS[0], ORG_SB, CONTA_FRETE],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.ml_accounts where id = $1", [CONTA_FRETE]);
+  });
+
+  it("quem alcança a conta lê as quatro partes; a outra organização, nada", async () => {
+    const admin = await asUser<Record<string, string>>(
+      ADMIN_SB,
+      `select shipping_list_cost::text, seller_shipping_subsidy::text, buyer_shipping_cost::text, buyer_shipping_subsidy::text
+       from public.order_financials where order_id = ${String(PEDIDOS[0])}`,
+    );
+    const outra = await asUser(
+      DE_OUTRA_ORG,
+      `select 1 from public.order_financials where order_id = ${String(PEDIDOS[0])}`,
+    );
+
+    expect(admin).toEqual([
+      { shipping_list_cost: "78.9", seller_shipping_subsidy: "27.05", buyer_shipping_cost: "0", buyer_shipping_subsidy: "24.8" },
+    ]);
+    expect(outra).toEqual([]);
+  });
+
+  it("o worker grava as partes junto com o frete, e não reescreve a linha depois", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("set local role service_role");
+      await client.query(
+        `insert into public.order_financials
+           (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount,
+            shipping_list_cost, seller_shipping_subsidy, buyer_shipping_cost, buyer_shipping_subsidy)
+         values ($1, $2, $3, 0, null, 8.99, 0, 0, 8.99)`,
+        [PEDIDOS[1], ORG_SB, CONTA_FRETE],
+      );
+      const { rows } = await client.query<{ s: string }>(
+        "select seller_shipping_subsidy::text as s from public.order_financials where order_id = $1",
+        [PEDIDOS[1]],
+      );
+
+      // Flex: o vendedor não paga e não tem desconto -- zero observado, não NULL.
+      expect(rows[0]?.s).toBe("0");
+      await expect(
+        client.query("update public.order_financials set buyer_shipping_cost = 1 where order_id = $1", [PEDIDOS[1]]),
+      ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("nenhuma das quatro aceita valor negativo", async () => {
+    for (const coluna of ["shipping_list_cost", "seller_shipping_subsidy", "buyer_shipping_cost", "buyer_shipping_subsidy"]) {
+      await expect(
+        client.query(
+          `insert into public.order_financials (order_id, organization_id, ml_account_id, ${coluna})
+           values ($1, $2, $3, -0.01)`,
+          [PEDIDOS[1], ORG_SB, CONTA_FRETE],
+        ),
+      ).rejects.toThrow(/check constraint/i);
+    }
+  });
+});

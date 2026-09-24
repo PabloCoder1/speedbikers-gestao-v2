@@ -118,6 +118,8 @@ function fakeDb(options: {
 
 interface FakeClientOptions {
   costsBySender?: number[];
+  /** Corpos de /costs na ordem das chamadas (D-407), pelo mesmo `schema.parse` do cliente real. */
+  costsBodies?: unknown[];
   costsError?: MercadoLivreApiError;
   discountsError?: MercadoLivreApiError;
   sellerDiscount?: number;
@@ -142,6 +144,12 @@ function fakeClient(options: FakeClientOptions = {}): {
       if (request.path.includes("/costs")) {
         if (options.costsError !== undefined) {
           return Promise.reject(options.costsError);
+        }
+
+        const corpo = options.costsBodies?.shift();
+
+        if (corpo !== undefined) {
+          return Promise.resolve(request.schema.parse(corpo));
         }
 
         return Promise.resolve(
@@ -177,7 +185,12 @@ function fakeClient(options: FakeClientOptions = {}): {
   return { client, calls };
 }
 
-function run(db: SyncOrderFinancialsDeps["db"], client: MercadoLivreClient, sleeps: number[] = []) {
+function run(
+  db: SyncOrderFinancialsDeps["db"],
+  client: MercadoLivreClient,
+  sleeps: number[] = [],
+  lines: string[] = [],
+) {
   const handler = createSyncOrderFinancialsHandler({
     db,
     mercadoLivre: client,
@@ -190,8 +203,6 @@ function run(db: SyncOrderFinancialsDeps["db"], client: MercadoLivreClient, slee
       return Promise.resolve();
     },
   });
-
-  const lines: string[] = [];
 
   return handler(ENVELOPE, {
     logger: createLogger({}, { sink: (line) => lines.push(line) }),
@@ -308,6 +319,100 @@ describe("sync.order-financials (D-165)", () => {
  * "retryable", o Cloud Tasks repetia 8 vezes e o dia inteiro da conta morria
  * no primeiro pedido cuja resposta o schema não conhecia.
  */
+/** Uma resposta real de /costs (produção, 24/09), com os `user_id` trocados. */
+const CUSTOS_REAIS = {
+  receiver: {
+    compensations: [],
+    fees: [],
+    cost: 0,
+    discounts: [{ rate: 1, type: "ratio", promoted_amount: 24.8 }],
+    user_id: 1,
+    cost_details: [],
+    save: 24.8,
+    compensation: 0,
+  },
+  gross_amount: 78.9,
+  senders: [
+    {
+      compensations: [],
+      charges: { charge_flex: 0 },
+      fees: [],
+      cost: 27.05,
+      discounts: [{ rate: 0.5, type: "mandatory", promoted_amount: 27.05 }],
+      user_id: 2,
+      save: 27.05,
+      compensation: 0,
+    },
+  ],
+  base_exchange: null,
+};
+
+describe("sync.order-financials — quem paga o frete (D-407)", () => {
+  it("grava o frete cheio, o subsídio e o frete do comprador da mesma resposta, e conta a cobertura", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9101, shipping_id: 5101 }, { id: 9102, shipping_id: 5102 }] });
+    const { client, calls } = fakeClient({
+      costsBodies: [CUSTOS_REAIS, { ...CUSTOS_REAIS, gross_amount: 90 }],
+    });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, [], lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+    // Nenhuma chamada nova: o detalhe vem da resposta que já era lida.
+    expect(calls).toEqual(["/shipments/5101/costs", "/orders/9101/discounts", "/shipments/5102/costs", "/orders/9102/discounts"]);
+    expect(upserted[0]).toMatchObject({
+      order_id: 9101,
+      seller_shipping_cost: 27.05,
+      shipping_list_cost: 78.9,
+      seller_shipping_subsidy: 27.05,
+      buyer_shipping_cost: 0,
+      buyer_shipping_subsidy: 24.8,
+    });
+    // O que não fecha é gravado como veio e contado no log.
+    expect(upserted[1]).toMatchObject({ order_id: 9102, shipping_list_cost: 90 });
+
+    const done = lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((l) => l.message === "sync_order_financials_done");
+
+    expect(done).toMatchObject({ items_with_shipping_detail: 2, items_shipping_detail_unbalanced: 1, items_shape_unknown: 0 });
+  });
+
+  it("detalhe fora da forma não reprova a resposta: o frete do vendedor é gravado e o resto fica nulo", async () => {
+    const { db, upserted, syncRuns } = fakeDb({ orders: [{ id: 9103, shipping_id: 5103 }] });
+    const { client } = fakeClient({
+      costsBodies: [{ ...CUSTOS_REAIS, receiver: "?", gross_amount: "muito", senders: [{ cost: 27.05, discounts: {} }] }],
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted[0]).toMatchObject({
+      seller_shipping_cost: 27.05,
+      shipping_list_cost: null,
+      seller_shipping_subsidy: null,
+      buyer_shipping_cost: null,
+      buyer_shipping_subsidy: null,
+    });
+    expect(syncRuns[0]).toMatchObject({ status: "done" });
+  });
+
+  it("4xx no /costs deixa as quatro partes nulas, como o frete", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9104, shipping_id: 5104 }] });
+    const { client } = fakeClient({
+      costsError: new MercadoLivreApiError("404", { status: 404, errorClass: "not_retryable", url: "x" }),
+    });
+
+    await run(db, client);
+
+    expect(upserted[0]).toMatchObject({
+      seller_shipping_cost: null,
+      shipping_list_cost: null,
+      seller_shipping_subsidy: null,
+      buyer_shipping_cost: null,
+      buyer_shipping_subsidy: null,
+    });
+  });
+});
+
 describe("sync.order-financials — o contrato de /orders/{id}/discounts (D-229)", () => {
   it("desconto do vendedor é a SOMA de details[].items[].amounts.seller — a forma documentada", async () => {
     const { db, upserted } = fakeDb({ orders: [{ id: 9101, shipping_id: null }] });

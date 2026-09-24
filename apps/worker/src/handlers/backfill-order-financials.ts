@@ -228,6 +228,8 @@ export function createBackfillOrderFinancialsHandler(deps: BackfillOrderFinancia
       items_skipped: resultado.itemsSkipped,
       items_without_shipping: resultado.itemsWithoutShipping,
       items_shape_unknown: resultado.itemsShapeUnknown,
+      items_with_shipping_detail: resultado.itemsWithShippingDetail,
+      items_shipping_detail_unbalanced: resultado.itemsShippingDetailUnbalanced,
       tem_mais: temMais,
     });
 
