@@ -16142,6 +16142,25 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
     expect((await acoes("ads_campanha")).filter((a) => a.status === "novo")).toHaveLength(1);
   });
 
+  it("D-404: só a fonte pedida roda — a outra não cria nem encerra nada", async () => {
+    const { rows } = await client.query<{ r: { fontes: string[]; detectados: Record<string, number> } }>(
+      "select public.sincronizar_alertas_central($1, date '2023-09-02', array['produto_prejuizo']) as r",
+      [ORG_SB],
+    );
+
+    expect(rows[0]?.r.fontes).toEqual(["produto_prejuizo"]);
+    expect(Object.keys(rows[0]?.r.detectados ?? {})).toEqual(["produto_prejuizo"]);
+    // O episódio de Ads aberto em 02/09 segue como estava.
+    expect((await acoes("ads_campanha")).filter((a) => a.status === "novo")).toHaveLength(1);
+
+    await expect(
+      client.query("select public.sincronizar_alertas_central($1, null, array['estoque'])", [ORG_SB]),
+    ).rejects.toThrow(/fonte desconhecida/);
+    await expect(
+      client.query("select public.sincronizar_alertas_central($1, null, array[]::text[])", [ORG_SB]),
+    ).rejects.toThrow(/fonte desconhecida/);
+  });
+
   it("só o worker chama: membro autenticado e anon são recusados", async () => {
     await expect(asUser(ADMIN_SB, `select public.sincronizar_alertas_central('${ORG_SB}')`)).rejects.toThrow(
       /permission denied/i,

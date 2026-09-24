@@ -1274,6 +1274,8 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 
 `sincronizar_alertas_central` no Dev, como `postgres` (a função é só do `service_role`), numa transação desfeita, com os dados do Dev até 14/09: **1,4 s** para os três detectores e o ciclo de vida -- 3 alertas de frete e 10 produtos no prejuízo; Ads fora (sem semana consolidada no Dev). É a soma do detector de frete (~1,2 s em produção) com uma página do ranking; roda uma vez por dia e por organização, às 8h, sem ninguém esperando.
 
+**Em produção, no primeiro disparo (24/09, 15h59):** as três fontes numa chamada estouraram o `statement_timeout` de 8 s com o banco frio (**8.066 ms**); a nova tentativa da fila, 60 s depois, passou em **2.254 ms** e criou 32 alertas. Daí D-404: uma fonte por chamada -- o detector de frete, a mais pesada, faz 4,4 s frio sozinho (D-399) e cabe no teto; as três juntas, não.
+
 ### Recuperação de 90 dias de frete (D-396) e o detector com o histórico inteiro (D-399, 24/09/2026)
 
 **A recuperação, em produção (23/09):** disparada às 15:34 (ensaio na `sbmotos` às 15:31), a última conta terminou às 20:01 — **~4,5 h** para as quatro, com dois pedaços simultâneos na fila `backfill`. 83 pedaços de um dia por conta, todos `done`; 72.572 pedidos gravados com frete, **nenhum NULL** (4xx), nenhum fora do contrato, **nenhum 429** na sincronização normal durante a rodada. Um pedaço da maior conta levou ~50 s. Os 432 pedidos válidos sem frete de 25/06 a 16/09 são todos de 25/06, antes do limite do disparo (18:31): do limite em diante, a cobertura é de 100%.

@@ -435,4 +435,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-401** — O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
+- **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
