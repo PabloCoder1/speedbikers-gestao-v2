@@ -14165,3 +14165,23 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** as regras das datas (2021, 2025, 2026); o efeito no esperado e na projecao, com a conta a mao (Black Friday de fator 2 na sexta e 1,5 na segunda: esperado R$ 20.000 e projecao R$ 31.500, contra R$ 30.000 sem o calendario); a data sem a ocorrencia anterior no historico, dita e sem peso; os testes de D-395 intactos; a leitura e a frase na web. Suite inteira num Supabase isolado.
 
 **Impacto:** `supabase/migrations/20260923195955_calendario_de_datas_comerciais.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/lib/central-meta{,.test}.ts`, `apps/web/app/central/meta.tsx`, `apps/web/app/globals.css`, `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF,METRICS,ROADMAP}.md`.
+
+## D-407 - Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
+
+**Contexto:** D-165 grava de `GET /shipments/{id}/costs` so `senders[].cost`, o frete que o vendedor paga. A mesma resposta traz o resto da conta, mas D-396 a deixou de fora: a forma nao tinha sido conferida numa amostra real.
+
+**1. A FORMA REAL.** 12 envios de producao em 24/09 (Full, coleta e Flex, duas contas), lidos so com GET: `gross_amount` (o frete cheio); `receiver` com `cost` e `discounts[]` (tipos `loyal`, `ratio` e `gap`, cada um com `rate` e `promoted_amount`); `senders[]` com `cost` e `discounts[]` (tipo `mandatory`, 30% ou 50% nas amostras). Nas 12, `gross_amount` = `receiver.cost` + soma de `receiver.discounts[].promoted_amount` + `senders[].cost` + soma de `senders[].discounts[].promoted_amount`, exatamente. Pelo `save` nao fecharia: em 2 das 12 ele veio menor que o desconto (8,01 contra 9,00; 9,61 contra 9,70). No Flex o vendedor nao paga e nao tem desconto, e o frete do comprador vem inteiro bancado (`loyal`).
+
+**2. QUATRO COLUNAS EM `order_financials`, NENHUMA CHAMADA NOVA.** `shipping_list_cost`, `seller_shipping_subsidy`, `buyer_shipping_cost` e `buyer_shipping_subsidy`, gravadas junto com o frete do vendedor. `seller_shipping_cost` continua sendo o valor depois do desconto -- a margem nao muda.
+
+**3. A PARTE NOVA NUNCA REPROVA A RESPOSTA.** O contrato da resposta continua sendo o frete do vendedor (D-229); o resto passa como `unknown` e e lido campo a campo (`detalheDoFrete`): forma inesperada vira NULL naquela parte, sem apagar as outras e sem deixar o pedido sem o frete. Lista de descontos vazia e zero observado; 4xx deixa as quatro nulas, como o frete.
+
+**4. O QUE NAO FECHA E DITO, NAO CORRIGIDO.** O log da varredura e do backfill conta os pedidos com as quatro partes (`items_with_shipping_detail`) e os que nao fecham com o frete cheio (`items_shipping_detail_unbalanced`); o valor e gravado como veio.
+
+**Ordem do deploy:** a migration em producao ANTES do worker -- o worker novo grava as colunas, e sem elas a gravacao falharia e o pedido ficaria sem frete.
+
+**Fora desta fatia:** o historico -- as linhas ja capturadas ficam NULL (a captura nunca reescreve; `service_role` nao tem `update`). Recuperar 90 dias custaria ~70 mil chamadas so de `/costs` (metade de D-396): decisao do dono. E a tela: o subsidio do Mercado Livre no periodo e o frete gratis dos compradores entram na central quando houver dias de dado.
+
+**Verificacao:** o leitor com as formas reais (Full com frete gratis, comprador pagando com `save` menor, dois descontos, Flex), parte fora da forma, resposta minima, dois vendedores e conta que nao fecha; a captura gravando as quatro partes sem chamada nova e contando no log, detalhe estranho sem reprovar, 4xx; integracao (leitura pelo alcance da conta, gravacao do worker sem `update`, nenhuma negativa). Suite inteira (863) num Supabase isolado.
+
+**Impacto:** `supabase/migrations/20260923195956_frete_subsidio_e_comprador.sql`, `apps/worker/src/handlers/{shipment-costs-detail,sync-order-financials,backfill-order-financials}.ts` e testes, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`.

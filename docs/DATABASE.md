@@ -184,6 +184,10 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 **Implementado em 2026-09-24**, migration `20260923195950_medidas_do_pacote_do_envio.sql`. Uma linha por pedido: `shipping_items[].dimensions` de `GET /shipments/{id}` (`"4.0x19.0x26.0,710.0"`, cm e gramas), com `weight_g`, `volume_cm3`, `largest_side_cm`, o texto cru e `dimensions_origin` (`"bmp"`, `"fd"`…). Gravada pelo worker na MESMA leitura de `logistic_type` (D-352) -- nenhuma chamada nova --, por um gancho que nunca derruba o pedido. Só envio de um item tem medidas; com mais, só `items_in_shipment`. Sem chave estrangeira para `orders` (o envio é lido antes de o pedido ser gravado). RLS de conta na forma de conjunto (D-181); escrita só do `service_role`. Começa no deploy de D-405: não há histórico.
 
+### `order_financials` — quem paga o frete (D-407)
+
+**Acrescentado em 2026-09-24**, migration `20260923195956_frete_subsidio_e_comprador.sql`. Além do frete do vendedor e do desconto (D-165), quatro colunas da mesma resposta de `GET /shipments/{id}/costs`: `shipping_list_cost` (`gross_amount`, o frete cheio), `seller_shipping_subsidy` (o desconto do Mercado Livre no frete do vendedor), `buyer_shipping_cost` (o que o comprador pagou) e `buyer_shipping_subsidy` (o frete do comprador bancado pelo Mercado Livre). Os descontos são a soma de `promoted_amount`, e as quatro fecham com o frete cheio. NULL = não observado (linha anterior à migration, 4xx, parte fora da forma); zero é observado. A captura grava uma vez e nunca reescreve: as linhas antigas ficam NULL.
+
 ### `orders` / `order_items` — vendas
 
 **Implementado em 2026-08-21** (migration `20260821040000_create_orders.sql`), gravado por `sync.orders.window` e `backfill.orders` — `apps/worker/src/handlers/persist-order.ts`.

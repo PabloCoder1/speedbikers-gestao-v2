@@ -7,6 +7,7 @@ import type { JobOutcome } from "../job-outcome.js";
 import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
+import { DETALHE_NAO_OBSERVADO, detalheDoFrete, detalheFecha, type DetalheDoFrete } from "./shipment-costs-detail.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
 /**
@@ -35,9 +36,16 @@ import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
 const payloadSchema = z.object({ mlAccountId: z.uuid() });
 
-/** GET /shipments/{id}/costs — só o que a conciliação usa (§2.15). */
+/**
+ * GET /shipments/{id}/costs — o frete do vendedor (§2.15) decide se a resposta
+ * está no contrato. O resto de quem paga o frete (D-407) passa como `unknown`
+ * e é lido à parte em `detalheDoFrete`: forma inesperada ali vira NULL, nunca
+ * um ZodError que deixaria o pedido sem o frete que a margem usa.
+ */
 const shipmentCostsSchema = z.object({
-  senders: z.array(z.object({ cost: z.number().nonnegative() })),
+  gross_amount: z.unknown().optional(),
+  receiver: z.unknown().optional(),
+  senders: z.array(z.object({ cost: z.number().nonnegative(), discounts: z.unknown().optional() })),
 });
 
 /**
@@ -111,10 +119,10 @@ export interface OrderToSweep {
  * Retryable (429/5xx) propaga — a fila re-tenta e o progresso já gravado
  * não se repete.
  */
-async function fetchOptionalCost<T>(
+async function fetchOptionalCost<T, R>(
   request: () => Promise<T>,
-  extract: (payload: T) => number,
-): Promise<number | null> {
+  extract: (payload: T) => R,
+): Promise<R | null> {
   try {
     return extract(await request());
   } catch (error) {
@@ -131,6 +139,10 @@ export interface ResultadoDaCaptura {
   itemsSkipped: number;
   itemsWithoutShipping: number;
   itemsShapeUnknown: number;
+  /** D-407: pedidos com as quatro partes de quem paga o frete legíveis. */
+  itemsWithShippingDetail: number;
+  /** D-407: desses, os que não fecham com o frete cheio -- gravados como vieram. */
+  itemsShippingDetailUnbalanced: number;
 }
 
 /**
@@ -158,6 +170,8 @@ export async function capturarCustosDosPedidos(params: {
   let itemsSkipped = 0;
   let itemsWithoutShipping = 0;
   let itemsShapeUnknown = 0;
+  let itemsWithShippingDetail = 0;
+  let itemsShippingDetailUnbalanced = 0;
   let requestsMade = 0;
 
   for (const order of orders) {
@@ -174,13 +188,14 @@ export async function capturarCustosDosPedidos(params: {
     requestsMade += 1;
 
     let shippingCost: number | null = null;
+    let detalhe: DetalheDoFrete = DETALHE_NAO_OBSERVADO;
     let sellerDiscount: number | null;
 
     try {
       if (order.shipping_id === null) {
         itemsWithoutShipping += 1;
       } else {
-        shippingCost = await fetchOptionalCost(
+        const custos = await fetchOptionalCost(
           () =>
             deps.mercadoLivre.request({
               method: "GET",
@@ -188,8 +203,16 @@ export async function capturarCustosDosPedidos(params: {
               accessToken,
               schema: shipmentCostsSchema,
             }),
-          (payload) => payload.senders.reduce((total, sender) => total + sender.cost, 0),
+          (payload) => ({
+            custo: payload.senders.reduce((total, sender) => total + sender.cost, 0),
+            detalhe: detalheDoFrete(payload),
+          }),
         );
+
+        if (custos !== null) {
+          shippingCost = custos.custo;
+          detalhe = custos.detalhe;
+        }
       }
 
       sellerDiscount = await fetchOptionalCost(
@@ -234,6 +257,7 @@ export async function capturarCustosDosPedidos(params: {
         ml_account_id: mlAccountId,
         seller_shipping_cost: shippingCost,
         seller_discount: sellerDiscount,
+        ...detalhe,
         captured_at: (deps.now?.() ?? new Date()).toISOString(),
       },
       { onConflict: "order_id", ignoreDuplicates: true },
@@ -244,9 +268,24 @@ export async function capturarCustosDosPedidos(params: {
     }
 
     itemsProcessed += 1;
+
+    const fecha = shippingCost === null ? null : detalheFecha(detalhe, shippingCost);
+
+    if (fecha !== null) {
+      itemsWithShippingDetail += 1;
+
+      if (!fecha) itemsShippingDetailUnbalanced += 1;
+    }
   }
 
-  return { itemsProcessed, itemsSkipped, itemsWithoutShipping, itemsShapeUnknown };
+  return {
+    itemsProcessed,
+    itemsSkipped,
+    itemsWithoutShipping,
+    itemsShapeUnknown,
+    itemsWithShippingDetail,
+    itemsShippingDetailUnbalanced,
+  };
 }
 
 export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps): JobHandler {
@@ -373,7 +412,14 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       return { status: "failed", retryable: errorClass !== "not_retryable", reason };
     }
 
-    const { itemsProcessed, itemsSkipped, itemsWithoutShipping, itemsShapeUnknown } = resultado;
+    const {
+      itemsProcessed,
+      itemsSkipped,
+      itemsWithoutShipping,
+      itemsShapeUnknown,
+      itemsWithShippingDetail,
+      itemsShippingDetailUnbalanced,
+    } = resultado;
     const finishedAt = deps.now?.() ?? new Date();
 
     // `partial` quando algum pedido ficou fora do contrato: o trabalho que
@@ -410,6 +456,9 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       // declarado — nunca escondido na média.
       items_without_shipping: itemsWithoutShipping,
       items_shape_unknown: itemsShapeUnknown,
+      // D-407: a cobertura de quem paga o frete, e o que não fechou.
+      items_with_shipping_detail: itemsWithShippingDetail,
+      items_shipping_detail_unbalanced: itemsShippingDetailUnbalanced,
     });
 
     return { status: "done", processed: itemsProcessed };

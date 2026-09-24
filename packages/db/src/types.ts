@@ -2218,28 +2218,40 @@ export type Database = {
       }
       order_financials: {
         Row: {
+          buyer_shipping_cost: number | null
+          buyer_shipping_subsidy: number | null
           captured_at: string
           ml_account_id: string
           order_id: number
           organization_id: string
           seller_discount: number | null
           seller_shipping_cost: number | null
+          seller_shipping_subsidy: number | null
+          shipping_list_cost: number | null
         }
         Insert: {
+          buyer_shipping_cost?: number | null
+          buyer_shipping_subsidy?: number | null
           captured_at?: string
           ml_account_id: string
           order_id: number
           organization_id: string
           seller_discount?: number | null
           seller_shipping_cost?: number | null
+          seller_shipping_subsidy?: number | null
+          shipping_list_cost?: number | null
         }
         Update: {
+          buyer_shipping_cost?: number | null
+          buyer_shipping_subsidy?: number | null
           captured_at?: string
           ml_account_id?: string
           order_id?: number
           organization_id?: string
           seller_discount?: number | null
           seller_shipping_cost?: number | null
+          seller_shipping_subsidy?: number | null
+          shipping_list_cost?: number | null
         }
         Relationships: [
           {
