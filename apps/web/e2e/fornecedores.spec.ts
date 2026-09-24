@@ -246,9 +246,14 @@ test("excluir fornecedor: some de vez quando não tem pedido, e com pedido expli
   await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
   await expect(page.getByRole("heading", { name: nome, level: 2 })).toBeVisible();
 
+  // A página do fornecedor TAMBÉM tem "Excluir". Sem esperar a edição carregar,
+  // o clique às vezes caía na página antiga: a confirmação abria lá, a
+  // navegação terminava e "Excluir de vez" saía do DOM — falhou na CI da main
+  // três vezes em 24/09 com "element was detached from the DOM, retrying".
   await page.getByRole("link", { name: "Editar" }).click();
+  await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}\/editar$/);
   await page.getByRole("button", { name: "Excluir" }).click();
-  await page.getByRole("button", { name: "Excluir de vez" }).click();
+  await page.getByRole("group", { name: "Confirmar exclusão" }).getByRole("button", { name: "Excluir de vez" }).click();
 
   await expect(page).toHaveURL(/\/fornecedores$/);
   await expect(page.getByRole("link", { name: nome, exact: true })).toHaveCount(0);
