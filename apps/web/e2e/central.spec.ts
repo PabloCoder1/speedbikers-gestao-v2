@@ -20,6 +20,14 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
     page.getByRole("navigation", { name: "Navegação principal" }).getByRole("link", { name: "Central do negócio" }),
   ).toBeVisible();
 
+  // D-400: a central de alertas abre a página — com itens, ou com o "nada pede atenção".
+  const atencao = page.getByRole("region", { name: "O que precisa da sua atenção" });
+
+  await expect(atencao).toBeVisible();
+  await expect(
+    atencao.getByRole("listitem").first().or(atencao.getByText(/Nada pede atenção agora/)),
+  ).toBeVisible();
+
   for (const regiao of [
     "Resumo do período",
     "Meta e projeção",

@@ -1,6 +1,7 @@
 import type { Tom } from "../components/tone";
-import type { DiaAds, ResumoAds } from "./ads";
-import { participacao, type ImpostoDoPeriodo, type ResumoFaturamento } from "./faturamento";
+import type { DiaAds, ResumoAds, VisaoAds } from "./ads";
+import type { PeriodoCentral } from "./central-periodo";
+import { participacao, type Faturamento, type ImpostoDoPeriodo, type ResumoFaturamento } from "./faturamento";
 import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
 import { formatarAliquota } from "./metas-imposto";
 import { avaliarVariacao, type Escala, type Polaridade, type Variacao } from "./variacao";
@@ -191,6 +192,37 @@ function motivoDoImposto(imposto: ImpostoDoPeriodo | null): string | null {
   }
 
   return null;
+}
+
+/**
+ * A entrada dos indicadores a partir das leituras já conferidas — a mesma para
+ * os indicadores e para a central de alertas (D-400), que julga a margem pela
+ * mesma regra. Leitura que falhou chega `null` e não vira zero (D-067).
+ */
+export function entradaDaCentral(
+  atual: Faturamento,
+  anterior: Faturamento | null,
+  ads: VisaoAds | null,
+  adsAnterior: VisaoAds | null,
+  periodo: PeriodoCentral,
+): EntradaCentral {
+  return {
+    atual: atual.resumo,
+    anterior: anterior?.resumo ?? null,
+    adsAtual: ads?.resumo ?? null,
+    adsAnterior: adsAnterior?.resumo ?? null,
+    coberturaAdsAtual: coberturaDoAds(ads?.diario ?? [], periodo.atual.from, periodo.atual.to, ads?.diasPendentes ?? []),
+    coberturaAdsAnterior: coberturaDoAds(
+      adsAnterior?.diario ?? [],
+      periodo.anterior.from,
+      periodo.anterior.to,
+      adsAnterior?.diasPendentes ?? [],
+    ),
+    emAndamento: periodo.emAndamento,
+    impostoAtual: atual.imposto,
+    impostoAnterior: anterior?.imposto ?? null,
+    adsZeroLegitimo: ads !== null && ads.contas.length > 0 && ads.contas.every((c) => c.ads === "nao_habilitado"),
+  };
 }
 
 export function montarIndicadores(e: EntradaCentral): Indicador[] {

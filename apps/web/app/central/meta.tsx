@@ -225,7 +225,7 @@ export function SecaoMeta({
 
   if (meta === null) {
     return (
-      <section aria-label="Meta e projeção">
+      <section aria-label="Meta e projeção" id="meta-e-projecao">
         {cabecalho}
         <p className="sb-empty">{indisponivel ?? "A meta do mês não carregou."}</p>
       </section>
@@ -239,7 +239,7 @@ export function SecaoMeta({
   const projecao = celulasDaProjecao(meta);
 
   return (
-    <section aria-label="Meta e projeção">
+    <section aria-label="Meta e projeção" id="meta-e-projecao">
       {cabecalho}
 
       <Panel

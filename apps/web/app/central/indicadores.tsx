@@ -7,7 +7,7 @@ import type { Tom } from "../../components/tone";
 import { lerMetaDoMes, situacaoDaMeta, type MetaDoMes } from "../../lib/central-meta";
 import { lerVisaoAds, type VisaoAds } from "../../lib/ads";
 import {
-  coberturaDoAds,
+  entradaDaCentral,
   formatRoas,
   montarIndicadores,
   montarResumo,
@@ -269,18 +269,7 @@ export async function Indicadores({
   const ads: VisaoAds | null = adsResult.error === null ? lerVisaoAds(adsResult.data) : null;
   const adsAnterior: VisaoAds | null = adsAnteriorResult.error === null ? lerVisaoAds(adsAnteriorResult.data) : null;
 
-  const entrada = {
-    atual: atual.resumo,
-    anterior,
-    adsAtual: ads?.resumo ?? null,
-    adsAnterior: adsAnterior?.resumo ?? null,
-    coberturaAdsAtual: coberturaDoAds(ads?.diario ?? [], periodo.atual.from, periodo.atual.to, ads?.diasPendentes ?? []),
-    coberturaAdsAnterior: coberturaDoAds(adsAnterior?.diario ?? [], periodo.anterior.from, periodo.anterior.to, adsAnterior?.diasPendentes ?? []),
-    emAndamento: periodo.emAndamento,
-    impostoAtual: atual.imposto,
-    impostoAnterior: faturamentoAnterior?.imposto ?? null,
-    adsZeroLegitimo: ads !== null && ads.contas.length > 0 && ads.contas.every((c) => c.ads === "nao_habilitado"),
-  };
+  const entrada = entradaDaCentral(atual, faturamentoAnterior, ads, adsAnterior, periodo);
 
   const indicadores = montarIndicadores(entrada);
   const resumo = montarResumo(indicadores, entrada, periodo.preset);
@@ -297,6 +286,7 @@ export async function Indicadores({
       )}
 
       <Panel
+        id="resumo-do-periodo"
         title="Resumo do período"
         subtitle="Montado a partir dos números abaixo; cada frase só afirma o que eles sustentam."
       >

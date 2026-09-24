@@ -11,6 +11,7 @@ import { formatBusinessDate } from "../../lib/format";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { AVISO } from "../faturamento/numeros";
+import { Atencao } from "./atencao";
 import { Indicadores } from "./indicadores";
 import { SinalDeAds } from "./sinal-ads";
 import { SinalDoFrete } from "./sinal-frete";
@@ -30,8 +31,8 @@ export const dynamic = "force-dynamic";
  * do mês com a projeção de fechamento e o imposto, com o lucro após imposto e
  * Ads. A terceira (D-397), o detector de frete, entra aqui como um painel com
  * os anúncios que pedem revisão; a quarta (D-398), os sinais de Ads por
- * campanha, como outro. A central de alertas vem na seguinte
- * (`docs/ROADMAP.md`, trilha 5J).
+ * campanha, como outro. A quinta (D-400) abre a página com a central de
+ * alertas, "o que precisa da sua atenção", juntando os sinais de todas.
  *
  * **As mesmas consultas de `/faturamento`.** `get_faturamento` e
  * `get_ads_overview`, sem detalhe, para o período atual e o anterior, mais
@@ -128,6 +129,21 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     membership.organizationId === null
       ? null
       : Promise.resolve(supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId }));
+  // D-400: o faturamento do período COM detalhe só conta produtos com margem
+  // negativa para a central de alertas. Leitura separada e em paralelo: os
+  // indicadores não esperam pelo detalhe (~0,9 s contra ~0,4 s sem ele).
+  const leituraProdutos = Promise.resolve(
+    supabase.rpc("get_faturamento", {
+      p_date_from: periodo.atual.from,
+      p_date_to: periodo.atual.to,
+      ...contaFiltro,
+      p_detalhe: true,
+    }),
+  );
+  const hrefFaturamento = `/faturamento?from=${periodo.atual.from}&to=${periodo.atual.to}${
+    contaSlug === null ? "" : `&account=${encodeURIComponent(contaSlug)}`
+  }`;
+
   // Os sinais de Ads usam a semana que o Mercado Livre já consolidou, não o período da central.
   const leituraAds =
     membership.organizationId === null
@@ -230,6 +246,18 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           Período personalizado inválido — mostrando {periodo.rotulo.toLowerCase()}.
         </p>
       )}
+
+      <Suspense fallback={<CarregandoBloco rotulo="o que precisa da sua atenção" />}>
+        <Atencao
+          leituras={leituras}
+          leituraMeta={leituraMeta}
+          leituraFrete={leituraFrete}
+          leituraAds={leituraAds}
+          leituraProdutos={leituraProdutos}
+          periodo={periodo}
+          hrefFaturamento={hrefFaturamento}
+        />
+      </Suspense>
 
       <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" />}>
         <Indicadores leituras={leituras} leituraMeta={leituraMeta} periodo={periodo} podeEditar={podeEditar} />

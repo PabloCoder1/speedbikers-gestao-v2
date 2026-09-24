@@ -14046,6 +14046,24 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **Impacto:** `supabase/migrations/20260923195500_detector_frete_desconta_mudanca_geral.sql`, `apps/web/lib/detector-frete{,.test}.ts`, `apps/web/app/central/frete/page.tsx`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.
 
+## D-400 - "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
+
+**Contexto:** o pedido do dono (D-394, secoes 13 e 14) quer, ao entrar, entender "quais acoes merecem analise": uma central de alertas com contagem por nivel (criticos, atencao, otimizacao, escala) e uma lista do tipo "2 campanhas gastaram sem vender", "4 produtos com margem negativa", "7 produtos com aumento anormal de frete", "margem caiu 3,7 p.p.", "meta 6,2% abaixo do ritmo", "3 campanhas com oportunidade de escala". Com D-397 a D-399, cada um desses sinais ja existe numa leitura.
+
+**1. NENHUM DETECTOR NOVO.** Cada item e uma contagem que outra leitura ja devolve: niveis de campanha (`get_sinais_ads`), niveis de anuncio (`get_detector_frete`), `skus_margem_negativa` e `skus_margem_abaixo_10` (`get_faturamento.por_sku`), o ritmo da meta (`ritmoDaMeta`) e a margem geral pela MESMA regra de comparacao dos indicadores (a montagem da entrada virou `entradaDaCentral`, usada pelos dois). `lib/central-atencao.ts` decide so o nivel do item e a frase.
+
+**2. OS NIVEIS.** Critico: campanha critica, produto com margem negativa, forte indicio de frete. Atencao: provavel problema de frete, ROAS abaixo de 80% da meta, margem geral em queda relevante, meta mais de 5% atras do ritmo. Otimizacao: campanha em atencao, frete em atencao, produto com margem entre 0% e 10%, meta ate 5% atras. Escala: campanha no teto acima da meta. Dentro do nivel, o que tem mais itens primeiro. O cabecalho soma as quantidades ("7 alertas criticos").
+
+**3. O QUE NAO ENTRA E ONDE ESTA.** Estoque, atendimento, mediacao e a fila de acoes ja sao a "Atencao necessaria" da Visao Geral (a atencao da operacao); a central cuida do dinheiro e aponta para la. Fonte que falhou ou ainda nao existe no banco sai da lista e o rodape diz qual -- nunca "0 campanhas criticas".
+
+**4. CUSTO.** Contar produtos com margem negativa pede `get_faturamento` COM detalhe (~0,9 s no Dev em 30 dias, contra ~0,4 s sem). Leitura separada e em paralelo, por streaming: os indicadores nao esperam por ela. As outras quatro leituras sao as que a pagina ja fazia.
+
+**Fora desta fatia:** persistir os alertas em `actions` (historico, notificacao, "resolvido") -- item proprio no ROADMAP.
+
+**Verificacao:** 6 testes da lista (ordem, frases com numero e caminho, fonte ausente, contagem zero, meta ate 5%), os 27 dos indicadores sem mudanca depois da extracao, e2e do painel na central; `check`, `build`.
+
+**Impacto:** `apps/web/lib/{central-atencao,central-indicadores}.ts` e testes, `apps/web/app/central/{atencao,page,indicadores,meta}.tsx`, `apps/web/components/panel.tsx` (`id` opcional para ancora), `apps/web/app/globals.css`, `apps/web/e2e/central.spec.ts`, `docs/{ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF}.md`.
+
 ## D-401 - O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
 
 **CORRIGE D-398.** Visto em producao em 24/09 as 8h50, antes do sync das 11h: a regra de D-398 ("ultimo dia antes de hoje com venda atribuida e impressao") tomou 23/09 como consolidado. Mas 23/09 era o **retrato parcial** gravado pelo sync de 23/09 as 11h15, quando ainda era o dia corrente -- por isso ja tinha venda. Com 23/09 "consolidado", 21/09 e 22/09 (venda zero, ainda nao consolidados) entraram na semana dos sinais: 2 campanhas criticas e 29 abaixo da meta que nao existem, ROAS da semana 10,09 contra 16,84. Na central, o ROAS de um periodo ate ontem saia subestimado sem aviso, porque nenhum dia era dado como pendente.
