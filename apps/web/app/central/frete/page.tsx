@@ -318,6 +318,7 @@ function CartaoDoAlerta({ alerta: a, janela }: { alerta: AlertaDeFrete; janela: 
 
 /** A comparação mais direta que existe para o anúncio — a mesma ordem da referência do "frete a mais". */
 function referencia(a: AlertaDeFrete): string {
+  if (a.sinais.historico > 0 && a.frete_esperado !== null) return `${formatCurrency(a.frete_esperado)} esperado`;
   if (a.sinais.historico > 0 && a.frete_antes !== null) return `${formatCurrency(a.frete_antes)} antes`;
   if (a.sinais.irmaos > 0 && a.frete_irmaos !== null) return `${formatCurrency(a.frete_irmaos)} no mesmo produto`;
   if (a.sinais.pares > 0 && a.frete_pares !== null) return `${formatCurrency(a.frete_pares)} nos pares`;
@@ -338,7 +339,9 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
         <ul>
           <li>
             <strong>Histórico do anúncio</strong> — frete mediano dos últimos 14 dias contra o dos dias anteriores, na
-            mesma faixa de preço. Pontua a partir de 15% (ou 3 vezes a variação normal do próprio anúncio) e R$ 1.
+            mesma faixa de preço, corrigido pela mudança geral da faixa (a da tabela do Mercado Livre, medida pela
+            mediana dos anúncios que venderam nas duas janelas). Pontua a partir de 15% (ou 3 vezes a variação normal
+            do próprio anúncio) e R$ 1.
           </li>
           <li>
             <strong>Mesmo produto</strong> — contra os outros anúncios do mesmo SKU na mesma faixa: 15%, 40% e 80%.
@@ -375,6 +378,7 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
                   <th className="sb-num">Anúncios</th>
                   <th className="sb-num">Frete ÷ preço, mediana</th>
                   <th className="sb-num">95% ficam até</th>
+                  <th className="sb-num">Mudança geral do frete</th>
                 </tr>
               </thead>
               <tbody>
@@ -384,6 +388,11 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
                     <td className="sb-num">{formatCount(f.anuncios)}</td>
                     <td className="sb-num">{formatPercent(f.razao_mediana)}</td>
                     <td className="sb-num">{formatPercent(f.razao_p95)}</td>
+                    <td className="sb-num" title="mediana da variação dos anúncios que venderam nas duas janelas">
+                      {f.variacao_geral === null
+                        ? "—"
+                        : `${f.variacao_geral > 0 ? "+" : ""}${formatPercent(f.variacao_geral)} (${formatCount(f.anuncios_comparados)})`}
+                    </td>
                   </tr>
                 ))}
               </tbody>

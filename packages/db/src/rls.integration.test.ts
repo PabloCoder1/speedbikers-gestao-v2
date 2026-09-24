@@ -14953,6 +14953,13 @@ describe("metas e imposto — monthly_goals, tax_rates e get_meta_do_mes (D-395)
  * Pontos: H 3+2+1+1 = 7 forte; D 3+2 = 5 forte; X 3+1 = 4 e I-012 2+1 = 3
  * prováveis; R 1 atenção. Ficam de fora do H: um pedido Flex (frete 0), um de
  * duas unidades (frete 50), um sem frete observado e um cancelado.
+ *
+ * D-399: doze produtos G na faixa de R$ 120 a 200 (MLB9990004), preço 150, de
+ * frete 20 antes para 21 agora (+5%, a "tabela"), menos G11 (29, +45%) e G12
+ * (23,60, +18%). A mudança geral da faixa é a mediana das doze variações:
+ * 1,05. G11 fica 38% acima do esperado (21), 1 ponto de histórico + 1 de
+ * margem = atenção; G12 fica 12% acima e não pontua (sem o desconto, seria
+ * 18% e pontuaria).
  */
 describe("get_detector_frete (D-397)", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
@@ -15003,6 +15010,19 @@ describe("get_detector_frete (D-397)", () => {
   vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: null, quando: atual(25) });
   vendas.push({ sku: "H", anuncio: "MLB9700001", preco: 50, comissao: 5, frete: 90, quando: atual(25), status: "cancelled" });
 
+  for (let g = 1; g <= 12; g += 1) {
+    const anuncio = `MLB97002${String(g).padStart(2, "0")}`;
+    const agora = g === 11 ? 29 : g === 12 ? 23.6 : 21;
+
+    for (const dia of [3, 5, 7, 9, 11]) {
+      vendas.push({ sku: `G${String(g)}`, anuncio, preco: 150, comissao: 15, frete: 20, quando: antes(dia) });
+    }
+
+    for (const dia of [20, 21, 22]) {
+      vendas.push({ sku: `G${String(g)}`, anuncio, preco: 150, comissao: 15, frete: agora, quando: atual(dia) });
+    }
+  }
+
   for (const dia of [20, 21, 22]) {
     vendas.push({ sku: "I", anuncio: "MLB9700011", preco: 50, comissao: 5, frete: 8, quando: atual(dia) });
     vendas.push({ sku: "I", anuncio: "MLB9700012", preco: 50, comissao: 5, frete: 12, quando: atual(dia) });
@@ -15030,7 +15050,7 @@ describe("get_detector_frete (D-397)", () => {
        from unnest($2::text[], $3::numeric[]) as c(codigo, custo)
        on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
        returning id, sku_key`,
-      [ORG_SB, codigos, codigos.map((c) => CUSTO[c] ?? 20)],
+      [ORG_SB, codigos, codigos.map((c) => CUSTO[c] ?? (c.startsWith("G") ? 60 : 20))],
     );
 
     for (const row of skus.rows) skuIds.set(row.sku_key.replace("RLSTEST-FRETE-", ""), row.id);
@@ -15039,7 +15059,8 @@ describe("get_detector_frete (D-397)", () => {
       `insert into public.listings
          (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, category_id)
        select $1, $2, a, 'Frete ' || a, 'active', 50, 'BRL', 5,
-              case when a = 'MLB9700031' then 'MLB9990002' when a = 'MLB9700041' then 'MLB9990003' else 'MLB9990001' end
+              case when a = 'MLB9700031' then 'MLB9990002' when a = 'MLB9700041' then 'MLB9990003'
+                   when a like 'MLB97002%' then 'MLB9990004' else 'MLB9990001' end
        from unnest($3::text[]) as a
        on conflict on constraint listings_account_item_unique do update set category_id = excluded.category_id`,
       [ORG_SB, CONTA, ANUNCIOS],
@@ -15108,6 +15129,8 @@ describe("get_detector_frete (D-397)", () => {
     pedidos_antes: number;
     frete_atual: number;
     frete_antes: number | null;
+    frete_esperado: number | null;
+    variacao_geral_faixa: number | null;
     frete_irmaos: number | null;
     frete_pares: number | null;
     pares: number | null;
@@ -15122,6 +15145,7 @@ describe("get_detector_frete (D-397)", () => {
   interface Detector {
     janela: Record<string, string>;
     resumo: Record<string, number | null>;
+    faixas: { faixa: string; variacao_geral: number | null; anuncios_comparados: number }[];
     alertas: Alerta[];
   }
 
@@ -15146,11 +15170,18 @@ describe("get_detector_frete (D-397)", () => {
     const d = await detector(ADMIN_SB);
 
     expect(d.janela).toEqual({ inicio: "2023-03-03", corte: "2023-05-18", fim: "2023-05-31" });
-    // 20 pares + H + dois anúncios de I + X + D + R.
-    expect(d.resumo).toMatchObject({ analisados: 26, forte: 2, provavel: 2, atencao: 1, normal: 21 });
-    // H 80 − 4 × 10, D 140 − 4 × 15, X 90 − 3 × 8, I-012 36 − 3 × 8.
+    // 20 pares + H + dois anúncios de I + X + D + R + os 12 G de D-399.
+    expect(d.resumo).toMatchObject({ analisados: 38, forte: 2, provavel: 2, atencao: 2, normal: 32 });
+    // H 80 − 4 × 10, D 140 − 4 × 15, X 90 − 3 × 8, I-012 36 − 3 × 8 (G11 é atenção: fora da soma).
     expect(d.resumo.excesso_14_dias).toBe(198);
-    expect(d.alertas.map((a) => a.anuncio)).toEqual(["MLB9700001", "MLB9700031", "MLB9700021", "MLB9700012", "MLB9700041"]);
+    expect(d.alertas.map((a) => a.anuncio)).toEqual([
+      "MLB9700001",
+      "MLB9700031",
+      "MLB9700021",
+      "MLB9700012",
+      "MLB9700211",
+      "MLB9700041",
+    ]);
   });
 
   it("histórico, pares, proporção e margem somam no H — e Flex, duas unidades, sem frete e cancelado ficam de fora", async () => {
@@ -15173,6 +15204,27 @@ describe("get_detector_frete (D-397)", () => {
       mudou_em: "2023-05-20",
     });
     expect(h.sinais).toMatchObject({ historico: 3, irmaos: 0, pares: 2, proporcao: 1, margem: 1, frete_tirou_margem: true });
+  });
+
+  it("a mudança geral da faixa sai do histórico: +5% em todos não é alerta, +45% vira +38% sobre o esperado (D-399)", async () => {
+    const d = await detector(ADMIN_SB);
+    const g11 = alerta(d, "MLB9700211");
+
+    expect(g11).toMatchObject({
+      nivel: "atencao",
+      pontos: 2,
+      faixa: "120_200",
+      frete_antes: 20,
+      frete_esperado: 21,
+      variacao_geral_faixa: 0.05,
+      excesso: 24,
+    });
+    expect(g11.sinais).toMatchObject({ historico: 1, margem: 1, frete_tirou_margem: true });
+    // +18% bruto, +12% sobre o esperado: sem alerta.
+    expect(d.alertas.some((a) => a.anuncio === "MLB9700212")).toBe(false);
+    expect(d.faixas.find((f) => f.faixa === "120_200")).toMatchObject({ variacao_geral: 0.05, anuncios_comparados: 12 });
+    // Com um anúncio só com histórico na faixa, não há mudança medida: o H segue contra o frete de antes.
+    expect(alerta(d, "MLB9700001")).toMatchObject({ frete_esperado: 10, variacao_geral_faixa: null });
   });
 
   it("mesmo produto, outro anúncio: o que paga mais pontua, o que paga menos não", async () => {

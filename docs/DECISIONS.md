@@ -14026,3 +14026,22 @@ Decisoes do dono na mesma conversa: tela nova ou evolucao a criterio do agente; 
 **Verificacao:** 4 testes de integracao novos (uma campanha por nivel com a conta feita a mao, a semana que fecha no ultimo dia consolidado, `dias_pendentes` de `get_ads_overview` contra o hoje real, RLS e anon) mais os 4 de D-363; 12 do leitor e dos textos; 4 novos da central (pendentes seguram ROAS e nao o lucro; frase do resumo); 1 do leitor de `get_ads_overview`; e2e da tela. Prototipo em producao: 5 abaixo da meta, 4 em atencao, 6 de escala, 20 normais e 16 pausadas, em 9 ms.
 
 **Impacto:** `supabase/migrations/20260923195000_sinais_de_ads.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/lib/{sinais-ads,ads,central-indicadores}.ts` e testes, `apps/web/app/central/{ads/*,sinal-ads.tsx,page.tsx,indicadores.tsx,sinal-frete.tsx,frete/page.tsx}`, `apps/web/app/faturamento/campanhas-ads.tsx`, `apps/web/app/globals.css` (cartoes de sinal renomeados de `sb-frete-*` para `sb-sinal-*`, compartilhados), `apps/web/e2e/central.spec.ts`, `docs/*`.
+
+## D-399 - O historico do detector de frete desconta a mudanca geral da faixa, medida pela mediana da variacao dos anuncios
+
+**ATUALIZA D-397.** Com os 90 dias de frete recuperados por D-396 (terminou em 23/09 as 20h: 83 pedacos por conta, 72.572 pedidos com frete, nenhum NULL, nenhum fora do contrato, nenhum 429 na sincronizacao normal; do limite em diante a cobertura e de 100%), o sinal de historico passou de 4 para 27 alertas, e a leitura por semana mostrou por que:
+
+- a mediana do frete subiu **na semana de 24/08/2026, nas quatro contas ao mesmo tempo**: R$ 7,95 -> R$ 8,45 na faixa de R$ 40 a 79, R$ 13,85 -> R$ 14,45 na de R$ 79 a 120. E a tabela do Mercado Livre, nao um anuncio;
+- as mudancas de cada anuncio sinalizadas se espalham por 17 datas diferentes entre 08/08 e 21/09 -- essas sao do anuncio.
+
+A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de cada anuncio: 12 dos 27 alertas estavam entre 15% e 19% so por causa dela, e o motivo "22% acima do que pagava" misturava as duas.
+
+**1. O ESPERADO.** O historico compara o frete atual com `frete de antes x mudanca geral da faixa`. O "frete a mais" do historico tambem e contra o esperado. O motivo escrito diz as duas coisas: "38% acima do esperado ... que com a alta geral de 5,0% da faixa seriam R$ 7,35".
+
+**2. A MUDANCA GERAL E A MEDIANA DA VARIACAO DOS ANUNCIOS**, entre os que venderam nas duas janelas (5 pedidos antes, 3 agora; 10 anuncios no minimo na faixa, senao fator 1). NAO e a mediana de todos os pedidos: ela muda com a composicao -- deu +24% na faixa de R$ 200 a 400 porque passou a vender mais bau, contra +3,1% pelos anuncios. Medido: +5,2% (R$ 40 a 79), +4,6% (ate R$ 40), +4,3% (R$ 79 a 120), +2,9% (R$ 120 a 200), +3,1% (R$ 200 a 400), +1,0% (acima de R$ 400), cada uma com o intervalo interquartil em poucos pontos.
+
+**3. A TELA** mostra a mudanca geral por faixa na tabela do metodo ("+5,2% (253)"), e a referencia do cartao passa a ser o frete esperado. O leitor aceita os campos novos ausentes (banco anterior a esta migration): o motivo volta ao texto de D-397.
+
+**Verificacao:** integracao com 12 produtos numa faixa (+5% em dez, +45% num, +18% noutro): o de +45% vira +38% sobre o esperado (atencao), o de +18% sai; 16 testes do leitor e dos motivos; `check`. Em producao, como `authenticated`, com os 90 dias completos, a versao de D-397 fez 4,4 s na primeira chamada e 1,2 s nas sete seguintes, sem salto na sexta.
+
+**Impacto:** `supabase/migrations/20260923195500_detector_frete_desconta_mudanca_geral.sql`, `apps/web/lib/detector-frete{,.test}.ts`, `apps/web/app/central/frete/page.tsx`, `packages/db/src/rls.integration.test.ts`, `docs/{METRICS,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.

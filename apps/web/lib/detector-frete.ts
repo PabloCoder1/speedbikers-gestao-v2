@@ -46,6 +46,14 @@ export interface AlertaDeFrete {
   readonly pedidos_antes: number;
   readonly frete_atual: number;
   readonly frete_antes: number | null;
+  /**
+   * D-399: o frete de antes corrigido pela mudança geral da faixa — o que o
+   * anúncio pagaria hoje se tivesse acompanhado a tabela. `null` num banco sem
+   * a migration de D-399.
+   */
+  readonly frete_esperado: number | null;
+  /** D-399: a mudança geral do frete na faixa (fração: 0,05 = +5%). `null` sem medida. */
+  readonly variacao_geral_faixa: number | null;
   readonly preco_atual: number;
   readonly preco_antes: number | null;
   readonly razao: number;
@@ -85,6 +93,9 @@ export interface FaixaDoDetector {
   readonly anuncios: number;
   readonly razao_mediana: number | null;
   readonly razao_p95: number | null;
+  /** D-399: a mediana da variação dos anúncios que venderam nas duas janelas. `null` sem medida. */
+  readonly variacao_geral: number | null;
+  readonly anuncios_comparados: number | null;
 }
 
 export interface DetectorDeFrete {
@@ -117,6 +128,11 @@ function numeroOuNulo(r: Registro, chave: string): number | null {
   if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
 
   throw new ForaDoContrato(chave);
+}
+
+/** Campo que só existe depois de uma migration: ausente vale `null`, presente é conferido. */
+function numeroOpcional(r: Registro, chave: string): number | null {
+  return chave in r ? numeroOuNulo(r, chave) : null;
 }
 
 function numero(r: Registro, chave: string): number {
@@ -188,6 +204,8 @@ function lerAlerta(valor: unknown): AlertaDeFrete {
     pedidos_antes: numero(r, "pedidos_antes"),
     frete_atual: numero(r, "frete_atual"),
     frete_antes: numeroOuNulo(r, "frete_antes"),
+    frete_esperado: numeroOpcional(r, "frete_esperado"),
+    variacao_geral_faixa: numeroOpcional(r, "variacao_geral_faixa"),
     preco_atual: numero(r, "preco_atual"),
     preco_antes: numeroOuNulo(r, "preco_antes"),
     razao: numero(r, "razao"),
@@ -261,6 +279,8 @@ export function lerDetectorFrete(valor: unknown): DetectorDeFrete | null {
           anuncios: numero(x, "anuncios"),
           razao_mediana: numeroOuNulo(x, "razao_mediana"),
           razao_p95: numeroOuNulo(x, "razao_p95"),
+          variacao_geral: numeroOpcional(x, "variacao_geral"),
+          anuncios_comparados: numeroOpcional(x, "anuncios_comparados"),
         };
       }),
       alertas: r.alertas.map(lerAlerta),
@@ -331,14 +351,24 @@ export function motivosDoAlerta(a: AlertaDeFrete, janela: DetectorDeFrete["janel
   const diasAntes = diasEntre(janela.inicio, janela.corte);
 
   if (a.sinais.historico > 0 && a.frete_antes !== null && a.frete_antes > 0) {
+    const geral = a.variacao_geral_faixa;
+    const esperado = a.frete_esperado;
+    // D-399: com mudança geral medida na faixa, o motivo compara com o esperado
+    // e diz quanto foi a tabela; sem ela (ou num banco anterior), com o de antes.
+    const corrigido = geral !== null && esperado !== null && esperado > 0 && Math.abs(geral) >= 0.005;
+    const desde = a.mudou_em === null ? "" : ` A mudança aparece a partir de ${formatBusinessDate(a.mudou_em)}.`;
+
     motivos.push({
       sinal: "historico",
       pontos: a.sinais.historico,
-      texto:
-        `Frete ${acima(a.frete_atual, a.frete_antes)} acima do que este anúncio pagava: ` +
-        `${formatCurrency(a.frete_atual)} nos últimos 14 dias contra ${formatCurrency(a.frete_antes)} ` +
-        `nos ${String(diasAntes)} dias anteriores, na mesma faixa de preço` +
-        (a.mudou_em === null ? "." : `. A mudança aparece a partir de ${formatBusinessDate(a.mudou_em)}.`),
+      texto: corrigido
+        ? `Frete ${acima(a.frete_atual, esperado)} acima do esperado: ${formatCurrency(a.frete_atual)} nos últimos 14 dias ` +
+          `contra ${formatCurrency(a.frete_antes)} nos ${String(diasAntes)} dias anteriores, que com a ` +
+          `${geral > 0 ? "alta" : "queda"} geral de ${formatPercent(Math.abs(geral))} da faixa seriam ` +
+          `${formatCurrency(esperado)}.${desde}`
+        : `Frete ${acima(a.frete_atual, a.frete_antes)} acima do que este anúncio pagava: ` +
+          `${formatCurrency(a.frete_atual)} nos últimos 14 dias contra ${formatCurrency(a.frete_antes)} ` +
+          `nos ${String(diasAntes)} dias anteriores, na mesma faixa de preço.${desde}`,
     });
   }
 
