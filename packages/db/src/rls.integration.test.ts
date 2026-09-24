@@ -16275,3 +16275,138 @@ describe("shipment_packages respeita o alcance por conta (D-405)", () => {
     ).rejects.toThrow(/check constraint/i);
   });
 });
+
+/**
+ * Calendário de datas comerciais na meta do mês (D-406), com a conta à mão.
+ *
+ * Venda plana de R$ 1.000 por dia de 01/09/2021 a 20/11/2022 (perfil semanal
+ * plano: todo dia pesa 1), menos a Black Friday de 2021 (26/11): a sexta
+ * vende R$ 2.000 (fator 2) e a segunda seguinte, 29/11, R$ 1.500 (fator 1,5).
+ *
+ * Novembro de 2022, visto de 21/11 (segunda da semana da Black Friday de
+ * 25/11): 20 dias passados pesam 20; os 10 que faltam pesam 10 + 1 + 0,5 =
+ * 11,5; o mês, 31,5. Meta de R$ 31.500: esperado até ontem = 31.500 × 20 ÷
+ * 31,5 = R$ 20.000 -- exatamente o realizado. Projeção = 20.000 + 1.000 ×
+ * 11,5 = R$ 31.500 (sem o calendário seria R$ 30.000).
+ */
+describe("calendário de datas comerciais na meta do mês (D-406)", () => {
+  const CONTA_CAL = "dddd9999-0000-4000-8000-0000000000e1";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do calendário','rlstest-calendario','PENDING')
+       on conflict do nothing`,
+      [CONTA_CAL, ORG_SB],
+    );
+    await client.query(
+      `insert into public.daily_account_metrics
+         (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       select $1, $2, d::date, 1,
+              case d::date when date '2021-11-26' then 2000 when date '2021-11-29' then 1500 else 1000 end,
+              1, 1
+       from generate_series(timestamp '2021-09-01', timestamp '2022-11-20', interval '1 day') d
+       on conflict (ml_account_id, metric_date) do nothing`,
+      [ORG_SB, CONTA_CAL],
+    );
+    await client.query(
+      `insert into public.monthly_goals (organization_id, month, revenue_goal)
+       values ($1, date '2022-11-01', 31500)
+       on conflict (organization_id, month) do update set revenue_goal = excluded.revenue_goal`,
+      [ORG_SB],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.daily_account_metrics where ml_account_id = $1", [CONTA_CAL]);
+    await client.query("delete from public.monthly_goals where organization_id = $1 and month = date '2022-11-01'", [ORG_SB]);
+  });
+
+  async function meta(mes: string): Promise<Record<string, unknown>> {
+    const rows = await asUser<{ r: Record<string, unknown> }>(
+      ADMIN_SB,
+      `select public.get_meta_do_mes('${ORG_SB}', date '${mes}', date '2022-11-21') as r`,
+    );
+
+    return rows[0]?.r ?? {};
+  }
+
+  it("as datas de um ano saem das regras: Carnaval pela Páscoa, segundos domingos, a sexta da Black Friday", async () => {
+    const { rows } = await client.query<{ nome: string; ancora: string; de: number; ate: number }>(
+      "select nome, to_char(ancora, 'YYYY-MM-DD') as ancora, de, ate from public.datas_comerciais(2026) order by ancora",
+    );
+
+    expect(rows.map((r) => [r.nome, r.ancora])).toEqual([
+      ["Carnaval", "2026-02-17"],
+      ["Dia do Consumidor", "2026-03-15"],
+      ["Dia das Mães", "2026-05-10"],
+      ["Dia dos Pais", "2026-08-09"],
+      ["Black Friday", "2026-11-27"],
+      ["Natal e Ano Novo", "2026-12-25"],
+    ]);
+    // A Black Friday de 2025 e a de 2021, medidas no Dev e no fixture abaixo.
+    const bf = await client.query<{ a: string; b: string }>(
+      `select to_char((select ancora from public.datas_comerciais(2025) where nome = 'Black Friday'), 'YYYY-MM-DD') as a,
+              to_char((select ancora from public.datas_comerciais(2021) where nome = 'Black Friday'), 'YYYY-MM-DD') as b`,
+    );
+
+    expect(bf.rows[0]).toEqual({ a: "2025-11-28", b: "2021-11-26" });
+  });
+
+  it("o efeito medido no ano anterior entra no esperado e na projeção, dia a dia", async () => {
+    const m = await meta("2022-11-01");
+
+    expect(m).toMatchObject({
+      situacao: "em_curso",
+      meta: 31500,
+      realizado_ate_ontem: 20000,
+      esperado_ate_ontem: 20000,
+      diferenca_ritmo: 0,
+      projecao: { ritmo: 31500, conservador: 31500, otimista: 31500 },
+    });
+    expect(m.datas_comerciais).toEqual([
+      {
+        nome: "Black Friday",
+        data: "2022-11-25",
+        inicio: "2022-11-21",
+        fim: "2022-11-28",
+        medida_em: "2021-11-26",
+        medido: true,
+        // (6 × 1 + 2 + 1,5) ÷ 8 − 1.
+        efeito: 0.1875,
+        // (1 + 0,5) ÷ 30: o mês ganha 5%.
+        efeito_no_mes: 0.05,
+        dias: [
+          { dia: "2022-11-21", fator: 1 },
+          { dia: "2022-11-22", fator: 1 },
+          { dia: "2022-11-23", fator: 1 },
+          { dia: "2022-11-24", fator: 1 },
+          { dia: "2022-11-25", fator: 2 },
+          { dia: "2022-11-26", fator: 1 },
+          { dia: "2022-11-27", fator: 1 },
+          { dia: "2022-11-28", fator: 1.5 },
+        ],
+      },
+    ]);
+  });
+
+  it("data sem a ocorrência anterior no histórico é dita, e não pesa", async () => {
+    // Carnaval de 2022 (01/03) toca fevereiro; o de 2021 é anterior ao histórico.
+    const m = await meta("2022-02-01");
+
+    expect(m.datas_comerciais).toEqual([
+      {
+        nome: "Carnaval",
+        data: "2022-03-01",
+        inicio: "2022-02-25",
+        fim: "2022-03-02",
+        medida_em: "2021-02-16",
+        medido: false,
+        efeito: null,
+        efeito_no_mes: null,
+        dias: [],
+      },
+    ]);
+    expect(m).toMatchObject({ situacao: "encerrado", realizado: 28000 });
+  });
+});
