@@ -26,7 +26,7 @@
 
 SKU/ML;visitas;migração
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923100000` e `20260923100100`; D-396 recupera 90 dias de frete; D-397 `/central/frete`; D-398 `/central/ads` e dia de Ads não consolidado. Próxima: alertas (5J).
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). Migrations `20260923100000` e `20260923100100`; D-396 (frete 100% desde 25/06); D-397/D-399 `/central/frete`; D-398 `/central/ads`. Próxima: alertas (5J).
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.

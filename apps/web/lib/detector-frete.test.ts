@@ -126,6 +126,21 @@ describe("lerDetectorFrete", () => {
     expect(lerDetectorFrete(null)).toBeNull();
   });
 
+  it("os campos de D-399 são nulos num banco anterior e lidos quando existem", () => {
+    expect(detector().alertas[0]?.frete_esperado).toBeNull();
+    expect(detector().faixas[0]?.variacao_geral).toBeNull();
+
+    const novo = lerDetectorFrete({
+      ...RESPOSTA,
+      faixas: [{ ...RESPOSTA.faixas[0], variacao_geral: 0.0458, anuncios_comparados: 98 }],
+      alertas: [{ ...PROTETOR, frete_esperado: 15.74, variacao_geral_faixa: 0.0458 }],
+    });
+
+    expect(novo?.alertas[0]).toMatchObject({ frete_esperado: 15.74, variacao_geral_faixa: 0.0458 });
+    expect(novo?.faixas[0]).toMatchObject({ variacao_geral: 0.0458, anuncios_comparados: 98 });
+    expect(lerDetectorFrete({ ...RESPOSTA, alertas: [{ ...PROTETOR, frete_esperado: "alto" }] })).toBeNull();
+  });
+
   it("aceita o excesso nulo: sem alerta com referência, não há frete a mais para somar", () => {
     const lido = lerDetectorFrete({ ...RESPOSTA, resumo: { ...RESPOSTA.resumo, excesso_14_dias: null } });
 
@@ -167,6 +182,22 @@ describe("motivosDoAlerta", () => {
     expect(limpo(motivo?.texto ?? "")).toBe(
       "Frete 121% acima do que este anúncio pagava: R$ 24,70 nos últimos 14 dias contra R$ 11,20 nos 76 dias anteriores, " +
         "na mesma faixa de preço. A mudança aparece a partir de 12/09/2026.",
+    );
+  });
+
+  it("com mudança geral medida na faixa, compara com o esperado e diz quanto foi a tabela (D-399)", () => {
+    const a = alerta({
+      frete_atual: 10.15,
+      frete_antes: 7,
+      frete_esperado: 7.35,
+      variacao_geral_faixa: 0.05,
+      mudou_em: null,
+      sinais: { historico: 1 },
+    });
+    const [motivo] = motivosDoAlerta(a, detector().janela);
+
+    expect(limpo(motivo?.texto ?? "")).toBe(
+      "Frete 38% acima do esperado: R$ 10,15 nos últimos 14 dias contra R$ 7,00 nos 76 dias anteriores, que com a alta geral de 5,0% da faixa seriam R$ 7,35.",
     );
   });
 

@@ -459,11 +459,13 @@ Comparação entre períodos (5I): o imposto é de polaridade **neutra** (acompa
 
 | Sinal | Compara com | 1 ponto | 2 pontos | 3 pontos | Mínimo |
 |---|---|---|---|---|---|
-| Histórico | o próprio anúncio na janela de antes, mesma faixa | +15% ou 3× o desvio absoluto mediano do anúncio, o que for maior | +40% | +80% | 5 pedidos antes; +R$ 1 |
+| Histórico | o **frete esperado**: o do próprio anúncio na janela de antes, mesma faixa, × a mudança geral da faixa (D-399) | +15% ou 3× o desvio absoluto mediano do anúncio, o que for maior | +40% | +80% | 5 pedidos antes; +R$ 1 sobre o esperado |
 | Mesmo produto | outros anúncios do mesmo SKU na mesma faixa (mediana) | +15% | +40% | +80% | 3 pedidos em cada; +R$ 1 |
 | Pares | produtos da mesma categoria do Mercado Livre e faixa (um valor por produto) | +50% e z robusto ≥ 3 | +100% e z ≥ 4 | +200% e z ≥ 6 | 6 produtos; +R$ 2 |
 | Proporção | frete ÷ preço contra o p95 da faixa | acima do p95 e ≥ 25% | ≥ 1,5× o p95 e ≥ 30% | ≥ 2× o p95 e ≥ 40% | — |
 | Margem | margem dos pedidos cobertos (custo de `get_faturamento`, D-356) | vende no prejuízo com frete ≥ 10% do preço; ou o frete subiu ≥ 5 p.p. do preço e a margem caiu junto (quando conhecida) | deixou de dar resultado (margem > 0 antes, ≤ 0 agora) com o frete explicando ao menos metade da queda | — | 5 cobertos antes, 3 agora |
+
+**Mudança geral da faixa (D-399):** a mediana, entre os anúncios da faixa com 5 pedidos antes e 3 agora, de frete de agora ÷ frete de antes — com 10 anúncios no mínimo, senão 1. É a tabela do Mercado Livre (medido: +4,6% a +5,2% nas faixas até R$ 120 a partir da semana de 24/08/2026, nas quatro contas), e o histórico não a atribui ao anúncio. Não é a mediana de todos os pedidos, que muda com a composição (deu +24% na faixa de R$ 200 a 400 porque passou a vender mais baú, contra +3,1% pelos anúncios). O "frete a mais" de um alerta de histórico também é contra o esperado.
 
 z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desvio zero, qualquer valor acima da mediana conta como fora da dispersão. Os limiares dos pares são mais altos que os do mesmo produto porque a categoria mistura tamanhos — faróis contra lanternas.
 

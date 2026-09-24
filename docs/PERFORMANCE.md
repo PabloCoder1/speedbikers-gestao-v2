@@ -1265,3 +1265,9 @@ Produção (`imvjfgnaprqsfjlnsyev`), **como `postgres`**, o corpo da função co
 ### `/central/ads`: os sinais de Ads (D-398, 23/09/2026)
 
 Produção, como `postgres`, o corpo de `get_sinais_ads` como `SELECT` de leitura (semana 14–20/09, 51 campanhas): **9 ms**. As tabelas de Ads têm ~6 mil linhas (65 campanhas × 97 dias); a tela ainda chama `get_faturamento` da mesma semana, sem detalhe, para a margem média (~0,4 s em 30 dias no Dev, D-395). O detector de frete (D-397), medido no Dev como `authenticated` depois do merge: 1.257 ms na primeira chamada e 290–304 ms nas sete seguintes, sem salto na sexta (750 linhas, 3 semanas de frete).
+
+### Recuperação de 90 dias de frete (D-396) e o detector com o histórico inteiro (D-399, 24/09/2026)
+
+**A recuperação, em produção (23/09):** disparada às 15:34 (ensaio na `sbmotos` às 15:31), a última conta terminou às 20:01 — **~4,5 h** para as quatro, com dois pedaços simultâneos na fila `backfill`. 83 pedaços de um dia por conta, todos `done`; 72.572 pedidos gravados com frete, **nenhum NULL** (4xx), nenhum fora do contrato, **nenhum 429** na sincronização normal durante a rodada. Um pedaço da maior conta levou ~50 s. Os 432 pedidos válidos sem frete de 25/06 a 16/09 são todos de 25/06, antes do limite do disparo (18:31): do limite em diante, a cobertura é de 100%.
+
+**O detector em produção, como `authenticated`, com os 90 dias completos** (versão de D-397, oito execuções seguidas numa transação desfeita): **4.383 ms** na primeira, **1.190–1.231 ms** nas sete seguintes, sem salto na sexta. 745 linhas analisadas, 665 com histórico. Com 3 semanas de frete eram 0,51 s como `postgres`: o custo cresce com os pedidos da janela (três vezes mais), como o de `get_faturamento` (~0,44 s em 30 dias). A tela e o painel da central carregam por streaming; se passar a incomodar, o caminho é um resumo diário por anúncio e faixa, não mexer nos sinais.
