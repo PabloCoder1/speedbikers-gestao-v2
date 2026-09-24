@@ -299,6 +299,8 @@ describe("catálogo de métricas", () => {
       "atingimento_meta",
       "cobertura_historico_pedidos",
       "comissao_percentual",
+      // D-402 (METRICS 5N): o ranking de produtos.
+      "concentracao_resultado",
       // D-398 (METRICS 5M): os sinais de Ads.
       "conversao_ads",
       "cpa_ads",
@@ -343,9 +345,11 @@ describe("catálogo de métricas", () => {
       "unidades_vendidas",
       "uso_orcamento_ads",
       "valor_cancelado",
+      "variacao_margem_produto",
       // D-394 (METRICS 5I): a variação entre períodos da Central do negócio.
       "variacao_percentual_periodo",
       "variacao_pontos_percentuais",
+      "variacao_receita_produto",
       "visitas",
     ]);
   });
@@ -15583,5 +15587,270 @@ describe("dia de Ads consolidado pela data do sync (D-401)", () => {
     );
 
     expect(linha?.v.dias_pendentes).toEqual([datas?.anteontem, datas?.ontem]);
+  });
+});
+
+/**
+ * Ranking de produtos (D-402): quatro SKUs, dois períodos, a conta feita à mão.
+ *
+ * Período 11 a 20/03/2023 (pedidos em 15/03); o anterior padrão, 01 a 10/03
+ * (pedidos em 05/03). Um pedido de RK-A em 05/02 só entra quando o anterior
+ * pedido é 01 a 10/02 -- e aí os de 05/03 ficam no intervalo, fora. Custo pelo
+ * `purchase_cost` (a história do INSERT é de agora, depois das vendas).
+ *
+ * | SKU  | custo | atual: pedidos × (un., preço, taxa/un., frete) | resultado | margem  | anterior             |
+ * |------|-------|------------------------------------------------|-----------|---------|----------------------|
+ * | RK-A | 10    | 6 × (1, 100, 10, 10)                           | 420       | 70%     | 5 × igual: +20%, 0 pp |
+ * | RK-B | 50    | 5 × (1, 100, 10, 50)                           | −50       | −10%    | 5 × frete 10: 0%, −40 pp |
+ * | RK-C | 5     | 2 × (1, 310, 31, 20)                           | 508       | 81,94%  | —                    |
+ * | RK-D | 20    | 10 × (2, 40, 4, 12)                            | 200       | 25%     | 5 × igual: +100%, 0 pp |
+ *
+ * Resultado de todos 1.078; metade = 539: C (508) não basta, C + A (928) sim
+ * -- 2 SKUs.
+ */
+describe("get_ranking_produtos (D-402)", () => {
+  const CONTA_RK = "dddd9999-0000-4000-8000-0000000000c1";
+  const EXPANSAO = `
+    with spec(sku, dia, n, qtd, preco, taxa, frete) as (values
+      ('RLSTEST-RK-A', date '2023-03-15', 6, 1, 100, 10, 10),
+      ('RLSTEST-RK-A', date '2023-03-05', 5, 1, 100, 10, 10),
+      ('RLSTEST-RK-A', date '2023-02-05', 1, 1, 100, 10, 10),
+      ('RLSTEST-RK-B', date '2023-03-15', 5, 1, 100, 10, 50),
+      ('RLSTEST-RK-B', date '2023-03-05', 5, 1, 100, 10, 10),
+      ('RLSTEST-RK-C', date '2023-03-15', 2, 1, 310, 31, 20),
+      ('RLSTEST-RK-D', date '2023-03-15', 10, 2, 40, 4, 12),
+      ('RLSTEST-RK-D', date '2023-03-05', 5, 2, 40, 4, 12)
+    )
+    select 9904100000 + row_number() over (order by s.sku, s.dia, g) as id,
+           (s.dia + time '12:00') at time zone 'America/Sao_Paulo' as quando,
+           s.*
+    from spec s
+    cross join generate_series(1, s.n) g`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do ranking','rlstest-ranking','PENDING')
+       on conflict do nothing`,
+      [CONTA_RK, ORG_SB],
+    );
+    await client.query(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1,'RLSTEST-RK-A','PRODUTO',10), ($1,'RLSTEST-RK-B','PRODUTO',50),
+              ($1,'RLSTEST-RK-C','PRODUTO',5), ($1,'RLSTEST-RK-D','PRODUTO',20)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku`,
+      [ORG_SB],
+    );
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+       select e.id, $1, $2, null, 'paid', e.quando, e.quando, e.qtd * e.preco, 'BRL'
+       from (${EXPANSAO}) e
+       on conflict (id) do nothing`,
+      [ORG_SB, CONTA_RK],
+    );
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+          title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       select e.id, $1, $2, 0, 'MLB9410' || (ascii(right(e.sku, 1)) - 64)::text, null, e.sku, e.qtd, e.preco, 'BRL', k.id, e.taxa
+       from (${EXPANSAO}) e
+       join public.skus k on k.organization_id = $1 and k.sku_key = e.sku
+       on conflict do nothing`,
+      [ORG_SB, CONTA_RK],
+    );
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       select e.id, $1, $2, e.frete, 0
+       from (${EXPANSAO}) e
+       on conflict (order_id) do nothing`,
+      [ORG_SB, CONTA_RK],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query(
+      "delete from public.order_financials where order_id in (select id from public.orders where ml_account_id = $1)",
+      [CONTA_RK],
+    );
+    await client.query("delete from public.orders where ml_account_id = $1", [CONTA_RK]);
+  });
+
+  interface Item {
+    sku_id: string;
+    sku: string;
+    unidades: number;
+    pedidos: number;
+    receita_bruta: number;
+    taxas_ml: number;
+    pedidos_cobertos: number;
+    frete_vendedor: number | null;
+    custo_produtos: number | null;
+    resultado_venda: number | null;
+    margem_venda: number | null;
+    resultado_apos_imposto: number | null;
+    pedidos_anterior: number;
+    receita_anterior: number | null;
+    variacao_receita: number | null;
+    variacao_margem: number | null;
+    frete_sobre_receita: number | null;
+  }
+
+  interface Ranking {
+    periodo: Record<string, string>;
+    ordem: string;
+    resumo: Record<string, number | null>;
+    total: number;
+    itens: Item[];
+  }
+
+  async function ranking(ordem: string, extra = "", usuario = ADMIN_SB): Promise<Ranking> {
+    const rows = await asUser<{ r: Ranking }>(
+      usuario,
+      `select public.get_ranking_produtos(p_date_from => '2023-03-11', p_date_to => '2023-03-20',
+         p_ml_account_id => '${CONTA_RK}', p_ordem => '${ordem}'${extra}) as r`,
+    );
+    const linha = rows[0];
+
+    if (linha === undefined) throw new Error("get_ranking_produtos não devolveu linha");
+
+    return linha.r;
+  }
+
+  const skus = (r: Ranking): string[] => r.itens.map((i) => i.sku.replace("RLSTEST-RK-", ""));
+
+  it("cada ordem, com o filtro dela", async () => {
+    const esperado: Record<string, string[]> = {
+      receita: ["D", "C", "A", "B"],
+      lucro: ["C", "A", "D", "B"],
+      // C tem 2 pedidos cobertos: fica fora da maior margem, não da menor.
+      margem: ["A", "D", "B"],
+      menor_margem: ["B", "D", "A", "C"],
+      volume: ["D", "A", "B", "C"],
+      frete: ["B", "D", "A", "C"],
+      prejuizo: ["B"],
+      // C não vendeu antes: sem comparação.
+      crescimento: ["D", "A", "B"],
+      queda_margem: ["B"],
+    };
+
+    for (const [ordem, lista] of Object.entries(esperado)) {
+      const r = await ranking(ordem);
+
+      expect([ordem, skus(r)]).toEqual([ordem, lista]);
+      expect(r.total).toBe(lista.length);
+    }
+  });
+
+  it("os números de cada SKU e o resumo", async () => {
+    const r = await ranking("receita");
+
+    expect(r.periodo).toEqual({
+      inicio: "2023-03-11",
+      fim: "2023-03-20",
+      anterior_inicio: "2023-03-01",
+      anterior_fim: "2023-03-10",
+    });
+    expect(r.itens.find((i) => i.sku === "RLSTEST-RK-D")).toMatchObject({
+      unidades: 20,
+      pedidos: 10,
+      receita_bruta: 800,
+      taxas_ml: 80,
+      pedidos_cobertos: 10,
+      frete_vendedor: 120,
+      custo_produtos: 400,
+      resultado_venda: 200,
+      margem_venda: 0.25,
+      // Sem alíquota cadastrada para 2023: NULL, nunca o resultado sem imposto.
+      resultado_apos_imposto: null,
+      pedidos_anterior: 5,
+      receita_anterior: 400,
+      variacao_receita: 1,
+      variacao_margem: 0,
+      frete_sobre_receita: 0.15,
+    });
+    expect(r.itens.find((i) => i.sku === "RLSTEST-RK-B")).toMatchObject({ variacao_receita: 0, variacao_margem: -0.4 });
+    expect(r.itens.find((i) => i.sku === "RLSTEST-RK-C")).toMatchObject({
+      margem_venda: 0.8194,
+      pedidos_anterior: 0,
+      receita_anterior: null,
+      variacao_receita: null,
+    });
+    expect(r.resumo).toEqual({
+      skus_com_venda: 4,
+      receita_bruta: 2520,
+      receita_bruta_anterior: 1400,
+      skus_cobertos: 4,
+      resultado_venda: 1078,
+      skus_prejuizo: 1,
+      prejuizo: -50,
+      skus_margem_abaixo_10: 1,
+      skus_comparaveis: 3,
+      skus_crescendo: 1,
+      skus_margem_comparavel: 3,
+      skus_queda_margem: 1,
+      skus_metade_do_resultado: 2,
+    });
+  });
+
+  it("o SKU do período bate com o por_sku de get_faturamento", async () => {
+    const r = await ranking("receita");
+    const [linha] = await asUser<{ f: { por_sku: { maior_receita: Record<string, unknown>[] } } }>(
+      ADMIN_SB,
+      `select public.get_faturamento('2023-03-11', '2023-03-20', '${CONTA_RK}', true) as f`,
+    );
+    const campos = [
+      "sku_id",
+      "unidades",
+      "pedidos",
+      "receita_bruta",
+      "taxas_ml",
+      "pedidos_cobertos",
+      "receita_coberta",
+      "frete_vendedor",
+      "custo_produtos",
+      "resultado_venda",
+      "margem_venda",
+      "custo_atual",
+    ];
+    const recorte = (x: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(campos.map((c) => [c, x[c]]));
+
+    expect(r.itens.map((i) => recorte(i as unknown as Record<string, unknown>))).toEqual(
+      (linha?.f.por_sku.maior_receita ?? []).map(recorte),
+    );
+  });
+
+  it("período anterior explícito: o intervalo entre os dois fica fora", async () => {
+    const r = await ranking("receita", ", p_anterior_from => '2023-02-01', p_anterior_to => '2023-02-10'");
+    const a = r.itens.find((i) => i.sku === "RLSTEST-RK-A");
+
+    expect(r.periodo).toMatchObject({ anterior_inicio: "2023-02-01", anterior_fim: "2023-02-10" });
+    // Só o pedido de 05/02; os cinco de 05/03 estão no intervalo.
+    expect(a).toMatchObject({ pedidos_anterior: 1, receita_anterior: 100, variacao_receita: null });
+    expect(r.resumo.receita_bruta_anterior).toBe(100);
+    expect(r.resumo.receita_bruta).toBe(2520);
+  });
+
+  it("página, e o que a função recusa", async () => {
+    const r = await ranking("receita", ", p_limite => 2, p_offset => 2");
+
+    expect(skus(r)).toEqual(["A", "B"]);
+    expect(r.total).toBe(4);
+    await expect(ranking("maior_lucro")).rejects.toThrow(/ordem desconhecida/);
+    await expect(ranking("receita", ", p_limite => 101")).rejects.toThrow(/pagina invalida/);
+    await expect(ranking("receita", ", p_anterior_from => '2023-03-05', p_anterior_to => '2023-03-12'")).rejects.toThrow(
+      /periodo anterior invalido/,
+    );
+  });
+
+  it("outra organização não vê nada; anon é recusado", async () => {
+    const outra = await ranking("receita", "", DE_OUTRA_ORG);
+
+    expect(outra.itens).toEqual([]);
+    expect(outra.resumo).toMatchObject({ skus_com_venda: 0, resultado_venda: null, skus_metade_do_resultado: null });
+    await expect(asAnon("select public.get_ranking_produtos('2023-03-11', '2023-03-20')")).rejects.toThrow(
+      /permission denied/i,
+    );
   });
 });

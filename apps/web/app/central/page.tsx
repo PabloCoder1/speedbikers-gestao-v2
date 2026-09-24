@@ -57,6 +57,11 @@ function montarHref(periodo: { preset: string } | { from: string; to: string } |
   return qs === "" ? "/central" : `/central?${qs}`;
 }
 
+/** O mesmo período e a mesma conta no ranking de produtos (D-402). */
+function hrefDoRanking(periodo: { preset: string } | { from: string; to: string }, contaSlug: string | null): string {
+  return montarHref(periodo, contaSlug).replace("/central", "/central/produtos");
+}
+
 function periodoDaUrl(periodo: PeriodoCentral): { preset: string } | { from: string; to: string } {
   return periodo.preset === null ? periodo.atual : { preset: periodo.preset };
 }
@@ -201,6 +206,10 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
 
             <Link className="sb-button" href="/central/ads">
               Sinais de Ads
+            </Link>
+
+            <Link className="sb-button" href={hrefDoRanking(periodoAtual, contaSlug)}>
+              Ranking de produtos
             </Link>
 
             <Link className="sb-button" href={contaSlug === null ? "/faturamento" : `/faturamento?account=${encodeURIComponent(contaSlug)}`}>
