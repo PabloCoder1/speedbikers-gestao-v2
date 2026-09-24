@@ -19,15 +19,18 @@ export function Panel({
   title,
   subtitle,
   aside,
+  id,
   children,
 }: {
   title: string;
   subtitle?: ReactNode;
   aside?: ReactNode;
+  /** Âncora, para um link de outra parte da tela (a central de alertas aponta para o resumo). */
+  id?: string;
   children: ReactNode;
 }): ReactNode {
   return (
-    <section className="sb-panel" aria-label={title}>
+    <section className="sb-panel" aria-label={title} id={id}>
       <div className="sb-panel-head">
         <div style={{ minWidth: 0 }}>
           <h2>{title}</h2>

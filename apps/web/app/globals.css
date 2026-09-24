@@ -16788,3 +16788,72 @@ td.sb-pco-num-linha {
 .sb-rank-frases a {
   white-space: nowrap;
 }
+
+/*
+  Central de alertas (D-400): o cabeçalho conta por nível, e cada item é uma
+  linha — nível, categoria, a frase e o caminho para o recorte. No celular a
+  frase desce para a linha de baixo, inteira.
+*/
+.sb-atencao-contagem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin: 0 0 var(--sb-space-3);
+}
+
+.sb-atencao-lista {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-atencao-lista li {
+  display: grid;
+  grid-template-columns: 7.5rem 5.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sb-space-2);
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--sb-table-rule);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.sb-atencao-lista li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.sb-atencao-lista .sb-status {
+  justify-self: start;
+}
+
+.sb-atencao-categoria {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-table-head-ink);
+}
+
+.sb-atencao-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+}
+
+@media (max-width: 640px) {
+  .sb-atencao-lista li {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .sb-atencao-texto {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+#resumo-do-periodo,
+#meta-e-projecao {
+  scroll-margin-top: var(--sb-space-5);
+}

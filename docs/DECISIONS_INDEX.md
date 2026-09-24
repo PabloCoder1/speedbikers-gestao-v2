@@ -431,6 +431,7 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-397** — Detector de frete: cinco comparacoes pontuadas por anuncio e faixa de preco, com o motivo escrito a partir dos numeros
 - **D-398** — Sinais de Ads por campanha na semana consolidada, e o dia de Ads que o Mercado Livre ainda nao consolidou fora dos julgamentos
 - **D-399** — O historico do detector de frete desconta a mudanca geral da faixa, medida pela mediana da variacao dos anuncios
+- **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
 - **D-401** — O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 
