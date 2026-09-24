@@ -26,7 +26,7 @@
 
 SKU/ML;visitas;migração
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403 alertas em `actions` (1ª rodada às 8h de 25/09). Próxima: notificação dos alertas (5J), depois do #77.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions` (falta o worker de D-404). Próxima: notificação dos alertas (5J), depois do #77.
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.

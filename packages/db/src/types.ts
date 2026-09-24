@@ -4357,6 +4357,7 @@ export type Database = {
       }
       sincronizar_alertas_central: {
         Args: {
+          p_fontes?: string[]
           p_hoje?: string
           p_organization_id: string
         }
