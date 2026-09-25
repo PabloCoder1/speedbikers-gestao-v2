@@ -12,7 +12,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { formatCurrency, formatPercent } from "../../lib/format";
-import { tomDaMargem } from "../../lib/faturamento";
+import { MARGEM_MINIMA, tomDaMargem } from "../../lib/faturamento";
 import { lerNumero } from "../../lib/numero-ptbr";
 import { createClient } from "../../lib/supabase/browser";
 
@@ -56,7 +56,14 @@ const PREFERENCIAS = "sb-calculadora-preco";
  * Conta, tipo e logística ficam lembrados neste navegador: é o que se repete de
  * um produto para outro.
  */
-export function CalculadoraPreco({ contas }: { contas: readonly { id: string; label: string }[] }): ReactNode {
+export function CalculadoraPreco({
+  contas,
+  margemMinima = MARGEM_MINIMA,
+}: {
+  contas: readonly { id: string; label: string }[];
+  /** A margem mínima da organização (D-410), para o tom do resultado. */
+  margemMinima?: number;
+}): ReactNode {
   const [plataforma, setPlataforma] = useState<Plataforma>("mercado_livre");
   const [tipo, setTipo] = useState<TipoAnuncioMl>("classico");
   const [contaId, setContaId] = useState(contas[0]?.id ?? "");
@@ -192,7 +199,7 @@ export function CalculadoraPreco({ contas }: { contas: readonly { id: string; la
     [plataforma, valores.preco, valores.custo, tipo, freteMl],
   );
 
-  const tom = resultado?.ok === true ? tomDaMargem(resultado.margem) : "neutro";
+  const tom = resultado?.ok === true ? tomDaMargem(resultado.margem, margemMinima) : "neutro";
   const faixa = valores.preco === null ? null : faixaShopee(valores.preco);
 
   return (

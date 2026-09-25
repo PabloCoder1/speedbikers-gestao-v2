@@ -14225,3 +14225,23 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** os testes de D-397 e D-399 passam sem mudanca lendo da tabela nova; os gatilhos (frete capturado cria a linha; cancelar tira e voltar a pago devolve; Flex tira; segunda linha tira e apaga-la devolve; duas unidades tiram; SKU vinculado e preco regravado aparecem); a tabela inteira igual a regra aplicada as tres tabelas, no banco todo; alcance por conta e ninguem grava direto, nem o worker. Suite inteira (872) num Supabase isolado.
 
 **Impacto:** `supabase/migrations/20260923195958_vendas_com_frete_para_o_detector.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE,ROADMAP}.md`.
+
+## D-410 - A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
+
+**Contexto:** D-408 levou para `central_thresholds` os limites que so a tela usava e deixou para depois os que moram nas consultas. Dois deles sao decisao de negocio: a margem minima dos produtos (10%, em `get_faturamento`: a lista "menor margem" e a contagem de produtos abaixo dela) e o piso do ROAS contra a meta da campanha (80%, em `get_sinais_ads`: o nivel "ROAS abaixo da meta" e, por ele, o alerta gravado por `sincronizar_alertas_central`).
+
+**1. A CONTA LE O LIMITE; A TELA DIZ O QUE A CONTA USOU.** As duas funcoes leem `central_thresholds` (`margin_floor`, `ads_roas_floor`, padroes 0,10 e 0,80) e devolvem o numero que usaram: `margem_minima` na raiz de `get_faturamento` e `referencias.roas_piso` em `get_sinais_ads`. O faturamento, a lista de produtos, as barras diarias, a central e a tela de Ads pintam e escrevem com esse numero -- nunca com outro lido em separado, que poderia divergir da contagem.
+
+**2. NENHUMA ASSINATURA MUDA.** Um parametro novo em `get_faturamento` quebraria a web entre o deploy dela e a migration (PGRST202 na central e no faturamento). Sem ele, a web nova sobre o banco antigo le a ausencia das chaves como os 10% e os 80% de sempre -- exatamente o que o banco antigo calcula.
+
+**3. DE QUEM E A MARGEM EM `get_faturamento`.** A funcao nao recebe a organizacao: a margem e a da organizacao de quem chama (`organization_members` de `auth.uid()`). Sem usuario -- o `service_role` -- fica com os 10%. `get_sinais_ads` recebe a organizacao e le a dela.
+
+**4. A LEITURA DOS LIMITES NA WEB PASSA A PEDIR TODAS AS COLUNAS.** Pedir `margin_floor` pelo nome antes da migration faria a leitura falhar e descartar os limites de D-408 ja salvos; com `*`, as colunas novas ausentes valem o padrao e o resto fica.
+
+**5. FORA:** as pontuacoes do detector de frete (15%/40%/80% do historico, os cortes dos pares) sao a calibragem do detector (D-397/D-399), nao um limite de negocio; e os demais cortes de Ads (CPC +20%, conversao -15%, R$ 50 minimos, 90% do orcamento) seguem no SQL.
+
+**Carimbo:** esta migration usa `20260923195959`, o ULTIMO abaixo do `20260923200000` do PR #77 ainda aberto. A proxima precisa do #77 mergeado (ou renumerado): uma migration acima dele deixaria a do #77 fora de ordem, e o workflow sem `--include-all` a recusaria.
+
+**Verificacao:** faturamento com margem minima de 30% (o produto de 25% entra na lista e na contagem; sem linha, 10% e a resposta diz qual usou); sinais com piso de 50% (meta 10, ROAS 5 deixa de estar abaixo); o leitor da web (chave ausente = padrao; limites de D-408 preservados sem as colunas novas; os textos da central com 70% e 15%). Suite de integracao inteira (874) num Supabase isolado; web 1.026.
+
+**Impacto:** `supabase/migrations/20260923195959_margem_minima_e_piso_do_roas.sql`, `apps/web/lib/{faturamento,limites-central,sinais-ads,central-atencao}.ts` e testes, `apps/web/app/faturamento/{page,numeros,barras-diarias,calculadora-preco}.tsx`, `apps/web/app/central/{produtos,ads,limites}/page.tsx`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,METRICS,PERFORMANCE,ROADMAP}.md`.

@@ -441,10 +441,12 @@ export type Database = {
       central_thresholds: {
         Row: {
           change_neutral: number
+          ads_roas_floor: number
           change_strong: number
           created_at: string
           goal_delay_warning: number
           margin_after_ads_low: number
+          margin_floor: number
           min_orders_sample: number
           organization_id: string
           points_neutral: number
@@ -453,10 +455,12 @@ export type Database = {
         }
         Insert: {
           change_neutral?: number
+          ads_roas_floor?: number
           change_strong?: number
           created_at?: string
           goal_delay_warning?: number
           margin_after_ads_low?: number
+          margin_floor?: number
           min_orders_sample?: number
           organization_id: string
           points_neutral?: number
@@ -465,10 +469,12 @@ export type Database = {
         }
         Update: {
           change_neutral?: number
+          ads_roas_floor?: number
           change_strong?: number
           created_at?: string
           goal_delay_warning?: number
           margin_after_ads_low?: number
+          margin_floor?: number
           min_orders_sample?: number
           organization_id?: string
           points_neutral?: number

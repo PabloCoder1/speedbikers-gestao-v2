@@ -9,6 +9,7 @@ import {
   lerFaturamento,
   montarCascata,
   participacao,
+  rotuloDaMargemMinima,
   tomDaMargem,
   type ContaFaturamento,
   type ResumoFaturamento,
@@ -29,9 +30,13 @@ export const AVISO: React.CSSProperties = { margin: "0 0 var(--sb-space-3)", fon
 
 const BLOCO: React.CSSProperties = { marginTop: "var(--sb-space-3)" };
 
-function celulasDoResumo(resumo: ResumoFaturamento, anterior: ResumoFaturamento | null): KpiCellData[] {
+function celulasDoResumo(
+  resumo: ResumoFaturamento,
+  anterior: ResumoFaturamento | null,
+  margemMinima: number,
+): KpiCellData[] {
   const antes = (valor: (r: ResumoFaturamento) => string): string | null => (anterior === null ? null : valor(anterior));
-  const tom = tomDaMargem(resumo.margem_venda);
+  const tom = tomDaMargem(resumo.margem_venda, margemMinima);
   const cobertura = participacao(resumo.receita_coberta, resumo.receita_bruta);
 
   return [
@@ -121,7 +126,7 @@ export async function Numeros({
   const anterior = anteriorResult.error === null ? (lerFaturamento(anteriorResult.data)?.resumo ?? null) : null;
   const { resumo } = atual;
   const cascata = montarCascata(resumo);
-  const tomMargem = tomDaMargem(resumo.margem_venda);
+  const tomMargem = tomDaMargem(resumo.margem_venda, atual.margemMinima);
 
   return (
     <>
@@ -131,7 +136,7 @@ export async function Numeros({
         </p>
       )}
 
-      <KpiStrip ancora cells={celulasDoResumo(resumo, anterior)} />
+      <KpiStrip ancora cells={celulasDoResumo(resumo, anterior, atual.margemMinima)} />
 
       <div className="sb-lower-grid">
         <Panel
@@ -216,7 +221,12 @@ export async function Numeros({
             {atual.diario.length === 0 ? (
               <p className="sb-empty">Nenhuma venda válida neste período.</p>
             ) : (
-              <BarrasDiarias dias={atual.diario} rangeFrom={range.from} rangeTo={range.to} />
+              <BarrasDiarias
+                dias={atual.diario}
+                rangeFrom={range.from}
+                rangeTo={range.to}
+                margemMinima={atual.margemMinima}
+              />
             )}
           </Panel>
         </div>
@@ -224,7 +234,7 @@ export async function Numeros({
 
       {todasAsContas && atual.porConta !== null && atual.porConta.length > 0 && (
         <div style={BLOCO}>
-          <TabelaContas contas={atual.porConta} />
+          <TabelaContas contas={atual.porConta} margemMinima={atual.margemMinima} />
         </div>
       )}
 
@@ -237,22 +247,22 @@ export async function Numeros({
             {atual.produtos.maiorReceita.length === 0 ? (
               <p className="sb-empty">Nenhum produto vinculado vendeu neste período.</p>
             ) : (
-              <ListaProdutos linhas={atual.produtos.maiorReceita} modo="receita" />
+              <ListaProdutos linhas={atual.produtos.maiorReceita} modo="receita" margemMinima={atual.margemMinima} />
             )}
           </Panel>
 
           <Panel
-            title="Margem abaixo de 10%"
+            title={`Margem abaixo de ${rotuloDaMargemMinima(atual.margemMinima)}`}
             subtitle={
               atual.produtos.skusAbaixoDaMargem === 0
-                ? "nenhum produto coberto ficou abaixo de 10%"
-                : `${formatCount(atual.produtos.skusAbaixoDaMargem)} produtos abaixo de 10%, ${formatCount(atual.produtos.skusMargemNegativa)} com margem negativa · da pior para a melhor`
+                ? `nenhum produto coberto ficou abaixo de ${rotuloDaMargemMinima(atual.margemMinima)}`
+                : `${formatCount(atual.produtos.skusAbaixoDaMargem)} produtos abaixo de ${rotuloDaMargemMinima(atual.margemMinima)}, ${formatCount(atual.produtos.skusMargemNegativa)} com margem negativa · da pior para a melhor`
             }
           >
             {atual.produtos.menorMargem.length === 0 ? (
               <p className="sb-empty">Nenhum produto coberto com margem abaixo de 10% neste período.</p>
             ) : (
-              <ListaProdutos linhas={atual.produtos.menorMargem} modo="margem" />
+              <ListaProdutos linhas={atual.produtos.menorMargem} modo="margem" margemMinima={atual.margemMinima} />
             )}
           </Panel>
         </div>
@@ -326,12 +336,20 @@ export async function Numeros({
   );
 }
 
-function PilulaDaMargem({ margem, custoAtual }: { margem: number | null; custoAtual: boolean }): ReactNode {
+function PilulaDaMargem({
+  margem,
+  custoAtual,
+  margemMinima,
+}: {
+  margem: number | null;
+  custoAtual: boolean;
+  margemMinima: number;
+}): ReactNode {
   if (margem === null) return <span className="sb-texto-suave">sem cobertura</span>;
 
   return (
     <span title={custoAtual ? "inclui pedido com o custo atual, sem histórico anterior à venda" : undefined}>
-      <StatePill tone={{ tom: tomDaMargem(margem), label: `${formatPercent(margem)}${custoAtual ? " *" : ""}` }} />
+      <StatePill tone={{ tom: tomDaMargem(margem, margemMinima), label: `${formatPercent(margem)}${custoAtual ? " *" : ""}` }} />
     </span>
   );
 }
@@ -348,7 +366,15 @@ function PilulaDaMargem({ margem, custoAtual }: { margem: number | null; custoAt
  * A posição (1º, 2º…) é a ordem que a RPC já devolve: receita no primeiro
  * painel, da pior margem para a melhor no segundo. Nada é reordenado aqui.
  */
-function ListaProdutos({ linhas, modo }: { linhas: readonly SkuFaturamento[]; modo: "receita" | "margem" }): ReactNode {
+function ListaProdutos({
+  linhas,
+  modo,
+  margemMinima,
+}: {
+  linhas: readonly SkuFaturamento[];
+  modo: "receita" | "margem";
+  margemMinima: number;
+}): ReactNode {
   return (
     <ol className="sb-fat-lista" aria-label={modo === "receita" ? "Produtos por receita" : "Produtos pela menor margem"}>
       {linhas.map((linha, indice) => (
@@ -368,7 +394,7 @@ function ListaProdutos({ linhas, modo }: { linhas: readonly SkuFaturamento[]; mo
             <strong title={modo === "receita" ? "receita bruta" : "resultado da venda"}>
               {formatCurrency(modo === "receita" ? linha.receita_bruta : linha.resultado_venda)}
             </strong>
-            <PilulaDaMargem margem={linha.margem_venda} custoAtual={linha.custo_atual} />
+            <PilulaDaMargem margem={linha.margem_venda} custoAtual={linha.custo_atual} margemMinima={margemMinima} />
           </span>
 
           <span className="sb-fat-detalhe">
@@ -388,7 +414,13 @@ function ListaProdutos({ linhas, modo }: { linhas: readonly SkuFaturamento[]; mo
   );
 }
 
-function TabelaContas({ contas }: { contas: readonly ContaFaturamento[] }): ReactNode {
+function TabelaContas({
+  contas,
+  margemMinima,
+}: {
+  contas: readonly ContaFaturamento[];
+  margemMinima: number;
+}): ReactNode {
   return (
     <Panel
       title="Por conta"
@@ -422,7 +454,7 @@ function TabelaContas({ contas }: { contas: readonly ContaFaturamento[] }): Reac
                 <td className="sb-num">{formatCurrency(conta.margem_operacional)}</td>
                 <td className="sb-num">{formatCurrency(conta.resultado_venda)}</td>
                 <td className="sb-num">
-                  <PilulaDaMargem margem={conta.margem_venda} custoAtual={false} />
+                  <PilulaDaMargem margem={conta.margem_venda} custoAtual={false} margemMinima={margemMinima} />
                 </td>
                 <td className="sb-num" title="pedidos cobertos ÷ pedidos">
                   {formatPercent(participacao(conta.pedidos_cobertos, conta.pedidos))}

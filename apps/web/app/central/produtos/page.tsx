@@ -12,6 +12,8 @@ import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../../lib/central-periodo";
 import { tomDaMargem } from "../../../lib/faturamento";
+import { carregarLimites } from "../../../lib/limites-central";
+import { currentMembership } from "../../../lib/request-membership";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import {
   definicaoDaOrdem,
@@ -108,6 +110,8 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const estado: Estado = { periodo: periodoDaUrl(periodo), conta, ordem, pagina };
 
+  const membership = await currentMembership();
+  const leituraLimites = carregarLimites(supabase, membership.organizationId);
   const resposta = await supabase.rpc("get_ranking_produtos", {
     p_date_from: periodo.atual.from,
     p_date_to: periodo.atual.to,
@@ -240,7 +244,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       <Resumo ranking={ranking} estado={estado} />
 
-      <Lista ranking={ranking} estado={estado} />
+      <Lista ranking={ranking} estado={estado} margemMinima={(await leituraLimites).margemMinima} />
 
       <ComoCalcula ranking={ranking} />
     </>
@@ -356,7 +360,15 @@ const COLUNAS: readonly { readonly id: string; readonly rotulo: string; readonly
   { id: "margem", rotulo: "Margem", titulo: "resultado ÷ receita, pedidos cobertos e, embaixo, contra o anterior em pontos (5 cobertos nos dois)" },
 ];
 
-function Lista({ ranking, estado }: { ranking: RankingDeProdutos; estado: Estado }): ReactNode {
+function Lista({
+  ranking,
+  estado,
+  margemMinima,
+}: {
+  ranking: RankingDeProdutos;
+  estado: Estado;
+  margemMinima: number;
+}): ReactNode {
   const definicao = definicaoDaOrdem(ranking.ordem);
   const { coluna, direcao } = colunaDaOrdem(ranking.ordem);
   const paginas = Math.max(1, Math.ceil(ranking.total / POR_PAGINA));
@@ -406,7 +418,14 @@ function Lista({ ranking, estado }: { ranking: RankingDeProdutos; estado: Estado
               </thead>
               <tbody>
                 {ranking.itens.map((p, i) => (
-                  <Linha key={p.sku_id} produto={p} posicao={inicio + i + 1} coluna={coluna} comImposto={comImposto} />
+                  <Linha
+                    key={p.sku_id}
+                    produto={p}
+                    posicao={inicio + i + 1}
+                    coluna={coluna}
+                    comImposto={comImposto}
+                    margemMinima={margemMinima}
+                  />
                 ))}
               </tbody>
             </table>
@@ -457,11 +476,13 @@ function Linha({
   posicao,
   coluna,
   comImposto,
+  margemMinima,
 }: {
   produto: ProdutoDoRanking;
   posicao: number;
   coluna: string;
   comImposto: boolean;
+  margemMinima: number;
 }): ReactNode {
   const classe = (id: string): string => (id === coluna ? "sb-num sb-rank-ordenada" : "sb-num");
 
@@ -498,7 +519,7 @@ function Linha({
         {p.margem_venda === null ? (
           <span className="sb-texto-suave">sem cobertura</span>
         ) : (
-          <StatePill tone={{ tom: tomDaMargem(p.margem_venda), label: formatPercent(p.margem_venda) }} />
+          <StatePill tone={{ tom: tomDaMargem(p.margem_venda, margemMinima), label: formatPercent(p.margem_venda) }} />
         )}
         {p.variacao_margem !== null && <span className="sb-central-motivo">{formatPontos(p.variacao_margem)}</span>}
       </td>

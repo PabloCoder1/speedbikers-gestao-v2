@@ -2,7 +2,7 @@ import { businessDateRangeLength, shiftBusinessDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
 import {
-  MARGEM_MINIMA,
+  rotuloDaMargemMinima,
   barraDaMargem,
   escalaDasMargens,
   tomDaMargem,
@@ -42,10 +42,13 @@ export function BarrasDiarias({
   dias,
   rangeFrom,
   rangeTo,
+  margemMinima,
 }: {
   dias: readonly DiaFaturamento[];
   rangeFrom: string;
   rangeTo: string;
+  /** A linha de referência e o tom das barras (D-410). */
+  margemMinima: number;
 }): ReactNode {
   const total = businessDateRangeLength(rangeFrom, rangeTo);
   const porDia = new Map(dias.map((d) => [d.dia, d]));
@@ -56,7 +59,10 @@ export function BarrasDiarias({
   });
 
   const maiorReceita = Math.max(0, ...dias.map((d) => d.receita_bruta));
-  const escala = escalaDasMargens(dias.map((d) => d.margem_venda));
+  const escala = escalaDasMargens(
+    dias.map((d) => d.margem_venda),
+    margemMinima,
+  );
   const passo = Math.max(1, Math.ceil(total / 7));
   const diasComMargem = dias.filter((d) => d.margem_venda !== null).length;
 
@@ -96,11 +102,11 @@ export function BarrasDiarias({
         <div
           className="sb-barras-plot sb-barras-margem"
           role="img"
-          aria-label={`Margem sobre a venda por dia, em ${formatCount(diasComMargem)} dias com pedido coberto; a linha tracejada marca 10%`}
+          aria-label={`Margem sobre a venda por dia, em ${formatCount(diasComMargem)} dias com pedido coberto; a linha tracejada marca ${rotuloDaMargemMinima(margemMinima)}`}
         >
           <span className="sb-barras-zero" style={{ bottom: pct(escala.zero) }} />
-          <span className="sb-barras-meta" style={{ bottom: pct(escala.zero + MARGEM_MINIMA / escala.total) }}>
-            <span>10%</span>
+          <span className="sb-barras-meta" style={{ bottom: pct(escala.zero + margemMinima / escala.total) }}>
+            <span>{rotuloDaMargemMinima(margemMinima)}</span>
           </span>
 
           {colunas.map(({ dia, dado }) => {
@@ -111,7 +117,7 @@ export function BarrasDiarias({
               <div key={dia} className="sb-barras-col" title={leituraDoDia(dia, dado)}>
                 {barra !== null && (
                   <span
-                    className={`sb-barras-barra sb-barras-${tomDaMargem(margem)}`}
+                    className={`sb-barras-barra sb-barras-${tomDaMargem(margem, margemMinima)}`}
                     style={{ bottom: pct(barra.base), height: pct(barra.altura) }}
                   />
                 )}

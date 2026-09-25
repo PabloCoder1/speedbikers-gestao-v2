@@ -116,6 +116,8 @@ describe("lerSinaisAds", () => {
 
     expect(s.janela.dias_pendentes).toEqual(["2026-09-21", "2026-09-22"]);
     expect(s.referencias.conversao_mediana).toBe(0.0568);
+    // Sem `roas_piso` (banco anterior a D-410), o padrão de 80% da meta.
+    expect(s.referencias.roas_piso).toBe(0.8);
     expect(s.campanhas[0]?.nivel).toBe("atencao");
     expect(s.campanhas[0]?.sinais.cpc_sobe_conversao_cai).toBe(true);
   });

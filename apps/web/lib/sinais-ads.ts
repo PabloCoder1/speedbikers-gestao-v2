@@ -18,6 +18,14 @@
 import type { Tom } from "../components/tone";
 import { formatRoas } from "./central-indicadores";
 import { LIMITES_PADRAO } from "./limites-central";
+
+/** Sem `roas_piso` na resposta (banco anterior a D-410), o padrão de sempre. */
+function pisoDoRoas(ref: Readonly<Record<string, unknown>>): number {
+  const v = ref.roas_piso;
+  const n = typeof v === "string" ? Number(v) : v;
+
+  return typeof n === "number" && Number.isFinite(n) ? n : LIMITES_PADRAO.roasPisoDaMeta;
+}
 import { formatCurrency, formatPercent } from "./format";
 
 export type NivelAds = "critico" | "abaixo_meta" | "atencao" | "escala" | "normal" | "pausada";
@@ -97,7 +105,12 @@ export interface ResumoSinaisAds {
 
 export interface SinaisAds {
   readonly janela: JanelaAds;
-  readonly referencias: { readonly ctr_mediano: number | null; readonly conversao_mediana: number | null };
+  readonly referencias: {
+    readonly ctr_mediano: number | null;
+    readonly conversao_mediana: number | null;
+    /** A fração da meta de ROAS abaixo da qual a campanha está "abaixo da meta" (D-410). */
+    readonly roas_piso: number;
+  };
   readonly resumo: ResumoSinaisAds;
   readonly campanhas: readonly CampanhaSinal[];
 }
@@ -277,6 +290,7 @@ export function lerSinaisAds(valor: unknown): SinaisAds | null {
       referencias: {
         ctr_mediano: numeroOuNulo(ref, "ctr_mediano"),
         conversao_mediana: numeroOuNulo(ref, "conversao_mediana"),
+        roas_piso: pisoDoRoas(ref),
       },
       resumo: {
         ...(resumo as Omit<ResumoSinaisAds, "roas" | "roas_anterior">),

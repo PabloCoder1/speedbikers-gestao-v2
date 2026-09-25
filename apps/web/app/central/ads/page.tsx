@@ -9,7 +9,7 @@ import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { formatRoas, listarDatas } from "../../../lib/central-indicadores";
-import { lerFaturamento } from "../../../lib/faturamento";
+import { lerFaturamento, rotuloDaMargemMinima } from "../../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
@@ -290,7 +290,7 @@ function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
     {
       metricId: "nivel_sinal_ads",
       label: NIVEL_ADS.abaixo_meta.rotulo,
-      formula: "ROAS abaixo de 80% da meta configurada na campanha",
+      formula: `ROAS abaixo de ${rotuloDaMargemMinima(s.referencias.roas_piso)} da meta configurada na campanha`,
       value: formatCount(r.abaixo_meta),
       previous: null,
       href: hrefDoNivel("abaixo_meta"),
@@ -517,7 +517,8 @@ function ComoDecide({
             ROAS abaixo de 1 (o Ads custou mais do que vendeu).
           </li>
           <li>
-            <strong>ROAS abaixo da meta</strong> — ROAS abaixo de 80% da meta que a própria campanha tem no Mercado Ads.
+            <strong>ROAS abaixo da meta</strong> — ROAS abaixo de {rotuloDaMargemMinima(sinais.referencias.roas_piso)} da
+            meta que a própria campanha tem no Mercado Ads (<Link href="/central/limites">limite ajustável</Link>).
             Abaixo da meta por pouco é a oscilação normal de uma estratégia que mira o alvo, e não vira sinal.
           </li>
           <li>
