@@ -1,3 +1,4 @@
+import { MARGEM_MINIMA } from "./faturamento";
 import type { createClient } from "./supabase/server";
 import { numeroDigitado, type Leitura } from "./metas-imposto";
 import { LIMITES_DA_VARIACAO, type LimitesDaVariacao } from "./variacao";
@@ -17,6 +18,10 @@ export interface LimitesDaCentral {
   readonly margemAposAdsBaixa: number;
   /** Menos pedidos cobertos que isto em um dos períodos: a razão não é comparada. */
   readonly amostraMinima: number;
+  /** Margem mínima dos produtos (D-410): abaixo dela, atenção e a lista de menor margem. */
+  readonly margemMinima: number;
+  /** Fração da meta de ROAS abaixo da qual a campanha está "abaixo da meta" (D-410). */
+  readonly roasPisoDaMeta: number;
   /** `false` = os padrões (sem linha, ou a leitura falhou). */
   readonly personalizados: boolean;
 }
@@ -26,6 +31,8 @@ export const LIMITES_PADRAO: LimitesDaCentral = {
   atrasoDaMeta: 0.05,
   margemAposAdsBaixa: 0.1,
   amostraMinima: 20,
+  margemMinima: MARGEM_MINIMA,
+  roasPisoDaMeta: 0.8,
   personalizados: false,
 };
 
@@ -58,11 +65,15 @@ export function lerLimites(linha: unknown): LimitesDaCentral {
 
   const [vn, vf, pn, pf, atraso, margem, amostra] = valores as [number, number, number, number, number, number, number];
 
+  // D-410: colunas que chegaram depois. Ausentes (banco anterior à migration),
+  // valem os padrões -- sem descartar os limites que a organização já salvou.
   return {
     variacao: { valor: { neutro: vn, forte: vf }, fracao: { neutro: pn, forte: pf } },
     atrasoDaMeta: atraso,
     margemAposAdsBaixa: margem,
     amostraMinima: amostra,
+    margemMinima: numero(r, "margin_floor") ?? LIMITES_PADRAO.margemMinima,
+    roasPisoDaMeta: numero(r, "ads_roas_floor") ?? LIMITES_PADRAO.roasPisoDaMeta,
     personalizados: true,
   };
 }
@@ -79,9 +90,9 @@ export async function carregarLimites(supabase: Supabase, organizationId: string
   try {
     const { data, error } = await supabase
       .from("central_thresholds")
-      .select(
-        "change_neutral, change_strong, points_neutral, points_strong, goal_delay_warning, margin_after_ads_low, min_orders_sample",
-      )
+      // Todas as colunas: as de D-410 podem ainda não existir no banco, e pedi-las
+      // pelo nome faria a leitura falhar e descartar os limites já salvos.
+      .select("*")
       .eq("organization_id", organizationId)
       .maybeSingle();
 
@@ -98,7 +109,9 @@ export const CAMPOS_DOS_LIMITES = [
   "points_neutral",
   "points_strong",
   "goal_delay_warning",
+  "margin_floor",
   "margin_after_ads_low",
+  "ads_roas_floor",
   "min_orders_sample",
 ] as const;
 
@@ -114,7 +127,9 @@ export function valoresDosLimites(l: LimitesDaCentral): ValoresDosLimites {
     points_neutral: l.variacao.fracao.neutro,
     points_strong: l.variacao.fracao.forte,
     goal_delay_warning: l.atrasoDaMeta,
+    margin_floor: l.margemMinima,
     margin_after_ads_low: l.margemAposAdsBaixa,
+    ads_roas_floor: l.roasPisoDaMeta,
     min_orders_sample: l.amostraMinima,
   };
 }
@@ -148,6 +163,14 @@ const TEXTOS: Readonly<Record<CampoDosLimites, { readonly rotulo: string; readon
   goal_delay_warning: {
     rotulo: "Atraso da meta que ainda é atenção (%)",
     dica: "Abaixo do esperado até ontem por até isto é atenção; mais que isso, perigo.",
+  },
+  margin_floor: {
+    rotulo: "Margem mínima dos produtos (%)",
+    dica: "Produto com margem abaixo disto entra na lista de menor margem e a margem aparece em atenção.",
+  },
+  ads_roas_floor: {
+    rotulo: "ROAS abaixo da meta (% da meta da campanha)",
+    dica: "Campanha com ROAS abaixo desta parte da meta que ela tem no Mercado Ads fica em \"ROAS abaixo da meta\".",
   },
   margin_after_ads_low: {
     rotulo: "Margem depois do Ads baixa (%)",
@@ -211,7 +234,9 @@ export function lerFormularioDosLimites(
     points_neutral: ["a variação estável em pontos", 20, false],
     points_strong: ["a variação forte em pontos", 20, false],
     goal_delay_warning: ["o atraso da meta", 99.99, false],
+    margin_floor: ["a margem mínima", 99.99, false],
     margin_after_ads_low: ["a margem depois do Ads", 99.99, true],
+    ads_roas_floor: ["o piso do ROAS", 100, false],
   };
 
   for (const [nome, [rotulo, max, aceitaZero]] of Object.entries(regras) as [

@@ -70,6 +70,7 @@ const PRODUTOS: ProdutosDoFaturamento = {
   skusComVenda: 400,
   skusAbaixoDaMargem: 9,
   skusMargemNegativa: 4,
+  margemMinima: 0.1,
 };
 
 /** A margem de 25,0% para 21,3%: queda relevante, tom de perigo, como a central julga. */
@@ -128,6 +129,22 @@ function entrada(parcial: Partial<EntradaDaAtencao> = {}): EntradaDaAtencao {
     ...parcial,
   };
 }
+
+describe("os cortes em uso nos textos (D-410)", () => {
+  it("a margem mínima e o piso do ROAS vêm da resposta, não do código", () => {
+    const base = sinaisAds({ critico: 0, abaixo_meta: 3, atencao: 0, escala: 0 });
+    const itens = montarAtencao(
+      entrada({
+        sinaisAds: { ...base, referencias: { ...base.referencias, roas_piso: 0.7 } },
+        produtos: { ...PRODUTOS, margemMinima: 0.15 },
+      }),
+    );
+    const textos = itens.map((i) => i.texto.replace(/\s/g, " "));
+
+    expect(textos).toContain("3 campanhas estão com ROAS abaixo de 70% da própria meta.");
+    expect(textos.some((t) => t.includes("com margem entre 0% e 15% "))).toBe(true);
+  });
+});
 
 describe("montarAtencao", () => {
   it("do crítico para a escala; dentro do nível, o que tem mais itens primeiro", () => {

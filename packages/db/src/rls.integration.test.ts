@@ -2178,6 +2178,30 @@ describe("get_faturamento (D-356)", () => {
     expect(dados.por_sku).toMatchObject({ skus_com_venda: 3, skus_margem_abaixo_10: 1, skus_margem_negativa: 0 });
   });
 
+  it("a margem mínima é a da organização (D-410): com 30%, FAT-A (25%) entra na lista e na contagem", async () => {
+    await client.query(
+      `insert into public.central_thresholds (organization_id, margin_floor) values ($1, 0.30)
+       on conflict (organization_id) do update set margin_floor = excluded.margin_floor`,
+      [ORG_SB],
+    );
+
+    try {
+      const dados = (await faturamento(ADMIN_SB)) as Faturamento & { margem_minima?: number };
+
+      expect(dados.margem_minima).toBe(0.3);
+      expect(dados.por_sku?.menor_margem.map((linha) => linha.sku_id)).toEqual([kit, skuA]);
+      expect(dados.por_sku).toMatchObject({ skus_margem_abaixo_10: 2, skus_margem_negativa: 0 });
+    } finally {
+      await client.query("delete from public.central_thresholds where organization_id = $1", [ORG_SB]);
+    }
+
+    // Sem linha, os 10% de sempre -- e a resposta diz o corte que usou.
+    const padrao = (await faturamento(ADMIN_SB)) as Faturamento & { margem_minima?: number };
+
+    expect(padrao.margem_minima).toBe(0.1);
+    expect(padrao.por_sku).toMatchObject({ skus_margem_abaixo_10: 1 });
+  });
+
   it("p_detalhe = false devolve só o resumo", async () => {
     const dados = await faturamento(ADMIN_SB, false);
 
@@ -15491,7 +15515,7 @@ describe("get_sinais_ads e dias pendentes de Ads (D-398)", () => {
       anterior_fim: "2023-05-22",
       dias_pendentes: ["2023-05-30", "2023-05-31"],
     });
-    expect(s.referencias).toEqual({ ctr_mediano: 0.005, conversao_mediana: 0.045 });
+    expect(s.referencias).toEqual({ ctr_mediano: 0.005, conversao_mediana: 0.045, roas_piso: 0.8 });
     expect(s.resumo).toMatchObject({
       campanhas: 6,
       critico: 1,
@@ -15505,6 +15529,25 @@ describe("get_sinais_ads e dias pendentes de Ads (D-398)", () => {
       roas: 9.55,
     });
     expect(s.campanhas.map((c) => c.campaign_id)).toEqual([920001, 920002, 920003, 920004, 920006, 920005]);
+  });
+
+  it("o piso do ROAS é o da organização (D-410): meta 10 e ROAS 5 -- abaixo com 80% (8), não com 50% (5)", async () => {
+    await client.query(
+      `insert into public.central_thresholds (organization_id, ads_roas_floor) values ($1, 0.50)
+       on conflict (organization_id) do update set ads_roas_floor = excluded.ads_roas_floor`,
+      [ORG_SB],
+    );
+
+    try {
+      const s = await sinais(ADMIN_SB);
+
+      expect(s.referencias).toMatchObject({ roas_piso: 0.5 });
+      expect(campanha(s, 920002)).toMatchObject({ roas: 5, sinais: { abaixo_da_meta: false } });
+      expect(campanha(s, 920002).nivel).not.toBe("abaixo_meta");
+      expect(s.resumo).toMatchObject({ abaixo_meta: 0 });
+    } finally {
+      await client.query("delete from public.central_thresholds where organization_id = $1", [ORG_SB]);
+    }
   });
 
   it("um nível por campanha, com os sinais que o fizeram", async () => {

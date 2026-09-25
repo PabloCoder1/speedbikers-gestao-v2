@@ -23,8 +23,9 @@ import type { Tom } from "../components/tone";
 import { ritmoDaMeta, type MetaDoMes } from "./central-meta";
 import type { Indicador } from "./central-indicadores";
 import type { DetectorDeFrete } from "./detector-frete";
-import type { ProdutosDoFaturamento } from "./faturamento";
+import { rotuloDaMargemMinima, type ProdutosDoFaturamento } from "./faturamento";
 import { formatCount, formatCurrency } from "./format";
+import { LIMITES_PADRAO } from "./limites-central";
 import type { SinaisAds } from "./sinais-ads";
 
 export type Severidade = "critico" | "atencao" | "otimizacao" | "oportunidade";
@@ -147,7 +148,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
       severidade: "atencao",
       categoria: "Ads",
       quantidade: ads.abaixo_meta,
-      texto: `${plural(ads.abaixo_meta, "campanha está", "campanhas estão")} com ROAS abaixo de 80% da própria meta.`,
+      texto: `${plural(ads.abaixo_meta, "campanha está", "campanhas estão")} com ROAS abaixo de ${rotuloDaMargemMinima(e.sinaisAds?.referencias.roas_piso ?? LIMITES_PADRAO.roasPisoDaMeta)} da própria meta.`,
       href: "/central/ads?nivel=abaixo_meta",
     });
   }
@@ -210,7 +211,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
         severidade: "otimizacao",
         categoria: "Produtos",
         quantidade: apertados,
-        texto: `${plural(apertados, "produto vendeu", "produtos venderam")} com margem entre 0% e 10% ${e.periodo}.`,
+        texto: `${plural(apertados, "produto vendeu", "produtos venderam")} com margem entre 0% e ${rotuloDaMargemMinima(e.produtos.margemMinima)} ${e.periodo}.`,
         href: comOrdem(e.hrefRanking, "menor_margem"),
       });
     }

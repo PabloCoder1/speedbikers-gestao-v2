@@ -6,6 +6,7 @@ import {
   lerFaturamento,
   montarCascata,
   participacao,
+  rotuloDaMargemMinima,
   tomDaMargem,
 } from "./faturamento";
 
@@ -180,6 +181,29 @@ describe("tomDaMargem", () => {
     expect(tomDaMargem(0.0999)).toBe("atencao");
     expect(tomDaMargem(0.1)).toBe("ok");
     expect(tomDaMargem(null)).toBe("neutro");
+  });
+
+  it("com a margem mínima da organização (D-410), o corte é o dela", () => {
+    expect(tomDaMargem(0.12, 0.15)).toBe("atencao");
+    expect(tomDaMargem(0.08, 0.05)).toBe("ok");
+    expect(tomDaMargem(-0.01, 0.05)).toBe("perigo");
+  });
+});
+
+describe("a margem mínima que a RPC usou (D-410)", () => {
+  it("vem da resposta, no faturamento e nos produtos; sem a chave, o padrão de 10%", () => {
+    const com = lerFaturamento({ ...COMPLETO, margem_minima: "0.15" });
+    const sem = lerFaturamento(COMPLETO);
+
+    expect(com?.margemMinima).toBe(0.15);
+    expect(com?.produtos?.margemMinima).toBe(0.15);
+    expect(sem?.margemMinima).toBe(0.1);
+    expect(lerFaturamento({ ...COMPLETO, margem_minima: "muita" })).toBeNull();
+  });
+
+  it("o rótulo não carrega o ,0 de formatPercent", () => {
+    expect(rotuloDaMargemMinima(0.1).replace(/\s/g, " ")).toBe("10%");
+    expect(rotuloDaMargemMinima(0.125).replace(/\s/g, " ")).toBe("12,5%");
   });
 });
 

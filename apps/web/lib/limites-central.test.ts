@@ -29,7 +29,9 @@ function formulario(valores: Partial<Record<CampoDosLimites, string>>): (nome: C
     points_neutral: "0,5",
     points_strong: "2",
     goal_delay_warning: "5",
+    margin_floor: "10",
     margin_after_ads_low: "10",
+    ads_roas_floor: "80",
     min_orders_sample: "20",
   };
 
@@ -46,19 +48,27 @@ describe("lerLimites (D-408)", () => {
       points_neutral: 0.005,
       points_strong: 0.02,
       goal_delay_warning: 0.05,
+      margin_floor: 0.1,
       margin_after_ads_low: 0.1,
+      ads_roas_floor: 0.8,
       min_orders_sample: 20,
     });
   });
 
   it("a linha da organização vira os limites, com numeric em texto ou número", () => {
-    expect(lerLimites(LINHA)).toEqual({
+    expect(lerLimites({ ...LINHA, margin_floor: "0.15", ads_roas_floor: 0.9 })).toEqual({
       variacao: { valor: { neutro: 0.03, forte: 0.15 }, fracao: { neutro: 0.01, forte: 0.03 } },
       atrasoDaMeta: 0.08,
       margemAposAdsBaixa: 0.12,
       amostraMinima: 30,
+      margemMinima: 0.15,
+      roasPisoDaMeta: 0.9,
       personalizados: true,
     });
+  });
+
+  it("sem as colunas de D-410 (banco anterior), os limites salvos ficam e as novas valem o padrão", () => {
+    expect(lerLimites(LINHA)).toMatchObject({ amostraMinima: 30, margemMinima: 0.1, roasPisoDaMeta: 0.8, personalizados: true });
   });
 
   it("linha fora da forma volta aos padrões: julgar com o de antes é melhor que não julgar", () => {
@@ -89,9 +99,22 @@ describe("lerFormularioDosLimites (D-408)", () => {
         points_neutral: 0.0025,
         points_strong: 0.02,
         goal_delay_warning: 0.05,
+        margin_floor: 0.1,
         margin_after_ads_low: 0.1,
+        ads_roas_floor: 0.8,
         min_orders_sample: 20,
       },
+    });
+  });
+
+  it("margem mínima acima de 0 e abaixo de 100%; o piso do ROAS até 100% da meta", () => {
+    expect(lerFormularioDosLimites(formulario({ margin_floor: "15", ads_roas_floor: "100" })).ok).toBe(true);
+
+    const lido = lerFormularioDosLimites(formulario({ margin_floor: "0", ads_roas_floor: "120" }));
+
+    expect(lido.ok ? {} : lido.erros).toEqual({
+      margin_floor: "A margem mínima fica acima de 0% e até 99,99%.",
+      ads_roas_floor: "O piso do ROAS fica acima de 0% e até 100%.",
     });
   });
 
@@ -134,7 +157,7 @@ describe("lerFormularioDosLimites (D-408)", () => {
 
 describe("descreverLimites (D-408)", () => {
   it("cada campo com o valor atual como se digita e a dica com o padrão", () => {
-    const d = descreverLimites(lerLimites(LINHA));
+    const d = descreverLimites(lerLimites({ ...LINHA, margin_floor: 0.15 }));
 
     expect(d.map((x) => [x.campo, x.atual])).toEqual([
       ["change_neutral", "3"],
@@ -142,11 +165,14 @@ describe("descreverLimites (D-408)", () => {
       ["points_neutral", "1"],
       ["points_strong", "3"],
       ["goal_delay_warning", "8"],
+      ["margin_floor", "15"],
       ["margin_after_ads_low", "12"],
+      ["ads_roas_floor", "80"],
       ["min_orders_sample", "30"],
     ]);
     expect(d[2]?.dica).toMatch(/Padrão: 0,5\.$/);
-    expect(d[6]?.dica).toMatch(/Padrão: 20\.$/);
+    expect(d[5]?.dica).toMatch(/Padrão: 10\.$/);
+    expect(d[8]?.dica).toMatch(/Padrão: 20\.$/);
   });
 
   it("0,07 não vira 7,000000000000001", () => {

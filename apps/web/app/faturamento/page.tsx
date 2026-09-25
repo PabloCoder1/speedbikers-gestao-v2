@@ -8,7 +8,9 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate } from "../../lib/format";
+import { carregarLimites } from "../../lib/limites-central";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
+import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { CalculadoraPreco } from "./calculadora-preco";
 import { CampanhasAds } from "./campanhas-ads";
@@ -223,7 +225,18 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         depende do período, e quem abre a tela só para simular não espera a
         leitura do faturamento.
       */}
-      <CalculadoraPreco contas={accounts.map((account) => ({ id: account.id, label: account.label }))} />
+      <Suspense fallback={null}>
+        <CalculadoraComLimites contas={accounts.map((account) => ({ id: account.id, label: account.label }))} />
+      </Suspense>
     </>
   );
+}
+
+/** A calculadora com a margem mínima da organização (D-410) -- uma leitura pequena, fora dos números. */
+async function CalculadoraComLimites({ contas }: { contas: readonly { id: string; label: string }[] }): Promise<ReactNode> {
+  const supabase = await createClient();
+  const membership = await currentMembership();
+  const limites = await carregarLimites(supabase, membership.organizationId);
+
+  return <CalculadoraPreco contas={contas} margemMinima={limites.margemMinima} />;
 }

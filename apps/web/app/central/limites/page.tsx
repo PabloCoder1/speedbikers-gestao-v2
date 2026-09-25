@@ -62,7 +62,7 @@ async function LimitesContent(): Promise<ReactNode> {
       : await supabase
           .from("central_thresholds")
           .select(
-            "change_neutral, change_strong, points_neutral, points_strong, goal_delay_warning, margin_after_ads_low, min_orders_sample, updated_at",
+            "*",
           )
           .eq("organization_id", membership.organizationId)
           .maybeSingle();
@@ -147,9 +147,11 @@ async function LimitesContent(): Promise<ReactNode> {
             <span>ONDE CADA UM VALE</span>
             <p>
               As variações colorem os indicadores e o resumo da central; o atraso da meta, o ritmo do mês e o item de
-              meta em "O que precisa da sua atenção"; a margem depois do Ads, a sugestão de escala em Sinais de Ads; a
-              amostra mínima, a comparação de margem, frete e médias. Os limites dos sinais de Ads, do detector de frete e
-              a margem de 10% do faturamento moram nas consultas do banco e ficam para uma próxima etapa.
+              meta em "O que precisa da sua atenção"; a margem mínima, a lista de menor margem e o tom da margem no
+              faturamento, no ranking de produtos e na calculadora; a margem depois do Ads, a sugestão de escala em
+              Sinais de Ads; o piso do ROAS, o nível "ROAS abaixo da meta" e o alerta gravado dele; a amostra mínima, a
+              comparação de margem, frete e médias. As pontuações do detector de frete são a calibragem dele, não um
+              limite de negócio.
             </p>
           </div>
         </div>

@@ -190,7 +190,7 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 ### `central_thresholds` — os limites da central (D-408)
 
-**Implementado em 2026-09-24**, migration `20260923195957_limites_da_central.sql`. Uma linha por organização (`organization_id` é a chave): `change_neutral`/`change_strong` (variação estável e forte, relativa), `points_neutral`/`points_strong` (em pontos percentuais, como fração), `goal_delay_warning`, `margin_after_ads_low` e `min_orders_sample`, com os padrões de antes como `default`. Sem linha, a web usa os padrões; apagar a linha volta a eles. RLS: membro lê (`accessible_orgs`), ADMIN/GESTOR gravam e apagam (`has_org_role`). CHECKs: forte acima do estável, pontos até 0,2, amostra de 1 a 1.000, nada negativo.
+**Implementado em 2026-09-24**, migration `20260923195957_limites_da_central.sql`; `margin_floor` (margem mínima dos produtos, 0,10) e `ads_roas_floor` (piso do ROAS contra a meta, 0,80) acrescentados em D-410 (`20260923195959`), lidos por `get_faturamento` e `get_sinais_ads`. Uma linha por organização (`organization_id` é a chave): `change_neutral`/`change_strong` (variação estável e forte, relativa), `points_neutral`/`points_strong` (em pontos percentuais, como fração), `goal_delay_warning`, `margin_after_ads_low` e `min_orders_sample`, com os padrões de antes como `default`. Sem linha, a web usa os padrões; apagar a linha volta a eles. RLS: membro lê (`accessible_orgs`), ADMIN/GESTOR gravam e apagam (`has_org_role`). CHECKs: forte acima do estável, pontos até 0,2, amostra de 1 a 1.000, nada negativo.
 
 ### `order_financials` — quem paga o frete (D-407)
 

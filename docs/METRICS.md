@@ -495,7 +495,7 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 |---|---|
 | Pausada | campanha que não está ativa — quem pausou já agiu; fica fora dos alertas e na tabela |
 | Crítico | gasto ≥ max(R$ 50, orçamento diário) sem nenhuma unidade vendida; ou ROAS < 1 com R$ 50 ou mais |
-| ROAS abaixo da meta | ROAS < 80% do `roas_target` da própria campanha, R$ 50 ou mais. Abaixo por pouco é a oscilação de uma estratégia que mira o alvo (medido: 25 de 51 campanhas abaixo por qualquer margem numa semana boa) |
+| ROAS abaixo da meta | ROAS < 80% do `roas_target` da própria campanha (o piso é da organização desde D-410, `central_thresholds.ads_roas_floor`), R$ 50 ou mais. Abaixo por pouco é a oscilação de uma estratégia que mira o alvo (medido: 25 de 51 campanhas abaixo por qualquer margem numa semana boa) |
 | Atenção | CPC +20% com conversão −15% (100 cliques nas duas semanas); ou gasto +20% com ROAS −15% (R$ 100 antes) |
 | Oportunidade de escala | ativa, ROAS ≥ meta, uso ≥ 90% ou 4 de 7 dias no teto, 5 unidades ou mais |
 | Normal | o resto |

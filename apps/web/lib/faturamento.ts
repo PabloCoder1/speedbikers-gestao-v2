@@ -12,8 +12,20 @@
  * (`docs/ARCHITECTURE.md` §21). Este módulo lê, dá tom e posiciona.
  */
 
-/** Abaixo disto a margem pede atenção — o mesmo corte da lista "menor margem" da RPC. */
+/**
+ * O PADRÃO da margem mínima: abaixo dela a margem pede atenção, e é o corte da
+ * lista "menor margem" da RPC. A organização muda a sua em `/central/limites`
+ * (D-410), e `get_faturamento` devolve o corte que usou (`margem_minima`) --
+ * a tela pinta com o mesmo número que a conta usou.
+ */
 export const MARGEM_MINIMA = 0.1;
+
+const PORCENTO_CURTO = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 2 });
+
+/** "10%", "12,5%" -- a margem mínima nos textos, sem o ",0" de `formatPercent`. */
+export function rotuloDaMargemMinima(minima: number): string {
+  return PORCENTO_CURTO.format(minima);
+}
 
 const RESUMO_CONTAGENS = [
   "pedidos",
@@ -91,6 +103,8 @@ export interface ProdutosDoFaturamento {
   readonly skusComVenda: number;
   readonly skusAbaixoDaMargem: number;
   readonly skusMargemNegativa: number;
+  /** O corte que a RPC usou para `skusAbaixoDaMargem` e a lista de menor margem. */
+  readonly margemMinima: number;
 }
 
 /**
@@ -130,6 +144,8 @@ export interface Faturamento {
   readonly diario: readonly DiaFaturamento[] | null;
   readonly porConta: readonly ContaFaturamento[] | null;
   readonly produtos: ProdutosDoFaturamento | null;
+  /** A margem mínima que a RPC usou (D-410); sem a chave (banco anterior), o padrão. */
+  readonly margemMinima: number;
 }
 
 class ForaDoContrato extends Error {}
@@ -226,8 +242,20 @@ export function lerFaturamento(valor: unknown): Faturamento | null {
     const raiz = registro(valor);
     const produtos = raiz.por_sku === null ? null : registro(raiz.por_sku);
     const resumo = registro(raiz.resumo);
+    const minima = raiz.margem_minima;
+    const margemMinima =
+      minima === undefined
+        ? MARGEM_MINIMA
+        : typeof minima === "number"
+          ? minima
+          : typeof minima === "string"
+            ? Number(minima)
+            : Number.NaN;
+
+    if (!Number.isFinite(margemMinima)) throw new ForaDoContrato("margem_minima");
 
     return {
+      margemMinima,
       resumo: campos(resumo, RESUMO_CONTAGENS, RESUMO_ANULAVEIS),
       imposto: "pedidos_sem_aliquota" in resumo ? campos(resumo, ["pedidos_sem_aliquota"], IMPOSTO_ANULAVEIS) : null,
       diario:
@@ -251,6 +279,7 @@ export function lerFaturamento(valor: unknown): Faturamento | null {
               skusComVenda: contagem(produtos, "skus_com_venda"),
               skusAbaixoDaMargem: contagem(produtos, "skus_margem_abaixo_10"),
               skusMargemNegativa: contagem(produtos, "skus_margem_negativa"),
+              margemMinima,
             },
     };
   } catch (erro) {
@@ -263,10 +292,10 @@ export function lerFaturamento(valor: unknown): Faturamento | null {
 export type TomDaMargem = "neutro" | "ok" | "atencao" | "perigo";
 
 /** Sem margem é neutro, nunca "ok": a ausência de cobertura não é uma margem boa. */
-export function tomDaMargem(margem: number | null): TomDaMargem {
+export function tomDaMargem(margem: number | null, minima: number = MARGEM_MINIMA): TomDaMargem {
   if (margem === null) return "neutro";
   if (margem < 0) return "perigo";
-  if (margem < MARGEM_MINIMA) return "atencao";
+  if (margem < minima) return "atencao";
 
   return "ok";
 }
@@ -402,9 +431,9 @@ function limitarMargem(margem: number): number {
  * negativa medem a mesma coisa. O teto nunca fica abaixo de 15%, para a linha de
  * referência de 10% caber no gráfico mesmo num período de margem baixa.
  */
-export function escalaDasMargens(margens: readonly (number | null)[]): EscalaDaMargem {
+export function escalaDasMargens(margens: readonly (number | null)[], minima: number = MARGEM_MINIMA): EscalaDaMargem {
   const valores = margens.filter((m): m is number => m !== null).map(limitarMargem);
-  const positivo = Math.max(MARGEM_MINIMA * 1.5, ...valores);
+  const positivo = Math.max(minima * 1.5, ...valores);
   const negativo = Math.max(0, ...valores.map((m) => -m));
   const total = positivo + negativo;
 

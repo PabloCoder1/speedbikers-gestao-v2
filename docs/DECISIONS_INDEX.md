@@ -441,4 +441,5 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
 - **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
 - **D-409** — O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
+- **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
 
