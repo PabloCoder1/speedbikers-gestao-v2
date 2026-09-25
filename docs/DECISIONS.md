@@ -14130,6 +14130,8 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **Impacto:** `supabase/migrations/20260923195945_alertas_da_central_por_fonte.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE}.md`.
 
+**Prova em producao (rodada das 8h de 25/09, `worker-00026-ss5`):** `ads_campanha` (8 atualizadas) e `produto_prejuizo` (15) fecharam de primeira; `frete_anomalo` passou do `statement_timeout` a frio (9,7 s), e a repeticao do Cloud Tasks um minuto depois fechou o ciclo em 2,4 s (10 detectados, 1 criado, 9 atualizados). Cada fonte cabe sozinha; a do frete fica perto do limite na primeira chamada do dia.
+
 ## D-405 - As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 
 **Contexto:** o detector de frete (D-397) aponta o anuncio cujo frete destoa, mas nao diz QUE medida esta errada: peso e dimensoes estao cadastrados em 22 de 973 SKUs vendidos. O ROADMAP pedia as medidas declaradas em `GET /items/{id}` (`shipping.dimensions`).
@@ -14143,6 +14145,8 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **4. O ANUNCIO, PRIMEIRO COMO SONDA.** O multiget de anuncios passa a pedir `shipping` (pequeno) e o log `listings_catalog_probe` conta quantos anuncios trazem `shipping.dimensions` legivel -- sem gravar ainda, a licao de D-109: medir antes de construir em cima. `attributes` (onde moram os `SELLER_PACKAGE_*`) fica de fora: e o bloco inteiro de dezenas de atributos por item, em ~17 mil anuncios a cada 6 h.
 
 **Fora desta fatia:** o detector usar as medidas (pares de tamanho parecido; declarado contra cobrado; o motivo "medida suspeita"), que depende de ver a cobertura real; e o historico, que exigiria reler dezenas de milhares de envios -- as medidas comecam a partir do deploy.
+
+**Cobertura medida em producao (25/09, 17 h depois do deploy):** 511 pacotes, TODOS com peso e medidas, nenhum texto ilegivel e nenhum envio com mais de um item; 290 anuncios distintos; origem `fd` (Full) 376 e `bmp` 130. A sonda do anuncio deu ZERO em tres rodadas: nenhum dos 4.365 anuncios das quatro contas traz `shipping.dimensions` no multiget. A medida do envio basta para comparar pares de tamanho parecido; o "declarado contra cobrado" fica sem fonte -- so os atributos `SELLER_PACKAGE_*`, o bloco inteiro de atributos a cada 6 h, que esta decisao evitou.
 
 **Verificacao:** as 4 medidas reais lidas em teste; forma invalida, zero e mais de um item; o gancho chamado e a falha dele engolida sem mudar a logistica; `shipping_items` estranho nao reprova o envio; a varredura grava o pacote sem movimento e conta no resumo; a sonda do anuncio; integracao da tabela (alcance por conta, outra organizacao, escrita so do worker, positivos). Suite inteira (857) num Supabase isolado.
 
