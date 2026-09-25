@@ -14190,6 +14190,8 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **Impacto:** `supabase/migrations/20260923195956_frete_subsidio_e_comprador.sql`, `apps/worker/src/handlers/{shipment-costs-detail,sync-order-financials,backfill-order-financials}.ts` e testes, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`.
 
+**Em producao (captura das 12:30 de 25/09, `worker-00027-6m7`):** 807 pedidos nas quatro contas, TODOS com as quatro partes, nenhuma resposta fora da forma. Em 38 (4,7%) o frete cheio nao fecha: 36 com as partes ACIMA do cheio (mediana R$ 2; ex.: comprador 5,99 + 15,40 bancados + vendedor 8,25 + 3,54 = 33,18 contra 21,78 -- descontos do comprador que se sobrepoem) e 2 sem o desconto do comprador (o mesmo envio de R$ 78,90 da amostra, sem o `ratio` de 24,80). Quem mostrar "quem paga o frete" soma as partes que interessam, sem supor que fecham com o cheio.
+
 ## D-408 - Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
 
 **Contexto:** D-148 diz que limiar e decisao do dono, nao constante. A central (D-394 a D-400) julgava com cortes escritos no codigo como "provisorios": a variacao estavel e forte (2% e 10%; 0,5 e 2 p.p.), o atraso da meta que ainda e atencao (5%), a amostra minima de pedidos para comparar razoes (20) e a margem depois do Ads abaixo da qual escalar nao e recomendado (10%). O ROADMAP (5J) pedia os limites nas configuracoes.
@@ -14245,3 +14247,5 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** faturamento com margem minima de 30% (o produto de 25% entra na lista e na contagem; sem linha, 10% e a resposta diz qual usou); sinais com piso de 50% (meta 10, ROAS 5 deixa de estar abaixo); o leitor da web (chave ausente = padrao; limites de D-408 preservados sem as colunas novas; os textos da central com 70% e 15%). Suite de integracao inteira (874) num Supabase isolado; web 1.026.
 
 **Impacto:** `supabase/migrations/20260923195959_margem_minima_e_piso_do_roas.sql`, `apps/web/lib/{faturamento,limites-central,sinais-ads,central-atencao}.ts` e testes, `apps/web/app/faturamento/{page,numeros,barras-diarias,calculadora-preco}.tsx`, `apps/web/app/central/{produtos,ads,limites}/page.tsx`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,METRICS,PERFORMANCE,ROADMAP}.md`.
+
+**Em producao (25/09, `20260923195959`):** sem linha da organizacao, `margem_minima` 0,10 e `roas_piso` 0,80 -- os numeros de antes. Em 30 dias: 1.194 SKUs vendidos, 51 abaixo da margem minima, 27 negativos; 7 campanhas abaixo da meta.
