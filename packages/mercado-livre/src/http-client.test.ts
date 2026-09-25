@@ -17,6 +17,52 @@ const NOOP_SLEEP = async (): Promise<void> => {
   /* sem atraso real em teste */
 };
 
+describe("createMercadoLivreClient - onFailure (incidente de 25/09)", () => {
+  it("entrega o corpo da resposta de erro final, uma vez, depois das novas tentativas", async () => {
+    const falhas: unknown[] = [];
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse(403, { message: "forbidden", error: "forbidden", status: 403, cause: [] })),
+    );
+    const client = createMercadoLivreClient({ fetchImpl, sleep: NOOP_SLEEP, onFailure: (f) => falhas.push(f) });
+
+    await expect(client.request({ method: "GET", path: "/orders/1", accessToken: "t", schema: orderSchema })).rejects.toThrow(
+      "Mercado Livre respondeu 403 para GET /orders/1.",
+    );
+    expect(falhas).toEqual([
+      {
+        status: 403,
+        method: "GET",
+        path: "/orders/1",
+        errorClass: "not_retryable",
+        body: { message: "forbidden", error: "forbidden", status: 403, cause: [] },
+      },
+    ]);
+  });
+
+  it("não é chamado quando a resposta é boa, e se ele lançar a chamada falha pelo motivo de sempre", async () => {
+    const onFailure = vi.fn(() => {
+      throw new Error("log quebrado");
+    });
+    const ok = createMercadoLivreClient({
+      fetchImpl: () => Promise.resolve(jsonResponse(200, { id: 1, status: "paid" })),
+      onFailure,
+    });
+
+    await ok.request({ method: "GET", path: "/orders/1", schema: orderSchema });
+    expect(onFailure).not.toHaveBeenCalled();
+
+    const falha = createMercadoLivreClient({
+      fetchImpl: () => Promise.resolve(jsonResponse(404, { message: "not found" })),
+      onFailure,
+    });
+
+    await expect(falha.request({ method: "GET", path: "/orders/2", schema: orderSchema })).rejects.toBeInstanceOf(
+      MercadoLivreApiError,
+    );
+    expect(onFailure).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("createMercadoLivreClient - request", () => {
   it("faz GET autenticado, com querystring e schema validando a resposta", async () => {
     const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {

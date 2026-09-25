@@ -59,7 +59,21 @@ const oauth = {
   redirectUri: "",
 };
 const encryptionKey = loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY);
-const mercadoLivre = createMercadoLivreClient();
+// Incidente de 25/09 (D-362): 403 em toda chamada de uma revisão nova, e o
+// corpo -- que diria de onde vinha a recusa -- não ficava em lugar nenhum.
+// O corpo vai resumido: a resposta de erro do Mercado Livre é pequena, mas
+// a de validação de um POST pode não ser.
+const mercadoLivre = createMercadoLivreClient({
+  onFailure: (falha) => {
+    logger.warn("ml_http_failure", {
+      status: falha.status,
+      method: falha.method,
+      path: falha.path,
+      error_class: falha.errorClass,
+      body: falha.body === undefined ? null : JSON.stringify(falha.body).slice(0, 600),
+    });
+  },
+});
 
 // `DOCUMENTS_BUCKET` é opcional (env.ts) até o bucket real existir no GCP —
 // o handler de parse da NF-e só entra no registro quando ela está presente,

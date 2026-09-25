@@ -25,6 +25,7 @@ export type {
   HttpMethod,
   MercadoLivreClient,
   MercadoLivreClientConfig,
+  MercadoLivreFailure,
   RequestOptions,
 } from "./http-client.js";
 
