@@ -16816,3 +16816,106 @@ describe("shipping_sales: as vendas do detector de frete, mantidas por gatilhos 
     }
   });
 });
+
+/**
+ * mark_notifications_read (D-393): marcar como lidas, em lote, só as não
+ * lidas do PRÓPRIO usuário dentro de um recorte (severidade, família de evento,
+ * conta). `security invoker`: a RLS de `notification_recipients` e de
+ * `domain_events` continua valendo. Os eventos geram os destinatários pelo
+ * gatilho de fan-out, como em produção; `domain_events` é append-only, então a
+ * suíte usa eventos próprios e não limpa (o mesmo raciocínio da suíte acima).
+ */
+describe("mark_notifications_read marca em lote só o recorte do próprio usuário (D-393)", () => {
+  const CONTA_1 = "eeee3333-0000-4000-8000-00000000e393"; // ANALISTA_SB tem permissão.
+  const CONTA_2 = "eeee4444-0000-4000-8000-00000000e393"; // ANALISTA_SB NÃO tem.
+  const eventos: Record<string, string> = {};
+
+  async function evento(chave: string, conta: string, tipo: string, severidade: string): Promise<void> {
+    const r = await client.query<{ id: string }>(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values ($1, $2, now(), $3, 'listing', $4, $5, 'sync', $6)
+       returning id`,
+      [ORG_SB, conta, tipo, `MLB-lote-${chave}`, severidade, `rlstest-lote:${chave}:${String(Date.now())}`],
+    );
+
+    eventos[chave] = r.rows[0]?.id ?? "";
+  }
+
+  /** As notificações do evento ainda não lidas por quem, entre os dois usuários da suíte. */
+  async function naoLidas(chave: string): Promise<string[]> {
+    const { rows } = await client.query<{ user_id: string }>(
+      `select nr.user_id
+       from public.notification_recipients nr
+       join public.notifications n on n.id = nr.notification_id
+       where n.domain_event_id = $1 and nr.read_at is null and nr.user_id = any($2)
+       order by nr.user_id`,
+      [eventos[chave], [ADMIN_SB, ANALISTA_SB]],
+    );
+
+    return rows.map((r) => r.user_id);
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$3,'Conta 1 (lote)','notify-lote-1',393001,'CONNECTED',now()),
+              ($2,$3,'Conta 2 (lote)','notify-lote-2',393002,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_1, CONTA_2, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_account_permissions (user_id, ml_account_id) values ($1,$2) on conflict do nothing",
+      [ANALISTA_SB, CONTA_1],
+    );
+
+    await evento("estoque", CONTA_1, "listing.available_quantity.changed", "informativo");
+    await evento("preco", CONTA_1, "listing.price.changed", "informativo");
+    await evento("critico", CONTA_1, "order.cancelled", "critico");
+    await evento("outra-conta", CONTA_2, "listing.available_quantity.changed", "informativo");
+  });
+
+  it("o fan-out chegou a quem alcança cada conta", async () => {
+    expect(await naoLidas("estoque")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+    expect(await naoLidas("outra-conta")).toEqual([ADMIN_SB]);
+  });
+
+  it("a família listing. na conta 1: marca as duas do ANALISTA, devolve 2 e não toca as do ADMIN nem a crítica", async () => {
+    const r = await asUserPersist<{ n: number }>(
+      ANALISTA_SB,
+      `select public.mark_notifications_read(null, 'listing.', '${CONTA_1}') as n`,
+    );
+
+    expect(r[0]?.n).toBe(2);
+    expect(await naoLidas("estoque")).toEqual([ADMIN_SB]);
+    expect(await naoLidas("preco")).toEqual([ADMIN_SB]);
+    expect(await naoLidas("critico")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+  });
+
+  it("severidade e conta juntas: só a crítica da conta 1; de novo, nada mais a marcar", async () => {
+    // Só a severidade pegaria também as críticas de outras suítes (o evento de
+    // estoque da organização): os recortes se somam.
+    const sql = `select public.mark_notifications_read('critico', null, '${CONTA_1}') as n`;
+    const primeira = await asUserPersist<{ n: number }>(ANALISTA_SB, sql);
+    const segunda = await asUserPersist<{ n: number }>(ANALISTA_SB, sql);
+
+    expect(primeira[0]?.n).toBe(1);
+    expect(segunda[0]?.n).toBe(0);
+    expect(await naoLidas("critico")).toEqual([ADMIN_SB]);
+  });
+
+  it("o recorte de conta vale: pedir a conta 2 não marca nada da conta 1", async () => {
+    const r = await asUserPersist<{ n: number }>(
+      ADMIN_SB,
+      `select public.mark_notifications_read(null, null, '${CONTA_2}') as n`,
+    );
+
+    expect(r[0]?.n).toBeGreaterThanOrEqual(1);
+    expect(await naoLidas("outra-conta")).toEqual([]);
+    expect(await naoLidas("estoque")).toEqual([ADMIN_SB]);
+  });
+
+  it("anon não executa", async () => {
+    await expect(asAnon("select public.mark_notifications_read()")).rejects.toThrow(/permission denied/i);
+  });
+});
