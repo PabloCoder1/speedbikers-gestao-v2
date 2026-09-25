@@ -5,7 +5,7 @@ import type { RealtimePostgresInsertPayload } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { entityHref, entityLabel, formatEventDiff } from "../lib/event-format";
+import { entityHref, entityText, formatEventDiff } from "../lib/event-format";
 import { eventTypeLabel, severityLabel } from "../lib/labels";
 import { shouldNotify, type NotificationPreferenceRule } from "../lib/notification-preferences";
 import { createClient } from "../lib/supabase/browser";
@@ -71,6 +71,10 @@ interface ToastGroup {
   accountLabel: string | null;
   count: number;
   diff: string | null;
+  /** O destino do toast quando ele é um evento só (D-411: o alerta precisa de `after`). */
+  href: string | null;
+  /** "Anúncio MLB123", ou o tipo do alerta da central (D-411). */
+  alvo: string;
   firstEventAt: number;
 }
 
@@ -168,6 +172,8 @@ export function NotificationToasts({
           event.before as Record<string, unknown> | null,
           event.after as Record<string, unknown> | null,
         ),
+        href: entityHref(event.entity_type, event.entity_id, event.after as Record<string, unknown> | null),
+        alvo: entityText(event.entity_type, event.entity_id, event.after as Record<string, unknown> | null),
         firstEventAt: carriedOver?.firstEventAt ?? now,
       };
 
@@ -246,7 +252,7 @@ export function NotificationToasts({
   return (
     <div className="sb-toast-pilha">
       {toasts.map((toast) => {
-        const href = toast.count === 1 ? (entityHref(toast.entityType, toast.entityId) ?? "/notificacoes") : "/notificacoes";
+        const href = toast.count === 1 ? (toast.href ?? "/notificacoes") : "/notificacoes";
 
         return (
           <div
@@ -282,7 +288,7 @@ export function NotificationToasts({
 
               {toast.accountLabel !== null && (
                 <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
-                  {toast.accountLabel} — {entityLabel(toast.entityType)} {toast.entityId}
+                  {toast.accountLabel} — {toast.alvo}
                 </div>
               )}
 

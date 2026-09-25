@@ -193,6 +193,9 @@ const EVENT_TYPE: Record<string, string> = {
   "sync.delayed": "Sincronização atrasada",
   "sync.failed": "Sincronização falhou",
   "ai.budget.exceeded": "Orçamento de IA do mês ultrapassado",
+  // D-411 -- o alerta NOVO de severidade alta da central; o tipo do alerta
+  // (frete, Ads, produto) vem na linha, de `after.kind`.
+  "central.alert.opened": "Alerta novo na central",
   // D-110 -- primeiro evento de atendimento; vocabulario separado de
   // SUPPORT_CASE_EVENT (abaixo), que e auditoria interna do case.
   "support.claim.disputed": "Reclamação entrou em mediação",

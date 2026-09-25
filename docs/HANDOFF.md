@@ -20,14 +20,14 @@
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | 25/09: worker `worker-00027-6m7` em `e4d55025` (D-407) e api `api-00021-qdr` em `cb4edb4a` (D-403), da `main`. Volta: `worker-00026-ss5`/`api-00020-9rn`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
 | **Migrations** | Produção com todas até `20260923195959` (25/09), pelo `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
-| **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-410). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405) e a notificação dos alertas (depois do PR #77). |
+| **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-411). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405) e a notificação dos alertas (depois do PR #77). |
 
 ### O que está pronto
 
 `/notificacoes` (D-393): triagem por severidade/família/conta; 556 ms → 63 ms; migration
 `20260923200000`. O PR #53 mexe nos mesmos arquivos.
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. Próxima: notificação dos alertas (5J), com o #77 na `main`.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. D-411: o alerta alto novo vira notificação (migration `20260925140000`).
 
 `/atendimento/conhecimento`: filtros, paginação e modal — já na `main` (`4c34bc68`).
 

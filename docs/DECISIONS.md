@@ -14378,3 +14378,19 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Impacto:** `supabase/migrations/20260923195959_margem_minima_e_piso_do_roas.sql`, `apps/web/lib/{faturamento,limites-central,sinais-ads,central-atencao}.ts` e testes, `apps/web/app/faturamento/{page,numeros,barras-diarias,calculadora-preco}.tsx`, `apps/web/app/central/{produtos,ads,limites}/page.tsx`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,METRICS,PERFORMANCE,ROADMAP}.md`.
 
 **Em producao (25/09, `20260923195959`):** sem linha da organizacao, `margem_minima` 0,10 e `roas_piso` 0,80 -- os numeros de antes. Em 30 dias: 1.194 SKUs vendidos, 51 abaixo da margem minima, 27 negativos; 7 campanhas abaixo da meta.
+
+## D-411 - O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
+
+**Contexto:** `sincronizar_alertas_central` (D-403/D-404) grava os alertas em `actions`, e ninguem era avisado -- o alerta esperava alguem abrir `/acoes` ou a central. O ROADMAP dizia que isso dependia da Central de Notificacoes refeita (D-393, PR #77) e de "um evento sem conta para o alerta de produto (`domain_events.ml_account_id` e obrigatorio)". O segundo ja nao era verdade: a coluna aceita nulo desde D-054, e o fan-out entrega o evento sem conta a organizacao inteira.
+
+**1. UM EVENTO, NENHUM CAMINHO NOVO DE ENTREGA.** No bloco que abre o episodio novo, o `insert` em `actions` passa a devolver as linhas criadas, e as de severidade alta gravam um `domain_event` `central.alert.opened` na mesma transacao: `entity_type = 'action'`, `entity_id` = id da acao, `after` com tipo, assunto, anuncio, SKU, impacto e recomendacao, `source = 'system'`, `dedup_key` pelo id da acao. O fan-out de D-073 faz o resto -- notificacao para quem alcanca a conta (o alerta de produto, sem conta, para todos), toast em tempo real (D-075) e a familia "central" na triagem (D-393).
+
+**2. IMPORTANTE, E SO O EPISODIO NOVO.** Medido em producao (25/09): a carga inicial abriu 15 episodios altos no primeiro dia (12 produtos no prejuizo, 2 fretes, 1 campanha) e nenhum no segundo. O episodio que continua aberto nao notifica todo dia; o que volta depois de fechado e outro episodio e notifica de novo. Os ja abertos antes da migration nao geram notificacao retroativa.
+
+**3. A LINHA DIZ O ALERTA, NAO O UUID.** Na Central de Notificacoes e no toast, o destino e o tipo do alerta ("Frete anomalo · MLB..."), o texto traz o impacto estimado, e o link leva a `/acoes?tipo=<kind>` -- a acao nao tem pagina propria, e a fila filtrada mostra o episodio com os atalhos para a tela que o explica (D-403).
+
+**Testes:** as suites que sincronizam com contas `rlstest` passaram a desfazer a transacao ou a usar slug proprio: o evento e append-only com `on delete restrict`, e a limpeza global apaga essas contas.
+
+**Verificacao:** a sincronizacao conta `notificadas`; dos tres episodios novos da suite do ciclo de vida, os dois altos viram evento e notificacao (a campanha para quem alcanca a conta, o produto para a organizacao inteira, o ANALISTA incluido) e o medio nao; rodar de novo no mesmo dia nao duplica; na suite do detector, as notificadas batem com os episodios altos abertos. Web: texto, link e destino do alerta; a familia "central" na triagem; o rotulo no catalogo. Suite de integracao inteira (880).
+
+**Impacto:** `supabase/migrations/20260925140000_alertas_da_central_viram_notificacao.sql`, `packages/domain/src/events/catalog.ts`, `apps/worker/src/handlers/sync-central-alerts.ts`, `apps/web/lib/{event-format,labels,notification-filters}.ts` e testes, `apps/web/app/notificacoes/notification-row.tsx`, `apps/web/components/notification-toasts.tsx`, `packages/db/src/rls.integration.test.ts`, `docs/{API,DECISIONS,DECISIONS_INDEX,HANDOFF,NOTIFICATIONS,ROADMAP}.md`.

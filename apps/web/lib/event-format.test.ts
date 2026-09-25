@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatCurrency } from "./format";
-import { entityHref, entityLabel, formatEventDiff, scalar } from "./event-format";
+import { entityHref, entityLabel, entityText, formatEventDiff, scalar } from "./event-format";
 
 describe("formatEventDiff", () => {
   it("listing.price.changed formata os dois lados como moeda", () => {
@@ -101,5 +101,31 @@ describe("entityLabel", () => {
     expect(entityLabel("listing")).toBe("Anúncio");
     expect(entityLabel("order")).toBe("Pedido");
     expect(entityLabel("inventory")).toBe("inventory");
+  });
+});
+
+/** D-411: o alerta novo da central, como `sincronizar_alertas_central` grava o `after`. */
+describe("central.alert.opened (D-411)", () => {
+  const ALERTA = { kind: "frete_anomalo", mlb_id: "MLB9700031", impacto: 123.45 };
+
+  it("o texto diz o tipo do alerta e o impacto estimado, quando há", () => {
+    expect(formatEventDiff("central.alert.opened", null, ALERTA)?.replace(/\s/g, " ")).toBe(
+      "Frete anômalo · R$ 123,45 de impacto estimado",
+    );
+    expect(formatEventDiff("central.alert.opened", null, { kind: "produto_prejuizo", impacto: null })).toBe(
+      "Produto no prejuízo",
+    );
+    expect(formatEventDiff("central.alert.opened", null, null)).toBeNull();
+  });
+
+  it("o link é a fila de ações filtrada pelo tipo; sem o tipo, a fila inteira", () => {
+    expect(entityHref("action", "3f2a", ALERTA)).toBe("/acoes?tipo=frete_anomalo");
+    expect(entityHref("action", "3f2a")).toBe("/acoes");
+  });
+
+  it("o destino nomeia o alerta, não o uuid da ação", () => {
+    expect(entityText("action", "3f2a", ALERTA)).toBe("Frete anômalo · MLB9700031");
+    expect(entityText("action", "3f2a", { kind: "ads_campanha" })).toBe("Campanha de Ads");
+    expect(entityText("listing", "MLB123")).toBe("Anúncio MLB123");
   });
 });

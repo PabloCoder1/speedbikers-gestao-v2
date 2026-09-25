@@ -15320,10 +15320,17 @@ describe("get_detector_frete (D-397)", () => {
   });
 
   it("D-403: a sincronização grava provável e forte como ações, uma por anúncio e faixa", async () => {
+    // Numa transação desfeita (D-411): os alertas altos viram `domain_event`,
+    // que é append-only e prenderia a conta `rlstest` desta suíte na limpeza
+    // global. O `rollback` leva ações, eventos e notificações juntos.
+    await client.query("begin");
+
     try {
       const {
         rows: [linha],
-      } = await client.query<{ r: { fontes: string[]; detectados: Record<string, number>; criadas: number } }>(
+      } = await client.query<{
+        r: { fontes: string[]; detectados: Record<string, number>; criadas: number; notificadas: number };
+      }>(
         "select public.sincronizar_alertas_central($1, date '2023-06-01') as r",
         [ORG_SB],
       );
@@ -15331,6 +15338,14 @@ describe("get_detector_frete (D-397)", () => {
       expect(linha?.r.fontes).toContain("frete_anomalo");
       // Os dois de atenção (MLB9700211, MLB9700041) ficam só na tela.
       expect(linha?.r.detectados.frete_anomalo).toBe(4);
+      // D-411: cada episódio novo de severidade alta -- de qualquer fonte -- vira
+      // uma notificação; os de severidade média, não.
+      const altas = await client.query<{ n: string }>(
+        "select count(*)::text as n from public.actions where organization_id = $1 and subject_key is not null and severity = 'alta'",
+        [ORG_SB],
+      );
+
+      expect(String(linha?.r.notificadas)).toBe(altas.rows[0]?.n);
 
       const { rows } = await client.query<{
         mlb_id: string;
@@ -15374,7 +15389,7 @@ describe("get_detector_frete (D-397)", () => {
         "Forte indício de frete errado (7 pontos no detector de frete).",
       ]);
     } finally {
-      await client.query("delete from public.actions where organization_id = $1 and subject_key is not null", [ORG_SB]);
+      await client.query("rollback");
     }
   });
 });
@@ -15978,6 +15993,10 @@ describe("get_ranking_produtos (D-402)", () => {
  * - o SKU vende 3 vezes no prejuízo em 05/08: R$ 100 − 10 − 15 − 90 = −15 cada.
  */
 describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
+  // Slug fora do prefixo `rlstest` (D-411): o alerta alto vira `domain_event`
+  // desta conta, e `domain_events` é append-only com `on delete restrict` --
+  // a limpeza GLOBAL, que apaga as contas `rlstest%`, esbarraria nele. O mesmo
+  // arranjo da suíte de notificações.
   const CONTA_AL = "dddd9999-0000-4000-8000-0000000000d1";
   const PEDIDOS = [9904200001, 9904200002, 9904200003];
 
@@ -16032,7 +16051,7 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
   beforeAll(async () => {
     await client.query(
       `insert into public.ml_accounts (id, organization_id, label, slug, status)
-       values ($1,$2,'Conta do ciclo','rlstest-ciclo','PENDING')
+       values ($1,$2,'Conta do ciclo','ciclo-alertas-central','PENDING')
        on conflict do nothing`,
       [CONTA_AL, ORG_SB],
     );
@@ -16108,7 +16127,8 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
     const r = await sincronizar("2023-08-10");
 
     expect(r.fontes).toEqual(expect.arrayContaining(["ads_campanha", "produto_prejuizo"]));
-    expect(r).toMatchObject({ criadas: 3, atualizadas: 0, encerradas: 0 });
+    // D-411: dos três episódios novos, os dois de severidade alta viram notificação.
+    expect(r).toMatchObject({ criadas: 3, notificadas: 2, atualizadas: 0, encerradas: 0 });
 
     const ads = await acoes("ads_campanha");
 
@@ -16132,8 +16152,44 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
       "De 11/07/2023 a 09/08/2023: 3 pedidos cobertos, R$ 300,00 de receita e resultado de -R$ 45,00 (margem -15,0%).",
     );
 
-    expect(await sincronizar("2023-08-10")).toMatchObject({ criadas: 0, atualizadas: 3 });
+    expect(await sincronizar("2023-08-10")).toMatchObject({ criadas: 0, notificadas: 0, atualizadas: 3 });
     expect(await acoes("ads_campanha")).toHaveLength(2);
+  });
+
+  it("D-411: o episódio novo de severidade alta vira notificação para quem alcança a conta; o médio, não", async () => {
+    const ads = await acoes("ads_campanha");
+    const [produto] = await acoes("produto_prejuizo");
+    const ids = [ads[0]?.id, ads[1]?.id, produto?.id].filter((id): id is string => id !== undefined);
+    const { rows } = await client.query<{
+      entity_id: string;
+      ml_account_id: string | null;
+      severity: string;
+      source: string;
+      dedup_key: string;
+      kind: string;
+      destinatarios: string[];
+    }>(
+      `select e.entity_id, e.ml_account_id::text, e.severity, e.source, e.dedup_key, e.after ->> 'kind' as kind,
+              array(select nr.user_id::text from public.notifications n
+                    join public.notification_recipients nr on nr.notification_id = n.id
+                    where n.domain_event_id = e.id) as destinatarios
+       from public.domain_events e
+       where e.event_type = 'central.alert.opened' and e.entity_id = any($1)
+       order by e.after ->> 'kind'`,
+      [ids],
+    );
+
+    // A campanha crítica (alta) e o produto (alto); a campanha abaixo da meta (média) não.
+    expect(rows.map((e) => [e.kind, e.entity_id, e.severity, e.source])).toEqual([
+      ["ads_campanha", ads[0]?.id, "importante", "system"],
+      ["produto_prejuizo", produto?.id, "importante", "system"],
+    ]);
+    expect(rows[0]?.ml_account_id).toBe(CONTA_AL);
+    expect(rows[0]?.dedup_key).toBe(`central.alert.opened:${ads[0]?.id ?? ""}`);
+    // O alerta de produto não tem conta: vai para a organização inteira, o ANALISTA incluído.
+    expect(rows[1]?.ml_account_id).toBeNull();
+    expect(rows[1]?.destinatarios).toEqual(expect.arrayContaining([ADMIN_SB, ANALISTA_SB]));
+    expect(rows[0]?.destinatarios).toEqual(expect.arrayContaining([ADMIN_SB]));
   });
 
   it("resolvida por uma pessoa, não reabre enquanto a condição continua", async () => {
