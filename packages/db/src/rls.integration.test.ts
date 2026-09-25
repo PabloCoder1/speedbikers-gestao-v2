@@ -309,9 +309,13 @@ describe("catálogo de métricas", () => {
       "custo_produtos_vendidos",
       "desconto_vendedor",
       "esperado_meta",
+      // D-412 (METRICS 5O): quem paga o frete.
+      "frete_bancado_ml_comprador",
+      "frete_bancado_ml_vendedor",
       // D-397 (METRICS 5L): o detector de frete.
       "frete_excedente_estimado",
       "frete_medio_pedido",
+      "frete_pago_comprador",
       "frete_vendedor",
       "imposto_estimado",
       "investimento_ads",
@@ -16973,5 +16977,153 @@ describe("mark_notifications_read marca em lote só o recorte do próprio usuár
 
   it("anon não executa", async () => {
     await expect(asAnon("select public.mark_notifications_read()")).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/**
+ * get_quem_paga_frete (D-412): as quatro partes do frete somadas POR ENVIO,
+ * com a conta feita à mão.
+ *
+ *   envio  conta  logística      cheio   vendedor  ML vend.  comprador  ML compr.
+ *   7001   1      fulfillment    78,90   27,05     27,05     0          24,80
+ *   7002   1      cross_docking  30,78    8,25      3,54     9,99        9,00
+ *   7003   1      cross_docking  20,00    5,00      5,00     0          10,00   <- pacote: 2 pedidos, conta 1 vez
+ *   7005   1      self_service    8,99    0         0        0           8,99
+ *   7006   1      fulfillment    (só o frete do vendedor: sem detalhe)
+ *   7007   2      fulfillment    55,00   20,00     20,00     0          10,00   <- não fecha (partes = 50)
+ *   7008   1      cancelado -- fora; 7009   1      agosto -- fora do período
+ */
+describe("get_quem_paga_frete: quem paga o frete, por envio (D-412)", () => {
+  const CONTA_1 = "aaaa4121-0000-4000-8000-00000000a412"; // ANALISTA_SB tem permissão.
+  const CONTA_2 = "bbbb4121-0000-4000-8000-00000000b412";
+  const PEDIDOS = [9904120001, 9904120002, 9904120003, 9904120004, 9904120005, 9904120006, 9904120007, 9904120008, 9904120009];
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$3,'Frete 1','rlstest-quem-paga-1','PENDING'), ($2,$3,'Frete 2','rlstest-quem-paga-2','PENDING')
+       on conflict do nothing`,
+      [CONTA_1, CONTA_2, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_account_permissions (user_id, ml_account_id) values ($1,$2) on conflict do nothing",
+      [ANALISTA_SB, CONTA_1],
+    );
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id, shipping_id, logistic_type)
+       select p.id, $1, p.conta, p.pack, p.status, p.quando, p.quando, 100, 'BRL', p.envio, p.logistica
+       from (values
+         ($2::bigint, $11::uuid, null::bigint, 'paid', timestamptz '2026-09-20 15:00+00', 7001::bigint, 'fulfillment'),
+         ($3, $11, null, 'paid', timestamptz '2026-09-20 15:00+00', 7002, 'cross_docking'),
+         ($4, $11, 88003, 'paid', timestamptz '2026-09-20 15:00+00', 7003, 'cross_docking'),
+         ($5, $11, 88003, 'paid', timestamptz '2026-09-20 15:00+00', 7003, 'cross_docking'),
+         ($6, $11, null, 'paid', timestamptz '2026-09-20 15:00+00', 7005, 'self_service'),
+         ($7, $11, null, 'paid', timestamptz '2026-09-20 15:00+00', 7006, 'fulfillment'),
+         ($8, $12, null, 'paid', timestamptz '2026-09-20 15:00+00', 7007, 'fulfillment'),
+         ($9, $11, null, 'cancelled', timestamptz '2026-09-20 15:00+00', 7008, 'fulfillment'),
+         ($10, $11, null, 'paid', timestamptz '2026-08-01 15:00+00', 7009, 'fulfillment')
+       ) as p(id, conta, pack, status, quando, envio, logistica)
+       on conflict (id) do nothing`,
+      [ORG_SB, ...PEDIDOS, CONTA_1, CONTA_2],
+    );
+    await client.query(
+      `insert into public.order_financials
+         (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount,
+          shipping_list_cost, seller_shipping_subsidy, buyer_shipping_cost, buyer_shipping_subsidy)
+       select f.id, $1, f.conta, f.vendedor, 0, f.cheio, f.ml_v, f.comprador, f.ml_c
+       from (values
+         ($2::bigint, $11::uuid, 27.05::numeric, 78.90::numeric, 27.05::numeric, 0::numeric, 24.80::numeric),
+         ($3, $11, 8.25, 30.78, 3.54, 9.99, 9.00),
+         ($4, $11, 5.00, 20.00, 5.00, 0, 10.00),
+         ($5, $11, 5.00, 20.00, 5.00, 0, 10.00),
+         ($6, $11, 0, 8.99, 0, 0, 8.99),
+         ($7, $11, 10.00, null, null, null, null),
+         ($8, $12, 20.00, 55.00, 20.00, 0, 10.00),
+         ($9, $11, 30.00, 60.00, 30.00, 0, 0),
+         ($10, $11, 30.00, 60.00, 30.00, 0, 0)
+       ) as f(id, conta, vendedor, cheio, ml_v, comprador, ml_c)
+       on conflict (order_id) do nothing`,
+      [ORG_SB, ...PEDIDOS, CONTA_1, CONTA_2],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.ml_accounts where id = any($1)", [[CONTA_1, CONTA_2]]);
+  });
+
+  interface QuemPaga {
+    envios_com_frete: number;
+    envios_com_detalhe: number;
+    frete_cheio: number;
+    frete_do_vendedor: number;
+    vendedor_pagou: number;
+    ml_bancou_vendedor: number;
+    comprador_pagou: number;
+    ml_bancou_comprador: number;
+    frete_gratis_comprador: number;
+    nao_fecham: number;
+    detalhe_desde: string | null;
+    por_logistica: { logistica: string; envios: number; vendedor_pagou: number; ml_bancou_comprador: number }[];
+  }
+
+  async function quemPaga(usuario: string): Promise<QuemPaga> {
+    const rows = await asUser<{ r: QuemPaga }>(
+      usuario,
+      "select public.get_quem_paga_frete(date '2026-09-01', date '2026-09-30') as r",
+    );
+
+    const linha = rows[0];
+
+    if (linha === undefined) throw new Error("get_quem_paga_frete não devolveu linha");
+
+    return linha.r;
+  }
+
+  it("soma por envio: o pacote conta uma vez; o sem detalhe entra só na cobertura; cancelado e fora do período, não", async () => {
+    const q = await quemPaga(ADMIN_SB);
+
+    expect(q).toMatchObject({
+      envios_com_frete: 6,
+      envios_com_detalhe: 5,
+      frete_cheio: 193.67,
+      frete_do_vendedor: 115.89,
+      vendedor_pagou: 60.3,
+      ml_bancou_vendedor: 55.59,
+      comprador_pagou: 9.99,
+      ml_bancou_comprador: 62.79,
+      frete_gratis_comprador: 4,
+      nao_fecham: 1,
+    });
+    expect(q.detalhe_desde).not.toBeNull();
+  });
+
+  it("por logística, do maior número de envios para o menor", async () => {
+    const q = await quemPaga(ADMIN_SB);
+
+    expect(q.por_logistica.map((l) => [l.logistica, l.envios, l.vendedor_pagou, l.ml_bancou_comprador])).toEqual([
+      ["cross_docking", 2, 13.25, 19],
+      ["fulfillment", 2, 47.05, 34.8],
+      ["self_service", 1, 0, 8.99],
+    ]);
+  });
+
+  it("quem alcança só a conta 1 vê só ela; outra organização, nada", async () => {
+    const analista = await quemPaga(ANALISTA_SB);
+    const outra = await quemPaga(DE_OUTRA_ORG);
+
+    expect(analista).toMatchObject({ envios_com_frete: 5, envios_com_detalhe: 4, vendedor_pagou: 40.3, nao_fecham: 0 });
+    expect(outra).toMatchObject({ envios_com_frete: 0, envios_com_detalhe: 0, frete_cheio: null, por_logistica: [] });
+  });
+
+  it("período ao contrário é recusado; anon não executa", async () => {
+    await expect(
+      asUser(ADMIN_SB, "select public.get_quem_paga_frete(date '2026-09-30', date '2026-09-01')"),
+    ).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon("select public.get_quem_paga_frete(date '2026-09-01', date '2026-09-30')")).rejects.toThrow(
+      /permission denied/i,
+    );
   });
 });
