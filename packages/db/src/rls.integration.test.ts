@@ -16584,3 +16584,192 @@ describe("central_thresholds: os limites da central (D-408)", () => {
     }
   });
 });
+
+/**
+ * shipping_sales (D-409): as vendas que o detector de frete considera, numa
+ * tabela estreita mantida por gatilhos. Cada mudança que mexe na regra
+ * (frete capturado, status, logística, segunda linha, quantidade, SKU
+ * vinculado depois) recalcula a linha do pedido; a tabela é sempre a regra de
+ * D-397 aplicada a `orders`, `order_items` e `order_financials`.
+ */
+describe("shipping_sales: as vendas do detector de frete, mantidas por gatilhos (D-409)", () => {
+  const CONTA_PERMITIDA = "aaaa4099-0000-4000-8000-00000000a409"; // ANALISTA_SB tem permissão aqui.
+  const CONTA_SEM = "bbbb4099-0000-4000-8000-00000000b409"; // mesma organização, sem permissão.
+  const PEDIDO = 9904090001;
+  const OUTRO = 9904090002;
+  let skuId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$3,'Vendas A','rlstest-vendas-a','PENDING'), ($2,$3,'Vendas B','rlstest-vendas-b','PENDING')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_account_permissions (user_id, ml_account_id) values ($1,$2) on conflict do nothing",
+      [ANALISTA_SB, CONTA_PERMITIDA],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1, 'RLSTEST-VENDAS-D409', 'PRODUTO', 20)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id`,
+      [ORG_SB],
+    );
+
+    skuId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id, logistic_type)
+       values ($1, $3, $4, null, 'paid', timestamptz '2026-09-20 15:00+00', timestamptz '2026-09-20 15:00+00', 80, 'BRL', 'fulfillment'),
+              ($2, $3, $5, null, 'paid', timestamptz '2026-09-20 16:00+00', timestamptz '2026-09-20 16:00+00', 80, 'BRL', 'cross_docking')
+       on conflict (id) do nothing`,
+      [PEDIDO, OUTRO, ORG_SB, CONTA_PERMITIDA, CONTA_SEM],
+    );
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       values ($1, $3, $4, 0, 'MLB9409001', null, 'Venda A', 1, 80, 'BRL', null, 9.6),
+              ($2, $3, $5, 0, 'MLB9409002', null, 'Venda B', 1, 80, 'BRL', null, 9.6)
+       on conflict do nothing`,
+      [PEDIDO, OUTRO, ORG_SB, CONTA_PERMITIDA, CONTA_SEM],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.order_items where order_id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.orders where id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.ml_accounts where id = any($1)", [[CONTA_PERMITIDA, CONTA_SEM]]);
+  });
+
+  async function linha(): Promise<Record<string, string | null> | undefined> {
+    const { rows } = await client.query<Record<string, string | null>>(
+      `select listing_id, sku_id::text, shipping_cost::text, unit_price::text, sale_fee::text
+       from public.shipping_sales where order_id = $1`,
+      [PEDIDO],
+    );
+
+    return rows[0];
+  }
+
+  it("sem frete capturado não há linha; o frete capturado cria a linha", async () => {
+    expect(await linha()).toBeUndefined();
+
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1, $2, $3, 12.5, 0), ($4, $2, $5, 14, 0)`,
+      [PEDIDO, ORG_SB, CONTA_PERMITIDA, OUTRO, CONTA_SEM],
+    );
+
+    expect(await linha()).toEqual({
+      listing_id: "MLB9409001",
+      sku_id: null,
+      shipping_cost: "12.5",
+      unit_price: "80",
+      sale_fee: "9.6",
+    });
+  });
+
+  it("cancelar tira e voltar a pago devolve; o Flex tira", async () => {
+    await client.query("update public.orders set status = 'cancelled' where id = $1", [PEDIDO]);
+    expect(await linha()).toBeUndefined();
+
+    await client.query("update public.orders set status = 'paid' where id = $1", [PEDIDO]);
+    expect(await linha()).toBeDefined();
+
+    await client.query("update public.orders set logistic_type = 'self_service' where id = $1", [PEDIDO]);
+    expect(await linha()).toBeUndefined();
+
+    await client.query("update public.orders set logistic_type = 'fulfillment' where id = $1", [PEDIDO]);
+    expect(await linha()).toBeDefined();
+  });
+
+  it("uma segunda linha no pedido tira e apagá-la devolve; duas unidades tiram", async () => {
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sale_fee)
+       values ($1, $2, $3, 1, 'MLB9409003', null, 'Segunda linha', 1, 30, 'BRL', 3)`,
+      [PEDIDO, ORG_SB, CONTA_PERMITIDA],
+    );
+    expect(await linha()).toBeUndefined();
+
+    await client.query("delete from public.order_items where order_id = $1 and position = 1", [PEDIDO]);
+    expect(await linha()).toBeDefined();
+
+    await client.query("update public.order_items set quantity = 2 where order_id = $1", [PEDIDO]);
+    expect(await linha()).toBeUndefined();
+
+    await client.query("update public.order_items set quantity = 1 where order_id = $1", [PEDIDO]);
+    expect(await linha()).toBeDefined();
+  });
+
+  it("o SKU vinculado depois e o preço regravado aparecem na linha", async () => {
+    await client.query("update public.order_items set sku_id = $2, unit_price = 85 where order_id = $1", [PEDIDO, skuId]);
+
+    expect(await linha()).toMatchObject({ sku_id: skuId, unit_price: "85" });
+  });
+
+  it("a tabela inteira é exatamente a regra de D-397 aplicada às três tabelas", async () => {
+    const { rows } = await client.query<{ diferencas: string }>(
+      `with regra as (
+         select o.id as order_id, o.organization_id, o.ml_account_id, o.date_created, i.id as line_id,
+                i.item_id as listing_id, i.sku_id, i.title, i.unit_price, i.sale_fee, f.seller_shipping_cost as shipping_cost
+         from public.orders o
+         join public.order_financials f on f.order_id = o.id
+         cross join lateral (
+           select c.*, count(*) over () as linhas
+           from public.order_items c
+           where c.order_id = o.id and c.organization_id = o.organization_id and c.ml_account_id = o.ml_account_id
+         ) i
+         where o.status in ('paid', 'partially_refunded')
+           and o.logistic_type is distinct from 'self_service'
+           and f.seller_shipping_cost is not null
+           and i.linhas = 1
+           and i.quantity = 1
+       ),
+       tabela as (
+         select order_id, organization_id, ml_account_id, date_created, line_id, listing_id, sku_id, title,
+                unit_price, sale_fee, shipping_cost
+         from public.shipping_sales
+       )
+       select count(*)::text as diferencas
+       from ((select * from regra except select * from tabela) union all (select * from tabela except select * from regra)) d`,
+    );
+
+    expect(rows[0]?.diferencas).toBe("0");
+  });
+
+  it("quem alcança a conta lê; ninguém grava direto, nem o worker", async () => {
+    const analista = await asUser<{ order_id: string }>(
+      ANALISTA_SB,
+      `select order_id::text from public.shipping_sales where order_id in (${String(PEDIDO)}, ${String(OUTRO)}) order by order_id`,
+    );
+    const admin = await asUser<{ order_id: string }>(
+      ADMIN_SB,
+      `select order_id::text from public.shipping_sales where order_id in (${String(PEDIDO)}, ${String(OUTRO)}) order by order_id`,
+    );
+    const outra = await asUser(DE_OUTRA_ORG, `select 1 from public.shipping_sales where order_id = ${String(PEDIDO)}`);
+
+    expect(analista.map((r) => r.order_id)).toEqual([String(PEDIDO)]);
+    expect(admin.map((r) => r.order_id)).toEqual([String(PEDIDO), String(OUTRO)]);
+    expect(outra).toEqual([]);
+    await expect(asUser(ADMIN_SB, `delete from public.shipping_sales where order_id = ${String(PEDIDO)}`)).rejects.toThrow(
+      /permission denied/i,
+    );
+
+    await client.query("begin");
+
+    try {
+      await client.query("set local role service_role");
+      await expect(
+        client.query(`update public.shipping_sales set shipping_cost = 0 where order_id = ${String(PEDIDO)}`),
+      ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});

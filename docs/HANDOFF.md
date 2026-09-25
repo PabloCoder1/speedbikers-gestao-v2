@@ -20,13 +20,13 @@
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | 25/09: worker `worker-00027-6m7` em `e4d55025` (D-407) e api `api-00021-qdr` em `cb4edb4a` (D-403), da `main`. Volta: `worker-00026-ss5`/`api-00020-9rn`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
 | **Migrations** | Produção com todas até `20260923195957` (25/09), pelo `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e abaixo de `20260923200000`, do PR #77 ainda aberto (livres: `195958`, `195959`). |
-| **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-408). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405) e a notificação dos alertas (depois do PR #77). |
+| **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-409). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405) e a notificação dos alertas (depois do PR #77). |
 
 ### O que está pronto
 
 SKU/ML;visitas;migração
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`. Próxima: notificação dos alertas (5J), depois do #77.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`. Próxima: notificação dos alertas (5J), depois do #77.
 
 `/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
 sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
@@ -80,7 +80,7 @@ e `docs/PERFORMANCE.md`.
 ## Riscos ativos
 
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
-  Cloud Tasks, que fechou o ciclo. Se falhar também na repetição, aliviar `get_detector_frete` dentro da sincronização.
+  Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
