@@ -219,6 +219,8 @@ A conciliação real só existe no ciclo mensal de `/billing/integration/...`, q
 
 **Sobre `catalogo_nao_classificado` (D-133):** o id aparece ao lado do número na tela, e a definição depende de uma distinção que a coluna sozinha não faz. `stock_is_virtual = false` significa **duas** coisas antes de D-133: "examinado e aprovado como físico" e "ninguém olhou". Quem conta o segundo caso é `stock_is_virtual_set_at IS NULL` — inclusive para o SKU que o próximo import criar, que nasce `false` por default. Contar pelo valor em vez de pela data daria "catálogo 100% classificado" no dia seguinte a uma planilha nova.
 
+**O frete do envio compartilhado (D-413):** `frete_vendedor` soma `order_financials.seller_shipping_share`, a parte de cada pedido. O custo que o Mercado Livre devolve é do envio; os pedidos válidos de um mesmo envio que trazem o mesmo custo o dividem, na proporção do valor de cada um, e contam o envio uma vez. Custos diferentes no mesmo envio (Full, em que o pacote do envio lista um pedido só) ficam como vieram.
+
 ### 5C.3 Cancelamento, devolução, reembolso e mediação são quatro coisas
 
 Três mecanismos independentes, nenhum consolidado numa visão financeira:
@@ -526,7 +528,7 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 | `frete_pago_comprador` | Frete pago pelo comprador | Σ por envio de `receiver.cost` | Idem |
 | `frete_bancado_ml_comprador` | Frete do comprador bancado pelo Mercado Livre | Σ por envio dos descontos do comprador; frete grátis = comprador pagou zero | Idem; em ~5% dos envios as partes não fecham com o frete cheio — soma-se a parte como veio |
 
-**Por envio, não por pedido:** os pedidos de um pacote dividem o envio, e cada um traz o custo do envio inteiro (medido: 0,37% do frete do vendedor somado a mais em 30 dias, se contado pedido a pedido). O frete do vendedor já gravado (`frete_vendedor`, 5C) continua pedido a pedido em `get_faturamento`.
+**Por cobrança, não por pedido:** os pedidos de um pacote dividem o envio, e cada um traz o custo do envio inteiro (medido: 0,37% do frete do vendedor somado a mais em 30 dias, se contado pedido a pedido). O custo repetido no mesmo envio conta uma vez; custos diferentes no mesmo envio somam (D-413) — a mesma regra de `frete_vendedor` (5C).
 
 ## 5H. Indicadores operacionais de sincronização
 

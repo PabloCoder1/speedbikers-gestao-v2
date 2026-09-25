@@ -196,6 +196,8 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 **Acrescentado em 2026-09-24**, migration `20260923195956_frete_subsidio_e_comprador.sql`. Além do frete do vendedor e do desconto (D-165), quatro colunas da mesma resposta de `GET /shipments/{id}/costs`: `shipping_list_cost` (`gross_amount`, o frete cheio), `seller_shipping_subsidy` (o desconto do Mercado Livre no frete do vendedor), `buyer_shipping_cost` (o que o comprador pagou) e `buyer_shipping_subsidy` (o frete do comprador bancado pelo Mercado Livre). Os descontos são a soma de `promoted_amount`, e as quatro fecham com o frete cheio. NULL = não observado (linha anterior à migration, 4xx, parte fora da forma); zero é observado. A captura grava uma vez e nunca reescreve: as linhas antigas ficam NULL.
 
+**A parte do pedido no frete (D-413, migration `20260925160000_frete_do_envio_compartilhado.sql`).** `seller_shipping_share`: o custo do envio dividido entre os pedidos válidos do mesmo envio que trazem o mesmo custo, na proporção do valor de cada um; o pedido sozinho, com custo diferente ou cancelado fica com o próprio custo. É o que as somas leem (`get_faturamento`, `get_ranking_produtos`, `get_sales_margin_summary`, `shipping_sales`). Mantida por gatilhos em `order_financials` (o frete gravado) e `orders` (status, envio, valor) que chamam `private.ratear_frete_do_envio`; a restrição `order_financials_parte_do_frete` exige a parte exatamente quando há custo. Índice parcial `orders_shipping_id_idx` para achar os pedidos do envio.
+
 ### `orders` / `order_items` — vendas
 
 **Implementado em 2026-08-21** (migration `20260821040000_create_orders.sql`), gravado por `sync.orders.window` e `backfill.orders` — `apps/worker/src/handlers/persist-order.ts`.
