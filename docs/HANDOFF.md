@@ -288,7 +288,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**Estoque:** D-351 (§13) e D-352 (§8) publicadas em produção; reconciliação despausada em 18/09 (16 SKUs com alvo LOCAL negativo, -81). Próximo: D-362.
+**Estoque:** D-351 (§13) e D-352 (§8) publicadas em produção; reconciliação despausada em 18/09 (16 SKUs com alvo LOCAL negativo, -81). D-362 1ª parte (gravar o user product do item vendido, migration `20260925170000`, migration antes do worker); próximo: a 2ª parte, resolver o SKU por ele.
 
 ---
 

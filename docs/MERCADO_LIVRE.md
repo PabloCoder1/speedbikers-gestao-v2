@@ -106,6 +106,7 @@ Pontos que a documentação oficial estabelece e que valem para o nosso desenho:
 - Um `user_product` pode aparecer em **vários** itens, com preço ou parcelamento diferentes em cada um. Não é sinônimo de anúncio.
 - Para consultar estoque de um item é preciso obter o `user_product_id` pelo recurso `/items`; **se o item tiver variações, ele vive dentro do array `variations`**. Isso importa para o Full na Fase 4.
 - Cada `user_product` pertence a uma família (`family_id`), que agrupa vários UPs.
+- **O pedido traz o user product vendido** (MEDIDO em 25/09/2026, D-362): `GET /orders/{id}` tem `order_items[].item.user_product_id`, igual ao da raiz do anúncio nos 8 pedidos da sonda (quatro contas, anúncios sem variação). As chaves do item no pedido: `id`, `title`, `category_id`, `variation_id`, `seller_custom_field`, `variation_attributes`, `warranty`, `condition`, `seller_sku`, `global_price`, `net_weight`, `user_product_id`, `release_date`, `attributes`.
 
 ### O que os dados reais mostraram
 

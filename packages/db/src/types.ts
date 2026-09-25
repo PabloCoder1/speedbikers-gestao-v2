@@ -2351,6 +2351,7 @@ export type Database = {
           title: string
           unit_price: number
           updated_at: string
+          user_product_id: string | null
           variation_id: string | null
         }
         Insert: {
@@ -2370,6 +2371,7 @@ export type Database = {
           title: string
           unit_price: number
           updated_at?: string
+          user_product_id?: string | null
           variation_id?: string | null
         }
         Update: {
@@ -2389,6 +2391,7 @@ export type Database = {
           title?: string
           unit_price?: number
           updated_at?: string
+          user_product_id?: string | null
           variation_id?: string | null
         }
         Relationships: [
