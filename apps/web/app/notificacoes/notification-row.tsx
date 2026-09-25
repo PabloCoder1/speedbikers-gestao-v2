@@ -8,7 +8,7 @@ import { StatusPill } from "../../components/status-pill";
 import { tomDeStatus, type Tom } from "../../components/tone";
 import { formatDateTime } from "../../lib/format";
 import { eventTypeLabel, severityLabel, statusTone } from "../../lib/labels";
-import { entityHref, entityLabel, formatEventDiff } from "../../lib/event-format";
+import { entityHref, entityText, formatEventDiff } from "../../lib/event-format";
 import { markNotificationRead } from "./actions";
 
 /**
@@ -91,6 +91,8 @@ function iconeDaFamilia(eventType: string): NomeDoIcone {
       return "sincronizar";
     case "ai":
       return "lampada";
+    case "central":
+      return "alvo";
     default:
       return "pulso";
   }
@@ -103,9 +105,9 @@ export function NotificationRow({ notification }: { notification: NotificationRo
 
   const isUnread = readAt === null;
   const diff = formatEventDiff(notification.eventType, notification.before, notification.after);
-  const href = entityHref(notification.entityType, notification.entityId);
+  const href = entityHref(notification.entityType, notification.entityId, notification.after);
   const rotulo = eventTypeLabel(notification.eventType);
-  const alvo = `${entityLabel(notification.entityType)} ${notification.entityId}`;
+  const alvo = entityText(notification.entityType, notification.entityId, notification.after);
 
   /*
     O MESMO tom da pílula, pela MESMA função. `tone.ts` é o dono único dos

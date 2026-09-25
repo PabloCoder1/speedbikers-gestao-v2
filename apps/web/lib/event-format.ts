@@ -1,3 +1,5 @@
+import { actionKindLabel } from "@sb/domain";
+
 import { formatCurrency } from "./format";
 import { listingStatusLabel } from "./labels";
 
@@ -44,6 +46,19 @@ export function formatEventDiff(
     case "listing.status.paused":
     case "listing.status.reactivated":
       return `${listingStatusLabel(scalar(b.status))} → ${listingStatusLabel(scalar(a.status))}`;
+    // D-411: o alerta da central diz o tipo e, quando há, o impacto estimado
+    // que o detector calculou -- a mesma forma gravada por
+    // `sincronizar_alertas_central`.
+    case "central.alert.opened": {
+      const kind = typeof a.kind === "string" ? a.kind : null;
+      const impacto = typeof a.impacto === "number" ? a.impacto : null;
+
+      if (kind === null) return null;
+
+      return impacto === null || impacto <= 0
+        ? actionKindLabel(kind)
+        : `${actionKindLabel(kind)} · ${formatCurrency(impacto)} de impacto estimado`;
+    }
     default:
       return null;
   }
@@ -74,8 +89,19 @@ export function formatEventDiff(
  */
 const MLB = /^MLB[0-9]+$/;
 
-export function entityHref(entityType: string, entityId: string): string | null {
+export function entityHref(
+  entityType: string,
+  entityId: string,
+  after: Record<string, unknown> | null = null,
+): string | null {
   if (entityType === "sku") return `/skus/${entityId}`;
+  // D-411: a ação não tem página própria; a fila de /acoes filtrada pelo tipo
+  // do alerta mostra o episódio com os atalhos para a tela que o explica.
+  if (entityType === "action") {
+    const kind = after !== null && typeof after.kind === "string" ? after.kind : null;
+
+    return kind === null ? "/acoes" : `/acoes?tipo=${encodeURIComponent(kind)}`;
+  }
   // D-110: primeiro evento cujo destino tem tela de detalhe própria (D-095).
   // `entity_id` é o `support_cases.id`, o mesmo UUID da rota.
   if (entityType === "support_case") return `/atendimento/${entityId}`;
@@ -89,6 +115,22 @@ export function entityLabel(entityType: string): string {
   if (entityType === "listing") return "Anúncio";
   if (entityType === "order") return "Pedido";
   if (entityType === "support_case") return "Atendimento";
+  if (entityType === "action") return "Alerta";
 
   return entityType;
+}
+
+/**
+ * O destino como a linha e o toast o nomeiam. Para quase tudo é "rótulo + id"
+ * ("SKU 3fa2…", "Anúncio MLB123"); o alerta da central (D-411) tem um uuid de
+ * ação que não diz nada a ninguém -- vira o tipo do alerta e o anúncio, quando há.
+ */
+export function entityText(entityType: string, entityId: string, after: Record<string, unknown> | null = null): string {
+  if (entityType === "action" && after !== null && typeof after.kind === "string") {
+    const mlb = typeof after.mlb_id === "string" && MLB.test(after.mlb_id) ? ` · ${after.mlb_id}` : "";
+
+    return `${actionKindLabel(after.kind)}${mlb}`;
+  }
+
+  return `${entityLabel(entityType)} ${entityId}`;
 }

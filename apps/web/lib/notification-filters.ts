@@ -72,7 +72,7 @@ export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
  * catálogo, e uma opção que hoje devolve vazio é diferente de uma opção que
  * não existe — a primeira responde "não houve", a segunda não responde nada.
  */
-export const NOTIFICATION_FAMILIES = ["listing", "stock", "order", "support", "sync", "ai"] as const;
+export const NOTIFICATION_FAMILIES = ["listing", "stock", "order", "support", "sync", "ai", "central"] as const;
 
 export type NotificationFamily = (typeof NOTIFICATION_FAMILIES)[number];
 
@@ -83,6 +83,7 @@ const FAMILY_LABEL: Record<NotificationFamily, string> = {
   support: "Atendimento",
   sync: "Sincronização",
   ai: "Copiloto e IA",
+  central: "Central do negócio",
 };
 
 export function notificationFamilyLabel(family: NotificationFamily): string {

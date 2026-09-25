@@ -443,4 +443,5 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
 - **D-409** — O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
 - **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
+- **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
 

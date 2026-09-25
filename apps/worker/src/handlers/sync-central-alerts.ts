@@ -37,6 +37,8 @@ const resultadoSchema = z.object({
   continuas: z.number(),
   criadas: z.number(),
   encerradas: z.number(),
+  /** D-411: episódios novos de severidade alta que viraram notificação. Ausente antes da migration. */
+  notificadas: z.number().optional(),
 });
 
 export interface SyncCentralAlertsDeps {
@@ -89,6 +91,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
         rodou: r.fontes.includes(fonte),
         detectados: r.detectados,
         criadas: r.criadas,
+        notificadas: r.notificadas ?? null,
         atualizadas: r.atualizadas,
         continuas: r.continuas,
         encerradas: r.encerradas,

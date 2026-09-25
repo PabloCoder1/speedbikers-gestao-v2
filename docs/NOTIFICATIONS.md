@@ -144,6 +144,8 @@ Notificação e ação são coisas diferentes e não devem se confundir:
 
 Um evento crítico pode gerar as duas. A maioria dos eventos gera apenas notificação, e muitos não geram nem isso.
 
+O caminho inverso existe desde D-411: o alerta NOVO de severidade alta da central (uma ação em `actions`) grava um `central.alert.opened` na mesma transação, e a notificação avisa que há uma ação a decidir — o link leva à fila de `/acoes` do tipo do alerta. O episódio que continua aberto não notifica de novo.
+
 *Motivo:* a V2 chegou a 5.243 alertas abertos. Cinco mil alertas não são cinco mil problemas — são uma tela que ninguém abre.
 
 ---

@@ -76,6 +76,11 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   // nada — "importante" alerta sem o peso de "critico", reservado para
   // dado errado ou sincronização morta.
   "ai.budget.exceeded": "importante",
+  // D-411: o episódio NOVO de severidade alta de um alerta da central (frete,
+  // Ads, produto no prejuízo). Medido: 15 no primeiro dia (a carga inicial),
+  // nenhum no segundo -- "importante" avisa sem gastar o "crítico", que é de
+  // dado errado ou sincronização morta.
+  "central.alert.opened": "importante",
   // MEDIDO antes de calibrar (D-110): 17 mediações NOVAS por dia nesta
   // operação. O requisito propunha "critico" como regra conceitual a
   // calibrar com dado real — 17 críticos/dia esvaziaria o nível na primeira
