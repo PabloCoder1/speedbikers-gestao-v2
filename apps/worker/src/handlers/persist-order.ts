@@ -179,6 +179,11 @@ export interface OrderPrefetch {
   /** `chaveDoItem(item_id, variation_id)` -> vinculo vigente. Ausente = sem vinculo. */
   linkByItemKey: Map<string, ResolvedLink>;
   /**
+   * D-362: `user_product_id` -> o vínculo `USER_PRODUCT` da conta. A segunda
+   * tentativa: só vale para o item sem vínculo por anúncio.
+   */
+  linkByUserProduct: Map<string, ResolvedLink>;
+  /**
    * `String(order.id)` -> movimentos gravados (D-351). Lido so para pedido em
    * status de venda ou de cancelamento; ausente = nada gravado.
    */
@@ -857,12 +862,14 @@ export async function prefetchOrders(
   const previousStatusById = new Map<string, string>();
   const logisticByOrderId = new Map<string, PersistedLogistic>();
   const linkByItemKey = new Map<string, ResolvedLink>();
+  const linkByUserProduct = new Map<string, ResolvedLink>();
 
   if (orders.length === 0) {
     return {
       previousStatusById,
       logisticByOrderId,
       linkByItemKey,
+      linkByUserProduct,
       recordedByOrderId: new Map(),
       cutoffBySku: new Map(),
       saleTransitionByOrderId: new Map(),
@@ -871,10 +878,23 @@ export async function prefetchOrders(
 
   const orderIds = orders.map((order) => order.id);
   const itemIds = [...new Set(orders.flatMap((order) => order.order_items.map((item) => item.item.id)))];
+  // D-362: os user products que os pedidos da página trazem. Página sem
+  // nenhum (pedidos anteriores à captura) não paga a leitura.
+  const userProducts = [
+    ...new Set(
+      orders.flatMap((order) =>
+        order.order_items.flatMap((item) => {
+          const up = userProductDoItem(item.item.user_product_id);
+
+          return up === null ? [] : [up];
+        }),
+      ),
+    ),
+  ];
 
   // 1 + N idas, com N = lotes de item. As quatro primeiras nao dependem umas
   // das outras.
-  const [statusResult, linkResults, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
+  const [statusResult, linkResults, userProductResults, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
     // D-352: a logistica gravada vem na MESMA leitura do status — ela e a
     // decisao ja tomada, e releitura nunca a reescreve (R5).
     db.from("orders").select("id, status, logistic_type, logistic_captured_at").in("id", orderIds),
@@ -886,6 +906,16 @@ export async function prefetchOrders(
           .eq("ml_account_id", context.mlAccountId)
           .eq("ref_kind", "ITEM")
           .in("item_id", lote),
+      ),
+    ),
+    Promise.all(
+      emLotes(userProducts, ITENS_POR_CONSULTA).map((lote) =>
+        db
+          .from("sku_listing_links")
+          .select(SKU_LINK_WITH_KIND_SELECT)
+          .eq("ml_account_id", context.mlAccountId)
+          .eq("ref_kind", "USER_PRODUCT")
+          .in("user_product_id", lote),
       ),
     ),
     lerMovimentosGravados(
@@ -926,6 +956,18 @@ export async function prefetchOrders(
     }
   }
 
+  for (const linkResult of userProductResults) {
+    // A mesma regra: falha de leitura LANÇA, nunca vira "sem vínculo".
+    for (const row of linhasDe(linkResult, "sku_listing_links") as unknown as SkuLinkWithKindRow[]) {
+      // `sku_listing_links_ref_shape` garante o user product no `USER_PRODUCT`.
+      if (row.user_product_id === null) {
+        continue;
+      }
+
+      linkByUserProduct.set(row.user_product_id, linkResolvido(row));
+    }
+  }
+
   // D-188: `kind` e componentes vem embutidos na propria leitura do vinculo.
   // Antes eram duas consultas a mais, encadeadas (skus dependia dos vinculos,
   // sku_components dependia dos kinds).
@@ -936,7 +978,11 @@ export async function prefetchOrders(
   // Verificacao de e6fda07, ALTA-1: as devolucoes gravadas, na mesma rodada do
   // corte, e so dos pedidos com venda gravada -- devolucao sem venda nao existe.
   const [cutoffBySku, devolucoes] = await Promise.all([
-    readErpCutoffs(db, context.organizationId, skusComCorte(linkByItemKey.values(), recordedByOrderId.values())),
+    readErpCutoffs(
+      db,
+      context.organizationId,
+      skusComCorte([...linkByItemKey.values(), ...linkByUserProduct.values()], recordedByOrderId.values()),
+    ),
     lerDevolucoes(db, context.organizationId, pedidosComVenda(recordedByOrderId)),
   ]);
 
@@ -946,6 +992,7 @@ export async function prefetchOrders(
     previousStatusById,
     logisticByOrderId,
     linkByItemKey,
+    linkByUserProduct,
     recordedByOrderId,
     cutoffBySku,
     saleTransitionByOrderId,
@@ -1107,9 +1154,13 @@ export async function persistOrder(
     // que o `maybeSingle()` sem linha significa.
     previousStatus = prefetch.previousStatusById.get(String(order.id)) ?? null;
     logisticaGravada = prefetch.logisticByOrderId.get(String(order.id)) ?? SEM_LOGISTICA;
-    resolvedLinks = order.order_items.map(
-      (item, index) => prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null)) ?? null,
-    );
+    // D-362: o vínculo por anúncio vence; sem ele, o do user product do pedido.
+    resolvedLinks = order.order_items.map((item, index) => {
+      const porAnuncio = prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null));
+      const up = userProductDoItem(item.item.user_product_id);
+
+      return porAnuncio ?? (up === null ? null : (prefetch.linkByUserProduct.get(up) ?? null));
+    });
     gravados = prefetch.recordedByOrderId.get(String(order.id)) ?? nadaGravado();
     cortes = prefetch.cutoffBySku;
     transicaoGravada = prefetch.saleTransitionByOrderId.get(String(order.id)) ?? null;
@@ -1119,7 +1170,13 @@ export async function persistOrder(
       db.from("orders").select("status, logistic_type, logistic_captured_at").eq("id", order.id).maybeSingle(),
       Promise.all(
         order.order_items.map((item, index) =>
-          resolveSku(db, context.mlAccountId, item.item.id, variationIds[index] ?? null),
+          resolveSku(
+            db,
+            context.mlAccountId,
+            item.item.id,
+            variationIds[index] ?? null,
+            userProductDoItem(item.item.user_product_id),
+          ),
         ),
       ),
       mexeNoEstoque(order.status)
@@ -1552,12 +1609,17 @@ function contaEstornosFull(writes: PageWrites | undefined, logger: Logger, order
  * item, nunca recalculado por join na leitura. Mesma forma de índice parcial
  * de `sku_listing_links` (`docs/DATABASE.md` secao 4): `variation_id` nulo
  * precisa de `.is()`, não `.eq()`.
+ *
+ * D-362: sem vínculo por anúncio, a segunda tentativa é o vínculo
+ * `USER_PRODUCT` do user product que o pedido traz. O por anúncio vence
+ * sempre -- é a decisão do dono para quando os dois divergem.
  */
 async function resolveSku(
   db: AdminClient,
   mlAccountId: string,
   itemId: string,
   variationId: string | null,
+  userProductId: string | null,
 ): Promise<ResolvedLink | null> {
   const query = db
     .from("sku_listing_links")
@@ -1581,6 +1643,37 @@ async function resolveSku(
   // D-188: uma ida em vez de tres. O caminho do webhook processa UM pedido e
   // nao tem o que agrupar, entao era ele que ainda pagava `sku_listing_links`
   // + `skus` + `sku_components` em sequencia.
+  const row = result.data as unknown as SkuLinkWithKindRow | null;
+
+  if (row !== null) {
+    return linkResolvido(row);
+  }
+
+  return userProductId === null ? null : resolvePeloUserProduct(db, mlAccountId, userProductId);
+}
+
+/**
+ * D-362: o vínculo `USER_PRODUCT` da conta. O índice único
+ * `sku_listing_links_user_product_unique` garante no máximo um.
+ */
+async function resolvePeloUserProduct(
+  db: AdminClient,
+  mlAccountId: string,
+  userProductId: string,
+): Promise<ResolvedLink | null> {
+  const result = await db
+    .from("sku_listing_links")
+    .select(SKU_LINK_WITH_KIND_SELECT)
+    .eq("ml_account_id", mlAccountId)
+    .eq("ref_kind", "USER_PRODUCT")
+    .eq("user_product_id", userProductId)
+    .maybeSingle();
+
+  if (result.error !== null) {
+    // A mesma regra do vínculo por anúncio: falha não é "sem vínculo".
+    throw new Error(`falha ao resolver sku_listing_link (user product ${userProductId}): ${result.error.message}`);
+  }
+
   const row = result.data as unknown as SkuLinkWithKindRow | null;
 
   return row === null ? null : linkResolvido(row);

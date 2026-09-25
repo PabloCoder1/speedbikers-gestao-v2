@@ -27,7 +27,7 @@
  * Forma da resposta, verificada contra o PostgREST real:
  *
  * ```json
- * { "id": "...", "sku_id": "...", "item_id": "MLB...", "variation_id": null,
+ * { "id": "...", "sku_id": "...", "item_id": "MLB...", "variation_id": null, "user_product_id": null,
  *   "skus": { "kind": "KIT", "sku_components": [ { "component_sku_id": "...", "quantity": 3 } ] } }
  * ```
  *
@@ -35,7 +35,7 @@
  * num SKU `PRODUTO` o array vem vazio — não ausente.
  */
 export const SKU_LINK_WITH_KIND_SELECT =
-  "id, sku_id, item_id, variation_id, skus(kind, sku_components!sku_components_kit_sku_id_fkey(component_sku_id, quantity))";
+  "id, sku_id, item_id, variation_id, user_product_id, skus(kind, sku_components!sku_components_kit_sku_id_fkey(component_sku_id, quantity))";
 
 /** Forma da linha que `SKU_LINK_WITH_KIND_SELECT` devolve. */
 export interface SkuLinkWithKindRow {
@@ -43,5 +43,7 @@ export interface SkuLinkWithKindRow {
   sku_id: string;
   item_id: string | null;
   variation_id: string | null;
+  /** D-362: preenchido no vínculo `USER_PRODUCT`; nulo no `ITEM`. */
+  user_product_id: string | null;
   skus: { kind: string; sku_components: { component_sku_id: string; quantity: number }[] } | null;
 }

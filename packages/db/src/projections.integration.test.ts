@@ -38,6 +38,8 @@ const COMPONENT_ID = randomUUID();
 const SIMPLE_ID = randomUUID();
 const ITEM_KIT = `MLB${String(Date.now()).slice(-9)}1`;
 const ITEM_SIMPLE = `MLB${String(Date.now()).slice(-9)}2`;
+// D-362: o vínculo pelo user product do pedido.
+const USER_PRODUCT = `MLBU${String(Date.now()).slice(-9)}3`;
 
 const db = createClient<Database>(SUPABASE_URL, SERVICE_ROLE_KEY ?? "sem-chave", {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -117,6 +119,14 @@ beforeAll(async () => {
         sku_id: SIMPLE_ID,
         source: "MANUAL",
       },
+      {
+        organization_id: ORGANIZATION_ID,
+        ml_account_id: ACCOUNT_ID,
+        ref_kind: "USER_PRODUCT",
+        user_product_id: USER_PRODUCT,
+        sku_id: KIT_ID,
+        source: "IMPORT_UPSELLER",
+      },
     ]),
   );
 });
@@ -168,6 +178,23 @@ describe("projeção do vínculo com kind e componentes (D-188)", () => {
     // mapa depende disso (D-186).
     expect(simples?.variation_id).toBe("12345");
     expect(kit?.variation_id).toBeNull();
+  });
+
+  it("o vínculo USER_PRODUCT volta com o user product, e o kit decompõe igual (D-362)", async () => {
+    const resultado = await db
+      .from("sku_listing_links")
+      .select(SKU_LINK_WITH_KIND_SELECT)
+      .eq("ml_account_id", ACCOUNT_ID)
+      .eq("ref_kind", "USER_PRODUCT")
+      .in("user_product_id", [USER_PRODUCT]);
+
+    expect(resultado.error).toBeNull();
+
+    const linhas = resultado.data as unknown as SkuLinkWithKindRow[];
+
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toMatchObject({ item_id: null, variation_id: null, user_product_id: USER_PRODUCT });
+    expect(linhas[0]?.skus?.sku_components).toEqual([{ component_sku_id: COMPONENT_ID, quantity: 3 }]);
   });
 
   it("sem nomear a chave estrangeira, o PostgREST RECUSA — é por isso que o nome está na constante", async () => {
