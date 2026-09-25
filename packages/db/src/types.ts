@@ -2279,6 +2279,7 @@ export type Database = {
           organization_id: string
           seller_discount: number | null
           seller_shipping_cost: number | null
+          seller_shipping_share: number | null
           seller_shipping_subsidy: number | null
           shipping_list_cost: number | null
         }
@@ -2291,6 +2292,7 @@ export type Database = {
           organization_id: string
           seller_discount?: number | null
           seller_shipping_cost?: number | null
+          seller_shipping_share?: number | null
           seller_shipping_subsidy?: number | null
           shipping_list_cost?: number | null
         }
@@ -2303,6 +2305,7 @@ export type Database = {
           organization_id?: string
           seller_discount?: number | null
           seller_shipping_cost?: number | null
+          seller_shipping_share?: number | null
           seller_shipping_subsidy?: number | null
           shipping_list_cost?: number | null
         }

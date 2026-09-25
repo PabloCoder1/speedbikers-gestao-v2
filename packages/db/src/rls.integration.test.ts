@@ -17127,3 +17127,177 @@ describe("get_quem_paga_frete: quem paga o frete, por envio (D-412)", () => {
     );
   });
 });
+
+/**
+ * D-413: o frete do envio compartilhado conta uma vez. Os casos da sonda de
+ * produção, com a conta feita à mão:
+ *
+ *   envio  pedidos (valor)            frete gravado    parte de cada um
+ *   7201   127,90 + 71,90  (Coleta)   33,60 e 33,60    21,508709 e 12,091291  (33,6 × valor ÷ 199,8)
+ *   7202   74,90 + 39,80   (Full)     8,45 e 13,71     8,45 e 13,71           (diferentes: ficam como vieram)
+ *   7203   100,00          (sozinho)  10,00            10,00
+ *   7204   60,00 + 40,00   (outro dia, o frete do 2º chega depois)  20 e 20 -> 12 e 8
+ *
+ * Soma pedido a pedido do dia 22/09: 99,36. Com a parte: 65,76.
+ */
+describe("seller_shipping_share: o frete do envio compartilhado conta uma vez (D-413)", () => {
+  const CONTA = "cccc4131-0000-4000-8000-00000000d413";
+  const PEDIDOS = [9904130001, 9904130002, 9904130003, 9904130004, 9904130005, 9904130006, 9904130007];
+  const [P1, P2, P3, P4, P5, P6, P7] = PEDIDOS as [number, number, number, number, number, number, number];
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Frete envio','rlstest-frete-envio','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id, shipping_id, logistic_type)
+       select p.id, $1, $2, p.pack, 'paid', p.quando, p.quando, p.valor, 'BRL', p.envio, p.logistica
+       from (values
+         ($3::bigint, 88201::bigint, timestamptz '2026-09-22 15:00+00', 127.90::numeric, 7201::bigint, 'cross_docking'),
+         ($4, 88201, timestamptz '2026-09-22 15:00+00', 71.90, 7201, 'cross_docking'),
+         ($5, 88202, timestamptz '2026-09-22 16:00+00', 74.90, 7202, 'fulfillment'),
+         ($6, 88202, timestamptz '2026-09-22 16:00+00', 39.80, 7202, 'fulfillment'),
+         ($7, null, timestamptz '2026-09-22 17:00+00', 100.00, 7203, 'cross_docking'),
+         ($8, 88204, timestamptz '2026-09-23 15:00+00', 60.00, 7204, 'cross_docking'),
+         ($9, 88204, timestamptz '2026-09-23 15:00+00', 40.00, 7204, 'cross_docking')
+       ) as p(id, pack, quando, valor, envio, logistica)
+       on conflict (id) do nothing`,
+      [ORG_SB, CONTA, ...PEDIDOS],
+    );
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+          title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       select p.id, $1, $2, 0, 'MLB94130' || p.n, null, 'Frete envio ' || p.n, 1, p.valor, 'BRL', null, 5
+       from (values ($3::bigint, 1, 127.90::numeric), ($4, 2, 71.90), ($5, 3, 74.90), ($6, 4, 39.80),
+                    ($7, 5, 100.00), ($8, 6, 60.00), ($9, 7, 40.00)) as p(id, n, valor)
+       on conflict do nothing`,
+      [ORG_SB, CONTA, ...PEDIDOS],
+    );
+    // O frete do 7º pedido chega depois, no teste da ordem de chegada.
+    await client.query(
+      `insert into public.order_financials
+         (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount,
+          shipping_list_cost, seller_shipping_subsidy, buyer_shipping_cost, buyer_shipping_subsidy)
+       select f.id, $1, $2, f.vendedor, 0, f.cheio, f.ml_v, f.comprador, f.ml_c
+       from (values
+         ($3::bigint, 33.60::numeric, 100.59::numeric, 0::numeric, 66.99::numeric, 0::numeric),
+         ($4, 33.60, 100.59, 0, 66.99, 0),
+         ($5, 8.45, 12.07, 3.62, 0, 0),
+         ($6, 13.71, 19.58, 5.87, 0, 0),
+         ($7, 10.00, null, null, null, null),
+         ($8, 20.00, null, null, null, null)
+       ) as f(id, vendedor, cheio, ml_v, comprador, ml_c)
+       on conflict (order_id) do nothing`,
+      [ORG_SB, CONTA, P1, P2, P3, P4, P5, P6],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.order_items where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.ml_accounts where id = $1", [CONTA]);
+  });
+
+  async function partes(): Promise<Record<string, number | null>> {
+    const { rows } = await client.query<{ order_id: string; parte: number | null }>(
+      "select order_id::text, seller_shipping_share::float8 as parte from public.order_financials where order_id = any($1)",
+      [PEDIDOS],
+    );
+
+    return Object.fromEntries(rows.map((r) => [r.order_id, r.parte]));
+  }
+
+  async function freteDoFaturamento(dia: string): Promise<number | null> {
+    const rows = await asUser<{ r: { resumo: { frete_vendedor: number | null } } }>(
+      ADMIN_SB,
+      `select public.get_faturamento(date '${dia}', date '${dia}', '${CONTA}'::uuid, false) as r`,
+    );
+
+    return rows[0]?.r.resumo.frete_vendedor ?? null;
+  }
+
+  it("o pacote com o mesmo custo divide pelo valor; custos diferentes e o pedido sozinho ficam como vieram", async () => {
+    const p = await partes();
+
+    expect(p[String(P1)]).toBeCloseTo(21.508709, 6);
+    expect(p[String(P2)]).toBeCloseTo(12.091291, 6);
+    expect((p[String(P1)] ?? 0) + (p[String(P2)] ?? 0)).toBeCloseTo(33.6, 6);
+    expect([p[String(P3)], p[String(P4)], p[String(P5)], p[String(P6)]]).toEqual([8.45, 13.71, 10, 20]);
+    expect(p[String(P7)]).toBeUndefined();
+  });
+
+  it("get_faturamento e a margem de /vendas somam a parte: 65,76, não 99,36", async () => {
+    expect(await freteDoFaturamento("2026-09-22")).toBe(65.76);
+
+    const margem = await asUser<{ frete: string | null }>(
+      ADMIN_SB,
+      `select frete_vendedor::text as frete from public.get_sales_margin_summary(date '2026-09-22', date '2026-09-22', '${CONTA}'::uuid, null, false)`,
+    );
+
+    expect(Number(margem[0]?.frete)).toBe(65.76);
+  });
+
+  it("o frete que chega depois rateia o envio, e a venda do detector acompanha", async () => {
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1,$2,$3,20,0) on conflict (order_id) do nothing`,
+      [P7, ORG_SB, CONTA],
+    );
+
+    const p = await partes();
+
+    expect([p[String(P6)], p[String(P7)]]).toEqual([12, 8]);
+
+    const { rows } = await client.query<{ order_id: string; frete: number }>(
+      "select order_id::text, shipping_cost::float8 as frete from public.shipping_sales where order_id = any($1) order by order_id",
+      [[P6, P7]],
+    );
+
+    expect(rows.map((r) => r.frete)).toEqual([12, 8]);
+    expect(await freteDoFaturamento("2026-09-23")).toBe(20);
+  });
+
+  it("o pedido cancelado sai da divisão: o outro volta a levar o envio inteiro, e volta a dividir se o cancelamento for desfeito", async () => {
+    await client.query("update public.orders set status = 'cancelled' where id = $1", [P2]);
+
+    let p = await partes();
+
+    expect(p[String(P1)]).toBe(33.6);
+    expect(await freteDoFaturamento("2026-09-22")).toBe(65.76);
+
+    await client.query("update public.orders set status = 'paid' where id = $1", [P2]);
+    p = await partes();
+
+    expect(p[String(P1)]).toBeCloseTo(21.508709, 6);
+  });
+
+  it("quem paga o frete: o envio repetido conta uma vez, as cobranças diferentes do mesmo envio somam", async () => {
+    const rows = await asUser<{ r: Record<string, unknown> }>(
+      ADMIN_SB,
+      `select public.get_quem_paga_frete(date '2026-09-22', date '2026-09-22', '${CONTA}'::uuid) as r`,
+    );
+
+    expect(rows[0]?.r).toMatchObject({
+      envios_com_frete: 3,
+      envios_com_detalhe: 2,
+      frete_cheio: 132.24,
+      vendedor_pagou: 55.76,
+      ml_bancou_vendedor: 9.49,
+      comprador_pagou: 66.99,
+      frete_gratis_comprador: 1,
+      nao_fecham: 0,
+    });
+  });
+
+  it("a parte existe exatamente quando o custo existe", async () => {
+    await expect(
+      client.query("update public.order_financials set seller_shipping_share = null where order_id = $1", [P5]),
+    ).rejects.toThrow(/order_financials_parte_do_frete/);
+  });
+});

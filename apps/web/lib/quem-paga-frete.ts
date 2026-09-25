@@ -22,7 +22,10 @@ export interface LogisticaDoFrete {
 
 export interface QuemPagaFrete {
   readonly periodo: { readonly de: string; readonly ate: string };
-  /** O primeiro dia com o detalhe gravado (D-407); `null` = nenhum ainda. */
+  /**
+   * O dia do pedido mais antigo com o detalhe (D-407): a captura começou em
+   * 25/09 e alcança pedidos de alguns dias antes. `null` = nenhum ainda.
+   */
   readonly detalhe_desde: string | null;
   readonly envios_com_frete: number;
   readonly envios_com_detalhe: number;
@@ -189,8 +192,8 @@ export function coberturaDoQuemPaga(q: QuemPagaFrete): string {
   const parte = fracao(q.envios_com_detalhe, q.envios_com_frete);
   const base =
     `Detalhe em ${formatCount(q.envios_com_detalhe)} dos ${formatCount(q.envios_com_frete)} envios do período` +
-    `${parte === null ? "" : ` (${formatPercent(parte)})`}: ele é gravado desde ${formatBusinessDate(q.detalhe_desde)}, ` +
-    "e os envios anteriores têm só o frete do vendedor.";
+    `${parte === null ? "" : ` (${formatPercent(parte)})`}: os pedidos com o detalhe começam em ` +
+    `${formatBusinessDate(q.detalhe_desde)}, e os anteriores têm só o frete do vendedor.`;
 
   return q.nao_fecham > 0
     ? `${base} Em ${formatCount(q.nao_fecham)} deles as partes não fecham com o frete cheio (descontos do comprador que se sobrepõem): as somas são das partes.`

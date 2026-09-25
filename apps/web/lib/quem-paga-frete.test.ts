@@ -83,7 +83,7 @@ describe("as frases e a cobertura (D-412)", () => {
 
   it("a cobertura diz quantos envios têm o detalhe, desde quando, e os que não fecham", () => {
     expect(legivel(coberturaDoQuemPaga(q))).toBe(
-      "Detalhe em 689 dos 27.880 envios do período (2,5%): ele é gravado desde 24/09/2026, e os envios anteriores têm só o frete do vendedor. Em 35 deles as partes não fecham com o frete cheio (descontos do comprador que se sobrepõem): as somas são das partes.",
+      "Detalhe em 689 dos 27.880 envios do período (2,5%): os pedidos com o detalhe começam em 24/09/2026, e os anteriores têm só o frete do vendedor. Em 35 deles as partes não fecham com o frete cheio (descontos do comprador que se sobrepõem): as somas são das partes.",
     );
     expect(coberturaDoQuemPaga({ ...q, detalhe_desde: null })).toMatch(/começa a ser gravado/);
   });
