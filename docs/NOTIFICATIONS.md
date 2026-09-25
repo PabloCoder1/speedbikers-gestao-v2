@@ -119,8 +119,11 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 - Histórico completo, com estado lido / não lido por usuário. **Feito.**
 - Link para a entidade afetada **quando a rota existe** — hoje só `entity_type = "sku"` (`/skus/[skuId]`); `listing`/`order` ainda não têm tela de detalhe própria, aparecem como texto.
 - Diff legível (`antes → depois`) só para os quatro tipos de evento com formato de `before`/`after` já documentado (`listing.price/title/available_quantity.changed`, `listing.status.paused`/`.reactivated`) — os demais mostram só o rótulo do evento.
-- **Pendente:** filtro por severidade, conta e período (a lista de hoje é só cronológica); agrupamento por janela (item 5, é concern de toast/exibição em tempo real, não da lista histórica).
-- Distinção entre alteração automática e manual **quando a origem puder ser identificada** — o campo `source` de `domain_events` carrega isso, ainda não exibido na lista (não pedido em D-074, cabe numa iteração de filtro).
+- **Filtro por severidade, tipo e conta — FEITO em D-393**, com o número que D-269 exigia antes de deixá-los entrar: 54.306 notificações no Dev, **13.810 críticas (25,4%)** espalhadas por 544 páginas, e **60,4% da caixa num tipo só** (`listing.available_quantity.changed`). Tipo entrou como FAMÍLIA (o prefixo antes do primeiro ponto — seis, contra 24 tipos no catálogo), e o recorte de lido/não lido de D-290 continua em pílula, não em menu. A lista ganhou cabeçalho de dia, e o dia é o da **chegada**, não o do fato: 541 das 54.306 têm os dois em dias civis diferentes, com atraso de até 32 dias.
+- **Filtro por período — RECUSADO com número (D-393)**, registrado como candidata: o Dev inteiro cabe em 21 dias (24/08 a 14/09; o ambiente está pausado desde D-350), então "últimos 7 dias" devolveria zero e se leria como tela quebrada. Entra quando a série tiver tamanho.
+- **Escrita em lote dentro do recorte — FEITA em D-393**, pela RPC `mark_notifications_read` (`security invoker`, migration `20260923200000`): quem filtra uma família limpa AQUELA e deixa as críticas por ler. Sem recorte a escrita continua sendo o `update` direto sob RLS de D-074.
+- Agrupamento por janela (item 5) continua sendo concern de toast/exibição em tempo real, não da lista histórica.
+- Distinção entre alteração automática e manual **quando a origem puder ser identificada** — **hoje ela NÃO pode** (medido em D-393): `domain_events.source` tem dois valores nesta base, `sync` (41.517) e `system` (12.789), e nenhum evento de usuário. O filtro existiria com um lado sempre vazio.
 
 ---
 

@@ -18,6 +18,45 @@ const DAY = new Intl.DateTimeFormat("pt-BR", {
 });
 
 /**
+ * `YYYY-MM-DD` do DIA DE NEGÓCIO de um instante — a ponte que faltava entre um
+ * `timestamptz` e o vocabulário de `formatBusinessDate` (D-393).
+ *
+ * **`en-CA` não é escolha de idioma: é o formato.** Essa localidade emite
+ * exatamente `2026-09-14`, que é a forma que o resto do projeto já usa para dia
+ * de negócio (`metric_date`, `p_date_from`). Escrever a mesma coisa com
+ * `toISOString().slice(0, 10)` daria o dia **em UTC** — a armadilha que D-260
+ * pagou, deslocando um histórico inteiro para outro dia da semana.
+ *
+ * Com isto, "é o mesmo dia?" vira comparação de duas strings do MESMO fuso, e
+ * a regra de `lib/relative-time.ts` ("nunca decidir 'hoje' fora de um fuso")
+ * continua valendo — ela só deixa de ser impossível de cumprir.
+ */
+const BUSINESS_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+export function businessDayOf(value: string | Date): string {
+  const instante = value instanceof Date ? value : new Date(value);
+
+  return BUSINESS_DAY.format(instante);
+}
+
+/** O dia da semana do dia de negócio ("segunda-feira"), para cabeçalho de grupo. */
+const WEEKDAY = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  weekday: "long",
+});
+
+export function formatWeekday(value: string | Date): string {
+  const instante = value instanceof Date ? value : new Date(value);
+
+  return WEEKDAY.format(instante);
+}
+
+/**
  * Fuso fixado em America/Sao_Paulo.
  *
  * O servidor da Vercel roda em UTC e o banco guarda `timestamptz`. Sem fixar,

@@ -19,27 +19,23 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350): api `api-00041-lzn` e worker `worker-00052-jpk` em `da130c0`. Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | 25/09: worker `worker-00027-6m7` em `e4d55025` (D-407) e api `api-00021-qdr` em `cb4edb4a` (D-403), da `main`. Volta: `worker-00026-ss5`/`api-00020-9rn`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção com todas até `20260923195959` (25/09), pelo `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e abaixo de `20260923200000`, do PR #77 ainda aberto — **o último, `195959`, foi usado em D-410: a próxima migration espera o #77**. |
+| **Migrations** | Produção com todas até `20260923195959` (25/09), pelo `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
 | **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-410). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405) e a notificação dos alertas (depois do PR #77). |
 
 ### O que está pronto
 
-SKU/ML;visitas;migração
+`/notificacoes` (D-393): triagem por severidade/família/conta; 556 ms → 63 ms; migration
+`20260923200000`. O PR #53 mexe nos mesmos arquivos.
 
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. Próxima: notificação dos alertas (5J), depois do #77.
+`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. Próxima: notificação dos alertas (5J), com o #77 na `main`.
 
-`/atendimento/conhecimento` (`feat/conhecimento-ux`): filtros/paginação e modal;
-sem banco/API/RLS. `check`, build, docs e 4 E2E verdes.
+`/atendimento/conhecimento`: filtros, paginação e modal — já na `main` (`4c34bc68`).
 
 `/precos` está pronta para integração na branch de produção `main`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 
-D-390: diagnóstico do anúncio compara 7 dias antes/depois de troca de
-título/foto, só alerta queda conjunta de vendas e visitas sem outro fator
-concorrente (migration `20260921130000`). A captura de descrição por hash,
-sem reconsulta quando o item não mudou, está na migration `20260921144813`
-e aguarda CI/publicação. D-389: diagnóstico do SKU usa o
-preço EFETIVO (promocional se há campanha ativa do ML, senão o cadastrado —
-migration `20260921121405`). As duas em Dev e produção desde 21/09.
+Diagnóstico do anúncio e do SKU: D-389 e D-390, migrations `20260921121405`, `20260921130000` e
+`20260921144813` — **as três aplicadas no Dev** (conferido em 23/09; a linha anterior dizia que a
+de hash aguardava publicação, e não aguardava mais).
 
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas

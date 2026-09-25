@@ -693,6 +693,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-11 | `get_sku_curation` — **da 6ª execução em diante** | 360 a 4.000 ms | **16 a 34 ms** | `plan_cache_mode = 'force_custom_plan'`; nenhuma linha do corpo mudou. Medido em LOCAL com catálogo sintético de 3.502 SKUs | D-319 |
 | 2026-09-12 | Varredura das 25 `plpgsql` sem `plan_cache_mode` | `get_sku_curation_summary`: 9–14 ms, **sem salto na 6ª**; escritas em lote (300 ids): custom 22–30 ms | genérico **14–20 ms** nas escritas | **nenhuma mudança** — `force_custom_plan` deixaria as escritas em lote mais lentas. 21 escritas de uma linha classificadas pela forma, não cronometradas. LOCAL, carga sintética de 3.500 SKUs / 8.376 retratos | D-324 |
 | 2026-09-18 | Faixa de `/anuncios` — **medido em produção**, `authenticated` | 6 × `get_listings_dashboard(p_limit 1)`, ~115 ms cada (~0,7 s) | **63 ms** as seis, `get_listings_dashboard_counts` | contagens sem os CTEs de venda e visitas; predicado copiado e preso por teste de integração | D-381 |
+| 2026-09-23 | `/notificacoes`, primeira pagina | **556 ms** | **63 ms** | raiz da consulta em `notification_recipients` (a tabela cuja linha a tela mostra) + indice `(user_id, created_at desc)`: o planejador anda pela ordem e para na centesima linha, em vez de materializar as 54.306 do usuario e ordenar no fim | D-393 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
