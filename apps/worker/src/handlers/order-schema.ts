@@ -17,6 +17,10 @@ export const orderItemSchema = z.object({
     title: z.string(),
     variation_id: z.number().nullable().optional(),
     seller_sku: z.string().nullable().optional(),
+    // D-362: o user product vendido -- medido em 25/09 no `GET /orders/{id}`
+    // real, igual ao da raiz do anúncio. Texto livre aqui: a forma é
+    // conferida ao gravar, e um valor estranho não pode derrubar o pedido.
+    user_product_id: z.string().nullable().optional(),
   }),
   quantity: z.number().int().positive(),
   unit_price: z.number().nonnegative(),

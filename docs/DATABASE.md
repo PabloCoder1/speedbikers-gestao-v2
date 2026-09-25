@@ -202,6 +202,8 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 **Implementado em 2026-08-21** (migration `20260821040000_create_orders.sql`), gravado por `sync.orders.window` e `backfill.orders` — `apps/worker/src/handlers/persist-order.ts`.
 
+**`order_items.user_product_id` (D-362, migration `20260925170000_user_product_do_item_vendido.sql`):** o user product que o pedido traz no item (`MLBU` + dígitos; a restrição `order_items_user_product_id_forma` recusa outra forma, e o worker grava NULL nesse caso). NULL no item gravado antes da captura. É a chave do vínculo `USER_PRODUCT` de `sku_listing_links`, que a 2ª parte da D-362 usa para achar o SKU.
+
 **Fato medido na V2 que define a modelagem:** o Mercado Livre **não entrega pedido multi-linha**. `orders` e `order_items` tinham exatamente 328.211 linhas cada. Uma compra de vários itens vira **vários pedidos** ligados por `pack_id`, e 189.158 pedidos tinham um.
 
 Consequências:

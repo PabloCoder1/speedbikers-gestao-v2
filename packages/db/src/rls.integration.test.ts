@@ -17301,3 +17301,53 @@ describe("seller_shipping_share: o frete do envio compartilhado conta uma vez (D
     ).rejects.toThrow(/order_financials_parte_do_frete/);
   });
 });
+
+describe("order_items.user_product_id: o user product vendido (D-362, 1ª parte)", () => {
+  const CONTA = "dddd3621-0000-4000-8000-00000000d362";
+  const PEDIDO = 9903620001;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'User product','rlstest-user-product','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+       values ($1,$2,$3,null,'paid','2026-09-24 15:00+00','2026-09-24 15:00+00',100,'BRL')
+       on conflict (id) do nothing`,
+      [PEDIDO, ORG_SB, CONTA],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_items where order_id = $1", [PEDIDO]);
+    await client.query("delete from public.orders where id = $1", [PEDIDO]);
+    await client.query("delete from public.ml_accounts where id = $1", [CONTA]);
+  });
+
+  async function gravar(position: number, userProduct: string | null): Promise<void> {
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+          title, quantity, unit_price, currency_id, sku_id, sale_fee, user_product_id)
+       values ($1,$2,$3,$4,'MLB1278301878',null,'Item vendido',1,100,'BRL',null,10,$5)`,
+      [PEDIDO, ORG_SB, CONTA, position, userProduct],
+    );
+  }
+
+  it("aceita MLBU<dígitos> e o nulo; recusa outra forma, como o vínculo", async () => {
+    await gravar(0, "MLBU1709054559");
+    await gravar(1, null);
+    await expect(gravar(2, "1709054559")).rejects.toThrow(/order_items_user_product_id_forma/);
+
+    const { rows } = await client.query<{ user_product_id: string | null }>(
+      "select user_product_id from public.order_items where order_id = $1 order by position",
+      [PEDIDO],
+    );
+
+    expect(rows.map((r) => r.user_product_id)).toEqual(["MLBU1709054559", null]);
+  });
+});

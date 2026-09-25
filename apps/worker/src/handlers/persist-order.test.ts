@@ -617,6 +617,32 @@ describe("persistOrder", () => {
     expect(rows[0]).toMatchObject({ sku_id: null, sku_listing_link_id: null });
   });
 
+  it("grava o user product que o pedido traz no item; forma estranha ou ausente vira nulo (D-362)", async () => {
+    const { db, inserted } = fakeDb();
+    const [base] = BASE_ORDER.order_items;
+
+    if (base === undefined) throw new Error("BASE_ORDER sem item");
+
+    const order: ParsedOrder = {
+      ...BASE_ORDER,
+      order_items: [
+        { ...base, item: { ...base.item, user_product_id: "MLBU1709054559" } },
+        { ...base, item: { ...base.item, id: "MLB1054990649", user_product_id: "1709054559" } },
+        { ...base, item: { ...base.item, id: "MLB1054990650" } },
+      ],
+    };
+
+    await run(db, order);
+
+    const rows = inserted.find((entry) => entry.table === "order_items")?.rows as {
+      user_product_id: string | null;
+      sku_id: string | null;
+    }[];
+    expect(rows.map((row) => row.user_product_id)).toEqual(["MLBU1709054559", null, null]);
+    // Só grava: a resolução pelo vínculo USER_PRODUCT é a 2ª parte da D-362.
+    expect(rows.map((row) => row.sku_id)).toEqual([null, null, null]);
+  });
+
   it("converte variation_id numérico para texto, igual à coluna de sku_listing_links", async () => {
     const { db, inserted } = fakeDb({
       linkForItem: (itemId, variationId) =>

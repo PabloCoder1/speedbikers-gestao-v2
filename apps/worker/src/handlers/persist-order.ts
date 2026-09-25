@@ -724,6 +724,19 @@ function cancelamentoPrecisaDoSinal(order: ParsedOrder, plano: CancellationMovem
  * continua com `skuKind: null`: a forma `skuKind: "PRODUTO"` com `skuId: null` e
  * um estado que o contrato de `SaleDeductionItem` declara impossivel.
  */
+/** A forma de `sku_listing_links.user_product_id` e de `order_items.user_product_id`. */
+const FORMA_USER_PRODUCT = /^MLBU[0-9]+$/;
+
+/**
+ * D-362: o user product que o pedido traz no item, se tiver a forma que a
+ * coluna aceita. Outra forma vira NULL -- o pedido grava do mesmo jeito.
+ */
+function userProductDoItem(valor: string | null | undefined): string | null {
+  const up = valor ?? null;
+
+  return up !== null && FORMA_USER_PRODUCT.test(up) ? up : null;
+}
+
 function itensDeDeducao(order: ParsedOrder, resolvedLinks: readonly (ResolvedLink | null)[]): SaleDeductionItem[] {
   return order.order_items.map((item, position) => {
     const resolved = resolvedLinks[position] ?? null;
@@ -1284,6 +1297,7 @@ export async function persistOrder(
       variation_id: variationId,
       title: item.item.title,
       seller_sku: item.item.seller_sku ?? null,
+      user_product_id: userProductDoItem(item.item.user_product_id),
       quantity: item.quantity,
       unit_price: item.unit_price,
       sale_fee: item.sale_fee ?? null,

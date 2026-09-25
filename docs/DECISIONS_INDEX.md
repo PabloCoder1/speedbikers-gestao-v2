@@ -446,3 +446,4 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 - **D-413** — O frete do envio compartilhado conta uma vez: os pedidos que repetem o custo do envio o dividem, numa coluna mantida por gatilho que todas as somas leem
+- **D-362** — A venda acha o SKU pelo user product quando o anuncio nao tem vinculo proprio; o identificador vem do proprio pedido, e a 1a parte so o grava
