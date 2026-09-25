@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { CAIXA_LIMITE, NOME_LIMITE, nomeDaCopia } from "../../../lib/template-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/membership";
 
@@ -13,11 +14,11 @@ import { currentMembership } from "../../../lib/membership";
  * barreira; a UI só traduz o erro.
  *
  * O teto de 2000 espelha a caixa de resposta (D-096): template maior que o
- * campo onde será colado é template que nunca cabe.
+ * campo onde será colado é template que nunca cabe. Os dois limites moram em
+ * `lib/template-filters.ts` desde D-392, porque a TELA também precisa deles
+ * para medir o orçamento da caixa — dois números iguais em arquivos diferentes
+ * é um deles envelhecer sozinho.
  */
-
-const NAME_LIMIT = 80;
-const BODY_LIMIT = 2_000;
 
 export interface TemplateActionResult {
   ok: boolean;
@@ -29,16 +30,16 @@ function validate(name: string, body: string): string | null {
     return "Dê um nome ao template.";
   }
 
-  if (name.trim().length > NAME_LIMIT) {
-    return `O nome passa de ${String(NAME_LIMIT)} caracteres.`;
+  if (name.trim().length > NOME_LIMITE) {
+    return `O nome passa de ${String(NOME_LIMITE)} caracteres.`;
   }
 
   if (body.length === 0) {
     return "Escreva o texto do template.";
   }
 
-  if (body.length > BODY_LIMIT) {
-    return `O texto passa de ${String(BODY_LIMIT)} caracteres — o limite da caixa de resposta.`;
+  if (body.length > CAIXA_LIMITE) {
+    return `O texto passa de ${String(CAIXA_LIMITE)} caracteres — o limite da caixa de resposta.`;
   }
 
   return null;
@@ -122,6 +123,61 @@ export async function updateTemplate(
   // "sem permissão", não "sucesso vazio".
   if (result.data === null) {
     return { ok: false, message: "Só ADMIN e GESTOR podem gerenciar templates." };
+  }
+
+  revalidatePath("/atendimento/templates");
+
+  return { ok: true, message: null };
+}
+
+/**
+ * DUPLICAR (D-392) — escrever uma variante é o jeito mais comum de criar um
+ * template novo ("Troca de produto" vira "Troca de produto — fora do prazo"),
+ * e antes disto a pessoa copiava o texto na mão de um campo para o outro.
+ *
+ * O texto é copiado DO BANCO, não do que a tela tinha na tela: duplicar uma
+ * versão desatualizada, sem ninguém perceber, seria pior que recusar. E o nome
+ * sai de `nomeDaCopia`, que consulta os nomes já usados — `unique (org, name)`
+ * recusaria a segunda cópia com um erro por um nome que ninguém escolheu.
+ */
+export async function duplicateTemplate(id: string): Promise<TemplateActionResult> {
+  const supabase = await createClient();
+
+  const [authResult, membershipResult, originResult, nomesResult] = await Promise.all([
+    supabase.auth.getUser(),
+    currentMembership(supabase),
+    supabase.from("reply_templates").select("name, body").eq("id", id).maybeSingle(),
+    supabase.from("reply_templates").select("name"),
+  ]);
+
+  const userId = authResult.data.user?.id;
+  const organizationId = membershipResult.organizationId;
+
+  if (userId === undefined || organizationId === null) {
+    return { ok: false, message: "Sessão expirada — atualize a página." };
+  }
+
+  if (originResult.error !== null) {
+    return { ok: false, message: translate(originResult.error.code, originResult.error.message) };
+  }
+
+  if (originResult.data === null) {
+    return { ok: false, message: "Este template não existe mais — atualize a página." };
+  }
+
+  if (nomesResult.error !== null) {
+    return { ok: false, message: translate(nomesResult.error.code, nomesResult.error.message) };
+  }
+
+  const result = await supabase.from("reply_templates").insert({
+    organization_id: organizationId,
+    created_by: userId,
+    name: nomeDaCopia(originResult.data.name, nomesResult.data.map((linha) => linha.name)),
+    body: originResult.data.body,
+  });
+
+  if (result.error !== null) {
+    return { ok: false, message: translate(result.error.code, result.error.message) };
   }
 
   revalidatePath("/atendimento/templates");

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **386** (D-001 a D-396).
+Decisões registradas: **387** (D-001 a D-396).
 
 ## Por domínio
 
@@ -251,7 +251,7 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
 - **D-385** — `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
 
-### outros (62)
+### outros (63)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -315,6 +315,7 @@ Decisões registradas: **386** (D-001 a D-396).
 - **D-365** — /compras refeita: o resumo que responde sem abrir pedido, o proximo passo em cada linha e a previsao que mostrava a vespera
 - **D-366** — Fornecedores: uma leitura com busca e "pedido em aberto", edicao que finalmente existe, e contato que vira acao
 - **D-368** — Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
+- **D-392** — Templates de resposta passam a dizer quanto da caixa ocupam, quem escreveu e onde estao
 
 ### processo/docs (1)
 

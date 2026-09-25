@@ -390,6 +390,14 @@ export function SidebarRodapeLink({
  */
 const PAGINAS_FORA_DO_MENU: readonly { label: string; href: string; grupo: string }[] = [
   { label: "Copiloto", href: "/copiloto", grupo: "Visão geral" },
+  /*
+    Templates de resposta (D-392): a tela existe desde a D-111, alcançável por
+    três links — a Caixa de Entrada, a tela de Perguntas e o hub de
+    Configurações —, e por nenhuma busca. Quem sabia o nome dela não tinha como
+    digitá-lo. Ela FICA fora da barra de propósito, como o Copiloto: é onde se
+    mantém o texto, não uma tela de operação do dia.
+  */
+  { label: "Templates de resposta", href: "/atendimento/templates", grupo: "Atendimento" },
 ];
 
 /**

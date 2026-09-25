@@ -15979,13 +15979,293 @@ td.sb-pco-num-linha {
 .sb-claims-guidance p { margin: 0.2rem 0 0; max-width: 58rem; color: var(--sb-text-soft); font-size: 0.75rem; line-height: 1.5; }
 .sb-claims-mediation { display: block; margin-top: 0.15rem; color: var(--sb-danger); font-size: 0.625rem; font-weight: 800; letter-spacing: 0.05em; }
 .sb-claims-table tbody tr:hover { background: var(--sb-danger-soft); }
-.sb-template-row { display: grid; gap: var(--sb-space-2); padding: var(--sb-space-3); border: 1px solid var(--sb-border); border-radius: var(--sb-radius); background: var(--sb-surface); }
-.sb-template-name { color: var(--sb-primary); font-size: 0.9375rem; }
-.sb-template-body { margin: 0; color: var(--sb-text-soft); font-size: 0.875rem; white-space: pre-wrap; }
-.sb-template-actions { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
-.sb-template-danger { color: var(--sb-danger); }
-.sb-template-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sb-space-2); padding: 0.6rem 0.75rem; border-radius: var(--sb-radius-md); background: var(--sb-danger-soft); color: var(--sb-danger-ink); font-size: 0.8125rem; }
-.sb-template-error { margin: 0; color: var(--sb-danger); font-size: 0.8125rem; }
+/*
+  TEMPLATES DE RESPOSTA (D-111; a tela inteira refeita em D-392).
+
+  Era um bloco de sete linhas com uma lista de cartões simples. A tela passou a
+  ter painel, busca, ordenação, indicadores e edição inline, e o que muda de
+  verdade aqui são duas coisas:
+
+  - o CARTÃO ganha cabeça (nome + selos), meta (autor e data) e corpo dobrável.
+    A dobra é `-webkit-line-clamp`, não corte no servidor: o texto inteiro
+    continua no DOM, então Ctrl+F do navegador e leitor de tela alcançam o que
+    a dobra esconde da vista;
+  - o APERTADO — template acima de 1.500 caracteres — ganha o fio de atenção
+    na borda esquerda, o mesmo idioma de `.sb-note-atencao`. Não é erro, é
+    aviso: ele provavelmente não caberá junto de um rascunho já escrito.
+
+  Sem classe nova de forma: campo é `.sb-input`, botão é `.sb-button`, estado é
+  `.sb-status` (via `StatePill`) e a moldura do modal é a `.sb-modal` que a
+  Base de Conhecimento já usava.
+*/
+.sb-template-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: var(--sb-space-3) 1.25rem;
+  border-bottom: 1px solid var(--sb-table-rule);
+}
+
+.sb-template-search {
+  display: flex;
+  flex: 1 1 22rem;
+  gap: var(--sb-space-2);
+}
+
+.sb-template-search .sb-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-template-list {
+  display: grid;
+  gap: var(--sb-space-3);
+  margin: 0;
+  padding: var(--sb-space-3) 1.25rem;
+  list-style: none;
+}
+
+.sb-template-card {
+  display: grid;
+  gap: var(--sb-space-2);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-left: 3px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-template-card-apertado {
+  border-left-color: var(--sb-accent-ink);
+}
+
+.sb-template-cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+}
+
+.sb-template-name {
+  color: var(--sb-primary);
+  font-size: 0.9375rem;
+}
+
+.sb-template-selos {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+}
+
+/* A ocupação da caixa é NÚMERO, não estado: mono e discreta, ao lado do selo. */
+.sb-template-ocupacao {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+.sb-template-meta {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-template-body {
+  margin: 0;
+  color: var(--sb-text-soft);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sb-template-body-dobrado {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.sb-template-marca {
+  padding: 0 0.125rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+}
+
+.sb-template-danger {
+  color: var(--sb-danger);
+}
+
+.sb-template-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sb-space-2);
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+  font-size: 0.8125rem;
+}
+
+.sb-template-error {
+  margin: 0;
+  color: var(--sb-danger);
+  font-size: 0.8125rem;
+}
+
+.sb-template-aviso {
+  margin: 0;
+  color: var(--sb-success);
+  font-size: 0.8125rem;
+}
+
+/* Edição inline e formulário do modal falam a MESMA língua: rótulo em cima,
+   contador à direita do rótulo, campo largo embaixo. */
+.sb-template-edicao,
+.sb-template-form {
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-template-form {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-template-campo {
+  display: grid;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+.sb-template-campo > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+}
+
+.sb-template-contador {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-style: normal;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-text-soft);
+}
+
+.sb-template-contador-apertado {
+  color: var(--sb-accent-ink);
+}
+
+.sb-template-contador-estourou {
+  color: var(--sb-danger);
+}
+
+.sb-template-textarea {
+  min-height: 9rem;
+  padding: 0.5rem 0.625rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.sb-template-nota {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.sb-template-modal {
+  width: min(40rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.sb-template-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sb-space-3);
+}
+
+.sb-template-modal-head .sb-close {
+  flex: none;
+}
+
+.sb-template-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+  padding-top: var(--sb-space-2);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+/* O indicador de apertados só ganha cor QUANDO há apertados — número zero
+   pintado de atenção é alarme falso todo dia. */
+.sb-template-stat-atencao {
+  --sb-tone: var(--sb-accent-ink);
+  --sb-tone-ink: var(--sb-accent-ink);
+}
+
+.sb-template-state {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: 2.5rem var(--sb-space-4);
+  color: var(--sb-text-soft);
+  text-align: left;
+}
+
+.sb-template-state strong {
+  color: var(--sb-text);
+}
+
+.sb-template-state-erro strong,
+.sb-template-state-erro span {
+  color: var(--sb-danger);
+}
+
+.sb-template-teto {
+  margin: 0;
+  padding: 0 1.25rem var(--sb-space-3);
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+@media (max-width: 600px) {
+  .sb-template-toolbar,
+  .sb-template-list {
+    padding-inline: var(--sb-space-3);
+  }
+
+  .sb-template-search {
+    flex: 1 1 100%;
+  }
+
+  .sb-template-cabeca {
+    align-items: flex-start;
+  }
+
+  .sb-template-actions .sb-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
 .sb-inbox-pages { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: var(--sb-space-3) 1.25rem; border-top: 1px solid var(--sb-border); color: var(--sb-text-soft); font-size: 0.75rem; }
 
 @media (max-width: 640px) {
