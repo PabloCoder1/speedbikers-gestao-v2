@@ -14441,4 +14441,6 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **Verificacao:** worker -- o user product do pedido vai para a linha do item, forma estranha e ausencia viram nulo, e o SKU continua nulo (144 testes do `persist-order`); integracao -- a coluna aceita a forma e o nulo e recusa o resto.
 
+**Em producao (25/09):** migration aplicada; worker `worker-00028-g7n` em `3b50b2f7` com 100% do trafego as 19:01 UTC. Nos primeiros 5 minutos, os 20 itens gravados trouxeram o user product, inclusive os 5 de anuncio com variacao -- o pedido traz o da variacao vendida; o unico sem SKU tem vinculo `USER_PRODUCT` e seria resolvido pela 2a parte. 91 jobs depois da troca, nenhum com falha.
+
 **Impacto:** `supabase/migrations/20260925170000_user_product_do_item_vendido.sql`, `apps/worker/src/handlers/{order-schema,persist-order}.ts` e teste, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`. Ordem de publicacao: a migration antes do worker -- o worker novo manda a coluna no upsert de `order_items`.
