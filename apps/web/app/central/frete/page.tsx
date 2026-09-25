@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { CarregandoConteudo } from "../../../components/carregando";
+import { CarregandoBloco, CarregandoConteudo } from "../../../components/carregando";
 import { FilterPill } from "../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
@@ -23,6 +23,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { AVISO } from "../../faturamento/numeros";
+import { QuemPagaOFrete } from "./quem-paga";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
 
@@ -189,6 +190,11 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
           )}
         </div>
       </Panel>
+
+      {/* D-412: quem paga o frete, com leitura própria -- não espera o detector nem o segura. */}
+      <Suspense fallback={<CarregandoBloco rotulo="quem paga o frete" />}>
+        <QuemPagaOFrete />
+      </Suspense>
 
       <ComoDecide detector={detector} />
     </>

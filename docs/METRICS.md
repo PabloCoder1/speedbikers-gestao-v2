@@ -516,6 +516,18 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 | `variacao_margem_produto` | Variação da margem do produto | margem do SKU no período − margem no anterior, em p.p. | Só com 5 pedidos cobertos nos dois períodos; "queda" no resumo = −5 p.p. ou mais |
 | `concentracao_resultado` | SKUs que fazem metade do resultado | menor N tal que os N SKUs de maior resultado somam metade do resultado de todos | Sem resultado total positivo: NULL. É resultado da venda, sem imposto, Ads nem custos fixos |
 
+## 5O. Quem paga o frete (D-412) — DEFINIDAS E IMPLEMENTADAS
+
+> O bloco "Quem paga o frete" de `/central/frete`, pelos últimos 30 dias até ontem. Fonte: `get_quem_paga_frete`, sobre as quatro partes que D-407 grava de `GET /shipments/{id}/costs`.
+
+| ID | Nome | Fórmula | Ressalva obrigatória na tela |
+|---|---|---|---|
+| `frete_bancado_ml_vendedor` | Frete do vendedor bancado pelo Mercado Livre | Σ por envio do desconto do ML no frete do vendedor; participação = ÷ (o que o vendedor pagou + ele) | Só envios com o detalhe (gravado desde 25/09/2026); a cobertura do período é dita |
+| `frete_pago_comprador` | Frete pago pelo comprador | Σ por envio de `receiver.cost` | Idem |
+| `frete_bancado_ml_comprador` | Frete do comprador bancado pelo Mercado Livre | Σ por envio dos descontos do comprador; frete grátis = comprador pagou zero | Idem; em ~5% dos envios as partes não fecham com o frete cheio — soma-se a parte como veio |
+
+**Por envio, não por pedido:** os pedidos de um pacote dividem o envio, e cada um traz o custo do envio inteiro (medido: 0,37% do frete do vendedor somado a mais em 30 dias, se contado pedido a pedido). O frete do vendedor já gravado (`frete_vendedor`, 5C) continua pedido a pedido em `get_faturamento`.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

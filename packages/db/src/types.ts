@@ -4556,6 +4556,17 @@ export type Database = {
         // A forma tipada mora em apps/web/lib/ranking-produtos.ts.
         Returns: Json
       }
+      get_quem_paga_frete: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string
+        }
+        // D-412: jsonb com as quatro partes do frete por envio, a cobertura e
+        // a divisão por logística. A forma tipada mora em
+        // apps/web/lib/quem-paga-frete.ts.
+        Returns: Json
+      }
       get_meta_do_mes: {
         Args: {
           p_hoje?: string
