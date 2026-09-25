@@ -92,6 +92,8 @@ function filterChain(
 
 interface FakeDbOptions {
   linkForItem?: (itemId: string, variationId: string | null) => { id: string; sku_id: string } | null;
+  /** D-362: o vínculo `USER_PRODUCT` da conta, pelo user product do pedido. */
+  linkForUserProduct?: (userProductId: string) => { id: string; sku_id: string } | null;
   /** Status da order já gravada, ANTES desta chamada — o "before" do motor de diff. */
   previousStatus?: string | null;
   /** Simula violação de `dedup_key` (23505) no insert de `domain_events`. */
@@ -414,9 +416,15 @@ function fakeDb(options: FakeDbOptions = {}): {
             return { data: null, error: { code: "42P01", message: "boom" } };
           }
 
-          const itemId = filters.item_id as string;
-          const variationId = (filters.variation_id as string | null | undefined) ?? null;
-          const link = options.linkForItem?.(itemId, variationId) ?? null;
+          // D-362: a segunda tentativa, pelo user product do pedido.
+          const userProductId = filters.ref_kind === "USER_PRODUCT" ? String(filters.user_product_id) : null;
+          const itemId = userProductId === null ? String(filters.item_id) : null;
+          const variationId =
+            userProductId === null ? ((filters.variation_id as string | null | undefined) ?? null) : null;
+          const link =
+            itemId === null
+              ? (options.linkForUserProduct?.(userProductId ?? "") ?? null)
+              : (options.linkForItem?.(itemId, variationId) ?? null);
 
           if (link === null) {
             return { data: null, error: null };
@@ -431,7 +439,10 @@ function fakeDb(options: FakeDbOptions = {}): {
           // self`): a forma do embed é provada contra o PostgREST real em
           // `packages/db/src/projections.integration.test.ts`.
           if (options.linkWithoutSku === true) {
-            return { data: { ...link, item_id: itemId, variation_id: variationId, skus: null }, error: null };
+            return {
+              data: { ...link, item_id: itemId, variation_id: variationId, user_product_id: userProductId, skus: null },
+              error: null,
+            };
           }
 
           const kind = options.skuKindById?.(link.sku_id) ?? "PRODUTO";
@@ -441,6 +452,7 @@ function fakeDb(options: FakeDbOptions = {}): {
               ...link,
               item_id: itemId,
               variation_id: variationId,
+              user_product_id: userProductId,
               skus: {
                 kind,
                 sku_components: kind === "KIT" ? (options.componentsByKitId?.(link.sku_id) ?? []) : [],
@@ -784,6 +796,56 @@ describe("persistOrder", () => {
       await expect(run(db, order, lines)).resolves.toBeUndefined();
       expect(lines.join()).toContain("domain_event_not_recorded");
       expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+    });
+  });
+
+  describe("o SKU pelo user product do pedido (D-362)", () => {
+    const COM_UP: ParsedOrder = {
+      ...BASE_ORDER,
+      order_items: [
+        { ...BASE_ORDER.order_items[0]!, item: { ...BASE_ORDER.order_items[0]!.item, user_product_id: "MLBU1709054559" } },
+      ],
+    };
+
+    it("sem vínculo por anúncio, acha o SKU pelo vínculo USER_PRODUCT e baixa o estoque", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => null,
+        linkForUserProduct: (up) => (up === "MLBU1709054559" ? { id: "link-up", sku_id: "sku-up" } : null),
+      });
+
+      await run(db, COM_UP);
+
+      const item = inserted.find((entry) => entry.table === "order_items")?.rows[0];
+      const movimento = inserted.find((entry) => entry.table === "stock_movements")?.rows[0];
+
+      expect(item).toMatchObject({ sku_id: "sku-up", sku_listing_link_id: "link-up", user_product_id: "MLBU1709054559" });
+      expect(movimento).toMatchObject({ sku_id: "sku-up", qty_delta: -1, movement_type: "VENDA_ML" });
+    });
+
+    it("o vínculo por anúncio vence o do user product quando os dois existem", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-item", sku_id: "sku-item" }),
+        linkForUserProduct: () => ({ id: "link-up", sku_id: "sku-up" }),
+      });
+
+      await run(db, COM_UP);
+
+      expect(inserted.find((entry) => entry.table === "order_items")?.rows[0]).toMatchObject({
+        sku_id: "sku-item",
+        sku_listing_link_id: "link-item",
+      });
+    });
+
+    it("user product sem vínculo, ou item sem user product: segue sem SKU e sem movimento", async () => {
+      const { db, inserted } = fakeDb({ linkForItem: () => null, linkForUserProduct: () => null });
+
+      await run(db, COM_UP);
+      await run(db, BASE_ORDER);
+
+      const itens = inserted.filter((entry) => entry.table === "order_items").flatMap((entry) => entry.rows);
+
+      expect(itens.map((row) => (row as { sku_id: string | null }).sku_id)).toEqual([null, null]);
+      expect(inserted.some((entry) => entry.table === "stock_movements")).toBe(false);
     });
   });
 
@@ -1470,6 +1532,78 @@ describe("prefetchOrders (D-186)", () => {
     expect(prefetch.cutoffBySku).toEqual(new Map([["sku-peca", null]]));
   });
 
+  it("lê os vínculos USER_PRODUCT da página numa leitura só, e o SKU deles entra no corte (D-362)", async () => {
+    const filtrosLidos: Record<string, unknown>[] = [];
+    const cortesPedidos: string[][] = [];
+
+    const cadeia = (table: string, filtros: Record<string, unknown>) => {
+      const resposta = (): { data: unknown; error: null } => {
+        if (table === "sku_listing_links" && filtros.ref_kind === "USER_PRODUCT") {
+          return {
+            data: [
+              {
+                id: "link-up",
+                sku_id: "sku-up",
+                item_id: null,
+                variation_id: null,
+                user_product_id: "MLBU1709054559",
+                skus: { kind: "PRODUTO", sku_components: [] },
+              },
+            ],
+            error: null,
+          };
+        }
+
+        return { data: [], error: null };
+      };
+      const self = {
+        select: () => self,
+        eq: (col: string, val: unknown) => cadeia(table, { ...filtros, [col]: val }),
+        in: (col: string, val: unknown) => cadeia(table, { ...filtros, [col]: val }),
+        then: <R>(onFulfilled: (value: { data: unknown; error: null }) => R) => {
+          if (table === "sku_listing_links") filtrosLidos.push(filtros);
+
+          return Promise.resolve(resposta()).then(onFulfilled);
+        },
+      };
+
+      return self;
+    };
+
+    const db = {
+      from: (table: string) => cadeia(table, {}),
+      rpc: (fn: string, args: { p_sku_ids: string[] }) => {
+        if (fn === "get_order_return_movements") return Promise.resolve({ data: [], error: null });
+
+        cortesPedidos.push(args.p_sku_ids);
+
+        return Promise.resolve({ data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: null })), error: null });
+      },
+    } as unknown as Parameters<typeof prefetchOrders>[0];
+
+    const [base] = BASE_ORDER.order_items;
+
+    if (base === undefined) throw new Error("BASE_ORDER sem item");
+
+    const pedido: ParsedOrder = {
+      ...PEDIDO_A,
+      order_items: [{ ...base, item: { ...base.item, user_product_id: "MLBU1709054559" } }],
+    };
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [pedido]);
+
+    expect(prefetch.linkByItemKey.size).toBe(0);
+    expect(prefetch.linkByUserProduct.get("MLBU1709054559")).toEqual({
+      id: "link-up",
+      sku_id: "sku-up",
+      kind: "PRODUTO",
+      components: [],
+    });
+    expect(filtrosLidos.map((f) => f.ref_kind)).toEqual(["ITEM", "USER_PRODUCT"]);
+    expect(filtrosLidos[1]?.user_product_id).toEqual(["MLBU1709054559"]);
+    expect(cortesPedidos).toEqual([["sku-up"]]);
+  });
+
   it("vínculo sem o SKU embutido LANÇA — não cai em PRODUTO (D-188)", async () => {
     // A FK `sku_listing_links_sku_id_fkey` é `not null` + `on delete
     // restrict`: a linha do SKU sempre existe. `skus` nulo aqui só pode ser o
@@ -1651,6 +1785,7 @@ describe("persistOrder com prefetch (D-186)", () => {
       // D-352: sem logística gravada é o padrão — o pedido que a V3 nunca viu.
       logisticByOrderId: parcial.logisticByOrderId ?? new Map<string, PersistedLogistic>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
+      linkByUserProduct: parcial.linkByUserProduct ?? new Map<string, ResolvedLink>(),
       recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
       cutoffBySku: parcial.cutoffBySku ?? new Map<string, ErpCutoff | null>(),
       saleTransitionByOrderId: parcial.saleTransitionByOrderId ?? new Map<string, ObservedSaleTransition>(),
@@ -1682,6 +1817,35 @@ describe("persistOrder com prefetch (D-186)", () => {
 
     expect((itens?.rows[0] as { sku_id: string }).sku_id).toBe("sku-9");
     expect((itens?.rows[0] as { sku_listing_link_id: string }).sku_listing_link_id).toBe("link-9");
+  });
+
+  it("sem vínculo por anúncio no lote, usa o do user product (D-362)", async () => {
+    const { db, inserted } = fakeDb({ linkForItem: () => null, linkForUserProduct: () => null });
+    const [base] = BASE_ORDER.order_items;
+
+    if (base === undefined) throw new Error("BASE_ORDER sem item");
+
+    await persistOrder(
+      db,
+      CONTEXT,
+      { ...BASE_ORDER, order_items: [{ ...base, item: { ...base.item, user_product_id: "MLBU1709054559" } }] },
+      createLogger({ service: "test" }),
+      prefetchDe({
+        linkByUserProduct: new Map([
+          ["MLBU1709054559", { id: "link-up", sku_id: "sku-up", kind: "PRODUTO" as const, components: [] }],
+        ]),
+        cutoffBySku: new Map([["sku-up", null]]),
+      }),
+    );
+
+    expect(inserted.find((row) => row.table === "order_items")?.rows[0]).toMatchObject({
+      sku_id: "sku-up",
+      sku_listing_link_id: "link-up",
+    });
+    expect(inserted.find((row) => row.table === "stock_movements")?.rows[0]).toMatchObject({
+      sku_id: "sku-up",
+      movement_type: "VENDA_ML",
+    });
   });
 
   it("KIT decompõe pelos componentes do lote", async () => {

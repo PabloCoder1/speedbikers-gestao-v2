@@ -14443,4 +14443,16 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 
 **Em producao (25/09):** migration aplicada; worker `worker-00028-g7n` em `3b50b2f7` com 100% do trafego as 19:01 UTC. Nos primeiros 5 minutos, os 20 itens gravados trouxeram o user product, inclusive os 5 de anuncio com variacao -- o pedido traz o da variacao vendida; o unico sem SKU tem vinculo `USER_PRODUCT` e seria resolvido pela 2a parte. 91 jobs depois da troca, nenhum com falha.
 
+**4. A 2a PARTE: A VENDA RESOLVE PELO USER PRODUCT (25/09).** Medido antes de programar: os 13% eram media de 30 dias puxada pelos dias antigos -- o item vendido sem SKU caiu de 17-24% ao dia (26/08 a 10/09) para 1,6-4% (16/09 em diante; 13 a 41 itens por dia), pelos vinculos feitos a mao em `/vinculacoes` (D-374). Sao ~15-25 baixas a mais por dia. A reconciliacao nao briga com elas: o alvo e a planilha mais os movimentos depois da captura (D-132), e a venda nova entra nos dois. Pelo SKU que o anuncio declara, 283 dos 300 itens sem SKU desde 14/09 (94%) casam com um vinculo `USER_PRODUCT`. O dono aprovou ("pode seguir com a 2a parte").
+
+- **Webhook:** `resolveSku` tenta o vinculo por anuncio; sem ele, `resolvePeloUserProduct` le o vinculo `USER_PRODUCT` da conta pelo user product do pedido (o indice unico `sku_listing_links_user_product_unique` garante no maximo um). Falha de leitura LANCA, como no por anuncio.
+- **Lote:** `prefetchOrders` le os vinculos `USER_PRODUCT` da pagina em lotes de 25, so quando a pagina tem user product, e os SKUs deles entram no corte do ERP (D-351). `OrderPrefetch.linkByUserProduct` guarda o mapa.
+- **A projecao compartilhada** (`SKU_LINK_WITH_KIND_SELECT`) passa a trazer `user_product_id`, provada contra o PostgREST real.
+- **O rotulo:** `order_items.sku_listing_link_id` aponta para o vinculo usado, e o `ref_kind` dele diz por qual caminho o SKU veio -- nenhuma coluna nova.
+- **Tudo o mais e o mesmo caminho:** KIT decompoe, Full sai com o par `ESTORNO_FULL` (a logistica passa a ser lida porque o item tem vinculo), venda anterior ao corte sai com o par `ESTORNO_PRE_CAPTURA`.
+
+**A recuperacao desde a planilha de 24/09 (13:47 UTC) e natural:** cada pedido volta ao worker quando o envio anda (enviado, entregue), e ai ganha o SKU e a baixa, com a data da venda. Medir em uma semana quantos ainda estao sem SKU; so entao, se sobrar, uma releitura dirigida. A 3a parte -- o SKU dos ~3.300 itens de 26/08 a 14/09, so para os relatorios -- continua em aberto.
+
+**Verificacao da 2a parte:** worker -- pelo user product sem vinculo por anuncio, com baixa; o por anuncio vence; sem vinculo ou sem user product segue sem SKU e sem movimento; o lote le os vinculos numa leitura so, poe o SKU no corte e o pedido usa o mapa (149 testes do `persist-order`); integracao -- a projecao devolve o `user_product_id` e o kit decompoe igual.
+
 **Impacto:** `supabase/migrations/20260925170000_user_product_do_item_vendido.sql`, `apps/worker/src/handlers/{order-schema,persist-order}.ts` e teste, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`. Ordem de publicacao: a migration antes do worker -- o worker novo manda a coluna no upsert de `order_items`.
