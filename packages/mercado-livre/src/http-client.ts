@@ -1,6 +1,7 @@
 import type { ZodType } from "zod";
 
 import { MercadoLivreApiError } from "./errors.js";
+import type { MercadoLivreErrorClass } from "./errors.js";
 import { classifyStatus, computeBackoffDelayMs, parseRetryAfterMs } from "./retry.js";
 
 const DEFAULT_BASE_URL = "https://api.mercadolibre.com";
@@ -8,12 +9,30 @@ const DEFAULT_MAX_ATTEMPTS = 4;
 /** Docs/API.md: "retryable com tolerância" tem retry limitado, não o mesmo teto do resto. */
 const DEFAULT_EVENTUAL_MAX_ATTEMPTS = 3;
 
+/** A resposta de erro final de uma chamada, para quem registra. */
+export interface MercadoLivreFailure {
+  status: number;
+  method: HttpMethod;
+  path: string;
+  errorClass: MercadoLivreErrorClass;
+  /** O corpo como o Mercado Livre devolveu; `undefined` quando não era JSON. */
+  body: unknown;
+}
+
 export interface MercadoLivreClientConfig {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   maxAttempts?: number;
   eventualMaxAttempts?: number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Chamado com a resposta de erro FINAL -- a que vira `MercadoLivreApiError`,
+   * depois das novas tentativas. O corpo não chega a quem trata o erro (o job
+   * grava só a mensagem), e sem ele um 403 não diz de onde vem a recusa
+   * (incidente de 25/09, D-362). Uma falha aqui é engolida: registrar nunca
+   * derruba a chamada.
+   */
+  onFailure?: (failure: MercadoLivreFailure) => void;
 }
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -135,6 +154,13 @@ export function createMercadoLivreClient(
 
       if (!canRetry) {
         const body = await safeReadJson(response);
+
+        try {
+          config.onFailure?.({ status: response.status, method: options.method, path: options.path, errorClass, body });
+        } catch {
+          // Observabilidade não derruba a operação.
+        }
+
         throw new MercadoLivreApiError(
           `Mercado Livre respondeu ${String(response.status)} para ${options.method} ${options.path}.`,
           { status: response.status, errorClass, url, body },
