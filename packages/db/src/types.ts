@@ -3024,6 +3024,56 @@ export type Database = {
           },
         ]
       }
+      shipping_sales: {
+        Row: {
+          date_created: string
+          line_id: string
+          listing_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          sale_fee: number | null
+          shipping_cost: number
+          sku_id: string | null
+          title: string | null
+          unit_price: number
+        }
+        Insert: {
+          date_created: string
+          line_id: string
+          listing_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          sale_fee?: number | null
+          shipping_cost: number
+          sku_id?: string | null
+          title?: string | null
+          unit_price: number
+        }
+        Update: {
+          date_created?: string
+          line_id?: string
+          listing_id?: string
+          ml_account_id?: string
+          order_id?: number
+          organization_id?: string
+          sale_fee?: number | null
+          shipping_cost?: number
+          sku_id?: string | null
+          title?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipping_sales_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_components: {
         Row: {
           component_sku_id: string

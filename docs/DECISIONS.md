@@ -14205,3 +14205,23 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** leitura da linha (numeric em texto ou numero, linha fora da forma volta aos padroes), o tom mudando com os cortes da organizacao, o formulario (porcentagem como se escreve, zero onde vale, forte acima do estavel, tres casas, amostra inteira), o atraso da meta e a amostra minima vindos da organizacao; integracao (ADMIN grava e os padroes preenchem, ANALISTA le e nao grava, outra organizacao nao ve, CHECKs); e2e da central inteiro (7) contra um Supabase isolado, com o novo: erro no campo, salvar muda o que a central diz, voltar aos padroes desfaz. Suite de integracao inteira (866).
 
 **Impacto:** `supabase/migrations/20260923195957_limites_da_central.sql`, `apps/web/lib/{limites-central,variacao,central-indicadores,central-meta,central-atencao,sinais-ads,metas-imposto}.ts` e testes, `apps/web/app/central/{page,indicadores,atencao,meta}.tsx`, `apps/web/app/central/{limites,ads}/`, `apps/web/app/central/metas/formularios.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/central.spec.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,METRICS,ROADMAP}.md`.
+
+## D-409 - O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
+
+**Contexto:** na rodada das 8h de 25/09, a fonte `frete_anomalo` da sincronizacao dos alertas (D-404) passou do `statement_timeout` de 8 s a frio (9,7 s); a repeticao do Cloud Tasks fechou em 2,4 s. O detector sozinho ja fazia 4,4 s na primeira chamada (D-399).
+
+**1. ONDE ESTAVA O CUSTO.** `EXPLAIN (ANALYZE, BUFFERS)` so de leitura, em producao, da parte do detector que junta `orders`, `order_financials` e `order_items` dos 90 dias: 78.208 pedidos, 77.143 linhas elegiveis, **626 ms com tudo em cache e 387.963 paginas tocadas** -- cada pedido numa pagina diferente de `orders` (74 mil paginas para 79 mil linhas) e cada item mais quatro (313 mil). A frio, isso e leitura de disco; o resto do detector (custo, medianas, pares) trabalha sobre as linhas ja lidas.
+
+**2. UMA TABELA ESTREITA, UMA LINHA POR VENDA ELEGIVEL.** `shipping_sales`: um item so, quantidade 1, paga ou parcialmente reembolsada, fora do Flex, com o frete do vendedor capturado -- exatamente a regra das CTEs `pedidos` e `linhas` de D-397. ~100 bytes por linha: os 90 dias cabem em ~1 mil paginas lidas em sequencia. O detector troca as duas CTEs por uma leitura dela; o resto da funcao e o de D-399, sem mudanca.
+
+**3. GATILHOS, NAO ROTINA DIARIA.** So o worker grava as tres tabelas; cada mudanca que mexe na regra (o frete capturado, o status, a logistica, o SKU vinculado, uma segunda linha, a quantidade, o preco) recalcula a linha daquele pedido. O detector ve o mesmo que via, no mesmo instante: sem janela de atraso e sem job novo. O gatilho de `orders` so dispara quando muda o que a regra le -- o webhook regrava o pedido o tempo todo com os mesmos valores. As funcoes dos gatilhos sao `security definer` em `private`, sem `execute` para ninguem: nao sao chamaveis, so disparam.
+
+**4. O CUSTO DO PRODUTO CONTINUA NA LEITURA.** As CTEs de custo de `get_faturamento` (D-356) seguem calculando o custo de cada venda na hora: o custo atual pode mudar, e congela-lo na tabela faria o detector divergir do faturamento.
+
+**5. ESTATISTICAS NA MIGRATION.** No ensaio do Dev, com a tabela recem-preenchida e sem `analyze`, o planejador escolheu juncoes ruins e a chamada passou de 3,5 minutos; com `analyze` logo depois do preenchimento, 155 ms.
+
+**Ensaio no Dev** (transacao desfeita, como `authenticated`, dados ate 14/09): o JSON inteiro do detector novo **igual** ao do atual (750 anuncios analisados, 3 provaveis, 39 em atencao, R$ 201,65 de excesso); **154-159 ms contra 302-328 ms** com o banco quente, 14.473 vendas na tabela.
+
+**Verificacao:** os testes de D-397 e D-399 passam sem mudanca lendo da tabela nova; os gatilhos (frete capturado cria a linha; cancelar tira e voltar a pago devolve; Flex tira; segunda linha tira e apaga-la devolve; duas unidades tiram; SKU vinculado e preco regravado aparecem); a tabela inteira igual a regra aplicada as tres tabelas, no banco todo; alcance por conta e ninguem grava direto, nem o worker. Suite inteira (872) num Supabase isolado.
+
+**Impacto:** `supabase/migrations/20260923195958_vendas_com_frete_para_o_detector.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,PERFORMANCE,ROADMAP}.md`.
