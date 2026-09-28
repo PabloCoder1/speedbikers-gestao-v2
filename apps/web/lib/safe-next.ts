@@ -15,7 +15,14 @@
  *
  * A query string é preservada de propósito: é ela que carrega o filtro da
  * tela de origem (D-090).
+ *
+ * Olhar os primeiros caracteres não basta: o parser de URL descarta TAB e
+ * quebra de linha em qualquer posição, e `/\t/evil.com` vira `//evil.com`
+ * depois da checagem (auditoria de 2026-09-28). Por isso o destino é
+ * resolvido como o navegador resolveria e só passa se continuar na origem.
  */
+const ORIGEM_DE_REFERENCIA = "https://origem.invalid";
+
 export function safeNext(next: string | null | undefined): string {
   if (next === null || next === undefined) {
     return "/";
@@ -31,5 +38,17 @@ export function safeNext(next: string | null | undefined): string {
     return "/";
   }
 
-  return next;
+  let destino: URL;
+
+  try {
+    destino = new URL(next, ORIGEM_DE_REFERENCIA);
+  } catch {
+    return "/";
+  }
+
+  if (destino.origin !== ORIGEM_DE_REFERENCIA) {
+    return "/";
+  }
+
+  return `${destino.pathname}${destino.search}${destino.hash}`;
 }

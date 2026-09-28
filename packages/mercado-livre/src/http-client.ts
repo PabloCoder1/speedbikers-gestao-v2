@@ -8,6 +8,13 @@ const DEFAULT_BASE_URL = "https://api.mercadolibre.com";
 const DEFAULT_MAX_ATTEMPTS = 4;
 /** Docs/API.md: "retryable com tolerância" tem retry limitado, não o mesmo teto do resto. */
 const DEFAULT_EVENTUAL_MAX_ATTEMPTS = 3;
+/**
+ * Teto de cada tentativa. Sem ele, uma conexão que para de responder segura o
+ * job até os timeouts internos do `fetch` (minutos), dentro de uma entrega de
+ * Cloud Tasks. O estouro rejeita com `TimeoutError`, falha de transporte como
+ * qualquer outra (auditoria de 2026-09-28).
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 /** A resposta de erro final de uma chamada, para quem registra. */
 export interface MercadoLivreFailure {
@@ -25,6 +32,8 @@ export interface MercadoLivreClientConfig {
   maxAttempts?: number;
   eventualMaxAttempts?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** Teto de cada tentativa, em ms. Padrão: `DEFAULT_REQUEST_TIMEOUT_MS`. */
+  requestTimeoutMs?: number;
   /**
    * Chamado com a resposta de erro FINAL -- a que vira `MercadoLivreApiError`,
    * depois das novas tentativas. O corpo não chega a quem trata o erro (o job
@@ -115,6 +124,7 @@ export function createMercadoLivreClient(
   const maxAttempts = config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const eventualMaxAttempts = config.eventualMaxAttempts ?? DEFAULT_EVENTUAL_MAX_ATTEMPTS;
   const sleep = config.sleep ?? defaultSleep;
+  const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   async function request<T>(options: RequestOptions<T>): Promise<T> {
     const url = buildUrl(baseUrl, options.path, options.searchParams);
@@ -135,6 +145,7 @@ export function createMercadoLivreClient(
         method: options.method,
         headers,
         ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+        signal: AbortSignal.timeout(requestTimeoutMs),
       });
 
       if (response.ok) {
