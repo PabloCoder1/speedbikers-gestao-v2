@@ -184,6 +184,14 @@ export interface OrderPrefetch {
    */
   linkByUserProduct: Map<string, ResolvedLink>;
   /**
+   * D-362: `chaveDaLinha(order_id, position)` -> o user product JÁ GRAVADO na
+   * linha do item. O `/orders/search` da reconciliação não traz
+   * `item.user_product_id` (medido em 28/09: a janela das 13:00 regravou 803
+   * itens e apagou o que o webhook tinha gravado). Sem o campo no payload, vale
+   * o gravado -- para resolver o SKU e para não apagar a coluna.
+   */
+  userProductByLine: Map<string, string>;
+  /**
    * `String(order.id)` -> movimentos gravados (D-351). Lido so para pedido em
    * status de venda ou de cancelamento; ausente = nada gravado.
    */
@@ -229,6 +237,10 @@ function linkResolvido(row: SkuLinkWithKindRow): ResolvedLink {
       quantity: component.quantity,
     })),
   };
+}
+
+function chaveDaLinha(orderId: number, position: number): string {
+  return `${String(orderId)}\u0000${String(position)}`;
 }
 
 function chaveDoItem(itemId: string, variationId: string | null): string {
@@ -742,6 +754,19 @@ function userProductDoItem(valor: string | null | undefined): string | null {
   return up !== null && FORMA_USER_PRODUCT.test(up) ? up : null;
 }
 
+/**
+ * D-362: o user product de uma linha -- o do payload, ou, sem ele, o que já
+ * está gravado nela (o `/orders/search` não traz o campo; o webhook, sim).
+ */
+function userProductDaLinha(
+  orderId: number,
+  position: number,
+  doPayload: string | null | undefined,
+  gravados: ReadonlyMap<string, string> | undefined,
+): string | null {
+  return userProductDoItem(doPayload) ?? gravados?.get(chaveDaLinha(orderId, position)) ?? null;
+}
+
 function itensDeDeducao(order: ParsedOrder, resolvedLinks: readonly (ResolvedLink | null)[]): SaleDeductionItem[] {
   return order.order_items.map((item, position) => {
     const resolved = resolvedLinks[position] ?? null;
@@ -870,6 +895,7 @@ export async function prefetchOrders(
       logisticByOrderId,
       linkByItemKey,
       linkByUserProduct,
+      userProductByLine: new Map(),
       recordedByOrderId: new Map(),
       cutoffBySku: new Map(),
       saleTransitionByOrderId: new Map(),
@@ -878,23 +904,15 @@ export async function prefetchOrders(
 
   const orderIds = orders.map((order) => order.id);
   const itemIds = [...new Set(orders.flatMap((order) => order.order_items.map((item) => item.item.id)))];
-  // D-362: os user products que os pedidos da página trazem. Página sem
-  // nenhum (pedidos anteriores à captura) não paga a leitura.
-  const userProducts = [
-    ...new Set(
-      orders.flatMap((order) =>
-        order.order_items.flatMap((item) => {
-          const up = userProductDoItem(item.item.user_product_id);
+  // D-362: os pedidos com item SEM user product no payload -- o que o
+  // `/orders/search` devolve. Para eles, vale o que o webhook já gravou.
+  const pedidosSemUserProduct = orders
+    .filter((order) => order.order_items.some((item) => userProductDoItem(item.item.user_product_id) === null))
+    .map((order) => order.id);
 
-          return up === null ? [] : [up];
-        }),
-      ),
-    ),
-  ];
-
-  // 1 + N idas, com N = lotes de item. As quatro primeiras nao dependem umas
+  // 1 + N idas, com N = lotes de item. As cinco primeiras nao dependem umas
   // das outras.
-  const [statusResult, linkResults, userProductResults, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
+  const [statusResult, linkResults, linhasGravadas, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
     // D-352: a logistica gravada vem na MESMA leitura do status — ela e a
     // decisao ja tomada, e releitura nunca a reescreve (R5).
     db.from("orders").select("id, status, logistic_type, logistic_captured_at").in("id", orderIds),
@@ -908,14 +926,10 @@ export async function prefetchOrders(
           .in("item_id", lote),
       ),
     ),
+    // Um item por pedido (D-184): 25 pedidos por consulta ficam longe do teto.
     Promise.all(
-      emLotes(userProducts, ITENS_POR_CONSULTA).map((lote) =>
-        db
-          .from("sku_listing_links")
-          .select(SKU_LINK_WITH_KIND_SELECT)
-          .eq("ml_account_id", context.mlAccountId)
-          .eq("ref_kind", "USER_PRODUCT")
-          .in("user_product_id", lote),
+      emLotes(pedidosSemUserProduct, PEDIDOS_POR_CONSULTA).map((lote) =>
+        db.from("order_items").select("order_id, position, user_product_id").in("order_id", lote),
       ),
     ),
     lerMovimentosGravados(
@@ -956,6 +970,40 @@ export async function prefetchOrders(
     }
   }
 
+  const userProductByLine = new Map<string, string>();
+
+  for (const resultado of linhasGravadas) {
+    for (const row of linhasDe(resultado, "order_items.user_product_id")) {
+      if (row.user_product_id !== null) {
+        userProductByLine.set(chaveDaLinha(row.order_id, row.position), row.user_product_id);
+      }
+    }
+  }
+
+  // D-362: os user products da página -- do payload ou, sem ele, o gravado --
+  // e os vínculos deles numa leitura. Página sem nenhum não paga a leitura.
+  const userProducts = [
+    ...new Set(
+      orders.flatMap((order) =>
+        order.order_items.flatMap((item, position) => {
+          const up = userProductDaLinha(order.id, position, item.item.user_product_id, userProductByLine);
+
+          return up === null ? [] : [up];
+        }),
+      ),
+    ),
+  ];
+  const userProductResults = await Promise.all(
+    emLotes(userProducts, ITENS_POR_CONSULTA).map((lote) =>
+      db
+        .from("sku_listing_links")
+        .select(SKU_LINK_WITH_KIND_SELECT)
+        .eq("ml_account_id", context.mlAccountId)
+        .eq("ref_kind", "USER_PRODUCT")
+        .in("user_product_id", lote),
+    ),
+  );
+
   for (const linkResult of userProductResults) {
     // A mesma regra: falha de leitura LANÇA, nunca vira "sem vínculo".
     for (const row of linhasDe(linkResult, "sku_listing_links") as unknown as SkuLinkWithKindRow[]) {
@@ -993,6 +1041,7 @@ export async function prefetchOrders(
     logisticByOrderId,
     linkByItemKey,
     linkByUserProduct,
+    userProductByLine,
     recordedByOrderId,
     cutoffBySku,
     saleTransitionByOrderId,
@@ -1140,6 +1189,10 @@ export async function persistOrder(
   const variationIds = order.order_items.map((item) =>
     item.item.variation_id != null ? String(item.item.variation_id) : null,
   );
+  // D-362: o do payload; sem ele (o `/orders/search`), o já gravado na linha.
+  const userProductIds = order.order_items.map((item, position) =>
+    userProductDaLinha(order.id, position, item.item.user_product_id, prefetch?.userProductByLine),
+  );
 
   let previousStatus: string | null;
   let logisticaGravada: PersistedLogistic;
@@ -1157,7 +1210,7 @@ export async function persistOrder(
     // D-362: o vínculo por anúncio vence; sem ele, o do user product do pedido.
     resolvedLinks = order.order_items.map((item, index) => {
       const porAnuncio = prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null));
-      const up = userProductDoItem(item.item.user_product_id);
+      const up = userProductIds[index] ?? null;
 
       return porAnuncio ?? (up === null ? null : (prefetch.linkByUserProduct.get(up) ?? null));
     });
@@ -1175,7 +1228,7 @@ export async function persistOrder(
             context.mlAccountId,
             item.item.id,
             variationIds[index] ?? null,
-            userProductDoItem(item.item.user_product_id),
+            userProductIds[index] ?? null,
           ),
         ),
       ),
@@ -1354,7 +1407,7 @@ export async function persistOrder(
       variation_id: variationId,
       title: item.item.title,
       seller_sku: item.item.seller_sku ?? null,
-      user_product_id: userProductDoItem(item.item.user_product_id),
+      user_product_id: userProductIds[position] ?? null,
       quantity: item.quantity,
       unit_price: item.unit_price,
       sale_fee: item.sale_fee ?? null,
