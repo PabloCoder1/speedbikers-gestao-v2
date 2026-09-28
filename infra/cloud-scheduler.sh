@@ -18,6 +18,11 @@ TIME_ZONE="America/Sao_Paulo"
 # dentro de aspas. Um `->` numa descrição faz o comando falhar com uma mensagem
 # sobre 'C:\Program', que não tem relação aparente com a causa.
 
+# NOVA TENTATIVA (auditoria de 2026-09-28, D-416). A rota responde 503 quando a
+# rodada nem consegue listar contas/organizações; sem `retryConfig` o Scheduler
+# só registrava a falha e a rodada esperava a próxima janela. Duas novas
+# tentativas, de 30 s a 120 s: repetir é seguro porque todo agendador enfileira
+# com `dedupeKey` da janela (o Cloud Tasks recusa o nome repetido).
 upsert_job() {
   local name="$1" schedule="$2" uri="$3" description="$4"
 
@@ -35,6 +40,9 @@ upsert_job() {
       --http-method POST \
       --oidc-service-account-email "$(sa_email "${SA_SCHEDULER}")" \
       --oidc-token-audience "${API_URL}" \
+      --max-retry-attempts 2 \
+      --min-backoff 30s \
+      --max-backoff 120s \
       --description "${description}" 2>&1)"; then
     printf '%s\n' "${output}" >&2
     fail "Falha ao ${action} o job ${name}. Mensagem do gcloud acima."
