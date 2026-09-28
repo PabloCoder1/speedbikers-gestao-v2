@@ -78,16 +78,30 @@ export async function ensureAccessToken(
     return { ok: true, accessToken: decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey) };
   }
 
+  // A credencial usada daqui em diante é a que a TRAVA devolve, não a lida
+  // acima. Entre as duas leituras outra execução pode ter renovado e soltado a
+  // trava: o `refresh_token` lido antes já foi consumido, e usá-lo daria
+  // `invalid_grant` -- a recusa definitiva que derruba a conta para ERROR
+  // (auditoria de 2026-09-28).
   const claimed = await deps.db
     .from("ml_credentials")
     .update({ refresh_locked_until: new Date(now.getTime() + REFRESH_LOCK_MS).toISOString() })
     .eq("ml_account_id", mlAccountId)
     .or(`refresh_locked_until.is.null,refresh_locked_until.lt.${now.toISOString()}`)
-    .select("ml_account_id")
+    .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
     .maybeSingle();
 
   if (claimed.error !== null || claimed.data === null) {
     return { ok: false, retryable: true, reason: "refresh do token em andamento por outra execução" };
+  }
+
+  if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
+    await deps.db
+      .from("ml_credentials")
+      .update({ refresh_locked_until: null })
+      .eq("ml_account_id", mlAccountId);
+
+    return { ok: true, accessToken: decryptToken(claimed.data.access_token_ciphertext, deps.encryptionKey) };
   }
 
   let token;
@@ -95,7 +109,7 @@ export async function ensureAccessToken(
   try {
     token = await refreshAccessToken(
       deps.oauth,
-      decryptToken(credentials.data.refresh_token_ciphertext, deps.encryptionKey),
+      decryptToken(claimed.data.refresh_token_ciphertext, deps.encryptionKey),
     );
   } catch (error) {
     const reason = error instanceof Error ? error.message : "falha ao renovar o token";
@@ -122,7 +136,7 @@ export async function ensureAccessToken(
 
   const newExpiresAt = new Date(now.getTime() + token.expires_in * 1000);
 
-  await deps.db
+  const saved = await deps.db
     .from("ml_credentials")
     .update({
       access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
@@ -131,6 +145,18 @@ export async function ensureAccessToken(
       refresh_locked_until: null,
     })
     .eq("ml_account_id", mlAccountId);
+
+  if (saved.error !== null) {
+    // O `refresh_token` antigo já foi consumido e o novo não ficou gravado: a
+    // próxima renovação vai dar `invalid_grant`. Sem nova tentativa (ela só
+    // anteciparia essa recusa), e com o motivo explícito em `job_runs` em vez
+    // de um sucesso que esconde a conta prestes a cair.
+    return {
+      ok: false,
+      retryable: false,
+      reason: `token renovado, mas a gravação falhou: ${saved.error.message}`.slice(0, 2000),
+    };
+  }
 
   return { ok: true, accessToken: token.access_token };
 }

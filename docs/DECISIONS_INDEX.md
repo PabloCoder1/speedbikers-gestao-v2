@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **407** (D-001 a D-416).
+Decisões registradas: **408** (D-001 a D-416).
 
 ## Por domínio
 
@@ -196,7 +196,7 @@ Decisões registradas: **407** (D-001 a D-416).
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
-### mercado-livre (65)
+### mercado-livre (66)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -263,6 +263,7 @@ Decisões registradas: **407** (D-001 a D-416).
 - **D-399** — O historico do detector de frete desconta a mudanca geral da faixa, medida pela mediana da variacao dos anuncios
 - **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 - **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
+- **D-415** — Auditoria de 28/09: a renovacao do token usa a credencial devolvida pela trava; login sem redirecionamento aberto; teto de tempo nas chamadas ao Mercado Livre e prazo do Cloud Tasks igual ao do worker
 
 ### outros (64)
 

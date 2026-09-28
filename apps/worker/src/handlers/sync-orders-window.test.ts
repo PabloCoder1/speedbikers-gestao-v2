@@ -125,7 +125,9 @@ function fakeDb(options: FakeDbOptions = {}): {
           table === "skus" ||
           table === "sku_components" ||
           table === "stock_movements" ||
-          table === "domain_events"
+          table === "domain_events" ||
+          // D-362: o user product já gravado das linhas da página.
+          table === "order_items"
         ) {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
           return chain({ data: [], error: null });
@@ -156,7 +158,8 @@ function fakeDb(options: FakeDbOptions = {}): {
             return chain(
               options.claimLockFails === true
                 ? { data: null, error: null }
-                : { data: { ml_account_id: ML_ACCOUNT_ID }, error: null },
+                : // Como o `UPDATE ... RETURNING` real: a trava devolve a credencial.
+                  { data: { ml_account_id: ML_ACCOUNT_ID, ...(credentials ?? {}) }, error: null },
             );
           }
         }

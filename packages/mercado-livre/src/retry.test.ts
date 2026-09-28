@@ -61,6 +61,14 @@ describe("computeBackoffDelayMs", () => {
       }),
     ).toBe(2_000);
   });
+
+  it("um Retry-After acima do teto para no teto -- o job não dorme uma hora dentro da entrega", () => {
+    const semJitter = (): number => 0;
+
+    expect(
+      computeBackoffDelayMs({ attempt: 1, maxDelayMs: 30_000, retryAfterMs: 3_600_000, random: semJitter }),
+    ).toBe(30_000);
+  });
 });
 
 describe("parseRetryAfterMs", () => {

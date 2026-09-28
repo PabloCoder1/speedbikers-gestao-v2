@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 
 import { MercadoLivreApiError } from "./errors.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "./http-client.js";
 import { classifyStatus, computeBackoffDelayMs, parseRetryAfterMs } from "./retry.js";
 
 /**
@@ -108,6 +109,8 @@ export interface RequestTokenOptions {
   fetchImpl?: typeof fetch;
   maxAttempts?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** Teto de cada tentativa, em ms. Padrão: `DEFAULT_REQUEST_TIMEOUT_MS`. */
+  requestTimeoutMs?: number;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -130,6 +133,7 @@ async function postToken(
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const sleep = options.sleep ?? defaultSleep;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   const body = new URLSearchParams(params);
 
@@ -143,6 +147,7 @@ async function postToken(
         "content-type": "application/x-www-form-urlencoded",
       },
       body: body.toString(),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
 
     if (response.ok) {

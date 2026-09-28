@@ -18,16 +18,34 @@ const VENCENDO = {
   access_token_expires_at: new Date(AGORA.getTime() + 60_000).toISOString(),
 };
 
-function fakeDb(): { deps: TokenDeps; atualizacoes: { table: string; row: Record<string, unknown> }[] } {
+/** O que outra execução deixou gravado depois de renovar: vale por mais seis horas. */
+const RENOVADA_POR_OUTRA = {
+  access_token_ciphertext: encryptToken("APP_USR-novo", CHAVE),
+  refresh_token_ciphertext: encryptToken("TG-novo", CHAVE),
+  access_token_expires_at: new Date(AGORA.getTime() + 6 * 3600_000).toISOString(),
+};
+
+interface Opcoes {
+  /** A credencial que o UPDATE da trava devolve; por padrão, a mesma da leitura. */
+  naTrava?: typeof VENCENDO;
+  /** Erro devolvido pela gravação do token novo. */
+  falhaAoGravar?: { message: string };
+}
+
+function fakeDb(opcoes: Opcoes = {}): {
+  deps: TokenDeps;
+  atualizacoes: { table: string; row: Record<string, unknown> }[];
+} {
   const atualizacoes: { table: string; row: Record<string, unknown> }[] = [];
 
-  const cadeia = (resultado: { data: unknown; error: null }) => {
+  const cadeia = (resultado: { data: unknown; error: { message: string } | null }) => {
     const self = {
       eq: () => self,
       or: () => self,
       select: () => self,
       maybeSingle: () => Promise.resolve(resultado),
-      then: <R>(resolve: (value: { data: unknown; error: null }) => R) => Promise.resolve(resultado).then(resolve),
+      then: <R>(resolve: (value: { data: unknown; error: { message: string } | null }) => R) =>
+        Promise.resolve(resultado).then(resolve),
     };
 
     return self;
@@ -36,11 +54,16 @@ function fakeDb(): { deps: TokenDeps; atualizacoes: { table: string; row: Record
   const db = {
     from: (table: string) => ({
       select: () => cadeia({ data: table === "ml_credentials" ? VENCENDO : null, error: null }),
-      // A trava é reivindicada com sucesso; as outras atualizações só são registradas.
+      // A trava é reivindicada com sucesso e devolve a credencial; as outras
+      // atualizações só são registradas.
       update: (row: Record<string, unknown>) => {
         atualizacoes.push({ table, row });
 
-        return cadeia({ data: table === "ml_credentials" ? { ml_account_id: CONTA } : null, error: null });
+        if (table === "ml_credentials" && "access_token_ciphertext" in row && opcoes.falhaAoGravar !== undefined) {
+          return cadeia({ data: null, error: opcoes.falhaAoGravar });
+        }
+
+        return cadeia({ data: table === "ml_credentials" ? (opcoes.naTrava ?? VENCENDO) : null, error: null });
       },
     }),
   } as unknown as TokenDeps["db"];
@@ -127,5 +150,44 @@ describe("ensureAccessToken: só a recusa definitiva derruba a conta (incidente 
 
     await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: false });
     expect(atualizacoes.find((a) => a.table === "ml_accounts")?.row).toMatchObject({ status: "ERROR" });
+  });
+});
+
+describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 28/09)", () => {
+  it("outra execução renovou entre a leitura e a trava: usa o token novo e NÃO renova com o refresh consumido", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const { deps, atualizacoes } = fakeDb({ naTrava: RENOVADA_POR_OUTRA });
+
+    const resultado = await ensureAccessToken(deps, CONTA, AGORA);
+
+    expect(resultado).toEqual({ ok: true, accessToken: "APP_USR-novo" });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(atualizacoes.some((a) => a.table === "ml_accounts")).toBe(false);
+    expect(atualizacoes.at(-1)).toEqual({ table: "ml_credentials", row: { refresh_locked_until: null } });
+  });
+
+  it("renova com o refresh token devolvido pela trava, não com o da primeira leitura", async () => {
+    respostaDoToken(200, { access_token: "APP_USR-x", refresh_token: "TG-x", expires_in: 21600, token_type: "Bearer", scope: "offline_access read write", user_id: 1 });
+    const naTrava = { ...VENCENDO, refresh_token_ciphertext: encryptToken("TG-da-trava", CHAVE) };
+    const { deps } = fakeDb({ naTrava });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({ ok: true, accessToken: "APP_USR-x" });
+
+    // O corpo do POST em /oauth/token é form-urlencoded: uma string.
+    const corpo = vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body as string;
+    expect(corpo).toContain("TG-da-trava");
+    expect(corpo).not.toContain("TG-velho");
+  });
+
+  it("a gravação do token novo falhou: sem nova tentativa e com o motivo explícito", async () => {
+    respostaDoToken(200, { access_token: "APP_USR-x", refresh_token: "TG-x", expires_in: 21600, token_type: "Bearer", scope: "offline_access read write", user_id: 1 });
+    const { deps } = fakeDb({ falhaAoGravar: { message: "connection reset" } });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      reason: "token renovado, mas a gravação falhou: connection reset",
+    });
   });
 });
