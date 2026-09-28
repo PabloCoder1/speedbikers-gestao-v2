@@ -1300,3 +1300,7 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 ### Visão Geral, "Atividade recente" (auditoria de 28/09/2026)
 
 **Produção:** média de 1.672 ms, máximo de 4.613 ms (a raiz `notifications` ordenada por `created_at`, sem índice que servisse). **Dev, como `authenticated`**, usuário com 54 mil avisos: 826 ms e 17 mil páginas -> **16 ms e 43**, pela raiz `notification_recipients` e o índice `(user_id, created_at desc)` -- a troca de D-393.
+
+### `work_mem` por função: faturamento, detector de frete e alertas da central (auditoria de 28/09/2026)
+
+**Produção, 18 a 28/09:** ~7,7 GB em arquivos temporários com o `work_mem` de 3,5 MB da instância; `sync-central-alerts` estourou o timeout 3 de 8 vezes em `produto_prejuizo`. **Dev:** `get_detector_frete` 148–380 ms com 589 blocos temporários → 141 ms e 0 com 16 MB; `get_faturamento` (90 dias) 1,38–2,68 s com 7.937 blocos → 1,37–1,46 s e 743 com 32 MB; `sincronizar_alertas_central(produto_prejuizo)` 885 ms e 4.281 blocos → 687 ms e 0 com 16 MB. O ganho de tempo quente é pequeno; o que some é o disco, que é o que pesa sob concorrência. Migration `20260928160000`, `alter function ... set work_mem` (só durante a execução da função).
