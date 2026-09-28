@@ -284,7 +284,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**Estoque:** D-351 (§13) e D-352 (§8) publicadas em produção; reconciliação despausada em 18/09 (16 SKUs com alvo LOCAL negativo, -81). D-362 1ª e 2ª partes em produção (a venda resolve o SKU pelo user product, com baixa; `worker-00035-bd4`). Em uma semana: medir os itens sem SKU desde a planilha de 24/09.
+**Estoque:** D-351 e D-352 em produção. D-362: 1ª e 2ª partes em produção (a venda resolve pelo user product, com baixa); a 3ª (28/09, SKU do histórico sem estoque) espera worker e api e o `POST /internal/backfill/order-user-products`. Em uma semana: medir os itens sem SKU desde a planilha de 24/09.
 
 ---
 

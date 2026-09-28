@@ -748,7 +748,7 @@ const FORMA_USER_PRODUCT = /^MLBU[0-9]+$/;
  * D-362: o user product que o pedido traz no item, se tiver a forma que a
  * coluna aceita. Outra forma vira NULL -- o pedido grava do mesmo jeito.
  */
-function userProductDoItem(valor: string | null | undefined): string | null {
+export function userProductDoItem(valor: string | null | undefined): string | null {
   const up = valor ?? null;
 
   return up !== null && FORMA_USER_PRODUCT.test(up) ? up : null;
@@ -1667,7 +1667,7 @@ function contaEstornosFull(writes: PageWrites | undefined, logger: Logger, order
  * `USER_PRODUCT` do user product que o pedido traz. O por anúncio vence
  * sempre -- é a decisão do dono para quando os dois divergem.
  */
-async function resolveSku(
+export async function resolveSku(
   db: AdminClient,
   mlAccountId: string,
   itemId: string,

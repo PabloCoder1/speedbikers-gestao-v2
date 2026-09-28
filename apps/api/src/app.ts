@@ -35,6 +35,7 @@ import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
 import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
 import { DIAS_MAXIMOS, triggerOrderFinancialsBackfill } from "./order-financials-backfill.js";
+import { triggerOrderUserProductsBackfill } from "./order-user-products-backfill.js";
 import type { OrderLogisticsScheduleDeps } from "./order-logistics-schedule.js";
 import { triggerOrderLogisticsSweep } from "./order-logistics-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
@@ -560,6 +561,38 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const opcoes = conta === undefined ? { dias } : { dias, conta };
 
     return context.json(await triggerOrderFinancialsBackfill(deps, opcoes));
+  });
+
+  // --------------------------------------------------------------------
+  // O SKU dos itens vendidos antigos (D-362, 3a parte). Disparo UNICO,
+  // manual, como o de cima: enfileira o primeiro pedaco de cada conta na fila
+  // `backfill`, a partir de 7 dias atras, e o worker encadeia o resto. Corpo
+  // opcional `{ "dias": 90, "conta": "<slug>" }`.
+  // --------------------------------------------------------------------
+  app.post("/internal/backfill/order-user-products", async (context) => {
+    const deps = dependencies.orderFinancialsSchedule;
+
+    if (deps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const corpo: unknown = await context.req.json().catch(() => ({}));
+    // O disparo comeca 7 dias atras; abaixo de 8 nao sobra dia nenhum.
+    const parsed = z
+      .object({
+        dias: z.number().int().min(8).max(DIAS_MAXIMOS).default(90),
+        conta: z.string().min(1).max(60).optional(),
+      })
+      .safeParse(corpo ?? {});
+
+    if (!parsed.success) {
+      return context.json({ error: { code: "invalid_body", issues: parsed.error.issues.map((i) => i.message) } }, 400);
+    }
+
+    const { dias, conta } = parsed.data;
+    const opcoes = conta === undefined ? { dias } : { dias, conta };
+
+    return context.json(await triggerOrderUserProductsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------
