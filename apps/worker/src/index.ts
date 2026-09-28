@@ -8,6 +8,7 @@ import { loadEnv } from "./env.js";
 import { createEnqueuer } from "./enqueue.js";
 import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.js";
 import { createBackfillOrderFinancialsHandler } from "./handlers/backfill-order-financials.js";
+import { createBackfillOrderUserProductsHandler } from "./handlers/backfill-order-user-products.js";
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createCheckAiBudgetHandler } from "./handlers/check-ai-budget.js";
 import { createDetectSalesAnomalyActionsHandler } from "./handlers/detect-sales-anomaly-actions.js";
@@ -118,6 +119,15 @@ const app = createWorkerApp({
     // D-396: os 90 dias de frete anteriores à varredura diária, um dia por
     // pedaço, na fila `backfill` e auto-encadeado como `backfill.orders`.
     "backfill.order-financials": createBackfillOrderFinancialsHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+      enqueuer,
+    }),
+    // D-362 (3ª parte): o SKU dos itens vendidos antigos, pela regra do worker,
+    // sem movimento de estoque -- um dia por pedaço, como o de cima.
+    "backfill.order-user-products": createBackfillOrderUserProductsHandler({
       db,
       mercadoLivre,
       oauth,

@@ -1901,6 +1901,75 @@ describe("POST /internal/backfill/order-financials (D-396)", () => {
   });
 });
 
+describe("POST /internal/backfill/order-user-products (D-362, 3ª parte)", () => {
+  const aceitaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),
+  };
+
+  function appComDeps(enqueued: EnqueueRequest[]) {
+    return createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      orderFinancialsSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () =>
+                Promise.resolve({ data: [{ id: "acc-1", organization_id: "org-1", slug: "speedbikers-loja-1" }], error: null }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => new Date("2026-09-23T15:00:00.000Z"),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({ taskName: "t", deduplicated: false, envelope: {} as never });
+          },
+        },
+      },
+    });
+  }
+
+  it("exige OIDC e responde 503 sem as dependências", async () => {
+    const recusa = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: { verify: () => Promise.resolve({ ok: false, reason: "token inválido" }) },
+    });
+    const semDeps = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    expect((await recusa.request("/internal/backfill/order-user-products", { method: "POST" })).status).toBe(401);
+    expect((await semDeps.request("/internal/backfill/order-user-products", { method: "POST" })).status).toBe(503);
+  });
+
+  it("sem corpo recupera 90 dias: um pedaço inicial por conta na fila backfill", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const response = await appComDeps(enqueued).request("/internal/backfill/order-user-products", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      accountsScanned: 1,
+      enqueued: 1,
+      ate: "2026-09-16T15:00:00.000Z",
+      limite: "2026-06-25T15:00:00.000Z",
+    });
+    expect(enqueued[0]).toMatchObject({ jobType: "backfill.order-user-products", queue: "backfill" });
+  });
+
+  it("recusa menos de 8 dias: o disparo começa 7 dias atrás", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const response = await appComDeps(enqueued).request("/internal/backfill/order-user-products", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dias: 5 }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(enqueued).toHaveLength(0);
+  });
+});
+
 describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
   const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
   const RELIST_ID = "cccccccc-0000-4000-8000-000000000001";
