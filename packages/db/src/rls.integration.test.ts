@@ -17351,3 +17351,110 @@ describe("order_items.user_product_id: o user product vendido (D-362, 1ª parte)
     expect(rows.map((r) => r.user_product_id)).toEqual(["MLBU1709054559", null]);
   });
 });
+
+/**
+ * D-417: a conta que para de sincronizar avisa. `domain_events` e `sync_runs`
+ * são append-only (e o evento prende a conta com `on delete restrict`): cada
+ * teste roda numa transação desfeita no fim -- a lição de D-411.
+ */
+describe("sync.delayed / sync.failed: a conta que para de sincronizar avisa (D-417)", () => {
+  const CONTA = "eeee4151-0000-4000-8000-00000000e415";
+
+  async function naTransacao(corpo: () => Promise<void>): Promise<void> {
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+         values ($1,$2,'Conta parada','rlstest-sync-parada','CONNECTED',9990415, now() - interval '30 days')`,
+        [CONTA, ORG_SB],
+      );
+      await corpo();
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  /** Uma execução da reconciliação de pedidos que terminou há `horas` horas. */
+  async function execucao(status: "done" | "failed", horas: number, motivo: string | null = null): Promise<void> {
+    await client.query(
+      `insert into public.sync_runs
+         (organization_id, ml_account_id, job_id, resource, channel, status, reason, items_processed, started_at, finished_at)
+       values ($1,$2,gen_random_uuid(),'orders','reconciliation',$3,$4,0,
+               now() - make_interval(hours => $5) - interval '1 minute', now() - make_interval(hours => $5))`,
+      [ORG_SB, CONTA, status, motivo, horas],
+    );
+  }
+
+  async function avisos(): Promise<{ id: string; event_type: string; severity: string; after: Record<string, unknown> }[]> {
+    const { rows } = await client.query<{ id: string; event_type: string; severity: string; after: Record<string, unknown> }>(
+      `select id::text, event_type, severity, after from public.domain_events
+       where ml_account_id = $1 and event_type like 'sync.%' order by occurred_at, event_type`,
+      [CONTA],
+    );
+
+    return rows;
+  }
+
+  it("reconciliação falhando e último sucesso há mais de 3 h: um aviso importante por episódio", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 5);
+      await execucao("failed", 0, "Mercado Livre respondeu 403 para GET /orders/search.");
+      await execucao("failed", 0, "Mercado Livre respondeu 403 para GET /orders/search.");
+
+      const lista = await avisos();
+
+      expect(lista).toHaveLength(1);
+      expect(lista[0]).toMatchObject({
+        event_type: "sync.delayed",
+        severity: "importante",
+        after: { tipo: "reconciliacao", label: "Conta parada", horas: 5, motivo: "Mercado Livre respondeu 403 para GET /orders/search." },
+      });
+
+      // O fan-out entrega a quem alcança a conta: o admin, não o analista sem permissão nela.
+      const { rows } = await client.query<{ user_id: string }>(
+        `select nr.user_id from public.notification_recipients nr
+         join public.notifications n on n.id = nr.notification_id where n.domain_event_id = $1`,
+        [lista[0]?.id],
+      );
+      const destinatarios = rows.map((r) => r.user_id);
+
+      expect(destinatarios).toContain(ADMIN_SB);
+      expect(destinatarios).not.toContain(ANALISTA_SB);
+    });
+  });
+
+  it("passando de 12 h vira crítico; sucesso recente não avisa, e o sucesso seguinte começa outro episódio", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 13);
+      await execucao("failed", 0, null);
+
+      expect((await avisos()).map((a) => [a.event_type, a.severity, a.after.horas])).toEqual([["sync.failed", "critico", 13]]);
+
+      await execucao("done", 0);
+      await execucao("failed", 0, null);
+
+      expect(await avisos()).toHaveLength(1);
+    });
+  });
+
+  it("a conta que entra em ERROR avisa na hora, crítico, uma vez; continuar em ERROR não repete", async () => {
+    await naTransacao(async () => {
+      await client.query(
+        "update public.ml_accounts set status = 'ERROR', last_error = 'Mercado Livre recusou a troca de token: invalid_grant.' where id = $1",
+        [CONTA],
+      );
+      await client.query("update public.ml_accounts set last_error = 'outra falha' where id = $1", [CONTA]);
+      await client.query("update public.ml_accounts set status = 'ERROR' where id = $1", [CONTA]);
+
+      const lista = await avisos();
+
+      expect(lista).toHaveLength(1);
+      expect(lista[0]).toMatchObject({
+        event_type: "sync.failed",
+        severity: "critico",
+        after: { tipo: "conta_em_erro", label: "Conta parada", motivo: "Mercado Livre recusou a troca de token: invalid_grant." },
+      });
+    });
+  });
+});

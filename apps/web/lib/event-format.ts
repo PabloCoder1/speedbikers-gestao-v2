@@ -59,6 +59,24 @@ export function formatEventDiff(
         ? actionKindLabel(kind)
         : `${actionKindLabel(kind)} · ${formatCurrency(impacto)} de impacto estimado`;
     }
+    // D-417: a conta que parou de sincronizar -- a forma gravada pelos gatilhos
+    // de `ml_accounts` (entrou em ERROR) e de `sync_runs` (reconciliação falhando).
+    case "sync.delayed":
+    case "sync.failed": {
+      const motivo = typeof a.motivo === "string" && a.motivo.trim() !== "" ? a.motivo : null;
+
+      if (a.tipo === "conta_em_erro") {
+        return motivo === null ? "Conta em erro: reconecte em Integrações" : `Conta em erro: ${motivo}`;
+      }
+
+      if (a.tipo === "reconciliacao" && typeof a.horas === "number") {
+        const parada = `Pedidos sem sincronizar há ${String(a.horas)} h`;
+
+        return motivo === null ? parada : `${parada} · ${motivo}`;
+      }
+
+      return null;
+    }
     default:
       return null;
   }
@@ -106,6 +124,9 @@ export function entityHref(
   // `entity_id` é o `support_cases.id`, o mesmo UUID da rota.
   if (entityType === "support_case") return `/atendimento/${entityId}`;
   if (entityType === "listing" && MLB.test(entityId)) return `/anuncios/${entityId}`;
+  // D-417: a conta que parou de sincronizar -- o cartão dela em Integrações
+  // tem a saúde e o botão Reconectar.
+  if (entityType === "ml_account") return "/integracoes";
 
   return null;
 }
@@ -116,6 +137,7 @@ export function entityLabel(entityType: string): string {
   if (entityType === "order") return "Pedido";
   if (entityType === "support_case") return "Atendimento";
   if (entityType === "action") return "Alerta";
+  if (entityType === "ml_account") return "Conta";
 
   return entityType;
 }
@@ -130,6 +152,11 @@ export function entityText(entityType: string, entityId: string, after: Record<s
     const mlb = typeof after.mlb_id === "string" && MLB.test(after.mlb_id) ? ` · ${after.mlb_id}` : "";
 
     return `${actionKindLabel(after.kind)}${mlb}`;
+  }
+
+  // D-417: a conta pelo nome, não pelo uuid.
+  if (entityType === "ml_account" && after !== null && typeof after.label === "string") {
+    return `Conta ${after.label}`;
   }
 
   return `${entityLabel(entityType)} ${entityId}`;
