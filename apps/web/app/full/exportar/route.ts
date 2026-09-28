@@ -5,6 +5,7 @@ import { LOW_COVERAGE_DAYS, isFullRow, resolveFullFilters } from "../../../lib/f
 import { currentMembership } from "../../../lib/membership";
 import { createClient } from "../../../lib/supabase/server";
 import { lastBusinessDays } from "../../../lib/business-window";
+import { lerPaginasDaRpc } from "../../../lib/rpc-pages";
 
 /**
  * CSV do recorte da Central Full (D-380) — mesmos filtros da tela, sem página.
@@ -27,30 +28,38 @@ export async function GET(request: NextRequest): Promise<Response> {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
 
+  const organizationId = membership.organizationId;
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
 
-  const { data, error } = await supabase.rpc("get_fulfillment_overview", {
-    p_organization_id: membership.organizationId,
-    p_date_from: dateFrom,
-    p_date_to: dateTo,
-    p_ml_account_id: filters.account,
-    p_situation: filters.situation,
-    p_search: filters.search,
-    p_sku_id: null,
-    p_limit: EXPORT_LIMIT,
-    p_offset: 0,
-    p_focus: filters.focus,
-    p_sort: filters.sort,
-    p_low_coverage_days: LOW_COVERAGE_DAYS,
-  });
+  // Em páginas: pedir o teto numa ida só devolvia mil linhas (max_rows). A
+  // linha-sentinela da página vazia sai em cada página, para o laço terminar.
+  const { linhas: rows, error } = await lerPaginasDaRpc(
+    async (offset, limite) => {
+      const pagina = await supabase.rpc("get_fulfillment_overview", {
+        p_organization_id: organizationId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_ml_account_id: filters.account,
+        p_situation: filters.situation,
+        p_search: filters.search,
+        p_sku_id: null,
+        p_limit: limite,
+        p_offset: offset,
+        p_focus: filters.focus,
+        p_sort: filters.sort,
+        p_low_coverage_days: LOW_COVERAGE_DAYS,
+      });
+
+      return { data: pagina.data?.filter(isFullRow) ?? null, error: pagina.error };
+    },
+    EXPORT_LIMIT,
+  );
 
   if (error !== null) {
     return new Response(`Não foi possível exportar o Full: ${error.message}`, { status: 502 });
   }
 
-  const linhas = data;
-  const total = linhas[0]?.total_count ?? 0;
-  const rows = linhas.filter(isFullRow);
+  const total = rows[0]?.total_count ?? 0;
 
   // Nunca cortar em silêncio (D-131): passou do teto, o nome do arquivo diz.
   const sufixo = total > EXPORT_LIMIT ? `-primeiros-${String(EXPORT_LIMIT)}-de-${String(total)}` : "";

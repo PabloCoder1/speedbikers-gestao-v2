@@ -318,10 +318,18 @@ export default async function HomePage({
       supabase.rpc("get_sales_summary", { p_date_from: anterior.from, p_date_to: anterior.to }),
       supabase.rpc("get_sales_daily_series", { p_date_from: serie.from, p_date_to: serie.to }),
       // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
-      // os mesmos rótulos canônicos. A policy `notification_recipients_select_own`
-      // já restringe o embed à própria linha do usuário.
+      // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de
+      // destinatários do próprio usuário (policy
+      // `notification_recipients_select_own`), com a notificação embutida.
+      // Pela raiz `notifications`, a ordem não tinha índice que servisse e o
+      // banco filtrava e ordenava as ~66 mil linhas a cada visita: média de
+      // 1,7 s e máximo de 4,6 s no `pg_stat_statements` de produção (auditoria
+      // de 2026-09-28). Com `(user_id, created_at desc)` ele para na quinta
+      // linha: no Dev, como `authenticated` e com o usuário de 54 mil avisos,
+      // 826 ms e 17 mil páginas lidas viraram 16 ms e 43 — a mesma troca que `/notificacoes` fez em D-393, e a mesma
+      // ordem, porque o fan-out grava as duas linhas na mesma transação.
       supabase
-        .from("notifications")
+        .from("notification_recipients")
         /*
           `occurred_at` ENTRA NO EMBED (D-311), e a coluna importa: ela é
           QUANDO A MUDANÇA ACONTECEU, enquanto `notifications.created_at` é o
@@ -333,7 +341,9 @@ export default async function HomePage({
           É a mesma expressão que `/notificacoes` já usa, e depois desta fatia
           as duas telas passam a mostrar o mesmo instante para o mesmo evento.
         */
-        .select("id, created_at, domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label))")
+        .select(
+          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label)))",
+        )
         .order("created_at", { ascending: false })
         .limit(ATIVIDADE_LIMITE),
       userId === null
@@ -532,7 +542,13 @@ export default async function HomePage({
   const pontos: SeriePonto[] = serieDiaria.error === null && Array.isArray(serieDiaria.data) ? serieDiaria.data : [];
 
   const eventos: AtividadeLinha[] =
-    atividade.error === null && Array.isArray(atividade.data) ? atividade.data : [];
+    atividade.error === null && Array.isArray(atividade.data)
+      ? atividade.data.map((linha) => ({
+          id: linha.notification_id,
+          created_at: linha.created_at,
+          domain_events: linha.notifications.domain_events,
+        }))
+      : [];
 
   const nome = perfil.error === null ? (perfil.data?.full_name ?? null) : null;
 

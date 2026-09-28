@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { lastBusinessDays } from "../../../lib/business-window";
 import { orderKey } from "../../../lib/listings-dashboard";
 import { EXPORT_LIMIT, listingsToCsv, type ListingExportRow } from "../../../lib/listings-export";
+import { lerPaginasDaRpc } from "../../../lib/rpc-pages";
 import { resolveListingsFilters } from "../../../lib/listings-view";
 import { currentMembership } from "../../../lib/membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -34,30 +35,36 @@ export async function GET(request: NextRequest): Promise<Response> {
     lista.map((conta) => conta.slug),
   );
   const conta = lista.find((item) => item.slug === filters.account) ?? null;
+  const organizationId = membership.organizationId;
   const { from: dateFrom, to: dateTo } = lastBusinessDays(filters.days);
 
-  const { data, error } = await supabase.rpc("get_listings_dashboard", {
-    p_organization_id: membership.organizationId,
-    p_date_from: dateFrom,
-    p_date_to: dateTo,
-    p_ml_account_id: conta?.id ?? null,
-    p_search: filters.search,
-    p_status: filters.status,
-    p_link_state: filters.link,
-    p_stock: filters.stock,
-    p_full: filters.full,
-    p_sold: filters.sold,
-    p_order: orderKey(filters.order),
-    p_limit: EXPORT_LIMIT,
-    p_offset: 0,
-  });
+  // Em páginas: pedir o teto numa ida só devolvia mil linhas (max_rows).
+  const { linhas, error } = await lerPaginasDaRpc(
+    (offset, limite) =>
+      supabase.rpc("get_listings_dashboard", {
+        p_organization_id: organizationId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_ml_account_id: conta?.id ?? null,
+        p_search: filters.search,
+        p_status: filters.status,
+        p_link_state: filters.link,
+        p_stock: filters.stock,
+        p_full: filters.full,
+        p_sold: filters.sold,
+        p_order: orderKey(filters.order),
+        p_limit: limite,
+        p_offset: offset,
+      }),
+    EXPORT_LIMIT,
+  );
 
   if (error !== null) {
     return new Response(`Não foi possível exportar os anúncios: ${error.message}`, { status: 502 });
   }
 
-  const rows = data as unknown as ListingExportRow[];
-  const total = (data[0] as { total_count?: number } | undefined)?.total_count ?? 0;
+  const rows = linhas as unknown as ListingExportRow[];
+  const total = (linhas[0] as { total_count?: number } | undefined)?.total_count ?? 0;
   const sufixo = total > EXPORT_LIMIT ? `-primeiros-${String(EXPORT_LIMIT)}-de-${String(total)}` : "";
   const nome = `anuncios-${dateTo}${sufixo}.csv`;
 
