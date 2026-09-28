@@ -14472,3 +14472,5 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** `ml-token.test.ts` -- 403 sem corpo, 403 do PolicyAgent e falha de rede nao tocam `ml_accounts` e soltam a trava; 400 `invalid_grant` e 401 `invalid_client` marcam `ERROR` com a mensagem do Mercado Livre.
 
 **Impacto:** `apps/worker/src/handlers/ml-token.ts` e teste, `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`.
+
+**Em producao (28/09):** `worker-00035-bd4` em `8171f699` -- esta decisao, a 2a parte da D-362 e o registro do corpo do erro do Mercado Livre -- com 100% do trafego desde 12:29:28 UTC, publicada com o vigia de 403: 10 minutos sem nenhum 403 e nenhum job falho; as quatro contas CONNECTED. O `ml_http_failure` registra tambem o 404 `discount_not_found` de `/orders/{id}/discounts`, que e a resposta normal de pedido sem desconto -- ruido a filtrar numa fatia propria.
