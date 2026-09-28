@@ -37,4 +37,4 @@ Cada assunto tem **um único dono documental**. Não duplicar regra entre docume
 
 ## Regra central
 
-O repositório versionado é a memória oficial do projeto. A `main` serve apenas como referência V2; o desenvolvimento da nova versão acontece na branch `v3` e em branches de trabalho derivadas dela quando apropriado.
+O repositório versionado é a memória oficial do projeto. A `main` é a V3 e a branch de produção (o merge nela publica a web); o trabalho sai de branches derivadas dela e entra por PR. A V2 fica em `v2-legacy` (tag `v2-final`), apenas como referência.

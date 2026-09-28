@@ -22,8 +22,7 @@
     "check:restore": "node scripts/restore-check.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.112.3",
-    "zod": "4.4.3"
+    "@supabase/supabase-js": "2.112.3"
   },
   "devDependencies": {
     "@sb/config": "workspace:*",

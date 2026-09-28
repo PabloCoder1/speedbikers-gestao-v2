@@ -79,7 +79,7 @@ recusa "prod sem confirmação" "exige CONFIRMO_PRODUCAO=sim" "${PROD_OK[@]:0:5}
 recusa "prod no projeto do Dev" "apontando para o projeto do Dev" "${PROD_OK[@]}" "PROJECT_ID=speedbikers-gestao-v3"
 recusa "prod no Supabase do Dev" "apontando para o Supabase do Dev" "${PROD_OK[@]}" "SUPABASE_PROJECT_REF=nmgccyqquwxecqffsidr"
 recusa "prod com a chave publicável do Dev" "chave publicável do Dev" "${PROD_OK[@]}" "SUPABASE_PUBLISHABLE_KEY=sb_publishable_Ldlp0fb3PrvXn29XZ7cpag_Sqo121xo"
-recusa "prod com a origem do web do Dev" "origem do web do Dev" "${PROD_OK[@]}" "WEB_ORIGINS=https://producao.exemplo.test,https://speedbikers-gestao-v2-m71j.vercel.app"
+recusa "prod com a origem do web do Dev" "origem do web do Dev" "${PROD_OK[@]}" "WEB_ORIGINS=https://producao.exemplo.test,http://localhost:3000"
 
 # --- prod completo e distinto
 passa "prod completo resolve o Supabase de produção" "SUPABASE_URL=https://refproducaoficticio00.supabase.co" "${PROD_OK[@]}"
@@ -107,7 +107,7 @@ passa "duas origens bem formadas" "WEB_ORIGINS=https://a.exemplo.test,https://b.
 
 # `http://localhost` é o caso de trabalho local, e existe só no dev.
 passa  "dev aceita localhost em http"  "WEB_ORIGINS=http://localhost:3000" "WEB_ORIGINS=http://localhost:3000"
-recusa "prod recusa localhost em http" "usa http://" "${PROD_OK[@]}" "WEB_ORIGINS=http://localhost:3000"
+recusa "prod recusa localhost em http" "usa http://" "${PROD_OK[@]}" "WEB_ORIGINS=http://127.0.0.1:3000"
 
 if [ "${falhas}" -eq 0 ]; then
   printf '\nambiente.test.sh: todos os casos passaram\n'

@@ -1,6 +1,6 @@
 # Prompt Mestre — Speed Bikers Gestão V3
 
-> Este arquivo define COMO o agente deve trabalhar. O estado real do projeto é sempre a branch `v3`, seu código, migrations e documentação versionada.
+> Este arquivo define COMO o agente deve trabalhar. O estado real do projeto é sempre a branch `main`, seu código, migrations e documentação versionada.
 
 ## 1. PAPEL
 
@@ -16,7 +16,7 @@ O chat NÃO é a memória oficial do projeto.
 
 A fonte de verdade é, nesta ordem prática:
 
-1. código atual da branch `v3`;
+1. código atual da branch `main`;
 2. migrations versionadas;
 3. `AGENTS.md`;
 4. `docs/HANDOFF.md`;
@@ -35,10 +35,11 @@ Nunca dependa de “lembrar” o que outra IA fez.
 
 Repositório: `PabloCoder1/speedbikers-gestao-v2`.
 
-- `main`: V2 preservada como referência histórica e funcional.
-- `v3`: reconstrução limpa da V3.
+- `main`: a V3, branch de produção (desde 2026-09-23; antes era a V2).
+- `v2-legacy` (tag `v2-final`): V2 preservada como referência histórica e funcional.
+- `v3`: aposentada em 2026-09-23; o conteúdo está na `main`.
 - referência V2 congelada inicialmente no commit `8573d971a5cd427702575b52ed249c53588ec5ca`.
-- não copie código da V2 automaticamente; consulte a `main` somente quando houver valor em entender uma implementação, teste, regra ou problema já enfrentado.
+- não copie código da V2 automaticamente; consulte a `v2-legacy` somente quando houver valor em entender uma implementação, teste, regra ou problema já enfrentado.
 
 Infraestrutura já preparada:
 
@@ -812,7 +813,7 @@ Não comece implementando uma feature.
 Primeiro:
 
 1. execute o protocolo de nova sessão;
-2. confirme que está na branch `v3` e que a árvore de trabalho está limpa;
+2. confirme que está numa branch derivada de `origin/main` e que a árvore de trabalho está limpa;
 3. leia toda a documentação atual;
 4. consulte a `main` apenas para entender a estrutura V2 e lições úteis, sem copiar código;
 5. proponha a arquitetura inicial definitiva da V3, incluindo:

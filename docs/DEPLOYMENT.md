@@ -26,12 +26,12 @@
 | Ambiente | Banco | Compute | Frontend |
 |---|---|---|---|
 | **local** | Supabase CLI em Docker | apps locais, Mercado Livre em fixture | `next dev` |
-| **development** | Supabase `speedbikers-gestao-v3-dev` (`nmgccyqquwxecqffsidr`, `sa-east-1`) | Cloud Run em `speedbikers-gestao-v3` | Vercel `speedbikers-gestao-v2-m71j` |
+| **development** | Supabase `speedbikers-gestao-v3-dev` (`nmgccyqquwxecqffsidr`, `sa-east-1`) | Cloud Run em `speedbikers-gestao-v3` (pausado desde 2026-09-14, D-350) | `next dev` local — o projeto Vercel do Dev (`speedbikers-gestao-v2-m71j`) foi excluído em 2026-09-23; `DEV_WEB_ORIGIN` passou a `http://localhost:3000` |
 | **production** | Supabase `speedbikers-prod` (`imvjfgnaprqsfjlnsyev`, `sa-east-1`), criado em 2026-09-14 | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
 
 **Três ambientes, não quatro.** Staging separado só se justifica quando houver produção com usuário real dependendo de estabilidade.
 
-**Preview da Vercel aponta para o Supabase Dev** — no projeto do Dev (`speedbikers-gestao-v2-m71j`). Nas prévias de `speedbikers-prod`, o escopo das `NEXT_PUBLIC_*` não foi verificado (D-350): se estiverem em *All Environments*, toda prévia de branch fala com o banco de produção.
+**Não há mais prévia de PR na Vercel** (desde 2026-09-23): o projeto do Dev foi excluído e o `speedbikers-prod` pula prévia de branch de feature (`vercel-ignore.sh`). As `NEXT_PUBLIC_*` do `speedbikers-prod` estão só em *Production* (conferido em 2026-09-28). Validar um PR antes do merge é `next build` + `next start` em porta própria contra o banco local.
 
 - *Vantagem:* zero infraestrutura de provisionamento por PR, dados realistas.
 - *Desvantagem:* migration destrutiva num PR afeta quem estiver testando.
