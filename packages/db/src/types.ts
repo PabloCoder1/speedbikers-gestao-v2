@@ -4996,37 +4996,6 @@ export type Database = {
           visits_change_ratio: number | null
         }[]
       }
-      get_listing_sales: {
-        Args: {
-          p_date_from: string
-          p_date_to: string
-          p_organization_id: string
-        }
-        Returns: {
-          gross_revenue: number
-          ml_account_id: string
-          mlb_id: string
-          units_sold: number
-        }[]
-      }
-      get_listing_traffic: {
-        Args: {
-          p_date_from: string
-          p_date_to: string
-          p_organization_id: string
-        }
-        Returns: {
-          // CORRECAO MANUAL (classe D-133): conversion_rate e NULL quando
-          // nao houve visita observada no periodo (D-170) — o gerador nao
-          // enxerga nulabilidade de coluna calculada.
-          conversion_rate: number | null
-          days_observed: number
-          item_id: string
-          ml_account_id: string
-          orders_count: number
-          visits: number
-        }[]
-      }
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
@@ -6069,27 +6038,6 @@ export type Database = {
           ml_account_id: string
           resource: string
           runs_24h: number
-        }[]
-      }
-      get_unlinked_listings: {
-        Args: {
-          p_days?: number
-          p_limit?: number
-          p_organization_id: string
-          p_status?: string
-        }
-        Returns: {
-          account_label: string
-          available_quantity: number
-          gross_revenue: number
-          item_id: string
-          ml_account_id: string
-          price: number
-          status: string
-          synced_at: string
-          title: string
-          total_count: number
-          units_sold: number
         }[]
       }
       link_document_item: {
