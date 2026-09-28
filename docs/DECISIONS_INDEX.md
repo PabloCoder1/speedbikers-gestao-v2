@@ -449,4 +449,3 @@ Decisões registradas: **407** (D-001 a D-415).
 - **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
-
