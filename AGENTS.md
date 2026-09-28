@@ -6,7 +6,10 @@ repositório. Leia o mínimo que a sua tarefa exige (D-177).
 ## Sempre, antes de qualquer coisa
 
 1. `docs/HANDOFF.md` — estado corrente, P0 ativos, riscos, próximo passo.
-2. Confirme branch (`v3`), HEAD e que o Supabase é `nmgccyqquwxecqffsidr`.
+2. Confirme branch (`main`, a de produção desde 23/09 — a `v3` foi aposentada),
+   HEAD e os Supabase: Dev `nmgccyqquwxecqffsidr`, produção `imvjfgnaprqsfjlnsyev`.
+   Fatia nova sai de `origin/main` (`git checkout -B <branch> origin/main`): o
+   `main` LOCAL de clones antigos ainda é a V2.
 
 Isso basta para saber onde o projeto está. **Não leia `DECISIONS.md`,
 `ROADMAP.md` ou os arquivos de arquivo por padrão** — juntos passam de 1 MB
@@ -34,9 +37,12 @@ grep -n "^## D-171" -A 40 docs/DECISIONS.md
 
 ## Regras que não mudam
 
-- Toda mudança estrutural de banco é **migration versionada**, aplicada no
-  Dev e renomeada para o timestamp que o MCP registrou.
-- A `main` é a V2, **apenas referência** — nunca copiar código de lá.
+- Toda mudança estrutural de banco é **migration versionada**. Ela chega ao
+  Dev pela CI no merge na `main` e à produção pelo `migrations-producao.yml`
+  (duas aprovações do dono) — nunca pelo MCP. **Merge na `main` publica a web
+  em produção**: a migration de que o código depende vai antes.
+- A V2 está em `v2-legacy` (tag `v2-final`), **apenas referência** — nunca
+  copiar código de lá.
 - Agregação em SQL, nunca em JavaScript. Ausência de dado não vira zero.
 - Nenhuma consulta que possa passar de 1.000 linhas sem paginação explícita,
   `readAllPages` ou agregação no SQL.

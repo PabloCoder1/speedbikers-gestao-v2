@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | `main` em `f984b647` (PR #103) em 25/09 — envelhece a cada merge: confira com `git log -1 origin/main`. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
-| **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350): api `api-00041-lzn` e worker `worker-00052-jpk` em `da130c0`. Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
+| **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | 28/09: worker `worker-00035-bd4` em `8171f699` (D-362, D-414) e api `api-00021-qdr` em `cb4edb4a` (D-403), da `main`. Volta: `worker-00034-wk2`/`api-00020-9rn`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
 | **Migrations** | Produção com todas até `20260925170000` (25/09, com a D-393 do #77, as D-411 a D-413 e a D-362), pelo `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
@@ -75,6 +75,9 @@ e `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
+- **Produção sem alerta nenhum** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde.
+  Canal de alerta e IP de saída fixo (Cloud NAT) são atos do dono. O app ML da V2
+  (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
@@ -185,9 +188,8 @@ e `docs/PERFORMANCE.md`.
 Nada disto pode ser feito por um agente.
 
 1. ~~**Deploy** dos dois serviços~~ — **FEITO em 2026-09-02** (D-162→D-216).
-2. ~~`bash infra/cloud-scheduler.sh`~~ — **FEITO**, **14** jobs `ENABLED`. A
-   lista canônica é `infra/cloud-scheduler.sh` (`DEPLOYMENT.md` §7); o «15
-   esperados» que já esteve escrito aqui era falso.
+2. ~~`bash infra/cloud-scheduler.sh`~~ — feito; a lista canônica é o script
+   (`DEPLOYMENT.md` §7). Produção tem 17 jobs, iguais a ele (28/09).
 3. ~~Relatar **Dashboard → Database → Backups** do projeto Dev~~ — **MEDIDO
    em 2026-09-13 (D-332)**: backup físico diário, ~7 dias de retenção. **Falta
    só confirmar o PITR** (aba *Point in time*, que não renderizou para as
@@ -203,10 +205,7 @@ Nada disto pode ser feito por um agente.
    (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
    chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
    UpSeller, comparar o saldo de alguns SKUs e relatar fecha o `[~]`.
-3c. ~~**As duas contas em `ERROR`** (`sbmotos`, `gmr`)~~ — **FEITO pelo
-   usuário em 2026-09-03** (reautorização OAuth às 13:31/13:34 UTC; medido:
-   as quatro contas `CONNECTED`, última sincronização `done` às 14:40 UTC).
-   Se alguma tela ainda mostrar ERROR, é cache — o banco diz CONNECTED.
+3c. ~~As duas contas em `ERROR` (03/09)~~ — reautorizadas pelo usuário.
 4. Ensaio de `/produtos` (5 SKUs sentinela) e preencher
    `/reposicao/configuracoes`.
 5. Primeiro relist real, deliberado, com anúncio sacrificável.
@@ -215,27 +214,24 @@ Nada disto pode ser feito por um agente.
    2026-09-14, o que não prova que está ligada (D-350). Conferir no painel:
    Authentication → Sign In / Providers → Email → *Prevent use of leaked
    passwords*, em `nmgccyqquwxecqffsidr` e em `imvjfgnaprqsfjlnsyev`.
-7. ~~**Branch protection da `v3`**~~ — **FEITO em 2026-09-03** e **reforçado
-   depois** (medido em 2026-09-14, D-350): 2 checks obrigatórios
-   (`typecheck, lint, test, build` e integração), só para quem **não** é admin.
-   O push direto do agente na `v3` passou a ser **barrado pelo modo automático**
-   (merge sem revisão): a junção sai por PR, com CI verde, pela interface do GitHub.
-8. ~~**Deploy de `worker`/`api` para D-229 valer**~~ — **FEITO em
-   2026-09-03**: validado no ar com `order_financials` indo de 1 para centenas
-   de linhas (leitura em D-229/D-230).
+7. **Branch protection da `main` — FALTA.** A proteção de 2026-09-03 (2 checks
+   obrigatórios, `typecheck, lint, test, build` e integração, D-350) ficou na
+   `v3` aposentada; a `main`, que publica produção, não tem proteção nem
+   ruleset (conferido em 2026-09-28): push direto e force-push passam. Recriar
+   a mesma regra na `main` e tirar a `v3` da política de branch do ambiente
+   `producao`.
+8. ~~Deploy de `worker`/`api` para D-229~~ — feito em 2026-09-03.
 9. ~~**O repositório está PÚBLICO.**~~ — **DECIDIDO pelo usuário em
    2026-09-03: fica público**, porque o plano gratuito do GitHub não aceita
    mais commits em repositório privado. Consequência que vale para todo mundo
    que escreve aqui: **os docs são públicos** — nunca um segredo, uma chave,
    um dado pessoal de cliente ou um número que a empresa não publicaria.
-10. ~~**Rotacionar a credencial do GitHub do Git Credential Manager**~~ —
-    **FEITO em 2026-09-14**: o push passou a ser recusado com "Invalid username
-    or token" e voltou depois de um novo login.
+10. ~~Rotacionar a credencial do GitHub~~ — feito em 2026-09-14.
 11. **Produção (D-350 §7):** apagar o *ambiente* do GitHub
     `SUPABASE_PROD_DB_PASSWORD` (sem trava) e confirmar os `SUPABASE_PROD_*`
     dentro de `producao`; na Vercel `speedbikers-prod`, `NEXT_PUBLIC_*` só em
-    Production, remover as 5 variáveis de infra e decidir o deploy automático
-    da `v3`; no Supabase de produção, Site URL e redirects do Auth, SMTP e PITR;
+    Production (conferido em 28/09) e remover as 5 variáveis de infra, que
+    nenhum código da `web` lê; no Supabase de produção, Site URL e redirects do Auth, SMTP e PITR;
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 
