@@ -20,6 +20,11 @@ export interface OrderFinancialsScheduleDeps {
 }
 
 export interface OrderFinancialsScheduleOutcome {
+  /**
+   * A rodada nem conseguiu listar o que percorrer. A rota responde 503, e o
+   * Cloud Scheduler registra falha em vez de verde (auditoria de 2026-09-28).
+   */
+  failed?: true;
   accountsScanned: number;
   enqueued: number;
   deduplicated: number;
@@ -39,7 +44,7 @@ export async function triggerOrderFinancialsSweep(
   if (accounts.error !== null) {
     deps.logger.error("order_financials_schedule_accounts_not_listed", { reason: accounts.error.message });
 
-    return { accountsScanned: 0, enqueued: 0, deduplicated: 0 };
+    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true };
   }
 
   let enqueued = 0;

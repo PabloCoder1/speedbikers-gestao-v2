@@ -14494,3 +14494,21 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Publicacao:** a web publica com o merge na `main`; worker e api so depois de novo deploy (`infra/deploy-cloud-run.sh`). Sem migration.
 
 **Impacto:** `apps/worker/src/handlers/ml-token.ts`, `apps/web/lib/safe-next.ts`, `packages/mercado-livre/src/{http-client,oauth,retry}.ts`, `apps/{api,worker}/src/enqueue.ts` e testes; `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-416 - Auditoria de 28/09, api: agendador que nem lista contas responde 503; erro interno sem a mensagem do banco; id de caminho validado; convite e link de acesso nao atravessam organizacao
+
+**Origem.** Pente-fino de 28/09/2026 (codigo da `main` `8171f699`). Quatro achados da `api`, todos com teste que reprova o codigo anterior.
+
+**1. Agendador verde com a rodada perdida.** Os 14 modulos `*-schedule.ts` e `reconcile.ts` devolviam `{ ...: 0 }` quando o `select` de contas ou organizacoes falhava, e a rota respondia 200: o Cloud Scheduler registrava sucesso e a rodada sumia, com so um `logger.error` -- a falha silenciosa que D-217 e D-414 ja custaram. **Decisao:** o resultado ganha `failed: true` nesse ramo, e as 16 rotas `/internal/schedule/*` respondem 503 (`respostaDoAgendador`). O "nenhuma conta CONNECTED" continua 200 com zero: e resposta, nao falha. **Pendente:** os jobs do Scheduler nao tem nova tentativa configurada; o 503 torna a falha visivel, e repetir exige `--max-retry-attempts` em `infra/cloud-scheduler.sh` e aplicar em producao.
+
+**2. Mensagem crua do Postgres no corpo da resposta.** Oito rotas `/v1/*` devolviam `{ code: "internal", message: outcome.reason }` com o texto do banco ou do Auth, contra a propria regra do `onError` (docs/API.md secao 6). **Decisao:** `erroInterno` loga o motivo com o `request_id` e devolve `"Erro interno."` com o `request_id` para cruzar. A tela que mostrava o texto do banco passa a mostrar a mensagem generica.
+
+**3. Id de caminho sem validacao.** `:caseId`, `:relistId` (duas rotas) e `:id` (importacao do ERP e da NF-e) iam ao Postgres como vieram: um id malformado virava 500 com `invalid input syntax for type uuid`. As tabelas sao `uuid` (conferido no catalogo). **Decisao:** `z.uuid()` antes, 400 fora do formato -- o que `:userId` ja fazia.
+
+**4. Convite e link de acesso atravessando organizacao (latente).** O convite VINCULAVA quem ja existia no Auth, inclusive membro de outra organizacao, sem consentimento; e `reissueAccessLink` so conferia o vinculo DESTA organizacao antes de gerar o link de `recovery`, que define a senha. A cadeia: ADMIN de A convida o e-mail de alguem de B, reemite o link, define a senha e entra com o alcance de B. E, mesmo sem ma-fe, a `web` trata "mais de uma organizacao" como erro -- a pessoa ficava trancada fora das duas. Hoje ha uma organizacao so; vira P0 quando houver a segunda. **Decisao:** o convite recusa quem ja e membro de OUTRA organizacao (mensagem neutra, sem dizer qual); quem existe no Auth sem organizacao nenhuma continua sendo vinculado. O link de acesso recusa o alvo com mais de um vinculo, com 409 -- a mesma regra que a suspensao ja tinha (`member-suspension.ts`). Isto revisa o comentario do convite ("vincular, nao recusar") no caso de outra organizacao.
+
+**Verificacao:** `app.test.ts` (+6: 503 do agendador, quatro ids malformados, 500 sem a mensagem do banco e com ela no log), `invites.test.ts` (+3), 13 testes de agendador atualizados para o `failed: true`. Os novos reprovam `origin/main`. Bateria: `build` 8/8, `check` 29/29.
+
+**Publicacao:** so vale depois do deploy da `api`. Sem migration.
+
+**Impacto:** `apps/api/src/{app,invites,reconcile}.ts`, `apps/api/src/*-schedule.ts` e testes; `docs/{DECISIONS,DECISIONS_INDEX}.md`.

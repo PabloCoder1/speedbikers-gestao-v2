@@ -132,6 +132,7 @@ describe("triggerSupportQuestionsReconcile (D-089)", () => {
       accountsScanned: 0,
       enqueued: 0,
       deduplicated: 0,
+      failed: true,
     });
     expect(enqueued).toHaveLength(0);
   });

@@ -69,7 +69,7 @@ describe("triggerOrderFinancialsSweep (D-165)", () => {
 
     const outcome = await triggerOrderFinancialsSweep(deps);
 
-    expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0 });
+    expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(requests).toHaveLength(0);
   });
 });

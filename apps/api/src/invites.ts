@@ -126,6 +126,30 @@ export async function inviteOrganizationMember(
   let userId = existente.userId;
   let inviteLink: string | null = null;
 
+  /*
+    QUEM JÁ É DE OUTRA ORGANIZAÇÃO não é vinculado (auditoria de 2026-09-28).
+    Vincular sem o consentimento da pessoa tinha dois efeitos: a `web` trata
+    "mais de uma organização" como erro (não há seletor), então ela ficava
+    trancada fora das duas; e o ADMIN desta organização passava a poder
+    reemitir o link de acesso dela — definir a senha de uma conta que também
+    alcança a outra organização. A mensagem é neutra de propósito: não diz
+    a qual organização a pessoa pertence. Quem existe no Auth SEM organização
+    (convite anterior que não chegou ao vínculo) continua sendo vinculado.
+  */
+  if (userId !== null) {
+    const vinculos = await deps.db.from("organization_members").select("organization_id").eq("user_id", userId);
+
+    if (vinculos.error !== null) {
+      return { status: "error", reason: vinculos.error.message };
+    }
+
+    const daqui = vinculos.data.some((vinculo) => vinculo.organization_id === caller.organizationId);
+
+    if (!daqui && vinculos.data.length > 0) {
+      return { status: "invalid", reason: "este e-mail não pode ser convidado para esta organização" };
+    }
+  }
+
   if (userId === null) {
     const gerado = await deps.db.auth.admin.generateLink({
       type: "invite",
@@ -295,6 +319,7 @@ async function encontrarPorEmail(
 export type ReissueOutcome =
   | { status: "issued"; link: string }
   | { status: "not_member" }
+  | { status: "invalid"; reason: string }
   | { status: "error"; reason: string };
 
 export async function reissueAccessLink(
@@ -302,21 +327,26 @@ export async function reissueAccessLink(
   caller: Caller,
   userId: string,
 ): Promise<ReissueOutcome> {
-  const membro = await deps.db
-    .from("organization_members")
-    .select("user_id")
-    .eq("organization_id", caller.organizationId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const vinculos = await deps.db.from("organization_members").select("organization_id").eq("user_id", userId);
 
-  if (membro.error !== null) {
-    return { status: "error", reason: membro.error.message };
+  if (vinculos.error !== null) {
+    return { status: "error", reason: vinculos.error.message };
   }
 
   // Não é membro daqui: a resposta é a mesma para "não existe" e "existe em
   // outra organização" — distinguir as duas contaria quem existe no sistema.
-  if (membro.data === null) {
+  if (!vinculos.data.some((vinculo) => vinculo.organization_id === caller.organizationId)) {
     return { status: "not_member" };
+  }
+
+  // Também é de outra organização: o link define a senha de uma conta que
+  // alcança a outra, e isso não é poder de um ADMIN daqui. Mesma regra da
+  // suspensão (`member-suspension.ts`), auditoria de 2026-09-28.
+  if (vinculos.data.length > 1) {
+    return {
+      status: "invalid",
+      reason: "esta pessoa também pertence a outra organização — o link de acesso tem de sair de lá",
+    };
   }
 
   const pessoa = await deps.db.auth.admin.getUserById(userId);

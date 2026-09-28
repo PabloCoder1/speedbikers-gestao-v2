@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **407** (D-001 a D-415).
+Decisões registradas: **408** (D-001 a D-416).
 
 ## Por domínio
 
-### atendimento (52)
+### atendimento (53)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -70,6 +70,7 @@ Decisões registradas: **407** (D-001 a D-415).
 - **D-388** — Devolucao com `orders: null` nao derruba mais a notificacao do claim
 - **D-389** — O diagnostico do SKU compara preco COM promocao, nao o cadastrado
 - **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
+- **D-416** — Auditoria de 28/09, api: agendador que nem lista contas responde 503; erro interno sem a mensagem do banco; id de caminho validado; convite e link de acesso nao atravessam organizacao
 
 ### banco/rls (37)
 

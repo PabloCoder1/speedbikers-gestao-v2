@@ -80,7 +80,7 @@ describe("triggerAdsCampaignsSync", () => {
   it("falha ao listar contas não enfileira nada", async () => {
     const { deps, enqueued } = montar({ accountsFail: true });
 
-    await expect(triggerAdsCampaignsSync(deps)).resolves.toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0 });
+    await expect(triggerAdsCampaignsSync(deps)).resolves.toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(enqueued).toHaveLength(0);
   });
 });
