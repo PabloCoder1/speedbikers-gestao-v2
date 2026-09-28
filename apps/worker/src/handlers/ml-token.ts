@@ -1,6 +1,12 @@
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreOAuthConfig } from "@sb/mercado-livre";
-import { decryptToken, encryptToken, refreshAccessToken } from "@sb/mercado-livre";
+import {
+  MercadoLivreApiError,
+  decryptToken,
+  encryptToken,
+  refreshAccessToken,
+  tokenErrorBodySchema,
+} from "@sb/mercado-livre";
 
 /**
  * Obtenção de `access_token` válido, compartilhada por todo handler que
@@ -21,6 +27,25 @@ const REFRESH_LOCK_MS = 60 * 1000;
 export type AccessTokenResult =
   | { ok: true; accessToken: string }
   | { ok: false; retryable: boolean; reason: string };
+
+/**
+ * A troca de token foi RECUSADA de vez: o Mercado Livre respondeu 400/401 com
+ * o erro OAuth no corpo (`invalid_grant`, `invalid_client`...). Só isso pede
+ * reconectar a conta.
+ *
+ * Todo o resto é passageiro e NÃO derruba a conta -- 403 sem esse corpo, 429
+ * e 5xx depois das novas tentativas, falha de rede, resposta fora da forma.
+ * Em 27/09/2026 um 403 de bloqueio na saída de UMA instância do worker
+ * marcou as quatro contas como ERROR, e a sincronização ficou 32 horas parada
+ * até alguém recolocá-las em CONNECTED; os refresh tokens estavam intactos.
+ */
+function recusaDefinitiva(error: unknown): boolean {
+  return (
+    error instanceof MercadoLivreApiError &&
+    (error.status === 400 || error.status === 401) &&
+    tokenErrorBodySchema.safeParse(error.body).success
+  );
+}
 
 /**
  * Garante um `access_token` válido, renovando quando perto de expirar.
@@ -79,6 +104,14 @@ export async function ensureAccessToken(
       .from("ml_credentials")
       .update({ refresh_locked_until: null })
       .eq("ml_account_id", mlAccountId);
+
+    if (!recusaDefinitiva(error)) {
+      // A conta continua CONNECTED: o job falha com nova tentativa, a próxima
+      // execução tenta renovar de novo, e a tela já avisa "token vencido numa
+      // conta conectada" enquanto isso durar.
+      return { ok: false, retryable: true, reason };
+    }
+
     await deps.db
       .from("ml_accounts")
       .update({ status: "ERROR", last_error: reason.slice(0, 2000) })
