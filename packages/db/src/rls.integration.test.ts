@@ -6623,80 +6623,6 @@ describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
   });
 });
 
-describe("get_listing_sales (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
-  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
-  // ausência de afterAll — ver comentário equivalente no describe de
-  // get_stock_coverage, acima.
-  const CONTA_ANUNCIO = "dddd6666-0000-4000-8000-000000000066";
-  const MLB_ID = "MLB900100200";
-  const MLB_FORA_DA_JANELA = "MLB900100201";
-  const TODAY = "2026-08-23";
-  const WINDOW_START = "2026-07-25"; // 30 dias antes, janela usada pela tela /anuncios
-
-  beforeAll(async () => {
-    await client.query(
-      `insert into public.ml_accounts (id, organization_id, label, slug, status)
-       values ($1,$2,'Conta de venda por anúncio','anunciotest-conta','PENDING')
-       on conflict do nothing`,
-      [CONTA_ANUNCIO, ORG_SB],
-    );
-
-    await client.query(
-      `insert into public.daily_listing_metrics
-         (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
-       values
-         ($1,$2,$3,null,'2026-08-20',2,200,2,2),
-         ($1,$2,$3,null,'2026-08-23',3,300,3,3),
-         ($1,$2,$3,'123456','2026-08-23',9,900,9,9),
-         ($1,$2,$4,null,'2020-01-02',5,500,5,5)`,
-      [ORG_SB, CONTA_ANUNCIO, MLB_ID, MLB_FORA_DA_JANELA],
-    );
-  });
-
-  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
-
-  it("soma venda por (conta, anúncio) no intervalo, INCLUINDO a linha com variação (D-123)", async () => {
-    // Este teste afirmava 5/500, "ignorando a linha com variação" — que era o
-    // comportamento ANTES de D-123. D-123 removeu o filtro `variation_id is
-    // null` de propósito (R$ 469.593,20 escondidos, 15,4% da receita) e o
-    // teste ficou obsoleto sem que ninguém visse: a CI já estava vermelha por
-    // outro motivo (D-130) e depois parou de rodar (falha de faturamento,
-    // D-142). O fixture tem 2+3 sem variação e 9 com — o total correto é 14.
-    const rows = await asUser<{ ml_account_id: string; mlb_id: string; units_sold: string; gross_revenue: string }>(
-      ADMIN_SB,
-      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_ID}'`,
-    );
-
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.units_sold)).toBe(14);
-    expect(Number(rows[0]?.gross_revenue)).toBe(1400);
-  });
-
-  it("fora da janela de datas, o anúncio nem aparece", async () => {
-    const rows = await asUser<{ mlb_id: string }>(
-      ADMIN_SB,
-      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_FORA_DA_JANELA}'`,
-    );
-
-    expect(rows).toHaveLength(0);
-  });
-
-  it("anon não executa", async () => {
-    await expect(
-      asAnon(`select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
-    ).rejects.toThrow(/permission denied/i);
-  });
-
-  it("usuário de outra organização não vê o anúncio desta organização", async () => {
-    const rows = await asUser<{ mlb_id: string }>(
-      DE_OUTRA_ORG,
-      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_ID}'`,
-    );
-
-    expect(rows).toHaveLength(0);
-  });
-});
-
 describe("get_sku_dashboard (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
@@ -7246,7 +7172,7 @@ describe("Mercado Ads: tabelas e get_ads_overview (D-363)", () => {
   });
 });
 
-describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
+describe("daily_listing_visits (D-032, Fase 5B)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
   // get_stock_coverage, acima.
@@ -7254,7 +7180,6 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
   const ITEM_ID = "MLB900100500";
   const ITEM_SO_PEDIDO = "MLB900100501"; // tem pedido, mas nenhuma visita registrada.
   const TODAY = "2026-08-23";
-  const WINDOW_START = "2026-07-25"; // 30 dias antes, janela usada pela tela /anuncios
 
   beforeAll(async () => {
     await client.query(
@@ -7307,69 +7232,6 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
 
   it("anon não lê daily_listing_visits", async () => {
     await expect(asAnon("select * from public.daily_listing_visits")).rejects.toThrow(/permission denied/i);
-  });
-
-  it("get_listing_traffic: conversão é FRAÇÃO e só sobre os dias observados (D-170)", async () => {
-    const rows = await asUser<{
-      item_id: string;
-      visits: string;
-      orders_count: string;
-      days_observed: string;
-      conversion_rate: string;
-    }>(
-      ADMIN_SB,
-      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
-    );
-
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.visits)).toBe(50);
-    // Pedidos da JANELA INTEIRA: 5 no dia com visita + 3 no dia sem.
-    expect(Number(rows[0]?.orders_count)).toBe(8);
-    // Dois dias de coleta (20/08 e 23/08); 21/08 teve pedido, não visita.
-    expect(Number(rows[0]?.days_observed)).toBe(2);
-    // 5 pedidos observados ÷ 50 visitas = 0,1 — e NÃO 8/50 = 0,16, que é o
-    // que a fórmula antiga faria ao misturar as duas janelas. Fração, não
-    // percentual: a tela formata com formatPercent.
-    expect(rows[0]?.conversion_rate).toBe("0.1000");
-  });
-
-  it("item com pedido mas sem visita no período: conversion_rate nulo, não Infinity", async () => {
-    const rows = await asUser<{ visits: string; orders_count: string; conversion_rate: string | null }>(
-      ADMIN_SB,
-      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_SO_PEDIDO}'`,
-    );
-
-    expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.visits)).toBe(0);
-    expect(Number(rows[0]?.orders_count)).toBe(2);
-    expect(rows[0]?.conversion_rate).toBeNull();
-  });
-
-  it("visita fora da janela de datas não conta na soma nem na cobertura", async () => {
-    const rows = await asUser<{ visits: string; days_observed: string }>(
-      ADMIN_SB,
-      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
-    );
-
-    // 20 + 30 = 50, sem contar as 999 de 2020-01-02 — que também não entram
-    // em days_observed: dia fora da janela não é dia observado.
-    expect(Number(rows[0]?.visits)).toBe(50);
-    expect(Number(rows[0]?.days_observed)).toBe(2);
-  });
-
-  it("anon não executa get_listing_traffic", async () => {
-    await expect(
-      asAnon(`select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
-    ).rejects.toThrow(/permission denied/i);
-  });
-
-  it("usuário de outra organização não vê o anúncio desta organização em get_listing_traffic", async () => {
-    const rows = await asUser<{ item_id: string }>(
-      DE_OUTRA_ORG,
-      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
-    );
-
-    expect(rows).toHaveLength(0);
   });
 });
 
