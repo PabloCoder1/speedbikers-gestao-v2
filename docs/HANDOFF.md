@@ -75,8 +75,8 @@ e `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **Produção sem alerta nenhum** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde.
-  Canal de alerta e IP de saída fixo (Cloud NAT) são atos do dono. O app ML da V2
+- **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
+  D-417/D-418 (o vigia pede um ato, ver D-418); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.

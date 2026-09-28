@@ -14526,3 +14526,17 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Verificacao:** integracao, em transacao desfeita (os dois lados sao append-only) -- falha com ultimo sucesso ha 5 h avisa uma vez (importante), e a segunda falha do episodio nao repete; o admin recebe e o analista sem a conta nao; ultimo sucesso ha 13 h avisa critico; sucesso recente nao avisa; a conta que entra em ERROR avisa critico uma vez, e continuar em ERROR nao repete. Web: texto, destino e link.
 
 **Impacto:** `supabase/migrations/20260928180000_sincronizacao_parada_avisa.sql`, `apps/web/lib/event-format.ts` e teste, `packages/db/src/rls.integration.test.ts`, `docs/{API,DECISIONS,DECISIONS_INDEX,NOTIFICATIONS}.md`.
+
+## D-418 - O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417
+
+**Contexto:** D-417 avisa quando a reconciliacao de pedidos FALHA ha horas -- o gatilho olha as linhas de `sync_runs`. Nao avisa quando ela para de RODAR: se o agendador deixa de enfileirar (D-217, "um job que para de ser enfileirado nao falha -- emudece"), nenhuma linha entra e o gatilho nao tem o que ver. O Cloud Scheduler fica verde, o endpoint responde 200, e nada acontece. E o risco ativo "producao sem alerta nenhum" do HANDOFF.
+
+**1. O VIGIA MORA NO BANCO.** `private.vigiar_sincronizacao()` percorre as contas CONNECTED e, para cada uma, compara agora com o ultimo sucesso da reconciliacao de pedidos (sem nenhum, `connected_at`): 3 horas avisa `sync.delayed`, 12 avisa `sync.failed`. Roda por pg_cron a cada 30 minutos -- sem depender do Cloud Scheduler, da api nem do worker. A conta em ERROR fica de fora: o gatilho dela (D-417) ja avisou.
+
+**2. UMA REGRA, UMA CHAVE.** `private.avisar_sincronizacao_parada(conta, ate, motivo)` e a regra de D-417 extraida: o gatilho de `sync_runs` e o vigia chamam a mesma funcao, com a mesma chave de episodio (`sync.*:{conta}:janela:{ultimo sucesso}`), entao os dois nunca avisam duas vezes o mesmo episodio. Sem motivo dado, o vigia usa o da ultima falha desde o ultimo sucesso; sem falha nenhuma, "Nenhuma reconciliacao de pedidos rodou desde o ultimo sucesso." -- exatamente o caso que o gatilho nao ve.
+
+**3. O AGENDAMENTO E UM ATO, NAO A MIGRATION.** A migration instala o pg_cron (disponivel e nao instalado em producao, medido em 28/09) e cria as funcoes; o agendamento e `select private.agendar_vigia_da_sincronizacao();`, rodado uma vez em producao (idempotente pelo nome do job). Agendado na migration, o vigia rodaria tambem no banco de teste da CI e no local, e um aviso numa conta de teste -- a limpeza apaga as contas `rlstest`, e o evento as prende com `on delete restrict` -- quebraria a suite ao acaso.
+
+**Verificacao:** integracao em transacao desfeita -- sem execucao ha 5 h avisa `sync.delayed` dizendo que nao rodou, e vigiar de novo nao repete; vigia e gatilho no mesmo episodio avisam uma vez; sucesso recente nao avisa; a falha que ainda nao tinha avisado da o motivo ao vigia; a conta em ERROR fica de fora; o ato agenda `*/30 * * * *` pelo nome.
+
+**Impacto:** `supabase/migrations/20260928190000_vigia_da_sincronizacao.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF,NOTIFICATIONS}.md`. Ato de producao, depois da migration: `select private.agendar_vigia_da_sincronizacao();`.
