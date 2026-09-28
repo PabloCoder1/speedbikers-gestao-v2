@@ -121,7 +121,9 @@ function fakeDb(options: FakeDbOptions = {}): {
           table === "sku_components" ||
           table === "orders" ||
           table === "stock_movements" ||
-          table === "domain_events"
+          table === "domain_events" ||
+          // D-362: o user product já gravado das linhas da página.
+          table === "order_items"
         ) {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
           return chain({ data: [], error: null });

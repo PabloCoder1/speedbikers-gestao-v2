@@ -1528,7 +1528,15 @@ describe("prefetchOrders (D-186)", () => {
     //
     // D-351: mais duas, sem crescer com a página — os movimentos gravados e o
     // corte do ERP (do componente, que é quem tem saldo).
-    expect(consultadas).toEqual(["orders", "sku_listing_links", "stock_movements", "rpc:get_erp_stock_cutoffs"]);
+    // D-362: + `order_items`, o user product já gravado das linhas que o
+    // `/orders/search` devolve sem ele -- uma leitura por lote de pedidos.
+    expect(consultadas).toEqual([
+      "orders",
+      "sku_listing_links",
+      "order_items",
+      "stock_movements",
+      "rpc:get_erp_stock_cutoffs",
+    ]);
     expect(prefetch.cutoffBySku).toEqual(new Map([["sku-peca", null]]));
   });
 
@@ -1604,6 +1612,67 @@ describe("prefetchOrders (D-186)", () => {
     expect(cortesPedidos).toEqual([["sku-up"]]);
   });
 
+  it("sem user product no payload (o /orders/search), usa o gravado na linha e lê o vínculo dele (D-362)", async () => {
+    const filtrosLidos: Record<string, unknown>[] = [];
+
+    const cadeia = (table: string, filtros: Record<string, unknown>) => {
+      const resposta = (): { data: unknown; error: null } => {
+        if (table === "order_items") {
+          return {
+            data: [{ order_id: PEDIDO_A.id, position: 0, user_product_id: "MLBU1709054559" }],
+            error: null,
+          };
+        }
+
+        if (table === "sku_listing_links" && filtros.ref_kind === "USER_PRODUCT") {
+          return {
+            data: [
+              {
+                id: "link-up",
+                sku_id: "sku-up",
+                item_id: null,
+                variation_id: null,
+                user_product_id: "MLBU1709054559",
+                skus: { kind: "PRODUTO", sku_components: [] },
+              },
+            ],
+            error: null,
+          };
+        }
+
+        return { data: [], error: null };
+      };
+      const self = {
+        select: () => self,
+        eq: (col: string, val: unknown) => cadeia(table, { ...filtros, [col]: val }),
+        in: (col: string, val: unknown) => cadeia(table, { ...filtros, [col]: val }),
+        then: <R>(onFulfilled: (value: { data: unknown; error: null }) => R) => {
+          if (table === "sku_listing_links") filtrosLidos.push(filtros);
+
+          return Promise.resolve(resposta()).then(onFulfilled);
+        },
+      };
+
+      return self;
+    };
+
+    const db = {
+      from: (table: string) => cadeia(table, {}),
+      rpc: (fn: string, args: { p_sku_ids: string[] }) =>
+        Promise.resolve(
+          fn === "get_order_return_movements"
+            ? { data: [], error: null }
+            : { data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: null })), error: null },
+        ),
+    } as unknown as Parameters<typeof prefetchOrders>[0];
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+
+    expect(prefetch.userProductByLine.get(`${String(PEDIDO_A.id)}\u00000`)).toBe("MLBU1709054559");
+    expect(filtrosLidos[1]).toMatchObject({ ref_kind: "USER_PRODUCT", user_product_id: ["MLBU1709054559"] });
+    expect(prefetch.linkByUserProduct.get("MLBU1709054559")).toMatchObject({ sku_id: "sku-up" });
+  });
+
   it("vínculo sem o SKU embutido LANÇA — não cai em PRODUTO (D-188)", async () => {
     // A FK `sku_listing_links_sku_id_fkey` é `not null` + `on delete
     // restrict`: a linha do SKU sempre existe. `skus` nulo aqui só pode ser o
@@ -1677,7 +1746,15 @@ describe("prefetchOrders (D-186)", () => {
 
     await prefetchOrders(db, CONTEXT, pagina);
 
-    expect(consultadas).toEqual(["orders", "sku_listing_links", "stock_movements", "rpc:get_erp_stock_cutoffs"]);
+    // D-362: + `order_items`, o user product já gravado das linhas que o
+    // `/orders/search` devolve sem ele -- uma leitura por lote de pedidos.
+    expect(consultadas).toEqual([
+      "orders",
+      "sku_listing_links",
+      "order_items",
+      "stock_movements",
+      "rpc:get_erp_stock_cutoffs",
+    ]);
   });
 
   it("página vazia não vai ao banco", async () => {
@@ -1786,6 +1863,7 @@ describe("persistOrder com prefetch (D-186)", () => {
       logisticByOrderId: parcial.logisticByOrderId ?? new Map<string, PersistedLogistic>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
       linkByUserProduct: parcial.linkByUserProduct ?? new Map<string, ResolvedLink>(),
+      userProductByLine: parcial.userProductByLine ?? new Map<string, string>(),
       recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
       cutoffBySku: parcial.cutoffBySku ?? new Map<string, ErpCutoff | null>(),
       saleTransitionByOrderId: parcial.saleTransitionByOrderId ?? new Map<string, ObservedSaleTransition>(),
@@ -1845,6 +1923,30 @@ describe("persistOrder com prefetch (D-186)", () => {
     expect(inserted.find((row) => row.table === "stock_movements")?.rows[0]).toMatchObject({
       sku_id: "sku-up",
       movement_type: "VENDA_ML",
+    });
+  });
+
+  it("o /orders/search sem user product não apaga o gravado, e o SKU sai por ele (D-362)", async () => {
+    const { db, inserted } = fakeDb({ linkForItem: () => null, linkForUserProduct: () => null });
+
+    await persistOrder(
+      db,
+      CONTEXT,
+      BASE_ORDER,
+      createLogger({ service: "test" }),
+      prefetchDe({
+        userProductByLine: new Map([[`${String(BASE_ORDER.id)}\u00000`, "MLBU1709054559"]]),
+        linkByUserProduct: new Map([
+          ["MLBU1709054559", { id: "link-up", sku_id: "sku-up", kind: "PRODUTO" as const, components: [] }],
+        ]),
+        cutoffBySku: new Map([["sku-up", null]]),
+      }),
+    );
+
+    expect(inserted.find((row) => row.table === "order_items")?.rows[0]).toMatchObject({
+      user_product_id: "MLBU1709054559",
+      sku_id: "sku-up",
+      sku_listing_link_id: "link-up",
     });
   });
 
