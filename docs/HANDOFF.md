@@ -19,7 +19,7 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | 28/09 14:2x UTC: worker `worker-00037-4l7` e api `api-00022-5j8` em `7ec1f236` (D-415, D-416; contém o `4fa10708` da D-362), da `main`. Volta: `worker-00036-lch`/`api-00021-qdr`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção com todas até `20260925170000` (25/09, com a D-393 do #77, as D-411 a D-413 e a D-362). **Pendentes em Dev e produção: `20260928150000`, `160000` e `170000`** (desempenho, #118; nenhum código depende delas): o segredo `SUPABASE_ACCESS_TOKEN` do GitHub é recusado ("Unauthorized") desde 28/09 13:22 UTC, o job do Dev falha e a guarda de produção recusa. Caminho normal: `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
+| **Migrations** | Produção com todas até `20260928180000` (até 25/09 tinham entrado a D-393 do #77, as D-411 a D-413 e a D-362). **Em 28/09 entraram `20260928150000`, `160000` e `170000` (#118) e `180000` (D-417, #122), com os tokens do Supabase trocados pelo dono (os antigos foram revogados às ~13:20 UTC). Caminho normal: `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
 | **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-413). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405). |
 
 ### O que está pronto
@@ -75,8 +75,8 @@ e `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **Produção sem alerta nenhum** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde.
-  Canal de alerta e IP de saída fixo (Cloud NAT) são atos do dono. O app ML da V2
+- **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
+  D-417/D-418 (o vigia pede um ato, ver D-418); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.

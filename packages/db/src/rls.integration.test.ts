@@ -17458,3 +17458,128 @@ describe("sync.delayed / sync.failed: a conta que para de sincronizar avisa (D-4
     });
   });
 });
+
+/**
+ * D-418: o banco vigia a sincronização -- o caso que o gatilho de D-417 não vê,
+ * a reconciliação que para de RODAR. Transação desfeita, como em D-417.
+ */
+describe("vigiar_sincronizacao: a reconciliação que para de rodar também avisa (D-418)", () => {
+  const CONTA = "eeee4181-0000-4000-8000-00000000e418";
+
+  async function naTransacao(corpo: () => Promise<void>): Promise<void> {
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+         values ($1,$2,'Conta muda','rlstest-sync-vigia','CONNECTED',9990418, now() - interval '30 days')`,
+        [CONTA, ORG_SB],
+      );
+      await corpo();
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  async function execucao(status: "done" | "failed", horas: number, motivo: string | null = null): Promise<void> {
+    await client.query(
+      `insert into public.sync_runs
+         (organization_id, ml_account_id, job_id, resource, channel, status, reason, items_processed, started_at, finished_at)
+       values ($1,$2,gen_random_uuid(),'orders','reconciliation',$3,$4,0,
+               now() - make_interval(hours => $5) - interval '1 minute', now() - make_interval(hours => $5))`,
+      [ORG_SB, CONTA, status, motivo, horas],
+    );
+  }
+
+  async function vigiar(): Promise<void> {
+    await client.query("select private.vigiar_sincronizacao()");
+  }
+
+  async function avisos(): Promise<{ event_type: string; after: Record<string, unknown> }[]> {
+    const { rows } = await client.query<{ event_type: string; after: Record<string, unknown> }>(
+      `select event_type, after from public.domain_events
+       where ml_account_id = $1 and event_type like 'sync.%' order by occurred_at, event_type`,
+      [CONTA],
+    );
+
+    return rows;
+  }
+
+  it("sem nenhuma execução há 5 h: avisa sync.delayed, dizendo que não rodou; vigiar de novo não repete", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 5);
+      await vigiar();
+      await vigiar();
+
+      const lista = await avisos();
+
+      expect(lista).toHaveLength(1);
+      expect(lista[0]).toMatchObject({
+        event_type: "sync.delayed",
+        after: {
+          tipo: "reconciliacao",
+          label: "Conta muda",
+          horas: 5,
+          motivo: "Nenhuma reconciliação de pedidos rodou desde o último sucesso.",
+        },
+      });
+    });
+  });
+
+  it("o vigia e o gatilho de D-417 usam a mesma chave: o mesmo episódio avisa uma vez só", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 14);
+      await vigiar();
+      await execucao("failed", 0, "Mercado Livre respondeu 403 para GET /orders/search.");
+
+      expect((await avisos()).map((a) => a.event_type)).toEqual(["sync.failed"]);
+    });
+  });
+
+  it("sucesso recente não avisa; a falha que ainda não tinha avisado dá o motivo ao vigia", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 1);
+      await vigiar();
+
+      expect(await avisos()).toHaveLength(0);
+    });
+
+    await naTransacao(async () => {
+      // A falha de 4 h atrás veio 1 h depois do sucesso: o gatilho não avisou.
+      await execucao("done", 5);
+      await execucao("failed", 4, "Mercado Livre respondeu 429.");
+      await vigiar();
+
+      expect(await avisos()).toMatchObject([
+        { event_type: "sync.delayed", after: { horas: 5, motivo: "Mercado Livre respondeu 429." } },
+      ]);
+    });
+  });
+
+  it("conta em ERROR fica de fora do vigia -- o gatilho da conta já avisou", async () => {
+    await naTransacao(async () => {
+      await execucao("done", 20);
+      await client.query("update public.ml_accounts set status = 'ERROR', last_error = 'x' where id = $1", [CONTA]);
+      await vigiar();
+
+      const tipos = (await avisos()).map((a) => a.after.tipo);
+
+      expect(tipos).toEqual(["conta_em_erro"]);
+    });
+  });
+
+  it("o ato de produção agenda o vigia a cada 30 minutos, pelo nome", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("select private.agendar_vigia_da_sincronizacao()");
+      const { rows } = await client.query<{ schedule: string; command: string }>(
+        "select schedule, command from cron.job where jobname = 'vigiar-sincronizacao'",
+      );
+
+      expect(rows).toEqual([{ schedule: "*/30 * * * *", command: "select private.vigiar_sincronizacao()" }]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
