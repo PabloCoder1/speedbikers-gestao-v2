@@ -451,3 +451,4 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
 - **D-417** — A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
+- **D-418** — O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417

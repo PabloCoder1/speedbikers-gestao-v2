@@ -144,7 +144,7 @@ Notificação e ação são coisas diferentes e não devem se confundir:
 
 Um evento crítico pode gerar as duas. A maioria dos eventos gera apenas notificação, e muitos não geram nem isso.
 
-**A conta que para de sincronizar avisa (D-417):** `sync.failed` (crítico) quando a conta entra em ERROR, e `sync.delayed`/`sync.failed` quando a reconciliação de pedidos falha há mais de 3/12 horas — um aviso por episódio, com link para `/integracoes`. Em 27/09 a parada de 32 horas passou sem aviso nenhum.
+**A conta que para de sincronizar avisa (D-417):** `sync.failed` (crítico) quando a conta entra em ERROR, e `sync.delayed`/`sync.failed` quando a reconciliação de pedidos falha há mais de 3/12 horas — um aviso por episódio, com link para `/integracoes`. Em 27/09 a parada de 32 horas passou sem aviso nenhum. **E quando a reconciliação para de rodar (D-418)**, um pg_cron a cada 30 minutos (`private.vigiar_sincronizacao`) avisa pela mesma regra e a mesma chave — agendado em produção por `select private.agendar_vigia_da_sincronizacao();`.
 
 O caminho inverso existe desde D-411: o alerta NOVO de severidade alta da central (uma ação em `actions`) grava um `central.alert.opened` na mesma transação, e a notificação avisa que há uma ação a decidir — o link leva à fila de `/acoes` do tipo do alerta. O episódio que continua aberto não notifica de novo.
 
