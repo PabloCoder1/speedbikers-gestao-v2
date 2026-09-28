@@ -132,7 +132,7 @@ describe("triggerListingVisitsSnapshot (D-032)", () => {
 
     const outcome = await triggerListingVisitsSnapshot(d);
 
-    expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0 });
+    expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(enqueued).toHaveLength(0);
   });
 

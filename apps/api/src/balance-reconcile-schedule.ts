@@ -26,6 +26,11 @@ export interface BalanceReconcileScheduleDeps {
 }
 
 export interface BalanceReconcileScheduleOutcome {
+  /**
+   * A rodada nem conseguiu listar o que percorrer. A rota responde 503, e o
+   * Cloud Scheduler registra falha em vez de verde (auditoria de 2026-09-28).
+   */
+  failed?: true;
   organizationsScanned: number;
   enqueued: number;
   deduplicated: number;
@@ -44,7 +49,7 @@ export async function triggerBalanceReconciliation(
       reason: organizations.error.message,
     });
 
-    return { organizationsScanned: 0, enqueued: 0, deduplicated: 0 };
+    return { organizationsScanned: 0, enqueued: 0, deduplicated: 0, failed: true };
   }
 
   let enqueued = 0;

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **387** (D-001 a D-396).
+Decisões registradas: **407** (D-001 a D-416).
 
 ## Por domínio
 
-### atendimento (51)
+### atendimento (53)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -69,8 +69,10 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-370** — Logo do fornecedor, e o cadastro de D-367 sem a barra que cobria os campos nem o "voltar" sublinhado
 - **D-388** — Devolucao com `orders: null` nao derruba mais a notificacao do claim
 - **D-389** — O diagnostico do SKU compara preco COM promocao, nao o cadastrado
+- **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
+- **D-416** — Auditoria de 28/09, api: agendador que nem lista contas responde 503; erro interno sem a mensagem do banco; id de caminho validado; convite e link de acesso nao atravessam organizacao
 
-### banco/rls (35)
+### banco/rls (37)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -107,8 +109,10 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-345** — O ACK lento nas rajadas e a consulta da conta no Postgres sob concorrencia -- medido na primeira rajada com o log por etapa
 - **D-346** — As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
 - **D-353** — O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
+- **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
+- **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
 
-### estoque (30)
+### estoque (31)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -140,8 +144,9 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-361** — Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
 - **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
+- **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 
-### interface (45)
+### interface (47)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -188,8 +193,10 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-386** — Pente fino, lote 3: telas que se ligam, busca pelo teclado e confirmacao antes do que nao tem volta
 - **D-387** — Pente fino, lote 4: Dashboard do SKU sem estilo inline, e o detalhe do pedido de compra diz o que grava, quem fez e confirma o recebimento
 - **D-391** — A tela de Configuracoes abre no que falta: zonas por presenca, o risco dito dentro do cartao e a camada hero fora
+- **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
+- **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
-### mercado-livre (59)
+### mercado-livre (65)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -244,14 +251,20 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-357** — Dashboard do Anuncio: barras por dia, checagem de fatos, atalhos e o ticket medio que o anuncio nao tinha
 - **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
+- **D-362** — A venda acha o SKU pelo user product quando o anuncio nao tem vinculo proprio; o identificador vem do proprio pedido, e a 1a parte so o grava
 - **D-364** — Republicacao de anuncio com variacoes: o corpo oficial, a trava sem estoque antes de fechar, a recusa do ML gravada e a retomada humana so depois de recusa comprovada
 - **D-369** — Republicacao: anuncio com variacoes em conta de user products nao republica -- o preflight trava antes de fechar e a recusa com essa causa deixa de oferecer retomada
 - **D-373** — /produtos vira o catalogo: uma leitura com contagens facetadas, atalhos do que pede acao e filtros por categoria, marca, tipo, situacao, anuncios e vendas
 - **D-375** — Entrada e saida por XML e por PDF: quatro documentos lidos, /notas-fiscais numa leitura e a saida que nao e nota fiscal
 - **D-381** — `/anuncios` ordena pela coluna, conta a faixa numa passada e mostra a foto do anuncio
 - **D-385** — `/anuncios` diz quanto o recorte vende, tem visoes rapidas, exporta CSV e vira cartao no celular
+- **D-397** — Detector de frete: cinco comparacoes pontuadas por anuncio e faixa de preco, com o motivo escrito a partir dos numeros
+- **D-398** — Sinais de Ads por campanha na semana consolidada, e o dia de Ads que o Mercado Livre ainda nao consolidou fora dos julgamentos
+- **D-399** — O historico do detector de frete desconta a mudanca geral da faixa, medida pela mediana da variacao dos anuncios
+- **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
+- **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
 
-### outros (63)
+### outros (64)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -316,12 +329,13 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-366** — Fornecedores: uma leitura com busca e "pedido em aberto", edicao que finalmente existe, e contato que vira acao
 - **D-368** — Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
 - **D-393** — A Central de Notificacoes deixou de ser uma parede cronologica: os numeros que D-269 pediu chegaram, e a raiz da consulta estava errada
+- **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (26)
+### vendas/métricas (29)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -349,8 +363,11 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 - **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
 - **D-384** — Pente fino, lote 2: Caixa de Entrada com faixa clicavel, busca, "Meus", mediacao e prazo com leitura; metricas de SAC ligadas a fila
+- **D-401** — O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
+- **D-409** — O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
+- **D-413** — O frete do envio compartilhado conta uma vez: os pedidos que repetem o custo do envio o dividem, numa coluna mantida por gatilho que todas as somas leem
 
-### worker/infra (77)
+### worker/infra (80)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -429,22 +446,6 @@ Decisões registradas: **387** (D-001 a D-396).
 - **D-394** — Central do negocio: a primeira fatia da central de inteligencia compara periodos com tom pela polaridade e resume em texto o que mudou
 - **D-395** — Central do negocio: meta do mes com projecao ponderada pelo dia da semana, e imposto por aliquota com vigencia ate o lucro apos imposto e Ads
 - **D-396** — Recuperacao de 90 dias de frete: um dia por pedaco na fila backfill, com o mesmo laco da varredura diaria
-- **D-397** — Detector de frete: cinco comparacoes pontuadas por anuncio e faixa de preco, com o motivo escrito a partir dos numeros
-- **D-398** — Sinais de Ads por campanha na semana consolidada, e o dia de Ads que o Mercado Livre ainda nao consolidou fora dos julgamentos
-- **D-399** — O historico do detector de frete desconta a mudanca geral da faixa, medida pela mediana da variacao dos anuncios
 - **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
-- **D-401** — O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
-- **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
-- **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
-- **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
-- **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
-- **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
-- **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
-- **D-409** — O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
-- **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
-- **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
-- **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
-- **D-413** — O frete do envio compartilhado conta uma vez: os pedidos que repetem o custo do envio o dividem, numa coluna mantida por gatilho que todas as somas leem
-- **D-362** — A venda acha o SKU pelo user product quando o anuncio nao tem vinculo proprio; o identificador vem do proprio pedido, e a 1a parte so o grava
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro

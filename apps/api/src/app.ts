@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { copilotQueryRequestSchema } from "@sb/contracts";
 import type { Logger } from "@sb/observability";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -376,7 +377,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerOrdersReconciliation(reconcile);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -392,7 +393,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerFulfillmentSnapshot(fulfillmentSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -410,7 +411,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerMetricsRefresh(metricsRefreshSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -427,7 +428,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerBalanceReconciliation(balanceReconcileSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -444,7 +445,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerLedgerIntegrityCheck(ledgerIntegritySchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -461,7 +462,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerAiBudgetCheck(aiBudgetSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -478,7 +479,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerListingsSnapshot(listingsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -495,7 +496,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -509,7 +510,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "not_configured" } }, 503);
     }
 
-    return context.json(await triggerAdsCampaignsSync(adsSchedule));
+    return respostaDoAgendador(context, await triggerAdsCampaignsSync(adsSchedule));
   });
 
   // --------------------------------------------------------------------
@@ -525,7 +526,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerOrderFinancialsSweep(orderFinancialsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -575,7 +576,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerOrderLogisticsSweep(orderLogisticsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -638,10 +639,18 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       );
     }
 
+    const caseId = context.req.param("caseId");
+
+    // Id de caminho é entrada do mundo: fora do formato, 400 -- e não o 500 do
+    // Postgres com "invalid input syntax for type uuid" (auditoria de 28/09).
+    if (!z.uuid().safeParse(caseId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
     const outcome = await requestSupportReply(
       supportReply,
       authorized.caller,
-      context.req.param("caseId"),
+      caseId,
       parsed.data,
     );
 
@@ -654,7 +663,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     // `already_sent`/`in_flight`/`previously_failed` são 200: a requisição foi
@@ -714,7 +723,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -765,8 +774,12 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       );
     }
 
+    if (outcome.status === "invalid") {
+      return context.json({ error: { code: "invalid_state", message: outcome.reason } }, 409);
+    }
+
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -832,7 +845,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -889,7 +902,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -953,7 +966,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -983,10 +996,18 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
+    const relistId = context.req.param("relistId");
+
+    // Id de caminho é entrada do mundo: fora do formato, 400 -- e não o 500 do
+    // Postgres com "invalid input syntax for type uuid" (auditoria de 28/09).
+    if (!z.uuid().safeParse(relistId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
     const outcome = await requestListingRelistExecution(
       relist,
       authorized.caller,
-      context.req.param("relistId"),
+      relistId,
     );
 
     if (outcome.status === "not_found") {
@@ -998,7 +1019,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -1029,7 +1050,15 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const outcome = await requestListingRelistRetry(relist, authorized.caller, context.req.param("relistId"));
+    const relistId = context.req.param("relistId");
+
+    // Id de caminho é entrada do mundo: fora do formato, 400 -- e não o 500 do
+    // Postgres com "invalid input syntax for type uuid" (auditoria de 28/09).
+    if (!z.uuid().safeParse(relistId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    const outcome = await requestListingRelistRetry(relist, authorized.caller, relistId);
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);
@@ -1040,7 +1069,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "error") {
-      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json(outcome);
@@ -1055,7 +1084,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerSupportQuestionsReconcile(supportQuestionsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   app.post("/internal/schedule/support-claims", async (context) => {
@@ -1067,7 +1096,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerSupportClaimsReconcile(supportClaimsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   app.post("/internal/schedule/support-messages", async (context) => {
@@ -1079,7 +1108,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerSupportMessagesReconcile(supportMessagesSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -1096,7 +1125,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerSalesAnomalyActionsDetection(salesAnomalyActionsSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -1113,7 +1142,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerDecisionOutcomesMeasurement(decisionOutcomesSchedule);
 
-    return context.json(outcome);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -1206,7 +1235,15 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const outcome = await confirmApply(importDeps, authorized.caller, context.req.param("id"));
+    const batchId = context.req.param("id");
+
+    // Id de caminho é entrada do mundo: fora do formato, 400 -- e não o 500 do
+    // Postgres com "invalid input syntax for type uuid" (auditoria de 28/09).
+    if (!z.uuid().safeParse(batchId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    const outcome = await confirmApply(importDeps, authorized.caller, batchId);
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);
@@ -1306,7 +1343,15 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const outcome = await confirmNfeApply(nfeImportDeps, authorized.caller, context.req.param("id"));
+    const documentId = context.req.param("id");
+
+    // Id de caminho é entrada do mundo: fora do formato, 400 -- e não o 500 do
+    // Postgres com "invalid input syntax for type uuid" (auditoria de 28/09).
+    if (!z.uuid().safeParse(documentId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    const outcome = await confirmNfeApply(nfeImportDeps, authorized.caller, documentId);
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);
@@ -1514,4 +1559,28 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/**
+ * Resposta das rotas `/internal/schedule/*`. Quando a rodada nem conseguiu
+ * listar contas ou organizações, 503 -- antes era 200 com zero enfileirado,
+ * o Cloud Scheduler registrava sucesso e a rodada sumia sem rastro fora de
+ * um `logger.error` (auditoria de 2026-09-28).
+ */
+function respostaDoAgendador(context: Context, outcome: { failed?: true }): Response {
+  return outcome.failed === true ? context.json(outcome, 503) : context.json(outcome);
+}
+
+/**
+ * Falha interna de uma rota `/v1/*`: o motivo real (mensagem do Postgres ou do
+ * Auth) vai para o log, e o cliente recebe só a mensagem genérica e o
+ * `request_id` para cruzar -- a mesma regra do `onError` (docs/API.md secao 6).
+ * Antes o `reason` saía cru no corpo (auditoria de 2026-09-28).
+ */
+function erroInterno(context: Context<AppEnv>, logger: Logger, reason: string): Response {
+  const requestId = context.get("requestId");
+
+  logger.error("request_internal_error", { request_id: requestId, path: context.req.path, reason });
+
+  return context.json({ error: { code: "internal", message: "Erro interno.", request_id: requestId } }, 500);
 }

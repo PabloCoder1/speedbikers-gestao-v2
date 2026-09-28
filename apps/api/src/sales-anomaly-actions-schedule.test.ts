@@ -104,7 +104,7 @@ describe("triggerSalesAnomalyActionsDetection", () => {
 
     const outcome = await triggerSalesAnomalyActionsDetection(d);
 
-    expect(outcome).toEqual({ organizationsScanned: 0, enqueued: 0, deduplicated: 0 });
+    expect(outcome).toEqual({ organizationsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(enqueued).toHaveLength(0);
   });
 

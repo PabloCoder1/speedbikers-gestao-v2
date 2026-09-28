@@ -481,6 +481,26 @@ describe("POST /internal/schedule/listings", () => {
     expect(response.status).toBe(503);
   });
 
+  it("responde 503 quando nem lista as contas -- o Scheduler registra falha, não verde", async () => {
+    const dbQueFalha = {
+      from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: null, error: { message: "boom" } }) }) }),
+    } as unknown as ListingsScheduleDeps["db"];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      listingsSchedule: {
+        db: dbQueFalha,
+        logger: createLogger({}, { sink: () => undefined }),
+        enqueuer: { enqueue: () => Promise.reject(new Error("não deveria enfileirar")) },
+      },
+    });
+
+    const response = await app.request("/internal/schedule/listings", { method: "POST" });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
+  });
+
   it("dispara a sincronização e devolve o resumo", async () => {
     const enqueued: EnqueueRequest[] = [];
 
@@ -1878,5 +1898,78 @@ describe("POST /internal/backfill/order-financials (D-396)", () => {
 
     expect(response.status).toBe(400);
     expect(enqueued).toHaveLength(0);
+  });
+});
+
+describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
+  const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
+  const RELIST_ID = "cccccccc-0000-4000-8000-000000000001";
+  const admin = {
+    authenticate: (): Promise<AuthResult> =>
+      Promise.resolve({ ok: true, caller: { userId: "u-admin", organizationId: ORGANIZATION_ID, role: "ADMIN" } }),
+  };
+
+  /** Banco que recusa toda leitura com a mensagem crua do Postgres. */
+  function relistComBancoQueFalha(enqueued: EnqueueRequest[]): RelistDeps {
+    const falha = {
+      eq: () => falha,
+      order: () => falha,
+      limit: () => falha,
+      maybeSingle: () => Promise.resolve({ data: null, error: { message: "permission denied for table listing_relists" } }),
+    };
+
+    return {
+      logger: createLogger({}, { sink: () => undefined }),
+      db: { from: () => ({ select: () => falha }) } as never,
+      enqueuer: {
+        enqueue: (request: EnqueueRequest) => {
+          enqueued.push(request);
+
+          return Promise.reject(new Error("não deveria enfileirar"));
+        },
+      },
+    };
+  }
+
+  it.each([
+    ["/v1/listings/relist/nao-e-uuid/retry"],
+    ["/v1/listings/relist/nao-e-uuid/execute"],
+    ["/v1/erp-imports/nao-e-uuid/apply"],
+    ["/v1/nfe-imports/nao-e-uuid/apply"],
+  ])("%s com id fora do formato: 400, sem ir ao banco", async (caminho) => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: admin,
+      relist: relistComBancoQueFalha(enqueued),
+      importDeps: {} as never,
+      nfeImportDeps: {} as never,
+    });
+
+    const response = await app.request(caminho, { method: "POST" });
+
+    expect(response.status).toBe(400);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("erro interno não devolve a mensagem do banco, só o request_id", async () => {
+    const linhas: string[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: (linha) => linhas.push(linha) }),
+      auth: admin,
+      relist: relistComBancoQueFalha([]),
+    });
+
+    const response = await app.request(`/v1/listings/relist/${RELIST_ID}/retry`, {
+      method: "POST",
+      headers: { "x-request-id": "req-auditoria" },
+    });
+    const corpo = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(corpo).not.toContain("permission denied");
+    expect(JSON.parse(corpo)).toEqual({ error: { code: "internal", message: "Erro interno.", request_id: "req-auditoria" } });
+    // O motivo real não se perde: vai para o log, com o mesmo request_id.
+    expect(linhas.some((l) => l.includes("permission denied") && l.includes("req-auditoria"))).toBe(true);
   });
 });

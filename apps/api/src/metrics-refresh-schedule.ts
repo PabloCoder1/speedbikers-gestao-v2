@@ -44,6 +44,11 @@ export interface MetricsRefreshScheduleDeps {
 }
 
 export interface MetricsRefreshScheduleOutcome {
+  /**
+   * A rodada nem conseguiu listar o que percorrer. A rota responde 503, e o
+   * Cloud Scheduler registra falha em vez de verde (auditoria de 2026-09-28).
+   */
+  failed?: true;
   accountsScanned: number;
   enqueued: number;
   deduplicated: number;
@@ -80,7 +85,7 @@ export async function triggerMetricsRefresh(
   if (accounts.error !== null) {
     deps.logger.error("metrics_refresh_accounts_not_listed", { reason: accounts.error.message });
 
-    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, dates };
+    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, dates, failed: true };
   }
 
   let enqueued = 0;

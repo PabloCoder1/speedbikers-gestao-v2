@@ -29,6 +29,8 @@ interface FakeOptions {
   usuarios?: { id: string; email: string }[];
   jaMembro?: boolean;
   falhaNaPermissao?: boolean;
+  /** Outras organizações em que o alvo já é membro (auditoria de 28/09). */
+  outrasOrganizacoes?: string[];
 }
 
 function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { tabela: string; linha: unknown }[] } {
@@ -36,10 +38,19 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
   const usuarios = options.usuarios ?? [];
   const escritas: { tabela: string; linha: unknown }[] = [];
 
+  // Todos os vínculos do alvo: a leitura `.select().eq(user)` de convite e de
+  // reemissão. "Membro daqui" vem das mesmas opções da consulta antiga.
+  const vinculos = [
+    ...(options.jaMembro === true || options.membroExiste === true ? [{ organization_id: ORG }] : []),
+    ...(options.outrasOrganizacoes ?? []).map((organization_id) => ({ organization_id })),
+  ];
+
   const db = {
     from: (tabela: string) => ({
       select: () => ({
         eq: () => ({
+          then: <R>(resolve: (value: { data: unknown; error: null }) => R) =>
+            Promise.resolve({ data: vinculos, error: null }).then(resolve),
           // ml_accounts: .select().eq(org).in(ids)
           in: (_coluna: string, ids: string[]) =>
             Promise.resolve({ data: ids.filter((id) => contas.includes(id)).map((id) => ({ id })), error: null }),
@@ -264,5 +275,39 @@ describe("reissueAccessLink (D-303)", () => {
     expect(escrito).not.toContain("sigilo@empresa.com");
     expect(escrito).not.toContain("https://auth.local");
     expect(escrito).toContain("access_link_issued");
+  });
+});
+
+describe("fronteira entre organizações no convite e no link (auditoria de 28/09)", () => {
+  const OUTRA = "22222222-0000-4000-8000-000000000002";
+
+  it("e-mail de quem já é de OUTRA organização não é vinculado", async () => {
+    const { deps, escritas } = fakeDeps({
+      usuarios: [{ id: "u-existente", email: "alguem@outra.com" }],
+      outrasOrganizacoes: [OUTRA],
+    });
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, { email: "alguem@outra.com", role: "OPERADOR" });
+
+    expect(outcome).toEqual({ status: "invalid", reason: "este e-mail não pode ser convidado para esta organização" });
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("quem existe no Auth sem organização nenhuma continua sendo vinculado", async () => {
+    const { deps, escritas } = fakeDeps({ usuarios: [{ id: "u-existente", email: "orfao@empresa.com" }] });
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, { email: "orfao@empresa.com", role: "OPERADOR" });
+
+    expect(outcome.status).toBe("linked");
+    expect(escritas.some((e) => e.tabela === "organization_members")).toBe(true);
+  });
+
+  it("membro daqui que TAMBÉM é de outra organização não recebe link", async () => {
+    const { deps, escritas } = fakeDeps({ membroExiste: true, outrasOrganizacoes: [OUTRA] });
+
+    const outcome = await reissueAccessLink(deps, ADMIN, "u-existente");
+
+    expect(outcome.status).toBe("invalid");
+    expect(escritas.some((e) => e.tabela === "auth.generateLink")).toBe(false);
   });
 });
