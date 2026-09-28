@@ -1292,3 +1292,19 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 ### Quem paga o frete (D-412, 25/09/2026)
 
 **Em produção, logo depois da migration (25/09, como `authenticated`, transação só de leitura):** 30 dias até ontem, 27.870 envios com frete e 689 com o detalhe -- **263–289 ms**, mesmo JSON do protótipo. O protótipo como `postgres` (sem RLS) fez 104 ms: a diferença é a RLS de `orders` e `order_financials`. O custo está em percorrer os envios do período para achar um pedido por envio, não na cobertura do detalhe -- ela crescer não deve mudar a conta. Roda num bloco próprio, com Suspense, sem segurar o detector.
+
+### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
+
+**Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
+
+### Visão Geral, "Atividade recente" (auditoria de 28/09/2026)
+
+**Produção:** média de 1.672 ms, máximo de 4.613 ms (a raiz `notifications` ordenada por `created_at`, sem índice que servisse). **Dev, como `authenticated`**, usuário com 54 mil avisos: 826 ms e 17 mil páginas -> **16 ms e 43**, pela raiz `notification_recipients` e o índice `(user_id, created_at desc)` -- a troca de D-393.
+
+### `work_mem` por função: faturamento, detector de frete e alertas da central (auditoria de 28/09/2026)
+
+**Produção, 18 a 28/09:** ~7,7 GB em arquivos temporários com o `work_mem` de 3,5 MB da instância; `sync-central-alerts` estourou o timeout 3 de 8 vezes em `produto_prejuizo`. **Dev:** `get_detector_frete` 148–380 ms com 589 blocos temporários → 141 ms e 0 com 16 MB; `get_faturamento` (90 dias) 1,38–2,68 s com 7.937 blocos → 1,37–1,46 s e 743 com 32 MB; `sincronizar_alertas_central(produto_prejuizo)` 885 ms e 4.281 blocos → 687 ms e 0 com 16 MB. O ganho de tempo quente é pequeno; o que some é o disco, que é o que pesa sob concorrência. Migration `20260928160000`, `alter function ... set work_mem` (só durante a execução da função).
+
+### `support_messages` sem regravar o que não mudou (auditoria de 28/09/2026)
+
+**Produção, 18 a 28/09:** 171.997 UPDATEs para ~6,4 mil mensagens (~27 regravações por linha): cada sincronização de caso faz upsert do transcript inteiro, com `observed_at` novo. Gatilho `support_messages_a_skip_unchanged` (migration `20260928170000`) pula a atualização quando só `observed_at`/`updated_at` mudariam. Ensaio no Dev: upsert idêntico manteve o `xmin`; conteúdo mudado gravou. Fica para medir depois do deploy: `n_tup_upd` e `n_dead_tup` de `support_messages` no `pg_stat_user_tables`. `listings` (~34 por linha) regrava por desenho -- cada captura grava `synced_at`, que a tela usa -- e `support_cases` ficou de fora porque o `update` do worker depende do `RETURNING`.
