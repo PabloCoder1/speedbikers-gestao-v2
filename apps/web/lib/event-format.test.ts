@@ -129,3 +129,32 @@ describe("central.alert.opened (D-411)", () => {
     expect(entityText("listing", "MLB123")).toBe("Anúncio MLB123");
   });
 });
+
+/** D-417: a conta que parou de sincronizar, como os gatilhos gravam o `after`. */
+describe("sync.delayed / sync.failed (D-417)", () => {
+  const RECONCILIACAO = { tipo: "reconciliacao", label: "GMR", horas: 5, motivo: "Mercado Livre respondeu 403 para GET /orders/search." };
+  const CONTA_EM_ERRO = { tipo: "conta_em_erro", label: "SbMotos", motivo: "Mercado Livre recusou a troca de token: invalid_grant." };
+
+  it("o texto diz há quanto tempo e por quê; a conta em erro diz o motivo ou o que fazer", () => {
+    expect(formatEventDiff("sync.delayed", null, RECONCILIACAO)).toBe(
+      "Pedidos sem sincronizar há 5 h · Mercado Livre respondeu 403 para GET /orders/search.",
+    );
+    expect(formatEventDiff("sync.failed", null, { ...RECONCILIACAO, horas: 13, motivo: null })).toBe(
+      "Pedidos sem sincronizar há 13 h",
+    );
+    expect(formatEventDiff("sync.failed", { status: "CONNECTED" }, CONTA_EM_ERRO)).toBe(
+      "Conta em erro: Mercado Livre recusou a troca de token: invalid_grant.",
+    );
+    expect(formatEventDiff("sync.failed", null, { tipo: "conta_em_erro", label: "GMR", motivo: null })).toBe(
+      "Conta em erro: reconecte em Integrações",
+    );
+    expect(formatEventDiff("sync.failed", null, { tipo: "outro" })).toBeNull();
+  });
+
+  it("o destino é a conta pelo nome, e o link leva a Integrações", () => {
+    expect(entityText("ml_account", "aaaa-bbbb", RECONCILIACAO)).toBe("Conta GMR");
+    expect(entityText("ml_account", "aaaa-bbbb")).toBe("Conta aaaa-bbbb");
+    expect(entityHref("ml_account", "aaaa-bbbb")).toBe("/integracoes");
+    expect(entityLabel("ml_account")).toBe("Conta");
+  });
+});

@@ -14512,3 +14512,17 @@ A alta geral (~5%) fica abaixo do limiar de 15% sozinha, mas SOMA a mudanca de c
 **Publicacao:** so vale depois do deploy da `api`. Sem migration.
 
 **Impacto:** `apps/api/src/{app,invites,reconcile}.ts`, `apps/api/src/*-schedule.ts` e testes; `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-417 - A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
+
+**Contexto:** em 27/09/2026 as quatro contas ficaram ~32 horas sem sincronizar e ninguem soube (D-414). A conta em ERROR faz todo job terminar como concluido sem processar nada, e a reconciliacao que falha grava `sync_runs` que ninguem le. `sync.delayed` (importante) e `sync.failed` (critico) estavam no catalogo desde o comeco (docs/API.md), com rotulo na web e familia "Sincronizacao" na Central (D-393) -- e nada os emitia.
+
+**1. DOIS GATILHOS NO BANCO, NENHUM JOB NOVO.** (a) `ml_accounts` entra em ERROR -> `sync.failed` critico na hora (`private.aviso_de_conta_em_erro`): e o que o worker faz na recusa definitiva da troca de token (D-414) e a api quando a conexao falha; sem reconectar, nada mais sincroniza. (b) `sync_runs` recebe uma falha da reconciliacao de pedidos e o ultimo sucesso dela tem mais de 3 horas -> `sync.delayed`; mais de 12 -> `sync.failed` (`private.aviso_de_reconciliacao_parada`). Os limiares sao os de `classifySyncFreshness` da tela /sincronizacao. E o que pega o bloqueio que nao derruba a conta: a renovacao passageira de D-414 falha hora apos hora com a conta CONNECTED. Sem sucesso nenhum, a referencia e `connected_at`.
+
+**2. UM AVISO POR EPISODIO.** O `dedup_key` leva o ultimo sucesso (ou o instante da entrada em ERROR): a falha seguinte do mesmo episodio nao repete o aviso, e o proximo sucesso comeca outro. A reconciliacao falha no maximo uma vez por hora por conta, entao o custo do gatilho e desprezivel.
+
+**3. O FAN-OUT FAZ O RESTO (D-073).** Evento com a conta: notificacao para quem a alcanca, toast em tempo real. Na web, o texto diz ha quanto tempo e por que ("Pedidos sem sincronizar ha 5 h · Mercado Livre respondeu 403...", "Conta em erro: <motivo>"), o destino e a conta pelo nome e o link leva a /integracoes, onde esta o Reconectar.
+
+**Verificacao:** integracao, em transacao desfeita (os dois lados sao append-only) -- falha com ultimo sucesso ha 5 h avisa uma vez (importante), e a segunda falha do episodio nao repete; o admin recebe e o analista sem a conta nao; ultimo sucesso ha 13 h avisa critico; sucesso recente nao avisa; a conta que entra em ERROR avisa critico uma vez, e continuar em ERROR nao repete. Web: texto, destino e link.
+
+**Impacto:** `supabase/migrations/20260928180000_sincronizacao_parada_avisa.sql`, `apps/web/lib/event-format.ts` e teste, `packages/db/src/rls.integration.test.ts`, `docs/{API,DECISIONS,DECISIONS_INDEX,NOTIFICATIONS}.md`.
