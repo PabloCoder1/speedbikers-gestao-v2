@@ -21,6 +21,10 @@ describe("safeNext", () => {
     ["/\\evil.example", "barra invertida, normalizada por alguns navegadores"],
     ["javascript:alert(1)", "esquema executável"],
     ["evil.example", "sem barra inicial"],
+    ["/\t/evil.example", "TAB descartado pelo parser vira //evil.example"],
+    ["/\n/evil.example", "quebra de linha descartada pelo parser vira //evil.example"],
+    ["/\r\n/evil.example", "CRLF descartado pelo parser vira //evil.example"],
+    ["/\t\\evil.example", "TAB seguido de barra invertida"],
   ])("recusa %s (%s) e cai na raiz", (candidate) => {
     expect(safeNext(candidate)).toBe("/");
   });

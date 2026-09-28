@@ -13,6 +13,15 @@ import type { Env } from "./env.js";
  * (docs/ARCHITECTURE.md secao 5).
  */
 
+/**
+ * Quanto o Cloud Tasks espera a resposta do worker antes de considerar a
+ * entrega perdida e repetir. Sem isto vale o padrão de 10 min para alvo HTTP,
+ * menor que os 900 s de timeout do worker (`infra/deploy-cloud-run.sh`): um
+ * job longo seria entregue de novo ainda rodando (resíduo de D-352 §6,
+ * auditoria de 2026-09-28).
+ */
+export const DISPATCH_DEADLINE_SECONDS = 900;
+
 export interface EnqueueRequest {
   jobType: string;
   organizationId: string;
@@ -79,6 +88,7 @@ export function createEnqueuer(
           task: {
             name: taskName,
             ...scheduleTime,
+            dispatchDeadline: { seconds: DISPATCH_DEADLINE_SECONDS },
             httpRequest: {
               httpMethod: "POST",
               url: `${env.WORKER_URL}/internal/jobs`,

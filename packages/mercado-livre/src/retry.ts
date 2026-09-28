@@ -53,6 +53,11 @@ const DEFAULT_MAX_DELAY_MS = 30_000;
  * nem cabeçalhos `X-RateLimit-*` (`docs/MERCADO_LIVRE.md` secao 2.3, D-042) —
  * por isso o cabeçalho é honrado quando presente, mas o backoff nunca depende
  * dele para existir.
+ *
+ * O `Retry-After` também para no teto: um `Retry-After: 3600` faria o job
+ * dormir uma hora dentro da entrega do Cloud Tasks. Acima do teto, a chamada
+ * esgota as tentativas e falha como retryable, e quem espera é a fila, não o
+ * processo (auditoria de 2026-09-28).
  */
 export function computeBackoffDelayMs(options: BackoffOptions): number {
   const baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
@@ -63,7 +68,7 @@ export function computeBackoffDelayMs(options: BackoffOptions): number {
   const jitteredMs = random() * exponentialCeilingMs;
 
   if (options.retryAfterMs !== undefined) {
-    return Math.max(jitteredMs, options.retryAfterMs);
+    return Math.max(jitteredMs, Math.min(options.retryAfterMs, maxDelayMs));
   }
 
   return jitteredMs;

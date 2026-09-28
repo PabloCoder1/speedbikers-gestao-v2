@@ -158,7 +158,8 @@ function fakeDb(options: FakeDbOptions = {}): {
             return chain(
               options.claimLockFails === true
                 ? { data: null, error: null }
-                : { data: { ml_account_id: ML_ACCOUNT_ID }, error: null },
+                : // Como o `UPDATE ... RETURNING` real: a trava devolve a credencial.
+                  { data: { ml_account_id: ML_ACCOUNT_ID, ...(credentials ?? {}) }, error: null },
             );
           }
         }
