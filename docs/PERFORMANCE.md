@@ -1292,3 +1292,11 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 ### Quem paga o frete (D-412, 25/09/2026)
 
 **Em produção, logo depois da migration (25/09, como `authenticated`, transação só de leitura):** 30 dias até ontem, 27.870 envios com frete e 689 com o detalhe -- **263–289 ms**, mesmo JSON do protótipo. O protótipo como `postgres` (sem RLS) fez 104 ms: a diferença é a RLS de `orders` e `order_financials`. O custo está em percorrer os envios do período para achar um pedido por envio, não na cobertura do detalhe -- ela crescer não deve mudar a conta. Roda num bloco próprio, com Suspense, sem segurar o detector.
+
+### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
+
+**Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
+
+### Visão Geral, "Atividade recente" (auditoria de 28/09/2026)
+
+**Produção:** média de 1.672 ms, máximo de 4.613 ms (a raiz `notifications` ordenada por `created_at`, sem índice que servisse). **Dev, como `authenticated`**, usuário com 54 mil avisos: 826 ms e 17 mil páginas -> **16 ms e 43**, pela raiz `notification_recipients` e o índice `(user_id, created_at desc)` -- a troca de D-393.
