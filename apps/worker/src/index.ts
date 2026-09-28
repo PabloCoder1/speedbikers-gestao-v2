@@ -37,6 +37,7 @@ import { createSyncSupportQuestionsReconcileHandler } from "./handlers/sync-supp
 import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
 import { createWebhookReceivedHandler } from "./handlers/webhook-received.js";
 import { createDocumentoReader } from "./documento-reader.js";
+import { registrarFalhaDoMl } from "./ml-failure-log.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
 
@@ -65,13 +66,7 @@ const encryptionKey = loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY);
 // a de validação de um POST pode não ser.
 const mercadoLivre = createMercadoLivreClient({
   onFailure: (falha) => {
-    logger.warn("ml_http_failure", {
-      status: falha.status,
-      method: falha.method,
-      path: falha.path,
-      error_class: falha.errorClass,
-      body: falha.body === undefined ? null : JSON.stringify(falha.body).slice(0, 600),
-    });
+    registrarFalhaDoMl(logger, falha);
   },
 });
 
