@@ -42,3 +42,6 @@ npm-debug.log*
 pnpm-debug.log*
 
 .claude/settings.local.json
+
+# Worktrees de trabalho paralelo criadas dentro do clone.
+.worktrees/

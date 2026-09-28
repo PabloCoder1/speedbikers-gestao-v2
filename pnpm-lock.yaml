@@ -234,9 +234,6 @@ importers:
       '@supabase/supabase-js':
         specifier: 2.112.3
         version: 2.112.3
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
     devDependencies:
       '@sb/config':
         specifier: workspace:*

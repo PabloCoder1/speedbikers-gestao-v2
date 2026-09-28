@@ -45,7 +45,10 @@ DEV_PROJECT_ID="speedbikers-gestao-v3"
 DEV_SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
 # Chave PUBLICÁVEL — a mesma que `apps/web` embute no bundle do navegador.
 DEV_SUPABASE_PUBLISHABLE_KEY="sb_publishable_Ldlp0fb3PrvXn29XZ7cpag_Sqo121xo"
-DEV_WEB_ORIGIN="https://speedbikers-gestao-v2-m71j.vercel.app"
+# O web do Dev é o local: o projeto Vercel do Dev (`speedbikers-gestao-v2-m71j`)
+# foi excluído em 2026-09-23, e manter a URL dele aqui liberava CORS da api do
+# Dev para um subdomínio que qualquer um pode registrar (auditoria de 28/09).
+DEV_WEB_ORIGIN="http://localhost:3000"
 
 AMBIENTE="${AMBIENTE:-dev}"
 

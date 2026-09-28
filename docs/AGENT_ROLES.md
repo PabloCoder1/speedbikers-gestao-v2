@@ -84,7 +84,7 @@ Antes de assumir uma tarefa:
 1. Ler `docs/HANDOFF.md`.
 2. Ler requisitos relacionados.
 3. Identificar arquivos e domínio afetados.
-4. Confirmar o que já existe na branch `v3`.
+4. Confirmar o que já existe na branch `main`.
 5. Consultar `main` somente quando precisar entender uma referência V2.
 
 Ao concluir uma etapa significativa:
@@ -101,6 +101,6 @@ Se houver conflito entre:
 - conversa;
 - memória de uma IA;
 - prompt antigo;
-- código/documentação atual da branch `v3`;
+- código/documentação atual da branch `main`;
 
-o estado atual versionado da branch `v3` é a fonte de verdade para implementação. Requisitos novos do usuário devem ser incorporados à documentação antes ou junto da implementação.
+o estado atual versionado da branch `main` é a fonte de verdade para implementação. Requisitos novos do usuário devem ser incorporados à documentação antes ou junto da implementação.
