@@ -18,8 +18,8 @@
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | 28/09 17:14 UTC: worker `worker-00039-f97` e api `api-00023-m6r` em `06f15a2d` (D-362, 3ª parte), da `main`, por deploy vigiado. Volta: `worker-00037-4l7`/`api-00022-5j8`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção com todas até `20260928180000` (até 25/09 tinham entrado a D-393 do #77, as D-411 a D-413 e a D-362). **Em 28/09 entraram `20260928150000`, `160000` e `170000` (#118) e `180000` (D-417, #122), com os tokens do Supabase trocados pelo dono (os antigos foram revogados às ~13:20 UTC). Caminho normal: `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260923200000`, D-393): as próximas usam a data real. |
+| **Produção** | Worker `worker-00040-6xj` em `4101e426` (D-419, 29/09 17:38 UTC) e api `api-00023-m6r` em `06f15a2d` (D-362, 28/09), da `main`, por deploy vigiado. Volta: `worker-00039-f97`/`api-00022-5j8`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
+| **Migrations** | Produção com todas até `20260929120000` (D-419, 29/09 17:32 UTC); em 28/09 entraram as de #118, D-417, D-418 e #128, com os tokens do Supabase trocados pelo dono. Caminho normal: `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260929120000`, D-419): as próximas usam a data real. |
 | **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-413). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405). |
 
 ### O que está pronto
@@ -286,7 +286,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Estoque:** D-351 e D-352 em produção. D-362: as três partes em produção; a 3ª (SKU do histórico, sem estoque) espera o disparo (`POST /internal/backfill/order-user-products`, ensaio `{"dias": 8}`, autorização do dono). Em uma semana: medir os itens sem SKU desde a planilha de 24/09.
 
-**Anúncios:** filtro de promoção (D-419) em código; publicar o worker e a migration `20260929120000`.
+**Anúncios:** filtro de promoção (D-419) em produção; a leitura nova chega na próxima sincronização do catálogo — conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes).
 
 ---
 
