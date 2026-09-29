@@ -113,10 +113,11 @@ export {
   effectivePromotionalPrice,
   getItemPromotions,
   isInPromotion,
+  promotionOffers,
   sellerPromotionEntrySchema,
   sellerPromotionsSchema,
 } from "./promotions.js";
-export type { GetItemPromotionsOptions, SellerPromotionEntry } from "./promotions.js";
+export type { GetItemPromotionsOptions, PromotionOffer, SellerPromotionEntry } from "./promotions.js";
 
 export { getItemDescription, itemDescriptionSchema } from "./description.js";
 export type { GetItemDescriptionOptions } from "./description.js";

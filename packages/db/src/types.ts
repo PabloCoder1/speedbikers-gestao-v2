@@ -1777,6 +1777,9 @@ export type Database = {
           // NULO = promocao nao lida (so anuncio ativo e lido).
           in_promotion: boolean | null
           promotion_checked_at: string | null
+          // D-420, migration 20260929180000: CORRECAO MANUAL, mesma razao.
+          // Campanhas no ar e candidatas da ultima leitura boa; NULO = nao lido.
+          promotions: Json | null
           // D-390, migration 20260921144813: CORRECAO MANUAL, mesma razao.
           // Hash SHA-256 da descricao, nunca o texto -- NULO sem leitura.
           description_fingerprint: string | null
@@ -1803,6 +1806,7 @@ export type Database = {
           promotional_price?: number | null
           in_promotion?: boolean | null
           promotion_checked_at?: string | null
+          promotions?: Json | null
           description_fingerprint?: string | null
           description_source_updated_at?: string | null
           sku_id?: string | null
@@ -1827,6 +1831,7 @@ export type Database = {
           promotional_price?: number | null
           in_promotion?: boolean | null
           promotion_checked_at?: string | null
+          promotions?: Json | null
           description_fingerprint?: string | null
           description_source_updated_at?: string | null
           sku_id?: string | null

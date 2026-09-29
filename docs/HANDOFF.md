@@ -286,7 +286,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Estoque:** D-351 e D-352 em produção. D-362: as três partes em produção; a 3ª (SKU do histórico, sem estoque) espera o disparo (`POST /internal/backfill/order-user-products`, ensaio `{"dias": 8}`, autorização do dono). Em uma semana: medir os itens sem SKU desde a planilha de 24/09.
 
-**Anúncios:** filtro de promoção (D-419) em produção; a leitura nova chega na próxima sincronização do catálogo — conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes).
+**Anúncios:** filtro de promoção (D-419) em produção; conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes). D-420 (campanhas) em código: migration `20260929180000` antes do worker.
 
 ---
 

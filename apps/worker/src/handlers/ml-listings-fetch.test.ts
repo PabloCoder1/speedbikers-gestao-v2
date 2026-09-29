@@ -29,6 +29,8 @@ interface PreviousRow {
   promotional_price?: number | null;
   in_promotion?: boolean | null;
   promotion_checked_at?: string | null;
+  /** D-420: as campanhas da última leitura. */
+  promotions?: unknown;
 }
 
 /** Fake encadeável: `.eq()`/`.is()` devolvem a si mesmos e o `await` resolve. */
@@ -472,6 +474,11 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
         in_promotion: true,
         promotion_checked_at: SYNCED_AT.toISOString(),
       });
+      // D-420: a no ar e a candidata, da MESMA resposta; o price 0 da candidata vira nulo.
+      expect(fake.upserted[0]?.promotions).toMatchObject([
+        { type: "SELLER_CAMPAIGN", status: "started", price: 249.99 },
+        { type: "PRICE_DISCOUNT", status: "candidate", price: null },
+      ]);
     });
 
     it("campanha só 'candidate' (price 0, ainda não ativada) NÃO vira preço promocional", async () => {
@@ -526,7 +533,12 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
       await fetchListings(params(fake.db, client));
 
       expect(requests.some((r) => r.path.startsWith("/seller-promotions/"))).toBe(false);
-      expect(fake.upserted[0]).toMatchObject({ promotional_price: null, in_promotion: null, promotion_checked_at: null });
+      expect(fake.upserted[0]).toMatchObject({
+        promotional_price: null,
+        in_promotion: null,
+        promotion_checked_at: null,
+        promotions: null,
+      });
     });
 
     it("falha ao consultar promoção não derruba o item — só fica sem preço promocional, com aviso no log", async () => {
@@ -563,6 +575,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
             promotional_price: 89.9,
             in_promotion: true,
             promotion_checked_at: lidaEm,
+            promotions: [{ type: "SELLER_CAMPAIGN", status: "started", price: 89.9 }],
           },
         ],
       });
@@ -574,7 +587,13 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
       await fetchListings(params(fake.db, client));
 
-      expect(fake.upserted[0]).toMatchObject({ promotional_price: 89.9, in_promotion: true, promotion_checked_at: lidaEm });
+      expect(fake.upserted[0]).toMatchObject({
+        promotional_price: 89.9,
+        in_promotion: true,
+        promotion_checked_at: lidaEm,
+        // D-420: as campanhas também ficam as da última leitura boa.
+        promotions: [{ type: "SELLER_CAMPAIGN", status: "started", price: 89.9 }],
+      });
     });
   });
 

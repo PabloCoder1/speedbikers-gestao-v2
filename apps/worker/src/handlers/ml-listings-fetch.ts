@@ -1,7 +1,7 @@
-import type { AdminClient } from "@sb/db";
+import type { AdminClient, Json } from "@sb/db";
 import { detectListingEvents } from "@sb/domain";
 import type { ListingSnapshot } from "@sb/domain";
-import type { MercadoLivreClient } from "@sb/mercado-livre";
+import type { MercadoLivreClient, PromotionOffer } from "@sb/mercado-livre";
 import {
   chunkItemIds,
   effectivePromotionalPrice,
@@ -9,11 +9,12 @@ import {
   getItemPromotions,
   getItemsBatch,
   isInPromotion,
+  promotionOffers,
   scanSellerItems,
 } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
-import { recordDomainEvents } from "./domain-events.js";
+import { asJson, recordDomainEvents } from "./domain-events.js";
 import {
   fingerprintDaDescricao,
   fingerprintDasFotos,
@@ -92,6 +93,8 @@ interface ListingUpsertRow {
   in_promotion: boolean | null;
   /** Quando a promoção foi lida COM SUCESSO pela última vez (D-419). */
   promotion_checked_at: string | null;
+  /** As campanhas no ar e as candidatas da mesma leitura (D-420). `null` = não lido. */
+  promotions: Json | null;
   currency_id: string;
   available_quantity: number;
   category_id: string | null;
@@ -126,30 +129,50 @@ export interface FetchListingsResult {
   itemsWithoutLink: number;
 }
 
+/** O que uma leitura boa de `/seller-promotions/items/{id}` diz do anúncio. */
+interface PromocaoLida {
+  emPromocao: boolean;
+  preco: number | null;
+  ofertas: PromotionOffer[];
+}
+
 /**
- * A promoção que a linha grava (D-419). Anúncio não ativo não roda campanha e
- * não é lido: tudo nulo. Ativo e lido agora: o que a leitura disse, com a hora.
- * Ativo e a leitura falhou: a ÚLTIMA leitura boa, com a hora dela — nunca
- * "sem promoção" por falta de leitura.
+ * A promoção que a linha grava (D-419, D-420). Anúncio não ativo não roda
+ * campanha e não é lido: tudo nulo. Ativo e lido agora: o que a leitura disse,
+ * com a hora. Ativo e a leitura falhou: a ÚLTIMA leitura boa, com a hora dela —
+ * nunca "sem promoção" (nem "sem campanha disponível") por falta de leitura.
  */
 function promocaoDaLinha(
   status: string,
-  lida: { emPromocao: boolean; preco: number | null } | undefined,
-  anterior: { promotional_price: number | null; in_promotion: boolean | null; promotion_checked_at: string | null } | undefined,
+  lida: PromocaoLida | undefined,
+  anterior:
+    | {
+        promotional_price: number | null;
+        in_promotion: boolean | null;
+        promotion_checked_at: string | null;
+        promotions?: Json | null;
+      }
+    | undefined,
   agora: Date,
-): Pick<ListingUpsertRow, "promotional_price" | "in_promotion" | "promotion_checked_at"> {
+): Pick<ListingUpsertRow, "promotional_price" | "in_promotion" | "promotion_checked_at" | "promotions"> {
   if (status !== "active") {
-    return { promotional_price: null, in_promotion: null, promotion_checked_at: null };
+    return { promotional_price: null, in_promotion: null, promotion_checked_at: null, promotions: null };
   }
 
   if (lida !== undefined) {
-    return { promotional_price: lida.preco, in_promotion: lida.emPromocao, promotion_checked_at: agora.toISOString() };
+    return {
+      promotional_price: lida.preco,
+      in_promotion: lida.emPromocao,
+      promotion_checked_at: agora.toISOString(),
+      promotions: asJson(lida.ofertas),
+    };
   }
 
   return {
     promotional_price: anterior?.promotional_price ?? null,
     in_promotion: anterior?.in_promotion ?? null,
     promotion_checked_at: anterior?.promotion_checked_at ?? null,
+    promotions: anterior?.promotions ?? null,
   };
 }
 
@@ -208,12 +231,13 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     promotional_price: number | null;
     in_promotion: boolean | null;
     promotion_checked_at: string | null;
+    promotions: Json | null;
   }>(
     (from, to) =>
       params.db
         .from("listings")
         .select(
-          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at",
+          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions",
         )
         .eq("ml_account_id", params.mlAccountId)
         // `listings_account_item_unique (ml_account_id, item_id)` — com a
@@ -316,7 +340,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     // enriquecimento. A PROMOÇÃO que falha fica com a última leitura boa
     // (D-419): gravar nulo dizia "sem promoção" de um anúncio que só não foi
     // lido, e o filtro de `/anuncios` o ofereceria para entrar numa campanha.
-    const promocaoPorItem = new Map<string, { emPromocao: boolean; preco: number | null }>();
+    const promocaoPorItem = new Map<string, PromocaoLida>();
     const fingerprintDescricaoPorItem = new Map<string, string | null>();
     const descricaoAtualizadaEmPorItem = new Map<string, string | null>();
 
@@ -336,7 +360,12 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
             getItemPromotions({ client: params.mercadoLivre, itemId: item.id, accessToken: params.accessToken })
               .then((promocoes) => ({
                 ok: true as const,
-                value: { emPromocao: isInPromotion(promocoes), preco: effectivePromotionalPrice(promocoes) },
+                value: {
+                  emPromocao: isInPromotion(promocoes),
+                  preco: effectivePromotionalPrice(promocoes),
+                  // D-420: as candidatas vêm na MESMA resposta — nenhuma chamada a mais.
+                  ofertas: promotionOffers(promocoes),
+                },
               }))
               .catch((error: unknown) => ({ ok: false as const, error })),
             shouldFetchDescription
