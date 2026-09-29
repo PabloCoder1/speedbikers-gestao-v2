@@ -20,6 +20,15 @@ import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow
 import { formatDecisionSnapshot } from "../../../lib/decision-format";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
+import {
+  lerCampanhas,
+  periodo,
+  precoDaCampanha,
+  quemPaga,
+  rotuloDoTipo,
+  separarCampanhas,
+  type Campanha,
+} from "../../../lib/campanhas";
 import { BarrasDiarias } from "./barras-diarias";
 import { checarAnuncio, horasDesde, idadeRelativa, SYNC_VELHO_HORAS } from "./checagem";
 import { CopiarMlb } from "./copiar-mlb";
@@ -253,6 +262,7 @@ export default async function AnuncioPage({
     relistsResult,
     decisionsResult,
     contentAnalysisResult,
+    promocaoResult,
     /*
       O PAPEL, para a aba Histórico decidir se oferece o disparo (D-295). Entra
       no `Promise.all` que já existe: em fila seria uma ida somada ao custo da
@@ -396,6 +406,17 @@ export default async function AnuncioPage({
           p_item_id: row.item_id,
         })
       : Promise.resolve({ data: null, error: null }),
+    // D-420: as campanhas do anúncio — a no ar e as que ele pode entrar. Leitura
+    // própria, e não no `select` do topo: a coluna chega com a migration
+    // 20260929180000, e a web pode chegar antes; sem ela, só o painel avisa em
+    // vez de a página inteira virar 404.
+    needsPrices
+      ? supabase
+          .from("listings")
+          .select("in_promotion, promotional_price, promotion_checked_at, promotions")
+          .eq("id", row.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     needsRelists ? currentMembership() : Promise.resolve(null),
   ]);
 
@@ -419,6 +440,9 @@ export default async function AnuncioPage({
   const daily = (dailyResult.data ?? []) as unknown as DiaMetricaRow[];
   const visits = (visitsResult.data ?? []) as unknown as DiaVisitaRow[];
   const prices = (pricesResult.data ?? []) as unknown as TimelineEventRow[];
+  const promocao = promocaoResult.data;
+  const campanhas = lerCampanhas(promocao?.promotions ?? null);
+  const { noAr: campanhasNoAr, candidatas: campanhasCandidatas } = separarCampanhas(campanhas ?? []);
   const relists = (relistsResult.data ?? []) as unknown as RelistRow[];
 
   /*
@@ -1149,6 +1173,23 @@ export default async function AnuncioPage({
 
         {tab === "preco" && (
           <Panel
+            title="Promoções"
+            subtitle="A campanha no ar e as que este anúncio pode entrar, lidas a cada sincronização do catálogo (6 h). A V3 só lê: entrar numa campanha é na Central de Promoções do Mercado Livre."
+          >
+            <PainelDePromocoes
+              status={row.status}
+              erro={promocaoResult.error}
+              emPromocao={promocao?.in_promotion ?? null}
+              lidaEm={promocao?.promotion_checked_at ?? null}
+              campanhas={campanhas}
+              noAr={campanhasNoAr}
+              candidatas={campanhasCandidatas}
+            />
+          </Panel>
+        )}
+
+        {tab === "preco" && (
+          <Panel
             title="Mudanças de preço observadas"
             subtitle="As mudanças são o DIFF entre duas sincronizações de 6 em 6 horas — uma alteração feita e desfeita entre elas não deixa registro."
           >
@@ -1535,5 +1576,111 @@ export default async function AnuncioPage({
         )}
       </ObjectHeader>
     </Shell>
+  );
+}
+
+/**
+ * O painel "Promoções" da aba Preço (D-420). Cada estado tem a sua frase —
+ * não lido, pausado e "banco sem a coluna" nunca viram "sem campanha".
+ */
+function PainelDePromocoes({
+  status,
+  erro,
+  emPromocao,
+  lidaEm,
+  campanhas,
+  noAr,
+  candidatas,
+}: {
+  status: string;
+  erro: { code?: string; message: string } | null;
+  emPromocao: boolean | null;
+  lidaEm: string | null;
+  campanhas: Campanha[] | null;
+  noAr: Campanha[];
+  candidatas: Campanha[];
+}): ReactNode {
+  if (erro !== null) {
+    return (
+      <p className="sb-empty">
+        {/* 42703: coluna inexistente — a migration de D-420 ainda não chegou a este banco. */}
+        {erro.code === "42703"
+          ? "As campanhas deste anúncio chegam com a próxima atualização do banco."
+          : `Não foi possível ler as campanhas deste anúncio: ${erro.message}`}
+      </p>
+    );
+  }
+
+  if (status !== "active") {
+    return (
+      <p className="sb-empty">
+        Anúncio {listingStatusLabel(status).toLowerCase()}: o Mercado Livre não roda campanha nele, e a V3 só lê a
+        promoção de anúncio ativo.
+      </p>
+    );
+  }
+
+  if (emPromocao === null && campanhas === null) {
+    return (
+      <p className="sb-empty">
+        A promoção deste anúncio ainda não foi lida — a próxima sincronização do catálogo lê (a cada 6 h).
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <div className="sb-panel-body">
+        {emPromocao === true ? (
+          noAr.length === 0 ? (
+            <p>Em campanha na última leitura{lidaEm === null ? "" : ` (${formatDateTime(lidaEm)})`}.</p>
+          ) : (
+            noAr.map((c, indice) => (
+              <p key={`${c.id ?? c.type}-${String(indice)}`}>
+                <b>Em campanha:</b> {rotuloDoTipo(c.type)}
+                {c.name === null ? "" : ` “${c.name}”`}
+                {precoDaCampanha(c) === null ? "" : ` · ${precoDaCampanha(c) ?? ""}`}
+                {periodo(c) === null ? "" : ` · ${periodo(c) ?? ""}`}
+              </p>
+            ))
+          )
+        ) : (
+          <p>
+            <b>Fora de campanha</b> na leitura de {lidaEm === null ? "—" : formatDateTime(lidaEm)}.
+          </p>
+        )}
+      </div>
+
+      {campanhas === null ? (
+        <p className="sb-empty">As campanhas disponíveis aparecem depois da próxima sincronização do catálogo.</p>
+      ) : candidatas.length === 0 ? (
+        <p className="sb-empty">Nenhuma campanha disponível para este anúncio na última leitura.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table className="sb-table" aria-label="Campanhas disponíveis">
+            <thead>
+              <tr>
+                <th>Campanhas disponíveis</th>
+                <th>Nome</th>
+                <th>Período</th>
+                <th>Preço</th>
+                <th>Quem paga o desconto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidatas.map((c, indice) => (
+                <tr key={`${c.id ?? c.type}-${String(indice)}`}>
+                  <td>{rotuloDoTipo(c.type)}</td>
+                  <td>{c.name ?? "—"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{periodo(c) ?? "—"}</td>
+                  <td>{precoDaCampanha(c) ?? "você escolhe"}</td>
+                  <td>{quemPaga(c) ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }

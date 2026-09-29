@@ -841,6 +841,15 @@ export default async function AnunciosPage({
                               )}
                               <span className="sb-an-promo">Promoção</span>
                             </span>
+                          ) : row.in_promotion === false ? (
+                            // Lido e fora de campanha (D-420): o caminho para as
+                            // campanhas em que ele pode entrar.
+                            <span className="sb-an-preco-promo">
+                              {formatCurrency(row.price)}
+                              <Link className="sb-an-preco-de" href={`/anuncios/${row.item_id}?aba=preco`}>
+                                Campanhas →
+                              </Link>
+                            </span>
                           ) : (
                             formatCurrency(row.price)
                           )}

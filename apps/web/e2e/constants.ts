@@ -145,6 +145,64 @@ export const E2E_LOCAL_STOCK = 50;
 /** O preço em campanha do primeiro anúncio (D-419) — o cadastrado é 189,90. */
 export const E2E_LISTING_PROMO_PRICE = 169.9;
 
+/** Campos que toda campanha gravada tem (D-420); cada uma preenche os seus. */
+const CAMPANHA_VAZIA = {
+  id: null,
+  name: null,
+  start_date: null,
+  finish_date: null,
+  price: null,
+  original_price: null,
+  suggested_price: null,
+  min_price: null,
+  max_price: null,
+  meli_percentage: null,
+  seller_percentage: null,
+  fixed_percentage: null,
+};
+
+/**
+ * As campanhas gravadas em `listings.promotions` (D-420), na forma do worker:
+ * a no ar do primeiro anúncio, e as duas em que o segundo — lido fora de
+ * campanha — pode entrar.
+ */
+export const E2E_LISTING_CAMPANHAS = {
+  "em-campanha": [
+    {
+      ...CAMPANHA_VAZIA,
+      type: "SELLER_CAMPAIGN",
+      status: "started",
+      id: "C-MLBE2E1",
+      name: "Campanha E2E",
+      finish_date: "2026-12-31T23:59:59",
+      price: E2E_LISTING_PROMO_PRICE,
+      original_price: 189.9,
+    },
+  ],
+  fora: [
+    {
+      ...CAMPANHA_VAZIA,
+      type: "PRICE_DISCOUNT",
+      status: "candidate",
+      original_price: 124.5,
+      suggested_price: 99.9,
+      min_price: 50,
+      max_price: 118,
+    },
+    {
+      ...CAMPANHA_VAZIA,
+      type: "SMART",
+      status: "candidate",
+      id: "P-MLBE2E2",
+      name: "Impulsione suas vendas",
+      price: 110,
+      original_price: 124.5,
+      meli_percentage: 2,
+      seller_percentage: 10,
+    },
+  ],
+};
+
 /** Full DO ANÚNCIO do primeiro anúncio (D-243) — o único com snapshot no seed. */
 export const E2E_LISTING_FULL = 3;
 

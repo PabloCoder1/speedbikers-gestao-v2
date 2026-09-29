@@ -393,7 +393,7 @@ Enumeração via `sku_listing_links` (`ref_kind='ITEM'`, mesmo mecanismo de Full
 
 RLS por `has_account_access(ml_account_id)`, mesmo padrão de `fulfillment_stock_snapshots`/`domain_events`/`sync_runs`.
 
-**Promoção (D-389, D-419).** Lida só para anúncio ativo, a cada sincronização do catálogo: `promotional_price` (o preço com a campanha, nulo sem promoção ou sem preço lido), `in_promotion` (campanha `started` na última leitura BOA; **nulo = não lido**) e `promotion_checked_at` (a hora dessa leitura). Leitura que falha repete a última boa — o nulo nunca quer dizer "sem promoção". O filtro de `/anuncios` (`get_listings_dashboard(p_promo)`) só enxerga ativos lidos.
+**Promoção (D-389, D-419).** Lida só para anúncio ativo, a cada sincronização do catálogo: `promotional_price` (o preço com a campanha, nulo sem promoção ou sem preço lido), `in_promotion` (campanha `started` na última leitura BOA; **nulo = não lido**) e `promotion_checked_at` (a hora dessa leitura). Leitura que falha repete a última boa — o nulo nunca quer dizer "sem promoção". O filtro de `/anuncios` (`get_listings_dashboard(p_promo)`) só enxerga ativos lidos. `promotions` (jsonb, lista ou nulo, D-420) guarda, da mesma leitura, as campanhas no ar e as candidatas — as que o anúncio pode entrar —, com nome, período, preço sugerido e faixa e a participação do Mercado Livre na co-participada; a aba Preço do anúncio as mostra.
 
 ### `documents` / `document_items` — NF-e
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createMercadoLivreClient } from "./http-client.js";
-import { effectivePromotionalPrice, getItemPromotions, isInPromotion } from "./promotions.js";
+import { effectivePromotionalPrice, getItemPromotions, isInPromotion, promotionOffers } from "./promotions.js";
 
 function clienteCom(status: number, corpo: unknown, captura: { url?: URL } = {}) {
   const fetchImpl = vi.fn((url: string | URL | Request) => {
@@ -123,5 +123,79 @@ describe("isInPromotion (D-419)", () => {
   it("só 'candidate', ou lista vazia: não está", () => {
     expect(isInPromotion([{ type: "DEAL", status: "candidate", price: 0, original_price: 100 }])).toBe(false);
     expect(isInPromotion([])).toBe(false);
+  });
+});
+
+describe("promotionOffers (D-420)", () => {
+  // Entradas reais da sonda de 29/09 (resumidas): o que o Mercado Livre devolve
+  // para um anúncio fora de campanha, e uma no ar.
+  const entradas = [
+    {
+      id: "P-MLB17937078",
+      type: "SMART",
+      status: "candidate",
+      price: 232.7,
+      meli_percentage: 0.96,
+      seller_percentage: 14.04,
+      original_price: 273.42,
+      name: "Impulsione suas vendas",
+    },
+    {
+      type: "PRICE_DISCOUNT",
+      status: "candidate",
+      price: 0,
+      original_price: 149.9,
+      name: "",
+      min_discounted_price: 37.96,
+      max_discounted_price: 142.4,
+      suggested_discounted_price: 94.89,
+    },
+    {
+      id: "C-MLB5174575",
+      type: "SELLER_COUPON_CAMPAIGN",
+      sub_type: "FIXED_PERCENTAGE",
+      fixed_percentage: 10,
+      status: "candidate",
+      price: 0,
+      original_price: 149.9,
+      start_date: "2026-08-20T00:00:00",
+      finish_date: "2026-10-19T23:59:59",
+      name: "Cupom para carrinhos abandonados",
+    },
+    {
+      id: "C-MLB5690339",
+      type: "SELLER_CAMPAIGN",
+      status: "started",
+      price: 199.9,
+      original_price: 239.9,
+      finish_date: "2026-10-08T23:59:59",
+      name: "12_8009",
+    },
+    { type: "DEAL", status: "finished", price: 10, original_price: 20 },
+  ];
+
+  it("guarda as no ar e as candidatas; o price 0 da candidata vira nulo, nunca zero", () => {
+    const ofertas = promotionOffers(entradas);
+
+    expect(ofertas.map((o) => `${o.type}:${o.status}`)).toEqual([
+      "SMART:candidate",
+      "PRICE_DISCOUNT:candidate",
+      "SELLER_COUPON_CAMPAIGN:candidate",
+      "SELLER_CAMPAIGN:started",
+    ]);
+    expect(ofertas[0]).toMatchObject({ price: 232.7, meli_percentage: 0.96, seller_percentage: 14.04 });
+    expect(ofertas[1]).toMatchObject({
+      price: null,
+      name: null,
+      suggested_price: 94.89,
+      min_price: 37.96,
+      max_price: 142.4,
+    });
+    expect(ofertas[2]).toMatchObject({ fixed_percentage: 10, finish_date: "2026-10-19T23:59:59" });
+    expect(ofertas[3]).toMatchObject({ status: "started", price: 199.9, original_price: 239.9 });
+  });
+
+  it("sem campanha nenhuma, lista vazia", () => {
+    expect(promotionOffers([])).toEqual([]);
   });
 });

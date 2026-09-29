@@ -47,6 +47,16 @@ export const sellerPromotionEntrySchema = z.object({
   start_date: z.string().optional(),
   finish_date: z.string().optional(),
   name: z.string().optional(),
+  // D-420, medidos na sonda de 29/09 (44 anúncios, quatro contas): a faixa e o
+  // preço que o Mercado Livre sugere para a candidata, e quem paga o desconto
+  // na co-participada (SMART, UNHEALTHY_STOCK) ou no cupom. Todos opcionais —
+  // cada tipo traz só uma parte.
+  min_discounted_price: z.number().nullable().optional(),
+  max_discounted_price: z.number().nullable().optional(),
+  suggested_discounted_price: z.number().nullable().optional(),
+  meli_percentage: z.number().nullable().optional(),
+  seller_percentage: z.number().nullable().optional(),
+  fixed_percentage: z.number().nullable().optional(),
 });
 
 export const sellerPromotionsSchema = z.array(sellerPromotionEntrySchema);
@@ -99,4 +109,71 @@ export function effectivePromotionalPrice(entries: readonly SellerPromotionEntry
 /** O item está numa campanha no ar agora (`status: "started"`), com ou sem preço lido (D-419). */
 export function isInPromotion(entries: readonly SellerPromotionEntry[]): boolean {
   return entries.some((entry) => entry.status === "started");
+}
+
+/**
+ * Uma campanha do anúncio, no ar ou candidata, na forma que `listings.promotions`
+ * guarda (D-420). Ausente vira `null`, nunca zero: a candidata vem com
+ * `price: 0` como marcador, e o preço dela é o que o vendedor escolher.
+ */
+export interface PromotionOffer {
+  type: string;
+  status: "started" | "candidate";
+  id: string | null;
+  name: string | null;
+  start_date: string | null;
+  finish_date: string | null;
+  /** O preço com a campanha: o no ar, ou o que a candidata já propõe (relâmpago, co-participada). */
+  price: number | null;
+  original_price: number | null;
+  suggested_price: number | null;
+  min_price: number | null;
+  max_price: number | null;
+  /** Co-participada: quanto do desconto cada um paga, em %. */
+  meli_percentage: number | null;
+  seller_percentage: number | null;
+  /** Cupom de percentual fixo. */
+  fixed_percentage: number | null;
+}
+
+/** Teto de campanhas guardadas por anúncio — a sonda mediu no máximo 10. */
+const MAX_OFFERS = 30;
+
+function positivo(valor: number | null | undefined): number | null {
+  return typeof valor === "number" && valor > 0 ? valor : null;
+}
+
+function numero(valor: number | null | undefined): number | null {
+  return typeof valor === "number" ? valor : null;
+}
+
+function texto(valor: string | undefined): string | null {
+  return valor === undefined || valor.trim() === "" ? null : valor;
+}
+
+/**
+ * As campanhas no ar e as candidatas, na ordem em que o Mercado Livre as
+ * devolve (D-420). Outros estados (encerrada, pendente) ficam de fora: não são
+ * nem o que vale agora nem o que dá para ativar.
+ */
+export function promotionOffers(entries: readonly SellerPromotionEntry[]): PromotionOffer[] {
+  return entries
+    .filter((entry) => entry.status === "started" || entry.status === "candidate")
+    .slice(0, MAX_OFFERS)
+    .map((entry) => ({
+      type: entry.type,
+      status: entry.status === "started" ? "started" : "candidate",
+      id: texto(entry.id),
+      name: texto(entry.name),
+      start_date: texto(entry.start_date),
+      finish_date: texto(entry.finish_date),
+      price: positivo(entry.price),
+      original_price: positivo(entry.original_price),
+      suggested_price: positivo(entry.suggested_discounted_price),
+      min_price: positivo(entry.min_discounted_price),
+      max_price: positivo(entry.max_discounted_price),
+      meli_percentage: numero(entry.meli_percentage),
+      seller_percentage: numero(entry.seller_percentage),
+      fixed_percentage: numero(entry.fixed_percentage),
+    }));
 }

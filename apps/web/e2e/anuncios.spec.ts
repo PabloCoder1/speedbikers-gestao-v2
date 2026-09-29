@@ -361,4 +361,22 @@ test("/anuncios: promoção separa os ativos lidos, e o não lido fica de fora c
   await expect(
     page.getByText(`${String(naoLidos.length)} anúncios ativos ainda sem leitura de promoção ficam de fora`),
   ).toBeVisible();
+
+  // D-420: do anúncio fora de campanha, o caminho para as campanhas em que ele
+  // pode entrar — a aba Preço, com o sugerido e quem paga o desconto.
+  await page.locator("tbody tr").first().getByRole("link", { name: "Campanhas →" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/anuncios/${fora[0]?.itemId ?? ""}\\?aba=preco`));
+
+  const tabela = page.getByRole("table", { name: "Campanhas disponíveis" });
+
+  await expect(tabela.locator("tbody tr")).toHaveCount(2);
+  await expect(tabela.getByRole("row", { name: /Desconto no preço/ })).toContainText("sugerido R$");
+  await expect(tabela.getByRole("row", { name: /Desconto no preço/ })).toContainText("99,90");
+  await expect(tabela.getByRole("row", { name: /Co-participada/ })).toContainText("Mercado Livre 2% · você 10%");
+  await expect(page.getByText("Fora de campanha", { exact: true })).toBeVisible();
+
+  // E o anúncio em campanha diz qual é.
+  await page.goto(`/anuncios/${emCampanha[0]?.itemId ?? ""}?aba=preco`);
+  await expect(page.getByText(/Em campanha:\s*Campanha do vendedor “Campanha E2E”/)).toBeVisible();
 });

@@ -48,6 +48,7 @@ import {
   E2E_LISTING_FULL,
   E2E_LISTING_PRICE_EVENT,
   E2E_LISTING_PRICE_EVENT_ALTA,
+  E2E_LISTING_CAMPANHAS,
   E2E_LISTING_PROMO_PRICE,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
@@ -1008,6 +1009,8 @@ async function main(): Promise<void> {
       in_promotion: "promocao" in anuncio ? anuncio.promocao === "em-campanha" : null,
       promotional_price: "promocao" in anuncio && anuncio.promocao === "em-campanha" ? E2E_LISTING_PROMO_PRICE : null,
       promotion_checked_at: "promocao" in anuncio ? new Date().toISOString() : null,
+      // D-420: as campanhas da mesma leitura; o não lido fica NULO.
+      promotions: "promocao" in anuncio ? E2E_LISTING_CAMPANHAS[anuncio.promocao] : null,
     })),
     { onConflict: "ml_account_id,item_id" },
   );
