@@ -25,6 +25,10 @@ interface PreviousRow {
   /** Opcional: casos que não testam foto/descrição não precisam declarar. */
   picture_fingerprint?: string | null;
   description_fingerprint?: string | null;
+  /** D-419: a última leitura de promoção. */
+  promotional_price?: number | null;
+  in_promotion?: boolean | null;
+  promotion_checked_at?: string | null;
 }
 
 /** Fake encadeável: `.eq()`/`.is()` devolvem a si mesmos e o `await` resolve. */
@@ -462,7 +466,12 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
       await fetchListings(params(fake.db, client));
 
-      expect(fake.upserted[0]).toMatchObject({ price: 370.69, promotional_price: 249.99 });
+      expect(fake.upserted[0]).toMatchObject({
+        price: 370.69,
+        promotional_price: 249.99,
+        in_promotion: true,
+        promotion_checked_at: SYNCED_AT.toISOString(),
+      });
     });
 
     it("campanha só 'candidate' (price 0, ainda não ativada) NÃO vira preço promocional", async () => {
@@ -475,7 +484,20 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
       await fetchListings(params(fake.db, client));
 
-      expect(fake.upserted[0]).toMatchObject({ price: 100, promotional_price: null });
+      expect(fake.upserted[0]).toMatchObject({ price: 100, promotional_price: null, in_promotion: false });
+    });
+
+    it("campanha no ar SEM preço lido: está em promoção, com o preço desconhecido (D-419)", async () => {
+      const fake = fakeDb({});
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active", price: 100 }) },
+        promotions: { MLB1: [{ type: "DEAL", status: "started", original_price: 100 }] },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null, in_promotion: true });
     });
 
     it("sem promoção nenhuma (item fora de qualquer campanha) o preço promocional fica nulo", async () => {
@@ -487,7 +509,11 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
       await fetchListings(params(fake.db, client));
 
-      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+      expect(fake.upserted[0]).toMatchObject({
+        promotional_price: null,
+        in_promotion: false,
+        promotion_checked_at: SYNCED_AT.toISOString(),
+      });
     });
 
     it("anúncio PAUSADO não chama o endpoint de promoções — pausado não roda campanha", async () => {
@@ -500,7 +526,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
       await fetchListings(params(fake.db, client));
 
       expect(requests.some((r) => r.path.startsWith("/seller-promotions/"))).toBe(false);
-      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null, in_promotion: null, promotion_checked_at: null });
     });
 
     it("falha ao consultar promoção não derruba o item — só fica sem preço promocional, com aviso no log", async () => {
@@ -519,8 +545,36 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
       expect(result.itemsProcessed).toBe(1);
       expect(result.itemsFailed).toBe(0);
-      expect(fake.upserted[0]).toMatchObject({ promotional_price: null });
+      // Sem leitura anterior: não lido, nunca "sem promoção" (D-419).
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: null, in_promotion: null, promotion_checked_at: null });
       expect(lines.join()).toContain("listing_promotion_fetch_failed");
+    });
+
+    it("falha ao consultar promoção mantém a ÚLTIMA leitura boa, com a hora dela (D-419)", async () => {
+      const lidaEm = "2026-08-28T12:00:00.000Z";
+      const fake = fakeDb({
+        previous: [
+          {
+            item_id: "MLB1",
+            title: "Anúncio MLB1",
+            status: "active",
+            price: 100,
+            available_quantity: 5,
+            promotional_price: 89.9,
+            in_promotion: true,
+            promotion_checked_at: lidaEm,
+          },
+        ],
+      });
+      const { client } = fakeClient({
+        scanPages: [{ results: ["MLB1"], scroll_id: null }],
+        bodies: { MLB1: item("MLB1", { status: "active", price: 100 }) },
+        promotionErrors: { MLB1: new Error("Mercado Livre respondeu 403 para GET /seller-promotions/items/MLB1.") },
+      });
+
+      await fetchListings(params(fake.db, client));
+
+      expect(fake.upserted[0]).toMatchObject({ promotional_price: 89.9, in_promotion: true, promotion_checked_at: lidaEm });
     });
   });
 

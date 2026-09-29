@@ -17,6 +17,7 @@ import {
   FULL_FILTERS,
   LINK_STATE_FILTERS,
   PAGE_SIZE,
+  PROMO_FILTERS,
   SOLD_FILTERS,
   STOCK_FILTERS,
   linkStateBadge,
@@ -104,6 +105,14 @@ interface DashboardRow {
   full_quantity: number | null;
   /** NULA até a próxima sincronização; AUSENTE com o banco anterior a 20260918150000. */
   thumbnail_url?: string | null;
+  /**
+   * Campanha no ar na última leitura BOA (D-419): NULA = não lida; o preço é
+   * NULO também quando a campanha veio sem preço. AUSENTES com o banco anterior
+   * a 20260929120000.
+   */
+  in_promotion?: boolean | null;
+  promotional_price?: number | null;
+  promotion_checked_at?: string | null;
   permalink?: string | null;
   total_count: number;
   /** Somas do RECORTE inteiro, antes do limit (D-385). AUSENTES com o banco anterior. */
@@ -232,8 +241,18 @@ export default async function AnunciosPage({
     busca, sem os filtros de estado — cada célula É um filtro de estado, e
     contá-la já filtrada por outro daria sempre zero ou o próprio número.
   */
+  /*
+    `p_promo` SÓ quando o filtro está ligado (D-419): a web chega a produção no
+    merge e a migration 20260929120000 depois, pelo workflow com aprovação. Sem
+    o argumento, a chamada serve às duas assinaturas; com ele, o banco antigo
+    responde PGRST202 e a tela diz que o filtro ainda não chegou.
+  */
   const [paginaNova, faixaNova] = await Promise.all([
-    supabase.rpc("get_listings_dashboard", { ...listaSemOrdem, p_order: orderKey(filters.order) }),
+    supabase.rpc("get_listings_dashboard", {
+      ...listaSemOrdem,
+      p_order: orderKey(filters.order),
+      ...(filters.promo === "all" ? {} : { p_promo: filters.promo }),
+    }),
     supabase.rpc("get_listings_dashboard_counts", {
       p_organization_id: organizationId,
       p_ml_account_id: selectedAccount?.id ?? null,
@@ -249,13 +268,28 @@ export default async function AnunciosPage({
     Aqui a tela cai na assinatura antiga: lista por faturamento, sem foto, e a
     faixa pelas seis chamadas de antes. Mesmo desenho de `/compras` e `/full`.
   */
-  const bancoAntigo = paginaNova.error?.code === "PGRST202" || faixaNova.error?.code === "PGRST202";
+  const promocaoSemBanco = filters.promo !== "all" && paginaNova.error?.code === "PGRST202";
+  const bancoAntigo =
+    !promocaoSemBanco && (paginaNova.error?.code === "PGRST202" || faixaNova.error?.code === "PGRST202");
 
   let pagina = paginaNova;
   // Contagem em erro é `undefined` e a célula diz "—", nunca zero: D-067 vale
   // para a faixa igual vale para a tabela. Uma leitura que falhou e vira "0 sem
   // estoque" afirma que está tudo bem — a mentira mais cara desta tela.
-  let contagens: Partial<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", number | undefined>> =
+  let contagens: Partial<
+    Record<
+      | "total"
+      | "active"
+      | "paused"
+      | "out_of_stock"
+      | "in_full"
+      | "unlinked"
+      | "in_promotion"
+      | "without_promotion"
+      | "promotion_unknown",
+      number | undefined
+    >
+  > =
     faixaNova.error === null ? (faixaNova.data[0] ?? {}) : {};
 
   if (bancoAntigo) {
@@ -293,7 +327,9 @@ export default async function AnunciosPage({
     };
   }
 
-  const { data, error } = pagina;
+  // Filtro de promoção com o banco anterior a 20260929120000: nem lista nem erro
+  // genérico — a nota abaixo diz o que falta.
+  const { data, error } = promocaoSemBanco ? { data: [], error: null } : pagina;
 
   const rows = (data ?? []) as DashboardRow[];
   // `total_count` vem repetido em toda linha (window function). Zero linhas
@@ -386,6 +422,13 @@ export default async function AnunciosPage({
   const rotuloEstoque = STOCK_FILTERS.find((f) => f.key === filters.stock)?.label ?? "Qualquer estoque";
   const rotuloFull = FULL_FILTERS.find((f) => f.key === filters.full)?.label ?? "Full ou não";
   const rotuloVenda = SOLD_FILTERS.find((f) => f.key === filters.sold)?.label ?? "Com ou sem venda";
+  const rotuloPromocao = PROMO_FILTERS.find((f) => f.key === filters.promo)?.label ?? "Com ou sem promoção";
+  // A contagem de cada opção sai da faixa (mesmo predicado da lista, D-419);
+  // sem ela (banco anterior, leitura que falhou), a opção fica sem número.
+  const contagemDaPromocao: Record<string, number | undefined> = {
+    with: contagens.in_promotion,
+    without: contagens.without_promotion,
+  };
   const rotuloPeriodo = `Últimos ${String(filters.days)} dias`;
 
   /*
@@ -401,6 +444,7 @@ export default async function AnunciosPage({
     ...(filters.stock === "all" ? [] : [{ rotulo: rotuloEstoque, href: buildHref(filters, { stock: "all" }) }]),
     ...(filters.full === "all" ? [] : [{ rotulo: rotuloFull, href: buildHref(filters, { full: "all" }) }]),
     ...(filters.sold === "all" ? [] : [{ rotulo: rotuloVenda, href: buildHref(filters, { sold: "all" }) }]),
+    ...(filters.promo === "all" ? [] : [{ rotulo: rotuloPromocao, href: buildHref(filters, { promo: "all" }) }]),
     ...(filters.search === null ? [] : [{ rotulo: `Busca “${filters.search}”`, href: buildHref(filters, { search: null }) }]),
   ];
   const limpar = buildHref(filters, NEUTRO);
@@ -475,6 +519,7 @@ export default async function AnunciosPage({
               {hidden("estoque", filters.stock === "all" ? null : filters.stock)}
               {hidden("full", filters.full === "all" ? null : filters.full)}
               {hidden("venda", filters.sold === "all" ? null : filters.sold)}
+              {hidden("promocao", filters.promo === "all" ? null : filters.promo)}
               {hidden("dias", filters.days === DEFAULT_PERIOD_DAYS ? null : String(filters.days))}
               {hidden("ordem", orderParam(filters.order))}
               {hidden("tamanho", filters.pageSize === PAGE_SIZE ? null : String(filters.pageSize))}
@@ -555,6 +600,18 @@ export default async function AnunciosPage({
                   label: option.label,
                 }))}
               />
+              <FilterMenu
+                rotulo={rotuloPromocao}
+                opcoes={PROMO_FILTERS.map((option) => {
+                  const quantos = contagemDaPromocao[option.key];
+
+                  return {
+                    href: buildHref(filters, { promo: option.key }),
+                    ativo: filters.promo === option.key,
+                    label: quantos === undefined ? option.label : `${option.label} · ${formatCount(quantos)}`,
+                  };
+                })}
+              />
             </>
           }
         >
@@ -577,6 +634,24 @@ export default async function AnunciosPage({
             <p role="note" className="sb-an-nota">
               Ordenação por coluna e foto dos anúncios chegam com a próxima atualização do banco; até lá a lista segue
               por faturamento.
+            </p>
+          )}
+
+          {promocaoSemBanco && (
+            <p role="note" className="sb-an-nota">
+              O filtro de promoção chega com a próxima atualização do banco.{" "}
+              <a href={buildHref(filters, { promo: "all" })}>Ver todos os anúncios</a>
+            </p>
+          )}
+
+          {filters.promo !== "all" && !promocaoSemBanco && (contagens.promotion_unknown ?? 0) > 0 && (
+            // O NÃO LIDO fica fora dos dois recortes (D-419): dizer quantos são
+            // evita ler "todos os ativos estão aqui".
+            <p className="sb-an-nota">
+              {formatCount(contagens.promotion_unknown ?? 0)}{" "}
+              {contagens.promotion_unknown === 1 ? "anúncio ativo ainda sem leitura" : "anúncios ativos ainda sem leitura"}{" "}
+              de promoção {contagens.promotion_unknown === 1 ? "fica" : "ficam"} de fora; a leitura é refeita a cada
+              sincronização do catálogo (6 h).
             </p>
           )}
 
@@ -624,7 +699,7 @@ export default async function AnunciosPage({
             </div>
           )}
 
-          {error === null && rows.length === 0 && (
+          {error === null && rows.length === 0 && !promocaoSemBanco && (
             <div className="sb-an-estado">
               <b>Nenhum anúncio corresponde a estes filtros.</b>
               {chips.length > 0 ? (
@@ -748,7 +823,27 @@ export default async function AnunciosPage({
                           <StatusPill code={row.status} label={listingStatusLabel(row.status)} />
                         </td>
                         <td className="sb-num" data-label="Preço">
-                          {formatCurrency(row.price)}
+                          {row.in_promotion === true ? (
+                            // Em campanha (D-419): o preço que o comprador paga,
+                            // com o cadastrado riscado. Campanha sem preço lido
+                            // mostra o cadastrado e a etiqueta — nunca inventa.
+                            <span
+                              className="sb-an-preco-promo"
+                              title={
+                                (row.promotion_checked_at ?? null) === null
+                                  ? "Em campanha do Mercado Livre"
+                                  : `Em campanha do Mercado Livre na leitura de ${formatDateTime(row.promotion_checked_at ?? "")}`
+                              }
+                            >
+                              {formatCurrency(row.promotional_price ?? row.price)}
+                              {(row.promotional_price ?? null) !== null && (
+                                <s className="sb-an-preco-de">{formatCurrency(row.price)}</s>
+                              )}
+                              <span className="sb-an-promo">Promoção</span>
+                            </span>
+                          ) : (
+                            formatCurrency(row.price)
+                          )}
                         </td>
                         <td className="sb-num" data-label="Estoque">
                           {zerado ? <span className="sb-an-zerado">0</span> : formatCount(row.available_quantity)}

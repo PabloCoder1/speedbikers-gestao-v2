@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createMercadoLivreClient } from "./http-client.js";
-import { effectivePromotionalPrice, getItemPromotions } from "./promotions.js";
+import { effectivePromotionalPrice, getItemPromotions, isInPromotion } from "./promotions.js";
 
 function clienteCom(status: number, corpo: unknown, captura: { url?: URL } = {}) {
   const fetchImpl = vi.fn((url: string | URL | Request) => {
     captura.url = new URL(url as string | URL);
 
-    return Promise.resolve(new Response(JSON.stringify(corpo), { status }));
+    // `undefined`: resposta de corpo VAZIO, como a recusa por instância (D-419).
+    return Promise.resolve(new Response(corpo === undefined ? "" : JSON.stringify(corpo), { status }));
   });
 
   return createMercadoLivreClient({ fetchImpl: fetchImpl as unknown as typeof fetch, sleep: () => Promise.resolve() });
@@ -57,6 +58,24 @@ describe("getItemPromotions", () => {
     await expect(getItemPromotions({ client, itemId: "MLB999", accessToken: "APP_USR-teste" })).resolves.toEqual([]);
   });
 
+  it("403 SEM corpo é a recusa da instância, não item fora de campanha: continua sendo erro (D-419)", async () => {
+    const client = clienteCom(403, undefined);
+
+    await expect(getItemPromotions({ client, itemId: "MLB999", accessToken: "APP_USR-teste" })).rejects.toThrow(/403/);
+  });
+
+  it("campanha sem `price` não derruba a leitura (medido em produção, 28/09, D-419)", async () => {
+    const client = clienteCom(200, [
+      { type: "SMART", status: "candidate", original_price: 120 },
+      { type: "SELLER_CAMPAIGN", status: "started", price: 99.9, original_price: 120 },
+    ]);
+
+    const promocoes = await getItemPromotions({ client, itemId: "MLB4657536904", accessToken: "APP_USR-teste" });
+
+    expect(promocoes).toHaveLength(2);
+    expect(effectivePromotionalPrice(promocoes)).toBe(99.9);
+  });
+
   it("outro erro (ex.: 500) continua sendo erro — só 403 é silencioso", async () => {
     const client = clienteCom(500, { message: "erro interno" }, {});
 
@@ -89,5 +108,20 @@ describe("effectivePromotionalPrice", () => {
     ]);
 
     expect(preco).toBe(45);
+  });
+});
+
+describe("isInPromotion (D-419)", () => {
+  it("está em promoção com uma campanha 'started', mesmo sem preço lido", () => {
+    const entradas = [{ type: "DEAL", status: "started", original_price: 100 }];
+
+    expect(isInPromotion(entradas)).toBe(true);
+    // O preço fica desconhecido, nunca inventado.
+    expect(effectivePromotionalPrice(entradas)).toBeNull();
+  });
+
+  it("só 'candidate', ou lista vazia: não está", () => {
+    expect(isInPromotion([{ type: "DEAL", status: "candidate", price: 0, original_price: 100 }])).toBe(false);
+    expect(isInPromotion([])).toBe(false);
   });
 });

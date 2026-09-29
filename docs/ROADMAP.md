@@ -437,6 +437,7 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Definition of Done:** preço anterior/atual e instante rastreáveis; janelas declaradas; métricas antes/depois; custo ausente aparece como ausência; ações/deep-links; testes e performance.
 - **Riscos:** atribuição causal indevida, janelas incompletas e margem sem base.
 - **Fora da primeira versão:** precificação automática, escrita remota de preço e margem/rentabilidade sem custo defensável.
+- [x] **Filtro de promoção em `/anuncios`** — pedido do dono em 2026-09-29 ("saber qual anúncio está em promo e qual não está para colocarmos"). ✔ código 2026-09-29: menu "Promoção" com contagens, visão "Ativos sem promoção", preço da campanha na coluna Preço e no CSV. Veio junto a correção da leitura: 430 leituras em ~40 h caíam no schema (campanha sem `price`) e o 403 sem corpo virava "sem promoção" · D-419
 
 #### Central Full — B/C — 🟡 PRIMEIRA VERSÃO em 2026-08-31 (D-173); análise antes/depois segue ABERTA
 

@@ -48,6 +48,7 @@ import {
   E2E_LISTING_FULL,
   E2E_LISTING_PRICE_EVENT,
   E2E_LISTING_PRICE_EVENT_ALTA,
+  E2E_LISTING_PROMO_PRICE,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
@@ -1003,6 +1004,10 @@ async function main(): Promise<void> {
       // `sku_listing_links` e deixa esta coluna nula de propósito (D-122).
       sku_id: anuncio.vinculo === "sku" ? skuId : null,
       synced_at: new Date().toISOString(),
+      // D-419: sem `promocao` no fixture, o anúncio fica NÃO LIDO (nulo).
+      in_promotion: "promocao" in anuncio ? anuncio.promocao === "em-campanha" : null,
+      promotional_price: "promocao" in anuncio && anuncio.promocao === "em-campanha" ? E2E_LISTING_PROMO_PRICE : null,
+      promotion_checked_at: "promocao" in anuncio ? new Date().toISOString() : null,
     })),
     { onConflict: "ml_account_id,item_id" },
   );

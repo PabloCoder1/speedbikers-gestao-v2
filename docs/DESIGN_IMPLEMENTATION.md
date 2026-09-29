@@ -378,7 +378,8 @@ branco embutido.
 > **Superfície:** `/anuncios`, filtros · **Figma:** o cabeçalho tem "Filtros ⌄" e
 > a ação primária; **Status** e **Com estoque** ficam na barra do painel ·
 > **V3 real:** tinha seis controles no cabeçalho · **Decisão:** cabeçalho com
-> Conta, Vínculo e busca; barra do painel com Estado, Estoque, Full e a
+> Conta, Vínculo e busca; barra do painel com Estado, Estoque, Full (depois
+> Venda, D-308, e Promoção, D-419) e a
 > paginação · **Motivo:** composição do frame — o cabeçalho recorta *o que se
 > olha*, a barra recorta *o estado da tabela*.
 

@@ -109,7 +109,13 @@ export type {
   SellerItemsScanPage,
 } from "./items.js";
 
-export { effectivePromotionalPrice, getItemPromotions, sellerPromotionEntrySchema, sellerPromotionsSchema } from "./promotions.js";
+export {
+  effectivePromotionalPrice,
+  getItemPromotions,
+  isInPromotion,
+  sellerPromotionEntrySchema,
+  sellerPromotionsSchema,
+} from "./promotions.js";
 export type { GetItemPromotionsOptions, SellerPromotionEntry } from "./promotions.js";
 
 export { getItemDescription, itemDescriptionSchema } from "./description.js";

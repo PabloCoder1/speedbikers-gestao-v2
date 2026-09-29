@@ -12,6 +12,7 @@ import {
   resolveLinkStateFilter,
   resolveOrder,
   resolvePage,
+  resolvePromoFilter,
   resolveSoldFilter,
   resolveStatusFilter,
   resolveStockFilter,
@@ -28,6 +29,8 @@ export interface ListingsFilters {
   full: string;
   /** 'all' | 'with' | 'without' — venda na janela (D-308, predicado de D-259). */
   sold: string;
+  /** 'all' | 'with' | 'without' — campanha no ar, só entre os ativos lidos (D-419). */
+  promo: string;
   /** Dias da janela. Muda venda/visitas/conversão e o predicado `sold` (D-308). */
   days: number;
   search: string | null;
@@ -52,6 +55,7 @@ export function resolveListingsFilters(query: Query, accountSlugs: readonly stri
     stock: resolveStockFilter(query.estoque),
     full: resolveFullFilter(query.full),
     sold: resolveSoldFilter(query.venda),
+    promo: resolvePromoFilter(query.promocao),
     days: resolvePeriodDays(query.dias),
     search: typeof query.busca === "string" && query.busca.trim() !== "" ? query.busca.trim() : null,
     order: resolveOrder(query.ordem),
@@ -70,6 +74,7 @@ export function listingsParams(filters: ListingsFilters): Record<string, string 
     estoque: filters.stock === "all" ? null : filters.stock,
     full: filters.full === "all" ? null : filters.full,
     venda: filters.sold === "all" ? null : filters.sold,
+    promocao: filters.promo === "all" ? null : filters.promo,
     // `/anuncios` continua sendo o endereço da janela de 30 dias, por
     // faturamento, 50 por página.
     dias: filters.days === DEFAULT_PERIOD_DAYS ? null : String(filters.days),
@@ -97,6 +102,7 @@ export const NEUTRO: Partial<ListingsFilters> = {
   stock: "all",
   full: "all",
   sold: "all",
+  promo: "all",
   search: null,
 };
 
@@ -138,9 +144,15 @@ export const QUICK_VIEWS: readonly QuickView[] = [
     hint: "Vendem, mas não baixam estoque de SKU nenhum — prioridade da Central de Vinculações.",
     filters: { link: "unlinked", sold: "with" },
   },
+  {
+    key: "ativo-sem-promocao",
+    label: "Ativos sem promoção",
+    hint: "Ativos e fora de qualquer campanha do Mercado Livre na última leitura — candidatos a entrar numa promoção.",
+    filters: { promo: "without" },
+  },
 ];
 
-const EIXOS = ["status", "link", "stock", "full", "sold", "search"] as const;
+const EIXOS = ["status", "link", "stock", "full", "sold", "promo", "search"] as const;
 
 /** A visão está ativa quando os eixos de estado são EXATAMENTE os dela. */
 export function isQuickViewActive(view: QuickView, filters: ListingsFilters): boolean {

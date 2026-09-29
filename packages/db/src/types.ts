@@ -1773,6 +1773,10 @@ export type Database = {
           // ambiente, mesmo raciocinio de delete_supplier/get_erp_stock_cutoffs
           // logo abaixo). NULO sem promocao ativa do Mercado Livre -- nunca 0.
           promotional_price: number | null
+          // D-419, migration 20260929120000: CORRECAO MANUAL, mesma razao.
+          // NULO = promocao nao lida (so anuncio ativo e lido).
+          in_promotion: boolean | null
+          promotion_checked_at: string | null
           // D-390, migration 20260921144813: CORRECAO MANUAL, mesma razao.
           // Hash SHA-256 da descricao, nunca o texto -- NULO sem leitura.
           description_fingerprint: string | null
@@ -1797,6 +1801,8 @@ export type Database = {
           price: number
           picture_fingerprint?: string | null
           promotional_price?: number | null
+          in_promotion?: boolean | null
+          promotion_checked_at?: string | null
           description_fingerprint?: string | null
           description_source_updated_at?: string | null
           sku_id?: string | null
@@ -1819,6 +1825,8 @@ export type Database = {
           price?: number
           picture_fingerprint?: string | null
           promotional_price?: number | null
+          in_promotion?: boolean | null
+          promotion_checked_at?: string | null
           description_fingerprint?: string | null
           description_source_updated_at?: string | null
           sku_id?: string | null
@@ -5020,6 +5028,8 @@ export type Database = {
           p_stock?: string | null
           p_full?: string | null
           p_order?: string
+          // D-419, migration 20260929120000: 'all' | 'with' | 'without'.
+          p_promo?: string
         }
         Returns: {
           account_label: string
@@ -5030,6 +5040,8 @@ export type Database = {
           // CORRECAO MANUAL (classe D-133): NULA sem snapshot de Full (D-243).
           full_quantity: number | null
           gross_revenue: number
+          // D-419: NULO = promocao nao lida; o preco e NULO tambem sem preco lido.
+          in_promotion: boolean | null
           item_id: string
           link_state: string
           listing_id: string
@@ -5037,6 +5049,8 @@ export type Database = {
           permalink: string | null
           ml_account_id: string
           price: number
+          promotion_checked_at: string | null
+          promotional_price: number | null
           // D-385: somas do recorte filtrado inteiro (antes do limit). A
           // de visitas e NULA quando nenhum anuncio do recorte tem visita.
           recorte_faturamento: number
@@ -5064,10 +5078,14 @@ export type Database = {
         Returns: {
           active: number
           in_full: number
+          // D-419: ativos em promocao, sem promocao e sem leitura.
+          in_promotion: number
           out_of_stock: number
           paused: number
+          promotion_unknown: number
           total: number
           unlinked: number
+          without_promotion: number
         }[]
       }
       get_listings_link_overview: {

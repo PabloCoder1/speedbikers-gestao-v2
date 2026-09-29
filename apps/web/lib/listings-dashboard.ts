@@ -104,6 +104,23 @@ export function resolveSoldFilter(raw: unknown): string {
 }
 
 /*
+  PROMOÇÃO (D-419). Só entre os ATIVOS — pausado não roda campanha — e só o
+  que a V3 LEU: "sem promoção" é lido e fora de campanha, nunca "não lido". O
+  anúncio sem leitura fica fora dos dois recortes, e a tela diz quantos são.
+*/
+export const PROMO_FILTERS = [
+  { key: "all", label: "Com ou sem promoção" },
+  { key: "with", label: "Em promoção" },
+  { key: "without", label: "Sem promoção" },
+] as const;
+
+const PROMO_KEYS = new Set(PROMO_FILTERS.map((f) => f.key as string));
+
+export function resolvePromoFilter(raw: unknown): string {
+  return typeof raw === "string" && PROMO_KEYS.has(raw) ? raw : "all";
+}
+
+/*
   O SELETOR DE PERÍODO MUDOU DE CASA (D-311). `PERIOD_PRESETS`,
   `DEFAULT_PERIOD_DAYS` e `resolvePeriodDays` moram em `lib/period.ts` desde
   que a Home virou a TERCEIRA tela a querer um seletor. O motivo é o mesmo que

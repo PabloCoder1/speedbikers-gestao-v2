@@ -393,6 +393,8 @@ Enumeração via `sku_listing_links` (`ref_kind='ITEM'`, mesmo mecanismo de Full
 
 RLS por `has_account_access(ml_account_id)`, mesmo padrão de `fulfillment_stock_snapshots`/`domain_events`/`sync_runs`.
 
+**Promoção (D-389, D-419).** Lida só para anúncio ativo, a cada sincronização do catálogo: `promotional_price` (o preço com a campanha, nulo sem promoção ou sem preço lido), `in_promotion` (campanha `started` na última leitura BOA; **nulo = não lido**) e `promotion_checked_at` (a hora dessa leitura). Leitura que falha repete a última boa — o nulo nunca quer dizer "sem promoção". O filtro de `/anuncios` (`get_listings_dashboard(p_promo)`) só enxerga ativos lidos.
+
 ### `documents` / `document_items` — NF-e
 
 **Fluxo completo implementado em 2026-08-22** (migration `20260822145800_create_documents.sql` + `20260822161237_create_link_document_item_rpc.sql`): `upload -> PARSE -> conferência -> confirmação -> aplicação`, mesmo fluxo do importador do UpSeller de ponta a ponta. `content_hash` UNIQUE impede que o mesmo arquivo entre duas vezes; `access_key` UNIQUE (44 dígitos, quando presente) cobre o caso de dois ARQUIVOS diferentes carregando a mesma nota.

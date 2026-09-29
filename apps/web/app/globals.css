@@ -15947,6 +15947,32 @@ td.sb-pco-num-linha {
   color: var(--sb-text-soft);
 }
 
+/* Preço em campanha (D-419): o que o comprador paga, o cadastrado riscado embaixo. */
+.sb-an-preco-promo {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.125rem;
+  font-weight: 600;
+}
+
+.sb-an-preco-de {
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-an-promo {
+  padding: 0 0.3125rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 /* Estoque DO ANÚNCIO zerado: é o que para a venda, e a linha diz isso. */
 .sb-an-zerado {
   display: inline-block;
