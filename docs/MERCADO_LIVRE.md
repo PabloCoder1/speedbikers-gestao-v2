@@ -312,6 +312,7 @@ Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem tam
 ## 2.8 Promoções e catálogo — CONFIRMADO (2026-08-21)
 
 - Promoções ativas de um item específico (caso de uso central para eventos de "entrou/saiu de promoção"): `GET /seller-promotions/items/{item_id}?app_version=v2`.
+  - **Medido em produção (28–29/09, D-419):** uma entrada pode vir **sem `price`** (430 leituras de 91 anúncios); o que diz se a campanha está no ar é `status: "started"`. O 403 COM corpo ("Caller don't have permissions to access this item") é o item fora de campanha; o 403 **sem corpo** é a recusa por instância do worker, e não diz nada sobre o item.
 - Tipos existentes: `DEAL`, `MARKETPLACE_CAMPAIGN`, `PRICE_DISCOUNT`, `LIGHTNING`, `DOD`, `VOLUME`, `PRE_NEGOTIATED`, `SELLER_CAMPAIGN`, `SMART`, `PRICE_MATCHING`, `UNHEALTHY_STOCK`, `SELLER_COUPON_CAMPAIGN`.
 - Catálogo: publicar direto (`POST /items` com `catalog_product_id` + `catalog_listing: true`) ou opt-in de item existente (`POST /items/catalog_listings`). **A sincronização de condições de venda entre item de marketplace e item de catálogo é automática e não pode ser desativada pelo vendedor.**
 - Diagnóstico de sincronização de catálogo: `GET /public/buybox/sync/{item_id}` (`status: SYNC|UNSYNC`).

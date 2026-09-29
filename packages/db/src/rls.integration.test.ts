@@ -7469,6 +7469,48 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     expect(zerados.every((r) => r.available_quantity === 0)).toBe(true);
   });
 
+  it("p_promo pega só os ativos LIDOS: o não lido e o pausado ficam fora de 'without' (D-419)", async () => {
+    // Busca própria (MLB9002006): os casos acima contam o recorte MLB9001005.
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at,
+          in_promotion, promotional_price, promotion_checked_at)
+       values
+         ($1,$2,'MLB900200600','Em campanha','active',100,'BRL',5,now(), true, 89.9, now()),
+         ($1,$2,'MLB900200601','Campanha sem preço lido','active',100,'BRL',5,now(), true, null, now()),
+         ($1,$2,'MLB900200602','Lido e fora de campanha','active',100,'BRL',5,now(), false, null, now()),
+         ($1,$2,'MLB900200603','Ativo ainda sem leitura','active',100,'BRL',5,now(), null, null, null),
+         ($1,$2,'MLB900200604','Pausado','paused',100,'BRL',5,now(), false, null, now())
+       on conflict (ml_account_id, item_id) do nothing`,
+      [ORG_SB, CONTA_TRAFEGO],
+    );
+
+    const recorte = (promo: string): Promise<{ item_id: string; in_promotion: boolean | null; promotional_price: string | null }[]> =>
+      asUser(
+        ADMIN_SB,
+        `select item_id, in_promotion, promotional_price from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+           p_search => 'MLB9002006', p_limit => 50, p_promo => '${promo}') order by item_id`,
+      );
+
+    const [com, sem, todos, lixo] = await Promise.all([recorte("with"), recorte("without"), recorte("all"), recorte("lixo")]);
+
+    expect(com.map((r) => r.item_id)).toEqual(["MLB900200600", "MLB900200601"]);
+    expect(com[0]).toMatchObject({ in_promotion: true, promotional_price: "89.9" });
+    // "Sem promoção" é lido e fora de campanha: nem o não lido, nem o pausado.
+    expect(sem.map((r) => r.item_id)).toEqual(["MLB900200602"]);
+    expect(todos).toHaveLength(5);
+    // Valor fora da lista cai em 'all', como os outros eixos.
+    expect(lixo).toHaveLength(5);
+
+    const [faixa] = await asUser<{ active: string; in_promotion: string; without_promotion: string; promotion_unknown: string }>(
+      ADMIN_SB,
+      `select active, in_promotion, without_promotion, promotion_unknown
+         from public.get_listings_dashboard_counts('${ORG_SB}', p_search => 'MLB9002006')`,
+    );
+
+    expect(faixa).toEqual({ active: "4", in_promotion: "2", without_promotion: "1", promotion_unknown: "1" });
+  });
+
   it("anon não executa get_listings_dashboard", async () => {
     await expect(asAnon(CALL)).rejects.toThrow(/permission denied/i);
   });
@@ -7497,7 +7539,20 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     };
 
     for (const busca of [null, "MLB9001005"]) {
-      const [faixa] = await asUser<Record<"total" | "active" | "paused" | "out_of_stock" | "in_full" | "unlinked", string>>(
+      const [faixa] = await asUser<
+        Record<
+          | "total"
+          | "active"
+          | "paused"
+          | "out_of_stock"
+          | "in_full"
+          | "unlinked"
+          | "in_promotion"
+          | "without_promotion"
+          | "promotion_unknown",
+          string
+        >
+      >(
         ADMIN_SB,
         `select * from public.get_listings_dashboard_counts('${ORG_SB}', p_search => ${busca === null ? "null" : `'${busca}'`})`,
       );
@@ -7508,6 +7563,12 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
       expect(Number(faixa?.out_of_stock)).toBe(await totalDaLista(", p_stock => 'out'", busca));
       expect(Number(faixa?.in_full)).toBe(await totalDaLista(", p_full => 'with'", busca));
       expect(Number(faixa?.unlinked)).toBe(await totalDaLista(", p_link_state => 'unlinked'", busca));
+      // D-419: as duas de promoção são as da lista, e com o não lido somam os ativos.
+      expect(Number(faixa?.in_promotion)).toBe(await totalDaLista(", p_promo => 'with'", busca));
+      expect(Number(faixa?.without_promotion)).toBe(await totalDaLista(", p_promo => 'without'", busca));
+      expect(Number(faixa?.in_promotion) + Number(faixa?.without_promotion) + Number(faixa?.promotion_unknown)).toBe(
+        Number(faixa?.active),
+      );
     }
   });
 

@@ -452,3 +452,4 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
 - **D-417** — A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
 - **D-418** — O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417
+- **D-419** — O filtro de promocao de /anuncios le o que a V3 sabe: in_promotion da ultima leitura boa, nulo quando nao lido, e so entre os ativos

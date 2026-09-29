@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { E2E_LISTINGS, E2E_LISTING_FULL, E2E_LISTING_TRAFFIC } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_FULL, E2E_LISTING_PROMO_PRICE, E2E_LISTING_TRAFFIC } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -317,4 +317,48 @@ test("/anuncios: o CSV sai com o mesmo recorte e a mesma ordem da tela", async (
   const zerado = E2E_LISTINGS.find((a) => a.available === 0);
 
   expect(linhas[1]).toContain(zerado?.itemId ?? "");
+});
+
+/**
+ * Promoção (D-419). O filtro só enxerga os ativos LIDOS, e o que ele protege:
+ *
+ *  1. **"Sem promoção" não é "não lido".** Dois ativos do seed nunca tiveram a
+ *     promoção lida; se o predicado virar `is not true`, eles entram em "Sem
+ *     promoção" e a lista passa de 1 para 3;
+ *  2. **quem está de fora é dito**, pela nota com a quantidade;
+ *  3. **o preço em campanha é o que o comprador paga**, com o cadastrado riscado.
+ */
+test("/anuncios: promoção separa os ativos lidos, e o não lido fica de fora com aviso", async ({ page }) => {
+  const emCampanha = E2E_LISTINGS.filter((a) => "promocao" in a && a.promocao === "em-campanha");
+  const fora = E2E_LISTINGS.filter((a) => "promocao" in a && a.promocao === "fora");
+  const naoLidos = E2E_LISTINGS.filter((a) => a.status === "active" && !("promocao" in a));
+
+  await login(page, "/anuncios");
+
+  const menuPromocao = page.locator("details.sb-menu").filter({ hasText: "Com ou sem promoção" });
+
+  // A contagem de cada opção sai da faixa, com o mesmo predicado da lista.
+  await menuPromocao.locator("summary").click();
+  await menuPromocao
+    .getByRole("link", { name: `Em promoção · ${String(emCampanha.length)}`, exact: true })
+    .click();
+
+  await expect(page).toHaveURL(/promocao=with/);
+  await expect(page.locator("tbody tr")).toHaveCount(emCampanha.length);
+
+  const preco = page.locator("tbody tr").first().locator('td[data-label="Preço"]');
+
+  await expect(preco.locator(".sb-an-promo")).toHaveText("Promoção");
+  await expect(preco).toContainText(E2E_LISTING_PROMO_PRICE.toFixed(2).replace(".", ","));
+  await expect(preco.locator("s")).toContainText("189,90");
+
+  // A visão rápida é o outro recorte, e troca o de agora.
+  await page.getByRole("navigation", { name: "Visões rápidas" }).getByRole("link", { name: "Ativos sem promoção" }).click();
+
+  await expect(page).toHaveURL(/promocao=without/);
+  await expect(page.locator("tbody tr")).toHaveCount(fora.length);
+  await expect(page.getByText(fora[0]?.itemId ?? "")).toBeVisible();
+  await expect(
+    page.getByText(`${String(naoLidos.length)} anúncios ativos ainda sem leitura de promoção ficam de fora`),
+  ).toBeVisible();
 });

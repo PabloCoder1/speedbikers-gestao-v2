@@ -28,13 +28,21 @@ import type { MercadoLivreClient } from "./http-client.js";
  * teste: mesma conta, mesmo token, 200 com dado real num item e 403 nos
  * outros três. Vira `[]` (nenhuma promoção): tratar como erro pararia a
  * sincronização no primeiro item sem campanha, que é a maioria do catálogo.
+ * **Só o 403 COM corpo (D-419).** O 403 sem corpo é a recusa por instância do
+ * worker (25, 27 e 28/09) — recusa tudo, e como `[]` virava "sem promoção"
+ * em todo anúncio lido por aquela instância. Ele continua sendo erro.
+ *
+ * **`price` pode faltar (D-419).** Medido em produção de 28 a 29/09: 430
+ * leituras de 91 anúncios, das quatro contas, recusadas pelo schema com
+ * `[i].price` ausente — e cada uma gravava "sem promoção". A entrada vale
+ * sem preço; o que diz se a promoção está no ar é o `status`.
  */
 export const sellerPromotionEntrySchema = z.object({
   id: z.string().optional(),
   type: z.string(),
   sub_type: z.string().optional(),
   status: z.string(),
-  price: z.number(),
+  price: z.number().nullable().optional(),
   original_price: z.number(),
   start_date: z.string().optional(),
   finish_date: z.string().optional(),
@@ -61,7 +69,7 @@ export async function getItemPromotions(options: GetItemPromotionsOptions): Prom
       schema: sellerPromotionsSchema,
     });
   } catch (error) {
-    if (error instanceof MercadoLivreApiError && error.status === 403) {
+    if (error instanceof MercadoLivreApiError && error.status === 403 && error.body !== undefined && error.body !== null) {
       return [];
     }
 
@@ -71,14 +79,24 @@ export async function getItemPromotions(options: GetItemPromotionsOptions): Prom
 
 /**
  * O preço que o comprador PAGA agora: o menor `price` entre as campanhas
- * `started`, ou `null` quando o item não está em promoção nenhuma.
+ * `started`, ou `null` quando o item não está em promoção nenhuma — ou está,
+ * mas a campanha veio sem preço (D-419): aí `isInPromotion` diz que está, e o
+ * preço fica desconhecido em vez de inventado.
  *
  * `Math.min` (não "a primeira `started`"): nada na doc garante no máximo uma
  * campanha ativa por item ao mesmo tempo, e o preço que o comprador vê na
  * vitrine é sempre o menor entre as que estiverem valendo.
  */
 export function effectivePromotionalPrice(entries: readonly SellerPromotionEntry[]): number | null {
-  const ativos = entries.filter((entry) => entry.status === "started").map((entry) => entry.price);
+  const ativos = entries
+    .filter((entry) => entry.status === "started")
+    .map((entry) => entry.price)
+    .filter((price): price is number => typeof price === "number" && price > 0);
 
   return ativos.length === 0 ? null : Math.min(...ativos);
+}
+
+/** O item está numa campanha no ar agora (`status: "started"`), com ou sem preço lido (D-419). */
+export function isInPromotion(entries: readonly SellerPromotionEntry[]): boolean {
+  return entries.some((entry) => entry.status === "started");
 }

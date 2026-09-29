@@ -58,6 +58,34 @@ describe("visões rápidas", () => {
   });
 });
 
+describe("promoção no recorte (D-419)", () => {
+  it("vai para a URL como `promocao` e volta no mesmo recorte; `all` fica fora", () => {
+    const filtros = resolveListingsFilters({ promocao: "without", conta: "loja-1" }, SLUGS);
+    const href = buildListingsHref(filtros, {});
+
+    expect(filtros.promo).toBe("without");
+    expect(href).toContain("promocao=without");
+    expect(resolveListingsFilters(Object.fromEntries(new URL(href, "http://x").searchParams.entries()), SLUGS)).toEqual(
+      filtros,
+    );
+    expect(buildListingsHref(filtros, { promo: "all" })).not.toContain("promocao=");
+  });
+
+  it("a visão \"Ativos sem promoção\" é o filtro de promoção, e limpar os filtros o desfaz", () => {
+    const visao = QUICK_VIEWS.find((v) => v.key === "ativo-sem-promocao");
+    const naVisao = resolveListingsFilters({ promocao: "without" }, SLUGS);
+
+    expect(visao === undefined ? "" : quickViewHref(visao, resolveListingsFilters({}, SLUGS))).toContain(
+      "promocao=without",
+    );
+    expect(visao !== undefined && isQuickViewActive(visao, naVisao)).toBe(true);
+    // Outra visão ligada por cima zera a promoção: `promo` é eixo de estado.
+    const zerado = QUICK_VIEWS.find((v) => v.key === "zerado-vendendo");
+
+    expect(zerado === undefined ? "" : quickViewHref(zerado, naVisao)).not.toContain("promocao=");
+  });
+});
+
 describe("resumo do recorte", () => {
   it("conversão é pedidos ÷ visitas somados, e indefinida sem visita", () => {
     expect(recorteConversion(50, 1000)).toBe(0.05);

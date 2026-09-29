@@ -45,8 +45,20 @@ describe("CSV de /anuncios", () => {
     const semDado = listingsToCsv([{ ...LINHA, title: "Bau", visits: null, conversion_rate: null, days_observed: 0 }], 30);
     const campos = (semDado.split("\r\n")[1] ?? "").split(";");
 
-    // Full (8), visitas (11), dias observados (12) e conversão (13) vazios.
-    expect([campos[8], campos[11], campos[12], campos[13]]).toEqual(["", "", "", ""]);
+    // Promoção não lida (7 e 8), Full (10), visitas (13), dias observados (14)
+    // e conversão (15) vazios.
+    expect([campos[7], campos[8], campos[10], campos[13], campos[14], campos[15]]).toEqual(["", "", "", "", "", ""]);
+  });
+
+  it("promoção: Sim com o preço, Não sem ele, e o não lido fica vazio (D-419)", () => {
+    const celulas = (linha: Partial<ListingExportRow>): string[] =>
+      (listingsToCsv([{ ...LINHA, title: "Bau", ...linha }], 30).split("\r\n")[1] ?? "").split(";").slice(7, 9);
+
+    expect(celulas({ in_promotion: true, promotional_price: 299.9 })).toEqual(["Sim", "299,9"]);
+    // Campanha sem preço lido: está em promoção, o preço fica vazio.
+    expect(celulas({ in_promotion: true, promotional_price: null })).toEqual(["Sim", ""]);
+    expect(celulas({ in_promotion: false, promotional_price: null })).toEqual(["Não", ""]);
+    expect(celulas({ in_promotion: null })).toEqual(["", ""]);
   });
 
   it("título que começa com = não vira fórmula no Excel", () => {

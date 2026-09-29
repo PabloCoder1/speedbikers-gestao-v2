@@ -53,6 +53,8 @@ export async function GET(request: NextRequest): Promise<Response> {
         p_full: filters.full,
         p_sold: filters.sold,
         p_order: orderKey(filters.order),
+        // Só com o filtro ligado, como a tela (D-419).
+        ...(filters.promo === "all" ? {} : { p_promo: filters.promo }),
         p_limit: limite,
         p_offset: offset,
       }),

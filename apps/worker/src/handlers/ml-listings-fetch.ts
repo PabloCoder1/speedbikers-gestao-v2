@@ -8,6 +8,7 @@ import {
   getItemDescription,
   getItemPromotions,
   getItemsBatch,
+  isInPromotion,
   scanSellerItems,
 } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -87,6 +88,10 @@ interface ListingUpsertRow {
   price: number;
   /** Preço com campanha ativa do Mercado Livre (D-389). `null` sem promoção — nunca 0. */
   promotional_price: number | null;
+  /** Numa campanha no ar (D-419). `null` = não lido; só anúncio ativo é lido. */
+  in_promotion: boolean | null;
+  /** Quando a promoção foi lida COM SUCESSO pela última vez (D-419). */
+  promotion_checked_at: string | null;
   currency_id: string;
   available_quantity: number;
   category_id: string | null;
@@ -119,6 +124,33 @@ export interface FetchListingsResult {
   itemsFailed: number;
   /** Anúncios reais que nenhum vínculo alcança — o número que motivou a Fase 4B. */
   itemsWithoutLink: number;
+}
+
+/**
+ * A promoção que a linha grava (D-419). Anúncio não ativo não roda campanha e
+ * não é lido: tudo nulo. Ativo e lido agora: o que a leitura disse, com a hora.
+ * Ativo e a leitura falhou: a ÚLTIMA leitura boa, com a hora dela — nunca
+ * "sem promoção" por falta de leitura.
+ */
+function promocaoDaLinha(
+  status: string,
+  lida: { emPromocao: boolean; preco: number | null } | undefined,
+  anterior: { promotional_price: number | null; in_promotion: boolean | null; promotion_checked_at: string | null } | undefined,
+  agora: Date,
+): Pick<ListingUpsertRow, "promotional_price" | "in_promotion" | "promotion_checked_at"> {
+  if (status !== "active") {
+    return { promotional_price: null, in_promotion: null, promotion_checked_at: null };
+  }
+
+  if (lida !== undefined) {
+    return { promotional_price: lida.preco, in_promotion: lida.emPromocao, promotion_checked_at: agora.toISOString() };
+  }
+
+  return {
+    promotional_price: anterior?.promotional_price ?? null,
+    in_promotion: anterior?.in_promotion ?? null,
+    promotion_checked_at: anterior?.promotion_checked_at ?? null,
+  };
 }
 
 export async function fetchListings(params: FetchListingsParams): Promise<FetchListingsResult> {
@@ -173,11 +205,16 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     picture_fingerprint: string | null;
     description_fingerprint: string | null;
     description_source_updated_at: string | null;
+    promotional_price: number | null;
+    in_promotion: boolean | null;
+    promotion_checked_at: string | null;
   }>(
     (from, to) =>
       params.db
         .from("listings")
-        .select("item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at")
+        .select(
+          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at",
+        )
         .eq("ml_account_id", params.mlAccountId)
         // `listings_account_item_unique (ml_account_id, item_id)` — com a
         // conta já fixada no filtro, `item_id` é ordenação estável.
@@ -274,11 +311,12 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     // (Promise.all interno), e os itens do lote correm em PARALELO — em
     // série, cada chamada extra multiplicaria o tempo do multiget inteiro.
     //
-    // Uma falha AQUI não derruba o item: o campo correspondente fica nulo (o
-    // mesmo que "sem promoção"/"sem descrição lida" no resto do sistema) e o
-    // log guarda o motivo — a sincronização do catálogo é o que importa,
-    // estes dois são enriquecimento.
-    const precoPromocionalPorItem = new Map<string, number | null>();
+    // Uma falha AQUI não derruba o item: a descrição fica nula e o log guarda
+    // o motivo — a sincronização do catálogo é o que importa, estes dois são
+    // enriquecimento. A PROMOÇÃO que falha fica com a última leitura boa
+    // (D-419): gravar nulo dizia "sem promoção" de um anúncio que só não foi
+    // lido, e o filtro de `/anuncios` o ofereceria para entrar numa campanha.
+    const promocaoPorItem = new Map<string, { emPromocao: boolean; preco: number | null }>();
     const fingerprintDescricaoPorItem = new Map<string, string | null>();
     const descricaoAtualizadaEmPorItem = new Map<string, string | null>();
 
@@ -296,7 +334,10 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
           const [promocao, descricao] = await Promise.all([
             getItemPromotions({ client: params.mercadoLivre, itemId: item.id, accessToken: params.accessToken })
-              .then((promocoes) => ({ ok: true as const, value: effectivePromotionalPrice(promocoes) }))
+              .then((promocoes) => ({
+                ok: true as const,
+                value: { emPromocao: isInPromotion(promocoes), preco: effectivePromotionalPrice(promocoes) },
+              }))
               .catch((error: unknown) => ({ ok: false as const, error })),
             shouldFetchDescription
               ? getItemDescription({ client: params.mercadoLivre, itemId: item.id, accessToken: params.accessToken })
@@ -306,7 +347,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           ]);
 
           if (promocao.ok) {
-            precoPromocionalPorItem.set(item.id, promocao.value);
+            promocaoPorItem.set(item.id, promocao.value);
           } else {
             params.logger.warn("listing_promotion_fetch_failed", {
               ml_account_id: params.mlAccountId,
@@ -359,7 +400,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         title: item.title,
         status: item.status,
         price: item.price,
-        promotional_price: precoPromocionalPorItem.get(item.id) ?? null,
+        ...promocaoDaLinha(item.status, promocaoPorItem.get(item.id), previousListingRowsByItem.get(item.id), syncedAt),
         currency_id: item.currency_id,
         available_quantity: item.available_quantity,
         category_id: item.category_id ?? null,

@@ -4,6 +4,7 @@ import {
   DEFAULT_ORDER,
   ORDER_COLUMNS,
   PAGE_SIZE,
+  PROMO_FILTERS,
   SOLD_FILTERS,
   linkStateBadge,
   nextOrder,
@@ -12,6 +13,7 @@ import {
   resolveOrder,
   resolveLinkStateFilter,
   resolvePage,
+  resolvePromoFilter,
   resolveSoldFilter,
   resolveStatusFilter,
   summarizeWindow,
@@ -144,6 +146,14 @@ describe("período e venda em /anuncios (D-308)", () => {
   it("`with` e `without` passam — são os dois valores que a RPC conhece (D-259)", () => {
     expect(resolveSoldFilter("with")).toBe("with");
     expect(resolveSoldFilter("without")).toBe("without");
+  });
+
+  it("promoção tem três posições, a neutra é `all`, e só `with`/`without` passam (D-419)", () => {
+    expect(PROMO_FILTERS.map((f) => f.key)).toEqual(["all", "with", "without"]);
+    expect(resolvePromoFilter(undefined)).toBe("all");
+    expect(resolvePromoFilter("candidate")).toBe("all");
+    expect(resolvePromoFilter("with")).toBe("with");
+    expect(resolvePromoFilter("without")).toBe("without");
   });
 
   /**

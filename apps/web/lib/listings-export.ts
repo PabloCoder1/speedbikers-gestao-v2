@@ -24,6 +24,9 @@ export interface ListingExportRow {
   conversion_rate: number | null;
   synced_at: string;
   permalink?: string | null;
+  /** D-419: AUSENTES com o banco anterior a 20260929120000 — células vazias. */
+  in_promotion?: boolean | null;
+  promotional_price?: number | null;
 }
 
 /** Teto da exportação. A rota diz no nome do arquivo quando o recorte passou dele (D-131). */
@@ -37,6 +40,8 @@ const HEADER = [
   "Conta",
   "Status",
   "Preço",
+  "Em promoção",
+  "Preço promocional",
   "Estoque do anúncio",
   "Full",
   "Unidades",
@@ -63,6 +68,9 @@ export function listingsToCsv(rows: readonly ListingExportRow[], janelaDias: num
     csvCell(row.account_label),
     csvCell(listingStatusLabel(row.status)),
     csvNumber(row.price),
+    // Não lido (ou banco anterior): vazio, nunca "Não" (D-419).
+    row.in_promotion === true ? "Sim" : row.in_promotion === false ? "Não" : "",
+    csvNumber(row.promotional_price ?? null),
     csvNumber(row.available_quantity),
     // Sem snapshot de Full: célula vazia, nunca "0" (D-067).
     csvNumber(row.full_quantity),

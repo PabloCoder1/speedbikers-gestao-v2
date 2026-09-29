@@ -82,6 +82,8 @@ export const E2E_LISTINGS = [
     available: 12,
     /** `listings.sku_id` preenchido: vínculo direto, a coluna SKU vira link. */
     vinculo: "sku",
+    /** D-419: lido EM campanha, a `E2E_LISTING_PROMO_PRICE`. */
+    promocao: "em-campanha",
   },
   {
     itemId: "MLB800000002",
@@ -90,6 +92,8 @@ export const E2E_LISTINGS = [
     price: 124.5,
     available: 0,
     vinculo: "nenhum",
+    /** D-419: lido e FORA de campanha. Os outros dois ativos ficam sem leitura. */
+    promocao: "fora",
   },
   {
     itemId: "MLB800000003",
@@ -137,6 +141,9 @@ export const E2E_LISTINGS = [
  * daqui — mudar o fixture muda a asserção junto.
  */
 export const E2E_LOCAL_STOCK = 50;
+
+/** O preço em campanha do primeiro anúncio (D-419) — o cadastrado é 189,90. */
+export const E2E_LISTING_PROMO_PRICE = 169.9;
 
 /** Full DO ANÚNCIO do primeiro anúncio (D-243) — o único com snapshot no seed. */
 export const E2E_LISTING_FULL = 3;
