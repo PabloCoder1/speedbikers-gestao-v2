@@ -13,3 +13,22 @@ allowBuilds:
   # O postinstall gera o código estático dos protobufs; sem ele o cliente não
   # carrega. Biblioteca do próprio ecossistema gRPC, amplamente usada.
   protobufjs: true
+
+# Correções de segurança em dependências TRANSITIVAS (07/10/2026), sempre na
+# mesma linha de versão que o pai já usa -- nenhuma troca de major. Cada uma
+# sai daqui quando o pacote que a traz passar a pedir a versão corrigida
+# (`pnpm why <pacote>` mostra quem traz).
+overrides:
+  # brace-expansion -- GHSA-qhr7-859c-m2p7 e o aviso de parseCommaParts (alto):
+  # DoS por recursão. Chega por exceljs (1.x e 2.x) e pelo eslint (5.x).
+  "brace-expansion@<1.1.20": "^1.1.20"
+  "brace-expansion@>=2.0.0 <2.1.6": "^2.1.6"
+  "brace-expansion@>=5.0.0 <5.0.11": "^5.0.11"
+  # @grpc/grpc-js (alto): getAuthContext pode devolver dado indevido. Chega por
+  # @google-cloud/tasks > google-gax, na api.
+  "@grpc/grpc-js@>=1.14.0 <1.14.5": "^1.14.5"
+  # source-map-js (alto): DoS no event loop por source map indexado. Chega por
+  # next > postcss.
+  "source-map-js@>=1.0.0 <1.2.2": "^1.2.2"
+  # sharp (alto): CVE-2026-96889 na librsvg embutida. Chega por next (imagens).
+  "sharp@<0.35.5": "^0.35.5"
