@@ -92,14 +92,21 @@ test("/vendas: a faixa é de volume, e comissão e margem moram no Faturamento",
 test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", async ({ page }) => {
   let pedidoDeFrete: Record<string, unknown> | null = null;
 
+  // A cotação interceptada responde como a real (D-421): abaixo de R$ 79, sem
+  // frete grátis vem só o custo de envio por unidade; oferecendo, o frete inteiro.
   await page.route("**/v1/pricing/ml-shipping-quote", async (route) => {
     pedidoDeFrete = route.request().postDataJSON() as Record<string, unknown>;
+    const preco = Number(pedidoDeFrete.preco);
+    const custoVendedor = preco >= 79 ? 21.9 : pedidoDeFrete.ofereceFreteGratis === true ? 13.85 : 8.25;
+
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         status: "ok",
-        cotacao: { custoVendedor: 21.9, moeda: "BRL", pesoFaturavelG: 600, custoSemDesconto: null, descontoPercentual: null },
+        cotacao: { custoVendedor, moeda: "BRL", pesoFaturavelG: 600, custoSemDesconto: null, descontoPercentual: null },
+        tarifaFixa: 0,
+        freteGratis: preco >= 79 || pedidoDeFrete.ofereceFreteGratis === true,
       }),
     });
   });
@@ -133,9 +140,22 @@ test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", as
   await expect(calc.locator(".sb-calc-total")).toContainText("40,02");
   expect(pedidoDeFrete).toMatchObject({ tipoAnuncio: "premium", alturaCm: 12, larguraCm: 18, comprimentoCm: 25, pesoG: 800, preco: 149.9 });
 
-  // Abaixo de R$ 19 o frete é do comprador: a margem sai sem cotação.
-  await calc.getByLabel("Preço de venda").fill("18,90");
+  // A partir de R$ 79 o frete grátis é obrigatório: a escolha fica travada.
+  const freteGratis = calc.getByRole("radiogroup", { name: "Frete grátis" });
+
+  await expect(freteGratis.getByRole("radio", { name: "Ofereço" })).toHaveAttribute("aria-checked", "true");
+  await expect(freteGratis.getByRole("radio", { name: "Não ofereço" })).toBeDisabled();
+
+  // Abaixo de R$ 79, sem oferecer (o padrão): só o custo de envio por unidade.
+  await calc.getByLabel("Preço de venda").fill("50");
   await calc.getByLabel("Custo do produto").fill("5");
-  await expect(calc.locator(".sb-calc-frete")).toContainText("o frete é do comprador");
-  await expect(calc.locator(".sb-calc-margem")).toBeVisible();
+  await expect(calc.locator(".sb-calc-frete")).toContainText("Sem frete grátis");
+  // 50 − (17% = 8,50) − 8,25 − 5 = 28,25 → 56,5%
+  await expect(calc.locator(".sb-calc-margem")).toHaveText("56,5%");
+  expect(pedidoDeFrete).toMatchObject({ preco: 50, ofereceFreteGratis: false });
+
+  // Oferecendo, o frete inteiro: 50 − 8,50 − 13,85 − 5 = 22,65 → 45,3%
+  await freteGratis.getByRole("radio", { name: "Ofereço" }).click();
+  await expect(calc.locator(".sb-calc-margem")).toHaveText("45,3%");
+  expect(pedidoDeFrete).toMatchObject({ preco: 50, ofereceFreteGratis: true });
 });

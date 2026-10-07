@@ -64,13 +64,15 @@ function deps(c: Cenario = {}, fetchImpl?: typeof fetch): PricingQuoteDeps & { c
   const impl =
     fetchImpl ??
     (vi.fn((url: string | URL | Request) => {
-      chamadas.push(new URL(url as string | URL));
+      const alvo = new URL(url as string | URL);
+      chamadas.push(alvo);
 
-      return Promise.resolve(
-        new Response(JSON.stringify({ coverage: { all_country: { list_cost: 23.45, currency_id: "BRL" } } }), {
-          status: 200,
-        }),
-      );
+      // Cada rota com a sua resposta: a cotação de frete e a tarifa fixa (D-421).
+      const corpo = alvo.pathname.endsWith("/listing_prices")
+        ? [{ sale_fee_details: { fixed_fee: alvo.searchParams.get("logistic_type") === "self_service" ? 7.75 : 0 } }]
+        : { coverage: { all_country: { list_cost: 23.45, currency_id: "BRL", billable_weight: 620 } } };
+
+      return Promise.resolve(new Response(JSON.stringify(corpo), { status: 200 }));
     }));
 
   return {
@@ -88,7 +90,7 @@ describe("quoteMlShipping", () => {
     const d = deps();
     const resultado = await quoteMlShipping(d, ADMIN, PEDIDO);
 
-    expect(resultado).toMatchObject({ status: "ok", cotacao: { custoVendedor: 23.45 } });
+    expect(resultado).toMatchObject({ status: "ok", cotacao: { custoVendedor: 23.45 }, tarifaFixa: 0, freteGratis: true });
     expect(d.chamadas[0]?.pathname).toBe("/users/244878077/shipping_options/free");
     expect(d.chamadas[0]?.searchParams.get("listing_type_id")).toBe("gold_pro");
   });
@@ -130,5 +132,49 @@ describe("quoteMlShipping", () => {
       status: "unavailable",
       reason: expect.stringContaining("HTTP 400") as unknown,
     });
+  });
+});
+
+describe("quoteMlShipping — frete grátis e tarifa fixa (D-421)", () => {
+  const frete = (d: { chamadas: URL[] }) => d.chamadas.find((u) => u.pathname.endsWith("/shipping_options/free"));
+  const tarifa = (d: { chamadas: URL[] }) => d.chamadas.find((u) => u.pathname.endsWith("/listing_prices"));
+
+  it("abaixo de R$ 79 sem frete grátis: cota com free_shipping=false", async () => {
+    const d = deps();
+    const r = await quoteMlShipping(d, ADMIN, { ...PEDIDO, preco: 50, ofereceFreteGratis: false });
+
+    expect(r).toMatchObject({ status: "ok", freteGratis: false });
+    expect(frete(d)?.searchParams.get("free_shipping")).toBe("false");
+  });
+
+  it("pedido antigo, sem o campo: abaixo de R$ 79 vale 'não oferece'", async () => {
+    const d = deps();
+
+    await expect(quoteMlShipping(d, ADMIN, { ...PEDIDO, preco: 50 })).resolves.toMatchObject({ freteGratis: false });
+  });
+
+  it("abaixo de R$ 79 oferecendo: free_shipping=true", async () => {
+    const d = deps();
+
+    await quoteMlShipping(d, ADMIN, { ...PEDIDO, preco: 50, ofereceFreteGratis: true });
+    expect(frete(d)?.searchParams.get("free_shipping")).toBe("true");
+  });
+
+  it("a partir de R$ 79 o frete grátis é obrigatório, mesmo pedindo que não", async () => {
+    const d = deps();
+    const r = await quoteMlShipping(d, ADMIN, { ...PEDIDO, preco: 79, ofereceFreteGratis: false });
+
+    expect(r).toMatchObject({ freteGratis: true });
+    expect(frete(d)?.searchParams.get("free_shipping")).toBe("true");
+  });
+
+  it("a tarifa fixa vem de listing_prices, com a logística e o peso FATURÁVEL da cotação", async () => {
+    const d = deps();
+    const r = await quoteMlShipping(d, ADMIN, { ...PEDIDO, preco: 50, logistica: "self_service" });
+
+    expect(r).toMatchObject({ status: "ok", tarifaFixa: 7.75 });
+    expect(tarifa(d)?.searchParams.get("logistic_type")).toBe("self_service");
+    expect(tarifa(d)?.searchParams.get("billable_weight")).toBe("620");
+    expect(tarifa(d)?.searchParams.get("listing_type_id")).toBe("gold_pro");
   });
 });

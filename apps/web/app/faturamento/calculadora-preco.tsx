@@ -3,9 +3,10 @@
 import {
   COMISSAO_ML,
   FAIXAS_SHOPEE,
-  FRETE_GRATIS_ML_MINIMO,
+  FRETE_GRATIS_OBRIGATORIO_ML,
   calcularPreco,
   faixaShopee,
+  freteGratisEfetivo,
   type Plataforma,
   type TipoAnuncioMl,
 } from "@sb/domain";
@@ -39,7 +40,7 @@ interface Cotacao {
 type EstadoCotacao =
   | { kind: "ociosa" }
   | { kind: "cotando" }
-  | { kind: "ok"; cotacao: Cotacao; chave: string }
+  | { kind: "ok"; cotacao: Cotacao; tarifaFixa: number; chave: string }
   | { kind: "erro"; mensagem: string };
 
 const PREFERENCIAS = "sb-calculadora-preco";
@@ -52,6 +53,11 @@ const PREFERENCIAS = "sb-calculadora-preco";
  * com o token da conta), refeita sozinha quando medidas, preço, tipo ou
  * logística mudam. Sem cotação, a margem fica em branco com o motivo — frete
  * zero fingido daria uma margem bonita e falsa.
+ *
+ * FRETE GRÁTIS (D-421): a partir de R$ 79 é obrigatório e o vendedor paga o
+ * frete. Abaixo, é escolha: sem oferecer, o Mercado Livre cobra só o custo de
+ * envio por unidade (R$ 8,25 contra R$ 13,85 numa Coleta de R$ 50). A escolha
+ * NÃO fica lembrada: ela é do anúncio, não da pessoa.
  *
  * Conta, tipo e logística ficam lembrados neste navegador: é o que se repete de
  * um produto para outro.
@@ -74,6 +80,7 @@ export function CalculadoraPreco({
   const [largura, setLargura] = useState("");
   const [comprimento, setComprimento] = useState("");
   const [peso, setPeso] = useState("");
+  const [ofereceFreteGratis, setOfereceFreteGratis] = useState(false);
   const [cotacao, setCotacao] = useState<EstadoCotacao>({ kind: "ociosa" });
 
   useEffect(() => {
@@ -106,13 +113,17 @@ export function CalculadoraPreco({
     peso: lerNumero(peso),
   };
 
-  const precisaFrete = plataforma === "mercado_livre" && valores.preco !== null && valores.preco >= FRETE_GRATIS_ML_MINIMO;
+  // Todo preço do Mercado Livre tem frete para o vendedor (D-421): até abaixo
+  // de R$ 19 a venda real cobra o custo de envio por unidade.
+  const precisaFrete = plataforma === "mercado_livre" && valores.preco !== null && valores.preco > 0;
+  const freteObrigatorio = valores.preco !== null && valores.preco >= FRETE_GRATIS_OBRIGATORIO_ML;
+  const freteGratis = valores.preco !== null && freteGratisEfetivo(valores.preco, ofereceFreteGratis);
   const medidasOk =
     [valores.altura, valores.largura, valores.comprimento, valores.peso].every((v) => v !== null && v > 0) && contaId !== "";
 
   // A chave da cotação: qualquer mudança nela invalida a cotação anterior.
   const chave = precisaFrete && medidasOk
-    ? JSON.stringify([contaId, tipo, logistica, valores.preco, valores.altura, valores.largura, valores.comprimento, valores.peso])
+    ? JSON.stringify([contaId, tipo, logistica, valores.preco, valores.altura, valores.largura, valores.comprimento, valores.peso, freteGratis])
     : null;
 
   useEffect(() => {
@@ -123,7 +134,7 @@ export function CalculadoraPreco({
     }
 
     let cancelada = false;
-    const pedido = JSON.parse(chave) as [string, TipoAnuncioMl, Logistica, number, number, number, number, number];
+    const pedido = JSON.parse(chave) as [string, TipoAnuncioMl, Logistica, number, number, number, number, number, boolean];
 
     // Espera a pessoa parar de digitar antes de perguntar ao Mercado Livre.
     const espera = window.setTimeout(() => {
@@ -153,15 +164,18 @@ export function CalculadoraPreco({
               larguraCm: pedido[5],
               comprimentoCm: pedido[6],
               pesoG: pedido[7],
+              ofereceFreteGratis: pedido[8],
             }),
           });
           const corpo = (await resposta.json().catch(() => null)) as
-            | { cotacao?: Cotacao; error?: { message?: string } }
+            | { cotacao?: Cotacao; tarifaFixa?: number; error?: { message?: string } }
             | null;
 
           if (cancelada) return;
 
-          if (!resposta.ok || corpo?.cotacao === undefined) {
+          // A tarifa fixa vem junto (D-421). Uma api anterior a ela não a manda,
+          // e sem tarifa não há margem -- nunca zero presumido.
+          if (!resposta.ok || corpo?.cotacao === undefined || typeof corpo.tarifaFixa !== "number") {
             setCotacao({
               kind: "erro",
               mensagem: corpo?.error?.message ?? `Não foi possível cotar o frete (HTTP ${String(resposta.status)}).`,
@@ -170,7 +184,7 @@ export function CalculadoraPreco({
             return;
           }
 
-          setCotacao({ kind: "ok", cotacao: corpo.cotacao, chave });
+          setCotacao({ kind: "ok", cotacao: corpo.cotacao, tarifaFixa: corpo.tarifaFixa, chave });
         } catch {
           if (!cancelada) setCotacao({ kind: "erro", mensagem: "Falha de conexão com a API." });
         }
@@ -183,7 +197,9 @@ export function CalculadoraPreco({
     };
   }, [chave]);
 
-  const freteMl = cotacao.kind === "ok" && cotacao.chave === chave ? cotacao.cotacao.custoVendedor : null;
+  const cotacaoValida = cotacao.kind === "ok" && cotacao.chave === chave ? cotacao : null;
+  const freteMl = cotacaoValida?.cotacao.custoVendedor ?? null;
+  const tarifaFixaMl = cotacaoValida?.tarifaFixa ?? null;
 
   const resultado = useMemo(
     () =>
@@ -195,8 +211,10 @@ export function CalculadoraPreco({
             custo: valores.custo,
             tipoAnuncio: tipo,
             freteMl,
+            tarifaFixaMl,
+            ofereceFreteGratis,
           }),
-    [plataforma, valores.preco, valores.custo, tipo, freteMl],
+    [plataforma, valores.preco, valores.custo, tipo, freteMl, tarifaFixaMl, ofereceFreteGratis],
   );
 
   const tom = resultado?.ok === true ? tomDaMargem(resultado.margem, margemMinima) : "neutro";
@@ -288,6 +306,39 @@ export function CalculadoraPreco({
                 </label>
               </div>
 
+              <div className="sb-calc-campo">
+                <span>
+                  Frete grátis{" "}
+                  <small className="sb-calc-dica">
+                    {freteObrigatorio
+                      ? `obrigatório a partir de ${formatCurrency(FRETE_GRATIS_OBRIGATORIO_ML)}`
+                      : "sem oferecer, você paga só o custo de envio por unidade"}
+                  </small>
+                </span>
+                <div className="sb-calc-segmento" role="radiogroup" aria-label="Frete grátis">
+                  {(
+                    [
+                      [false, "Não ofereço"],
+                      [true, "Ofereço"],
+                    ] as const
+                  ).map(([valor, rotulo]) => (
+                    <button
+                      key={rotulo}
+                      type="button"
+                      role="radio"
+                      aria-checked={freteGratis === valor}
+                      disabled={freteObrigatorio}
+                      className={freteGratis === valor ? "sb-segmented-opcao sb-segmented-opcao-ativa" : "sb-segmented-opcao"}
+                      onClick={() => {
+                        setOfereceFreteGratis(valor);
+                      }}
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {contas.length > 1 && (
                 <label className="sb-calc-campo">
                   <span>Conta (a cotação usa a reputação e a logística dela)</span>
@@ -324,16 +375,14 @@ export function CalculadoraPreco({
               <p className={`sb-calc-frete sb-calc-frete-${cotacao.kind}`} aria-live="polite">
                 {contas.length === 0
                   ? "Nenhuma conta do Mercado Livre conectada — sem conta, não há cotação de frete."
-                  : valores.preco !== null && valores.preco < FRETE_GRATIS_ML_MINIMO
-                    ? `Abaixo de ${formatCurrency(FRETE_GRATIS_ML_MINIMO)} o frete é do comprador — não entra na conta.`
-                    : !medidasOk
+                  : !medidasOk
                       ? "Preencha altura, largura, comprimento e peso para cotar o frete."
                       : cotacao.kind === "cotando"
                         ? "Cotando o frete com o Mercado Livre…"
                         : cotacao.kind === "erro"
                           ? cotacao.mensagem
                           : cotacao.kind === "ok"
-                            ? `Frete cotado: ${formatCurrency(cotacao.cotacao.custoVendedor)}${cotacao.cotacao.pesoFaturavelG === null ? "" : ` · peso faturável ${String(cotacao.cotacao.pesoFaturavelG)} g`}${cotacao.cotacao.descontoPercentual === null ? "" : ` · desconto de ${formatPercent(cotacao.cotacao.descontoPercentual)}`}`
+                            ? `${freteGratis ? "Frete grátis por sua conta" : "Sem frete grátis — custo de envio por unidade"}: ${formatCurrency(cotacao.cotacao.custoVendedor)}${cotacao.tarifaFixa > 0 ? ` · tarifa fixa ${formatCurrency(cotacao.tarifaFixa)}` : ""}${cotacao.cotacao.pesoFaturavelG === null ? "" : ` · peso faturável ${String(cotacao.cotacao.pesoFaturavelG)} g`}${cotacao.cotacao.descontoPercentual === null ? "" : ` · desconto de ${formatPercent(cotacao.cotacao.descontoPercentual)}`}`
                             : "Aguardando o preço para cotar o frete."}
               </p>
             </>
@@ -383,7 +432,7 @@ export function CalculadoraPreco({
                   <dt>Preço de venda</dt>
                   <dd>{formatCurrency(resultado.preco)}</dd>
                 </div>
-                {resultado.linhas.slice(0, 2).map((linha) => (
+                {resultado.linhas.map((linha) => (
                   <div key={linha.rotulo} title={linha.detalhe}>
                     <dt>
                       − {linha.rotulo}

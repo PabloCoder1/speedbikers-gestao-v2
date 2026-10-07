@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createMercadoLivreClient } from "./http-client.js";
-import { quoteFreeShippingCost } from "./shipping-quote.js";
+import { quoteFreeShippingCost, quoteSaleFixedFee } from "./shipping-quote.js";
 
 const INPUT = {
   sellerId: 244878077,
@@ -13,6 +13,7 @@ const INPUT = {
   preco: 300,
   listingTypeId: "gold_pro",
   logistica: "drop_off",
+  freteGratis: true,
 } as const;
 
 function clienteCom(corpo: unknown, captura: { url?: URL; headers?: Record<string, string> } = {}) {
@@ -69,5 +70,47 @@ describe("quoteFreeShippingCost", () => {
     const client = clienteCom({ coverage: { all_country: { currency_id: "BRL" } } });
 
     await expect(quoteFreeShippingCost(client, INPUT)).rejects.toThrow();
+  });
+});
+
+describe("free_shipping é a escolha do vendedor (D-421)", () => {
+  it("sem frete grátis, a chamada leva free_shipping=false", async () => {
+    const captura: { url?: URL } = {};
+    const client = clienteCom({ coverage: { all_country: { list_cost: 8.25, currency_id: "BRL" } } }, captura);
+
+    await expect(quoteFreeShippingCost(client, { ...INPUT, preco: 50, freteGratis: false })).resolves.toMatchObject({
+      custoVendedor: 8.25,
+    });
+    expect(captura.url?.searchParams.get("free_shipping")).toBe("false");
+  });
+});
+
+describe("quoteSaleFixedFee (D-421)", () => {
+  const FIXA = { accessToken: "APP_USR-teste", preco: 50, listingTypeId: "gold_special", logistica: "self_service", pesoFaturavelG: 512.4 } as const;
+
+  it("monta a chamada da doc: preço, tipo, BRL, logística, me2 e peso faturável inteiro", async () => {
+    const captura: { url?: URL } = {};
+    const client = clienteCom([{ sale_fee_details: { fixed_fee: 7.75, percentage_fee: 11 } }], captura);
+
+    await expect(quoteSaleFixedFee(client, FIXA)).resolves.toBe(7.75);
+    expect(captura.url?.pathname).toBe("/sites/MLB/listing_prices");
+    expect(captura.url?.searchParams.get("price")).toBe("50");
+    expect(captura.url?.searchParams.get("listing_type_id")).toBe("gold_special");
+    expect(captura.url?.searchParams.get("currency_id")).toBe("BRL");
+    expect(captura.url?.searchParams.get("logistic_type")).toBe("self_service");
+    expect(captura.url?.searchParams.get("shipping_mode")).toBe("me2");
+    expect(captura.url?.searchParams.get("billable_weight")).toBe("512");
+  });
+
+  it("aceita a resposta como objeto, não só lista", async () => {
+    const client = clienteCom({ sale_fee_details: { fixed_fee: 0 } });
+
+    await expect(quoteSaleFixedFee(client, { ...FIXA, logistica: "cross_docking" })).resolves.toBe(0);
+  });
+
+  it("resposta sem fixed_fee é recusada, nunca vira zero", async () => {
+    const client = clienteCom([{ sale_fee_details: {} }]);
+
+    await expect(quoteSaleFixedFee(client, FIXA)).rejects.toThrow();
   });
 });

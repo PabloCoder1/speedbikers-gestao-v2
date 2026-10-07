@@ -10,8 +10,18 @@
  * constantes nomeadas para a troca ser uma linha e um teste — não um número
  * espalhado pela tela:
  *
- * - **Mercado Livre:** 12% no Clássico, 17% no Premium. O frete grátis (pago
- *   pelo vendedor) vale a partir de R$ 19; abaixo disso, o frete é do comprador.
+ * - **Mercado Livre:** 12% no Clássico, 17% no Premium.
+ * - **Frete no Mercado Livre (D-421, revisa D-359):** a partir de R$ 79 o frete
+ *   grátis é obrigatório e o vendedor paga a cotação com desconto. ABAIXO de
+ *   R$ 79 o vendedor escolhe: oferecendo frete grátis, paga o frete inteiro; sem
+ *   oferecer, paga só o "custo de envio por unidade" do Mercado Livre (de R$ 19
+ *   a R$ 78,99 é o próprio Mercado Livre que dá o frete grátis ao comprador).
+ *   Os dois valores vêm da MESMA cotação oficial, com `free_shipping` ligado ou
+ *   desligado -- medido em 07/10/2026 numa conta real: Coleta, R$ 50, 500 g,
+ *   R$ 13,85 com e R$ 8,25 sem, e R$ 8,25 é a mediana do que os pedidos de
+ *   R$ 19 a R$ 78,99 pagaram nos 30 dias anteriores. A "tarifa fixa" por venda
+ *   (`listing_prices`, desde 02/03/2026) só existe abaixo de R$ 79 e, no
+ *   Mercado Envios, só no Flex.
  * - **Shopee:** percentual + valor fixo por faixa de preço (tabela abaixo). O
  *   valor fixo é o frete da Shopee. O "subsídio Pix" da tabela da Shopee não
  *   entra: decisão do dono.
@@ -29,8 +39,17 @@ export const LISTING_TYPE_ML: Readonly<Record<TipoAnuncioMl, "gold_special" | "g
   premium: "gold_pro",
 };
 
-/** A partir deste preço o frete grátis entra, e o vendedor paga o frete. */
-export const FRETE_GRATIS_ML_MINIMO = 19;
+/**
+ * A partir deste preço o frete grátis é OBRIGATÓRIO no Mercado Livre e o
+ * vendedor paga o frete (o "TH" de `listing_prices`). Abaixo dele, oferecer é
+ * escolha do vendedor.
+ */
+export const FRETE_GRATIS_OBRIGATORIO_ML = 79;
+
+/** O frete grátis vale nesta venda? A partir de R$ 79 sempre; abaixo, se o vendedor oferece. */
+export function freteGratisEfetivo(preco: number, ofereceFreteGratis: boolean): boolean {
+  return preco >= FRETE_GRATIS_OBRIGATORIO_ML || ofereceFreteGratis;
+}
 
 export interface FaixaShopee {
   /** Preço mínimo da faixa, inclusivo. */
@@ -65,10 +84,21 @@ export interface EntradaCalculadora {
   /** Só Mercado Livre. */
   readonly tipoAnuncio?: TipoAnuncioMl;
   /**
-   * Só Mercado Livre: o custo do frete para o vendedor, da cotação oficial.
-   * `null` = ainda não cotado — a margem fica indefinida em vez de assumir zero.
+   * Só Mercado Livre: o custo do frete para o vendedor, da cotação oficial --
+   * feita com o frete grátis da venda (`freteGratisEfetivo`). `null` = ainda não
+   * cotado: a margem fica indefinida em vez de assumir zero.
    */
   readonly freteMl?: number | null;
+  /**
+   * Só Mercado Livre: o vendedor oferece frete grátis? Abaixo de R$ 79 é
+   * escolha; a partir dele o valor é ignorado (obrigatório). Padrão: não.
+   */
+  readonly ofereceFreteGratis?: boolean;
+  /**
+   * Só Mercado Livre: a tarifa fixa por venda (`listing_prices`), que vem com a
+   * cotação. `null` = não cotada -- margem indefinida, como o frete.
+   */
+  readonly tarifaFixaMl?: number | null;
 }
 
 export interface LinhaCusto {
@@ -82,12 +112,15 @@ export type ResultadoCalculadora =
       readonly ok: true;
       readonly preco: number;
       readonly comissao: number;
+      /** Só Mercado Livre abaixo de R$ 79 no Flex (ou envio próprio); zero no resto. */
+      readonly tarifaFixa: number;
       readonly frete: number;
       readonly recebido: number;
       readonly custo: number;
       readonly resultado: number;
       /** Fração: 0,183 = 18,3%. */
       readonly margem: number;
+      /** O que sai do preço até "você recebe", na ordem da tela. */
       readonly linhas: readonly LinhaCusto[];
     }
   | { readonly ok: false; readonly motivo: string };
@@ -104,6 +137,7 @@ export function calcularPreco(entrada: EntradaCalculadora): ResultadoCalculadora
   if (!Number.isFinite(custo) || custo < 0) return { ok: false, motivo: "informe o custo do produto" };
 
   let comissao: number;
+  let tarifaFixa = 0;
   let frete: number;
   let detalheComissao: string;
   let detalheFrete: string;
@@ -121,24 +155,35 @@ export function calcularPreco(entrada: EntradaCalculadora): ResultadoCalculadora
     comissao = centavos(preco * COMISSAO_ML[tipo]);
     detalheComissao = `${pct(COMISSAO_ML[tipo])} — anúncio ${tipo === "classico" ? "Clássico" : "Premium"}`;
 
-    if (preco < FRETE_GRATIS_ML_MINIMO) {
-      frete = 0;
-      detalheFrete = `abaixo de ${reais(FRETE_GRATIS_ML_MINIMO)} o frete é do comprador`;
-    } else if (entrada.freteMl === undefined || entrada.freteMl === null) {
+    // Todo preço tem frete para o vendedor -- até abaixo de R$ 19, onde a
+    // regra antiga dizia "frete do comprador" e a venda real cobra o custo de
+    // envio por unidade (R$ 5,65 de mediana). Sem cotação, sem margem.
+    if (
+      entrada.freteMl === undefined ||
+      entrada.freteMl === null ||
+      entrada.tarifaFixaMl === undefined ||
+      entrada.tarifaFixaMl === null
+    ) {
       return { ok: false, motivo: "cote o frete pelas medidas para ver a margem" };
-    } else {
-      frete = centavos(entrada.freteMl);
-      detalheFrete = "frete grátis — cotação oficial do Mercado Livre";
     }
+
+    frete = centavos(entrada.freteMl);
+    tarifaFixa = centavos(entrada.tarifaFixaMl);
+    detalheFrete = preco >= FRETE_GRATIS_OBRIGATORIO_ML
+      ? `frete grátis obrigatório a partir de ${reais(FRETE_GRATIS_OBRIGATORIO_ML)} — cotação oficial`
+      : entrada.ofereceFreteGratis === true
+        ? "frete grátis oferecido por você — cotação oficial"
+        : "sem frete grátis por sua conta — custo de envio por unidade do Mercado Livre";
   }
 
-  const recebido = centavos(preco - comissao - frete);
+  const recebido = centavos(preco - comissao - tarifaFixa - frete);
   const resultado = centavos(recebido - custo);
 
   return {
     ok: true,
     preco,
     comissao,
+    tarifaFixa,
     frete,
     recebido,
     custo,
@@ -146,8 +191,10 @@ export function calcularPreco(entrada: EntradaCalculadora): ResultadoCalculadora
     margem: resultado / preco,
     linhas: [
       { rotulo: "Comissão", valor: comissao, detalhe: detalheComissao },
+      ...(tarifaFixa > 0
+        ? [{ rotulo: "Tarifa fixa", valor: tarifaFixa, detalhe: "por venda, cobrada pelo Mercado Livre abaixo de R$ 79" }]
+        : []),
       { rotulo: "Frete", valor: frete, detalhe: detalheFrete },
-      { rotulo: "Custo do produto", valor: custo, detalhe: "o que você paga pelo item" },
     ],
   };
 }

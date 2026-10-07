@@ -22,6 +22,13 @@ import type { MercadoLivreClient } from "./http-client.js";
  * - a própria doc chama o valor de "estimativa aproximada", considerando uma
  *   unidade. A tela diz isso.
  *
+ * `free_shipping` É A ESCOLHA DO VENDEDOR, não uma constante (D-421). Abaixo de
+ * R$ 79, com `true` vem o frete inteiro que ele pagaria oferecendo frete
+ * grátis; com `false`, o custo de envio por unidade que o Mercado Livre cobra
+ * sem esse frete grátis. Medido em 07/10/2026, conta real, 10x15x20 cm e
+ * 500 g: Coleta R$ 50 -> 13,85 / 8,25; Full -> 15,05 / 8,75; Flex -> 9,99 / 0.
+ * A partir de R$ 79 os dois dão o mesmo valor.
+ *
  * Unidades: o exemplo oficial é `9x17x22,462`, e o formato de dimensões dos
  * itens do Mercado Livre é centímetros e gramas. A doc desta rota não repete as
  * unidades — ficam declaradas aqui como a leitura adotada.
@@ -60,6 +67,8 @@ export interface ShippingQuoteInput {
   readonly preco: number;
   readonly listingTypeId: "gold_special" | "gold_pro";
   readonly logistica: LogisticaMl;
+  /** O vendedor oferece frete grátis nesta venda (a partir de R$ 79 é obrigatório). */
+  readonly freteGratis: boolean;
 }
 
 export interface ShippingQuote {
@@ -90,7 +99,7 @@ export async function quoteFreeShippingCost(client: MercadoLivreClient, input: S
       mode: "me2",
       condition: "new",
       logistic_type: input.logistica,
-      free_shipping: true,
+      free_shipping: input.freteGratis,
     },
     schema: shippingQuoteSchema,
   });
@@ -104,4 +113,52 @@ export async function quoteFreeShippingCost(client: MercadoLivreClient, input: S
     custoSemDesconto: discount?.promoted_amount ?? null,
     descontoPercentual: discount?.rate ?? null,
   };
+}
+
+/**
+ * A TARIFA FIXA por venda (D-421), de `GET /sites/MLB/listing_prices`.
+ *
+ * Desde 02/03/2026 no Brasil ("Custos por vender", developers, atualizada em
+ * 03/09/2026) o `fixed_fee` depende da logística e do modo de envio, e a doc
+ * avisa que sem `logistic_type`, `shipping_mode` e `billable_weight` o valor
+ * não coincide com o cobrado. A regra publicada: preço abaixo do limite do
+ * frete grátis obrigatório (R$ 79) e me2 -- só o Flex (`self_service`) cobra;
+ * a partir do limite, nunca. Medido em 07/10/2026: Flex R$ 50 -> 7,75; R$ 15
+ * -> 6,25; Coleta e Full -> 0. `category_id` não muda o `fixed_fee` (só o
+ * percentual, que a calculadora não lê daqui).
+ */
+export const listingPricesSchema = z.union([
+  z.array(z.object({ sale_fee_details: z.object({ fixed_fee: z.number().nonnegative() }) })).min(1),
+  z.object({ sale_fee_details: z.object({ fixed_fee: z.number().nonnegative() }) }),
+]);
+
+export interface SaleFixedFeeInput {
+  readonly accessToken: string;
+  readonly preco: number;
+  readonly listingTypeId: "gold_special" | "gold_pro";
+  readonly logistica: LogisticaMl;
+  /** Peso faturável da cotação de frete; sem ele, o peso informado. */
+  readonly pesoFaturavelG: number;
+}
+
+export async function quoteSaleFixedFee(client: MercadoLivreClient, input: SaleFixedFeeInput): Promise<number> {
+  const response = await client.request({
+    method: "GET",
+    path: "/sites/MLB/listing_prices",
+    accessToken: input.accessToken,
+    searchParams: {
+      price: input.preco,
+      listing_type_id: input.listingTypeId,
+      currency_id: "BRL",
+      logistic_type: input.logistica,
+      shipping_mode: "me2",
+      billable_weight: inteiro(input.pesoFaturavelG),
+    },
+    schema: listingPricesSchema,
+  });
+
+  const linha = Array.isArray(response) ? response[0] : response;
+
+  // `min(1)` no schema: a lista nunca chega vazia aqui.
+  return linha?.sale_fee_details.fixed_fee ?? 0;
 }

@@ -14593,3 +14593,23 @@ Um filtro "sem promocao" sobre esse nulo ofereceria para entrar numa campanha o 
 **Verificacao:** mercado-livre -- `promotionOffers` com as entradas reais da sonda (13 testes); worker -- a leitura boa grava as campanhas, a falha mantem as anteriores, o pausado fica nulo (25 testes); web -- leitura defensiva da coluna, rotulos, periodo com e sem fuso, preco e quem paga (4 testes); integracao no Supabase isolado com a migration nova; e2e -- de "Sem promocao" ao painel do anuncio, com a tabela das duas candidatas do seed e a campanha no ar do outro.
 
 **Impacto:** `supabase/migrations/20260929180000_campanhas_do_anuncio.sql`, `packages/mercado-livre/src/{promotions,index}.ts` e teste, `apps/worker/src/handlers/ml-listings-fetch.ts` e teste, `packages/db/src/types.ts`, `apps/web/lib/campanhas.ts` e teste, `apps/web/app/anuncios/{page.tsx,[itemId]/page.tsx}`, `apps/web/e2e/{anuncios.spec,constants,seed}.ts`, `docs/{DATABASE,DECISIONS,DECISIONS_INDEX,HANDOFF,MERCADO_LIVRE,ROADMAP}.md`. Publicacao: web no merge; migration; worker depois.
+
+## D-421 - Calculadora de preco: abaixo de R$ 79 o frete gratis e escolha do vendedor, e sem ele o Mercado Livre cobra so o custo de envio por unidade; a tarifa fixa entra quando existe
+
+**Contexto:** o dono: "sempre que calculamos ela da o set como estivessemos oferecendo o frete gratis, porem alguns nao oferecemos isso entao a taxa e menor". A calculadora de D-359 cotava SEMPRE com `free_shipping=true` a partir de R$ 19, e abaixo de R$ 19 punha frete zero ("frete do comprador").
+
+**O que a pesquisa mostrou** (`docs/MERCADO_LIVRE.md` 2.18): a partir de R$ 79 o frete gratis e obrigatorio e o vendedor paga; abaixo, oferecer e escolha. A mesma cotacao oficial, com `free_shipping=false`, devolve o custo de envio por unidade -- Coleta, R$ 50, 500 g: R$ 8,25 contra R$ 13,85 com frete gratis --, e R$ 8,25 e exatamente a mediana do `seller_shipping_cost` dos pedidos de R$ 19 a R$ 78,99 nos 30 dias anteriores. Abaixo de R$ 19 o vendedor tambem paga (R$ 5,65 de mediana): o "frete zero" de D-359 era falso. E desde 02/03/2026 existe a tarifa fixa por venda de `listing_prices`, que abaixo de R$ 79 no Mercado Envios so o Flex cobra (R$ 7,75 a R$ 50).
+
+**Decisao:**
+1. A calculadora pergunta "Frete gratis: Nao ofereco / Ofereco". A partir de R$ 79 a escolha fica travada em "Ofereco" (`FRETE_GRATIS_OBRIGATORIO_ML`, `freteGratisEfetivo`); abaixo, o padrao e "Nao ofereco" -- o caso mais comum nos pedidos. A escolha nao fica lembrada no navegador: e do anuncio, nao da pessoa.
+2. A `api` (`/v1/pricing/ml-shipping-quote`) cota com o `free_shipping` efetivo e le a tarifa fixa em `listing_prices` com a logistica, `me2` e o peso FATURAVEL da cotacao; devolve `tarifaFixa` e `freteGratis`. Pedido sem o campo novo vale "nao oferece".
+3. Todo preco do Mercado Livre pede cotacao (sai a regra dos R$ 19). Sem frete OU sem tarifa cotados, a margem fica indefinida -- nunca zero presumido.
+4. A tarifa fixa vira linha propria ("Tarifa fixa") entre a comissao e o frete, so quando maior que zero.
+
+**Fica de fora, de proposito:** o percentual de `listing_prices` (varia por categoria e campanha; a calculadora segue com 12%/17% do dono, D-359) e frete com desconto parcial que o Mercado Livre aplica por distancia.
+
+**Verificacao:** `calculadora-preco.test.ts` (+7: sem cotacao em qualquer preco, sem tarifa, nao oferece, oferece, obrigatorio em R$ 79, tarifa fixa do Flex e linha ausente quando zero), `shipping-quote.test.ts` (+4: `free_shipping=false`; `listing_prices` com os parametros da doc, resposta em objeto e sem `fixed_fee` recusada), `pricing-quote.test.ts` (+5: flag efetivo, pedido antigo, obrigatorio, tarifa com peso faturavel), e2e de `/faturamento` (a escolha travada a partir de R$ 79, 56,5% sem e 45,3% com frete gratis a R$ 50). Bateria: `build` 8/8, `check` 29/29, guardas estaticas.
+
+**Publicacao:** a tela depende da `api` nova (a resposta precisa trazer `tarifaFixa`): o deploy da `api` sai da `main` LOGO DEPOIS do merge, e entre os dois a calculadora do Mercado Livre mostra "nao foi possivel cotar" em vez de um numero errado. A `api` nova com a tela antiga tambem funciona: o pedido sem o campo vale "nao oferece". Sem migration.
+
+**Impacto:** `packages/domain/src/pricing/calculadora-preco.ts`, `packages/mercado-livre/src/shipping-quote.ts`, `apps/api/src/pricing-quote.ts`, `apps/web/app/faturamento/calculadora-preco.tsx`, `apps/web/app/globals.css`, testes e e2e; `docs/{MERCADO_LIVRE,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`.

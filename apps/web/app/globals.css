@@ -8737,6 +8737,21 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   color: var(--sb-text);
 }
 
+/* A regra ao lado do rótulo (D-421): "obrigatório a partir de R$ 79". */
+.sb-calc-dica {
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+/* A partir de R$ 79 o frete grátis é obrigatório: a escolha fica travada. */
+.sb-calc-segmento .sb-segmented-opcao:disabled {
+  cursor: not-allowed;
+}
+
+.sb-calc-segmento .sb-segmented-opcao:disabled:not(.sb-segmented-opcao-ativa) {
+  opacity: 0.45;
+}
+
 .sb-calc-campo .sb-input {
   width: 100%;
   min-width: 0;

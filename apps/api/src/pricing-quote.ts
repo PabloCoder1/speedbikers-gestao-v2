@@ -1,9 +1,11 @@
 import type { AdminClient } from "@sb/db";
+import { freteGratisEfetivo } from "@sb/domain";
 import {
   LOGISTICAS_ML,
   MercadoLivreApiError,
   decryptToken,
   quoteFreeShippingCost,
+  quoteSaleFixedFee,
   type MercadoLivreClient,
   type ShippingQuote,
 } from "@sb/mercado-livre";
@@ -28,6 +30,11 @@ import type { Caller } from "./auth.js";
  *    renovação vinda da `api` seria o caminho para desconectar a conta. Token
  *    perto de vencer → 503 "tente de novo em instantes": o worker renova em
  *    todo sync, e a calculadora não vale uma conta desconectada.
+ *
+ * D-421: duas leituras, em sequência -- a cotação do frete, com o frete grátis
+ * da venda (obrigatório a partir de R$ 79; abaixo, a escolha do vendedor), e a
+ * tarifa fixa de `listing_prices`, que precisa do peso faturável da primeira.
+ * O teto de `TIMEOUT_MS` vale para as duas juntas.
  *
  * Autorização: qualquer papel com acesso à CONTA (é leitura de preço, não
  * escrita). Fronteira de organização e permissão por conta refeitas aqui, como
@@ -55,12 +62,21 @@ export const pricingQuoteRequestSchema = z.object({
   preco: z.number().positive().max(10_000_000),
   tipoAnuncio: z.enum(["classico", "premium"]),
   logistica: z.enum(LOGISTICAS_ML),
+  /** Abaixo de R$ 79: o vendedor oferece frete grátis? Ausente = não (a tela antiga não mandava). */
+  ofereceFreteGratis: z.boolean().default(false),
 });
 
-export type PricingQuoteRequest = z.infer<typeof pricingQuoteRequestSchema>;
+export type PricingQuoteRequest = z.input<typeof pricingQuoteRequestSchema>;
 
 export type PricingQuoteOutcome =
-  | { status: "ok"; cotacao: ShippingQuote }
+  | {
+      status: "ok";
+      cotacao: ShippingQuote;
+      /** A tarifa fixa por venda (`listing_prices`); zero quando o Mercado Livre não cobra. */
+      tarifaFixa: number;
+      /** O frete grátis que valeu na cotação: obrigatório a partir de R$ 79, escolha abaixo. */
+      freteGratis: boolean;
+    }
   | { status: "not_found" }
   | { status: "unavailable"; reason: string }
   | { status: "error"; reason: string };
@@ -117,19 +133,36 @@ export async function quoteMlShipping(
 
   let relogio: ReturnType<typeof setTimeout> | undefined;
 
+  const freteGratis = freteGratisEfetivo(request.preco, request.ofereceFreteGratis ?? false);
+  const accessToken = decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey);
+  const listingTypeId = request.tipoAnuncio === "premium" ? "gold_pro" : "gold_special";
+  const sellerId = account.data.seller_id;
+
   try {
-    const cotacao = await Promise.race([
-      quoteFreeShippingCost(deps.client, {
-        sellerId: account.data.seller_id,
-        accessToken: decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey),
-        alturaCm: request.alturaCm,
-        larguraCm: request.larguraCm,
-        comprimentoCm: request.comprimentoCm,
-        pesoG: request.pesoG,
-        preco: request.preco,
-        listingTypeId: request.tipoAnuncio === "premium" ? "gold_pro" : "gold_special",
-        logistica: request.logistica,
-      }),
+    const { cotacao, tarifaFixa } = await Promise.race([
+      (async () => {
+        const cotacao = await quoteFreeShippingCost(deps.client, {
+          sellerId,
+          accessToken,
+          alturaCm: request.alturaCm,
+          larguraCm: request.larguraCm,
+          comprimentoCm: request.comprimentoCm,
+          pesoG: request.pesoG,
+          preco: request.preco,
+          listingTypeId,
+          logistica: request.logistica,
+          freteGratis,
+        });
+        const tarifaFixa = await quoteSaleFixedFee(deps.client, {
+          accessToken,
+          preco: request.preco,
+          listingTypeId,
+          logistica: request.logistica,
+          pesoFaturavelG: cotacao.pesoFaturavelG ?? request.pesoG,
+        });
+
+        return { cotacao, tarifaFixa };
+      })(),
       new Promise<never>((_resolve, reject) => {
         relogio = setTimeout(() => {
           reject(new Error("o Mercado Livre demorou para responder"));
@@ -137,7 +170,7 @@ export async function quoteMlShipping(
       }),
     ]);
 
-    return { status: "ok", cotacao };
+    return { status: "ok", cotacao, tarifaFixa, freteGratis };
   } catch (error) {
     const reason =
       error instanceof MercadoLivreApiError

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **408** (D-001 a D-416).
+Decisões registradas: **413** (D-001 a D-421).
 
 ## Por domínio
 
@@ -196,7 +196,7 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
-### mercado-livre (66)
+### mercado-livre (69)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -264,6 +264,9 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-405** — As medidas do pacote vem de cada envio, na leitura que ja acontece; as declaradas no anuncio entram primeiro como sonda
 - **D-407** — Quem paga o frete: frete cheio, subsidio do Mercado Livre e frete do comprador, gravados da resposta de /costs que ja e lida
 - **D-415** — Auditoria de 28/09: a renovacao do token usa a credencial devolvida pela trava; login sem redirecionamento aberto; teto de tempo nas chamadas ao Mercado Livre e prazo do Cloud Tasks igual ao do worker
+- **D-419** — O filtro de promocao de /anuncios le o que a V3 sabe: in_promotion da ultima leitura boa, nulo quando nao lido, e so entre os ativos
+- **D-420** — Cada anuncio guarda as campanhas do Mercado Livre em que pode entrar, da mesma leitura da promocao, e a aba Preco as mostra com o preco sugerido e quem paga
+- **D-421** — Calculadora de preco: abaixo de R$ 79 o frete gratis e escolha do vendedor, e sem ele o Mercado Livre cobra so o custo de envio por unidade; a tarifa fixa entra quando existe
 
 ### outros (64)
 
@@ -336,7 +339,7 @@ Decisões registradas: **408** (D-001 a D-416).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (29)
+### vendas/métricas (31)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -367,6 +370,8 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-401** — O dia de Ads consolidado e o gravado por um sync posterior ao fim do dia, com venda atribuida e impressao
 - **D-409** — O detector de frete le uma tabela estreita de vendas, mantida por gatilhos, em vez de juntar pedidos, fretes e itens de 90 dias a cada chamada
 - **D-413** — O frete do envio compartilhado conta uma vez: os pedidos que repetem o custo do envio o dividem, numa coluna mantida por gatilho que todas as somas leem
+- **D-417** — A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
+- **D-418** — O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417
 
 ### worker/infra (80)
 
@@ -450,7 +455,3 @@ Decisões registradas: **408** (D-001 a D-416).
 - **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
-- **D-417** — A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
-- **D-418** — O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417
-- **D-419** — O filtro de promocao de /anuncios le o que a V3 sabe: in_promotion da ultima leitura boa, nulo quando nao lido, e so entre os ativos
-- **D-420** — Cada anuncio guarda as campanhas do Mercado Livre em que pode entrar, da mesma leitura da promocao, e a aba Preco as mostra com o preco sugerido e quem paga
