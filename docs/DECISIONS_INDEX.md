@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **413** (D-001 a D-421).
+Decisões registradas: **414** (D-001 a D-422).
 
 ## Por domínio
 
@@ -339,7 +339,7 @@ Decisões registradas: **413** (D-001 a D-421).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (31)
+### vendas/métricas (32)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -372,6 +372,7 @@ Decisões registradas: **413** (D-001 a D-421).
 - **D-413** — O frete do envio compartilhado conta uma vez: os pedidos que repetem o custo do envio o dividem, numa coluna mantida por gatilho que todas as somas leem
 - **D-417** — A conta que para de sincronizar avisa: sync.failed quando entra em ERROR, sync.delayed e sync.failed quando a reconciliacao de pedidos falha por mais de 3 e 12 horas
 - **D-418** — O banco vigia a sincronizacao: um pg_cron a cada 30 minutos avisa a conta sem reconciliacao de pedidos ha 3 e 12 horas, com a chave de episodio de D-417
+- **D-422** — Excel da Curva ABC: o recorte da tela com as tres curvas inteiras, uma aba consolidada por SKU e uma por criterio
 
 ### worker/infra (80)
 
