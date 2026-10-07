@@ -11,7 +11,7 @@ import type {
   RecordedOrderMovements,
   ResolvedLink,
 } from "./persist-order.js";
-import { persistOrder, prefetchOrders } from "./persist-order.js";
+import { persistOrder, prefetchOrders, skuUnicoDoAnuncio } from "./persist-order.js";
 
 const CONTEXT: PersistOrderContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
@@ -1387,6 +1387,34 @@ describe("persistOrder — venda anterior ao snapshot do ERP (D-351)", () => {
  * continuava emitindo evento de status e deduzindo estoque de um pedido que
  * podia nao ter sido gravado. Estes testes provam que o fluxo PARA.
  */
+describe("skuUnicoDoAnuncio (D-423)", () => {
+  const vinculo = (id: string, skuId: string, kind: "PRODUTO" | "KIT" = "PRODUTO") =>
+    ({
+      id,
+      sku_id: skuId,
+      item_id: "MLB1",
+      variation_id: `v-${id}`,
+      skus: {
+        kind,
+        sku_components: kind === "KIT" ? [{ component_sku_id: "peca", quantity: 2 }] : [],
+      },
+    }) as unknown as Parameters<typeof skuUnicoDoAnuncio>[0][number];
+
+  it("todos os vínculos no mesmo SKU: o de id menor, com kind e componentes", () => {
+    expect(skuUnicoDoAnuncio([vinculo("l-3", "kit", "KIT"), vinculo("l-1", "kit", "KIT")])).toEqual({
+      id: "l-1",
+      sku_id: "kit",
+      kind: "KIT",
+      components: [{ componentSkuId: "peca", quantity: 2 }],
+    });
+  });
+
+  it("dois SKUs no mesmo anúncio é ambíguo; sem vínculo, nada", () => {
+    expect(skuUnicoDoAnuncio([vinculo("l-1", "sku-1"), vinculo("l-2", "sku-2")])).toBeNull();
+    expect(skuUnicoDoAnuncio([])).toBeNull();
+  });
+});
+
 describe("persistOrder — escritas críticas (D-178)", () => {
   it("falha ao gravar a order aborta antes de evento e de estoque", async () => {
     const { db, inserted } = fakeDb({ orderWriteError: true, previousStatus: "confirmed" });
@@ -1673,6 +1701,36 @@ describe("prefetchOrders (D-186)", () => {
     expect(prefetch.linkByUserProduct.get("MLBU1709054559")).toMatchObject({ sku_id: "sku-up" });
   });
 
+  it("D-423: guarda o SKU único de cada anúncio -- só quando todos os vínculos dele concordam", async () => {
+    const vinculo = (id: string, skuId: string, itemId: string, variationId: string) => ({
+      id,
+      sku_id: skuId,
+      item_id: itemId,
+      variation_id: variationId,
+      skus: { kind: "PRODUTO", sku_components: [] },
+    });
+    const { db } = dbFalso({
+      orders: { data: [], error: null },
+      sku_listing_links: {
+        data: [
+          vinculo("link-b", "sku-20017", "MLB1054990648", "111"),
+          vinculo("link-a", "sku-20017", "MLB1054990648", "222"),
+          vinculo("link-c", "sku-1", "MLB2", "333"),
+          vinculo("link-d", "sku-2", "MLB2", "444"),
+        ],
+        error: null,
+      },
+    });
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+
+    expect(prefetch.linkByItemUniqueSku).toEqual(
+      new Map([["MLB1054990648", { id: "link-a", sku_id: "sku-20017", kind: "PRODUTO", components: [] }]]),
+    );
+    // A chave exata continua só para a variação que o vínculo tem.
+    expect(prefetch.linkByItemKey.has("MLB1054990648\u0000")).toBe(false);
+  });
+
   it("vínculo sem o SKU embutido LANÇA — não cai em PRODUTO (D-188)", async () => {
     // A FK `sku_listing_links_sku_id_fkey` é `not null` + `on delete
     // restrict`: a linha do SKU sempre existe. `skus` nulo aqui só pode ser o
@@ -1863,6 +1921,7 @@ describe("persistOrder com prefetch (D-186)", () => {
       logisticByOrderId: parcial.logisticByOrderId ?? new Map<string, PersistedLogistic>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
       linkByUserProduct: parcial.linkByUserProduct ?? new Map<string, ResolvedLink>(),
+      linkByItemUniqueSku: parcial.linkByItemUniqueSku ?? new Map<string, ResolvedLink>(),
       userProductByLine: parcial.userProductByLine ?? new Map<string, string>(),
       recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
       cutoffBySku: parcial.cutoffBySku ?? new Map<string, ErpCutoff | null>(),
@@ -1924,6 +1983,81 @@ describe("persistOrder com prefetch (D-186)", () => {
       sku_id: "sku-up",
       movement_type: "VENDA_ML",
     });
+  });
+
+  it("D-423: venda sem variação sem vínculo exato usa o SKU único do anúncio, antes do user product, e baixa estoque", async () => {
+    const { db, inserted } = fakeDb({ linkForItem: () => null, linkForUserProduct: () => null });
+    const [base] = BASE_ORDER.order_items;
+
+    if (base === undefined) throw new Error("BASE_ORDER sem item");
+
+    await persistOrder(
+      db,
+      CONTEXT,
+      { ...BASE_ORDER, order_items: [{ ...base, item: { ...base.item, user_product_id: "MLBU1709054559" } }] },
+      createLogger({ service: "test" }),
+      prefetchDe({
+        linkByItemUniqueSku: new Map([
+          ["MLB1054990648", { id: "link-unico", sku_id: "sku-20017", kind: "PRODUTO" as const, components: [] }],
+        ]),
+        linkByUserProduct: new Map([
+          ["MLBU1709054559", { id: "link-up", sku_id: "sku-up", kind: "PRODUTO" as const, components: [] }],
+        ]),
+        cutoffBySku: new Map([["sku-20017", null]]),
+      }),
+    );
+
+    expect(inserted.find((row) => row.table === "order_items")?.rows[0]).toMatchObject({
+      sku_id: "sku-20017",
+      sku_listing_link_id: "link-unico",
+    });
+    expect(inserted.find((row) => row.table === "stock_movements")?.rows[0]).toMatchObject({
+      sku_id: "sku-20017",
+      movement_type: "VENDA_ML",
+    });
+  });
+
+  it("D-423: o vínculo exato vence o SKU único; venda COM variação nunca usa o SKU único", async () => {
+    const unico = new Map([
+      ["MLB1054990648", { id: "link-unico", sku_id: "sku-unico", kind: "PRODUTO" as const, components: [] }],
+    ]);
+    const exato = fakeDb({ linkForItem: () => null });
+
+    await persistOrder(
+      exato.db,
+      CONTEXT,
+      BASE_ORDER,
+      createLogger({ service: "test" }),
+      prefetchDe({
+        linkByItemKey: new Map([
+          ["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9", kind: "PRODUTO" as const, components: [] }],
+        ]),
+        linkByItemUniqueSku: unico,
+        cutoffBySku: new Map([["sku-9", null]]),
+      }),
+    );
+
+    expect(exato.inserted.find((row) => row.table === "order_items")?.rows[0]).toMatchObject({ sku_id: "sku-9" });
+
+    const [base] = BASE_ORDER.order_items;
+
+    if (base === undefined) throw new Error("BASE_ORDER sem item");
+
+    const comVariacao = fakeDb({ linkForItem: () => null });
+
+    await persistOrder(
+      comVariacao.db,
+      CONTEXT,
+      { ...BASE_ORDER, order_items: [{ ...base, item: { ...base.item, variation_id: 555 } }] },
+      createLogger({ service: "test" }),
+      prefetchDe({ linkByItemUniqueSku: unico }),
+    );
+
+    expect(comVariacao.inserted.find((row) => row.table === "order_items")?.rows[0]).toMatchObject({
+      sku_id: null,
+      sku_listing_link_id: null,
+    });
+    expect(comVariacao.inserted.find((row) => row.table === "stock_movements")).toBeUndefined();
   });
 
   it("o /orders/search sem user product não apaga o gravado, e o SKU sai por ele (D-362)", async () => {

@@ -97,7 +97,16 @@ function fakeDb(options: { orders?: OrderRow[]; items?: ItemRow[]; links?: LinkR
   /** `sku_listing_links`: casa todos os `eq`/`is` e devolve a forma do embed (D-188). */
   function vinculos(): unknown {
     const filtros: Record<string, unknown> = {};
+    const casa = (l: LinkRow): boolean =>
+      l.ref_kind === filtros.ref_kind &&
+      (filtros.item_id === undefined || l.item_id === filtros.item_id) &&
+      (!("variation_id" in filtros) || l.variation_id === filtros.variation_id) &&
+      (filtros.user_product_id === undefined || l.user_product_id === filtros.user_product_id);
+    const embed = (l: LinkRow): unknown => ({ ...l, skus: { kind: "PRODUTO", sku_components: [] } });
     const self = {
+      // D-423: a leitura de todos os vínculos do anúncio (sem `maybeSingle`).
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: links.filter(casa).map(embed), error: null }).then(resolve),
       eq: (coluna: string, valor: unknown) => {
         filtros[coluna] = valor;
 
@@ -109,18 +118,9 @@ function fakeDb(options: { orders?: OrderRow[]; items?: ItemRow[]; links?: LinkR
         return self;
       },
       maybeSingle: () => {
-        const link = links.find(
-          (l) =>
-            l.ref_kind === filtros.ref_kind &&
-            (filtros.item_id === undefined || l.item_id === filtros.item_id) &&
-            (!("variation_id" in filtros) || l.variation_id === filtros.variation_id) &&
-            (filtros.user_product_id === undefined || l.user_product_id === filtros.user_product_id),
-        );
+        const link = links.find(casa);
 
-        return Promise.resolve({
-          data: link === undefined ? null : { ...link, skus: { kind: "PRODUTO", sku_components: [] } },
-          error: null,
-        });
+        return Promise.resolve({ data: link === undefined ? null : embed(link), error: null });
       },
     };
 
@@ -287,13 +287,17 @@ function item(orderId: number, itemId: string, userProductId: string | null = nu
   };
 }
 
-function link(id: string, skuId: string, chave: { item?: string; userProduct?: string }): LinkRow {
+function link(
+  id: string,
+  skuId: string,
+  chave: { item?: string; userProduct?: string; variation?: string },
+): LinkRow {
   return {
     id,
     sku_id: skuId,
     ref_kind: chave.item !== undefined ? "ITEM" : "USER_PRODUCT",
     item_id: chave.item ?? null,
-    variation_id: null,
+    variation_id: chave.variation ?? null,
     user_product_id: chave.userProduct ?? null,
   };
 }
@@ -373,6 +377,33 @@ describe("backfill.order-user-products (D-362, 3ª parte)", () => {
         payload: { mlAccountId: ML_ACCOUNT_ID, ate: "2026-09-15T15:00:00.000Z", limite: LIMITE },
       },
     ]);
+  });
+
+  it("D-423: venda sem variação ganha o SKU único do anúncio sem reler o pedido; dois SKUs seguem para a releitura", async () => {
+    const { db, items, tabelas } = fakeDb({
+      orders: [
+        { id: 9001, date_created: "2026-09-16T10:00:00.000Z" },
+        { id: 9002, date_created: "2026-09-16T11:00:00.000Z" },
+      ],
+      items: [item(9001, "MLB1"), item(9002, "MLB2")],
+      links: [
+        link("l-v2", "sku-20017", { item: "MLB1", variation: "222" }),
+        link("l-v1", "sku-20017", { item: "MLB1", variation: "111" }),
+        link("l-a", "sku-a", { item: "MLB2", variation: "333" }),
+        link("l-b", "sku-b", { item: "MLB2", variation: "444" }),
+      ],
+    });
+    const { client, calls } = fakeClient({ 9002: pedidoDoMl(9002, "MLB2", "MLBU222") });
+
+    const { outcome } = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(calls).toEqual(["/orders/9002"]);
+    expect(items.map((i) => [i.order_id, i.sku_id, i.sku_listing_link_id ?? null])).toEqual([
+      [9001, "sku-20017", "l-v1"],
+      [9002, null, null],
+    ]);
+    expect([...tabelas].filter((t) => t.startsWith("stock") || t.startsWith("inventory"))).toEqual([]);
   });
 
   it("repetir o pedaço não relê o que já ganhou o user product", async () => {
