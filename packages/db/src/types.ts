@@ -5591,6 +5591,122 @@ export type Database = {
           job_type: string | null
         }[]
       }
+      // D-424: a Curva ABC detalhada (tela e Excel).
+      get_sku_abc_analysis: {
+        Args: {
+          p_abc_class?: string | null
+          p_category?: string | null
+          p_criterion?: string | null
+          p_date_from: string
+          p_date_to: string
+          p_kind?: string | null
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_movement?: string | null
+          p_offset?: number
+          p_only_without_full?: boolean
+          p_order?: string | null
+          p_organization_id: string
+          p_prev_from?: string | null
+          p_prev_to?: string | null
+          p_search?: string | null
+          p_stock?: string | null
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          abc_class: string
+          category: string | null
+          class_a_count: number
+          class_a_value: number
+          class_b_count: number
+          class_b_value: number
+          class_c_count: number
+          class_c_value: number
+          class_orders: string | null
+          class_revenue: string | null
+          class_units: string | null
+          coverage_days: number | null
+          cumulative_share: number
+          full_stock: number
+          kept_count: number
+          kind: string
+          local_stock: number | null
+          metric_share: number
+          metric_value: number
+          moved_down_count: number
+          moved_up_count: number
+          movement: string | null
+          new_count: number
+          orders: number
+          prev_abc_class: string | null
+          prev_metric_value: number | null
+          prev_scope_total_value: number | null
+          purchase_cost: number | null
+          revenue: number
+          scope_total_value: number
+          sku: string
+          sku_id: string
+          supplier_brand: string | null
+          title: string | null
+          total_count: number
+          total_orders: number
+          total_revenue: number
+          total_units: number
+          units: number
+          without_full_count: number
+        }[]
+      }
+      get_sku_abc_breakdown: {
+        Args: {
+          p_category?: string | null
+          p_criterion?: string | null
+          p_date_from: string
+          p_date_to: string
+          p_dimension: string
+          p_kind?: string | null
+          p_ml_account_id?: string | null
+          p_organization_id: string
+          p_prev_from?: string | null
+          p_prev_to?: string | null
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          class_a_value: number | null
+          class_b_value: number | null
+          class_c_value: number | null
+          group_key: string
+          group_label: string
+          orders: number | null
+          revenue: number | null
+          sku_count: number
+          units: number | null
+        }[]
+      }
+      get_sku_categories: {
+        Args: { p_organization_id: string }
+        Returns: {
+          category: string
+        }[]
+      }
+      get_sku_sales_by_account: {
+        Args: {
+          p_category?: string | null
+          p_date_from: string
+          p_date_to: string
+          p_kind?: string | null
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          ml_account_id: string
+          orders: number
+          revenue: number
+          sku_id: string
+          units: number
+        }[]
+      }
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null

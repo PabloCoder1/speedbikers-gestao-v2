@@ -3,8 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   ABC_CRITERIA,
   ABC_CLASSES,
+  ABC_ORDERS,
   PAGE_SIZE,
+  type AbcFilters,
   buildAbcHref,
+  countActiveAbcFilters,
+  daysBetween,
+  resolveAbcCustomRange,
+  resolveAbcWindow,
   resolveAbcCriterion,
   resolveAbcClass,
   resolveAbcFilters,
@@ -12,15 +18,25 @@ import {
   summarizeAbcWindow,
 } from "./abc-filters";
 
-const base = {
+const base: AbcFilters = {
   accountSlug: null,
   brand: null,
+  category: null,
+  kind: null,
   criterion: ABC_CRITERIA[0],
   days: 90,
+  custom: null,
+  invalidCustom: false,
   onlyWithoutFull: false,
   abcClass: null,
+  stock: null,
+  movement: null,
+  search: null,
+  order: ABC_ORDERS[0],
   page: 1,
 };
+
+const HOJE = "2026-10-07";
 
 describe("critério e período", () => {
   it("resolve os três critérios", () => {
@@ -42,6 +58,8 @@ describe("critério e período", () => {
   it("período fora dos presets cai em 90", () => {
     expect(resolveAbcPeriod("30")).toBe(30);
     expect(resolveAbcPeriod("60")).toBe(60);
+    expect(resolveAbcPeriod("7")).toBe(7);
+    expect(resolveAbcPeriod("365")).toBe(365);
     expect(resolveAbcPeriod("4000")).toBe(90);
     expect(resolveAbcPeriod("abc")).toBe(90);
     expect(resolveAbcPeriod(undefined)).toBe(90);
@@ -151,5 +169,90 @@ describe("summarizeAbcWindow", () => {
 
   it("zero é resultado, não erro", () => {
     expect(summarizeAbcWindow(1, 0, 0).totalPages).toBe(0);
+  });
+});
+
+describe("recortes e filtros novos (D-424)", () => {
+  it("categoria, tipo, estoque, movimento, busca e ordem vêm da URL; valor desconhecido é ignorado", () => {
+    const f = resolveAbcFilters(
+      { categoria: " MANETE ", tipo: "kit", estoque: "sem_local", movimento: "caiu", busca: " 20017 ", ordem: "queda" },
+      HOJE,
+    );
+
+    expect(f.category).toBe("MANETE");
+    expect(f.kind?.value).toBe("KIT");
+    expect(f.stock?.key).toBe("sem_local");
+    expect(f.movement?.key).toBe("caiu");
+    expect(f.search).toBe("20017");
+    expect(f.order.key).toBe("queda");
+
+    const ruim = resolveAbcFilters({ tipo: "servico", estoque: "x", movimento: "y", ordem: "z" }, HOJE);
+
+    expect(ruim.kind).toBeNull();
+    expect(ruim.stock).toBeNull();
+    expect(ruim.movement).toBeNull();
+    expect(ruim.order.key).toBe("curva");
+  });
+
+  it("a busca é cortada em 80 caracteres", () => {
+    expect(resolveAbcFilters({ busca: "x".repeat(200) }, HOJE).search).toHaveLength(80);
+  });
+
+  it("os filtros novos entram na URL e voltam iguais", () => {
+    const f = resolveAbcFilters(
+      { categoria: "MANETE", tipo: "produto", estoque: "sem_estoque", movimento: "novo", busca: "bau", ordem: "cobertura" },
+      HOJE,
+    );
+    const href = buildAbcHref(f, {});
+
+    expect(href).toBe(
+      "/curva-abc?categoria=MANETE&tipo=produto&estoque=sem_estoque&movimento=novo&busca=bau&ordem=cobertura",
+    );
+    expect(resolveAbcFilters(Object.fromEntries(new URL(href, "http://x").searchParams), HOJE)).toEqual(f);
+  });
+
+  it("conta quantos filtros fora do padrão estão ligados", () => {
+    expect(countActiveAbcFilters(base)).toBe(0);
+    expect(countActiveAbcFilters({ ...base, category: "MANETE", search: "bau", days: 30 })).toBe(3);
+  });
+});
+
+describe("período personalizado e de comparação (D-424)", () => {
+  it("aceita `de`/`ate` válidos e o personalizado vence `dias`", () => {
+    const f = resolveAbcFilters({ de: "2026-01-01", ate: "2026-03-31", dias: "30" }, HOJE);
+
+    expect(f.custom).toEqual({ from: "2026-01-01", to: "2026-03-31" });
+    expect(f.invalidCustom).toBe(false);
+    expect(buildAbcHref(f, {})).toBe("/curva-abc?de=2026-01-01&ate=2026-03-31");
+  });
+
+  it("recusa invertido, futuro, formato ruim, só um lado e mais de dois anos", () => {
+    expect(resolveAbcCustomRange({ de: "2026-03-01", ate: "2026-01-01" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "2026-10-01", ate: "2026-10-08" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "01/01/2026", ate: "2026-02-01" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "2026-01-01" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "2024-01-01", ate: "2026-01-01" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({}, HOJE)).toEqual({ custom: null, invalid: false });
+  });
+
+  it("escolher um preset descarta o personalizado", () => {
+    const f = resolveAbcFilters({ de: "2026-01-01", ate: "2026-03-31" }, HOJE);
+
+    expect(buildAbcHref(f, { days: 30 })).toBe("/curva-abc?dias=30");
+  });
+
+  it("a comparação é o período anterior de mesmo tamanho, colado no início", () => {
+    expect(resolveAbcWindow(base, HOJE)).toEqual({
+      from: "2026-07-10",
+      to: HOJE,
+      prevFrom: "2026-04-11",
+      prevTo: "2026-07-09",
+      dayCount: 90,
+    });
+
+    const custom = resolveAbcWindow({ ...base, custom: { from: "2026-03-01", to: "2026-03-31" } }, HOJE);
+
+    expect(custom).toMatchObject({ from: "2026-03-01", to: "2026-03-31", prevFrom: "2026-01-29", prevTo: "2026-02-28" });
+    expect(daysBetween(custom.prevFrom, custom.prevTo)).toBe(custom.dayCount);
   });
 });

@@ -6623,6 +6623,225 @@ describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
   });
 });
 
+describe("Curva ABC detalhada (D-424): get_sku_abc_analysis, get_sku_abc_breakdown, get_sku_sales_by_account", () => {
+  // Categoria e marca PRÓPRIAS: os outros describes deixam venda nesta
+  // organização, e a curva recalculada dentro de `D424CAT` só enxerga estes SKUs.
+  const CONTA = "dddd4242-0000-4000-8000-000000000042";
+  const DE = "2026-08-01";
+  const ATE = "2026-08-23";
+  const ANT_DE = "2026-07-01";
+  const ANT_ATE = "2026-07-23";
+  const RECORTE = `'${ORG_SB}','${DE}','${ATE}','${ANT_DE}','${ANT_ATE}',null,null,'D424CAT'`;
+
+  let s1 = "";
+  let s2 = "";
+  let s3 = "";
+  let s4 = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta D-424','d424-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title, kind, brand, supplier_brand, supplier_brand_source)
+       values
+         ($1,'D424-S1','Guidão um','PRODUTO','D424CAT','D424MARCA','DERIVED'),
+         ($1,'D424-S2','Guidão dois','PRODUTO','D424CAT','D424MARCA','DERIVED'),
+         ($1,'D424-S3','Retrovisor 100%_x','KIT','D424CAT',null,null),
+         ($1,'D424-S4','Parou de vender','PRODUTO','D424CAT',null,null)
+       returning id`,
+      [ORG_SB],
+    );
+    [s1, s2, s3, s4] = skus.rows.map((r) => r.id) as [string, string, string, string];
+
+    // Agora: S1 1.000, S2 50, S3 30. Antes: S2 900, S1 100, S4 10.
+    // Classes agora: S1 A (antes 0%), S2 B (antes 92,6%), S3 C (antes 97,2%).
+    // Classes antes: S2 A, S1 B (antes 89,1%), S4 C (antes 99,0%).
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,'2026-08-10',10,1000,8,8),
+         ($1,$2,$4,'2026-08-10',1,50,1,1),
+         ($1,$2,$5,'2026-08-11',3,30,3,3),
+         ($1,$2,$4,'2026-07-10',9,900,9,9),
+         ($1,$2,$3,'2026-07-10',1,100,1,1),
+         ($1,$2,$6,'2026-07-10',1,10,1,1)`,
+      [ORG_SB, CONTA, s1, s2, s3, s4],
+    );
+
+    await client.query(
+      `insert into public.inventory_balances (organization_id, sku_id, location_kind, quantity)
+       values ($1,$2,'LOCAL',20)
+       on conflict (sku_id, location_kind) do update set quantity = excluded.quantity`,
+      [ORG_SB, s1],
+    );
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
+       values ($1,$2,'d424-inventory','MLB999999424',$3,7,now())`,
+      [ORG_SB, CONTA, s2],
+    );
+  });
+
+  interface Linha {
+    sku_id: string;
+    abc_class: string;
+    class_revenue: string | null;
+    class_units: string | null;
+    prev_abc_class: string | null;
+    movement: string | null;
+    cumulative_share: string;
+    local_stock: string | null;
+    full_stock: string;
+    coverage_days: string | null;
+    total_count: string;
+    scope_total_value: string;
+    prev_scope_total_value: string | null;
+    moved_up_count: string;
+    moved_down_count: string;
+    new_count: string;
+  }
+
+  it("classe, movimento contra o período anterior, estoque e cobertura por SKU", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE})`);
+    const por = new Map(rows.map((r) => [r.sku_id, r]));
+
+    expect(rows.map((r) => r.sku_id)).toEqual([s1, s2, s3]);
+    expect(por.get(s1)).toMatchObject({ abc_class: "A", prev_abc_class: "B", movement: "subiu", class_units: "A" });
+    expect(por.get(s2)).toMatchObject({ abc_class: "B", prev_abc_class: "A", movement: "caiu" });
+    expect(por.get(s3)).toMatchObject({ abc_class: "C", prev_abc_class: null, movement: "novo" });
+    expect(Number(rows[0]?.scope_total_value)).toBe(1080);
+    expect(Number(rows[0]?.prev_scope_total_value)).toBe(1010);
+    expect([rows[0]?.moved_up_count, rows[0]?.moved_down_count, rows[0]?.new_count].map(Number)).toEqual([1, 1, 1]);
+
+    // S1: 20 em estoque, 10 unidades em 23 dias -> 46 dias. S2: sem saldo local -> cobertura vazia, nunca zero.
+    expect(Number(por.get(s1)?.local_stock)).toBe(20);
+    expect(Number(por.get(s1)?.coverage_days)).toBe(46);
+    expect(por.get(s2)?.local_stock).toBeNull();
+    expect(por.get(s2)?.coverage_days).toBeNull();
+    expect(Number(por.get(s2)?.full_stock)).toBe(7);
+  });
+
+  it("a classe é a mesma de get_sku_abc_curve no mesmo recorte", async () => {
+    const analise = await asUser<{ sku_id: string; abc_class: string; cumulative_share: string }>(
+      ADMIN_SB,
+      `select sku_id, abc_class, cumulative_share from public.get_sku_abc_analysis(${RECORTE}) order by sku_id`,
+    );
+    // A curva antiga não tem recorte de categoria; compara-se pela marca, que
+    // S1 e S2 compartilham.
+    const porMarcaNova = await asUser<{ sku_id: string; abc_class: string; cumulative_share: string }>(
+      ADMIN_SB,
+      `select sku_id, abc_class, cumulative_share from public.get_sku_abc_analysis('${ORG_SB}','${DE}','${ATE}',null,null,null,'D424MARCA') order by sku_id`,
+    );
+    const porMarcaAntiga = await asUser<{ sku_id: string; abc_class: string; cumulative_share: string }>(
+      ADMIN_SB,
+      `select sku_id, abc_class, cumulative_share from public.get_sku_abc_curve('${ORG_SB}','${DE}','${ATE}',null,'faturamento',false,200,0,'D424MARCA') order by sku_id`,
+    );
+
+    expect(analise).toHaveLength(3);
+    expect(porMarcaNova).toEqual(porMarcaAntiga);
+  });
+
+  it("filtros de depois da curva não mudam a classe nem o acumulado", async () => {
+    const tudo = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE})`);
+    const soB = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_abc_class => 'B')`);
+    const caiu = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_movement => 'caiu')`);
+    const semLocal = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_stock => 'sem_local')`);
+
+    expect(soB.map((r) => r.sku_id)).toEqual([s2]);
+    expect(soB[0]?.cumulative_share).toBe(tudo.find((r) => r.sku_id === s2)?.cumulative_share);
+    expect(Number(soB[0]?.total_count)).toBe(1);
+    expect(caiu.map((r) => r.sku_id)).toEqual([s2]);
+    expect(semLocal.map((r) => r.sku_id)).toEqual([s2, s3]);
+  });
+
+  it("a busca é texto puro, sem curinga, e ignora maiúsculas", async () => {
+    const porSku = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_search => 'd424-s3')`);
+    const porTitulo = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_search => 'guidão')`);
+    const curinga = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_search => '%')`);
+    const literal = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_search => '100%_x')`);
+
+    expect(porSku.map((r) => r.sku_id)).toEqual([s3]);
+    expect(porTitulo.map((r) => r.sku_id)).toEqual([s1, s2]);
+    expect(curinga.map((r) => r.sku_id)).toEqual([s3]);
+    expect(literal.map((r) => r.sku_id)).toEqual([s3]);
+  });
+
+  it("tipo e ordenação: só kits; e 'queda' põe primeiro quem mais perdeu", async () => {
+    const kits = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_kind => 'KIT')`);
+    const queda = await asUser<Linha>(ADMIN_SB, `select * from public.get_sku_abc_analysis(${RECORTE}, p_order => 'queda')`);
+
+    expect(kits.map((r) => r.sku_id)).toEqual([s3]);
+    // A curva é recalculada dentro do tipo: o kit sozinho é classe A.
+    expect(kits[0]?.abc_class).toBe("A");
+    expect(queda[0]?.sku_id).toBe(s2);
+  });
+
+  it("recortes agregados: conta com o valor por classe, e a migração inclui quem parou de vender", async () => {
+    const conta = await asUser<{ group_label: string; revenue: string; class_a_value: string; class_b_value: string; class_c_value: string; sku_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_breakdown('${ORG_SB}','${DE}','${ATE}','conta','${ANT_DE}','${ANT_ATE}',null,null,'D424CAT')`,
+    );
+    const migracao = await asUser<{ group_key: string; group_label: string; sku_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_breakdown('${ORG_SB}','${DE}','${ATE}','migracao','${ANT_DE}','${ANT_ATE}',null,null,'D424CAT')`,
+    );
+    const mes = await asUser<{ group_key: string; revenue: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_breakdown('${ORG_SB}','${ANT_DE}','${ATE}','mes',null,null,null,null,'D424CAT')`,
+    );
+
+    expect(conta).toHaveLength(1);
+    expect(conta[0]).toMatchObject({ group_label: "Conta D-424" });
+    expect([conta[0]?.revenue, conta[0]?.class_a_value, conta[0]?.class_b_value, conta[0]?.class_c_value, conta[0]?.sku_count].map(Number)).toEqual([
+      1080, 1000, 50, 30, 3,
+    ]);
+    expect(migracao.map((m) => [m.group_key, m.group_label, Number(m.sku_count)])).toEqual([
+      ["A", "B", 1],
+      ["B", "A", 1],
+      ["C", "Sem venda", 1],
+      ["Novo", "C", 1],
+    ]);
+    expect(mes.map((m) => [m.group_key, Number(m.revenue)])).toEqual([
+      ["2026-07", 1010],
+      ["2026-08", 1080],
+    ]);
+  });
+
+  it("venda por SKU e conta, e a categoria aparece na lista do filtro", async () => {
+    const porConta = await asUser<{ sku_id: string; ml_account_id: string; revenue: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_by_account('${ORG_SB}','${DE}','${ATE}',null,'D424CAT')`,
+    );
+    const categorias = await asUser<{ category: string }>(ADMIN_SB, `select * from public.get_sku_categories('${ORG_SB}')`);
+
+    expect(porConta.map((r) => [r.sku_id, r.ml_account_id, Number(r.revenue)]).sort()).toEqual(
+      [
+        [s1, CONTA, 1000],
+        [s2, CONTA, 50],
+        [s3, CONTA, 30],
+      ].sort(),
+    );
+    expect(categorias.map((c) => c.category)).toContain("D424CAT");
+  });
+
+  it("anon não executa; outra organização não vê nada", async () => {
+    await expect(asAnon(`select * from public.get_sku_abc_analysis(${RECORTE})`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(`select * from public.get_sku_abc_breakdown('${ORG_SB}','${DE}','${ATE}','conta')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_sku_abc_analysis(${RECORTE})`)).toHaveLength(0);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_sku_sales_by_account('${ORG_SB}','${DE}','${ATE}')`)).toHaveLength(0);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_sku_categories('${ORG_SB}')`)).toHaveLength(0);
+  });
+});
+
 describe("get_sku_dashboard (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

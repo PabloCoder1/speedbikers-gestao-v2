@@ -12,14 +12,14 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-28 |
+| **Atualizado em** | 2026-10-07 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | `main` em `f984b647` (PR #103) em 25/09 — envelhece a cada merge: confira com `git log -1 origin/main`. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | Worker `worker-00040-6xj` em `4101e426` (D-419, 29/09 17:38 UTC) e api `api-00023-m6r` em `06f15a2d` (D-362, 28/09), da `main`, por deploy vigiado. Volta: `worker-00039-f97`/`api-00022-5j8`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção com todas até `20260929120000` (D-419, 29/09 17:32 UTC); em 28/09 entraram as de #118, D-417, D-418 e #128, com os tokens do Supabase trocados pelo dono. Caminho normal: `migrations-producao.yml` (duas aprovações; o dono dispara e aprova a aplicação). Sem `--include-all`; nunca MCP. Timestamp de hora válida e maior que o último da `main` (`20260929120000`, D-419): as próximas usam a data real. |
+| **Produção** | Worker `worker-00041-z9d` em `4ee14a6d` (D-423, 07/10 18:24 UTC) e api `api-00024-k74` em `defb45ad` (D-421, 07/10), da `main`, por deploy vigiado. Volta: `worker-00040-6xj`/`api-00023-m6r`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
+| **Migrations** | Produção até `20260929120000` (`schema_migrations`, 07/10). **Pendentes:** `20260929180000` (D-420) e `20261007200000` (D-424) -- o `migrations-producao.yml` aplica as duas; até lá `/curva-abc` mostra erro de carga. Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261007200000`. |
 | **Frente atual** | Trilha 5J — central de inteligência do negócio (D-394 a D-413). Próximo: o detector de frete usar as medidas dos envios (100% dos pacotes com medida desde 24/09; o anúncio não traz a declarada, D-405). |
 
 ### O que está pronto
@@ -284,7 +284,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 **Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
 
-**Estoque:** D-351 e D-352 em produção. D-362: as três partes em produção; a 3ª (SKU do histórico, sem estoque) espera o disparo (`POST /internal/backfill/order-user-products`, ensaio `{"dias": 8}`, autorização do dono). Em uma semana: medir os itens sem SKU desde a planilha de 24/09.
+**Estoque:** D-351 e D-352 em produção. D-362 e D-423 em produção; o histórico (365 dias, sem estoque) disparado em 07/10 por job temporário do Scheduler com o OIDC da `v3-scheduler-invoker`, apagado depois. Receita com SKU em 90 dias: R$ 7,14 mi -> R$ 8,50 mi de R$ 8,62 mi.
 
 **Anúncios:** filtro de promoção (D-419) em produção; conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes). D-420 (campanhas) em código: migration `20260929180000` antes do worker.
 
