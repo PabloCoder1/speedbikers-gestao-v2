@@ -14631,3 +14631,21 @@ Um filtro "sem promocao" sobre esse nulo ofereceria para entrar numa campanha o 
 **Verificacao:** `app/curva-abc/export/rows.test.ts` (7: juncao das tres curvas e a ordem, SKU so numa curva, ticket sem pedido, resumo, curva vazia, total zero, frase do recorte). `build` 8/8, `check` 29/29, guardas estaticas.
 
 **Impacto:** `apps/web/app/curva-abc/{page.tsx,export/*}`, `apps/web/app/globals.css`; `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-423 - A venda sem variacao acha o SKU pelo anuncio quando todos os vinculos dele apontam para o mesmo SKU; o historico ganha o SKU sem movimento de estoque
+
+**Contexto:** o dono, sobre a Curva ABC: "temos 4 contas, as 4 anunciam o mesmo produto com o mesmo SKU, por exemplo o 20017 ... o certo e pegarmos todos os anuncios de 20017, fazer o levantamento real e ai sim fazer o faturamento dele". A curva ja somava por `sku_id` entre contas e anuncios (nenhum SKU repetido); o que faltava era venda: em 90 dias o 20017 tinha R$ 12,2 mil com SKU e R$ 48,4 mil em itens sem SKU dos proprios anuncios dele. Na organizacao, R$ 1,36 mi de R$ 8,62 mi (11.490 itens, 281 SKUs) eram itens sem SKU cujo `seller_sku` e um SKU cadastrado.
+
+**Causa:** o vinculo `ITEM` importado do UpSeller foi gravado POR VARIACAO (`item_id` + `variation_id`), e a venda antiga chegou com `variation_id` nulo. A busca exata (`item_id`, `variation_id is null`) nao casava, e o user product (D-362) nao cobre: so 2 desses itens o tem gravado. Medido em 07/10/2026 por semana: 776 a 1.567 itens por semana ate 07/09, 268 na de 14/09, 68 na de 21/09, 0 na de 28/09 e 1 na de 05/10 -- a venda nova ja chega casando; o buraco e o historico (38.576 itens desde 14/09/2025, 15.704 deles com mais de 180 dias).
+
+**Decisao (o dono deixou a escolha: "pode fazer o que voce acha que e o recomendado"):**
+
+- **A regra:** venda SEM variacao, sem vinculo exato, cujo anuncio tem vinculos `ITEM` na conta e TODOS apontam para o mesmo SKU -> esse SKU, pelo vinculo de id menor (a escolha nao muda entre leituras). Dois SKUs no anuncio continua sem SKU (ambiguo). A venda COM variacao sem vinculo proprio nao usa a regra: pode ser variacao ainda nao vinculada, e o SKU vizinho seria erro.
+- **A ordem:** vinculo exato -> SKU unico do anuncio -> user product (D-362). A mesma em `resolveSku` (webhook e o job de historico) e no lote (`prefetchOrders` guarda `linkByItemUniqueSku`, montado dos vinculos que ja lia -- nenhuma leitura a mais).
+- **Daqui para frente** a venda que casar baixa o estoque como qualquer venda vinculada. Medido: 1 item nos ultimos 8 dias -- a baixa nova e praticamente nula.
+- **O historico** ganha o SKU pelo job da D-362 3a parte (`POST /internal/backfill/order-user-products`, `dias` ate 365), que usa a mesma `resolveSku`: grava `sku_id` e `sku_listing_link_id` na linha ainda sem SKU, sem movimento de estoque, e recalcula as metricas dos dias tocados -- e por elas que a Curva ABC, as vendas e o faturamento por SKU passam a contar o item. O item que a regra resolve deixa de ser relido no Mercado Livre.
+- **Quando um pedido antigo volta ao worker**, a baixa segue a regra de sempre com o mesmo SKU (o que a D-362 ja aceitava): SKU com planilha sai em par que soma zero (D-351).
+
+**Verificacao:** `persist-order.test.ts` -- `skuUnicoDoAnuncio` (o de id menor com kind e componentes; dois SKUs e vazio sao nulo), o prefetch guarda so o anuncio cujos vinculos concordam, o lote usa o SKU unico antes do user product e baixa estoque, o vinculo exato vence e a venda com variacao nao usa a regra; `backfill-order-user-products.test.ts` -- a venda sem variacao ganha o SKU sem reler o pedido e sem tocar o estoque, o anuncio com dois SKUs segue para a releitura. `build` 8/8, `check` 29/29.
+
+**Impacto:** `apps/worker/src/handlers/{persist-order.ts,persist-order.test.ts,backfill-order-user-products.test.ts}`; `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.

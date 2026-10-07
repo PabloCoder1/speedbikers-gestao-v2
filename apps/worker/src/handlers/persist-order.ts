@@ -184,6 +184,11 @@ export interface OrderPrefetch {
    */
   linkByUserProduct: Map<string, ResolvedLink>;
   /**
+   * D-423: `item_id` -> o vínculo quando TODOS os vínculos do anúncio apontam
+   * para o mesmo SKU. Só vale para a venda sem variação (`skuUnicoDoAnuncio`).
+   */
+  linkByItemUniqueSku: Map<string, ResolvedLink>;
+  /**
    * D-362: `chaveDaLinha(order_id, position)` -> o user product JÁ GRAVADO na
    * linha do item. O `/orders/search` da reconciliação não traz
    * `item.user_product_id` (medido em 28/09: a janela das 13:00 regravou 803
@@ -888,6 +893,7 @@ export async function prefetchOrders(
   const logisticByOrderId = new Map<string, PersistedLogistic>();
   const linkByItemKey = new Map<string, ResolvedLink>();
   const linkByUserProduct = new Map<string, ResolvedLink>();
+  const linkByItemUniqueSku = new Map<string, ResolvedLink>();
 
   if (orders.length === 0) {
     return {
@@ -895,6 +901,7 @@ export async function prefetchOrders(
       logisticByOrderId,
       linkByItemKey,
       linkByUserProduct,
+      linkByItemUniqueSku,
       userProductByLine: new Map(),
       recordedByOrderId: new Map(),
       cutoffBySku: new Map(),
@@ -952,6 +959,8 @@ export async function prefetchOrders(
     });
   }
 
+  const linksPorAnuncio = new Map<string, SkuLinkWithKindRow[]>();
+
   for (const linkResult of linkResults) {
     // Mesma razao de `resolveSku`: tratar falha como "sem vinculo" gravaria
     // `sku_id` null numa venda real e pularia a deducao inteira.
@@ -967,6 +976,16 @@ export async function prefetchOrders(
       }
 
       linkByItemKey.set(chaveDoItem(row.item_id, row.variation_id), linkResolvido(row));
+      linksPorAnuncio.set(row.item_id, [...(linksPorAnuncio.get(row.item_id) ?? []), row]);
+    }
+  }
+
+  // D-423: a mesma regra de `resolveSku`, sobre os vínculos já lidos.
+  for (const [itemId, rows] of linksPorAnuncio) {
+    const unico = skuUnicoDoAnuncio(rows);
+
+    if (unico !== null) {
+      linkByItemUniqueSku.set(itemId, unico);
     }
   }
 
@@ -1041,6 +1060,7 @@ export async function prefetchOrders(
     logisticByOrderId,
     linkByItemKey,
     linkByUserProduct,
+    linkByItemUniqueSku,
     userProductByLine,
     recordedByOrderId,
     cutoffBySku,
@@ -1208,11 +1228,15 @@ export async function persistOrder(
     previousStatus = prefetch.previousStatusById.get(String(order.id)) ?? null;
     logisticaGravada = prefetch.logisticByOrderId.get(String(order.id)) ?? SEM_LOGISTICA;
     // D-362: o vínculo por anúncio vence; sem ele, o do user product do pedido.
+    // D-423: entre os dois, a venda sem variação usa o SKU único do anúncio --
+    // a mesma ordem de `resolveSku`.
     resolvedLinks = order.order_items.map((item, index) => {
-      const porAnuncio = prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null));
+      const variacao = variationIds[index] ?? null;
+      const porAnuncio = prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variacao));
+      const unico = variacao === null ? prefetch.linkByItemUniqueSku.get(item.item.id) : undefined;
       const up = userProductIds[index] ?? null;
 
-      return porAnuncio ?? (up === null ? null : (prefetch.linkByUserProduct.get(up) ?? null));
+      return porAnuncio ?? unico ?? (up === null ? null : (prefetch.linkByUserProduct.get(up) ?? null));
     });
     gravados = prefetch.recordedByOrderId.get(String(order.id)) ?? nadaGravado();
     cortes = prefetch.cutoffBySku;
@@ -1702,7 +1726,61 @@ export async function resolveSku(
     return linkResolvido(row);
   }
 
+  if (variationId === null) {
+    const unico = await resolvePeloSkuUnicoDoAnuncio(db, mlAccountId, itemId);
+
+    if (unico !== null) {
+      return unico;
+    }
+  }
+
   return userProductId === null ? null : resolvePeloUserProduct(db, mlAccountId, userProductId);
+}
+
+/**
+ * D-423: a venda SEM variação de um anúncio cujos vínculos apontam, TODOS, para
+ * o mesmo SKU. O vínculo do UpSeller foi gravado por variação, e o Mercado
+ * Livre passou a mandar a venda sem `variation_id`: a busca exata não casava, e
+ * o item ficava sem SKU -- 11.234 itens e R$ 1,32 mi em 90 dias, medidos em
+ * 07/10/2026 (o SKU 20017 aparecia com 1/5 do que vendeu). Com um SKU só não há
+ * outro a escolher; com dois ou mais, continua sem SKU (ambíguo).
+ *
+ * Só para venda sem variação: a venda COM variação sem vínculo próprio pode ser
+ * uma variação ainda não vinculada, e aí escolher o SKU vizinho seria errar.
+ */
+export function skuUnicoDoAnuncio(rows: readonly SkuLinkWithKindRow[]): ResolvedLink | null {
+  const primeiro = rows[0];
+
+  if (primeiro === undefined || rows.some((row) => row.sku_id !== primeiro.sku_id)) {
+    return null;
+  }
+
+  // O vínculo de id menor: a escolha não muda de uma leitura para outra.
+  const escolhido = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0] ?? primeiro;
+
+  return linkResolvido(escolhido);
+}
+
+async function resolvePeloSkuUnicoDoAnuncio(
+  db: AdminClient,
+  mlAccountId: string,
+  itemId: string,
+): Promise<ResolvedLink | null> {
+  const result = await db
+    .from("sku_listing_links")
+    .select(SKU_LINK_WITH_KIND_SELECT)
+    .eq("ml_account_id", mlAccountId)
+    .eq("ref_kind", "ITEM")
+    .eq("item_id", itemId);
+
+  if (result.error !== null) {
+    // A mesma regra: falha não é "sem vínculo".
+    throw new Error(`falha ao resolver o SKU único do anúncio ${itemId}: ${result.error.message}`);
+  }
+
+  const rows = result.data as unknown as SkuLinkWithKindRow[] | null;
+
+  return skuUnicoDoAnuncio(rows ?? []);
 }
 
 /**

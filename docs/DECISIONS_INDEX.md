@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **414** (D-001 a D-422).
+Decisões registradas: **415** (D-001 a D-423).
 
 ## Por domínio
 
@@ -196,7 +196,7 @@ Decisões registradas: **414** (D-001 a D-422).
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
-### mercado-livre (69)
+### mercado-livre (70)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -267,6 +267,7 @@ Decisões registradas: **414** (D-001 a D-422).
 - **D-419** — O filtro de promocao de /anuncios le o que a V3 sabe: in_promotion da ultima leitura boa, nulo quando nao lido, e so entre os ativos
 - **D-420** — Cada anuncio guarda as campanhas do Mercado Livre em que pode entrar, da mesma leitura da promocao, e a aba Preco as mostra com o preco sugerido e quem paga
 - **D-421** — Calculadora de preco: abaixo de R$ 79 o frete gratis e escolha do vendedor, e sem ele o Mercado Livre cobra so o custo de envio por unidade; a tarifa fixa entra quando existe
+- **D-423** — A venda sem variacao acha o SKU pelo anuncio quando todos os vinculos dele apontam para o mesmo SKU; o historico ganha o SKU sem movimento de estoque
 
 ### outros (64)
 
@@ -456,3 +457,4 @@ Decisões registradas: **414** (D-001 a D-422).
 - **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
+
