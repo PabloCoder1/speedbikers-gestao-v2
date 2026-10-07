@@ -14613,3 +14613,21 @@ Um filtro "sem promocao" sobre esse nulo ofereceria para entrar numa campanha o 
 **Publicacao:** a tela depende da `api` nova (a resposta precisa trazer `tarifaFixa`): o deploy da `api` sai da `main` LOGO DEPOIS do merge, e entre os dois a calculadora do Mercado Livre mostra "nao foi possivel cotar" em vez de um numero errado. A `api` nova com a tela antiga tambem funciona: o pedido sem o campo vale "nao oferece". Sem migration.
 
 **Impacto:** `packages/domain/src/pricing/calculadora-preco.ts`, `packages/mercado-livre/src/shipping-quote.ts`, `apps/api/src/pricing-quote.ts`, `apps/web/app/faturamento/calculadora-preco.tsx`, `apps/web/app/globals.css`, testes e e2e; `docs/{MERCADO_LIVRE,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-422 - Excel da Curva ABC: o recorte da tela com as tres curvas inteiras, uma aba consolidada por SKU e uma por criterio
+
+**Contexto:** o dono pediu "a opcao de fazer download em excel das curvas abc, bem detalhado".
+
+**Decisao:** botao "Baixar Excel" em `/curva-abc`, rota `GET /curva-abc/export/xlsx` com os MESMOS parametros da tela (`resolveAbcFilters`): periodo, conta, marca e "sem Full" recortam o arquivo. A classe e o criterio escolhidos NAO recortam: o arquivo leva as TRES curvas inteiras (faturamento, unidades, pedidos) e cada aba tem filtro automatico -- a frase do recorte e a aba Resumo dizem isso.
+
+- **Resumo:** recorte, como as classes se definem (A ate 80%, B ate 95%, C o resto, recalculadas dentro do recorte), e por criterio as tres classes com SKUs, total e participacao, mais os SKUs sem Full.
+- **Consolidado:** uma linha por SKU de qualquer curva, na ordem do faturamento -- classe em cada criterio e a combinada ("AAB"), faturamento com % e % acumulado, unidades, pedidos, ticket medio, preco medio por unidade, custo unitario, estoque local, estoque Full e "sem Full".
+- **Faturamento / Unidades / Pedidos:** a curva de cada criterio como a RPC devolve.
+
+**Como le:** a mesma `get_sku_abc_curve` da tela, uma vez por criterio, em paginas de 1.000 (`lerPaginasDaRpc`, teto de 20 mil SKUs), mais `skus` (marca de fornecedor, custo) e `inventory_balances` LOCAL, tambem paginados; as cinco leituras em paralelo. Nada agrega em JavaScript: soma, participacao e classe vem do Postgres; por linha so ha razao entre dois numeros dados (ticket, preco medio), e divisor zero ou ausencia vira celula vazia, nunca zero (D-067). Cliente da sessao, RLS decide (D-012).
+
+**Medido com os dados de producao em 07/10/2026** (90 dias, todas as contas): 1.752 SKUs em cada curva, 3,7 s de leitura e 0,5 s de planilha, 402 KB. As classes fecham em 80,0% / 15,0% / 5,0% nos tres criterios.
+
+**Verificacao:** `app/curva-abc/export/rows.test.ts` (7: juncao das tres curvas e a ordem, SKU so numa curva, ticket sem pedido, resumo, curva vazia, total zero, frase do recorte). `build` 8/8, `check` 29/29, guardas estaticas.
+
+**Impacto:** `apps/web/app/curva-abc/{page.tsx,export/*}`, `apps/web/app/globals.css`; `docs/{DECISIONS,DECISIONS_INDEX}.md`.

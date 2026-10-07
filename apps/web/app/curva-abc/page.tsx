@@ -141,6 +141,7 @@ export default async function CurvaAbcPage({
   // não é a fatia do recorte na curva global.
   const recortes = [selectedAccount?.label, filters.brand].filter((r): r is string => r !== undefined && r !== null);
   const escopo = recortes.length === 0 ? ", consolidado" : `, recalculada dentro de ${recortes.join(" e ")}`;
+  const exportHref = buildAbcHref(filters, { page: 1 }).replace(/^\/curva-abc/, "/curva-abc/export/xlsx");
   const filtrosAtivos =
     filters.accountSlug !== null ||
     filters.brand !== null ||
@@ -201,11 +202,18 @@ export default async function CurvaAbcPage({
               {escopo}.
             </p>
           </div>
-          {filtrosAtivos && (
-            <Link className="sb-button" href="/curva-abc">
-              Limpar filtros
-            </Link>
-          )}
+          <div className="sb-abc-controls-acoes">
+            {filtrosAtivos && (
+              <Link className="sb-button" href="/curva-abc">
+                Limpar filtros
+              </Link>
+            )}
+            {/* O Excel leva o MESMO recorte (período, conta, marca, sem Full) e as
+                três curvas inteiras -- `export/xlsx/route.ts`. */}
+            <a className="sb-button sb-button-primary" href={exportHref} download>
+              Baixar Excel
+            </a>
+          </div>
         </div>
 
         <div className="sb-abc-filter-grid">
