@@ -14649,3 +14649,94 @@ Um filtro "sem promocao" sobre esse nulo ofereceria para entrar numa campanha o 
 **Verificacao:** `persist-order.test.ts` -- `skuUnicoDoAnuncio` (o de id menor com kind e componentes; dois SKUs e vazio sao nulo), o prefetch guarda so o anuncio cujos vinculos concordam, o lote usa o SKU unico antes do user product e baixa estoque, o vinculo exato vence e a venda com variacao nao usa a regra; `backfill-order-user-products.test.ts` -- a venda sem variacao ganha o SKU sem reler o pedido e sem tocar o estoque, o anuncio com dois SKUs segue para a releitura. `build` 8/8, `check` 29/29.
 
 **Impacto:** `apps/worker/src/handlers/{persist-order.ts,persist-order.test.ts,backfill-order-user-products.test.ts}`; `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.
+
+## D-424 - Curva ABC detalhada: recortes que recalculam e filtros que so escondem linha, comparacao com o periodo anterior, e o Excel com painel e graficos nativos
+
+**Contexto:** o dono, depois da D-423: "acho que voce pode colocar mais opcoes de filtro na tela de curva a, b e c, pois acho que tem muitas coisas a serem vistas, detalhe mais" e "o Excel gerado tambem deve ser o mais detalhado que der, dashboard, graficos e etc.".
+
+**Decisao -- a tela (`/curva-abc`):**
+
+- **Periodo:** 7, 15, 30, 60, 90 (padrao), 180 e 365 dias, ou datas livres (`de`/`ate`, ate dois anos, fim ate hoje; invalido avisa e cai no padrao). 180 e 365 so fazem sentido desde que o historico ganhou o SKU (D-423).
+- **Comparacao sempre ligada:** o periodo anterior de MESMO tamanho, colado no inicio. Dele saem a classe anterior, o movimento (subiu, caiu, manteve, novo) e a variacao do criterio.
+- **Dois tipos de filtro, e a diferenca e a curva inteira:**
+  - Recortes que RECALCULAM a curva (entram no conjunto e no denominador): conta, marca (`supplier_brand`), categoria (`skus.brand`, a coluna Categorias do UpSeller, D-129) e tipo (produto ou kit).
+  - Filtros que so ESCONDEM linha (a classe e o acumulado do SKU nao mudam): classe, "sem Full", estoque (sem local, sem nenhum, com estoque), movimento e busca por SKU ou nome. A busca e texto puro (`strpos`), sem curinga.
+- **Ordenacao:**
+  - posicao na curva (padrao);
+  - mais faturamento, unidades ou pedidos;
+  - maior crescimento ou maior queda;
+  - mais estoque;
+  - menor cobertura;
+  - nome.
+- **Filtros salvos:** o mesmo componente de `/vendas` e `/anuncios`.
+- **Tabela:** classe, com a classe em faturamento/unidades/pedidos ("AAB"), e por SKU:
+  - faturamento, unidades, pedidos e ticket;
+  - % e % acumulado;
+  - variacao com o selo do movimento;
+  - estoque local, Full e cobertura em dias.
+- **Indicadores:** o criterio no recorte contra o anterior, SKUs listados, as outras duas metricas, ticket e o movimento de classe.
+
+**Decisao -- o Excel (`/curva-abc/export/xlsx`):** leva o recorte da tela (periodo com o anterior, conta, marca, categoria, tipo, "sem Full"); os filtros de linha viram filtro automatico das colunas.
+
+- **Painel:** seis indicadores contra o periodo anterior e oito graficos NATIVOS do Excel, alimentados pelas tabelas no fim da propria aba:
+  - Pareto top 30 (colunas + % acumulado no eixo secundario);
+  - rosca por classe;
+  - faturamento por conta e por classe;
+  - mes a mes por classe;
+  - top 15 SKUs;
+  - top 10 marcas;
+  - top 10 categorias;
+  - movimento de classe.
+
+  Ainda no Painel: o resumo das tres curvas e a matriz de migracao (classe antes x agora, com "sem venda" para quem parou).
+- **Consolidado:** 28 colunas por SKU -- as tres classes, o periodo anterior, variacao, movimento, custo, estoque local/Full/total, valor do estoque e cobertura. Barra de dados no faturamento e escala de cor na variacao e na cobertura.
+- **Faturamento / Unidades / Pedidos:** a curva de cada criterio, com o anterior.
+- **Por conta:** o mesmo SKU em cada conta lado a lado, faturamento e unidades -- o pedido original da D-423 (o 20017 nas quatro contas).
+- **Glossario.**
+
+**Por que grafico nativo e nao imagem:** o exceljs 4 nao escreve grafico. Imagem seria estatica e exigiria renderizar no servidor. `lib/xlsx-charts.ts` acrescenta as partes DrawingML ao arquivo:
+- o grafico em `xl/charts`, o desenho com as ancoras, as relacoes e os tipos de conteudo;
+- o cache dos valores, para quem so pre-visualiza;
+- a ordem dos elementos segue o esquema ECMA-376, que o Excel exige.
+
+**Como le:** tres RPCs `security invoker` novas (migration `20261007200000`), e `get_sku_abc_curve` fica para a pagina do SKU:
+- `get_sku_abc_analysis` -- uma linha por SKU, com totais e contagens em janelas antes do limit;
+- `get_sku_abc_breakdown` -- conta, marca, categoria, mes e migracao, somados no Postgres;
+- `get_sku_sales_by_account` -- paginada.
+
+Mais `get_sku_categories` para a lista do filtro. A classe e a MESMA conta de `get_sku_abc_curve` (acumulado antes do SKU, 2 casas, 80/95).
+
+**Medido:**
+- **Producao (07/10/2026, leitura do corpo como consulta):**
+  - 1.794 de 1.794 SKUs com classe, valor, acumulado e Full iguais aos de `get_sku_abc_curve` (90 dias);
+  - 175 ms com 365 dias.
+- **Stack local isolado, dados sinteticos (310 SKUs, 4 contas, 200 dias):**
+  - tela e Excel pela rota, rota em 0,8 s;
+  - leitura 0,4 s + planilha 0,2 s, 166 KB.
+- **Amostra sintetica de 1.800 SKUs:** 828 KB em menos de 3 s.
+- **Excel 16:** abriu as duas planilhas sem reparo, com os 8 graficos e as series e pontos esperados; as imagens dos graficos foram exportadas e conferidas.
+
+**Verificacao:**
+- `abc-filters.test.ts` (28): recortes, filtros, periodo personalizado e janela de comparacao.
+- `rows.test.ts` (11): consolidado, resumo, pivo por conta, migracao, frase do recorte e a montagem do arquivo com os 8 graficos.
+- `xlsx-charts.test.ts` (8): cache sem zero falso, Pareto, rosca, relacoes e erro de aba inexistente.
+- Integracao, 8 testes contra Postgres real:
+  - classe e movimento, e igualdade com a curva antiga;
+  - filtro que nao muda a classe;
+  - busca sem curinga;
+  - tipo e ordenacao;
+  - conta e migracao com "sem venda";
+  - venda por conta;
+  - anon e outra organizacao.
+- `build` 8/8, `check` 29/29.
+
+**Impacto:**
+- `supabase/migrations/20261007200000_curva_abc_analise.sql`;
+- `packages/db/src/{types.ts,rls.integration.test.ts}`;
+- `apps/web/app/curva-abc/{page.tsx,export/*}`;
+- `apps/web/lib/{abc-filters.ts,xlsx-charts.ts}` e testes;
+- `apps/web/app/globals.css`;
+- `apps/web/package.json` (`jszip`, ja no lockfile pelo exceljs);
+- `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+Producao precisa da migration pelo `migrations-producao.yml` ANTES do deploy da web.

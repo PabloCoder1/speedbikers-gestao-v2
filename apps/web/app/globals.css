@@ -3606,6 +3606,63 @@ table {
   font-weight: 600;
 }
 
+/*
+ * D-424: os controles que a curva ganhou -- período personalizado no menu,
+ * busca com ordenação, e as colunas de detalhe da tabela.
+ */
+.sb-abc-periodo {
+  display: grid;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.625rem 0.375rem;
+  border-top: 1px solid var(--sb-border);
+}
+
+.sb-abc-periodo .sb-button {
+  justify-content: center;
+}
+
+.sb-abc-busca {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem) auto;
+  gap: var(--sb-space-2);
+  padding-top: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-abc-classes-fup {
+  margin-top: 0.1875rem;
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.08em;
+  color: var(--sb-text-soft);
+}
+
+.sb-abc-meta {
+  margin-top: 0.125rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-abc-vs {
+  display: grid;
+  justify-items: end;
+  gap: 0.1875rem;
+  white-space: nowrap;
+}
+
+.sb-abc-mov {
+  padding: 0.0625rem 0.3125rem;
+  border-radius: var(--sb-radius-sm);
+  font-size: 0.5625rem;
+  font-weight: 600;
+}
+
+.sb-abc-cards + .sb-abc-bars,
+.sb-kpi-strip + .sb-abc-cards {
+  margin-top: var(--sb-space-3);
+}
+
 .sb-abc-pagination {
   display: flex;
   justify-content: flex-end;
@@ -3625,6 +3682,10 @@ table {
 
   .sb-abc-controls-head {
     align-items: flex-start;
+  }
+
+  .sb-abc-busca {
+    grid-template-columns: 1fr;
   }
 
   .sb-abc-pagination {
