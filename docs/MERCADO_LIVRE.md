@@ -814,6 +814,33 @@ falharia e o pedido ficaria pendente por um valor que a V3 já trata como "não 
 
 A mesma resposta traz `shipping_items[]`, e cada item leva `dimensions` como texto -- `"4.0x19.0x26.0,710.0"`: três lados em cm e o peso em gramas -- e `dimensions_source.origin`. Nos 4 envios lidos em 17/09/2026: `"bmp"` no que saiu da loja, `"fd"` nos três do Full; o `dimensions` do topo do envio veio **nulo** nos quatro. A doc (FAQ "Items — Shipping attributes and dimensions", 05/2026) confirma as unidades e que, no ME2/Full, parte das medidas é definida pela logística do Mercado Livre. No anúncio, as medidas declaradas moram em `shipping.dimensions` (mesmo formato) e nos atributos `SELLER_PACKAGE_HEIGHT/WIDTH/LENGTH/WEIGHT`; a V3 só pede `shipping`, como sonda (D-405).
 
+## 2.18 Frete grátis por faixa de preço e tarifa fixa — CONFIRMADO por LEITURA REAL (2026-10-07, D-421)
+
+**A regra publicada** ("Como funcionam os fretes grátis", mercadolivre.com.br/ajuda/16467, lida em 07/10/2026):
+
+- produto novo a partir de **R$ 79**: o vendedor oferece frete grátis e **paga** o envio, com desconto por reputação;
+- de **R$ 19 a R$ 78,99**, entrega padrão: **o Mercado Livre** oferece o frete grátis;
+- abaixo de **R$ 19**: o frete grátis é **opcional** e, oferecido, o custo é do vendedor.
+
+**A tarifa fixa** ("Custos por vender", developers, atualizada em 03/09/2026): desde **02/03/2026** no Brasil o `fixed_fee` de `GET /sites/MLB/listing_prices` depende de `logistic_type`, `shipping_mode` e `billable_weight`; sem eles "não coincidirá com o que realmente será cobrado". A regra: preço abaixo do limite do frete grátis obrigatório + me2 → **só o Flex** (`self_service`) cobra; me1/custom → sempre cobra; a partir do limite → nunca.
+
+**O que a cotação devolve** (`GET /users/{id}/shipping_options/free`, conta real, 10x15x20 cm, 500 g, Clássico):
+
+| logística | preço | `free_shipping=true` | `free_shipping=false` | `fixed_fee` |
+|---|---:|---:|---:|---:|
+| Coleta | 15 | 13,85 | 5,95 | 0 |
+| Coleta | 50 | 13,85 | 8,25 | 0 |
+| Coleta | 120 | 18,15 | 18,15 | 0 |
+| Full | 50 | 15,05 | 8,75 | 0 |
+| Flex | 50 | 9,99 | 0 | 7,75 |
+| Flex | 15 | 9,99 | 0 | 6,25 |
+
+Abaixo de R$ 79, `free_shipping=false` é o **custo de envio por unidade** que o vendedor paga sem oferecer frete grátis; `true` é o frete inteiro que ele pagaria oferecendo. A partir de R$ 79 os dois coincidem. **Conferido contra os pedidos:** em produção, de 07/09 a 07/10, os pedidos de R$ 19 a R$ 78,99 em Coleta e Full pagaram `seller_shipping_cost` com mediana de **R$ 8,25** (abaixo de R$ 19, R$ 5,65), e os do Flex, zero. `listing_prices` responde sem `category_id`; a categoria muda só o percentual.
+
+Sem token, as duas rotas respondem 403 (`PolicyAgent`).
+
+---
+
 ## 3. Estratégia de sincronização
 
 Aprovada e independente dos detalhes de endpoint. Três canais com papéis que nunca se confundem:

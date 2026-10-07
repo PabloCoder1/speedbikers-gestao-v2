@@ -647,7 +647,7 @@ Pedidos do dono em 16/09/2026, depois de `/faturamento` (D-356). Não reabre mar
 
 - [x] **Dashboard do Anúncio refeito** — barras por dia de vendas e visitas, checagem de fatos, atalhos (copiar MLB, ver no ML), ticket médio, compras por pack e preço médio praticado — ✔ 2026-09-16 · D-357
 - [x] **Cobertura e reposição refeita e mais rápida** — sugestão com plano custom (~490 → ~200 ms), uma leitura para a tela (~255 ms), investimento sugerido e frescor das entradas — ✔ 2026-09-16 · D-358
-- [x] **Calculadora de preço** no `/faturamento` — Mercado Livre (12% clássico / 17% premium, frete oficial pela cotação do ML a partir de R$ 19) e Shopee (tabela por faixa) — ✔ 2026-09-16 · D-359. API de produção `api-00006-gxz`
+- [x] **Calculadora de preço** no `/faturamento` — Mercado Livre (12% clássico / 17% premium, frete oficial pela cotação do ML com a escolha de frete grátis abaixo de R$ 79 e a tarifa fixa, D-421) e Shopee (tabela por faixa) — ✔ 2026-09-16 · D-359. API de produção `api-00006-gxz`
 - [x] **Listas de produtos do Faturamento** com rolagem própria e sem rolagem lateral — ✔ 2026-09-16 (`edf2d5b`)
 - [x] **Mercado Ads — análise de campanhas** (Product Ads, API oficial): sync diário por conta, faixa (investimento, vendas, ROAS, ACOS, TACoS), barras por dia, campanhas com ROAS contra o alvo — ✔ código 2026-09-16 · D-363
   - [x] Migration `20260916165243` em produção (workflow "Migrations de produção", duas aprovações)

@@ -125,8 +125,8 @@ export type { GetItemDescriptionOptions } from "./description.js";
 export { USER_PRODUCT_SELLER_TAG, fetchIsUserProductSeller, userTagsSchema } from "./users.js";
 export type { FetchUserProductSellerOptions } from "./users.js";
 
-export { LOGISTICAS_ML, quoteFreeShippingCost, shippingQuoteSchema } from "./shipping-quote.js";
-export type { LogisticaMl, ShippingQuote, ShippingQuoteInput, ShippingQuoteResponse } from "./shipping-quote.js";
+export { LOGISTICAS_ML, listingPricesSchema, quoteFreeShippingCost, quoteSaleFixedFee, shippingQuoteSchema } from "./shipping-quote.js";
+export type { LogisticaMl, SaleFixedFeeInput, ShippingQuote, ShippingQuoteInput, ShippingQuoteResponse } from "./shipping-quote.js";
 
 export {
   PRODUCT_ADS_MAX_DAYS_BACK,
