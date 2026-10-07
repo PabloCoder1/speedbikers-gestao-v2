@@ -143,8 +143,8 @@ test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", as
   // A partir de R$ 79 o frete grátis é obrigatório: a escolha fica travada.
   const freteGratis = calc.getByRole("radiogroup", { name: "Frete grátis" });
 
-  await expect(freteGratis.getByRole("radio", { name: "Ofereço" })).toHaveAttribute("aria-checked", "true");
-  await expect(freteGratis.getByRole("radio", { name: "Não ofereço" })).toBeDisabled();
+  await expect(freteGratis.getByRole("radio", { name: "Ofereço", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(freteGratis.getByRole("radio", { name: "Não ofereço", exact: true })).toBeDisabled();
 
   // Abaixo de R$ 79, sem oferecer (o padrão): só o custo de envio por unidade.
   await calc.getByLabel("Preço de venda").fill("50");
@@ -155,7 +155,7 @@ test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", as
   expect(pedidoDeFrete).toMatchObject({ preco: 50, ofereceFreteGratis: false });
 
   // Oferecendo, o frete inteiro: 50 − 8,50 − 13,85 − 5 = 22,65 → 45,3%
-  await freteGratis.getByRole("radio", { name: "Ofereço" }).click();
+  await freteGratis.getByRole("radio", { name: "Ofereço", exact: true }).click();
   await expect(calc.locator(".sb-calc-margem")).toHaveText("45,3%");
   expect(pedidoDeFrete).toMatchObject({ preco: 50, ofereceFreteGratis: true });
 });
