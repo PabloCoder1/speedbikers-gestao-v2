@@ -28,8 +28,14 @@ gcloud secrets add-iam-policy-binding SHOPEE_TEST_PARTNER_KEY --project speedbik
 
 Depois, o deploy da api e do worker com `SHOPEE_PARTNER_ID=1248019` no
 ambiente (`infra/deploy-cloud-run.sh` monta as variáveis e o segredo só com
-ele) e `infra/cloud-scheduler.sh` com a mesma variável, que cria o job
-horário `v3-shopee-orders`.
+ele) — **feito em 13/10** (`worker-00042-k5n`, `api-00025-rbw`). Falta o job
+horário `v3-shopee-orders` (o mesmo de `infra/cloud-scheduler.sh` com
+`SHOPEE_PARTNER_ID`), num terminal onde o `gcloud` aceite a cron com espaço
+(Cloud Shell ou PowerShell; no Git Bash o `gcloud.cmd` quebra):
+
+```bash
+gcloud scheduler jobs create http v3-shopee-orders --project speedbikers-prod --location southamerica-east1 --schedule "20 * * * *" --time-zone America/Sao_Paulo --uri https://api-p6gzq3hzca-rj.a.run.app/internal/schedule/shopee-orders --http-method POST --oidc-service-account-email v3-scheduler-invoker@speedbikers-prod.iam.gserviceaccount.com --oidc-token-audience https://api-p6gzq3hzca-rj.a.run.app --max-retry-attempts 2 --min-backoff 30s --max-backoff 120s --description "Sincronizacao de pedidos da Shopee, por loja conectada"
+```
 
 ## 2. Endereços — CONFIRMADO em 13/10/2026
 
