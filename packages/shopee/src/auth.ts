@@ -98,5 +98,5 @@ const RECUSA_DEFINITIVA = new Set([
 ]);
 
 export function isDefinitiveRefreshRefusal(error: unknown): boolean {
-  return error instanceof ShopeeApiError && error.code !== null && RECUSA_DEFINITIVA.has(error.code);
+  return error instanceof ShopeeApiError && error.baseCode !== null && RECUSA_DEFINITIVA.has(error.baseCode);
 }

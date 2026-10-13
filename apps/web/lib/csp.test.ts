@@ -39,12 +39,12 @@ describe("montarCsp", () => {
     );
   });
 
-  it("img-src abre o Supabase (fotos de perfil, D-354) e o CDN do Mercado Livre (miniatura do anúncio)", () => {
+  it("img-src abre o Supabase (fotos de perfil, D-354) e os CDNs do Mercado Livre e da Shopee (foto do anúncio)", () => {
     expect(diretiva(montarCsp(base), "img-src")).toBe(
-      "img-src 'self' data: blob: https://projeto.supabase.co https://*.mlstatic.com",
+      "img-src 'self' data: blob: https://projeto.supabase.co https://*.mlstatic.com https://*.susercontent.com https://cf.shopee.com.br",
     );
     expect(diretiva(montarCsp({ ...base, supabaseUrl: "" }), "img-src")).toBe(
-      "img-src 'self' data: blob: https://*.mlstatic.com",
+      "img-src 'self' data: blob: https://*.mlstatic.com https://*.susercontent.com https://cf.shopee.com.br",
     );
   });
 

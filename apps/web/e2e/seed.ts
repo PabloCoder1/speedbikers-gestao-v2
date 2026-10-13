@@ -50,6 +50,8 @@ import {
   E2E_LISTING_PRICE_EVENT_ALTA,
   E2E_LISTING_CAMPANHAS,
   E2E_LISTING_PROMO_PRICE,
+  E2E_SHOPEE_ITEMS,
+  E2E_SHOPEE_LEITURA_MINUTOS,
   E2E_SHOPEE_SHOP,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
@@ -66,6 +68,7 @@ import {
   E2E_SUGESTOES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
+  type E2eShopeeItem,
 } from "./constants.js";
 import { SEED_OUTPUT_PATH, type SeedOutput } from "./seed-output.js";
 
@@ -1021,22 +1024,94 @@ async function main(): Promise<void> {
   }
 
   // D-425: uma loja Shopee conectada no sandbox, para o painel de /contas.
-  const lojaShopee = await db.from("shopee_shops").upsert(
-    {
-      organization_id: organizationId,
-      environment: "sandbox",
-      shop_id: E2E_SHOPEE_SHOP.shopId,
-      shop_name: E2E_SHOPEE_SHOP.name,
-      region: E2E_SHOPEE_SHOP.region,
-      shop_status: "NORMAL",
-      status: "CONNECTED",
-      auth_expires_at: new Date(Date.now() + 365 * 86_400_000).toISOString(),
-    },
-    { onConflict: "environment,shop_id" },
-  );
+  // D-428: com a lista de itens lida há meia hora (`items_synced_until`), que é
+  // a "Última leitura do catálogo" de /anuncios/shopee.
+  const lojaShopee = await db
+    .from("shopee_shops")
+    .upsert(
+      {
+        organization_id: organizationId,
+        environment: "sandbox",
+        shop_id: E2E_SHOPEE_SHOP.shopId,
+        shop_name: E2E_SHOPEE_SHOP.name,
+        region: E2E_SHOPEE_SHOP.region,
+        shop_status: "NORMAL",
+        status: "CONNECTED",
+        auth_expires_at: new Date(Date.now() + 365 * 86_400_000).toISOString(),
+        items_synced_until: new Date(Date.now() - E2E_SHOPEE_LEITURA_MINUTOS * 60_000).toISOString(),
+      },
+      { onConflict: "environment,shop_id" },
+    )
+    .select("id")
+    .single();
 
   if (lojaShopee.error !== null) {
     throw lojaShopee.error;
+  }
+
+  const lojaShopeeId = lojaShopee.data.id;
+
+  /*
+    O CATÁLOGO da loja (D-428) — um item por estado do vínculo pelo SKU do
+    anúncio, e um apagado que não pode aparecer (ver `E2E_SHOPEE_ITEMS`). Grava
+    na forma do worker: o item NÃO LIDO só tem o que a lista dá (id, estado,
+    `update_time`), com nome, SKU, variação, preço e estoque NULOS; preço e
+    estoque do item com variação moram nas variações. Upsert pela chave
+    natural: reexecutar não duplica.
+  */
+  const itensShopee: readonly E2eShopeeItem[] = Object.values(E2E_SHOPEE_ITEMS);
+  const lidoEm = new Date(Date.now() - E2E_SHOPEE_LEITURA_MINUTOS * 60_000).toISOString();
+  const atualizadoNaShopee = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+
+  const catalogoShopee = await db.from("shopee_items").upsert(
+    itensShopee.map((item) => {
+      const semVariacao = item.lido && item.variacoes.length === 0;
+
+      return {
+        shopee_shop_id: lojaShopeeId,
+        organization_id: organizationId,
+        item_id: item.itemId,
+        item_status: item.status,
+        shopee_updated_at: atualizadoNaShopee,
+        item_name: item.lido ? item.nome : null,
+        item_sku: item.lido ? item.itemSku : null,
+        has_model: item.lido ? item.variacoes.length > 0 : null,
+        currency: semVariacao ? "BRL" : null,
+        current_price: semVariacao ? item.preco : null,
+        original_price: semVariacao ? item.precoOriginal : null,
+        available_stock: semVariacao ? item.estoque : null,
+        image_url: null,
+        details_synced_at: item.lido ? lidoEm : null,
+      };
+    }),
+    { onConflict: "shopee_shop_id,item_id" },
+  );
+
+  if (catalogoShopee.error !== null) {
+    throw catalogoShopee.error;
+  }
+
+  const variacoesShopee = await db.from("shopee_item_models").upsert(
+    itensShopee.flatMap((item) =>
+      item.variacoes.map((variacao) => ({
+        shopee_shop_id: lojaShopeeId,
+        item_id: item.itemId,
+        model_id: variacao.modelId,
+        organization_id: organizationId,
+        model_name: variacao.nome,
+        model_sku: variacao.sku,
+        model_status: variacao.status,
+        currency: "BRL",
+        current_price: variacao.preco,
+        original_price: null,
+        available_stock: variacao.estoque,
+      })),
+    ),
+    { onConflict: "shopee_shop_id,item_id,model_id" },
+  );
+
+  if (variacoesShopee.error !== null) {
+    throw variacoesShopee.error;
   }
 
   // Full DO ANÚNCIO (D-243): UM snapshot, só para o primeiro anúncio. Os outros

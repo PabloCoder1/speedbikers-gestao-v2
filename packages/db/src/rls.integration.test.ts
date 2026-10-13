@@ -2793,6 +2793,217 @@ describe("financeiro dos pedidos Shopee (D-427)", () => {
   });
 });
 
+/*
+  D-428: o catálogo Shopee e o vínculo PELO SKU DO ANÚNCIO. A regra mora na
+  view shopee_listing_units; aqui ela é provada contra o Postgres: os quatro
+  estados, a normalização (upper/btrim, a mesma de skus.sku_key), o item
+  apagado de fora, a paginação e a fronteira de organização.
+*/
+describe("catálogo Shopee e vínculo pelo SKU do anúncio (D-428)", () => {
+  const LOJA = "dddd4280-0000-4000-8000-00000000d428";
+  const MARCO = "2026-10-13T15:00:00.000Z";
+  let skuId = "";
+
+  async function item(id: number, campos: string, valores: string): Promise<void> {
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, ${campos})
+       values ($1, $2, $3, ${valores})`,
+      [LOJA, ORG_SB, id],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, items_synced_until)
+       values ($1,$2,'sandbox',990428001,'Loja Catalogo','CONNECTED',$3)`,
+      [LOJA, ORG_SB, MARCO],
+    );
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'D428-SKU-X','PRODUTO') returning id`,
+      [ORG_SB],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    // A: sem variação, SKU com espaço e minúscula -> VINCULADO.
+    await item(4281, "item_name, item_sku, has_model, current_price, available_stock, details_synced_at, details_update_time",
+      "'NORMAL', now() - interval '2 days', 'Painel A', '  d428-sku-x ', false, 149.9, 7, now(), now() - interval '2 days'");
+    // B: com variação -> uma vinculada, uma fora do catálogo, uma sem SKU.
+    await item(4282, "item_name, item_sku, has_model, details_synced_at, details_update_time",
+      "'NORMAL', now() - interval '2 days', 'Bau B', 'D428-SKU-X', true, now(), now() - interval '2 days'");
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku, current_price)
+       values ($1, 4282, 1, $2, 'Azul', 'D428-SKU-X', 99.9), ($1, 4282, 2, $2, 'Preto', 'NAO-EXISTE-D428', null),
+              ($1, 4282, 3, $2, 'Verde', null, null)`,
+      [LOJA, ORG_SB],
+    );
+    // C: sem variação e sem SKU.
+    await item(4283, "item_name, item_sku, has_model, details_synced_at, details_update_time",
+      "'UNLIST', now() - interval '2 days', 'Capa C', null, false, now(), now() - interval '2 days'");
+    // D: nunca lido.
+    await item(4284, "item_name", "'NORMAL', now() - interval '1 day', null");
+    // E: lido, diz ter variação, nenhuma variação lida -> aguardando.
+    await item(4285, "item_name, has_model, details_synced_at, details_update_time",
+      "'NORMAL', now() - interval '2 days', 'Kit E', true, now(), now() - interval '2 days'");
+    // F: apagado -> fora.
+    await item(4286, "item_name, item_sku, has_model, details_synced_at, details_update_time",
+      "'SELLER_DELETE', now(), 'Apagado F', 'D428-SKU-X', false, now() - interval '1 day', now() - interval '1 day'");
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+    await client.query("delete from public.skus where id = $1", [skuId]);
+  });
+
+  it("quatro estados, normalização do SKU, item apagado de fora", async () => {
+    const linhas = await asUser<{ item_id: string; model_id: string | null; estado: string; vinculo_via: string | null; sku: string | null }>(
+      ADMIN_SB,
+      `select item_id, model_id, estado, vinculo_via, sku
+         from public.get_shopee_listings('${ORG_SB}', '${LOJA}', null, null, 200, 0)
+        order by item_id, model_id nulls first`,
+    );
+
+    expect(linhas).toEqual([
+      { item_id: "4281", model_id: null, estado: "VINCULADO", vinculo_via: "SKU_DO_ANUNCIO", sku: "D428-SKU-X" },
+      { item_id: "4282", model_id: "1", estado: "VINCULADO", vinculo_via: "SKU_DO_ANUNCIO", sku: "D428-SKU-X" },
+      { item_id: "4282", model_id: "2", estado: "SKU_FORA_DO_CATALOGO", vinculo_via: null, sku: null },
+      { item_id: "4282", model_id: "3", estado: "SEM_SKU_NO_ANUNCIO", vinculo_via: null, sku: null },
+      { item_id: "4283", model_id: null, estado: "SEM_SKU_NO_ANUNCIO", vinculo_via: null, sku: null },
+      { item_id: "4284", model_id: null, estado: "AGUARDANDO_LEITURA", vinculo_via: null, sku: null },
+      { item_id: "4285", model_id: null, estado: "AGUARDANDO_LEITURA", vinculo_via: null, sku: null },
+    ]);
+  });
+
+  it("contadores no SQL, com a última leitura do catálogo; preço ausente fica nulo", async () => {
+    const resumo = await asUser<Record<string, string | boolean | null>>(
+      ADMIN_SB,
+      `select r.anuncios, r.itens, r.vinculados, r.sem_sku_no_anuncio, r.sku_fora_do_catalogo, r.aguardando_leitura,
+              r.ultima_leitura = '${MARCO}'::timestamptz as leitura_confere
+         from public.get_shopee_listings_summary('${ORG_SB}', '${LOJA}') r`,
+    );
+
+    const { leitura_confere: leituraConfere, ...contagens } = resumo[0] ?? {};
+
+    expect(contagens).toEqual({
+      anuncios: "7",
+      itens: "5",
+      vinculados: "2",
+      sem_sku_no_anuncio: "2",
+      sku_fora_do_catalogo: "1",
+      aguardando_leitura: "2",
+    });
+    // A última leitura é o marco da loja (o driver devolve Date; a comparação fica no SQL).
+    expect(leituraConfere).toBe(true);
+
+    // Outra loja da organização, nunca lida: no escopo de todas as lojas, a data
+    // de uma não pode esconder a outra -- a última leitura fica NULA.
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, status)
+       values ('dddd4280-0000-4000-8000-00000000e428', $1, 'sandbox', 990428002, 'CONNECTED')`,
+      [ORG_SB],
+    );
+
+    const escopo = await asUser<{ todas: boolean; uma: boolean }>(
+      ADMIN_SB,
+      `select (select ultima_leitura is null from public.get_shopee_listings_summary('${ORG_SB}', null)) as todas,
+              (select ultima_leitura is not null from public.get_shopee_listings_summary('${ORG_SB}', '${LOJA}')) as uma`,
+    );
+
+    await client.query("delete from public.shopee_shops where id = 'dddd4280-0000-4000-8000-00000000e428'");
+
+    expect(escopo).toEqual([{ todas: true, uma: true }]);
+
+    const precos = await asUser<{ model_id: string | null; current_price: string | null }>(
+      ADMIN_SB,
+      `select model_id, current_price from public.get_shopee_listings('${ORG_SB}', '${LOJA}', 'SKU_FORA_DO_CATALOGO', null, 50, 0)`,
+    );
+
+    expect(precos).toEqual([{ model_id: "2", current_price: null }]);
+  });
+
+  it("filtro, busca e paginação com o total da consulta", async () => {
+    const pagina = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select total_count from public.get_shopee_listings('${ORG_SB}', '${LOJA}', null, null, 2, 0)`,
+    );
+    const busca = await asUser<{ item_id: string }>(
+      ADMIN_SB,
+      `select item_id from public.get_shopee_listings('${ORG_SB}', null, null, ' 4283 ', 50, 0)`,
+    );
+    const porSku = await asUser<{ item_id: string }>(
+      ADMIN_SB,
+      `select distinct item_id from public.get_shopee_listings('${ORG_SB}', null, 'VINCULADO', 'd428-sku', 50, 0)`,
+    );
+
+    expect(pagina).toEqual([{ total_count: "7" }, { total_count: "7" }]);
+    expect(busca).toEqual([{ item_id: "4283" }]);
+    expect(porSku.map((r) => r.item_id).sort()).toEqual(["4281", "4282"]);
+  });
+
+  it("outra organização não vê nada; o navegador não grava nem chama a fila do worker", async () => {
+    expect(
+      await asUser(DE_OUTRA_ORG, `select 1 from public.get_shopee_listings('${ORG_SB}', null, null, null, 50, 0)`),
+    ).toHaveLength(0);
+    expect(await asUser(DE_OUTRA_ORG, `select 1 from public.shopee_items where shopee_shop_id = '${LOJA}'`)).toHaveLength(0);
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at)
+         values ('${LOJA}','${ORG_SB}', 9, 'NORMAL', now())`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN_SB, `select * from public.shopee_items_details_pending('${LOJA}', 10)`)).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(asAnon("select * from public.shopee_listing_units")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("fila do detalhe: nunca lido, alterado (relógio da Shopee), leitura falha há 1 dia, variações ausentes há 1 dia — o resto fica", async () => {
+    // 4283 mudou depois do detalhe (o relógio da Shopee: update_time da lista > o do detalhe).
+    await client.query(
+      "update public.shopee_items set shopee_updated_at = details_update_time + interval '1 second' where shopee_shop_id = $1 and item_id = 4283",
+      [LOJA],
+    );
+    // 4285 (com variação e nenhuma gravada) lido há 2 dias: volta, com recuo.
+    await client.query(
+      "update public.shopee_items set details_synced_at = now() - interval '2 days' where shopee_shop_id = $1 and item_id = 4285",
+      [LOJA],
+    );
+    // 4287: leitura que não serviu há 2 dias -> volta; 4288: falhou agora -> espera o recuo.
+    await item(4287, "item_name, details_synced_at, details_error", "'NORMAL', now() - interval '3 days', null, now() - interval '2 days', 'nao_devolvido'");
+    await item(4288, "item_name, details_synced_at, details_error", "'NORMAL', now() - interval '3 days', null, now(), 'error_param'");
+
+    const pendentes = await client.query<{ item_id: string }>(
+      "select item_id from public.shopee_items_details_pending($1, 50)",
+      [LOJA],
+    );
+    const aguardando = await asUser<{ item_id: string; details_error: string | null }>(
+      ADMIN_SB,
+      `select item_id, details_error from public.get_shopee_listings('${ORG_SB}', '${LOJA}', 'AGUARDANDO_LEITURA', null, 50, 0) order by item_id`,
+    );
+
+    expect(pendentes.rows.map((r) => r.item_id)).toEqual(["4284", "4283", "4287", "4285"]);
+    // Todo "aguardando" tem saída: ou está na fila, ou volta nela no recuo (4288). A tela recebe o motivo.
+    expect(aguardando).toEqual([
+      { item_id: "4284", details_error: null },
+      { item_id: "4285", details_error: null },
+      { item_id: "4287", details_error: "nao_devolvido" },
+      { item_id: "4288", details_error: "error_param" },
+    ]);
+  });
+
+  it("a trava da cadeia do detalhe: uma por loja, e só o worker pega", async () => {
+    const primeira = await client.query<{ pegou: boolean }>("select public.shopee_items_hydrate_lock($1, 900) as pegou", [LOJA]);
+    const segunda = await client.query<{ pegou: boolean }>("select public.shopee_items_hydrate_lock($1, 900) as pegou", [LOJA]);
+
+    await client.query("update public.shopee_shops set items_hydrate_locked_until = null where id = $1", [LOJA]);
+
+    const depois = await client.query<{ pegou: boolean }>("select public.shopee_items_hydrate_lock($1, 900) as pegou", [LOJA]);
+
+    expect([primeira.rows[0]?.pegou, segunda.rows[0]?.pegou, depois.rows[0]?.pegou]).toEqual([true, false, true]);
+    await expect(asUser(ADMIN_SB, `select public.shopee_items_hydrate_lock('${LOJA}', 900)`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";

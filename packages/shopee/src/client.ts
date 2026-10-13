@@ -42,11 +42,22 @@ export const SHOPEE_HOSTS: Record<ShopeeEnvironment, { api: string; auth: string
 
 export type ShopeeErrorClass = "retryable" | "not_retryable";
 
+/**
+ * Códigos de erro da Shopee que pedem só "tente depois" (referência das APIs
+ * de pedido, financeiro e catálogo, conferida em 13/10/2026). Vêm com HTTP 200.
+ */
+const CODIGOS_PASSAGEIROS = new Set(["error_server", "error_network", "error_inner", "error_system_busy", "error_rate_limit"]);
+
 /** Erro da Shopee: HTTP fora de 2xx, ou `error` preenchido no corpo. Nunca carrega token nem assinatura. */
 export class ShopeeApiError extends Error {
   readonly status: number;
   /** O código de erro da Shopee (`error_auth`, `error_param`...), ou `null` sem corpo legível. */
   readonly code: string | null;
+  /**
+   * O código sem o prefixo de módulo: a Shopee manda às vezes
+   * `product.error_item_not_found` no lugar de `error_item_not_found` (D-428).
+   */
+  readonly baseCode: string | null;
   readonly requestId: string | null;
   readonly errorClass: ShopeeErrorClass;
 
@@ -55,13 +66,15 @@ export class ShopeeApiError extends Error {
     this.name = "ShopeeApiError";
     this.status = options.status;
     this.code = options.code;
+    this.baseCode = options.code === null ? null : options.code.replace(/^[a-z_]+\./, "");
     this.requestId = options.requestId;
-    // `error_network` é a chamada interna da Shopee que falhou (D-427): passageiro.
+    // `error_network` é a chamada interna da Shopee que falhou (D-427);
+    // `error_inner`, `error_system_busy` e `error_rate_limit` pedem "tente
+    // depois" nas páginas do catálogo (D-428). Todos passageiros.
     const passageiro =
       options.status === 429 ||
       options.status >= 500 ||
-      options.code === "error_server" ||
-      options.code === "error_network";
+      (this.baseCode !== null && CODIGOS_PASSAGEIROS.has(this.baseCode));
 
     this.errorClass = passageiro ? "retryable" : "not_retryable";
   }
@@ -82,7 +95,8 @@ export interface ShopeeRequest<T> {
   path: string;
   /** Chamada de LOJA: os dois juntos entram na assinatura e na query. */
   shop?: { accessToken: string; shopId: number };
-  query?: Record<string, string>;
+  /** Lista vira parâmetro REPETIDO (`item_status=NORMAL&item_status=UNLIST`), como pede `get_item_list`. */
+  query?: Record<string, string | readonly string[]>;
   body?: unknown;
   schema: z.ZodType<T>;
 }
@@ -140,7 +154,11 @@ export function createShopeeClient(config: ShopeeClientConfig): ShopeeClient {
       );
 
       for (const [chave, valor] of Object.entries(request.query ?? {})) {
-        url.searchParams.set(chave, valor);
+        if (typeof valor === "string") {
+          url.searchParams.set(chave, valor);
+        } else {
+          for (const item of valor) url.searchParams.append(chave, item);
+        }
       }
 
       const response = await fetchImpl(url, {
