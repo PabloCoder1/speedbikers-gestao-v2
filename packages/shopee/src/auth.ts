@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { SHOPEE_HOSTS, type ShopeeClient, type ShopeeEnvironment } from "./client.js";
+import { SHOPEE_HOSTS, ShopeeApiError, type ShopeeClient, type ShopeeEnvironment } from "./client.js";
 
 /**
  * Autorização de loja (D-425) — open.shopee.com/developer-guide/20, conferido
@@ -79,4 +79,24 @@ export function refreshAccessToken(
     body: { refresh_token: options.refreshToken, partner_id: client.partnerId, shop_id: options.shopId },
     schema: shopeeTokenSchema,
   });
+}
+
+/**
+ * Os códigos com que a Shopee RECUSA a renovação de vez (referência de
+ * `v2.public.refresh_access_token`, conferida em 13/10/2026): a loja precisa
+ * ser autorizada de novo. Qualquer outro erro — `error_server`,
+ * `error_network`, HTTP 5xx/429, timeout — é passageiro, e a loja continua
+ * conectada (a lição de D-414: só a recusa definitiva derruba a conexão).
+ */
+const RECUSA_DEFINITIVA = new Set([
+  "refresh_token_expired",
+  "shop_access_expired",
+  "shop_banned",
+  "shop_no_linked",
+  "error_shop_refresh_token",
+  "error_auth",
+]);
+
+export function isDefinitiveRefreshRefusal(error: unknown): boolean {
+  return error instanceof ShopeeApiError && error.code !== null && RECUSA_DEFINITIVA.has(error.code);
 }

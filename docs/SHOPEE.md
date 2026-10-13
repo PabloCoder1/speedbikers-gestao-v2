@@ -15,15 +15,21 @@ porquê moram em `docs/DECISIONS.md` (D-425 em diante).
 | Test Partner Key | Secret Manager `SHOPEE_TEST_PARTNER_KEY` (projeto `speedbikers-prod`) — **nunca** em chat, print, `.env` versionado ou Git |
 | Test Redirect URL Domain | `https://api-p6gzq3hzca-rj.a.run.app` (só o domínio; o caminho vai no link) |
 
-**Ligar na api de produção** (D-425): a conta da api precisa ler o segredo —
-ato do dono, uma vez:
+**Ligar em produção** (D-425, D-426): a api (conexão) e o worker (renovação
+e pedidos) precisam ler o segredo — ato do dono, uma vez cada:
 
 ```bash
 gcloud secrets add-iam-policy-binding SHOPEE_TEST_PARTNER_KEY --project speedbikers-prod --member serviceAccount:v3-api-runtime@speedbikers-prod.iam.gserviceaccount.com --role roles/secretmanager.secretAccessor
 ```
 
-Depois, o deploy da api com `SHOPEE_PARTNER_ID=1248019` no ambiente
-(`infra/deploy-cloud-run.sh` monta as variáveis e o segredo só com ele).
+```bash
+gcloud secrets add-iam-policy-binding SHOPEE_TEST_PARTNER_KEY --project speedbikers-prod --member serviceAccount:v3-worker-runtime@speedbikers-prod.iam.gserviceaccount.com --role roles/secretmanager.secretAccessor
+```
+
+Depois, o deploy da api e do worker com `SHOPEE_PARTNER_ID=1248019` no
+ambiente (`infra/deploy-cloud-run.sh` monta as variáveis e o segredo só com
+ele) e `infra/cloud-scheduler.sh` com a mesma variável, que cria o job
+horário `v3-shopee-orders`.
 
 ## 2. Endereços — CONFIRMADO em 13/10/2026
 
@@ -83,6 +89,29 @@ Na V3: `POST /v1/shopee/connect` (ADMIN) devolve o link;
 Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
 `ml_credentials`), `shopee_oauth_states` (`docs/DATABASE.md`).
 
+## 4.1 Renovação e pedidos — CONFIRMADO (D-426)
+
+- **Renovação** no worker, na hora de usar: com menos de 10 minutos de
+  folga, trava `refresh_locked_until` (60 s) e renova com o refresh lido NA
+  trava (uso único). Recusa definitiva (`refresh_token_expired`,
+  `shop_access_expired`, `shop_banned`, `shop_no_linked`,
+  `error_shop_refresh_token`, `error_auth`) → loja `ERROR`; o resto é
+  passageiro — `apps/worker/src/handlers/shopee-token.ts`.
+- **Lista** (`GET /api/v2/order/get_order_list`): `time_range_field`
+  (`create_time` | `update_time`), `time_from`/`time_to` com no máximo
+  **15 dias**, `page_size` até **100**, `cursor`; devolve `more`,
+  `next_cursor` e `order_list[].order_sn`.
+- **Detalhe** (`GET /api/v2/order/get_order_detail`): até **50**
+  `order_sn` por chamada; itens e valores só com `response_optional_fields`.
+  A V3 pede `item_list,total_amount,pay_time,shipping_carrier,
+  payment_method,cancel_by,cancel_reason` — nada do comprador.
+  `total_amount` não vem antes do pagamento (fica NULO).
+- **Na V3:** job `shopee.orders.sync` por loja, janela por `update_time` a
+  partir de `shopee_shops.orders_synced_until` menos 10 minutos; a primeira
+  leitura começa 90 dias atrás e encadeia janelas de 15 dias. Gatilho
+  horário `POST /internal/schedule/shopee-orders`. Tabelas
+  `shopee_orders` e `shopee_order_items` (`docs/DATABASE.md`).
+
 ## 5. Sandbox — o roteiro
 
 Fonte: `open.shopee.com/developer-guide/644` (Sandbox Testing V2) e `/744`.
@@ -117,7 +146,7 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | Fatia | O quê | Estado |
 |---|---|---|
 | 0–1 | Decisão, `@sb/shopee`, conexão da loja (link, retorno, tokens cifrados, loja em `/contas`) | código (D-425) |
-| 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | — |
+| 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | código (D-426) |
 | 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | — |
 | 4 | Produtos e vínculo com SKU (SKU do vendedor; os ~3.000 vínculos Shopee do UpSeller) | — |
 | 5 | Estoque (exige decisão do dono: a planilha do UpSeller já desconta a venda Shopee) | — |

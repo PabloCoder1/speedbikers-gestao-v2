@@ -193,6 +193,15 @@ YAML
     self_url="$(service_url worker)"
     [ -n "${self_url}" ] || self_url="https://placeholder.invalid"
 
+    # D-426: o worker lê os pedidos da Shopee e renova os tokens — o mesmo
+    # interruptor da api (SHOPEE_PARTNER_ID), sem redirect_uri.
+    local shopee_env="" shopee_secret=""
+    if [ -n "${SHOPEE_PARTNER_ID}" ]; then
+      shopee_env=",SHOPEE_PARTNER_ID=${SHOPEE_PARTNER_ID},SHOPEE_ENVIRONMENT=${SHOPEE_ENVIRONMENT}"
+      shopee_secret=",SHOPEE_PARTNER_KEY=${SECRET_SHOPEE_PARTNER_KEY}:latest"
+      info "Shopee ligada no worker: ${SHOPEE_ENVIRONMENT}"
+    fi
+
     gc run deploy "${app}" \
       --image "${image}" \
       --region "${REGION}" \
@@ -203,8 +212,8 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}" \
       --quiet
 
     if [ "${self_url}" = "https://placeholder.invalid" ]; then

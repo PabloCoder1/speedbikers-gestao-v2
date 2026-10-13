@@ -20,6 +20,7 @@
     "@sb/domain": "workspace:*",
     "@sb/mercado-livre": "workspace:*",
     "@sb/observability": "workspace:*",
+    "@sb/shopee": "workspace:*",
     "fast-xml-parser": "5.11.0",
     "hono": "4.13.7",
     "read-excel-file": "9.3.10",

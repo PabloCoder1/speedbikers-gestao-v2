@@ -2620,6 +2620,84 @@ describe("lojas Shopee (D-425)", () => {
   });
 });
 
+/*
+  D-426: os pedidos da Shopee. Lidos por quem é da organização; escritos só
+  pelo worker; apagar a loja leva pedidos e itens junto.
+*/
+describe("pedidos Shopee (D-426)", () => {
+  const LOJA = "dddd4260-0000-4000-8000-00000000d426";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status)
+       values ($1,$2,'sandbox',990426001,'Loja Pedidos','CONNECTED')`,
+      [LOJA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at)
+       values ($1,$2,'D426A1','UNPAID', now(), now())`,
+      [LOJA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, item_sku, quantity)
+       values ($1,'D426A1',0,$2,9,'SKU-9',2)`,
+      [LOJA, ORG_SB],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  it("quem é da organização vê pedido e itens, com o total NULO antes do pagamento; outra organização não vê", async () => {
+    const pedido = await asUser<{ order_status: string; total_amount: string | null }>(
+      ADMIN_SB,
+      "select order_status, total_amount from public.shopee_orders where order_sn = 'D426A1'",
+    );
+    const itens = await asUser(ADMIN_SB, "select item_sku from public.shopee_order_items where order_sn = 'D426A1'");
+
+    expect(pedido).toEqual([{ order_status: "UNPAID", total_amount: null }]);
+    expect(itens).toEqual([{ item_sku: "SKU-9" }]);
+    expect(await asUser(DE_OUTRA_ORG, "select 1 from public.shopee_orders where order_sn = 'D426A1'")).toHaveLength(0);
+    expect(await asUser(DE_OUTRA_ORG, "select 1 from public.shopee_order_items where order_sn = 'D426A1'")).toHaveLength(
+      0,
+    );
+  });
+
+  it("nem o ADMIN grava pedido pelo navegador; anon não lê", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at)
+         values ('${LOJA}','${ORG_SB}','D426B1','UNPAID', now(), now())`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.shopee_orders")).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.shopee_order_items")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("item sem pedido é recusado; apagar a loja leva pedidos e itens", async () => {
+    await expect(
+      client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity)
+         values ($1,'NAO-EXISTE',0,$2,9,1)`,
+        [LOJA, ORG_SB],
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+
+    const restos = await client.query(
+      `select (select count(*) from public.shopee_orders where shopee_shop_id = $1)::int as pedidos,
+              (select count(*) from public.shopee_order_items where shopee_shop_id = $1)::int as itens`,
+      [LOJA],
+    );
+
+    expect(restos.rows).toEqual([{ pedidos: 0, itens: 0 }]);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";

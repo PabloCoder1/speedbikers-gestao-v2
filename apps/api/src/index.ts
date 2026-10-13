@@ -80,6 +80,10 @@ const app = createApp({
   // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
   ...(shopeeShops !== undefined ? { shopeeShops } : {}),
+  // D-426: o gatilho horário dos pedidos, só com a Shopee configurada.
+  ...(shopeeShops !== undefined
+    ? { shopeeOrdersSchedule: { db, enqueuer, logger, environment: env.SHOPEE_ENVIRONMENT } }
+    : {}),
   ipAllowlist: createIpAllowlistVerifier(),
   // D-346 — a conta dona do `seller_id` vem da memória. A consulta por
   // notificação era o ACK de 2,8 s nas rajadas (D-345).
