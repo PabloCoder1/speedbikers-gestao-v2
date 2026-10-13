@@ -65,6 +65,16 @@ export const envSchema = z.object({
   ),
 
   /**
+   * Shopee Open Platform (D-426): o worker lê os pedidos e renova os tokens.
+   * As três juntas registram o handler `shopee.orders.sync`; faltando
+   * qualquer uma, ele não existe e o resto sobe igual (mesmo interruptor da
+   * api, D-425). A Partner Key é segredo (Secret Manager).
+   */
+  SHOPEE_PARTNER_ID: z.string().regex(/^[0-9]+$/, "precisa ser o número do partner_id").optional(),
+  SHOPEE_PARTNER_KEY: z.string().min(16).optional(),
+  SHOPEE_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
+
+  /**
    * Cloud Tasks — o worker se REENFILEIRA para si mesmo (`backfill.orders`
    * avançando pedaço a pedaço, `docs/HANDOFF.md`). `WORKER_URL` é a própria
    * URL deste serviço: alvo e audience OIDC do próximo pedaço.

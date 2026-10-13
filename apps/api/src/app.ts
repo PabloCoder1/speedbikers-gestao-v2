@@ -64,6 +64,8 @@ import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
+import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import type { OidcVerifier } from "./oidc.js";
@@ -111,6 +113,8 @@ export interface AppDependencies {
   mlAccounts?: MlAccountsDeps;
   /** `undefined` sem as variáveis da Shopee (env.ts, D-425): as rotas dela respondem 503. */
   shopeeShops?: ShopeeShopsDeps;
+  /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
+  shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
   copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
@@ -527,6 +531,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerListingsSnapshot(listingsSchedule);
+
+    return respostaDoAgendador(context, outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Pedidos da Shopee (D-426) — mesmo formato de /internal/schedule/listings,
+  // por LOJA. Cadência horária: `infra/cloud-scheduler.sh` (só com a Shopee
+  // configurada).
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/shopee-orders", async (context) => {
+    const shopeeOrdersSchedule = dependencies.shopeeOrdersSchedule;
+
+    if (shopeeOrdersSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerShopeeOrdersSync(shopeeOrdersSchedule);
 
     return respostaDoAgendador(context, outcome);
   });

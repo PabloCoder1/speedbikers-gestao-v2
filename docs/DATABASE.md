@@ -141,6 +141,10 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma diferença: a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização. `shopee_shops` (`environment` sandbox|live, `shop_id` único por ambiente, `shop_name`, `region`, `shop_status` da Shopee, `status` da conexão CONNECTED|ERROR, `auth_expires_at` — a autorização vence em até 365 dias) é lida por membros da organização e escrita só pela api. `shopee_credentials` (tokens cifrados com a chave de `ml_credentials`, `refresh_token_expires_at` de 30 dias, trava `refresh_locked_until`) e `shopee_oauth_states` não têm política nem grant fora do `service_role`. Contrato da API em `docs/SHOPEE.md`.
 
+### `shopee_orders` / `shopee_order_items` — pedidos Shopee (D-426)
+
+Migration `20261013140000`. Espelho de `get_order_detail`, escrito só pelo worker (`shopee.orders.sync`) e lido por membros da organização. `shopee_orders` tem chave (`shopee_shop_id`, `order_sn`): status como a Shopee manda, `total_amount` NULO antes do pagamento (nunca zero), datas da Shopee, transportadora, forma de pagamento e cancelamento — nada do comprador. `shopee_order_items` tem chave (`shopee_shop_id`, `order_sn`, `position`) e é SUBSTITUÍDA a cada leitura do pedido; `item_sku`/`model_sku` são o SKU do vendedor (vínculo na fatia 4). Apagar a loja leva pedidos e itens. **Não entra no ledger de estoque** — a baixa é a fatia 5. `shopee_shops.orders_synced_until` é o marco da leitura (NULO = nunca; a primeira começa 90 dias atrás).
+
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
 Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.

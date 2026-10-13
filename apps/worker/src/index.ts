@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createAdminClient } from "@sb/db";
 import { createMercadoLivreClient, loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
+import { createShopeeClient } from "@sb/shopee";
 
 import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
@@ -18,6 +19,7 @@ import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decision-outcomes.js";
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
+import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
@@ -74,6 +76,24 @@ const mercadoLivre = createMercadoLivreClient({
 // `DOCUMENTS_BUCKET` é opcional (env.ts) até o bucket real existir no GCP —
 // o handler de parse da NF-e só entra no registro quando ela está presente,
 // mesmo raciocínio de `dependencies?` opcionais em `apps/api/src/app.ts`.
+// D-426: a Shopee só existe no worker com as variáveis dela (env.ts). Os
+// tokens usam a mesma chave de cifra das credenciais do Mercado Livre.
+const shopeeHandlers =
+  env.SHOPEE_PARTNER_ID !== undefined && env.SHOPEE_PARTNER_KEY !== undefined
+    ? {
+        "shopee.orders.sync": createShopeeOrdersSyncHandler({
+          db,
+          encryptionKey,
+          enqueuer,
+          client: createShopeeClient({
+            environment: env.SHOPEE_ENVIRONMENT,
+            partnerId: Number(env.SHOPEE_PARTNER_ID),
+            partnerKey: env.SHOPEE_PARTNER_KEY,
+          }),
+        }),
+      }
+    : {};
+
 const nfeHandlers =
   env.DOCUMENTS_BUCKET !== undefined
     ? {
@@ -199,6 +219,7 @@ const app = createWorkerApp({
     "diagnostics.sync-central-alerts": createSyncCentralAlertsHandler({ db }),
     "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
     ...nfeHandlers,
+    ...shopeeHandlers,
   }),
 });
 

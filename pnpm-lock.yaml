@@ -177,6 +177,9 @@ importers:
       '@sb/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@sb/shopee':
+        specifier: workspace:*
+        version: link:../../packages/shopee
       fast-xml-parser:
         specifier: 5.11.0
         version: 5.11.0

@@ -265,5 +265,16 @@ upsert_job \
   "${API_URL}/internal/schedule/decision-outcomes" \
   "Medicao de resultado de decisoes (7/15/30 dias) contra o baseline_snapshot, por organizacao"
 
+# Pedidos da Shopee (D-426) -- HORARIA, por LOJA, so com a Shopee ligada no
+# ambiente (SHOPEE_PARTNER_ID, o mesmo interruptor do deploy): sem ela a rota
+# responde 503 e o job so registraria falha.
+if [ -n "${SHOPEE_PARTNER_ID}" ]; then
+  upsert_job \
+    "v3-shopee-orders" \
+    "20 * * * *" \
+    "${API_URL}/internal/schedule/shopee-orders" \
+    "Sincronizacao de pedidos da Shopee, por loja conectada"
+fi
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

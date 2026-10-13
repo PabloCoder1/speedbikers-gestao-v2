@@ -742,7 +742,7 @@ O texto anterior está inteiro em
 Pedido do dono em 13/10/2026, com o app aprovado no Shopee Open Platform. Contrato e estado em `docs/SHOPEE.md`.
 
 - [x] **Fatias 0–1: decisão, cliente e conexão da loja** — `@sb/shopee` (assinatura, link, token, loja), `POST /v1/shopee/connect` e `GET /oauth/shopee/callback`, `shopee_shops`/`shopee_credentials`/`shopee_oauth_states`, painel "Lojas Shopee" em `/contas` — ✔ código 2026-10-13 · D-425. Migration `20261013120000`
-- [ ] **Fatia 2: renovação automática do token e pedidos** — renovar antes das 4 h (refresh de uso único, trava como D-414), aviso da autorização perto de vencer; pedidos por janela de atualização e o histórico
+- [x] **Fatia 2: renovação automática do token e pedidos** — renovação no worker com trava e refresh de uso único, recusa definitiva derruba a loja (como D-414); `shopee.orders.sync` por janela de `update_time` com marco por loja, 90 dias de histórico, gatilho horário; `shopee_orders`/`shopee_order_items` — ✔ código 2026-10-13 · D-426. Migration `20261013140000`. Fica para depois: aviso da autorização perto de vencer (`auth_expires_at`) e a tela dos pedidos (fatia 6)
 - [ ] **Fatia 3: financeiro do pedido** — comissão, taxa de serviço, frete e valor líquido da própria Shopee, no lugar da tabela fixa da calculadora (D-359)
 - [ ] **Fatia 4: produtos e vínculo com SKU** — anúncios e variações pelo SKU do vendedor; reaproveitar os ~3.000 vínculos Shopee do UpSeller que D-037 descartava
 - [ ] **Fatia 5: estoque** — a venda Shopee baixa o mesmo estoque; **decisão do dono antes**: a planilha do UpSeller já desconta essas vendas (corte como D-351)

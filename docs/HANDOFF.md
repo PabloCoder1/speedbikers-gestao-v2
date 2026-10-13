@@ -19,8 +19,8 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00041-z9d` em `4ee14a6d` (D-423, 07/10 18:24 UTC) e api `api-00024-k74` em `defb45ad` (D-421, 07/10), da `main`, por deploy vigiado. Volta: `worker-00040-6xj`/`api-00023-m6r`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261007200000` (D-420 e D-424 entraram em 07/10 20:54 UTC, conferido no log do `migrations-producao.yml`). **Pendente:** `20261013120000` (D-425). Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261013120000`. |
-| **Frente atual** | **Trilha Shopee** (D-425, `docs/SHOPEE.md`): fatias 0–1 em código; próxima, renovação do token e pedidos. A 5J segue com o detector de frete pelas medidas (D-405). |
+| **Migrations** | Produção até `20261007200000` (D-420 e D-424 entraram em 07/10 20:54 UTC, conferido no log do `migrations-producao.yml`). **Pendente:** `20261013120000` (D-425) e `20261013140000` (D-426). Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261013140000`. |
+| **Frente atual** | **Trilha Shopee** (D-425, `docs/SHOPEE.md`): fatias 0–2 em código (conexão, token, pedidos); próxima, o financeiro do pedido. A 5J segue com o detector de frete pelas medidas (D-405). |
 
 ### O que está pronto
 
@@ -234,7 +234,7 @@ Nada disto pode ser feito por um agente.
     nenhum código da `web` lê; no Supabase de produção, Site URL e redirects do Auth, SMTP e PITR;
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
-12. **Shopee (D-425):** acesso da api ao segredo (comando em `docs/SHOPEE.md` §1);
+12. **Shopee (D-425/D-426):** acesso da api e do worker ao segredo (`docs/SHOPEE.md` §1);
     antes do Go Live, Cloud NAT com IP fixo.
 
 ---

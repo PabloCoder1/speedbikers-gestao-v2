@@ -3190,6 +3190,141 @@ export type Database = {
           },
         ]
       }
+      shopee_order_items: {
+        Row: {
+          discounted_price: number | null
+          item_id: number
+          item_name: string | null
+          item_sku: string | null
+          model_id: number | null
+          model_name: string | null
+          model_sku: string | null
+          order_sn: string
+          organization_id: string
+          original_price: number | null
+          position: number
+          promotion_type: string | null
+          quantity: number
+          shopee_shop_id: string
+        }
+        Insert: {
+          discounted_price?: number | null
+          item_id: number
+          item_name?: string | null
+          item_sku?: string | null
+          model_id?: number | null
+          model_name?: string | null
+          model_sku?: string | null
+          order_sn: string
+          organization_id: string
+          original_price?: number | null
+          position: number
+          promotion_type?: string | null
+          quantity: number
+          shopee_shop_id: string
+        }
+        Update: {
+          discounted_price?: number | null
+          item_id?: number
+          item_name?: string | null
+          item_sku?: string | null
+          model_id?: number | null
+          model_name?: string | null
+          model_sku?: string | null
+          order_sn?: string
+          organization_id?: string
+          original_price?: number | null
+          position?: number
+          promotion_type?: string | null
+          quantity?: number
+          shopee_shop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_order_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_order_items_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id", "order_sn"]
+            isOneToOne: false
+            referencedRelation: "shopee_orders"
+            referencedColumns: ["shopee_shop_id", "order_sn"]
+          },
+        ]
+      }
+      shopee_orders: {
+        Row: {
+          cancel_by: string | null
+          cancel_reason: string | null
+          cod: boolean | null
+          currency: string | null
+          order_sn: string
+          order_status: string
+          organization_id: string
+          paid_at: string | null
+          payment_method: string | null
+          shipping_carrier: string | null
+          shopee_created_at: string
+          shopee_shop_id: string
+          shopee_updated_at: string
+          synced_at: string
+          total_amount: number | null
+        }
+        Insert: {
+          cancel_by?: string | null
+          cancel_reason?: string | null
+          cod?: boolean | null
+          currency?: string | null
+          order_sn: string
+          order_status: string
+          organization_id: string
+          paid_at?: string | null
+          payment_method?: string | null
+          shipping_carrier?: string | null
+          shopee_created_at: string
+          shopee_shop_id: string
+          shopee_updated_at: string
+          synced_at?: string
+          total_amount?: number | null
+        }
+        Update: {
+          cancel_by?: string | null
+          cancel_reason?: string | null
+          cod?: boolean | null
+          currency?: string | null
+          order_sn?: string
+          order_status?: string
+          organization_id?: string
+          paid_at?: string | null
+          payment_method?: string | null
+          shipping_carrier?: string | null
+          shopee_created_at?: string
+          shopee_shop_id?: string
+          shopee_updated_at?: string
+          synced_at?: string
+          total_amount?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_orders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_orders_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopee_shops: {
         Row: {
           auth_expires_at: string | null
@@ -3200,6 +3335,7 @@ export type Database = {
           environment: string
           id: string
           last_error: string | null
+          orders_synced_until: string | null
           organization_id: string
           region: string | null
           shop_id: number
@@ -3217,6 +3353,7 @@ export type Database = {
           environment: string
           id?: string
           last_error?: string | null
+          orders_synced_until?: string | null
           organization_id: string
           region?: string | null
           shop_id: number
@@ -3234,6 +3371,7 @@ export type Database = {
           environment?: string
           id?: string
           last_error?: string | null
+          orders_synced_until?: string | null
           organization_id?: string
           region?: string | null
           shop_id?: number
