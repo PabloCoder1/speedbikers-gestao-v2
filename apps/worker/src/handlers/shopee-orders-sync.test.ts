@@ -215,7 +215,7 @@ describe("shopee.orders.sync (D-426)", () => {
     ]);
   });
 
-  it("com marco: lê de 10 minutos antes dele até agora, sem encadear; grava pedido e itens", async () => {
+  it("com marco: lê de 10 minutos antes dele até agora e, alcançado agora, enfileira o financeiro; grava pedido e itens", async () => {
     const marco = new Date(NOW.getTime() - 2 * 3_600_000).toISOString();
     const shopee = fakeShopee({ paginas: [["A1", "A2"]] });
     const { outcome, gravado, enfileirados } = await rodar({ ...LOJA, orders_synced_until: marco }, shopee);
@@ -223,7 +223,16 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(outcome).toEqual({ status: "done", processed: 2 });
     expect(shopee.listas[0]?.get("time_from")).toBe(String(Math.floor(new Date(marco).getTime() / 1000) - 600));
     expect(shopee.listas[0]?.get("time_to")).toBe(String(AGORA_S));
-    expect(enfileirados).toEqual([]);
+    // Sem nova janela de pedidos; o financeiro (D-427) vem atrás.
+    expect(enfileirados).toEqual([
+      {
+        jobType: "shopee.order-financials.sync",
+        organizationId: ORG,
+        dedupeKey: `shopee-financials:${LOJA_ID}:${String(AGORA_S)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: LOJA_ID },
+      },
+    ]);
     expect(gravado.marcos).toEqual([NOW.toISOString()]);
     expect(gravado.pedidos[0]).toMatchObject({
       shopee_shop_id: LOJA_ID,

@@ -148,6 +148,15 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
         queue: "backfill",
         payload: { shopeeShopId: loja.id },
       });
+    } else {
+      // Os pedidos alcançaram agora: o financeiro deles vem atrás (D-427).
+      await deps.enqueuer.enqueue({
+        jobType: "shopee.order-financials.sync",
+        organizationId: loja.organization_id,
+        dedupeKey: `shopee-financials:${loja.id}:${String(ateS)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: loja.id },
+      });
     }
 
     context.logger.info("shopee_orders_sync_done", {

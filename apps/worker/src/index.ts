@@ -19,6 +19,7 @@ import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decision-outcomes.js";
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
+import { createShopeeOrderFinancialsSyncHandler } from "./handlers/shopee-order-financials-sync.js";
 import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
@@ -78,18 +79,24 @@ const mercadoLivre = createMercadoLivreClient({
 // mesmo raciocínio de `dependencies?` opcionais em `apps/api/src/app.ts`.
 // D-426: a Shopee só existe no worker com as variáveis dela (env.ts). Os
 // tokens usam a mesma chave de cifra das credenciais do Mercado Livre.
-const shopeeHandlers =
+const shopeeClient =
   env.SHOPEE_PARTNER_ID !== undefined && env.SHOPEE_PARTNER_KEY !== undefined
+    ? createShopeeClient({
+        environment: env.SHOPEE_ENVIRONMENT,
+        partnerId: Number(env.SHOPEE_PARTNER_ID),
+        partnerKey: env.SHOPEE_PARTNER_KEY,
+      })
+    : undefined;
+const shopeeHandlers =
+  shopeeClient !== undefined
     ? {
-        "shopee.orders.sync": createShopeeOrdersSyncHandler({
+        "shopee.orders.sync": createShopeeOrdersSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
+        // D-427: o financeiro de cada pedido, enfileirado pelo job acima.
+        "shopee.order-financials.sync": createShopeeOrderFinancialsSyncHandler({
           db,
           encryptionKey,
           enqueuer,
-          client: createShopeeClient({
-            environment: env.SHOPEE_ENVIRONMENT,
-            partnerId: Number(env.SHOPEE_PARTNER_ID),
-            partnerKey: env.SHOPEE_PARTNER_KEY,
-          }),
+          client: shopeeClient,
         }),
       }
     : {};
