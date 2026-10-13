@@ -62,6 +62,13 @@ build_and_deploy() {
       ;;
   esac
 
+  # D-425: o partner_id da Shopee é só dígitos, pelo mesmo motivo acima.
+  case "${SHOPEE_PARTNER_ID}" in
+    *[!0-9]*)
+      fail "SHOPEE_PARTNER_ID='${SHOPEE_PARTNER_ID}' tem caractere nao numerico. O partner_id da Shopee e so digitos."
+      ;;
+  esac
+
   step "Build da imagem: ${app}"
   info "${image}"
   gc builds submit \
@@ -138,6 +145,22 @@ MERCADO_LIVRE_CLIENT_ID: "${MERCADO_LIVRE_CLIENT_ID}"
 MERCADO_LIVRE_REDIRECT_URI: "${ml_redirect_uri}"
 YAML
 
+    # D-425: a Shopee só entra com SHOPEE_PARTNER_ID definido — sem ele, nem as
+    # variáveis nem o segredo vão para a revisão, e a api sobe sem a Shopee.
+    # O segredo só é montado quando existe, porque a conta da api precisa de
+    # `secretAccessor` nele ANTES (setup-dev.sh, SEGREDOS_CONSUMIDORES): um
+    # segredo sem acesso não falha o deploy, falha a PARTIDA do container.
+    local shopee_secret=""
+    if [ -n "${SHOPEE_PARTNER_ID}" ]; then
+      cat >> "${env_file}" <<YAML
+SHOPEE_PARTNER_ID: "${SHOPEE_PARTNER_ID}"
+SHOPEE_ENVIRONMENT: "${SHOPEE_ENVIRONMENT}"
+SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-${api_url}/oauth/shopee/callback}"
+YAML
+      shopee_secret=",SHOPEE_PARTNER_KEY=${SECRET_SHOPEE_PARTNER_KEY}:latest"
+      info "Shopee ligada: ${SHOPEE_ENVIRONMENT}, partner_id ${SHOPEE_PARTNER_ID}"
+    fi
+
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
     # e não envia credencial do Google. A autenticação é própria da rota
     # (docs/API.md secao 2).
@@ -155,7 +178,7 @@ YAML
       --timeout 60s \
       --cpu 1 --memory 512Mi \
       --env-vars-file "${env_file}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest${shopee_secret}" \
       --quiet
   else
     # O worker NÃO tem rota pública para fora — só o Cloud Tasks o invoca, com

@@ -34,6 +34,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 |---|---|---|---|
 | `/webhooks/mercado-livre` | POST | Validação própria da origem | ACK rápido e enfileira. **Não é "zero chamada de rede"** (D-339): as notificações com trabalho criam a Cloud Task antes do ACK. A conta dona do `seller_id` vem de um diretório **em memória** desde D-346 — a consulta por notificação custava p95 de 2,8 s nas rajadas (D-345), e a primeira tentativa de evitá-la, só para o tópico sem consumidor, esfriou as conexões e foi revertida (D-340). Desde 2026-08-25 (D-088) o ACK roteia por tópico: `questions` vira `sync.support.questions` com `{ mlAccountId, questionId }`; todo o resto continua em `sync.webhook.received`. Uma regra de dedupe só (`ml-webhook:{resource}:{janela-minuto}`) para os dois. `questions` com `resource` fora de `/questions/{id}` responde 200 sem enfileirar e sai como `ml_webhook_unroutable_resource` no log |
 | `/oauth/mercado-livre/callback` | GET | `state` de CSRF | Conclui a autorização da conta — **implementado em 2026-08-21** |
+| `/oauth/shopee/callback` | GET | `state` de CSRF | Conclui a autorização de loja Shopee (D-425): recebe `code` e `shop_id` (ou `main_account_id`), cria a loja e grava os tokens cifrados; responde `{ connected, shops }` ou `{ error: { code: "invalid_state" \| "rejected" } }`. 503 sem as variáveis da Shopee |
 
 **Regra crítica do webhook:** o caminho é liberado **explicitamente e apenas ele**, com teste negativo nas rotas vizinhas. *Motivo, medido na V2:* o proxy exigia sessão, o webhook não envia cookie, e as notificações de preço, promoção e Full morriam em silêncio num 307 para `/login`.
 
@@ -65,6 +66,7 @@ Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERRO
 | Rota | Método | Papel mínimo | Descrição |
 |---|---|---|---|
 | `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta — **implementado em 2026-08-21**, devolve `{ authorizationUrl }` |
+| `/v1/shopee/connect` | POST | ADMIN | Inicia a autorização de loja Shopee (D-425), sem corpo — a loja só é conhecida no retorno; devolve `{ authorizationUrl }`. 503 sem as variáveis da Shopee |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
 | `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação |

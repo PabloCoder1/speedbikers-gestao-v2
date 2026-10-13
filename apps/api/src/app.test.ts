@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
+import { createShopeeClient } from "@sb/shopee";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
@@ -16,6 +17,7 @@ import type { MlAccountsDeps } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
 import type { RelistDeps } from "./relist.js";
+import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import type { WebhookDeps } from "./webhook.js";
 
 function buildApp(): { app: ReturnType<typeof createApp>; lines: string[] } {
@@ -2040,5 +2042,123 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     expect(JSON.parse(corpo)).toEqual({ error: { code: "internal", message: "Erro interno.", request_id: "req-auditoria" } });
     // O motivo real não se perde: vai para o log, com o mesmo request_id.
     expect(linhas.some((l) => l.includes("permission denied") && l.includes("req-auditoria"))).toBe(true);
+  });
+});
+
+describe("conexão de loja Shopee (D-425)", () => {
+  const CHAVE_SHOPEE = randomBytes(32);
+
+  function chainShopee(result: unknown): Record<string, unknown> {
+    const self: Record<string, unknown> = {};
+
+    for (const metodo of ["eq", "is", "gt", "in", "select"]) {
+      self[metodo] = () => self;
+    }
+
+    self.maybeSingle = () => Promise.resolve(result);
+    self.single = () => Promise.resolve(result);
+    self.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+
+    return self;
+  }
+
+  function withShopee(options: { role?: Role; withAuth?: boolean; withDeps?: boolean; stateValido?: boolean } = {}) {
+    const authenticate = (_header: string | undefined, allowed: readonly Role[]): Promise<AuthResult> => {
+      if (options.withAuth === false) {
+        return Promise.resolve({ ok: false, status: 401, reason: "sem token" });
+      }
+
+      const role = options.role ?? "ADMIN";
+
+      return Promise.resolve(
+        allowed.includes(role)
+          ? { ok: true, caller: { userId: "u1", organizationId: "org-1", role } }
+          : { ok: false, status: 403, reason: "papel sem permissão para esta ação" },
+      );
+    };
+
+    const db = {
+      from: () => ({
+        insert: () => chainShopee({ error: null }),
+        update: () =>
+          chainShopee({
+            data:
+              options.stateValido === false ? null : { organization_id: "org-1", environment: "sandbox", created_by: "u1" },
+            error: null,
+          }),
+        select: () => chainShopee({ data: [], error: null }),
+        upsert: () => chainShopee({ data: { id: "loja-1" }, error: null }),
+      }),
+    } as unknown as ShopeeShopsDeps["db"];
+
+    const respostas: Record<string, unknown> = {
+      "/api/v2/auth/token/get": { error: "", access_token: "acc-token-123", refresh_token: "ref-token-123", expire_in: 14400 },
+      "/api/v2/shop/get_shop_info": { error: "", shop_name: "Loja Teste BR", region: "BR", status: "NORMAL" },
+    };
+
+    return createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: { authenticate },
+      ...(options.withDeps === false
+        ? {}
+        : {
+            shopeeShops: {
+              db,
+              logger: createLogger({}, { sink: () => undefined }),
+              encryptionKey: CHAVE_SHOPEE,
+              redirectUri: "https://api.exemplo.run.app/oauth/shopee/callback",
+              client: createShopeeClient({
+                environment: "sandbox",
+                partnerId: 1248019,
+                partnerKey: "chave-de-teste-nao-real",
+                fetchImpl: ((url: URL) =>
+                  Promise.resolve(new Response(JSON.stringify(respostas[url.pathname]), { status: 200 }))) as unknown as typeof fetch,
+              }),
+            },
+          }),
+    });
+  }
+
+  describe("POST /v1/shopee/connect", () => {
+    it("só ADMIN; sem login é 401; sem a configuração da Shopee é 503", async () => {
+      const gestor = await withShopee({ role: "GESTOR" }).request("/v1/shopee/connect", { method: "POST" });
+      const anonimo = await withShopee({ withAuth: false }).request("/v1/shopee/connect", { method: "POST" });
+      const desligada = await withShopee({ withDeps: false }).request("/v1/shopee/connect", { method: "POST" });
+
+      expect(gestor.status).toBe(403);
+      expect(anonimo.status).toBe(401);
+      expect(desligada.status).toBe(503);
+    });
+
+    it("ADMIN recebe o link de autorização do sandbox Brasil", async () => {
+      const response = await withShopee().request("/v1/shopee/connect", { method: "POST" });
+      const body = (await response.json()) as { authorizationUrl: string };
+
+      expect(response.status).toBe(200);
+      expect(body.authorizationUrl).toMatch(/^https:\/\/open\.sandbox\.test-stable\.shopee\.com\.br\/auth\?/);
+    });
+  });
+
+  describe("GET /oauth/shopee/callback", () => {
+    it("sem configuração é 503; sem state é 400; state inválido é 400", async () => {
+      expect((await withShopee({ withDeps: false }).request("/oauth/shopee/callback?state=x")).status).toBe(503);
+      expect((await withShopee().request("/oauth/shopee/callback?code=a&shop_id=1")).status).toBe(400);
+
+      const invalido = await withShopee({ stateValido: false }).request(
+        `/oauth/shopee/callback?state=${"s".repeat(43)}&code=a&shop_id=1`,
+      );
+
+      expect(invalido.status).toBe(400);
+      expect(await invalido.json()).toEqual({ error: { code: "invalid_state" } });
+    });
+
+    it("não exige login (é o navegador vindo da Shopee) e devolve as lojas conectadas", async () => {
+      const response = await withShopee({ withAuth: false }).request(
+        `/oauth/shopee/callback?state=${"s".repeat(43)}&code=abc&shop_id=54804`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ connected: true, shops: [{ shopId: 54804, shopName: "Loja Teste BR" }] });
+    });
   });
 });

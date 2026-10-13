@@ -21,6 +21,7 @@ e a maior parte é irrelevante para qualquer tarefa específica.
 |---|---|
 | Banco, RLS, migration, índice | `docs/DATABASE.md` |
 | Mercado Livre, webhook, sync | `docs/MERCADO_LIVRE.md`, `docs/API.md` |
+| Shopee | `docs/SHOPEE.md` |
 | Tela, componente, UX | `docs/PRODUCT_REQUIREMENTS.md` + a seção relevante do `docs/ROADMAP.md` |
 | **Aparência** de tela ou componente | `docs/DESIGN_IMPLEMENTATION.md` — Design Contract e fila visual |
 | Métrica, número exibido | `docs/METRICS.md` |

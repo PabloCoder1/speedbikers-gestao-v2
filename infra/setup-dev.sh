@@ -142,6 +142,12 @@ SEGREDOS_CONSUMIDORES=(
   "${SECRET_ANTHROPIC_KEY}:${SA_API}"
 )
 
+# D-425: a Partner Key da Shopee, só quando a Shopee está ligada no ambiente —
+# o mesmo interruptor do deploy (SHOPEE_PARTNER_ID). Só a api a lê.
+if [ -n "${SHOPEE_PARTNER_ID}" ]; then
+  SEGREDOS_CONSUMIDORES+=("${SECRET_SHOPEE_PARTNER_KEY}:${SA_API}")
+fi
+
 grant_secret_access() {
   local secret="$1" sa="$2" output
 

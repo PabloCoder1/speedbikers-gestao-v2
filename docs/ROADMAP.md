@@ -734,3 +734,17 @@ conserta o texto.
 
 O texto anterior está inteiro em
 `docs/archive/roadmap/2026-09-02_proximo-passo-imediato-aposentado.md`.
+
+---
+
+## Trilha Shopee — segundo canal, só leitura (D-425)
+
+Pedido do dono em 13/10/2026, com o app aprovado no Shopee Open Platform. Contrato e estado em `docs/SHOPEE.md`.
+
+- [x] **Fatias 0–1: decisão, cliente e conexão da loja** — `@sb/shopee` (assinatura, link, token, loja), `POST /v1/shopee/connect` e `GET /oauth/shopee/callback`, `shopee_shops`/`shopee_credentials`/`shopee_oauth_states`, painel "Lojas Shopee" em `/contas` — ✔ código 2026-10-13 · D-425. Migration `20261013120000`
+- [ ] **Fatia 2: renovação automática do token e pedidos** — renovar antes das 4 h (refresh de uso único, trava como D-414), aviso da autorização perto de vencer; pedidos por janela de atualização e o histórico
+- [ ] **Fatia 3: financeiro do pedido** — comissão, taxa de serviço, frete e valor líquido da própria Shopee, no lugar da tabela fixa da calculadora (D-359)
+- [ ] **Fatia 4: produtos e vínculo com SKU** — anúncios e variações pelo SKU do vendedor; reaproveitar os ~3.000 vínculos Shopee do UpSeller que D-037 descartava
+- [ ] **Fatia 5: estoque** — a venda Shopee baixa o mesmo estoque; **decisão do dono antes**: a planilha do UpSeller já desconta essas vendas (corte como D-351)
+- [ ] **Fatia 6: canal nos relatórios** — Mercado Livre e Shopee como dimensão em Vendas, Faturamento e ranking; painel por loja
+- [ ] **Fatia 7: Go Live** — IP fixo (Cloud NAT) obrigatório, credenciais e domínio de produção, Product Brief; autorizar Speedbikers e Sbmotos

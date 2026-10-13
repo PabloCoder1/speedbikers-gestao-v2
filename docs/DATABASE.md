@@ -137,6 +137,10 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 **Match exato roda sozinho**, sem tela: depois de qualquer aplicação do importador, o worker relê os candidatos `OPEN` da organização sobre as mesmas linhas de origem — se o SKU passou a existir, o vínculo é criado e o candidato fecha com `resolution_method = 'EXACT_MATCH'`, sem intervenção humana.
 
+### `shopee_shops` / `shopee_credentials` / `shopee_oauth_states` — conexão Shopee (D-425)
+
+Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma diferença: a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização. `shopee_shops` (`environment` sandbox|live, `shop_id` único por ambiente, `shop_name`, `region`, `shop_status` da Shopee, `status` da conexão CONNECTED|ERROR, `auth_expires_at` — a autorização vence em até 365 dias) é lida por membros da organização e escrita só pela api. `shopee_credentials` (tokens cifrados com a chave de `ml_credentials`, `refresh_token_expires_at` de 30 dias, trava `refresh_locked_until`) e `shopee_oauth_states` não têm política nem grant fora do `service_role`. Contrato da API em `docs/SHOPEE.md`.
+
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
 Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.

@@ -190,6 +190,16 @@ MERCADO_LIVRE_REDIRECT_URI="${MERCADO_LIVRE_REDIRECT_URI:-}"
 SECRET_ML_CLIENT_SECRET="MERCADO_LIVRE_CLIENT_SECRET"
 SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
 
+# Shopee Open Platform (D-425). O partner_id NÃO é segredo; a Partner Key é, e
+# vive no Secret Manager — a de teste em SHOPEE_TEST_PARTNER_KEY (sandbox); a de
+# produção, no Go Live, num segredo próprio (exportar SECRET_SHOPEE_PARTNER_KEY
+# e SHOPEE_ENVIRONMENT=live). Sem SHOPEE_PARTNER_ID no ambiente do deploy, a api
+# sobe SEM a Shopee: as rotas dela respondem 503 e nenhum segredo é montado.
+SHOPEE_PARTNER_ID="${SHOPEE_PARTNER_ID:-}"
+SHOPEE_ENVIRONMENT="${SHOPEE_ENVIRONMENT:-sandbox}"
+SHOPEE_REDIRECT_URI="${SHOPEE_REDIRECT_URI:-}"
+SECRET_SHOPEE_PARTNER_KEY="${SECRET_SHOPEE_PARTNER_KEY:-SHOPEE_TEST_PARTNER_KEY}"
+
 # Copiloto (D-082): Claude Haiku 4.5. Só a api consome — o Copiloto roda
 # inteiro em apps/api (POST /v1/copilot/query), o worker nunca chama a
 # Anthropic. Chave nova, provisionada direto no Secret Manager em
