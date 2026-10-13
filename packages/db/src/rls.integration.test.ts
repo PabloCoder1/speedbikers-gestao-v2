@@ -2555,6 +2555,71 @@ describe("credenciais são inalcançáveis pela Data API", () => {
 });
 
 
+/*
+  D-425: as lojas Shopee. Lidas por quem é da organização; escritas só pela api
+  (service role); credenciais e states fora do alcance do navegador.
+*/
+describe("lojas Shopee (D-425)", () => {
+  const LOJA = "dddd4250-0000-4000-8000-00000000d425";
+  const SHOP_ID = 990425001;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status)
+       values ($1,$2,'sandbox',$3,'Loja Teste','CONNECTED')`,
+      [LOJA, ORG_SB, SHOP_ID],
+    );
+    await client.query(
+      `insert into public.shopee_credentials
+         (shopee_shop_id, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at, refresh_token_expires_at)
+       values ($1, repeat('a', 60), repeat('b', 60), now() + interval '4 hours', now() + interval '30 days')`,
+      [LOJA],
+    );
+  });
+
+  afterAll(async () => {
+    // Apagar a loja leva a credencial junto (on delete cascade).
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  it("quem é da organização vê a loja; outra organização não vê", async () => {
+    const minhas = await asUser<{ shop_id: string; shop_name: string }>(
+      ADMIN_SB,
+      `select shop_id, shop_name from public.shopee_shops where shop_id = ${String(SHOP_ID)}`,
+    );
+    const deOutra = await asUser(DE_OUTRA_ORG, `select 1 from public.shopee_shops where shop_id = ${String(SHOP_ID)}`);
+
+    expect(minhas).toEqual([{ shop_id: String(SHOP_ID), shop_name: "Loja Teste" }]);
+    expect(deOutra).toHaveLength(0);
+  });
+
+  it("nem o ADMIN grava loja pelo navegador — só a api", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.shopee_shops (organization_id, environment, shop_id) values ('${ORG_SB}','sandbox',990425002)`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it.each(["shopee_credentials", "shopee_oauth_states"])("authenticated e anon são recusados em %s", async (t) => {
+    await expect(asUser(ADMIN_SB, `select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(`select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("a mesma loja não entra duas vezes no mesmo ambiente; token curto (texto claro) é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.shopee_shops (organization_id, environment, shop_id) values ($1,'sandbox',$2)`,
+        [ORG_OUTRA, SHOP_ID],
+      ),
+    ).rejects.toThrow(/shopee_shops_unica/);
+    await expect(
+      client.query(`update public.shopee_credentials set access_token_ciphertext = 'abc' where shopee_shop_id = $1`, [LOJA]),
+    ).rejects.toThrow(/shopee_credentials_cifradas/);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";
@@ -5875,20 +5940,60 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     const doFixture = (linhas: { sku_id: string; units_90d: string }[]): string | undefined =>
       linhas.find((l) => l.sku_id === skuId)?.units_90d;
 
-    const comNulo = await asUser<{ sku_id: string; units_90d: string }>(
-      ADMIN_SB,
-      `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}', null, null, null, 5000, 0)`,
-    );
+    // A data EXPLÍCITA continua sendo a do fixture: 15 = 10 de TODAY + 5 de 40
+    // dias antes. O número é o que o nulo zerava, e 15 !== 0 é afirmação de
+    // verdade -- não um zero que passaria de qualquer jeito (D-197).
     const comHoje = await asUser<{ sku_id: string; units_90d: string }>(
       ADMIN_SB,
       `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}','${TODAY}', null, null, 5000, 0)`,
     );
 
-    // 15 = 10 de hoje + 5 de 40 dias atras, do fixture. O numero e o que o
-    // nulo zerava, e 15 !== 0 e afirmacao de verdade -- nao um zero que
-    // passaria de qualquer jeito (D-197).
     expect(Number(doFixture(comHoje))).toBe(15);
-    expect(Number(doFixture(comNulo))).toBe(15);
+
+    // O NULO é o hoje DO BANCO, não o TODAY fixo do fixture. Até 13/10/2026
+    // este caso comparava o nulo com TODAY e passava por coincidência: a venda
+    // de 40 dias antes de TODAY (14/07) ainda caía na janela de 90 dias contada
+    // de hoje. Em 13/10 saiu, e o caso quebrou sem regressão nenhuma. Agora ele
+    // planta uma venda DATADA DE HOJE (apagada no fim), compara o nulo com
+    // `current_date` explícito e confere contra uma soma independente da
+    // tabela -- que nunca é zero, porque a venda de hoje sempre está nela.
+    const plantadas = await client.query<{ metric_date: string }>(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,current_date,10,500,5,5)
+       on conflict do nothing
+       returning metric_date`,
+      [ORG_SB, CONTA, skuId],
+    );
+
+    try {
+      const comNulo = await asUser<{ sku_id: string; units_90d: string }>(
+        ADMIN_SB,
+        `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}', null, null, null, 5000, 0)`,
+      );
+      const comCurrentDate = await asUser<{ sku_id: string; units_90d: string }>(
+        ADMIN_SB,
+        `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}', current_date, null, null, 5000, 0)`,
+      );
+      const { rows } = await client.query<{ unidades: string }>(
+        `select coalesce(sum(units_sold), 0) as unidades from public.daily_sku_metrics
+         where sku_id = $1 and metric_date > current_date - 90 and metric_date <= current_date`,
+        [skuId],
+      );
+      const esperado = Number(rows[0]?.unidades ?? 0);
+
+      expect(esperado).toBeGreaterThanOrEqual(10);
+      expect(Number(doFixture(comNulo))).toBe(esperado);
+      expect(doFixture(comNulo)).toBe(doFixture(comCurrentDate));
+    } finally {
+      if (plantadas.rows.length > 0) {
+        await client.query(
+          `delete from public.daily_sku_metrics
+           where organization_id = $1 and ml_account_id = $2 and sku_id = $3 and metric_date = current_date`,
+          [ORG_SB, CONTA, skuId],
+        );
+      }
+    }
   });
 
   it("total_count acompanha o FILTRO de estado, nao o universo", async () => {

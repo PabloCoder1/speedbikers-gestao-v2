@@ -101,6 +101,21 @@ export const envSchema = z.object({
   WEB_ORIGINS: z.string().optional(),
 
   /**
+   * Shopee Open Platform (D-425). As quatro juntas ligam a conexão de loja;
+   * faltando qualquer uma, as rotas da Shopee respondem 503 e o resto da api
+   * sobe igual — o mesmo interruptor de `DOCUMENTS_BUCKET`.
+   *
+   * `SHOPEE_PARTNER_KEY` é segredo (Secret Manager). O `SHOPEE_PARTNER_ID` de
+   * teste só vale no sandbox, e o de produção só em `live`.
+   * `SHOPEE_REDIRECT_URI` precisa estar no domínio declarado no Console da
+   * Shopee ("Test/Live Redirect URL Domain").
+   */
+  SHOPEE_PARTNER_ID: z.string().regex(/^[0-9]+$/, "precisa ser o número do partner_id").optional(),
+  SHOPEE_PARTNER_KEY: z.string().min(16).optional(),
+  SHOPEE_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
+  SHOPEE_REDIRECT_URI: z.url().optional(),
+
+  /**
    * Copiloto (D-082) — narração de diagnóstico via Claude Haiku 4.5. Segredo,
    * vem do Secret Manager (`infra/lib.sh` `SECRET_ANTHROPIC_KEY`). Único
    * consumidor: `narrate_sku_diagnosis` em `src/copilot.ts`.

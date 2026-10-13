@@ -145,6 +145,13 @@ export const E2E_LOCAL_STOCK = 50;
 /** O preço em campanha do primeiro anúncio (D-419) — o cadastrado é 189,90. */
 export const E2E_LISTING_PROMO_PRICE = 169.9;
 
+/**
+ * A loja Shopee do seed (D-425): conectada no sandbox. O retorno da autorização
+ * é quem cria a linha na vida real; aqui o seed a planta para a tela de contas
+ * ter o que listar.
+ */
+export const E2E_SHOPEE_SHOP = { shopId: 990000001, name: "Loja Shopee E2E", region: "BR" } as const;
+
 /** Campos que toda campanha gravada tem (D-420); cada uma preenche os seus. */
 const CAMPANHA_VAZIA = {
   id: null,

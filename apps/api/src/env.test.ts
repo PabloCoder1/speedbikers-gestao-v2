@@ -90,4 +90,23 @@ describe("parseEnv", () => {
   it("recusa MERCADO_LIVRE_REDIRECT_URI que não é URL", () => {
     expect(parseEnv({ ...OBRIGATORIAS, MERCADO_LIVRE_REDIRECT_URI: "callback" }).ok).toBe(false);
   });
+
+  it("Shopee (D-425): sem as variáveis o boot segue, no sandbox; partner_id que não é número é recusado", () => {
+    const sem = parseEnv({ ...OBRIGATORIAS });
+
+    expect(sem.ok && sem.env).toMatchObject({ SHOPEE_ENVIRONMENT: "sandbox" });
+    expect(sem.ok && sem.env.SHOPEE_PARTNER_ID).toBeUndefined();
+
+    const com = parseEnv({
+      ...OBRIGATORIAS,
+      SHOPEE_PARTNER_ID: "1248019",
+      SHOPEE_PARTNER_KEY: "chave-de-teste-longa-o-bastante",
+      SHOPEE_REDIRECT_URI: "https://api-rrquw5upla-rj.a.run.app/oauth/shopee/callback",
+      SHOPEE_ENVIRONMENT: "live",
+    });
+
+    expect(com.ok && com.env).toMatchObject({ SHOPEE_PARTNER_ID: "1248019", SHOPEE_ENVIRONMENT: "live" });
+    expect(parseEnv({ ...OBRIGATORIAS, SHOPEE_PARTNER_ID: "abc" }).ok).toBe(false);
+    expect(parseEnv({ ...OBRIGATORIAS, SHOPEE_ENVIRONMENT: "producao" }).ok).toBe(false);
+  });
 });

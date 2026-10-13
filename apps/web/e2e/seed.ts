@@ -50,6 +50,7 @@ import {
   E2E_LISTING_PRICE_EVENT_ALTA,
   E2E_LISTING_CAMPANHAS,
   E2E_LISTING_PROMO_PRICE,
+  E2E_SHOPEE_SHOP,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
@@ -1017,6 +1018,25 @@ async function main(): Promise<void> {
 
   if (listings.error !== null) {
     throw listings.error;
+  }
+
+  // D-425: uma loja Shopee conectada no sandbox, para o painel de /contas.
+  const lojaShopee = await db.from("shopee_shops").upsert(
+    {
+      organization_id: organizationId,
+      environment: "sandbox",
+      shop_id: E2E_SHOPEE_SHOP.shopId,
+      shop_name: E2E_SHOPEE_SHOP.name,
+      region: E2E_SHOPEE_SHOP.region,
+      shop_status: "NORMAL",
+      status: "CONNECTED",
+      auth_expires_at: new Date(Date.now() + 365 * 86_400_000).toISOString(),
+    },
+    { onConflict: "environment,shop_id" },
+  );
+
+  if (lojaShopee.error !== null) {
+    throw lojaShopee.error;
   }
 
   // Full DO ANÚNCIO (D-243): UM snapshot, só para o primeiro anúncio. Os outros

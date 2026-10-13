@@ -16,6 +16,7 @@ import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { ConnectButton } from "./connect-button";
 import { NewAccountForm } from "./new-account-form";
+import { ShopeeConnectButton } from "./shopee-connect-button";
 
 export const metadata = { title: "Contas Mercado Livre — Speed Bikers Gestão" };
 
@@ -78,9 +79,14 @@ export default async function ContasPage(): Promise<ReactNode> {
     );
   }
 
-  const { data, error } = await supabase.rpc("get_ml_account_cards", {
-    p_organization_id: organizationId,
-  });
+  // D-425: as lojas Shopee saem na mesma ida das contas do Mercado Livre.
+  const [{ data, error }, lojasShopee] = await Promise.all([
+    supabase.rpc("get_ml_account_cards", { p_organization_id: organizationId }),
+    supabase
+      .from("shopee_shops")
+      .select("id, shop_id, shop_name, region, environment, status, shop_status, auth_expires_at, connected_at, last_error")
+      .order("connected_at", { ascending: true }),
+  ]);
 
   const accounts = data ?? [];
 
@@ -315,6 +321,72 @@ export default async function ContasPage(): Promise<ReactNode> {
           })}
         </div>
       )}
+
+      {/*
+        SHOPEE (D-425): segundo canal, só leitura. A loja nasce no retorno da
+        autorização — não há cadastro antes, como no Mercado Livre. Sem a
+        tabela (banco anterior a 20261013120000), o painel diz que a novidade
+        ainda não chegou em vez de virar erro.
+      */}
+      <div className="sb-account-create">
+        <Panel
+          title="Lojas Shopee"
+          subtitle="Conecte a loja e autorize na Shopee com o login da própria loja. A Shopee pede a autorização de novo no prazo escolhido nela (até 365 dias)."
+        >
+          <div className="sb-panel-body">
+            {lojasShopee.error !== null ? (
+              <p className="sb-empty">
+                {lojasShopee.error.code === "PGRST205" || lojasShopee.error.code === "42P01"
+                  ? "As lojas Shopee chegam com a próxima atualização do banco."
+                  : `Não foi possível ler as lojas Shopee: ${lojasShopee.error.message}`}
+              </p>
+            ) : lojasShopee.data.length === 0 ? (
+              <p className="sb-empty">Nenhuma loja Shopee conectada ainda.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table" aria-label="Lojas Shopee">
+                  <thead>
+                    <tr>
+                      <th>Loja</th>
+                      <th>Ambiente</th>
+                      <th>Conexão</th>
+                      <th>Autorização vence</th>
+                      <th>Conectada em</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lojasShopee.data.map((loja) => (
+                      <tr key={loja.id}>
+                        <td>
+                          {loja.shop_name ?? "Loja sem nome lido"}
+                          <span className="sb-mono" style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                            {loja.shop_id}
+                            {loja.region === null ? "" : ` · ${loja.region}`}
+                            {loja.shop_status === null || loja.shop_status === "NORMAL" ? "" : ` · ${loja.shop_status}`}
+                          </span>
+                        </td>
+                        <td>{loja.environment === "live" ? "Produção" : "Teste (sandbox)"}</td>
+                        <td>
+                          {loja.status === "CONNECTED" ? "Conectada" : "Com erro"}
+                          {loja.last_error === null ? null : (
+                            <span style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                              {sanitizeErrorText(loja.last_error)}
+                            </span>
+                          )}
+                        </td>
+                        <td>{loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}</td>
+                        <td>{formatDateTime(loja.connected_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {ehAdmin && <ShopeeConnectButton />}
+          </div>
+        </Panel>
+      </div>
 
       {ehAdmin && (
         <div className="sb-account-create">

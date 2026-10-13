@@ -62,6 +62,8 @@ import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
+import type { ShopeeShopsDeps } from "./shopee-shops.js";
+import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import type { OidcVerifier } from "./oidc.js";
@@ -107,6 +109,8 @@ export interface AppDependencies {
   ipAllowlist?: IpAllowlistVerifier;
   webhook?: WebhookDeps;
   mlAccounts?: MlAccountsDeps;
+  /** `undefined` sem as variáveis da Shopee (env.ts, D-425): as rotas dela respondem 503. */
+  shopeeShops?: ShopeeShopsDeps;
   copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
@@ -306,6 +310,50 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     return context.json({ connected: true, mlAccountId: outcome.mlAccountId });
   });
+
+  // --------------------------------------------------------------------
+  // Callback da autorização Shopee (D-425). Público como o do Mercado Livre:
+  // quem chega é o navegador do ADMIN redirecionado pela Shopee, e a defesa é
+  // o `state`. A Shopee devolve `code` e `shop_id` — ou `main_account_id`,
+  // quando a autorização veio de uma conta principal com várias lojas.
+  // --------------------------------------------------------------------
+  app.get("/oauth/shopee/callback", async (context) => {
+    const shopeeShops = dependencies.shopeeShops;
+
+    if (shopeeShops === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const state = context.req.query("state");
+
+    if (state === undefined) {
+      return context.json({ error: { code: "invalid_payload", message: "state ausente" } }, 400);
+    }
+
+    const numero = (valor: string | undefined): number | undefined =>
+      valor !== undefined && /^[0-9]+$/.test(valor) ? Number(valor) : undefined;
+    const code = context.req.query("code");
+    const shopId = numero(context.req.query("shop_id"));
+    const mainAccountId = numero(context.req.query("main_account_id"));
+
+    const outcome = await completeShopeeConnect(shopeeShops, {
+      state,
+      ...(code === undefined ? {} : { code }),
+      ...(shopId === undefined ? {} : { shopId }),
+      ...(mainAccountId === undefined ? {} : { mainAccountId }),
+    });
+
+    if (outcome.status === "invalid_state") {
+      return context.json({ error: { code: "invalid_state" } }, 400);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
+    }
+
+    return context.json({ connected: true, shops: outcome.shops });
+  });
+
 
   // --------------------------------------------------------------------
   // Rotas internas: Cloud Scheduler e Cloud Tasks, autenticadas por OIDC.
@@ -1442,6 +1490,38 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);
     }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    return context.json({ authorizationUrl: outcome.authorizationUrl });
+  });
+
+  // --------------------------------------------------------------------
+  // Conectar loja Shopee (D-425). Só ADMIN, como o Mercado Livre. Sem corpo:
+  // a loja só é conhecida no retorno da autorização.
+  // --------------------------------------------------------------------
+  app.post("/v1/shopee/connect", async (context) => {
+    const auth = dependencies.auth;
+    const shopeeShops = dependencies.shopeeShops;
+
+    if (auth === undefined || shopeeShops === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("shopee_connect_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const outcome = await startShopeeConnect(shopeeShops, authorized.caller);
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);

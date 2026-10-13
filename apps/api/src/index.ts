@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createAdminClient, createUserClient } from "@sb/db";
 import { createMercadoLivreClient, loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
+import { createShopeeClient } from "@sb/shopee";
 
 import { createAccountDirectory, loadAccountsFromDb } from "./account-directory.js";
 import { createAnthropicClient } from "./anthropic-client.js";
@@ -26,6 +27,23 @@ const enqueuer = createEnqueuer(env);
 // `DOCUMENTS_BUCKET` é opcional (env.ts) até o bucket real existir no GCP —
 // as rotas de NF-e só entram no registro quando ela está presente, mesmo
 // raciocínio do handler de parse em `apps/worker/src/index.ts`.
+// D-425: a conexão Shopee só liga com as quatro variáveis (env.ts). A chave de
+// cifra dos tokens é a mesma de `ml_credentials`.
+const shopeeShops =
+  env.SHOPEE_PARTNER_ID !== undefined && env.SHOPEE_PARTNER_KEY !== undefined && env.SHOPEE_REDIRECT_URI !== undefined
+    ? {
+        db,
+        logger,
+        encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
+        redirectUri: env.SHOPEE_REDIRECT_URI,
+        client: createShopeeClient({
+          environment: env.SHOPEE_ENVIRONMENT,
+          partnerId: Number(env.SHOPEE_PARTNER_ID),
+          partnerKey: env.SHOPEE_PARTNER_KEY,
+        }),
+      }
+    : undefined;
+
 const nfeImportDeps =
   env.DOCUMENTS_BUCKET !== undefined
     ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
@@ -61,6 +79,7 @@ const app = createApp({
   // `exactOptionalPropertyTypes`, atribuir `undefined` a uma propriedade
   // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
+  ...(shopeeShops !== undefined ? { shopeeShops } : {}),
   ipAllowlist: createIpAllowlistVerifier(),
   // D-346 — a conta dona do `seller_id` vem da memória. A consulta por
   // notificação era o ACK de 2,8 s nas rajadas (D-345).

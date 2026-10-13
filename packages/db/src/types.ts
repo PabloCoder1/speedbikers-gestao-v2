@@ -3099,6 +3099,166 @@ export type Database = {
           },
         ]
       }
+      // D-425, migration 20261013120000: CORRECAO MANUAL -- a CLI so regenera
+      // depois de aplicada em todo ambiente (mesmo raciocinio de D-389).
+      shopee_credentials: {
+        Row: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at: string
+          encryption_key_version: number
+          refresh_locked_until: string | null
+          refresh_token_ciphertext: string
+          refresh_token_expires_at: string
+          shopee_shop_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at?: string
+          encryption_key_version?: number
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext: string
+          refresh_token_expires_at: string
+          shopee_shop_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token_ciphertext?: string
+          access_token_expires_at?: string
+          created_at?: string
+          encryption_key_version?: number
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext?: string
+          refresh_token_expires_at?: string
+          shopee_shop_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_credentials_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: true
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopee_oauth_states: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          created_by: string | null
+          environment: string
+          expires_at: string
+          organization_id: string
+          state: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment: string
+          expires_at: string
+          organization_id: string
+          state: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment?: string
+          expires_at?: string
+          organization_id?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_oauth_states_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_oauth_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopee_shops: {
+        Row: {
+          auth_expires_at: string | null
+          authorized_at: string | null
+          connected_at: string
+          created_at: string
+          created_by: string | null
+          environment: string
+          id: string
+          last_error: string | null
+          organization_id: string
+          region: string | null
+          shop_id: number
+          shop_name: string | null
+          shop_status: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          auth_expires_at?: string | null
+          authorized_at?: string | null
+          connected_at?: string
+          created_at?: string
+          created_by?: string | null
+          environment: string
+          id?: string
+          last_error?: string | null
+          organization_id: string
+          region?: string | null
+          shop_id: number
+          shop_name?: string | null
+          shop_status?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_expires_at?: string | null
+          authorized_at?: string | null
+          connected_at?: string
+          created_at?: string
+          created_by?: string | null
+          environment?: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string
+          region?: string | null
+          shop_id?: number
+          shop_name?: string | null
+          shop_status?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_shops_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_shops_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_components: {
         Row: {
           component_sku_id: string
