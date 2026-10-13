@@ -45,9 +45,18 @@ and Authentication), `/documents/v2/v2.shop.get_shop_info`.
 | | Sandbox | Produção (Brasil) |
 |---|---|---|
 | API | `https://openplatform.sandbox.test-stable.shopee.sg` (não há sandbox de API brasileiro) | `https://openplatform.shopee.com.br` |
-| Página de autorização | `https://open.sandbox.test-stable.shopee.com.br/auth` | `https://open.shopee.com.br/auth` |
+| Página de autorização | `https://open.sandbox.test-stable.shopee.com/auth` (global; o `.com.br` da tabela oficial **não existe no DNS**) | `https://open.shopee.com.br/auth` |
 
 O `partner_id` de teste só vale no sandbox; o de produção, só em produção.
+
+**Sandbox é global, inclusive a autorização (conferido em 13/10/2026 à tarde):**
+a tabela de `developer-guide/20` lista `open.sandbox.test-stable.shopee.com.br/auth`
+para o Brasil, mas o host responde `NXDOMAIN` — foi o que o dono viu ao clicar
+em Conectar. A página global `open.sandbox.test-stable.shopee.com/auth` aceita
+o partner_id de teste e leva ao login da conta de TESTE
+(`account.sandbox.test-stable.shopee.com`), com o país no seletor. O
+`open.test-stable.shopee.com/auth` do exemplo da mesma página é outro
+ambiente (`account.seller.test-stable`), não o sandbox público.
 
 ## 3. Assinatura — CONFIRMADO
 
