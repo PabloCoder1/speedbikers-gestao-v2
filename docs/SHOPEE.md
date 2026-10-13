@@ -112,6 +112,29 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   horário `POST /internal/schedule/shopee-orders`. Tabelas
   `shopee_orders` e `shopee_order_items` (`docs/DATABASE.md`).
 
+## 4.2 Financeiro do pedido — CONFIRMADO (D-427)
+
+- **`GET /api/v2/payment/get_escrow_detail`**, um `order_sn` por chamada.
+  `response.order_income` traz `escrow_amount` (o que a loja recebe — **muda
+  até o pedido completar**), `buyer_total_amount`, `commission_fee`,
+  `service_fee`, `seller_transaction_fee`, `net_commission_fee` e
+  `net_service_fee` (só vendedor local do Brasil), o frete
+  (`actual_shipping_fee`, `buyer_paid_shipping_fee`,
+  `shopee_shipping_rebate`, `final_shipping_fee` — pode ser negativo —,
+  `reverse_shipping_fee`), descontos e cupons por quem bancou, afiliados
+  (`order_ams_commission_fee`), `seller_order_processing_fee` e ajustes.
+  Fora dele: `buyer_user_name` e `buyer_payment_info` — a V3 não guarda.
+- **Lote** (`get_escrow_detail_batch`, até 50): a referência se contradiz
+  no formato da resposta; usar só depois de conferido no sandbox.
+- **Erros:** `order_not_found` e `error_data` = pedido sem financeiro (não
+  é falha); `error_server` e `error_network` = passageiros.
+- **Na V3:** job `shopee.order-financials.sync` (até 100 pedidos por
+  execução), enfileirado por `shopee.orders.sync` quando os pedidos
+  alcançam agora; quem precisa de leitura é
+  `shopee_orders_financials_pending` (pago e nunca lido, alterado depois da
+  leitura, ou aberto e lido há mais de 24 h). Colunas e `order_income`
+  inteiro em `shopee_orders`.
+
 ## 5. Sandbox — o roteiro
 
 Fonte: `open.shopee.com/developer-guide/644` (Sandbox Testing V2) e `/744`.
@@ -147,7 +170,7 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 |---|---|---|
 | 0–1 | Decisão, `@sb/shopee`, conexão da loja (link, retorno, tokens cifrados, loja em `/contas`) | código (D-425) |
 | 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | código (D-426) |
-| 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | — |
+| 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | código (D-427) |
 | 4 | Produtos e vínculo com SKU (SKU do vendedor; os ~3.000 vínculos Shopee do UpSeller) | — |
 | 5 | Estoque (exige decisão do dono: a planilha do UpSeller já desconta a venda Shopee) | — |
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja | — |

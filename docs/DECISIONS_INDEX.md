@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **418** (D-001 a D-426).
+Decisões registradas: **419** (D-001 a D-427).
 
 ## Por domínio
 
-### atendimento (54)
+### atendimento (55)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -72,6 +72,7 @@ Decisões registradas: **418** (D-001 a D-426).
 - **D-411** — O alerta novo de severidade alta da central vira notificacao pelo caminho de todo evento: um domain_event na mesma transacao que abre o episodio
 - **D-416** — Auditoria de 28/09, api: agendador que nem lista contas responde 503; erro interno sem a mensagem do banco; id de caminho validado; convite e link de acesso nao atravessam organizacao
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
+- **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 
 ### banco/rls (37)
 

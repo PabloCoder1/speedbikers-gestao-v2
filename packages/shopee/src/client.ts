@@ -52,7 +52,14 @@ export class ShopeeApiError extends Error {
     this.status = options.status;
     this.code = options.code;
     this.requestId = options.requestId;
-    this.errorClass = options.status === 429 || options.status >= 500 || options.code === "error_server" ? "retryable" : "not_retryable";
+    // `error_network` é a chamada interna da Shopee que falhou (D-427): passageiro.
+    const passageiro =
+      options.status === 429 ||
+      options.status >= 500 ||
+      options.code === "error_server" ||
+      options.code === "error_network";
+
+    this.errorClass = passageiro ? "retryable" : "not_retryable";
   }
 }
 

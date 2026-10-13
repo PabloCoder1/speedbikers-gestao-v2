@@ -2698,6 +2698,101 @@ describe("pedidos Shopee (D-426)", () => {
   });
 });
 
+/*
+  D-427: quais pedidos Shopee precisam do financeiro. A regra mora no SQL
+  (compara duas colunas), e é ela que decide quanto o worker chama a Shopee.
+*/
+describe("financeiro dos pedidos Shopee (D-427)", () => {
+  const LOJA = "dddd4270-0000-4000-8000-00000000d427";
+  const OUTRA_LOJA = "dddd4270-0000-4000-8000-00000000e427";
+
+  async function pedido(loja: string, sn: string, status: string, campos: string, valores: string): Promise<void> {
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, ${campos})
+       values ($1, $2, $3, $4, now() - interval '10 days', ${valores})`,
+      [loja, ORG_SB, sn, status],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, status)
+       values ($1,$2,'sandbox',990427001,'CONNECTED'), ($3,$2,'sandbox',990427002,'CONNECTED')`,
+      [LOJA, ORG_SB, OUTRA_LOJA],
+    );
+    // Pago, nunca lido.
+    await pedido(LOJA, "NUNCA", "SHIPPED", "shopee_updated_at, paid_at", "now() - interval '2 days', now() - interval '9 days'");
+    // Não pago: não tem financeiro.
+    await pedido(LOJA, "UNPAID", "UNPAID", "shopee_updated_at", "now() - interval '1 day'");
+    // Completo e lido depois da última mudança: pronto.
+    await pedido(
+      LOJA,
+      "PRONTO",
+      "COMPLETED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '3 days', now() - interval '9 days', now() - interval '2 days'",
+    );
+    // Completo há tempo, lido ANTES da última mudança (devolução): reler.
+    await pedido(
+      LOJA,
+      "MUDOU",
+      "COMPLETED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '1 hour', now() - interval '9 days', now() - interval '2 days'",
+    );
+    // Aberto, lido há 25 h: reler (o escrow muda até completar).
+    await pedido(
+      LOJA,
+      "ABERTO_VELHO",
+      "SHIPPED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '3 days', now() - interval '9 days', now() - interval '25 hours'",
+    );
+    // Aberto, lido há 1 h: ainda não.
+    await pedido(
+      LOJA,
+      "ABERTO_NOVO",
+      "SHIPPED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '3 days', now() - interval '9 days', now() - interval '1 hour'",
+    );
+    // Outra loja, nunca lido: não entra na lista desta.
+    await pedido(OUTRA_LOJA, "OUTRA", "SHIPPED", "shopee_updated_at, paid_at", "now() - interval '2 days', now() - interval '9 days'");
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, OUTRA_LOJA]]);
+  });
+
+  it("pago e nunca lido, alterado depois da leitura, ou aberto lido há mais de 24 h — nunca lidos primeiro", async () => {
+    const pendentes = await client.query<{ order_sn: string }>(
+      "select order_sn from public.shopee_orders_financials_pending($1, 100)",
+      [LOJA],
+    );
+
+    expect(pendentes.rows.map((r) => r.order_sn)).toEqual(["NUNCA", "MUDOU", "ABERTO_VELHO"]);
+  });
+
+  it("respeita o limite", async () => {
+    const um = await client.query("select order_sn from public.shopee_orders_financials_pending($1, 1)", [LOJA]);
+
+    expect(um.rows).toEqual([{ order_sn: "NUNCA" }]);
+  });
+
+  it("o navegador não chama a função; order_income só aceita objeto", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from public.shopee_orders_financials_pending('${LOJA}', 10)`),
+    ).rejects.toThrow(/permission denied/i);
+    await expect(
+      client.query(
+        "update public.shopee_orders set order_income = '[1]'::jsonb where shopee_shop_id = $1 and order_sn = 'NUNCA'",
+        [LOJA],
+      ),
+    ).rejects.toThrow(/shopee_orders_order_income_objeto/);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";

@@ -3258,55 +3258,124 @@ export type Database = {
       }
       shopee_orders: {
         Row: {
+          actual_shipping_fee: number | null
+          buyer_paid_shipping_fee: number | null
+          buyer_total_amount: number | null
           cancel_by: string | null
           cancel_reason: string | null
           cod: boolean | null
+          commission_fee: number | null
           currency: string | null
+          escrow_amount: number | null
+          escrow_amount_after_adjustment: number | null
+          final_shipping_fee: number | null
+          financials_synced_at: string | null
+          net_commission_fee: number | null
+          net_service_fee: number | null
+          order_ams_commission_fee: number | null
+          order_income: Json | null
           order_sn: string
           order_status: string
           organization_id: string
           paid_at: string | null
           payment_method: string | null
+          return_order_sns: string[] | null
+          reverse_shipping_fee: number | null
+          seller_discount: number | null
+          seller_order_processing_fee: number | null
+          seller_transaction_fee: number | null
+          service_fee: number | null
           shipping_carrier: string | null
           shopee_created_at: string
+          shopee_discount: number | null
+          shopee_shipping_rebate: number | null
           shopee_shop_id: string
           shopee_updated_at: string
           synced_at: string
+          total_adjustment_amount: number | null
           total_amount: number | null
+          voucher_from_seller: number | null
+          voucher_from_shopee: number | null
         }
         Insert: {
+          actual_shipping_fee?: number | null
+          buyer_paid_shipping_fee?: number | null
+          buyer_total_amount?: number | null
           cancel_by?: string | null
           cancel_reason?: string | null
           cod?: boolean | null
+          commission_fee?: number | null
           currency?: string | null
+          escrow_amount?: number | null
+          escrow_amount_after_adjustment?: number | null
+          final_shipping_fee?: number | null
+          financials_synced_at?: string | null
+          net_commission_fee?: number | null
+          net_service_fee?: number | null
+          order_ams_commission_fee?: number | null
+          order_income?: Json | null
           order_sn: string
           order_status: string
           organization_id: string
           paid_at?: string | null
           payment_method?: string | null
+          return_order_sns?: string[] | null
+          reverse_shipping_fee?: number | null
+          seller_discount?: number | null
+          seller_order_processing_fee?: number | null
+          seller_transaction_fee?: number | null
+          service_fee?: number | null
           shipping_carrier?: string | null
           shopee_created_at: string
+          shopee_discount?: number | null
+          shopee_shipping_rebate?: number | null
           shopee_shop_id: string
           shopee_updated_at: string
           synced_at?: string
+          total_adjustment_amount?: number | null
           total_amount?: number | null
+          voucher_from_seller?: number | null
+          voucher_from_shopee?: number | null
         }
         Update: {
+          actual_shipping_fee?: number | null
+          buyer_paid_shipping_fee?: number | null
+          buyer_total_amount?: number | null
           cancel_by?: string | null
           cancel_reason?: string | null
           cod?: boolean | null
+          commission_fee?: number | null
           currency?: string | null
+          escrow_amount?: number | null
+          escrow_amount_after_adjustment?: number | null
+          final_shipping_fee?: number | null
+          financials_synced_at?: string | null
+          net_commission_fee?: number | null
+          net_service_fee?: number | null
+          order_ams_commission_fee?: number | null
+          order_income?: Json | null
           order_sn?: string
           order_status?: string
           organization_id?: string
           paid_at?: string | null
           payment_method?: string | null
+          return_order_sns?: string[] | null
+          reverse_shipping_fee?: number | null
+          seller_discount?: number | null
+          seller_order_processing_fee?: number | null
+          seller_transaction_fee?: number | null
+          service_fee?: number | null
           shipping_carrier?: string | null
           shopee_created_at?: string
+          shopee_discount?: number | null
+          shopee_shipping_rebate?: number | null
           shopee_shop_id?: string
           shopee_updated_at?: string
           synced_at?: string
+          total_adjustment_amount?: number | null
           total_amount?: number | null
+          voucher_from_seller?: number | null
+          voucher_from_shopee?: number | null
         }
         Relationships: [
           {
@@ -4846,6 +4915,12 @@ export type Database = {
         // D-398: jsonb com janela (e dias pendentes), referencias, resumo e
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
+      }
+      shopee_orders_financials_pending: {
+        Args: { p_limit?: number; p_shopee_shop_id: string }
+        Returns: {
+          order_sn: string
+        }[]
       }
       sincronizar_alertas_central: {
         Args: {
