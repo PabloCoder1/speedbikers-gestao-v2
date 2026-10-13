@@ -461,7 +461,10 @@ export default async function AnunciosPage({
           <>
             Catálogo do Mercado Livre sincronizado a cada 6h — estado, estoque, Full, venda, visitas e conversão dos
             últimos {filters.days} dias. A fila dos sem vínculo está na{" "}
-            <Link href="/vinculacoes">Central de Vinculações</Link>.
+            <Link href="/vinculacoes">Central de Vinculações</Link>. A Shopee tem tela própria:{" "}
+            {/* D-428: só o caminho para a outra tela — nenhuma contagem, filtro
+                ou RPC do Mercado Livre muda com a Shopee. */}
+            <Link href="/anuncios/shopee">Anúncios da Shopee</Link>.
           </>
         }
         aside={

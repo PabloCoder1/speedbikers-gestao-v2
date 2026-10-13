@@ -1,18 +1,16 @@
 import {
   ORDER_DETAIL_BATCH,
   ORDER_LIST_MAX_WINDOW_S,
-  ShopeeApiError,
   getOrderDetail,
   getOrderListPage,
   shopeeEpochToIso,
   type ShopeeOrder,
 } from "@sb/shopee";
-import { z, ZodError } from "zod";
 
-import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
-import { ensureShopeeAccessToken, type ShopeeTokenDeps } from "./shopee-token.js";
+import { falhaDaShopee, lerLojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
+import { ensureShopeeAccessToken } from "./shopee-token.js";
 
 /**
  * `shopee.orders.sync` (D-426) — os pedidos de UMA loja Shopee, uma janela de
@@ -31,64 +29,21 @@ import { ensureShopeeAccessToken, type ShopeeTokenDeps } from "./shopee-token.js
  * deixa o worker se reenfileirar.
  */
 
-const payloadSchema = z.object({ shopeeShopId: z.uuid() });
-
 const SOBREPOSICAO_S = 10 * 60;
 const PRIMEIRA_LEITURA_S = 90 * 24 * 3600;
 /** Teto de páginas de 100 por janela — 20 mil pedidos em 15 dias passaria de qualquer loja da casa. */
 const MAX_PAGINAS = 200;
 
-export interface ShopeeOrdersSyncDeps extends ShopeeTokenDeps {
-  enqueuer: Enqueuer;
-  now?: () => Date;
-}
-
-function falhaDaShopee(error: unknown): JobOutcome {
-  if (error instanceof ZodError) {
-    return { status: "failed", retryable: false, reason: "resposta da Shopee fora do contrato" };
-  }
-
-  const reason = error instanceof Error ? error.message : "erro desconhecido ao ler pedidos da Shopee";
-
-  return {
-    status: "failed",
-    retryable: !(error instanceof ShopeeApiError) || error.errorClass === "retryable",
-    reason,
-  };
-}
+export type ShopeeOrdersSyncDeps = ShopeeJobDeps;
 
 export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const parsed = payloadSchema.safeParse(context.payload);
+    const aberta = await lerLojaConectada(deps, context, "shopee_orders_sync_skipped");
 
-    if (!parsed.success) {
-      return { status: "failed", retryable: false, reason: "payload sem shopeeShopId" };
-    }
+    if ("outcome" in aberta) return aberta.outcome;
 
+    const { loja } = aberta;
     const now = deps.now?.() ?? new Date();
-    const lida = await deps.db
-      .from("shopee_shops")
-      .select("id, organization_id, environment, shop_id, status, orders_synced_until")
-      .eq("id", parsed.data.shopeeShopId)
-      .maybeSingle();
-
-    if (lida.error !== null) {
-      return { status: "failed", retryable: true, reason: `falha ao ler a loja: ${lida.error.message}` };
-    }
-
-    const loja = lida.data;
-
-    // Loja apagada, em erro ou de outro ambiente: a corrente para aqui, sem
-    // erro. Reconectar retoma do marco.
-    if (loja?.status !== "CONNECTED" || loja.environment !== deps.client.environment) {
-      context.logger.info("shopee_orders_sync_skipped", {
-        shopee_shop_id: parsed.data.shopeeShopId,
-        motivo: loja === null ? "loja inexistente" : loja.status !== "CONNECTED" ? "loja não conectada" : "outro ambiente",
-      });
-
-      return { status: "done", processed: 0 };
-    }
-
     const token = await ensureShopeeAccessToken(deps, { id: loja.id, shopId: loja.shop_id }, now);
 
     if (!token.ok) {
@@ -106,7 +61,7 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
     try {
       ordens = await listarJanela(deps, shop, deS, ateS);
     } catch (error) {
-      return falhaDaShopee(error);
+      return falhaDaShopee(error, "erro desconhecido ao ler pedidos da Shopee");
     }
 
     let gravados = 0;
@@ -117,7 +72,7 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
       try {
         pedidos = await getOrderDetail(deps.client, shop, ordens.slice(i, i + ORDER_DETAIL_BATCH));
       } catch (error) {
-        return falhaDaShopee(error);
+        return falhaDaShopee(error, "erro desconhecido ao ler pedidos da Shopee");
       }
 
       const erro = await gravarPedidos(deps, { id: loja.id, organizationId: loja.organization_id }, pedidos, now);

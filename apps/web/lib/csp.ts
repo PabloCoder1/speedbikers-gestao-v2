@@ -18,11 +18,22 @@
  *   o navegador fala com o Supabase (HTTPS e o WebSocket do Realtime, que os
  *   toasts de notificação usam) e com a `api` (`NEXT_PUBLIC_API_URL`, lida por dez
  *   componentes de cliente). O mesmo código serve o local e o Dev.
- * - **`img-src` externo só para o Mercado Livre**: a miniatura do anúncio em
+ * - **`img-src` externo só para as fotos de anúncio**: a miniatura em
  *   `/anuncios` vem de `https://*.mlstatic.com` (a sincronização só grava host
- *   desse domínio). Sem `worker-src` nem `frame-src`: conferido que o app não
- *   tem `Worker`, `iframe` nem `EventSource`.
+ *   desse domínio), e a de `/anuncios/shopee` dos CDNs de `SHOPEE_IMAGE_HOSTS`
+ *   (D-428). Sem `worker-src` nem `frame-src`: conferido que o app não tem
+ *   `Worker`, `iframe` nem `EventSource`.
  */
+
+/**
+ * Os hosts da foto do anúncio Shopee (`shopee_items.image_url`, D-428) que o
+ * `img-src` abre. **NÃO MEDIDOS**: o worker grava a primeira URL de
+ * `image_url_list` sem conferir o host, e estes são os CDNs públicos da Shopee
+ * Brasil. Por isso `/anuncios/shopee` só desenha `<img>` para estes hosts
+ * (`shopeeImageUrl`) — qualquer outro cai no monograma, nunca num quadrado
+ * bloqueado. Medir o host real no sandbox e em produção e corrigir aqui.
+ */
+export const SHOPEE_IMAGE_HOSTS = ["*.susercontent.com", "cf.shopee.com.br"] as const;
 
 /** Um valor imprevisível e único por requisição — é o que o atacante teria de adivinhar. */
 export function gerarNonce(): string {
@@ -77,8 +88,9 @@ export function montarCsp({
     "style-src 'self' 'unsafe-inline'",
     // A foto de perfil vem do Storage do Supabase (D-354): a mesma origem que
     // `connect-src` já abre. A miniatura do anúncio vem do CDN do Mercado Livre
-    // (`/anuncios`, 20260918150000) — e só dele.
-    `img-src 'self' data: blob:${supabase === null ? "" : ` ${supabase.http}`} https://*.mlstatic.com`,
+    // (`/anuncios`, 20260918150000); a do anúncio Shopee, dos CDNs da Shopee
+    // (`/anuncios/shopee`, D-428).
+    `img-src 'self' data: blob:${supabase === null ? "" : ` ${supabase.http}`} https://*.mlstatic.com${SHOPEE_IMAGE_HOSTS.map((host) => ` https://${host}`).join("")}`,
     "font-src 'self'",
     `connect-src ${[...new Set(conectar)].join(" ")}`,
     "object-src 'none'",

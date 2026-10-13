@@ -92,5 +92,5 @@ export async function getEscrowDetail(
 const SEM_FINANCEIRO = new Set(["order_not_found", "error_data", "common.error_not_found"]);
 
 export function isEscrowUnavailable(error: unknown): boolean {
-  return error instanceof ShopeeApiError && error.code !== null && SEM_FINANCEIRO.has(error.code);
+  return error instanceof ShopeeApiError && error.baseCode !== null && SEM_FINANCEIRO.has(error.baseCode);
 }

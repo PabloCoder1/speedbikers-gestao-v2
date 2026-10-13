@@ -28,10 +28,11 @@ gcloud secrets add-iam-policy-binding SHOPEE_TEST_PARTNER_KEY --project speedbik
 
 Depois, o deploy da api e do worker com `SHOPEE_PARTNER_ID=1248019` no
 ambiente (`infra/deploy-cloud-run.sh` monta as variáveis e o segredo só com
-ele) — **feito em 13/10** (`worker-00042-k5n`, `api-00025-rbw`). Falta o job
+ele) — **feito em 13/10** (`worker-00042-k5n`, `api-00025-rbw`). O job
 horário `v3-shopee-orders` (o mesmo de `infra/cloud-scheduler.sh` com
-`SHOPEE_PARTNER_ID`), num terminal onde o `gcloud` aceite a cron com espaço
-(Cloud Shell ou PowerShell; no Git Bash o `gcloud.cmd` quebra):
+`SHOPEE_PARTNER_ID`) foi **criado em 13/10** e serve pedidos e catálogo
+(D-428). Para recriá-lo, num terminal onde o `gcloud` aceite a cron com
+espaço (Cloud Shell ou PowerShell; no Git Bash o `gcloud.cmd` quebra):
 
 ```bash
 gcloud scheduler jobs create http v3-shopee-orders --project speedbikers-prod --location southamerica-east1 --schedule "20 * * * *" --time-zone America/Sao_Paulo --uri https://api-p6gzq3hzca-rj.a.run.app/internal/schedule/shopee-orders --http-method POST --oidc-service-account-email v3-scheduler-invoker@speedbikers-prod.iam.gserviceaccount.com --oidc-token-audience https://api-p6gzq3hzca-rj.a.run.app --max-retry-attempts 2 --min-backoff 30s --max-backoff 120s --description "Sincronizacao de pedidos da Shopee, por loja conectada"
@@ -150,6 +151,34 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   leitura, ou aberto e lido há mais de 24 h). Colunas e `order_income`
   inteiro em `shopee_orders`.
 
+## 4.3 Catálogo — CONFIRMADO (D-428)
+
+- **Lista** (`GET /api/v2/product/get_item_list`): `offset` e `page_size`
+  (até **100**), `item_status` obrigatório e **repetido**
+  (`item_status=NORMAL&item_status=UNLIST`; NORMAL, UNLIST, BANNED,
+  REVIEWING, SELLER_DELETE, SHOPEE_DELETE), `update_time_from`/`_to`
+  opcionais. Devolve `item[] {item_id, item_status, update_time}`,
+  `has_next_page`, `next_offset`, `total_count`. Há limite de offset
+  ("use the next field"): seguir sempre o `next_offset`.
+- **Detalhe** (`GET /api/v2/product/get_item_base_info`): até **50** em
+  `item_id_list`, separados por vírgula. Traz `item_name`, `item_sku` (o
+  SKU "pai"), `has_model`, `image`, `stock_info_v2.summary_info`; `price_info`
+  **não vem** quando o item tem variação.
+- **Variações** (`GET /api/v2/product/get_model_list`): um item por
+  chamada. `model[] {model_id, model_sku, model_status, tier_index,
+  price_info, stock_info_v2}` e `tier_variation[]` (o nome da variação sai
+  das opções pelos índices).
+- **Na V3:** `shopee.items.sync` (lista; sem marco, o catálogo vivo inteiro;
+  com `shopee_shops.items_synced_until`, a janela desde ele com todos os
+  status, sem fim de janela, conferindo o `total_count`) e
+  `shopee.items.hydrate` (detalhe e variações, uma cadeia por loja,
+  escolhidos por `shopee_items_details_pending`; erro definitivo de um
+  item o marca e a fila segue). Pegam carona no gatilho horário dos
+  pedidos, 5 minutos depois. Erros `error_inner`, `error_system_busy` e
+  `error_rate_limit` são passageiros; o código vem às vezes com prefixo de
+  módulo (`product.error_item_not_found`). O vínculo é o SKU do anúncio igual a `skus.sku_key`, derivado na
+  view `shopee_listing_units`; tela em `/anuncios/shopee`.
+
 ## 5. Sandbox — o roteiro
 
 Fonte: `open.shopee.com/developer-guide/644` (Sandbox Testing V2) e `/744`.
@@ -186,7 +215,7 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 0–1 | Decisão, `@sb/shopee`, conexão da loja (link, retorno, tokens cifrados, loja em `/contas`) | código (D-425) |
 | 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | código (D-426) |
 | 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | código (D-427) |
-| 4 | Produtos e vínculo com SKU (SKU do vendedor; os ~3.000 vínculos Shopee do UpSeller) | — |
+| 4 | Produtos e vínculo com SKU: 4a catálogo e vínculo pelo SKU do anúncio; 4b vínculo manual, painel no SKU, `/contas`; os ~3.000 do UpSeller vão para a fatia 7 | 4a código (D-428) |
 | 5 | Estoque (exige decisão do dono: a planilha do UpSeller já desconta a venda Shopee) | — |
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja | — |
 | 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |

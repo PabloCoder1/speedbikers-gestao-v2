@@ -1,0 +1,204 @@
+import { type Page, expect, test } from "@playwright/test";
+
+import { E2E_ANOMALIA, E2E_SHOPEE_ESPERADO, E2E_SHOPEE_ITEMS, E2E_SKU_CODE } from "./constants.js";
+import { login } from "./helpers.js";
+
+/**
+ * `/anuncios/shopee` — o catálogo da loja Shopee e o vínculo pelo SKU do
+ * anúncio (D-428, fatia 4a).
+ *
+ * O seed planta um item por estado do vínculo e um apagado
+ * (`E2E_SHOPEE_ITEMS`); as contagens esperadas estão escritas à mão em
+ * `E2E_SHOPEE_ESPERADO`, para o teste conferir a view, e não uma cópia dela.
+ *
+ * O que ele protege, em ordem de gravidade:
+ *
+ *  1. **O vínculo normaliza o SKU como `skus.sku_key`.** O SKU do item chega em
+ *     minúsculas e com espaços; se a comparação deixar de ser `upper(btrim())`,
+ *     o "Vinculados pelo SKU" cai de 2 para 1 e a linha perde o link.
+ *  2. **A faixa não diverge da lista.** Cada célula é um filtro de estado, e
+ *     clicar mostra exatamente aquela quantidade.
+ *  3. **Item apagado não é anúncio**, e ausência não vira zero: o item ainda
+ *     não lido mostra "—" no preço e no estoque.
+ *
+ * Localizadores por papel e texto, nunca por classe: o esqueleto de
+ * carregamento repete as classes do shell (`components/carregando.tsx`).
+ */
+
+function faixa(page: Page) {
+  return page.getByRole("region", { name: "Contadores dos anúncios da Shopee" });
+}
+
+/** A célula da faixa: o pai do rótulo exato. */
+function celula(page: Page, rotulo: string) {
+  return faixa(page).getByText(rotulo, { exact: true }).locator("..");
+}
+
+function tabela(page: Page) {
+  return page.getByRole("table", { name: "Anúncios da Shopee" });
+}
+
+/** As linhas de dados: todas as linhas da tabela menos a do cabeçalho. */
+async function esperaLinhas(page: Page, quantidade: number): Promise<void> {
+  await expect(tabela(page).getByRole("row")).toHaveCount(quantidade + 1);
+}
+
+const { skuNoItem, duasVariacoes, semSku, aguardando, apagado } = E2E_SHOPEE_ITEMS;
+const [variacaoVinculada, variacaoFora] = duasVariacoes.variacoes;
+
+test("/anuncios/shopee: a faixa conta os estados do vínculo, e a última leitura aparece", async ({ page }) => {
+  await login(page, "/anuncios/shopee");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Anúncios da Shopee" })).toBeVisible();
+
+  const esperado: [string, number][] = [
+    ["Anúncios", E2E_SHOPEE_ESPERADO.anuncios],
+    ["Vinculados pelo SKU", E2E_SHOPEE_ESPERADO.vinculados],
+    ["Sem SKU no anúncio", E2E_SHOPEE_ESPERADO.semSkuNoAnuncio],
+    ["SKU fora do catálogo", E2E_SHOPEE_ESPERADO.skuForaDoCatalogo],
+    ["Aguardando leitura", E2E_SHOPEE_ESPERADO.aguardandoLeitura],
+  ];
+
+  for (const [rotulo, quantidade] of esperado) {
+    await expect(celula(page, rotulo).getByText(String(quantidade), { exact: true }), rotulo).toBeVisible();
+  }
+
+  // Cada variação é um anúncio; a célula diz em quantos itens.
+  await expect(celula(page, "Anúncios")).toContainText(`em ${String(E2E_SHOPEE_ESPERADO.itens)} itens`);
+
+  // A loja do seed foi lida há meia hora: a célula tem instante, não "—".
+  const leitura = celula(page, "Última leitura do catálogo");
+
+  await expect(leitura).toContainText("a leitura roda de hora em hora");
+  await expect(faixa(page).getByText("—", { exact: true })).toHaveCount(0);
+
+  // A lista mostra as cinco unidades, e a janela declara o total.
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.anuncios);
+  await expect(page.getByText(`${String(E2E_SHOPEE_ESPERADO.anuncios)} anúncios.`, { exact: true })).toBeVisible();
+
+  // O apagado pelo vendedor não aparece em lugar nenhum.
+  await expect(page.getByText(apagado.nome)).toHaveCount(0);
+  await expect(page.getByText(String(apagado.itemId))).toHaveCount(0);
+});
+
+test("/anuncios/shopee: o vínculo pelo SKU do anúncio leva ao SKU, e cada estado tem rótulo próprio", async ({
+  page,
+}) => {
+  await login(page, "/anuncios/shopee");
+
+  const lista = tabela(page);
+
+  // (a) SKU do ITEM em minúsculas e com espaços: vinculado ao SKU do seed.
+  const linhaItem = lista.getByRole("row", { name: new RegExp(String(skuNoItem.itemId)) });
+  const linkSku = linhaItem.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+  await expect(linkSku).toHaveAttribute("href", /^\/skus\/[0-9a-f-]{36}$/);
+  await expect(linhaItem).toContainText("pelo SKU do anúncio");
+  // O SKU do anúncio aparece como o vendedor digitou (sem as pontas em branco).
+  await expect(linhaItem).toContainText(E2E_SKU_CODE.toLowerCase());
+
+  // (b) O vínculo mora na VARIAÇÃO: uma vinculada, a outra fora do catálogo.
+  const linhaVinculada = lista.getByRole("row", { name: new RegExp(variacaoVinculada.nome) });
+
+  await expect(linhaVinculada.getByRole("link", { name: E2E_ANOMALIA.sku, exact: true })).toHaveAttribute(
+    "href",
+    /^\/skus\//,
+  );
+
+  const linhaFora = lista.getByRole("row", { name: new RegExp(variacaoFora.nome) });
+
+  await expect(linhaFora).toContainText("SKU fora do catálogo");
+  await expect(linhaFora).toContainText(variacaoFora.sku);
+  await expect(linhaFora).toContainText("variação indisponível");
+  await expect(linhaFora.getByRole("link")).toHaveCount(0);
+
+  // (c) SKU em branco não é SKU.
+  const linhaSemSku = lista.getByRole("row", { name: new RegExp(semSku.nome) });
+
+  await expect(linhaSemSku).toContainText("Sem SKU no anúncio");
+  await expect(linhaSemSku).toContainText("Pausado");
+
+  // (d) Só a lista foi lida: sem nome, e preço e estoque "—", nunca zero.
+  // Colunas: Anúncio, Loja, SKU do anúncio, Vínculo, Preço, Estoque, Status.
+  const linhaAguardando = lista.getByRole("row", { name: new RegExp(String(aguardando.itemId)) });
+
+  await expect(linhaAguardando).toContainText("Aguardando leitura");
+  await expect(linhaAguardando).toContainText("Nome ainda não lido");
+  await expect(linhaAguardando.getByRole("cell").nth(4)).toHaveText("—");
+  await expect(linhaAguardando.getByRole("cell").nth(5)).toHaveText("—");
+
+  // Clicar no SKU leva à página dele.
+  await linkSku.click();
+  await expect(page).toHaveURL(/\/skus\/[0-9a-f-]{36}$/);
+});
+
+test("/anuncios/shopee: clicar num contador filtra a lista para exatamente aquele estado", async ({ page }) => {
+  await login(page, "/anuncios/shopee");
+
+  await celula(page, "Sem SKU no anúncio").getByRole("link", { name: "ver lista" }).click();
+
+  await expect(page).toHaveURL(/estado=sem-sku/);
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.semSkuNoAnuncio);
+  await expect(tabela(page)).toContainText(semSku.nome);
+
+  // O filtro aparece como chip que se desfaz; a faixa segue contando o escopo.
+  const chips = page.getByLabel("Filtros ativos");
+
+  await expect(chips).toContainText("Sem SKU no anúncio");
+  await expect(celula(page, "Anúncios").getByText(String(E2E_SHOPEE_ESPERADO.anuncios), { exact: true })).toBeVisible();
+
+  await celula(page, "Vinculados pelo SKU").getByRole("link", { name: "ver lista" }).click();
+
+  await expect(page).toHaveURL(/estado=vinculado/);
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.vinculados);
+  await expect(tabela(page).getByRole("link", { name: E2E_SKU_CODE, exact: true })).toBeVisible();
+  await expect(tabela(page).getByRole("link", { name: E2E_ANOMALIA.sku, exact: true })).toBeVisible();
+
+  await celula(page, "SKU fora do catálogo").getByRole("link", { name: "ver lista" }).click();
+
+  await expect(page).toHaveURL(/estado=fora-do-catalogo/);
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.skuForaDoCatalogo);
+  await expect(tabela(page)).toContainText(variacaoFora.nome);
+
+  // Tirar o chip volta para a lista inteira.
+  await page.getByRole("link", { name: "Tirar o filtro SKU fora do catálogo" }).click();
+
+  await expect(page).not.toHaveURL(/estado=/);
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.anuncios);
+});
+
+test("/anuncios/shopee: a busca recorta pelo SKU e mantém o estado", async ({ page }) => {
+  await login(page, "/anuncios/shopee?estado=vinculado");
+
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.vinculados);
+
+  const busca = page.getByRole("searchbox", { name: "Buscar anúncio da Shopee por nome, SKU ou número do item" });
+
+  await busca.fill(E2E_ANOMALIA.sku);
+  await busca.press("Enter");
+
+  await expect(page).toHaveURL(/estado=vinculado/);
+  await expect(page).toHaveURL(/q=/);
+  await esperaLinhas(page, 1);
+  await expect(tabela(page)).toContainText(variacaoVinculada.nome);
+
+  // A faixa conta sem a busca, e o "ver lista" dela também a larga: com a
+  // busca, a célula dizendo 2 abriria uma lista de 1.
+  await expect(celula(page, "Vinculados pelo SKU").getByText(String(E2E_SHOPEE_ESPERADO.vinculados), { exact: true })).toBeVisible();
+  await expect(celula(page, "Vinculados pelo SKU").getByRole("link", { name: "ver lista" })).toHaveAttribute(
+    "href",
+    "/anuncios/shopee?estado=vinculado",
+  );
+});
+
+test("/anuncios: o link do cabeçalho leva aos anúncios da Shopee", async ({ page }) => {
+  await login(page, "/anuncios");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de anúncios" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Anúncios da Shopee", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/anuncios\/shopee$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Anúncios da Shopee" })).toBeVisible();
+  await esperaLinhas(page, E2E_SHOPEE_ESPERADO.anuncios);
+});

@@ -5,12 +5,17 @@ import type { ShopeeEnvironment } from "@sb/shopee";
 import type { Enqueuer } from "./enqueue.js";
 
 /**
- * Gatilho da sincronização de pedidos da Shopee (D-426) — chamado pelo Cloud
- * Scheduler, uma vez por hora, no formato de `listings-schedule.ts`: uma
- * tarefa `shopee.orders.sync` por loja CONECTADA do ambiente configurado, na
- * fila `backfill`. A janela de cada execução sai do marco da loja; o gatilho
- * só garante que toda loja é visitada a cada hora.
+ * Gatilho da sincronização da Shopee (D-426, D-428) — chamado pelo Cloud
+ * Scheduler, uma vez por hora, no formato de `listings-schedule.ts`: para
+ * cada loja CONECTADA do ambiente configurado, uma tarefa `shopee.orders.sync`
+ * e uma `shopee.items.sync` (o catálogo), na fila `backfill`. A janela de cada
+ * execução sai do marco da loja; o gatilho só garante que toda loja é visitada
+ * a cada hora. O catálogo pega carona no mesmo job do Scheduler: nenhum
+ * agendamento novo em produção.
  */
+
+/** O atraso do catálogo em relação aos pedidos, na mesma rodada horária. */
+export const ITEMS_DELAY_S = 300;
 
 export interface ShopeeOrdersScheduleDeps {
   db: AdminClient;
@@ -47,18 +52,26 @@ export async function triggerShopeeOrdersSync(deps: ShopeeOrdersScheduleDeps): P
   let deduplicated = 0;
 
   for (const loja of lojas.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "shopee.orders.sync",
-      organizationId: loja.organization_id,
-      dedupeKey: `shopee-orders:${loja.id}:hora:${hora}`,
-      queue: "backfill",
-      payload: { shopeeShopId: loja.id },
-    });
+    // O catálogo sai 5 minutos depois: os pedidos renovam o token primeiro, e
+    // as duas tarefas não disputam a trava da renovação a cada 4 h (D-428).
+    for (const [jobType, prefixo, atraso] of [
+      ["shopee.orders.sync", "shopee-orders", undefined],
+      ["shopee.items.sync", "shopee-items", ITEMS_DELAY_S],
+    ] as const) {
+      const result = await deps.enqueuer.enqueue({
+        jobType,
+        organizationId: loja.organization_id,
+        dedupeKey: `${prefixo}:${loja.id}:hora:${hora}`,
+        queue: "backfill",
+        payload: { shopeeShopId: loja.id },
+        ...(atraso === undefined ? {} : { delaySeconds: atraso }),
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
     }
   }
 

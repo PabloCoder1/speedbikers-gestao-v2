@@ -3145,6 +3145,144 @@ export type Database = {
           },
         ]
       }
+      shopee_item_models: {
+        Row: {
+          available_stock: number | null
+          currency: string | null
+          current_price: number | null
+          item_id: number
+          model_id: number
+          model_name: string | null
+          model_sku: string | null
+          model_status: string | null
+          organization_id: string
+          original_price: number | null
+          shopee_shop_id: string
+        }
+        Insert: {
+          available_stock?: number | null
+          currency?: string | null
+          current_price?: number | null
+          item_id: number
+          model_id: number
+          model_name?: string | null
+          model_sku?: string | null
+          model_status?: string | null
+          organization_id: string
+          original_price?: number | null
+          shopee_shop_id: string
+        }
+        Update: {
+          available_stock?: number | null
+          currency?: string | null
+          current_price?: number | null
+          item_id?: number
+          model_id?: number
+          model_name?: string | null
+          model_sku?: string | null
+          model_status?: string | null
+          organization_id?: string
+          original_price?: number | null
+          shopee_shop_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_item_models_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_item_models_shopee_shop_id_item_id_fkey"
+            columns: ["shopee_shop_id", "item_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_items"
+            referencedColumns: ["shopee_shop_id", "item_id"]
+          },
+        ]
+      }
+      shopee_items: {
+        Row: {
+          available_stock: number | null
+          currency: string | null
+          current_price: number | null
+          details_error: string | null
+          details_synced_at: string | null
+          details_update_time: string | null
+          first_seen_at: string
+          has_model: boolean | null
+          image_url: string | null
+          is_fulfillment_by_shopee: boolean | null
+          item_id: number
+          item_name: string | null
+          item_sku: string | null
+          item_status: string
+          organization_id: string
+          original_price: number | null
+          shopee_created_at: string | null
+          shopee_shop_id: string
+          shopee_updated_at: string
+        }
+        Insert: {
+          available_stock?: number | null
+          currency?: string | null
+          current_price?: number | null
+          details_error?: string | null
+          details_synced_at?: string | null
+          details_update_time?: string | null
+          first_seen_at?: string
+          has_model?: boolean | null
+          image_url?: string | null
+          is_fulfillment_by_shopee?: boolean | null
+          item_id: number
+          item_name?: string | null
+          item_sku?: string | null
+          item_status: string
+          organization_id: string
+          original_price?: number | null
+          shopee_created_at?: string | null
+          shopee_shop_id: string
+          shopee_updated_at: string
+        }
+        Update: {
+          available_stock?: number | null
+          currency?: string | null
+          current_price?: number | null
+          details_error?: string | null
+          details_synced_at?: string | null
+          details_update_time?: string | null
+          first_seen_at?: string
+          has_model?: boolean | null
+          image_url?: string | null
+          is_fulfillment_by_shopee?: boolean | null
+          item_id?: number
+          item_name?: string | null
+          item_sku?: string | null
+          item_status?: string
+          organization_id?: string
+          original_price?: number | null
+          shopee_created_at?: string | null
+          shopee_shop_id?: string
+          shopee_updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_items_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopee_oauth_states: {
         Row: {
           consumed_at: string | null
@@ -3404,6 +3542,8 @@ export type Database = {
           environment: string
           id: string
           last_error: string | null
+          items_hydrate_locked_until: string | null
+          items_synced_until: string | null
           orders_synced_until: string | null
           organization_id: string
           region: string | null
@@ -3422,6 +3562,8 @@ export type Database = {
           environment: string
           id?: string
           last_error?: string | null
+          items_hydrate_locked_until?: string | null
+          items_synced_until?: string | null
           orders_synced_until?: string | null
           organization_id: string
           region?: string | null
@@ -3440,6 +3582,8 @@ export type Database = {
           environment?: string
           id?: string
           last_error?: string | null
+          items_hydrate_locked_until?: string | null
+          items_synced_until?: string | null
           orders_synced_until?: string | null
           organization_id?: string
           region?: string | null
@@ -4767,7 +4911,33 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      shopee_listing_units: {
+        Row: {
+          available_stock: number | null
+          currency: string | null
+          current_price: number | null
+          details_error: string | null
+          details_synced_at: string | null
+          estado: string | null
+          image_url: string | null
+          item_id: number | null
+          item_name: string | null
+          item_status: string | null
+          model_id: number | null
+          model_name: string | null
+          model_status: string | null
+          organization_id: string | null
+          original_price: number | null
+          shopee_shop_id: string | null
+          shopee_updated_at: string | null
+          sku: string | null
+          sku_anuncio: string | null
+          sku_id: string | null
+          sku_title: string | null
+          vinculo_via: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       apply_support_remote_transition: {
@@ -4907,6 +5077,52 @@ export type Database = {
         // mora em apps/web/lib/detector-frete.ts.
         Returns: Json
       }
+      get_shopee_listings: {
+        Args: {
+          p_busca?: string | null
+          p_estado?: string | null
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_shopee_shop_id?: string | null
+        }
+        Returns: {
+          available_stock: number | null
+          currency: string | null
+          current_price: number | null
+          details_error: string | null
+          details_synced_at: string | null
+          estado: string
+          image_url: string | null
+          item_id: number
+          item_name: string | null
+          item_status: string
+          model_id: number | null
+          model_name: string | null
+          model_status: string | null
+          original_price: number | null
+          shop_name: string | null
+          shopee_shop_id: string
+          sku: string | null
+          sku_anuncio: string | null
+          sku_id: string | null
+          sku_title: string | null
+          total_count: number
+          vinculo_via: string | null
+        }[]
+      }
+      get_shopee_listings_summary: {
+        Args: { p_organization_id: string; p_shopee_shop_id?: string | null }
+        Returns: {
+          aguardando_leitura: number
+          anuncios: number
+          itens: number
+          sem_sku_no_anuncio: number
+          sku_fora_do_catalogo: number
+          ultima_leitura: string | null
+          vinculados: number
+        }[]
+      }
       get_sinais_ads: {
         Args: {
           p_hoje?: string
@@ -4915,6 +5131,17 @@ export type Database = {
         // D-398: jsonb com janela (e dias pendentes), referencias, resumo e
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
+      }
+      shopee_items_details_pending: {
+        Args: { p_limit?: number; p_shopee_shop_id: string }
+        Returns: {
+          item_id: number
+          shopee_updated_at: string
+        }[]
+      }
+      shopee_items_hydrate_lock: {
+        Args: { p_shopee_shop_id: string; p_ttl_seconds?: number }
+        Returns: boolean
       }
       shopee_orders_financials_pending: {
         Args: { p_limit?: number; p_shopee_shop_id: string }

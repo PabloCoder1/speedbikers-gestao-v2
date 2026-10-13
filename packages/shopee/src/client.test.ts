@@ -168,3 +168,24 @@ describe("datas da Shopee", () => {
     expect(shopeeEpochToIso(null)).toBeNull();
   });
 });
+
+describe("classificação dos erros da Shopee (D-428)", () => {
+  const erro = (code: string | null, status = 200) => new ShopeeApiError("x", { status, code, requestId: null });
+
+  it("o código com prefixo de módulo vira o código-base", () => {
+    expect(erro("product.error_item_not_found").baseCode).toBe("error_item_not_found");
+    expect(erro("error_param").baseCode).toBe("error_param");
+    expect(erro(null).baseCode).toBeNull();
+  });
+
+  it("os códigos de 'tente depois' das páginas do catálogo são passageiros, com ou sem prefixo", () => {
+    for (const code of ["error_inner", "error_system_busy", "error_rate_limit", "product.error_inner", "error_server", "error_network"]) {
+      expect(erro(code).errorClass).toBe("retryable");
+    }
+
+    expect(erro("error_param").errorClass).toBe("not_retryable");
+    expect(erro("product.error_item_not_found").errorClass).toBe("not_retryable");
+    expect(erro(null, 503).errorClass).toBe("retryable");
+  });
+});
+

@@ -550,3 +550,127 @@ export const E2E_PURCHASE_ORDERS = [
     itens: [{ sku: "E2E-PC-006", quantidade: 1, custo: 42 }],
   },
 ] as const;
+
+/** Uma variação do catálogo Shopee do seed (D-428), na forma de `shopee_item_models`. */
+export interface E2eShopeeVariacao {
+  readonly modelId: number;
+  readonly nome: string;
+  readonly sku: string | null;
+  readonly status: string;
+  readonly preco: number;
+  readonly estoque: number;
+}
+
+/** Um item do catálogo Shopee do seed (D-428), na forma de `shopee_items`. */
+export interface E2eShopeeItem {
+  readonly itemId: number;
+  readonly status: string;
+  /** NULO no item que ainda não teve o detalhe lido — é assim que o worker o grava. */
+  readonly nome: string | null;
+  /** Falso = só a LISTA foi lida: o detalhe (`details_synced_at`) fica nulo. */
+  readonly lido: boolean;
+  /** O SKU do ITEM, cru como o vendedor digitou — só vale quando não há variação. */
+  readonly itemSku: string | null;
+  readonly preco: number | null;
+  readonly precoOriginal: number | null;
+  readonly estoque: number | null;
+  readonly variacoes: readonly E2eShopeeVariacao[];
+}
+
+/**
+ * O CATÁLOGO da loja Shopee do seed (D-428) — um item por caso que
+ * `/anuncios/shopee` precisa provar, e nenhum é decoração:
+ *
+ *   - `skuNoItem`: sem variação, com o SKU do ITEM igual ao SKU principal do
+ *     seed **em minúsculas e com espaços nas pontas**. Vinculado só se a
+ *     normalização `upper(btrim())` de `skus.sku_key` valer dos dois lados;
+ *   - `duasVariacoes`: o vínculo mora na VARIAÇÃO — uma com o SKU da anomalia
+ *     (vinculada), outra com um SKU que não existe no catálogo (fora dele, e
+ *     marcada indisponível pela Shopee);
+ *   - `semSku`: sem variação e com o SKU em BRANCO — branco não é SKU;
+ *   - `aguardando`: só a lista foi lida (detalhe nulo): sem nome, preço e
+ *     estoque, que a tela mostra "—", nunca zero;
+ *   - `apagado`: SELLER_DELETE com SKU válido — não é anúncio e não pode
+ *     aparecer nem ser contado.
+ */
+export const E2E_SHOPEE_ITEMS = {
+  skuNoItem: {
+    itemId: 990_000_101,
+    status: "NORMAL",
+    nome: "Capacete Shopee E2E — SKU no item",
+    lido: true,
+    itemSku: `  ${E2E_SKU_CODE.toLowerCase()} `,
+    preco: 249.9,
+    precoOriginal: 299.9,
+    estoque: 7,
+    variacoes: [],
+  },
+  duasVariacoes: {
+    itemId: 990_000_102,
+    status: "NORMAL",
+    nome: "Luva Shopee E2E — duas variações",
+    lido: true,
+    itemSku: null,
+    preco: null,
+    precoOriginal: null,
+    estoque: null,
+    variacoes: [
+      { modelId: 1, nome: "Preta / M", sku: E2E_ANOMALIA.sku, status: "MODEL_NORMAL", preco: 59.9, estoque: 4 },
+      { modelId: 2, nome: "Azul / G", sku: "SHOPEE-E2E-SEM-CADASTRO", status: "MODEL_UNAVAILABLE", preco: 59.9, estoque: 0 },
+    ],
+  },
+  semSku: {
+    itemId: 990_000_103,
+    status: "UNLIST",
+    nome: "Bomba de Ar Shopee E2E — sem SKU",
+    lido: true,
+    itemSku: "   ",
+    preco: 89.9,
+    precoOriginal: null,
+    estoque: 3,
+    variacoes: [],
+  },
+  aguardando: {
+    itemId: 990_000_104,
+    status: "NORMAL",
+    nome: null,
+    lido: false,
+    itemSku: null,
+    preco: null,
+    precoOriginal: null,
+    estoque: null,
+    variacoes: [],
+  },
+  apagado: {
+    itemId: 990_000_105,
+    status: "SELLER_DELETE",
+    nome: "Selim Shopee E2E — apagado pelo vendedor",
+    lido: true,
+    itemSku: E2E_SKU_CODE,
+    preco: 120,
+    precoOriginal: null,
+    estoque: 2,
+    variacoes: [],
+  },
+} as const satisfies Record<string, E2eShopeeItem>;
+
+/** Há quantos minutos o seed marca a última leitura da lista da loja (`items_synced_until`). */
+export const E2E_SHOPEE_LEITURA_MINUTOS = 30;
+
+/**
+ * O que a faixa de `/anuncios/shopee` deve contar sobre `E2E_SHOPEE_ITEMS` —
+ * escrito à mão, e não derivado, de propósito: derivar em JS seria reescrever a
+ * view `shopee_listing_units`, e o teste passaria a conferir o código contra
+ * ele mesmo. Uma linha por unidade (variação, ou o item sem variação):
+ *
+ *   skuNoItem 1 (vinculado) + duasVariacoes 2 (vinculado, fora) + semSku 1 +
+ *   aguardando 1 = 5 anúncios em 4 itens; o apagado não conta.
+ */
+export const E2E_SHOPEE_ESPERADO = {
+  anuncios: 5,
+  itens: 4,
+  vinculados: 2,
+  semSkuNoAnuncio: 1,
+  skuForaDoCatalogo: 1,
+  aguardandoLeitura: 1,
+} as const;

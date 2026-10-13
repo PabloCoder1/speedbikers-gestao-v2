@@ -1,11 +1,10 @@
 import type { TablesUpdate } from "@sb/db";
-import { ShopeeApiError, getEscrowDetail, isEscrowUnavailable, type ShopeeEscrowDetail } from "@sb/shopee";
-import { z, ZodError } from "zod";
+import { getEscrowDetail, isEscrowUnavailable, type ShopeeEscrowDetail } from "@sb/shopee";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { asJson } from "./domain-events.js";
-import type { ShopeeOrdersSyncDeps } from "./shopee-orders-sync.js";
+import { falhaDaShopee, lerLojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
 import { ensureShopeeAccessToken } from "./shopee-token.js";
 
 /**
@@ -23,23 +22,9 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  *   `shopee.orders.sync` quando os pedidos alcançam agora.
  */
 
-const payloadSchema = z.object({ shopeeShopId: z.uuid() });
-
 export const FINANCEIRO_POR_EXECUCAO = 100;
 
-export type ShopeeOrderFinancialsSyncDeps = ShopeeOrdersSyncDeps;
-
-function falhaDaShopee(error: unknown): JobOutcome {
-  if (error instanceof ZodError) {
-    return { status: "failed", retryable: false, reason: "resposta da Shopee fora do contrato" };
-  }
-
-  return {
-    status: "failed",
-    retryable: !(error instanceof ShopeeApiError) || error.errorClass === "retryable",
-    reason: error instanceof Error ? error.message : "erro desconhecido ao ler o financeiro da Shopee",
-  };
-}
+export type ShopeeOrderFinancialsSyncDeps = ShopeeJobDeps;
 
 /** As colunas de `shopee_orders` a partir do `order_income` — ausente vira nulo, nunca zero. */
 function colunasDoFinanceiro(detalhe: ShopeeEscrowDetail, now: Date): TablesUpdate<"shopee_orders"> {
@@ -74,34 +59,12 @@ function colunasDoFinanceiro(detalhe: ShopeeEscrowDetail, now: Date): TablesUpda
 
 export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancialsSyncDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const parsed = payloadSchema.safeParse(context.payload);
+    const aberta = await lerLojaConectada(deps, context, "shopee_order_financials_skipped");
 
-    if (!parsed.success) {
-      return { status: "failed", retryable: false, reason: "payload sem shopeeShopId" };
-    }
+    if ("outcome" in aberta) return aberta.outcome;
 
+    const { loja } = aberta;
     const now = deps.now?.() ?? new Date();
-    const lida = await deps.db
-      .from("shopee_shops")
-      .select("id, organization_id, environment, shop_id, status")
-      .eq("id", parsed.data.shopeeShopId)
-      .maybeSingle();
-
-    if (lida.error !== null) {
-      return { status: "failed", retryable: true, reason: `falha ao ler a loja: ${lida.error.message}` };
-    }
-
-    const loja = lida.data;
-
-    if (loja?.status !== "CONNECTED" || loja.environment !== deps.client.environment) {
-      context.logger.info("shopee_order_financials_skipped", {
-        shopee_shop_id: parsed.data.shopeeShopId,
-        motivo: loja === null ? "loja inexistente" : loja.status !== "CONNECTED" ? "loja não conectada" : "outro ambiente",
-      });
-
-      return { status: "done", processed: 0 };
-    }
-
     const pendentes = await deps.db.rpc("shopee_orders_financials_pending", {
       p_shopee_shop_id: loja.id,
       p_limit: FINANCEIRO_POR_EXECUCAO,
@@ -134,7 +97,7 @@ export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancia
       } catch (error) {
         if (!isEscrowUnavailable(error)) {
           // O que já foi gravado fica; a nova tentativa segue dos que faltam.
-          return falhaDaShopee(error);
+          return falhaDaShopee(error, "erro desconhecido ao ler o financeiro da Shopee");
         }
 
         linha = { financials_synced_at: now.toISOString() };

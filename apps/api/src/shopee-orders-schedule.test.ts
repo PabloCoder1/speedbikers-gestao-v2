@@ -64,11 +64,11 @@ function deps(options: { falha?: boolean; deduplicaLoja?: string } = {}) {
   return { deps: d, enqueued, filtros };
 }
 
-describe("triggerShopeeOrdersSync (D-426)", () => {
-  it("uma tarefa por loja CONECTADA do ambiente configurado, na fila backfill, com a hora na chave", async () => {
+describe("triggerShopeeOrdersSync (D-426, D-428)", () => {
+  it("por loja CONECTADA do ambiente: pedidos e catálogo, na fila backfill, com a hora na chave", async () => {
     const { deps: d, enqueued, filtros } = deps();
 
-    expect(await triggerShopeeOrdersSync(d)).toEqual({ shopsScanned: 2, enqueued: 2, deduplicated: 0 });
+    expect(await triggerShopeeOrdersSync(d)).toEqual({ shopsScanned: 2, enqueued: 4, deduplicated: 0 });
     expect(filtros).toEqual([
       ["status", "CONNECTED"],
       ["environment", "sandbox"],
@@ -80,12 +80,28 @@ describe("triggerShopeeOrdersSync (D-426)", () => {
       queue: "backfill",
       payload: { shopeeShopId: LOJAS[0]?.id },
     });
+    // D-428: o catálogo pega carona no mesmo gatilho, com chave própria.
+    expect(enqueued[1]).toEqual({
+      jobType: "shopee.items.sync",
+      organizationId: "org-1",
+      dedupeKey: `shopee-items:${LOJAS[0]?.id ?? ""}:hora:2026-10-13T15`,
+      queue: "backfill",
+      payload: { shopeeShopId: LOJAS[0]?.id },
+      // Depois dos pedidos, que renovam o token primeiro.
+      delaySeconds: 300,
+    });
+    expect(enqueued.map((e) => e.jobType)).toEqual([
+      "shopee.orders.sync",
+      "shopee.items.sync",
+      "shopee.orders.sync",
+      "shopee.items.sync",
+    ]);
   });
 
   it("conta os deduplicados à parte", async () => {
     const { deps: d } = deps({ deduplicaLoja: LOJAS[1]?.id ?? "" });
 
-    expect(await triggerShopeeOrdersSync(d)).toEqual({ shopsScanned: 2, enqueued: 1, deduplicated: 1 });
+    expect(await triggerShopeeOrdersSync(d)).toEqual({ shopsScanned: 2, enqueued: 2, deduplicated: 2 });
   });
 
   it("sem conseguir listar as lojas: falha, sem enfileirar", async () => {
@@ -124,7 +140,7 @@ describe("POST /internal/schedule/shopee-orders (D-426)", () => {
     );
 
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ shopsScanned: 2, enqueued: 2, deduplicated: 0 });
+    expect(await ok.json()).toEqual({ shopsScanned: 2, enqueued: 4, deduplicated: 0 });
     expect(falha.status).toBe(503);
   });
 });

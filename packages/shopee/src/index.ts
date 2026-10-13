@@ -32,3 +32,15 @@ export type { OrderListPage, ShopeeOrder } from "./orders.js";
 
 export { getEscrowDetail, isEscrowUnavailable, orderIncomeSchema } from "./payment.js";
 export type { ShopeeEscrowDetail, ShopeeOrderIncome } from "./payment.js";
+
+export {
+  ITEM_BASE_INFO_BATCH,
+  ITEM_LIST_PAGE_SIZE,
+  getItemBaseInfo,
+  getItemListPage,
+  getModelList,
+  precoEEstoque,
+  shopeeItemSchema,
+  shopeeModelSchema,
+} from "./products.js";
+export type { ItemBaseInfo, ItemListPage, ModelList, ShopeeItem, ShopeeItemStatus, ShopeeModel } from "./products.js";

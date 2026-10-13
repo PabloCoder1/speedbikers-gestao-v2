@@ -19,6 +19,8 @@ import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decision-outcomes.js";
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
+import { createShopeeItemsHydrateHandler } from "./handlers/shopee-items-hydrate.js";
+import { createShopeeItemsSyncHandler } from "./handlers/shopee-items-sync.js";
 import { createShopeeOrderFinancialsSyncHandler } from "./handlers/shopee-order-financials-sync.js";
 import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
@@ -98,6 +100,9 @@ const shopeeHandlers =
           enqueuer,
           client: shopeeClient,
         }),
+        // D-428: o catálogo da loja — a lista, que enfileira o detalhe.
+        "shopee.items.sync": createShopeeItemsSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
+        "shopee.items.hydrate": createShopeeItemsHydrateHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
       }
     : {};
 
