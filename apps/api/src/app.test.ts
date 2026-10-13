@@ -2130,12 +2130,12 @@ describe("conexão de loja Shopee (D-425)", () => {
       expect(desligada.status).toBe(503);
     });
 
-    it("ADMIN recebe o link de autorização do sandbox Brasil", async () => {
+    it("ADMIN recebe o link de autorização do sandbox", async () => {
       const response = await withShopee().request("/v1/shopee/connect", { method: "POST" });
       const body = (await response.json()) as { authorizationUrl: string };
 
       expect(response.status).toBe(200);
-      expect(body.authorizationUrl).toMatch(/^https:\/\/open\.sandbox\.test-stable\.shopee\.com\.br\/auth\?/);
+      expect(body.authorizationUrl).toMatch(/^https:\/\/open\.sandbox\.test-stable\.shopee\.com\/auth\?/);
     });
   });
 

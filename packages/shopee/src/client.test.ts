@@ -101,7 +101,7 @@ describe("cliente", () => {
 });
 
 describe("autorização (open.shopee.com/developer-guide/20)", () => {
-  it("o link do sandbox Brasil, sem assinatura, com o state", () => {
+  it("o link do sandbox (pagina global), sem assinatura, com o state", () => {
     const url = new URL(
       buildAuthorizationUrl({
         environment: "sandbox",
@@ -111,7 +111,7 @@ describe("autorização (open.shopee.com/developer-guide/20)", () => {
       }),
     );
 
-    expect(url.origin + url.pathname).toBe("https://open.sandbox.test-stable.shopee.com.br/auth");
+    expect(url.origin + url.pathname).toBe("https://open.sandbox.test-stable.shopee.com/auth");
     expect(Object.fromEntries(url.searchParams.entries())).toEqual({
       partner_id: "1248019",
       auth_type: "seller",

@@ -133,7 +133,7 @@ function montar(opcoes: Opcoes & { respostas?: Record<string, unknown> } = {}) {
 }
 
 describe("startShopeeConnect (D-425)", () => {
-  it("grava o state da organização, no ambiente do cliente, e devolve o link do sandbox Brasil", async () => {
+  it("grava o state da organização, no ambiente do cliente, e devolve o link do sandbox", async () => {
     const { deps, gravado } = montar();
 
     const outcome = await startShopeeConnect(deps, CALLER);
@@ -143,7 +143,7 @@ describe("startShopeeConnect (D-425)", () => {
     const url = new URL(outcome.status === "redirect" ? outcome.authorizationUrl : "http://x");
     const linha = (gravado.insert?.[0] as { table: string; row: Record<string, unknown> }).row;
 
-    expect(url.origin + url.pathname).toBe("https://open.sandbox.test-stable.shopee.com.br/auth");
+    expect(url.origin + url.pathname).toBe("https://open.sandbox.test-stable.shopee.com/auth");
     expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT);
     expect(url.searchParams.get("state")).toBe(linha.state);
     expect(linha).toMatchObject({

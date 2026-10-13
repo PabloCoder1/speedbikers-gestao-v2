@@ -28,7 +28,11 @@ export type ShopeeEnvironment = "sandbox" | "live";
 export const SHOPEE_HOSTS: Record<ShopeeEnvironment, { api: string; auth: string }> = {
   sandbox: {
     api: "https://openplatform.sandbox.test-stable.shopee.sg",
-    auth: "https://open.sandbox.test-stable.shopee.com.br/auth",
+    // A tabela oficial lista open.sandbox.test-stable.shopee.com.br para o
+    // Brasil, mas o host NAO EXISTE no DNS (conferido em 13/10/2026). O
+    // sandbox e global: esta pagina aceita o partner_id de teste e leva ao
+    // login da conta de teste (account.sandbox.test-stable.shopee.com).
+    auth: "https://open.sandbox.test-stable.shopee.com/auth",
   },
   live: {
     api: "https://openplatform.shopee.com.br",
