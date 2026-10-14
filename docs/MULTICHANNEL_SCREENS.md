@@ -68,7 +68,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Saúde | `/saude` | 1 | — | `job_runs` (já inclui os jobs Shopee) | cadência dos jobs Shopee em `lib/sync-health.ts` | T1 (C-09) |
 | Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) | cartão e contagem da Shopee | E3 → T3 |
-| Usuários | `/usuarios` | 2 | — | `user_account_permissions` (só ML) | conceder loja Shopee | E2 → T2 |
+| Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | sem loja, anúncio ou pedido Shopee | C-08 → T7 |
 | Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas | futuro |
 | Shell e menu | todas | 2 | — | contagem de contas ML conectadas | "N contas conectadas" ignora lojas | E3 → T3 |
@@ -244,7 +244,7 @@ número.
 |---|---|---|---|
 | **T0** | Esta auditoria | — | documento na `main` |
 | **T1 ✔** | Modelo e seletor de marketplace (`lib` pura + componente) nas duas telas que já têm os dois canais: `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; formulário de período personalizado em `/vendas/shopee`; `/contas` com título e texto que falam dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09) | nada (só leitura que já existe) | **código 2026-10-14, D-431** — ver a nota abaixo da tabela |
-| **T2** | Concessão de loja em `/usuarios` | E2 | usuário sem a loja não a vê em nenhuma tela |
+| **T2 ✔** | Concessão de loja em `/usuarios`: gaveta, coluna, histórico e convite | E2 (C-54) | **código 2026-10-14, D-434** — o ADMIN concede e retira, e o efeito chega à tela de quem recebe (e2e) |
 | **T3** | Seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
 | **T4** | `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
 | **T5** | `/faturamento` com marketplace e a linha por loja | E5 | componentes não comparáveis nunca somados |

@@ -14919,6 +14919,26 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `supabase/migrations/20261014190000_permissao_por_loja_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `apps/api/src/invites.ts` e teste, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: depois de D-432 (a migration vem depois da dela), a migration, depois a api (o convite com lojas). Para a tela: concessao de loja em `/usuarios` e o rotulo dos dois eventos (Agente 2, T2).
 
+## D-434 - Telas multicanais, etapa T2: a loja Shopee ganha em /usuarios o mesmo alcance da conta do Mercado Livre, e o convite confere no banco o que concedeu
+
+**Contexto:** D-433 (E2, Agente 1) pos a loja Shopee na regra da conta do ML -- ADMIN alcanca todas, os demais as concedidas em `user_shopee_shop_permissions` -- com escrita direta sob a RLS, mas sem tela. Sem ela, a loja conectada depois do backfill so aparece para o ADMIN, e ninguem consegue dar ou tirar uma loja de alguem.
+
+**1. A MESMA FORMA DAS CONTAS.** Na gaveta do usuario, "Lojas Shopee permitidas" logo abaixo das contas, com o mesmo controle: o corpo de `AccountAccessControls` virou `AlcanceControls`, comum as duas listas (uma copia sairia de sincronia), e os interruptores ganharam `role="group"` com nome, porque as duas listas moram na mesma gaveta. ADMIN le "todas as lojas (por ser ADMIN)"; quem so le ve as lojas da pessoa que ele mesmo alcanca. Na tabela, a coluna "Lojas Shopee permitidas" so existe quando quem olha alcanca alguma loja -- uma coluna vazia leria como "ninguem tem loja".
+
+**2. ESCRITA DIRETA SOB A RLS.** `grantShopeeShopAccess` e `revokeShopeeShopAccess` inserem e apagam a concessao como as das contas; quem recusa e o banco (so ADMIN, so para membro), e a recusa chega como 42501, que `traduzir()` ja dizia. Remover o membro nao muda: o gatilho de D-433 tira as lojas, com evento.
+
+**3. O HISTORICO DA NOME A LOJA.** `SHOPEE_SHOP_ACCESS_GRANTED` e `_REVOKED` ganham rotulo ("ganhou/perdeu acesso a loja Shopee"), e a coluna "Conta" virou "Conta ou loja".
+
+**4. O CONVITE CONFERE O QUE CONCEDEU.** A escolha de lojas segue a das contas e some para ADMIN. A api anterior a D-433 descarta `shopeeShopIds` calada (o validador ignora campo desconhecido): depois do convite, a tela le as concessoes da pessoa sob a RLS de quem convidou e, se faltar loja, diz quantas e manda a gaveta -- nunca afirma uma concessao que nao aconteceu (`lib/alcance-shopee.ts`, com teste).
+
+**5. A LOJA DE TESTE E MARCADA** com "(teste)", como nas telas da Shopee. Banco sem a tabela de D-433: a parte de lojas nao aparece (nada de botao morto).
+
+**Publicacao:** so a web, e so DEPOIS de: #147 e #148 na `main`, a migration `20261014190000` em producao (o historico le a coluna `shopee_shop_id`) e o deploy da api do #148 (o convite com lojas; antes dele o convite vale e a tela diz que as lojas faltaram).
+
+**Verificacao:** `pnpm run check`, `pnpm run build` e `pnpm docs:check` verdes; unitarios: `lib/alcance-shopee.test.ts` (7 -- rotulo com e sem teste e sem nome; as lojas que faltaram, na ordem pedida, sem esconder a que faltou atras de concessao antiga); e2e num stack isolado com as 250 migrations (E1 e E2 incluidas): `usuarios.spec` 10/10 -- o ADMIN concede a loja ao GESTOR na gaveta e, numa sessao do GESTOR, `/vendas/shopee` passa a mostrar a loja; retira e ela some; o historico diz as duas coisas; rodado duas vezes seguidas, porque devolve o banco ao seed --, e o convite com a escolha de lojas que some para ADMIN; suite inteira 209/209 (206 numa passada; os 3 de convite com o servidor na porta 3000, para onde o link redireciona, como em D-431). A mesma passada mostra que a E2 nao quebrou nenhuma outra tela. Depois dos merges do #147, #148 e #150, a T2 foi refeita sobre a `main` com a E3 (251 migrations), num banco recriado do zero: `check` (33) e `build` (9) verdes e de novo 209/209 -- numa rodada anterior no MESMO banco, `atendimento` e `notificacoes` falharam porque rodadas repetidas deixam caso assumido e notificacao lida que o seed nao desfaz; banco limpo, passaram.
+
+**Impacto:** `apps/web/app/usuarios/{page,actions,member-controls,tabela-usuarios,detalhe-usuario,convidar,acesso-membro}.tsx`/`.ts`, `apps/web/lib/alcance-shopee.ts` e teste, `apps/web/e2e/usuarios.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-435 - Contas dos marketplaces numa fonte so (marketplace_accounts) e a loja Shopee parada avisando como a conta do ML, so a quem alcanca a loja (E3 da frente multicanal)
 
 **Contexto:** a auditoria de 14/10 (`docs/MULTICHANNEL_CONTRACTS.md`, riscos R4 e R5) achou a Shopee fora de `/sincronizacao`, do vigia de sincronizacao parada (D-417/D-418, so `ml_accounts`) e das notificacoes: loja em ERROR ou parada nao avisava ninguem -- o modo de falhar de D-217. E o Agente 2 precisa de UMA fonte para o seletor Marketplace/Conta (C-52), que respeite a permissao por conta (D-175) e por loja (D-433) sem a tela juntar duas listas.
