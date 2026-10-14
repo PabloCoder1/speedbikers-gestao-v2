@@ -10,6 +10,28 @@ function horasAtras(h: number): string {
 }
 
 const CONTA_1 = "aaaaaaaa-0000-4000-8000-000000000001";
+
+function diasAFrente(d: number): string {
+  return new Date(NOW.getTime() + d * 24 * 3_600_000).toISOString();
+}
+
+/** Uma loja Shopee live, lida há meia hora, com a autorização longe de vencer. */
+function loja(extra: Partial<NonNullable<IntegrationsInput["shopeeShops"]>[number]> = {}) {
+  return {
+    name: "Speed Bikers Oficial",
+    environment: "live",
+    connection_status: "CONNECTED",
+    last_error: null,
+    connected_at: horasAtras(24 * 30),
+    orders_synced_at: horasAtras(0.5),
+    authorization_expires_at: diasAFrente(200),
+    ...extra,
+  };
+}
+
+function jobShopee(jobType: string, horas: number) {
+  return { job_type: jobType, job_status: "done", job_last_run_at: horasAtras(horas), job_age_hours: horas, job_failures_24h: 0 };
+}
 const CONTA_2 = "aaaaaaaa-0000-4000-8000-000000000002";
 
 function reconciliacao(
@@ -41,6 +63,7 @@ function base(): IntegrationsInput {
       { id: CONTA_1, label: "Loja 1", status: "CONNECTED", connected_at: horasAtras(48), last_error: null },
       { id: CONTA_2, label: "Loja 2", status: "CONNECTED", connected_at: horasAtras(2), last_error: null },
     ],
+    shopeeShops: [loja()],
     syncHealth: [
       reconciliacao(CONTA_1, "orders", 0.5),
       reconciliacao(CONTA_1, "visits", 20, { runs_24h: 1 }),
@@ -71,6 +94,10 @@ function base(): IntegrationsInput {
         job_age_hours: 3,
         job_failures_24h: 0,
       },
+      jobShopee("shopee.orders.sync", 0.4),
+      jobShopee("shopee.order-financials.sync", 0.4),
+      jobShopee("shopee.items.sync", 0.3),
+      jobShopee("shopee.items.hydrate", 0.3),
       {
         job_type: "maintenance.check-ai-budget",
         job_status: "done",
@@ -100,6 +127,7 @@ function adversas(): IntegrationsInput[] {
     now: NOW,
     viewerIsAdmin: true,
     mlAccounts: null,
+    shopeeShops: null,
     syncHealth: null,
     jobs: null,
     migration: null,
@@ -107,9 +135,10 @@ function adversas(): IntegrationsInput[] {
     ai: null,
     api: { configured: false, health: null },
   };
-  const vazia: IntegrationsInput = { ...base(), mlAccounts: [], syncHealth: [], jobs: [], importBatches: [], ai: { runsThisMonth: 0, lastRunAt: null, monthCostUsd: 0, budgetExceededAt: null } };
+  const vazia: IntegrationsInput = { ...base(), mlAccounts: [], shopeeShops: [], syncHealth: [], jobs: [], importBatches: [], ai: { runsThisMonth: 0, lastRunAt: null, monthCostUsd: 0, budgetExceededAt: null } };
   const antiga = base();
   antiga.syncHealth = [reconciliacao(CONTA_1, "orders", 400), reconciliacao(CONTA_2, "orders", 400)];
+  antiga.shopeeShops = [loja({ orders_synced_at: horasAtras(400) })];
   antiga.jobs = antiga.jobs?.map((j) => ({ ...j, job_last_run_at: horasAtras(400), job_age_hours: 400 })) ?? null;
   antiga.ai = { runsThisMonth: 0, lastRunAt: horasAtras(2000), monthCostUsd: 0, budgetExceededAt: null };
   const falhando = base();
@@ -347,6 +376,73 @@ describe("Webhook", () => {
     const nenhum = base();
     nenhum.jobs = [];
     expect(card(nenhum, "webhook").connection?.state).toBe("sem_atividade");
+  });
+});
+
+describe("Shopee (D-446) — o veredito da loja é o de /sincronizacao, e a leitura é a dos quatro jobs", () => {
+  it("loja conectada com pedidos lidos há meia hora e os quatro jobs em dia é ok, com o instante da leitura", () => {
+    const shopee = card(base(), "shopee");
+
+    expect(shopee.connection?.state).toBe("ok");
+    expect(shopee.connection?.observedAt).toBe(horasAtras(0.5));
+    expect(shopee.connection?.detail).toContain("Speed Bikers Oficial: pedidos em dia");
+    expect(shopee.sync?.state).toBe("ok");
+    expect(shopee.sync?.detail).toContain("financeiro dos pedidos");
+  });
+
+  it("os limiares são os do vigia: 4 h sem leitura é atenção, 13 h é erro — com o nome da loja", () => {
+    expect(card({ ...base(), shopeeShops: [loja({ orders_synced_at: horasAtras(4) })] }, "shopee").connection?.state).toBe(
+      "atencao",
+    );
+
+    const parada = card({ ...base(), shopeeShops: [loja({ orders_synced_at: horasAtras(13) })] }, "shopee").connection;
+
+    expect(parada?.state).toBe("erro");
+    expect(parada?.detail).toContain("Speed Bikers Oficial: pedidos parados");
+  });
+
+  it("loja em ERROR é erro com o motivo SANITIZADO; a autorização perto de vencer rebaixa a loja em dia", () => {
+    const erro = card(
+      { ...base(), shopeeShops: [loja({ connection_status: "ERROR", last_error: "invalid_access_token\nstack trace" })] },
+      "shopee",
+    ).connection;
+
+    expect(erro?.state).toBe("erro");
+    expect(erro?.detail).toContain("conexão em erro");
+    expect(erro?.detail).not.toContain("\n");
+
+    const vencendo = card({ ...base(), shopeeShops: [loja({ authorization_expires_at: diasAFrente(10) })] }, "shopee").connection;
+
+    expect(vencendo?.state).toBe("atencao");
+    expect(vencendo?.detail).toContain("autorização vence em 10 dias");
+  });
+
+  it("a loja de teste é marcada no detalhe e dita na configuração; nunca lida é sem atividade, nunca ok", () => {
+    const teste = card(
+      {
+        ...base(),
+        shopeeShops: [loja({ name: "Loja de teste", environment: "sandbox", connected_at: null, orders_synced_at: null })],
+      },
+      "shopee",
+    );
+
+    expect(teste.connection?.state).toBe("sem_atividade");
+    expect(teste.connection?.detail).toContain("Loja de teste (teste): nunca lida");
+    expect(teste.configuration.state).toBe("nao_verificavel");
+    expect(teste.configuration.detail).toContain("1 loja(s) em ambiente de teste, fora das somas");
+  });
+
+  it("zero lojas: para ADMIN é não configurado; para quem não é ADMIN é não verificável (a permissão por loja esconde)", () => {
+    expect(card({ ...base(), shopeeShops: [] }, "shopee").connection?.state).toBe("nao_configurado");
+    expect(card({ ...base(), shopeeShops: [], viewerIsAdmin: false }, "shopee").connection?.state).toBe("nao_verificavel");
+  });
+
+  it("sem linhas de jobs (não ADMIN) a leitura é não verificável; com linhas mas sem job da Shopee, sem atividade", () => {
+    expect(card({ ...base(), jobs: null }, "shopee").sync?.state).toBe("nao_verificavel");
+
+    const semShopee = base().jobs?.filter((job) => !(job.job_type ?? "").startsWith("shopee.")) ?? null;
+
+    expect(card({ ...base(), jobs: semShopee }, "shopee").sync?.state).toBe("sem_atividade");
   });
 });
 

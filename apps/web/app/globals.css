@@ -5154,7 +5154,16 @@ table {
     justify-content: center;
   }
 
+  /*
+    A TABELA EM BLOCO no celular (D-446). As linhas viram grade aqui, mas a
+    `<table>` continuava `display: table` com o `table-layout: fixed` de cima:
+    a largura das colunas saía do cabeçalho escondido, e a célula "O que foi
+    observado" ficava com 128 px de 292 — o texto quebrava letra por letra nos
+    sete cartões. Em bloco, cada linha ocupa a largura do cartão (248 px).
+  */
   .sb-integration-table {
+    display: block;
+    table-layout: auto;
     min-width: 0;
     white-space: normal;
   }

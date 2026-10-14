@@ -69,7 +69,7 @@ export interface TermoDaTelaDona {
 export type EditorRoles = readonly string[] | "self" | "none";
 
 export interface SettingsSection {
-  id: "organizacao" | "reposicao" | "notificacoes" | "mercado_livre" | "ia" | "operacao" | "preferencias";
+  id: "organizacao" | "reposicao" | "notificacoes" | "mercado_livre" | "shopee" | "ia" | "operacao" | "preferencias";
   label: string;
   state: SettingState;
   /** Uma linha: o que existe hoje, com número quando há número. */
@@ -110,6 +110,15 @@ export interface SettingsOverview {
   knowledge_validated: number;
   ml_accounts_total: number;
   ml_accounts_connected: number;
+  /*
+    As lojas Shopee (D-446) NÃO vêm da RPC: a página as conta à parte, no banco
+    (`count` com `head`), na mesma ida. Nulo = aquela contagem falhou, e só a
+    seção da Shopee fica indisponível — o resto da leitura continua valendo.
+  */
+  shopee_shops_total: number | null;
+  shopee_shops_connected: number | null;
+  /** Lojas fora do ambiente live (sandbox): aparecem, mas nunca somam. */
+  shopee_shops_test: number | null;
 }
 
 // Policies conferidas em 2026-09-03 (Dev) e reconferidas em 2026-09-22 contra
@@ -125,6 +134,9 @@ const EDITORS = {
   notificacoes: "Cada usuário edita só as próprias preferências.",
   // ml_accounts_admin_inserts: ADMIN. Conectar exige o client_secret, que só a api tem.
   mercado_livre: "ADMIN cadastra e conecta.",
+  // A loja nasce no retorno da autorização na Shopee, que só ADMIN inicia
+  // (`{ehAdmin && <ShopeeConnectButton />}` em /contas; a api confere o papel).
+  shopee: "ADMIN conecta a loja e autoriza na Shopee.",
   // AI_MONTHLY_BUDGET_USD é variável do worker (D-100), definida no deploy.
   ia: "Ninguém pela interface: o teto é definido no deploy.",
   // reply_templates_* e knowledge_entries_update_admin: ADMIN e GESTOR gerenciam; qualquer membro sugere conhecimento.
@@ -143,6 +155,7 @@ const EDITOR_ROLES = {
   reposicao: ["ADMIN", "GESTOR"],
   notificacoes: "self",
   mercado_livre: ["ADMIN"],
+  shopee: ["ADMIN"],
   ia: "none",
   operacao: ["ADMIN", "GESTOR"],
   preferencias: "self",
@@ -198,6 +211,12 @@ export const INCLUI = {
     // `{ehAdmin && (<Panel title="Conectar conta" …`.
     { termo: "Conectar conta", arquivo: "app/contas/page.tsx", somenteAdmin: true },
   ],
+  shopee: [
+    // O painel de /contas que todo papel vê.
+    { termo: "Lojas Shopee", arquivo: "app/contas/page.tsx" },
+    // O botão só aparece a ADMIN (`{ehAdmin && <ShopeeConnectButton />}`).
+    { termo: "Conectar loja Shopee", arquivo: "app/contas/shopee-connect-button.tsx", somenteAdmin: true },
+  ],
   // A IA não tem tela dona (D-232): quem compõe uso e custo é a Central de
   // Integrações, e é o item do menu que leva até ela.
   ia: [{ termo: "Integrações", arquivo: "components/nav.tsx" }],
@@ -218,6 +237,10 @@ const LINKS = {
   notificacoes: [{ label: "Preferências de notificação", href: "/notificacoes/preferencias" }],
   mercado_livre: [
     { label: "Contas ML", href: "/contas" },
+    { label: "Integrações", href: "/integracoes" },
+  ],
+  shopee: [
+    { label: "Contas e lojas", href: "/contas" },
     { label: "Integrações", href: "/integracoes" },
   ],
   // Custo e uso de IA não têm tela dona (D-232): a Central de Integrações é
@@ -345,6 +368,22 @@ export function avisoDe(
     return comSaida(
       "Conta desconectada não sincroniza: pedidos, perguntas e mensagens novos dela não chegam",
       "reconecte a conta em Contas ML",
+      quemPode,
+      papel,
+    );
+  }
+
+  // Loja em ERROR não é lida (a leitura de hora em hora só visita loja
+  // conectada), e o conserto é reautorizar — só ADMIN inicia.
+  if (
+    id === "shopee" &&
+    o.shopee_shops_total !== null &&
+    o.shopee_shops_connected !== null &&
+    o.shopee_shops_connected < o.shopee_shops_total
+  ) {
+    return comSaida(
+      "Loja desconectada não é lida: pedidos, financeiro e catálogo novos dela não chegam",
+      "reautorize a loja em Contas e lojas",
       quemPode,
       papel,
     );
@@ -510,7 +549,7 @@ function indisponivel(id: SettingsSection["id"], label: string): SettingsSection
 }
 
 /**
- * As sete seções, na ordem do ROADMAP. `papel` é o de quem olha (`null` quando
+ * As oito seções, na ordem do ROADMAP (a Shopee, D-446, logo depois do Mercado Livre). `papel` é o de quem olha (`null` quando
  * não se sabe): ele só muda o FIM dos avisos — a ação para quem pode, o pedido
  * para quem não pode —, nunca o estado nem o resumo.
  */
@@ -622,6 +661,28 @@ export function describeSettings(lida: SettingsOverview | null, papel: string | 
     );
   }
 
+  // A Shopee (D-446), com a contagem que a página fez à parte. A loja de teste
+  // é dita — conta como conectada, mas nunca entra nas somas das telas.
+  let shopee: SettingsSection;
+  const lojas = o?.shopee_shops_total ?? null;
+  const lojasConectadas = o?.shopee_shops_connected ?? null;
+  const lojasDeTeste = o?.shopee_shops_test ?? null;
+
+  if (lojas === null || lojasConectadas === null || lojasDeTeste === null) {
+    shopee = indisponivel("shopee", "Shopee");
+  } else if (lojas === 0) {
+    shopee = secao("shopee", "Shopee", "nao_configurado", "Nenhuma loja autorizada.");
+  } else {
+    const teste = lojasDeTeste === 0 ? "" : `; ${plural(lojasDeTeste, "de teste", "de teste")}, fora das somas`;
+
+    shopee = secao(
+      "shopee",
+      "Shopee",
+      lojasConectadas === lojas ? "configurado" : "parcial",
+      `${String(lojasConectadas)} de ${plural(lojas, "loja conectada", "lojas conectadas")}${teste}.`,
+    );
+  }
+
   // Nunca "configurado" nem "não configurado": o teto EXISTE, mas mora fora
   // do alcance de qualquer tela — dizer isso é a informação útil. Uso e custo
   // do mês são compostos pela Central de Integrações, não repetidos aqui.
@@ -679,7 +740,7 @@ export function describeSettings(lida: SettingsOverview | null, papel: string | 
   // que não houve. A organização escondida já cai em `o === null` acima;
   // esta regra é a que continua valendo se um dia uma seção ficar
   // indisponível sozinha. Alarme feito de "não sei" é o que D-067 proíbe.
-  return [organizacao, reposicao, notificacoes, mercadoLivre, ia, operacao, preferencias].map((s) => ({
+  return [organizacao, reposicao, notificacoes, mercadoLivre, shopee, ia, operacao, preferencias].map((s) => ({
     ...s,
     aviso: s.state === "indisponivel" ? null : avisoDe(o, s.id, papel),
   }));
