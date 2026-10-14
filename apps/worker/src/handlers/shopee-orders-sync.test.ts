@@ -230,7 +230,7 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(outcome).toEqual({ status: "done", processed: 2 });
     expect(shopee.listas[0]?.get("time_from")).toBe(String(Math.floor(new Date(marco).getTime() / 1000) - 600));
     expect(shopee.listas[0]?.get("time_to")).toBe(String(AGORA_S));
-    // Sem nova janela de pedidos; o financeiro (D-427) e as devoluções (D-447) vêm atrás.
+    // Sem nova janela de pedidos; o financeiro (D-427), as devoluções (D-447) e o Ads (D-449) vêm atrás.
     expect(enfileirados).toEqual([
       {
         jobType: "shopee.order-financials.sync",
@@ -243,6 +243,13 @@ describe("shopee.orders.sync (D-426)", () => {
         jobType: "shopee.returns.sync",
         organizationId: ORG,
         dedupeKey: `shopee-returns-ciclo:${LOJA_ID}:${String(AGORA_S)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: LOJA_ID },
+      },
+      {
+        jobType: "shopee.ads.sync",
+        organizationId: ORG,
+        dedupeKey: `shopee-ads:${LOJA_ID}:${String(AGORA_S)}`,
         queue: "backfill",
         payload: { shopeeShopId: LOJA_ID },
       },
