@@ -19,8 +19,8 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-14 |
-| `origin/main` | `caafb616` (#155: D-439; #156, #158 e #159: D-440, D-442, D-444) |
-| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61) e `feat/produtos-multicanal` (rascunho #161: E6c) · A2: T3b (D-446) |
+| `origin/main` | `558eacd1` (#155: D-439; #156, #158, #159 e #162: D-440, D-442, D-444, D-446) |
+| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61), `feat/produtos-multicanal` (rascunho #161: E6c) e `feat/devolucoes-shopee` (rascunho #163: E7a) · A2: T6b (D-448, empilhada no #157) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
 | Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendente: `20261015000000` (E6b, #157) |
