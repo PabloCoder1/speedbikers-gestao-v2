@@ -37,6 +37,7 @@ import {
   type Periodo,
 } from "../../lib/vendas-multicanal";
 import { AdsShopee } from "./ads-shopee";
+import { LIBERACOES_A_VISTA, RepasseShopee } from "./repasse-shopee";
 import { AVISO } from "./numeros";
 
 /**
@@ -124,12 +125,12 @@ export async function FaturamentoMulticanal({
   const rotuloPeriodo = days === null ? "Período personalizado" : `Últimos ${String(days)} dias`;
 
   /*
-    Os Ads CPC da loja (D-456, C-63), só no recorte Shopee. As duas leituras
-    partem AGORA (`Promise.resolve` dispara o builder do supabase-js) e
-    chegam por streaming numa seção própria, como o Mercado Ads na tela do ML:
-    não esperam o faturamento, nem o faturamento as espera.
+    O repasse (D-458, C-64) e os Ads CPC da loja (D-456, C-63), só no recorte
+    Shopee. As leituras partem AGORA (`Promise.resolve` dispara o builder do
+    supabase-js) e chegam por streaming em seções próprias, como o Mercado Ads
+    na tela do ML: não esperam o faturamento, nem o faturamento as espera.
   */
-  const adsDoPeriodo = {
+  const doPeriodoShopee = {
     p_organization_id: organizationId,
     p_date_from: range.from,
     p_date_to: range.to,
@@ -138,8 +139,24 @@ export async function FaturamentoMulticanal({
   const leiturasAds =
     escopo === "shopee"
       ? {
-          leitura: Promise.resolve(supabase.rpc("get_shopee_ads_overview", adsDoPeriodo)),
-          diaria: Promise.resolve(supabase.rpc("get_shopee_ads_daily", adsDoPeriodo)),
+          leitura: Promise.resolve(supabase.rpc("get_shopee_ads_overview", doPeriodoShopee)),
+          diaria: Promise.resolve(supabase.rpc("get_shopee_ads_daily", doPeriodoShopee)),
+        }
+      : null;
+  const leiturasRepasse =
+    escopo === "shopee"
+      ? {
+          leitura: Promise.resolve(supabase.rpc("get_shopee_repasse_overview", doPeriodoShopee)),
+          // O "a liberar" é um retrato de agora: não tem período.
+          pendente: Promise.resolve(
+            supabase.rpc("get_shopee_repasse_pendente", {
+              p_organization_id: organizationId,
+              p_account_ids: doPeriodoShopee.p_account_ids,
+            }),
+          ),
+          liberacoes: Promise.resolve(
+            supabase.rpc("get_shopee_repasses", { ...doPeriodoShopee, p_limit: LIBERACOES_A_VISTA }),
+          ),
         }
       : null;
 
@@ -278,6 +295,26 @@ export async function FaturamentoMulticanal({
 
       {/* O cabeçalho e os filtros saem antes; os números chegam por streaming, como na tela do ML. */}
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>{corpo}</Suspense>
+
+      {/* O realizado ao lado do previsto: logo depois do resultado, antes dos Ads. */}
+      {leiturasRepasse !== null && (
+        <section id="repasse" className="sb-campanhas-ml" aria-label="Repasse da Shopee">
+          <Suspense
+            fallback={
+              <Panel title="Repasse da Shopee" subtitle="Carregando o que a Shopee liberou no período">
+                <CarregandoBloco rotulo="repasses da Shopee" />
+              </Panel>
+            }
+          >
+            <RepasseShopee
+              leitura={leiturasRepasse.leitura}
+              pendente={leiturasRepasse.pendente}
+              liberacoes={leiturasRepasse.liberacoes}
+              periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+            />
+          </Suspense>
+        </section>
+      )}
 
       {leiturasAds !== null && (
         <section id="ads" className="sb-campanhas-ml" aria-label="Ads CPC da loja Shopee">

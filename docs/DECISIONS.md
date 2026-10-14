@@ -15293,3 +15293,58 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **Suite inteira:** 224 de 225 na rodada inteira, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000). A que falhou, em `/conhecimento` (fora desta fatia: a linha validada nao apareceu a tempo), passou ao repetir o spec no mesmo banco -- intermitente.
 
 **Impacto:** `apps/web/lib/ads-shopee.ts` e o teste, `apps/web/app/faturamento/{ads-shopee,multicanal,campanhas-ads}.tsx` (`BarrasAds` e `formatRoas` exportados), `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
+## D-458 - Telas multicanais, etapa T5d: o repasse da Shopee entra no /faturamento da Shopee como o realizado ao lado do previsto, pelo dia da liberacao, sem tocar no recebido nem no resultado
+
+**Contexto:** D-451 (C-64, A1) trouxe as liberacoes do escrow por pedido. Sao quatro leituras:
+- `get_shopee_repasse_overview`: pelo dia da liberacao, o liberado, o previsto dos mesmos pedidos e a diferenca;
+- `get_shopee_repasse_daily`: a serie;
+- `get_shopee_repasses`: cada liberacao;
+- `get_shopee_repasse_pendente`: o que falta liberar agora.
+
+O contrato pede tres cuidados:
+- nao somar o repasse ao recebido nem ao resultado;
+- nao comparar o liberado com a receita do mesmo periodo (o dinheiro sai em outro dia);
+- nao chamar a diferenca de cobranca enquanto a unidade de `payout_amount` nao for conferida no sandbox.
+
+**1. ONDE.** No recorte Shopee de `/faturamento`, numa secao propria (`#repasse`) logo depois dos numeros e antes dos Ads: o realizado fica junto do resultado que ele confere. As tres leituras partem junto com a pagina e chegam por streaming. A secao nao existe no ML nem no "Todos".
+
+**2. O QUE MOSTRA.**
+- **Faixa:**
+  - "Liberado no periodo" (`shopee_repasse_liberado`), com os pedidos e as liberacoes sem valor, que ficam fora da soma;
+  - "Previsto desses pedidos", com "N de M pedidos com o previsto lido" (os dois numeros do banco, sem conta na tela);
+  - "Diferenca" (`shopee_repasse_diferenca`), com os pedidos divergentes e a ressalva da unidade;
+  - "A liberar agora" (`shopee_a_liberar`), com os pedidos, os sem financeiro e o mais antigo.
+- **"Ultimas liberacoes":** as 10 mais recentes do periodo, cada uma com a loja, o dia, o previsto do pedido, a diferenca quando ha e "N liberacoes do pedido" quando ele saiu em parcelas. O total do periodo vem do banco ("mostrando as 10 mais recentes de N").
+- **"Por loja":** ao lado, o liberado de cada loja, os divergentes, o a liberar e ate quando foi lido. A loja de teste aparece marcada e fora do total.
+- **Ressalva sempre visivel:** o repasse e contado pelo dia da liberacao, nao o da venda, e nao muda o recebido nem o resultado.
+
+**3. A UNIDADE NAO CONFERIDA.** A celula da diferenca diz sempre que a unidade do valor liberado ainda nao foi conferida com a Shopee. Quando TODOS os pedidos comparaveis divergem (pelo menos 3, pelas contagens do banco), aparece um aviso de atencao: antes de tratar como cobranca, confira a unidade, porque uma unidade trocada produz exatamente isso. Nenhuma razao e calculada na tela; so as contagens do SQL sao lidas.
+
+**4. AUSENCIA NAO E ZERO.**
+- Sem TOTAL (nenhuma loja live lida), nao ha faixa; as lojas aparecem com "--" e "repasses ainda nao lidos".
+- Periodo fora da leitura gera aviso, com o "lida ate".
+- Liberacao sem valor aparece como "sem valor", nao R$ 0.
+- Pedido sem o financeiro aparece como "previsto nao lido".
+- Se o "a liberar" falhar, a celula diz isso, sem derrubar o resto.
+
+**5. A WEB PODE CHEGAR ANTES DA MIGRATION** (`20261015050000`): PGRST202 vira "a leitura dos repasses da Shopee ainda esta sendo ativada", como nos Ads (D-456).
+
+**Publicacao:** so a web, empilhada na T5c (#173). O merge vem depois dela e pode ir antes da migration em producao.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 6 em `lib/repasse-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira zeros, a loja de teste e o sinal de unidade trocada (todos os comparaveis, pelo menos 3; um so ou parte deles nao alarma; sem leitura, nada).
+- **e2e:** `faturamento-multicanal` 6/6 e `faturamento` 3/3. O teste novo usa o seed (so a loja de TESTE, nunca lida) e confere:
+  - a secao com a ressalva do dia da liberacao;
+  - nenhuma faixa;
+  - a loja com "--" e "repasses ainda nao lidos · loja de teste, fora do total";
+  - a ordem das secoes (repasse antes dos Ads);
+  - a ausencia da secao no "Todos".
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 12 pedidos, 8 liberados no periodo (um em duas parcelas, um R$ 5 abaixo do previsto, um sem valor, um sem o financeiro lido) e 4 ainda nao liberados (um sem financeiro).
+  - A conta a mao fecha com a funcao e com a tela: liberado R$ 711,00 (8 pedidos, 1 liberacao sem valor), previsto R$ 730,00 (7 de 8), diferenca -R$ 5,00 (1 pedido divergente), a liberar R$ 330,00 (4 pedidos, 1 sem financeiro).
+  - As 9 liberacoes aparecem na lista, com as parcelas, o "sem valor", o "previsto nao lido" e a diferenca.
+  - No desktop, as colunas ficam com 524 px; no celular (390 px), nada passa da largura.
+- **Suite inteira:** 226/226, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/repasse-shopee.ts` e o teste, `apps/web/app/faturamento/{repasse-shopee,multicanal}.tsx`, `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.

@@ -183,3 +183,39 @@ test("/faturamento?marketplace=shopee: os Ads CPC da loja dizem o que não se sa
   await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Ads CPC da loja Shopee" })).toHaveCount(0);
 });
+
+/**
+ * D-458 (T5d, contrato C-64): o repasse da Shopee no recorte Shopee — o
+ * realizado ao lado do previsto. O seed só tem a loja de TESTE, com os
+ * repasses nunca lidos: sem total de zeros, a loja com "—" e o motivo, e a
+ * ressalva de que o liberado é do dia da liberação, não da venda. A seção vem
+ * antes dos Ads e não existe no ML nem no "Todos".
+ */
+test("/faturamento?marketplace=shopee: o repasse diz o que não se sabe e não se compara com a receita", async ({
+  page,
+}) => {
+  await login(page, "/faturamento?marketplace=shopee");
+
+  const repasse = page.getByRole("region", { name: "Repasse da Shopee" });
+
+  await expect(repasse.getByText("Repasse da Shopee", { exact: true })).toBeVisible();
+  await expect(repasse.getByRole("note").filter({ hasText: "contado pelo dia da liberação" })).toBeVisible();
+  await expect(repasse.getByText(/Nenhuma loja real com os repasses já lidos/)).toBeVisible();
+  await expect(repasse.locator(".sb-kpi")).toHaveCount(0);
+
+  const loja = repasse.getByRole("list", { name: "Repasse por loja" }).getByRole("listitem");
+
+  await expect(loja).toHaveCount(1);
+  await expect(loja).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(loja).toContainText("—");
+  await expect(loja).toContainText("repasses ainda não lidos · loja de teste, fora do total");
+
+  // O repasse vem antes dos Ads: o realizado fica junto do resultado.
+  const secoes = await page.locator("section.sb-campanhas-ml").evaluateAll((s) => s.map((e) => e.id));
+
+  expect(secoes).toEqual(["repasse", "ads"]);
+
+  await page.goto("/faturamento?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Repasse da Shopee" })).toHaveCount(0);
+});
