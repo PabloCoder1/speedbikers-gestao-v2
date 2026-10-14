@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { buildAuthorizationUrl, getAccessToken, refreshAccessToken } from "./auth.js";
-import { ShopeeApiError, createShopeeClient, sign, signBaseString } from "./client.js";
+import { ShopeeApiError, createShopeeClient, isShopLevelError, sign, signBaseString } from "./client.js";
 import { getShopInfo, shopeeEpochToIso } from "./shop.js";
 
 const NOW = new Date("2026-10-13T15:00:00.000Z");
@@ -186,6 +186,18 @@ describe("classificação dos erros da Shopee (D-428)", () => {
     expect(erro("error_param").errorClass).toBe("not_retryable");
     expect(erro("product.error_item_not_found").errorClass).toBe("not_retryable");
     expect(erro(null, 503).errorClass).toBe("retryable");
+  });
+
+  it("D-432: credencial, assinatura, partner e loja inválida são da LOJA, não do pedido — com ou sem prefixo", () => {
+    for (const code of ["error_auth", "error_shop", "error_sign", "error_permission", "invalid_partner_id", "invalid_acceess_token", "common.error_auth"]) {
+      expect(isShopLevelError(erro(code))).toBe(true);
+    }
+
+    for (const code of ["error_param", "order_not_found", "error_server", "product.error_item_not_found"]) {
+      expect(isShopLevelError(erro(code))).toBe(false);
+    }
+
+    expect(isShopLevelError(new Error("error_auth"))).toBe(false);
   });
 });
 
