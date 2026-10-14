@@ -66,6 +66,11 @@ export function formatEventDiff(
       const motivo = typeof a.motivo === "string" && a.motivo.trim() !== "" ? a.motivo : null;
 
       if (a.tipo === "conta_em_erro") {
+        // D-438: a loja Shopee (D-435) reconecta em Contas e lojas, não em Integrações.
+        if (a.marketplace === "SHOPEE") {
+          return motivo === null ? "Loja em erro: reautorize em Contas e lojas" : `Loja em erro: ${motivo}`;
+        }
+
         return motivo === null ? "Conta em erro: reconecte em Integrações" : `Conta em erro: ${motivo}`;
       }
 
@@ -127,6 +132,9 @@ export function entityHref(
   // D-417: a conta que parou de sincronizar -- o cartão dela em Integrações
   // tem a saúde e o botão Reconectar.
   if (entityType === "ml_account") return "/integracoes";
+  // D-438: a loja Shopee parada ou em erro (D-435) -- é em Contas e lojas que
+  // ela mostra a conexão e se reautoriza.
+  if (entityType === "shopee_shop") return "/contas";
 
   return null;
 }
@@ -138,6 +146,7 @@ export function entityLabel(entityType: string): string {
   if (entityType === "support_case") return "Atendimento";
   if (entityType === "action") return "Alerta";
   if (entityType === "ml_account") return "Conta";
+  if (entityType === "shopee_shop") return "Loja Shopee";
 
   return entityType;
 }
@@ -157,6 +166,14 @@ export function entityText(entityType: string, entityId: string, after: Record<s
   // D-417: a conta pelo nome, não pelo uuid.
   if (entityType === "ml_account" && after !== null && typeof after.label === "string") {
     return `Conta ${after.label}`;
+  }
+
+  /*
+    D-438: a loja pelo nome. O vigia grava em `label` o nome lido na Shopee ou,
+    sem ele, "Loja Shopee <shop_id>" -- que já começa com o rótulo e não o repete.
+  */
+  if (entityType === "shopee_shop" && after !== null && typeof after.label === "string") {
+    return /^loja shopee\b/iu.test(after.label) ? after.label : `Loja Shopee ${after.label}`;
   }
 
   return `${entityLabel(entityType)} ${entityId}`;

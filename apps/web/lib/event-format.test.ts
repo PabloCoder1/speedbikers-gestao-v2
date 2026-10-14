@@ -158,3 +158,25 @@ describe("sync.delayed / sync.failed (D-417)", () => {
     expect(entityLabel("ml_account")).toBe("Conta");
   });
 });
+
+describe("a loja Shopee parada ou em erro (D-435, rótulos de D-438)", () => {
+  const PARADA = { tipo: "reconciliacao", marketplace: "SHOPEE", label: "Speedbikers", horas: 14, motivo: null };
+
+  it("o texto do vigia vale igual para a loja; a loja em erro manda reautorizar em Contas e lojas", () => {
+    expect(formatEventDiff("sync.failed", null, PARADA)).toBe("Pedidos sem sincronizar há 14 h");
+    expect(formatEventDiff("sync.failed", null, { tipo: "conta_em_erro", marketplace: "SHOPEE", label: "Speedbikers", motivo: null })).toBe(
+      "Loja em erro: reautorize em Contas e lojas",
+    );
+    expect(
+      formatEventDiff("sync.failed", null, { tipo: "conta_em_erro", marketplace: "SHOPEE", motivo: "refresh_token_expired" }),
+    ).toBe("Loja em erro: refresh_token_expired");
+  });
+
+  it("o destino é a loja pelo nome, sem repetir o rótulo, e o link leva a Contas e lojas", () => {
+    expect(entityText("shopee_shop", "cccc-dddd", PARADA)).toBe("Loja Shopee Speedbikers");
+    expect(entityText("shopee_shop", "cccc-dddd", { ...PARADA, label: "Loja Shopee 990000001" })).toBe("Loja Shopee 990000001");
+    expect(entityText("shopee_shop", "cccc-dddd")).toBe("Loja Shopee cccc-dddd");
+    expect(entityHref("shopee_shop", "cccc-dddd")).toBe("/contas");
+    expect(entityLabel("shopee_shop")).toBe("Loja Shopee");
+  });
+});

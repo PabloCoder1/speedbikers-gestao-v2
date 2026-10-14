@@ -11,6 +11,8 @@ import { tomDeStatus } from "../../components/tone";
 import { formatCount, formatDateTime, formatDay } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone, runStatusLabel } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
+import { avisoDaAutorizacao, lojaDeTeste, vereditoDaLoja } from "../../lib/saude-loja-shopee";
+import { isShopeeSchemaMissing } from "../../lib/shopee-listings";
 import { createClient } from "../../lib/supabase/server";
 import {
   calculateBackfillProgress,
@@ -115,6 +117,8 @@ interface EventRow {
   severity: string;
   occurred_at: string;
   ml_accounts: { label: string } | null;
+  /** A loja Shopee do aviso do vigia (D-435); nulo nos demais. */
+  shopee_shop_id: string | null;
 }
 
 /**
@@ -140,7 +144,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     );
   }
 
-  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult] = await Promise.all([
+  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult, lojasResult] = await Promise.all([
     supabase
       .from("ml_accounts")
       .select("id, label, slug, status, last_error, connected_at, backfill_covered_until")
@@ -149,7 +153,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     supabase.rpc("get_processing_health", { p_organization_id: organizationId }),
     supabase
       .from("domain_events")
-      .select("id, event_type, entity_type, entity_id, severity, occurred_at, ml_accounts(label)")
+      .select("id, event_type, entity_type, entity_id, severity, occurred_at, shopee_shop_id, ml_accounts(label)")
       .order("occurred_at", { ascending: false })
       .limit(30),
     /*
@@ -159,6 +163,12 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       devolve AGREGADO — nunca a linha de execução.
     */
     supabase.rpc("get_job_failures", { p_days: FAILURE_WINDOW_DAYS, p_limit: 30 }),
+    // D-438: as lojas Shopee que a pessoa alcança (C-52), com o frescor delas.
+    supabase
+      .from("marketplace_accounts")
+      .select("account_id, name, environment, connection_status, last_error, connected_at, orders_synced_at, authorization_expires_at")
+      .eq("marketplace", "SHOPEE")
+      .order("name", { ascending: true }),
   ]);
 
   const accounts = accountsResult.data ?? [];
@@ -166,6 +176,10 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const processing = (processingResult.data ?? []) as ProcessingRow[];
   const events = (eventsResult.data ?? []) as EventRow[];
   const failures = failuresResult.data ?? [];
+  // Banco anterior à D-435 (sem a view): a seção das lojas não existe, e isso não é erro.
+  const lojasAusentes = isShopeeSchemaMissing(lojasResult.error);
+  const lojas = lojasAusentes ? [] : (lojasResult.data ?? []);
+  const nomeDaLoja = new Map(lojas.map((loja) => [loja.account_id, loja.name]));
 
   // Falha em QUALQUER uma das cinco: mostrar erro, nunca "sem dado" (D-067)
   // — numa tela que existe para pegar exatamente esse tipo de problema.
@@ -174,7 +188,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     healthResult.error ??
     processingResult.error ??
     eventsResult.error ??
-    failuresResult.error;
+    failuresResult.error ??
+    (lojasAusentes ? null : lojasResult.error);
 
   /*
     ZERO LINHAS TEM DOIS SIGNIFICADOS, e a tela precisa saber qual é (D-067):
@@ -319,7 +334,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
         subtitle="Veja primeiro se os dados de cada conta estão prontos para análise. Depois, investigue frescor, histórico, processamento e falhas sem misturar sinais diferentes."
         aside={
           <nav className="sb-channel-nav" aria-label="Navegação de dados e processamentos">
-            <Link href="/contas">Contas Mercado Livre →</Link>
+            <Link href="/contas">Contas e lojas →</Link>
             <Link href="/importacoes">Histórico de importações →</Link>
           </nav>
         }
@@ -350,6 +365,9 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
         <>
           <nav className="sb-sync-nav" aria-label="Seções da sincronização">
             <a href="#contas"><Icone nome="loja" tamanho={14} /> Contas</a>
+            {lojas.length > 0 && (
+              <a href="#lojas"><Icone nome="loja" tamanho={14} /> Lojas Shopee</a>
+            )}
             <a href="#recursos"><Icone nome="sincronizar" tamanho={14} /> Recursos</a>
             <a href="#historico"><Icone nome="barras" tamanho={14} /> Histórico</a>
             <a href="#processamento"><Icone nome="ciclo" tamanho={14} /> Processamento</a>
@@ -469,6 +487,96 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
               })}
             </div>
           </section>
+
+          {/*
+            AS LOJAS SHOPEE (D-438), lidas de `marketplace_accounts` (C-52): a
+            conexão, a última leitura de pedidos que terminou e a autorização.
+            O veredito usa os limiares do vigia (3 h e 12 h, D-435), para esta
+            tela e o sino dizerem a mesma coisa sobre a mesma loja. Sem loja
+            que a pessoa alcance (D-433), a seção não existe.
+          */}
+          {lojas.length > 0 && (
+            <section id="lojas" className="sb-sync-overview" aria-labelledby="sync-lojas-title">
+              <div className="sb-sync-section-head">
+                <div>
+                  <span className="sb-eyebrow">SHOPEE</span>
+                  <h2 id="sync-lojas-title">Lojas Shopee</h2>
+                  <p>
+                    Pedidos lidos de hora em hora. O veredito mede a última leitura de pedidos que terminou: a partir de
+                    3 h a loja está atrasada e a partir de 12 h, parada — os mesmos limites do aviso.
+                  </p>
+                </div>
+              </div>
+
+              <div className="sb-sync-account-grid">
+                {lojas.map((loja) => {
+                  const veredito = vereditoDaLoja(loja, now);
+                  const autorizacao = avisoDaAutorizacao(loja, now);
+                  const teste = lojaDeTeste(loja);
+                  const conexao: PillTone =
+                    loja.connection_status === "CONNECTED"
+                      ? { tom: "ok", label: "Conectada" }
+                      : { tom: "perigo", label: "Com erro" };
+
+                  return (
+                    <article
+                      className="sb-sync-account"
+                      key={loja.account_id}
+                      data-tone={veredito.tom}
+                      aria-label={`Loja Shopee ${loja.name}`}
+                    >
+                      <header className="sb-sync-account-head">
+                        <div className="sb-sync-account-name">
+                          <span className="sb-sync-account-icon"><Icone nome="loja" tamanho={17} /></span>
+                          <div>
+                            <h3>{loja.name}</h3>
+                            <span>Shopee</span>
+                          </div>
+                        </div>
+                        <div className="sb-sync-account-pills">
+                          {teste && <StatePill tone={{ tom: "atencao", label: "Teste" }} />}
+                          <StatePill tone={conexao} />
+                          <StatePill tone={{ tom: veredito.tom, label: veredito.rotulo }} />
+                        </div>
+                      </header>
+
+                      <p className="sb-sync-guidance">
+                        {veredito.orientacao}
+                        {teste && " Loja de teste: o vigia não avisa sobre ela."}
+                      </p>
+
+                      <dl className="sb-sync-account-facts">
+                        <div>
+                          <dt>Última leitura de pedidos que terminou</dt>
+                          <dd>{loja.orders_synced_at === null ? "—" : formatDateTime(loja.orders_synced_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>Conectada em</dt>
+                          <dd>{formatDateTime(loja.connected_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>Autorização vence em</dt>
+                          <dd className={autorizacao?.tom === "perigo" ? "sb-sync-danger" : undefined}>
+                            {loja.authorization_expires_at === null ? "—" : formatDay(loja.authorization_expires_at)}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {autorizacao !== null && (
+                        <p className="sb-sync-guidance">
+                          <StatePill tone={{ tom: autorizacao.tom, label: autorizacao.rotulo }} /> {autorizacao.orientacao}
+                        </p>
+                      )}
+
+                      {loja.connection_status !== "CONNECTED" && loja.last_error !== null && (
+                        <p className="sb-sync-account-error">{sanitizeErrorText(loja.last_error)}</p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           <div id="recursos" className="sb-sync-section-anchor">
             <KpiStrip cells={celulas} />
@@ -683,8 +791,16 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                           <span className="sb-mono">
                             {event.entity_type} {event.entity_id}
                           </span>
-                          {/* Nulo para eventos organizacionais sem conta (D-054). */}
-                          <span style={{ color: "var(--sb-text-soft)" }}>{event.ml_accounts?.label ?? "Estoque"}</span>
+                          {/*
+                            A conta ML, a loja Shopee (D-435, pelo nome — D-438) ou,
+                            sem nenhuma das duas, o evento organizacional (D-054).
+                          */}
+                          <span style={{ color: "var(--sb-text-soft)" }}>
+                            {event.ml_accounts?.label ??
+                              (event.shopee_shop_id === null
+                                ? "Estoque"
+                                : (nomeDaLoja.get(event.shopee_shop_id) ?? "Loja Shopee"))}
+                          </span>
                           <span style={{ color: "var(--sb-text-soft)", marginLeft: "auto", whiteSpace: "nowrap" }}>
                             {formatDateTime(event.occurred_at)}
                           </span>

@@ -60,11 +60,11 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
-| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML) | a Shopee não emite evento | E3 (R4) |
+| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | filtro e preferências por loja | T3a ✔ (rótulo e destino, D-438) |
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat/devolução Shopee integrados | fora do plano (E7: devoluções) |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
-| Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) | marcos da loja (`orders_synced_until`, `items_synced_until`) | E3 → T3 |
+| Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) · `marketplace_accounts` (C-52) | frescor do catálogo da loja | T3a ✔ (D-438) |
 | Saúde | `/saude` | 1 | — | `job_runs` (já inclui os jobs Shopee) | cadência dos jobs Shopee em `lib/sync-health.ts` | T1 (C-09) |
 | Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) | cartão e contagem da Shopee | E3 → T3 |
@@ -245,7 +245,7 @@ número.
 | **T0** | Esta auditoria | — | documento na `main` |
 | **T1 ✔** | Modelo e seletor de marketplace (`lib` pura + componente) nas duas telas que já têm os dois canais: `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; formulário de período personalizado em `/vendas/shopee`; `/contas` com título e texto que falam dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09) | nada (só leitura que já existe) | **código 2026-10-14, D-431** — ver a nota abaixo da tabela |
 | **T2 ✔** | Concessão de loja em `/usuarios`: gaveta, coluna, histórico e convite | E2 (C-54) | **código 2026-10-14, D-434** — o ADMIN concede e retira, e o efeito chega à tela de quem recebe (e2e) |
-| **T3** | Seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
+| **T3a ✔ / T3b** | **T3a, código 2026-10-14, D-438:** o aviso da loja (D-435) com nome e destino, as lojas em `/sincronizacao` com os limiares do vigia e a contagem do shell por `marketplace_accounts`. **T3b:** seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
 | **T4** | `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
 | **T5** | `/faturamento` com marketplace e a linha por loja | E5 | componentes não comparáveis nunca somados |
 | **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07) | E6 | — |
