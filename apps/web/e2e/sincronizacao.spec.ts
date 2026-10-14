@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { E2E_SHOPEE_SHOP } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -190,4 +191,39 @@ test("/sincronizacao: a lista de falhas não virou o log cru que o frame desenha
   // E as chaves internas do worker não vazam para a tela.
   await expect(painel.getByText(/dedupe/i)).toHaveCount(0);
   await expect(painel.getByText(/e2e:seed:/)).toHaveCount(0);
+});
+
+/**
+ * AS LOJAS SHOPEE (D-438), lidas de `marketplace_accounts` (C-52): a loja do
+ * seed aparece com o nome, a marca de TESTE, a conexão e os fatos de frescor.
+ *
+ * O veredito ("Primeira leitura", "Pedidos parados"…) depende do relógio desde
+ * o seed e fica para o teste unitário (`lib/saude-loja-shopee.test.ts`); aqui
+ * vai o que é determinístico: o seed não grava leitura terminada, então a
+ * última leitura é "—" — nunca uma data inventada —, e a loja de teste diz que
+ * o vigia não avisa sobre ela.
+ */
+test("/sincronizacao: a loja Shopee aparece com a marca de teste, a conexão e a última leitura", async ({ page }) => {
+  await login(page, "/sincronizacao");
+
+  await expect(page.getByRole("heading", { level: 2, name: "Lojas Shopee" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Seções da sincronização" }).getByRole("link", { name: "Lojas Shopee" })).toBeVisible();
+
+  const loja = page.getByRole("article", { name: `Loja Shopee ${E2E_SHOPEE_SHOP.name}` });
+
+  await expect(loja.getByRole("heading", { level: 3, name: E2E_SHOPEE_SHOP.name })).toBeVisible();
+  await expect(loja.getByText("Teste", { exact: true })).toBeVisible();
+  await expect(loja.getByText("Conectada", { exact: true })).toBeVisible();
+  await expect(loja).toContainText("Loja de teste: o vigia não avisa sobre ela.");
+
+  const ultimaLeitura = loja.getByText("Última leitura de pedidos que terminou").locator("..");
+
+  await expect(ultimaLeitura.getByRole("definition")).toHaveText("—");
+  await expect(loja.getByText("Autorização vence em")).toBeVisible();
+
+  // O caminho para reconectar é o da tela que conecta as duas.
+  await expect(page.getByRole("link", { name: "Contas e lojas →" })).toHaveAttribute("href", "/contas");
+
+  // A contagem do rodapé lê a mesma fonte (C-52): a conta ML e a loja Shopee do seed.
+  await expect(page.getByText("2 contas conectadas", { exact: true })).toBeVisible();
 });

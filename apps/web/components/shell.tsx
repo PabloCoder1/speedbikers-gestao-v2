@@ -93,7 +93,11 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     // `NotificationToasts`, em toda página autenticada — uma ida a mais por
     // carregamento, e ela ficava na frente da assinatura de Realtime.
     supabase.from("notification_preferences").select("event_type, ml_account_id, min_severity, enabled"),
-    supabase.from("ml_accounts").select("id", { count: "exact", head: true }).eq("status", "CONNECTED"),
+    // D-438: contas do ML E lojas Shopee, pela fonte única das contas (C-52, D-435).
+    supabase
+      .from("marketplace_accounts")
+      .select("account_id", { count: "exact", head: true })
+      .eq("connection_status", "CONNECTED"),
     supabase.from("support_cases").select("id", { count: "exact", head: true }).neq("internal_status", "RESOLVIDO"),
     // O NOME da pessoa, para o bloco de perfil (o frame mostra "João Martins
     // / Administrador", não o e-mail cru e o enum). A policy de `profiles`
@@ -164,7 +168,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <b>{orgName}</b>
-              <small>
+              <small title="Contas do Mercado Livre e lojas Shopee com a conexão ativa">
                 {contasConectadas === null
                   ? "contas não verificadas"
                   : `${String(contasConectadas)} ${contasConectadas === 1 ? "conta conectada" : "contas conectadas"}`}
