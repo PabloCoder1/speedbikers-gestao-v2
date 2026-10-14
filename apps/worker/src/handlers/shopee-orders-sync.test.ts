@@ -39,6 +39,7 @@ function fakeDb(loja: Loja | null) {
     pedidos: [] as Record<string, unknown>[],
     apagados: [] as string[][],
     itens: [] as Record<string, unknown>[],
+    resolucoes: [] as unknown[],
   };
 
   function chain(result: unknown, aoFim?: () => void) {
@@ -69,6 +70,11 @@ function fakeDb(loja: Loja | null) {
   };
 
   const db = {
+    rpc: (nome: string, args: unknown) => {
+      gravado.resolucoes.push({ nome, args });
+
+      return Promise.resolve({ data: 0, error: null });
+    },
     from: (table: string) => ({
       select: () => chain({ data: table === "shopee_shops" ? loja : credencial, error: null }),
       update: (row: Record<string, unknown>) =>
@@ -244,6 +250,10 @@ describe("shopee.orders.sync (D-426)", () => {
     });
     // Os itens são SUBSTITUÍDOS: apaga os do lote e insere de novo.
     expect(gravado.apagados).toEqual([["A1", "A2"]]);
+    // D-430: e o SKU dos itens do lote é resolvido em SQL logo depois.
+    expect(gravado.resolucoes).toEqual([
+      { nome: "shopee_resolve_order_item_skus", args: { p_shopee_shop_id: LOJA_ID, p_order_sns: ["A1", "A2"] } },
+    ]);
     expect(gravado.itens.filter((i) => i.order_sn === "A1")).toEqual([
       expect.objectContaining({ position: 0, item_sku: "BAU05", model_id: null, model_sku: null, quantity: 1, discounted_price: 120.5 }),
       expect.objectContaining({ position: 1, item_sku: null, model_id: 77, model_sku: "BAU05-P", quantity: 2 }),

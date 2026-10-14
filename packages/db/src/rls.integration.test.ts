@@ -340,6 +340,10 @@ describe("catálogo de métricas", () => {
       "resultado_contribuicao",
       "resultado_venda",
       "roas",
+      "shopee_pedidos",
+      "shopee_recebido",
+      "shopee_receita_bruta",
+      "shopee_unidades",
       "skus_distintos_vendidos",
       "tacos",
       "taxa_cancelamento",
@@ -3168,6 +3172,207 @@ describe("vínculo manual Shopee (D-429)", () => {
     ).rejects.toThrow(/append-only/);
     // A loja com histórico não some em cascata.
     await expect(client.query("delete from public.shopee_shops where id = $1", [LOJA])).rejects.toThrow(/foreign key|violates/i);
+  });
+});
+
+/*
+  D-430: as VENDAS da Shopee. O SKU gravado em cada item (manual > SKU do
+  anúncio > SKU do próprio pedido), a situação da venda, o dia em São Paulo, a
+  receita (financeiro, senão itens, senão desconhecida) e o resumo por loja.
+*/
+describe("vendas Shopee (D-430)", () => {
+  const LOJA = "dddd4300-0000-4000-8000-00000000d430";
+  const skus: Record<"a" | "b" | "c" | "m", string> = { a: "", b: "", c: "", m: "" };
+
+  async function sku(nome: string): Promise<string> {
+    const r = await client.query<{ id: string }>(
+      "insert into public.skus (organization_id, sku, kind) values ($1, $2, 'PRODUTO') returning id",
+      [ORG_SB, nome],
+    );
+
+    return r.rows[0]?.id ?? "";
+  }
+
+  async function pedido(sn: string, status: string, criado: string, pago: string | null, renda: string | null): Promise<void> {
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+          escrow_amount, order_income, financials_synced_at)
+       values ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz, $6::timestamptz,
+               ($7::jsonb ->> 'escrow_amount')::numeric, $7::jsonb, case when $7::jsonb is null then null else now() end)`,
+      [LOJA, ORG_SB, sn, status, criado, pago, renda],
+    );
+  }
+
+  async function item(sn: string, pos: number, itemId: number, modelo: number | null, preco: number, qtd: number, modelSku: string | null, itemSku: string | null) {
+    await client.query(
+      `insert into public.shopee_order_items
+         (shopee_shop_id, order_sn, position, organization_id, item_id, model_id, item_sku, model_sku, quantity, discounted_price)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [LOJA, sn, pos, ORG_SB, itemId, modelo, itemSku, modelSku, qtd, preco],
+    );
+  }
+
+  const itens = (sn: string) =>
+    client.query<{ position: number; sku_id: string | null; vinculo_via: string | null }>(
+      "select position, sku_id, vinculo_via from public.shopee_order_items where shopee_shop_id = $1 and order_sn = $2 order by position",
+      [LOJA, sn],
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, orders_synced_until)
+       values ($1, $2, 'sandbox', 990430001, 'Loja Vendas', 'CONNECTED', now())`,
+      [LOJA, ORG_SB],
+    );
+    skus.a = await sku("D430-A");
+    skus.b = await sku("D430-B");
+    skus.c = await sku("D430-C");
+    skus.m = await sku("D430-MANUAL");
+
+    // Catálogo: item 1 sem variação, SKU D430-A no anúncio; item 2 com a
+    // variação 21 (SKU D430-B) e a 22 (sem SKU); o item 3 foi APAGADO.
+    await client.query(
+      `insert into public.shopee_items
+         (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+       values ($1, $2, 1, 'NORMAL', now(), 'Um', 'D430-A', false, now(), now()),
+              ($1, $2, 2, 'NORMAL', now(), 'Dois', null, true, now(), now()),
+              ($1, $2, 3, 'SELLER_DELETE', now(), 'Tres', 'D430-C', false, now(), now())`,
+      [LOJA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku)
+       values ($1, 2, 21, $2, 'Azul', 'D430-B'), ($1, 2, 22, $2, 'Preto', null)`,
+      [LOJA, ORG_SB],
+    );
+
+    // P1: válido, com financeiro; itens do anúncio 1 e da variação 21.
+    await pedido("P1", "COMPLETED", "2026-10-10T15:00:00Z", "2026-10-10T15:01:00Z",
+      JSON.stringify({ order_discounted_price: 300, escrow_amount: 255.5 }));
+    await item("P1", 0, 1, null, 100, 1, null, "qualquer-coisa");
+    await item("P1", 1, 2, 21, 100, 2, "outro-sku", null);
+    // P2: válido, sem financeiro; variação 22 sem SKU no anúncio, mas o pedido trouxe D430-C.
+    await pedido("P2", "SHIPPED", "2026-10-11T15:00:00Z", "2026-10-11T15:00:30Z", null);
+    await item("P2", 0, 2, 22, 50, 2, "d430-c", null);
+    // P3: válido, item APAGADO do catálogo; o pedido trouxe D430-C -> SKU do pedido. Preço 0 (bundle): receita desconhecida.
+    await pedido("P3", "READY_TO_SHIP", "2026-10-12T15:00:00Z", "2026-10-12T15:00:30Z", null);
+    await item("P3", 0, 3, null, 0, 1, null, "D430-C");
+    // P4: cancelado. P5: não pago. P6: válido criado 02:30 UTC de 14/10 = 23:30 de 13/10 em São Paulo.
+    await pedido("P4", "CANCELLED", "2026-10-12T16:00:00Z", "2026-10-12T16:00:30Z", null);
+    await item("P4", 0, 1, null, 100, 1, null, null);
+    await pedido("P5", "UNPAID", "2026-10-12T17:00:00Z", null, null);
+    await item("P5", 0, 1, null, 100, 1, null, null);
+    await pedido("P6", "SHIPPED", "2026-10-14T02:30:00Z", "2026-10-14T02:31:00Z", null);
+    await item("P6", 0, 9, null, 10, 1, null, null);
+
+    await client.query("select public.shopee_resolve_order_item_skus($1)", [LOJA]);
+  });
+
+  afterAll(async () => {
+    await client.query("alter table public.shopee_sku_link_events disable trigger shopee_sku_link_events_no_mutation");
+    await client.query("delete from public.shopee_sku_link_events where shopee_shop_id = $1", [LOJA]);
+    await client.query("alter table public.shopee_sku_link_events enable trigger shopee_sku_link_events_no_mutation");
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+    await client.query("delete from public.skus where id = any($1::uuid[])", [[skus.a, skus.b, skus.c, skus.m]]);
+  });
+
+  it("o SKU gravado: o do anúncio vence o do pedido; o apagado e o sem SKU no anúncio caem no do pedido; sem nada, nulo", async () => {
+    expect((await itens("P1")).rows).toEqual([
+      { position: 0, sku_id: skus.a, vinculo_via: "SKU_DO_ANUNCIO" },
+      { position: 1, sku_id: skus.b, vinculo_via: "SKU_DO_ANUNCIO" },
+    ]);
+    expect((await itens("P2")).rows).toEqual([{ position: 0, sku_id: skus.c, vinculo_via: "SKU_DO_PEDIDO" }]);
+    expect((await itens("P3")).rows).toEqual([{ position: 0, sku_id: skus.c, vinculo_via: "SKU_DO_PEDIDO" }]);
+    expect((await itens("P6")).rows).toEqual([{ position: 0, sku_id: null, vinculo_via: null }]);
+
+    // Repetir não regrava nada.
+    const denovo = await client.query<{ n: number }>("select public.shopee_resolve_order_item_skus($1) as n", [LOJA]);
+
+    expect(denovo.rows[0]?.n).toBe(0);
+  });
+
+  it("o vínculo manual novo preenche só o SKU que faltava; o já resolvido não muda", async () => {
+    // O item 9 (P6) não está no catálogo: cataloga-o para poder vincular.
+    await client.query(
+      `insert into public.shopee_items
+         (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, has_model, details_synced_at, details_update_time)
+       values ($1, $2, 9, 'NORMAL', now(), 'Nove', false, now(), now())`,
+      [LOJA, ORG_SB],
+    );
+    await asUserPersist(ADMIN_SB, `select public.set_shopee_sku_link('${LOJA}', 9, null, '${skus.m}')`);
+    await asUserPersist(ADMIN_SB, `select public.set_shopee_sku_link('${LOJA}', 1, null, '${skus.m}')`);
+
+    expect((await itens("P6")).rows).toEqual([{ position: 0, sku_id: skus.m, vinculo_via: "MANUAL" }]);
+    // P1/0 já tinha D430-A pelo anúncio: a venda passada não é reescrita.
+    expect((await itens("P1")).rows[0]).toEqual({ position: 0, sku_id: skus.a, vinculo_via: "SKU_DO_ANUNCIO" });
+
+    // A próxima gravação do pedido (worker) aplica a regra vigente: o manual vence.
+    await client.query("select public.shopee_resolve_order_item_skus($1, array['P1'])", [LOJA]);
+
+    expect((await itens("P1")).rows[0]).toEqual({ position: 0, sku_id: skus.m, vinculo_via: "MANUAL" });
+  });
+
+  it("situação, dia em São Paulo e receita: do financeiro, dos itens, ou desconhecida com preço 0", async () => {
+    const pedidos = await asUser<{ order_sn: string; situacao: string; dia: string; receita_bruta: string | null; recebido: string | null; financeiro_lido: boolean }>(
+      ADMIN_SB,
+      `select order_sn, situacao, dia::text, receita_bruta, recebido, financeiro_lido
+         from public.shopee_sales_orders where shopee_shop_id = '${LOJA}' order by order_sn`,
+    );
+
+    expect(pedidos).toEqual([
+      { order_sn: "P1", situacao: "VALIDA", dia: "2026-10-10", receita_bruta: "300", recebido: "255.5", financeiro_lido: true },
+      { order_sn: "P2", situacao: "VALIDA", dia: "2026-10-11", receita_bruta: "100", recebido: null, financeiro_lido: false },
+      { order_sn: "P3", situacao: "VALIDA", dia: "2026-10-12", receita_bruta: null, recebido: null, financeiro_lido: false },
+      { order_sn: "P4", situacao: "CANCELADA", dia: "2026-10-12", receita_bruta: "100", recebido: null, financeiro_lido: false },
+      { order_sn: "P5", situacao: "NAO_PAGA", dia: "2026-10-12", receita_bruta: "100", recebido: null, financeiro_lido: false },
+      { order_sn: "P6", situacao: "VALIDA", dia: "2026-10-13", receita_bruta: "10", recebido: null, financeiro_lido: false },
+    ]);
+  });
+
+  it("o resumo por loja conta no SQL; recebido só com financeiro; a lista pagina com o total", async () => {
+    const resumo = await asUser<Record<string, string | null>>(
+      ADMIN_SB,
+      `select environment, pedidos, unidades, receita_bruta, pedidos_sem_receita, recebido, pedidos_sem_recebido, cancelados, pedidos_sem_sku
+         from public.get_shopee_sales_by_shop('${ORG_SB}', '2026-10-10', '2026-10-13') where shopee_shop_id = '${LOJA}'`,
+    );
+
+    // Válidos: P1 (3 un.), P2 (2), P3 (1), P6 (1). Receita conhecida 300 + 100 + 10; P3 sem receita.
+    expect(resumo).toEqual([
+      {
+        environment: "sandbox",
+        pedidos: "4",
+        unidades: "7",
+        receita_bruta: "410",
+        pedidos_sem_receita: "1",
+        recebido: "255.5",
+        pedidos_sem_recebido: "3",
+        cancelados: "1",
+        pedidos_sem_sku: "0",
+      },
+    ]);
+
+    const pagina = await asUser<{ order_sn: string; total_count: string }>(
+      ADMIN_SB,
+      `select order_sn, total_count from public.get_shopee_orders('${ORG_SB}', '2026-10-10', '2026-10-13', '${LOJA}', 'VALIDA', 2, 0)`,
+    );
+
+    expect(pagina).toEqual([
+      { order_sn: "P6", total_count: "4" },
+      { order_sn: "P3", total_count: "4" },
+    ]);
+    expect(
+      await asUser(DE_OUTRA_ORG, `select 1 from public.get_shopee_orders('${ORG_SB}', '2026-10-01', '2026-10-31', null, null, 50, 0)`),
+    ).toHaveLength(0);
+  });
+
+  it("a resolução é só do worker; as definições estão no espelho de METRICS", async () => {
+    await expect(asUser(ADMIN_SB, `select public.shopee_resolve_order_item_skus('${LOJA}')`)).rejects.toThrow(/permission denied/i);
+
+    const definicoes = await client.query<{ id: string }>(
+      "select id from public.metric_definitions where id like 'shopee_%' order by id",
+    );
+
+    expect(definicoes.rows.map((r) => r.id)).toEqual(["shopee_pedidos", "shopee_recebido", "shopee_receita_bruta", "shopee_unidades"]);
   });
 });
 

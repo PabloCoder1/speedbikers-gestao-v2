@@ -19,8 +19,8 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00043-694` e api `api-00027-p7c` em `e037573f` (D-425 a D-428, 13/10), por deploy vigiado, Shopee sandbox ligada (`SHOPEE_PARTNER_ID=1248019`). Volta: `worker-00042-k5n`/`api-00026-lq8`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261013180000` (D-428, 13/10). **Pendente:** `20261014120000` (D-429). Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261014120000`. |
-| **Frente atual** | **Trilha Shopee** (D-425, `docs/SHOPEE.md`): fatias 0–4a no ar no sandbox (conexão, token, pedidos, financeiro, catálogo; loja de teste lida); 4b (vínculo manual, D-429) em código; depois, 5 (estoque, decisão do dono) ou 6 (relatórios). A 5J segue com o detector de frete pelas medidas (D-405). |
+| **Migrations** | Produção até `20261014120000` (D-429, 14/10). **Pendente:** `20261014150000` (D-430). Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261014150000`. |
+| **Frente atual** | **Trilha Shopee** (D-425, `docs/SHOPEE.md`): fatias 0–4 no ar no sandbox (conexão, token, pedidos, financeiro, catálogo, vínculo manual); 5 (estoque) adiada para o Go Live (dono, 14/10); 6a (venda Shopee, D-430) em código; depois, 6b. A 5J segue com o detector de frete pelas medidas (D-405). |
 
 ### O que está pronto
 

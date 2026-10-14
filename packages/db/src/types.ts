@@ -3343,7 +3343,10 @@ export type Database = {
           position: number
           promotion_type: string | null
           quantity: number
+          vinculo_via: string | null
           shopee_shop_id: string
+          shopee_sku_link_id: string | null
+          sku_id: string | null
         }
         Insert: {
           discounted_price?: number | null
@@ -3359,7 +3362,10 @@ export type Database = {
           position: number
           promotion_type?: string | null
           quantity: number
+          vinculo_via?: string | null
           shopee_shop_id: string
+          shopee_sku_link_id?: string | null
+          sku_id?: string | null
         }
         Update: {
           discounted_price?: number | null
@@ -3375,7 +3381,10 @@ export type Database = {
           position?: number
           promotion_type?: string | null
           quantity?: number
+          vinculo_via?: string | null
           shopee_shop_id?: string
+          shopee_sku_link_id?: string | null
+          sku_id?: string | null
         }
         Relationships: [
           {
@@ -5071,6 +5080,28 @@ export type Database = {
         }
         Relationships: []
       }
+      shopee_sales_orders: {
+        Row: {
+          com_devolucao: boolean | null
+          dia: string | null
+          environment: string | null
+          financeiro_lido: boolean | null
+          order_sn: string | null
+          order_status: string | null
+          organization_id: string | null
+          paid_at: string | null
+          receita_bruta: number | null
+          recebido: number | null
+          resumo: Json | null
+          sem_sku: number | null
+          shop_name: string | null
+          shopee_created_at: string | null
+          shopee_shop_id: string | null
+          situacao: string | null
+          unidades: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       apply_support_remote_transition: {
@@ -5258,6 +5289,52 @@ export type Database = {
           vinculados: number
         }[]
       }
+      get_shopee_orders: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_situacao?: string | null
+          p_shopee_shop_id?: string | null
+        }
+        Returns: {
+          com_devolucao: boolean
+          environment: string
+          financeiro_lido: boolean
+          itens: Json | null
+          order_sn: string
+          order_status: string
+          receita_bruta: number | null
+          recebido: number | null
+          shop_name: string | null
+          shopee_created_at: string
+          shopee_shop_id: string
+          situacao: string
+          total_count: number
+          unidades: number | null
+        }[]
+      }
+      get_shopee_sales_by_shop: {
+        Args: { p_date_from: string; p_date_to: string; p_organization_id: string }
+        Returns: {
+          cancelados: number
+          com_devolucao: number
+          connection_status: string
+          environment: string
+          pedidos: number
+          pedidos_sem_receita: number
+          pedidos_sem_recebido: number
+          pedidos_sem_sku: number
+          receita_bruta: number | null
+          recebido: number | null
+          shop_name: string | null
+          shopee_shop_id: string
+          ultima_leitura: string | null
+          unidades: number
+        }[]
+      }
       get_shopee_shop_catalog_counts: {
         Args: { p_organization_id: string }
         Returns: {
@@ -5325,6 +5402,10 @@ export type Database = {
         Returns: {
           order_sn: string
         }[]
+      }
+      shopee_resolve_order_item_skus: {
+        Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }
+        Returns: number
       }
       sincronizar_alertas_central: {
         Args: {

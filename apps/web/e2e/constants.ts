@@ -674,3 +674,215 @@ export const E2E_SHOPEE_ESPERADO = {
   skuForaDoCatalogo: 1,
   aguardandoLeitura: 1,
 } as const;
+
+/** Um item de pedido Shopee do seed (D-430), na forma de `shopee_order_items`. */
+export interface E2eShopeePedidoItem {
+  readonly itemId: number;
+  readonly modelId: number | null;
+  readonly nome: string;
+  readonly variacao: string | null;
+  /** O SKU do ITEM e o da VARIAÇÃO, crus como vêm no pedido. */
+  readonly itemSku: string | null;
+  readonly modelSku: string | null;
+  readonly quantidade: number;
+  /** Preço com o desconto da loja. 0 = item de bundle deal: o preço fica com o financeiro. */
+  readonly preco: number;
+}
+
+/** Um pedido Shopee do seed (D-430), na forma de `shopee_orders`. */
+export interface E2eShopeePedido {
+  readonly orderSn: string;
+  readonly status: string;
+  /** Há quantos dias o pedido foi criado — relativo, e sempre dentro dos últimos 30. */
+  readonly diasAtras: number;
+  /** Falso = sem `paid_at`: o comprador ainda não pagou. */
+  readonly pago: boolean;
+  /** O financeiro lido (`order_income`, `escrow_amount`); nulo = ainda não lido. */
+  readonly financeiro: {
+    readonly receitaBruta: number;
+    readonly recebido: number;
+    readonly devolucoes: readonly string[];
+  } | null;
+  readonly itens: readonly E2eShopeePedidoItem[];
+}
+
+const { skuNoItem: CAPACETE, duasVariacoes: LUVA, semSku: BOMBA } = E2E_SHOPEE_ITEMS;
+const [LUVA_PRETA] = LUVA.variacoes;
+
+/**
+ * Os PEDIDOS da loja Shopee do seed (D-430) — um por caso que `/vendas/shopee`
+ * precisa provar, todos nos últimos 30 dias (o período padrão):
+ *
+ *   - `comFinanceiro`: válido, financeiro lido. A receita é a DO FINANCEIRO
+ *     (489,80), não a dos itens (2 × 249,90 = 499,80) — prova de que o
+ *     financeiro vence; tem devolução registrada, que não reduz a receita. O
+ *     item é o capacete, vinculado pelo SKU do anúncio;
+ *   - `semFinanceiro`: válido, sem financeiro — receita pelos itens, recebido
+ *     "aguardando o financeiro". A variação "Preta / M" vincula pelo SKU do
+ *     anúncio ao SKU da anomalia;
+ *   - `cancelado`: pago e cancelado — fora das somas, contado à parte;
+ *   - `bundle`: válido, sem financeiro, com um item de preço 0 (bundle deal) —
+ *     receita DESCONHECIDA ("—"), nunca zero — e a bomba de ar, sem SKU;
+ *   - `skuDoPedido`: o item NÃO está no catálogo lido, e o SKU da variação que
+ *     veio no pedido (minúsculo, com espaços) é o da anomalia — "SKU do pedido";
+ *   - `naoPago`: UNPAID, sem `paid_at` — fora de tudo, só na lista.
+ *
+ * Nenhum item usa a variação "Azul / G": o spec de `/anuncios/shopee` a vincula
+ * à mão, e o vínculo manual novo preenche o SKU que faltava nas vendas daquela
+ * unidade (D-430) — um item dela aqui mudaria de resultado com a ordem dos specs.
+ */
+export const E2E_SHOPEE_PEDIDOS = {
+  comFinanceiro: {
+    orderSn: "E2E-SHP-FINANCEIRO",
+    status: "COMPLETED",
+    diasAtras: 2,
+    pago: true,
+    financeiro: { receitaBruta: 489.8, recebido: 401.23, devolucoes: ["E2E-SHP-DEVOLUCAO-1"] },
+    itens: [
+      {
+        itemId: CAPACETE.itemId,
+        modelId: null,
+        nome: CAPACETE.nome,
+        variacao: null,
+        itemSku: CAPACETE.itemSku,
+        modelSku: null,
+        quantidade: 2,
+        preco: 249.9,
+      },
+    ],
+  },
+  semFinanceiro: {
+    orderSn: "E2E-SHP-SEM-FINANCEIRO",
+    status: "READY_TO_SHIP",
+    diasAtras: 1,
+    pago: true,
+    financeiro: null,
+    itens: [
+      {
+        itemId: LUVA.itemId,
+        modelId: LUVA_PRETA.modelId,
+        nome: LUVA.nome,
+        variacao: LUVA_PRETA.nome,
+        itemSku: null,
+        modelSku: LUVA_PRETA.sku,
+        quantidade: 1,
+        preco: 59.9,
+      },
+    ],
+  },
+  cancelado: {
+    orderSn: "E2E-SHP-CANCELADO",
+    status: "CANCELLED",
+    diasAtras: 3,
+    pago: true,
+    financeiro: null,
+    itens: [
+      {
+        itemId: CAPACETE.itemId,
+        modelId: null,
+        nome: CAPACETE.nome,
+        variacao: null,
+        itemSku: CAPACETE.itemSku,
+        modelSku: null,
+        quantidade: 1,
+        preco: 249.9,
+      },
+    ],
+  },
+  bundle: {
+    orderSn: "E2E-SHP-BUNDLE",
+    status: "SHIPPED",
+    diasAtras: 4,
+    pago: true,
+    financeiro: null,
+    itens: [
+      {
+        itemId: BOMBA.itemId,
+        modelId: null,
+        nome: BOMBA.nome,
+        variacao: null,
+        itemSku: null,
+        modelSku: null,
+        quantidade: 1,
+        preco: 89.9,
+      },
+      {
+        itemId: CAPACETE.itemId,
+        modelId: null,
+        nome: CAPACETE.nome,
+        variacao: null,
+        itemSku: CAPACETE.itemSku,
+        modelSku: null,
+        quantidade: 1,
+        preco: 0,
+      },
+    ],
+  },
+  skuDoPedido: {
+    orderSn: "E2E-SHP-SKU-DO-PEDIDO",
+    status: "PROCESSED",
+    diasAtras: 5,
+    pago: true,
+    financeiro: null,
+    itens: [
+      {
+        itemId: 990_000_199,
+        modelId: 990_000_299,
+        nome: "Farol Shopee E2E — fora do catálogo",
+        variacao: "Branco",
+        itemSku: null,
+        modelSku: ` ${E2E_ANOMALIA.sku.toLowerCase()} `,
+        quantidade: 1,
+        preco: 120,
+      },
+    ],
+  },
+  naoPago: {
+    orderSn: "E2E-SHP-NAO-PAGO",
+    status: "UNPAID",
+    diasAtras: 6,
+    pago: false,
+    financeiro: null,
+    itens: [
+      {
+        itemId: CAPACETE.itemId,
+        modelId: null,
+        nome: CAPACETE.nome,
+        variacao: null,
+        itemSku: CAPACETE.itemSku,
+        modelSku: null,
+        quantidade: 1,
+        preco: 249.9,
+      },
+    ],
+  },
+} as const satisfies Record<string, E2eShopeePedido>;
+
+/**
+ * O que o painel "Por loja" de `/vendas/shopee` deve mostrar para a loja do
+ * seed nos últimos 30 dias — escrito à mão, e não derivado de
+ * `E2E_SHOPEE_PEDIDOS`, pelo mesmo motivo de `E2E_SHOPEE_ESPERADO`: derivar em
+ * JS seria reescrever a view `shopee_sales_orders`.
+ *
+ *   válidos: comFinanceiro, semFinanceiro, bundle, skuDoPedido = 4;
+ *   unidades: 2 + 1 + (1 + 1) + 1 = 6;
+ *   receita bruta: 489,80 (financeiro) + 59,90 + 120,00 = 669,70 — o bundle
+ *     fica de fora e é contado em "sem receita conhecida";
+ *   recebido: 401,23, só o comFinanceiro; os outros 3 válidos aguardam o
+ *     financeiro;
+ *   cancelados 1; com devolução 1; com item sem SKU 1 (o bundle);
+ *   na lista: os 6, inclusive o cancelado e o não pago.
+ */
+export const E2E_SHOPEE_VENDAS_ESPERADO = {
+  pedidos: 4,
+  unidades: 6,
+  receitaBruta: 669.7,
+  semReceitaConhecida: 1,
+  recebido: 401.23,
+  aguardandoFinanceiro: 3,
+  cancelados: 1,
+  devolucoes: 1,
+  comItemSemSku: 1,
+  naLista: 6,
+  validasNaLista: 4,
+} as const;
