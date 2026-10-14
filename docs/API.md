@@ -66,6 +66,7 @@ Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERRO
 | Rota | Método | Papel mínimo | Descrição |
 |---|---|---|---|
 | `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta — **implementado em 2026-08-21**, devolve `{ authorizationUrl }` |
+| `/v1/organization/invites` | POST | ADMIN | Convida (ou vincula) um membro com papel e alcance (D-296, D-354): `{ email, role, fullName?, mlAccountIds?, shopeeShopIds? }`. Contas e lojas são conferidas como da organização ANTES de qualquer escrita e concedidas depois do vínculo; falha na concessão é dita (`membro criado, mas sem acesso …`). `shopeeShopIds` desde D-433 |
 | `/v1/shopee/connect` | POST | ADMIN | Inicia a autorização de loja Shopee (D-425), sem corpo — a loja só é conhecida no retorno; devolve `{ authorizationUrl }`. 503 sem as variáveis da Shopee |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |

@@ -4949,6 +4949,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           previous_role: string | null
+          shopee_shop_id: string | null
           target_user_id: string
         }
         Insert: {
@@ -4961,6 +4962,7 @@ export type Database = {
           occurred_at?: string
           organization_id: string
           previous_role?: string | null
+          shopee_shop_id?: string | null
           target_user_id: string
         }
         Update: {
@@ -4973,6 +4975,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           previous_role?: string | null
+          shopee_shop_id?: string | null
           target_user_id?: string
         }
         Relationships: [
@@ -5076,6 +5079,39 @@ export type Database = {
           },
           {
             foreignKeyName: "user_account_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_shopee_shop_permissions: {
+        Row: {
+          created_at: string
+          shopee_shop_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          shopee_shop_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          shopee_shop_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_shopee_shop_permissions_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_shopee_shop_permissions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
