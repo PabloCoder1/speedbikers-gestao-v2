@@ -5337,6 +5337,43 @@ export type Database = {
         // mora em apps/web/lib/detector-frete.ts.
         Returns: Json
       }
+      get_shopee_faturamento: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-437): TOTAL sem conta; loja nunca lida com tudo nulo.
+          account_id: string | null
+          account_name: string | null
+          custo_produtos: number | null
+          environment: string | null
+          imposto_coberto: number | null
+          margem_apos_imposto: number | null
+          margem_venda: number | null
+          nivel: "TOTAL" | "CONTA"
+          pedidos: number | null
+          pedidos_cobertos: number | null
+          pedidos_custo_atual: number | null
+          pedidos_definitivos: number | null
+          pedidos_provisorios: number | null
+          pedidos_sem_aliquota: number | null
+          pedidos_sem_custo: number | null
+          pedidos_sem_financeiro: number | null
+          pedidos_sem_receita: number | null
+          pedidos_sem_sku: number | null
+          receita_bruta: number | null
+          receita_coberta: number | null
+          recebido_coberto: number | null
+          resultado_apos_imposto: number | null
+          resultado_definitivo: number | null
+          resultado_provisorio: number | null
+          resultado_venda: number | null
+          ultima_atualizacao: string | null
+        }[]
+      }
       get_shopee_listings: {
         Args: {
           p_busca?: string | null
@@ -5548,6 +5585,51 @@ export type Database = {
         // a divisão por logística. A forma tipada mora em
         // apps/web/lib/quem-paga-frete.ts.
         Returns: Json
+      }
+      get_marketplace_sales_daily: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          compras: number
+          dia: string
+          // CORRECAO MANUAL (D-436): NULO = a linha do TOTAL do dia.
+          marketplace: "ML" | "SHOPEE" | null
+          pedidos_sem_receita: number
+          receita_bruta: number | null
+          unidades: number
+        }[]
+      }
+      get_marketplace_sales_summary: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-436): o que a definicao garante por nivel --
+          // TOTAL sem marketplace/conta; MARKETPLACE sem conta; CONTA com tudo.
+          account_id: string | null
+          account_name: string | null
+          compras: number | null
+          environment: string | null
+          marketplace: "ML" | "SHOPEE" | null
+          nivel: "TOTAL" | "MARKETPLACE" | "CONTA"
+          pedidos_ml: number | null
+          pedidos_sem_receita: number | null
+          pedidos_sem_recebido: number | null
+          receita_bruta: number | null
+          recebido: number | null
+          ticket_medio: number | null
+          ultima_atualizacao: string | null
+          unidades: number | null
+        }[]
       }
       get_meta_do_mes: {
         Args: {

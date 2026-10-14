@@ -242,3 +242,5 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E1 | Ingestão robusta antes do volume real: pedido recusado não trava o financeiro, lote de pedidos numa transação que não regride, marco monotônico, erro da loja interrompe, organização amarrada à loja (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-432) |
 | E2 | Permissão por loja: a mesma regra das contas ML (ADMIN todas; os demais, as concedidas), auditada, com convite e limpeza na saída (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-433) |
 | E3 | `marketplace_accounts` (contas ML e lojas numa fonte, com a permissão) e a loja parada avisando como a conta ML: vigia de 3/12 h pelo avanço do marco e ERROR na hora, só loja `live`, só a quem alcança a loja | código (D-435) |
+| E4 | Vendas por marketplace e o consolidado (6b, vendas): `get_marketplace_sales_summary` e `_daily`, só o que soma, sandbox e loja nunca lida fora das somas, ML idêntico a `get_sales_summary` | código (D-436) |
+| E5 | Faturamento Shopee: resultado = recebido − custo nos cobertos, definitivo e provisório separados, imposto do dia; custo pela regra de D-356, provado equivalente | código (D-437) |
