@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { E2E_SHOPEE_SHOP } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -67,7 +68,7 @@ test("ADMIN: verde exige atividade observada — nos dois sentidos; nenhuma conf
   */
   const integracoes = page.getByRole("region").filter({ has: page.getByRole("row", { name: /Conexão/ }) });
 
-  await expect(integracoes).toHaveCount(6);
+  await expect(integracoes).toHaveCount(7);
 
   for (const regiao of await integracoes.all()) {
     const configuracao = regiao.getByRole("row", { name: /Configuração/ });
@@ -140,4 +141,23 @@ test("/integracoes: cada cartão diz o que a integração COBRE, e isso não é 
   // E o vocabulário das pílulas continua declarado — sem ele, "Observado" e
   // "Sem atividade" parecem sinônimos.
   await expect(page.getByText("COMO LER OS ESTADOS")).toBeVisible();
+});
+
+/**
+ * O CARTÃO DA SHOPEE (D-446): as lojas pela fonte única de contas (C-52), com
+ * o veredito de /sincronizacao. O veredito depende do relógio desde o seed e
+ * mora no teste unitário; aqui vai o determinístico — a loja com a marca de
+ * teste, a configuração que a diz fora das somas e as telas donas.
+ */
+test("ADMIN: o cartão da Shopee nomeia a loja de teste, diz que ela fica fora das somas e aponta as telas donas", async ({
+  page,
+}) => {
+  await login(page, "/integracoes");
+
+  const shopee = page.getByRole("region", { name: "Shopee", exact: true });
+
+  await expect(shopee.getByRole("row", { name: /Conexão/ })).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(shopee.getByRole("row", { name: /Configuração/ })).toContainText("1 loja(s) em ambiente de teste, fora das somas");
+  await expect(shopee.getByRole("link", { name: "Contas e lojas" })).toHaveAttribute("href", "/contas");
+  await expect(shopee.getByRole("link", { name: "Sincronização" })).toHaveAttribute("href", "/sincronizacao");
 });
