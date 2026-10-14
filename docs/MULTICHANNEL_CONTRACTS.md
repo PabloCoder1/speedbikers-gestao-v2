@@ -152,6 +152,17 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.12 Repasse da Shopee (C-64, D-451) — em código
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_shopee_repasse_overview` | `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]` | pelo **dia da liberação** (São Paulo): `nivel` TOTAL (só loja live lida) e CONTA (nunca lida = NULO): `cobertura_completa`, `lido_ate`, `liberado`, `pedidos_liberados`, `liberacoes_sem_valor`, `previsto` (o `escrow_amount` dos mesmos pedidos, com financeiro lido), `pedidos_com_previsto`, `diferenca` (todas as liberações do pedido − previsto), `pedidos_divergentes` |
+| `get_shopee_repasse_daily` | os mesmos | uma linha por dia com liberação, só lojas live: `liberado`, `pedidos`, `liberacoes_sem_valor` (a soma fecha com o TOTAL) |
+| `get_shopee_repasses` | os mesmos + `p_order_sn`, `p_limit` (1–200), `p_offset` | cada liberação: `shopee_shop_id`, `shop_name`, `environment`, `order_sn`, `released_at`, `payout_amount`, `previsto`, `diferenca_do_pedido`, `liberacoes_do_pedido`, `order_status`, `shopee_created_at`, `total_count` |
+| `get_shopee_repasse_pendente` | `p_organization_id`, `p_account_ids uuid[]` | retrato de agora, TOTAL e CONTA: `pedidos`, `a_liberar`, `pedidos_sem_financeiro`, `pedidos_completos`, `pedidos_com_devolucao`, `mais_antigo`, `lido_desde`, `lido_ate` |
+
+**É o realizado ao lado do previsto:** o repasse não muda o recebido nem o resultado (C-58/C-61). O liberado é do dia em que o dinheiro saiu, não o da venda — não comparar com a receita do mesmo período. O "a liberar" só conta pedidos criados depois do início da leitura (`lido_desde`). Até a conferência no sandbox, a unidade de `payout_amount` não está confirmada: uma `diferenca` enorme em todos os pedidos é sinal disso, não de cobrança.
+
 ### 3.11 Ads da Shopee (C-63, D-449) — em código
 
 | Contrato | Parâmetros | Devolve |
@@ -265,7 +276,7 @@ contrato NOVO (E4), e as RPCs do ML continuam como estão.
 | R6 | cobertura | Histórico Shopee de 90 dias (ML: 365) | `PRIMEIRA_LEITURA_S` | declarar na tela |
 | R7 | desempenho | `shopee_sales_orders` filtra pelo `dia` calculado e agrega os itens em LATERAL antes do filtro: não usa `shopee_orders_org_created_idx`. Irrelevante com 1 pedido; precisa ensaio como `authenticated` antes do Go Live e antes de virar base do "Todos" | definição da view | futura |
 | R8 | integridade | `organization_id` de pedidos, itens e catálogo não é amarrado ao da loja (FK composta ou gatilho); só o worker escreve | migrations | **corrigido em produção (D-432)**: FK composta |
-| R9 | financeiro | Devoluções (D-447, E7a) e Ads CPC da loja (D-449, E7b): em código; o GMV Max de loja e o extrato/repasse, ainda não. Reembolso (`seller_return_refund`, `drc_adjustable_refund`, `prorated_*_offset_return_items`) e retenções (`withholding_*`) existem só dentro do `order_income` (jsonb), com semântica não conferida. **No sandbox o pedido de teste veio com `escrow_amount` = `order_discounted_price` (149,90)**: as taxas não aparecem, então o sandbox não valida a fórmula das taxas — só loja real valida | `payment.ts`; o `order_income` do pedido de produção (94 chaves) | lacuna declarada |
+| R9 | financeiro | Devoluções (D-447, E7a), Ads CPC da loja (D-449, E7b) e repasse por pedido (D-451, E7c): em código; o GMV Max de loja, o extrato da carteira e a renda por pedido (`get_income_detail`), ainda não — esperam o sandbox. Reembolso (`seller_return_refund`, `drc_adjustable_refund`, `prorated_*_offset_return_items`) e retenções (`withholding_*`) existem só dentro do `order_income` (jsonb), com semântica não conferida. **No sandbox o pedido de teste veio com `escrow_amount` = `order_discounted_price` (149,90)**: as taxas não aparecem, então o sandbox não valida a fórmula das taxas — só loja real valida | `payment.ts`; o `order_income` do pedido de produção (94 chaves) | lacuna declarada |
 | R11 | negócio (inferência a medir, achado do Agente 2) | O saldo vem da planilha do UpSeller, que já desconta a venda Shopee, mas a demanda da reposição (`get_purchase_suggestions`, `get_replenishment_overview`, cobertura) é só a do ML: para SKU que também vende na Shopee, a cobertura sai alta demais e a sugestão de compra baixa demais | leitura das RPCs (`daily_sku_metrics`) | a medir; entra na decisão da fatia 5 |
 | R10 | acoplamento | Todas as agregações de vendas, faturamento, ranking, curva ABC, central e estoque são do Mercado Livre (§4) | §4 | é o trabalho da 6b |
 
@@ -373,7 +384,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   não leem a Shopee** até a fatia 5 (decisão do dono, 14/10).
 - **Contrato entregue:** ranking e ABC com canal.
 
-### E7 — Fontes financeiras que faltam (R9) e Live Push — E7a (devoluções, D-447) e E7b (Ads CPC, D-449) em código
+### E7 — Fontes financeiras que faltam (R9) e Live Push — E7a (devoluções, D-447), E7b (Ads CPC, D-449) e E7c (repasse, D-451) em código
 
 Devoluções (API `returns`), reembolso pelo `order_income`, lote do
 financeiro (`get_escrow_detail_batch`, a conferir no sandbox), Ads da

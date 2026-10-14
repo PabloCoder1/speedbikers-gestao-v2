@@ -24,6 +24,7 @@ import { createShopeeItemsSyncHandler } from "./handlers/shopee-items-sync.js";
 import { createShopeeOrderFinancialsSyncHandler } from "./handlers/shopee-order-financials-sync.js";
 import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js";
 import { createShopeeAdsSyncHandler } from "./handlers/shopee-ads-sync.js";
+import { createShopeeEscrowReleasesSyncHandler } from "./handlers/shopee-escrow-releases-sync.js";
 import { createShopeeReturnsSyncHandler } from "./handlers/shopee-returns-sync.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
@@ -109,6 +110,8 @@ const shopeeHandlers =
         "shopee.returns.sync": createShopeeReturnsSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
         // D-449: o desempenho diário de Ads CPC, também enfileirado pelo de pedidos.
         "shopee.ads.sync": createShopeeAdsSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
+        // D-451: os repasses (liberações do escrow), também enfileirados pelo de pedidos.
+        "shopee.escrow-releases.sync": createShopeeEscrowReleasesSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
       }
     : {};
 
