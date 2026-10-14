@@ -19,11 +19,11 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-14 |
-| `origin/main` | `8496b016` (#155: D-439; #156 e #158: D-440, D-442) |
-| Branches abertas | A1: `feat/curva-abc-multicanal` (rascunho #157: E6b) e `feat/faturamento-shopee-composicao` (C-61, D-443) · A2: T6a (D-444, rascunho) |
+| `origin/main` | `caafb616` (#155: D-439; #156, #158 e #159: D-440, D-442, D-444) |
+| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61) e `feat/produtos-multicanal` (rascunho #161: E6c) · A2: T3b (D-446) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014220000` (D-437, run `38597993424`, 14/10). Pendentes: `20261014230000` (E6a, na `main` desde o #155), `20261015000000` (E6b, #157) e `20261015010000` (C-61) |
+| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, #157) e `20261015010000` (C-61, #160) |
 | Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -39,9 +39,9 @@
 **Em andamento**
 - E4, vendas por marketplace e o consolidado (D-436): **em código e validada localmente** (integração com as 252 migrations do zero, equivalência com `get_sales_summary` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #151 mergeado; migration `20261014210000` **em produção** em 14/10 (run `38597993424`; worker e api não mudam).
 - E5, faturamento da Shopee (D-437): **em código e validada localmente** (integração com as 253 migrations do zero, equivalência do custo com `get_faturamento`, mutação do histórico de custo); PR #152 mergeado; migration `20261014220000` **em produção** em 14/10 (run `38597993424`).
-- E6a, vendas por SKU entre marketplaces (D-439): **em código e validada localmente** (integração com as 254 migrations do zero, equivalências com `get_sku_sales_breakdown` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #155 mergeado (`b3a58ac5`) — falta a migration `20261014230000` em produção (a T6a do A2 espera por ela).
+- E6a, vendas por SKU entre marketplaces (D-439): **em código e validada localmente** (integração com as 254 migrations do zero, equivalências com `get_sku_sales_breakdown` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #155 mergeado (`b3a58ac5`); migration `20261014230000` **em produção** em 14/10 (run `38612642381`).
 - E6b, curva ABC por marketplace (D-441): **em código e validada** — o ML idêntico às funções antigas lado a lado (3.124 combinações locais e 11 casos no Dev com dados reais), ~30x mais rápida no Dev (plano custom), integração 976/976 com as 255 migrations do zero, 11 mutações; rascunho #157 — falta CI, merge e a migration `20261015000000`.
-- C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — falta PR, CI, merge e a migration `20261015010000`.
+- C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — rascunho #160 — falta CI, merge e a migration `20261015010000`.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
 - E6c `/produtos` (C-56) e ranking com resultado → E7 fontes financeiras que faltam → E8 Go Live e estoque.
@@ -60,21 +60,21 @@
 - T3a — **na `main`, #154** (D-438, consome o C-52 e os avisos de D-435): o aviso do vigia com nome e destino em notificações, a seção "Lojas Shopee" em `/sincronizacao` com os limiares do vigia (3 h e 12 h) e a autorização perto de vencer, e a contagem do rodapé por `marketplace_accounts`.
 - Validação de cada etapa: `check`, `build`, `docs:check`, unitários e a suíte e2e inteira num stack isolado com o banco recriado do zero (210/210 na T3a; os 3 de convite só com o servidor na porta 3000).
 
-- T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Em código e validada localmente** no **#156** (fora do rascunho), já sobre a `main` com a cadeia #149 → #153 → #154. As migrations `20261014210000`/`220000` estão em produção (run `38597993424`, conferido em 14/10).
-- T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Em código e validada localmente** (e2e 21/21 nas telas tocadas; a coluna do ML no "Todos" é idêntica à tela do ML) no **rascunho #158**, empilhado sobre a T4.
+- T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Na `main`, #156** (`bcf33111`, deploy de produção da Vercel `success`).
+- T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Na `main`, #158** (`8496b016`); a suíte e2e inteira passou localmente (219/219).
+- T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Em código e validada localmente** (suíte e2e 222/222) no **rascunho #159**; só entra na `main` depois da migration `20261014230000` em produção.
 
 **Em andamento**
-- #156 (T4) fora do rascunho, com a `main` do #155 trazida por merge; entra assim que a CI fechar verde. A T5 (#158) vem depois dele.
+- T6a no **rascunho #159**, pronta e presa à migration `20261014230000` em produção (ato do dono).
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T3b — cartão da Shopee em `/integracoes`, contagem em `/configuracoes` e o seletor de marketplace lendo `marketplace_accounts`.
 - T5b — no recorte Shopee de `/faturamento`: a cascata com os componentes do recebido (comissão, taxas, frete, cupons, afiliados, "outros"), a série diária e, se o rateio fechar, os produtos — sobre o C-61 (D-443, A1).
-- T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
-- Selo "Teste" no painel Shopee do SKU (C-06): a C-55 já está em produção — entra numa próxima fatia.
+- T6b curva ABC por marketplace (C-60, #157) → T6c `/produtos` com a Shopee e o ranking com resultado (C-56, E6c) → T7 busca universal (C-57) → T8 central e meta (Go Live).
 - T-R5: sobreposição de texto no cartão "Por loja" de `/vendas/shopee` no celular (preexistente, D-430).
 
 **Bloqueios**
-- T5b espera o C-61 (A1, D-443). T6 espera os contratos da E6 (C-59 na `main` pelo #155, C-60 no #157).
+- T6a espera a migration `20261014230000` em produção (dono). T5b espera o C-61 (A1, D-443). T6b espera o C-60 (#157); T6c, o C-56.
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
@@ -92,9 +92,9 @@
 | C-01 | Seletor Marketplace/Conta em toda tela que filtra por conta; lojas em `/contas`, `/sincronizacao` e no shell | A2 | — | em parte: T3a no rascunho #154 (D-438); T3b a fazer | só lista o que a permissão deixa; slug antigo continua valendo |
 | C-02 | `/vendas` e Home com "todos", "ml", "shopee" e várias contas | A2 | — | `/vendas` em código (T4, D-440); a Home ainda não | ML idêntico ao de hoje; a web não soma linha |
 | C-03 | `/faturamento` com marketplace e a linha por loja | A2 | — | em código (T5, D-442) | componente não comparável nunca somado |
-| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | A2 | — | aguarda E6 (T6) | — |
+| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | A2 | — | ranking e aba Vendas em código (T6a, D-444); curva ABC aguarda o C-60 (T6b) | — |
 | C-05 | Concessão de loja em `/usuarios` | A2 | — | rascunho #153 (T2, D-434) | usuário sem a loja não a vê em tela nenhuma |
-| C-06 | Selo de loja de teste no painel Shopee do SKU | A2 | — | **pedido novo ao A1**: `get_sku_shopee_listings` devolver o ambiente | loja sandbox marcada "Teste" |
+| C-06 | Selo de loja de teste no painel Shopee do SKU | A2 | — | em código (T6a, D-444), sobre a C-55 | loja sandbox marcada "Teste" |
 | C-07 | `/produtos` sem chamar de "sem anúncio/venda" o SKU que só a Shopee tem | A2 | — | **pedido novo ao A1**: `get_products_overview` com a Shopee (depois de E6) | — |
 | C-08 | Busca universal achando loja, anúncio e pedido Shopee | A2 | — | **pedido novo ao A1**: `search_entities` com a Shopee | — |
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | A2 | — | em código (T1, D-431) | job horário atrasado aparece como atrasado |
@@ -106,7 +106,7 @@
 | C-55 | `get_sku_shopee_listings` devolve `environment` da loja (atende C-06) | A1 | painel Shopee do SKU | em produção (D-432, 14/10); coluna `environment` no fim | loja sandbox identificável na resposta |
 | C-56 | `get_products_overview` conta anúncio e venda Shopee (atende C-07) | A1 | `/produtos` | aceito; depende da E6 (grão de SKU Shopee) | SKU só da Shopee deixa de aparecer como "sem anúncio/sem venda"; contagens do ML iguais |
 | C-58 | `get_shopee_faturamento`: TOTAL e por loja, resultado = recebido − custo, definitivo e provisório separados, imposto do dia (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.5); NÃO soma com o resultado do ML | A1 | `/faturamento` (T5, atende C-03) | em produção (D-437, #152, 14/10) | os três resultados prontos; nada somado com o ML |
-| C-59 | `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total) e `get_sku_sales_by_marketplace_account` (aba Vendas do SKU); view `shopee_sales_items` (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.6) | A1 | ranking e aba Vendas do SKU (T6, atende C-04 em parte) | na `main` (D-439, #155); migration em produção pendente | ML igual a `get_sku_sales_breakdown`; a soma dos SKUs da loja fecha com `get_shopee_sales_by_shop` |
+| C-59 | `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total) e `get_sku_sales_by_marketplace_account` (aba Vendas do SKU); view `shopee_sales_items` (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.6) | A1 | ranking e aba Vendas do SKU (T6, atende C-04 em parte) | em produção (D-439, #155, 14/10) | ML igual a `get_sku_sales_breakdown`; a soma dos SKUs da loja fecha com `get_shopee_sales_by_shop` |
 | C-60 | Curva ABC por marketplace: `get_sku_abc_analysis`, `get_sku_abc_breakdown` e `get_sku_sales_by_account` com `p_marketplaces`/`p_account_ids` no fim, critério `compras`, colunas por marketplace (`docs/MULTICHANNEL_CONTRACTS.md` §3.7) | A1 | `/curva-abc` e o Excel (T6, atende C-04 em parte) | em código (D-441) | nulo = o ML de antes; com a Shopee, `orders`/cobertura nulos e `pedidos` recusado |
 | C-61 | Componentes do faturamento Shopee sobre os pedidos cobertos (comissão, taxas, frete, cupons da loja, afiliados, ajustes e "outros" que fecham com o recebido), descontos bancados pela Shopee, série diária e, se o rateio fechar, por SKU | A1 | `/faturamento` (T5b: cascata, série e produtos) | em código (D-443; `docs/MULTICHANNEL_CONTRACTS.md` §3.8) | receita coberta − Σ componentes − outros = recebido coberto, provado em toda linha |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
@@ -130,4 +130,4 @@
 ## Decisões pendentes do dono
 
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
-2. **E6a (já na `main`):** `migrations-producao.yml` para `20261014230000` assim que a CI da `main` terminar (a trava recusa antes), com as duas aprovações — a T6a do A2 espera por ela. **E6b e C-61:** depois dos merges (#157 e o do C-61), `20261015000000` e `20261015010000`. (E4 e E5: em produção desde 14/10.)
+2. **E6b e C-61:** depois dos merges (#157 e #160), `migrations-producao.yml` para `20261015000000` e `20261015010000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.) (E4 e E5: em produção desde 14/10.)
