@@ -52,6 +52,8 @@ import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
+import { VendasEntreMarketplaces } from "./vendas-entre-marketplaces";
+import { contarLojasShopee } from "../../../lib/marketplace";
 import { lastBusinessDays } from "../../../lib/business-window";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
@@ -324,6 +326,8 @@ export default async function SkuDashboardPage({
     acoesAbertasResult,
     membrosResult,
     shopeeResult,
+    vendasPorContaResult,
+    lojasShopee,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -544,6 +548,21 @@ export default async function SkuDashboardPage({
           p_sku_id: sku.data.id,
         })
       : Promise.resolve({ data: null, error: null }),
+    /*
+      AS VENDAS ENTRE MARKETPLACES (D-444, C-59): o total da operação e uma
+      linha por conta ML e loja Shopee, no mesmo período da aba. E o número de
+      lojas Shopee, que decide se a seção aparece: sem loja, ela só repetiria a
+      tabela por conta do ML. Mesma ida, só na aba Vendas.
+    */
+    needsSales
+      ? supabase.rpc("get_sku_sales_by_marketplace_account", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    needsSales ? contarLojasShopee(supabase) : Promise.resolve(null),
   ]);
 
   const dashboard = dashboardResult.data;
@@ -987,8 +1006,16 @@ export default async function SkuDashboardPage({
 
       {tab === "vendas" && (
         <>
+          {lojasShopee !== null && lojasShopee > 0 && (
+            <VendasEntreMarketplaces
+              linhas={vendasPorContaResult.data ?? []}
+              erro={vendasPorContaResult.error}
+              dias={LOOKBACK_DAYS}
+            />
+          )}
+
           <div className="sb-section-label sb-skud-mt0">
-            <span>Vendas do SKU</span>
+            <span>{lojasShopee !== null && lojasShopee > 0 ? "No Mercado Livre" : "Vendas do SKU"}</span>
             <span className="sb-section-note">últimos {LOOKBACK_DAYS} dias, somadas entre as contas no banco</span>
           </div>
 
@@ -1334,7 +1361,15 @@ export default async function SkuDashboardPage({
                           <tr
                             key={`${anuncio.shopee_shop_id}:${String(anuncio.item_id)}:${anuncio.model_id === null ? "item" : String(anuncio.model_id)}`}
                           >
-                            <td>{anuncio.shop_name ?? "—"}</td>
+                            <td>
+                              {anuncio.shop_name ?? "—"}
+                              {/* C-06: a loja de sandbox marcada, como em toda tela da Shopee. */}
+                              {anuncio.environment !== "live" && (
+                                <span className="sb-an-meta">
+                                  <StatePill tone={{ tom: "atencao", label: "Teste" }} />
+                                </span>
+                              )}
+                            </td>
                             <td>
                               {anuncio.item_name ?? <span className="sb-skud-soft">nome ainda não lido</span>}
                               {anuncio.model_name !== null && (
