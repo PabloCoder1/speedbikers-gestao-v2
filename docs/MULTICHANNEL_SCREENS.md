@@ -44,14 +44,14 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Área | Rotas | Classe | Conta hoje (URL) | Fonte | O que falta para o multicanal | Etapa |
 |---|---|---|---|---|---|---|
 | Home | `/` | 2 | — | `get_sales_summary`/`series` (`daily_*`), cobertura, anúncios pausados | faixa de vendas com o marketplace | E4 → T4 |
-| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | Shopee na mesma estrutura, "Todos", várias contas — §4 | T1, E3/E4 → T3/T4 |
+| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | Shopee na mesma estrutura, "Todos", várias contas — §4 | T1 ✔ (D-431: seletor e período personalizado na Shopee); E3/E4 → T3/T4 |
 | Faturamento | `/faturamento` | 2 | `account` (slug) | `get_faturamento`, `get_ads_overview` (ML) | linha por loja Shopee, resumo Shopee, "Todos" do comparável — §5 | E5 → T5 |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | Shopee só depois do Go Live (D-430 §5) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
 | Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | contrato C-07 + E6 |
 | SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings` | vendas por canal; o painel Shopee não marca a loja de teste | E6 → T6; C-06 |
-| Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | troca de marketplace entre as duas listas; na Shopee faltam vendas, exportação e filtros salvos | T1; E6 |
+| Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | na Shopee faltam vendas, exportação e filtros salvos | T1 ✔ (D-431: seletor levando a busca); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
@@ -66,7 +66,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
 | Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) | marcos da loja (`orders_synced_until`, `items_synced_until`) | E3 → T3 |
 | Saúde | `/saude` | 1 | — | `job_runs` (já inclui os jobs Shopee) | cadência dos jobs Shopee em `lib/sync-health.ts` | T1 (C-09) |
-| Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | título "Contas Mercado Livre" e indicadores só do ML; lojas num painel solto | T1 (texto) / E3 → T3 |
+| Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) | cartão e contagem da Shopee | E3 → T3 |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` (só ML) | conceder loja Shopee | E2 → T2 |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | sem loja, anúncio ou pedido Shopee | C-08 → T7 |
@@ -243,7 +243,7 @@ número.
 | Etapa | O quê | Depende | Aceite |
 |---|---|---|---|
 | **T0** | Esta auditoria | — | documento na `main` |
-| **T1** | Modelo e seletor de marketplace (`lib` pura + componente) nas duas telas que já têm os dois canais: `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; formulário de período personalizado em `/vendas/shopee`; `/contas` com título e texto que falam dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09) | nada (só leitura que já existe) | trocar de marketplace preserva o período; sem lojas, nada muda na tela do ML; e2e de `/vendas`, `/anuncios` e `/contas` com os números de hoje |
+| **T1 ✔** | Modelo e seletor de marketplace (`lib` pura + componente) nas duas telas que já têm os dois canais: `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; formulário de período personalizado em `/vendas/shopee`; `/contas` com título e texto que falam dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09) | nada (só leitura que já existe) | **código 2026-10-14, D-431** — ver a nota abaixo da tabela |
 | **T2** | Concessão de loja em `/usuarios` | E2 | usuário sem a loja não a vê em nenhuma tela |
 | **T3** | Seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
 | **T4** | `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
@@ -251,6 +251,17 @@ número.
 | **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07) | E6 | — |
 | **T7** | Busca universal com a Shopee (C-08) | C-08 | — |
 | **T8** | Central e meta do mês com a Shopee | Go Live + dono | — |
+
+**T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
+regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
+com conta ML **e** loja Shopee visíveis — contadas no banco (`count`, `head`).
+Atravessa só o que vale nos dois lados: o período nas vendas; a busca nos
+anúncios, menos o código MLB. Nesta etapa ele escolhe entre as telas que já
+existem; a URL ainda não leva `marketplace` (isso nasce com o "todos", T4).
+Validado: `check`, `build` e `docs:check` verdes; 13 unitários novos; e2e 41/41
+nas telas tocadas e a suíte inteira 208/208 (4 só passaram reexecutadas, por
+ambiente — ver D-431); fotos no desktop e no celular, que pegaram o painel do
+primeiro menu cortado atrás da lateral (corrigido com `alinhamento="inicio"`).
 
 ---
 
@@ -261,4 +272,5 @@ número.
 | T-R1 | Usuário restrito a uma conta ML vê todas as lojas Shopee (S1) | qualquer seletor de loja expõe o que a pessoa não deveria ver | E2 antes de T3; até lá, nenhuma tela nova lista lojas além das que já listam |
 | T-R2 | Comparar período com mais de 90 dias | a Shopee parece ter crescido do nada | declarar a cobertura do histórico na comparação (T4) |
 | T-R3 | A planilha do UpSeller já desconta a venda Shopee do estoque, mas a demanda da reposição só conta o ML | cobertura alta demais e sugestão de compra baixa demais para SKU que vende na Shopee — **inferência**, a medir com dado real | registrado para o dono e o A1 (fatia 5) |
-| T-R4 | `/vendas/shopee` e `/anuncios/shopee` ficam fora do menu | quem não passa pelo link do subtítulo não acha | T1 põe a troca de marketplace no cabeçalho das duas telas |
+| T-R4 | `/vendas/shopee` e `/anuncios/shopee` ficam fora do menu | quem não passa pelo link do subtítulo não acha | **resolvido na T1** (D-431): a troca é o primeiro menu do cabeçalho das telas de vendas e de anúncios |
+| T-R5 | No celular, o cartão "Por loja" de `/vendas/shopee` sobrepõe as notas pequenas ("1 sem receita conhecida", "3 aguardando o financeiro") ao valor ao lado — **preexistente** (D-430), visto nas fotos da T1 | leitura difícil na largura de 390 px | corrigir na próxima fatia que mexer na tela (T4 a reestrutura) |
