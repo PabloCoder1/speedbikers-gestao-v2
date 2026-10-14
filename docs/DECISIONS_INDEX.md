@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **427** (D-001 a D-435).
+Decisões registradas: **429** (D-001 a D-437).
 
 ## Por domínio
 
@@ -74,7 +74,7 @@ Decisões registradas: **427** (D-001 a D-435).
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 
-### banco/rls (38)
+### banco/rls (39)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -114,6 +114,7 @@ Decisões registradas: **427** (D-001 a D-435).
 - **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
 - **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
 - **D-428** — Shopee, fatia 4a: o catalogo da loja em tabelas proprias e o vinculo pelo SKU do anuncio, derivado em SQL
+- **D-436** — Vendas por marketplace e o consolidado no SQL (E4, fatia 6b de vendas): soma so o que tem a mesma semantica, o sandbox e a loja nunca lida ficam fora das somas, e o ML e identico a get_sales_summary
 
 ### estoque (31)
 
@@ -200,7 +201,7 @@ Decisões registradas: **427** (D-001 a D-435).
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 
-### mercado-livre (75)
+### mercado-livre (76)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -277,6 +278,7 @@ Decisões registradas: **427** (D-001 a D-435).
 - **D-433** — Shopee, permissao por loja (E2 da frente multicanal): a loja segue a regra da conta do Mercado Livre -- ADMIN alcanca todas, os demais as concedidas -- e ninguem perde visao no dia
 - **D-434** — Telas multicanais, etapa T2: a loja Shopee ganha em /usuarios o mesmo alcance da conta do Mercado Livre, e o convite confere no banco o que concedeu
 - **D-435** — Contas dos marketplaces numa fonte so (marketplace_accounts) e a loja Shopee parada avisando como a conta do ML, so a quem alcanca a loja (E3 da frente multicanal)
+- **D-437** — Faturamento da Shopee (E5): resultado = recebido - custo nos pedidos cobertos, definitivo e provisorio separados, o custo pela regra de D-356 provada equivalente, e nada soma com o resultado do ML
 
 ### outros (64)
 
