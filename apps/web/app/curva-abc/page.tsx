@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import type { Database } from "@sb/db";
 import { toSalesMetricDate } from "@sb/domain";
 
 import { FilterMenu } from "../../components/filter-menu";
@@ -9,28 +10,39 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
+import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { Shell } from "../../components/shell";
 import { TOM, type Tom } from "../../components/tone";
 import {
   ABC_CLASSES,
-  ABC_CRITERIA,
   ABC_KINDS,
   ABC_MOVEMENTS,
-  ABC_ORDERS,
   ABC_PERIODS,
   ABC_STOCK_STATES,
   DEFAULT_PERIOD,
   PAGE_SIZE,
   buildAbcHref,
   countActiveAbcFilters,
+  criteriosDoEscopo,
+  ordensDoEscopo,
   resolveAbcFilters,
   resolveAbcWindow,
   summarizeAbcWindow,
   type AbcFilters,
 } from "../../lib/abc-filters";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../lib/format";
+import { contarLojasShopee } from "../../lib/marketplace";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
+import {
+  HISTORICO_SHOPEE_DIAS,
+  ROTULO_DO_ESCOPO,
+  alternarConta,
+  antesDoHistoricoShopee,
+  marketplacesDoEscopo,
+  resolverContas,
+  type ContaDoSeletor,
+} from "../../lib/vendas-multicanal";
 
 export const metadata = { title: "Curva ABC — Speed Bikers Gestão" };
 
@@ -53,48 +65,16 @@ export const dynamic = "force-dynamic";
  * 🔴 **A versão de D-140 mostrava 1.000 de 1.492 SKUs e somava as classes em
  * JavaScript sobre esse resultado truncado.** As contagens e somas são janelas
  * no Postgres sobre o conjunto filtrado inteiro, antes do limit.
+ *
+ * **O marketplace é mais um recorte (D-448, sobre o C-60).** Sem `marketplace`
+ * na URL, a curva é a do Mercado Livre de sempre, com as mesmas chamadas.
+ * `marketplace=todos|shopee` recalcula a curva com a Shopee: o critério que
+ * soma é a COMPRA (o pack do ML e o pedido da Shopee), "pedidos" e cobertura
+ * ficam de fora (a função os devolve nulos), e o Full só existe com o ML no
+ * recorte. A loja de teste nunca entra.
  */
-interface AbcAnalysisRow {
-  sku_id: string;
-  sku: string;
-  title: string | null;
-  supplier_brand: string | null;
-  category: string | null;
-  kind: string;
-  revenue: number;
-  units: number;
-  orders: number;
-  metric_value: number;
-  metric_share: number;
-  cumulative_share: number;
-  abc_class: "A" | "B" | "C";
-  class_revenue: string | null;
-  class_units: string | null;
-  class_orders: string | null;
-  prev_metric_value: number | null;
-  prev_abc_class: string | null;
-  movement: string | null;
-  local_stock: number | null;
-  full_stock: number;
-  coverage_days: number | null;
-  total_count: number;
-  class_a_count: number;
-  class_b_count: number;
-  class_c_count: number;
-  class_a_value: number;
-  class_b_value: number;
-  class_c_value: number;
-  without_full_count: number;
-  total_revenue: number;
-  total_units: number;
-  total_orders: number;
-  moved_up_count: number;
-  moved_down_count: number;
-  kept_count: number;
-  new_count: number;
-  scope_total_value: number;
-  prev_scope_total_value: number | null;
-}
+type AbcAnalysisRow = Database["public"]["Functions"]["get_sku_abc_analysis"]["Returns"][number];
+
 
 const MOVIMENTO: Record<string, { texto: string; tom: Tom }> = {
   subiu: { texto: "↑ subiu", tom: "ok" },
@@ -130,13 +110,27 @@ export default async function CurvaAbcPage({
 }): Promise<ReactNode> {
   const query = await searchParams;
   const supabase = await createClient();
+  const today = toSalesMetricDate(new Date());
+  // Os filtros só dependem da URL: saem antes, porque o recorte decide o que ler.
+  const pedidos = resolveAbcFilters(query, today);
+  const multicanal = pedidos.escopo !== "ml";
 
   // As contas não dependem da organização: a RLS já as restringe. As leituras
-  // que não dependem de nada saem juntas (D-195).
-  const [membership, accountsResult, savedFiltersResult] = await Promise.all([
+  // que não dependem de nada saem juntas (D-195). Fora do ML, a lista de contas
+  // e lojas vem da fonte única (C-52); no ML basta o NÚMERO de lojas, que só
+  // decide se o seletor de marketplace aparece (D-431).
+  const [membership, accountsResult, savedFiltersResult, lojasShopee, contasDoRecorte] = await Promise.all([
     currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/curva-abc").order("name"),
+    contarLojasShopee(supabase),
+    multicanal
+      ? supabase
+          .from("marketplace_accounts")
+          .select("account_id, marketplace, name, environment")
+          .order("marketplace", { ascending: true })
+          .order("name", { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const organizationId = membership.organizationId;
@@ -150,11 +144,25 @@ export default async function CurvaAbcPage({
     );
   }
 
-  const today = toSalesMetricDate(new Date());
-  const filters = resolveAbcFilters(query, today);
-  const janela = resolveAbcWindow(filters, today);
-
   const accounts = accountsResult.data ?? [];
+
+  // As contas do link que a pessoa alcança e que cabem no recorte; as outras
+  // caem, com aviso (D-440). Fora do ML, o Full só é lido com alguma conta ML.
+  const todasAsContas: ContaDoSeletor[] = contasDoRecorte.data ?? [];
+  const { selecionadas, descartadas } =
+    pedidos.escopo === "ml"
+      ? { selecionadas: null, descartadas: 0 }
+      : resolverContas(pedidos.contas?.join(","), todasAsContas, pedidos.escopo);
+  const leMl =
+    pedidos.escopo === "ml" ||
+    (pedidos.escopo === "todos" && (selecionadas === null || selecionadas.some((c) => c.marketplace === "ML")));
+  const filters: AbcFilters = {
+    ...pedidos,
+    contas: selecionadas === null ? null : selecionadas.map((c) => c.account_id),
+    onlyWithoutFull: leMl && pedidos.onlyWithoutFull,
+  };
+  const janela = resolveAbcWindow(filters, today);
+  const contasDoMenu = todasAsContas.filter((c) => filters.escopo === "todos" || c.marketplace === "SHOPEE");
   // Slug desconhecido cai em "consolidado" em silêncio — mesmo tratamento de
   // `/vendas` e `/anuncios`.
   const selectedAccount = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
@@ -173,7 +181,14 @@ export default async function CurvaAbcPage({
       p_date_to: janela.to,
       p_prev_from: janela.prevFrom,
       p_prev_to: janela.prevTo,
-      p_ml_account_id: selectedAccount?.id ?? null,
+      // O recorte ML chama a função EXATAMENTE como antes (C-60: marketplace
+      // nulo = só ML); fora dele, a conta vai em p_account_ids.
+      ...(filters.escopo === "ml"
+        ? { p_ml_account_id: selectedAccount?.id ?? null }
+        : {
+            p_marketplaces: marketplacesDoEscopo(filters.escopo),
+            p_account_ids: filters.contas === null ? null : [...filters.contas],
+          }),
       p_supplier_brand: filters.brand,
       p_category: filters.category,
       p_kind: filters.kind?.value ?? null,
@@ -195,7 +210,7 @@ export default async function CurvaAbcPage({
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
   const categories = (categoriesResult.data ?? []).map((r) => r.category);
 
-  const rows = (data ?? []) as AbcAnalysisRow[];
+  const rows: AbcAnalysisRow[] = data ?? [];
   const first = rows[0];
   const totalCount = first?.total_count ?? 0;
   const windowInfo = summarizeAbcWindow(filters.page, totalCount, rows.length);
@@ -204,7 +219,16 @@ export default async function CurvaAbcPage({
     first === undefined ? 0 : first.class_a_value + first.class_b_value + first.class_c_value;
 
   // Os recortes que recalculam a curva, numa oração só.
+  const nomesDasContas =
+    selecionadas === null
+      ? null
+      : selecionadas.length === 1
+        ? (selecionadas[0]?.name ?? "1 conta")
+        : `${String(selecionadas.length)} contas e lojas`;
   const recortes = [
+    // "todos os marketplaces" no meio da frase; Shopee é nome próprio.
+    filters.escopo === "todos" ? ROTULO_DO_ESCOPO.todos.toLowerCase() : filters.escopo === "shopee" ? ROTULO_DO_ESCOPO.shopee : null,
+    nomesDasContas,
     selectedAccount?.label,
     filters.brand === null ? null : `marca ${filters.brand}`,
     filters.category === null ? null : `categoria ${filters.category}`,
@@ -216,6 +240,11 @@ export default async function CurvaAbcPage({
       ? `Últimos ${String(filters.days)} dias`
       : `De ${formatBusinessDate(janela.from)} a ${formatBusinessDate(janela.to)}`;
   const exportHref = buildAbcHref(filters, { page: 1 }).replace(/^\/curva-abc/, "/curva-abc/export/xlsx");
+  // O Excel ainda é só do Mercado Livre (T6b2): fora dele, o link é o do recorte ML.
+  const exportHrefMl = buildAbcHref(filters, { escopo: "ml", page: 1 }).replace(/^\/curva-abc/, "/curva-abc/export/xlsx");
+  // A Shopee guarda 90 dias: um período anterior mais velho faz ela parecer "nova" (T-R2).
+  const historicoCurto = filters.escopo !== "ml" && antesDoHistoricoShopee(janela.prevFrom, today);
+  const comprasNoLugarDePedidos = multicanal;
   const filtrosAtivos = countActiveAbcFilters(filters);
 
   const variacaoRecorte =
@@ -262,23 +291,53 @@ export default async function CurvaAbcPage({
                 value: formatCount(first.total_units),
                 previous: null,
               },
-              {
-                key: "pedidos",
-                label: "Pedidos",
-                formula: "Soma dos pedidos dos SKUs listados (um pedido com dois SKUs conta nos dois).",
-                value: formatCount(first.total_orders),
-                previous: null,
-              },
+              comprasNoLugarDePedidos
+                ? {
+                    key: "compras",
+                    label: "Compras",
+                    formula:
+                      "Soma das compras dos SKUs listados: o pack do Mercado Livre e o pedido da Shopee (uma compra com dois SKUs conta nos dois).",
+                    value: formatCount(first.total_purchases),
+                    previous: null,
+                  }
+                : {
+                    key: "pedidos",
+                    label: "Pedidos",
+                    formula: "Soma dos pedidos dos SKUs listados (um pedido com dois SKUs conta nos dois).",
+                    value: formatCount(first.total_orders),
+                    previous: null,
+                  },
             ] as const
           )
             .filter((cell) => cell.key !== filters.criterion.key)
-            .map((cell) => ({ label: cell.label, formula: cell.formula, value: cell.value, previous: cell.previous })),
-          {
-            label: "Ticket médio",
-            formula: "Faturamento ÷ pedidos dos SKUs listados.",
-            value: first.total_orders === 0 ? "—" : formatCurrency(first.total_revenue / first.total_orders),
-            previous: null,
-          },
+            .map((cell) => ({
+              label: cell.label,
+              formula: cell.formula,
+              value: cell.value,
+              previous: cell.previous,
+              // Item Shopee de preço zero (bundle) não tem receita: dito, não somado.
+              ...(cell.key === "faturamento" && (first.total_shopee_items_without_revenue ?? 0) > 0
+                ? {
+                    ressalva: `${formatCount(first.total_shopee_items_without_revenue)} itens Shopee sem receita conhecida, fora da soma`,
+                  }
+                : {}),
+            })),
+          // O ticket do ML é faturamento ÷ pedidos; fora do ML o pedido não
+          // soma, e a receita dos itens Shopee de preço zero é desconhecida:
+          // o ticket entre marketplaces mora em /vendas, recalculado no banco.
+          ...(multicanal
+            ? []
+            : [
+                {
+                  label: "Ticket médio",
+                  formula: "Faturamento ÷ pedidos dos SKUs listados.",
+                  value:
+                    first.total_orders === null || first.total_orders === 0 || first.total_revenue === null
+                      ? "—"
+                      : formatCurrency(first.total_revenue / first.total_orders),
+                  previous: null,
+                },
+              ]),
           {
             label: "Movimento de classe",
             formula: "Classe no período contra a classe no período anterior de mesmo tamanho, no mesmo recorte.",
@@ -297,6 +356,16 @@ export default async function CurvaAbcPage({
         subtitle="Onde receita, volume e disponibilidade se concentram."
         aside={
           <>
+            {/* O marketplace vem primeiro (D-431): é o recorte mais largo. */}
+            <SeletorDeMarketplace
+              ativo={filters.escopo}
+              contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
+              destinos={{
+                todos: buildAbcHref(filters, { escopo: "todos" }),
+                ml: buildAbcHref(filters, { escopo: "ml" }),
+                shopee: buildAbcHref(filters, { escopo: "shopee" }),
+              }}
+            />
             <FilterMenu
               rotulo={filters.custom === null ? `Últimos ${String(filters.days)} dias` : "Período personalizado"}
               opcoes={ABC_PERIODS.map((days) => ({
@@ -331,17 +400,40 @@ export default async function CurvaAbcPage({
                 </button>
               </form>
             </FilterMenu>
-            <FilterMenu
-              rotulo={selectedAccount?.label ?? "Todas as contas"}
-              opcoes={[
-                { href: buildAbcHref(filters, { accountSlug: null }), label: "Todas as contas", ativo: selectedAccount === null },
-                ...accounts.map((account) => ({
-                  href: buildAbcHref(filters, { accountSlug: account.slug }),
-                  label: account.label,
-                  ativo: selectedAccount?.id === account.id,
-                })),
-              ]}
-            />
+            {filters.escopo === "ml" ? (
+              <FilterMenu
+                rotulo={selectedAccount?.label ?? "Todas as contas"}
+                opcoes={[
+                  { href: buildAbcHref(filters, { accountSlug: null }), label: "Todas as contas", ativo: selectedAccount === null },
+                  ...accounts.map((account) => ({
+                    href: buildAbcHref(filters, { accountSlug: account.slug }),
+                    label: account.label,
+                    ativo: selectedAccount?.id === account.id,
+                  })),
+                ]}
+              />
+            ) : (
+              // Várias contas e lojas, uma por clique, num valor só na URL (D-440).
+              contasDoMenu.length > 0 && (
+                <FilterMenu
+                  nome="Contas"
+                  rotulo={nomesDasContas ?? "Todas as contas"}
+                  opcoes={[
+                    { href: buildAbcHref(filters, { contas: null }), label: "Todas as contas", ativo: selecionadas === null },
+                    ...contasDoMenu.map((conta) => {
+                      const marcada = selecionadas?.some((c) => c.account_id === conta.account_id) ?? false;
+                      const proximas = alternarConta(selecionadas, conta);
+
+                      return {
+                        href: buildAbcHref(filters, { contas: proximas === null ? null : proximas.map((c) => c.account_id) }),
+                        ativo: marcada,
+                        label: `${marcada ? "✓ " : ""}${conta.name} · ${conta.marketplace === "ML" ? "Mercado Livre" : "Shopee"}${conta.environment === "live" ? "" : " (teste)"}`,
+                      };
+                    }),
+                  ]}
+                />
+              )
+            )}
             <FilterMenu
               rotulo={filters.brand ?? "Todas as marcas"}
               opcoes={[
@@ -384,6 +476,24 @@ export default async function CurvaAbcPage({
         }
       />
 
+      {descartadas > 0 && (
+        <p role="note" className="sb-an-nota">
+          {descartadas === 1
+            ? "1 conta do link não está disponível para você neste recorte e ficou de fora."
+            : `${String(descartadas)} contas do link não estão disponíveis para você neste recorte e ficaram de fora.`}
+        </p>
+      )}
+
+      {multicanal && (
+        <p role="note" className="sb-an-nota">
+          Com a Shopee no recorte, a curva soma <strong>compras</strong> (o pack do Mercado Livre e o pedido da Shopee):
+          pedidos, ticket e cobertura em dias são do Mercado Livre e ficam de fora{leMl ? "" : ", assim como o Full"}. A
+          loja Shopee de teste nunca entra.
+          {historicoCurto &&
+            ` A Shopee guarda ${String(HISTORICO_SHOPEE_DIAS)} dias de histórico: o período anterior começa antes disso, e o movimento de classe dela aparece como "novo" ou "subiu".`}
+        </p>
+      )}
+
       {filters.invalidCustom && (
         <p role="alert" className="sb-note" style={{ marginBottom: "var(--sb-space-3)" }}>
           Período personalizado inválido (datas fora de ordem, no futuro ou com mais de dois anos) — mostrando os
@@ -406,16 +516,24 @@ export default async function CurvaAbcPage({
                 Limpar filtros ({filtrosAtivos})
               </Link>
             )}
-            {/* O Excel leva o MESMO recorte da tela -- `export/xlsx/route.ts`. */}
-            <a className="sb-button sb-button-primary" href={exportHref} download>
-              Baixar Excel
-            </a>
+            {/* O Excel leva o MESMO recorte da tela -- `export/xlsx/route.ts`. Fora do ML
+                ele ainda não sabe a Shopee (T6b2): em vez de baixar outro recorte calado,
+                a tela diz e oferece o do Mercado Livre. */}
+            {multicanal ? (
+              <a className="sb-button" href={exportHrefMl} download title="O Excel ainda não traz a Shopee">
+                Baixar Excel (só Mercado Livre)
+              </a>
+            ) : (
+              <a className="sb-button sb-button-primary" href={exportHref} download>
+                Baixar Excel
+              </a>
+            )}
           </div>
         </div>
 
         <div className="sb-abc-filter-grid">
           <FilterGroup label="Critério">
-            {ABC_CRITERIA.map((criterion) => (
+            {criteriosDoEscopo(filters.escopo).map((criterion) => (
               <FilterPill
                 key={criterion.key}
                 href={buildAbcHref(filters, { criterion })}
@@ -484,7 +602,7 @@ export default async function CurvaAbcPage({
             className="sb-input"
           />
           <select name="ordem" defaultValue={filters.order.key} aria-label="Ordenar por" className="sb-input">
-            {ABC_ORDERS.map((order) => (
+            {ordensDoEscopo(filters.escopo).map((order) => (
               <option key={order.key} value={order.key}>
                 Ordenar: {order.label}
               </option>
@@ -550,6 +668,7 @@ export default async function CurvaAbcPage({
       */}
       {first !== undefined && (
         <div className="sb-abc-bars">
+          {leMl && (
           <section className="sb-abc-full-card">
             <div className="sb-abc-insight-head">
               <div>
@@ -575,6 +694,7 @@ export default async function CurvaAbcPage({
               {filters.onlyWithoutFull ? "Mostrando somente sem Full" : "Ver somente sem Full"}
             </FilterPill>
           </section>
+          )}
 
           <section className="sb-note sb-abc-risk-card">
             <span>RISCO OPERACIONAL</span>
@@ -626,18 +746,34 @@ export default async function CurvaAbcPage({
                       Faturamento
                     </th>
                     <th className="sb-num">Unidades</th>
-                    <th className="sb-num">Pedidos</th>
-                    <th className="sb-num">Ticket médio</th>
+                    {multicanal ? (
+                      <th className="sb-num" title="O pack do Mercado Livre e o pedido da Shopee que contêm o SKU">
+                        Compras
+                      </th>
+                    ) : (
+                      <>
+                        <th className="sb-num">Pedidos</th>
+                        <th className="sb-num">Ticket médio</th>
+                      </>
+                    )}
+                    {filters.escopo === "todos" && (
+                      <>
+                        <th className="sb-num">Mercado Livre</th>
+                        <th className="sb-num">Shopee</th>
+                      </>
+                    )}
                     <th className="sb-num">% do total</th>
                     <th className="sb-num">% acumulado</th>
                     <th className="sb-num" title="Variação do critério contra o período anterior de mesmo tamanho">
                       vs anterior
                     </th>
                     <th className="sb-num">Estoque local</th>
-                    <th className="sb-num">Full</th>
-                    <th className="sb-num" title="Dias que o estoque local + Full cobre na venda média diária do período">
-                      Cobertura
-                    </th>
+                    {leMl && <th className="sb-num">Full</th>}
+                    {!multicanal && (
+                      <th className="sb-num" title="Dias que o estoque local + Full cobre na venda média diária do período">
+                        Cobertura
+                      </th>
+                    )}
                   </tr>
                 </thead>
 
@@ -654,11 +790,11 @@ export default async function CurvaAbcPage({
                           </span>
                           <div
                             className="sb-abc-classes-fup"
-                            title="Classe em faturamento / unidades / pedidos"
+                            title={`Classe em faturamento / unidades / ${multicanal ? "compras" : "pedidos"}`}
                           >
                             {row.class_revenue ?? "–"}
                             {row.class_units ?? "–"}
-                            {row.class_orders ?? "–"}
+                            {(multicanal ? row.class_purchases : row.class_orders) ?? "–"}
                           </div>
                         </td>
                         <td>
@@ -675,10 +811,39 @@ export default async function CurvaAbcPage({
                             </div>
                           )}
                         </td>
-                        <td className="sb-num">{formatCurrency(row.revenue)}</td>
+                        <td className="sb-num">
+                          {formatCurrency(row.revenue)}
+                          {(row.shopee_items_without_revenue ?? 0) > 0 && (
+                            <small className="sb-an-sub">
+                              {formatCount(row.shopee_items_without_revenue)} itens Shopee sem receita
+                            </small>
+                          )}
+                        </td>
                         <td className="sb-num">{formatCount(row.units)}</td>
-                        <td className="sb-num">{formatCount(row.orders)}</td>
-                        <td className="sb-num">{row.orders === 0 ? "—" : formatCurrency(row.revenue / row.orders)}</td>
+                        {multicanal ? (
+                          <td className="sb-num">{formatCount(row.purchases)}</td>
+                        ) : (
+                          <>
+                            <td className="sb-num">{formatCount(row.orders)}</td>
+                            <td className="sb-num">
+                              {row.orders === null || row.orders === 0 || row.revenue === null
+                                ? "—"
+                                : formatCurrency(row.revenue / row.orders)}
+                            </td>
+                          </>
+                        )}
+                        {filters.escopo === "todos" && (
+                          <>
+                            <td className="sb-num" title="receita · unidades no Mercado Livre">
+                              {formatCurrency(row.revenue_ml)}
+                              <small className="sb-an-sub">{formatCount(row.units_ml)} un</small>
+                            </td>
+                            <td className="sb-num" title="receita · unidades na Shopee">
+                              {formatCurrency(row.revenue_shopee)}
+                              <small className="sb-an-sub">{formatCount(row.units_shopee)} un</small>
+                            </td>
+                          </>
+                        )}
                         <td className="sb-num">
                           <div className="sb-abc-share">
                             <i aria-hidden="true" style={{ width: `${String(Math.min(100, row.metric_share))}%` }} />
@@ -709,16 +874,20 @@ export default async function CurvaAbcPage({
                           </div>
                         </td>
                         <td className="sb-num">{formatCount(row.local_stock)}</td>
-                        <td className="sb-num">
-                          {row.full_stock === 0 ? (
-                            <span className="sb-abc-full-empty">Sem Full</span>
-                          ) : (
-                            formatCount(row.full_stock)
-                          )}
-                        </td>
-                        <td className="sb-num">
-                          {row.coverage_days === null ? "—" : `${formatCount(Math.round(row.coverage_days))} d`}
-                        </td>
+                        {leMl && (
+                          <td className="sb-num">
+                            {row.full_stock === 0 ? (
+                              <span className="sb-abc-full-empty">Sem Full</span>
+                            ) : (
+                              formatCount(row.full_stock)
+                            )}
+                          </td>
+                        )}
+                        {!multicanal && (
+                          <td className="sb-num">
+                            {row.coverage_days === null ? "—" : `${formatCount(Math.round(row.coverage_days))} d`}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
