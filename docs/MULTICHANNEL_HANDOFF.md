@@ -58,10 +58,10 @@
 - Validação de cada etapa: `check`, `build`, `docs:check`, unitários e a suíte e2e inteira num stack isolado com o banco recriado do zero (210/210 na T3a; os 3 de convite só com o servidor na porta 3000).
 
 - T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Em código e validada localmente** no **rascunho #156**, já sobre a `main` com a cadeia #149 → #153 → #154. As migrations `20261014210000`/`220000` estão em produção (run `38597993424`, conferido em 14/10).
-- T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Em código e validada localmente** (e2e 21/21 nas telas tocadas; a coluna do ML no "Todos" é idêntica à tela do ML), empilhada sobre a T4.
+- T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Em código e validada localmente** (e2e 21/21 nas telas tocadas; a coluna do ML no "Todos" é idêntica à tela do ML) no **rascunho #158**, empilhado sobre a T4.
 
 **Em andamento**
-- #156 (T4) espera o e2e reexecutado da CI (o anterior caiu ao subir o Supabase); a T5 entra depois dele.
+- #156 (T4) espera o e2e reexecutado da CI (o anterior caiu ao subir o Supabase); a T5 (#158) entra depois dele.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T3b — cartão da Shopee em `/integracoes`, contagem em `/configuracoes` e o seletor de marketplace lendo `marketplace_accounts`.

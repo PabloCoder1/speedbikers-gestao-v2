@@ -45,7 +45,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 |---|---|---|---|---|---|---|
 | Home | `/` | 2 | — | `get_sales_summary`/`series` (`daily_*`), cobertura, anúncios pausados | faixa de vendas com o marketplace | E4 → T4 |
 | Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje", ranking e cancelamento consolidados (esperam o grão de SKU, E6) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas) |
-| Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58) | componentes do recebido, série diária e produtos da Shopee (C-61, T5b) | T5 ✔ (D-442: "Shopee" e "Todos" lado a lado, sem total) |
+| Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58) | componentes do recebido, série diária e produtos da Shopee (C-61, T5b) | T5 ✔ (D-442, rascunho #158: "Shopee" e "Todos" lado a lado, sem total) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | Shopee só depois do Go Live (D-430 §5) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
