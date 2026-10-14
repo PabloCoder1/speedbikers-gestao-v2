@@ -15176,6 +15176,60 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/lib/{integrations,settings-hub}.ts` e testes, `apps/web/app/{integracoes,configuracoes}/page.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/{integracoes,configuracoes}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-447 - Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
+
+**Contexto:** a E7 traz as fontes financeiras que faltavam da Shopee (R9), cada uma so depois de conferida na documentacao oficial. A primeira e a de devolucoes: hoje o sistema so sabe que um pedido teve devolucao pela lista `return_order_sns` do financeiro (`com_devolucao`, D-430), sem situacao, motivo, valor nem itens. O efeito em dinheiro ja esta no recebido e cai em "outros" na composicao (D-443).
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.returns.get_return_list`, o guia "Return Refund Management" e a "V2.0 Data Definition"): lista por janela de `update_time` (ou `create_time`) de no maximo 15 dias; ate 100 por pagina com `page_no` e `more` (a referencia diz que `page_no` comeca em 0, o exemplo usa 1); um pedido pode ter VARIAS devolucoes (`return_sn`); situacoes REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED, PROCESSING, SELLER_DISPUTE -- so os nomes, sem dizer em qual o reembolso foi pago (o fluxo e uma imagem); `confirm` (so reembolso) leva a ACCEPTED; `return_solution` 0 = devolucao e reembolso, 1 = so reembolso; o app (Seller In House System) tem permissao para a API.
+
+**Decisao:**
+
+1. **Tabelas proprias:** `shopee_returns` (uma por `return_sn`) e `shopee_return_items`, com RLS pela permissao por loja (D-433) e a organizacao amarrada a loja (D-432). O pedido nao e FK: a devolucao pode chegar antes dele.
+2. **Sem o comprador:** nome, e-mail e foto (`user`), as fotos da devolucao e o texto livre que o comprador escreveu nao sao lidos nem gravados -- o schema do cliente os descarta, e o teste prova com o exemplo oficial.
+3. **A situacao como veio, sem interpretar:** a documentacao nao diz quando o reembolso e pago, entao nada se chama "reembolsado"; o resumo conta por situacao (`por_situacao`) e soma o `refund_amount` que a Shopee informa.
+4. **O SKU do item como o do pedido** (D-430): o vinculo manual, o SKU do anuncio e, por ultimo, o SKU que a devolucao traz (`variation_sku` com variacao, senao `item_sku`).
+5. **O job `shopee.returns.sync`** (fila `backfill`) segue o de pedidos (D-426/D-432): janela de ate 15 dias por `update_time` a partir do marco `returns_synced_until` (10 minutos de sobreposicao; sem marco, 90 dias atras), o marco so avanca depois de gravar e nunca recua, cada lote numa transacao (`shopee_upsert_returns`) que nao regride. E enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora -- sem agendamento novo, so o worker muda. Pagina que so repete devolucoes ja vistas enquanto a Shopee diz que ha mais para a tarefa com o motivo (a semantica de `page_no` se confere no sandbox).
+6. **Leitura:** `get_shopee_returns` (a lista do periodo, com os itens e o SKU; filtros de loja, situacao e pedido; ate 200 por pagina) e `get_shopee_returns_summary` (TOTAL so de loja live ja lida, e por loja: quantas, de quantos pedidos, quantas so de reembolso, unidades, o valor informado e o mesmo por situacao; loja lida sem devolucao = 0; nunca lida = NULO).
+7. **Fica para depois:** o estoque de volta (fatia 5), o detalhe por devolucao (`get_return_detail`), as acoes (aceitar, disputar) e a devolucao por SKU numa metrica.
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial da referencia lido sem o comprador, as fotos e o texto livre; pagina vazia sem a lista.
+- **Worker:** a primeira leitura (90 dias, janela de 15, enfileira a seguinte), com marco (10 min antes, paginas 0 e 1, a mesma devolucao em duas paginas fica com a mais nova, normalizacao de vazio e modelo 0, solucao 0/1), a paginacao que repete (para sem girar), erro passageiro e falha ao gravar sem avancar o marco, loja desconectada; e o job de pedidos encadeando as devolucoes.
+- **Integracao** num stack isolado: 4 testes -- a gravacao sem regredir com o SKU (manual vencendo o da devolucao, variacao), o marco que nao recua, a lista com os filtros, o resumo por situacao com a loja de teste fora do TOTAL, a loja sem devolucao zerada e a nunca lida nula, a permissao por loja, so o worker gravando e as recusas.
+- **Mutacao:** 7 regras estragadas (regredir, SKU da devolucao vencendo o manual, variacao ignorada, TOTAL com a loja de teste, nunca lida virando zero, sem devolucao virando nulo, lista sem o filtro de situacao) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real e a semantica de `page_no`.
+
+**Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.
+
+## D-449 - Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
+
+**Contexto:** o faturamento do ML ja tem Ads (5G, D-363) e o lucro apos imposto e Ads (5K); o da Shopee nao (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.ads.get_all_cpc_ads_daily_performance`, `v2.ads.get_gms_campaign_performance` e o "Shopee On-Platform Ads API Guide"):
+- o desempenho DIARIO dos anuncios CPC da loja: impressoes, cliques, pedidos, itens e GMV atribuidos (DIRETO = o item clicado; AMPLO = qualquer item da loja ate 7 dias depois do clique), gasto (`expense`) e ROAS;
+- datas `DD-MM-YYYY`, periodo de no maximo 1 mes, ate 6 meses atras, sem data futura e com inicio diferente do fim;
+- o app (Seller In House System) tem permissao; o guia restringe o uso a operacao da loja, que e o caso;
+- os anuncios GMV Max de LOJA tem consulta propria (`get_gms_campaign_performance`, POST), que so devolve o AGREGADO do periodo e exige loja habilitada: nao ha dia a dia, e a documentacao nao diz se o gasto deles esta no CPC da loja.
+
+**Decisao:**
+
+1. **`daily_shopee_ads_metrics`** (loja, dia), como a Shopee manda, com RLS pela permissao por loja; campo ausente fica NULO.
+2. **E "Ads CPC da loja", NAO o total de Ads** -- o GMV Max de loja pode ficar de fora. Por isso **nada disso entra no resultado da venda** (C-58/C-61): o "resultado apos Ads" da Shopee espera a conferencia com loja real (o numero da tela contra o Seller Center), no Go Live (E8).
+3. **A cobertura da leitura** (`shopee_shops.ads_read_from`/`ads_read_until`, so cresce): dentro dela, dia sem linha e dia sem anuncio (0); fora, desconhecido. O resumo diz se o periodo inteiro esta coberto (`cobertura_completa`).
+4. **A releitura mais nova vale:** o GMV atribuido muda ate 7 dias depois do clique, e o job rele as duas ultimas semanas; a primeira leitura pega 90 dias em pedacos de 30.
+5. **O job `shopee.ads.sync`** (fila `backfill`), enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora, no maximo uma leitura a cada 3 horas; `error_not_found` = loja sem dado de Ads (periodo vazio); `ads.rate_limit.*` = passageiro. O dia e o de Sao Paulo.
+6. **Leitura:** `get_shopee_ads_overview` (TOTAL de loja live com Ads lido, e por loja; nunca lido = NULO; loja lida sem anuncio = 0) com investimento, vendas com Ads (amplo e direto), pedidos, cliques, impressoes, ROAS, ACOS e TACoS sobre a receita bruta das vendas validas (5S) -- tudo sobre as somas; e `get_shopee_ads_daily` (serie, so live).
+7. Metricas `shopee_investimento_ads`, `shopee_receita_ads`, `shopee_roas`, `shopee_acos`, `shopee_tacos` (METRICS 5V), com a ressalva "CPC da loja, nao o total".
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial; o formato das datas; lista ausente = vazio; inicio igual ao fim recusado antes de chamar.
+- **Worker:** o dia de Sao Paulo, os pedacos de ate 30 dias sem dia sozinho, a primeira leitura (90 dias em tres chamadas), a releitura de 14 dias, o intervalo de 3 horas, `error_not_found` como vazio, o limite de requisicoes passageiro, a falha ao gravar; e o job de pedidos encadeando o Ads.
+- **Integracao** num stack isolado: 4 testes -- a gravacao (dia fora da janela ignorado, releitura mais nova vale, mais velha nao, cobertura que so cresce), o resumo com os numeros exatos (R$ 15 investidos, R$ 100 de vendas com Ads, ROAS 6,67, ACOS 15%, TACoS 7,5% sobre R$ 200), a loja lida sem anuncio em 0, a nunca lida nula, a loja de teste fora do TOTAL, a cobertura incompleta, a serie, a permissao por loja e as recusas.
+- **Mutacao:** 8 regras estragadas (cobertura encolhendo, releitura velha sobrescrevendo, dia fora da janela, TOTAL com a loja de teste, lida sem anuncio virando nulo, ROAS invertido, cobertura ignorando o inicio, serie com a loja de teste) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real; com loja real, se o GMV Max entra no CPC da loja.
+
+**Impacto:** `supabase/migrations/20261015040000_ads_shopee.sql`, `packages/shopee/src/{ads,ads.test,index}.ts`, `apps/worker/src/handlers/{shopee-ads-sync,shopee-ads-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
 ## D-454 - Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
 
 **Contexto:** D-445 (C-56, A1) fez `get_products_overview` olhar os dois marketplaces. COM e SEM viraram "em algum" e "em nenhum"; `p_listing`/`p_sales` ganharam SO_ML, SO_SHOPEE e AMBOS; a linha ganhou `shopee_listing_count` e `shopee_units_sold_90d` (nulos sem loja live); o resumo ganhou `sem_anuncio_ml`, `sem_venda_90d_ml` e `tem_shopee`. A tela so lia as chaves de antes (o leitor ignora chave a mais). Por isso mostrava o numero novo do "sem anuncio" sem avisar que o sentido tinha mudado, e nao deixava ver em que marketplace o SKU esta.

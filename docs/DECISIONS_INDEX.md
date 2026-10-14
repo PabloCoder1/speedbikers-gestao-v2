@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **439** (D-001 a D-454).
+Decisões registradas: **441** (D-001 a D-454).
 
 ## Por domínio
 
-### atendimento (55)
+### atendimento (56)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -73,6 +73,7 @@ Decisões registradas: **439** (D-001 a D-454).
 - **D-416** — Auditoria de 28/09, api: agendador que nem lista contas responde 503; erro interno sem a mensagem do banco; id de caminho validado; convite e link de acesso nao atravessam organizacao
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
+- **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 
 ### banco/rls (41)
 
@@ -206,7 +207,7 @@ Decisões registradas: **439** (D-001 a D-454).
 - **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
 
-### mercado-livre (79)
+### mercado-livre (80)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -286,6 +287,7 @@ Decisões registradas: **439** (D-001 a D-454).
 - **D-437** — Faturamento da Shopee (E5): resultado = recebido - custo nos pedidos cobertos, definitivo e provisorio separados, o custo pela regra de D-356 provada equivalente, e nada soma com o resultado do ML
 - **D-441** — Curva ABC por marketplace (E6b): marketplace e conta/loja como recortes nas tres funcoes da Curva ABC, com o ML identico e 30x mais rapido
 - **D-445** — /produtos com a Shopee (E6c, C-56): anuncio e venda olham os dois marketplaces, os campos do ML nao mudam e a loja de teste nao conta
+- **D-449** — Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 - **D-454** — Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
 
 ### outros (64)

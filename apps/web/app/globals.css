@@ -16482,6 +16482,27 @@ td.sb-pco-num-linha {
     margin-left: 0.25rem;
   }
 
+  /*
+    T-R5: no cartão "Por loja" de /vendas/shopee as notas são FRASES ("3
+    aguardando o financeiro", "a leitura é de hora em hora") e a última
+    leitura também ("pedidos ainda não lidos"). Em linha e sem quebra (a
+    .sb-table é nowrap), invadiam a célula vizinha do cartão -- medido em 390
+    px: 134 a 222 px além da própria célula. Só nesta tabela, a célula quebra
+    e a nota desce para a linha de baixo; /anuncios, de notas curtas, não muda.
+  */
+  .sb-vendas-lojas tbody td {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .sb-vendas-lojas tbody td .sb-an-sub {
+    display: block;
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+    text-align: right;
+  }
+
   .sb-an-recorte {
     margin-inline: var(--sb-space-3);
   }

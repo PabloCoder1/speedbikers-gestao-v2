@@ -179,6 +179,14 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### Ads da Shopee (D-449)
+
+Migration `20261015040000`. `daily_shopee_ads_metrics` (loja, dia: impressões, cliques, pedidos, itens, GMV direto e amplo, gasto — os anúncios CPC da loja, como a Shopee manda), RLS pela permissão por loja. `shopee_shops.ads_read_from`/`ads_read_until` é a cobertura da leitura (só cresce) e `ads_synced_at`, a última leitura. `shopee_upsert_ads_days` só para o worker. Leitura: `get_shopee_ads_overview` e `get_shopee_ads_daily`. Métricas 5V.
+
+### Devoluções da Shopee (D-447)
+
+Migration `20261015030000`. `shopee_returns` (uma por `return_sn`; situação, motivo, solução, valor de reembolso informado, prazos e estados de negociação/prova/compensação, como a Shopee manda) e `shopee_return_items` (itens com o SKU resolvido: manual, SKU do anúncio, SKU da devolução), com RLS pela permissão por loja e a organização amarrada à loja; **sem o comprador, as fotos e o texto livre**. `shopee_shops.returns_synced_until` é o marco; `shopee_upsert_returns` (sem regredir) e `shopee_advance_returns_synced_until` só para o worker. Leitura: `get_shopee_returns` e `get_shopee_returns_summary`.
+
 ### `/produtos` com a Shopee (D-445)
 
 Migration `20261015020000`. `get_products_overview` ganha, por SKU, `shopee_listing_count` (anúncio Shopee vinculado, um por item, só loja live) e `shopee_units_sold_90d` (pedido válido de loja live em 90 dias), NULOS sem loja live; anúncio e venda nos filtros, facetas e resumo olham os dois marketplaces (`p_listing`/`p_sales` com SO_ML, SO_SHOPEE, AMBOS); o resumo traz `sem_anuncio_ml`, `sem_venda_90d_ml` e `tem_shopee`. Os campos do ML não mudam.

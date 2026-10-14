@@ -122,11 +122,26 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
         payload: { shopeeShopId: loja.id },
       });
     } else {
-      // Os pedidos alcançaram agora: o financeiro deles vem atrás (D-427).
+      // Os pedidos alcançaram agora: o financeiro deles vem atrás (D-427), e
+      // as devoluções (D-447) e o Ads (D-449) da loja também.
       await deps.enqueuer.enqueue({
         jobType: "shopee.order-financials.sync",
         organizationId: loja.organization_id,
         dedupeKey: `shopee-financials:${loja.id}:${String(ateS)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: loja.id },
+      });
+      await deps.enqueuer.enqueue({
+        jobType: "shopee.returns.sync",
+        organizationId: loja.organization_id,
+        dedupeKey: `shopee-returns-ciclo:${loja.id}:${String(ateS)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: loja.id },
+      });
+      await deps.enqueuer.enqueue({
+        jobType: "shopee.ads.sync",
+        organizationId: loja.organization_id,
+        dedupeKey: `shopee-ads:${loja.id}:${String(ateS)}`,
         queue: "backfill",
         payload: { shopeeShopId: loja.id },
       });
