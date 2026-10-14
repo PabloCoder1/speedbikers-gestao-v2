@@ -20,7 +20,7 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `562b1e60` (D-430) |
-| Branches abertas | A1: `feat/shopee-ingestao-robusta` (E1 + estes documentos) · A2: `docs/multicanal-auditoria` (local) |
+| Branches abertas | A1: `feat/shopee-ingestao-robusta` (PR #147: E1 + estes documentos) e `feat/shopee-permissao-por-loja` (E2, sobre a #147) · A2: `feat/multicanal-t1-seletor` (local, T1 pronta) |
 | Web em produção | `562b1e60`, conferido na Vercel |
 | Worker / api em produção | worker `worker-00044-p8d` em `562b1e60` (D-430); api `api-00027-p7c` em `e037573f`; Shopee **sandbox** |
 | Migrations em produção | até `20261014150000` (D-430, 14/10). Próxima: `20261014180000` (D-432), antes do worker |
@@ -49,14 +49,16 @@
 ## Agente 2 — frontend multicanal
 
 **Concluído**
-- Auditoria das telas (14/10), lida rota a rota na `main` `562b1e60`: inventário de ~30 áreas com a classe multicanal, os filtros de conta de hoje, Vendas e Faturamento em detalhe, o desenho do filtro Marketplace/Conta e a sequência T0–T8 — `docs/MULTICHANNEL_SCREENS.md`.
+- T0 — auditoria das telas e mapa de lacunas (14/10): `docs/MULTICHANNEL_SCREENS.md`.
+- T1 — **em código e validada localmente, não publicada** (D-431, branch `feat/multicanal-t1-seletor`): seletor de marketplace no início da barra de `/vendas`, `/vendas/shopee`, `/anuncios` e `/anuncios/shopee` (só com os dois canais; leva o período ou a busca, nunca conta, loja, marca ou estado); período personalizado em `/vendas/shopee`; `/contas` e o menu como "Contas e lojas"; os quatro jobs `shopee.*` com cadência horária em `/saude` (C-09). Validado: `check`, `build`, `docs:check`, 13 unitários novos, e2e 41/41 nas telas tocadas e 208/208 na suíte inteira num stack isolado (4 só passaram reexecutadas, por ambiente — D-431).
 
 **Em andamento**
-- —
+- Publicar a T1: PR depois do aval do dono. Se o PR #147 (A1) entrar antes, rebase: fico com este arquivo e o `AGENTS.md` da `main` e reaplico só esta seção; a D-431 vai antes da D-432 no `DECISIONS.md`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- **T1, sem depender de contrato novo:** seletor de marketplace (`lib` pura + componente) entre `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; período personalizado em `/vendas/shopee`; `/contas` falando dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09).
-- Depois, na ordem dos contratos: T2 concessão de loja (E2) → T3 seletor sobre `marketplace_accounts` e as lojas em sincronização, saúde, integrações e shell (E3) → T4 `/vendas` única com "todos" (E4) → T5 `/faturamento` (E5) → T6 ranking, ABC, SKU e `/produtos` (E6) → T7 busca universal → T8 central e meta (Go Live).
+- T2 concessão de loja em `/usuarios` (C-54, E2) → T3 seletor sobre `marketplace_accounts` e as lojas em sincronização, integrações, configurações e shell (C-52, E3) → T4 `/vendas` única com "todos" (C-53, E4) → T5 `/faturamento` (E5) → T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
+- Selo "Teste" no painel Shopee do SKU (C-06) quando a C-55 estiver em produção.
+- T-R5: sobreposição de texto no cartão "Por loja" de `/vendas/shopee` no celular (preexistente, D-430).
 
 **Bloqueios**
 - T2 a T6 esperam os contratos C-52 a C-54 e os de E5/E6. Nenhuma tela nova lista loja Shopee antes de E2 (risco S1).
@@ -64,7 +66,7 @@
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
-- Inferência a medir: a planilha do UpSeller desconta a venda Shopee do estoque, mas a reposição só conta a demanda do ML — cobertura alta demais para SKU que vende na Shopee (T-R3).
+- Inferência a medir: a planilha do UpSeller desconta a venda Shopee do estoque, mas a reposição só conta a demanda do ML — cobertura alta demais para SKU que vende na Shopee (T-R3, R11 do A1).
 
 ---
 
@@ -80,7 +82,7 @@
 | C-06 | Selo de loja de teste no painel Shopee do SKU | A2 | — | **pedido novo ao A1**: `get_sku_shopee_listings` devolver o ambiente | loja sandbox marcada "Teste" |
 | C-07 | `/produtos` sem chamar de "sem anúncio/venda" o SKU que só a Shopee tem | A2 | — | **pedido novo ao A1**: `get_products_overview` com a Shopee (depois de E6) | — |
 | C-08 | Busca universal achando loja, anúncio e pedido Shopee | A2 | — | **pedido novo ao A1**: `search_entities` com a Shopee | — |
-| C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | A2 | — | T1, sem contrato novo | job horário atrasado aparece como atrasado |
+| C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | A2 | — | em código (T1, D-431) | job horário atrasado aparece como atrasado |
 | C-50 | Catálogo e vínculo Shopee: `get_shopee_listings`, `get_shopee_listings_summary`, `get_sku_shopee_listings`, `get_shopee_shop_catalog_counts`, `set_/remove_shopee_sku_link` | A1 | `/anuncios/shopee`, `/skus/[id]`, `/contas` | em produção | — (existente; §3.2) |
 | C-51 | Vendas Shopee por loja: `get_shopee_sales_by_shop`, `get_shopee_orders` | A1 | `/vendas/shopee` | em produção (14/10) | migration em produção e a loja de teste na tela |
 | C-52 | `marketplace_accounts`: a fonte única do seletor Marketplace/Conta, com `slug` do ML e `shop_id` da Shopee | A1 | seletor do A2 | proposto (E3) | uma linha por conta/loja visível ao usuário, respeitando a permissão por conta/loja |
