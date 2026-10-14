@@ -3211,6 +3211,48 @@ export type Database = {
           },
         ]
       }
+      shopee_escrow_releases: {
+        Row: {
+          order_sn: string
+          organization_id: string
+          payout_amount: number | null
+          released_at: string
+          shopee_shop_id: string
+          synced_at: string
+        }
+        Insert: {
+          order_sn: string
+          organization_id: string
+          payout_amount?: number | null
+          released_at: string
+          shopee_shop_id: string
+          synced_at?: string
+        }
+        Update: {
+          order_sn?: string
+          organization_id?: string
+          payout_amount?: number | null
+          released_at?: string
+          shopee_shop_id?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_escrow_releases_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "shopee_escrow_releases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopee_item_models: {
         Row: {
           available_stock: number | null
@@ -3834,6 +3876,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           environment: string
+          escrow_releases_read_from: string | null
+          escrow_releases_synced_until: string | null
           id: string
           last_error: string | null
           items_hydrate_locked_until: string | null
@@ -3859,6 +3903,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           environment: string
+          escrow_releases_read_from?: string | null
+          escrow_releases_synced_until?: string | null
           id?: string
           last_error?: string | null
           items_hydrate_locked_until?: string | null
@@ -3884,6 +3930,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           environment?: string
+          escrow_releases_read_from?: string | null
+          escrow_releases_synced_until?: string | null
           id?: string
           last_error?: string | null
           items_hydrate_locked_until?: string | null
@@ -5895,6 +5943,91 @@ export type Database = {
           unidades: number | null
         }[]
       }
+      get_shopee_repasse_daily: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          dia: string
+          liberacoes_sem_valor: number
+          liberado: number | null
+          pedidos: number
+        }[]
+      }
+      get_shopee_repasse_overview: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-451): TOTAL sem conta; repasse nunca lido com tudo nulo.
+          account_id: string | null
+          account_name: string | null
+          cobertura_completa: boolean | null
+          diferenca: number | null
+          environment: string | null
+          liberacoes_sem_valor: number | null
+          liberado: number | null
+          lido_ate: string | null
+          nivel: string
+          pedidos_com_previsto: number | null
+          pedidos_divergentes: number | null
+          pedidos_liberados: number | null
+          previsto: number | null
+        }[]
+      }
+      get_shopee_repasse_pendente: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-451): TOTAL sem conta; repasse nunca lido com tudo nulo.
+          a_liberar: number | null
+          account_id: string | null
+          account_name: string | null
+          environment: string | null
+          lido_ate: string | null
+          lido_desde: string | null
+          mais_antigo: string | null
+          nivel: string
+          pedidos: number | null
+          pedidos_com_devolucao: number | null
+          pedidos_completos: number | null
+          pedidos_sem_financeiro: number | null
+        }[]
+      }
+      get_shopee_repasses: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+          p_order_sn?: string | null
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-451): o pedido pode nao estar lido (previsto, situacao e criacao nulos).
+          diferenca_do_pedido: number | null
+          environment: string
+          liberacoes_do_pedido: number
+          order_sn: string
+          order_status: string | null
+          payout_amount: number | null
+          previsto: number | null
+          released_at: string
+          shop_name: string
+          shopee_created_at: string | null
+          shopee_shop_id: string
+          total_count: number
+        }[]
+      }
       get_shopee_returns: {
         Args: {
           p_account_ids?: string[] | null
@@ -6081,6 +6214,16 @@ export type Database = {
           p_read_until: string
           p_shopee_shop_id: string
           p_synced_at?: string
+        }
+        Returns: number
+      }
+      shopee_upsert_escrow_releases: {
+        Args: {
+          p_from: string
+          p_repasses: Json
+          p_shopee_shop_id: string
+          p_synced_at?: string
+          p_until: string
         }
         Returns: number
       }

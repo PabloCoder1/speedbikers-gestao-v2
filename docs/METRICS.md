@@ -605,6 +605,19 @@ Lidas por `get_shopee_ads_overview` e `get_shopee_ads_daily`, do desempenho diá
 - **Cobertura:** dentro da leitura (`ads_read_from`/`ads_read_until`), dia sem linha é dia sem anúncio (0); o resumo diz se o período está inteiro coberto. Loja nunca lida: NULO.
 - **Não soma com o Ads do ML** (5G): atribuições diferentes.
 
+## 5W. Repasse da Shopee (D-451) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`, das liberações do escrow por pedido (`v2.payment.get_escrow_list`).
+
+| Id | Definição |
+|---|---|
+| `shopee_repasse_liberado` | `SUM(payout_amount)` das liberações, pelo **dia da liberação** (São Paulo) — não o da venda. Liberação sem valor fica fora da soma e é contada à parte. |
+| `shopee_repasse_diferenca` | Por pedido liberado no período: a soma de **todas** as liberações dele menos o `escrow_amount` (o previsto, 5S). Desconhecida se o financeiro não foi lido ou se alguma liberação veio sem valor. Conciliação: não entra no recebido nem no resultado. |
+| `shopee_a_liberar` | Retrato de agora: `SUM(escrow_amount)` dos pedidos válidos sem liberação lida, **criados depois do início da leitura** (um anterior pode ter sido liberado antes dela); os sem financeiro são contados. |
+
+- **Cobertura:** liberação fora da leitura (`escrow_releases_read_from` até o marco) é desconhecida; o resumo diz se o período está coberto, tolerando 2 h de atraso no fim. Loja nunca lida: NULO; lida sem repasse: 0.
+- **Não muda o recebido** (`shopee_recebido` segue o `escrow_amount`): o repasse é o realizado ao lado do previsto.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

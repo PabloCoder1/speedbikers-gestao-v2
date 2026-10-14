@@ -345,6 +345,8 @@ describe("catálogo de métricas", () => {
       "resultado_contribuicao",
       "resultado_venda",
       "roas",
+      // D-451: o repasse da Shopee (a liberar, diferenca, liberado).
+      "shopee_a_liberar",
       // D-449: Ads CPC da loja Shopee (ACOS, investimento, vendas com Ads, ROAS, TACoS).
       "shopee_acos",
       // D-443: a composicao do recebido da Shopee.
@@ -360,6 +362,8 @@ describe("catálogo de métricas", () => {
       "shopee_receita_bruta",
       // D-439: o grao de SKU da receita da Shopee.
       "shopee_receita_item",
+      "shopee_repasse_diferenca",
+      "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
       "shopee_roas",
@@ -3395,6 +3399,7 @@ describe("vendas Shopee (D-430)", () => {
 
     // D-437 acrescentou as cinco do faturamento (METRICS 5U); D-443, a composicao.
     expect(definicoes.rows.map((r) => r.id)).toEqual([
+      "shopee_a_liberar",
       "shopee_acos",
       "shopee_composicao_recebido",
       "shopee_custo_produtos",
@@ -3406,6 +3411,8 @@ describe("vendas Shopee (D-430)", () => {
       "shopee_receita_ads",
       "shopee_receita_bruta",
       "shopee_receita_item",
+      "shopee_repasse_diferenca",
+      "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
       "shopee_roas",
@@ -4623,6 +4630,289 @@ describe("faturamento da Shopee (D-437)", () => {
     );
 
     expect(rows).toHaveLength(5);
+  });
+});
+
+/*
+  D-451: repasse da Shopee (C-64). Cada liberação do escrow (get_escrow_list)
+  com a cobertura da leitura; o liberado pelo dia da liberação contra o
+  previsto (escrow_amount) por pedido, somando todas as liberações dele; o "a
+  liberar" só de pedidos válidos criados depois do início da leitura; loja de
+  teste fora do TOTAL; nunca lida nula.
+*/
+describe("Repasse da Shopee (D-451)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d451";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d451";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d451";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d451";
+  const LOJA = "dddd4510-0000-4000-8000-0000000a0451";
+  const SEM_REPASSE = "dddd4510-0000-4000-8000-0000000b0451";
+  const SANDBOX = "dddd4510-0000-4000-8000-0000000c0451";
+  const NUNCA = "dddd4510-0000-4000-8000-0000000d0451";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+  // 01/10 à meia-noite de São Paulo: o início da leitura.
+  const INICIO = "2026-10-01T03:00:00.000Z";
+  const LIDO_ATE = new Date().toISOString();
+
+  const gravar = async (loja: string, repasses: unknown[], de: string, ate: string, quando = "2026-10-12T12:00:00Z") =>
+    (
+      await client.query<{ n: number }>("select public.shopee_upsert_escrow_releases($1, $2::jsonb, $3, $4, $5) as n", [
+        loja,
+        JSON.stringify(repasses),
+        de,
+        ate,
+        quando,
+      ])
+    ).rows[0]?.n;
+
+  const repasse = (order_sn: string, released_at: string, payout_amount: number | null) => ({ order_sn, released_at, payout_amount });
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d451@rls.test'), ($2::uuid, 'analista-d451@rls.test'), ($3::uuid, 'membro-d451@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-451', 'org-d451') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $5, 'live', 990451001, 'Loja Real', 'CONNECTED', now()),
+              ($2, $5, 'live', 990451002, 'Sem Repasse', 'CONNECTED', now()),
+              ($3, $5, 'sandbox', 990451003, 'Teste', 'CONNECTED', now()),
+              ($4, $5, 'live', 990451004, 'Nunca Lida', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, SEM_REPASSE, SANDBOX, NUNCA, ORG],
+    );
+    // Os pedidos da loja real: (pedido, situação, criado em, previsto; nulo = financeiro não lido, devoluções).
+    const pedidos: [string, string, string, number | null, string[] | null][] = [
+      ["P1", "COMPLETED", "2026-10-05T12:00:00Z", 100, null],
+      ["P2", "COMPLETED", "2026-10-06T12:00:00Z", 50, null],
+      ["P3", "SHIPPED", "2026-10-08T12:00:00Z", 80, null],
+      ["P4", "SHIPPED", "2026-10-09T12:00:00Z", null, null],
+      ["P5", "CANCELLED", "2026-10-08T12:00:00Z", 60, null],
+      // Antes do início da leitura: pode ter sido liberado antes dela.
+      ["P6", "COMPLETED", "2026-09-20T12:00:00Z", 90, null],
+      ["P7", "COMPLETED", "2026-10-07T12:00:00Z", 70, ["R1"]],
+      ["P8", "COMPLETED", "2026-10-06T13:00:00Z", 40, null],
+    ];
+
+    for (const [sn, situacao, criado, previsto, devolucoes] of pedidos) {
+      await client.query(
+        `insert into public.shopee_orders
+           (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+            escrow_amount, financials_synced_at, order_income, return_order_sns)
+         values ($1, $2, $3, $4, $5, $5, $5, $6, case when $6::numeric is null then null else now() end,
+                 case when $6::numeric is null then null else '{}'::jsonb end, $7)
+         on conflict do nothing`,
+        [LOJA, ORG, sn, situacao, criado, previsto, devolucoes],
+      );
+    }
+
+    // Um pedido pendente na loja de teste: fora do TOTAL do a liberar.
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at, escrow_amount, financials_synced_at, order_income)
+       values ($1, $2, 'T1', 'SHIPPED', '2026-10-08T12:00:00Z', '2026-10-08T12:00:00Z', '2026-10-08T12:00:00Z', 500, now(), '{}'::jsonb)
+       on conflict do nothing`,
+      [SANDBOX, ORG],
+    );
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SEM_REPASSE, SANDBOX, NUNCA]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("grava a janela: liberação fora dela não entra, a releitura mais nova vale e a cobertura só cresce", async () => {
+    expect(
+      await gravar(
+        LOJA,
+        [
+          repasse("P1", "2026-10-10T15:00:00Z", 100),
+          repasse("P2", "2026-10-10T16:00:00Z", 30),
+          // O mesmo pedido liberado de novo no dia seguinte.
+          repasse("P2", "2026-10-11T15:00:00Z", 25),
+          // Um pedido que o sistema não leu.
+          repasse("X9", "2026-10-11T18:00:00Z", 9),
+          repasse("P8", "2026-10-11T19:00:00Z", null),
+          // Fora do periodo do resumo: o P8 tem uma liberacao sem valor, entao a diferenca dele e desconhecida.
+          repasse("P8", "2026-10-12T12:00:00Z", 15),
+          repasse("FORA", "2026-09-15T12:00:00Z", 999),
+        ],
+        INICIO,
+        LIDO_ATE,
+      ),
+    ).toBe(6);
+    // Releitura: o valor do X9 corrigido.
+    expect(await gravar(LOJA, [repasse("X9", "2026-10-11T18:00:00Z", 10)], "2026-10-11T00:00:00Z", "2026-10-12T00:00:00Z", "2026-10-13T12:00:00Z")).toBe(1);
+    // Releitura mais velha que a guardada não sobrescreve.
+    expect(await gravar(LOJA, [repasse("P1", "2026-10-10T15:00:00Z", 1)], "2026-10-10T00:00:00Z", "2026-10-11T00:00:00Z", "2026-10-11T12:00:00Z")).toBe(0);
+    await gravar(SEM_REPASSE, [], INICIO, LIDO_ATE);
+    await gravar(SANDBOX, [repasse("S1", "2026-10-10T14:00:00Z", 999)], INICIO, LIDO_ATE);
+
+    const { rows } = await client.query<{ desde: string; ate: string; fora: string; x9: string }>(
+      `select escrow_releases_read_from = $2::timestamptz as desde, escrow_releases_synced_until = $3::timestamptz as ate,
+              (select count(*) from public.shopee_escrow_releases where shopee_shop_id = $1 and order_sn = 'FORA')::text as fora,
+              (select payout_amount::text from public.shopee_escrow_releases where shopee_shop_id = $1 and order_sn = 'X9') as x9
+         from public.shopee_shops where id = $1`,
+      [LOJA, INICIO, LIDO_ATE],
+    );
+
+    // As janelas menores de dentro não encolheram a cobertura.
+    expect(rows[0]).toEqual({ desde: true, ate: true, fora: "0", x9: "10.00" });
+  });
+
+  it("o resumo pelo dia da liberação: liberado, previsto e a diferença por pedido; lida sem repasse em 0; nunca lida nula; teste fora do TOTAL", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, cobertura_completa, liberado, pedidos_liberados, liberacoes_sem_valor, previsto, pedidos_com_previsto,
+              diferenca, pedidos_divergentes
+         from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}') order by nivel desc, account_name`,
+    );
+    const total = {
+      cobertura_completa: true,
+      liberado: "165.00",
+      pedidos_liberados: "4",
+      liberacoes_sem_valor: "1",
+      previsto: "190.00",
+      pedidos_com_previsto: "3",
+      diferenca: "5.00",
+      pedidos_divergentes: "1",
+    };
+
+    expect(linhas).toEqual([
+      { nivel: "TOTAL", account_name: null, ...total },
+      { nivel: "CONTA", account_name: "Loja Real", ...total },
+      {
+        nivel: "CONTA",
+        account_name: "Nunca Lida",
+        cobertura_completa: null,
+        liberado: null,
+        pedidos_liberados: null,
+        liberacoes_sem_valor: null,
+        previsto: null,
+        pedidos_com_previsto: null,
+        diferenca: null,
+        pedidos_divergentes: null,
+      },
+      {
+        nivel: "CONTA",
+        account_name: "Sem Repasse",
+        cobertura_completa: true,
+        liberado: "0.00",
+        pedidos_liberados: "0",
+        liberacoes_sem_valor: "0",
+        previsto: "0.00",
+        pedidos_com_previsto: "0",
+        diferenca: "0.00",
+        pedidos_divergentes: "0",
+      },
+      expect.objectContaining({ account_name: "Teste", liberado: "999.00" }),
+    ]);
+
+    // Só o dia 10: o P2 liberou 30 nele, mas a diferença dele soma as duas liberações (55 - 50).
+    const [dia10] = await asUser<Linha>(
+      ADMIN,
+      `select liberado, previsto, diferenca from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${DE}') where nivel = 'TOTAL'`,
+    );
+
+    expect(dia10).toEqual({ liberado: "130.00", previsto: "150.00", diferenca: "5.00" });
+
+    // Começando antes da leitura, a cobertura não é completa.
+    const [antes] = await asUser<Linha>(ADMIN, `select cobertura_completa from public.get_shopee_repasse_overview('${ORG}', '2026-09-25', '${ATE}') where nivel = 'TOTAL'`);
+
+    expect(antes?.cobertura_completa).toBe(false);
+  });
+
+  it("a série por dia fecha com o TOTAL, sem a loja de teste; a lista traz o previsto e a diferença do pedido", async () => {
+    const dias = await asUser<Linha>(ADMIN, `select dia::text, liberado, pedidos, liberacoes_sem_valor from public.get_shopee_repasse_daily('${ORG}', '${DE}', '${ATE}')`);
+
+    expect(dias).toEqual([
+      { dia: DE, liberado: "130.00", pedidos: "2", liberacoes_sem_valor: "0" },
+      { dia: ATE, liberado: "35.00", pedidos: "3", liberacoes_sem_valor: "1" },
+    ]);
+
+    const lista = await asUser<Linha>(
+      ADMIN,
+      `select order_sn, environment, payout_amount, previsto, diferenca_do_pedido, liberacoes_do_pedido, order_status, total_count
+         from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}')`,
+    );
+
+    expect(lista).toEqual([
+      { order_sn: "P8", environment: "live", payout_amount: null, previsto: "40.00", diferenca_do_pedido: null, liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "X9", environment: "live", payout_amount: "10.00", previsto: null, diferenca_do_pedido: null, liberacoes_do_pedido: "1", order_status: null, total_count: "6" },
+      { order_sn: "P2", environment: "live", payout_amount: "25.00", previsto: "50.00", diferenca_do_pedido: "5.00", liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "P2", environment: "live", payout_amount: "30.00", previsto: "50.00", diferenca_do_pedido: "5.00", liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "P1", environment: "live", payout_amount: "100.00", previsto: "100.00", diferenca_do_pedido: "0.00", liberacoes_do_pedido: "1", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "S1", environment: "sandbox", payout_amount: "999.00", previsto: null, diferenca_do_pedido: null, liberacoes_do_pedido: "1", order_status: null, total_count: "6" },
+    ]);
+
+    const pagina = await asUser<Linha>(ADMIN, `select order_sn, total_count from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}', null, 'P2', 1, 1)`);
+
+    expect(pagina).toEqual([{ order_sn: "P2", total_count: "2" }]);
+  });
+
+  it("o a liberar: válidos sem liberação criados depois do início; cancelado e anterior fora; nunca lida nula", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, pedidos, a_liberar, pedidos_sem_financeiro, pedidos_completos, pedidos_com_devolucao, mais_antigo::text,
+              lido_desde = '${INICIO}'::timestamptz as desde
+         from public.get_shopee_repasse_pendente('${ORG}') order by nivel desc, account_name`,
+    );
+    // P3 (80), P4 (sem financeiro) e P7 (70, completo, com devolução).
+    const loja = {
+      pedidos: "3",
+      a_liberar: "150.00",
+      pedidos_sem_financeiro: "1",
+      pedidos_completos: "1",
+      pedidos_com_devolucao: "1",
+      mais_antigo: "2026-10-07 12:00:00+00",
+      desde: true,
+    };
+
+    expect(linhas).toEqual([
+      { nivel: "TOTAL", account_name: null, ...loja },
+      { nivel: "CONTA", account_name: "Loja Real", ...loja },
+      {
+        nivel: "CONTA",
+        account_name: "Nunca Lida",
+        pedidos: null,
+        a_liberar: null,
+        pedidos_sem_financeiro: null,
+        pedidos_completos: null,
+        pedidos_com_devolucao: null,
+        mais_antigo: null,
+        desde: null,
+      },
+      expect.objectContaining({ account_name: "Sem Repasse", pedidos: "0", a_liberar: "0.00", mais_antigo: null }),
+      expect.objectContaining({ account_name: "Teste", pedidos: "1", a_liberar: "500.00" }),
+    ]);
+  });
+
+  it("a permissão por loja vale; só o worker grava; período inválido é recusado", async () => {
+    const analista = await asUser<Linha>(ANALISTA, "select distinct shopee_shop_id from public.shopee_escrow_releases");
+
+    expect(analista).toEqual([{ shopee_shop_id: LOJA }]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_escrow_releases")).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}')`)).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_repasse_pendente('${ORG}')`)).toEqual([]);
+    await expect(asUser(ADMIN, `select public.shopee_upsert_escrow_releases('${LOJA}', '[]'::jsonb, now(), now())`)).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_repasse_daily('${ORG}', '${ATE}', '${DE}')`)).rejects.toThrow(/periodo invalido/);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}', null, null, 500)`)).rejects.toThrow(/p_limit/);
+    await expect(asAnon(`select * from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
   });
 });
 
