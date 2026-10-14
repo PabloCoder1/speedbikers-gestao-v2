@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **425** (D-001 a D-435).
+Decisões registradas: **426** (D-001 a D-436).
 
 ## Por domínio
 
@@ -74,7 +74,7 @@ Decisões registradas: **425** (D-001 a D-435).
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 
-### banco/rls (38)
+### banco/rls (39)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -114,6 +114,7 @@ Decisões registradas: **425** (D-001 a D-435).
 - **D-403** — Os alertas da central viram itens da Central de Acoes, um episodio por assunto, gravados por uma funcao SQL a partir dos detectores que ja existem
 - **D-410** — A margem minima dos produtos e o piso do ROAS contra a meta viram limites da organizacao, lidos pelo SQL que conta
 - **D-428** — Shopee, fatia 4a: o catalogo da loja em tabelas proprias e o vinculo pelo SKU do anuncio, derivado em SQL
+- **D-436** — Vendas por marketplace e o consolidado no SQL (E4, fatia 6b de vendas): soma so o que tem a mesma semantica, o sandbox e a loja nunca lida ficam fora das somas, e o ML e identico a get_sales_summary
 
 ### estoque (31)
 

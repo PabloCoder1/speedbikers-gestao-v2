@@ -5549,6 +5549,51 @@ export type Database = {
         // apps/web/lib/quem-paga-frete.ts.
         Returns: Json
       }
+      get_marketplace_sales_daily: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          compras: number
+          dia: string
+          // CORRECAO MANUAL (D-436): NULO = a linha do TOTAL do dia.
+          marketplace: "ML" | "SHOPEE" | null
+          pedidos_sem_receita: number
+          receita_bruta: number | null
+          unidades: number
+        }[]
+      }
+      get_marketplace_sales_summary: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-436): o que a definicao garante por nivel --
+          // TOTAL sem marketplace/conta; MARKETPLACE sem conta; CONTA com tudo.
+          account_id: string | null
+          account_name: string | null
+          compras: number | null
+          environment: string | null
+          marketplace: "ML" | "SHOPEE" | null
+          nivel: "TOTAL" | "MARKETPLACE" | "CONTA"
+          pedidos_ml: number | null
+          pedidos_sem_receita: number | null
+          pedidos_sem_recebido: number | null
+          receita_bruta: number | null
+          recebido: number | null
+          ticket_medio: number | null
+          ultima_atualizacao: string | null
+          unidades: number | null
+        }[]
+      }
       get_meta_do_mes: {
         Args: {
           p_hoje?: string
