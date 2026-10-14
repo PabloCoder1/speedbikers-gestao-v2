@@ -13,7 +13,8 @@ import { removeMember } from "./actions";
  *
  * - **Suspender** mantém tudo e só impede a pessoa de entrar. Reversível. Mora
  *   no Auth, então passa pela `api` (service role, D-012).
- * - **Remover da organização** apaga o vínculo e o alcance nas contas. O
+ * - **Remover da organização** apaga o vínculo e o alcance nas contas e nas
+ *   lojas Shopee (estas pelo gatilho do banco, D-433). O
  *   histórico fica. Mora numa Server Action sob RLS, com `guard_last_admin`.
  *
  * **Os dois pedem confirmação**, e a confirmação diz o efeito com o nome da
@@ -129,7 +130,7 @@ export function AcessoDoMembro({
               <p className="sb-zona-acesso-texto">
                 {ehUltimoAdmin
                   ? "Indisponível: é o único ADMIN. Promova outra pessoa antes."
-                  : "Apaga o vínculo e o acesso às contas. O histórico continua."}
+                  : "Apaga o vínculo e o acesso às contas e às lojas. O histórico continua."}
               </p>
             </div>
             <button
@@ -154,7 +155,7 @@ export function AcessoDoMembro({
               `Suspender o acesso de ${nome}? A pessoa não consegue mais entrar. Uma sessão já aberta vale até o token expirar (até 1 hora).`}
             {confirmando === "reativar" && `Reativar o acesso de ${nome}? A pessoa volta a entrar com a senha que já tinha.`}
             {confirmando === "remover" &&
-              `Remover ${nome} desta organização? O vínculo e o acesso às contas são apagados. Para voltar, será preciso convidar de novo.`}
+              `Remover ${nome} desta organização? O vínculo e o acesso às contas e às lojas são apagados. Para voltar, será preciso convidar de novo.`}
           </p>
           <div className="sb-confirmacao-botoes">
             <button

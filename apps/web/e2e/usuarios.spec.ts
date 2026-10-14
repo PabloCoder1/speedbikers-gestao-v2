@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_SHOPEE_SHOP } from "./constants.js";
 import { login, loginAs } from "./helpers.js";
 
 /**
@@ -240,10 +240,82 @@ test("/usuarios: o convite pede e-mail, papel e alcance — e o alcance some par
     a lista de contas some para ele em vez de ficar ali sem efeito.
   */
   await expect(caixa.getByText("Contas que essa pessoa vai alcançar")).toBeVisible();
+  // As lojas Shopee seguem a mesma regra (D-434), com a loja de teste marcada.
+  await expect(caixa.getByText("Lojas Shopee que essa pessoa vai alcançar")).toBeVisible();
+  await expect(caixa.getByRole("checkbox", { name: `${E2E_SHOPEE_SHOP.name} (teste)` })).toBeVisible();
 
   await caixa.getByLabel("Papel").selectOption("ADMIN");
 
   await expect(caixa.getByText("Contas que essa pessoa vai alcançar")).toHaveCount(0);
+  await expect(caixa.getByText("Lojas Shopee que essa pessoa vai alcançar")).toHaveCount(0);
+});
+/**
+ * A LOJA SHOPEE POR PESSOA (D-434), sobre a permissão por loja de D-433: o
+ * ADMIN concede e retira a loja na gaveta, como faz com as contas, e o efeito
+ * chega à tela de quem a recebe — o GESTOR passa a ver a loja em
+ * `/vendas/shopee` e deixa de ver ao perder. É a prova de ponta a ponta: a
+ * escrita direta sob a RLS, o histórico do banco e a leitura por loja.
+ *
+ * **Deixa o banco como encontrou**: termina retirando a loja, e começa
+ * desfazendo uma concessão que uma rodada anterior, caída no meio, tenha
+ * deixado.
+ */
+test("/usuarios: o ADMIN concede e retira a loja Shopee do GESTOR, e o efeito chega à tela dele", async ({
+  page,
+  browser,
+}) => {
+  const rotuloDaLoja = `${E2E_SHOPEE_SHOP.name} (teste)`;
+
+  await login(page, "/usuarios");
+
+  const gerenciar = page.getByRole("region", { name: "Gerenciar acessos" });
+
+  // A coluna existe porque a organização tem loja; o ADMIN alcança todas pelo papel.
+  await expect(gerenciar.getByRole("columnheader", { name: "Lojas Shopee permitidas" })).toBeVisible();
+  await expect(gerenciar.getByRole("row").filter({ hasText: "e2e@speedbikers.test" })).toContainText("Todas as lojas");
+
+  await gerenciar.getByRole("button", { name: "E2E Gestor", exact: true }).click();
+
+  const gaveta = page.getByRole("dialog", { name: /Detalhe do usuário/ });
+  const caixa = gaveta.getByRole("group", { name: "Lojas Shopee permitidas" }).getByRole("checkbox", { name: rotuloDaLoja });
+
+  await expect(caixa).toBeVisible();
+
+  /*
+    O controle é CONTROLADO pelo servidor: o clique chama a Server Action e a
+    caixa só muda quando a página volta com a concessão. Por isso `click` e a
+    espera pelo estado, e não `check`, que exigiria a troca na mesma hora.
+  */
+  if (await caixa.isChecked()) {
+    await caixa.click();
+    await expect(caixa).not.toBeChecked();
+  }
+
+  // O GESTOR, numa sessão própria: sem a loja, a Shopee não existe para ele.
+  const baseURL = test.info().project.use.baseURL;
+  const contexto = await browser.newContext(baseURL === undefined ? {} : { baseURL });
+  const visao = await contexto.newPage();
+
+  await loginAs(visao, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, "/vendas/shopee");
+  await expect(visao.getByText("Nenhuma loja Shopee conectada.")).toBeVisible();
+
+  // Concede: o histórico do banco diz, e a loja chega à tela do GESTOR.
+  await caixa.click();
+  await expect(caixa).toBeChecked();
+  await expect(gaveta.getByText("ganhou acesso à loja Shopee").first()).toBeVisible();
+
+  await visao.reload();
+  await expect(visao.getByRole("table", { name: "Vendas da Shopee por loja" })).toContainText(E2E_SHOPEE_SHOP.name);
+
+  // Retira: some de novo, e o banco volta ao seed.
+  await caixa.click();
+  await expect(caixa).not.toBeChecked();
+  await expect(gaveta.getByText("perdeu acesso à loja Shopee").first()).toBeVisible();
+
+  await visao.reload();
+  await expect(visao.getByText("Nenhuma loja Shopee conectada.")).toBeVisible();
+
+  await contexto.close();
 });
 
 test("/usuarios: o GESTOR não vê o botão de convidar", async ({ page }) => {

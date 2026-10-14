@@ -51,18 +51,19 @@
 
 **Concluído**
 - T0 — auditoria das telas e mapa de lacunas (14/10): `docs/MULTICHANNEL_SCREENS.md`.
-- T1 — **em código e validada localmente, não publicada** (D-431, branch `feat/multicanal-t1-seletor`): seletor de marketplace no início da barra de `/vendas`, `/vendas/shopee`, `/anuncios` e `/anuncios/shopee` (só com os dois canais; leva o período ou a busca, nunca conta, loja, marca ou estado); período personalizado em `/vendas/shopee`; `/contas` e o menu como "Contas e lojas"; os quatro jobs `shopee.*` com cadência horária em `/saude` (C-09). Validado: `check`, `build`, `docs:check`, 13 unitários novos, e2e 41/41 nas telas tocadas e 208/208 na suíte inteira num stack isolado (4 só passaram reexecutadas, por ambiente — D-431).
+- T1 — **PR #149, CI verde, aguardando merge** (D-431): seletor de marketplace no início da barra de `/vendas`, `/vendas/shopee`, `/anuncios` e `/anuncios/shopee` (só com os dois canais; leva o período ou a busca, nunca conta, loja, marca ou estado); período personalizado em `/vendas/shopee`; `/contas` e o menu como "Contas e lojas"; os quatro jobs `shopee.*` com cadência horária em `/saude` (C-09). Validado: `check`, `build`, `docs:check`, 13 unitários novos, e2e 41/41 nas telas tocadas e 208/208 na suíte inteira num stack isolado (4 só passaram reexecutadas, por ambiente — D-431).
 
 **Em andamento**
-- Publicar a T1: PR depois do aval do dono. Se o PR #147 (A1) entrar antes, rebase: fico com este arquivo e o `AGENTS.md` da `main` e reaplico só esta seção; a D-431 vai antes da D-432 no `DECISIONS.md`.
+- T2 — concessão de loja Shopee em `/usuarios` (D-434, consome o C-54): **em código e validada localmente**, na branch `feat/multicanal-t2-lojas-usuarios`, empilhada sobre o #148 e a T1. Só abre PR depois do #147, do #148 e do #149; publica depois da migration `20261014190000` e do deploy da api do #148.
+- Se o #147 entrar antes do #149, rebase: fico com este arquivo e o `AGENTS.md` da `main` e reaplico só esta seção; a D-431 vai antes da D-432 no `DECISIONS.md`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T2 concessão de loja em `/usuarios` (C-54, E2) → T3 seletor sobre `marketplace_accounts` e as lojas em sincronização, integrações, configurações e shell (C-52, E3) → T4 `/vendas` única com "todos" (C-53, E4) → T5 `/faturamento` (E5) → T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
+- T3 seletor sobre `marketplace_accounts` e as lojas em sincronização, integrações, configurações e shell (C-52, E3) → T4 `/vendas` única com "todos" (C-53, E4) → T5 `/faturamento` (E5) → T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
 - Selo "Teste" no painel Shopee do SKU (C-06) quando a C-55 estiver em produção.
 - T-R5: sobreposição de texto no cartão "Por loja" de `/vendas/shopee` no celular (preexistente, D-430).
 
 **Bloqueios**
-- T2 a T6 esperam os contratos C-52 a C-54 e os de E5/E6. Nenhuma tela nova lista loja Shopee antes de E2 (risco S1).
+- T3 a T6 esperam os contratos C-52 e C-53 e os de E5/E6. A T2 espera a decisão do dono sobre a regra da E2 (o #148 só entra com ela).
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
@@ -79,7 +80,7 @@
 | C-02 | `/vendas` e Home com "todos", "ml", "shopee" e várias contas | A2 | — | aguarda C-53 (T4) | ML idêntico ao de hoje; a web não soma linha |
 | C-03 | `/faturamento` com marketplace e a linha por loja | A2 | — | aguarda E5 (T5) | componente não comparável nunca somado |
 | C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | A2 | — | aguarda E6 (T6) | — |
-| C-05 | Concessão de loja em `/usuarios` | A2 | — | aguarda C-54 (T2) | usuário sem a loja não a vê em tela nenhuma |
+| C-05 | Concessão de loja em `/usuarios` | A2 | — | em código (T2, D-434), sobre o #148 | usuário sem a loja não a vê em tela nenhuma |
 | C-06 | Selo de loja de teste no painel Shopee do SKU | A2 | — | **pedido novo ao A1**: `get_sku_shopee_listings` devolver o ambiente | loja sandbox marcada "Teste" |
 | C-07 | `/produtos` sem chamar de "sem anúncio/venda" o SKU que só a Shopee tem | A2 | — | **pedido novo ao A1**: `get_products_overview` com a Shopee (depois de E6) | — |
 | C-08 | Busca universal achando loja, anúncio e pedido Shopee | A2 | — | **pedido novo ao A1**: `search_entities` com a Shopee | — |

@@ -95,7 +95,48 @@ export async function revokeAccountAccess(userId: string, mlAccountId: string): 
 }
 
 /**
+ * O ALCANCE NAS LOJAS SHOPEE (D-434), o espelho das duas de cima. A regra é do
+ * banco (D-433): só o ADMIN da organização da loja escreve, e só para quem é
+ * membro dela — a recusa chega como a das contas (42501), e `traduzir` já a diz.
+ */
+export async function grantShopeeShopAccess(userId: string, shopeeShopId: string): Promise<AccessResult> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("user_shopee_shop_permissions")
+    .insert({ user_id: userId, shopee_shop_id: shopeeShopId });
+
+  if (error !== null) {
+    return { ok: false, message: traduzir(error) };
+  }
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, message: null };
+}
+
+export async function revokeShopeeShopAccess(userId: string, shopeeShopId: string): Promise<AccessResult> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("user_shopee_shop_permissions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("shopee_shop_id", shopeeShopId);
+
+  if (error !== null) {
+    return { ok: false, message: traduzir(error) };
+  }
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, message: null };
+}
+
+/**
  * REMOVER DA ORGANIZAÇÃO (D-354) — apaga o vínculo e o alcance nas contas.
+ * As lojas Shopee saem pelo próprio banco (D-433: o gatilho
+ * `organization_members_revoke_shopee_shops`, com evento por loja).
  *
  * O banco já sabia fazer isto desde D-175 (`organization_members_admin_writes`
  * é `for all`); faltava a tela. O que acontece, na ordem:

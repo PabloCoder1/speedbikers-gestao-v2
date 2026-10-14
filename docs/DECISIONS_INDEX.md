@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **425** (D-001 a D-433).
+Decisões registradas: **426** (D-001 a D-434).
 
 ## Por domínio
 
@@ -200,7 +200,7 @@ Decisões registradas: **425** (D-001 a D-433).
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 
-### mercado-livre (73)
+### mercado-livre (74)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -275,6 +275,7 @@ Decisões registradas: **425** (D-001 a D-433).
 - **D-429** — Shopee, fatia 4b: o vinculo manual vence o SKU do anuncio, no desenho do Mercado Livre e em tabelas proprias
 - **D-430** — Shopee, fatia 6a: a venda Shopee tem definicao propria, o SKU e gravado no item como no Mercado Livre, e a tela por loja valida antes de qualquer soma
 - **D-433** — Shopee, permissao por loja (E2 da frente multicanal): a loja segue a regra da conta do Mercado Livre -- ADMIN alcanca todas, os demais as concedidas -- e ninguem perde visao no dia
+- **D-434** — Telas multicanais, etapa T2: a loja Shopee ganha em /usuarios o mesmo alcance da conta do Mercado Livre, e o convite confere no banco o que concedeu
 
 ### outros (64)
 

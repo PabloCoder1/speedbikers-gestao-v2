@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 
 import { CampoFoto } from "../../components/campo-foto";
 import { Icone } from "../../components/icons";
+import { lojasNaoConcedidas } from "../../lib/alcance-shopee";
 import { explicar404 } from "../../lib/api-desatualizada";
 import { salvarFoto } from "../../lib/foto-perfil";
 import { createClient } from "../../lib/supabase/browser";
@@ -44,25 +45,33 @@ const PAPEIS = [
   { valor: "OPERADOR", descricao: "Atende e opera o dia a dia." },
   { valor: "ANALISTA", descricao: "Lê tudo e analisa; não encerra anúncio." },
   { valor: "GESTOR", descricao: "Decide compra e republicação." },
-  { valor: "ADMIN", descricao: "Tudo, incluindo papéis e acessos — alcança todas as contas." },
+  { valor: "ADMIN", descricao: "Tudo, incluindo papéis e acessos — alcança todas as contas e lojas." },
 ] as const;
 
 type Estado =
   | { kind: "fechado" }
   | { kind: "aberto" }
   | { kind: "enviando" }
-  | { kind: "convidado"; link: string; fotoErro: string | null }
-  | { kind: "vinculado"; fotoErro: string | null }
+  | { kind: "convidado"; link: string; fotoErro: string | null; lojasAviso: string | null }
+  | { kind: "vinculado"; fotoErro: string | null; lojasAviso: string | null }
   | { kind: "ja_membro" }
   | { kind: "erro"; mensagem: string };
 
-export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): ReactNode {
+export function ConvidarUsuario({
+  accounts,
+  lojas,
+}: {
+  accounts: AccountOption[];
+  /** As lojas Shopee da organização (D-434); sem nenhuma, a escolha não aparece. */
+  lojas: AccountOption[];
+}): ReactNode {
   const router = useRouter();
   const [estado, setEstado] = useState<Estado>({ kind: "fechado" });
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [papel, setPapel] = useState<string>("OPERADOR");
   const [contas, setContas] = useState<string[]>([]);
+  const [lojasEscolhidas, setLojasEscolhidas] = useState<string[]>([]);
   const [foto, setFoto] = useState<Blob | null>(null);
 
   /** ADMIN alcança todas as contas por PAPEL: pedir contas para ele seria ruído. */
@@ -83,6 +92,42 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
     } catch (falha) {
       return falha instanceof Error ? falha.message : "A foto não foi salva.";
     }
+  }
+
+  /**
+   * AS LOJAS PEDIDAS FORAM DADAS? (D-434) A `api` no ar mais velha que a tela não
+   * conhece `shopeeShopIds` e o descarta calada: o convite vale e a pessoa entra
+   * sem as lojas. Conferir no banco, sob a RLS de quem convidou (ADMIN vê as
+   * concessões das lojas da organização), é o que impede a tela de afirmar o
+   * que não aconteceu.
+   */
+  async function conferirLojas(userId: string | undefined): Promise<string | null> {
+    const pedidas = pedeContas ? lojasEscolhidas : [];
+
+    if (pedidas.length === 0) return null;
+
+    if (userId === undefined) {
+      return "Não foi possível confirmar o acesso às lojas Shopee. Confira na gaveta da pessoa.";
+    }
+
+    const { data, error } = await createClient()
+      .from("user_shopee_shop_permissions")
+      .select("shopee_shop_id")
+      .eq("user_id", userId)
+      .in("shopee_shop_id", pedidas);
+
+    if (error !== null) {
+      return "Não foi possível confirmar o acesso às lojas Shopee. Confira na gaveta da pessoa.";
+    }
+
+    const faltam = lojasNaoConcedidas(
+      pedidas,
+      data.map((linha) => linha.shopee_shop_id),
+    ).length;
+
+    return faltam === 0
+      ? null
+      : `${String(faltam)} de ${String(pedidas.length)} lojas Shopee não foram concedidas — a API no ar pode ainda não conhecer lojas. Conceda na gaveta da pessoa.`;
   }
 
   async function convidar(): Promise<void> {
@@ -117,6 +162,7 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
           fullName: nome.trim().replace(/\s+/g, " "),
           role: papel,
           ...(pedeContas && contas.length > 0 ? { mlAccountIds: contas } : {}),
+          ...(pedeContas && lojasEscolhidas.length > 0 ? { shopeeShopIds: lojasEscolhidas } : {}),
         }),
       });
 
@@ -155,14 +201,14 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         return;
       }
 
-      const fotoErro = await enviarFoto(corpo?.userId);
+      const [fotoErro, lojasAviso] = await Promise.all([enviarFoto(corpo?.userId), conferirLojas(corpo?.userId)]);
 
       router.refresh();
 
       if (corpo?.status === "invited" && corpo.inviteLink !== undefined) {
-        setEstado({ kind: "convidado", link: corpo.inviteLink, fotoErro });
+        setEstado({ kind: "convidado", link: corpo.inviteLink, fotoErro, lojasAviso });
       } else {
-        setEstado({ kind: "vinculado", fotoErro });
+        setEstado({ kind: "vinculado", fotoErro, lojasAviso });
       }
     } catch {
       setEstado({ kind: "erro", mensagem: `Falha de conexão com a API em ${API_URL}.` });
@@ -174,6 +220,7 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
     setNome("");
     setEmail("");
     setContas([]);
+    setLojasEscolhidas([]);
     setFoto(null);
   }
 
@@ -312,6 +359,30 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
                       )}
                     </div>
                   )}
+
+                  {/* As lojas Shopee (D-434): a mesma regra das contas — some para ADMIN. */}
+                  {pedeContas && lojas.length > 0 && (
+                    <div className="sb-form-campo">
+                      <span>Lojas Shopee que essa pessoa vai alcançar</span>
+                      <div className="sb-contas-grade">
+                        {lojas.map((loja) => (
+                          <label key={loja.id} className="sb-conta-opcao">
+                            <input
+                              type="checkbox"
+                              checked={lojasEscolhidas.includes(loja.id)}
+                              disabled={enviando}
+                              onChange={(event) => {
+                                setLojasEscolhidas((atual) =>
+                                  event.target.checked ? [...atual, loja.id] : atual.filter((id) => id !== loja.id),
+                                );
+                              }}
+                            />
+                            <span>{loja.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 {estado.kind === "erro" && (
@@ -350,6 +421,12 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
                   </p>
                 )}
 
+                {estado.lojasAviso !== null && (
+                  <p role="alert" className="sb-campo-erro">
+                    O convite valeu, mas: {estado.lojasAviso}
+                  </p>
+                )}
+
                 <div className="sb-modal-acoes">
                   <button type="button" className="sb-button sb-button-primary" onClick={fechar}>
                     Concluir
@@ -369,6 +446,12 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
                 {estado.kind === "vinculado" && estado.fotoErro !== null && (
                   <p role="alert" className="sb-campo-erro">
                     A foto não foi salva: {estado.fotoErro}
+                  </p>
+                )}
+
+                {estado.kind === "vinculado" && estado.lojasAviso !== null && (
+                  <p role="alert" className="sb-campo-erro">
+                    {estado.lojasAviso}
                   </p>
                 )}
 
