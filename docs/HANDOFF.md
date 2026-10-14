@@ -19,8 +19,8 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00044-p8d` em `562b1e60` (D-430), api `api-00027-p7c` em `e037573f`, Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta do worker: `worker-00043-694`; fixo na revisão (`update-traffic --to-revisions`, D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261014150000` (D-430). **Próximas:** `20261014180000` e `20261014190000` (D-432/D-433), antes do worker e da api. Dono dispara e aprova; sem `--include-all`; nunca MCP. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4 e 6a no ar no sandbox; E1/E2 (D-432/D-433) em código; 5 (estoque) adiada para o Go Live (dono, 14/10); depois, 6b. A 5J segue com o detector de frete (D-405). |
+| **Migrations** | Produção até `20261014150000` (D-430). **Próximas:** `20261014180000`, `…190000` e `…200000` (D-432/433/435), antes do worker e da api. Dono dispara e aprova; sem `--include-all`; nunca MCP. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4 e 6a no ar no sandbox; E1–E3 (D-432/433/435) em código; 5 (estoque) adiada para o Go Live (dono, 14/10); depois, 6b. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 
@@ -76,7 +76,7 @@ e `docs/PERFORMANCE.md`.
 ## Riscos ativos
 
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
-  D-417/D-418 (o vigia pede um ato, ver D-418); canal externo e Cloud NAT são do dono. O app ML da V2
+  D-417/D-418, mas o vigia NUNCA foi agendado (`cron.job` vazio em 14/10; ato, D-435); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.

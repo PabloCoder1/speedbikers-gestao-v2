@@ -72,6 +72,10 @@ as de `user_shopee_shop_permissions`) — mesmas assinaturas, menos linhas
 para quem não alcança a loja. Valores monetários em `numeric` (BRL, `currency` devolvido quando há);
 ausente = NULO, nunca zero.
 
+### 3.0 Contas dos dois marketplaces — `marketplace_accounts` (C-52, D-435, em código)
+
+View `security_invoker`, lida com `supabase.from("marketplace_accounts")`: uma linha por conta ML e por loja Shopee que o chamador alcança (D-175, D-433). Colunas: `marketplace` (`ML` | `SHOPEE`), `account_id`, `organization_id`, `name`, `slug` (só ML; os filtros salvos usam `account=<slug>`), `shop_id` (só Shopee), `environment` (ML sempre `live`; Shopee `sandbox`|`live` — **sandbox nunca entra em total**), `connection_status` (ML: PENDING/CONNECTED/REVOKED/ERROR; Shopee: CONNECTED/ERROR), `last_error`, `connected_at`, `orders_synced_at` (ML: última reconciliação de pedidos que serviu; Shopee: último avanço do marco — NULO = nunca) e `authorization_expires_at` (só Shopee). Sem paginação (dezenas de linhas por organização).
+
 ### 3.1 Lojas
 
 | Contrato | Forma | Onde |
@@ -180,7 +184,7 @@ contrato NOVO (E4), e as RPCs do ML continuam como estão.
 | R1 | confiabilidade | **Pedido envenenado trava o financeiro da loja inteira.** Um erro definitivo da Shopee em UM pedido faz a execução falhar antes dos demais; o pedido nunca lido volta primeiro (`order by financials_synced_at nulls first`) em toda execução seguinte. Além disso, `common.error_not_found` nunca é reconhecido como "sem financeiro": o filtro compara o código SEM prefixo com a forma COM prefixo. É o defeito que D-428 corrigiu no catálogo, sem o espelho aqui | leitura de `shopee-order-financials-sync.ts`; sonda sobre `@sb/shopee` (`common.error_not_found` → `semFinanceiro=false`) | **corrigido em código (D-432)**; era alto com volume real |
 | R2 | integridade | O pedido é gravado em 4 chamadas sem transação (upsert do pedido → apaga itens → insere itens → resolve SKU). Falha no meio deixa pedido sem itens até a próxima leitura. Duas execuções na mesma loja (fila com 2 em paralelo; encadeamento do backfill + gatilho horário) podem gravar fora de ordem: o upsert não compara `update_time` e o marco é sobrescrito sem `greatest` | `shopee-orders-sync.ts` | **corrigido em código (D-432)** |
 | R3 | operação | Janela com mais de 200 páginas lança erro genérico, tratado como passageiro: a mesma janela se repete para sempre | `listarJanela` | **corrigido em código (D-432)**: falha sem repetir |
-| R4 | observabilidade | Shopee fora de `/sincronizacao`, do vigia de sincronização parada (D-417/D-418 lê só `ml_accounts`) e das notificações. Loja em ERROR, marco parado ou autorização perto de vencer (`auth_expires_at`) não avisam ninguém — o modo de falhar de D-217. Em `/saude` os jobs `shopee.*` aparecem, mas sem veredito de atraso (`JOB_CADENCE_MIN` não os conhece — arquivo do Agente 2) | `vigia_da_sincronizacao`; `apps/web/lib/sync-health.ts` | média |
+| R4 | observabilidade | Shopee fora de `/sincronizacao`, do vigia de sincronização parada (D-417/D-418 lê só `ml_accounts`) e das notificações. Loja em ERROR, marco parado ou autorização perto de vencer (`auth_expires_at`) não avisam ninguém — o modo de falhar de D-217. Em `/saude` os jobs `shopee.*` aparecem, mas sem veredito de atraso (`JOB_CADENCE_MIN` não os conhece — arquivo do Agente 2) | `vigia_da_sincronizacao`; `apps/web/lib/sync-health.ts` | **corrigido em código (D-435)** para loja parada e em ERROR; o veredito em `/saude` é a T1 do Agente 2 (C-09); autorização perto de vencer ainda sem aviso (só na view) |
 | R5 | credencial | Não há "desconectar loja" no app; revogar exige o painel da Shopee, e a loja só vai para ERROR quando a renovação é recusada | api e `/contas` | baixa |
 | R6 | cobertura | Histórico Shopee de 90 dias (ML: 365) | `PRIMEIRA_LEITURA_S` | declarar na tela |
 | R7 | desempenho | `shopee_sales_orders` filtra pelo `dia` calculado e agrega os itens em LATERAL antes do filtro: não usa `shopee_orders_org_created_idx`. Irrelevante com 1 pedido; precisa ensaio como `authenticated` antes do Go Live e antes de virar base do "Todos" | definição da view | futura |
@@ -239,7 +243,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
 - **Contrato entregue:** concessão de loja (o Agente 2 põe na tela de
   Usuários).
 
-### E3 — Contas multicanal e saúde (R4, R5)
+### E3 — Contas multicanal e saúde (R4, R5) — em código (D-435)
 
 - **Escopo:** view `marketplace_accounts` (`security invoker`):
   `marketplace` ('ML' | 'SHOPEE'), `account_id` (uuid), organização, nome,

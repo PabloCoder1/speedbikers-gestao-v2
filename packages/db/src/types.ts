@@ -918,6 +918,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           severity: string
+          shopee_shop_id: string | null
           source: string
         }
         Insert: {
@@ -933,6 +934,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           severity: string
+          shopee_shop_id?: string | null
           source: string
         }
         Update: {
@@ -948,6 +950,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           severity?: string
+          shopee_shop_id?: string | null
           source?: string
         }
         Relationships: [
@@ -3587,6 +3590,7 @@ export type Database = {
           last_error: string | null
           items_hydrate_locked_until: string | null
           items_synced_until: string | null
+          orders_last_success_at: string | null
           orders_synced_until: string | null
           organization_id: string
           region: string | null
@@ -3607,6 +3611,7 @@ export type Database = {
           last_error?: string | null
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
+          orders_last_success_at?: string | null
           orders_synced_until?: string | null
           organization_id: string
           region?: string | null
@@ -3627,6 +3632,7 @@ export type Database = {
           last_error?: string | null
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
+          orders_last_success_at?: string | null
           orders_synced_until?: string | null
           organization_id?: string
           region?: string | null
@@ -5121,6 +5127,26 @@ export type Database = {
       }
     }
     Views: {
+      marketplace_accounts: {
+        Row: {
+          // CORRECAO MANUAL (D-435): a view une ml_accounts e shopee_shops, e o
+          // gerador devolve toda coluna de view como nula; aqui o que a
+          // definicao garante.
+          account_id: string
+          authorization_expires_at: string | null
+          connected_at: string | null
+          connection_status: string
+          environment: string
+          last_error: string | null
+          marketplace: "ML" | "SHOPEE"
+          name: string
+          orders_synced_at: string | null
+          organization_id: string
+          shop_id: number | null
+          slug: string | null
+        }
+        Relationships: []
+      }
       shopee_listing_units: {
         Row: {
           available_stock: number | null
