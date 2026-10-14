@@ -918,6 +918,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           severity: string
+          shopee_shop_id: string | null
           source: string
         }
         Insert: {
@@ -933,6 +934,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           severity: string
+          shopee_shop_id?: string | null
           source: string
         }
         Update: {
@@ -948,6 +950,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           severity?: string
+          shopee_shop_id?: string | null
           source?: string
         }
         Relationships: [
@@ -3187,6 +3190,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "shopee_item_models_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "shopee_item_models_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3267,6 +3277,13 @@ export type Database = {
           shopee_updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "shopee_items_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "shopee_items_organization_id_fkey"
             columns: ["organization_id"]
@@ -3388,6 +3405,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "shopee_order_items_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "shopee_order_items_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3416,6 +3440,8 @@ export type Database = {
           escrow_amount: number | null
           escrow_amount_after_adjustment: number | null
           final_shipping_fee: number | null
+          financials_error: string | null
+          financials_error_at: string | null
           financials_synced_at: string | null
           net_commission_fee: number | null
           net_service_fee: number | null
@@ -3456,6 +3482,8 @@ export type Database = {
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
           final_shipping_fee?: number | null
+          financials_error?: string | null
+          financials_error_at?: string | null
           financials_synced_at?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
@@ -3496,6 +3524,8 @@ export type Database = {
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
           final_shipping_fee?: number | null
+          financials_error?: string | null
+          financials_error_at?: string | null
           financials_synced_at?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
@@ -3526,6 +3556,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "shopee_orders_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "shopee_orders_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3553,6 +3590,7 @@ export type Database = {
           last_error: string | null
           items_hydrate_locked_until: string | null
           items_synced_until: string | null
+          orders_last_success_at: string | null
           orders_synced_until: string | null
           organization_id: string
           region: string | null
@@ -3573,6 +3611,7 @@ export type Database = {
           last_error?: string | null
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
+          orders_last_success_at?: string | null
           orders_synced_until?: string | null
           organization_id: string
           region?: string | null
@@ -3593,6 +3632,7 @@ export type Database = {
           last_error?: string | null
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
+          orders_last_success_at?: string | null
           orders_synced_until?: string | null
           organization_id?: string
           region?: string | null
@@ -4915,6 +4955,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           previous_role: string | null
+          shopee_shop_id: string | null
           target_user_id: string
         }
         Insert: {
@@ -4927,6 +4968,7 @@ export type Database = {
           occurred_at?: string
           organization_id: string
           previous_role?: string | null
+          shopee_shop_id?: string | null
           target_user_id: string
         }
         Update: {
@@ -4939,6 +4981,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           previous_role?: string | null
+          shopee_shop_id?: string | null
           target_user_id?: string
         }
         Relationships: [
@@ -5049,8 +5092,61 @@ export type Database = {
           },
         ]
       }
+      user_shopee_shop_permissions: {
+        Row: {
+          created_at: string
+          shopee_shop_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          shopee_shop_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          shopee_shop_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_shopee_shop_permissions_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_shopee_shop_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
+      marketplace_accounts: {
+        Row: {
+          // CORRECAO MANUAL (D-435): a view une ml_accounts e shopee_shops, e o
+          // gerador devolve toda coluna de view como nula; aqui o que a
+          // definicao garante.
+          account_id: string
+          authorization_expires_at: string | null
+          connected_at: string | null
+          connection_status: string
+          environment: string
+          last_error: string | null
+          marketplace: "ML" | "SHOPEE"
+          name: string
+          orders_synced_at: string | null
+          organization_id: string
+          shop_id: number | null
+          slug: string | null
+        }
+        Relationships: []
+      }
       shopee_listing_units: {
         Row: {
           available_stock: number | null
@@ -5359,6 +5455,7 @@ export type Database = {
           available_stock: number | null
           currency: string | null
           current_price: number | null
+          environment: string
           item_id: number
           item_name: string | null
           item_status: string
@@ -5403,8 +5500,16 @@ export type Database = {
           order_sn: string
         }[]
       }
+      shopee_advance_orders_synced_until: {
+        Args: { p_shopee_shop_id: string; p_until: string }
+        Returns: string
+      }
       shopee_resolve_order_item_skus: {
         Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }
+        Returns: number
+      }
+      shopee_upsert_orders: {
+        Args: { p_pedidos: Json; p_shopee_shop_id: string; p_synced_at?: string }
         Returns: number
       }
       sincronizar_alertas_central: {

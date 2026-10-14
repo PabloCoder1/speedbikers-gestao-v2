@@ -33,33 +33,29 @@ interface Loja {
   orders_synced_until: string | null;
 }
 
-function fakeDb(loja: Loja | null) {
+interface PedidoGravado extends Record<string, unknown> {
+  order_sn: string;
+  itens: Record<string, unknown>[];
+}
+
+/**
+ * Banco falso: a loja e a credencial por `select`; a gravação do lote e o
+ * marco por RPC (D-432). `gravaAte` diz quantos pedidos o banco aceita por
+ * lote (os outros seriam leitura mais velha que a guardada); `erroNaGravacao`
+ * faz a RPC do lote falhar.
+ */
+function fakeDb(loja: Loja | null, opcoes: { gravaAte?: number; erroNaGravacao?: string } = {}) {
   const gravado = {
     marcos: [] as unknown[],
-    pedidos: [] as Record<string, unknown>[],
-    apagados: [] as string[][],
-    itens: [] as Record<string, unknown>[],
-    resolucoes: [] as unknown[],
+    lotes: [] as { loja: unknown; pedidos: PedidoGravado[]; syncedAt: unknown }[],
   };
 
-  function chain(result: unknown, aoFim?: () => void) {
+  function leitura(result: unknown) {
     const self: Record<string, unknown> = {};
 
-    for (const metodo of ["eq", "or", "select"]) {
-      self[metodo] = () => self;
-    }
-
-    self.in = (_coluna: string, valores: string[]) => {
-      gravado.apagados.push(valores);
-
-      return self;
-    };
+    self.select = () => self;
+    self.eq = () => self;
     self.maybeSingle = () => Promise.resolve(result);
-    self.then = (resolve: (value: unknown) => unknown) => {
-      aoFim?.();
-
-      return Promise.resolve({ error: null }).then(resolve);
-    };
 
     return self;
   }
@@ -70,28 +66,29 @@ function fakeDb(loja: Loja | null) {
   };
 
   const db = {
-    rpc: (nome: string, args: unknown) => {
-      gravado.resolucoes.push({ nome, args });
+    rpc: (nome: string, args: Record<string, unknown>) => {
+      if (nome === "shopee_upsert_orders") {
+        if (opcoes.erroNaGravacao !== undefined) {
+          return Promise.resolve({ data: null, error: { message: opcoes.erroNaGravacao } });
+        }
 
-      return Promise.resolve({ data: 0, error: null });
+        const pedidos = args.p_pedidos as PedidoGravado[];
+
+        gravado.lotes.push({ loja: args.p_shopee_shop_id, pedidos, syncedAt: args.p_synced_at });
+
+        return Promise.resolve({ data: Math.min(pedidos.length, opcoes.gravaAte ?? pedidos.length), error: null });
+      }
+
+      if (nome === "shopee_advance_orders_synced_until") {
+        gravado.marcos.push(args.p_until);
+
+        return Promise.resolve({ data: args.p_until, error: null });
+      }
+
+      throw new Error(`rpc inesperada: ${nome}`);
     },
     from: (table: string) => ({
-      select: () => chain({ data: table === "shopee_shops" ? loja : credencial, error: null }),
-      update: (row: Record<string, unknown>) =>
-        chain({ error: null }, () => {
-          if (table === "shopee_shops") gravado.marcos.push(row.orders_synced_until);
-        }),
-      upsert: (rows: Record<string, unknown>[]) => {
-        gravado.pedidos.push(...rows);
-
-        return Promise.resolve({ error: null });
-      },
-      delete: () => chain({ error: null }),
-      insert: (rows: Record<string, unknown>[]) => {
-        gravado.itens.push(...rows);
-
-        return Promise.resolve({ error: null });
-      },
+      select: () => leitura({ data: table === "shopee_shops" ? loja : credencial, error: null }),
     }),
   } as unknown as ShopeeOrdersSyncDeps["db"];
 
@@ -166,8 +163,12 @@ function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
   };
 }
 
-function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>) {
-  const { db, gravado } = fakeDb(loja);
+function rodar(
+  loja: Loja | null,
+  shopee: ReturnType<typeof fakeShopee>,
+  opcoes: { gravaAte?: number; erroNaGravacao?: string } = {},
+) {
+  const { db, gravado } = fakeDb(loja, opcoes);
   const enfileirados: EnqueueRequest[] = [];
   const handler = createShopeeOrdersSyncHandler({
     db,
@@ -240,21 +241,20 @@ describe("shopee.orders.sync (D-426)", () => {
       },
     ]);
     expect(gravado.marcos).toEqual([NOW.toISOString()]);
-    expect(gravado.pedidos[0]).toMatchObject({
-      shopee_shop_id: LOJA_ID,
-      organization_id: ORG,
+    // D-432: o lote inteiro numa RPC (pedido, itens substituídos e SKU, numa
+    // transação); a organização vem da loja, no banco.
+    expect(gravado.lotes).toHaveLength(1);
+    expect(gravado.lotes[0]?.loja).toBe(LOJA_ID);
+    expect(gravado.lotes[0]?.syncedAt).toBe(NOW.toISOString());
+    expect(gravado.lotes[0]?.pedidos.map((p) => p.order_sn)).toEqual(["A1", "A2"]);
+    expect(gravado.lotes[0]?.pedidos[0]).toMatchObject({
       order_sn: "A1",
       order_status: "COMPLETED",
       total_amount: 120.5,
       shopee_updated_at: new Date((AGORA_S - 3600) * 1000).toISOString(),
     });
-    // Os itens são SUBSTITUÍDOS: apaga os do lote e insere de novo.
-    expect(gravado.apagados).toEqual([["A1", "A2"]]);
-    // D-430: e o SKU dos itens do lote é resolvido em SQL logo depois.
-    expect(gravado.resolucoes).toEqual([
-      { nome: "shopee_resolve_order_item_skus", args: { p_shopee_shop_id: LOJA_ID, p_order_sns: ["A1", "A2"] } },
-    ]);
-    expect(gravado.itens.filter((i) => i.order_sn === "A1")).toEqual([
+    expect(gravado.lotes[0]?.pedidos[0]).not.toHaveProperty("organization_id");
+    expect(gravado.lotes[0]?.pedidos[0]?.itens).toEqual([
       expect.objectContaining({ position: 0, item_sku: "BAU05", model_id: null, model_sku: null, quantity: 1, discounted_price: 120.5 }),
       expect.objectContaining({ position: 1, item_sku: null, model_id: 77, model_sku: "BAU05-P", quantity: 2 }),
     ]);
@@ -279,6 +279,34 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(definitivo.outcome).toMatchObject({ status: "failed", retryable: false });
     expect(passageiro.gravado.marcos).toEqual([]);
     expect(definitivo.gravado.marcos).toEqual([]);
+  });
+
+  it("D-432: leitura mais velha que a guardada é ignorada pelo banco e não conta como gravada; o marco anda", async () => {
+    const marco = new Date(NOW.getTime() - 2 * 3_600_000).toISOString();
+    const { outcome, gravado } = await rodar(
+      { ...LOJA, orders_synced_until: marco },
+      fakeShopee({ paginas: [["A1", "A2", "A3"]] }),
+      { gravaAte: 1 },
+    );
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(gravado.marcos).toEqual([NOW.toISOString()]);
+  });
+
+  it("D-432: falha ao gravar o lote não avança o marco, e a tarefa se repete", async () => {
+    const { outcome, gravado } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { erroNaGravacao: "deadlock" });
+
+    expect(outcome).toEqual({ status: "failed", retryable: true, reason: "falha ao gravar pedidos: deadlock" });
+    expect(gravado.marcos).toEqual([]);
+  });
+
+  it("D-432: janela acima do teto de páginas falha SEM repetir (repetir bateria no mesmo teto)", async () => {
+    const paginas = Array.from({ length: 201 }, (): string[] => []);
+    const { outcome, gravado } = await rodar(LOJA, fakeShopee({ paginas }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(gravado.lotes).toEqual([]);
+    expect(gravado.marcos).toEqual([]);
   });
 
   it("loja em erro, de outro ambiente ou inexistente: pula, sem chamar a Shopee", async () => {

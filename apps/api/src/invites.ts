@@ -69,6 +69,11 @@ export const inviteRequestSchema = z.object({
   fullName: z.string().trim().min(1, "nome vazio").max(200).optional(),
   /** Contas que a pessoa poderá alcançar. ADMIN alcança todas por papel — a lista fica vazia. */
   mlAccountIds: z.array(z.uuid()).max(50).optional(),
+  /**
+   * Lojas Shopee que a pessoa poderá alcançar (D-433), a mesma regra das
+   * contas. Opcional: a tela que ainda não oferece lojas continua valendo.
+   */
+  shopeeShopIds: z.array(z.uuid()).max(50).optional(),
 });
 
 export type InviteRequest = z.infer<typeof inviteRequestSchema>;
@@ -109,6 +114,25 @@ export async function inviteOrganizationMember(
 
     if (contas.data.length !== contasPedidas.length) {
       return { status: "invalid", reason: "conta que não pertence a esta organização" };
+    }
+  }
+
+  // As lojas Shopee pedidas, pela mesma razão (D-433).
+  const lojasPedidas = request.shopeeShopIds ?? [];
+
+  if (lojasPedidas.length > 0) {
+    const lojas = await deps.db
+      .from("shopee_shops")
+      .select("id")
+      .eq("organization_id", caller.organizationId)
+      .in("id", lojasPedidas);
+
+    if (lojas.error !== null) {
+      return { status: "error", reason: lojas.error.message };
+    }
+
+    if (lojas.data.length !== lojasPedidas.length) {
+      return { status: "invalid", reason: "loja Shopee que não pertence a esta organização" };
     }
   }
 
@@ -232,10 +256,27 @@ export async function inviteOrganizationMember(
     }
   }
 
+  if (lojasPedidas.length > 0) {
+    const lojas = await deps.db
+      .from("user_shopee_shop_permissions")
+      .insert(lojasPedidas.map((id) => ({ user_id: userId, shopee_shop_id: id })));
+
+    if (lojas.error !== null) {
+      // Mesma regra das contas: o vínculo fica, e a falha é dita.
+      deps.logger.error("invite_shopee_permissions_failed", {
+        organization_id: caller.organizationId,
+        error: lojas.error.message,
+      });
+
+      return { status: "error", reason: `membro criado, mas sem acesso às lojas Shopee: ${lojas.error.message}` };
+    }
+  }
+
   deps.logger.info("invite_created", {
     organization_id: caller.organizationId,
     role: request.role,
     accounts: contasPedidas.length,
+    shopee_shops: lojasPedidas.length,
     novo_usuario: inviteLink !== null,
   });
 

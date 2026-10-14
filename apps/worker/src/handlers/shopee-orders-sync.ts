@@ -9,6 +9,7 @@ import {
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { asJson } from "./domain-events.js";
 import { falhaDaShopee, lerLojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
 import { ensureShopeeAccessToken } from "./shopee-token.js";
 
@@ -24,6 +25,11 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  *   15 dias, cada uma enfileirando a seguinte até alcançar agora.
  * - O marco só avança depois de a janela inteira gravar: uma falha no meio faz
  *   a fila repetir a MESMA janela.
+ * - D-432: cada lote é gravado numa transação (`shopee_upsert_orders`: o
+ *   pedido, os itens substituídos e o SKU), sem regredir — a leitura mais
+ *   velha que a guardada é ignorada, porque duas execuções na mesma loja
+ *   podem se cruzar. O marco também só anda para a frente
+ *   (`shopee_advance_orders_synced_until`).
  *
  * Fila `backfill` (1/s, 2 simultâneas): a Shopee tem volume baixo, e a fila já
  * deixa o worker se reenfileirar.
@@ -33,6 +39,12 @@ const SOBREPOSICAO_S = 10 * 60;
 const PRIMEIRA_LEITURA_S = 90 * 24 * 3600;
 /** Teto de páginas de 100 por janela — 20 mil pedidos em 15 dias passaria de qualquer loja da casa. */
 const MAX_PAGINAS = 200;
+
+/**
+ * A janela passou do teto. Repetir leria a MESMA janela e bateria no mesmo
+ * teto: a falha não se repete (D-432) e aparece em `job_runs` a cada hora.
+ */
+class JanelaGrandeDemais extends Error {}
 
 export type ShopeeOrdersSyncDeps = ShopeeJobDeps;
 
@@ -61,10 +73,15 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
     try {
       ordens = await listarJanela(deps, shop, deS, ateS);
     } catch (error) {
+      if (error instanceof JanelaGrandeDemais) {
+        return { status: "failed", retryable: false, reason: error.message };
+      }
+
       return falhaDaShopee(error, "erro desconhecido ao ler pedidos da Shopee");
     }
 
     let gravados = 0;
+    let ignorados = 0;
 
     for (let i = 0; i < ordens.length; i += ORDER_DETAIL_BATCH) {
       let pedidos: ShopeeOrder[];
@@ -75,19 +92,20 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
         return falhaDaShopee(error, "erro desconhecido ao ler pedidos da Shopee");
       }
 
-      const erro = await gravarPedidos(deps, { id: loja.id, organizationId: loja.organization_id }, pedidos, now);
+      const lote = await gravarPedidos(deps, loja.id, pedidos, now);
 
-      if (erro !== null) {
-        return { status: "failed", retryable: true, reason: erro };
+      if ("erro" in lote) {
+        return { status: "failed", retryable: true, reason: lote.erro };
       }
 
-      gravados += pedidos.length;
+      gravados += lote.gravados;
+      ignorados += pedidos.length - lote.gravados;
     }
 
-    const marco = await deps.db
-      .from("shopee_shops")
-      .update({ orders_synced_until: new Date(ateS * 1000).toISOString() })
-      .eq("id", loja.id);
+    const marco = await deps.db.rpc("shopee_advance_orders_synced_until", {
+      p_shopee_shop_id: loja.id,
+      p_until: new Date(ateS * 1000).toISOString(),
+    });
 
     if (marco.error !== null) {
       return { status: "failed", retryable: true, reason: `falha ao avançar o marco da loja: ${marco.error.message}` };
@@ -121,6 +139,8 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
       ate: new Date(ateS * 1000).toISOString(),
       pedidos_listados: ordens.length,
       pedidos_gravados: gravados,
+      // Leitura mais velha que a guardada (outra execução chegou antes).
+      pedidos_ignorados: ignorados,
       tem_mais: temMais,
     });
 
@@ -155,24 +175,25 @@ async function listarJanela(
     cursor = resposta.nextCursor;
   }
 
-  throw new Error(`a janela passou de ${String(MAX_PAGINAS)} páginas de pedidos; reduza a janela`);
+  throw new JanelaGrandeDemais(`a janela passou de ${String(MAX_PAGINAS)} páginas de pedidos; reduza a janela`);
 }
 
 /**
- * Um lote: os pedidos por upsert, e os itens SUBSTITUÍDOS (o detalhe não traz
- * identificador estável por linha em todo caso). Devolve o erro, ou `null`.
+ * Um lote, numa transação (`shopee_upsert_orders`, D-432): o pedido, os itens
+ * SUBSTITUÍDOS (o detalhe não traz identificador estável por linha em todo
+ * caso) e o SKU de cada item (D-430). Aqui só se normaliza: vazio vira nulo,
+ * modelo 0 vira nulo. Devolve quantos pedidos o banco gravou — os outros eram
+ * leitura mais velha que a guardada.
  */
 async function gravarPedidos(
   deps: ShopeeOrdersSyncDeps,
-  loja: { id: string; organizationId: string },
+  lojaId: string,
   pedidos: readonly ShopeeOrder[],
   now: Date,
-): Promise<string | null> {
-  if (pedidos.length === 0) return null;
+): Promise<{ gravados: number } | { erro: string }> {
+  if (pedidos.length === 0) return { gravados: 0 };
 
-  const linhas = pedidos.map((pedido) => ({
-    shopee_shop_id: loja.id,
-    organization_id: loja.organizationId,
+  const lote = pedidos.map((pedido) => ({
     order_sn: pedido.order_sn,
     order_status: pedido.order_status,
     currency: pedido.currency ?? null,
@@ -185,30 +206,8 @@ async function gravarPedidos(
     payment_method: pedido.payment_method ?? null,
     cancel_by: pedido.cancel_by ?? null,
     cancel_reason: pedido.cancel_reason ?? null,
-    synced_at: now.toISOString(),
-  }));
-
-  const ordens = await deps.db.from("shopee_orders").upsert(linhas, { onConflict: "shopee_shop_id,order_sn" });
-
-  if (ordens.error !== null) return `falha ao gravar pedidos: ${ordens.error.message}`;
-
-  const apagados = await deps.db
-    .from("shopee_order_items")
-    .delete()
-    .eq("shopee_shop_id", loja.id)
-    .in(
-      "order_sn",
-      pedidos.map((pedido) => pedido.order_sn),
-    );
-
-  if (apagados.error !== null) return `falha ao substituir itens: ${apagados.error.message}`;
-
-  const itens = pedidos.flatMap((pedido) =>
-    (pedido.item_list ?? []).map((item, position) => ({
-      shopee_shop_id: loja.id,
-      order_sn: pedido.order_sn,
+    itens: (pedido.item_list ?? []).map((item, position) => ({
       position,
-      organization_id: loja.organizationId,
       item_id: item.item_id,
       item_name: item.item_name ?? null,
       item_sku: item.item_sku === "" ? null : (item.item_sku ?? null),
@@ -220,20 +219,15 @@ async function gravarPedidos(
       discounted_price: item.model_discounted_price ?? null,
       promotion_type: item.promotion_type === "" ? null : (item.promotion_type ?? null),
     })),
-  );
+  }));
 
-  if (itens.length === 0) return null;
-
-  const inseridos = await deps.db.from("shopee_order_items").insert(itens);
-
-  if (inseridos.error !== null) return `falha ao gravar itens: ${inseridos.error.message}`;
-
-  // D-430: o SKU de cada item, gravado como no Mercado Livre (D-020) -- manual,
-  // SKU do anúncio ou o do próprio pedido, resolvido em SQL.
-  const resolvidos = await deps.db.rpc("shopee_resolve_order_item_skus", {
-    p_shopee_shop_id: loja.id,
-    p_order_sns: pedidos.map((pedido) => pedido.order_sn),
+  const gravado = await deps.db.rpc("shopee_upsert_orders", {
+    p_shopee_shop_id: lojaId,
+    p_pedidos: asJson(lote),
+    p_synced_at: now.toISOString(),
   });
 
-  return resolvidos.error === null ? null : `falha ao resolver o SKU dos itens: ${resolvidos.error.message}`;
+  if (gravado.error !== null) return { erro: `falha ao gravar pedidos: ${gravado.error.message}` };
+
+  return { gravados: gravado.data };
 }

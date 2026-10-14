@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **423** (D-001 a D-431).
+Decisões registradas: **426** (D-001 a D-435).
 
 ## Por domínio
 
@@ -200,7 +200,7 @@ Decisões registradas: **423** (D-001 a D-431).
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 
-### mercado-livre (72)
+### mercado-livre (74)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -274,6 +274,8 @@ Decisões registradas: **423** (D-001 a D-431).
 - **D-423** — A venda sem variacao acha o SKU pelo anuncio quando todos os vinculos dele apontam para o mesmo SKU; o historico ganha o SKU sem movimento de estoque
 - **D-429** — Shopee, fatia 4b: o vinculo manual vence o SKU do anuncio, no desenho do Mercado Livre e em tabelas proprias
 - **D-430** — Shopee, fatia 6a: a venda Shopee tem definicao propria, o SKU e gravado no item como no Mercado Livre, e a tela por loja valida antes de qualquer soma
+- **D-433** — Shopee, permissao por loja (E2 da frente multicanal): a loja segue a regra da conta do Mercado Livre -- ADMIN alcanca todas, os demais as concedidas -- e ninguem perde visao no dia
+- **D-435** — Contas dos marketplaces numa fonte so (marketplace_accounts) e a loja Shopee parada avisando como a conta do ML, so a quem alcanca a loja (E3 da frente multicanal)
 
 ### outros (64)
 
@@ -346,7 +348,7 @@ Decisões registradas: **423** (D-001 a D-431).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (34)
+### vendas/métricas (35)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -382,6 +384,7 @@ Decisões registradas: **423** (D-001 a D-431).
 - **D-422** — Excel da Curva ABC: o recorte da tela com as tres curvas inteiras, uma aba consolidada por SKU e uma por criterio
 - **D-424** — Curva ABC detalhada: recortes que recalculam e filtros que so escondem linha, comparacao com o periodo anterior, e o Excel com painel e graficos nativos
 - **D-426** — Shopee, fatia 2: o worker renova o token antes de vencer e le os pedidos por janela de atualizacao, com marco por loja
+- **D-432** — Shopee, ingestao robusta (E1 da frente multicanal): o pedido recusado nao trava o financeiro, o lote de pedidos grava numa transacao que nao regride, e o erro da loja interrompe em vez de marcar item por item
 
 ### worker/infra (80)
 

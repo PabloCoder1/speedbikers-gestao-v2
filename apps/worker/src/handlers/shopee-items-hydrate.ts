@@ -4,6 +4,7 @@ import {
   ShopeeApiError,
   getItemBaseInfo,
   getModelList,
+  isShopLevelError,
   precoEEstoque,
   shopeeEpochToIso,
   type ModelList,
@@ -25,7 +26,8 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  * - Uma cadeia por loja (`shopee_items_hydrate_lock`): o gatilho horário
  *   abriria outra enquanto a anterior anda, e as duas brigariam nas variações.
  * - Quem precisa de leitura é o SQL (`shopee_items_details_pending`).
- * - Só erro PASSAGEIRO interrompe a tarefa. O erro definitivo de UM item
+ * - Só erro PASSAGEIRO ou da LOJA (credencial, assinatura, loja inválida —
+ *   D-432) interrompe a tarefa. O erro definitivo de UM item
  *   (não devolvido, fora do contrato, variações recusadas) marca aquele item
  *   com `details_error` e a fila segue — volta em 1 dia ou quando ele mudar.
  *   Sem isso, um item ruim voltaria primeiro em toda execução e travaria a
@@ -49,8 +51,15 @@ function texto(valor: string | null | undefined): string | null {
   return valor === undefined || valor === null || valor.trim() === "" ? null : valor;
 }
 
-function ePassageiro(error: unknown): boolean {
+/**
+ * Erro que interrompe a tarefa: passageiro ("tente depois") ou da LOJA. O da
+ * loja repetiria igual em cada item — relê-los um a um e marcar todos com
+ * `details_error` (D-432) atrasaria o catálogo inteiro em 1 dia por uma
+ * credencial.
+ */
+function interrompe(error: unknown): boolean {
   if (error instanceof ZodError) return false;
+  if (isShopLevelError(error)) return true;
 
   return !(error instanceof ShopeeApiError) || error.errorClass === "retryable";
 }
@@ -78,7 +87,7 @@ async function lerDetalhes(
 
     return { itens, erros };
   } catch (error) {
-    if (ePassageiro(error) || ids.length === 1) throw error;
+    if (interrompe(error) || ids.length === 1) throw error;
   }
 
   for (const id of ids) {
@@ -89,7 +98,7 @@ async function lerDetalhes(
       if (item !== undefined) itens.set(id, item);
       else erros.set(id, um.invalid > 0 ? "fora_do_contrato" : "nao_devolvido");
     } catch (error) {
-      if (ePassageiro(error)) throw error;
+      if (interrompe(error)) throw error;
 
       erros.set(id, motivo(error));
     }
@@ -222,7 +231,7 @@ async function hidratar(
         models = lista.models;
         variacoesInvalidas += lista.invalid;
       } catch (error) {
-        if (ePassageiro(error)) {
+        if (interrompe(error)) {
           return { outcome: falhaDaShopee(error, "erro desconhecido ao ler as variações da Shopee"), temMais: false };
         }
 

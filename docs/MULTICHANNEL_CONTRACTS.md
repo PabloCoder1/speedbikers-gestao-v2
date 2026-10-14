@@ -1,0 +1,308 @@
+# Camada de dados multicanal — auditoria, contratos e plano
+
+> Dono: Agente 1 (integração, backend e dados). Leitor principal: Agente 2
+> (telas, filtros, dashboards). Fonte de verdade: o código da `main` em
+> `562b1e60` (14/10/2026) e o que foi medido em produção no mesmo dia. O
+> contrato da API da Shopee está em `docs/SHOPEE.md`; as definições de
+> métrica, em `docs/METRICS.md`. **Nada aqui promete o que não existe:** cada
+> contrato diz onde ele está (código, Dev, produção).
+
+---
+
+## 1. Estado medido em 14/10/2026
+
+| Camada | Código (`main`) | Dev | Produção |
+|---|---|---|---|
+| Migrations Shopee | `20261013120000` → `20261014150000` (D-425 a D-430); `20261014180000` (D-432) em PR | até `20261014150000` (CI da `main`) | até `20261014150000` (D-430, run `38573035912`, 14/10) |
+| Worker / api | D-430 | pausado (D-350) | worker `worker-00044-p8d` em `562b1e60` (D-430); api `api-00027-p7c` em `e037573f` (D-428); sandbox, `SHOPEE_PARTNER_ID=1248019` |
+| Web | D-430 | — | `562b1e60` (D-430); `/vendas/shopee` com dado desde a migration de 14/10 |
+| Dado Shopee real | — | — | 1 loja **sandbox** CONNECTED, 1 pedido (READY_TO_SHIP, financeiro lido), 1 item de pedido, 1 item de catálogo, 0 vínculos manuais |
+| Jobs (7 dias) | — | — | `shopee.orders.sync` 27, `shopee.order-financials.sync` 21, `shopee.items.sync` 17, `shopee.items.hydrate` 17 — **todos `done`, zero falhas** |
+| Token | — | — | renovado sozinho (última renovação 14/10 10:20 UTC, vence 14:20; refresh até 13/11; autorização até 13/10/2027) |
+
+Testes unitários na `main` (rodados em 14/10): `@sb/shopee` 24, worker
+(handlers Shopee) 30, api (Shopee) 14, web (`lib/shopee-*`) 45 — todos
+passam. Integração (RLS, RPCs) e e2e passam na CI da `main`.
+
+**O que isso prova e o que não prova.** Prova, no sandbox: autorização,
+renovação do token, leitura de pedidos, financeiro e catálogo de UMA loja com
+UM pedido. **Não prova:** paginação real (mais de 100 pedidos ou itens),
+conta principal com várias lojas, lojas reais (`live`), volume, rate limit,
+backfill de 90 dias com dado, vínculo manual em produção, vendas (D-430) em
+produção. Nenhuma loja real foi conectada: o Go Live (fatia 7) depende de
+Cloud NAT com IP fixo e do cadastro no Console (`docs/SHOPEE.md` §6).
+
+---
+
+## 2. Identidade multicanal
+
+| Conceito | Mercado Livre | Shopee | Regra |
+|---|---|---|---|
+| Marketplace | implícito (tabelas sem prefixo) | prefixo `shopee_` | contratos novos: coluna `marketplace` = `'ML'` / `'SHOPEE'` (nunca `channel`) |
+| Conta | `ml_accounts.id` (uuid); `slug` na URL | `shopee_shops.id` (uuid); `shop_id` (bigint) é único **por ambiente** | o uuid identifica; nunca comparar `seller_id` com `shop_id` |
+| Ambiente | só produção | `environment` = `sandbox` \| `live` | **sandbox nunca entra em total da empresa** |
+| Pedido | `orders.id` (bigint) + `ml_account_id`; compra = `pack_id` | (`shopee_shop_id`, `order_sn` texto); um pedido tem vários itens | id externo só vale junto da conta |
+| Item de pedido | uma linha por pedido (medido: 0 multi-linha em 340 mil) | `position` no pedido, substituído a cada leitura | — |
+| Anúncio | `listings.mlb_id` (`^MLB`) + `variation_id` | (`shopee_shop_id`, `item_id`, `model_id`); unidade = variação, ou item sem variação | — |
+| SKU canônico | `skus.id` | `skus.id` | **o único ponto comum entre canais** |
+| Vínculo anúncio→SKU | `sku_listing_links` (+ eventos) | `shopee_sku_links` (+ eventos), manual vence o SKU do anúncio | tabelas separadas; nada cria SKU automaticamente |
+| SKU na venda | `order_items.sku_id` gravado (D-020) | `shopee_order_items.sku_id` gravado (D-430): MANUAL > SKU_DO_ANUNCIO > SKU_DO_PEDIDO | congelado na última leitura do pedido |
+
+Não há colisão de identificadores por construção: cada canal tem tabelas
+próprias e toda chave externa leva a conta (uuid) junto.
+
+**Avaliação da arquitetura (sem proposta de troca).** As cinco camadas já
+existem separadas: adaptadores (`@sb/mercado-livre`, `@sb/shopee`), jobs no
+worker por marketplace, persistência própria por marketplace (D-425 §1),
+regras compartilhadas em `@sb/domain` e leituras por RPC. O que falta é só a
+**camada de leitura comum**: hoje a convergência entre canais acontece apenas
+no `skus.id`. O desenho que preserva o ML é convergir na LEITURA (views e RPCs
+novas que unem os dois lados no SQL, cada um com a sua definição), não
+generalizar `ml_accounts`, `orders` ou `daily_*`, que têm `ml_account_id NOT
+NULL`, `^MLB` e cerca de 30 funções em cima (§4).
+
+---
+
+## 3. Contratos Shopee disponíveis (Agente 2 pode consumir)
+
+Todos `security invoker`, recebem `p_organization_id` e respeitam a RLS de
+quem chama. **Até D-433 a RLS da Shopee era por ORGANIZAÇÃO; com a
+migration `20261014190000` passa a ser por LOJA** (ADMIN todas; os demais,
+as de `user_shopee_shop_permissions`) — mesmas assinaturas, menos linhas
+para quem não alcança a loja. Valores monetários em `numeric` (BRL, `currency` devolvido quando há);
+ausente = NULO, nunca zero.
+
+### 3.0 Contas dos dois marketplaces — `marketplace_accounts` (C-52, D-435, em código)
+
+View `security_invoker`, lida com `supabase.from("marketplace_accounts")`: uma linha por conta ML e por loja Shopee que o chamador alcança (D-175, D-433). Colunas: `marketplace` (`ML` | `SHOPEE`), `account_id`, `organization_id`, `name`, `slug` (só ML; os filtros salvos usam `account=<slug>`), `shop_id` (só Shopee), `environment` (ML sempre `live`; Shopee `sandbox`|`live` — **sandbox nunca entra em total**), `connection_status` (ML: PENDING/CONNECTED/REVOKED/ERROR; Shopee: CONNECTED/ERROR), `last_error`, `connected_at`, `orders_synced_at` (ML: última reconciliação de pedidos que serviu; Shopee: último avanço do marco — NULO = nunca) e `authorization_expires_at` (só Shopee). Sem paginação (dezenas de linhas por organização).
+
+### 3.1 Lojas
+
+| Contrato | Forma | Onde |
+|---|---|---|
+| `shopee_shops` (tabela, `select`) | `id`, `environment`, `shop_id`, `shop_name`, `region`, `shop_status` (NORMAL/BANNED/FROZEN, da Shopee), `status` (CONNECTED/ERROR, da conexão), `authorized_at`, `auth_expires_at`, `connected_at`, `last_error`, `orders_synced_until`, `items_synced_until` | produção |
+| `get_shopee_shop_catalog_counts(p_organization_id)` | por loja: `anuncios`, `vinculados`, `ultima_leitura`; NULOS se o catálogo nunca foi lido | produção |
+
+Frescor por loja: `orders_synced_until` (pedidos) e `items_synced_until`
+(catálogo) — marcos no relógio da Shopee; NULO = nunca lido. Não existe
+frescor do financeiro por loja (só por pedido, `financials_synced_at`).
+
+### 3.2 Catálogo e vínculo
+
+| Contrato | Parâmetros | Devolve | Paginação | Onde |
+|---|---|---|---|---|
+| `get_shopee_listings` | `p_organization_id`, `p_shopee_shop_id?`, `p_estado?` (VINCULADO, SEM_SKU_NO_ANUNCIO, SKU_FORA_DO_CATALOGO, AGUARDANDO_LEITURA), `p_busca?`, `p_limit` (≤200), `p_offset` | uma linha por unidade: loja, item, variação, `sku_anuncio`, status, preço, estoque, imagem, `sku_id`/`sku`/`sku_title`, `estado`, `vinculo_via` (MANUAL \| SKU_DO_ANUNCIO), `manual_link_id`, `sku_pelo_anuncio`, `details_error`, `total_count` | offset, `total_count` por janela | produção |
+| `get_shopee_listings_summary` | `p_organization_id`, `p_shopee_shop_id?` | contadores por estado e `ultima_leitura` (a mais velha entre as lojas; NULA se alguma nunca foi lida) | — | produção |
+| `get_sku_shopee_listings` | `p_organization_id`, `p_sku_id` | os anúncios Shopee de um SKU (≤200); `environment` da loja no fim (C-55, D-432) | — | produção; `environment` em código |
+| `set_shopee_sku_link` / `remove_shopee_sku_link` | loja, item, variação, SKU, motivo | escrita (ADMIN/GESTOR/OPERADOR) | — | produção |
+
+Conflito de vínculo = `manual_link_id` preenchido e `sku_pelo_anuncio`
+diferente do `sku`. Anúncio sem vínculo = estados SEM_SKU_NO_ANUNCIO e
+SKU_FORA_DO_CATALOGO. Produto com vários anúncios = `get_sku_shopee_listings`.
+**A Central de Vinculações (`/vinculacoes`) é só do Mercado Livre.**
+
+### 3.3 Vendas (D-430) — em produção desde 14/10
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_shopee_sales_by_shop` | `p_organization_id`, `p_date_from`, `p_date_to` (datas de São Paulo) | uma linha por loja (inclusive sandbox, com `environment`): `pedidos`, `unidades`, `receita_bruta`, `pedidos_sem_receita`, `recebido`, `pedidos_sem_recebido`, `cancelados`, `com_devolucao`, `pedidos_sem_sku`, `ultima_leitura`, `connection_status` |
+| `get_shopee_orders` | + `p_shopee_shop_id?`, `p_situacao?` (VALIDA, CANCELADA, NAO_PAGA), `p_limit` (≤200), `p_offset` | pedidos mais novos primeiro, com `itens` (jsonb: item, variação, quantidade, `sku_id`, `sku`, `vinculo_via`) e `total_count` |
+| `shopee_sales_orders` (view) | — | a definição única do pedido de venda Shopee; base das duas RPCs |
+
+Semântica (`docs/METRICS.md` 5S): venda válida = paga e fora de UNPAID,
+CANCELLED, IN_CANCEL; dia = criação do pedido em São Paulo; receita bruta =
+produtos com desconto da loja, sem frete; recebido = `escrow_amount`,
+provisório até COMPLETED.
+
+**Não existe para a Shopee:** série diária, recorte por SKU ou marca, custo,
+resultado, margem, ranking, curva ABC, Ads, devoluções com valor, estoque.
+
+---
+
+## 4. Contratos do Mercado Livre que as telas usam hoje
+
+Mapeamento de 14/10 (leitura das telas e da última migration de cada RPC).
+**Todo contrato de venda, faturamento, ABC, cobertura e anúncio é do Mercado
+Livre**, e o filtro de conta é sempre UM `p_ml_account_id uuid default null`
+(nulo = todas). Nenhuma RPC aceita lista de contas, slug ou marketplace.
+
+| Tela | Contratos (última migration) | Filtros que já existem no backend | Base ML |
+|---|---|---|---|
+| `/vendas` (`?account=<slug>`) | `get_sales_summary`, `get_sales_daily_series`, `get_sales_expanded_summary` (coluna `taxas_ml`), `get_sales_today_summary`, `get_sales_top_skus` | período, UMA conta, marca (`p_supplier_brand`, `p_sem_marca`); sem `p_organization_id` (escopo pela RLS) | `daily_sku_metrics`, `daily_account_metrics`, `orders`, `order_items` |
+| `/faturamento` (`?account=`) | `get_faturamento` (jsonb com `por_conta`), `get_ads_overview` | período, UMA conta, `p_detalhe` | `orders`, `order_items`, `order_financials`, custo, Ads |
+| `/central` e sub-rotas | `get_faturamento` ×3, `get_ads_overview`, `get_meta_do_mes` (sem conta), `get_detector_frete`, `get_sinais_ads`, `get_quem_paga_frete`, `get_ranking_produtos` | período e UMA conta onde há | `daily_account_metrics`, `shipping_sales`, Ads, `orders` |
+| `/produtos` | `get_products_overview`, `get_sku_curation*`, `get_stock_coverage`, `get_sku_dashboard` | sem conta nem período; "tem anúncio/tem venda" só ML | `listings`, `sku_listing_links`, `daily_sku_metrics` |
+| `/anuncios` (`?conta=`), `/anuncios/[MLB]` | `get_listings_dashboard`, `..._counts`, `get_listing_dashboard_summary`, `get_fulfillment_overview`, `get_listing_content_change_analysis` | período, UMA conta, estado, vínculo, estoque, Full, promoção | `listings`, `daily_listing_*`, `fulfillment_stock_snapshots` |
+| `/curva-abc` (`?conta=`) | `get_sku_abc_analysis`, `get_sku_abc_breakdown`, `get_sku_sales_by_account` | período e anterior, UMA conta, marca, categoria, critério | `daily_sku_metrics`, Full |
+| `/skus/[id]` | `get_sku_dashboard`, `get_sku_listings`, `get_sku_abc_curve`, `get_sku_timeline`, `get_price_changes`, `get_sku_sales_breakdown` (uma linha por conta ML), baseline, eventos; **`get_sku_shopee_listings`** à parte | SKU, período, conta | ML; Shopee só o painel de anúncios |
+| `/vinculacoes` (`?conta=`) | `get_listings_link_overview`, `get_link_integrity`, `get_listing_link_suggestions`, escritas de vínculo | período, UMA conta | só ML |
+| `/estoque`, `/reposicao` | `get_stock_balances`, `get_stock_summary`, `get_replenishment_overview` | marca, categoria, busca | Full e `daily_sku_metrics` (a Shopee **não pode** entrar antes da fatia 5) |
+| `/sincronizacao` | `get_sync_health` (`sync_runs` por conta ML), `get_processing_health`, `ml_accounts.backfill_covered_until`, `get_job_failures` | organização | só ML; o veredito de frescor é calculado na web |
+| `/saude`, `/integracoes` | `get_system_health` (genérico sobre `job_runs`) | — | os jobs `shopee.*` aparecem, mas `JOB_CADENCE_MIN` (`apps/web/lib/sync-health.ts`) não tem chave `shopee.*`: sem veredito de atraso |
+| `/contas` | `get_ml_account_cards`; `shopee_shops` + `get_shopee_shop_catalog_counts` | organização | os dois, em chamadas separadas |
+
+As cinco tabelas `daily_*` (`listing`, `sku`, `account`, `listing_visits`,
+`ads_campaign`) têm `ml_account_id NOT NULL` com FK para `ml_accounts`, e
+`daily_listing_*` exige `^MLB`. Também são presas ao ML: `orders`,
+`order_items`, `order_financials`, `listings`, `sku_listing_links`,
+`link_candidates`, `fulfillment_stock_snapshots`, `metric_refresh_state` e
+`sync_runs`. **Nenhum objeto fora da família `shopee_*` lê a Shopee.**
+
+Identidade de conta na URL: `?account=<slug>` em `/vendas`, `/faturamento`,
+`/central`, `/central/produtos`; `?conta=<slug>` em `/anuncios`,
+`/curva-abc`, `/vinculacoes`; `saved_filters.params` guarda esses slugs. Slug
+desconhecido cai em "todas as contas" sem aviso.
+
+**Consequência para o "Todos":** misturar a Shopee em qualquer RPC acima
+mudaria número do ML ou exigiria reescrever o grão. Por isso o consolidado é
+contrato NOVO (E4), e as RPCs do ML continuam como estão.
+
+---
+
+## 5. Semântica: o que pode somar entre canais
+
+| Métrica | ML | Shopee | Soma? |
+|---|---|---|---|
+| Unidades | `SUM(order_items.quantity)` válidos | `SUM(quantity)` válidos | **sim** |
+| Receita bruta | `orders.total_amount` (produtos, com o desconto do vendedor no preço, sem frete) | `order_discounted_price` (produtos com desconto da loja, sem frete, antes dos cupons da Shopee); NULO com item de preço 0 sem financeiro | **sim, com `pedidos_sem_receita` ao lado** |
+| Pedidos | `orders.id` = **uma linha de item** (o carrinho é o `pack_id`) | `order_sn` = **o carrinho** | **não como "pedidos"**. Somar `pedidos_por_pack` (ML) com pedidos Shopee = **compras** |
+| Ticket médio | receita ÷ compras (pack) | receita ÷ pedidos | sim, recalculado no SQL sobre a soma (nunca média de médias) |
+| Cancelados | `cancelled` + `pending_cancel` | `CANCELLED` + `IN_CANCEL` | sim, como contagem de compras canceladas |
+| Recebido | `margem_operacional_pedido` = bruto − comissão − frete do vendedor, **só pedidos cobertos** | `escrow_amount` = já desconta comissão, taxa de serviço, taxa de transação, frete, cupons da loja, afiliados | **NÃO.** Componentes diferentes; o da Shopee é mais completo. Mostrar por canal, com a definição de cada um |
+| Resultado / margem | `get_faturamento` (5F), sobre pedidos cobertos | não existe | não existe para a Shopee |
+| Ads, TACoS | Mercado Ads | não integrado | não |
+| Histórico | 365 dias | **90 dias** (primeira leitura) | comparação com período anterior > 90 dias subestima a Shopee: declarar a cobertura |
+
+---
+
+## 6. Riscos e lacunas encontrados
+
+| # | Tipo | O quê | Evidência | Gravidade hoje |
+|---|---|---|---|---|
+| R0 | publicação | ~~Migration de D-430 fora de produção~~ — **resolvido em 14/10** (E0): migration aplicada e worker em `562b1e60` | `schema_migrations` de produção; `APP_COMMIT=562b1e60` | — |
+| S1 | segurança | RLS das tabelas `shopee_*` é por **organização** (`accessible_orgs`); a do ML é por **conta** (`accessible_accounts`, `user_account_permissions`). Um usuário restrito a uma conta ML vê todas as lojas Shopee, com pedidos e financeiro. Contraria "respeitar permissões por conta" (`PRODUCT_REQUIREMENTS.md`) | migrations `20261013*`; D-429 §2 admite | **corrigido em código (D-433)**; era latente (todo membro não-ADMIN de produção tem todas as contas ML, medido 14/10) |
+| R1 | confiabilidade | **Pedido envenenado trava o financeiro da loja inteira.** Um erro definitivo da Shopee em UM pedido faz a execução falhar antes dos demais; o pedido nunca lido volta primeiro (`order by financials_synced_at nulls first`) em toda execução seguinte. Além disso, `common.error_not_found` nunca é reconhecido como "sem financeiro": o filtro compara o código SEM prefixo com a forma COM prefixo. É o defeito que D-428 corrigiu no catálogo, sem o espelho aqui | leitura de `shopee-order-financials-sync.ts`; sonda sobre `@sb/shopee` (`common.error_not_found` → `semFinanceiro=false`) | **corrigido em código (D-432)**; era alto com volume real |
+| R2 | integridade | O pedido é gravado em 4 chamadas sem transação (upsert do pedido → apaga itens → insere itens → resolve SKU). Falha no meio deixa pedido sem itens até a próxima leitura. Duas execuções na mesma loja (fila com 2 em paralelo; encadeamento do backfill + gatilho horário) podem gravar fora de ordem: o upsert não compara `update_time` e o marco é sobrescrito sem `greatest` | `shopee-orders-sync.ts` | **corrigido em código (D-432)** |
+| R3 | operação | Janela com mais de 200 páginas lança erro genérico, tratado como passageiro: a mesma janela se repete para sempre | `listarJanela` | **corrigido em código (D-432)**: falha sem repetir |
+| R4 | observabilidade | Shopee fora de `/sincronizacao`, do vigia de sincronização parada (D-417/D-418 lê só `ml_accounts`) e das notificações. Loja em ERROR, marco parado ou autorização perto de vencer (`auth_expires_at`) não avisam ninguém — o modo de falhar de D-217. Em `/saude` os jobs `shopee.*` aparecem, mas sem veredito de atraso (`JOB_CADENCE_MIN` não os conhece — arquivo do Agente 2) | `vigia_da_sincronizacao`; `apps/web/lib/sync-health.ts` | **corrigido em código (D-435)** para loja parada e em ERROR; o veredito em `/saude` é a T1 do Agente 2 (C-09); autorização perto de vencer ainda sem aviso (só na view) |
+| R5 | credencial | Não há "desconectar loja" no app; revogar exige o painel da Shopee, e a loja só vai para ERROR quando a renovação é recusada | api e `/contas` | baixa |
+| R6 | cobertura | Histórico Shopee de 90 dias (ML: 365) | `PRIMEIRA_LEITURA_S` | declarar na tela |
+| R7 | desempenho | `shopee_sales_orders` filtra pelo `dia` calculado e agrega os itens em LATERAL antes do filtro: não usa `shopee_orders_org_created_idx`. Irrelevante com 1 pedido; precisa ensaio como `authenticated` antes do Go Live e antes de virar base do "Todos" | definição da view | futura |
+| R8 | integridade | `organization_id` de pedidos, itens e catálogo não é amarrado ao da loja (FK composta ou gatilho); só o worker escreve | migrations | **corrigido em código (D-432)**: FK composta |
+| R9 | financeiro | Sem API de devoluções, sem extrato/repasse, sem Ads da Shopee. Reembolso (`seller_return_refund`, `drc_adjustable_refund`, `prorated_*_offset_return_items`) e retenções (`withholding_*`) existem só dentro do `order_income` (jsonb), com semântica não conferida. **No sandbox o pedido de teste veio com `escrow_amount` = `order_discounted_price` (149,90)**: as taxas não aparecem, então o sandbox não valida a fórmula das taxas — só loja real valida | `payment.ts`; o `order_income` do pedido de produção (94 chaves) | lacuna declarada |
+| R11 | negócio (inferência a medir, achado do Agente 2) | O saldo vem da planilha do UpSeller, que já desconta a venda Shopee, mas a demanda da reposição (`get_purchase_suggestions`, `get_replenishment_overview`, cobertura) é só a do ML: para SKU que também vende na Shopee, a cobertura sai alta demais e a sugestão de compra baixa demais | leitura das RPCs (`daily_sku_metrics`) | a medir; entra na decisão da fatia 5 |
+| R10 | acoplamento | Todas as agregações de vendas, faturamento, ranking, curva ABC, central e estoque são do Mercado Livre (§4) | §4 | é o trabalho da 6b |
+
+---
+
+## 7. Plano incremental
+
+Cada etapa é uma fatia: migration versionada, testes, CI verde, publicação
+na ordem migration → worker/api → web, e este documento atualizado com o
+contrato entregue. Nenhuma etapa muda número do Mercado Livre: onde um
+contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
+
+### E0 — Publicar D-430 (ato do dono) — FEITA em 14/10
+
+- **Escopo:** `migrations-producao.yml` com `20261014150000`; depois o worker
+  (a resolução do SKU no lote) e a api.
+- **Aceite:** `/vendas/shopee` em produção mostra a loja de teste; o próximo
+  `shopee.orders.sync` grava `sku_id`/`vinculo_via` sem falha em `job_runs`.
+- **Contrato entregue:** §3.3 em produção.
+
+### E1 — Ingestão Shopee robusta (R1, R2, R3, R8) — em código (D-432)
+
+- **Escopo:** financeiro com `financials_error` e recuo de 1 dia na
+  `shopee_orders_financials_pending` (o espelho de D-428: erro definitivo de
+  um pedido grava e a fila segue); reconhecer `error_not_found`; RPC
+  `service_role` que grava pedido + itens + SKU numa transação, sem regredir
+  `shopee_updated_at`, e marco com `greatest`; janela grande vira falha não
+  repetível; amarrar `organization_id` à loja; `get_sku_shopee_listings`
+  devolve o `environment` da loja (C-55, coluna nova no fim).
+- **Arquivos:** migration nova; `apps/worker/src/handlers/shopee-{orders-sync,order-financials-sync}.ts`
+  e testes; `packages/shopee/src/payment.ts`; `packages/db/src/{types,rls.integration.test}.ts`.
+- **Testes:** worker (pedido envenenado no meio do lote; gravação fora de
+  ordem; janela grande); integração (transação, regressão recusada, fila com
+  recuo, FK composta).
+- **Aceite:** um pedido com erro definitivo não impede os outros; nenhum
+  pedido fica sem itens; leitura velha não sobrescreve nova.
+- **Contrato entregue:** nenhum novo; `financials_error` passa a explicar o
+  "aguardando financeiro".
+
+### E2 — Permissão por loja (S1) — em código (D-433), com a regra proposta
+
+- **Escopo:** a mesma regra do ML: ADMIN vê todas as lojas; os demais, as
+  concedidas. Conjunto `private.accessible_shopee_shops()`; as políticas das
+  tabelas `shopee_*` passam de organização para loja; as RPCs `security
+  invoker` herdam. A migration concede as lojas existentes a quem hoje tem
+  TODAS as contas ML, para ninguém perder visão no dia.
+- **Arquivos:** migration nova; `rls.integration.test.ts` (4 usuários do
+  fixture); RPC de concessão para a tela de Usuários.
+- **Aceite:** usuário sem a loja não lê pedido, financeiro, catálogo nem
+  vínculo dela, por tabela e por RPC.
+- **Contrato entregue:** concessão de loja (o Agente 2 põe na tela de
+  Usuários).
+
+### E3 — Contas multicanal e saúde (R4, R5) — em código (D-435)
+
+- **Escopo:** view `marketplace_accounts` (`security invoker`):
+  `marketplace` ('ML' | 'SHOPEE'), `account_id` (uuid), organização, nome,
+  `slug` do ML (os links e filtros salvos antigos usam `account=<slug>`),
+  `shop_id` da Shopee, ambiente, status da conexão, último erro, frescor de
+  pedidos e de catálogo, cobertura do histórico. A Shopee no vigia de
+  sincronização parada e aviso de `auth_expires_at` a 30 dias. **Nomes SQL
+  novos evitam `channel`**: `support_cases.channel` e `sync_runs.channel` já
+  existem com outro sentido, e o parâmetro `canal` de `/atendimento` também.
+- **Aceite:** o seletor Canal/Conta tem UMA fonte; loja parada gera
+  notificação como a conta ML.
+- **Contrato entregue:** `marketplace_accounts` — a lista de contas do seletor.
+
+### E4 — Vendas por canal e "Todos" (fatia 6b, vendas)
+
+- **Escopo:** `get_marketplace_sales_summary(p_organization_id, p_date_from,
+  p_date_to, p_marketplaces text[], p_account_ids uuid[])`: uma linha por
+  marketplace (e por conta, quando pedido) e a linha consolidada calculada
+  no SQL. Somam (§5): compras (pack do ML + pedido Shopee), unidades,
+  receita bruta (com os pedidos sem receita ao lado) e cancelados; o ticket
+  é recalculado sobre a soma. Na consolidada ficam NULOS o recebido e os
+  "Pedidos do Mercado Livre", que só existem por marketplace. Sandbox fora
+  da consolidada (a linha volta com a marca). `p_account_ids` vem de
+  `marketplace_accounts` (a URL leva UM valor com os ids separados por
+  vírgula, porque os filtros salvos são `Record<string,string>`). Série
+  diária por marketplace para gráfico. `p_marketplaces` nulo = só ML, o
+  padrão de hoje. A view da Shopee passa a
+  filtrar pelo intervalo em `timestamptz` (usa o índice), com ensaio como
+  `authenticated`.
+- **Testes:** equivalência (só ML = RPC atual do ML, número a número; só
+  Shopee = `get_shopee_sales_by_shop`), permissão por conta e por loja,
+  sandbox fora do total, sem receita contado à parte.
+- **Contrato entregue:** o "Todos" de `/vendas`, filtrável por canal e conta.
+
+### E5 — Faturamento Shopee
+
+- **Escopo:** resultado = recebido − custo (`sku_cost_history` na data do
+  pedido, KIT pelos componentes), sobre pedidos cobertos (financeiro lido e
+  custo conhecido em todos os itens); ids próprios (`shopee_resultado_venda`,
+  `shopee_margem_venda`), nunca "lucro líquido". Precisa da decisão do dono
+  sobre usar o recebido provisório (pedido ainda não COMPLETED).
+- **Contrato entregue:** linha Shopee em `/faturamento`, com cobertura.
+
+### E6 — Grão de SKU, ranking e curva ABC
+
+- **Escopo:** `daily_shopee_sku_metrics` (loja, `sku_id` com o balde nulo,
+  dia), convergente como D-199, materializada pelo worker depois dos
+  pedidos; leitura multicanal por canal. **Sugestão de compra e cobertura
+  não leem a Shopee** até a fatia 5 (decisão do dono, 14/10).
+- **Contrato entregue:** ranking e ABC com canal.
+
+### E7 — Fontes financeiras que faltam (R9) e Live Push
+
+Devoluções (API `returns`), reembolso pelo `order_income`, lote do
+financeiro (`get_escrow_detail_batch`, a conferir no sandbox), Ads da
+Shopee, extrato/repasse e push de pedido. **Cada uma só depois de conferida
+na documentação oficial e no sandbox** — nada disso está confirmado hoje.
+
+### E8 — Go Live e estoque (fatias 7 e 5)
+
+Infra (Cloud NAT com IP fixo, partner de produção) e decisões do dono. Antes
+de conectar loja real: E1 pronta e o ensaio de volume de E4.

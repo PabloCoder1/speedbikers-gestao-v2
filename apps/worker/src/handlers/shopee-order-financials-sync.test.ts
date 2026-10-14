@@ -86,7 +86,10 @@ function fakeShopee(erros: Record<string, string> = {}) {
 
     const erro = erros[sn];
     const corpo =
-      erro === undefined
+      // Resposta "de sucesso" fora do contrato (sem order_income).
+      erro === "FORA_DO_CONTRATO"
+        ? { error: "", response: { order_sn: sn } }
+        : erro === undefined
         ? {
             error: "",
             response: {
@@ -162,6 +165,9 @@ describe("shopee.order-financials.sync (D-427)", () => {
         return_order_sns: [],
         order_income: { escrow_amount: 81.4, commission_fee: 16.1, service_fee: 4, final_shipping_fee: -12.5 },
         financials_synced_at: NOW.toISOString(),
+        // D-432: a leitura que serviu limpa a recusa anterior.
+        financials_error: null,
+        financials_error_at: null,
       }) as unknown,
     });
     expect(JSON.stringify(db.gravados)).not.toContain("comprador");
@@ -169,25 +175,55 @@ describe("shopee.order-financials.sync (D-427)", () => {
   });
 
   it("pedido que a Shopee não acha: marcado como lido, sem tocar no financeiro guardado", async () => {
-    const db = fakeDb({ pendentes: ["A1", "A2"] });
+    // D-432: `common.error_not_found` vem COM o prefixo de módulo (referência
+    // conferida em 14/10) e também é "sem financeiro".
+    const db = fakeDb({ pendentes: ["A1", "A2", "A3"] });
 
-    const { outcome } = await rodar(db, fakeShopee({ A1: "order_not_found" }));
+    const { outcome } = await rodar(db, fakeShopee({ A1: "order_not_found", A3: "common.error_not_found" }));
 
-    expect(outcome).toEqual({ status: "done", processed: 2 });
-    expect(db.gravados[0]).toEqual({ orderSn: "A1", row: { financials_synced_at: NOW.toISOString() } });
+    expect(outcome).toEqual({ status: "done", processed: 3 });
+    const semFinanceiro = { financials_synced_at: NOW.toISOString(), financials_error: null, financials_error_at: null };
+
+    expect(db.gravados[0]).toEqual({ orderSn: "A1", row: semFinanceiro });
     expect(db.gravados[1]?.row).toMatchObject({ escrow_amount: 81.4 });
+    expect(db.gravados[2]).toEqual({ orderSn: "A3", row: semFinanceiro });
   });
 
-  it("erro da Shopee no meio: o que já foi lido fica gravado, e a falha diz se repete", async () => {
-    const passageiro = fakeDb({ pendentes: ["A1", "A2", "A3"] });
-    const definitivo = fakeDb({ pendentes: ["A1"] });
+  it("erro passageiro no meio: o que já foi lido fica gravado, e a tarefa se repete", async () => {
+    const db = fakeDb({ pendentes: ["A1", "A2", "A3"] });
 
-    const a = await rodar(passageiro, fakeShopee({ A2: "error_server" }));
-    const b = await rodar(definitivo, fakeShopee({ A1: "error_param" }));
+    const { outcome } = await rodar(db, fakeShopee({ A2: "error_server" }));
 
-    expect(a.outcome).toMatchObject({ status: "failed", retryable: true });
-    expect(passageiro.gravados.map((g) => g.orderSn)).toEqual(["A1"]);
-    expect(b.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(db.gravados.map((g) => g.orderSn)).toEqual(["A1"]);
+  });
+
+  it("D-432: pedido recusado de vez fica com o erro e a fila SEGUE — sem tocar no financeiro guardado", async () => {
+    const db = fakeDb({ pendentes: ["A1", "A2", "A3", "A4"] });
+    const shopee = fakeShopee({ A2: "error_param", A3: "FORA_DO_CONTRATO" });
+
+    const { outcome } = await rodar(db, shopee);
+
+    expect(outcome).toEqual({ status: "done", processed: 4 });
+    expect(shopee.pedidos).toEqual(["A1", "A2", "A3", "A4"]);
+    expect(db.gravados.map((g) => g.orderSn)).toEqual(["A1", "A2", "A3", "A4"]);
+    // Só o erro e a hora: nem a hora da última leitura boa nem o financeiro mudam.
+    expect(db.gravados[1]?.row).toEqual({ financials_error: "error_param", financials_error_at: NOW.toISOString() });
+    expect(db.gravados[2]?.row).toEqual({ financials_error: "fora_do_contrato", financials_error_at: NOW.toISOString() });
+    expect(db.gravados[3]?.row).toMatchObject({ escrow_amount: 81.4, financials_error: null });
+  });
+
+  it("D-432: erro da LOJA (credencial, assinatura) interrompe sem marcar o pedido — repetiria em todos", async () => {
+    for (const codigo of ["error_auth", "invalid_acceess_token", "error_shop"]) {
+      const db = fakeDb({ pendentes: ["A1", "A2", "A3"] });
+      const shopee = fakeShopee({ A2: codigo });
+
+      const { outcome } = await rodar(db, shopee);
+
+      expect(outcome).toMatchObject({ status: "failed", retryable: false });
+      expect(shopee.pedidos).toEqual(["A1", "A2"]);
+      expect(db.gravados.map((g) => g.orderSn)).toEqual(["A1"]);
+    }
   });
 
   it("lote cheio enfileira a continuação; nada pendente termina sem chamar a Shopee", async () => {

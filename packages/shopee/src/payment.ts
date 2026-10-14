@@ -88,8 +88,14 @@ export async function getEscrowDetail(
  * Pedido sem financeiro para ler: a Shopee não acha o pedido (ainda não
  * pago, cancelado antes do pagamento) ou não tem o dado. Não é falha da
  * tarefa — o pedido fica sem financeiro até a próxima mudança dele.
+ *
+ * A comparação é pelo código SEM prefixo de módulo (`baseCode`): a
+ * referência (conferida em 14/10/2026) devolve `common.error_not_found`
+ * ("supplier order item income not found"), que chega aqui como
+ * `error_not_found`. Até D-432 a lista trazia a forma com prefixo, que nunca
+ * casava — o pedido virava falha da tarefa.
  */
-const SEM_FINANCEIRO = new Set(["order_not_found", "error_data", "common.error_not_found"]);
+const SEM_FINANCEIRO = new Set(["order_not_found", "error_data", "error_not_found"]);
 
 export function isEscrowUnavailable(error: unknown): boolean {
   return error instanceof ShopeeApiError && error.baseCode !== null && SEM_FINANCEIRO.has(error.baseCode);

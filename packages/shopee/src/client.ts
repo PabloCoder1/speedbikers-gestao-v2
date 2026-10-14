@@ -80,6 +80,29 @@ export class ShopeeApiError extends Error {
   }
 }
 
+/**
+ * Códigos que dizem respeito à LOJA ou ao APP, não ao pedido ou item da
+ * chamada (Common Error Codes da referência, conferidos em 14/10/2026 em
+ * `v2.payment.get_escrow_detail`): token inválido, assinatura, partner,
+ * loja inválida, permissão. Repetir a mesma chamada para o próximo pedido dá
+ * o mesmo erro — quem itera pedidos ou itens interrompe a tarefa em vez de
+ * marcar um por um (D-432). `invalid_acceess_token` é a grafia da própria
+ * documentação.
+ */
+const CODIGOS_DA_LOJA = new Set([
+  "error_auth",
+  "error_shop",
+  "error_sign",
+  "error_permission",
+  "invalid_partner_id",
+  "invalid_acceess_token",
+  "invalid_access_token",
+]);
+
+export function isShopLevelError(error: unknown): boolean {
+  return error instanceof ShopeeApiError && error.baseCode !== null && CODIGOS_DA_LOJA.has(error.baseCode);
+}
+
 export interface ShopeeClientConfig {
   environment: ShopeeEnvironment;
   partnerId: number;
