@@ -19,11 +19,11 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-14 |
-| `origin/main` | `93304ac3` (#147, #148 e #150: D-432, D-433, D-435) |
-| Branches abertas | A1: `feat/vendas-por-marketplace` (E4) · A2: `feat/multicanal-t1-seletor` (PR #149: T1), `feat/multicanal-t2-lojas-usuarios` (rascunho #153: T2) e `feat/multicanal-t3-saude-lojas` (rascunho #154: T3a) |
+| `origin/main` | `d80db953` (#151 e #152: D-436, D-437; #149, #153 e #154: D-431, D-434, D-438) |
+| Branches abertas | A1: `feat/vendas-por-sku-multicanal` (PR #155: E6a) · A2: `feat/multicanal-t4-vendas-todos` (rascunho #156: T4) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014200000` (D-435, run `38585020320`, 14/10). Próxima: `20261014210000` (D-436) |
+| Migrations em produção | até `20261014220000` (D-437, run `38597993424`, 14/10). Pendente: `20261014230000` (E6a, #155) |
 | Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -37,11 +37,12 @@
 - E1, E2 e E3 (D-432, D-433, D-435) **em produção** em 14/10: PRs #147/#148/#150 com CI verde (e2e inclusive), migrations pelo workflow com as duas aprovações do dono, worker e api em `93304ac3`. O vigia de D-418 foi agendado pelo dono (`vigiar-sincronizacao`, a cada 30 min) e agora cobre as lojas live.
 
 **Em andamento**
-- E4, vendas por marketplace e o consolidado (D-436): **em código e validada localmente** (integração com as 252 migrations do zero, equivalência com `get_sales_summary` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #151 — falta CI, merge e a migration `20261014210000` (worker e api não mudam).
-- E5, faturamento da Shopee (D-437): **em código e validada localmente** (integração com as 253 migrations do zero, equivalência do custo com `get_faturamento`, mutação do histórico de custo); falta PR, CI, merge e a migration `20261014220000`.
+- E4, vendas por marketplace e o consolidado (D-436): **em código e validada localmente** (integração com as 252 migrations do zero, equivalência com `get_sales_summary` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #151 mergeado; migration `20261014210000` **em produção** em 14/10 (run `38597993424`; worker e api não mudam).
+- E5, faturamento da Shopee (D-437): **em código e validada localmente** (integração com as 253 migrations do zero, equivalência do custo com `get_faturamento`, mutação do histórico de custo); PR #152 mergeado; migration `20261014220000` **em produção** em 14/10 (run `38597993424`).
+- E6a, vendas por SKU entre marketplaces (D-439): **em código e validada localmente** (integração com as 254 migrations do zero, equivalências com `get_sku_sales_breakdown` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #155 — falta merge e a migration `20261014230000`.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
-- E6 grão de SKU, ranking, ABC → E7 fontes financeiras que faltam → E8 Go Live e estoque.
+- E6b curva ABC por marketplace → C-61 (componentes do faturamento Shopee, pedido do A2) → E6c `/produtos` (C-56) e ranking com resultado → E7 fontes financeiras que faltam → E8 Go Live e estoque.
 
 **Bloqueios**
 - E4 e E5 em produção dependem do merge e da migration (dono). A exibição do resultado da E5 depende da decisão 1 abaixo (os três números já vêm prontos).
@@ -96,11 +97,13 @@
 | C-50 | Catálogo e vínculo Shopee: `get_shopee_listings`, `get_shopee_listings_summary`, `get_sku_shopee_listings`, `get_shopee_shop_catalog_counts`, `set_/remove_shopee_sku_link` | A1 | `/anuncios/shopee`, `/skus/[id]`, `/contas` | em produção | — (existente; §3.2) |
 | C-51 | Vendas Shopee por loja: `get_shopee_sales_by_shop`, `get_shopee_orders` | A1 | `/vendas/shopee` | em produção (14/10) | migration em produção e a loja de teste na tela |
 | C-52 | `marketplace_accounts`: a fonte única do seletor Marketplace/Conta, com `slug` do ML e `shop_id` da Shopee (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.0); evento de loja `entity_type = 'shopee_shop'` com `shopee_shop_id` (rótulo e link na web: A2) | A1 | seletor do A2; notificações | em produção (D-435, 14/10) | uma linha por conta/loja visível ao usuário, respeitando a permissão por conta/loja |
-| C-53 | `get_marketplace_sales_summary` (linhas TOTAL/MARKETPLACE/CONTA) + `get_marketplace_sales_daily` (`p_marketplaces text[]`, `p_account_ids uuid[]`); métricas `multicanal_*` (METRICS 5T) | A1 | `/vendas` (T4) | em código (D-436, migration `20261014210000`) | só ML = números de hoje; linha consolidada no SQL; NULO no que não soma; sandbox fora |
+| C-53 | `get_marketplace_sales_summary` (linhas TOTAL/MARKETPLACE/CONTA) + `get_marketplace_sales_daily` (`p_marketplaces text[]`, `p_account_ids uuid[]`); métricas `multicanal_*` (METRICS 5T) | A1 | `/vendas` (T4) | em produção (D-436, #151, 14/10) | só ML = números de hoje; linha consolidada no SQL; NULO no que não soma; sandbox fora |
 | C-54 | Permissão por loja Shopee: `user_shopee_shop_permissions` (insert/delete direto sob RLS, só ADMIN, só para membro; como `user_account_permissions`), eventos `SHOPEE_SHOP_ACCESS_GRANTED`/`_REVOKED` (coluna `shopee_shop_id`), convite `POST /v1/organization/invites` com `shopeeShopIds` | A1 | tela de Usuários (A2, T2) | em produção (D-433, 14/10; api do convite em `api-00028-qmw`) | usuário sem a loja não lê nada dela, por tabela e por RPC — provado na integração |
 | C-55 | `get_sku_shopee_listings` devolve `environment` da loja (atende C-06) | A1 | painel Shopee do SKU | em produção (D-432, 14/10); coluna `environment` no fim | loja sandbox identificável na resposta |
 | C-56 | `get_products_overview` conta anúncio e venda Shopee (atende C-07) | A1 | `/produtos` | aceito; depende da E6 (grão de SKU Shopee) | SKU só da Shopee deixa de aparecer como "sem anúncio/sem venda"; contagens do ML iguais |
-| C-58 | `get_shopee_faturamento`: TOTAL e por loja, resultado = recebido − custo, definitivo e provisório separados, imposto do dia (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.5); NÃO soma com o resultado do ML | A1 | `/faturamento` (T5, atende C-03) | em código (D-437, migration `20261014220000`) | os três resultados prontos; nada somado com o ML |
+| C-58 | `get_shopee_faturamento`: TOTAL e por loja, resultado = recebido − custo, definitivo e provisório separados, imposto do dia (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.5); NÃO soma com o resultado do ML | A1 | `/faturamento` (T5, atende C-03) | em produção (D-437, #152, 14/10) | os três resultados prontos; nada somado com o ML |
+| C-59 | `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total) e `get_sku_sales_by_marketplace_account` (aba Vendas do SKU); view `shopee_sales_items` (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.6) | A1 | ranking e aba Vendas do SKU (T6, atende C-04 em parte) | em código (D-439, PR #155) | ML igual a `get_sku_sales_breakdown`; a soma dos SKUs da loja fecha com `get_shopee_sales_by_shop` |
+| C-61 | Componentes do faturamento Shopee sobre os pedidos cobertos (comissão, taxas, frete, cupons da loja, afiliados, ajustes e "outros" que fecham com o recebido), descontos bancados pela Shopee, série diária e, se o rateio fechar, por SKU | A1 | `/faturamento` (T5: cascata e gráfico) | aceito (D-443), depois da E6b; campos só depois de conferidos na documentação oficial | receita coberta − Σ componentes − outros = recebido coberto |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
 
 ---
@@ -121,5 +124,5 @@
 
 ## Decisões pendentes do dono
 
-1. **E5 (exibição):** mostrar o resultado de todos os cobertos, só o definitivo (COMPLETED) ou os dois? A RPC já devolve os três; a escolha é da tela.
-2. **E4 e E5:** depois dos merges (#151 e o da E5), `migrations-producao.yml` para `20261014210000` e `20261014220000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações.
+1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
+2. **E6a:** depois do merge do #155, `migrations-producao.yml` para `20261014230000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4 e E5: em produção desde 14/10.)

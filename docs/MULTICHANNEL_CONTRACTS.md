@@ -130,6 +130,16 @@ sandbox e loja nunca lida aparecem só em `CONTA` (a nunca lida com tudo NULO
 métricas em `docs/METRICS.md` 5T. Erros: marketplace fora de ML/SHOPEE e
 período invertido são recusados pelo banco.
 
+### 3.6 Vendas por SKU entre marketplaces (C-59, D-439) — em código
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_marketplace_sku_sales` | `p_organization_id`, `p_date_from`, `p_date_to`, `p_marketplaces text[]` (nulo = só ML), `p_account_ids uuid[]`, `p_sku_ids uuid[]`, `p_ordem` (`receita` \| `unidades`), `p_limit` (≤500), `p_offset` | uma linha por SKU (e o balde sem SKU, `sku_id` NULO): `sku`, `sku_title`, `unidades_ml`/`receita_ml`/`compras_ml`, `unidades_shopee`/`receita_shopee`/`itens_shopee_sem_receita`/`compras_shopee`, o total (`unidades`, `receita_bruta`, `compras`) e `total_count` |
+| `get_sku_sales_by_marketplace_account` | `p_organization_id`, `p_sku_id`, `p_date_from`, `p_date_to` | `nivel` TOTAL (só operação) e CONTA (uma por conta ML e loja Shopee, com `environment`): `unidades`, `receita_bruta`, `itens_sem_receita`, `compras`, `preco_medio` (NULO se há item de receita desconhecida) |
+| `shopee_sales_items` (view) | — | o grão de SKU da Shopee: item de pedido com a situação, o dia e `receita_item` |
+
+Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
+
 ### 3.5 Faturamento da Shopee (C-58, D-437) — em código
 
 `get_shopee_faturamento(p_organization_id, p_date_from, p_date_to, p_account_ids uuid[])`: linhas `TOTAL` (lojas live já lidas) e `CONTA` (uma por loja, com `environment`; nunca lida = tudo NULO). Colunas: `pedidos`, `receita_bruta`, `pedidos_sem_receita`, `pedidos_cobertos`, `receita_coberta`, `recebido_coberto`, `custo_produtos`, `resultado_venda`, `margem_venda` (fração), `pedidos_definitivos`/`resultado_definitivo` (COMPLETED), `pedidos_provisorios`/`resultado_provisorio`, `pedidos_sem_financeiro`, `pedidos_sem_sku`, `pedidos_sem_custo`, `pedidos_custo_atual`, `pedidos_sem_aliquota`, `imposto_coberto`, `resultado_apos_imposto`, `margem_apos_imposto`, `ultima_atualizacao`. **Não somar com o resultado do ML** (`get_faturamento`): as duas contas têm componentes diferentes (METRICS 5U × 5F) — a tela mostra por marketplace. Qual resultado exibir (todos, definitivo ou provisório) é decisão de tela/dono; os três vêm prontos.
@@ -304,7 +314,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   sobre usar o recebido provisório (pedido ainda não COMPLETED).
 - **Contrato entregue:** linha Shopee em `/faturamento`, com cobertura.
 
-### E6 — Grão de SKU, ranking e curva ABC
+### E6 — Grão de SKU, ranking e curva ABC — E6a em código (D-439); E6b (ABC) e E6c (`/produtos`, ranking com resultado) a fazer
 
 - **Escopo:** `daily_shopee_sku_metrics` (loja, `sku_id` com o balde nulo,
   dia), convergente como D-199, materializada pelo worker depois dos
