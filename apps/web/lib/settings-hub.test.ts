@@ -25,6 +25,9 @@ function base(): SettingsOverview {
     knowledge_validated: 0,
     ml_accounts_total: 4,
     ml_accounts_connected: 4,
+    shopee_shops_total: 1,
+    shopee_shops_connected: 1,
+    shopee_shops_test: 0,
   };
 }
 
@@ -36,8 +39,8 @@ function section(overview: SettingsOverview | null, id: string) {
   return found;
 }
 
-describe("describeSettings — as sete seções do item", () => {
-  it("são sete, na ordem do ROADMAP, e toda seção aponta para pelo menos uma tela dona e diz quem altera", () => {
+describe("describeSettings — as oito seções do item", () => {
+  it("são oito, na ordem do ROADMAP, e toda seção aponta para pelo menos uma tela dona e diz quem altera", () => {
     const secoes = describeSettings(base());
 
     expect(secoes.map((s) => s.id)).toEqual([
@@ -45,6 +48,7 @@ describe("describeSettings — as sete seções do item", () => {
       "reposicao",
       "notificacoes",
       "mercado_livre",
+      "shopee",
       "ia",
       "operacao",
       "preferencias",
@@ -90,6 +94,9 @@ describe("describeSettings — as sete seções do item", () => {
       knowledge_validated: 0,
       ml_accounts_total: 0,
       ml_accounts_connected: 0,
+      shopee_shops_total: 0,
+      shopee_shops_connected: 0,
+      shopee_shops_test: 0,
     };
 
     for (const papel of [null, ...PAPEIS]) {
@@ -173,6 +180,41 @@ describe("as outras seções", () => {
     expect(section(nenhuma, "notificacoes").state).toBe("nao_configurado");
   });
 
+  it("Shopee (D-446): todas conectadas é configurado e a de teste é dita; uma fora é PARCIAL com a saída para quem pode", () => {
+    expect(section(base(), "shopee")).toMatchObject({ state: "configurado", summary: "1 de 1 loja conectada." });
+    expect(section(base(), "shopee").links.map((l) => l.href)).toEqual(["/contas", "/integracoes"]);
+
+    const comTeste = base();
+    comTeste.shopee_shops_total = 2;
+    comTeste.shopee_shops_connected = 2;
+    comTeste.shopee_shops_test = 1;
+    expect(section(comTeste, "shopee").summary).toBe("2 de 2 lojas conectadas; 1 de teste, fora das somas.");
+
+    const umaFora = base();
+    umaFora.shopee_shops_total = 2;
+    expect(section(umaFora, "shopee")).toMatchObject({ state: "parcial", summary: "1 de 2 lojas conectadas." });
+    expect(avisoDe(umaFora, "shopee", "ADMIN")).toBe(
+      "Loja desconectada não é lida: pedidos, financeiro e catálogo novos dela não chegam — reautorize a loja em Contas e lojas.",
+    );
+    expect(avisoDe(umaFora, "shopee", "GESTOR")).toContain("peça a um ADMIN que reautorize a loja");
+
+    const nenhuma = base();
+    nenhuma.shopee_shops_total = 0;
+    nenhuma.shopee_shops_connected = 0;
+    expect(section(nenhuma, "shopee")).toMatchObject({ state: "nao_configurado", summary: "Nenhuma loja autorizada." });
+  });
+
+  it("Shopee: a contagem que falhou derruba SÓ a seção dela — as outras continuam lidas, e sem aviso inventado", () => {
+    const semLojas = base();
+    semLojas.shopee_shops_connected = null;
+
+    const secoes = describeSettings(semLojas);
+
+    expect(secoes.find((s) => s.id === "shopee")).toMatchObject({ state: "indisponivel", aviso: null });
+    expect(secoes.filter((s) => s.state === "indisponivel")).toHaveLength(1);
+    expect(section(semLojas, "mercado_livre").state).toBe("configurado");
+  });
+
   it("Mercado Livre: todas conectadas é configurado; uma fora é PARCIAL, com a contagem; e aponta para Contas e Integrações", () => {
     expect(section(base(), "mercado_livre")).toMatchObject({ state: "configurado", summary: "4 de 4 contas conectadas." });
     expect(section(base(), "mercado_livre").links.map((l) => l.href)).toEqual(["/contas", "/integracoes"]);
@@ -254,13 +296,13 @@ describe("placarDe e vereditoDe — um placar só, dito na faixa e no subtítulo
   }
 
   it("zero, um e N sem configuração: a frase concorda em número e o placar diz os mesmos números", () => {
-    expect(vereditoDe(describeSettings(leitura(0, 0)), false)).toBe("As 7 áreas têm configuração.");
-    expect(vereditoDe(describeSettings(leitura(1, 0)), false)).toBe("1 das 7 áreas ainda não tem configuração.");
-    expect(vereditoDe(describeSettings(leitura(2, 0)), false)).toBe("2 das 7 áreas ainda não têm configuração.");
+    expect(vereditoDe(describeSettings(leitura(0, 0)), false)).toBe("As 8 áreas têm configuração.");
+    expect(vereditoDe(describeSettings(leitura(1, 0)), false)).toBe("1 das 8 áreas ainda não tem configuração.");
+    expect(vereditoDe(describeSettings(leitura(2, 0)), false)).toBe("2 das 8 áreas ainda não têm configuração.");
 
     expect(placarDe(describeSettings(leitura(2, 0)), false)).toEqual({
-      secoes: 7,
-      configuradas: 4,
+      secoes: 8,
+      configuradas: 5,
       parciais: 0,
       naoConfiguradas: 2,
       naoEditaveis: 1,
@@ -271,17 +313,17 @@ describe("placarDe e vereditoDe — um placar só, dito na faixa e no subtítulo
   it("área PARCIAL não é contada como 'sem configuração' — era o subtítulo discordando da célula 'Parciais'", () => {
     /*
       O defeito: com uma conta ML fora e Reposição só com regra por marca, o
-      subtítulo dizia "3 das 7 áreas ainda não têm configuração" e a faixa,
+      subtítulo dizia "3 das 8 áreas ainda não têm configuração" e a faixa,
       logo abaixo, "Não configuradas 1" e "Parciais 2". As duas áreas TÊM
       configuração.
     */
-    expect(vereditoDe(describeSettings(leitura(0, 1)), false)).toBe("1 das 7 áreas tem configuração parcial.");
-    expect(vereditoDe(describeSettings(leitura(0, 2)), false)).toBe("2 das 7 áreas têm configuração parcial.");
+    expect(vereditoDe(describeSettings(leitura(0, 1)), false)).toBe("1 das 8 áreas tem configuração parcial.");
+    expect(vereditoDe(describeSettings(leitura(0, 2)), false)).toBe("2 das 8 áreas têm configuração parcial.");
     expect(vereditoDe(describeSettings(leitura(1, 2)), false)).toBe(
-      "1 das 7 áreas ainda não tem configuração e 2 têm configuração parcial.",
+      "1 das 8 áreas ainda não tem configuração e 2 têm configuração parcial.",
     );
     expect(vereditoDe(describeSettings(leitura(2, 1)), false)).toBe(
-      "2 das 7 áreas ainda não têm configuração e 1 tem configuração parcial.",
+      "2 das 8 áreas ainda não têm configuração e 1 tem configuração parcial.",
     );
   });
 
@@ -298,8 +340,8 @@ describe("placarDe e vereditoDe — um placar só, dito na faixa e no subtítulo
         // A zona 1 é a soma das duas: é ela que o rótulo "FALTA CONFIGURAR" abriga.
         expect(secoes.filter((s) => zonaDe(s.state) === 1)).toHaveLength(sem + parciais);
 
-        if (sem > 0) expect(veredito).toContain(`${String(sem)} das 7 áreas ainda não`);
-        if (parciais > 0) expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das 7 áreas )?(tem|têm) configuração parcial`));
+        if (sem > 0) expect(veredito).toContain(`${String(sem)} das 8 áreas ainda não`);
+        if (parciais > 0) expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das 8 áreas )?(tem|têm) configuração parcial`));
         if (sem === 0) expect(veredito).not.toContain("ainda não");
         if (parciais === 0) expect(veredito).not.toContain("parcial");
       }
@@ -311,22 +353,22 @@ describe("placarDe e vereditoDe — um placar só, dito na faixa e no subtítulo
 
     expect(vereditoDe(secoes, true)).toBeNull();
 
-    // 7 / 1 / 6: o total e as duas partes que continuam SABIDAS.
+    // 8 / 1 / 7: o total e as duas partes que continuam SABIDAS.
     expect(placarDe(secoes, true)).toEqual({
-      secoes: 7,
+      secoes: 8,
       configuradas: null,
       parciais: null,
       naoConfiguradas: null,
       naoEditaveis: 1,
-      indisponiveis: 6,
+      indisponiveis: 7,
     });
   });
 
   it("qualquer área indisponível derruba o veredito, mesmo sem erro de leitura", () => {
     /*
       `maybeSingle()` sobre zero linhas devolve `data` nulo SEM erro: sem esta
-      regra, seis áreas na zona "NÃO FOI POSSÍVEL LER" e o subtítulo dizendo
-      "As 7 áreas têm configuração".
+      regra, sete áreas na zona "NÃO FOI POSSÍVEL LER" e o subtítulo dizendo
+      "As 8 áreas têm configuração".
     */
     expect(vereditoDe(describeSettings(null), false)).toBeNull();
   });
@@ -348,10 +390,10 @@ describe("zonaDe — a tela agrupa por PRESENÇA de configuração, e só por is
     expect(zonaDe("indisponivel")).toBe(3);
   });
 
-  it("na leitura que falhou são SEIS na zona 3 e a IA continua na 2 — é por isso que 'Indisponíveis: 7' seria errado", () => {
+  it("na leitura que falhou são SETE na zona 3 e a IA continua na 2 — é por isso que 'Indisponíveis: 8' seria errado", () => {
     const zonas = describeSettings(null).map((s) => zonaDe(s.state));
 
-    expect(zonas.filter((z) => z === 3)).toHaveLength(6);
+    expect(zonas.filter((z) => z === 3)).toHaveLength(7);
     expect(zonas.filter((z) => z === 2)).toHaveLength(1);
     expect(zonaDe(section(null, "ia").state)).toBe(2);
   });
@@ -679,7 +721,7 @@ describe("inclui — o que a área abrange, no vocabulário da tela dona", () =>
     }
   });
 
-  it("a leitura que falhou não apaga o vocabulário: as sete continuam dizendo o que abrangem", () => {
+  it("a leitura que falhou não apaga o vocabulário: as oito continuam dizendo o que abrangem", () => {
     for (const s of describeSettings(null)) {
       expect(s.inclui.length).toBeGreaterThan(0);
     }
