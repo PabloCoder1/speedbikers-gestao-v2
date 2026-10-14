@@ -90,6 +90,15 @@ export default async function NovoPedidoDeCompraPage({
 
   const marcas = (marcasResult.data ?? []).map((m) => m.supplier_brand).filter((m) => m.trim() !== "");
 
+  /*
+    T-R6: duas leituras que, ao falhar, pareceriam "nada". Os SKUs vindos da
+    Reposição sumiriam do rascunho calados (quem clicou "Criar pedido" acharia
+    que a sugestão estava vazia), e a lista de marcas do "Trazer da reposição"
+    ficaria vazia como se o catálogo não tivesse marca.
+  */
+  const erroDaReposicao = "error" in skusResult && skusResult.error !== null ? skusResult.error.message : null;
+  const erroDasMarcas = marcasResult.error?.message ?? null;
+
   const visao = fornecedoresResult.error === null ? lerVisaoFornecedores(fornecedoresResult.data) : null;
   const erroFornecedores =
     fornecedoresResult.error?.message ?? (visao === null ? "a leitura dos fornecedores voltou fora do contrato" : null);
@@ -167,6 +176,20 @@ export default async function NovoPedidoDeCompraPage({
         <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Não foi possível carregar os fornecedores: {erroFornecedores}. A lista abaixo pode estar vazia — o rascunho
           ainda pode ser criado sem fornecedor.
+        </p>
+      )}
+
+      {erroDaReposicao !== null && (
+        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          Os {prefill.length} item(ns) vindos da Reposição não puderam ser carregados: {erroDaReposicao}. O rascunho abre
+          sem eles — volte à <Link href="/reposicao">Reposição</Link> e tente de novo.
+        </p>
+      )}
+
+      {erroDasMarcas !== null && (
+        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          Não foi possível carregar as marcas do catálogo: {erroDasMarcas}. O &quot;Trazer da reposição&quot; fica sem a
+          lista de marcas.
         </p>
       )}
 
