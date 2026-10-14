@@ -16,6 +16,7 @@ import { inviteOrganizationMember, reissueAccessLink } from "./invites.js";
 
 const ORG = "11111111-0000-4000-8000-000000000001";
 const CONTA = "aaaaaaaa-0000-4000-8000-000000000001";
+const LOJA = "dddddddd-0000-4000-8000-000000000001";
 const ADMIN: Caller = { userId: "u-admin", organizationId: ORG, role: "ADMIN" };
 
 interface FakeOptions {
@@ -25,6 +26,9 @@ interface FakeOptions {
   emailDoAlvo?: string | null;
   /** Contas que a consulta por organização devolve (o filtro é do fake). */
   contasDaOrganizacao?: string[];
+  /** Lojas Shopee que a consulta por organização devolve (D-433). */
+  lojasDaOrganizacao?: string[];
+  falhaNaPermissaoDeLoja?: boolean;
   /** Usuários já existentes no Auth, por e-mail. */
   usuarios?: { id: string; email: string }[];
   jaMembro?: boolean;
@@ -35,6 +39,7 @@ interface FakeOptions {
 
 function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { tabela: string; linha: unknown }[] } {
   const contas = options.contasDaOrganizacao ?? [CONTA];
+  const lojas = options.lojasDaOrganizacao ?? [LOJA];
   const usuarios = options.usuarios ?? [];
   const escritas: { tabela: string; linha: unknown }[] = [];
 
@@ -51,9 +56,12 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
         eq: () => ({
           then: <R>(resolve: (value: { data: unknown; error: null }) => R) =>
             Promise.resolve({ data: vinculos, error: null }).then(resolve),
-          // ml_accounts: .select().eq(org).in(ids)
-          in: (_coluna: string, ids: string[]) =>
-            Promise.resolve({ data: ids.filter((id) => contas.includes(id)).map((id) => ({ id })), error: null }),
+          // ml_accounts e shopee_shops: .select().eq(org).in(ids)
+          in: (_coluna: string, ids: string[]) => {
+            const daOrganizacao = tabela === "shopee_shops" ? lojas : contas;
+
+            return Promise.resolve({ data: ids.filter((id) => daOrganizacao.includes(id)).map((id) => ({ id })), error: null });
+          },
           // organization_members: .select().eq(org).eq(user).maybeSingle()
           eq: () => ({
             maybeSingle: () =>
@@ -71,6 +79,10 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
         escritas.push({ tabela, linha });
 
         if (tabela === "user_account_permissions" && options.falhaNaPermissao === true) {
+          return Promise.resolve({ error: { message: "permissão recusada" } });
+        }
+
+        if (tabela === "user_shopee_shop_permissions" && options.falhaNaPermissaoDeLoja === true) {
           return Promise.resolve({ error: { message: "permissão recusada" } });
         }
 
@@ -146,6 +158,46 @@ describe("inviteOrganizationMember (D-296)", () => {
     expect(outcome).toEqual({ status: "invalid", reason: "conta que não pertence a esta organização" });
     // E nada foi escrito: a recusa acontece ANTES de criar usuário.
     expect(escritas).toEqual([]);
+  });
+
+  it("D-433: loja Shopee de outra organização é RECUSADA antes de criar qualquer coisa", async () => {
+    const { deps, escritas } = fakeDeps({ lojasDaOrganizacao: [] });
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, {
+      email: "alguem@empresa.com",
+      role: "ANALISTA",
+      shopeeShopIds: ["dddddddd-0000-4000-8000-000000000009"],
+    });
+
+    expect(outcome).toEqual({ status: "invalid", reason: "loja Shopee que não pertence a esta organização" });
+    expect(escritas).toEqual([]);
+  });
+
+  it("D-433: as lojas pedidas viram concessão depois do vínculo; a falha é DITA", async () => {
+    const certo = fakeDeps();
+    const outcome = await inviteOrganizationMember(certo.deps, ADMIN, {
+      email: "nova@empresa.com",
+      role: "OPERADOR",
+      mlAccountIds: [CONTA],
+      shopeeShopIds: [LOJA],
+    });
+
+    expect(outcome.status).toBe("invited");
+    const tabelas = certo.escritas.map((e) => e.tabela);
+
+    expect(tabelas.indexOf("user_shopee_shop_permissions")).toBeGreaterThan(tabelas.indexOf("organization_members"));
+    expect(certo.escritas.find((e) => e.tabela === "user_shopee_shop_permissions")?.linha).toEqual([
+      { user_id: "novo-nova@empresa.com", shopee_shop_id: LOJA },
+    ]);
+
+    const falha = fakeDeps({ falhaNaPermissaoDeLoja: true });
+    const comFalha = await inviteOrganizationMember(falha.deps, ADMIN, {
+      email: "nova@empresa.com",
+      role: "OPERADOR",
+      shopeeShopIds: [LOJA],
+    });
+
+    expect(comFalha).toHaveProperty("reason", expect.stringContaining("sem acesso às lojas Shopee"));
   });
 
   /** Quem já tem conta no sistema não é erro: vira vínculo, sem link a aceitar. */

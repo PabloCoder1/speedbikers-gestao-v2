@@ -66,8 +66,10 @@ NULL`, `^MLB` e cerca de 30 funções em cima (§4).
 ## 3. Contratos Shopee disponíveis (Agente 2 pode consumir)
 
 Todos `security invoker`, recebem `p_organization_id` e respeitam a RLS de
-quem chama. **RLS da Shopee é por ORGANIZAÇÃO, não por loja** (ver §6, risco
-S1). Valores monetários em `numeric` (BRL, `currency` devolvido quando há);
+quem chama. **Até D-433 a RLS da Shopee era por ORGANIZAÇÃO; com a
+migration `20261014190000` passa a ser por LOJA** (ADMIN todas; os demais,
+as de `user_shopee_shop_permissions`) — mesmas assinaturas, menos linhas
+para quem não alcança a loja. Valores monetários em `numeric` (BRL, `currency` devolvido quando há);
 ausente = NULO, nunca zero.
 
 ### 3.1 Lojas
@@ -174,7 +176,7 @@ contrato NOVO (E4), e as RPCs do ML continuam como estão.
 | # | Tipo | O quê | Evidência | Gravidade hoje |
 |---|---|---|---|---|
 | R0 | publicação | ~~Migration de D-430 fora de produção~~ — **resolvido em 14/10** (E0): migration aplicada e worker em `562b1e60` | `schema_migrations` de produção; `APP_COMMIT=562b1e60` | — |
-| S1 | segurança | RLS das tabelas `shopee_*` é por **organização** (`accessible_orgs`); a do ML é por **conta** (`accessible_accounts`, `user_account_permissions`). Um usuário restrito a uma conta ML vê todas as lojas Shopee, com pedidos e financeiro. Contraria "respeitar permissões por conta" (`PRODUCT_REQUIREMENTS.md`) | migrations `20261013*`; D-429 §2 admite | **latente**: todo membro não-ADMIN de produção tem todas as contas ML (medido 14/10) |
+| S1 | segurança | RLS das tabelas `shopee_*` é por **organização** (`accessible_orgs`); a do ML é por **conta** (`accessible_accounts`, `user_account_permissions`). Um usuário restrito a uma conta ML vê todas as lojas Shopee, com pedidos e financeiro. Contraria "respeitar permissões por conta" (`PRODUCT_REQUIREMENTS.md`) | migrations `20261013*`; D-429 §2 admite | **corrigido em código (D-433)**; era latente (todo membro não-ADMIN de produção tem todas as contas ML, medido 14/10) |
 | R1 | confiabilidade | **Pedido envenenado trava o financeiro da loja inteira.** Um erro definitivo da Shopee em UM pedido faz a execução falhar antes dos demais; o pedido nunca lido volta primeiro (`order by financials_synced_at nulls first`) em toda execução seguinte. Além disso, `common.error_not_found` nunca é reconhecido como "sem financeiro": o filtro compara o código SEM prefixo com a forma COM prefixo. É o defeito que D-428 corrigiu no catálogo, sem o espelho aqui | leitura de `shopee-order-financials-sync.ts`; sonda sobre `@sb/shopee` (`common.error_not_found` → `semFinanceiro=false`) | **corrigido em código (D-432)**; era alto com volume real |
 | R2 | integridade | O pedido é gravado em 4 chamadas sem transação (upsert do pedido → apaga itens → insere itens → resolve SKU). Falha no meio deixa pedido sem itens até a próxima leitura. Duas execuções na mesma loja (fila com 2 em paralelo; encadeamento do backfill + gatilho horário) podem gravar fora de ordem: o upsert não compara `update_time` e o marco é sobrescrito sem `greatest` | `shopee-orders-sync.ts` | **corrigido em código (D-432)** |
 | R3 | operação | Janela com mais de 200 páginas lança erro genérico, tratado como passageiro: a mesma janela se repete para sempre | `listarJanela` | **corrigido em código (D-432)**: falha sem repetir |
@@ -223,7 +225,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
 - **Contrato entregue:** nenhum novo; `financials_error` passa a explicar o
   "aguardando financeiro".
 
-### E2 — Permissão por loja (S1) — **decisão do dono**
+### E2 — Permissão por loja (S1) — em código (D-433), com a regra proposta
 
 - **Escopo:** a mesma regra do ML: ADMIN vê todas as lojas; os demais, as
   concedidas. Conjunto `private.accessible_shopee_shops()`; as políticas das

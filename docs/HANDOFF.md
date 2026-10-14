@@ -18,9 +18,9 @@
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | Worker `worker-00044-p8d` em `562b1e60` (D-430) e api `api-00027-p7c` em `e037573f` (14/10), Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta do worker: `worker-00043-694`. Worker fixo na revisão: `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261014150000` (D-430, 14/10). **Próxima:** `20261014180000` (D-432), antes do worker. Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261014180000`. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; agentes em `docs/MULTICHANNEL_HANDOFF.md`, contratos em `docs/MULTICHANNEL_CONTRACTS.md`): fatias 0–4 e 6a no ar no sandbox; E1 (ingestão robusta, D-432) em código; 5 (estoque) adiada para o Go Live (dono, 14/10); depois, 6b. A 5J segue com o detector de frete (D-405). |
+| **Produção** | Worker `worker-00044-p8d` em `562b1e60` (D-430), api `api-00027-p7c` em `e037573f`, Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta do worker: `worker-00043-694`; fixo na revisão (`update-traffic --to-revisions`, D-342). Webhooks só em produção; Dev pausado (D-350). |
+| **Migrations** | Produção até `20261014150000` (D-430). **Próximas:** `20261014180000` e `20261014190000` (D-432/D-433), antes do worker e da api. Dono dispara e aprova; sem `--include-all`; nunca MCP. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4 e 6a no ar no sandbox; E1/E2 (D-432/D-433) em código; 5 (estoque) adiada para o Go Live (dono, 14/10); depois, 6b. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 

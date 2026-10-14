@@ -240,3 +240,4 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja: 6a definição da venda, SKU gravado e `/vendas/shopee`; 6b canal em Faturamento e ranking | 6a código (D-430) |
 | 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |
 | E1 | Ingestão robusta antes do volume real: pedido recusado não trava o financeiro, lote de pedidos numa transação que não regride, marco monotônico, erro da loja interrompe, organização amarrada à loja (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-432) |
+| E2 | Permissão por loja: a mesma regra das contas ML (ADMIN todas; os demais, as concedidas), auditada, com convite e limpeza na saída (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-433) |

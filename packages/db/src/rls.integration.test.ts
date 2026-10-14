@@ -3604,6 +3604,195 @@ describe("ingestão Shopee robusta (D-432)", () => {
   });
 });
 
+/*
+  D-433: a permissão por LOJA Shopee, a mesma regra das contas do ML. ADMIN
+  alcança todas as lojas da organização; os demais, as concedidas em
+  user_shopee_shop_permissions. Organização própria, para os eventos de
+  acesso (append-only) não se misturarem aos de outros blocos.
+*/
+describe("permissão por loja Shopee (D-433)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d433";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d433";
+  const OPERADOR = "aaaaaaaa-0000-4000-8000-00000001d433";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000002d433";
+  const SAINDO = "aaaaaaaa-0000-4000-8000-00000003d433";
+  const LOJA_A = "dddd4330-0000-4000-8000-0000000a0433";
+  const LOJA_B = "dddd4330-0000-4000-8000-0000000b0433";
+  let skuId = "";
+
+  const visiveis = async (usuario: string, sql: string): Promise<string[]> =>
+    (await asUser<{ loja: string }>(usuario, sql)).map((r) => r.loja).sort();
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d433@rls.test'), ($2::uuid, 'operador-d433@rls.test'),
+                    ($3::uuid, 'analista-d433@rls.test'), ($4::uuid, 'saindo-d433@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, OPERADOR, ANALISTA, SAINDO],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-433', 'org-d433') on conflict (id) do nothing",
+      [ORG],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'OPERADOR'), ($1, $4, 'ANALISTA'), ($1, $5, 'ANALISTA')
+       on conflict do nothing`,
+      [ORG, ADMIN, OPERADOR, ANALISTA, SAINDO],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, orders_synced_until)
+       values ($1, $3, 'sandbox', 990433001, 'Loja A', 'CONNECTED', now()), ($2, $3, 'sandbox', 990433002, 'Loja B', 'CONNECTED', now())`,
+      [LOJA_A, LOJA_B, ORG],
+    );
+    for (const loja of [LOJA_A, LOJA_B]) {
+      await client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+         values ($1, $2, 'P-D433', 'SHIPPED', now(), now(), now())`,
+        [loja, ORG],
+      );
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price)
+         values ($1, 'P-D433', 0, $2, 1, 1, 10)`,
+        [loja, ORG],
+      );
+      await client.query(
+        `insert into public.shopee_items
+           (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+         values ($1, $2, 1, 'NORMAL', now(), 'Item', null, false, now(), now())`,
+        [loja, ORG],
+      );
+    }
+    const r = await client.query<{ id: string }>(
+      "insert into public.skus (organization_id, sku, kind) values ($1, 'D433-SKU', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+      [ORG],
+    );
+    skuId = r.rows[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA_A, LOJA_B]]);
+  });
+
+  it("sem concessão, o não-ADMIN não vê loja, pedido, item, catálogo nem venda; o ADMIN vê as duas", async () => {
+    const consultas = [
+      "select id as loja from public.shopee_shops",
+      "select shopee_shop_id as loja from public.shopee_orders",
+      "select shopee_shop_id as loja from public.shopee_order_items",
+      "select shopee_shop_id as loja from public.shopee_items",
+      "select shopee_shop_id as loja from public.shopee_sales_orders",
+      `select shopee_shop_id as loja from public.get_shopee_sales_by_shop('${ORG}', current_date - 1, current_date + 1)`,
+      `select shopee_shop_id as loja from public.get_shopee_listings('${ORG}', null, null, null, 50, 0)`,
+    ];
+
+    for (const sql of consultas) {
+      expect(await visiveis(ANALISTA, sql)).toEqual([]);
+      expect(await visiveis(ADMIN, sql)).toEqual([LOJA_A, LOJA_B].sort());
+    }
+  });
+
+  it("com a loja A concedida, vê só a A — por tabela, view e RPC", async () => {
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)", [ANALISTA, LOJA_A]);
+
+    try {
+      expect(await visiveis(ANALISTA, "select id as loja from public.shopee_shops")).toEqual([LOJA_A]);
+      expect(await visiveis(ANALISTA, "select shopee_shop_id as loja from public.shopee_orders")).toEqual([LOJA_A]);
+      expect(
+        await visiveis(ANALISTA, `select shopee_shop_id as loja from public.get_shopee_orders('${ORG}', current_date - 1, current_date + 1, null, null, 50, 0)`),
+      ).toEqual([LOJA_A]);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1", [ANALISTA]);
+    }
+  });
+
+  it("só o ADMIN da organização da loja concede, e só a quem é membro dela", async () => {
+    await expect(
+      asUser(ANALISTA, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}')`),
+    ).rejects.toThrow(/row-level security/i);
+    await expect(
+      asUser(DE_OUTRA_ORG, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}')`),
+    ).rejects.toThrow(/row-level security/i);
+    // Quem não é da organização não recebe a loja, nem pelo ADMIN dela.
+    await expect(
+      asUser(ADMIN, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${DE_OUTRA_ORG}', '${LOJA_A}')`),
+    ).rejects.toThrow(/row-level security/i);
+    expect(
+      await asUser(ADMIN, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}') returning user_id`),
+    ).toHaveLength(1);
+  });
+
+  it("conceder e revogar viram evento de acesso, com o ator e a loja", async () => {
+    await asUserPersist(ADMIN, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_B}')`);
+    await asUserPersist(ADMIN, `delete from public.user_shopee_shop_permissions where user_id = '${ANALISTA}' and shopee_shop_id = '${LOJA_B}'`);
+
+    const eventos = await client.query<{ event_type: string; actor_user_id: string; ml_account_id: string | null }>(
+      `select event_type, actor_user_id, ml_account_id from public.organization_access_events
+        where organization_id = $1 and shopee_shop_id = $2 and target_user_id = $3 order by occurred_at, created_at`,
+      [ORG, LOJA_B, ANALISTA],
+    );
+
+    expect(eventos.rows.slice(-2)).toEqual([
+      { event_type: "SHOPEE_SHOP_ACCESS_GRANTED", actor_user_id: ADMIN, ml_account_id: null },
+      { event_type: "SHOPEE_SHOP_ACCESS_REVOKED", actor_user_id: ADMIN, ml_account_id: null },
+    ]);
+    // O evento de loja não aceita a forma de conta, nem o contrário.
+    await expect(
+      client.query(
+        `insert into public.organization_access_events (organization_id, event_type, target_user_id, shopee_shop_id, ml_account_id)
+         values ($1, 'SHOPEE_SHOP_ACCESS_GRANTED', $2, null, null)`,
+        [ORG, ANALISTA],
+      ),
+    ).rejects.toThrow(/organization_access_events_role_shape/);
+  });
+
+  it("quem sai da organização perde as lojas dela, com o evento", async () => {
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)", [SAINDO, LOJA_A]);
+    await asUserPersist(ADMIN, `delete from public.organization_members where organization_id = '${ORG}' and user_id = '${SAINDO}'`);
+
+    const restos = await client.query("select 1 from public.user_shopee_shop_permissions where user_id = $1", [SAINDO]);
+    const eventos = await client.query<{ event_type: string }>(
+      `select event_type from public.organization_access_events
+        where organization_id = $1 and target_user_id = $2 and shopee_shop_id = $3 order by occurred_at, created_at`,
+      [ORG, SAINDO, LOJA_A],
+    );
+
+    expect(restos.rows).toHaveLength(0);
+    expect(eventos.rows.at(-1)).toEqual({ event_type: "SHOPEE_SHOP_ACCESS_REVOKED" });
+  });
+
+  it("o vínculo manual exige o alcance da loja, além do papel", async () => {
+    const vincular = `select public.set_shopee_sku_link('${LOJA_A}', 1, null, '${skuId}') as id`;
+
+    await expect(asUser(OPERADOR, vincular)).rejects.toThrow(/sem permissao/);
+
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)", [OPERADOR, LOJA_A]);
+
+    try {
+      expect(await asUser(OPERADOR, vincular)).toHaveLength(1);
+      // A loja B continua fora do alcance dele.
+      await expect(asUser(OPERADOR, `select public.set_shopee_sku_link('${LOJA_B}', 1, null, '${skuId}')`)).rejects.toThrow(/sem permissao/);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1", [OPERADOR]);
+    }
+  });
+
+  it("o anon não lê as concessões; o não-ADMIN lê só as próprias e as das lojas que alcança", async () => {
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)", [OPERADOR, LOJA_B]);
+
+    try {
+      await expect(asAnon("select * from public.user_shopee_shop_permissions")).rejects.toThrow(/permission denied/i);
+      expect(await asUser(ANALISTA, "select 1 from public.user_shopee_shop_permissions")).toHaveLength(0);
+      expect(
+        await asUser<{ user_id: string }>(OPERADOR, "select user_id from public.user_shopee_shop_permissions"),
+      ).toEqual([{ user_id: OPERADOR }]);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1", [OPERADOR]);
+    }
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";
