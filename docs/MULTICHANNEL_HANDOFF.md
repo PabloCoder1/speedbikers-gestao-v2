@@ -20,10 +20,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `558eacd1` (#155: D-439; #156, #158, #159 e #162: D-440, D-442, D-444, D-446) |
-| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61), `feat/produtos-multicanal` (rascunho #161: E6c) e `feat/devolucoes-shopee` (rascunho #163: E7a) · A2: T6b (D-448, empilhada no #157) |
+| Branches abertas | A1: `feat/produtos-multicanal` (#161: E6c), `feat/devolucoes-shopee` (rascunho #163: E7a) e `feat/ads-shopee` (rascunho #166: E7b), empilhadas nessa ordem · A2: T6b (D-448, empilhada no #157) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, #157) , `20261015010000` (C-61, #160) e `20261015020000` (E6c, #161) |
+| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, na `main` pelo #157), `20261015010000` (C-61, na `main` pelo #160) e `20261015020000` (E6c, #161) |
 | Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -41,8 +41,8 @@
 - E5, faturamento da Shopee (D-437): **em código e validada localmente** (integração com as 253 migrations do zero, equivalência do custo com `get_faturamento`, mutação do histórico de custo); PR #152 mergeado; migration `20261014220000` **em produção** em 14/10 (run `38597993424`).
 - E6a, vendas por SKU entre marketplaces (D-439): **em código e validada localmente** (integração com as 254 migrations do zero, equivalências com `get_sku_sales_breakdown` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #155 mergeado (`b3a58ac5`); migration `20261014230000` **em produção** em 14/10 (run `38612642381`).
 - E6b, curva ABC por marketplace (D-441): **em código e validada** — o ML idêntico às funções antigas lado a lado (3.124 combinações locais e 11 casos no Dev com dados reais), ~30x mais rápida no Dev (plano custom), integração 976/976 com as 255 migrations do zero, 11 mutações; rascunho #157 — falta CI, merge e a migration `20261015000000`.
-- C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — rascunho #160 — falta CI, merge e a migration `20261015010000`.
-- E6c, `/produtos` com a Shopee (D-445): **em código e validada** — sem Shopee, idêntica à função antiga (25 combinações locais; 5 casos no Dev com 3.554 SKUs, ~75→78 ms); com Shopee, os campos do ML iguais, os números da Shopee iguais à contagem direta e as facetas fechando; 7 mutações; empilhada no #160 — rascunho #161 — falta CI, merge e a migration `20261015020000`. O ranking com resultado da central fica para depois do Go Live (D-430 §5).
+- C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — na `main` pelo #160 — falta a migration `20261015010000`.
+- E6c, `/produtos` com a Shopee (D-445): **em código e validada** — sem Shopee, idêntica à função antiga (25 combinações locais; 5 casos no Dev com 3.554 SKUs, ~75→78 ms); com Shopee, os campos do ML iguais, os números da Shopee iguais à contagem direta e as facetas fechando; 7 mutações; empilhada no #160 — #161 (pronto para revisão) — falta CI, merge e a migration `20261015020000`. O ranking com resultado da central fica para depois do Go Live (D-430 §5).
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
 - E7 fontes financeiras que faltam → E8 Go Live e estoque.
@@ -131,4 +131,4 @@
 ## Decisões pendentes do dono
 
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
-2. **E6b, C-61 e E6c:** depois dos merges (#157, #160 e #161), `migrations-producao.yml` para `20261015000000`, `20261015010000` e `20261015020000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.) (E4 e E5: em produção desde 14/10.)
+2. **E6b, C-61 e E6c:** depois do merge do #161 (#157 e #160 já entraram), `migrations-producao.yml` para `20261015000000`, `20261015010000` e `20261015020000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)
