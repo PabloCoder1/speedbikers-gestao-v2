@@ -98,6 +98,8 @@ O contador é da JANELA inteira (5 min desde o primeiro evento do grupo), não s
 
 **Implementado em 2026-08-24 (D-073):** o fan-out (trigger `AFTER INSERT` em `domain_events`, `private.fan_out_notification`) já aplica esta regra na GERAÇÃO — evento organizacional alcança todo membro da organização, evento de conta alcança ADMIN (sempre) mais quem tiver `user_account_permissions` para aquela conta, mesma regra já usada para leitura de `domain_events` (D-054). A policy de leitura de `notifications` amarra a existir uma linha em `notification_recipients` — a defesa em profundidade descrita acima. Teste negativo em `packages/db/src/rls.integration.test.ts`.
 
+**Evento de loja Shopee (D-435):** `domain_events.shopee_shop_id` preenchido alcança ADMIN mais quem tiver `user_shopee_shop_permissions` para a loja (D-433), na geração e na leitura (`domain_events_select_permitted`). Evento com conta ML OU loja, nunca as duas (`domain_events_uma_origem`).
+
 Esta é a única regra que ainda filtra a CRIAÇÃO do `notification_recipients` — `notification_preferences` (secao 6) NÃO filtra mais desde D-076, só a permissão por conta acima.
 
 ---
@@ -144,7 +146,7 @@ Notificação e ação são coisas diferentes e não devem se confundir:
 
 Um evento crítico pode gerar as duas. A maioria dos eventos gera apenas notificação, e muitos não geram nem isso.
 
-**A conta que para de sincronizar avisa (D-417):** `sync.failed` (crítico) quando a conta entra em ERROR, e `sync.delayed`/`sync.failed` quando a reconciliação de pedidos falha há mais de 3/12 horas — um aviso por episódio, com link para `/integracoes`. Em 27/09 a parada de 32 horas passou sem aviso nenhum. **E quando a reconciliação para de rodar (D-418)**, um pg_cron a cada 30 minutos (`private.vigiar_sincronizacao`) avisa pela mesma regra e a mesma chave — agendado em produção por `select private.agendar_vigia_da_sincronizacao();`.
+**A conta que para de sincronizar avisa (D-417):** `sync.failed` (crítico) quando a conta entra em ERROR, e `sync.delayed`/`sync.failed` quando a reconciliação de pedidos falha há mais de 3/12 horas — um aviso por episódio, com link para `/integracoes`. Em 27/09 a parada de 32 horas passou sem aviso nenhum. **E quando a reconciliação para de rodar (D-418)**, um pg_cron a cada 30 minutos (`private.vigiar_sincronizacao`) avisa pela mesma regra e a mesma chave — agendado em produção por `select private.agendar_vigia_da_sincronizacao();`. **Ato pendente:** em 14/10 o `cron.job` de produção estava VAZIO, ou seja, o vigia nunca rodou lá (D-435). **A loja Shopee (D-435)** avisa pelas mesmas regras e no mesmo vigia: `sync.delayed`/`sync.failed` com 3/12 h sem o marco de pedidos andar, `sync.failed` crítico quando entra em ERROR — `entity_type = 'shopee_shop'`, `shopee_shop_id` no evento, só loja `live`.
 
 O caminho inverso existe desde D-411: o alerta NOVO de severidade alta da central (uma ação em `actions`) grava um `central.alert.opened` na mesma transação, e a notificação avisa que há uma ação a decidir — o link leva à fila de `/acoes` do tipo do alerta. O episódio que continua aberto não notifica de novo.
 
