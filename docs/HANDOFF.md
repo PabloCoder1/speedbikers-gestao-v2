@@ -19,8 +19,8 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00045-c2f` e api `api-00028-qmw` em `93304ac3` (D-432/433/435, 14/10), Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta: `worker-00044-p8d`/`api-00027-p7c`. Worker fixo na revisão (`update-traffic --to-revisions`, D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261014220000` (D-437, 14/10). **Próximas:** `20261014230000`, `…15000000` e `…15010000` (D-439/441/443). Dono dispara (depois da CI da `main`) e aprova; sem `--include-all`; nunca MCP. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4, 6a e E1–E3 no ar (sandbox); E4–E5 (vendas consolidadas e faturamento Shopee, D-436/437) no ar; E6a/E6b e C-61 (vendas por SKU, curva ABC por marketplace, composição do faturamento Shopee; D-439/441/443) em código; 5 (estoque) adiada para o Go Live. A 5J segue com o detector de frete (D-405). |
+| **Migrations** | Produção até `20261014220000` (D-437, 14/10). **Próximas:** `20261014230000`, `…15000000`, `…15010000` e `…15020000` (D-439/441/443/445). Dono dispara (depois da CI da `main`) e aprova; sem `--include-all`; nunca MCP. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4, 6a e E1–E3 no ar (sandbox); E4–E5 (vendas consolidadas e faturamento Shopee, D-436/437) no ar; E6 e C-61 (vendas por SKU, curva ABC por marketplace, `/produtos`, composição do faturamento Shopee; D-439/441/445/443) em código; 5 (estoque) adiada para o Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 

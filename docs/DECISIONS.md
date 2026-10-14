@@ -15117,3 +15117,24 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **Limite honesto:** conferido na documentacao oficial e num pedido de sandbox sem taxas. Fechar a cascata com loja real (e saber se a comissao do Brasil e a bruta ou a liquida) e verificacao do Go Live (E8).
 
 **Impacto:** `supabase/migrations/20261015010000_composicao_faturamento_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: so a migration (worker e api nao mudam); a tela e a T5b do A2.
+
+## D-445 - /produtos com a Shopee (E6c, C-56): anuncio e venda olham os dois marketplaces, os campos do ML nao mudam e a loja de teste nao conta
+
+**Contexto:** `get_products_overview` (D-373) contava anuncio e venda de 90 dias so do ML: um SKU que so a Shopee anuncia ou vende caia em "sem anuncio"/"sem venda" -- nos filtros, nas facetas e nos cartoes "ativos sem anuncio/venda" (C-07 do A2, aceito como C-56). O grao de SKU da Shopee existe desde D-439 e o anuncio Shopee ja e resolvido para o SKU (`shopee_listing_units`, D-429).
+
+**Decisao:**
+
+1. **Os campos do ML nao mudam** (`listing_count`, `units_sold_90d`). A linha ganha `shopee_listing_count` (anuncio Shopee vinculado ao SKU -- manual ou pelo SKU do anuncio --, um por item, so loja live; excluido pelo vendedor nao conta) e `shopee_units_sold_90d` (pedido valido de loja live nos ultimos 90 dias, o grao de D-439).
+2. **Anuncio e venda olham QUALQUER marketplace** nos filtros, nas facetas e no resumo: COM/SEM passam a ser "em algum marketplace"/"em nenhum". `p_listing` e `p_sales` ganham SO_ML, SO_SHOPEE e AMBOS, e as facetas trazem as mesmas contagens (com + sem = todos; so_ml + so_shopee + ambos = com).
+3. **O resumo guarda o so do ML a parte** (`sem_anuncio_ml`, `sem_venda_90d_ml`) -- o cartao de antes, para quem quer saber o que ainda nao esta no ML -- e diz se ha Shopee (`tem_shopee`).
+4. **Sem loja Shopee live, os numeros da Shopee sao NULOS** (nao ha o que dizer) e o resto e exatamente o de antes. Loja de teste nunca conta.
+5. **Continua `security definer` com ADMIN/GESTOR** (D-373/D-180): o catalogo e da organizacao, como as contagens do ML, que ja nao seguem a permissao por conta.
+6. **O ranking com resultado da central** (`get_ranking_produtos`, D-402) segue so ML: a central so recebe a Shopee depois do Go Live (D-430 secao 5). O resultado por produto da Shopee existe no faturamento (C-61, D-443).
+
+**Verificacao:**
+- **Sem Shopee = o de antes:** a funcao antiga recriada num schema de rascunho e comparada com a nova como ADMIN, numa organizacao sintetica (300 SKUs, 2 contas, vendas de 120 dias, anuncios e vinculos ML), em 25 combinacoes de filtro, ordem e paginacao: **identica**, tirando as chaves novas. No **Dev, catalogo real de 3.554 SKUs**, como `authenticated` ADMIN: identica em 5 casos; ~75 ms antes, ~78 ms agora.
+- **Com Shopee** (loja live e de teste, itens com e sem variacao, item apagado, vendas recentes, velhas e canceladas): os campos do ML de cada SKU iguais aos da funcao antiga; os numeros da Shopee iguais a contagem direta; as facetas fecham; cada recorte devolve a sua faceta; 31 SKUs anunciados so na Shopee deixam de ser "sem anuncio" (157 contra 185 so do ML).
+- **Integracao:** 3 testes com numeros exatos (cinco SKUs em cada combinacao, os recortes, a organizacao sem Shopee com os nulos e o ANALISTA recusado). Os de D-373 passam sem mudanca.
+- **Mutacao:** 7 regras estragadas (loja de teste contando, venda velha, cancelado, SEM so do ML, resumo so do ML, nulo virando zero, faceta errada) -- todas derrubam teste.
+
+**Impacto:** `supabase/migrations/20261015020000_produtos_com_shopee.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem tipo novo (a RPC devolve `jsonb`). Publicacao: so a migration; a tela (as colunas e os recortes novos) e do A2 -- sem mudanca nela, `/produtos` ja deixa de chamar de "sem anuncio/venda" o SKU que so a Shopee tem.
