@@ -568,6 +568,22 @@ Lidas por `get_marketplace_sales_summary` (linhas TOTAL, MARKETPLACE e CONTA) e 
 - **Dia:** criação do pedido em São Paulo nos dois. **Frescor:** o elo mais fraco do grupo (`ultima_atualizacao`).
 - **Sem marca:** a receita da Shopee é do pedido, não do item; o recorte por marca espera o grão de SKU Shopee (E6).
 
+## 5U. Faturamento da Shopee (D-437) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_shopee_faturamento` (TOTAL e uma linha por loja). A conta é a da própria Shopee: **resultado = recebido (`escrow_amount`) − custo dos produtos**; o recebido já desconta comissão, taxa de serviço, taxa de transação, o frete que fica com a loja, cupons da loja e afiliados. **Não soma com `resultado_venda` do ML (5F)**, que deixa de fora taxa fixa, parcelamento e Mercado Pago.
+
+| Id | Definição |
+|---|---|
+| `shopee_custo_produtos` | `SUM(quantidade × custo unitário na data do pedido)`, KIT pelos componentes — a regra de `custo_produtos_vendidos` (5F, D-356), provada equivalente a `get_faturamento`. |
+| `shopee_resultado_venda` | `SUM(escrow_amount − custo)` dos pedidos cobertos. Também separado: `COMPLETED` (definitivo) e os demais (provisório — o escrow ainda muda). |
+| `shopee_margem_venda` | `shopee_resultado_venda / receita bruta` dos MESMOS cobertos. Zero cobertura = NULO. |
+| `shopee_imposto_estimado` | `SUM(receita bruta × alíquota do dia)` dos cobertos (D-395); NULO se algum coberto não tem alíquota. |
+| `shopee_resultado_apos_imposto` | `shopee_resultado_venda − shopee_imposto_estimado`. |
+
+- **Pedido coberto:** válido (5S), receita conhecida, financeiro lido, SKU em todos os itens e custo conhecido de todos. O resto é contado por motivo (`pedidos_sem_financeiro`, `pedidos_sem_sku`, `pedidos_sem_custo`) — nunca zero.
+- **Não é lucro líquido:** Ads e despesas fixas ficam fora; o imposto é à parte.
+- **Fora do TOTAL:** loja de sandbox e loja nunca lida (NULO na linha dela).
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

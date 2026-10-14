@@ -19,8 +19,8 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00045-c2f` e api `api-00028-qmw` em `93304ac3` (D-432/433/435, 14/10), Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta: `worker-00044-p8d`/`api-00027-p7c`. Worker fixo na revisão (`update-traffic --to-revisions`, D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261014200000` (D-435, 14/10). **Próxima:** `20261014210000` (D-436). Dono dispara (depois da CI da `main`) e aprova; sem `--include-all`; nunca MCP. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4, 6a e E1–E3 no ar (sandbox); E4 (consolidado de vendas, D-436) em código; 5 (estoque) adiada para o Go Live. A 5J segue com o detector de frete (D-405). |
+| **Migrations** | Produção até `20261014200000` (D-435, 14/10). **Próximas:** `20261014210000` e `20261014220000` (D-436/437). Dono dispara (depois da CI da `main`) e aprova; sem `--include-all`; nunca MCP. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4, 6a e E1–E3 no ar (sandbox); E4/E5 (vendas consolidadas e faturamento Shopee, D-436/437) em código; 5 (estoque) adiada para o Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 
@@ -30,12 +30,6 @@
 `/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. D-411: o alerta alto novo vira notificação (migration `20260925140000`). D-412: quem paga o frete, por envio (migration `20260925150000`). D-413: o frete do envio compartilhado conta uma vez (migration `20260925160000`).
 
 `/atendimento/conhecimento`: filtros, paginação e modal — já na `main` (`4c34bc68`).
-
-`/precos` está pronta para integração na branch de produção `main`: o histórico mantém a RPC paginada, os filtros e a exportação existentes, com toolbar de busca e período, recorte explícito, estados de erro/vazio recuperáveis e tabela adaptada para mobile. Não houve alteração de banco ou backend. Verificação local: `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
-
-Diagnóstico do anúncio e do SKU: D-389 e D-390, migrations `20260921121405`, `20260921130000` e
-`20260921144813` — **as três aplicadas no Dev** (conferido em 23/09; a linha anterior dizia que a
-de hash aguardava publicação, e não aguardava mais).
 
 Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas

@@ -130,6 +130,10 @@ sandbox e loja nunca lida aparecem só em `CONTA` (a nunca lida com tudo NULO
 métricas em `docs/METRICS.md` 5T. Erros: marketplace fora de ML/SHOPEE e
 período invertido são recusados pelo banco.
 
+### 3.5 Faturamento da Shopee (C-58, D-437) — em código
+
+`get_shopee_faturamento(p_organization_id, p_date_from, p_date_to, p_account_ids uuid[])`: linhas `TOTAL` (lojas live já lidas) e `CONTA` (uma por loja, com `environment`; nunca lida = tudo NULO). Colunas: `pedidos`, `receita_bruta`, `pedidos_sem_receita`, `pedidos_cobertos`, `receita_coberta`, `recebido_coberto`, `custo_produtos`, `resultado_venda`, `margem_venda` (fração), `pedidos_definitivos`/`resultado_definitivo` (COMPLETED), `pedidos_provisorios`/`resultado_provisorio`, `pedidos_sem_financeiro`, `pedidos_sem_sku`, `pedidos_sem_custo`, `pedidos_custo_atual`, `pedidos_sem_aliquota`, `imposto_coberto`, `resultado_apos_imposto`, `margem_apos_imposto`, `ultima_atualizacao`. **Não somar com o resultado do ML** (`get_faturamento`): as duas contas têm componentes diferentes (METRICS 5U × 5F) — a tela mostra por marketplace. Qual resultado exibir (todos, definitivo ou provisório) é decisão de tela/dono; os três vêm prontos.
+
 ---
 
 ## 4. Contratos do Mercado Livre que as telas usam hoje
@@ -291,7 +295,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   sandbox fora do total, sem receita contado à parte.
 - **Contrato entregue:** o "Todos" de `/vendas`, filtrável por canal e conta.
 
-### E5 — Faturamento Shopee
+### E5 — Faturamento Shopee — em código (D-437)
 
 - **Escopo:** resultado = recebido − custo (`sku_cost_history` na data do
   pedido, KIT pelos componentes), sobre pedidos cobertos (financeiro lido e

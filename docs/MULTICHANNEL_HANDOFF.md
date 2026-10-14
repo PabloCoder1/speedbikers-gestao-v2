@@ -37,13 +37,14 @@
 - E1, E2 e E3 (D-432, D-433, D-435) **em produção** em 14/10: PRs #147/#148/#150 com CI verde (e2e inclusive), migrations pelo workflow com as duas aprovações do dono, worker e api em `93304ac3`. O vigia de D-418 foi agendado pelo dono (`vigiar-sincronizacao`, a cada 30 min) e agora cobre as lojas live.
 
 **Em andamento**
-- E4, vendas por marketplace e o consolidado (D-436): **em código e validada localmente** (integração com as 252 migrations do zero, equivalência com `get_sales_summary` e `get_shopee_sales_by_shop`, mutação do sandbox); falta PR, CI, merge e a migration `20261014210000` (worker e api não mudam).
+- E4, vendas por marketplace e o consolidado (D-436): **em código e validada localmente** (integração com as 252 migrations do zero, equivalência com `get_sales_summary` e `get_shopee_sales_by_shop`, mutação do sandbox); PR #151 — falta CI, merge e a migration `20261014210000` (worker e api não mudam).
+- E5, faturamento da Shopee (D-437): **em código e validada localmente** (integração com as 253 migrations do zero, equivalência do custo com `get_faturamento`, mutação do histórico de custo); falta PR, CI, merge e a migration `20261014220000`.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
-- E5 faturamento Shopee → E6 grão de SKU, ranking, ABC → E7 fontes financeiras que faltam → E8 Go Live e estoque.
+- E6 grão de SKU, ranking, ABC → E7 fontes financeiras que faltam → E8 Go Live e estoque.
 
 **Bloqueios**
-- E4 em produção depende do merge e da migration (dono). E5 depende da decisão 1 abaixo.
+- E4 e E5 em produção dependem do merge e da migration (dono). A exibição do resultado da E5 depende da decisão 1 abaixo (os três números já vêm prontos).
 
 ---
 
@@ -93,6 +94,7 @@
 | C-54 | Permissão por loja Shopee: `user_shopee_shop_permissions` (insert/delete direto sob RLS, só ADMIN, só para membro; como `user_account_permissions`), eventos `SHOPEE_SHOP_ACCESS_GRANTED`/`_REVOKED` (coluna `shopee_shop_id`), convite `POST /v1/organization/invites` com `shopeeShopIds` | A1 | tela de Usuários (A2, T2) | em produção (D-433, 14/10; api do convite em `api-00028-qmw`) | usuário sem a loja não lê nada dela, por tabela e por RPC — provado na integração |
 | C-55 | `get_sku_shopee_listings` devolve `environment` da loja (atende C-06) | A1 | painel Shopee do SKU | em produção (D-432, 14/10); coluna `environment` no fim | loja sandbox identificável na resposta |
 | C-56 | `get_products_overview` conta anúncio e venda Shopee (atende C-07) | A1 | `/produtos` | aceito; depende da E6 (grão de SKU Shopee) | SKU só da Shopee deixa de aparecer como "sem anúncio/sem venda"; contagens do ML iguais |
+| C-58 | `get_shopee_faturamento`: TOTAL e por loja, resultado = recebido − custo, definitivo e provisório separados, imposto do dia (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.5); NÃO soma com o resultado do ML | A1 | `/faturamento` (T5, atende C-03) | em código (D-437, migration `20261014220000`) | os três resultados prontos; nada somado com o ML |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
 
 ---
@@ -113,5 +115,5 @@
 
 ## Decisões pendentes do dono
 
-1. **E5:** o resultado da venda Shopee usa o recebido provisório (pedido ainda não COMPLETED) ou só o definitivo?
-2. **E4:** depois do merge, `migrations-producao.yml` para `20261014210000` (D-436) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações.
+1. **E5 (exibição):** mostrar o resultado de todos os cobertos, só o definitivo (COMPLETED) ou os dois? A RPC já devolve os três; a escolha é da tela.
+2. **E4 e E5:** depois dos merges (#151 e o da E5), `migrations-producao.yml` para `20261014210000` e `20261014220000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações.

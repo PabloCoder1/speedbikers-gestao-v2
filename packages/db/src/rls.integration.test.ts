@@ -345,9 +345,15 @@ describe("catálogo de métricas", () => {
       "resultado_contribuicao",
       "resultado_venda",
       "roas",
+      // D-437 (METRICS 5U): o faturamento da Shopee, entre as de vendas (5S).
+      "shopee_custo_produtos",
+      "shopee_imposto_estimado",
+      "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
       "shopee_receita_bruta",
+      "shopee_resultado_apos_imposto",
+      "shopee_resultado_venda",
       "shopee_unidades",
       "skus_distintos_vendidos",
       "tacos",
@@ -3377,7 +3383,18 @@ describe("vendas Shopee (D-430)", () => {
       "select id from public.metric_definitions where id like 'shopee_%' order by id",
     );
 
-    expect(definicoes.rows.map((r) => r.id)).toEqual(["shopee_pedidos", "shopee_recebido", "shopee_receita_bruta", "shopee_unidades"]);
+    // D-437 acrescentou as cinco do faturamento (METRICS 5U).
+    expect(definicoes.rows.map((r) => r.id)).toEqual([
+      "shopee_custo_produtos",
+      "shopee_imposto_estimado",
+      "shopee_margem_venda",
+      "shopee_pedidos",
+      "shopee_recebido",
+      "shopee_receita_bruta",
+      "shopee_resultado_apos_imposto",
+      "shopee_resultado_venda",
+      "shopee_unidades",
+    ]);
   });
 });
 
@@ -4329,6 +4346,266 @@ describe("vendas por marketplace e o consolidado (D-436)", () => {
       "multicanal_ticket_medio",
       "multicanal_unidades",
     ]);
+  });
+});
+
+/*
+  D-437: o faturamento da Shopee. Resultado = recebido (escrow) - custo, sobre
+  os pedidos cobertos; definitivo e provisório separados; o que não cobre,
+  contado por motivo; imposto pela alíquota do dia; e a EQUIVALÊNCIA do custo:
+  os mesmos SKUs vendidos no mesmo instante custam o mesmo aqui e em
+  get_faturamento (D-356).
+*/
+describe("faturamento da Shopee (D-437)", () => {
+  const ORG = "66666666-0000-4000-8000-00000000d437";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d437";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d437";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d437";
+  const CONTA = "aaaa4370-0000-4000-8000-0000000c0437";
+  const LOJA = "dddd4370-0000-4000-8000-0000000a0437";
+  const SANDBOX = "dddd4370-0000-4000-8000-0000000b0437";
+  const NUNCA_LIDA = "dddd4370-0000-4000-8000-0000000c0437";
+  const PEDIDOS_ML = [9900437001, 9900437002, 9900437003];
+  const DIA = "2026-07-10";
+  const QUANDO = "2026-07-10T15:00:00Z";
+  const sku: Record<"s1" | "s2" | "s3" | "kit", string> = { s1: "", s2: "", s3: "", kit: "" };
+
+  async function pedidoShopee(loja: string, sn: string, status: string, receita: number | null, escrow: number | null) {
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+          escrow_amount, order_income, financials_synced_at)
+       values ($1, $2, $3, $4, $5, $5, $5, $6,
+               case when $6::numeric is null then null else jsonb_build_object('order_discounted_price', $7::numeric, 'escrow_amount', $6::numeric) end,
+               case when $6::numeric is null then null else now() end)
+       on conflict do nothing`,
+      [loja, ORG, sn, status, QUANDO, escrow, receita],
+    );
+  }
+
+  async function item(loja: string, sn: string, skuId: string | null, quantidade: number, preco: number) {
+    await client.query(
+      `insert into public.shopee_order_items
+         (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, $2, 0, $3, 1, $4, $5, $6, case when $6::uuid is null then null else 'SKU_DO_PEDIDO' end)
+       on conflict do nothing`,
+      [loja, sn, ORG, quantidade, preco, skuId],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d437@rls.test'), ($2::uuid, 'analista-d437@rls.test'), ($3::uuid, 'membro-d437@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-437', 'org-d437') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+
+    // S1: custo 25 na data (histórico de 01/07; o de 20/07 é depois da venda).
+    // S2: só o custo atual (5). S3: sem custo. KIT = 2 x S1 + 1 x S2.
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1, 'D437-S1', 'PRODUTO', 20), ($1, 'D437-S2', 'PRODUTO', 5), ($1, 'D437-S3', 'PRODUTO', null), ($1, 'D437-KIT', 'KIT', null)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku_key`,
+      [ORG],
+    );
+
+    sku.s1 = skus.rows.find((r) => r.sku_key === "D437-S1")?.id ?? "";
+    sku.s2 = skus.rows.find((r) => r.sku_key === "D437-S2")?.id ?? "";
+    sku.s3 = skus.rows.find((r) => r.sku_key === "D437-S3")?.id ?? "";
+    sku.kit = skus.rows.find((r) => r.sku_key === "D437-KIT")?.id ?? "";
+
+    await client.query(
+      `insert into public.sku_cost_history (organization_id, sku_id, previous_cost, new_cost, changed_by_role, changed_at)
+       values ($1, $2, null, 25, 'postgres', '2026-07-01 12:00:00+00'), ($1, $2, 25, 30, 'postgres', '2026-07-20 12:00:00+00')`,
+      [ORG, sku.s1],
+    );
+    await client.query(
+      "insert into public.sku_components (kit_sku_id, component_sku_id, quantity) values ($1, $2, 2), ($1, $3, 1) on conflict do nothing",
+      [sku.kit, sku.s1, sku.s2],
+    );
+    await client.query(
+      "insert into public.tax_rates (organization_id, valid_from, rate) values ($1, '2026-07-01', 0.10) on conflict do nothing",
+      [ORG],
+    );
+
+    // O lado ML da equivalência: os mesmos SKUs, no mesmo instante, cobertos.
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1, $2, 'Conta D-437', 'rlstest-d437', 9990438, 'CONNECTED', now()) on conflict do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.orders (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id)
+       values ($1, $4, $5, null, 'paid', $6, $6, 100, 'BRL'), ($2, $4, $5, null, 'paid', $6, $6, 60, 'BRL'), ($3, $4, $5, null, 'paid', $6, $6, 80, 'BRL')
+       on conflict (id) do nothing`,
+      [...PEDIDOS_ML, ORG, CONTA, QUANDO],
+    );
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       values ($1, $4, $5, 0, 'MLB943701', null, 'S1', 2, 50, 'BRL', $6, 5),
+              ($2, $4, $5, 0, 'MLB943702', null, 'S2', 1, 60, 'BRL', $7, 6),
+              ($3, $4, $5, 0, 'MLB943703', null, 'Kit', 1, 80, 'BRL', $8, 8)
+       on conflict do nothing`,
+      [...PEDIDOS_ML, ORG, CONTA, sku.s1, sku.s2, sku.kit],
+    );
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1, $4, $5, 10, 0), ($2, $4, $5, 10, 0), ($3, $4, $5, 10, 0) on conflict (order_id) do nothing`,
+      [...PEDIDOS_ML, ORG, CONTA],
+    );
+
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $4, 'live', 990437001, 'Loja Real', 'CONNECTED', now() - interval '120 days', now(), now()),
+              ($2, $4, 'sandbox', 990437002, 'Teste', 'CONNECTED', now() - interval '120 days', now(), now()),
+              ($3, $4, 'live', 990437003, 'Nunca Lida', 'CONNECTED', now(), null, null)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, NUNCA_LIDA, ORG],
+    );
+    // P1 e P3 completos, P2 em trânsito: os três cobertos. P4 sem custo, P5 sem
+    // SKU, P6 sem financeiro, P7 cancelado. No sandbox, um coberto que não soma.
+    await pedidoShopee(LOJA, "P1", "COMPLETED", 100, 80);
+    await item(LOJA, "P1", sku.s1, 2, 50);
+    await pedidoShopee(LOJA, "P2", "SHIPPED", 60, 50);
+    await item(LOJA, "P2", sku.s2, 1, 60);
+    await pedidoShopee(LOJA, "P3", "COMPLETED", 80, 70);
+    await item(LOJA, "P3", sku.kit, 1, 80);
+    await pedidoShopee(LOJA, "P4", "COMPLETED", 40, 30);
+    await item(LOJA, "P4", sku.s3, 1, 40);
+    await pedidoShopee(LOJA, "P5", "COMPLETED", 40, 30);
+    await item(LOJA, "P5", null, 1, 40);
+    await pedidoShopee(LOJA, "P6", "SHIPPED", null, null);
+    await item(LOJA, "P6", sku.s1, 1, 10);
+    await pedidoShopee(LOJA, "P7", "CANCELLED", 999, 999);
+    await item(LOJA, "P7", sku.s1, 1, 999);
+    await pedidoShopee(SANDBOX, "PS", "COMPLETED", 500, 400);
+    await item(SANDBOX, "PS", sku.s2, 1, 500);
+
+    await client.query(
+      "insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing",
+      [ANALISTA, LOJA],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX, NUNCA_LIDA]]);
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS_ML]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS_ML]);
+  });
+
+  type Linha = Record<string, string | null>;
+
+  const faturamento = (usuario: string) =>
+    asUser<Linha>(usuario, `select * from public.get_shopee_faturamento('${ORG}', '${DIA}', '${DIA}') order by nivel desc, account_id`);
+
+  it("o TOTAL: resultado = recebido - custo nos cobertos; definitivo e provisório separados; o resto por motivo", async () => {
+    const total = (await faturamento(ADMIN)).find((l) => l.nivel === "TOTAL");
+
+    expect(total).toMatchObject({
+      pedidos: "6",
+      receita_bruta: "330.00",
+      pedidos_cobertos: "3",
+      receita_coberta: "240.00",
+      recebido_coberto: "200.00",
+      // 2 x 25 (histórico na data) + 5 (atual) + KIT (2 x 25 + 5)
+      custo_produtos: "110.00",
+      resultado_venda: "90.00",
+      margem_venda: "0.3750",
+      pedidos_definitivos: "2",
+      resultado_definitivo: "45.00",
+      pedidos_provisorios: "1",
+      resultado_provisorio: "45.00",
+      pedidos_sem_financeiro: "1",
+      pedidos_sem_sku: "1",
+      pedidos_sem_custo: "1",
+      // S2 e o KIT (que leva S2) usam o custo atual.
+      pedidos_custo_atual: "2",
+      pedidos_sem_aliquota: "0",
+      imposto_coberto: "24.00",
+      resultado_apos_imposto: "66.00",
+      margem_apos_imposto: "0.2750",
+    });
+  });
+
+  it("EQUIVALÊNCIA: os mesmos SKUs no mesmo instante custam o mesmo em get_faturamento (ML)", async () => {
+    const [ml] = await asUser<{ f: { resumo: Record<string, number | null> } }>(
+      ADMIN,
+      `select public.get_faturamento('${DIA}', '${DIA}', '${CONTA}', false) as f`,
+    );
+    const total = (await faturamento(ADMIN)).find((l) => l.nivel === "TOTAL");
+
+    expect(ml?.f.resumo.pedidos_cobertos).toBe(3);
+    expect(ml?.f.resumo.custo_produtos).toBe(Number(total?.custo_produtos));
+    expect(ml?.f.resumo.pedidos_custo_atual).toBe(Number(total?.pedidos_custo_atual));
+  });
+
+  it("sandbox e loja nunca lida ficam só na linha da loja (a nunca lida com NULO); o TOTAL não as soma", async () => {
+    const linhas = await faturamento(ADMIN);
+
+    expect(linhas.find((l) => l.account_id === SANDBOX)).toMatchObject({
+      nivel: "CONTA",
+      environment: "sandbox",
+      pedidos: "1",
+      // 400 recebidos - 5 de custo (S2, atual).
+      resultado_venda: "395.00",
+    });
+    expect(linhas.find((l) => l.account_id === NUNCA_LIDA)).toMatchObject({ nivel: "CONTA", pedidos: null, resultado_venda: null });
+    expect(linhas.find((l) => l.account_id === LOJA)).toMatchObject({ nivel: "CONTA", resultado_venda: "90.00" });
+  });
+
+  it("sem alíquota para algum pedido coberto, o imposto e o resultado após imposto são NULOS", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("delete from public.tax_rates where organization_id = $1", [ORG]);
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+
+      const { rows } = await client.query<Linha>(
+        `select pedidos_sem_aliquota, imposto_coberto, resultado_apos_imposto, resultado_venda
+           from public.get_shopee_faturamento('${ORG}', '${DIA}', '${DIA}') where nivel = 'TOTAL'`,
+      );
+
+      expect(rows).toEqual([{ pedidos_sem_aliquota: "3", imposto_coberto: null, resultado_apos_imposto: null, resultado_venda: "90.00" }]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("a permissão por loja vale; período invertido é recusado", async () => {
+    const analista = await faturamento(ANALISTA);
+
+    expect(analista.map((l) => [l.nivel, l.account_id])).toEqual([
+      ["TOTAL", null],
+      ["CONTA", LOJA],
+    ]);
+    expect(await faturamento(MEMBRO)).toEqual([]);
+    expect(await faturamento(DE_OUTRA_ORG)).toEqual([]);
+    await expect(
+      asUser(ADMIN, `select * from public.get_shopee_faturamento('${ORG}', '2026-07-11', '2026-07-10')`),
+    ).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon(`select * from public.get_shopee_faturamento('${ORG}', '${DIA}', '${DIA}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("as cinco métricas do faturamento Shopee estão no espelho de METRICS (5U)", async () => {
+    const { rows } = await client.query<{ id: string }>(
+      "select id from public.metric_definitions where id in ('shopee_custo_produtos','shopee_resultado_venda','shopee_margem_venda','shopee_imposto_estimado','shopee_resultado_apos_imposto') order by id",
+    );
+
+    expect(rows).toHaveLength(5);
   });
 });
 
