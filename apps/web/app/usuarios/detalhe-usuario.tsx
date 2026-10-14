@@ -10,7 +10,7 @@ import { TOM } from "../../components/tone";
 import { memberStatusLabel, memberStatusTone, type MemberStatus } from "../../lib/member-filters";
 import { tomDePapel } from "../../lib/role-tone";
 import { AcessoDoMembro } from "./acesso-membro";
-import { AccountAccessControls, RoleSelect, type AccountOption } from "./member-controls";
+import { AccountAccessControls, RoleSelect, ShopeeShopAccessControls, type AccountOption } from "./member-controls";
 import { ReemitirLink } from "./reemitir-link";
 
 /**
@@ -65,6 +65,9 @@ export function DetalheUsuario({
   editavel,
   accounts,
   granted,
+  lojas,
+  lojasNomes,
+  lojasConcedidas,
   historico,
   historicoVisivel,
 }: {
@@ -91,6 +94,11 @@ export function DetalheUsuario({
   editavel: boolean;
   accounts: AccountOption[];
   granted: string[];
+  /** As lojas Shopee que quem olha alcança (D-434); sem nenhuma, a parte some. */
+  lojas: AccountOption[];
+  /** Rótulos das lojas concedidas a esta pessoa, já resolvidos pelo servidor. */
+  lojasNomes: readonly string[];
+  lojasConcedidas: string[];
   historico: EventoDeAcesso[];
   /** O histórico só existe para ADMIN: a policy não devolve linha aos demais. */
   historicoVisivel: boolean;
@@ -199,6 +207,35 @@ export function DetalheUsuario({
                 </div>
               )}
             </div>
+
+            {/*
+              AS LOJAS SHOPEE (D-434), na mesma forma das contas: a regra é a
+              mesma (D-433). Sem loja que quem olha alcance, a parte não existe
+              — uma lista vazia de lojas leria como "ninguém tem loja".
+            */}
+            {lojas.length > 0 && (
+              <div className="sb-drawer-card-parte">
+                <span>Lojas Shopee permitidas</span>
+
+                {todasPorAdmin ? (
+                  <span className="sb-status" style={TOM.info}>
+                    todas as lojas (por ser ADMIN)
+                  </span>
+                ) : editavel ? (
+                  <ShopeeShopAccessControls userId={userId} role={role} lojas={lojas} concedidas={lojasConcedidas} />
+                ) : lojasNomes.length === 0 ? (
+                  <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>nenhuma loja associada</span>
+                ) : (
+                  <div className="sb-badge-row">
+                    {lojasNomes.map((loja) => (
+                      <span className="sb-status" key={loja} style={TOM.info}>
+                        {loja}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {ehUltimoAdmin && (

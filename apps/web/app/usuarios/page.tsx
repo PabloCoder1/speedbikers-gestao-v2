@@ -14,9 +14,12 @@ import {
   type MemberStatus,
 } from "../../lib/member-filters";
 import { createClient } from "../../lib/supabase/server";
+import { rotuloDaLojaNoAlcance } from "../../lib/alcance-shopee";
 import { currentMembership } from "../../lib/request-membership";
+import { isShopeeSchemaMissing } from "../../lib/shopee-listings";
 import { tempoRelativo } from "../../lib/tempo-relativo";
 import { ConvidarUsuario } from "./convidar";
+import type { AccountOption } from "./member-controls";
 import { FiltroDeStatus, TabelaDeUsuarios, type LinhaDeUsuario } from "./tabela-usuarios";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
@@ -72,6 +75,10 @@ function eventoLabel(row: {
       return "acesso suspenso";
     case "MEMBER_REACTIVATED":
       return "acesso reativado";
+    case "SHOPEE_SHOP_ACCESS_GRANTED":
+      return "ganhou acesso à loja Shopee";
+    case "SHOPEE_SHOP_ACCESS_REVOKED":
+      return "perdeu acesso à loja Shopee";
     default:
       // Função total: tipo novo do banco degrada para o valor cru.
       return row.event_type;
@@ -107,18 +114,40 @@ export default async function UsuariosPage({
 
   const isAdmin = myRole === "ADMIN";
 
-  const [membersResult, accountsResult, permissionsResult, eventsResult, detalheResult, sessao] = await Promise.all([
+  const [
+    membersResult,
+    accountsResult,
+    permissionsResult,
+    lojasResult,
+    lojasPermissoesResult,
+    eventsResult,
+    detalheResult,
+    sessao,
+  ] = await Promise.all([
     supabase
       .from("organization_members")
       .select("organization_id, user_id, role, created_at, profiles(full_name, avatar_path)")
       .order("role"),
     supabase.from("ml_accounts").select("id, label").eq("organization_id", organizationId).order("label"),
     supabase.from("user_account_permissions").select("user_id, ml_account_id"),
+    /*
+      AS LOJAS SHOPEE E QUEM AS ALCANÇA (D-433, D-434) — o mesmo par das contas.
+      A RLS das lojas é por loja desde D-433: o ADMIN vê todas da organização e
+      todas as concessões delas; os demais, as lojas que alcançam.
+    */
+    supabase
+      .from("shopee_shops")
+      .select("id, shop_name, shop_id, environment")
+      .eq("organization_id", organizationId)
+      .order("connected_at", { ascending: true }),
+    supabase.from("user_shopee_shop_permissions").select("user_id, shopee_shop_id"),
     // A policy só devolve linhas para ADMIN — para os demais isto volta
     // vazio, e a seção nem aparece.
     supabase
       .from("organization_access_events")
-      .select("id, event_type, target_user_id, ml_account_id, previous_role, new_role, actor_user_id, occurred_at")
+      .select(
+        "id, event_type, target_user_id, ml_account_id, shopee_shop_id, previous_role, new_role, actor_user_id, occurred_at",
+      )
       .order("occurred_at", { ascending: false })
       .limit(50),
     /*
@@ -168,7 +197,33 @@ export default async function UsuariosPage({
   );
   const contaPorId = new Map(accounts.map((a) => [a.id, a.label]));
 
-  const erro = membersResult.error ?? accountsResult.error ?? permissionsResult.error;
+  /*
+    O ALCANCE NAS LOJAS só existe com as duas leituras de pé. Banco anterior à
+    D-433 (sem `user_shopee_shop_permissions`) ou anterior à Shopee: a parte de
+    lojas não aparece — conceder o que o banco não guarda seria um botão morto.
+    Outra falha de leitura é erro, dito como o das contas.
+  */
+  const lojasAusentes =
+    isShopeeSchemaMissing(lojasResult.error) || isShopeeSchemaMissing(lojasPermissoesResult.error);
+  const lojas: AccountOption[] = lojasAusentes
+    ? []
+    : (lojasResult.data ?? []).map((loja) => ({ id: loja.id, label: rotuloDaLojaNoAlcance(loja) }));
+  const lojasPermissoes = lojasAusentes ? [] : (lojasPermissoesResult.data ?? []);
+  const lojaPorId = new Map(lojas.map((loja) => [loja.id, loja.label]));
+
+  const erro =
+    membersResult.error ??
+    accountsResult.error ??
+    permissionsResult.error ??
+    (lojasAusentes ? null : (lojasResult.error ?? lojasPermissoesResult.error));
+
+  /** A conta OU a loja de um evento de acesso, pelo nome. */
+  const alvoDoEvento = (evento: { ml_account_id: string | null; shopee_shop_id: string | null }): string | null =>
+    evento.ml_account_id !== null
+      ? (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id)
+      : evento.shopee_shop_id !== null
+        ? (lojaPorId.get(evento.shopee_shop_id) ?? "loja Shopee")
+        : null;
 
   /*
     Os CINCO papéis do `check` de `organization_members`, na ordem de alcance.
@@ -182,6 +237,9 @@ export default async function UsuariosPage({
   const linhas: LinhaDeUsuario[] = members.map((member) => {
     const detalhe = detalhePorUsuario.get(member.user_id);
     const granted = permissions.filter((p) => p.user_id === member.user_id).map((p) => p.ml_account_id);
+    const lojasConcedidas = lojasPermissoes
+      .filter((p) => p.user_id === member.user_id && lojaPorId.has(p.shopee_shop_id))
+      .map((p) => p.shopee_shop_id);
 
     /*
       Sem a janela (quem não é ADMIN), `detalhe` é `undefined` e o estado cai em
@@ -204,6 +262,8 @@ export default async function UsuariosPage({
       status,
       contas: granted.map((id) => contaPorId.get(id) ?? id),
       granted,
+      lojas: lojasConcedidas.map((id) => lojaPorId.get(id) ?? id),
+      lojasConcedidas,
       todasPorAdmin: member.role === "ADMIN",
       desde: formatDateTime(member.created_at),
       ultimoAcesso: formatDateTime(ultimoAcesso),
@@ -220,7 +280,7 @@ export default async function UsuariosPage({
             evento.actor_user_id === null
               ? "sistema"
               : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
-          conta: evento.ml_account_id === null ? null : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
+          conta: alvoDoEvento(evento),
         })),
     };
   });
@@ -276,7 +336,7 @@ export default async function UsuariosPage({
   return (
     <Shell>
       <PageTitle
-        aside={isAdmin ? <ConvidarUsuario accounts={accounts} /> : undefined}
+        aside={isAdmin ? <ConvidarUsuario accounts={accounts} lojas={lojas} /> : undefined}
         eyebrow="ADMINISTRAÇÃO / USUÁRIOS E ACESSOS"
         title="Usuários"
         subtitle={
@@ -302,7 +362,7 @@ export default async function UsuariosPage({
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel
           title="Gerenciar acessos"
-          subtitle={`O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz. ${janela}`}
+          subtitle={`O papel decide o que a pessoa PODE fazer; as contas e as lojas decidem sobre o que ela faz. ${janela}`}
           aside={
             /*
               A busca, como GET nativo: o recorte fica na URL. O `hidden` do
@@ -336,7 +396,7 @@ export default async function UsuariosPage({
               <p>{janela}</p>
             </div>
           ) : (
-            <TabelaDeUsuarios linhas={visiveis} isAdmin={isAdmin} accounts={accounts} />
+            <TabelaDeUsuarios linhas={visiveis} isAdmin={isAdmin} accounts={accounts} lojas={lojas} />
           )}
         </Panel>
       </div>
@@ -358,7 +418,7 @@ export default async function UsuariosPage({
                       <th>Quem mudou</th>
                       <th>Sobre quem</th>
                       <th>O quê</th>
-                      <th>Conta</th>
+                      <th>Conta ou loja</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -377,11 +437,7 @@ export default async function UsuariosPage({
                         </td>
                         <td>{nomePorUsuario.get(event.target_user_id) ?? event.target_user_id}</td>
                         <td>{eventoLabel(event)}</td>
-                        <td className="sb-texto-suave">
-                          {event.ml_account_id === null
-                            ? "—"
-                            : (contaPorId.get(event.ml_account_id) ?? event.ml_account_id)}
-                        </td>
+                        <td className="sb-texto-suave">{alvoDoEvento(event) ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

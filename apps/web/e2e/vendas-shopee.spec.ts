@@ -1,4 +1,5 @@
 import { type Page, expect, test } from "@playwright/test";
+import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 
 import {
   E2E_ANOMALIA,
@@ -216,19 +217,69 @@ test("/vendas/shopee: o filtro de situação recorta a lista, não o painel, e c
   await esperaPedidos(page, ESPERADO.naLista);
 });
 
-test("/vendas: o link do cabeçalho leva às vendas da Shopee levando o período, e volta", async ({ page }) => {
-  await login(page, "/vendas?days=7");
+/** O seletor de marketplace do cabeçalho (D-431), pelo nome acessível dele. */
+function seletorDeMarketplace(page: Page) {
+  return page.locator("details.sb-menu").filter({ has: page.locator('summary[aria-label^="Marketplace:"]') });
+}
+
+/**
+ * A TROCA DE MARKETPLACE (D-431): o seletor no começo da barra leva de uma tela
+ * de vendas à outra levando SÓ o que vale nos dois lados — o período. Conta,
+ * marca e métrica são do Mercado Livre e ficam para trás; a volta não traz a
+ * loja nem a situação da Shopee. É a regra de compatibilidade do recorte
+ * (`docs/MULTICHANNEL_SCREENS.md` §4), provada pela URL.
+ */
+test("/vendas: o seletor de marketplace leva às vendas da Shopee só com o período, e volta", async ({ page }) => {
+  await login(page, "/vendas?days=7&account=e2e-loja&semMarca=1&metric=unidades");
 
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Vendas da Shopee", exact: true }).click();
+  const seletor = seletorDeMarketplace(page);
+
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Shopee", exact: true }).click();
 
   await expect(page).toHaveURL(/\/vendas\/shopee\?days=7$/);
   await expect(page.getByRole("heading", { level: 1, name: "Vendas da Shopee" })).toBeVisible();
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Shopee");
   await esperaPedidos(page, ESPERADO.naLista);
 
-  await page.getByRole("link", { name: "Dashboard de vendas", exact: true }).click();
+  // Um recorte da Shopee antes de voltar: ele não pode atravessar.
+  await page.goto("/vendas/shopee?days=7&situacao=validas");
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Mercado Livre", exact: true }).click();
 
   await expect(page).toHaveURL(/\/vendas\?days=7$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+});
+
+/**
+ * O PERÍODO PERSONALIZADO em `/vendas/shopee` (D-431): a URL já aceitava
+ * `from`/`to`, faltava o formulário. Aplicar as datas não pode descartar a
+ * situação — um GET nativo envia só os campos do formulário, e é o hidden que
+ * a mantém (o mesmo defeito que `/vendas` já teve com a métrica).
+ */
+test("/vendas/shopee: o período personalizado aplica as datas e mantém a situação", async ({ page }) => {
+  await login(page, "/vendas/shopee?situacao=validas");
+
+  await esperaPedidos(page, ESPERADO.validasNaLista);
+
+  // Os pedidos do seed têm até 6 dias: uma janela de 10 dias, no calendário de
+  // São Paulo, os alcança todos — as mesmas funções de data do seed.
+  const hoje = toSalesMetricDate(new Date());
+  const de = shiftBusinessDate(hoje, -10);
+
+  const periodo = page.locator("details", { hasText: "Últimos 30 dias" });
+
+  await periodo.locator("summary").click();
+  await periodo.getByLabel("Data inicial").fill(de);
+  await periodo.getByLabel("Data final").fill(hoje);
+  await periodo.getByRole("button", { name: "Aplicar período" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`from=${de}`));
+  await expect(page).toHaveURL(new RegExp(`to=${hoje}`));
+  await expect(page).toHaveURL(/situacao=validas/);
+  await expect(page.locator("details", { hasText: "Período personalizado" }).locator("summary")).toBeVisible();
+  await esperaPedidos(page, ESPERADO.validasNaLista);
 });

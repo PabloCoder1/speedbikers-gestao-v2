@@ -45,6 +45,9 @@ export interface LinhaDeUsuario {
   readonly status: MemberStatus;
   readonly contas: readonly string[];
   readonly granted: string[];
+  /** Rótulos das lojas Shopee concedidas (D-434), já resolvidos pela página. */
+  readonly lojas: readonly string[];
+  readonly lojasConcedidas: string[];
   readonly todasPorAdmin: boolean;
   readonly desde: string;
   readonly ultimoAcesso: string;
@@ -57,23 +60,37 @@ export interface LinhaDeUsuario {
 /** Quantas etiquetas de conta cabem antes do "+N". */
 const CONTAS_VISIVEIS = 2;
 
-function Contas({ linha }: { linha: LinhaDeUsuario }): ReactNode {
-  if (linha.todasPorAdmin) {
-    return <span className="sb-chip sb-chip-info">Todas as contas</span>;
+/**
+ * As etiquetas de alcance — contas do Mercado Livre ou, desde D-434, lojas
+ * Shopee: a mesma regra (ADMIN alcança tudo pelo papel), a mesma forma.
+ */
+function Alcance({
+  itens,
+  todasPorAdmin,
+  todas,
+  nenhum,
+}: {
+  itens: readonly string[];
+  todasPorAdmin: boolean;
+  todas: string;
+  nenhum: string;
+}): ReactNode {
+  if (todasPorAdmin) {
+    return <span className="sb-chip sb-chip-info">{todas}</span>;
   }
 
-  if (linha.contas.length === 0) {
-    return <span className="sb-texto-suave">Nenhuma conta associada</span>;
+  if (itens.length === 0) {
+    return <span className="sb-texto-suave">{nenhum}</span>;
   }
 
-  const visiveis = linha.contas.slice(0, CONTAS_VISIVEIS);
-  const resto = linha.contas.length - visiveis.length;
+  const visiveis = itens.slice(0, CONTAS_VISIVEIS);
+  const resto = itens.length - visiveis.length;
 
   return (
-    <span className="sb-chips" title={linha.contas.join(" · ")}>
-      {visiveis.map((conta) => (
-        <span key={conta} className="sb-chip">
-          {conta}
+    <span className="sb-chips" title={itens.join(" · ")}>
+      {visiveis.map((item) => (
+        <span key={item} className="sb-chip">
+          {item}
         </span>
       ))}
       {resto > 0 && <span className="sb-chip sb-chip-mais">+{resto}</span>}
@@ -85,11 +102,16 @@ export function TabelaDeUsuarios({
   linhas,
   isAdmin,
   accounts,
+  lojas,
 }: {
   linhas: readonly LinhaDeUsuario[];
   isAdmin: boolean;
   accounts: AccountOption[];
+  /** As lojas Shopee que quem olha alcança (D-434). Sem nenhuma, a coluna não existe. */
+  lojas: AccountOption[];
 }): ReactNode {
+  const temLojas = lojas.length > 0;
+
   return (
     <div style={{ overflowX: "auto" }}>
       <table className="sb-table sb-tabela-usuarios">
@@ -98,6 +120,7 @@ export function TabelaDeUsuarios({
             <th>Usuário / E-mail</th>
             <th>Papel</th>
             <th>Contas ML permitidas</th>
+            {temLojas && <th>Lojas Shopee permitidas</th>}
             {/* Só para ADMIN: coluna vazia prometeria um dado que o usuário não vê. */}
             {isAdmin && <th>Status</th>}
             {isAdmin && <th className="sb-num">Último acesso</th>}
@@ -124,6 +147,9 @@ export function TabelaDeUsuarios({
                       email={linha.email}
                       fotoPath={linha.foto}
                       granted={linha.granted}
+                      lojas={lojas}
+                      lojasNomes={linha.lojas}
+                      lojasConcedidas={linha.lojasConcedidas}
                       historico={linha.historico}
                       historicoVisivel={isAdmin}
                       nome={linha.nome}
@@ -146,8 +172,23 @@ export function TabelaDeUsuarios({
                 </span>
               </td>
               <td>
-                <Contas linha={linha} />
+                <Alcance
+                  itens={linha.contas}
+                  todasPorAdmin={linha.todasPorAdmin}
+                  todas="Todas as contas"
+                  nenhum="Nenhuma conta associada"
+                />
               </td>
+              {temLojas && (
+                <td>
+                  <Alcance
+                    itens={linha.lojas}
+                    todasPorAdmin={linha.todasPorAdmin}
+                    todas="Todas as lojas"
+                    nenhum="Nenhuma loja associada"
+                  />
+                </td>
+              )}
               {isAdmin && (
                 <td>
                   <span className="sb-estado-pessoa" data-status={linha.status}>

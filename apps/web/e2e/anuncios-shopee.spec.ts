@@ -296,14 +296,61 @@ test("/anuncios/shopee: vincular à mão a variação fora do catálogo, e remov
   await faixaDiz("SKU fora do catálogo", E2E_SHOPEE_ESPERADO.skuForaDoCatalogo);
 });
 
-test("/anuncios: o link do cabeçalho leva aos anúncios da Shopee", async ({ page }) => {
+/** O seletor de marketplace do cabeçalho (D-431), pelo nome acessível dele. */
+function seletorDeMarketplace(page: Page) {
+  return page.locator("details.sb-menu").filter({ has: page.locator('summary[aria-label^="Marketplace:"]') });
+}
+
+test("/anuncios: o seletor de marketplace leva à lista inteira da Shopee", async ({ page }) => {
   await login(page, "/anuncios");
 
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de anúncios" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Anúncios da Shopee", exact: true }).click();
+  const seletor = seletorDeMarketplace(page);
+
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Shopee", exact: true }).click();
 
   await expect(page).toHaveURL(/\/anuncios\/shopee$/);
   await expect(page.getByRole("heading", { level: 1, name: "Anúncios da Shopee" })).toBeVisible();
   await esperaLinhas(page, E2E_SHOPEE_ESPERADO.anuncios);
+});
+
+/**
+ * A TROCA DE MARKETPLACE (D-431) nas listas de anúncios: a busca por SKU
+ * atravessa nos dois sentidos — "este SKU na outra loja" é para isso que a
+ * troca serve — e o código de anúncio do Mercado Livre fica para trás, porque
+ * não existe na Shopee. Conta, período e estados são de um canal só.
+ */
+test("/anuncios: o seletor de marketplace leva aos anúncios da Shopee com a busca do SKU, e volta", async ({ page }) => {
+  await login(page, `/anuncios?busca=${encodeURIComponent(E2E_ANOMALIA.sku)}&dias=7`);
+
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de anúncios" })).toBeVisible();
+
+  const seletor = seletorDeMarketplace(page);
+
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Shopee", exact: true }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/anuncios/shopee\\?q=${encodeURIComponent(E2E_ANOMALIA.sku)}$`));
+  await expect(page.getByRole("heading", { level: 1, name: "Anúncios da Shopee" })).toBeVisible();
+  await expect(tabela(page)).toContainText(variacaoVinculada.nome);
+
+  // A volta leva a busca e larga o estado da Shopee.
+  await page.goto(`/anuncios/shopee?estado=vinculado&q=${encodeURIComponent(E2E_ANOMALIA.sku)}`);
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Mercado Livre", exact: true }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/anuncios\\?busca=${encodeURIComponent(E2E_ANOMALIA.sku)}$`));
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de anúncios" })).toBeVisible();
+});
+
+test("/anuncios: o código MLB da busca não vai para a Shopee", async ({ page }) => {
+  await login(page, "/anuncios?busca=MLB1476804187");
+
+  await expect(seletorDeMarketplace(page).getByRole("link", { name: "Shopee", exact: true, includeHidden: true })).toHaveAttribute(
+    "href",
+    "/anuncios/shopee",
+  );
 });

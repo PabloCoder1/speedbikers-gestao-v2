@@ -19,14 +19,16 @@ import { ConnectButton } from "./connect-button";
 import { NewAccountForm } from "./new-account-form";
 import { ShopeeConnectButton } from "./shopee-connect-button";
 
-export const metadata = { title: "Contas Mercado Livre — Speed Bikers Gestão" };
+export const metadata = { title: "Contas e lojas — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
 // pessoa. Ver apps/web/app/importacoes/page.tsx para o mesmo raciocínio.
 export const dynamic = "force-dynamic";
 
 /**
- * Contas Mercado Livre — cadastro e conexão OAuth.
+ * Contas e lojas — cadastro e conexão OAuth das contas do Mercado Livre e das
+ * lojas Shopee (D-425). O título fala dos dois canais desde D-431: a tela já
+ * conectava a Shopee, mas o nome e o menu só falavam do Mercado Livre.
  *
  * Pendência registrada em `docs/HANDOFF.md` desde a Fase 3: a rota
  * `POST /v1/ml-accounts/connect` existia e estava testada, mas sem tela
@@ -64,7 +66,7 @@ export default async function ContasPage(): Promise<ReactNode> {
   if (organizationId === null) {
     return (
       <Shell>
-        <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Contas Mercado Livre" compacto />
+        <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Contas e lojas" compacto />
         <Panel title="Acesso indisponível">
           <div className="sb-channel-empty">
             <span className="sb-channel-empty-icon" aria-hidden="true">
@@ -140,8 +142,8 @@ export default async function ContasPage(): Promise<ReactNode> {
           sobrancelha existe para concordar com a sidebar acesa. */}
       <PageTitle
         eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS"
-        title="Contas Mercado Livre"
-        subtitle="Conexões, permissões e disponibilidade de dados por operação."
+        title="Contas e lojas"
+        subtitle="Mercado Livre e Shopee: conexões, permissões e disponibilidade de dados por operação."
         compacto
         aside={
           <nav className="sb-channel-nav" aria-label="Navegação de canais">

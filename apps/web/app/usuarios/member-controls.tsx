@@ -3,7 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-import { changeMemberRole, grantAccountAccess, revokeAccountAccess } from "./actions";
+import {
+  changeMemberRole,
+  grantAccountAccess,
+  grantShopeeShopAccess,
+  revokeAccountAccess,
+  revokeShopeeShopAccess,
+  type AccessResult,
+} from "./actions";
 
 /**
  * Controles de acesso de UM membro (D-175).
@@ -90,28 +97,82 @@ export function AccountAccessControls({
   accounts: AccountOption[];
   granted: string[];
 }): ReactNode {
+  return (
+    <AlcanceControls
+      rotulo="Contas Mercado Livre permitidas"
+      todas="todas as contas (por ser ADMIN)"
+      role={role}
+      opcoes={accounts}
+      concedidos={granted}
+      alternar={(accountId, on) => (on ? grantAccountAccess(userId, accountId) : revokeAccountAccess(userId, accountId))}
+    />
+  );
+}
+
+/**
+ * As lojas Shopee (D-434): a mesma regra das contas (D-433) — ADMIN alcança
+ * todas sem linha; os demais, as concedidas —, então o mesmo controle.
+ */
+export function ShopeeShopAccessControls({
+  userId,
+  role,
+  lojas,
+  concedidas,
+}: {
+  userId: string;
+  role: string;
+  lojas: AccountOption[];
+  concedidas: string[];
+}): ReactNode {
+  return (
+    <AlcanceControls
+      rotulo="Lojas Shopee permitidas"
+      todas="todas as lojas (por ser ADMIN)"
+      role={role}
+      opcoes={lojas}
+      concedidos={concedidas}
+      alternar={(lojaId, on) => (on ? grantShopeeShopAccess(userId, lojaId) : revokeShopeeShopAccess(userId, lojaId))}
+    />
+  );
+}
+
+/**
+ * Os interruptores de alcance — um por conta ou loja. Era o corpo de
+ * `AccountAccessControls`; virou peça comum quando a loja Shopee ganhou a
+ * mesma regra (D-434), em vez de uma cópia que sairia de sincronia.
+ */
+function AlcanceControls({
+  rotulo,
+  todas,
+  role,
+  opcoes,
+  concedidos,
+  alternar,
+}: {
+  /** O nome do grupo para quem ouve a tela — as duas listas moram na mesma gaveta. */
+  rotulo: string;
+  todas: string;
+  role: string;
+  opcoes: AccountOption[];
+  concedidos: string[];
+  alternar: (id: string, on: boolean) => Promise<AccessResult>;
+}): ReactNode {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ADMIN alcança todas as contas por `private.has_account_access`, sem linha
-  // em `user_account_permissions`. Oferecer os interruptores aqui sugeriria
-  // que eles mudam alguma coisa — e não mudam.
+  // ADMIN alcança tudo pelo papel (`private.has_account_access`,
+  // `private.accessible_shopee_shops`), sem linha de concessão. Oferecer os
+  // interruptores aqui sugeriria que eles mudam alguma coisa — e não mudam.
   if (role === "ADMIN") {
-    return (
-      <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        todas as contas (por ser ADMIN)
-      </span>
-    );
+    return <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{todas}</span>;
   }
 
-  async function toggle(accountId: string, on: boolean): Promise<void> {
+  async function toggle(id: string, on: boolean): Promise<void> {
     setBusy(true);
     setError(null);
 
-    const result = on
-      ? await grantAccountAccess(userId, accountId)
-      : await revokeAccountAccess(userId, accountId);
+    const result = await alternar(id, on);
 
     setBusy(false);
 
@@ -125,10 +186,10 @@ export function AccountAccessControls({
   }
 
   return (
-    <div style={{ display: "grid", gap: "0.25rem" }}>
+    <div role="group" aria-label={rotulo} style={{ display: "grid", gap: "0.25rem" }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-        {accounts.map((account) => {
-          const on = granted.includes(account.id);
+        {opcoes.map((account) => {
+          const on = concedidos.includes(account.id);
 
           return (
             <label key={account.id} style={{ fontSize: "0.8125rem", display: "flex", gap: "0.25rem" }}>
