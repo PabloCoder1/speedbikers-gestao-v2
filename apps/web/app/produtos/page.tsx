@@ -9,10 +9,13 @@ import { TOM, type Tom } from "../../components/tone";
 import {
   DEFAULT_PAGE_SIZE,
   ORDENS,
+  PRESENCAS,
+  PRESENCAS_SEM_SHOPEE,
   SEM_CATEGORIA,
   SEM_MARCA,
   buildCurationHref,
   filtrosAtivos,
+  presencaPorMarketplace,
   resolveCurationFilters,
   toCurationRpcArgs,
   toOverviewRpcArgs,
@@ -27,10 +30,12 @@ import {
 import { PAGE_SIZES } from "../../lib/filters";
 import { formatCount, formatDay } from "../../lib/format";
 import {
+  contagemDaPresenca,
   lerVisaoProdutos,
   linhaDoLegado,
   opcoesDeLista,
   type Contagem,
+  type ContagemPresenca,
   type LinhaCuradoriaLegado,
   type LinhaProduto,
   type VisaoProdutos,
@@ -70,6 +75,13 @@ export const dynamic = "force-dynamic";
  *
  * **Sem a migration no banco** (a web chega antes), a função nova responde
  * PGRST202 e a tela cai nas RPCs de sempre, sem cartões nem contagens.
+ *
+ * **A Shopee (D-454, sobre D-445/C-56).** Com loja Shopee live, anúncio e
+ * venda olham os dois marketplaces: os filtros ganham "só no ML", "só na
+ * Shopee" e "nos dois", os cartões de "sem anúncio/venda" passam a dizer "em
+ * nenhum marketplace" (com o número só do ML ao lado), e a coluna de giro
+ * mostra cada marketplace na sua linha, sem total — o banco não o devolve.
+ * Sem loja live (ou antes da migration de D-445), a tela é a de antes.
  */
 
 const ROTULO_ESTADO: Record<EstadoChave, string> = {
@@ -98,8 +110,22 @@ const ROTULO_SITUACAO: Record<SituacaoChave, string> = {
   encerrando: "Encerrando estoque",
   inativo: "Inativos no ERP",
 };
-const ROTULO_ANUNCIOS: Record<PresencaChave, string> = { com: "Com anúncio", sem: "Sem anúncio" };
-const ROTULO_VENDAS: Record<PresencaChave, string> = { com: "Vendeu em 90 dias", sem: "Sem venda em 90 dias" };
+// Os rótulos viram chip fora do grupo: cada um diz o eixo ("Anúncio só na
+// Shopee" e "Vendeu só na Shopee" não podem virar o mesmo "Só na Shopee").
+const ROTULO_ANUNCIOS: Record<PresencaChave, string> = {
+  com: "Com anúncio",
+  sem: "Sem anúncio",
+  "so-ml": "Anúncio só no ML",
+  "so-shopee": "Anúncio só na Shopee",
+  ambos: "Anúncio no ML e na Shopee",
+};
+const ROTULO_VENDAS: Record<PresencaChave, string> = {
+  com: "Vendeu em 90 dias",
+  sem: "Sem venda em 90 dias",
+  "so-ml": "Vendeu só no ML",
+  "so-shopee": "Vendeu só na Shopee",
+  ambos: "Vendeu no ML e na Shopee",
+};
 
 /** As categorias e marcas à vista antes do "mais". */
 const LIMITE_LISTA = 8;
@@ -185,6 +211,32 @@ function opcoesDe(
   };
 
   return { principais: principais.map(converter), demais: demais.map(converter) };
+}
+
+/**
+ * As opções de um eixo de presença (D-454). Com loja Shopee live, as cinco;
+ * sem ela, as duas de antes — "só no ML" repetiria o "com" e as outras duas
+ * estariam sempre vazias. Um recorte por marketplace que chegou pela URL
+ * continua à vista, para poder ser tirado ali mesmo.
+ */
+function opcoesDePresenca(
+  comShopee: boolean,
+  contagens: ContagemPresenca,
+  rotulos: Record<PresencaChave, string>,
+  ativo: PresencaChave | null,
+  href: (k: PresencaChave | null) => string,
+): Opcao[] {
+  const chaves: readonly PresencaChave[] = comShopee
+    ? (Object.keys(PRESENCAS) as PresencaChave[])
+    : [...PRESENCAS_SEM_SHOPEE, ...(ativo !== null && presencaPorMarketplace(ativo) ? [ativo] : [])];
+
+  return chaves.map((k) => ({
+    chave: k,
+    rotulo: rotulos[k],
+    n: contagemDaPresenca(contagens, k),
+    href: href(ativo === k ? null : k),
+    ativo: ativo === k,
+  }));
 }
 
 /** Os filtros ativos como chips que se tiram com um clique. */
@@ -322,6 +374,15 @@ export default async function ProdutosPage({
   const retrato = visao?.resumo.retrato_em ?? totalResumo?.snapshot_captured_at ?? null;
   const f = visao?.facetas ?? null;
   const r = visao?.resumo ?? null;
+  // D-454: só a leitura de D-445 sabe se há loja Shopee live; a antiga e a de
+  // antes de D-373 respondem como sempre.
+  const comShopee = r?.tem_shopee === true;
+  // Recorte por marketplace sobre a função anterior a D-445: ela não o
+  // conhece e devolve a lista vazia, sem erro. Dizer, em vez de mostrar "0".
+  const recorteSemLeitura =
+    visao !== null &&
+    r?.tem_shopee === null &&
+    (presencaPorMarketplace(atual.anuncios) || presencaPorMarketplace(atual.vendas));
 
   const opcoesEixo = <K extends string>(
     chaves: readonly K[],
@@ -378,7 +439,12 @@ export default async function ProdutosPage({
           {
             rotulo: "Ativos sem anúncio",
             n: r.sem_anuncio,
-            nota: "nenhum anúncio vende o SKU",
+            // Com Shopee, o número é "em nenhum marketplace" (D-445) e o só do
+            // ML, o cartão de antes, vai na nota — os dois vêm do banco.
+            nota:
+              comShopee && r.sem_anuncio_ml !== null
+                ? `em nenhum marketplace · ${formatCount(r.sem_anuncio_ml)} sem anúncio no ML`
+                : "nenhum anúncio vende o SKU",
             href: atalho(atual, { anuncios: "sem", situacao: "ativo" }),
             ativo: atual.anuncios === "sem" && atual.situacao === "ativo" && filtrosAtivos(atual) === 2,
             tom: "info",
@@ -386,7 +452,10 @@ export default async function ProdutosPage({
           {
             rotulo: "Ativos sem venda",
             n: r.sem_venda_90d,
-            nota: "nenhuma unidade em 90 dias",
+            nota:
+              comShopee && r.sem_venda_90d_ml !== null
+                ? `nada em 90 dias, em nenhum marketplace · ${formatCount(r.sem_venda_90d_ml)} sem venda no ML`
+                : "nenhuma unidade em 90 dias",
             href: atalho(atual, { vendas: "sem", situacao: "ativo" }),
             ativo: atual.vendas === "sem" && atual.situacao === "ativo" && filtrosAtivos(atual) === 2,
             tom: "info",
@@ -525,26 +594,16 @@ export default async function ProdutosPage({
 
             <GrupoFiltro
               titulo="Anúncios"
-              opcoes={opcoesEixo(
-                ["com", "sem"] as const,
-                ROTULO_ANUNCIOS,
-                f.anuncios,
-                (k) => k,
-                atual.anuncios,
-                (k) => buildCurationHref(atual, { anuncios: k }),
+              opcoes={opcoesDePresenca(comShopee, f.anuncios, ROTULO_ANUNCIOS, atual.anuncios, (k) =>
+                buildCurationHref(atual, { anuncios: k }),
               )}
               {...(atual.anuncios === null ? {} : { limpar: buildCurationHref(atual, { anuncios: null }) })}
             />
 
             <GrupoFiltro
               titulo="Vendas"
-              opcoes={opcoesEixo(
-                ["com", "sem"] as const,
-                ROTULO_VENDAS,
-                f.vendas,
-                (k) => k,
-                atual.vendas,
-                (k) => buildCurationHref(atual, { vendas: k }),
+              opcoes={opcoesDePresenca(comShopee, f.vendas, ROTULO_VENDAS, atual.vendas, (k) =>
+                buildCurationHref(atual, { vendas: k }),
               )}
               {...(atual.vendas === null ? {} : { limpar: buildCurationHref(atual, { vendas: null }) })}
             />
@@ -614,6 +673,13 @@ export default async function ProdutosPage({
             </div>
           </div>
 
+          {recorteSemLeitura && (
+            <p role="status" className="sb-note sb-note-atencao" style={{ margin: 0 }}>
+              O recorte por marketplace (só no ML, só na Shopee, nos dois) ainda não existe neste banco, e a lista sai
+              vazia. Tire o filtro de anúncio ou de venda para ver o catálogo.
+            </p>
+          )}
+
           <CurationTable
             organizationId={organizationId}
             rows={linhas}
@@ -623,6 +689,7 @@ export default async function ProdutosPage({
               retrato === null
                 ? "sem retrato do ERP — sem retrato não há sugestão"
                 : `retrato do ERP de ${formatDay(retrato)}`,
+              ...(comShopee ? ["anúncios e vendas do ML e da Shopee, sem a loja de teste"] : []),
             ].join(" · ")}
           />
 

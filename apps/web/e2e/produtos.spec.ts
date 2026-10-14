@@ -262,3 +262,51 @@ test("/produtos: atalho, filtro facetado e chip compõem o recorte na URL (D-373
   await expect(page).toHaveURL(/estado=pendente/);
   await expect(page).not.toHaveURL(/tipo=/);
 });
+
+/**
+ * D-454 (sobre D-445, C-56): sem loja Shopee LIVE, `/produtos` é a tela de
+ * antes. O seed tem só a loja de TESTE — com anúncio vinculado a SKU e pedidos
+ * —, e ela nunca conta: os filtros de anúncio e venda ficam com as duas opções
+ * de sempre, a coluna de giro não ganha marketplace, "só no ML" acha
+ * exatamente os mesmos SKUs que "com anúncio", e "só na Shopee" não acha
+ * ninguém. A tela com a Shopee só aparece com loja live, que o seed não tem de
+ * propósito (as provas de equivalência das outras telas dependem disso).
+ */
+test("/produtos sem loja Shopee live: anúncio e venda como antes, e a loja de teste não conta (D-454)", async ({
+  page,
+}) => {
+  await page.goto("/login?next=%2Fprodutos");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Produtos" })).toBeVisible();
+
+  const filtros = page.getByRole("complementary", { name: "Filtros do catálogo" });
+  const anuncios = filtros.getByRole("group", { name: "Anúncios" });
+  const vendas = filtros.getByRole("group", { name: "Vendas" });
+  const contagem = page.getByText(/^[\d.]+ produtos?$/);
+
+  await expect(anuncios.getByRole("link")).toHaveCount(2);
+  await expect(vendas.getByRole("link")).toHaveCount(2);
+  await expect(page.getByRole("table").getByTitle("Mercado Livre")).toHaveCount(0);
+
+  const comAnuncio = await anuncios.getByRole("link", { name: /^Com anúncio/ }).locator("em").innerText();
+
+  // Pela URL, o recorte "só no ML" é aceito, aparece no grupo para ser tirado
+  // e, sem Shopee, é o "com anúncio" de antes — a lista e a faceta.
+  await page.goto("/produtos?anuncios=so-ml");
+  await expect(page.getByRole("link", { name: "Tirar filtro Anúncio só no ML" })).toBeVisible();
+
+  const soMl = anuncios.getByRole("link", { name: /^Anúncio só no ML/ });
+
+  await expect(soMl).toHaveAttribute("aria-current", "true");
+  await expect(soMl.locator("em")).toHaveText(comAnuncio);
+  await expect(contagem).toHaveText(`${comAnuncio} ${comAnuncio === "1" ? "produto" : "produtos"}`);
+
+  // A loja de teste tem anúncio vinculado e venda, e não conta.
+  await page.goto("/produtos?anuncios=so-shopee");
+  await expect(contagem).toHaveText("0 produtos");
+  await page.goto("/produtos?vendas=so-shopee");
+  await expect(contagem).toHaveText("0 produtos");
+});
