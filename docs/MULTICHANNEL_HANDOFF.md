@@ -20,10 +20,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `562b1e60` (D-430) |
-| Branches abertas | A1: `feat/shopee-ingestao-robusta` (PR #147: E1 + estes documentos) e `feat/shopee-permissao-por-loja` (E2, sobre a #147) · A2: `feat/multicanal-t1-seletor` (local, T1 pronta) |
+| Branches abertas | A1: `feat/shopee-ingestao-robusta` (PR #147: E1 + estes documentos) e `feat/shopee-permissao-por-loja` (E2, sobre a #147) e `feat/marketplace-accounts-e-vigia` (E3, sobre a E2) · A2: `feat/multicanal-t1-seletor` (PR #149: T1) |
 | Web em produção | `562b1e60`, conferido na Vercel |
 | Worker / api em produção | worker `worker-00044-p8d` em `562b1e60` (D-430); api `api-00027-p7c` em `e037573f`; Shopee **sandbox** |
-| Migrations em produção | até `20261014150000` (D-430, 14/10). Próximas: `20261014180000` (D-432) e `20261014190000` (D-433), antes do worker e da api |
+| Migrations em produção | até `20261014150000` (D-430, 14/10). Próximas: `20261014180000` (D-432), `20261014190000` (D-433) e `20261014200000` (D-435), antes do worker e da api |
 | Dev | todas as migrations da `main` (CI `38571140787` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -37,10 +37,11 @@
 
 **Em andamento**
 - E1, ingestão robusta (D-432): **em código e validada localmente** (unitários, integração com as migrations do zero, mutações); PR #147 — falta CI, merge, migration `20261014180000` em produção e o deploy do worker.
-- E2, permissão por loja (D-433): **em código e validada localmente** (integração 946/946 com as 250 migrations do zero, mutação da política, ensaio do backfill); falta PR, CI, merge, migration `20261014190000` e o deploy da api (convite com lojas).
+- E2, permissão por loja (D-433): **em código e validada localmente** (integração 946/946 com as 250 migrations do zero, mutação da política, ensaio do backfill); PR #148 — falta CI, merge, migration `20261014190000` e o deploy da api (convite com lojas).
+- E3, contas dos marketplaces e vigia da loja (D-435): **em código e validada localmente** (integração 952/952 com as 251 migrations do zero, mutações do fan-out, da RLS e da referência do vigia); falta PR, CI, merge e a migration `20261014200000` (worker e api não mudam).
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
-- E3 `marketplace_accounts` e saúde → E4 vendas por marketplace e consolidado → E5 faturamento Shopee → E6 grão de SKU, ranking, ABC → E7 fontes financeiras que faltam → E8 Go Live e estoque.
+- E4 vendas por marketplace e consolidado → E5 faturamento Shopee → E6 grão de SKU, ranking, ABC → E7 fontes financeiras que faltam → E8 Go Live e estoque.
 
 **Bloqueios**
 - E1 e E2 em produção dependem do dono (merge e migration; ver "Decisões pendentes do dono").
@@ -86,7 +87,7 @@
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | A2 | — | em código (T1, D-431) | job horário atrasado aparece como atrasado |
 | C-50 | Catálogo e vínculo Shopee: `get_shopee_listings`, `get_shopee_listings_summary`, `get_sku_shopee_listings`, `get_shopee_shop_catalog_counts`, `set_/remove_shopee_sku_link` | A1 | `/anuncios/shopee`, `/skus/[id]`, `/contas` | em produção | — (existente; §3.2) |
 | C-51 | Vendas Shopee por loja: `get_shopee_sales_by_shop`, `get_shopee_orders` | A1 | `/vendas/shopee` | em produção (14/10) | migration em produção e a loja de teste na tela |
-| C-52 | `marketplace_accounts`: a fonte única do seletor Marketplace/Conta, com `slug` do ML e `shop_id` da Shopee | A1 | seletor do A2 | proposto (E3) | uma linha por conta/loja visível ao usuário, respeitando a permissão por conta/loja |
+| C-52 | `marketplace_accounts`: a fonte única do seletor Marketplace/Conta, com `slug` do ML e `shop_id` da Shopee (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.0); evento de loja `entity_type = 'shopee_shop'` com `shopee_shop_id` (rótulo e link na web: A2) | A1 | seletor do A2; notificações | em código (D-435, migration `20261014200000`) | uma linha por conta/loja visível ao usuário, respeitando a permissão por conta/loja |
 | C-53 | `get_marketplace_sales_summary` + série diária (`p_marketplaces text[]`, `p_account_ids uuid[]`) | A1 | `/vendas` | proposto (E4) | só ML = números de hoje; linha consolidada no SQL; NULO no que não soma; sandbox fora |
 | C-54 | Permissão por loja Shopee: `user_shopee_shop_permissions` (insert/delete direto sob RLS, só ADMIN, só para membro; como `user_account_permissions`), eventos `SHOPEE_SHOP_ACCESS_GRANTED`/`_REVOKED` (coluna `shopee_shop_id`), convite `POST /v1/organization/invites` com `shopeeShopIds` | A1 | tela de Usuários (A2, T2) | em código (D-433, migration `20261014190000`) | usuário sem a loja não lê nada dela, por tabela e por RPC — provado na integração |
 | C-55 | `get_sku_shopee_listings` devolve `environment` da loja (atende C-06) | A1 | painel Shopee do SKU | em código (D-432, migration `20261014180000`); coluna `environment` no fim, sem quebrar quem lê | loja sandbox identificável na resposta |
@@ -114,3 +115,4 @@
 1. **E1:** depois do merge, disparar `migrations-producao.yml` para `20261014180000` (D-432) e fazer as duas aprovações; depois, o deploy do worker. (A E0 está feita; há um run `38574819387` parado na 1ª aprovação do mesmo SHA da D-430, sem nada a aplicar — pode ser cancelado.)
 2. **E2 (confirmar antes do merge):** implementada com a regra proposta — a loja segue a permissão por conta do ML (ADMIN vê tudo; os demais, o que for concedido), e as lojas atuais foram concedidas a quem hoje tem todas as contas ML. Loja conectada depois nasce só do ADMIN até ser concedida. Outra regra = ajuste na migration antes do merge.
 3. **E5:** o resultado da venda Shopee usa o recebido provisório (pedido ainda não COMPLETED) ou só o definitivo?
+4. **Vigia de sincronização (D-418, vale para o ML e, com a E3, para a Shopee):** NUNCA foi agendado em produção — `cron.job` vazio em 14/10. Ato único, no SQL Editor de produção: `select private.agendar_vigia_da_sincronizacao();`. Sem ele, conta ou loja que para de rodar não avisa (só a falha registrada e o ERROR avisam).
