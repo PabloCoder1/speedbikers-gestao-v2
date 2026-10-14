@@ -15258,3 +15258,38 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **A conferir no sandbox, depois do deploy do worker:** a chamada real, a unidade de `payout_amount` contra o `escrow_amount`, e o que vem numa janela sem repasse.
 
 **Impacto:** `supabase/migrations/20261015050000_repasse_shopee.sql`, `packages/shopee/src/{escrow-list,escrow-list.test,index}.ts`, `apps/worker/src/handlers/{shopee-escrow-releases-sync,shopee-escrow-releases-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
+## D-456 - Telas multicanais, etapa T5c: os Ads CPC da loja Shopee entram no /faturamento da Shopee como secao propria, rotulados "CPC da loja", fora do resultado e sem somar com o Mercado Ads
+
+**Contexto:** D-449 (C-63, A1) trouxe o desempenho diario dos anuncios CPC das lojas Shopee: `get_shopee_ads_overview` (TOTAL so de loja live com Ads lido; por loja, com Ads nunca lidos NULOS e loja lida sem anuncio em 0) e `get_shopee_ads_daily` (a serie, so live). O ML ja mostra o Mercado Ads no `/faturamento` (D-363). A Shopee nao mostrava Ads em lugar nenhum. O proprio contrato pede tres cuidados: dizer "Ads CPC" (o GMV Max de loja pode ficar de fora), nao descontar do resultado da venda e nao somar com o Ads do ML.
+
+**1. ONDE.** No recorte Shopee de `/faturamento`, numa secao propria (`#ads`) depois dos numeros, como o Mercado Ads na tela do ML. As duas leituras partem junto com a pagina (`Promise.resolve` dispara o builder) e chegam por streaming: nao esperam o faturamento, nem o faturamento as espera. A secao nao existe no ML (la esta o Mercado Ads) nem no "Todos" (os dois nao se somam).
+
+**2. O QUE MOSTRA.**
+- **Faixa:** investimento, vendas com Ads (a atribuicao AMPLA, com a direta e os pedidos na ressalva), ROAS, ACOS e TACoS (com a receita bruta do denominador na ressalva). Os ids sao os de METRICS 5V.
+- **Serie:** "Investimento × vendas por dia", com as barras do Mercado Ads (o mesmo componente).
+- **Por loja:** ao lado da serie, cada loja com o investimento e o que se sabe dela -- "Ads ainda nao lidos", "sem anuncio no periodo", "so os dias ja lidos", e ROAS, ACOS e vendas com Ads quando ha anuncio. A loja de teste aparece marcada e "fora do total".
+- **Ressalva sempre visivel:** "Nao e o total de Ads: os anuncios GMV Max de loja podem ficar de fora. Por isso nada daqui e descontado do resultado da venda, e nao soma com o Mercado Ads."
+
+**3. AUSENCIA NAO E ZERO.**
+- Sem TOTAL (nenhuma loja live com Ads lido), nao ha faixa: "R$ 0,00 investidos" seria inventado. A tela diz "nenhuma loja real com os Ads ja lidos" e lista as lojas com "--".
+- Periodo fora da leitura (`cobertura_completa = false`): aviso de que os numeros sao so dos dias ja lidos.
+- Dia com o gasto ou as vendas NULOS nao vira barra de zero. O dia fica fora das barras e e contado pelo campo que faltou. A nota diz o efeito, porque as somas do banco ignoram o nulo: dia sem gasto conta as vendas e nao o investimento (ROAS acima do real); dia sem vendas, o contrario. Pedido ao A1 (o TOTAL nao diz quantos dias vieram assim): registrado no handoff.
+- A Shopee ainda atribui venda ate 7 dias depois do clique: a nota avisa que os ultimos dias podem subir.
+
+**4. A WEB PODE CHEGAR ANTES DA MIGRATION.** Como no Mercado Ads, a funcao ausente (PGRST202) vira "a leitura dos Ads da Shopee ainda esta sendo ativada neste ambiente", e o resto da tela segue. Conferido no banco isolado com as duas funcoes renomeadas: a resposta do servidor traz a frase, sem alerta de erro.
+
+**Publicacao:** so a web, sobre a `main` (a migration `20261015040000` ja esta nela e no Dev). Pode entrar antes da migration em producao (item 4). Ate a primeira loja live com Ads lido, a secao mostra a loja de teste e diz que nao ha numeros.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 9 em `lib/ads-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira total de zeros, o estado de cada loja (nunca lida, lida sem anuncio, com investimento, venda ou clique), a loja de teste e os dias sem valor contados pelo campo que faltou.
+- **e2e:** `faturamento-multicanal` 5/5 e `faturamento` 3/3, num stack isolado com as migrations da `main`. O teste novo usa o seed (so a loja de TESTE, com os Ads nunca lidos) e confere: a secao com a ressalva, nenhuma faixa, a loja com "--" e "Ads ainda nao lidos · loja de teste, fora do total". No ML e no "Todos", a secao nao existe.
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 20 dias lidos de um periodo de 30, um dia sem linha, um dia com o gasto nulo, 25 vendas validas, uma segunda loja live com os Ads nunca lidos.
+  - A secao mostra exatamente o que a funcao devolve: R$ 276,00 investidos, R$ 3.005,00 de vendas com Ads (R$ 1.689,00 diretas, 38 pedidos), ROAS 10,89x, ACOS 9,2%, TACoS 6,8% sobre R$ 4.075,00.
+  - Aparecem o aviso de periodo incompleto e "1 dia sem o gasto informado pela Shopee".
+  - Por loja: a de teste e a segunda loja com "--", a real com o investimento e "so os dias ja lidos".
+  - No desktop as duas colunas ficam com 524 px cada; no celular (390 px) nada passa da largura.
+- **Suite inteira:** 224 de 225 na rodada inteira, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000). A que falhou, em `/conhecimento` (fora desta fatia: a linha validada nao apareceu a tempo), passou ao repetir o spec no mesmo banco -- intermitente.
+
+**Impacto:** `apps/web/lib/ads-shopee.ts` e o teste, `apps/web/app/faturamento/{ads-shopee,multicanal,campanhas-ads}.tsx` (`BarrasAds` e `formatRoas` exportados), `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
