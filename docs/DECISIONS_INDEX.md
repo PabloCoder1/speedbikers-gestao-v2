@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **436** (D-001 a D-446).
+Decisões registradas: **437** (D-001 a D-448).
 
 ## Por domínio
 
@@ -206,7 +206,7 @@ Decisões registradas: **436** (D-001 a D-446).
 - **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
 
-### mercado-livre (77)
+### mercado-livre (78)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -285,6 +285,7 @@ Decisões registradas: **436** (D-001 a D-446).
 - **D-435** — Contas dos marketplaces numa fonte so (marketplace_accounts) e a loja Shopee parada avisando como a conta do ML, so a quem alcanca a loja (E3 da frente multicanal)
 - **D-437** — Faturamento da Shopee (E5): resultado = recebido - custo nos pedidos cobertos, definitivo e provisorio separados, o custo pela regra de D-356 provada equivalente, e nada soma com o resultado do ML
 - **D-441** — Curva ABC por marketplace (E6b): marketplace e conta/loja como recortes nas tres funcoes da Curva ABC, com o ML identico e 30x mais rapido
+- **D-448** — Telas multicanais, etapa T6b: a Curva ABC ganha os recortes Todos e Shopee, com a compra como criterio que soma; o recorte ML continua identico, e o Excel multicanal fica para a T6b2
 
 ### outros (64)
 
