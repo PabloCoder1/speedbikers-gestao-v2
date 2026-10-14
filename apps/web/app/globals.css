@@ -7625,6 +7625,25 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   margin-top: var(--sb-space-3);
 }
 
+/*
+  A definição de cada canal na comparação lado a lado de `/faturamento?marketplace=todos`
+  (D-442). Quebra linha, ao contrário da `.sb-an-sub`: as definições são frases, e numa
+  linha só empurravam a coluna do Mercado Livre para fora da tela do celular.
+*/
+.sb-comparacao-def {
+  display: block;
+  max-width: 22rem;
+  margin: 0.125rem 0 0 auto;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  white-space: normal;
+}
+
+/* O nome da métrica também quebra: com ele em uma linha, as três colunas não cabem no celular. */
+.sb-comparacao td:first-child {
+  white-space: normal;
+}
+
 .sb-faturamento-sku {
   display: block;
 }
