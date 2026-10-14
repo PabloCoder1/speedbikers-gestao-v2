@@ -24,10 +24,11 @@
  * fora da moldura de um sistema em que a pessoa ainda não entrou.
  *
  * **O que ele NÃO pega:** troca só de `?filtro=` na MESMA página por `<Link>`
- * (nenhum segmento muda, nenhum `loading.tsx` entra). Isso é coberto pelo
- * `CarregandoSeODemorar` nos componentes compartilhados que fazem esse tipo de
- * link (`KpiStrip`, `FilterPill`); `<a>` comum recarrega a página, e aí o
- * `loading.tsx` aparece pelo streaming.
+ * (nenhum segmento muda, nenhum `loading.tsx` entra). Isso é a ATUALIZAÇÃO NO
+ * LUGAR de D-500: `CarregandoSeODemorar` nos componentes compartilhados que
+ * fazem esse tipo de link (`KpiStrip`, `FilterPill`, `ObjectHeader`, as opções
+ * do `FilterMenu`) e `FormularioFiltro` na busca GET; `<a>` comum recarrega a
+ * página, e aí o `loading.tsx` aparece pelo streaming.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

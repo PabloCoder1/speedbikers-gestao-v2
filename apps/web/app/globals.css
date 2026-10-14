@@ -5289,19 +5289,6 @@ table {
   border: 0;
 }
 
-/*
- * A tela de carregamento POR CIMA da atual, para o `<Link>` que só troca o
- * filtro (`components/carregando-link.tsx`). Nasce transparente e entra com o
- * MESMO atraso do esqueleto: navegação rápida termina antes e nada pisca.
- */
-.sb-carregando-cobertura {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: var(--sb-ground);
-  opacity: 0;
-  animation: sb-revela 160ms ease-out 350ms forwards;
-}
 
 .sb-carregando-revela {
   display: flex;
@@ -5422,6 +5409,97 @@ table {
 
   .sb-carregando-progresso {
     display: none;
+  }
+}
+
+/*
+ * A ATUALIZAÇÃO NO LUGAR (D-500) — navegação que fica na MESMA tela: filtro,
+ * busca, paginação, aba, "ver lista" (`components/carregando-link.tsx`,
+ * `components/formulario-filtro.tsx`).
+ *
+ * Até D-500 essa navegação cobria a tela com o esqueleto depois de 350 ms, e a
+ * pessoa perdia de vista a tabela e o filtro que tinha acabado de mexer. Agora o
+ * dado velho fica onde está até o novo chegar:
+ *
+ * - o controle clicado esmaece NA HORA (`.sb-link-pendente` é um marcador
+ *   `hidden`: o link não muda de tamanho);
+ * - o conteúdo para de aceitar clique na hora — um segundo clique não dispara
+ *   outra leitura —, mas continua rolando: o bloqueio é nos filhos, e a roda do
+ *   mouse cai no próprio `.sb-content`;
+ * - a barra da moldura aparece depois de 100 ms, e o conteúdo esmaece depois de
+ *   400 ms. Resposta rápida chega antes e nada pisca.
+ *
+ * O gancho do esmaecimento é o `aria-busy` que o componente põe no `<main>`: o
+ * que o leitor de tela ouve e o que se vê são o MESMO estado, com início e fim
+ * na própria navegação.
+ */
+a:has(> .sb-link-pendente) {
+  opacity: 0.65;
+}
+
+.sb-content[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.6;
+  transition: opacity 200ms ease-out 400ms;
+}
+
+.sb-content[aria-busy="true"] > * {
+  pointer-events: none;
+}
+
+/* A barra mora na base da barra superior, como a do `loading.tsx`. */
+.sb-topbar:has(> .sb-atualizando-barra) {
+  position: relative;
+}
+
+.sb-atualizando-barra {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  animation: sb-revela 120ms ease-out 100ms forwards;
+}
+
+/* Fora da moldura (sem barra superior), no topo da janela. */
+body > .sb-atualizando-barra {
+  position: fixed;
+  top: 0;
+  bottom: auto;
+  z-index: 70;
+}
+
+.sb-atualizando-barra::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--sb-secondary) 70%, var(--sb-accent));
+  animation: sb-progresso 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/*
+ * Sem movimento, o aviso continua — só não corre. A barra fica parada e
+ * inteira, e o esmaecimento troca de uma vez, com o mesmo atraso.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .sb-atualizando-barra {
+    animation-duration: 1ms;
+  }
+
+  .sb-atualizando-barra::before {
+    width: 100%;
+    background: var(--sb-secondary);
+    animation: none;
+  }
+
+  .sb-content[aria-busy="true"] {
+    transition-duration: 0s;
   }
 }
 
@@ -14649,6 +14727,15 @@ td.sb-pco-num-linha {
   border-top-color: var(--sb-secondary);
   background: transparent;
   animation: sb-girar 0.9s linear infinite;
+}
+
+/* Os dois giros da nota fiscal eram os únicos sem a regra de movimento reduzido
+   que os outros giros do app já têm (D-500): mais lentos, como `.sb-vnc-girando`. */
+@media (prefers-reduced-motion: reduce) {
+  .sb-nf-girando,
+  .sb-nf-estado-doc-icone-girando {
+    animation-duration: 2s;
+  }
 }
 
 .sb-nf-estado-doc-falha {

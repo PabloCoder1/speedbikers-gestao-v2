@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ItemDeMenu } from "./item-de-menu";
+
 /**
  * Menu de filtro da barra de ferramentas — o `.button.ghost` com chevron que
  * abre um dropdown, como a toolbar de `Sales` ("Geral ⌄", "Últimos 30 dias ⌄")
@@ -10,7 +12,8 @@ import type { ReactNode } from "react";
  * primeira seria a que sairia de sincronia. É Server Component sem estado: o
  * `<details>` nativo faz o dropdown e cada opção é um LINK, então o recorte
  * continua na URL (compartilhável, com voltar do navegador e Filtros Salvos
- * funcionando), nunca em estado React.
+ * funcionando), nunca em estado React. Desde D-500 o link é de navegação suave
+ * (`ItemDeMenu`), com a atualização no lugar enquanto a tela nova não chega.
  *
  * `children` aceita conteúdo extra no fim do painel — o formulário de período
  * personalizado de `/vendas` é o único caso.
@@ -56,14 +59,9 @@ export function FilterMenu({
       </summary>
       <div className={alinhamento === "inicio" ? "sb-menu-panel sb-menu-panel-inicio" : "sb-menu-panel"}>
         {opcoes.map((opcao) => (
-          <a
-            key={opcao.href}
-            className="sb-menu-item"
-            aria-current={opcao.ativo ? "true" : undefined}
-            href={opcao.href}
-          >
+          <ItemDeMenu key={opcao.href} href={opcao.href} ativo={opcao.ativo}>
             {opcao.label}
-          </a>
+          </ItemDeMenu>
         ))}
         {children}
       </div>
