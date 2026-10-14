@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **438** (D-001 a D-450).
+Decisões registradas: **439** (D-001 a D-450).
 
 ## Por domínio
 
@@ -398,7 +398,7 @@ Decisões registradas: **438** (D-001 a D-450).
 - **D-444** — Telas multicanais, etapa T6a: o ranking de produtos de /vendas chega ao Todos e a Shopee, a aba Vendas do SKU ganha o total entre marketplaces por conta e loja, e a loja de teste ganha o selo no painel Shopee do SKU
 - **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
 
-### worker/infra (80)
+### worker/infra (81)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -480,4 +480,5 @@ Decisões registradas: **438** (D-001 a D-450).
 - **D-400** — "O que precisa da sua atencao": a central de alertas junta as contagens que as outras leituras ja calculam, sem detector novo
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
+- **D-443** — Composicao do faturamento da Shopee (C-61): uma definicao do pedido, a cascata pelos termos da formula oficial do escrow com "outros" fechando, a serie diaria, o por SKU sem rateio, o TOTAL do C-58 somando como a linha e o C-58 150x mais rapido
 
