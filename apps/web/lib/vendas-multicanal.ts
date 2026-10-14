@@ -100,6 +100,9 @@ export interface RecorteDeVendas {
 
 const METRICA_PADRAO = "faturamento";
 
+/** As telas que têm o recorte de marketplace com "Todos" (D-440, D-442). */
+export type TelaDoRecorte = "/vendas" | "/faturamento";
+
 /**
  * O endereço de `/vendas` com um recorte trocado. Trocar de marketplace leva
  * o período e só as contas que cabem no destino (a regra de D-431); a tela do
@@ -107,6 +110,19 @@ const METRICA_PADRAO = "faturamento";
  * padrão fica fora da URL, como no resto da tela.
  */
 export function hrefDeVendas(atual: RecorteDeVendas, troca: Partial<RecorteDeVendas> = {}): string {
+  return hrefDoRecorte("/vendas", atual, troca);
+}
+
+/**
+ * O mesmo endereço para qualquer tela com o recorte (`hrefDeVendas` é este,
+ * em `/vendas`). `/faturamento` usa os mesmos nomes de parâmetro — trocar de
+ * tela leva marketplace, período e contas junto.
+ */
+export function hrefDoRecorte(
+  tela: TelaDoRecorte,
+  atual: RecorteDeVendas,
+  troca: Partial<RecorteDeVendas> = {},
+): string {
   const escopo = troca.escopo ?? atual.escopo;
   const periodo = troca.periodo ?? atual.periodo;
   const metrica = troca.metrica ?? atual.metrica;
@@ -115,7 +131,7 @@ export function hrefDeVendas(atual: RecorteDeVendas, troca: Partial<RecorteDeVen
     escopo === "ml" || contasBase === null ? null : contasBase.filter((conta) => cabeNoEscopo(conta, escopo));
 
   return buildFilterHref(
-    "/vendas",
+    tela,
     {
       marketplace: escopo === "ml" ? null : escopo,
       ...("from" in periodo

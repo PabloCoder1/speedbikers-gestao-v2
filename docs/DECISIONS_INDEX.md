@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **431** (D-001 a D-440).
+Decisões registradas: **432** (D-001 a D-442).
 
 ## Por domínio
 
@@ -151,7 +151,7 @@ Decisões registradas: **431** (D-001 a D-440).
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 
-### interface (49)
+### interface (50)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -202,6 +202,7 @@ Decisões registradas: **431** (D-001 a D-440).
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 - **D-438** — Telas multicanais, etapa T3a: a loja Shopee aparece na saude da operacao -- o aviso do vigia com nome e destino, /sincronizacao com os limiares do vigia, e a contagem do topo pela fonte unica
+- **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 
 ### mercado-livre (76)
 

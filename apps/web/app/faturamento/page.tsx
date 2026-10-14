@@ -6,14 +6,19 @@ import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
+import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { Shell } from "../../components/shell";
+import { hrefDeFaturamento } from "../../lib/faturamento-multicanal";
 import { formatBusinessDate } from "../../lib/format";
 import { carregarLimites } from "../../lib/limites-central";
+import { contarLojasShopee } from "../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
+import { resolverEscopoVendas } from "../../lib/vendas-multicanal";
 import { CalculadoraPreco } from "./calculadora-preco";
 import { CampanhasAds } from "./campanhas-ads";
+import { FaturamentoMulticanal } from "./multicanal";
 import { AVISO, Numeros } from "./numeros";
 
 export const metadata = { title: "Faturamento — Speed Bikers Gestão" };
@@ -40,6 +45,10 @@ export const dynamic = "force-dynamic";
  * comissão inteiras e recusa a margem, em vez de inventá-la.
  *
  * Sem recorte de marca: o frete é do pedido e não se divide por marca (5E).
+ *
+ * **Shopee e "Todos" (D-442):** `marketplace=shopee` e `marketplace=todos` são
+ * esta tela com outro recorte (`./multicanal.tsx`), lidos de outro contrato
+ * (C-58). Sem `marketplace`, nada aqui muda — só o seletor no cabeçalho.
  */
 
 type Consulta = Record<string, string | string[] | undefined>;
@@ -78,6 +87,12 @@ export default function FaturamentoPage(props: { searchParams: Promise<Consulta>
 
 async function FaturamentoContent({ searchParams }: { searchParams: Promise<Consulta> }): Promise<ReactNode> {
   const query = await searchParams;
+  const escopo = resolverEscopoVendas(query.marketplace);
+
+  if (escopo !== "ml") {
+    return <FaturamentoMulticanal query={query} escopo={escopo} />;
+  }
+
   const supabase = await createClient();
   const today = toSalesMetricDate(new Date());
 
@@ -86,8 +101,12 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
   const isCustom = days === null;
   const periodo: Periodo = isCustom ? range : { days };
 
-  // A conta da URL vira id aqui: as leituras abaixo dependem disto.
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
+  // A conta da URL vira id aqui: as leituras abaixo dependem disto. O número
+  // de lojas Shopee (D-431) só decide se o seletor de marketplace aparece.
+  const [accountsResult, lojasShopee] = await Promise.all([
+    supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
+    contarLojasShopee(supabase),
+  ]);
 
   const accounts = accountsResult.data ?? [];
   const requestedSlug = typeof query.account === "string" ? query.account : null;
@@ -130,8 +149,24 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         }
         aside={
           <>
+            {/*
+              O MARKETPLACE VEM PRIMEIRO (D-431). Para a Shopee e o "Todos" só o
+              período atravessa: a conta daqui (`account=<slug>`) é do ML.
+              Sem loja Shopee, o seletor não aparece.
+            */}
+            <SeletorDeMarketplace
+              ativo="ml"
+              contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
+              destinos={{
+                ml: montarHref("/faturamento", periodo, contaSlug),
+                todos: hrefDeFaturamento({ escopo: "ml", periodo, contas: null }, { escopo: "todos" }),
+                shopee: hrefDeFaturamento({ escopo: "ml", periodo, contas: null }, { escopo: "shopee" }),
+              }}
+            />
+
             {accountsResult.error === null && accounts.length > 0 && (
               <FilterMenu
+                nome="Conta"
                 rotulo={contaLabel}
                 opcoes={[
                   { href: montarHref("/faturamento", periodo, null), ativo: selectedAccount === null, label: "Todas as contas" },
@@ -145,6 +180,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
             )}
 
             <FilterMenu
+              nome="Período"
               rotulo={periodoLabel}
               opcoes={PERIOD_PRESETS.map((preset) => ({
                 href: montarHref("/faturamento", { days: preset }, contaSlug),
