@@ -5390,6 +5390,132 @@ export type Database = {
           ultima_atualizacao: string | null
         }[]
       }
+      get_shopee_faturamento_composicao: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-443): TOTAL sem conta; componente sem pedido que o informe e loja nunca lida = nulo.
+          account_id: string | null
+          account_name: string | null
+          afiliados: number | null
+          ajustes: number | null
+          comissao: number | null
+          comissao_liquida: number | null
+          cupom_loja: number | null
+          cupom_shopee: number | null
+          desconto_shopee: number | null
+          environment: string | null
+          frete_devolucao: number | null
+          frete_loja: number | null
+          moedas_shopee: number | null
+          nivel: string
+          outros: number | null
+          pedidos_cobertos: number | null
+          pedidos_com_ajuste: number | null
+          recebido_coberto: number | null
+          receita_coberta: number | null
+          taxa_por_pedido: number | null
+          taxa_servico: number | null
+          taxa_servico_liquida: number | null
+          taxa_transacao: number | null
+        }[]
+      }
+      get_shopee_faturamento_diario: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          custo_produtos: number | null
+          dia: string
+          margem_venda: number | null
+          pedidos: number
+          pedidos_cobertos: number
+          pedidos_sem_receita: number
+          recebido_coberto: number | null
+          receita_bruta: number | null
+          receita_coberta: number | null
+          resultado_venda: number | null
+        }[]
+      }
+      get_shopee_faturamento_pedidos: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          afiliados: number | null
+          ajustes: number | null
+          aliquota: number | null
+          coberto: boolean
+          comissao: number | null
+          comissao_liquida: number | null
+          cupom_loja: number | null
+          cupom_shopee: number | null
+          custo: number | null
+          custo_atual: boolean
+          custo_ok: boolean
+          desconto_shopee: number | null
+          dia: string
+          environment: string
+          financeiro_lido: boolean
+          frete_devolucao: number | null
+          frete_loja: number | null
+          imposto: number | null
+          itens: number
+          loja_lida: boolean
+          moedas_shopee: number | null
+          order_sn: string
+          order_status: string
+          outros: number | null
+          recebido: number | null
+          receita: number | null
+          sem_sku: boolean
+          shopee_shop_id: string
+          sku_unico: string | null
+          taxa_por_pedido: number | null
+          taxa_servico: number | null
+          taxa_servico_liquida: number | null
+          taxa_transacao: number | null
+          unidades: number | null
+        }[]
+      }
+      get_shopee_faturamento_por_sku: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_ordem?: string
+          p_organization_id: string
+        }
+        Returns: {
+          custo_atual: boolean
+          custo_produtos: number | null
+          margem_venda: number | null
+          pedidos: number
+          pedidos_cobertos: number
+          pedidos_varios_skus: number
+          recebido_coberto: number | null
+          receita_bruta: number | null
+          receita_coberta: number | null
+          receita_varios_skus: number | null
+          resultado_venda: number | null
+          sku: string
+          sku_id: string
+          title: string | null
+          total_count: number
+          unidades: number
+        }[]
+      }
       get_shopee_listings: {
         Args: {
           p_busca?: string | null
