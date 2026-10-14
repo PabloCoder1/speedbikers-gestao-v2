@@ -324,6 +324,17 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
+> **Superfície:** `/anuncios/shopee` (D-428), o vínculo manual nela, o painel
+> "Anúncios da Shopee" em `/skus/[id]` e a coluna "Anúncios" das Lojas Shopee
+> em `/contas` (D-429) · **Figma:** não desenhou o segundo canal · **V3 real:**
+> telas e painéis próprios da Shopee · **Decisão:** reaproveitar o que o
+> Mercado Livre já usa — `PageTitle`, `KpiStrip`, `Panel`, `.sb-table`, as
+> classes `.sb-an-*` de `/anuncios`, o popup `.sb-vnc-modal` e a `BuscaSku` de
+> `/vinculacoes` —, sem forma nova; o contador "Vinculados pelo SKU" virou
+> "Vinculados" (manual ou pelo SKU do anúncio) · **Motivo:** escopo enxuto — o
+> Figma não desenhou o segundo canal, e o Design Contract resolve os
+> componentes recorrentes.
+
 > **Superfície:** `/skus/[id]`, abas que não a Visão geral · **Figma:** o frame
 > mostra *"Conteúdo da aba em construção"* para todas · **V3 real:** conteúdo
 > completo · **Decisão:** aplicar o **design system** (rótulo de seção, cartão

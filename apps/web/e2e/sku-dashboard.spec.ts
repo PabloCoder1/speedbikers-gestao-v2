@@ -383,8 +383,9 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
 
   /*
     E A LISTA DO QUE NÃO DÁ PARA JULGAR. Ela é a metade que impede a outra de
-    mentir: sem teto configurado não há selo de dispersão, e sem tabela de
-    outra plataforma não há diagnóstico de Shopee.
+    mentir: sem teto configurado não há selo de dispersão, e o diagnóstico
+    julga só o Mercado Livre — os anúncios da Shopee (D-429) estão na aba
+    Anúncios, sem régua aqui.
   */
   // O seed tem 26,4% de diferença entre os dois anúncios: acima do teto.
   await expect(problemas).toContainText("Preços muito diferentes entre os anúncios");

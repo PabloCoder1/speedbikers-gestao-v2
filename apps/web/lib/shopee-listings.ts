@@ -1,15 +1,17 @@
 /**
- * Vocabulário de `/anuncios/shopee` (D-428, fatia 4a da trilha Shopee).
+ * Vocabulário de `/anuncios/shopee` (D-428, fatia 4a da trilha Shopee; o
+ * vínculo manual, D-429, mora em `./shopee-link`).
  *
  * A MECÂNICA (href, página, janela) vem de `./filters`; aqui vive só o que é
- * desta tela: os quatro estados do vínculo pelo SKU do anúncio, o estado do
- * item na Shopee e o preço na moeda da própria linha. Toda contagem e todo
- * filtro moram nas RPCs `get_shopee_listings` e `get_shopee_listings_summary`
- * — nada aqui soma linha.
+ * desta tela: os quatro estados do vínculo (manual, que vence, ou pelo SKU do
+ * anúncio), o estado do item na Shopee e o preço na moeda da própria linha.
+ * Toda contagem e todo filtro moram nas RPCs `get_shopee_listings` e
+ * `get_shopee_listings_summary` — nada aqui soma linha.
  */
 
 import { SHOPEE_IMAGE_HOSTS } from "./csp";
 import { buildFilterHref, resolvePageParam, summarizePagedWindow, type PagedWindow } from "./filters";
+import { formatCount } from "./format";
 import type { Tom } from "../components/tone";
 
 export const SHOPEE_LISTINGS_PATH = "/anuncios/shopee";
@@ -27,9 +29,12 @@ export const SHOPEE_LINK_STATES = [
   {
     slug: "vinculado",
     codigo: "VINCULADO",
-    rotulo: "Vinculados pelo SKU",
-    explicacao: "pelo SKU do anúncio",
-    criterio: "O SKU do anúncio (o da variação; o do item sem variação), em maiúsculas e sem espaços nas pontas, é um SKU do catálogo.",
+    // D-429: conta o vínculo MANUAL e o pelo SKU do anúncio — a view já
+    // contava os dois; o rótulo deixou de dizer "pelo SKU".
+    rotulo: "Vinculados",
+    explicacao: "manual ou pelo SKU do anúncio",
+    criterio:
+      "Tem vínculo manual (gravado aqui, e ele vence) ou, sem ele, o SKU do anúncio (o da variação; o do item sem variação), em maiúsculas e sem espaços nas pontas, é um SKU do catálogo.",
     tom: "ok",
   },
   {
@@ -243,6 +248,21 @@ export function shopeeImageUrl(url: string | null): string | null {
   );
 
   return permitido ? url : null;
+}
+
+/**
+ * O tamanho do catálogo de uma loja, na coluna "Anúncios" de `/contas`
+ * (D-429): "5 anúncios · 2 vinculados", com os números que
+ * `get_shopee_shop_catalog_counts` contou no SQL. Catálogo NUNCA lido chega
+ * nulo e vira `null` — a tela diz "—", nunca "0 anúncios", que afirmaria uma
+ * loja vazia que ninguém olhou.
+ */
+export function resumoDoCatalogoShopee(anuncios: number | null, vinculados: number | null): string | null {
+  if (anuncios === null || vinculados === null) return null;
+
+  return `${formatCount(anuncios)} ${anuncios === 1 ? "anúncio" : "anúncios"} · ${formatCount(vinculados)} ${
+    vinculados === 1 ? "vinculado" : "vinculados"
+  }`;
 }
 
 /**

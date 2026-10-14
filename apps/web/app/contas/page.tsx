@@ -13,6 +13,7 @@ import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
 import { currentMembership } from "../../lib/request-membership";
 import { formatAge } from "../../lib/relative-time";
 import { sanitizeErrorText } from "../../lib/sanitize";
+import { isShopeeSchemaMissing, resumoDoCatalogoShopee } from "../../lib/shopee-listings";
 import { createClient } from "../../lib/supabase/server";
 import { ConnectButton } from "./connect-button";
 import { NewAccountForm } from "./new-account-form";
@@ -80,15 +81,21 @@ export default async function ContasPage(): Promise<ReactNode> {
   }
 
   // D-425: as lojas Shopee saem na mesma ida das contas do Mercado Livre.
-  const [{ data, error }, lojasShopee] = await Promise.all([
+  // D-429: e o tamanho do catálogo de cada loja também — contado no SQL
+  // (`get_shopee_shop_catalog_counts`), nulo quando o catálogo nunca foi lido.
+  const [{ data, error }, lojasShopee, catalogoShopee] = await Promise.all([
     supabase.rpc("get_ml_account_cards", { p_organization_id: organizationId }),
     supabase
       .from("shopee_shops")
       .select("id, shop_id, shop_name, region, environment, status, shop_status, auth_expires_at, connected_at, last_error")
       .order("connected_at", { ascending: true }),
+    supabase.rpc("get_shopee_shop_catalog_counts", { p_organization_id: organizationId }),
   ]);
 
   const accounts = data ?? [];
+  // Por loja, para a coluna "Anúncios": indexar o que o banco já contou, não somar.
+  const catalogoPorLoja = new Map((catalogoShopee.data ?? []).map((linha) => [linha.shopee_shop_id, linha]));
+  const catalogoAusente = isShopeeSchemaMissing(catalogoShopee.error);
 
   const agora = new Date();
   const connectedCount = accounts.filter((account) => account.status === "CONNECTED").length;
@@ -350,34 +357,62 @@ export default async function ContasPage(): Promise<ReactNode> {
                       <th>Loja</th>
                       <th>Ambiente</th>
                       <th>Conexão</th>
+                      <th title="Unidades de anúncio (cada variação, ou o item sem variação) e quantas têm SKU vinculado — manual ou pelo SKU do anúncio; itens apagados ficam de fora">
+                        Anúncios
+                      </th>
                       <th>Autorização vence</th>
                       <th>Conectada em</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {lojasShopee.data.map((loja) => (
-                      <tr key={loja.id}>
-                        <td>
-                          {loja.shop_name ?? "Loja sem nome lido"}
-                          <span className="sb-mono" style={{ display: "block", color: "var(--sb-text-soft)" }}>
-                            {loja.shop_id}
-                            {loja.region === null ? "" : ` · ${loja.region}`}
-                            {loja.shop_status === null || loja.shop_status === "NORMAL" ? "" : ` · ${loja.shop_status}`}
-                          </span>
-                        </td>
-                        <td>{loja.environment === "live" ? "Produção" : "Teste (sandbox)"}</td>
-                        <td>
-                          {loja.status === "CONNECTED" ? "Conectada" : "Com erro"}
-                          {loja.last_error === null ? null : (
-                            <span style={{ display: "block", color: "var(--sb-text-soft)" }}>
-                              {sanitizeErrorText(loja.last_error)}
+                    {lojasShopee.data.map((loja) => {
+                      const catalogo = catalogoPorLoja.get(loja.id) ?? null;
+                      const resumo =
+                        catalogo === null ? null : resumoDoCatalogoShopee(catalogo.anuncios, catalogo.vinculados);
+                      const ultimaLeitura = catalogo?.ultima_leitura ?? null;
+
+                      return (
+                        <tr key={loja.id}>
+                          <td>
+                            {loja.shop_name ?? "Loja sem nome lido"}
+                            <span className="sb-mono" style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                              {loja.shop_id}
+                              {loja.region === null ? "" : ` · ${loja.region}`}
+                              {loja.shop_status === null || loja.shop_status === "NORMAL" ? "" : ` · ${loja.shop_status}`}
                             </span>
-                          )}
-                        </td>
-                        <td>{loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}</td>
-                        <td>{formatDateTime(loja.connected_at)}</td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>{loja.environment === "live" ? "Produção" : "Teste (sandbox)"}</td>
+                          <td>
+                            {loja.status === "CONNECTED" ? "Conectada" : "Com erro"}
+                            {loja.last_error === null ? null : (
+                              <span style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                                {sanitizeErrorText(loja.last_error)}
+                              </span>
+                            )}
+                          </td>
+                          {/*
+                            O CATÁLOGO DA LOJA (D-429): contado no SQL; nulo é
+                            "—", nunca zero (D-067) — "0 anúncios" afirmaria uma
+                            loja vazia que ninguém leu. O número leva à lista
+                            da loja em Anúncios da Shopee.
+                          */}
+                          <td>
+                            {resumo === null ? "—" : <Link href={`/anuncios/shopee?loja=${loja.id}`}>{resumo}</Link>}
+                            <span style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                              {catalogoShopee.error !== null
+                                ? catalogoAusente
+                                  ? "chega com a próxima atualização do banco"
+                                  : "não foi possível ler agora"
+                                : ultimaLeitura === null
+                                  ? "catálogo ainda não lido"
+                                  : `lido ${formatAge(ultimaLeitura, agora) ?? `em ${formatDateTime(ultimaLeitura)}`}`}
+                            </span>
+                          </td>
+                          <td>{loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}</td>
+                          <td>{formatDateTime(loja.connected_at)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

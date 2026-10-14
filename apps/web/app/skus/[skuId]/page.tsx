@@ -11,6 +11,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { TOM } from "../../../components/tone";
 import { Shell } from "../../../components/shell";
+import { StatePill } from "../../../components/state-pill";
 import { StatusPill } from "../../../components/status-pill";
 import {
   autorDaDecisao,
@@ -29,6 +30,13 @@ import {
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { formatAge } from "../../../lib/relative-time";
+import { sanitizeErrorText } from "../../../lib/sanitize";
+import {
+  formatShopeeMoney,
+  isShopeeSchemaMissing,
+  shopeeItemStatus,
+  shopeeModelUnavailable,
+} from "../../../lib/shopee-listings";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
@@ -296,6 +304,9 @@ export default async function SkuDashboardPage({
   const needsPrices = tab === "precos";
   const needsSales = tab === "vendas";
   const needsDecisions = tab === "visao-geral" || tab === "decisoes";
+  // Os anúncios da Shopee (D-429) só aparecem na aba Anúncios: nem a visão
+  // geral nem o diagnóstico os leem, então a leitura não entra no gate deles.
+  const needsShopee = tab === "anuncios";
 
   const [
     dashboardResult,
@@ -312,6 +323,7 @@ export default async function SkuDashboardPage({
     openActionsResult,
     acoesAbertasResult,
     membrosResult,
+    shopeeResult,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -520,11 +532,27 @@ export default async function SkuDashboardPage({
           .select("user_id, profiles(full_name)")
           .eq("organization_id", sku.data.organization_id)
       : Promise.resolve({ data: null, error: null }),
+    /*
+      OS ANÚNCIOS DA SHOPEE DESTE SKU (D-429). `get_sku_shopee_listings` lê a
+      view `shopee_listing_units` com a precedência da casa — o vínculo
+      MANUAL vence o pelo SKU do anúncio —, a mesma régua de
+      `/anuncios/shopee`. Mesma ida do `Promise.all`, só na aba que os mostra.
+    */
+    needsShopee
+      ? supabase.rpc("get_sku_shopee_listings", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+        })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const dashboard = dashboardResult.data;
   const listings: AnuncioDoSku[] = ((listingsResult.data ?? []) as LinhaDeAnuncio[]).map(lerAnuncio);
   const contasParaVinculo = contasResult.data ?? [];
+  // Ausente (banco anterior a D-429) não é erro nem "nenhum": a tela diz que a
+  // novidade ainda não chegou, como `/contas` (D-425).
+  const shopeeAusente = isShopeeSchemaMissing(shopeeResult.error);
+  const anunciosShopee = shopeeResult.data ?? [];
 
   /*
     O ESCOPO DO DIAGNÓSTICO vive na URL, como a aba (D-317): lista fechada
@@ -532,8 +560,10 @@ export default async function SkuDashboardPage({
     ANTES de tocar qualquer conta — o mesmo molde de `parseTab`.
 
     Novas contas entram sozinhas: as opções saem dos anúncios, não de uma lista
-    escrita. Plataforma não é dimensão aqui porque não existe no esquema — a
-    tela diz isso em vez de oferecer um seletor que não recorta nada.
+    escrita. Plataforma não é dimensão aqui: o diagnóstico julga só os
+    anúncios do Mercado Livre. Os da Shopee (D-429) aparecem na aba Anúncios,
+    mas nenhuma verificação daqui tem régua para eles ainda — a tela diz isso
+    em vez de oferecer um seletor que não recorta nada.
   */
   const contasDoSku = [...new Map(listings.map((l) => [l.ml_account_id, l.account_label])).entries()].map(
     ([id, label]) => ({ id, label: label ?? "conta desconhecida" }),
@@ -1122,6 +1152,7 @@ export default async function SkuDashboardPage({
       )}
 
       {tab === "anuncios" && (
+        <>
         <Panel
           title="Anúncios vinculados"
           subtitle={listingsResult.error === null ? resumoDeAnuncios(listings.length) : undefined}
@@ -1244,6 +1275,117 @@ export default async function SkuDashboardPage({
           )}
           </div>
         </Panel>
+
+        {/*
+          A SHOPEE (D-429), em painel próprio e depois do Mercado Livre: são
+          canais com tabelas próprias (D-425), e misturar as linhas numa tabela
+          só pediria colunas que um dos dois não tem (conta × loja, MLB ×
+          item/variação). Só leitura aqui — o vínculo manual se grava em
+          Anúncios da Shopee, que é para onde o número do item leva.
+        */}
+        <div className="sb-skud-mt3">
+          <Panel
+            title="Anúncios da Shopee"
+            subtitle="Vínculo manual, que vence, ou pelo SKU que o vendedor digitou no anúncio — a mesma régua de Anúncios da Shopee."
+            aside={
+              <Link className="sb-skud-link" href="/anuncios/shopee">
+                Todos os anúncios da Shopee →
+              </Link>
+            }
+          >
+            <div className="sb-panel-body">
+              {shopeeAusente && (
+                <p className="sb-skud-soft">Os anúncios da Shopee chegam com a próxima atualização do banco.</p>
+              )}
+
+              {shopeeResult.error !== null && !shopeeAusente && (
+                <p className="sb-skud-danger" role="alert">
+                  Não foi possível carregar os anúncios da Shopee:{" "}
+                  {sanitizeErrorText(shopeeResult.error.message) ?? "a leitura falhou neste carregamento."}
+                </p>
+              )}
+
+              {shopeeResult.error === null && anunciosShopee.length === 0 && (
+                <p className="sb-skud-soft">Nenhum anúncio Shopee vinculado a este SKU.</p>
+              )}
+
+              {shopeeResult.error === null && anunciosShopee.length > 0 && (
+                <div className="sb-skud-scroll">
+                  <table className="sb-table sb-skud-min-48" aria-label="Anúncios da Shopee deste SKU">
+                    <thead>
+                      <tr>
+                        <th>Loja</th>
+                        <th>Anúncio</th>
+                        <th title="O SKU que o vendedor digitou no anúncio: o da variação, ou o do item sem variação">
+                          SKU do anúncio
+                        </th>
+                        <th className="sb-num">Preço</th>
+                        <th className="sb-num">Estoque</th>
+                        <th>Status</th>
+                        <th>Vínculo</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {anunciosShopee.map((anuncio) => {
+                        const status = shopeeItemStatus(anuncio.item_status);
+
+                        return (
+                          <tr
+                            key={`${anuncio.shopee_shop_id}:${String(anuncio.item_id)}:${anuncio.model_id === null ? "item" : String(anuncio.model_id)}`}
+                          >
+                            <td>{anuncio.shop_name ?? "—"}</td>
+                            <td>
+                              {anuncio.item_name ?? <span className="sb-skud-soft">nome ainda não lido</span>}
+                              {anuncio.model_name !== null && (
+                                <span className="sb-skud-meta">{anuncio.model_name}</span>
+                              )}
+                              <div className="sb-skud-mono-caption">
+                                {/* O item abre a lista da Shopee já buscada por ele,
+                                    onde o vínculo manual se troca ou remove. */}
+                                <Link
+                                  href={`/anuncios/shopee?q=${String(anuncio.item_id)}`}
+                                  title="Abrir em Anúncios da Shopee"
+                                >
+                                  {anuncio.item_id}
+                                </Link>
+                                {anuncio.model_id !== null && ` · variação ${String(anuncio.model_id)}`}
+                              </div>
+                            </td>
+                            <td className="sb-skud-mono">{anuncio.sku_anuncio ?? "—"}</td>
+                            <td className="sb-num">{formatShopeeMoney(anuncio.current_price, anuncio.currency)}</td>
+                            {/* Ausente é "—", nunca zero (D-067); e o saldo é o DO
+                                ANÚNCIO na Shopee, não o do ERP. */}
+                            <td
+                              className="sb-num"
+                              title="estoque DESTE anúncio na Shopee, na última leitura do catálogo — não é o saldo do ERP"
+                            >
+                              {anuncio.available_stock === null ? "—" : formatCount(anuncio.available_stock)}
+                            </td>
+                            <td>
+                              <StatePill tone={{ tom: status.tom, label: status.rotulo }} />
+                              {shopeeModelUnavailable(anuncio.model_status) && (
+                                <span className="sb-skud-meta">variação indisponível</span>
+                              )}
+                            </td>
+                            <td className="sb-skud-caption">
+                              {anuncio.vinculo_via === "MANUAL"
+                                ? "vínculo manual"
+                                : anuncio.vinculo_via === "SKU_DO_ANUNCIO"
+                                  ? "pelo SKU do anúncio"
+                                  : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Panel>
+        </div>
+        </>
       )}
 
       {tab === "full" && (
@@ -1782,9 +1924,10 @@ export default async function SkuDashboardPage({
           {/*
             ESTE PAINEL NÃO É CONDICIONAL, e a primeira versão dele era — o que
             deixava a tela calada justamente no SKU sem nenhuma ressalva
-            situacional. As duas últimas linhas são verdade SEMPRE (não há
-            outra plataforma nesta base, e quatro campos do Mercado Livre não
-            são sincronizados), e limite permanente que só aparece às vezes é
+            situacional. As duas últimas linhas são verdade SEMPRE (o
+            diagnóstico não julga a Shopee — D-429 trouxe os anúncios dela para
+            a aba Anúncios, não para estas réguas —, e quatro campos do Mercado
+            Livre não são sincronizados), e limite permanente que só aparece às vezes é
             pior do que limite nenhum: ensina que a ausência significa "tudo
             coberto".
           */}
@@ -1799,8 +1942,9 @@ export default async function SkuDashboardPage({
                       <li key={linha}>{linha}</li>
                     ))}
                     <li>
-                      Shopee e outras plataformas: esta base é do Mercado Livre. Não há tabela de outra plataforma, e
-                      um seletor com uma opção vazia prometeria integração que não existe.
+                      Shopee: este diagnóstico julga só os anúncios do Mercado Livre. Os anúncios da Shopee vinculados
+                      a este SKU estão na <Link href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</Link>, mas
+                      preço, estoque anunciado e ações ainda não têm régua para eles aqui.
                     </li>
                     <li>
                       Tipo de anúncio, catálogo, logística e qualidade da publicação: nenhuma dessas colunas é

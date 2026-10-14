@@ -16258,6 +16258,15 @@ td.sb-pco-num-linha {
   white-space: nowrap;
 }
 
+/* Os botões do vínculo manual da Shopee (D-429), embaixo do vínculo, em
+   linha: `.sb-text-button` sem moldura, como o "Remover" da página do SKU. */
+.sb-an-vinculo-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.75rem;
+  margin-top: 0.25rem;
+}
+
 /* Pausado e encerrado continuam legíveis, mas saem da frente dos ativos. */
 .sb-an-linha-inativa td:not(.sb-an-acoes) {
   color: var(--sb-text-soft);
