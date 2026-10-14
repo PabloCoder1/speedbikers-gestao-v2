@@ -585,6 +585,9 @@ Lidas por `get_shopee_faturamento` (TOTAL e uma linha por loja). A conta é a da
 - **Pedido coberto:** válido (5S), receita conhecida, financeiro lido, SKU em todos os itens e custo conhecido de todos. O resto é contado por motivo (`pedidos_sem_financeiro`, `pedidos_sem_sku`, `pedidos_sem_custo`) — nunca zero.
 - **Não é lucro líquido:** Ads e despesas fixas ficam fora; o imposto é à parte.
 - **Fora do TOTAL:** loja de sandbox e loja nunca lida (NULO na linha dela).
+- **Receita do TOTAL (D-443):** a soma da receita bruta conhecida das lojas, como na linha da loja e no C-53 — loja lida sem pedido é 0; os pedidos sem receita seguem contados à parte.
+- **`shopee_composicao_recebido` (D-443):** para onde vai o dinheiro nos MESMOS cobertos — `receita coberta − (comissão + taxa de serviço + taxa de transação + frete da loja + frete de devolução + cupom da loja + afiliados + taxa por pedido) − outros = recebido coberto`, pelos termos da fórmula oficial do `escrow_amount`. Frete da loja = frete real − pago pelo comprador − subsídio da Shopee − desconto do 3PL (negativo = sobrou); `final_shipping_fee` não entra. **Outros** é o que a lista não explica e pode ser negativo. Componente que nenhum pedido informa = NULO. Informativos fora da cascata: comissão e taxa líquidas (Brasil), o bancado pela Shopee e os ajustes depois do escrow. Conferido na documentação e num pedido de sandbox sem taxas; fechar com loja real é verificação do Go Live.
+- **Por dia e por SKU (D-443):** o dia de São Paulo, só lojas live lidas (os dias somam o TOTAL); por SKU, só pedidos de um SKU — sem rateio do recebido entre itens; os de vários SKUs são contados.
 
 ## 5H. Indicadores operacionais de sincronização
 

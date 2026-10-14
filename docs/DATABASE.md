@@ -179,6 +179,10 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### Composição do faturamento da Shopee (D-443)
+
+Migration `20261015010000`. `get_shopee_faturamento_pedidos` é a definição única do pedido no faturamento da Shopee (cobertura, custo de D-356 com a etapa de custo `MATERIALIZED`, alíquota do dia e os componentes do recebido pela fórmula oficial do escrow); `get_shopee_faturamento` (C-58) passa a ler dela, com o TOTAL de receita somando como a linha. Novas: `get_shopee_faturamento_composicao` (a cascata com `outros`), `get_shopee_faturamento_diario` e `get_shopee_faturamento_por_sku` (só pedidos de um SKU). Métrica `shopee_composicao_recebido`.
+
 ### Curva ABC por marketplace (D-441)
 
 Migration `20261015000000`. `get_sku_abc_analysis`, `get_sku_abc_breakdown` e `get_sku_sales_by_account` ganham `p_marketplaces text[]` (nulo = só ML, o resultado de antes) e `p_account_ids uuid[]` (conta ML ou loja Shopee) no fim, e viram `plpgsql` com plano custom. Novas colunas: `purchases`/`class_purchases`, a parte de cada marketplace e `shopee_items_without_revenue`; o painel ganha a dimensão `marketplace`. Com a Shopee no recorte: `orders` e cobertura nulos, critério `pedidos` recusado; Full nulo sem o ML.
