@@ -16,10 +16,12 @@ import type { ReactNode } from "react";
 import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { pageNumbers } from "../../../lib/listings-dashboard";
+import { contarContasMl } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../lib/period";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
@@ -116,12 +118,15 @@ export default async function VendasShopeePage({
 
   // As lojas não dependem da organização (a RLS já as restringe): saem junto
   // com o membership, como em `/anuncios/shopee`.
-  const [membership, lojasResult] = await Promise.all([
+  const [membership, lojasResult, contasMl] = await Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
       .select("id, organization_id, shop_name, shop_id, environment, status")
       .order("connected_at", { ascending: true }),
+    // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
+    // marketplace oferecer a volta a `/vendas`.
+    contarContasMl(supabase),
   ]);
 
   const organizationId = membership.organizationId;
@@ -250,12 +255,19 @@ export default async function VendasShopeePage({
         subtitle={
           <>
             Pedidos das lojas Shopee de {de} até {ate}, pelo dia da criação do pedido em São Paulo, lidos de hora em
-            hora. Venda válida é o pedido pago, fora de não pago, cancelado e em cancelamento. As vendas do Mercado
-            Livre estão no <Link href={hrefVendas}>Dashboard de vendas</Link>.
+            hora. Venda válida é o pedido pago, fora de não pago, cancelado e em cancelamento.
           </>
         }
         aside={
           <>
+            {/* O marketplace primeiro, como em `/vendas` (D-431): a volta leva
+                só o período — loja e situação são da Shopee. */}
+            <SeletorDeMarketplace
+              ativo="shopee"
+              contas={{ ml: contasMl, shopee: lojas.length }}
+              destinos={{ ml: hrefVendas, shopee: buildShopeeSalesHref(filters) }}
+            />
+
             {/* Todo o recorte vive na URL, nunca em estado React — link
                 compartilhável e voltar do navegador, como em `/vendas`. */}
             <FilterMenu
@@ -277,7 +289,33 @@ export default async function VendasShopeePage({
                 ativo: filters.days === preset,
                 label: `Últimos ${String(preset)} dias`,
               }))}
-            />
+            >
+              {/* O período personalizado de `/vendas` (D-431): a URL já o
+                  aceitava (`from`/`to`), faltava o formulário. Um GET nativo
+                  envia só os campos do formulário — sem os hidden, aplicar o
+                  período descartaria a loja e a situação. */}
+              <form method="get" action="/vendas/shopee" className="sb-periodo-form">
+                {filters.loja !== null && <input type="hidden" name="loja" value={filters.loja} />}
+                {filters.situacao !== null && <input type="hidden" name="situacao" value={filters.situacao} />}
+                <input
+                  type="date"
+                  name="from"
+                  defaultValue={filters.days === null ? filters.range.from : undefined}
+                  aria-label="Data inicial"
+                  className="sb-input"
+                />
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={filters.days === null ? filters.range.to : undefined}
+                  aria-label="Data final"
+                  className="sb-input"
+                />
+                <button type="submit" className="sb-button sb-button-primary">
+                  Aplicar período
+                </button>
+              </form>
+            </FilterMenu>
           </>
         }
       />

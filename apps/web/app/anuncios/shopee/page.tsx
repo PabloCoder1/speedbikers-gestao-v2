@@ -17,11 +17,13 @@ import { Icone } from "../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { pageNumbers } from "../../../lib/listings-dashboard";
+import { contarContasMl, hrefDosAnuncios } from "../../../lib/marketplace";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
 import { sanitizeErrorText } from "../../../lib/sanitize";
@@ -75,11 +77,18 @@ export const dynamic = "force-dynamic";
  * contagens dele, e só ganhou um link para cá.
  */
 
+const DESCRICAO =
+  "Catálogo das lojas Shopee, lido de hora em hora. O vínculo vem do SKU que o vendedor digitou no anúncio — o da " +
+  "variação, ou o do item quando não há variação — comparado ao catálogo, ou de um vínculo manual feito aqui, que vence " +
+  "o do anúncio.";
+
+/**
+ * Sem catálogo para listar, o seletor de marketplace não aparece (ele mora no
+ * cabeçalho da lista): o caminho de volta fica no texto.
+ */
 const SUBTITULO = (
   <>
-    Catálogo das lojas Shopee, lido de hora em hora. O vínculo vem do SKU que o vendedor digitou no anúncio — o da
-    variação, ou o do item quando não há variação — comparado ao catálogo, ou de um vínculo manual feito aqui, que vence
-    o do anúncio. Os anúncios do Mercado Livre estão no <Link href="/anuncios">Dashboard de anúncios</Link>.
+    {DESCRICAO} Os anúncios do Mercado Livre estão no <Link href="/anuncios">Dashboard de anúncios</Link>.
   </>
 );
 
@@ -115,12 +124,15 @@ export default async function AnunciosShopeePage({
 
   // As lojas não dependem da organização (a RLS já as restringe): saem junto
   // com o membership, como as contas em `/anuncios` (D-195).
-  const [membership, lojasResult] = await Promise.all([
+  const [membership, lojasResult, contasMl] = await Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
       .select("id, organization_id, shop_name, shop_id, environment, status")
       .order("connected_at", { ascending: true }),
+    // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
+    // marketplace oferecer a volta a `/anuncios`.
+    contarContasMl(supabase),
   ]);
 
   const organizationId = membership.organizationId;
@@ -307,9 +319,17 @@ export default async function AnunciosShopeePage({
       <PageTitle
         eyebrow="COMERCIAL / CATÁLOGO"
         title="Anúncios da Shopee"
-        subtitle={SUBTITULO}
+        subtitle={DESCRICAO}
         aside={
           <>
+            {/* O marketplace primeiro, como em `/anuncios` (D-431): a volta
+                leva só a busca — loja e estado são da Shopee. */}
+            <SeletorDeMarketplace
+              ativo="shopee"
+              contas={{ ml: contasMl, shopee: lojas.length }}
+              destinos={{ ml: hrefDosAnuncios("ml", filters.busca), shopee: buildShopeeListingsHref(filters) }}
+            />
+
             {/* Todo o recorte vive na URL, nunca em estado React — link
                 compartilhável e voltar do navegador, como em `/anuncios`. */}
             <FilterMenu

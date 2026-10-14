@@ -171,6 +171,21 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "diagnostics.detect-support-patterns": 1440,
   "diagnostics.sync-central-alerts": 1440, // D-403
   "diagnostics.measure-decision-outcomes": 1440, // v3-measure-decision-outcomes: "30 8 * * *"
+  /*
+    SHOPEE (D-431), todos de hora em hora por loja CONECTADA. Um agendador só,
+    `v3-shopee-orders` ("20 * * * *"), enfileira os pedidos e, 5 minutos
+    depois, o catálogo (`apps/api/src/shopee-orders-schedule.ts`); os outros
+    dois vêm atrás de cada leitura bem-sucedida — o financeiro quando os
+    pedidos alcançam agora, o detalhe depois de toda lista
+    (`apps/worker/src/handlers/shopee-{orders,items}-sync.ts`). Sem loja
+    conectada não há execução nenhuma, e a Saúde só julga o job que apareceu
+    em `job_runs`: loja em ERROR, que para de ser lida, vira atraso aqui — o
+    silêncio de D-217 sem ninguém olhar.
+  */
+  "shopee.orders.sync": 60,
+  "shopee.order-financials.sync": 60,
+  "shopee.items.sync": 60,
+  "shopee.items.hydrate": 60,
 };
 
 /**
