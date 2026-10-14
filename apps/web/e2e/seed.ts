@@ -1114,6 +1114,19 @@ async function main(): Promise<void> {
     throw variacoesShopee.error;
   }
 
+  /*
+    D-429: a loja do seed começa SEM vínculo manual — é o estado que
+    `E2E_SHOPEE_ESPERADO` descreve. O spec de /anuncios/shopee cria um e o
+    remove na mesma corrida; se ele cair no meio, rodar o seed de novo devolve
+    a loja ao ponto de partida. O histórico (`shopee_sku_link_events`) é
+    append-only e fica — ele não entra em contagem nenhuma.
+  */
+  const manuaisShopee = await db.from("shopee_sku_links").delete().eq("shopee_shop_id", lojaShopeeId);
+
+  if (manuaisShopee.error !== null) {
+    throw manuaisShopee.error;
+  }
+
   // Full DO ANÚNCIO (D-243): UM snapshot, só para o primeiro anúncio. Os outros
   // três ficam sem snapshot de propósito — é o que prova na tela que ausência
   // de snapshot vira "—" e não "0" (D-067), e que a célula "No Full" conta

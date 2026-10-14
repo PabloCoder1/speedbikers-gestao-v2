@@ -3876,6 +3876,137 @@ export type Database = {
           },
         ]
       }
+      shopee_sku_link_events: {
+        Row: {
+          actor_user_id: string
+          event_type: string
+          id: string
+          item_id: number
+          link_id: string
+          model_id: number | null
+          occurred_at: string
+          organization_id: string
+          previous_sku_id: string | null
+          reason: string | null
+          shopee_shop_id: string
+          sku_id: string
+        }
+        Insert: {
+          actor_user_id: string
+          event_type: string
+          id?: string
+          item_id: number
+          link_id: string
+          model_id?: number | null
+          occurred_at?: string
+          organization_id: string
+          previous_sku_id?: string | null
+          reason?: string | null
+          shopee_shop_id: string
+          sku_id: string
+        }
+        Update: {
+          actor_user_id?: string
+          event_type?: string
+          id?: string
+          item_id?: number
+          link_id?: string
+          model_id?: number | null
+          occurred_at?: string
+          organization_id?: string
+          previous_sku_id?: string | null
+          reason?: string | null
+          shopee_shop_id?: string
+          sku_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_sku_link_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_sku_link_events_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_sku_link_events_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopee_sku_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          item_id: number
+          model_id: number | null
+          organization_id: string
+          shopee_shop_id: string
+          sku_id: string
+          source: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_id: number
+          model_id?: number | null
+          organization_id: string
+          shopee_shop_id: string
+          sku_id: string
+          source?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_id?: number
+          model_id?: number | null
+          organization_id?: string
+          shopee_shop_id?: string
+          sku_id?: string
+          source?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_sku_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_sku_links_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_sku_links_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skus: {
         Row: {
           barcode: string | null
@@ -4923,6 +5054,7 @@ export type Database = {
           item_id: number | null
           item_name: string | null
           item_status: string | null
+          manual_link_id: string | null
           model_id: number | null
           model_name: string | null
           model_status: string | null
@@ -4933,6 +5065,7 @@ export type Database = {
           sku: string | null
           sku_anuncio: string | null
           sku_id: string | null
+          sku_pelo_anuncio: string | null
           sku_title: string | null
           vinculo_via: string | null
         }
@@ -5097,6 +5230,7 @@ export type Database = {
           item_id: number
           item_name: string | null
           item_status: string
+          manual_link_id: string | null
           model_id: number | null
           model_name: string | null
           model_status: string | null
@@ -5106,6 +5240,7 @@ export type Database = {
           sku: string | null
           sku_anuncio: string | null
           sku_id: string | null
+          sku_pelo_anuncio: string | null
           sku_title: string | null
           total_count: number
           vinculo_via: string | null
@@ -5123,6 +5258,15 @@ export type Database = {
           vinculados: number
         }[]
       }
+      get_shopee_shop_catalog_counts: {
+        Args: { p_organization_id: string }
+        Returns: {
+          anuncios: number | null
+          shopee_shop_id: string
+          ultima_leitura: string | null
+          vinculados: number | null
+        }[]
+      }
       get_sinais_ads: {
         Args: {
           p_hoje?: string
@@ -5131,6 +5275,39 @@ export type Database = {
         // D-398: jsonb com janela (e dias pendentes), referencias, resumo e
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
+      }
+      get_sku_shopee_listings: {
+        Args: { p_organization_id: string; p_sku_id: string }
+        Returns: {
+          available_stock: number | null
+          currency: string | null
+          current_price: number | null
+          item_id: number
+          item_name: string | null
+          item_status: string
+          manual_link_id: string | null
+          model_id: number | null
+          model_name: string | null
+          model_status: string | null
+          shop_name: string | null
+          shopee_shop_id: string
+          sku_anuncio: string | null
+          vinculo_via: string | null
+        }[]
+      }
+      remove_shopee_sku_link: {
+        Args: { p_link_id: string; p_reason: string }
+        Returns: undefined
+      }
+      set_shopee_sku_link: {
+        Args: {
+          p_item_id: number
+          p_model_id: number | null
+          p_reason?: string | null
+          p_shopee_shop_id: string
+          p_sku_id: string
+        }
+        Returns: string
       }
       shopee_items_details_pending: {
         Args: { p_limit?: number; p_shopee_shop_id: string }

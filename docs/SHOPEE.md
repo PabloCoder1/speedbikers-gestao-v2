@@ -178,6 +178,12 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   `error_rate_limit` são passageiros; o código vem às vezes com prefixo de
   módulo (`product.error_item_not_found`). O vínculo é o SKU do anúncio igual a `skus.sku_key`, derivado na
   view `shopee_listing_units`; tela em `/anuncios/shopee`.
+- **Vínculo manual (D-429):** `shopee_sku_links`, um por unidade (variação,
+  ou item sem variação), só por `set_shopee_sku_link` /
+  `remove_shopee_sku_link` (ADMIN, GESTOR ou OPERADOR da organização;
+  unidade no catálogo sincronizado; remover pede motivo); histórico
+  `shopee_sku_link_events`. **O manual vence o SKU do anúncio** — a
+  precedência está na view.
 
 ## 5. Sandbox — o roteiro
 
@@ -215,7 +221,7 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 0–1 | Decisão, `@sb/shopee`, conexão da loja (link, retorno, tokens cifrados, loja em `/contas`) | código (D-425) |
 | 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | código (D-426) |
 | 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | código (D-427) |
-| 4 | Produtos e vínculo com SKU: 4a catálogo e vínculo pelo SKU do anúncio; 4b vínculo manual, painel no SKU, `/contas`; os ~3.000 do UpSeller vão para a fatia 7 | 4a código (D-428) |
+| 4 | Produtos e vínculo com SKU: 4a catálogo e vínculo pelo SKU do anúncio; 4b vínculo manual, painel no SKU, `/contas`; os ~3.000 do UpSeller vão para a fatia 7 | 4a no ar no sandbox (D-428); 4b código (D-429) |
 | 5 | Estoque (exige decisão do dono: a planilha do UpSeller já desconta a venda Shopee) | — |
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja | — |
 | 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |

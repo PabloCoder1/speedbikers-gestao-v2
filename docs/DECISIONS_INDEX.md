@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **420** (D-001 a D-428).
+Decisões registradas: **421** (D-001 a D-429).
 
 ## Por domínio
 
@@ -199,7 +199,7 @@ Decisões registradas: **420** (D-001 a D-428).
 - **D-402** — Ranking de produtos: uma RPC agrega os dois periodos por SKU com os custos de get_faturamento, e devolve uma pagina por ordem
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 
-### mercado-livre (70)
+### mercado-livre (71)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -271,6 +271,7 @@ Decisões registradas: **420** (D-001 a D-428).
 - **D-420** — Cada anuncio guarda as campanhas do Mercado Livre em que pode entrar, da mesma leitura da promocao, e a aba Preco as mostra com o preco sugerido e quem paga
 - **D-421** — Calculadora de preco: abaixo de R$ 79 o frete gratis e escolha do vendedor, e sem ele o Mercado Livre cobra so o custo de envio por unidade; a tarifa fixa entra quando existe
 - **D-423** — A venda sem variacao acha o SKU pelo anuncio quando todos os vinculos dele apontam para o mesmo SKU; o historico ganha o SKU sem movimento de estoque
+- **D-429** — Shopee, fatia 4b: o vinculo manual vence o SKU do anuncio, no desenho do Mercado Livre e em tabelas proprias
 
 ### outros (64)
 

@@ -3004,6 +3004,173 @@ describe("catálogo Shopee e vínculo pelo SKU do anúncio (D-428)", () => {
   });
 });
 
+/*
+  D-429: o vínculo MANUAL do anúncio Shopee. Vence o SKU do anúncio; só por
+  RPC, com papel na organização, SKU da mesma organização e a unidade no
+  catálogo sincronizado; histórico append-only; remover exige motivo.
+*/
+describe("vínculo manual Shopee (D-429)", () => {
+  const LOJA = "dddd4290-0000-4000-8000-00000000d429";
+  const ids: Record<"x" | "y" | "z", string> = { x: "", y: "", z: "" };
+
+  async function sku(nome: string, org: string): Promise<string> {
+    const r = await client.query<{ id: string }>(
+      "insert into public.skus (organization_id, sku, kind) values ($1, $2, 'PRODUTO') returning id",
+      [org, nome],
+    );
+
+    return r.rows[0]?.id ?? "";
+  }
+
+  async function unidade(item: number, modelo: number | null) {
+    const r = await asUser<{ estado: string; vinculo_via: string | null; sku: string | null; sku_pelo_anuncio: string | null; manual_link_id: string | null }>(
+      ADMIN_SB,
+      `select estado, vinculo_via, sku, sku_pelo_anuncio, manual_link_id
+         from public.shopee_listing_units
+        where shopee_shop_id = '${LOJA}' and item_id = ${String(item)} and model_id is not distinct from ${modelo === null ? "null" : String(modelo)}`,
+    );
+
+    return r[0];
+  }
+
+  // asUserPersist: a gravação tem de ficar para os testes seguintes (asUser desfaz).
+  const vincular = (item: number, modelo: number | null, skuId: string, quem = ADMIN_SB) =>
+    asUserPersist<{ id: string }>(
+      quem,
+      `select public.set_shopee_sku_link('${LOJA}', ${String(item)}, ${modelo === null ? "null" : String(modelo)}, '${skuId}') as id`,
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, status)
+       values ($1, $2, 'sandbox', 990429001, 'CONNECTED')`,
+      [LOJA, ORG_SB],
+    );
+    ids.x = await sku("D429-SKU-X", ORG_SB);
+    ids.y = await sku("D429-SKU-Y", ORG_SB);
+    ids.z = await sku("D429-SKU-Z", ORG_OUTRA);
+
+    // A: sem variação, o anúncio indica X. B: duas variações (sem SKU; SKU fora do catálogo). C: nunca lido.
+    await client.query(
+      `insert into public.shopee_items
+         (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+       values ($1, $2, 4291, 'NORMAL', now(), 'Item A', 'D429-SKU-X', false, now(), now()),
+              ($1, $2, 4292, 'NORMAL', now(), 'Item B', null, true, now(), now()),
+              ($1, $2, 4293, 'NORMAL', now(), null, null, null, null, null)`,
+      [LOJA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku)
+       values ($1, 4292, 1, $2, 'Azul', null), ($1, 4292, 2, $2, 'Preto', 'NAO-EXISTE-D429')`,
+      [LOJA, ORG_SB],
+    );
+  });
+
+  afterAll(async () => {
+    // O histórico é append-only e prende a loja (restrict): a limpeza do teste
+    // desliga o gatilho, como a do vínculo do Mercado Livre lá em cima.
+    await client.query("alter table public.shopee_sku_link_events disable trigger shopee_sku_link_events_no_mutation");
+    await client.query("delete from public.shopee_sku_link_events where shopee_shop_id = $1", [LOJA]);
+    await client.query("alter table public.shopee_sku_link_events enable trigger shopee_sku_link_events_no_mutation");
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+    await client.query("delete from public.skus where id = any($1::uuid[])", [[ids.x, ids.y, ids.z]]);
+  });
+
+  it("o manual vence o SKU do anúncio; a tela recebe os dois", async () => {
+    expect(await unidade(4291, null)).toMatchObject({ estado: "VINCULADO", vinculo_via: "SKU_DO_ANUNCIO", sku: "D429-SKU-X" });
+
+    await vincular(4291, null, ids.y);
+
+    expect(await unidade(4291, null)).toMatchObject({
+      estado: "VINCULADO",
+      vinculo_via: "MANUAL",
+      sku: "D429-SKU-Y",
+      sku_pelo_anuncio: "D429-SKU-X",
+    });
+  });
+
+  it("vincula a variação sem SKU; trocar o SKU mantém o id e grava RETARGETED; repetir o mesmo SKU não grava nada", async () => {
+    expect(await unidade(4292, 1)).toMatchObject({ estado: "SEM_SKU_NO_ANUNCIO", manual_link_id: null });
+
+    const [criado] = await vincular(4292, 1, ids.y);
+    const [trocado] = await vincular(4292, 1, ids.x);
+    const [igual] = await vincular(4292, 1, ids.x);
+
+    expect(trocado?.id).toBe(criado?.id);
+    expect(igual?.id).toBe(criado?.id);
+    expect(await unidade(4292, 1)).toMatchObject({ estado: "VINCULADO", vinculo_via: "MANUAL", sku: "D429-SKU-X" });
+
+    const eventos = await client.query<{ event_type: string; previous_sku_id: string | null; sku_id: string }>(
+      "select event_type, previous_sku_id, sku_id from public.shopee_sku_link_events where link_id = $1 order by occurred_at, event_type",
+      [criado?.id],
+    );
+
+    expect(eventos.rows).toEqual([
+      { event_type: "CREATED", previous_sku_id: null, sku_id: ids.y },
+      { event_type: "RETARGETED", previous_sku_id: ids.y, sku_id: ids.x },
+    ]);
+  });
+
+  it("recusa: SKU de outra organização, unidade fora do catálogo, item com variação inteiro, quem não é da organização", async () => {
+    await expect(vincular(4292, 2, ids.z)).rejects.toThrow(/outra organizacao/);
+    await expect(vincular(4293, null, ids.x)).rejects.toThrow(/catalogo sincronizado/);
+    await expect(vincular(4292, 9, ids.x)).rejects.toThrow(/catalogo sincronizado/);
+    await expect(vincular(4292, null, ids.x)).rejects.toThrow(/catalogo sincronizado|vincule cada variacao/);
+    await expect(vincular(4292, 2, ids.x, DE_OUTRA_ORG)).rejects.toThrow(/sem permissao/);
+    // Nem o ADMIN escreve direto na tabela: só pela RPC.
+    await expect(
+      asUser(ADMIN_SB, `delete from public.shopee_sku_links where shopee_shop_id = '${LOJA}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("o painel do SKU e a contagem por loja (NULA enquanto o catálogo não foi lido)", async () => {
+    const doX = await asUser<{ item_id: string; model_id: string | null; vinculo_via: string }>(
+      ADMIN_SB,
+      `select item_id, model_id, vinculo_via from public.get_sku_shopee_listings('${ORG_SB}', '${ids.x}')`,
+    );
+
+    // A foi para Y (manual); a variação B/1 é de X (manual).
+    expect(doX).toEqual([{ item_id: "4292", model_id: "1", vinculo_via: "MANUAL" }]);
+
+    const antes = await asUser<{ anuncios: string | null; vinculados: string | null }>(
+      ADMIN_SB,
+      `select anuncios, vinculados from public.get_shopee_shop_catalog_counts('${ORG_SB}') where shopee_shop_id = '${LOJA}'`,
+    );
+
+    await client.query("update public.shopee_shops set items_synced_until = now() where id = $1", [LOJA]);
+
+    const depois = await asUser<{ anuncios: string | null; vinculados: string | null }>(
+      ADMIN_SB,
+      `select anuncios, vinculados from public.get_shopee_shop_catalog_counts('${ORG_SB}') where shopee_shop_id = '${LOJA}'`,
+    );
+
+    expect(antes).toEqual([{ anuncios: null, vinculados: null }]);
+    // A (manual), B/1 (manual), B/2 (fora do catálogo), C (aguardando) = 4 anúncios, 2 vinculados.
+    expect(depois).toEqual([{ anuncios: "4", vinculados: "2" }]);
+  });
+
+  it("remover exige motivo; o SKU do anúncio volta a valer; o histórico não se altera", async () => {
+    const link = (await unidade(4291, null))?.manual_link_id ?? "";
+
+    await expect(asUser(ADMIN_SB, `select public.remove_shopee_sku_link('${link}', '   ')`)).rejects.toThrow(/motivo obrigatorio/);
+    await asUserPersist(ADMIN_SB, `select public.remove_shopee_sku_link('${link}', 'vinculado errado no teste')`);
+
+    expect(await unidade(4291, null)).toMatchObject({ vinculo_via: "SKU_DO_ANUNCIO", sku: "D429-SKU-X", manual_link_id: null });
+
+    const removido = await client.query<{ reason: string }>(
+      "select reason from public.shopee_sku_link_events where link_id = $1 and event_type = 'REMOVED'",
+      [link],
+    );
+
+    expect(removido.rows).toEqual([{ reason: "vinculado errado no teste" }]);
+    await expect(
+      client.query("update public.shopee_sku_link_events set reason = 'x' where link_id = $1", [link]),
+    ).rejects.toThrow(/append-only/);
+    // A loja com histórico não some em cascata.
+    await expect(client.query("delete from public.shopee_shops where id = $1", [LOJA])).rejects.toThrow(/foreign key|violates/i);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";
@@ -13528,9 +13695,15 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "link_document_item",
     "mark_purchase_order_ordered",
     "receive_purchase_order",
+    // D-429: o vinculo manual Shopee. Os dois validam o escopo de cada
+    // parametro: a organizacao sai da LOJA (ou do vinculo), o papel e
+    // conferido nela (has_org_role ADMIN/GESTOR/OPERADOR), o SKU tem de ser
+    // da mesma organizacao, e item/variacao sao procurados DENTRO da loja.
+    "remove_shopee_sku_link",
     "remove_sku_listing_link",
     "resolve_link_candidate",
     "retarget_sku_listing_link",
+    "set_shopee_sku_link",
     "set_skus_stock_virtual",
     "set_skus_supplier_brand",
     // D-370: confere o papel NA organizacao do fornecedor (has_org_role) e que

@@ -2,10 +2,12 @@
  * DESVIO DE DESENHO (formato de docs/DESIGN_IMPLEMENTATION.md):
  * **Superfície:** `/anuncios/shopee` · **Figma:** não há frame para a Shopee ·
  * **V3 real:** catálogo das lojas Shopee com o vínculo pelo SKU do anúncio
- * (D-428) · **Decisão:** compor com o Design Contract e os componentes que
- * `/anuncios` já usa (PageTitle, KpiStrip, Panel, FilterMenu, StatePill,
- * `.sb-table` e as classes `.sb-an-*`), sem forma nova · **Motivo:** escopo
- * enxuto — o Figma não desenhou o segundo canal.
+ * (D-428) e o vínculo manual, que vence (D-429) · **Decisão:** compor com o
+ * Design Contract e os componentes que `/anuncios` já usa (PageTitle,
+ * KpiStrip, Panel, FilterMenu, StatePill, `.sb-table` e as classes
+ * `.sb-an-*`), e o vínculo manual com o popup e a busca de SKU de
+ * `/vinculacoes` (`.sb-vnc-modal`, `BuscaSku`), sem forma nova · **Motivo:**
+ * escopo enxuto — o Figma não desenhou o segundo canal.
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -23,6 +25,7 @@ import { pageNumbers } from "../../../lib/listings-dashboard";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
 import { sanitizeErrorText } from "../../../lib/sanitize";
+import { acaoDoVinculoShopee, podeVincularShopee, skuQueOAnuncioIndica } from "../../../lib/shopee-link";
 import {
   SHOPEE_LINK_STATES,
   SHOPEE_PAGE_SIZE,
@@ -40,6 +43,8 @@ import {
 } from "../../../lib/shopee-listings";
 import { createClient } from "../../../lib/supabase/server";
 
+import { AcoesDoVinculoShopee } from "./acoes-vinculo-shopee";
+
 export const metadata = { title: "Anúncios da Shopee — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
@@ -52,12 +57,19 @@ export const dynamic = "force-dynamic";
  * Uma linha por UNIDADE de anúncio — cada variação, ou o item quando não há
  * variação —, como `shopee_listing_units` define. O vínculo é o SKU que o
  * vendedor digitou no anúncio, normalizado como `skus.sku_key`, igual a um SKU
- * do catálogo: DERIVADO na leitura, nunca gravado. O vínculo manual é a fatia
- * 4b.
+ * do catálogo: DERIVADO na leitura, nunca gravado.
  *
- * A web só LÊ: lista e faixa saem de `get_shopee_listings` (paginada no SQL,
- * com `total_count`) e `get_shopee_listings_summary` (contadores no SQL). A
- * Shopee é lida pelo worker, de hora em hora; esta tela nunca a chama.
+ * **O vínculo manual (D-429, fatia 4b) VENCE o do anúncio.** Ele é gravado
+ * aqui, pelo popup da coluna "Vínculo", e só por quem tem papel ADMIN, GESTOR
+ * ou OPERADOR na organização — o mesmo corte de `set_shopee_sku_link` e
+ * `remove_shopee_sku_link`; a tela esconde os botões de quem não pode, e o
+ * banco recusa do mesmo jeito. A unidade só aceita vínculo depois de lida
+ * (D-316): a linha "aguardando leitura" não oferece botão.
+ *
+ * Lista e faixa saem de `get_shopee_listings` (paginada no SQL, com
+ * `total_count`) e `get_shopee_listings_summary` (contadores no SQL — o
+ * "Vinculados" já conta o manual). A Shopee é lida pelo worker, de hora em
+ * hora; esta tela nunca a chama, e o vínculo não muda nada no anúncio de lá.
  *
  * Nada aqui toca o Mercado Livre: `/anuncios` continua com as RPCs e as
  * contagens dele, e só ganhou um link para cá.
@@ -66,8 +78,8 @@ export const dynamic = "force-dynamic";
 const SUBTITULO = (
   <>
     Catálogo das lojas Shopee, lido de hora em hora. O vínculo vem do SKU que o vendedor digitou no anúncio — o da
-    variação, ou o do item quando não há variação — comparado ao catálogo. Os anúncios do Mercado Livre estão no{" "}
-    <Link href="/anuncios">Dashboard de anúncios</Link>.
+    variação, ou o do item quando não há variação — comparado ao catálogo, ou de um vínculo manual feito aqui, que vence
+    o do anúncio. Os anúncios do Mercado Livre estão no <Link href="/anuncios">Dashboard de anúncios</Link>.
   </>
 );
 
@@ -138,6 +150,8 @@ export default async function AnunciosShopeePage({
   }
 
   const lojas = lojasResult.data.filter((loja) => loja.organization_id === organizationId);
+  // Quem vê os botões do vínculo manual: o mesmo corte das RPCs de escrita.
+  const podeVincular = podeVincularShopee(membership.role);
 
   if (lojas.length === 0) {
     return (
@@ -248,6 +262,8 @@ export default async function AnunciosShopeePage({
               }[estado.codigo],
         ),
         previous: null,
+        // "Vinculados" soma as duas origens (D-429); a célula diz quais.
+        ...(estado.codigo === "VINCULADO" && contagens !== null && !nuncaLido ? { ressalva: estado.explicacao } : {}),
         href: buildShopeeKpiHref(filters, estado.slug),
         tom: estado.tom,
       }),
@@ -394,6 +410,13 @@ export default async function AnunciosShopeePage({
             </p>
           )}
 
+          {lista.error === null && rows.length > 0 && !podeVincular && (
+            // Sem o papel, a coluna "Vínculo" não tem botão — a tela diz por quê.
+            <p role="note" className="sb-an-nota">
+              Vincular um anúncio à mão é para administrador, gestor ou operador da organização.
+            </p>
+          )}
+
           {lista.error !== null && (
             <Estado titulo="Não foi possível carregar os anúncios da Shopee." erro>
               <span>{sanitizeErrorText(lista.error.message) ?? "A leitura falhou neste carregamento."}</span>
@@ -452,7 +475,7 @@ export default async function AnunciosShopeePage({
                     <th title="O SKU que o vendedor digitou no anúncio: o da variação, ou o do item sem variação">
                       SKU do anúncio
                     </th>
-                    <th>Vínculo</th>
+                    <th title="O vínculo manual, gravado aqui, vence; sem ele vale o SKU do anúncio">Vínculo</th>
                     <th className="sb-num">Preço</th>
                     <th className="sb-num" title="Estoque disponível DO ANÚNCIO na Shopee — não o do ERP">
                       Estoque
@@ -471,6 +494,8 @@ export default async function AnunciosShopeePage({
                     const classes = [zerado ? "sb-an-linha-zerada" : "", inativo ? "sb-an-linha-inativa" : ""]
                       .filter((classe) => classe !== "")
                       .join(" ");
+                    const acao = acaoDoVinculoShopee(row);
+                    const indica = skuQueOAnuncioIndica(row);
 
                     return (
                       <tr
@@ -528,7 +553,16 @@ export default async function AnunciosShopeePage({
                               <Link className="sb-entity sb-mono" href={`/skus/${row.sku_id}`} title={row.sku_title ?? undefined}>
                                 {row.sku}
                               </Link>
-                              <small className="sb-an-sub">pelo SKU do anúncio</small>
+                              <small className="sb-an-sub">
+                                {row.vinculo_via === "MANUAL" ? "vínculo manual" : "pelo SKU do anúncio"}
+                              </small>
+                              {/* O manual vence, e quando ele discorda do anúncio a
+                                  linha diz o que o anúncio indicaria. */}
+                              {indica !== null && (
+                                <small className="sb-an-sub">
+                                  o anúncio indica <span className="sb-mono">{indica}</span>
+                                </small>
+                              )}
                             </>
                           ) : estado === null ? (
                             row.estado
@@ -542,6 +576,33 @@ export default async function AnunciosShopeePage({
                               </small>
                             </>
                           )}
+
+                          {/* O VÍNCULO MANUAL (D-429): só para quem pode gravar. */}
+                          {podeVincular && acao.tipo === "aguardando" && (
+                            // A RPC recusaria: a unidade ainda não está no catálogo lido.
+                            <small className="sb-an-sub">vincular à mão só depois da leitura</small>
+                          )}
+                          {podeVincular &&
+                            (acao.tipo === "manual" || acao.tipo === "outro-sku" || acao.tipo === "vincular") && (
+                              <AcoesDoVinculoShopee
+                                modo={acao.tipo}
+                                linkId={acao.tipo === "manual" ? acao.linkId : null}
+                                unidade={{
+                                  lojaId: row.shopee_shop_id,
+                                  lojaNome: nomePorId.get(row.shopee_shop_id) ?? row.shop_name ?? "Loja Shopee",
+                                  itemId: row.item_id,
+                                  modelId: row.model_id,
+                                  itemName: row.item_name,
+                                  modelName: row.model_name,
+                                  skuAnuncio: row.sku_anuncio,
+                                  skuAtual:
+                                    row.estado === "VINCULADO" && row.sku_id !== null && row.sku !== null
+                                      ? { id: row.sku_id, sku: row.sku }
+                                      : null,
+                                  skuPeloAnuncio: row.sku_pelo_anuncio,
+                                }}
+                              />
+                            )}
                         </td>
                         {/* Ausente é "—", nunca zero (D-067): o item ainda não
                             lido não tem preço nem estoque. O preço original

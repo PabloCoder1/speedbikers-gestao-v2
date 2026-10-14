@@ -9,6 +9,7 @@ import {
   formatShopeeMoney,
   isShopeeSchemaMissing,
   resolveShopeeListingsFilters,
+  resumoDoCatalogoShopee,
   shopeeImageUrl,
   shopeeItemStatus,
   shopeeLinkState,
@@ -77,7 +78,10 @@ describe("estados do vínculo", () => {
       "SKU_FORA_DO_CATALOGO",
       "AGUARDANDO_LEITURA",
     ]);
-    expect(shopeeLinkState("VINCULADO")?.explicacao).toBe("pelo SKU do anúncio");
+    // D-429: "Vinculados" conta o manual e o pelo SKU do anúncio, e diz isso.
+    expect(shopeeLinkState("VINCULADO")?.rotulo).toBe("Vinculados");
+    expect(shopeeLinkState("VINCULADO")?.explicacao).toBe("manual ou pelo SKU do anúncio");
+    expect(shopeeLinkState("VINCULADO")?.criterio).toMatch(/vínculo manual/);
     expect(shopeeLinkState("OUTRO")).toBeNull();
   });
 });
@@ -154,3 +158,12 @@ describe("explicacaoDoAguardando (D-428)", () => {
   });
 });
 
+
+describe("resumoDoCatalogoShopee (D-429)", () => {
+  it("flexiona cada número; catálogo nunca lido é nulo, nunca zero", () => {
+    expect(resumoDoCatalogoShopee(5, 2)).toBe("5 anúncios · 2 vinculados");
+    expect(resumoDoCatalogoShopee(1, 1)).toBe("1 anúncio · 1 vinculado");
+    expect(resumoDoCatalogoShopee(0, 0)).toBe("0 anúncios · 0 vinculados");
+    expect(resumoDoCatalogoShopee(null, null)).toBeNull();
+  });
+});
