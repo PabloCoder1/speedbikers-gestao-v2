@@ -718,6 +718,12 @@ Manter os seis KPIs atuais e acrescentar: taxas do Mercado Livre, margem operaci
 
 O gráfico deve permitir trocar a métrica entre faturamento, unidades, pedidos e compras/packs. **A RPC `get_sales_daily_series` já devolve as quatro** e a tela plota uma — é trabalho de interface, não de banco. Presets de 7/15/30/60/90 e personalizado já existem; a comparação com período anterior existe nos cards e deve alcançar o gráfico.
 
+**Marketplace (D-440).** A mesma tela tem três recortes, escolhidos no primeiro menu do cabeçalho: Mercado Livre (o padrão, com tudo o que está acima), Shopee e Todos os marketplaces. Fora do ML, os números vêm do consolidado do banco (`get_marketplace_sales_summary` e `_daily`, `docs/METRICS.md` 5T): receita bruta, compras (o pack do ML e o pedido da Shopee), unidades e ticket, com o período anterior; uma ou várias contas e lojas; e a tabela por marketplace e conta, onde ficam o que não soma entre canais (pedidos do ML, recebido da Shopee). A loja de teste e a loja nunca lida aparecem só por conta, fora das somas. Marca, "hoje", ranking e cancelamento continuam só no recorte ML até a Shopee ter o grão de SKU — e a tela diz isso.
+
+### Faturamento — marketplace (D-442)
+
+A tela do Mercado Livre continua a de sempre e ganha o seletor de marketplace no primeiro menu. **Shopee:** a conta da própria Shopee (`get_shopee_faturamento`, `docs/METRICS.md` 5U) — receita, resultado (recebido − custo), margem, recebido e resultado após imposto contra o período anterior; o resultado inteiro e, ao lado, o definitivo (pedido completo) e o provisório (o escrow ainda muda); a tabela por loja; e a cobertura com os motivos de quem fica fora e onde se resolve. **Todos:** os dois marketplaces lado a lado, cada um com a sua conta, **sem total de resultado** — o recebido do ML e o da Shopee descontam coisas diferentes; a receita somada fica em Vendas. A divisão do recebido da Shopee por componente (comissão, taxas, frete, cupons, afiliados) espera o contrato C-61.
+
 ### Dashboard de Anúncios
 
 Deixa de ser lista e passa a responder: quais anúncios existem, em qual conta, SKU, status, preço, disponível, Full, vendas, faturamento, visitas, conversão, última sincronização e problemas relevantes. Filtros por conta, status, SKU, MLB, período, com/sem Full, com/sem estoque, vinculado/sem vínculo, com/sem venda.

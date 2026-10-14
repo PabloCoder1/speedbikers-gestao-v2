@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **432** (D-001 a D-441).
+Decisões registradas: **434** (D-001 a D-442).
 
 ## Por domínio
 
@@ -74,7 +74,7 @@ Decisões registradas: **432** (D-001 a D-441).
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 
-### banco/rls (40)
+### banco/rls (41)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -116,6 +116,7 @@ Decisões registradas: **432** (D-001 a D-441).
 - **D-428** — Shopee, fatia 4a: o catalogo da loja em tabelas proprias e o vinculo pelo SKU do anuncio, derivado em SQL
 - **D-436** — Vendas por marketplace e o consolidado no SQL (E4, fatia 6b de vendas): soma so o que tem a mesma semantica, o sandbox e a loja nunca lida ficam fora das somas, e o ML e identico a get_sales_summary
 - **D-439** — Vendas por SKU entre marketplaces (E6a): o grao de SKU da Shopee numa view, o ranking com o total no SQL e as vendas de um SKU por conta e loja
+- **D-440** — Telas multicanais, etapa T4: /vendas tem os recortes Todos, Mercado Livre e Shopee na mesma tela, lidos do consolidado do SQL, e o ML continua exatamente o de sempre
 
 ### estoque (31)
 
@@ -151,7 +152,7 @@ Decisões registradas: **432** (D-001 a D-441).
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 
-### interface (49)
+### interface (50)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -202,6 +203,7 @@ Decisões registradas: **432** (D-001 a D-441).
 - **D-404** — A sincronizacao dos alertas da central roda uma fonte por chamada, cada uma abaixo do statement_timeout
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 - **D-438** — Telas multicanais, etapa T3a: a loja Shopee aparece na saude da operacao -- o aviso do vigia com nome e destino, /sincronizacao com os limiares do vigia, e a contagem do topo pela fonte unica
+- **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 
 ### mercado-livre (77)
 

@@ -41,6 +41,7 @@ import {
   summarizeShopeeOrdersWindow,
 } from "../../../lib/shopee-sales";
 import { createClient } from "../../../lib/supabase/server";
+import { hrefDeVendas, type RecorteDeVendas } from "../../../lib/vendas-multicanal";
 
 export const metadata = { title: "Vendas da Shopee — Speed Bikers Gestão" };
 
@@ -238,6 +239,13 @@ export default async function VendasShopeePage({
   const periodoLabel = filters.days === null ? "Período personalizado" : `Últimos ${String(filters.days)} dias`;
   // O caminho de volta leva o período junto, como o link de lá traz o de lá.
   const hrefVendas = buildShopeeSalesHref(filters, { loja: null, situacao: null }).replace(/^\/vendas\/shopee/, "/vendas");
+  // O mesmo período, para o resumo da Shopee e o consolidado (D-440); loja e situação ficam aqui.
+  const recorteDaVolta: RecorteDeVendas = {
+    escopo: "shopee",
+    periodo: filters.days === null ? { from: filters.range.from, to: filters.range.to } : { days: filters.days },
+    contas: null,
+    metrica: "faturamento",
+  };
 
   const chips: { rotulo: string; href: string }[] = [
     ...(lojaAtiva === null ? [] : [{ rotulo: nomeDaLojaShopee(lojaAtiva), href: buildShopeeSalesHref(filters, { loja: null }) }]),
@@ -265,7 +273,13 @@ export default async function VendasShopeePage({
             <SeletorDeMarketplace
               ativo="shopee"
               contas={{ ml: contasMl, shopee: lojas.length }}
-              destinos={{ ml: hrefVendas, shopee: buildShopeeSalesHref(filters) }}
+              destinos={{
+                ml: hrefVendas,
+                // D-440: o resumo da Shopee e o consolidado moram em `/vendas`;
+                // esta tela é o detalhe dos pedidos e das lojas.
+                shopee: hrefDeVendas(recorteDaVolta, { escopo: "shopee" }),
+                todos: hrefDeVendas(recorteDaVolta, { escopo: "todos" }),
+              }}
             />
 
             {/* Todo o recorte vive na URL, nunca em estado React — link

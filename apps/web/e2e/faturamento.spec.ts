@@ -29,14 +29,17 @@ test("/faturamento: conta e período viajam entre Faturamento e Vendas", async (
   await expect(page.getByText("Não foi possível carregar o faturamento")).toHaveCount(0);
   await expect(page.getByText(/formato que esta tela não reconhece/)).toHaveCount(0);
 
-  const menus = page.locator("details.sb-menu");
+  // Pelo nome do menu, não pela posição: o seletor de marketplace (D-442) vem
+  // antes de todos quando há loja Shopee.
+  const menu = (nome: string) =>
+    page.locator("details.sb-menu").filter({ has: page.locator(`summary[aria-label^="${nome}:"]`) });
 
-  await menus.nth(0).locator("summary").click();
-  await menus.nth(0).getByRole("link", { name: "Loja E2E" }).click();
+  await menu("Conta").locator("summary").click();
+  await menu("Conta").getByRole("link", { name: "Loja E2E" }).click();
   await expect(page).toHaveURL(/account=e2e-loja/);
 
-  await menus.nth(1).locator("summary").click();
-  await menus.nth(1).getByRole("link", { name: "Últimos 7 dias" }).click();
+  await menu("Período").locator("summary").click();
+  await menu("Período").getByRole("link", { name: "Últimos 7 dias" }).click();
   await expect(page).toHaveURL(/days=7/);
   await expect(page).toHaveURL(/account=e2e-loja/);
 

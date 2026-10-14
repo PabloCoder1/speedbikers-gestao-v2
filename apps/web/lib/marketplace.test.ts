@@ -43,6 +43,19 @@ describe("opcoesDeMarketplace", () => {
     ]);
   });
 
+  it("com o destino do consolidado (D-440), 'Todos os marketplaces' vem primeiro — e só com dois canais", () => {
+    const comTodos = { ...DESTINOS, todos: "/vendas?marketplace=todos&days=7" };
+
+    expect(opcoesDeMarketplace("todos", ["ml", "shopee"], comTodos)).toEqual([
+      { href: "/vendas?marketplace=todos&days=7", ativo: true, label: "Todos os marketplaces" },
+      { href: "/vendas?days=7", ativo: false, label: "Mercado Livre" },
+      { href: "/vendas/shopee?days=7", ativo: false, label: "Shopee" },
+    ]);
+    expect(opcoesDeMarketplace("ml", ["ml"], comTodos)).toBeNull();
+    // Com o "todos" ativo, nenhum marketplace é forçado a aparecer.
+    expect(marketplacesVisiveis({ ml: 4, shopee: 0 }, "todos")).toEqual(["ml"]);
+  });
+
   it("o rótulo é por código, sem marca nenhuma fora do vocabulário", () => {
     expect(MARKETPLACE_ROTULO).toEqual({ ml: "Mercado Livre", shopee: "Shopee" });
   });

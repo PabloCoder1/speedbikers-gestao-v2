@@ -1146,6 +1146,9 @@ body {
   font-family: var(--sb-mono);
   font-size: 0.625rem;
   color: var(--sb-muted-ink);
+  /* D-440: os ids do consolidado (`multicanal_receita_bruta`) não cabem na
+     célula do celular e eram cortados; quebram em vez de sumir. */
+  overflow-wrap: anywhere;
 }
 
 /* A variação contra o período anterior (D-394): chip no tom da polaridade. */
@@ -7620,6 +7623,25 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
 .sb-faturamento-tabela {
   overflow-x: auto;
   margin-top: var(--sb-space-3);
+}
+
+/*
+  A definição de cada canal na comparação lado a lado de `/faturamento?marketplace=todos`
+  (D-442). Quebra linha, ao contrário da `.sb-an-sub`: as definições são frases, e numa
+  linha só empurravam a coluna do Mercado Livre para fora da tela do celular.
+*/
+.sb-comparacao-def {
+  display: block;
+  max-width: 22rem;
+  margin: 0.125rem 0 0 auto;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  white-space: normal;
+}
+
+/* O nome da métrica também quebra: com ele em uma linha, as três colunas não cabem no celular. */
+.sb-comparacao td:first-child {
+  white-space: normal;
 }
 
 .sb-faturamento-sku {

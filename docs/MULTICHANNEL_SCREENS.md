@@ -44,8 +44,8 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Área | Rotas | Classe | Conta hoje (URL) | Fonte | O que falta para o multicanal | Etapa |
 |---|---|---|---|---|---|---|
 | Home | `/` | 2 | — | `get_sales_summary`/`series` (`daily_*`), cobertura, anúncios pausados | faixa de vendas com o marketplace | E4 → T4 |
-| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | Shopee na mesma estrutura, "Todos", várias contas — §4 | T1 ✔ (D-431: seletor e período personalizado na Shopee); E3/E4 → T3/T4 |
-| Faturamento | `/faturamento` | 2 | `account` (slug) | `get_faturamento`, `get_ads_overview` (ML) | linha por loja Shopee, resumo Shopee, "Todos" do comparável — §5 | E5 → T5 |
+| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje", ranking e cancelamento consolidados (esperam o grão de SKU, E6) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas) |
+| Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58) | componentes do recebido, série diária e produtos da Shopee (C-61, T5b) | T5 ✔ (D-442, rascunho #158: "Shopee" e "Todos" lado a lado, sem total) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | Shopee só depois do Go Live (D-430 §5) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
@@ -188,7 +188,7 @@ Shopee, por faixa — D-359).
 | Reembolsos e ajustes | fora | só dentro do `order_income`, semântica não conferida (R9) | "—" com o motivo |
 | Cancelamentos | em `/vendas` | contagem | contagem de compras canceladas |
 | Publicidade | Mercado Ads | não integrada | só no recorte com ML |
-| Resultado e margem | sobre pedidos cobertos | não existe (E5) | por canal; nunca "lucro líquido" |
+| Resultado e margem | sobre pedidos cobertos | escrow − custo, definitivo e provisório (5U, C-58) | por canal, lado a lado e sem total (D-442); nunca "lucro líquido" |
 | Cobertura | frete, custo e item único | financeiro lido, custo conhecido | por canal |
 
 ---
@@ -224,7 +224,7 @@ linhas.
 |---|---|---|---|
 | C-01 | Seletor Marketplace/Conta (§4) em toda tela que filtra por conta; `/contas`, `/sincronizacao` e o shell com as lojas | C-52 `marketplace_accounts` (com o slug do ML para os links antigos; permissão por conta e por loja) | E3 (+E2) → T3 |
 | C-02 | `/vendas` e a faixa de vendas da Home com "todos", "ml" e "shopee", várias contas, marca e frescor por canal | C-53 `get_marketplace_sales_summary` + série diária | E4 → T4 |
-| C-03 | `/faturamento` com marketplace: resumo Shopee (§5), linha por loja na tabela por conta, cobertura por canal | contrato de E5 (sem id ainda) | E5 → T5 |
+| C-03 | `/faturamento` com marketplace: resumo Shopee (§5), linha por loja na tabela por conta, cobertura por canal | C-58 (D-437) | T5 ✔ (D-442) |
 | C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | contrato de E6 (sem id ainda) | E6 → T6 |
 | C-05 | Concessão de loja em `/usuarios` | C-54 | E2 → T2 |
 | C-06 | Selo de loja de teste no painel Shopee do SKU | `get_sku_shopee_listings` devolvendo o ambiente da loja — **pedido novo** | pequeno |
@@ -246,8 +246,8 @@ número.
 | **T1 ✔** | Modelo e seletor de marketplace (`lib` pura + componente) nas duas telas que já têm os dois canais: `/vendas` ↔ `/vendas/shopee` e `/anuncios` ↔ `/anuncios/shopee`, levando o período; formulário de período personalizado em `/vendas/shopee`; `/contas` com título e texto que falam dos dois canais; cadência dos jobs `shopee.*` em `/saude` (C-09) | nada (só leitura que já existe) | **código 2026-10-14, D-431** — ver a nota abaixo da tabela |
 | **T2 ✔** | Concessão de loja em `/usuarios`: gaveta, coluna, histórico e convite | E2 (C-54) | **código 2026-10-14, D-434** — o ADMIN concede e retira, e o efeito chega à tela de quem recebe (e2e) |
 | **T3a ✔ / T3b** | **T3a, código 2026-10-14, D-438:** o aviso da loja (D-435) com nome e destino, as lojas em `/sincronizacao` com os limiares do vigia e a contagem do shell por `marketplace_accounts`. **T3b:** seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
-| **T4** | `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
-| **T5** | `/faturamento` com marketplace e a linha por loja | E5 | componentes não comparáveis nunca somados |
+| **T4 ✔** | **código 2026-10-14, D-440.** `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
+| **T5 ✔** | **código 2026-10-14, D-442.** `/faturamento` com marketplace e a linha por loja; "Todos" lado a lado, sem total; T5b (componentes do recebido e série diária) espera o C-61 | E5 | componentes não comparáveis nunca somados |
 | **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07) | E6 | — |
 | **T7** | Busca universal com a Shopee (C-08) | C-08 | — |
 | **T8** | Central e meta do mês com a Shopee | Go Live + dono | — |
