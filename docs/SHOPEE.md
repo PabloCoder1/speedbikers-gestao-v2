@@ -245,3 +245,4 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E4 | Vendas por marketplace e o consolidado (6b, vendas): `get_marketplace_sales_summary` e `_daily`, só o que soma, sandbox e loja nunca lida fora das somas, ML idêntico a `get_sales_summary` | código (D-436) |
 | E5 | Faturamento Shopee: resultado = recebido − custo nos cobertos, definitivo e provisório separados, imposto do dia; custo pela regra de D-356, provado equivalente | código (D-437) |
 | E6a | Vendas por SKU entre marketplaces: o grão de SKU da Shopee (`shopee_sales_items`), o ranking por SKU com o total e as vendas de um SKU por conta e loja; ABC (E6b) e `/produtos`/ranking com resultado (E6c) depois | código (D-439) |
+| E6b | Curva ABC por marketplace: marketplace e conta/loja como recortes nas três funções da Curva ABC (a tela, o painel do Excel e a aba por conta), com o ML idêntico; critério `compras`; `pedidos`, cobertura e Full só com o ML | código (D-441) |

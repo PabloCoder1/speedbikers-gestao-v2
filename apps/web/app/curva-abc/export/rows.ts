@@ -70,10 +70,11 @@ export interface AbcBreakdownRow {
 
 export interface SkuAccountSales {
   sku_id: string;
-  ml_account_id: string;
-  revenue: number;
+  // D-441: nulos na linha da loja Shopee; esta exportação ainda lê só o ML.
+  ml_account_id: string | null;
+  revenue: number | null;
   units: number;
-  orders: number;
+  orders: number | null;
 }
 
 export interface CurveSummary {
@@ -265,7 +266,7 @@ export function pivotByAccount(
 
   for (const venda of sales) {
     const contas = porSku.get(venda.sku_id) ?? new Map<string, SkuAccountSales>();
-    contas.set(venda.ml_account_id, venda);
+    if (venda.ml_account_id) contas.set(venda.ml_account_id, venda);
     porSku.set(venda.sku_id, contas);
   }
 

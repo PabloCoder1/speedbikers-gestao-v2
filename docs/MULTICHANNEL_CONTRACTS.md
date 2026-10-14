@@ -130,6 +130,18 @@ sandbox e loja nunca lida aparecem só em `CONTA` (a nunca lida com tudo NULO
 métricas em `docs/METRICS.md` 5T. Erros: marketplace fora de ML/SHOPEE e
 período invertido são recusados pelo banco.
 
+### 3.7 Curva ABC por marketplace (C-60, D-441) — em código
+
+As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces text[]` (`ML` e/ou `SHOPEE`; nulo = só ML, o resultado de antes) e `p_account_ids uuid[]` (ids de `marketplace_accounts`: conta ML ou loja Shopee). São recortes que recalculam a curva.
+
+| Contrato | O que muda | Colunas novas |
+|---|---|---|
+| `get_sku_abc_analysis` | critério `compras` (pack do ML + pedido Shopee) e ordem `compras` | `purchases`, `class_purchases`, `revenue_ml`, `units_ml`, `purchases_ml`, `revenue_shopee`, `units_shopee`, `purchases_shopee`, `shopee_items_without_revenue`, `total_purchases`, `total_shopee_items_without_revenue` |
+| `get_sku_abc_breakdown` | dimensão `marketplace` (rótulos Mercado Livre e Shopee); `conta` inclui as lojas (rótulo = nome da loja) | `purchases`, `shopee_items_without_revenue` |
+| `get_sku_sales_by_account` | uma linha por SKU e conta ML **ou** loja Shopee | `marketplace`, `account_id`, `purchases`, `shopee_items_without_revenue` (na linha da loja, `ml_account_id` e `orders` são NULOS) |
+
+**Com a Shopee no recorte:** `orders`, `total_orders` e `class_orders` NULOS (pedido do ML não soma com o da Shopee); critério `pedidos` RECUSADO (use `compras`); `coverage_days` NULO (fatia 5); `p_ml_account_id` RECUSADO (use `p_account_ids`). **Sem o ML no recorte:** `full_stock` NULO e `p_only_without_full` RECUSADO. Receita de um SKU = a conhecida; `shopee_items_without_revenue` diz quantos itens ficaram de fora. Sandbox nunca entra. `get_sku_abc_curve` (página do SKU) continua só ML.
+
 ### 3.6 Vendas por SKU entre marketplaces (C-59, D-439) — em código
 
 | Contrato | Parâmetros | Devolve |
@@ -314,7 +326,9 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   sobre usar o recebido provisório (pedido ainda não COMPLETED).
 - **Contrato entregue:** linha Shopee em `/faturamento`, com cobertura.
 
-### E6 — Grão de SKU, ranking e curva ABC — E6a em código (D-439); E6b (ABC) e E6c (`/produtos`, ranking com resultado) a fazer
+### E6 — Grão de SKU, ranking e curva ABC — E6a (D-439) e E6b (D-441) em código; E6c (`/produtos`, ranking com resultado) a fazer
+
+> O grão de SKU da Shopee ficou numa view (`shopee_sales_items`, D-439), não na tabela materializada prevista abaixo; materializar só se o volume pedir (medir no Go Live).
 
 - **Escopo:** `daily_shopee_sku_metrics` (loja, `sku_id` com o balde nulo,
   dia), convergente como D-199, materializada pelo worker depois dos
