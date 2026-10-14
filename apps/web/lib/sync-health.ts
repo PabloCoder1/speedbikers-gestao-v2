@@ -189,6 +189,9 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   // As devoluções (D-447, C-62) vêm encadeadas atrás de cada leitura de pedidos:
   // a mesma cadência. Antes do worker com o job, nenhuma linha -- nada a julgar.
   "shopee.returns.sync": 60,
+  // Os Ads da Shopee (D-449, C-63): encadeados pelos pedidos, mas lidos no
+  // máximo a cada 3 h -- a cadência é a do próprio job, não a do encadeamento.
+  "shopee.ads.sync": 180,
 };
 
 /**

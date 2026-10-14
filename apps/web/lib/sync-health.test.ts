@@ -241,6 +241,12 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
       expect(classifyJobFreshness(job, minutesAgo(300), NOW)).toBe("critico");
     }
   });
+
+  it("os Ads da Shopee leem a cada 3 h: 5 h é normal, 10 h é atenção, 13 h é crítico", () => {
+    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(300), NOW)).toBe("ok");
+    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(600), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(780), NOW)).toBe("critico");
+  });
 });
 
 describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)", () => {
