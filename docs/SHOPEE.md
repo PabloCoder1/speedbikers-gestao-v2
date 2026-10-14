@@ -165,6 +165,23 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   leitura, ou aberto e lido há mais de 24 h). Colunas e `order_income`
   inteiro em `shopee_orders`.
 
+## 4.2b Devoluções — CONFIRMADO na documentação (D-447)
+
+- **`GET /api/v2/returns/get_return_list`** (referência, guia "Return
+  Refund Management" e "V2.0 Data Definition", conferidos em 14/10/2026):
+  janela de `update_time` ou `create_time` de no máximo 15 dias; até 100
+  por página, `page_no` + `more` (a referência diz que começa em 0, o
+  exemplo usa 1 — **conferir no sandbox**). Um pedido pode ter várias
+  devoluções (`return_sn`).
+- **Situações:** REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED,
+  PROCESSING, SELLER_DISPUTE — só os nomes; a documentação não diz em
+  qual o reembolso foi pago. `return_solution`: 0 devolução e reembolso,
+  1 só reembolso. Permissão: o app Seller In House System pode chamar.
+- **Na V3:** job `shopee.returns.sync` (encadeado pelo de pedidos), tabelas
+  `shopee_returns`/`shopee_return_items` **sem o comprador** (nome,
+  e-mail, foto), sem as fotos e sem o texto livre; leitura por
+  `get_shopee_returns` e `get_shopee_returns_summary`.
+
 ## 4.3 Catálogo — CONFIRMADO (D-428)
 
 - **Lista** (`GET /api/v2/product/get_item_list`): `offset` e `page_size`
@@ -248,3 +265,4 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E6b | Curva ABC por marketplace: marketplace e conta/loja como recortes nas três funções da Curva ABC (a tela, o painel do Excel e a aba por conta), com o ML idêntico; critério `compras`; `pedidos`, cobertura e Full só com o ML | código (D-441) |
 | C-61 | Composição do faturamento (pedido do A2): a cascata do recebido pelos termos da fórmula oficial do escrow com `outros`, a série diária e o por SKU sem rateio; o TOTAL do C-58 somando como a linha; o C-58 ~150x mais rápido | código (D-443) |
 | E6c | `/produtos` com a Shopee: anúncio vinculado e venda de 90 dias por SKU (só loja live), filtros, facetas e resumo olhando os dois marketplaces, o só do ML à parte | código (D-445) |
+| E7a | Devoluções: a API `returns` em tabela própria, sem o comprador, com a situação como veio, o SKU de cada item, a lista e o resumo por situação | código (D-447); chamada real a conferir no sandbox depois do deploy |

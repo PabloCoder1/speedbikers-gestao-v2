@@ -44,3 +44,6 @@ export {
   shopeeModelSchema,
 } from "./products.js";
 export type { ItemBaseInfo, ItemListPage, ModelList, ShopeeItem, ShopeeItemStatus, ShopeeModel } from "./products.js";
+
+export { RETURN_LIST_MAX_WINDOW_S, RETURN_LIST_PAGE_SIZE, getReturnListPage, shopeeReturnSchema } from "./returns.js";
+export type { ReturnListPage, ShopeeReturn } from "./returns.js";
