@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **431** (D-001 a D-439).
+Decisões registradas: **432** (D-001 a D-441).
 
 ## Por domínio
 
@@ -203,7 +203,7 @@ Decisões registradas: **431** (D-001 a D-439).
 - **D-431** — Telas multicanais, etapa T1: o marketplace e o primeiro menu do cabecalho, entre as telas que ja existem, e so aparece com os dois canais
 - **D-438** — Telas multicanais, etapa T3a: a loja Shopee aparece na saude da operacao -- o aviso do vigia com nome e destino, /sincronizacao com os limiares do vigia, e a contagem do topo pela fonte unica
 
-### mercado-livre (76)
+### mercado-livre (77)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -281,6 +281,7 @@ Decisões registradas: **431** (D-001 a D-439).
 - **D-434** — Telas multicanais, etapa T2: a loja Shopee ganha em /usuarios o mesmo alcance da conta do Mercado Livre, e o convite confere no banco o que concedeu
 - **D-435** — Contas dos marketplaces numa fonte so (marketplace_accounts) e a loja Shopee parada avisando como a conta do ML, so a quem alcanca a loja (E3 da frente multicanal)
 - **D-437** — Faturamento da Shopee (E5): resultado = recebido - custo nos pedidos cobertos, definitivo e provisorio separados, o custo pela regra de D-356 provada equivalente, e nada soma com o resultado do ML
+- **D-441** — Curva ABC por marketplace (E6b): marketplace e conta/loja como recortes nas tres funcoes da Curva ABC, com o ML identico e 30x mais rapido
 
 ### outros (64)
 

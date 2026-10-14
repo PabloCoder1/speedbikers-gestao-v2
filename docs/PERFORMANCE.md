@@ -1293,6 +1293,10 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 
 **Em produção, logo depois da migration (25/09, como `authenticated`, transação só de leitura):** 30 dias até ontem, 27.870 envios com frete e 689 com o detalhe -- **263–289 ms**, mesmo JSON do protótipo. O protótipo como `postgres` (sem RLS) fez 104 ms: a diferença é a RLS de `orders` e `order_financials`. O custo está em percorrer os envios do período para achar um pedido por envio, não na cobertura do detalhe -- ela crescer não deve mudar a conta. Roda num bloco próprio, com Suspense, sem segurar o detector.
 
+### `/curva-abc`: a Curva ABC em plano custom (D-441, 14/10/2026)
+
+**Dev, como `authenticated`** (125 mil linhas de `daily_sku_metrics` em 365 dias; 90 dias com o anterior, a primeira página de 50; as funções novas em `pg_temp`, só leitura, oito execuções na mesma sessão): `get_sku_abc_analysis` em `language sql` com `SET` (o plano genérico de D-305) **~4.270 ms** (11.020 ms a frio) contra **~138 ms** (151 ms a frio) em `plpgsql` + `force_custom_plan`, a mesma saída; `get_sku_abc_breakdown` por conta, ~5.100 contra ~170 ms. Saída idêntica em 11 casos (1.719 SKUs, o painel em 5 dimensões, 3.352 linhas por conta). Migration `20261015000000`.
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.

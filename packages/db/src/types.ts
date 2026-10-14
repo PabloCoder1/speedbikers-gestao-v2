@@ -6705,12 +6705,14 @@ export type Database = {
       get_sku_abc_analysis: {
         Args: {
           p_abc_class?: string | null
+          p_account_ids?: string[] | null
           p_category?: string | null
           p_criterion?: string | null
           p_date_from: string
           p_date_to: string
           p_kind?: string | null
           p_limit?: number
+          p_marketplaces?: string[] | null
           p_ml_account_id?: string | null
           p_movement?: string | null
           p_offset?: number
@@ -6733,11 +6735,12 @@ export type Database = {
           class_c_count: number
           class_c_value: number
           class_orders: string | null
+          class_purchases: string | null
           class_revenue: string | null
           class_units: string | null
           coverage_days: number | null
           cumulative_share: number
-          full_stock: number
+          full_stock: number | null
           kept_count: number
           kind: string
           local_stock: number | null
@@ -6747,33 +6750,45 @@ export type Database = {
           moved_up_count: number
           movement: string | null
           new_count: number
-          orders: number
+          orders: number | null
           prev_abc_class: string | null
           prev_metric_value: number | null
           prev_scope_total_value: number | null
           purchase_cost: number | null
-          revenue: number
+          purchases: number
+          purchases_ml: number | null
+          purchases_shopee: number | null
+          revenue: number | null
+          revenue_ml: number | null
+          revenue_shopee: number | null
           scope_total_value: number
+          shopee_items_without_revenue: number | null
           sku: string
           sku_id: string
           supplier_brand: string | null
           title: string | null
           total_count: number
-          total_orders: number
-          total_revenue: number
+          total_orders: number | null
+          total_purchases: number
+          total_revenue: number | null
+          total_shopee_items_without_revenue: number | null
           total_units: number
           units: number
+          units_ml: number | null
+          units_shopee: number | null
           without_full_count: number
         }[]
       }
       get_sku_abc_breakdown: {
         Args: {
+          p_account_ids?: string[] | null
           p_category?: string | null
           p_criterion?: string | null
           p_date_from: string
           p_date_to: string
           p_dimension: string
           p_kind?: string | null
+          p_marketplaces?: string[] | null
           p_ml_account_id?: string | null
           p_organization_id: string
           p_prev_from?: string | null
@@ -6787,7 +6802,9 @@ export type Database = {
           group_key: string
           group_label: string
           orders: number | null
+          purchases: number | null
           revenue: number | null
+          shopee_items_without_revenue: number | null
           sku_count: number
           units: number | null
         }[]
@@ -6800,19 +6817,25 @@ export type Database = {
       }
       get_sku_sales_by_account: {
         Args: {
+          p_account_ids?: string[] | null
           p_category?: string | null
           p_date_from: string
           p_date_to: string
           p_kind?: string | null
           p_limit?: number
+          p_marketplaces?: string[] | null
           p_offset?: number
           p_organization_id: string
           p_supplier_brand?: string | null
         }
         Returns: {
-          ml_account_id: string
-          orders: number
-          revenue: number
+          account_id: string
+          marketplace: string
+          ml_account_id: string | null
+          orders: number | null
+          purchases: number
+          revenue: number | null
+          shopee_items_without_revenue: number | null
           sku_id: string
           units: number
         }[]
