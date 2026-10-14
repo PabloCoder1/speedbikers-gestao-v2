@@ -153,7 +153,9 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   // O `<h2>` virou rótulo de seção e os números viraram cartões de indicador —
   // o vocabulário do design system. O que se afirma continua sendo o mesmo: o
   // título da seção, e cada número no seu cartão.
-  await expect(page.getByText("Vendas do SKU", { exact: true })).toBeVisible();
+  // O seed tem loja Shopee: a seção do ML vem depois da "Entre marketplaces"
+  // (D-444) e se chama pelo canal. Sem loja Shopee, ela é "Vendas do SKU".
+  await expect(page.getByText("No Mercado Livre", { exact: true })).toBeVisible();
 
   // Os seis números canônicos viraram UMA faixa de KPIs (a mesma apresentação
   // que /vendas dá às mesmas métricas), em vez de seis cartões soltos.
@@ -164,8 +166,11 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   // Razão sobre as SOMAS (500 / 5 = R$ 100,00), não média das razões diárias.
   await expect(cartao("Ticket médio")).toContainText(`${String(receita / compras)},00`);
 
-  // A conta do seed aparece na tabela por conta, com as mesmas unidades.
-  const linhaConta = page.getByRole("row", { name: new RegExp(seed.mlAccountLabel) });
+  // A conta do seed aparece na tabela por conta do ML, com as mesmas unidades
+  // (ela também está na tabela entre marketplaces, acima: daí o painel).
+  const linhaConta = page
+    .getByRole("region", { name: "Por conta" })
+    .getByRole("row", { name: new RegExp(seed.mlAccountLabel) });
   await expect(linhaConta).toContainText(String(unidades));
 
   // Dois dias gravados, duas linhas por dia — e nenhum dia inventado com zero.

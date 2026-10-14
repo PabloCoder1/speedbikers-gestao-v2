@@ -33,6 +33,11 @@ import {
   type Periodo,
   type RecorteDeVendas,
 } from "../../lib/vendas-multicanal";
+import {
+  TAMANHO_DO_RANKING,
+  ordemDoRanking,
+  type LinhaDoRanking,
+} from "../../lib/vendas-por-sku";
 import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 
 /**
@@ -112,8 +117,10 @@ export async function VendasMulticanal({
     p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
   };
 
-  // As quatro leituras em paralelo: o período e o anterior, resumo e série.
-  const [atualResult, anteriorResult, diasResult, diasAnterioresResult] = await Promise.all([
+  // As cinco leituras em paralelo: o período e o anterior, resumo e série, e
+  // o ranking de produtos (C-59, D-444) na ordem da métrica do gráfico.
+  const ordem = ordemDoRanking(metrica);
+  const [atualResult, anteriorResult, diasResult, diasAnterioresResult, rankingResult] = await Promise.all([
     supabase.rpc("get_marketplace_sales_summary", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
     supabase.rpc("get_marketplace_sales_summary", {
       ...argumentos,
@@ -122,9 +129,18 @@ export async function VendasMulticanal({
     }),
     supabase.rpc("get_marketplace_sales_daily", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
     supabase.rpc("get_marketplace_sales_daily", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
+    supabase.rpc("get_marketplace_sku_sales", {
+      ...argumentos,
+      p_date_from: range.from,
+      p_date_to: range.to,
+      p_ordem: ordem,
+      p_limit: TAMANHO_DO_RANKING,
+      p_offset: 0,
+    }),
   ]);
 
-  // Falha em qualquer uma é erro dito, nunca "sem venda" (D-067).
+  // Falha em qualquer uma é erro dito, nunca "sem venda" (D-067). O ranking
+  // falha sozinho, no painel dele: o resto da tela não depende dele.
   const erro = atualResult.error ?? anteriorResult.error ?? diasResult.error ?? diasAnterioresResult.error ?? null;
 
   const { total, grupos } = agruparLinhas(atualResult.data ?? []);
@@ -325,11 +341,12 @@ export async function VendasMulticanal({
 
           {/*
             O QUE ESTE RECORTE AINDA NÃO TEM, dito em vez de calado: marca,
-            "hoje", ranking de produtos e cancelamento são do Mercado Livre
-            até a Shopee ter o grão de SKU (E6) e o cancelamento no consolidado.
+            "hoje" e cancelamento são do Mercado Livre até o cancelamento entrar
+            no consolidado. O ranking de produtos chegou com o grão de SKU da
+            Shopee (C-59, D-444).
           */}
           <p role="note" className="sb-an-nota">
-            Marca, vendas de hoje, ranking de produtos e taxa de cancelamento ainda são só do Mercado Livre —{" "}
+            Marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre —{" "}
             <Link href={hrefDeVendas(recorte, { escopo: "ml" })}>veja no recorte Mercado Livre</Link>. A loja Shopee de
             teste nunca entra nas somas.
             {historicoCurto &&
@@ -436,6 +453,15 @@ export async function VendasMulticanal({
               )}
             </Panel>
           </div>
+
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
+            <RankingDeProdutos
+              erro={rankingResult.error}
+              linhas={rankingResult.data ?? []}
+              escopo={escopo}
+              ordem={ordem}
+            />
+          </div>
         </>
       )}
     </>
@@ -502,5 +528,114 @@ function LinhaDaTabela({
       </td>
       <td style={estilo}>{linha?.ultima_atualizacao === null || linha === null ? "—" : formatDateTime(linha.ultima_atualizacao)}</td>
     </tr>
+  );
+}
+
+/**
+ * OS PRODUTOS QUE MAIS VENDERAM no recorte (D-444), do C-59: o total por SKU
+ * já somado no SQL entre os marketplaces e, no "Todos", a parte de cada canal
+ * ao lado. Diferente do ranking do ML, o que foi vendido SEM produto vinculado
+ * aparece — marcado, sem link — porque é venda que existe e que nenhum
+ * produto do catálogo explica.
+ */
+function RankingDeProdutos({
+  erro,
+  linhas,
+  escopo,
+  ordem,
+}: {
+  erro: { message: string } | null;
+  linhas: readonly LinhaDoRanking[];
+  escopo: EscopoMulticanal;
+  ordem: "receita" | "unidades";
+}): ReactNode {
+  const todos = escopo === "todos";
+  const total = linhas[0]?.total_count ?? 0;
+  const criterio = ordem === "receita" ? "receita bruta" : "unidades";
+
+  return (
+    <Panel
+      title="Produtos que mais venderam"
+      subtitle={`top ${String(linhas.length === 0 ? TAMANHO_DO_RANKING : linhas.length)} de ${formatCount(total)} por ${criterio} · ${ROTULO_DO_ESCOPO[escopo].toLowerCase()} · a loja Shopee de teste fica fora`}
+      aside={
+        <Link href="/curva-abc" style={{ color: "var(--sb-secondary)", fontSize: "0.6875rem" }}>
+          Curva ABC →
+        </Link>
+      }
+    >
+      {erro !== null ? (
+        <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar o ranking: {erro.message}
+        </p>
+      ) : linhas.length === 0 ? (
+        <p className="sb-empty">Nenhum produto com venda somável neste recorte.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table className="sb-table" aria-label="Produtos que mais venderam">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th className="sb-num">Receita bruta</th>
+                <th className="sb-num">Unidades</th>
+                <th className="sb-num" title="O pack do Mercado Livre e o pedido da Shopee que contêm o produto">
+                  Compras
+                </th>
+                {todos && (
+                  <>
+                    <th className="sb-num">Mercado Livre</th>
+                    <th className="sb-num">Shopee</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((linha) => (
+                <tr key={linha.sku_id ?? "sem-sku"}>
+                  <td>
+                    {linha.sku_id === null ? (
+                      <>
+                        <strong>Sem produto vinculado</strong>
+                        <small className="sb-an-sub">
+                          vendido por anúncio sem SKU · <Link href="/vinculacoes">vincular</Link>
+                        </small>
+                      </>
+                    ) : (
+                      <>
+                        <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
+                          {linha.sku_title ?? linha.sku ?? "—"}
+                        </Link>
+                        <small className="sb-an-sub sb-mono">SKU {linha.sku ?? "—"}</small>
+                      </>
+                    )}
+                  </td>
+                  <td className="sb-num">
+                    {valorOuTraco(linha.receita_bruta, formatCurrency)}
+                    {(linha.itens_shopee_sem_receita ?? 0) > 0 && (
+                      <small className="sb-an-sub">
+                        {formatCount(linha.itens_shopee_sem_receita)} itens Shopee sem receita conhecida
+                      </small>
+                    )}
+                  </td>
+                  <td className="sb-num">{formatCount(linha.unidades)}</td>
+                  <td className="sb-num">{formatCount(linha.compras)}</td>
+                  {todos && (
+                    <>
+                      <td className="sb-num" title="receita bruta · unidades no Mercado Livre">
+                        {valorOuTraco(linha.receita_ml, formatCurrency)}
+                        <small className="sb-an-sub">{valorOuTraco(linha.unidades_ml, formatCount)} un</small>
+                      </td>
+                      <td className="sb-num" title="receita bruta · unidades na Shopee">
+                        {valorOuTraco(linha.receita_shopee, formatCurrency)}
+                        <small className="sb-an-sub">{valorOuTraco(linha.unidades_shopee, formatCount)} un</small>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   );
 }
