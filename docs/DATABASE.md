@@ -179,6 +179,10 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### Repasse da Shopee (D-451)
+
+Migration `20261015050000`. `shopee_escrow_releases` (loja, pedido, momento da liberação; `payout_amount` como a Shopee manda), RLS pela permissão por loja; um pedido pode ter mais de uma liberação. `shopee_shops.escrow_releases_read_from` e o marco `escrow_releases_synced_until` são a cobertura da leitura, gravados na mesma transação (`shopee_upsert_escrow_releases`, só o worker). Leitura: `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`. Métricas 5W.
+
 ### Ads da Shopee (D-449)
 
 Migration `20261015040000`. `daily_shopee_ads_metrics` (loja, dia: impressões, cliques, pedidos, itens, GMV direto e amplo, gasto — os anúncios CPC da loja, como a Shopee manda), RLS pela permissão por loja. `shopee_shops.ads_read_from`/`ads_read_until` é a cobertura da leitura (só cresce) e `ads_synced_at`, a última leitura. `shopee_upsert_ads_days` só para o worker. Leitura: `get_shopee_ads_overview` e `get_shopee_ads_daily`. Métricas 5V.

@@ -198,6 +198,27 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   cada 3 h), `daily_shopee_ads_metrics` com a cobertura da leitura; leitura
   por `get_shopee_ads_overview` e `get_shopee_ads_daily`.
 
+## 4.2d Repasse e extrato — CONFERIDO na documentação (D-451)
+
+- **`GET /api/v2/payment/get_escrow_list`** (14/10/2026): os pedidos cujo
+  escrow foi LIBERADO numa janela de `escrow_release_time`, com
+  `payout_amount` ("the settlement amount"). Sem janela máxima declarada
+  (a V3 usa 15 dias); 100 por página, `page_no` a partir de 1, `more`. O
+  exemplo traz o valor inteiro (57334) e a tabela, `float` — **conferir a
+  unidade no sandbox** contra o `escrow_amount`. Permissão: Seller In House.
+- **`get_payout_detail` / `get_payout_info`:** só vendedor internacional (CB).
+- **`get_wallet_transaction_list`** (extrato, só loja local): janela de 15
+  dias; tipos (escrow liberado, saque, ajuste, cobrança de Ads, escrow
+  rápido...); traz `buyer_name`; **sem identificador da transação** e com
+  `page_no` descrito como deslocamento — fica para depois do sandbox.
+- **`get_income_overview` / `get_income_detail`** (out/2025): pendente e
+  liberado como no Seller Center; o detalhe se contradiz no formato da
+  resposta — fica para depois do sandbox.
+- **Na V3:** job `shopee.escrow-releases.sync` (encadeado pelo de pedidos),
+  `shopee_escrow_releases` com a cobertura da leitura; leitura por
+  `get_shopee_repasse_overview`, `_daily`, `get_shopee_repasses` e
+  `get_shopee_repasse_pendente`.
+
 ## 4.3 Catálogo — CONFIRMADO (D-428)
 
 - **Lista** (`GET /api/v2/product/get_item_list`): `offset` e `page_size`
@@ -281,5 +302,6 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E6b | Curva ABC por marketplace: marketplace e conta/loja como recortes nas três funções da Curva ABC (a tela, o painel do Excel e a aba por conta), com o ML idêntico; critério `compras`; `pedidos`, cobertura e Full só com o ML | código (D-441) |
 | C-61 | Composição do faturamento (pedido do A2): a cascata do recebido pelos termos da fórmula oficial do escrow com `outros`, a série diária e o por SKU sem rateio; o TOTAL do C-58 somando como a linha; o C-58 ~150x mais rápido | código (D-443) |
 | E6c | `/produtos` com a Shopee: anúncio vinculado e venda de 90 dias por SKU (só loja live), filtros, facetas e resumo olhando os dois marketplaces, o só do ML à parte | código (D-445) |
-| E7b | Ads CPC da loja: o desempenho diário com a cobertura da leitura, ROAS/ACOS/TACoS no SQL; fora do resultado até conferir o GMV Max com loja real | código (D-449); chamada real a conferir no sandbox depois do deploy |
 | E7a | Devoluções: a API `returns` em tabela própria, sem o comprador, com a situação como veio, o SKU de cada item, a lista e o resumo por situação | código (D-447); chamada real a conferir no sandbox depois do deploy |
+| E7b | Ads CPC da loja: o desempenho diário com a cobertura da leitura, ROAS/ACOS/TACoS no SQL; fora do resultado até conferir o GMV Max com loja real | código (D-449); chamada real a conferir no sandbox depois do deploy |
+| E7c | Repasse: cada liberação do escrow por pedido (`get_escrow_list`) contra o previsto, com a cobertura da leitura; o a liberar; extrato da carteira e renda por pedido esperam o sandbox | código (D-451); chamada real e unidade do valor a conferir no sandbox depois do deploy |
