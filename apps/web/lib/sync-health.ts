@@ -186,6 +186,9 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "shopee.order-financials.sync": 60,
   "shopee.items.sync": 60,
   "shopee.items.hydrate": 60,
+  // As devoluções (D-447, C-62) vêm encadeadas atrás de cada leitura de pedidos:
+  // a mesma cadência. Antes do worker com o job, nenhuma linha -- nada a julgar.
+  "shopee.returns.sync": 60,
 };
 
 /**

@@ -10,14 +10,18 @@ import {
   pivotByAccount,
   razao,
   summarizeCurve,
+  terceiraCurva,
+  terceiroCriterio,
   variacao,
   type AbcAnalysisRow,
   type AbcBreakdownRow,
   type AbcClassLetter,
   type AbcCriterionKey,
+  type AbcCurves,
   type AbcDimension,
   type AccountColumn,
   type SkuAccountSales,
+  type TerceiroCriterio,
 } from "./rows";
 
 /**
@@ -29,7 +33,9 @@ import {
  *   alimentam -- o gráfico aponta para essas células.
  * - **Consolidado**: uma linha por SKU com as três curvas, o período anterior,
  *   estoque, valor do estoque e cobertura; barras de dados e escala de cor.
- * - **Faturamento / Unidades / Pedidos**: a curva de cada critério.
+ * - **Faturamento / Unidades / Pedidos**: a curva de cada critério. Com a
+ *   Shopee no recorte (D-450), a terceira é **Compras** (o pack do ML e o
+ *   pedido da Shopee): o pedido do ML não soma com o dela.
  * - **Por conta**: o mesmo SKU em cada conta, lado a lado.
  * - **Glossário**: o que cada coluna quer dizer.
  *
@@ -62,11 +68,26 @@ const DECIMAL = "#,##0.0";
 const PERCENT = "0.00%";
 const PERCENT_SIGNED = '+0.0%;-0.0%;0.0%';
 
-const CRITERIOS: readonly { key: AbcCriterionKey; aba: string; rotulo: string; formato: string }[] = [
-  { key: "faturamento", aba: "Faturamento", rotulo: "Faturamento (R$)", formato: CURRENCY },
-  { key: "unidades", aba: "Unidades", rotulo: "Unidades vendidas", formato: INTEGER },
-  { key: "pedidos", aba: "Pedidos", rotulo: "Pedidos", formato: INTEGER },
-];
+interface Criterio {
+  key: AbcCriterionKey;
+  aba: string;
+  rotulo: string;
+  formato: string;
+}
+
+/** O rótulo do terceiro critério, inteiro e abreviado. */
+const TERCEIRO: Readonly<Record<TerceiroCriterio, { rotulo: string; curto: string }>> = {
+  pedidos: { rotulo: "Pedidos", curto: "ped." },
+  compras: { rotulo: "Compras", curto: "comp." },
+};
+
+function criteriosDo(terceiro: TerceiroCriterio): readonly Criterio[] {
+  return [
+    { key: "faturamento", aba: "Faturamento", rotulo: "Faturamento (R$)", formato: CURRENCY },
+    { key: "unidades", aba: "Unidades", rotulo: "Unidades vendidas", formato: INTEGER },
+    { key: terceiro, aba: TERCEIRO[terceiro].rotulo, rotulo: TERCEIRO[terceiro].rotulo, formato: INTEGER },
+  ];
+}
 
 interface Contexto {
   organizationName: string | null;
@@ -147,8 +168,13 @@ function porFaturamento(linhas: readonly AbcBreakdownRow[]): AbcBreakdownRow[] {
 }
 
 export interface AbcWorkbookInput {
-  curves: Readonly<Record<AbcCriterionKey, readonly AbcAnalysisRow[]>>;
-  breakdowns: Readonly<Record<AbcDimension, readonly AbcBreakdownRow[]>>;
+  curves: AbcCurves;
+  /** O recorte "por marketplace" só existe no "Todos" (D-450). */
+  breakdowns: Readonly<Record<Exclude<AbcDimension, "marketplace">, readonly AbcBreakdownRow[]>> & {
+    readonly marketplace?: readonly AbcBreakdownRow[];
+  };
+  /** Falso quando o recorte não lê o Mercado Livre: sem Full nem cobertura (C-60). Padrão: verdadeiro. */
+  leMl?: boolean;
   byAccount: readonly SkuAccountSales[];
   accounts: readonly AccountColumn[];
   organizationName: string | null;
@@ -175,22 +201,31 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
 
   const fat = summarizeCurve("faturamento", input.curves.faturamento);
   const uni = summarizeCurve("unidades", input.curves.unidades);
-  const ped = summarizeCurve("pedidos", input.curves.pedidos);
+  const terceiro = terceiroCriterio(input.curves);
+  const ter = TERCEIRO[terceiro];
+  const ped = summarizeCurve(terceiro, terceiraCurva(input.curves));
+  const leMl = input.leMl ?? true;
+  const semReceita = input.curves.faturamento[0]?.total_shopee_items_without_revenue ?? null;
 
   // --- indicadores (linhas 5 a 7), seis blocos de duas colunas ---
   const indicadores: { rotulo: string; valor: number | null; formato: string; anterior: number | null; anteriorFormato: string }[] = [
     { rotulo: "Faturamento", valor: fat.total, formato: CURRENCY, anterior: fat.prevTotal, anteriorFormato: CURRENCY },
     { rotulo: "Unidades vendidas", valor: uni.total, formato: INTEGER, anterior: uni.prevTotal, anteriorFormato: INTEGER },
-    { rotulo: "Pedidos", valor: ped.total, formato: INTEGER, anterior: ped.prevTotal, anteriorFormato: INTEGER },
-    {
-      rotulo: "Ticket médio",
-      valor: razao(fat.total, ped.total),
-      formato: CURRENCY,
-      anterior: razao(fat.prevTotal, ped.prevTotal),
-      anteriorFormato: CURRENCY,
-    },
+    { rotulo: ter.rotulo, valor: ped.total, formato: INTEGER, anterior: ped.prevTotal, anteriorFormato: INTEGER },
+    // O ticket é do ML (faturamento ÷ pedidos). Com a Shopee, no lugar dele, o
+    // que a receita deixou de fora: os itens de preço zero (bundle).
+    terceiro === "pedidos"
+      ? {
+          rotulo: "Ticket médio",
+          valor: razao(fat.total, ped.total),
+          formato: CURRENCY,
+          anterior: razao(fat.prevTotal, ped.prevTotal),
+          anteriorFormato: CURRENCY,
+        }
+      : { rotulo: "Itens Shopee sem receita", valor: semReceita, formato: INTEGER, anterior: null, anteriorFormato: INTEGER },
     { rotulo: "SKUs com venda", valor: fat.totalSkus, formato: INTEGER, anterior: null, anteriorFormato: INTEGER },
-    { rotulo: "SKUs sem Full", valor: fat.withoutFull, formato: INTEGER, anterior: null, anteriorFormato: INTEGER },
+    // Sem o ML no recorte não há Full: vazio, nunca zero.
+    { rotulo: "SKUs sem Full", valor: leMl ? fat.withoutFull : null, formato: INTEGER, anterior: null, anteriorFormato: INTEGER },
   ];
 
   indicadores.forEach((kpi, i) => {
@@ -246,7 +281,7 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
   // 1. Resumo por classe
   tituloDeSecao(sheet, r, "Resumo por classe (as três curvas)", PAINEL_COLUNAS);
   r += 1;
-  cabecalho(sheet, r, ["Classe", "SKUs (fat.)", "Faturamento", "% fat.", "SKUs (unid.)", "Unidades", "% unid.", "SKUs (ped.)", "Pedidos", "% ped."]);
+  cabecalho(sheet, r, ["Classe", "SKUs (fat.)", "Faturamento", "% fat.", "SKUs (unid.)", "Unidades", "% unid.", `SKUs (${ter.curto})`, ter.rotulo, `% ${ter.curto}`]);
   r += 1;
   const resumoInicio = r;
 
@@ -454,7 +489,17 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
   ): void => {
     tituloDeSecao(sheet, r, titulo, PAINEL_COLUNAS);
     r += 1;
-    cabecalho(sheet, r, [rotuloDaChave, "Faturamento", "Unidades", "Pedidos", "SKUs com venda", "Ticket médio", "Fat. classe A", "Fat. classe B", "Fat. classe C"]);
+    cabecalho(sheet, r, [
+      rotuloDaChave,
+      "Faturamento",
+      "Unidades",
+      ter.rotulo,
+      "SKUs com venda",
+      terceiro === "pedidos" ? "Ticket médio" : "Ticket médio (só ML)",
+      "Fat. classe A",
+      "Fat. classe B",
+      "Fat. classe C",
+    ]);
     r += 1;
     const inicio = r;
 
@@ -464,9 +509,9 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
         rotular(linha),
         linha.revenue,
         linha.units,
-        linha.orders,
+        terceiro === "pedidos" ? linha.orders : (linha.purchases ?? null),
         linha.sku_count,
-        razao(linha.revenue, linha.orders),
+        terceiro === "pedidos" ? razao(linha.revenue, linha.orders) : null,
         linha.class_a_value,
         linha.class_b_value,
         linha.class_c_value,
@@ -542,6 +587,11 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
     limite: 10,
   });
 
+  // No "Todos" (D-450): o mesmo recorte, por marketplace -- somado no banco.
+  if (input.breakdowns.marketplace !== undefined) {
+    recorte("Por marketplace", "Marketplace", porFaturamento(input.breakdowns.marketplace), (l) => l.group_label, null);
+  }
+
   rodape(sheet, r + 1, PAINEL_COLUNAS, input.generatedAt);
 
   return charts;
@@ -553,6 +603,11 @@ function painel(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: C
 
 function consolidado(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto: Contexto): void {
   const sheet = workbook.addWorksheet("Consolidado", { properties: { tabColor: { argb: "FF3F44A6" } } });
+  const terceiro = terceiroCriterio(input.curves);
+  const ter = TERCEIRO[terceiro];
+  const comShopee = terceiro === "compras";
+  // A parte de cada canal só tem sentido com os dois; a Shopee sozinha é a curva inteira.
+  const comDoisCanais = comShopee && (input.leMl ?? true);
   const colunas = [
     ["Posição", 8, null],
     ["SKU", 18, null],
@@ -562,14 +617,14 @@ function consolidado(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contex
     ["Categoria", 18, null],
     ["Classe fat.", 9, null],
     ["Classe unid.", 9, null],
-    ["Classe ped.", 9, null],
-    ["Classes (F/U/P)", 10, null],
+    [`Classe ${ter.curto}`, 9, null],
+    [comShopee ? "Classes (F/U/C)" : "Classes (F/U/P)", 10, null],
     ["Faturamento (R$)", 16, CURRENCY],
     ["% do faturamento", 12, PERCENT],
     ["% acumulado", 12, PERCENT],
     ["Unidades", 11, INTEGER],
-    ["Pedidos", 11, INTEGER],
-    ["Ticket médio (R$)", 14, CURRENCY],
+    [ter.rotulo, 11, INTEGER],
+    [comShopee ? "Ticket médio (só ML)" : "Ticket médio (R$)", 14, CURRENCY],
     ["Preço médio por unidade (R$)", 15, CURRENCY],
     ["Faturamento anterior (R$)", 16, CURRENCY],
     ["Variação", 11, PERCENT_SIGNED],
@@ -582,6 +637,15 @@ function consolidado(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contex
     ["Valor do estoque (R$)", 15, CURRENCY],
     ["Cobertura (dias)", 11, DECIMAL],
     ["Sem Full", 9, null],
+    // As colunas da Shopee vão NO FIM: as de antes não mudam de letra, e a
+    // formatação condicional (K, S, AA) continua apontando para o lugar certo.
+    ...(comDoisCanais
+      ? ([
+          ["Faturamento ML (R$)", 16, CURRENCY],
+          ["Faturamento Shopee (R$)", 16, CURRENCY],
+        ] as const)
+      : []),
+    ...(comShopee ? ([["Itens Shopee sem receita", 12, INTEGER]] as const) : []),
   ] as const;
   sheet.columns = colunas.map(([, width]) => ({ width }));
   let c = topo(sheet, colunas.length, "Curva ABC — consolidado por SKU", contexto);
@@ -620,7 +684,10 @@ function consolidado(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contex
       linha.totalStock,
       linha.stockValue,
       linha.coverageDays,
-      linha.fullStock === 0 ? "Sim" : "Não",
+      // Sem Full (recorte sem o ML), a pergunta não existe: vazio.
+      linha.fullStock === null ? null : linha.fullStock === 0 ? "Sim" : "Não",
+      ...(comDoisCanais ? [linha.revenueMl, linha.revenueShopee] : []),
+      ...(comShopee ? [linha.shopeeItemsWithoutRevenue] : []),
     ];
     pintarClasse(row.getCell(7), linha.classRevenue);
     pintarClasse(row.getCell(8), linha.classUnits);
@@ -676,7 +743,7 @@ function consolidado(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contex
 
 function curvaDoCriterio(
   workbook: ExcelJS.Workbook,
-  criterio: (typeof CRITERIOS)[number],
+  criterio: Criterio,
   linhas: readonly AbcAnalysisRow[],
   input: AbcWorkbookInput,
   contexto: Contexto,
@@ -749,7 +816,14 @@ function porConta(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto:
     ...contas.map((a) => `Unid. ${a.label}`),
   ];
   sheet.columns = titulos.map((_, i) => ({ width: i === 1 ? 46 : i === 0 ? 18 : 15 }));
-  let l = topo(sheet, titulos.length, "Venda de cada SKU em cada conta (todas as contas, mesmo com uma conta escolhida)", contexto);
+  let l = topo(
+    sheet,
+    titulos.length,
+    terceiroCriterio(input.curves) === "compras"
+      ? "Venda de cada SKU em cada conta do Mercado Livre e loja Shopee do recorte (a loja de teste aparece, mas fica fora do total)"
+      : "Venda de cada SKU em cada conta (todas as contas, mesmo com uma conta escolhida)",
+    contexto,
+  );
   const linhaCabecalho = l;
   cabecalho(sheet, l, titulos);
   l += 1;
@@ -780,19 +854,29 @@ function glossario(workbook: ExcelJS.Workbook, input: AbcWorkbookInput, contexto
   sheet.columns = [{ width: 28 }, { width: 110 }];
   let r = topo(sheet, 2, "Como ler esta planilha", contexto);
 
+  const comShopee = terceiroCriterio(input.curves) === "compras";
   const termos: readonly (readonly [string, string])[] = [
-    ["Classe A / B / C", "Os SKUs em ordem decrescente do critério: A até 80% do total acumulado, B de 80% a 95%, C o resto. Calculada dentro do recorte (conta, marca, categoria, tipo), não é a fatia do recorte na curva geral."],
-    ["Classes (F/U/P)", "A classe do SKU em faturamento, unidades e pedidos, nessa ordem. \"AAB\" = A em faturamento e unidades, B em pedidos; \"-\" onde o SKU não entrou na curva."],
+    ["Classe A / B / C", "Os SKUs em ordem decrescente do critério: A até 80% do total acumulado, B de 80% a 95%, C o resto. Calculada dentro do recorte (marketplace, conta, marca, categoria, tipo), não é a fatia do recorte na curva geral."],
+    comShopee
+      ? ["Classes (F/U/C)", "A classe do SKU em faturamento, unidades e compras, nessa ordem. \"AAB\" = A em faturamento e unidades, B em compras; \"-\" onde o SKU não entrou na curva."]
+      : ["Classes (F/U/P)", "A classe do SKU em faturamento, unidades e pedidos, nessa ordem. \"AAB\" = A em faturamento e unidades, B em pedidos; \"-\" onde o SKU não entrou na curva."],
+    ...(comShopee
+      ? ([
+          ["Compras", "A compra do cliente: o pack do Mercado Livre e o pedido da Shopee. É o que soma entre marketplaces; o pedido do ML é uma linha de item e não soma com o da Shopee."],
+          ["Itens Shopee sem receita", "Itens de preço zero na Shopee (bundle): a receita deles é desconhecida, fica fora do faturamento e é contada aqui. Nunca vira zero."],
+          ["Loja de teste", "A loja Shopee de sandbox aparece na aba por conta, mas nunca entra na curva nem nas somas."],
+        ] as const)
+      : []),
     ["Período anterior", `Os ${String(input.dayCount)} dias imediatamente antes do período, no mesmo recorte. É a base da variação e do movimento de classe.`],
     ["Variação", "(período − anterior) ÷ anterior. Vazia quando o SKU não vendeu no período anterior: crescimento sobre zero não é número."],
     ["Movimento", "Subiu (ex.: B → A), caiu (A → B), manteve, ou novo (sem venda no período anterior)."],
     ["Matriz de migração", "Quantos SKUs foram de cada classe no período anterior para cada classe agora. \"Sem venda\" = vendia antes e parou."],
-    ["Ticket médio", "Faturamento ÷ pedidos. Um pedido com dois SKUs conta nos dois."],
+    ["Ticket médio", comShopee ? "Do Mercado Livre (faturamento ÷ pedidos): com a Shopee no recorte o pedido não soma, e a coluna fica vazia. O ticket entre marketplaces está em /vendas." : "Faturamento ÷ pedidos. Um pedido com dois SKUs conta nos dois."],
     ["Estoque local", "Saldo da loja (organização inteira, não segue a conta). Vazio = sem saldo registrado; kits não têm saldo próprio."],
-    ["Estoque Full", "Soma dos saldos do Full recapturados nos últimos 3 dias, das contas do recorte."],
+    ["Estoque Full", "Soma dos saldos do Full recapturados nos últimos 3 dias, das contas do recorte. Só do Mercado Livre: vazio quando o recorte não tem conta ML."],
     ["Valor do estoque", "Custo unitário × (estoque local positivo + Full)."],
-    ["Cobertura (dias)", "Quantos dias o estoque (local + Full) dura na venda média diária do período."],
-    ["Fonte", "Vendas diárias por SKU (pedidos pagos), as mesmas da tela /curva-abc. Uma venda só entra quando tem SKU vinculado (D-423)."],
+    ["Cobertura (dias)", comShopee ? "Vazia com a Shopee no recorte: o estoque da Shopee ainda não entra na cobertura." : "Quantos dias o estoque (local + Full) dura na venda média diária do período."],
+    ["Fonte", comShopee ? "Vendas diárias por SKU do Mercado Livre e itens dos pedidos válidos da Shopee, as mesmas da tela /curva-abc. Uma venda só entra quando tem SKU vinculado (D-423)." : "Vendas diárias por SKU (pedidos pagos), as mesmas da tela /curva-abc. Uma venda só entra quando tem SKU vinculado (D-423)."],
     ["Filtros de linha", "Classe, estoque, movimento e busca da tela NÃO recortam o arquivo: use o filtro automático das colunas."],
   ];
 
@@ -820,8 +904,17 @@ export async function buildAbcWorkbook(input: AbcWorkbookInput): Promise<Uint8Ar
   const charts = painel(workbook, input, contexto);
   consolidado(workbook, input, contexto);
 
-  for (const criterio of CRITERIOS) {
-    curvaDoCriterio(workbook, criterio, input.curves[criterio.key], input, contexto);
+  const terceiro = terceiroCriterio(input.curves);
+
+  for (const criterio of criteriosDo(terceiro)) {
+    const linhas =
+      criterio.key === "faturamento"
+        ? input.curves.faturamento
+        : criterio.key === "unidades"
+          ? input.curves.unidades
+          : terceiraCurva(input.curves);
+
+    curvaDoCriterio(workbook, criterio, linhas, input, contexto);
   }
 
   porConta(workbook, input, contexto);

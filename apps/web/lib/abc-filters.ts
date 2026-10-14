@@ -15,7 +15,7 @@
 import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
-import { resolverEscopoVendas, type EscopoVendas } from "./vendas-multicanal";
+import { resolverContas, resolverEscopoVendas, type ContaDoSeletor, type EscopoVendas } from "./vendas-multicanal";
 
 /**
  * Cinquenta linhas mantêm a leitura analítica sem mandar uma tabela longa no
@@ -308,6 +308,37 @@ export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>)
     },
     override.page === undefined ? 1 : next.page,
   );
+}
+
+/**
+ * As contas do link que valem no recorte (D-448), e o que decorre delas -- a
+ * MESMA regra na tela e no Excel (D-450). Ficam as que a pessoa alcança (a
+ * lista já vem da RLS) e que cabem no recorte; as outras caem, contadas para a
+ * tela avisar. O Full só é lido com alguma conta ML no recorte, e "sem Full"
+ * sem ela seria recusado pela função (C-60): sai.
+ */
+export function aplicarContasDoRecorte(
+  pedidos: AbcFilters,
+  todasAsContas: readonly ContaDoSeletor[],
+): { filters: AbcFilters; selecionadas: ContaDoSeletor[] | null; descartadas: number; leMl: boolean } {
+  const { selecionadas, descartadas } =
+    pedidos.escopo === "ml"
+      ? { selecionadas: null, descartadas: 0 }
+      : resolverContas(pedidos.contas?.join(","), todasAsContas, pedidos.escopo);
+  const leMl =
+    pedidos.escopo === "ml" ||
+    (pedidos.escopo === "todos" && (selecionadas === null || selecionadas.some((c) => c.marketplace === "ML")));
+
+  return {
+    filters: {
+      ...pedidos,
+      contas: selecionadas === null ? null : selecionadas.map((c) => c.account_id),
+      onlyWithoutFull: leMl && pedidos.onlyWithoutFull,
+    },
+    selecionadas,
+    descartadas,
+    leMl,
+  };
 }
 
 /**

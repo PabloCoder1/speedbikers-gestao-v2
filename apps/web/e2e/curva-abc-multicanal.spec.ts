@@ -1,5 +1,7 @@
 import { type Page, expect, test } from "@playwright/test";
+import JSZip from "jszip";
 
+import { E2E_SHOPEE_SHOP } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -93,7 +95,7 @@ test("/curva-abc?marketplace=todos: com a única loja Shopee de teste, a curva �
   await expect(page.getByText(/a curva soma compras/)).toBeVisible();
 });
 
-test("/curva-abc?marketplace=shopee: só a loja de teste — nenhum SKU inventado, sem Full, e o Excel diz que é do ML", async ({
+test("/curva-abc?marketplace=shopee: só a loja de teste — nenhum SKU inventado, sem Full, e o Excel leva o recorte", async ({
   page,
 }) => {
   await login(page, "/curva-abc?marketplace=shopee&semFull=1");
@@ -105,9 +107,52 @@ test("/curva-abc?marketplace=shopee: só a loja de teste — nenhum SKU inventad
   await expect(page.getByText("Não foi possível carregar")).toHaveCount(0);
   await expect(page.getByText("Sem estoque no Full")).toHaveCount(0);
 
-  const excel = page.getByRole("link", { name: "Baixar Excel (só Mercado Livre)" });
+  // O Excel leva o MESMO recorte da tela (D-450).
+  const excel = page.getByRole("link", { name: "Baixar Excel" });
 
   await expect(excel).toBeVisible();
-  await expect(excel).toHaveAttribute("href", /^\/curva-abc\/export\/xlsx(\?|$)/);
-  await expect(excel).not.toHaveAttribute("href", /marketplace=/);
+  await expect(excel).toHaveAttribute("href", /^\/curva-abc\/export\/xlsx\?marketplace=shopee/);
+});
+
+/** Baixa o Excel do link da tela e abre o arquivo: as abas e os textos que ele traz. */
+async function abrirExcel(page: Page): Promise<{ abas: string; textos: string }> {
+  const href = await page.getByRole("link", { name: "Baixar Excel" }).getAttribute("href");
+
+  expect(href).not.toBeNull();
+
+  const resposta = await page.request.get(href ?? "");
+
+  expect(resposta.status()).toBe(200);
+  expect(resposta.headers()["content-type"]).toContain("spreadsheetml");
+
+  const zip = await JSZip.loadAsync(await resposta.body());
+
+  return {
+    abas: (await zip.file("xl/workbook.xml")?.async("string")) ?? "",
+    textos: (await zip.file("xl/sharedStrings.xml")?.async("string")) ?? "",
+  };
+}
+
+test("o Excel do 'Todos' traz Compras no lugar de Pedidos, o recorte por marketplace e a loja na aba por conta — o do ML não muda", async ({
+  page,
+}) => {
+  await login(page, "/curva-abc?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Curva ABC" })).toBeVisible();
+
+  const todos = await abrirExcel(page);
+
+  expect(todos.abas).toContain('name="Compras"');
+  expect(todos.abas).not.toContain('name="Pedidos"');
+  expect(todos.textos).toContain("Por marketplace");
+  // A loja de teste é coluna da aba por conta, marcada.
+  expect(todos.textos).toContain(`${E2E_SHOPEE_SHOP.name} (Shopee) — teste`);
+
+  await page.goto("/curva-abc");
+  await expect(page.getByRole("heading", { level: 1, name: "Curva ABC" })).toBeVisible();
+
+  const ml = await abrirExcel(page);
+
+  expect(ml.abas).toContain('name="Pedidos"');
+  expect(ml.abas).not.toContain('name="Compras"');
+  expect(ml.textos).not.toContain("Por marketplace");
 });

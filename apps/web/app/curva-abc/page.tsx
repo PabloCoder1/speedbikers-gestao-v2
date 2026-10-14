@@ -21,6 +21,7 @@ import {
   ABC_STOCK_STATES,
   DEFAULT_PERIOD,
   PAGE_SIZE,
+  aplicarContasDoRecorte,
   buildAbcHref,
   countActiveAbcFilters,
   criteriosDoEscopo,
@@ -40,7 +41,6 @@ import {
   alternarConta,
   antesDoHistoricoShopee,
   marketplacesDoEscopo,
-  resolverContas,
   type ContaDoSeletor,
 } from "../../lib/vendas-multicanal";
 
@@ -147,20 +147,9 @@ export default async function CurvaAbcPage({
   const accounts = accountsResult.data ?? [];
 
   // As contas do link que a pessoa alcança e que cabem no recorte; as outras
-  // caem, com aviso (D-440). Fora do ML, o Full só é lido com alguma conta ML.
+  // caem, com aviso (D-440). A mesma regra do Excel (`aplicarContasDoRecorte`).
   const todasAsContas: ContaDoSeletor[] = contasDoRecorte.data ?? [];
-  const { selecionadas, descartadas } =
-    pedidos.escopo === "ml"
-      ? { selecionadas: null, descartadas: 0 }
-      : resolverContas(pedidos.contas?.join(","), todasAsContas, pedidos.escopo);
-  const leMl =
-    pedidos.escopo === "ml" ||
-    (pedidos.escopo === "todos" && (selecionadas === null || selecionadas.some((c) => c.marketplace === "ML")));
-  const filters: AbcFilters = {
-    ...pedidos,
-    contas: selecionadas === null ? null : selecionadas.map((c) => c.account_id),
-    onlyWithoutFull: leMl && pedidos.onlyWithoutFull,
-  };
+  const { filters, selecionadas, descartadas, leMl } = aplicarContasDoRecorte(pedidos, todasAsContas);
   const janela = resolveAbcWindow(filters, today);
   const contasDoMenu = todasAsContas.filter((c) => filters.escopo === "todos" || c.marketplace === "SHOPEE");
   // Slug desconhecido cai em "consolidado" em silêncio — mesmo tratamento de
@@ -240,8 +229,6 @@ export default async function CurvaAbcPage({
       ? `Últimos ${String(filters.days)} dias`
       : `De ${formatBusinessDate(janela.from)} a ${formatBusinessDate(janela.to)}`;
   const exportHref = buildAbcHref(filters, { page: 1 }).replace(/^\/curva-abc/, "/curva-abc/export/xlsx");
-  // O Excel ainda é só do Mercado Livre (T6b2): fora dele, o link é o do recorte ML.
-  const exportHrefMl = buildAbcHref(filters, { escopo: "ml", page: 1 }).replace(/^\/curva-abc/, "/curva-abc/export/xlsx");
   // A Shopee guarda 90 dias: um período anterior mais velho faz ela parecer "nova" (T-R2).
   const historicoCurto = filters.escopo !== "ml" && antesDoHistoricoShopee(janela.prevFrom, today);
   const comprasNoLugarDePedidos = multicanal;
@@ -516,18 +503,10 @@ export default async function CurvaAbcPage({
                 Limpar filtros ({filtrosAtivos})
               </Link>
             )}
-            {/* O Excel leva o MESMO recorte da tela -- `export/xlsx/route.ts`. Fora do ML
-                ele ainda não sabe a Shopee (T6b2): em vez de baixar outro recorte calado,
-                a tela diz e oferece o do Mercado Livre. */}
-            {multicanal ? (
-              <a className="sb-button" href={exportHrefMl} download title="O Excel ainda não traz a Shopee">
-                Baixar Excel (só Mercado Livre)
-              </a>
-            ) : (
-              <a className="sb-button sb-button-primary" href={exportHref} download>
-                Baixar Excel
-              </a>
-            )}
+            {/* O Excel leva o MESMO recorte da tela, marketplace e contas inclusive (D-450) -- `export/xlsx/route.ts`. */}
+            <a className="sb-button sb-button-primary" href={exportHref} download>
+              Baixar Excel
+            </a>
           </div>
         </div>
 
