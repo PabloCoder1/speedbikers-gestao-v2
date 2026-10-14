@@ -91,6 +91,28 @@
 
 ---
 
+## Agente 3 — UX/UI, carregamento e design system
+
+Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na faixa **D-500+** (combinada com A1 e A2). Território: componentes compartilhados de carregamento e estado (`carregando*.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx`, `filter-menu.tsx`, `filter-pill.tsx`, `kpi-strip.tsx`, `saved-filters.tsx`), o bloco CARREGAMENTO de `globals.css` e as telas sem branch aberta do A2. Não muda dado, consulta, parâmetro de URL nem regra de negócio.
+
+**Concluído**
+- Auditoria de carregamento, interação e estados especiais (14/10): 17 achados com evidência, `docs/UX_SYSTEM.md` §2.
+- D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms.
+
+**Em andamento**
+- PR da D-500 (só web).
+
+**Falta** (`docs/UX_SYSTEM.md` §3)
+- Atualização no lugar nos 45 `<Link>` sem indicador e nas 24 buscas GET restantes. Começa pelas telas sem branch do A2; `/anuncios`, `/vendas/shopee`, `/curva-abc`, `/faturamento` e `/produtos` só quando o A2 liberar.
+- Botão pendente compartilhado e `EstadoDaTela` (erro, vazio e permissão).
+- Shell num layout: proposta ao dono, depois de #164, #165 e #167.
+
+**Para o A2**
+- Falha de leitura mostrada como "nenhum" em `/vinculacoes`, `/usuarios` (histórico), `/curva-abc` (opções), `/compras/novo`, `/diagnostico` e `/skus/[skuId]` (`docs/UX_SYSTEM.md` §2, item 8). É lógica de tela, então fica com você; A3 dá a forma do estado de erro.
+- Tela nova de filtro: use `ItemDeMenu`/`FilterMenu`, `FilterPill` e `FormularioFiltro`, e nunca `<a href="?…">` ou `<form method="get">`.
+
+---
+
 ## Contratos combinados
 
 | Id | O quê | Dono | Consumidor | Estado | Critério de aceite |
