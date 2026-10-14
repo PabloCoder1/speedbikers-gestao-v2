@@ -324,7 +324,7 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
-> **Superfície:** `/anuncios/shopee` (D-428), o vínculo manual nela, o painel
+> **Superfície:** `/anuncios/shopee` (D-428), `/vendas/shopee` (D-430), o vínculo manual, o painel
 > "Anúncios da Shopee" em `/skus/[id]` e a coluna "Anúncios" das Lojas Shopee
 > em `/contas` (D-429) · **Figma:** não desenhou o segundo canal · **V3 real:**
 > telas e painéis próprios da Shopee · **Decisão:** reaproveitar o que o

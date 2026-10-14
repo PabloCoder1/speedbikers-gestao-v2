@@ -530,6 +530,28 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 **Por cobrança, não por pedido:** os pedidos de um pacote dividem o envio, e cada um traz o custo do envio inteiro (medido: 0,37% do frete do vendedor somado a mais em 30 dias, se contado pedido a pedido). O custo repetido no mesmo envio conta uma vez; custos diferentes no mesmo envio somam (D-413) — a mesma regra de `frete_vendedor` (5C).
 
+## 5S. Vendas da Shopee (D-430) — DEFINIDAS E IMPLEMENTADAS
+
+A Shopee é um canal com definições PRÓPRIAS (ids `shopee_*`), lidas por RPCs
+próprias (`get_shopee_sales_by_shop`, `get_shopee_orders`, sobre a view
+`shopee_sales_orders`). Nada das seções acima muda: as tabelas `daily_*_metrics`,
+`/vendas`, `/faturamento`, `/central` e o ranking seguem só Mercado Livre até a
+fatia 6b oferecer o canal à escolha.
+
+| Id | Definição |
+|---|---|
+| `shopee_pedidos` | Pedidos VÁLIDOS: pago (`paid_at` preenchido) e fora de `UNPAID`, `CANCELLED` e `IN_CANCEL` (o `pending_cancel` do ML). |
+| `shopee_unidades` | Soma de `quantity` dos itens dos pedidos válidos. |
+| `shopee_receita_bruta` | Valor dos PRODUTOS com o desconto da loja, sem o frete e antes de cupons, moedas e descontos bancados pela Shopee — o que o ML chama de receita bruta. Do financeiro quando lido (`order_income.order_discounted_price`); antes, preço × quantidade dos itens. |
+| `shopee_recebido` | `escrow_amount`, o que a própria Shopee diz que a loja recebe (já desconta comissão, taxas, frete que fica com a loja, cupons da loja e afiliados). Provisório até o pedido completar. |
+
+- **Dia:** a criação do pedido (`shopee_created_at`) no dia civil de São Paulo — como o ML, e não a data de pagamento.
+- **Ausência:** item com preço 0 (bundle deal) sem financeiro lido torna a receita do pedido DESCONHECIDA (NULO), contada à parte (`pedidos_sem_receita`); pedido sem financeiro fica fora do recebido e é contado à parte (`pedidos_sem_recebido`). Loja cujos pedidos nunca foram lidos: "—", nunca zero.
+- **Cancelamento:** excluído de todas; contado à parte (`cancelados`). **Devolução:** não reduz a receita (como 5C.3); o pedido com devolução é contado à parte.
+- **Sandbox:** a loja de teste aparece com o rótulo "Teste" e NUNCA entra em total da empresa.
+- **SKU:** gravado no item na gravação do pedido (D-020): vínculo manual, SKU do anúncio (a view `shopee_listing_units`) ou o SKU do próprio pedido. Item sem nenhum dos três fica sem SKU e continua nos totais.
+- **Não somar com o ML ainda:** o "recebido" da Shopee é mais completo que o do ML (5F), e o pedido Shopee tem vários itens; a soma entre canais é decisão da 6b.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

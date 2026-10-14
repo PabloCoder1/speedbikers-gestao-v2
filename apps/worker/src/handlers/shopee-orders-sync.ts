@@ -226,5 +226,14 @@ async function gravarPedidos(
 
   const inseridos = await deps.db.from("shopee_order_items").insert(itens);
 
-  return inseridos.error === null ? null : `falha ao gravar itens: ${inseridos.error.message}`;
+  if (inseridos.error !== null) return `falha ao gravar itens: ${inseridos.error.message}`;
+
+  // D-430: o SKU de cada item, gravado como no Mercado Livre (D-020) -- manual,
+  // SKU do anúncio ou o do próprio pedido, resolvido em SQL.
+  const resolvidos = await deps.db.rpc("shopee_resolve_order_item_skus", {
+    p_shopee_shop_id: loja.id,
+    p_order_sns: pedidos.map((pedido) => pedido.order_sn),
+  });
+
+  return resolvidos.error === null ? null : `falha ao resolver o SKU dos itens: ${resolvidos.error.message}`;
 }

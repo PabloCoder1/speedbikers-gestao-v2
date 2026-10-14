@@ -52,6 +52,7 @@ import {
   E2E_LISTING_PROMO_PRICE,
   E2E_SHOPEE_ITEMS,
   E2E_SHOPEE_LEITURA_MINUTOS,
+  E2E_SHOPEE_PEDIDOS,
   E2E_SHOPEE_SHOP,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
@@ -69,6 +70,7 @@ import {
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
   type E2eShopeeItem,
+  type E2eShopeePedido,
 } from "./constants.js";
 import { SEED_OUTPUT_PATH, type SeedOutput } from "./seed-output.js";
 
@@ -1039,6 +1041,9 @@ async function main(): Promise<void> {
         status: "CONNECTED",
         auth_expires_at: new Date(Date.now() + 365 * 86_400_000).toISOString(),
         items_synced_until: new Date(Date.now() - E2E_SHOPEE_LEITURA_MINUTOS * 60_000).toISOString(),
+        // D-430: os pedidos também lidos há meia hora — a "Última leitura" de
+        // /vendas/shopee. Nulo seria "pedidos ainda não lidos".
+        orders_synced_until: new Date(Date.now() - E2E_SHOPEE_LEITURA_MINUTOS * 60_000).toISOString(),
       },
       { onConflict: "environment,shop_id" },
     )
@@ -1958,6 +1963,87 @@ async function main(): Promise<void> {
     if (linhas.error !== null) {
       throw linhas.error;
     }
+  }
+
+  /*
+    D-430: os PEDIDOS da loja Shopee do seed (`E2E_SHOPEE_PEDIDOS`), na forma do
+    worker — o pedido como `get_order_detail` o grava, o financeiro como
+    `get_escrow_detail` o completa (`order_income` inteiro ao lado das colunas),
+    e os itens substituídos. Apaga e recria pela loja: reexecutar não duplica,
+    e um pedido que um spec tenha mexido volta ao fixture.
+
+    O SKU de cada item é resolvido pela MESMA RPC que o worker chama depois de
+    gravar os itens (`shopee_resolve_order_item_skus`). Fica no FIM do seed de
+    propósito: a variação "Preta / M" vincula pelo SKU do anúncio ao SKU da
+    anomalia, que só nasce acima — resolver antes gravaria "sem SKU".
+  */
+  const pedidosShopee: readonly E2eShopeePedido[] = Object.values(E2E_SHOPEE_PEDIDOS);
+  const pedidosAntigos = await db.from("shopee_orders").delete().eq("shopee_shop_id", lojaShopeeId);
+
+  if (pedidosAntigos.error !== null) {
+    throw pedidosAntigos.error;
+  }
+
+  const agoraDosPedidos = Date.now();
+  const pedidosGravados = await db.from("shopee_orders").insert(
+    pedidosShopee.map((pedido) => {
+      const criadoEm = agoraDosPedidos - pedido.diasAtras * 86_400_000;
+
+      return {
+        shopee_shop_id: lojaShopeeId,
+        organization_id: organizationId,
+        order_sn: pedido.orderSn,
+        order_status: pedido.status,
+        currency: "BRL",
+        shopee_created_at: new Date(criadoEm).toISOString(),
+        shopee_updated_at: new Date(criadoEm + 60 * 60_000).toISOString(),
+        paid_at: pedido.pago ? new Date(criadoEm + 10 * 60_000).toISOString() : null,
+        escrow_amount: pedido.financeiro?.recebido ?? null,
+        return_order_sns: pedido.financeiro === null ? null : [...pedido.financeiro.devolucoes],
+        order_income:
+          pedido.financeiro === null
+            ? null
+            : {
+                order_discounted_price: pedido.financeiro.receitaBruta,
+                escrow_amount: pedido.financeiro.recebido,
+              },
+        financials_synced_at: pedido.financeiro === null ? null : new Date(agoraDosPedidos).toISOString(),
+      };
+    }),
+  );
+
+  if (pedidosGravados.error !== null) {
+    throw pedidosGravados.error;
+  }
+
+  const itensDosPedidos = await db.from("shopee_order_items").insert(
+    pedidosShopee.flatMap((pedido) =>
+      pedido.itens.map((item, position) => ({
+        shopee_shop_id: lojaShopeeId,
+        order_sn: pedido.orderSn,
+        position,
+        organization_id: organizationId,
+        item_id: item.itemId,
+        item_name: item.nome,
+        item_sku: item.itemSku,
+        model_id: item.modelId,
+        model_name: item.variacao,
+        model_sku: item.modelSku,
+        quantity: item.quantidade,
+        original_price: item.preco,
+        discounted_price: item.preco,
+      })),
+    ),
+  );
+
+  if (itensDosPedidos.error !== null) {
+    throw itensDosPedidos.error;
+  }
+
+  const skusDosPedidos = await db.rpc("shopee_resolve_order_item_skus", { p_shopee_shop_id: lojaShopeeId });
+
+  if (skusDosPedidos.error !== null) {
+    throw skusDosPedidos.error;
   }
 
   const output: SeedOutput = {

@@ -155,6 +155,10 @@ Migration `20261013180000`. `shopee_items` (chave loja + `item_id`): status e `u
 
 Migration `20261014120000`. Um vínculo manual por unidade de anúncio Shopee (variação, ou item sem variação; índices parciais por loja + item + variação), com o SKU (`restrict`). Escrita só por `set_shopee_sku_link` e `remove_shopee_sku_link` (`security definer`; ADMIN, GESTOR ou OPERADOR da organização por `has_org_role`; SKU da mesma organização; a unidade no catálogo sincronizado; item com variação não recebe vínculo inteiro; remover exige motivo). `shopee_sku_link_events` é append-only (CREATED, RETARGETED com o SKU anterior, REMOVED com motivo) e prende a loja (`restrict`). Leitura por membros. A view `shopee_listing_units` dá precedência ao manual (`vinculo_via = MANUAL`, com `manual_link_id` e o `sku_pelo_anuncio`); `get_sku_shopee_listings` serve o painel do SKU e `get_shopee_shop_catalog_counts` a contagem por loja (NULA sem leitura).
 
+### Vendas Shopee — `shopee_sales_orders` e o SKU gravado (D-430)
+
+Migration `20261014150000`. `shopee_order_items` ganha `sku_id` (`set null`), `vinculo_via` (MANUAL, SKU_DO_ANUNCIO, SKU_DO_PEDIDO; nulo junto com o SKU) e `shopee_sku_link_id` (sem FK), gravados por `shopee_resolve_order_item_skus` (só `service_role`, chamada pelo worker a cada lote de pedidos); o vínculo manual novo preenche só o que faltava (`private.shopee_fill_order_item_skus`). A view `shopee_sales_orders` (`security_invoker`) é a definição única do pedido de venda Shopee: situação (VALIDA, CANCELADA, NAO_PAGA), dia em São Paulo, unidades, receita bruta (financeiro, senão itens, senão NULA), recebido, financeiro lido, devolução, os itens com o SKU e o ambiente da loja. Lida por `get_shopee_sales_by_shop` e `get_shopee_orders` (paginada). Definições em `docs/METRICS.md` 5S e em `metric_definitions` (`shopee_*`).
+
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
 Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.

@@ -222,6 +222,6 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 2 | Renovação automática do token + pedidos (lista e detalhe, janela horária, histórico) | código (D-426) |
 | 3 | Financeiro do pedido (comissão, taxa, frete, líquido — `payment/get_escrow_detail`) | código (D-427) |
 | 4 | Produtos e vínculo com SKU: 4a catálogo e vínculo pelo SKU do anúncio; 4b vínculo manual, painel no SKU, `/contas`; os ~3.000 do UpSeller vão para a fatia 7 | 4a no ar no sandbox (D-428); 4b código (D-429) |
-| 5 | Estoque (exige decisão do dono: a planilha do UpSeller já desconta a venda Shopee) | — |
-| 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja | — |
+| 5 | Estoque (a planilha do UpSeller já desconta a venda Shopee) | adiada para o Go Live (decisão do dono, 14/10) |
+| 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja: 6a definição da venda, SKU gravado e `/vendas/shopee`; 6b canal em Faturamento e ranking | 6a código (D-430) |
 | 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |

@@ -560,7 +560,19 @@ async function VendasContent({
         subtitle={
           <>
             {contaLabel}, {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
-            {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
+            {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}. A Shopee tem tela
+            própria:{" "}
+            {/* D-430: só o caminho para a outra tela, levando o período — nenhum
+                número, menu, filtro ou RPC do Mercado Livre muda com a Shopee. */}
+            <Link
+              href={buildHref({ period, accountSlug: null, metricKey: DEFAULT_SALES_METRIC.key, brand: { kind: "todas" } }, {}).replace(
+                /^\/vendas/,
+                "/vendas/shopee",
+              )}
+            >
+              Vendas da Shopee
+            </Link>
+            .
           </>
         }
         aside={
