@@ -126,7 +126,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     title: "Administração",
     items: [
       { label: "Usuários", href: "/usuarios", icone: "pessoas" },
-      { label: "Contas Mercado Livre", href: "/contas", icone: "loja" },
+      { label: "Contas e lojas", href: "/contas", icone: "loja" },
       { label: "Integrações", href: "/integracoes", icone: "tomada" },
       { label: "Sincronização", href: "/sincronizacao", icone: "sincronizar" },
       /*

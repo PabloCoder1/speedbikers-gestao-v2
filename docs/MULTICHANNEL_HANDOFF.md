@@ -20,7 +20,7 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `93304ac3` (#147, #148 e #150: D-432, D-433, D-435) |
-| Branches abertas | A1: `feat/vendas-por-marketplace` (E4) · A2: `feat/multicanal-t1-seletor` (PR #149: T1) e `feat/multicanal-t2-lojas-usuarios` (T2, local) |
+| Branches abertas | A1: `feat/vendas-por-marketplace` (E4) · A2: `feat/multicanal-t1-seletor` (PR #149: T1), `feat/multicanal-t2-lojas-usuarios` (rascunho #153: T2) e `feat/multicanal-t3-saude-lojas` (rascunho #154: T3a) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
 | Migrations em produção | até `20261014200000` (D-435, run `38585020320`, 14/10). Próxima: `20261014210000` (D-436) |
@@ -52,25 +52,30 @@
 
 **Concluído**
 - T0 — auditoria das telas e mapa de lacunas (14/10): `docs/MULTICHANNEL_SCREENS.md`.
-- T1 — **PR #149** (D-431), atualizado com a `main` `93304ac3` por merge (conflitos só de documentação): seletor de marketplace no início da barra de `/vendas`, `/vendas/shopee`, `/anuncios` e `/anuncios/shopee` (só com os dois canais; leva o período ou a busca, nunca conta, loja, marca ou estado); período personalizado em `/vendas/shopee`; `/contas` e o menu como "Contas e lojas"; os quatro jobs `shopee.*` com cadência horária em `/saude` (C-09). Validado: `check`, `build`, `docs:check`, 13 unitários novos, e2e 41/41 nas telas tocadas e 208/208 na suíte inteira num stack isolado (4 só passaram reexecutadas, por ambiente — D-431). Só web; não depende de migration.
-- T2 — concessão de loja Shopee em `/usuarios` (D-434, consome o C-54): **em código e validada localmente** na branch `feat/multicanal-t2-lojas-usuarios` (sobre a T1 e a E2), não publicada. e2e 209/209 sobre E1+E2+T1+T2 com as 250 migrations do zero.
+- T1 — **PR #149** (D-431): seletor de marketplace no início da barra de `/vendas`, `/vendas/shopee`, `/anuncios` e `/anuncios/shopee` (só com os dois canais; leva o período ou a busca, nunca conta, loja, marca ou estado); período personalizado em `/vendas/shopee`; `/contas` e o menu como "Contas e lojas"; os quatro jobs `shopee.*` com cadência horária em `/saude` (C-09). Só web; não depende de migration.
+- T2 — **rascunho #153** (D-434, consome o C-54): lojas Shopee por usuário em `/usuarios` — gaveta, coluna, histórico e convite que confere no banco o que concedeu. Pré-requisitos de banco e api conferidos em produção.
+- T3a — **rascunho #154** (D-438, consome o C-52 e os avisos de D-435): o aviso do vigia com nome e destino em notificações, a seção "Lojas Shopee" em `/sincronizacao` com os limiares do vigia (3 h e 12 h) e a autorização perto de vencer, e a contagem do rodapé por `marketplace_accounts`.
+- Validação de cada etapa: `check`, `build`, `docs:check`, unitários e a suíte e2e inteira num stack isolado com o banco recriado do zero (210/210 na T3a; os 3 de convite só com o servidor na porta 3000).
 
 **Em andamento**
-- Merge do #149.
+- Os três PRs em cadeia: #149 → #153 → #154. Cada um entra depois do anterior; os rascunhos viram prontos na vez deles.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T2: PR depois do #149; publicar só depois da migration `20261014190000` em produção e do deploy da api (convite com lojas).
-- T3 — seletor sobre `marketplace_accounts` (C-52, na `main` desde D-435) e as lojas em sincronização, integrações, configurações e shell; rótulo e link de `entity_type = 'shopee_shop'` em `lib/event-format.ts` → T4 `/vendas` única com "todos" (C-53, E4) → T5 `/faturamento` (E5) → T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
-- Selo "Teste" no painel Shopee do SKU (C-06) quando a C-55 estiver em produção.
+- T3b — cartão da Shopee em `/integracoes`, contagem em `/configuracoes` e o seletor de marketplace lendo `marketplace_accounts`.
+- T4 — `/vendas` única com "todos" sobre o C-53 (`get_marketplace_sales_summary`/`_daily`, D-436, na `main`).
+- T5 — `/faturamento` com a Shopee sobre o C-58 (`get_shopee_faturamento`, D-437, na `main`), **depois da decisão do dono** sobre qual resultado mostrar (definitivo, provisório ou os dois).
+- T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
+- Selo "Teste" no painel Shopee do SKU (C-06): a C-55 já está em produção — entra numa próxima fatia.
 - T-R5: sobreposição de texto no cartão "Por loja" de `/vendas/shopee` no celular (preexistente, D-430).
 
 **Bloqueios**
-- T2 e T3 só publicam depois das migrations `20261014190000`/`20261014200000` em produção. T4 a T6 esperam o C-53 e os contratos de E5/E6.
+- T5 espera a decisão do dono sobre o resultado da Shopee. T6 espera os contratos da E6.
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
 - Inferência a medir: a planilha do UpSeller desconta a venda Shopee do estoque, mas a reposição só conta a demanda do ML — cobertura alta demais para SKU que vende na Shopee (T-R3, R11 do A1).
+- e2e: rodar a suíte duas vezes no mesmo banco quebra `atendimento` e `notificacoes` (o seed não desfaz caso assumido nem notificação lida) — `db reset` entre rodadas.
 
 ---
 
@@ -78,11 +83,11 @@
 
 | Id | O quê | Dono | Consumidor | Estado | Critério de aceite |
 |---|---|---|---|---|---|
-| C-01 | Seletor Marketplace/Conta em toda tela que filtra por conta; lojas em `/contas`, `/sincronizacao` e no shell | A2 | — | liberado: C-52 na `main` (D-435); T3 a fazer | só lista o que a permissão deixa; slug antigo continua valendo |
+| C-01 | Seletor Marketplace/Conta em toda tela que filtra por conta; lojas em `/contas`, `/sincronizacao` e no shell | A2 | — | em parte: T3a no rascunho #154 (D-438); T3b a fazer | só lista o que a permissão deixa; slug antigo continua valendo |
 | C-02 | `/vendas` e Home com "todos", "ml", "shopee" e várias contas | A2 | — | aguarda C-53 (T4) | ML idêntico ao de hoje; a web não soma linha |
 | C-03 | `/faturamento` com marketplace e a linha por loja | A2 | — | aguarda E5 (T5) | componente não comparável nunca somado |
 | C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | A2 | — | aguarda E6 (T6) | — |
-| C-05 | Concessão de loja em `/usuarios` | A2 | — | em código (T2, D-434), branch local | usuário sem a loja não a vê em tela nenhuma |
+| C-05 | Concessão de loja em `/usuarios` | A2 | — | rascunho #153 (T2, D-434) | usuário sem a loja não a vê em tela nenhuma |
 | C-06 | Selo de loja de teste no painel Shopee do SKU | A2 | — | **pedido novo ao A1**: `get_sku_shopee_listings` devolver o ambiente | loja sandbox marcada "Teste" |
 | C-07 | `/produtos` sem chamar de "sem anúncio/venda" o SKU que só a Shopee tem | A2 | — | **pedido novo ao A1**: `get_products_overview` com a Shopee (depois de E6) | — |
 | C-08 | Busca universal achando loja, anúncio e pedido Shopee | A2 | — | **pedido novo ao A1**: `search_entities` com a Shopee | — |

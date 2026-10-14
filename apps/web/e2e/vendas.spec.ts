@@ -30,21 +30,25 @@ test("/vendas: conta, marca, período e métrica compõem sem se descartar", asy
 
   const menus = page.locator("details.sb-menu");
 
+  // O marketplace vem PRIMEIRO na barra (D-431): é o recorte mais largo. O
+  // seed tem loja Shopee, então o seletor aparece — e começa no Mercado Livre.
+  await expect(menus.nth(0).locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
+
   // Conta.
-  await menus.nth(0).locator("summary").click();
-  await menus.nth(0).getByRole("link", { name: "Loja E2E" }).click();
+  await menus.nth(1).locator("summary").click();
+  await menus.nth(1).getByRole("link", { name: "Loja E2E" }).click();
   await expect(page).toHaveURL(/account=e2e-loja/);
 
   // Marca — "Sem marca" NÃO é ausência de filtro (D-237): é a venda que
   // nenhuma marca alcança.
-  await menus.nth(1).locator("summary").click();
-  await menus.nth(1).getByRole("link", { name: "Sem marca" }).click();
+  await menus.nth(2).locator("summary").click();
+  await menus.nth(2).getByRole("link", { name: "Sem marca" }).click();
   await expect(page).toHaveURL(/semMarca=1/);
   await expect(page).toHaveURL(/account=e2e-loja/);
 
   // Período.
-  await menus.nth(2).locator("summary").click();
-  await menus.nth(2).getByRole("link", { name: "Últimos 7 dias" }).click();
+  await menus.nth(3).locator("summary").click();
+  await menus.nth(3).getByRole("link", { name: "Últimos 7 dias" }).click();
   await expect(page).toHaveURL(/days=7/);
 
   // Métrica, pelo controle segmentado que substituiu as pílulas do gráfico.
@@ -58,9 +62,9 @@ test("/vendas: conta, marca, período e métrica compõem sem se descartar", asy
 
   // E o rótulo de cada menu diz o estado — sem isso o filtro fica aplicado e
   // invisível, que é pior do que não ter filtro.
-  await expect(menus.nth(0).locator("summary")).toContainText("Loja E2E");
-  await expect(menus.nth(1).locator("summary")).toContainText("Sem marca");
-  await expect(menus.nth(2).locator("summary")).toContainText("Últimos 7 dias");
+  await expect(menus.nth(1).locator("summary")).toContainText("Loja E2E");
+  await expect(menus.nth(2).locator("summary")).toContainText("Sem marca");
+  await expect(menus.nth(3).locator("summary")).toContainText("Últimos 7 dias");
 });
 
 

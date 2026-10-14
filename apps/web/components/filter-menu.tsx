@@ -24,22 +24,37 @@ export interface FilterOption {
 export function FilterMenu({
   rotulo,
   opcoes,
+  nome,
+  alinhamento = "fim",
   children,
 }: {
   /** O que o botão mostra — normalmente a opção ativa. */
   rotulo: string;
   opcoes: readonly FilterOption[];
+  /**
+   * De que é o filtro, para quem ouve a tela: "Marketplace" vira "Marketplace:
+   * Shopee". O botão mostra só o valor, como os outros; sem `nome`, o nome
+   * acessível continua sendo o texto visível.
+   */
+  nome?: string;
+  /**
+   * De que lado o painel abre. O padrão ("fim") alinha pela direita do botão,
+   * o certo para os menus do meio e do fim da barra. O PRIMEIRO menu da barra
+   * abre pelo "inicio": alinhado pela direita, um botão mais estreito que o
+   * painel o empurraria para baixo da barra lateral (D-431).
+   */
+  alinhamento?: "inicio" | "fim";
   children?: ReactNode;
 }): ReactNode {
   return (
     <details className="sb-menu">
-      <summary className="sb-button">
+      <summary className="sb-button" aria-label={nome === undefined ? undefined : `${nome}: ${rotulo}`}>
         {rotulo}
         <span aria-hidden="true" className="sb-menu-chevron">
           ⌄
         </span>
       </summary>
-      <div className="sb-menu-panel">
+      <div className={alinhamento === "inicio" ? "sb-menu-panel sb-menu-panel-inicio" : "sb-menu-panel"}>
         {opcoes.map((opcao) => (
           <a
             key={opcao.href}

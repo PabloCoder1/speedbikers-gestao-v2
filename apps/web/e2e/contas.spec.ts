@@ -12,6 +12,10 @@ import { login } from "./helpers.js";
 test("/contas: o painel Lojas Shopee lista a loja da organização e oferece conectar ao ADMIN", async ({ page }) => {
   await login(page, "/contas");
 
+  // O título e o menu falam dos dois canais (D-431): a Shopee se conecta aqui.
+  await expect(page.getByRole("heading", { level: 1, name: "Contas e lojas" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Contas e lojas" }).first()).toBeVisible();
+
   const tabela = page.getByRole("table", { name: "Lojas Shopee" });
 
   await expect(tabela).toBeVisible();

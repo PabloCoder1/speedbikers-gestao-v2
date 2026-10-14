@@ -17,6 +17,8 @@ import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 import { FilterMenu } from "../../components/filter-menu";
+import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
+import { contarLojasShopee } from "../../lib/marketplace";
 import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
@@ -380,10 +382,13 @@ async function VendasContent({
   const isCustom = days === null;
   const period: Period = isCustom ? range : { days };
 
-  const [accountsResult, membershipResult, savedFiltersResult] = await Promise.all([
+  const [accountsResult, membershipResult, savedFiltersResult, lojasShopee] = await Promise.all([
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
     currentMembership(),
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
+    // D-431: só o NÚMERO de lojas, para o seletor de marketplace saber se há
+    // outro canal. Nenhum número do Mercado Livre depende disto.
+    contarLojasShopee(supabase),
   ]);
 
   const accounts: AccountOption[] = accountsResult.data ?? [];
@@ -560,23 +565,29 @@ async function VendasContent({
         subtitle={
           <>
             {contaLabel}, {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
-            {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}. A Shopee tem tela
-            própria:{" "}
-            {/* D-430: só o caminho para a outra tela, levando o período — nenhum
-                número, menu, filtro ou RPC do Mercado Livre muda com a Shopee. */}
-            <Link
-              href={buildHref({ period, accountSlug: null, metricKey: DEFAULT_SALES_METRIC.key, brand: { kind: "todas" } }, {}).replace(
-                /^\/vendas/,
-                "/vendas/shopee",
-              )}
-            >
-              Vendas da Shopee
-            </Link>
-            .
+            {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
           </>
         }
         aside={
           <>
+            {/*
+              O MARKETPLACE VEM PRIMEIRO (D-431): é o recorte mais largo. Para a
+              Shopee só o período atravessa — conta, marca e métrica são deste
+              canal (D-430: nenhum número, filtro ou RPC do Mercado Livre muda
+              com a Shopee). Sem loja Shopee, o seletor não aparece.
+            */}
+            <SeletorDeMarketplace
+              ativo="ml"
+              contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
+              destinos={{
+                ml: buildHref({ period, accountSlug, metricKey: metric.key, brand }, {}),
+                shopee: buildHref(
+                  { period, accountSlug: null, metricKey: DEFAULT_SALES_METRIC.key, brand: { kind: "todas" } },
+                  {},
+                ).replace(/^\/vendas/, "/vendas/shopee"),
+              }}
+            />
+
             {/*
               Os filtros saíram das linhas de pílulas e viraram a barra de menus
               do Figma. O comportamento é o mesmo — link com `href`, estado na

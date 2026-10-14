@@ -2003,6 +2003,13 @@ summary[aria-disabled="true"] {
   box-shadow: var(--sb-shadow-pop);
 }
 
+/* O primeiro menu da barra abre pelo início do botão (D-431): pela direita, o
+   painel mais largo que o botão vazava para baixo da barra lateral. */
+.sb-menu-panel-inicio {
+  right: auto;
+  left: 0;
+}
+
 .sb-menu-item {
   display: block;
   padding: 0.375rem 0.625rem;

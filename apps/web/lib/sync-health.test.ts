@@ -227,6 +227,20 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
     expect(classifyJobFreshness("sync.order-logistics", minutesAgo(13 * 60), NOW)).toBe("atencao");
     expect(classifyJobFreshness("sync.order-logistics", minutesAgo(25 * 60), NOW)).toBe("critico");
   });
+
+  /**
+   * Os quatro jobs da Shopee (D-431) apareciam em `/saude` sem veredito — o
+   * `sem_cadencia` que só mostra a idade. São horários: a loja que parou de ser
+   * lida (conexão em ERROR) tem de ficar vermelha em poucas horas, como o
+   * `sync.orders.window` do Mercado Livre em D-217.
+   */
+  it("os jobs da Shopee são horários: 1 h é normal, 3 h é atenção, 5 h é crítico", () => {
+    for (const job of ["shopee.orders.sync", "shopee.order-financials.sync", "shopee.items.sync", "shopee.items.hydrate"]) {
+      expect(classifyJobFreshness(job, minutesAgo(60), NOW)).toBe("ok");
+      expect(classifyJobFreshness(job, minutesAgo(180), NOW)).toBe("atencao");
+      expect(classifyJobFreshness(job, minutesAgo(300), NOW)).toBe("critico");
+    }
+  });
 });
 
 describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)", () => {

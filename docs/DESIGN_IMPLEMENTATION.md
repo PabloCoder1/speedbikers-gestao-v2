@@ -272,7 +272,7 @@ branco embutido.
 |---|---|---|
 | Shell (sidebar + grupos + topbar) | `components/shell.tsx`, `nav.tsx` | **camada nova**, refeita pelo frame; trilho de 58px em ≤850 desde A1 |
 | `PageTitle`, `Panel`, `KpiStrip`, `ObjectHeader` | `components/*.tsx` | **camada nova** — `.page-title`, `.panel`, `.kpi-strip`/`.ops-metrics`, Object Header do Figma |
-| `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">` |
+| `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">`. Desde D-431: `nome` (nome acessível, "Marketplace: Shopee") e `alinhamento="inicio"` para o PRIMEIRO menu da barra — alinhado pela direita, o painel mais largo que o botão vazava para baixo da lateral |
 | `tone.ts` (`TOM`, `tomDeStatus`) | `components/tone.ts` | **dono único** dos cinco tons do `.status`; `StatusPill`, `StatePill`, `KpiStrip`, `ObjectHeader` e a Home leem daqui (eram cinco mapas) |
 | `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |
 | `StatePill` (vocabulário da tela → tom) | `components/state-pill.tsx` | alinhado — era cápsula de contorno; virou o mesmo chip |
@@ -331,9 +331,11 @@ branco embutido.
 > Mercado Livre já usa — `PageTitle`, `KpiStrip`, `Panel`, `.sb-table`, as
 > classes `.sb-an-*` de `/anuncios`, o popup `.sb-vnc-modal` e a `BuscaSku` de
 > `/vinculacoes` —, sem forma nova; o contador "Vinculados pelo SKU" virou
-> "Vinculados" (manual ou pelo SKU do anúncio) · **Motivo:** escopo enxuto — o
-> Figma não desenhou o segundo canal, e o Design Contract resolve os
-> componentes recorrentes.
+> "Vinculados" (manual ou pelo SKU do anúncio); a troca entre os canais é o
+> seletor de marketplace (D-431), um `FilterMenu` no início da barra das telas
+> de vendas e de anúncios, que só aparece com os dois canais · **Motivo:**
+> escopo enxuto — o Figma não desenhou o segundo canal, e o Design Contract
+> resolve os componentes recorrentes.
 
 > **Superfície:** `/skus/[id]`, abas que não a Visão geral · **Figma:** o frame
 > mostra *"Conteúdo da aba em construção"* para todas · **V3 real:** conteúdo

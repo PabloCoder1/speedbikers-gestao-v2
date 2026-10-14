@@ -8,6 +8,7 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
+import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
@@ -42,6 +43,7 @@ import {
   revenueShare,
   type ListingsFilters,
 } from "../../lib/listings-view";
+import { contarLojasShopee, hrefDosAnuncios } from "../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
@@ -186,10 +188,12 @@ export default async function AnunciosPage({
   // As contas e os filtros salvos não dependem da organização (a RLS já os
   // restringe): saem juntos com o membership desde D-195. As duas RPCs abaixo
   // continuam depois, porque elas SIM precisam da conta escolhida.
-  const [membership, accountsResult, savedFiltersResult] = await Promise.all([
+  const [membership, accountsResult, savedFiltersResult, lojasShopee] = await Promise.all([
     currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/anuncios").order("name"),
+    // D-431: só o NÚMERO de lojas, para o seletor de marketplace.
+    contarLojasShopee(supabase),
   ]);
 
   const organizationId = membership.organizationId;
@@ -461,14 +465,20 @@ export default async function AnunciosPage({
           <>
             Catálogo do Mercado Livre sincronizado a cada 6h — estado, estoque, Full, venda, visitas e conversão dos
             últimos {filters.days} dias. A fila dos sem vínculo está na{" "}
-            <Link href="/vinculacoes">Central de Vinculações</Link>. A Shopee tem tela própria:{" "}
-            {/* D-428: só o caminho para a outra tela — nenhuma contagem, filtro
-                ou RPC do Mercado Livre muda com a Shopee. */}
-            <Link href="/anuncios/shopee">Anúncios da Shopee</Link>.
+            <Link href="/vinculacoes">Central de Vinculações</Link>.
           </>
         }
         aside={
           <>
+            {/* O marketplace primeiro (D-431). Para a Shopee só a busca
+                atravessa, menos o código MLB; conta, período e estados são do
+                Mercado Livre (D-428: nada daqui muda com a Shopee). */}
+            <SeletorDeMarketplace
+              ativo="ml"
+              contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
+              destinos={{ ml: buildHref(filters, {}), shopee: hrefDosAnuncios("shopee", filters.search) }}
+            />
+
             {/*
               Como no frame: o cabeçalho recorta O QUE SE OLHA (conta, período,
               vínculo, busca); os filtros de ESTADO da tabela moram na barra do
