@@ -23,7 +23,7 @@
 | Branches abertas | A1: `feat/produtos-multicanal` (#161: E6c), `feat/devolucoes-shopee` (rascunho #163: E7a) e `feat/ads-shopee` (rascunho #166: E7b), empilhadas nessa ordem · A2: T6b (D-448, empilhada no #157) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, na `main` pelo #157), `20261015010000` (C-61, na `main` pelo #160), `20261015020000` (E6c, #161) e `20261015030000` (E7a, #163) |
+| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, na `main` pelo #157), `20261015010000` (C-61, na `main` pelo #160), `20261015020000` (E6c, #161), `20261015030000` (E7a, #163) e `20261015040000` (E7b, #166) |
 | Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -43,10 +43,11 @@
 - E6b, curva ABC por marketplace (D-441): **em código e validada** — o ML idêntico às funções antigas lado a lado (3.124 combinações locais e 11 casos no Dev com dados reais), ~30x mais rápida no Dev (plano custom), integração 976/976 com as 255 migrations do zero, 11 mutações; rascunho #157 — falta CI, merge e a migration `20261015000000`.
 - C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — na `main` pelo #160 — falta a migration `20261015010000`.
 - E6c, `/produtos` com a Shopee (D-445): **em código e validada** — sem Shopee, idêntica à função antiga (25 combinações locais; 5 casos no Dev com 3.554 SKUs, ~75→78 ms); com Shopee, os campos do ML iguais, os números da Shopee iguais à contagem direta e as facetas fechando; 7 mutações; empilhada no #160 — #161 (pronto para revisão) — falta CI, merge e a migration `20261015020000`. O ranking com resultado da central fica para depois do Go Live (D-430 §5).
-- E7a, devoluções da Shopee (D-447): **em código e validada localmente** — a API `returns` conferida na documentação oficial; tabelas sem o comprador, situação como veio, SKU por item; job `shopee.returns.sync` encadeado pelo de pedidos; integração (4 testes) e 7 mutações; empilhada no #161 — rascunho #163 — falta CI, merge, a migration `20261015030000` e o deploy do worker; **a chamada real e a semântica de `page_no` se conferem no sandbox depois do deploy**. Para o A2: o job novo precisa da cadência em `apps/web/lib/sync-health.ts` (`"shopee.returns.sync": 60`, vem junto com os pedidos).
+- E7a, devoluções da Shopee (D-447): **em código e validada localmente** — a API `returns` conferida na documentação oficial; tabelas sem o comprador, situação como veio, SKU por item; job `shopee.returns.sync` encadeado pelo de pedidos; integração (4 testes) e 7 mutações; empilhada no #161 — rascunho #163 — falta CI, merge, a migration `20261015030000` e o deploy do worker; **a chamada real e a semântica de `page_no` se conferem no sandbox depois do deploy**. Cadência em `/saude`: `shopee.returns.sync` = 60 min, no #165 do A2.
+- E7b, Ads da Shopee (D-449): **em código e validada localmente** — o desempenho diário dos anúncios CPC da loja conferido na documentação; `daily_shopee_ads_metrics` com a cobertura da leitura; job `shopee.ads.sync` (no máximo a cada 3 h); ROAS/ACOS/TACoS no SQL; integração (4 testes) e 8 mutações; empilhada no #163 (#166, rascunho) — falta CI, merge, a migration `20261015040000` e o deploy do worker. **É o CPC da loja, não o total: o GMV Max de loja pode ficar de fora; não entra no resultado da venda até conferir com loja real.** Cadência em `/saude`: `shopee.ads.sync` = 180 min, no #165 do A2.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
-- E7b em diante (extrato/repasse, Ads, lote do financeiro, push — cada um conferido na documentação e no sandbox antes) → E8 Go Live e estoque.
+- E7c em diante (extrato/repasse, lote do financeiro, push — cada um conferido na documentação e no sandbox antes) → E8 Go Live e estoque.
 
 **Bloqueios**
 - E4 e E5 em produção dependem do merge e da migration (dono). A exibição do resultado da E5 depende da decisão 1 abaixo (os três números já vêm prontos).
@@ -114,6 +115,7 @@
 | C-60 | Curva ABC por marketplace: `get_sku_abc_analysis`, `get_sku_abc_breakdown` e `get_sku_sales_by_account` com `p_marketplaces`/`p_account_ids` no fim, critério `compras`, colunas por marketplace (`docs/MULTICHANNEL_CONTRACTS.md` §3.7) | A1 | `/curva-abc` e o Excel (T6, atende C-04 em parte) | em código (D-441) | nulo = o ML de antes; com a Shopee, `orders`/cobertura nulos e `pedidos` recusado |
 | C-61 | Componentes do faturamento Shopee sobre os pedidos cobertos (comissão, taxas, frete, cupons da loja, afiliados, ajustes e "outros" que fecham com o recebido), descontos bancados pela Shopee, série diária e, se o rateio fechar, por SKU | A1 | `/faturamento` (T5b: cascata, série e produtos) | em código (D-443; `docs/MULTICHANNEL_CONTRACTS.md` §3.8) | receita coberta − Σ componentes − outros = recebido coberto, provado em toda linha |
 | C-62 | Devoluções da Shopee: `get_shopee_returns` (lista com itens e SKU) e `get_shopee_returns_summary` (TOTAL e por loja, por situação); colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.10 | A1 | vendas Shopee / atendimento (a tela é do A2) | em código (D-447) | situação como a Shopee manda (sem "reembolsado"); nada do comprador; sandbox fora do TOTAL; nunca lida = NULO |
+| C-63 | Ads da Shopee: `get_shopee_ads_overview` (TOTAL e por loja, com a cobertura) e `get_shopee_ads_daily`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.11 | A1 | `/faturamento` e a central (a tela é do A2) | em código (D-449) | rotular "Ads CPC da loja"; NÃO descontar do resultado até conferir o GMV Max com loja real |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
 
 ---
@@ -128,11 +130,11 @@
 | `docs/HANDOFF.md` | os dois, só a linha da própria frente, perto do limite de 25 KB do `docs:check` |
 | `docs/MULTICHANNEL_HANDOFF.md` | este arquivo — cada um na sua seção |
 | `AGENTS.md` | uma linha só no roteador ("Shopee, multicanal"), com os três documentos multicanais; quem mudar edita a mesma linha |
-| `apps/web/lib/sync-health.ts` (`JOB_CADENCE_MIN`) | A2; falta a cadência dos jobs `shopee.*` (horários) para `/saude` dar veredito — o A1 informa a cadência |
+| `apps/web/lib/sync-health.ts` (`JOB_CADENCE_MIN`) | A2; `shopee.returns.sync` (60 min) e `shopee.ads.sync` (180 min) no #165 (rascunho, espera a `20261015000000` em produção) |
 
 ---
 
 ## Decisões pendentes do dono
 
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
-2. **E6b, C-61, E6c e E7a:** depois dos merges do #161 e do #163 (#157 e #160 já entraram), `migrations-producao.yml` para `20261015000000`, `20261015010000`, `20261015020000` e `20261015030000`; **a E7a também publica o worker, DEPOIS da migration** (o job lê a coluna nova) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)
+2. **E6b a E7b:** depois dos merges do #161, do #163 e do #166 (#157 e #160 já entraram), `migrations-producao.yml` para `20261015000000` a `20261015040000`; **E7a e E7b também publicam o worker, DEPOIS da migration** (os jobs leem as colunas novas) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)

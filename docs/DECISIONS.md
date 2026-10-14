@@ -15200,3 +15200,32 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **A conferir no sandbox, depois do deploy do worker:** a chamada real e a semantica de `page_no`.
 
 **Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.
+
+## D-449 - Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
+
+**Contexto:** o faturamento do ML ja tem Ads (5G, D-363) e o lucro apos imposto e Ads (5K); o da Shopee nao (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.ads.get_all_cpc_ads_daily_performance`, `v2.ads.get_gms_campaign_performance` e o "Shopee On-Platform Ads API Guide"):
+- o desempenho DIARIO dos anuncios CPC da loja: impressoes, cliques, pedidos, itens e GMV atribuidos (DIRETO = o item clicado; AMPLO = qualquer item da loja ate 7 dias depois do clique), gasto (`expense`) e ROAS;
+- datas `DD-MM-YYYY`, periodo de no maximo 1 mes, ate 6 meses atras, sem data futura e com inicio diferente do fim;
+- o app (Seller In House System) tem permissao; o guia restringe o uso a operacao da loja, que e o caso;
+- os anuncios GMV Max de LOJA tem consulta propria (`get_gms_campaign_performance`, POST), que so devolve o AGREGADO do periodo e exige loja habilitada: nao ha dia a dia, e a documentacao nao diz se o gasto deles esta no CPC da loja.
+
+**Decisao:**
+
+1. **`daily_shopee_ads_metrics`** (loja, dia), como a Shopee manda, com RLS pela permissao por loja; campo ausente fica NULO.
+2. **E "Ads CPC da loja", NAO o total de Ads** -- o GMV Max de loja pode ficar de fora. Por isso **nada disso entra no resultado da venda** (C-58/C-61): o "resultado apos Ads" da Shopee espera a conferencia com loja real (o numero da tela contra o Seller Center), no Go Live (E8).
+3. **A cobertura da leitura** (`shopee_shops.ads_read_from`/`ads_read_until`, so cresce): dentro dela, dia sem linha e dia sem anuncio (0); fora, desconhecido. O resumo diz se o periodo inteiro esta coberto (`cobertura_completa`).
+4. **A releitura mais nova vale:** o GMV atribuido muda ate 7 dias depois do clique, e o job rele as duas ultimas semanas; a primeira leitura pega 90 dias em pedacos de 30.
+5. **O job `shopee.ads.sync`** (fila `backfill`), enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora, no maximo uma leitura a cada 3 horas; `error_not_found` = loja sem dado de Ads (periodo vazio); `ads.rate_limit.*` = passageiro. O dia e o de Sao Paulo.
+6. **Leitura:** `get_shopee_ads_overview` (TOTAL de loja live com Ads lido, e por loja; nunca lido = NULO; loja lida sem anuncio = 0) com investimento, vendas com Ads (amplo e direto), pedidos, cliques, impressoes, ROAS, ACOS e TACoS sobre a receita bruta das vendas validas (5S) -- tudo sobre as somas; e `get_shopee_ads_daily` (serie, so live).
+7. Metricas `shopee_investimento_ads`, `shopee_receita_ads`, `shopee_roas`, `shopee_acos`, `shopee_tacos` (METRICS 5V), com a ressalva "CPC da loja, nao o total".
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial; o formato das datas; lista ausente = vazio; inicio igual ao fim recusado antes de chamar.
+- **Worker:** o dia de Sao Paulo, os pedacos de ate 30 dias sem dia sozinho, a primeira leitura (90 dias em tres chamadas), a releitura de 14 dias, o intervalo de 3 horas, `error_not_found` como vazio, o limite de requisicoes passageiro, a falha ao gravar; e o job de pedidos encadeando o Ads.
+- **Integracao** num stack isolado: 4 testes -- a gravacao (dia fora da janela ignorado, releitura mais nova vale, mais velha nao, cobertura que so cresce), o resumo com os numeros exatos (R$ 15 investidos, R$ 100 de vendas com Ads, ROAS 6,67, ACOS 15%, TACoS 7,5% sobre R$ 200), a loja lida sem anuncio em 0, a nunca lida nula, a loja de teste fora do TOTAL, a cobertura incompleta, a serie, a permissao por loja e as recusas.
+- **Mutacao:** 8 regras estragadas (cobertura encolhendo, releitura velha sobrescrevendo, dia fora da janela, TOTAL com a loja de teste, lida sem anuncio virando nulo, ROAS invertido, cobertura ignorando o inicio, serie com a loja de teste) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real; com loja real, se o GMV Max entra no CPC da loja.
+
+**Impacto:** `supabase/migrations/20261015040000_ads_shopee.sql`, `packages/shopee/src/{ads,ads.test,index}.ts`, `apps/worker/src/handlers/{shopee-ads-sync,shopee-ads-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.

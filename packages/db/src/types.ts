@@ -659,6 +659,69 @@ export type Database = {
           },
         ]
       }
+      daily_shopee_ads_metrics: {
+        Row: {
+          broad_gmv: number | null
+          broad_items: number | null
+          broad_orders: number | null
+          clicks: number | null
+          direct_gmv: number | null
+          direct_items: number | null
+          direct_orders: number | null
+          expense: number | null
+          impressions: number | null
+          metric_date: string
+          organization_id: string
+          shopee_shop_id: string
+          synced_at: string
+        }
+        Insert: {
+          broad_gmv?: number | null
+          broad_items?: number | null
+          broad_orders?: number | null
+          clicks?: number | null
+          direct_gmv?: number | null
+          direct_items?: number | null
+          direct_orders?: number | null
+          expense?: number | null
+          impressions?: number | null
+          metric_date: string
+          organization_id: string
+          shopee_shop_id: string
+          synced_at?: string
+        }
+        Update: {
+          broad_gmv?: number | null
+          broad_items?: number | null
+          broad_orders?: number | null
+          clicks?: number | null
+          direct_gmv?: number | null
+          direct_items?: number | null
+          direct_orders?: number | null
+          expense?: number | null
+          impressions?: number | null
+          metric_date?: string
+          organization_id?: string
+          shopee_shop_id?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_shopee_ads_metrics_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "daily_shopee_ads_metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_sku_metrics: {
         Row: {
           average_selling_price: number | null
@@ -3762,6 +3825,9 @@ export type Database = {
       }
       shopee_shops: {
         Row: {
+          ads_read_from: string | null
+          ads_read_until: string | null
+          ads_synced_at: string | null
           auth_expires_at: string | null
           authorized_at: string | null
           connected_at: string
@@ -3784,6 +3850,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ads_read_from?: string | null
+          ads_read_until?: string | null
+          ads_synced_at?: string | null
           auth_expires_at?: string | null
           authorized_at?: string | null
           connected_at?: string
@@ -3806,6 +3875,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ads_read_from?: string | null
+          ads_read_until?: string | null
+          ads_synced_at?: string | null
           auth_expires_at?: string | null
           authorized_at?: string | null
           connected_at?: string
@@ -5538,6 +5610,53 @@ export type Database = {
         // mora em apps/web/lib/detector-frete.ts.
         Returns: Json
       }
+      get_shopee_ads_daily: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          acos: number | null
+          cliques: number | null
+          dia: string
+          impressoes: number | null
+          investimento: number | null
+          pedidos_ads: number | null
+          receita_ads: number | null
+          receita_ads_direta: number | null
+          roas: number | null
+        }[]
+      }
+      get_shopee_ads_overview: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-449): TOTAL sem conta; Ads nunca lido com tudo nulo.
+          account_id: string | null
+          account_name: string | null
+          acos: number | null
+          cliques: number | null
+          cobertura_completa: boolean | null
+          dias_lidos: number | null
+          environment: string | null
+          impressoes: number | null
+          investimento: number | null
+          nivel: string
+          pedidos_ads: number | null
+          receita_ads: number | null
+          receita_ads_direta: number | null
+          receita_bruta: number | null
+          roas: number | null
+          tacos: number | null
+          ultima_atualizacao: string | null
+        }[]
+      }
       get_shopee_faturamento: {
         Args: {
           p_account_ids?: string[] | null
@@ -5954,6 +6073,16 @@ export type Database = {
       shopee_advance_returns_synced_until: {
         Args: { p_shopee_shop_id: string; p_until: string }
         Returns: string
+      }
+      shopee_upsert_ads_days: {
+        Args: {
+          p_dias: Json
+          p_read_from: string
+          p_read_until: string
+          p_shopee_shop_id: string
+          p_synced_at?: string
+        }
+        Returns: number
       }
       shopee_upsert_orders: {
         Args: { p_pedidos: Json; p_shopee_shop_id: string; p_synced_at?: string }

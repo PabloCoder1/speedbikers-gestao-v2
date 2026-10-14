@@ -23,6 +23,7 @@ import { createShopeeItemsHydrateHandler } from "./handlers/shopee-items-hydrate
 import { createShopeeItemsSyncHandler } from "./handlers/shopee-items-sync.js";
 import { createShopeeOrderFinancialsSyncHandler } from "./handlers/shopee-order-financials-sync.js";
 import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js";
+import { createShopeeAdsSyncHandler } from "./handlers/shopee-ads-sync.js";
 import { createShopeeReturnsSyncHandler } from "./handlers/shopee-returns-sync.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
@@ -106,6 +107,8 @@ const shopeeHandlers =
         "shopee.items.hydrate": createShopeeItemsHydrateHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
         // D-447: as devoluções, enfileiradas por `shopee.orders.sync`.
         "shopee.returns.sync": createShopeeReturnsSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
+        // D-449: o desempenho diário de Ads CPC, também enfileirado pelo de pedidos.
+        "shopee.ads.sync": createShopeeAdsSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
       }
     : {};
 

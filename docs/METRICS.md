@@ -589,6 +589,22 @@ Lidas por `get_shopee_faturamento` (TOTAL e uma linha por loja). A conta é a da
 - **`shopee_composicao_recebido` (D-443):** para onde vai o dinheiro nos MESMOS cobertos — `receita coberta − (comissão + taxa de serviço + taxa de transação + frete da loja + frete de devolução + cupom da loja + afiliados + taxa por pedido) − outros = recebido coberto`, pelos termos da fórmula oficial do `escrow_amount`. Frete da loja = frete real − pago pelo comprador − subsídio da Shopee − desconto do 3PL (negativo = sobrou); `final_shipping_fee` não entra. **Outros** é o que a lista não explica e pode ser negativo. Componente que nenhum pedido informa = NULO. Informativos fora da cascata: comissão e taxa líquidas (Brasil), o bancado pela Shopee e os ajustes depois do escrow. Conferido na documentação e num pedido de sandbox sem taxas; fechar com loja real é verificação do Go Live.
 - **Por dia e por SKU (D-443):** o dia de São Paulo, só lojas live lidas (os dias somam o TOTAL); por SKU, só pedidos de um SKU — sem rateio do recebido entre itens; os de vários SKUs são contados.
 
+## 5V. Ads da Shopee (D-449) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_shopee_ads_overview` e `get_shopee_ads_daily`, do desempenho diário dos **anúncios CPC da loja** (`v2.ads.get_all_cpc_ads_daily_performance`).
+
+| Id | Definição |
+|---|---|
+| `shopee_investimento_ads` | `SUM(expense)` — o gasto dos anúncios CPC da loja. |
+| `shopee_receita_ads` | `SUM(broad_gmv)` — a atribuição ampla da Shopee (qualquer item da loja até 7 dias depois do clique); a direta (o item clicado) à parte. |
+| `shopee_roas` | `receita_ads / investimento`, sobre as somas. NULO sem investimento. Venda sobre investimento, não lucro. |
+| `shopee_acos` | `investimento / receita_ads`, sobre as somas. NULO sem venda com Ads. |
+| `shopee_tacos` | `investimento / receita bruta` das vendas válidas (5S) das mesmas lojas e dias. NULO sem receita. |
+
+- **CPC da loja, não o total de Ads:** os anúncios GMV Max de loja têm consulta própria, só com o agregado do período, e a documentação não diz se o gasto deles está aqui. **Nada disso entra no resultado da venda** até a conferência com loja real.
+- **Cobertura:** dentro da leitura (`ads_read_from`/`ads_read_until`), dia sem linha é dia sem anúncio (0); o resumo diz se o período está inteiro coberto. Loja nunca lida: NULO.
+- **Não soma com o Ads do ML** (5G): atribuições diferentes.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
