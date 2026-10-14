@@ -152,6 +152,21 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.8 Composição do faturamento da Shopee (C-61, D-443) — em código
+
+Todas com `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]`, sobre os MESMOS pedidos cobertos do C-58 (lidos de `get_shopee_faturamento_pedidos`, a definição única).
+
+| Contrato | Devolve |
+|---|---|
+| `get_shopee_faturamento_composicao` | `nivel` TOTAL (só lojas live lidas) e CONTA (uma por loja, com `environment`; nunca lida = NULO): `pedidos_cobertos`, `receita_coberta`, `comissao`, `taxa_servico`, `taxa_transacao`, `frete_loja`, `frete_devolucao`, `cupom_loja`, `afiliados`, `taxa_por_pedido`, `outros`, `recebido_coberto`. **receita_coberta − componentes − outros = recebido_coberto** em toda linha. Informativos fora da cascata: `comissao_liquida`, `taxa_servico_liquida` (só Brasil), `cupom_shopee`, `moedas_shopee`, `desconto_shopee`, `pedidos_com_ajuste`, `ajustes` (depois do escrow; o recebido não os inclui) |
+| `get_shopee_faturamento_diario` | uma linha por dia de São Paulo com pedido: `pedidos`, `receita_bruta` (NULA no dia só de receita desconhecida), `pedidos_sem_receita`, `pedidos_cobertos`, `receita_coberta`, `recebido_coberto`, `custo_produtos`, `resultado_venda`, `margem_venda`; os dias somam o TOTAL do C-58 |
+| `get_shopee_faturamento_por_sku` (+ `p_ordem` `receita` \| `margem`, `p_limit` ≤100) | uma linha por SKU, **só pedidos de um SKU** (sem rateio do recebido): `unidades`, `pedidos`, `receita_bruta`, `pedidos_cobertos`, `receita_coberta`, `recebido_coberto`, `custo_produtos`, `resultado_venda`, `margem_venda`, `custo_atual`, `total_count`, `pedidos_varios_skus`, `receita_varios_skus` (o que ficou de fora). `margem` = menor margem, só com cobertos |
+| `get_shopee_faturamento_pedidos` | a definição por pedido (cobertura, custo, alíquota, componentes); para conferência e drill-down |
+
+**Componentes, pelos termos da fórmula oficial do `escrow_amount`:** comissão `commission_fee`; serviço `service_fee`; transação `seller_transaction_fee`; frete da loja = `actual_shipping_fee − buyer_paid_shipping_fee − shopee_shipping_rebate − shipping_fee_discount_from_3pl` (negativo = sobrou; **não** é o `final_shipping_fee`, que veio −7,18 num pedido sem custo para a loja); devolução = `reverse_shipping_fee + final_return_to_seller_shipping_fee`; cupom da loja = `voucher_from_seller + seller_coin_cash_back`; afiliados `order_ams_commission_fee`; por pedido `seller_order_processing_fee`. **`outros` pode ser negativo** (crédito, p.ex. repasse de desconto da Shopee). Componente que nenhum pedido coberto informa = NULO. Conferido na documentação e num pedido de sandbox sem taxas: com loja real, se a comissão do Brasil fechar pela líquida, a diferença aparece em `outros`.
+
+**C-58 (D-443):** o TOTAL de `receita_bruta` soma como a linha da loja (loja lida sem pedido = 0).
+
 ### 3.5 Faturamento da Shopee (C-58, D-437) — em código
 
 `get_shopee_faturamento(p_organization_id, p_date_from, p_date_to, p_account_ids uuid[])`: linhas `TOTAL` (lojas live já lidas) e `CONTA` (uma por loja, com `environment`; nunca lida = tudo NULO). Colunas: `pedidos`, `receita_bruta`, `pedidos_sem_receita`, `pedidos_cobertos`, `receita_coberta`, `recebido_coberto`, `custo_produtos`, `resultado_venda`, `margem_venda` (fração), `pedidos_definitivos`/`resultado_definitivo` (COMPLETED), `pedidos_provisorios`/`resultado_provisorio`, `pedidos_sem_financeiro`, `pedidos_sem_sku`, `pedidos_sem_custo`, `pedidos_custo_atual`, `pedidos_sem_aliquota`, `imposto_coberto`, `resultado_apos_imposto`, `margem_apos_imposto`, `ultima_atualizacao`. **Não somar com o resultado do ML** (`get_faturamento`): as duas contas têm componentes diferentes (METRICS 5U × 5F) — a tela mostra por marketplace. Qual resultado exibir (todos, definitivo ou provisório) é decisão de tela/dono; os três vêm prontos.

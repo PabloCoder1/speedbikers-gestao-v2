@@ -1293,6 +1293,10 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 
 **Em produção, logo depois da migration (25/09, como `authenticated`, transação só de leitura):** 30 dias até ontem, 27.870 envios com frete e 689 com o detalhe -- **263–289 ms**, mesmo JSON do protótipo. O protótipo como `postgres` (sem RLS) fez 104 ms: a diferença é a RLS de `orders` e `order_financials`. O custo está em percorrer os envios do período para achar um pedido por envio, não na cobertura do detalhe -- ela crescer não deve mudar a conta. Roda num bloco próprio, com Suspense, sem segurar o detector.
 
+### `get_shopee_faturamento`: o custo por item uma vez só (D-443, 14/10/2026)
+
+**Stack local, organização sintética de 400 pedidos (817 itens), seis execuções:** a versão de D-437 (em produção) levava **6.348–8.646 ms** — a etapa do custo, referenciada uma vez, era embutida num nested loop com os pedidos e refazia o custo de TODOS os itens para cada pedido (234 × 463 = 108 mil buscas de custo e de kit). Com a etapa do custo e a dos componentes `MATERIALIZED` (migration `20261015010000`): **41–50 ms**, linear nos itens, a mesma saída (200 verificações lado a lado). Em produção só há um pedido de sandbox hoje; com loja real, a tela ficaria inviável.
+
 ### `/curva-abc`: a Curva ABC em plano custom (D-441, 14/10/2026)
 
 **Dev, como `authenticated`** (125 mil linhas de `daily_sku_metrics` em 365 dias; 90 dias com o anterior, a primeira página de 50; as funções novas em `pg_temp`, só leitura, oito execuções na mesma sessão): `get_sku_abc_analysis` em `language sql` com `SET` (o plano genérico de D-305) **~4.270 ms** (11.020 ms a frio) contra **~138 ms** (151 ms a frio) em `plpgsql` + `force_custom_plan`, a mesma saída; `get_sku_abc_breakdown` por conta, ~5.100 contra ~170 ms. Saída idêntica em 11 casos (1.719 SKUs, o painel em 5 dimensões, 3.352 linhas por conta). Migration `20261015000000`.
