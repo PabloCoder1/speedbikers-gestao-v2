@@ -57,7 +57,7 @@
 - T3a — **rascunho #154** (D-438, consome o C-52 e os avisos de D-435): o aviso do vigia com nome e destino em notificações, a seção "Lojas Shopee" em `/sincronizacao` com os limiares do vigia (3 h e 12 h) e a autorização perto de vencer, e a contagem do rodapé por `marketplace_accounts`.
 - Validação de cada etapa: `check`, `build`, `docs:check`, unitários e a suíte e2e inteira num stack isolado com o banco recriado do zero (210/210 na T3a; os 3 de convite só com o servidor na porta 3000).
 
-- T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Em código e validada localmente** na branch `feat/multicanal-t4-vendas-todos` (sobre a T3a); publica depois das migrations `20261014210000`/`220000` em produção.
+- T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Em código e validada localmente** no **rascunho #156** (sobre a T3a). As migrations `20261014210000`/`220000` estão em produção (run `38597993424`, conferido em 14/10): falta só a cadeia #149 → #153 → #154 entrar antes.
 
 **Em andamento**
 - Os PRs em cadeia: #149 → #153 → #154, e a T4 sobre eles. Cada um entra depois do anterior; os rascunhos viram prontos na vez deles.
