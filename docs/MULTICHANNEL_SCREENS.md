@@ -50,7 +50,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
 | Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | contrato C-07 + E6 |
-| SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML) | T6a ✔ (D-444: entre marketplaces por conta e loja; selo "Teste", C-06) |
+| SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
 | Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | na Shopee faltam vendas, exportação e filtros salvos | T1 ✔ (D-431: seletor levando a busca); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |

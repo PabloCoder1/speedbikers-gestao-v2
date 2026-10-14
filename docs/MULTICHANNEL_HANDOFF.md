@@ -60,10 +60,10 @@
 
 - T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Na `main`, #156** (`bcf33111`, deploy de produção da Vercel `success`).
 - T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Na `main`, #158** (`8496b016`); a suíte e2e inteira passou localmente (219/219).
-- T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Em código e validada localmente**; só entra na `main` depois da migration `20261014230000` em produção.
+- T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Em código e validada localmente** (suíte e2e 222/222) no **rascunho #159**; só entra na `main` depois da migration `20261014230000` em produção.
 
 **Em andamento**
-- T6a pronta, presa à migration `20261014230000` em produção (ato do dono).
+- T6a no **rascunho #159**, pronta e presa à migration `20261014230000` em produção (ato do dono).
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T3b — cartão da Shopee em `/integracoes`, contagem em `/configuracoes` e o seletor de marketplace lendo `marketplace_accounts`.
