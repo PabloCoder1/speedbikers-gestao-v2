@@ -237,8 +237,16 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     );
   }
 
-  // Uma chamada: todas as contagens no banco (D-185), sob a RLS de quem pergunta.
-  const overview = await supabase.rpc("get_settings_overview", { p_organization_id: organizationId }).maybeSingle();
+  // Todas as contagens no banco (D-185), sob a RLS de quem pergunta, numa ida:
+  // a RPC e, à parte, as lojas Shopee (D-446), que ela não conta — o total, as
+  // conectadas e as de teste, cada uma um `count` com `head`.
+  const [overview, lojas, lojasConectadas, lojasDeTeste] = await Promise.all([
+    supabase.rpc("get_settings_overview", { p_organization_id: organizationId }).maybeSingle(),
+    supabase.from("shopee_shops").select("id", { count: "exact", head: true }),
+    supabase.from("shopee_shops").select("id", { count: "exact", head: true }).eq("status", "CONNECTED"),
+    supabase.from("shopee_shops").select("id", { count: "exact", head: true }).neq("environment", "live"),
+  ]);
+  const contagem = (r: { count: number | null; error: unknown }): number | null => (r.error === null ? r.count : null);
 
   /*
     Três formas de "não li", tratadas do mesmo jeito pela faixa e pelo
@@ -247,7 +255,15 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
     nome NULL e todas as contagens em zero (`describeSettings` a trata como
     leitura ausente).
   */
-  const lida = overview.error === null ? overview.data : null;
+  const lida =
+    overview.error === null && overview.data !== null
+      ? {
+          ...overview.data,
+          shopee_shops_total: contagem(lojas),
+          shopee_shops_connected: contagem(lojasConectadas),
+          shopee_shops_test: contagem(lojasDeTeste),
+        }
+      : null;
   const semLeitura = (lida?.organization_name ?? null) === null;
   const secoes = describeSettings(lida, membership.role);
 

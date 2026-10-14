@@ -1,5 +1,7 @@
+import type { Tom } from "../components/tone";
 import { batchStatusLabel, mlAccountStatusLabel, statusTone } from "./labels";
 import { sanitizeErrorText } from "./sanitize";
+import { avisoDaAutorizacao, lojaDeTeste, vereditoDaLoja } from "./saude-loja-shopee";
 import { classifyJobFreshness, classifyResourceFreshness, failureRateLabel } from "./sync-health";
 import type { SyncVerdict } from "./sync-health";
 
@@ -56,7 +58,7 @@ export interface Dimension {
   observedAt: string | null;
 }
 
-export type IntegrationId = "mercado_livre" | "webhook" | "upseller" | "ia" | "supabase" | "google_cloud";
+export type IntegrationId = "mercado_livre" | "webhook" | "shopee" | "upseller" | "ia" | "supabase" | "google_cloud";
 
 export interface IntegrationLink {
   label: string;
@@ -93,6 +95,21 @@ export interface MlAccountInput {
   status: string;
   connected_at: string | null;
   last_error: string | null;
+}
+
+/**
+ * Uma loja Shopee como `marketplace_accounts` (C-52, D-435) a devolve — a
+ * mesma linha que `/sincronizacao` lê para o veredito da loja (D-438).
+ */
+export interface ShopeeShopInput {
+  name: string;
+  environment: string | null;
+  connection_status: string | null;
+  last_error: string | null;
+  connected_at: string | null;
+  /** A última leitura de pedidos que TERMINOU (`orders_last_success_at`). */
+  orders_synced_at: string | null;
+  authorization_expires_at: string | null;
 }
 
 export interface SyncHealthInput {
@@ -150,6 +167,8 @@ export interface IntegrationsInput {
   /** O que `organization_members.role` diz de quem está olhando — decide o que "zero linhas" significa. */
   viewerIsAdmin: boolean;
   mlAccounts: MlAccountInput[] | null;
+  /** As lojas Shopee que a pessoa alcança (D-433); `null` = a leitura falhou. */
+  shopeeShops: ShopeeShopInput[] | null;
   syncHealth: SyncHealthInput[] | null;
   /** `null` = `get_system_health` não devolveu linha (não é ADMIN) ou falhou. */
   jobs: JobInput[] | null;
@@ -482,6 +501,113 @@ function webhook(input: IntegrationsInput): IntegrationCard {
   };
 }
 
+/**
+ * OS QUATRO JOBS DA SHOPEE (D-427/D-429), horários (`JOB_CADENCE_MIN` desde
+ * D-431): a mesma régua de `/saude` para dizer se a leitura está andando.
+ */
+const SHOPEE_JOBS: readonly { jobType: string; label: string }[] = [
+  { jobType: "shopee.orders.sync", label: "pedidos" },
+  { jobType: "shopee.order-financials.sync", label: "financeiro dos pedidos" },
+  { jobType: "shopee.items.sync", label: "catálogo" },
+  { jobType: "shopee.items.hydrate", label: "detalhe do catálogo" },
+];
+
+/** O tom do veredito da loja (`lib/saude-loja-shopee.ts`) no vocabulário desta tela. */
+const ESTADO_DO_TOM: Record<Tom, IntegrationState> = {
+  ok: "ok",
+  atencao: "atencao",
+  perigo: "erro",
+  neutro: "sem_atividade",
+  info: "observado",
+};
+
+/**
+ * A CONEXÃO das lojas Shopee (D-446). O veredito é o de `/sincronizacao`
+ * (D-438) — os limiares do vigia, 3 h e 12 h —, e não um segundo: a loja
+ * "atrasada" aqui é a mesma que avisou no sino. `ok` exige, como no Mercado
+ * Livre, uma leitura de pedidos que TERMINOU há pouco, não só `CONNECTED`. A
+ * autorização perto de vencer rebaixa a loja: a Shopee pede de novo no prazo
+ * escolhido nela, e nenhum aviso no sino lembra disso.
+ */
+function shopeeConnection(input: IntegrationsInput): Dimension {
+  if (input.shopeeShops === null) {
+    return NAO_VERIFICAVEL("não foi possível ler as lojas");
+  }
+
+  if (input.shopeeShops.length === 0) {
+    // Permissão por loja (D-433): para quem não é ADMIN, zero linhas pode ser
+    // só "nenhuma loja concedida a você".
+    return input.viewerIsAdmin
+      ? { state: "nao_configurado", detail: "nenhuma loja autorizada", observedAt: null }
+      : NAO_VERIFICAVEL("lojas visíveis só para ADMIN ou para quem tem a loja concedida");
+  }
+
+  const lojas = input.shopeeShops.map((loja) => {
+    const veredito = vereditoDaLoja(loja, input.now);
+    const autorizacao = avisoDaAutorizacao(loja, input.now);
+    const motivo = loja.connection_status === "CONNECTED" ? null : sanitizeErrorText(loja.last_error, 100);
+    const partes = [veredito.rotulo.toLowerCase()];
+
+    if (motivo !== null) partes.push(motivo);
+    if (autorizacao !== null) partes.push(autorizacao.rotulo.toLowerCase());
+
+    return {
+      state: worst([
+        ESTADO_DO_TOM[veredito.tom],
+        ...(autorizacao === null ? [] : [ESTADO_DO_TOM[autorizacao.tom]]),
+      ]),
+      texto: `${loja.name}${lojaDeTeste(loja) ? " (teste)" : ""}: ${partes.join("; ")}`,
+    };
+  });
+
+  return {
+    state: worst(lojas.map((loja) => loja.state)),
+    detail: `${String(lojas.length)} loja(s) — ${lojas.map((loja) => loja.texto).join(" · ")}`,
+    observedAt: maxIso(input.shopeeShops.map((loja) => loja.orders_synced_at)),
+  };
+}
+
+function shopee(input: IntegrationsInput): IntegrationCard {
+  let sync: Dimension;
+
+  if (input.jobs === null) {
+    sync = NAO_VERIFICAVEL("execuções restritas a ADMIN (get_system_health não devolveu linhas)");
+  } else {
+    const fluxos = SHOPEE_JOBS.map((fluxo) => {
+      const job = findJob(input.jobs, fluxo.jobType);
+
+      return { ...fluxo, job, ...jobState(job, fluxo.jobType, input.now) };
+    });
+
+    sync = fluxos.some((f) => f.job !== null && f.job.job_last_run_at !== null)
+      ? {
+          state: worst(fluxos.map((f) => f.state)),
+          detail: fluxos.map((f) => `${f.label}: ${f.detail}`).join("; "),
+          observedAt: maxIso(fluxos.map((f) => f.job?.job_last_run_at ?? null)),
+        }
+      : { state: "sem_atividade", detail: "nenhuma leitura da Shopee registrada", observedAt: null };
+  }
+
+  const deTeste = (input.shopeeShops ?? []).filter((loja) => lojaDeTeste(loja)).length;
+
+  return {
+    id: "shopee",
+    label: "Shopee",
+    scope: "Pedidos, financeiro dos pedidos e catálogo, por loja autorizada.",
+    links: [
+      { label: "Contas e lojas", href: "/contas" },
+      { label: "Sincronização", href: "/sincronizacao" },
+    ],
+    connection: shopeeConnection(input),
+    sync,
+    configuration: NAO_VERIFICAVEL(
+      `o partner id e a chave do app vivem no Secret Manager e o app no painel da Shopee — sem coletor autenticado daqui${
+        deTeste > 0 ? `; ${String(deTeste)} loja(s) em ambiente de teste, fora das somas` : ""
+      }`,
+    ),
+  };
+}
+
 function upseller(input: IntegrationsInput): IntegrationCard {
   let sync: Dimension;
 
@@ -658,5 +784,5 @@ function googleCloud(input: IntegrationsInput): IntegrationCard {
 }
 
 export function describeIntegrations(input: IntegrationsInput): IntegrationCard[] {
-  return [mercadoLivre(input), webhook(input), upseller(input), ia(input), supabase(input), googleCloud(input)];
+  return [mercadoLivre(input), webhook(input), shopee(input), upseller(input), ia(input), supabase(input), googleCloud(input)];
 }
