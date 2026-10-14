@@ -15015,6 +15015,22 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/lib/{event-format,saude-loja-shopee}.ts` e testes, `apps/web/app/sincronizacao/page.tsx`, `apps/web/components/shell.tsx`, `apps/web/e2e/sincronizacao.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api; depende de D-435 em producao (ja esta).
 
+## D-439 - Vendas por SKU entre marketplaces (E6a): o grao de SKU da Shopee numa view, o ranking com o total no SQL e as vendas de um SKU por conta e loja
+
+**Contexto:** a E6 da frente multicanal poe a Shopee no ranking, na curva ABC, na aba Vendas do SKU e em `/produtos` (C-04, C-07). O grao de SKU do ML existe (`daily_sku_metrics`: conta, SKU com o balde nulo, dia); o da Shopee nao -- o pedido Shopee tem varios itens e a receita bruta de 5S e do PEDIDO. A curva ABC, o ranking com resultado/margem e o `/produtos` sao RPCs grandes do ML, com regras proprias e testes de numero exato; mexer nelas pede equivalencia caso a caso. A E6 foi dividida: esta (E6a) e a base de vendas por SKU; a curva ABC (E6b) e o `/produtos` e o ranking com resultado (E6c) vem depois.
+
+**1. `shopee_sales_items` (view, security_invoker).** Uma linha por item de pedido Shopee, com a situacao e o dia do pedido herdados de `shopee_sales_orders` (D-430, sem repetir a regra) e a RECEITA DO ITEM = preco com o desconto da loja x quantidade; item de preco 0 (bundle deal) tem receita DESCONHECIDA (NULO), contada a parte. O SKU e o gravado no item (D-430). E o grao de SKU da Shopee para tudo o que vier (ABC, ranking, produtos).
+
+**2. `get_marketplace_sku_sales` (ranking por vendas).** Uma linha por SKU (e o balde sem SKU, `sku_id` NULO, numa linha so) com colunas por marketplace -- unidades, receita e compras do ML (`daily_sku_metrics`) e da Shopee (`shopee_sales_items`, com os itens de receita desconhecida) -- e o total no SQL; ordem por receita ou unidades; paginada (ate 500) com `total_count`; filtros de marketplace (nulo = so ML), conta/loja e SKUs. O FULL JOIN casa o balde nulo dos dois lados por um sentinela (o Postgres recusa `is not distinct from` em full join).
+
+**3. `get_sku_sales_by_marketplace_account` (a aba Vendas do SKU).** Uma linha por conta ML e por loja Shopee (sandbox com a marca) e a do TOTAL so com o que e operacao; preco medio so sem item de receita desconhecida (dividir a receita conhecida por todas as unidades daria um preco falso).
+
+**4. METRICAS.** `shopee_receita_item` (5S) e o grao de SKU de `multicanal_compras`, `multicanal_unidades` e `multicanal_receita_bruta` (5T) em `metric_definitions`.
+
+**Verificacao:** integracao em organizacao propria (stack isolado, `db reset` das 254 migrations) -- o ranking (X: ML 3/R$ 300 + Shopee 3/R$ 180 com 1 item de preco 0 = 6/R$ 480/4 compras; Y; o balde sem SKU dos dois lados numa linha; sandbox e cancelado fora; ordem por unidades; padrao so ML); EQUIVALENCIA -- a soma dos SKUs da loja fecha com `get_shopee_sales_by_shop` (unidades e receita) e a linha ML do SKU e a de `get_sku_sales_breakdown`; as vendas de um SKU por conta e loja com o sandbox marcado e o preco medio nulo onde ha desconhecido; permissao por conta e por loja, outra organizacao, anon na view; ordem e periodo invalidos. Mutacao: deixar o sandbox entrar derruba o ranking e a equivalencia.
+
+**Impacto:** `supabase/migrations/20261014230000_vendas_por_sku_multicanal.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: so a migration; as telas sao a T6 do Agente 2.
+
 ## D-440 - Telas multicanais, etapa T4: /vendas tem os recortes Todos, Mercado Livre e Shopee na mesma tela, lidos do consolidado do SQL, e o ML continua exatamente o de sempre
 
 **Contexto:** o pedido central da frente multicanal e administrar a operacao numa tela so, consolidada, por marketplace e por conta. D-436 (E4, Agente 1, C-53) entregou `get_marketplace_sales_summary` e `get_marketplace_sales_daily`: o TOTAL ja somado no SQL so com o que tem a mesma semantica (`docs/METRICS.md` 5T), uma linha por marketplace e uma por conta. Ate aqui, `/vendas` era so do ML e a Shopee tinha tela propria (`/vendas/shopee`, D-430).

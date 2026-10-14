@@ -179,6 +179,10 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### Vendas por SKU entre marketplaces (D-439)
+
+Migration `20261014230000`. A view `shopee_sales_items` (`security_invoker`) é o grão de SKU da Shopee: uma linha por item com a situação e o dia do pedido (de `shopee_sales_orders`) e `receita_item` (preço com desconto × quantidade; preço 0 = NULO). `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total, balde sem SKU, paginado) e `get_sku_sales_by_marketplace_account` (um SKU por conta ML e loja Shopee, com o TOTAL) leem `daily_sku_metrics` e a view. Métrica `shopee_receita_item`; `multicanal_*` ganham o grão de SKU.
+
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
 Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.
