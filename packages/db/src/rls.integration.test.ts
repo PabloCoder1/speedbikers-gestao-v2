@@ -3376,6 +3376,234 @@ describe("vendas Shopee (D-430)", () => {
   });
 });
 
+/*
+  D-432: a ingestão Shopee aguenta volume. A gravação do lote numa transação
+  que não regride, o marco que só anda para a frente, o pedido recusado que
+  não trava a fila do financeiro, a organização amarrada à loja e o ambiente
+  no painel do SKU (C-55).
+*/
+describe("ingestão Shopee robusta (D-432)", () => {
+  const LOJA = "dddd4320-0000-4000-8000-00000000d432";
+  let skuId = "";
+
+  const pedidoJson = (sn: string, atualizado: string, status: string, itens: Record<string, unknown>[]) => ({
+    order_sn: sn,
+    order_status: status,
+    currency: "BRL",
+    cod: false,
+    total_amount: 120.5,
+    shopee_created_at: "2026-10-10T15:00:00Z",
+    shopee_updated_at: atualizado,
+    paid_at: "2026-10-10T15:01:00Z",
+    shipping_carrier: null,
+    payment_method: null,
+    cancel_by: null,
+    cancel_reason: null,
+    itens,
+  });
+
+  const itemJson = (position: number, itemId: number, itemSku: string | null, quantity: number) => ({
+    position,
+    item_id: itemId,
+    item_name: "Painel",
+    item_sku: itemSku,
+    model_id: null,
+    model_name: null,
+    model_sku: null,
+    quantity,
+    original_price: 130,
+    discounted_price: 120.5,
+    promotion_type: null,
+  });
+
+  const gravar = async (pedidos: unknown[]): Promise<number> => {
+    const r = await client.query<{ n: number }>("select public.shopee_upsert_orders($1, $2::jsonb, now()) as n", [
+      LOJA,
+      JSON.stringify(pedidos),
+    ]);
+
+    return r.rows[0]?.n ?? -1;
+  };
+
+  const estado = (sn: string) =>
+    client.query<{ order_status: string; organization_id: string; itens: number; vias: (string | null)[] | null }>(
+      `select o.order_status, o.organization_id,
+              (select count(*)::int from public.shopee_order_items i
+                where i.shopee_shop_id = o.shopee_shop_id and i.order_sn = o.order_sn) as itens,
+              (select array_agg(i.vinculo_via order by i.position) from public.shopee_order_items i
+                where i.shopee_shop_id = o.shopee_shop_id and i.order_sn = o.order_sn) as vias
+         from public.shopee_orders o where o.shopee_shop_id = $1 and o.order_sn = $2`,
+      [LOJA, sn],
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status)
+       values ($1, $2, 'sandbox', 990432001, 'Loja Robusta', 'CONNECTED')`,
+      [LOJA, ORG_SB],
+    );
+    const r = await client.query<{ id: string }>(
+      "insert into public.skus (organization_id, sku, kind) values ($1, 'D432-PAINEL', 'PRODUTO') returning id",
+      [ORG_SB],
+    );
+    skuId = r.rows[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+    await client.query("delete from public.skus where id = $1", [skuId]);
+  });
+
+  it("grava pedido, itens e SKU numa chamada, com a organização da LOJA", async () => {
+    const n = await gravar([
+      pedidoJson("R1", "2026-10-12T10:00:00Z", "SHIPPED", [itemJson(0, 1, "d432-painel", 1), itemJson(1, 2, null, 2)]),
+    ]);
+    const r = await estado("R1");
+
+    expect(n).toBe(1);
+    // O SKU que veio no próprio pedido resolve (D-430), na mesma transação.
+    expect(r.rows).toEqual([
+      { order_status: "SHIPPED", organization_id: ORG_SB, itens: 2, vias: ["SKU_DO_PEDIDO", null] },
+    ]);
+  });
+
+  it("NÃO REGRIDE: leitura mais velha que a guardada é ignorada, com os itens; a igual regrava", async () => {
+    const velha = await gravar([pedidoJson("R1", "2026-10-11T10:00:00Z", "READY_TO_SHIP", [itemJson(0, 1, null, 5)])]);
+
+    expect(velha).toBe(0);
+    expect((await estado("R1")).rows[0]).toMatchObject({ order_status: "SHIPPED", itens: 2 });
+
+    const igual = await gravar([pedidoJson("R1", "2026-10-12T10:00:00Z", "SHIPPED", [itemJson(0, 1, "D432-PAINEL", 1)])]);
+
+    expect(igual).toBe(1);
+    expect((await estado("R1")).rows[0]).toMatchObject({ order_status: "SHIPPED", itens: 1 });
+
+    const nova = await gravar([pedidoJson("R1", "2026-10-13T10:00:00Z", "COMPLETED", [itemJson(0, 1, "D432-PAINEL", 1)])]);
+
+    expect(nova).toBe(1);
+    expect((await estado("R1")).rows[0]).toMatchObject({ order_status: "COMPLETED", itens: 1 });
+  });
+
+  it("o mesmo pedido duas vezes no lote: vale a leitura mais nova, sem erro de conflito", async () => {
+    const n = await gravar([
+      pedidoJson("R2", "2026-10-12T10:00:00Z", "READY_TO_SHIP", [itemJson(0, 1, null, 1)]),
+      pedidoJson("R2", "2026-10-12T11:00:00Z", "SHIPPED", [itemJson(0, 1, null, 3), itemJson(1, 2, null, 1)]),
+    ]);
+
+    expect(n).toBe(1);
+    expect((await estado("R2")).rows[0]).toMatchObject({ order_status: "SHIPPED", itens: 2 });
+  });
+
+  it("lote vazio grava zero; loja inexistente e lote que não é array são recusados", async () => {
+    expect(await gravar([])).toBe(0);
+    await expect(
+      client.query("select public.shopee_upsert_orders('00000000-0000-4000-8000-000000000000'::uuid, '[]'::jsonb)"),
+    ).rejects.toThrow(/nao encontrada/);
+    await expect(client.query("select public.shopee_upsert_orders($1, '{}'::jsonb)", [LOJA])).rejects.toThrow(/array/);
+  });
+
+  it("o marco só anda para a frente", async () => {
+    const marco = async (ate: string): Promise<string | undefined> =>
+      (
+        await client.query<{ m: Date }>("select public.shopee_advance_orders_synced_until($1, $2::timestamptz) as m", [
+          LOJA,
+          ate,
+        ])
+      ).rows[0]?.m.toISOString();
+
+    expect(await marco("2026-10-12T00:00:00Z")).toBe("2026-10-12T00:00:00.000Z");
+    expect(await marco("2026-10-13T00:00:00Z")).toBe("2026-10-13T00:00:00.000Z");
+    // Uma execução que termina depois, com janela mais curta, não puxa para trás.
+    expect(await marco("2026-10-12T12:00:00Z")).toBe("2026-10-13T00:00:00.000Z");
+  });
+
+  it("o navegador não grava lote nem mexe no marco", async () => {
+    await expect(asUser(ADMIN_SB, `select public.shopee_upsert_orders('${LOJA}', '[]'::jsonb)`)).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(
+      asUser(ADMIN_SB, `select public.shopee_advance_orders_synced_until('${LOJA}', now())`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("pedido recusado no financeiro sai da fila por 1 dia, volta se mudar, e vem depois dos outros", async () => {
+    // Pagos e nunca lidos: OK1 normal; RUIM recusado há 1 h; VELHO recusado há 2 dias; MUDOU recusado e alterado depois.
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+          financials_error, financials_error_at)
+       values
+         ($1, $2, 'F-OK1', 'SHIPPED', now() - interval '5 days', now() - interval '4 days', now() - interval '5 days', null, null),
+         ($1, $2, 'F-RUIM', 'SHIPPED', now() - interval '5 days', now() - interval '6 days', now() - interval '5 days',
+          'error_param', now() - interval '1 hour'),
+         ($1, $2, 'F-VELHO', 'SHIPPED', now() - interval '5 days', now() - interval '6 days', now() - interval '5 days',
+          'error_param', now() - interval '2 days'),
+         ($1, $2, 'F-MUDOU', 'SHIPPED', now() - interval '5 days', now() - interval '1 minute', now() - interval '5 days',
+          'error_param', now() - interval '1 hour')`,
+      [LOJA, ORG_SB],
+    );
+
+    const pendentes = await client.query<{ order_sn: string }>(
+      "select order_sn from public.shopee_orders_financials_pending($1, 100) where order_sn like 'F-%'",
+      [LOJA],
+    );
+
+    // F-RUIM fica de fora (recusado há 1 h, sem mudança); os recusados vêm por último.
+    expect(pendentes.rows.map((r) => r.order_sn)).toEqual(["F-OK1", "F-VELHO", "F-MUDOU"]);
+  });
+
+  it("o erro do financeiro vem com a hora, ou nenhum dos dois", async () => {
+    await expect(
+      client.query("update public.shopee_orders set financials_error = 'x' where shopee_shop_id = $1 and order_sn = 'F-OK1'", [
+        LOJA,
+      ]),
+    ).rejects.toThrow(/shopee_orders_financials_error_coerente/);
+  });
+
+  it("a organização do pedido, do item e do catálogo é a da loja", async () => {
+    const outraOrg = ORG_OUTRA;
+
+    await expect(
+      client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at)
+         values ($1, $2, 'X-ORG', 'UNPAID', now(), now())`,
+        [LOJA, outraOrg],
+      ),
+    ).rejects.toThrow(/shopee_orders_loja_da_organizacao/);
+    await expect(
+      client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity)
+         values ($1, 'R1', 9, $2, 1, 1)`,
+        [LOJA, outraOrg],
+      ),
+    ).rejects.toThrow(/shopee_order_items_loja_da_organizacao/);
+    await expect(
+      client.query(
+        `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at)
+         values ($1, $2, 77, 'NORMAL', now())`,
+        [LOJA, outraOrg],
+      ),
+    ).rejects.toThrow(/shopee_items_loja_da_organizacao/);
+  });
+
+  it("C-55: o painel Shopee do SKU traz o ambiente da loja", async () => {
+    await client.query(
+      `insert into public.shopee_items
+         (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model,
+          details_synced_at, details_update_time)
+       values ($1, $2, 1, 'NORMAL', now(), 'Painel', 'D432-PAINEL', false, now(), now())`,
+      [LOJA, ORG_SB],
+    );
+
+    const linhas = await asUser<{ item_id: string; environment: string }>(
+      ADMIN_SB,
+      `select item_id, environment from public.get_sku_shopee_listings('${ORG_SB}', '${skuId}')`,
+    );
+
+    expect(linhas).toEqual([{ item_id: "1", environment: "sandbox" }]);
+  });
+});
+
 describe("vínculo SKU ↔ anúncio", () => {
   const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
   let skuId = "";

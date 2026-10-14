@@ -548,6 +548,20 @@ describe("shopee.items.hydrate (D-428)", () => {
     expect(banco.ops).toContainEqual(expect.objectContaining({ op: "update", table: "shopee_items", filtros: { shopee_shop_id: LOJA_ID, item_id: 1 } }));
   });
 
+  it("D-432: erro da LOJA no lote (credencial) falha sem reler item a item e sem marcar item nenhum", async () => {
+    const banco = fakeDb({ pendentes: [pendente(1), pendente(9)] });
+    const shopee = fakeShopee({
+      "/api/v2/product/get_item_base_info": () => ({ error: "error_auth", message: "Invalid access_token." }),
+    });
+
+    const { outcome } = await rodar(createShopeeItemsHydrateHandler, banco, shopee);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.chamadas.map((u) => u.searchParams.get("item_id_list"))).toEqual(["1,9"]);
+    expect(escritas(banco.ops).filter((o) => o.table === "shopee_items")).toEqual([]);
+    expect(soltouATrava(banco.ops)).toBe(true);
+  });
+
   it("erro passageiro no lote: falha sem gravar item; lote cheio enfileira a continuação depois de soltar a trava", async () => {
     const ocupado = fakeDb({ pendentes: [pendente(1)] });
     const a = await rodar(

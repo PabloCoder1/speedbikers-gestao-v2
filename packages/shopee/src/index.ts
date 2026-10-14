@@ -1,4 +1,4 @@
-export { SHOPEE_HOSTS, ShopeeApiError, createShopeeClient, sign, signBaseString } from "./client.js";
+export { SHOPEE_HOSTS, ShopeeApiError, createShopeeClient, isShopLevelError, sign, signBaseString } from "./client.js";
 export type {
   ShopeeClient,
   ShopeeClientConfig,

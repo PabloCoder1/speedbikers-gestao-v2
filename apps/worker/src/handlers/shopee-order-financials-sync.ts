@@ -1,5 +1,12 @@
 import type { TablesUpdate } from "@sb/db";
-import { getEscrowDetail, isEscrowUnavailable, type ShopeeEscrowDetail } from "@sb/shopee";
+import {
+  ShopeeApiError,
+  getEscrowDetail,
+  isEscrowUnavailable,
+  isShopLevelError,
+  type ShopeeEscrowDetail,
+} from "@sb/shopee";
+import { ZodError } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
@@ -18,6 +25,12 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  * - Pedido que a Shopee não acha fica marcado como lido, sem financeiro, e
  *   guarda a última leitura boa se havia uma — a próxima mudança dele o traz
  *   de volta.
+ * - D-432: o erro DEFINITIVO de um pedido (parâmetro recusado, resposta fora
+ *   do contrato) fica nele (`financials_error`) e a fila segue; ele volta em
+ *   1 dia ou quando mudar. Antes, um pedido ruim voltava primeiro em toda
+ *   execução e travava o financeiro da loja inteira. Só interrompem a tarefa
+ *   o erro passageiro e o erro da LOJA (credencial, assinatura, loja
+ *   inválida), que repetiria igual no próximo pedido.
  * - Lote cheio enfileira a continuação; o enfileiramento inicial vem de
  *   `shopee.orders.sync` quando os pedidos alcançam agora.
  */
@@ -54,7 +67,24 @@ function colunasDoFinanceiro(detalhe: ShopeeEscrowDetail, now: Date): TablesUpda
     return_order_sns: detalhe.returnOrderSns,
     order_income: asJson(renda),
     financials_synced_at: now.toISOString(),
+    financials_error: null,
+    financials_error_at: null,
   };
+}
+
+/** Erro que vale para a loja inteira, ou que pede "tente depois": a tarefa para. */
+function interrompe(error: unknown): boolean {
+  if (error instanceof ZodError) return false;
+  if (isShopLevelError(error)) return true;
+
+  return !(error instanceof ShopeeApiError) || error.errorClass === "retryable";
+}
+
+/** O motivo gravado no pedido: o código da Shopee, nunca a mensagem com dados. */
+function motivo(error: unknown): string {
+  if (error instanceof ShopeeApiError) return error.code ?? `HTTP ${String(error.status)}`;
+
+  return error instanceof ZodError ? "fora_do_contrato" : "erro";
 }
 
 export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancialsSyncDeps): JobHandler {
@@ -87,6 +117,7 @@ export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancia
     const shop = { accessToken: token.accessToken, shopId: loja.shop_id };
     let lidos = 0;
     let semFinanceiro = 0;
+    const recusados: { order_sn: string; motivo: string }[] = [];
 
     for (const { order_sn: orderSn } of pendentes.data) {
       let linha: TablesUpdate<"shopee_orders">;
@@ -95,13 +126,19 @@ export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancia
         linha = colunasDoFinanceiro(await getEscrowDetail(deps.client, shop, orderSn), now);
         lidos += 1;
       } catch (error) {
-        if (!isEscrowUnavailable(error)) {
+        if (isEscrowUnavailable(error)) {
+          linha = { financials_synced_at: now.toISOString(), financials_error: null, financials_error_at: null };
+          semFinanceiro += 1;
+        } else if (interrompe(error)) {
           // O que já foi gravado fica; a nova tentativa segue dos que faltam.
           return falhaDaShopee(error, "erro desconhecido ao ler o financeiro da Shopee");
-        }
+        } else {
+          // Recusa deste pedido: fica nele, e o financeiro guardado não muda.
+          const porque = motivo(error);
 
-        linha = { financials_synced_at: now.toISOString() };
-        semFinanceiro += 1;
+          linha = { financials_error: porque.slice(0, 200), financials_error_at: now.toISOString() };
+          recusados.push({ order_sn: orderSn, motivo: porque });
+        }
       }
 
       const gravada = await deps.db
@@ -133,9 +170,17 @@ export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancia
       pedidos_pendentes: pendentes.data.length,
       financeiros_lidos: lidos,
       sem_financeiro: semFinanceiro,
+      recusados: recusados.length,
       tem_mais: temMais,
     });
 
-    return { status: "done", processed: lidos + semFinanceiro };
+    if (recusados.length > 0) {
+      context.logger.warn("shopee_order_financials_refused", {
+        shopee_shop_id: loja.id,
+        pedidos: recusados.slice(0, 20),
+      });
+    }
+
+    return { status: "done", processed: lidos + semFinanceiro + recusados.length };
   };
 }

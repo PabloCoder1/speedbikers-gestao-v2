@@ -12,15 +12,15 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-10-07 |
+| **Atualizado em** | 2026-10-14 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | `main` em `f984b647` (PR #103) em 25/09 — envelhece a cada merge: confira com `git log -1 origin/main`. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | Worker `worker-00043-694` e api `api-00027-p7c` em `e037573f` (D-425 a D-428, 13/10), por deploy vigiado, Shopee sandbox ligada (`SHOPEE_PARTNER_ID=1248019`). Volta: `worker-00042-k5n`/`api-00026-lq8`. O worker fica fixo na revisão: depois do deploy, `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
-| **Migrations** | Produção até `20261014120000` (D-429, 14/10). **Pendente:** `20261014150000` (D-430). Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261014150000`. |
-| **Frente atual** | **Trilha Shopee** (D-425, `docs/SHOPEE.md`): fatias 0–4 no ar no sandbox (conexão, token, pedidos, financeiro, catálogo, vínculo manual); 5 (estoque) adiada para o Go Live (dono, 14/10); 6a (venda Shopee, D-430) em código; depois, 6b. A 5J segue com o detector de frete pelas medidas (D-405). |
+| **Produção** | Worker `worker-00044-p8d` em `562b1e60` (D-430) e api `api-00027-p7c` em `e037573f` (14/10), Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta do worker: `worker-00043-694`. Worker fixo na revisão: `update-traffic --to-revisions` (D-342). Webhooks só em produção; Dev pausado (D-350). |
+| **Migrations** | Produção até `20261014150000` (D-430, 14/10). **Próxima:** `20261014180000` (D-432), antes do worker. Dono dispara e aprova; sem `--include-all`; nunca MCP. Próximo timestamp maior que `20261014180000`. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; agentes em `docs/MULTICHANNEL_HANDOFF.md`, contratos em `docs/MULTICHANNEL_CONTRACTS.md`): fatias 0–4 e 6a no ar no sandbox; E1 (ingestão robusta, D-432) em código; 5 (estoque) adiada para o Go Live (dono, 14/10); depois, 6b. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 

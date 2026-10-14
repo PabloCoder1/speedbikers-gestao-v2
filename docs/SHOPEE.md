@@ -127,6 +127,12 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   leitura começa 90 dias atrás e encadeia janelas de 15 dias. Gatilho
   horário `POST /internal/schedule/shopee-orders`. Tabelas
   `shopee_orders` e `shopee_order_items` (`docs/DATABASE.md`).
+- **Gravação (D-432):** cada lote de 50 vai numa transação
+  (`shopee_upsert_orders`: pedido, itens substituídos e SKU), e a leitura
+  com `update_time` mais velho que o guardado é ignorada — duas execuções
+  na mesma loja podem se cruzar. O marco só anda para a frente
+  (`shopee_advance_orders_synced_until`). Janela acima de 200 páginas falha
+  sem repetir.
 
 ## 4.2 Financeiro do pedido — CONFIRMADO (D-427)
 
@@ -142,8 +148,16 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   Fora dele: `buyer_user_name` e `buyer_payment_info` — a V3 não guarda.
 - **Lote** (`get_escrow_detail_batch`, até 50): a referência se contradiz
   no formato da resposta; usar só depois de conferido no sandbox.
-- **Erros:** `order_not_found` e `error_data` = pedido sem financeiro (não
-  é falha); `error_server` e `error_network` = passageiros.
+- **Erros — CONFERIDO na referência em 14/10/2026 (D-432):**
+  `order_not_found`, `error_data` e `common.error_not_found` ("supplier
+  order item income not found", vem COM o prefixo) = pedido sem financeiro
+  (não é falha); `error_server` e `error_network` = passageiros;
+  `error_param` = recusa daquele pedido (fica em `financials_error`, volta
+  em 1 dia ou quando ele mudar, e a fila segue). Os códigos comuns —
+  `error_auth` (token, partner, permissão), `error_sign`, `error_shop`,
+  `invalid_partner_id`, `invalid_acceess_token` (grafia da documentação) —
+  são da LOJA: interrompem a tarefa sem marcar pedido
+  (`isShopLevelError` em `@sb/shopee`; vale também para o catálogo).
 - **Na V3:** job `shopee.order-financials.sync` (até 100 pedidos por
   execução), enfileirado por `shopee.orders.sync` quando os pedidos
   alcançam agora; quem precisa de leitura é
@@ -225,3 +239,4 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 5 | Estoque (a planilha do UpSeller já desconta a venda Shopee) | adiada para o Go Live (decisão do dono, 14/10) |
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja: 6a definição da venda, SKU gravado e `/vendas/shopee`; 6b canal em Faturamento e ranking | 6a código (D-430) |
 | 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |
+| E1 | Ingestão robusta antes do volume real: pedido recusado não trava o financeiro, lote de pedidos numa transação que não regride, marco monotônico, erro da loja interrompe, organização amarrada à loja (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-432) |

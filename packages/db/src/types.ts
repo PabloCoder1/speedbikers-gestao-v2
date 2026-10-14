@@ -3187,6 +3187,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "shopee_item_models_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "shopee_item_models_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3267,6 +3274,13 @@ export type Database = {
           shopee_updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "shopee_items_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "shopee_items_organization_id_fkey"
             columns: ["organization_id"]
@@ -3388,6 +3402,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "shopee_order_items_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "shopee_order_items_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3416,6 +3437,8 @@ export type Database = {
           escrow_amount: number | null
           escrow_amount_after_adjustment: number | null
           final_shipping_fee: number | null
+          financials_error: string | null
+          financials_error_at: string | null
           financials_synced_at: string | null
           net_commission_fee: number | null
           net_service_fee: number | null
@@ -3456,6 +3479,8 @@ export type Database = {
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
           final_shipping_fee?: number | null
+          financials_error?: string | null
+          financials_error_at?: string | null
           financials_synced_at?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
@@ -3496,6 +3521,8 @@ export type Database = {
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
           final_shipping_fee?: number | null
+          financials_error?: string | null
+          financials_error_at?: string | null
           financials_synced_at?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
@@ -3525,6 +3552,13 @@ export type Database = {
           voucher_from_shopee?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "shopee_orders_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "shopee_orders_organization_id_fkey"
             columns: ["organization_id"]
@@ -5359,6 +5393,7 @@ export type Database = {
           available_stock: number | null
           currency: string | null
           current_price: number | null
+          environment: string
           item_id: number
           item_name: string | null
           item_status: string
@@ -5403,8 +5438,16 @@ export type Database = {
           order_sn: string
         }[]
       }
+      shopee_advance_orders_synced_until: {
+        Args: { p_shopee_shop_id: string; p_until: string }
+        Returns: string
+      }
       shopee_resolve_order_item_skus: {
         Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }
+        Returns: number
+      }
+      shopee_upsert_orders: {
+        Args: { p_pedidos: Json; p_shopee_shop_id: string; p_synced_at?: string }
         Returns: number
       }
       sincronizar_alertas_central: {

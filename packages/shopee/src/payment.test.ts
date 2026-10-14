@@ -70,6 +70,8 @@ describe("get_escrow_detail (D-427)", () => {
 
     expect(isEscrowUnavailable(erro("order_not_found"))).toBe(true);
     expect(isEscrowUnavailable(erro("error_data"))).toBe(true);
+    // D-432: a referência devolve este COM o prefixo de módulo.
+    expect(isEscrowUnavailable(erro("common.error_not_found"))).toBe(true);
     expect(isEscrowUnavailable(erro("error_server"))).toBe(false);
     expect(isEscrowUnavailable(erro("error_param"))).toBe(false);
     expect(isEscrowUnavailable(new Error("order_not_found"))).toBe(false);
