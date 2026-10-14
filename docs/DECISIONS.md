@@ -15156,3 +15156,28 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **Mutacao:** 7 regras estragadas (loja de teste contando, venda velha, cancelado, SEM so do ML, resumo so do ML, nulo virando zero, faceta errada) -- todas derrubam teste.
 
 **Impacto:** `supabase/migrations/20261015020000_produtos_com_shopee.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem tipo novo (a RPC devolve `jsonb`). Publicacao: so a migration; a tela (as colunas e os recortes novos) e do A2 -- sem mudanca nela, `/produtos` ja deixa de chamar de "sem anuncio/venda" o SKU que so a Shopee tem.
+
+## D-447 - Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
+
+**Contexto:** a E7 traz as fontes financeiras que faltavam da Shopee (R9), cada uma so depois de conferida na documentacao oficial. A primeira e a de devolucoes: hoje o sistema so sabe que um pedido teve devolucao pela lista `return_order_sns` do financeiro (`com_devolucao`, D-430), sem situacao, motivo, valor nem itens. O efeito em dinheiro ja esta no recebido e cai em "outros" na composicao (D-443).
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.returns.get_return_list`, o guia "Return Refund Management" e a "V2.0 Data Definition"): lista por janela de `update_time` (ou `create_time`) de no maximo 15 dias; ate 100 por pagina com `page_no` e `more` (a referencia diz que `page_no` comeca em 0, o exemplo usa 1); um pedido pode ter VARIAS devolucoes (`return_sn`); situacoes REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED, PROCESSING, SELLER_DISPUTE -- so os nomes, sem dizer em qual o reembolso foi pago (o fluxo e uma imagem); `confirm` (so reembolso) leva a ACCEPTED; `return_solution` 0 = devolucao e reembolso, 1 = so reembolso; o app (Seller In House System) tem permissao para a API.
+
+**Decisao:**
+
+1. **Tabelas proprias:** `shopee_returns` (uma por `return_sn`) e `shopee_return_items`, com RLS pela permissao por loja (D-433) e a organizacao amarrada a loja (D-432). O pedido nao e FK: a devolucao pode chegar antes dele.
+2. **Sem o comprador:** nome, e-mail e foto (`user`), as fotos da devolucao e o texto livre que o comprador escreveu nao sao lidos nem gravados -- o schema do cliente os descarta, e o teste prova com o exemplo oficial.
+3. **A situacao como veio, sem interpretar:** a documentacao nao diz quando o reembolso e pago, entao nada se chama "reembolsado"; o resumo conta por situacao (`por_situacao`) e soma o `refund_amount` que a Shopee informa.
+4. **O SKU do item como o do pedido** (D-430): o vinculo manual, o SKU do anuncio e, por ultimo, o SKU que a devolucao traz (`variation_sku` com variacao, senao `item_sku`).
+5. **O job `shopee.returns.sync`** (fila `backfill`) segue o de pedidos (D-426/D-432): janela de ate 15 dias por `update_time` a partir do marco `returns_synced_until` (10 minutos de sobreposicao; sem marco, 90 dias atras), o marco so avanca depois de gravar e nunca recua, cada lote numa transacao (`shopee_upsert_returns`) que nao regride. E enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora -- sem agendamento novo, so o worker muda. Pagina que so repete devolucoes ja vistas enquanto a Shopee diz que ha mais para a tarefa com o motivo (a semantica de `page_no` se confere no sandbox).
+6. **Leitura:** `get_shopee_returns` (a lista do periodo, com os itens e o SKU; filtros de loja, situacao e pedido; ate 200 por pagina) e `get_shopee_returns_summary` (TOTAL so de loja live ja lida, e por loja: quantas, de quantos pedidos, quantas so de reembolso, unidades, o valor informado e o mesmo por situacao; loja lida sem devolucao = 0; nunca lida = NULO).
+7. **Fica para depois:** o estoque de volta (fatia 5), o detalhe por devolucao (`get_return_detail`), as acoes (aceitar, disputar) e a devolucao por SKU numa metrica.
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial da referencia lido sem o comprador, as fotos e o texto livre; pagina vazia sem a lista.
+- **Worker:** a primeira leitura (90 dias, janela de 15, enfileira a seguinte), com marco (10 min antes, paginas 0 e 1, a mesma devolucao em duas paginas fica com a mais nova, normalizacao de vazio e modelo 0, solucao 0/1), a paginacao que repete (para sem girar), erro passageiro e falha ao gravar sem avancar o marco, loja desconectada; e o job de pedidos encadeando as devolucoes.
+- **Integracao** num stack isolado: 4 testes -- a gravacao sem regredir com o SKU (manual vencendo o da devolucao, variacao), o marco que nao recua, a lista com os filtros, o resumo por situacao com a loja de teste fora do TOTAL, a loja sem devolucao zerada e a nunca lida nula, a permissao por loja, so o worker gravando e as recusas.
+- **Mutacao:** 7 regras estragadas (regredir, SKU da devolucao vencendo o manual, variacao ignorada, TOTAL com a loja de teste, nunca lida virando zero, sem devolucao virando nulo, lista sem o filtro de situacao) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real e a semantica de `page_no`.
+
+**Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.

@@ -152,6 +152,15 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.10 Devoluções da Shopee (C-62, D-447) — em código
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_shopee_returns` | `p_organization_id`, `p_date_from`, `p_date_to` (criação, dia de São Paulo), `p_account_ids uuid[]`, `p_status text[]`, `p_order_sn`, `p_limit` (≤200), `p_offset` | uma linha por devolução: loja (`shop_name`, `environment`), `return_sn`, `order_sn`, `status`, `reason`, `reassessed_reason`, `return_solution` (`RETURN_REFUND` \| `REFUND`), `refund_amount`, `amount_before_discount`, `currency`, `needs_logistics`, `negotiation_status`, `seller_proof_status`, `seller_compensation_status`, `return_refund_type`, `due_date`, `return_seller_due_date`, criação/atualização, `itens` (jsonb: `item_id`, `model_id`, `nome`, `quantidade`, `preco`, `sku_id`, `sku`, `vinculo_via`) e `total_count` |
+| `get_shopee_returns_summary` | `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]` | `nivel` TOTAL (só loja live com as devoluções já lidas) e CONTA (uma por loja; nunca lida = NULO): `devolucoes`, `pedidos_com_devolucao`, `so_reembolso`, `unidades`, `valor_reembolso` (o que a Shopee informa; loja lida sem devolução = 0) e `por_situacao` (jsonb `{SITUACAO: {devolucoes, valor_reembolso, unidades}}`) |
+
+**A situação vem como a Shopee manda** (REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED, PROCESSING, SELLER_DISPUTE): a documentação não diz em qual o reembolso foi pago, então a tela não deve chamar o valor de "reembolsado" — é o "valor de reembolso informado". Nada do comprador é guardado. O efeito no recebido já está na composição (C-61, em "outros").
+
 ### 3.9 `/produtos` com a Shopee (C-56, D-445) — em código
 
 `get_products_overview` (mesma assinatura; devolve `jsonb`). **Na linha:** `listing_count` e `units_sold_90d` continuam do ML; novos `shopee_listing_count` (anúncio Shopee vinculado ao SKU, um por item, só loja live) e `shopee_units_sold_90d` (pedido válido de loja live, 90 dias) — NULOS quando a organização não tem loja Shopee live. **Filtros:** `p_listing`/`p_sales` = `COM` (em algum marketplace), `SEM` (em nenhum), `SO_ML`, `SO_SHOPEE`, `AMBOS`. **Facetas** `anuncios` e `vendas`: `todos`, `com`, `sem`, `so_ml`, `so_shopee`, `ambos` (com + sem = todos; so_ml + so_shopee + ambos = com). **Resumo:** `sem_anuncio` e `sem_venda_90d` dos dois marketplaces, `sem_anuncio_ml` e `sem_venda_90d_ml` (o cartão de antes) e `tem_shopee`. Loja de teste nunca conta. Sem loja live, tudo como antes.
@@ -247,7 +256,7 @@ contrato NOVO (E4), e as RPCs do ML continuam como estão.
 | R6 | cobertura | Histórico Shopee de 90 dias (ML: 365) | `PRIMEIRA_LEITURA_S` | declarar na tela |
 | R7 | desempenho | `shopee_sales_orders` filtra pelo `dia` calculado e agrega os itens em LATERAL antes do filtro: não usa `shopee_orders_org_created_idx`. Irrelevante com 1 pedido; precisa ensaio como `authenticated` antes do Go Live e antes de virar base do "Todos" | definição da view | futura |
 | R8 | integridade | `organization_id` de pedidos, itens e catálogo não é amarrado ao da loja (FK composta ou gatilho); só o worker escreve | migrations | **corrigido em produção (D-432)**: FK composta |
-| R9 | financeiro | Sem API de devoluções, sem extrato/repasse, sem Ads da Shopee. Reembolso (`seller_return_refund`, `drc_adjustable_refund`, `prorated_*_offset_return_items`) e retenções (`withholding_*`) existem só dentro do `order_income` (jsonb), com semântica não conferida. **No sandbox o pedido de teste veio com `escrow_amount` = `order_discounted_price` (149,90)**: as taxas não aparecem, então o sandbox não valida a fórmula das taxas — só loja real valida | `payment.ts`; o `order_income` do pedido de produção (94 chaves) | lacuna declarada |
+| R9 | financeiro | Devoluções: em código (D-447, E7a). Sem extrato/repasse e sem Ads da Shopee. Reembolso (`seller_return_refund`, `drc_adjustable_refund`, `prorated_*_offset_return_items`) e retenções (`withholding_*`) existem só dentro do `order_income` (jsonb), com semântica não conferida. **No sandbox o pedido de teste veio com `escrow_amount` = `order_discounted_price` (149,90)**: as taxas não aparecem, então o sandbox não valida a fórmula das taxas — só loja real valida | `payment.ts`; o `order_income` do pedido de produção (94 chaves) | lacuna declarada |
 | R11 | negócio (inferência a medir, achado do Agente 2) | O saldo vem da planilha do UpSeller, que já desconta a venda Shopee, mas a demanda da reposição (`get_purchase_suggestions`, `get_replenishment_overview`, cobertura) é só a do ML: para SKU que também vende na Shopee, a cobertura sai alta demais e a sugestão de compra baixa demais | leitura das RPCs (`daily_sku_metrics`) | a medir; entra na decisão da fatia 5 |
 | R10 | acoplamento | Todas as agregações de vendas, faturamento, ranking, curva ABC, central e estoque são do Mercado Livre (§4) | §4 | é o trabalho da 6b |
 
@@ -355,7 +364,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   não leem a Shopee** até a fatia 5 (decisão do dono, 14/10).
 - **Contrato entregue:** ranking e ABC com canal.
 
-### E7 — Fontes financeiras que faltam (R9) e Live Push
+### E7 — Fontes financeiras que faltam (R9) e Live Push — E7a (devoluções, D-447) em código
 
 Devoluções (API `returns`), reembolso pelo `order_income`, lote do
 financeiro (`get_escrow_detail_batch`, a conferir no sandbox), Ads da

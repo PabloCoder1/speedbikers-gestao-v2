@@ -20,10 +20,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `caafb616` (#155: D-439; #156, #158 e #159: D-440, D-442, D-444) |
-| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61) e `feat/produtos-multicanal` (rascunho #161: E6c) · A2: T3b (D-446) |
+| Branches abertas | A1: `feat/curva-abc-multicanal` (#157: E6b), `feat/faturamento-shopee-composicao` (rascunho #160: C-61) , `feat/produtos-multicanal` (rascunho #161: E6c) e `feat/devolucoes-shopee` (E7a, D-447) · A2: T3b (D-446) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, #157) , `20261015010000` (C-61, #160) e `20261015020000` (E6c, #161) |
+| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes: `20261015000000` (E6b, #157) , `20261015010000` (C-61, #160) , `20261015020000` (E6c, #161) e `20261015030000` (E7a) |
 | Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -43,9 +43,10 @@
 - E6b, curva ABC por marketplace (D-441): **em código e validada** — o ML idêntico às funções antigas lado a lado (3.124 combinações locais e 11 casos no Dev com dados reais), ~30x mais rápida no Dev (plano custom), integração 976/976 com as 255 migrations do zero, 11 mutações; rascunho #157 — falta CI, merge e a migration `20261015000000`.
 - C-61, composição do faturamento da Shopee (D-443): **em código e validada** — o C-58 idêntico ao antigo lado a lado (200 verificações, com a cascata fechando, os dias somando o TOTAL e o por SKU coerente), o TOTAL de receita corrigido (achado do A2), o C-58 ~150x mais rápido (o custo por item era refeito para cada pedido), 9 mutações; empilhada no #157 — rascunho #160 — falta CI, merge e a migration `20261015010000`.
 - E6c, `/produtos` com a Shopee (D-445): **em código e validada** — sem Shopee, idêntica à função antiga (25 combinações locais; 5 casos no Dev com 3.554 SKUs, ~75→78 ms); com Shopee, os campos do ML iguais, os números da Shopee iguais à contagem direta e as facetas fechando; 7 mutações; empilhada no #160 — rascunho #161 — falta CI, merge e a migration `20261015020000`. O ranking com resultado da central fica para depois do Go Live (D-430 §5).
+- E7a, devoluções da Shopee (D-447): **em código e validada localmente** — a API `returns` conferida na documentação oficial; tabelas sem o comprador, situação como veio, SKU por item; job `shopee.returns.sync` encadeado pelo de pedidos; integração (4 testes) e 7 mutações; empilhada no #161 — falta PR, CI, merge, a migration `20261015030000` e o deploy do worker; **a chamada real e a semântica de `page_no` se conferem no sandbox depois do deploy**. Para o A2: o job novo precisa da cadência em `apps/web/lib/sync-health.ts` (`"shopee.returns.sync": 60`, vem junto com os pedidos).
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
-- E7 fontes financeiras que faltam → E8 Go Live e estoque.
+- E7b em diante (extrato/repasse, Ads, lote do financeiro, push — cada um conferido na documentação e no sandbox antes) → E8 Go Live e estoque.
 
 **Bloqueios**
 - E4 e E5 em produção dependem do merge e da migration (dono). A exibição do resultado da E5 depende da decisão 1 abaixo (os três números já vêm prontos).
@@ -110,6 +111,7 @@
 | C-59 | `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total) e `get_sku_sales_by_marketplace_account` (aba Vendas do SKU); view `shopee_sales_items` (colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.6) | A1 | ranking e aba Vendas do SKU (T6, atende C-04 em parte) | em produção (D-439, #155, 14/10) | ML igual a `get_sku_sales_breakdown`; a soma dos SKUs da loja fecha com `get_shopee_sales_by_shop` |
 | C-60 | Curva ABC por marketplace: `get_sku_abc_analysis`, `get_sku_abc_breakdown` e `get_sku_sales_by_account` com `p_marketplaces`/`p_account_ids` no fim, critério `compras`, colunas por marketplace (`docs/MULTICHANNEL_CONTRACTS.md` §3.7) | A1 | `/curva-abc` e o Excel (T6, atende C-04 em parte) | em código (D-441) | nulo = o ML de antes; com a Shopee, `orders`/cobertura nulos e `pedidos` recusado |
 | C-61 | Componentes do faturamento Shopee sobre os pedidos cobertos (comissão, taxas, frete, cupons da loja, afiliados, ajustes e "outros" que fecham com o recebido), descontos bancados pela Shopee, série diária e, se o rateio fechar, por SKU | A1 | `/faturamento` (T5b: cascata, série e produtos) | em código (D-443; `docs/MULTICHANNEL_CONTRACTS.md` §3.8) | receita coberta − Σ componentes − outros = recebido coberto, provado em toda linha |
+| C-62 | Devoluções da Shopee: `get_shopee_returns` (lista com itens e SKU) e `get_shopee_returns_summary` (TOTAL e por loja, por situação); colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.10 | A1 | vendas Shopee / atendimento (a tela é do A2) | em código (D-447) | situação como a Shopee manda (sem "reembolsado"); nada do comprador; sandbox fora do TOTAL; nunca lida = NULO |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
 
 ---
@@ -131,4 +133,4 @@
 ## Decisões pendentes do dono
 
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
-2. **E6b, C-61 e E6c:** depois dos merges (#157, #160 e #161), `migrations-producao.yml` para `20261015000000`, `20261015010000` e `20261015020000` — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.) (E4 e E5: em produção desde 14/10.)
+2. **E6b, C-61, E6c e E7a:** depois dos merges (#157, #160, #161 e o da E7a), `migrations-producao.yml` para `20261015000000`, `20261015010000`, `20261015020000` e `20261015030000`; **a E7a também publica o worker, DEPOIS da migration** (o job lê a coluna nova) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.) (E4 e E5: em produção desde 14/10.)

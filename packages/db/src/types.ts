@@ -3578,6 +3578,188 @@ export type Database = {
           },
         ]
       }
+      shopee_return_items: {
+        Row: {
+          item_id: number
+          item_name: string | null
+          item_price: number | null
+          item_sku: string | null
+          model_id: number | null
+          organization_id: string
+          position: number
+          quantity: number
+          return_sn: string
+          shopee_shop_id: string
+          sku_id: string | null
+          variation_sku: string | null
+          vinculo_via: string | null
+        }
+        Insert: {
+          item_id: number
+          item_name?: string | null
+          item_price?: number | null
+          item_sku?: string | null
+          model_id?: number | null
+          organization_id: string
+          position: number
+          quantity: number
+          return_sn: string
+          shopee_shop_id: string
+          sku_id?: string | null
+          variation_sku?: string | null
+          vinculo_via?: string | null
+        }
+        Update: {
+          item_id?: number
+          item_name?: string | null
+          item_price?: number | null
+          item_sku?: string | null
+          model_id?: number | null
+          organization_id?: string
+          position?: number
+          quantity?: number
+          return_sn?: string
+          shopee_shop_id?: string
+          sku_id?: string | null
+          variation_sku?: string | null
+          vinculo_via?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_return_items_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "shopee_return_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shopee_return_items_shopee_shop_id_return_sn_fkey"
+            columns: ["shopee_shop_id", "return_sn"]
+            isOneToOne: false
+            referencedRelation: "shopee_returns"
+            referencedColumns: ["shopee_shop_id", "return_sn"]
+          },
+          {
+            foreignKeyName: "shopee_return_items_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopee_returns: {
+        Row: {
+          amount_before_discount: number | null
+          currency: string | null
+          due_date: string | null
+          is_partial_quantity_return: boolean | null
+          is_refund_amount_adjusted: boolean | null
+          needs_logistics: boolean | null
+          negotiation_status: string | null
+          order_sn: string
+          organization_id: string
+          reason: string | null
+          reassessed_reason: string | null
+          refund_amount: number | null
+          return_refund_request_type: number | null
+          return_refund_type: string | null
+          return_seller_due_date: string | null
+          return_ship_due_date: string | null
+          return_sn: string
+          return_solution: string | null
+          seller_compensation_status: string | null
+          seller_proof_status: string | null
+          shopee_created_at: string
+          shopee_shop_id: string
+          shopee_updated_at: string
+          status: string
+          synced_at: string
+          tracking_number: string | null
+          validation_type: string | null
+        }
+        Insert: {
+          amount_before_discount?: number | null
+          currency?: string | null
+          due_date?: string | null
+          is_partial_quantity_return?: boolean | null
+          is_refund_amount_adjusted?: boolean | null
+          needs_logistics?: boolean | null
+          negotiation_status?: string | null
+          order_sn: string
+          organization_id: string
+          reason?: string | null
+          reassessed_reason?: string | null
+          refund_amount?: number | null
+          return_refund_request_type?: number | null
+          return_refund_type?: string | null
+          return_seller_due_date?: string | null
+          return_ship_due_date?: string | null
+          return_sn: string
+          return_solution?: string | null
+          seller_compensation_status?: string | null
+          seller_proof_status?: string | null
+          shopee_created_at: string
+          shopee_shop_id: string
+          shopee_updated_at: string
+          status: string
+          synced_at?: string
+          tracking_number?: string | null
+          validation_type?: string | null
+        }
+        Update: {
+          amount_before_discount?: number | null
+          currency?: string | null
+          due_date?: string | null
+          is_partial_quantity_return?: boolean | null
+          is_refund_amount_adjusted?: boolean | null
+          needs_logistics?: boolean | null
+          negotiation_status?: string | null
+          order_sn?: string
+          organization_id?: string
+          reason?: string | null
+          reassessed_reason?: string | null
+          refund_amount?: number | null
+          return_refund_request_type?: number | null
+          return_refund_type?: string | null
+          return_seller_due_date?: string | null
+          return_ship_due_date?: string | null
+          return_sn?: string
+          return_solution?: string | null
+          seller_compensation_status?: string | null
+          seller_proof_status?: string | null
+          shopee_created_at?: string
+          shopee_shop_id?: string
+          shopee_updated_at?: string
+          status?: string
+          synced_at?: string
+          tracking_number?: string | null
+          validation_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopee_returns_loja_da_organizacao"
+            columns: ["shopee_shop_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "shopee_returns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopee_shops: {
         Row: {
           auth_expires_at: string | null
@@ -3592,6 +3774,7 @@ export type Database = {
           items_synced_until: string | null
           orders_last_success_at: string | null
           orders_synced_until: string | null
+          returns_synced_until: string | null
           organization_id: string
           region: string | null
           shop_id: number
@@ -3613,6 +3796,7 @@ export type Database = {
           items_synced_until?: string | null
           orders_last_success_at?: string | null
           orders_synced_until?: string | null
+          returns_synced_until?: string | null
           organization_id: string
           region?: string | null
           shop_id: number
@@ -3634,6 +3818,7 @@ export type Database = {
           items_synced_until?: string | null
           orders_last_success_at?: string | null
           orders_synced_until?: string | null
+          returns_synced_until?: string | null
           organization_id?: string
           region?: string | null
           shop_id?: number
@@ -5591,6 +5776,65 @@ export type Database = {
           unidades: number | null
         }[]
       }
+      get_shopee_returns: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+          p_order_sn?: string | null
+          p_organization_id: string
+          p_status?: string[] | null
+        }
+        Returns: {
+          amount_before_discount: number | null
+          currency: string | null
+          due_date: string | null
+          environment: string
+          itens: Json
+          needs_logistics: boolean | null
+          negotiation_status: string | null
+          order_sn: string
+          reason: string | null
+          reassessed_reason: string | null
+          refund_amount: number | null
+          return_refund_type: string | null
+          return_seller_due_date: string | null
+          return_sn: string
+          return_solution: string | null
+          seller_compensation_status: string | null
+          seller_proof_status: string | null
+          shop_name: string
+          shopee_created_at: string
+          shopee_shop_id: string
+          shopee_updated_at: string
+          status: string
+          total_count: number
+        }[]
+      }
+      get_shopee_returns_summary: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (D-447): TOTAL sem conta; loja nunca lida com tudo nulo.
+          account_id: string | null
+          account_name: string | null
+          devolucoes: number | null
+          environment: string | null
+          nivel: string
+          pedidos_com_devolucao: number | null
+          por_situacao: Json | null
+          so_reembolso: number | null
+          ultima_atualizacao: string | null
+          unidades: number | null
+          valor_reembolso: number | null
+        }[]
+      }
       get_shopee_sales_by_shop: {
         Args: { p_date_from: string; p_date_to: string; p_organization_id: string }
         Returns: {
@@ -5707,8 +5951,16 @@ export type Database = {
         Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }
         Returns: number
       }
+      shopee_advance_returns_synced_until: {
+        Args: { p_shopee_shop_id: string; p_until: string }
+        Returns: string
+      }
       shopee_upsert_orders: {
         Args: { p_pedidos: Json; p_shopee_shop_id: string; p_synced_at?: string }
+        Returns: number
+      }
+      shopee_upsert_returns: {
+        Args: { p_devolucoes: Json; p_shopee_shop_id: string; p_synced_at?: string }
         Returns: number
       }
       sincronizar_alertas_central: {

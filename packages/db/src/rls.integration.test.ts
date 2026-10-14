@@ -4616,6 +4616,184 @@ describe("faturamento da Shopee (D-437)", () => {
 });
 
 /*
+  D-447: devoluções da Shopee (C-62). A gravação em lote sem regredir, com o
+  SKU de cada item; a permissão por loja; a lista e o resumo por situação,
+  como a Shopee manda; loja de teste fora do TOTAL; loja nunca lida nula.
+*/
+describe("devoluções da Shopee (D-447)", () => {
+  const ORG = "44444444-0000-4000-8000-00000000d447";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d447";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d447";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d447";
+  const LOJA = "dddd4470-0000-4000-8000-0000000a0447";
+  const SANDBOX = "dddd4470-0000-4000-8000-0000000b0447";
+  const SEM_DEVOLUCAO = "dddd4470-0000-4000-8000-0000000c0447";
+  const NUNCA_LIDA = "dddd4470-0000-4000-8000-0000000d0447";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+  let skuX = "";
+  let skuY = "";
+
+  const devolucao = (sn: string, pedido: string, status: string, solucao: string, valor: number | null, atualizada: string, itens: unknown[]) => ({
+    return_sn: sn,
+    order_sn: pedido,
+    status,
+    reason: "ITEM_DAMAGED",
+    return_solution: solucao,
+    refund_amount: valor,
+    currency: "BRL",
+    needs_logistics: solucao === "RETURN_REFUND",
+    shopee_created_at: "2026-10-10T15:00:00Z",
+    shopee_updated_at: atualizada,
+    itens,
+  });
+
+  const gravar = async (loja: string, lote: unknown[]) =>
+    (await client.query<{ n: number }>("select public.shopee_upsert_returns($1, $2::jsonb) as n", [loja, JSON.stringify(lote)])).rows[0]?.n;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d447@rls.test'), ($2::uuid, 'analista-d447@rls.test'), ($3::uuid, 'membro-d447@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-447', 'org-d447') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1, 'D447-X', 'PRODUTO'), ($1, 'D447-Y', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku_key`,
+      [ORG],
+    );
+
+    skuX = skus.rows.find((r) => r.sku_key === "D447-X")?.id ?? "";
+    skuY = skus.rows.find((r) => r.sku_key === "D447-Y")?.id ?? "";
+
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, returns_synced_until)
+       values ($1, $5, 'live', 990447001, 'Loja Real', 'CONNECTED', now(), now()),
+              ($2, $5, 'sandbox', 990447002, 'Teste', 'CONNECTED', now(), now()),
+              ($3, $5, 'live', 990447003, 'Sem Devolucao', 'CONNECTED', now(), now()),
+              ($4, $5, 'live', 990447004, 'Nunca Lida', 'CONNECTED', now(), null)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, SEM_DEVOLUCAO, NUNCA_LIDA, ORG],
+    );
+    // Vinculo manual do item 77/modelo 5 com Y: vale sobre o SKU da devolucao.
+    await client.query(
+      `insert into public.shopee_sku_links (shopee_shop_id, organization_id, item_id, model_id, sku_id)
+       values ($1, $2, 77, 5, $3) on conflict do nothing`,
+      [LOJA, ORG, skuY],
+    );
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX, SEM_DEVOLUCAO, NUNCA_LIDA]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("grava sem regredir: a leitura mais velha é ignorada; os itens são substituídos e o SKU resolvido", async () => {
+    // R1: X pelo SKU do item (sem modelo) e o item 77/5 pelo vínculo manual (Y), mesmo trazendo o SKU de X.
+    const r1 = devolucao("R1", "P1", "REQUESTED", "RETURN_REFUND", 100, "2026-10-10T16:00:00Z", [
+      { position: 0, item_id: 9, model_id: null, item_sku: "d447-x ", quantity: 2, item_price: 30 },
+      { position: 1, item_id: 77, model_id: 5, item_sku: "PAI", variation_sku: "D447-X", quantity: 1, item_price: 40 },
+    ]);
+    const r2 = devolucao("R2", "P1", "ACCEPTED", "REFUND", 50, "2026-10-10T16:00:00Z", [
+      { position: 0, item_id: 8, model_id: 3, variation_sku: "D447-Y", quantity: 1, item_price: 50 },
+    ]);
+
+    expect(await gravar(LOJA, [r1, r2])).toBe(2);
+    // Mais velha que a guardada: nada muda.
+    expect(await gravar(LOJA, [{ ...r1, status: "CANCELLED", shopee_updated_at: "2026-10-10T15:30:00Z", itens: [] }])).toBe(0);
+    // Mais nova: a situação muda.
+    expect(await gravar(LOJA, [{ ...r1, status: "PROCESSING", shopee_updated_at: "2026-10-10T17:00:00Z" }])).toBe(1);
+    await gravar(SANDBOX, [devolucao("RS", "PS", "REQUESTED", "REFUND", 999, "2026-10-10T16:00:00Z", [])]);
+
+    const { rows } = await client.query<{ return_sn: string; status: string; position: number; sku_id: string | null; vinculo_via: string | null }>(
+      `select r.return_sn, r.status, i.position, i.sku_id, i.vinculo_via
+         from public.shopee_returns r join public.shopee_return_items i using (shopee_shop_id, return_sn)
+        where r.shopee_shop_id = $1 order by 1, 3`,
+      [LOJA],
+    );
+
+    expect(rows).toEqual([
+      { return_sn: "R1", status: "PROCESSING", position: 0, sku_id: skuX, vinculo_via: "SKU_DA_DEVOLUCAO" },
+      { return_sn: "R1", status: "PROCESSING", position: 1, sku_id: skuY, vinculo_via: "MANUAL" },
+      { return_sn: "R2", status: "ACCEPTED", position: 0, sku_id: skuY, vinculo_via: "SKU_DA_DEVOLUCAO" },
+    ]);
+    // O marco nunca recua.
+    const marco = await client.query<{ m: string }>("select public.shopee_advance_returns_synced_until($1, '2020-01-01') as m", [LOJA]);
+
+    expect(new Date(marco.rows[0]?.m ?? 0).getFullYear()).toBeGreaterThan(2020);
+  });
+
+  it("a lista: período, situação, pedido e os itens com o SKU", async () => {
+    const lista = await asUser<Linha>(
+      ADMIN,
+      `select return_sn, order_sn, status, return_solution, refund_amount, itens, total_count, environment
+         from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}', array['${LOJA}']::uuid[])`,
+    );
+    const aceitas = await asUser<Linha>(ADMIN, `select return_sn from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}', p_status => array['ACCEPTED'])`);
+
+    expect(lista.map((l) => [l.return_sn, l.status, l.return_solution, l.refund_amount, l.total_count])).toEqual([
+      ["R1", "PROCESSING", "RETURN_REFUND", "100", "2"],
+      ["R2", "ACCEPTED", "REFUND", "50", "2"],
+    ]);
+    expect(lista[0]?.itens).toEqual([
+      expect.objectContaining({ item_id: 9, quantidade: 2, sku: "D447-X", vinculo_via: "SKU_DA_DEVOLUCAO" }),
+      expect.objectContaining({ item_id: 77, model_id: 5, quantidade: 1, sku: "D447-Y", vinculo_via: "MANUAL" }),
+    ]);
+    expect(aceitas.map((l) => l.return_sn)).toEqual(["R2"]);
+  });
+
+  it("o resumo: por situação como a Shopee manda; TOTAL sem a loja de teste; loja sem devolução zerada; nunca lida nula", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, devolucoes, pedidos_com_devolucao, so_reembolso, unidades, valor_reembolso, por_situacao
+         from public.get_shopee_returns_summary('${ORG}', '${DE}', '${ATE}') order by nivel desc, account_name`,
+    );
+
+    expect(linhas[0]).toMatchObject({
+      nivel: "TOTAL",
+      devolucoes: "2",
+      pedidos_com_devolucao: "1",
+      so_reembolso: "1",
+      unidades: "4",
+      valor_reembolso: "150.00",
+      por_situacao: { PROCESSING: { devolucoes: 1, valor_reembolso: 100, unidades: 3 }, ACCEPTED: { devolucoes: 1, valor_reembolso: 50, unidades: 1 } },
+    });
+    expect(linhas.slice(1).map((l) => [l.account_name, l.devolucoes, l.valor_reembolso])).toEqual([
+      ["Loja Real", "2", "150.00"],
+      ["Nunca Lida", null, null],
+      ["Sem Devolucao", "0", "0.00"],
+      ["Teste", "1", "999.00"],
+    ]);
+  });
+
+  it("a permissão por loja vale; só o worker grava; período inválido é recusado", async () => {
+    const analista = await asUser<Linha>(ANALISTA, "select return_sn from public.shopee_returns order by 1");
+
+    expect(analista.map((l) => l.return_sn)).toEqual(["R1", "R2"]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_returns")).toEqual([]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_return_items")).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}')`)).toEqual([]);
+    await expect(asUser(ADMIN, `select public.shopee_upsert_returns('${LOJA}', '[]'::jsonb)`)).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_returns_summary('${ORG}', '${ATE}', '${DE}')`)).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon(`select * from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/*
   D-445: /produtos com a Shopee (C-56). Anúncio e venda olham os dois
   marketplaces; os campos do ML não mudam; loja de teste não conta; sem loja
   Shopee live, os números da Shopee são nulos e o resto é o de antes.
