@@ -146,8 +146,16 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
   const agora = new Date();
   const inicioDoMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
 
-  const [accounts, syncHealth, systemHealth, batches, aiRuns, aiCost, budgetEvent, apiHealth] = await Promise.all([
+  const [accounts, lojasShopee, syncHealth, systemHealth, batches, aiRuns, aiCost, budgetEvent, apiHealth] = await Promise.all([
     supabase.from("ml_accounts").select("id, label, status, connected_at, last_error").order("label"),
+    // As lojas Shopee (D-446) pela fonte única de contas (C-52): a mesma linha
+    // que /sincronizacao lê para o veredito da loja. O filtro por marketplace
+    // deixa o ramo do Mercado Livre da view de fora no plano.
+    supabase
+      .from("marketplace_accounts")
+      .select("name, environment, connection_status, last_error, connected_at, orders_synced_at, authorization_expires_at")
+      .eq("marketplace", "SHOPEE")
+      .order("name"),
     supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
     supabase.rpc("get_system_health"),
     // Cancelado é estado terminal NORMAL (ato humano), não falha da integração:
@@ -196,6 +204,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
     now: agora,
     viewerIsAdmin: membership.role === "ADMIN",
     mlAccounts: accounts.error === null ? accounts.data : null,
+    shopeeShops: lojasShopee.error === null ? lojasShopee.data : null,
     syncHealth: syncHealth.error === null ? syncHealth.data : null,
     jobs,
     migration:
