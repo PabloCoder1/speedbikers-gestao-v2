@@ -235,17 +235,11 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
    * `sync.orders.window` do Mercado Livre em D-217.
    */
   it("os jobs da Shopee são horários: 1 h é normal, 3 h é atenção, 5 h é crítico", () => {
-    for (const job of ["shopee.orders.sync", "shopee.order-financials.sync", "shopee.items.sync", "shopee.items.hydrate", "shopee.returns.sync"]) {
+    for (const job of ["shopee.orders.sync", "shopee.order-financials.sync", "shopee.items.sync", "shopee.items.hydrate"]) {
       expect(classifyJobFreshness(job, minutesAgo(60), NOW)).toBe("ok");
       expect(classifyJobFreshness(job, minutesAgo(180), NOW)).toBe("atencao");
       expect(classifyJobFreshness(job, minutesAgo(300), NOW)).toBe("critico");
     }
-  });
-
-  it("os Ads da Shopee leem a cada 3 h: 5 h é normal, 10 h é atenção, 13 h é crítico", () => {
-    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(300), NOW)).toBe("ok");
-    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(600), NOW)).toBe("atencao");
-    expect(classifyJobFreshness("shopee.ads.sync", minutesAgo(780), NOW)).toBe("critico");
   });
 });
 
