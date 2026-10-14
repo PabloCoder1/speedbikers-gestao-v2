@@ -20,11 +20,11 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `391c7165` (#157, #160, #161, #163, #166 e #169: D-441, D-443, D-445, D-447, D-449 e D-451; #168 do A2) |
-| Branches abertas | A1: `feat/push-shopee` (E7d) · A2: T6b (D-448, empilhada no #157) |
+| Branches abertas | A1: `feat/push-shopee` (#172: E7d) · A2: T6b (D-448, empilhada no #157) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
 | Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes, **todas na `main`**: `20261015000000` (E6b, #157), `20261015010000` (C-61, #160), `20261015020000` (E6c, #161), `20261015030000` (E7a, #163), `20261015040000` (E7b, #166) e `20261015050000` (E7c, #169) — esperam o workflow do dono |
-| Dev | todas as migrations da `main` (CI `38583103789` verde); serviços pausados (D-350) |
+| Dev | até `20261015010000` (conferido no Dev em 14/10, CI da `main` `38628067773`); `…15020000` a `…15050000` entram pelo job da CI da `main` `38634675932` (`391c7165`), em andamento; serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
 ---
@@ -46,7 +46,7 @@
 - E7a, devoluções da Shopee (D-447): **em código e validada localmente** — a API `returns` conferida na documentação oficial; tabelas sem o comprador, situação como veio, SKU por item; job `shopee.returns.sync` encadeado pelo de pedidos; integração (4 testes) e 7 mutações; na `main` pelo #163 — falta a migration `20261015030000` e o deploy do worker; **a chamada real e a semântica de `page_no` se conferem no sandbox depois do deploy**. Cadência em `/saude`: `shopee.returns.sync` = 60 min, no #170 do A2.
 - E7b, Ads da Shopee (D-449): **em código e validada localmente** — o desempenho diário dos anúncios CPC da loja conferido na documentação; `daily_shopee_ads_metrics` com a cobertura da leitura; job `shopee.ads.sync` (no máximo a cada 3 h); ROAS/ACOS/TACoS no SQL; integração (4 testes) e 8 mutações; na `main` pelo #166 — falta a migration `20261015040000` e o deploy do worker. **É o CPC da loja, não o total: o GMV Max de loja pode ficar de fora; não entra no resultado da venda até conferir com loja real.** Cadência em `/saude`: `shopee.ads.sync` = 180 min, no #170 do A2.
 - E7c, repasse da Shopee (D-451): **em código e validada localmente** — `get_escrow_list` conferida na documentação (o extrato da carteira e o `get_income_detail` ficam para depois do sandbox: sem identificador e formato contraditório); `shopee_escrow_releases` com a cobertura; job `shopee.escrow-releases.sync`; integração (5 testes) e 15 mutações; na `main` pelo #169 — falta a migration `20261015050000` e o deploy do worker. Cadência em `/saude`: `shopee.escrow-releases.sync` = 60 min, no #170 do A2.
-- E7d, push da Shopee (D-453): **em código e validado localmente** — o guia de push conferido; `POST /push/shopee` na api, assinado pelo corpo cru, antecipa `shopee.orders.sync` (código 3) e `shopee.returns.sync` (29) da loja, uma tarefa por janela de 5 minutos; sem assinatura válida, 200 e nada; autorização cancelada só no log (formato contraditório); 7 testes da rota e 7 mutações; sem migration — falta PR, CI, merge, o deploy da **api** e o cadastro do endereço no Console (`docs/DEPLOYMENT.md` §6.2). Não muda contrato de leitura nem tela.
+- E7d, push da Shopee (D-453): **em código e validado localmente** — o guia de push conferido; `POST /push/shopee` na api, assinado pelo corpo cru, antecipa `shopee.orders.sync` (código 3) e `shopee.returns.sync` (29) da loja, uma tarefa por janela de 5 minutos; sem assinatura válida, 200 e nada; autorização cancelada só no log (formato contraditório); 7 testes da rota e 7 mutações; sem migration; #172 — falta CI, merge, o deploy da **api** e o cadastro do endereço no Console (`docs/DEPLOYMENT.md` §6.2). Não muda contrato de leitura nem tela.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
 - E7e em diante: o lote do financeiro (`get_escrow_detail_batch` — a referência segue contraditória: GET com corpo JSON, `response[]` × `escrow_detail_list`), o extrato da carteira e a renda por pedido — os três depois da resposta real do sandbox → E8 Go Live e estoque.
