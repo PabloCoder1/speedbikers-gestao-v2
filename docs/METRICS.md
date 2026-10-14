@@ -552,6 +552,22 @@ fatia 6b oferecer o canal à escolha.
 - **SKU:** gravado no item na gravação do pedido (D-020): vínculo manual, SKU do anúncio (a view `shopee_listing_units`) ou o SKU do próprio pedido. Item sem nenhum dos três fica sem SKU e continua nos totais.
 - **Não somar com o ML ainda:** o "recebido" da Shopee é mais completo que o do ML (5F), e o pedido Shopee tem vários itens; a soma entre canais é decisão da 6b.
 
+## 5T. Vendas consolidadas entre marketplaces (D-436) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_marketplace_sales_summary` (linhas TOTAL, MARKETPLACE e CONTA) e `get_marketplace_sales_daily`. Cada canal mantém a própria definição (5.2 no ML, 5S na Shopee); o consolidado soma **só o que tem a mesma semântica**.
+
+| Id | Definição |
+|---|---|
+| `multicanal_compras` | Pack do ML (`pedidos_por_pack`) + pedido válido da Shopee (um carrinho). O "pedido" do ML é uma linha de item e NÃO soma: fica só na linha do ML (`pedidos_ml`). |
+| `multicanal_unidades` | `unidades_vendidas` (ML) + `shopee_unidades`. |
+| `multicanal_receita_bruta` | `receita_bruta` (ML) + `shopee_receita_bruta` de receita conhecida: produtos com o desconto do vendedor, sem frete, nos dois. Pedido Shopee de receita desconhecida fica fora e é contado à parte (`pedidos_sem_receita`). |
+| `multicanal_ticket_medio` | `multicanal_receita_bruta / (multicanal_compras − pedidos_sem_receita)`, recalculado sobre a soma — nunca média de médias. |
+
+- **Não soma:** o recebido (5F no ML × `shopee_recebido`, componentes diferentes) — só na linha da Shopee; pedidos do ML; cancelados (ainda não no consolidado).
+- **Fora das somas:** loja de sandbox (aparece só em CONTA, com o ambiente) e loja live nunca lida (CONTA com tudo NULO, nunca zero). Sem loja live lida, a Shopee não tem linha de MARKETPLACE.
+- **Dia:** criação do pedido em São Paulo nos dois. **Frescor:** o elo mais fraco do grupo (`ultima_atualizacao`).
+- **Sem marca:** a receita da Shopee é do pedido, não do item; o recorte por marca espera o grão de SKU Shopee (E6).
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

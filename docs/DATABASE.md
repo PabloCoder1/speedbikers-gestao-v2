@@ -171,6 +171,10 @@ Migration `20261014190000`. `user_shopee_shop_permissions` (`user_id`, `shopee_s
 
 Migration `20261014200000`. A view `marketplace_accounts` (`security_invoker`) é a fonte única do seletor Marketplace/Conta: uma linha por conta ML e por loja Shopee que o chamador alcança — `marketplace` (`ML`|`SHOPEE`), `account_id`, `organization_id`, `name`, `slug` (ML), `shop_id` (Shopee), `environment` (ML sempre `live`), `connection_status`, `last_error`, `connected_at`, `orders_synced_at` (ML: última reconciliação de pedidos que serviu; Shopee: `orders_last_success_at`) e `authorization_expires_at` (só Shopee). `shopee_shops.orders_last_success_at` é quando o marco de pedidos andou pela última vez (gatilho `before update of orders_synced_until`). `domain_events` ganha `shopee_shop_id` (sem FK; CHECK `NOT VALID` de uma origem só): o fan-out entrega o evento de loja ao ADMIN e às concessões da loja, e a RLS de leitura ganha o ramo da loja. `private.avisar_loja_shopee_parada` e o gatilho de ERROR em `shopee_shops` avisam `sync.delayed`/`sync.failed` (só loja `live`); `private.vigiar_sincronizacao()` percorre contas e lojas.
 
+### Vendas por marketplace (D-436)
+
+Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marketplaces, p_account_ids)` e `get_marketplace_sales_daily` (`security invoker`) leem `daily_account_metrics` (ML, a fonte de `get_sales_summary`) e `shopee_sales_orders` (Shopee, com o intervalo também em `timestamptz` para o índice valer) e devolvem o consolidado no SQL — definições em `docs/METRICS.md` 5T e em `metric_definitions` (`multicanal_*`). `p_marketplaces` nulo = só ML; `p_account_ids` de `marketplace_accounts`.
+
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
 Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.
