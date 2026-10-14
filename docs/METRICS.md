@@ -567,6 +567,7 @@ Lidas por `get_marketplace_sales_summary` (linhas TOTAL, MARKETPLACE e CONTA) e 
 - **Fora das somas:** loja de sandbox (aparece só em CONTA, com o ambiente) e loja live nunca lida (CONTA com tudo NULO, nunca zero). Sem loja live lida, a Shopee não tem linha de MARKETPLACE.
 - **Dia:** criação do pedido em São Paulo nos dois. **Frescor:** o elo mais fraco do grupo (`ultima_atualizacao`).
 - **Sem marca:** a receita da Shopee é do pedido, não do item; o recorte por marca espera o grão de SKU Shopee (E6).
+- **Grão de SKU (D-439):** `get_marketplace_sku_sales` e `get_sku_sales_by_marketplace_account` — o ML por `daily_sku_metrics`, a Shopee pelo item (`shopee_receita_item`: preço com o desconto da loja × quantidade; item de preço 0 = receita desconhecida, contada à parte), com o balde sem SKU numa linha só.
 
 ## 5U. Faturamento da Shopee (D-437) — DEFINIDAS E IMPLEMENTADAS
 

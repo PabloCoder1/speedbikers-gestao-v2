@@ -5176,6 +5176,22 @@ export type Database = {
         }
         Relationships: []
       }
+      shopee_sales_items: {
+        Row: {
+          dia: string | null
+          environment: string | null
+          order_sn: string | null
+          organization_id: string | null
+          position: number | null
+          quantity: number | null
+          receita_item: number | null
+          shopee_created_at: string | null
+          shopee_shop_id: string | null
+          situacao: string | null
+          sku_id: string | null
+        }
+        Relationships: []
+      }
       shopee_sales_orders: {
         Row: {
           com_devolucao: boolean | null
@@ -5486,6 +5502,26 @@ export type Database = {
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
       }
+      get_sku_sales_by_marketplace_account: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+          p_sku_id: string
+        }
+        Returns: {
+          account_id: string | null
+          account_name: string | null
+          compras: number
+          environment: string | null
+          itens_sem_receita: number
+          marketplace: "ML" | "SHOPEE" | null
+          nivel: "TOTAL" | "CONTA"
+          preco_medio: number | null
+          receita_bruta: number | null
+          unidades: number
+        }[]
+      }
       get_sku_shopee_listings: {
         Args: { p_organization_id: string; p_sku_id: string }
         Returns: {
@@ -5629,6 +5665,35 @@ export type Database = {
           ticket_medio: number | null
           ultima_atualizacao: string | null
           unidades: number | null
+        }[]
+      }
+      get_marketplace_sku_sales: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_marketplaces?: string[] | null
+          p_offset?: number
+          p_ordem?: "receita" | "unidades"
+          p_organization_id: string
+          p_sku_ids?: string[] | null
+        }
+        Returns: {
+          compras: number
+          compras_ml: number | null
+          compras_shopee: number | null
+          itens_shopee_sem_receita: number | null
+          receita_bruta: number | null
+          receita_ml: number | null
+          receita_shopee: number | null
+          sku: string | null
+          sku_id: string | null
+          sku_title: string | null
+          total_count: number
+          unidades: number
+          unidades_ml: number | null
+          unidades_shopee: number | null
         }[]
       }
       get_meta_do_mes: {
