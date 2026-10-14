@@ -57,12 +57,13 @@
 - T3a — **rascunho #154** (D-438, consome o C-52 e os avisos de D-435): o aviso do vigia com nome e destino em notificações, a seção "Lojas Shopee" em `/sincronizacao` com os limiares do vigia (3 h e 12 h) e a autorização perto de vencer, e a contagem do rodapé por `marketplace_accounts`.
 - Validação de cada etapa: `check`, `build`, `docs:check`, unitários e a suíte e2e inteira num stack isolado com o banco recriado do zero (210/210 na T3a; os 3 de convite só com o servidor na porta 3000).
 
+- T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Em código e validada localmente** na branch `feat/multicanal-t4-vendas-todos` (sobre a T3a); publica depois das migrations `20261014210000`/`220000` em produção.
+
 **Em andamento**
-- Os três PRs em cadeia: #149 → #153 → #154. Cada um entra depois do anterior; os rascunhos viram prontos na vez deles.
+- Os PRs em cadeia: #149 → #153 → #154, e a T4 sobre eles. Cada um entra depois do anterior; os rascunhos viram prontos na vez deles.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T3b — cartão da Shopee em `/integracoes`, contagem em `/configuracoes` e o seletor de marketplace lendo `marketplace_accounts`.
-- T4 — `/vendas` única com "todos" sobre o C-53 (`get_marketplace_sales_summary`/`_daily`, D-436, na `main`).
 - T5 — `/faturamento` com a Shopee sobre o C-58 (`get_shopee_faturamento`, D-437, na `main`), **depois da decisão do dono** sobre qual resultado mostrar (definitivo, provisório ou os dois).
 - T6 ranking, ABC, SKU e `/produtos` (E6, C-56) → T7 busca universal (C-57) → T8 central e meta (Go Live).
 - Selo "Teste" no painel Shopee do SKU (C-06): a C-55 já está em produção — entra numa próxima fatia.
@@ -84,7 +85,7 @@
 | Id | O quê | Dono | Consumidor | Estado | Critério de aceite |
 |---|---|---|---|---|---|
 | C-01 | Seletor Marketplace/Conta em toda tela que filtra por conta; lojas em `/contas`, `/sincronizacao` e no shell | A2 | — | em parte: T3a no rascunho #154 (D-438); T3b a fazer | só lista o que a permissão deixa; slug antigo continua valendo |
-| C-02 | `/vendas` e Home com "todos", "ml", "shopee" e várias contas | A2 | — | aguarda C-53 (T4) | ML idêntico ao de hoje; a web não soma linha |
+| C-02 | `/vendas` e Home com "todos", "ml", "shopee" e várias contas | A2 | — | `/vendas` em código (T4, D-440); a Home ainda não | ML idêntico ao de hoje; a web não soma linha |
 | C-03 | `/faturamento` com marketplace e a linha por loja | A2 | — | aguarda E5 (T5) | componente não comparável nunca somado |
 | C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | A2 | — | aguarda E6 (T6) | — |
 | C-05 | Concessão de loja em `/usuarios` | A2 | — | rascunho #153 (T2, D-434) | usuário sem a loja não a vê em tela nenhuma |

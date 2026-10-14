@@ -49,26 +49,40 @@ export type ContasPorMarketplace = Readonly<Record<Marketplace, number | null>>;
  * a deixaria sem saber onde está. Leitura que falhou não vira opção: oferecer
  * um marketplace que não se conseguiu confirmar levaria a uma tela vazia.
  */
-export function marketplacesVisiveis(contas: ContasPorMarketplace, ativo: Marketplace): Marketplace[] {
+export function marketplacesVisiveis(contas: ContasPorMarketplace, ativo: Escopo): Marketplace[] {
   return ORDEM.filter((marketplace) => marketplace === ativo || (contas[marketplace] ?? 0) > 0);
 }
 
 /**
+ * O recorte do seletor: um marketplace ou TODOS (D-440). "Todos" só existe
+ * onde a tela tem um consolidado de verdade, somado no SQL (`/vendas`, sobre o
+ * C-53) — a tela que não o oferece simplesmente não passa o destino.
+ */
+export type Escopo = Marketplace | "todos";
+
+export const ROTULO_TODOS = "Todos os marketplaces";
+
+/**
  * As opções do menu, ou `null` quando só há um marketplace: com um só não há
- * o que escolher, e a tela continua exatamente a de antes.
+ * o que escolher, e a tela continua exatamente a de antes. "Todos" vem
+ * primeiro — é o recorte mais largo —, e só com dois marketplaces visíveis.
  */
 export function opcoesDeMarketplace(
-  ativo: Marketplace,
+  ativo: Escopo,
   visiveis: readonly Marketplace[],
-  destinos: Readonly<Record<Marketplace, string>>,
+  destinos: Readonly<Record<Marketplace, string>> & { readonly todos?: string },
 ): FilterOption[] | null {
   if (visiveis.length < 2) return null;
 
-  return visiveis.map((marketplace) => ({
+  const porMarketplace = visiveis.map((marketplace) => ({
     href: destinos[marketplace],
     ativo: marketplace === ativo,
     label: MARKETPLACE_ROTULO[marketplace],
   }));
+
+  return destinos.todos === undefined
+    ? porMarketplace
+    : [{ href: destinos.todos, ativo: ativo === "todos", label: ROTULO_TODOS }, ...porMarketplace];
 }
 
 /** O código do anúncio do Mercado Livre — `MLB` e dígitos. Não existe na Shopee. */
