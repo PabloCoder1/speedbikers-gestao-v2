@@ -152,6 +152,10 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.9 `/produtos` com a Shopee (C-56, D-445) — em código
+
+`get_products_overview` (mesma assinatura; devolve `jsonb`). **Na linha:** `listing_count` e `units_sold_90d` continuam do ML; novos `shopee_listing_count` (anúncio Shopee vinculado ao SKU, um por item, só loja live) e `shopee_units_sold_90d` (pedido válido de loja live, 90 dias) — NULOS quando a organização não tem loja Shopee live. **Filtros:** `p_listing`/`p_sales` = `COM` (em algum marketplace), `SEM` (em nenhum), `SO_ML`, `SO_SHOPEE`, `AMBOS`. **Facetas** `anuncios` e `vendas`: `todos`, `com`, `sem`, `so_ml`, `so_shopee`, `ambos` (com + sem = todos; so_ml + so_shopee + ambos = com). **Resumo:** `sem_anuncio` e `sem_venda_90d` dos dois marketplaces, `sem_anuncio_ml` e `sem_venda_90d_ml` (o cartão de antes) e `tem_shopee`. Loja de teste nunca conta. Sem loja live, tudo como antes.
+
 ### 3.8 Composição do faturamento da Shopee (C-61, D-443) — em código
 
 Todas com `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]`, sobre os MESMOS pedidos cobertos do C-58 (lidos de `get_shopee_faturamento_pedidos`, a definição única).
@@ -341,7 +345,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   sobre usar o recebido provisório (pedido ainda não COMPLETED).
 - **Contrato entregue:** linha Shopee em `/faturamento`, com cobertura.
 
-### E6 — Grão de SKU, ranking e curva ABC — E6a (D-439) e E6b (D-441) em código; E6c (`/produtos`, ranking com resultado) a fazer
+### E6 — Grão de SKU, ranking e curva ABC — E6a (D-439), E6b (D-441) e E6c (`/produtos`, D-445) em código; o ranking com resultado da central fica para depois do Go Live (D-430 §5)
 
 > O grão de SKU da Shopee ficou numa view (`shopee_sales_items`, D-439), não na tabela materializada prevista abaixo; materializar só se o volume pedir (medir no Go Live).
 

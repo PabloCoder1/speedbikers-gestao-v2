@@ -179,6 +179,10 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### `/produtos` com a Shopee (D-445)
+
+Migration `20261015020000`. `get_products_overview` ganha, por SKU, `shopee_listing_count` (anúncio Shopee vinculado, um por item, só loja live) e `shopee_units_sold_90d` (pedido válido de loja live em 90 dias), NULOS sem loja live; anúncio e venda nos filtros, facetas e resumo olham os dois marketplaces (`p_listing`/`p_sales` com SO_ML, SO_SHOPEE, AMBOS); o resumo traz `sem_anuncio_ml`, `sem_venda_90d_ml` e `tem_shopee`. Os campos do ML não mudam.
+
 ### Composição do faturamento da Shopee (D-443)
 
 Migration `20261015010000`. `get_shopee_faturamento_pedidos` é a definição única do pedido no faturamento da Shopee (cobertura, custo de D-356 com a etapa de custo `MATERIALIZED`, alíquota do dia e os componentes do recebido pela fórmula oficial do escrow); `get_shopee_faturamento` (C-58) passa a ler dela, com o TOTAL de receita somando como a linha. Novas: `get_shopee_faturamento_composicao` (a cascata com `outros`), `get_shopee_faturamento_diario` e `get_shopee_faturamento_por_sku` (só pedidos de um SKU). Métrica `shopee_composicao_recebido`.

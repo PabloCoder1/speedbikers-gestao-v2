@@ -4616,6 +4616,165 @@ describe("faturamento da Shopee (D-437)", () => {
 });
 
 /*
+  D-445: /produtos com a Shopee (C-56). Anúncio e venda olham os dois
+  marketplaces; os campos do ML não mudam; loja de teste não conta; sem loja
+  Shopee live, os números da Shopee são nulos e o resto é o de antes.
+*/
+describe("get_products_overview com a Shopee (D-445)", () => {
+  const ORG = "55555555-0000-4000-8000-00000000d445";
+  const ORG_SEM_SHOPEE = "55555555-0000-4000-8000-00000001d445";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d445";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d445";
+  const CONTA = "aaaa4450-0000-4000-8000-0000000a0445";
+  const LOJA = "dddd4450-0000-4000-8000-0000000a0445";
+  const SANDBOX = "dddd4450-0000-4000-8000-0000000b0445";
+  const sku: Record<"a" | "b" | "c" | "d" | "e", string> = { a: "", b: "", c: "", d: "", e: "" };
+
+  async function anuncioShopee(loja: string, itemId: number, skuTexto: string) {
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at)
+       values ($1, $2, $3, 'NORMAL', now(), 'Anuncio', $4, false, now()) on conflict do nothing`,
+      [loja, ORG, itemId, skuTexto],
+    );
+  }
+
+  async function vendaShopee(loja: string, sn: string, skuId: string, diasAtras: number, status = "COMPLETED") {
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, $5, now() - make_interval(days => $4), now(), now() - make_interval(days => $4)) on conflict do nothing`,
+      [loja, ORG, sn, diasAtras, status],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, $2, 0, $3, 1, 2, 30, $4, 'SKU_DO_PEDIDO') on conflict do nothing`,
+      [loja, sn, ORG, skuId],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d445@rls.test'), ($2::uuid, 'analista-d445@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-445', 'org-d445'), ($2, 'Org D-445 sem Shopee', 'org-d445-b') on conflict (id) do nothing",
+      [ORG, ORG_SEM_SHOPEE],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $3, 'ADMIN'), ($1, $4, 'ANALISTA'), ($2, $3, 'ADMIN') on conflict do nothing`,
+      [ORG, ORG_SEM_SHOPEE, ADMIN, ANALISTA],
+    );
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1, 'D445-A', 'PRODUTO'), ($1, 'D445-B', 'PRODUTO'), ($1, 'D445-C', 'PRODUTO'), ($1, 'D445-D', 'PRODUTO'), ($1, 'D445-E', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku_key`,
+      [ORG],
+    );
+
+    for (const chave of ["a", "b", "c", "d", "e"] as const) {
+      sku[chave] = skus.rows.find((r) => r.sku_key === `D445-${chave.toUpperCase()}`)?.id ?? "";
+    }
+
+    await client.query("insert into public.skus (organization_id, sku, kind) values ($1, 'D445-Z', 'PRODUTO') on conflict do nothing", [
+      ORG_SEM_SHOPEE,
+    ]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta D-445', 'rlstest-d445', 'CONNECTED', 9990455, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    // ML: A e E anunciados e vendidos.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB4450001', 'A', 'active', 10, 'BRL', 1, $3), ($1, $2, 'MLB4450005', 'E', 'active', 10, 'BRL', 1, $4)
+       on conflict do nothing`,
+      [ORG, CONTA, sku.a, sku.e],
+    );
+    await client.query(
+      `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $3, current_date - 3, 4, 40, 4, 4), ($1, $2, $4, current_date - 3, 1, 10, 1, 1) on conflict do nothing`,
+      [ORG, CONTA, sku.a, sku.e],
+    );
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $3, 'live', 990445001, 'Loja Real', 'CONNECTED', now(), now(), now()),
+              ($2, $3, 'sandbox', 990445002, 'Teste', 'CONNECTED', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    // Shopee: B anunciado e vendido na loja real; E anunciado nela; C só na loja
+    // de teste (não conta); D vendeu há 120 dias (fora dos 90).
+    await anuncioShopee(LOJA, 4450002, "D445-B");
+    await anuncioShopee(LOJA, 4450005, "D445-E");
+    await anuncioShopee(SANDBOX, 4450003, "D445-C");
+    await vendaShopee(LOJA, "V-B", sku.b, 5);
+    await vendaShopee(SANDBOX, "V-C", sku.c, 5);
+    await vendaShopee(LOJA, "V-D", sku.d, 120);
+    // Cancelado não é venda: A continua sem venda na Shopee.
+    await vendaShopee(LOJA, "V-A", sku.a, 5, "CANCELLED");
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX]]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = $1", [CONTA]);
+    await client.query("delete from public.listings where ml_account_id = $1", [CONTA]);
+  });
+
+  interface Visao {
+    total: number;
+    linhas: { sku: string; listing_count: number; units_sold_90d: number; shopee_listing_count: number | null; shopee_units_sold_90d: number | null }[];
+    facetas: Record<"anuncios" | "vendas", Record<"todos" | "com" | "sem" | "so_ml" | "so_shopee" | "ambos", number>>;
+    resumo: Record<"sem_anuncio" | "sem_anuncio_ml" | "sem_venda_90d" | "sem_venda_90d_ml", number> & { tem_shopee: boolean };
+  }
+
+  const visao = async (args = "", org = ORG) => {
+    const [linha] = await asUser<{ v: Visao }>(ADMIN, `select public.get_products_overview('${org}', p_order => 'criado'${args}) as v`);
+
+    return linha?.v;
+  };
+
+  it("anúncio e venda dos dois marketplaces; os campos do ML não mudam; a loja de teste não conta", async () => {
+    const v = await visao();
+    const por = new Map(v?.linhas.map((l) => [l.sku, [l.listing_count, l.units_sold_90d, l.shopee_listing_count, l.shopee_units_sold_90d]]));
+
+    expect(Object.fromEntries(por)).toEqual({
+      "D445-A": [1, 4, 0, 0],
+      "D445-B": [0, 0, 1, 2],
+      "D445-C": [0, 0, 0, 0],
+      "D445-D": [0, 0, 0, 0],
+      "D445-E": [1, 1, 1, 0],
+    });
+    expect(v?.facetas.anuncios).toEqual({ todos: 5, com: 3, sem: 2, so_ml: 1, so_shopee: 1, ambos: 1 });
+    expect(v?.facetas.vendas).toEqual({ todos: 5, com: 3, sem: 2, so_ml: 2, so_shopee: 1, ambos: 0 });
+    // O "sem anúncio/venda" de qualquer marketplace, e o só do ML à parte.
+    expect(v?.resumo).toMatchObject({ sem_anuncio: 2, sem_anuncio_ml: 3, sem_venda_90d: 2, sem_venda_90d_ml: 3, tem_shopee: true });
+  });
+
+  it("os recortes por marketplace", async () => {
+    const skus = async (args: string) => (await visao(args))?.linhas.map((l) => l.sku).sort();
+
+    expect(await skus(", p_listing => 'SO_SHOPEE'")).toEqual(["D445-B"]);
+    expect(await skus(", p_listing => 'AMBOS'")).toEqual(["D445-E"]);
+    expect(await skus(", p_listing => 'SEM'")).toEqual(["D445-C", "D445-D"]);
+    expect(await skus(", p_sales => 'SO_ML'")).toEqual(["D445-A", "D445-E"]);
+    expect(await skus(", p_sales => 'COM'")).toEqual(["D445-A", "D445-B", "D445-E"]);
+  });
+
+  it("sem loja Shopee live, os números da Shopee são nulos; ANALISTA continua de fora", async () => {
+    const v = await visao("", ORG_SEM_SHOPEE);
+
+    expect(v?.linhas.map((l) => [l.sku, l.shopee_listing_count, l.shopee_units_sold_90d])).toEqual([["D445-Z", null, null]]);
+    expect(v?.resumo.tem_shopee).toBe(false);
+    await expect(asUser(ANALISTA, `select public.get_products_overview('${ORG}')`)).rejects.toThrow(/sem permissao/);
+  });
+});
+
+/*
   D-443: a composição do faturamento da Shopee (C-61). Uma definição só do
   pedido (get_shopee_faturamento_pedidos) para o C-58, a cascata, a série
   diária e o por SKU; a cascata pelos termos da fórmula oficial do escrow, com
