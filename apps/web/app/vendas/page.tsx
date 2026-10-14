@@ -19,6 +19,8 @@ import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 import { FilterMenu } from "../../components/filter-menu";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { contarLojasShopee } from "../../lib/marketplace";
+import { hrefDeVendas, resolverEscopoVendas } from "../../lib/vendas-multicanal";
+import { VendasMulticanal } from "./multicanal";
 import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
@@ -373,6 +375,18 @@ async function VendasContent({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const query = await searchParams;
+
+  /*
+    TODOS OS MARKETPLACES, OU SÓ A SHOPEE (D-440): a mesma tela com outro
+    recorte, lida do contrato multicanal (C-53). Sem `marketplace`, tudo abaixo
+    é a tela do Mercado Livre de sempre, com as RPCs dele — nenhum número muda.
+  */
+  const escopo = resolverEscopoVendas(query.marketplace);
+
+  if (escopo !== "ml") {
+    return <VendasMulticanal query={query} escopo={escopo} />;
+  }
+
   const supabase = await createClient();
   const now = new Date();
   const today = toSalesMetricDate(now);
@@ -581,10 +595,10 @@ async function VendasContent({
               contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
               destinos={{
                 ml: buildHref({ period, accountSlug, metricKey: metric.key, brand }, {}),
-                shopee: buildHref(
-                  { period, accountSlug: null, metricKey: DEFAULT_SALES_METRIC.key, brand: { kind: "todas" } },
-                  {},
-                ).replace(/^\/vendas/, "/vendas/shopee"),
+                // D-440: "Todos" e "Shopee" são esta tela com outro recorte; só o
+                // período atravessa (conta, marca e métrica são do ML).
+                todos: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key }, { escopo: "todos" }),
+                shopee: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key }, { escopo: "shopee" }),
               }}
             />
 

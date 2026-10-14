@@ -1146,6 +1146,9 @@ body {
   font-family: var(--sb-mono);
   font-size: 0.625rem;
   color: var(--sb-muted-ink);
+  /* D-440: os ids do consolidado (`multicanal_receita_bruta`) não cabem na
+     célula do celular e eram cortados; quebram em vez de sumir. */
+  overflow-wrap: anywhere;
 }
 
 /* A variação contra o período anterior (D-394): chip no tom da polaridade. */

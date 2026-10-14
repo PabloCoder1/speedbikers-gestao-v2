@@ -240,6 +240,14 @@ test("/vendas: o seletor de marketplace leva às vendas da Shopee só com o per�
   await seletor.locator("summary").click();
   await seletor.getByRole("link", { name: "Shopee", exact: true }).click();
 
+  // D-440: "Shopee" é o resumo em `/vendas`, com o mesmo período; os pedidos
+  // e as lojas da Shopee estão a um clique, no detalhe.
+  await expect(page).toHaveURL(/\/vendas\?marketplace=shopee&days=7$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Shopee");
+
+  await page.getByRole("link", { name: "Pedidos e lojas da Shopee →" }).click();
+
   await expect(page).toHaveURL(/\/vendas\/shopee\?days=7$/);
   await expect(page.getByRole("heading", { level: 1, name: "Vendas da Shopee" })).toBeVisible();
   await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Shopee");

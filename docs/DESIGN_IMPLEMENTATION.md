@@ -272,7 +272,7 @@ branco embutido.
 |---|---|---|
 | Shell (sidebar + grupos + topbar) | `components/shell.tsx`, `nav.tsx` | **camada nova**, refeita pelo frame; trilho de 58px em ≤850 desde A1 |
 | `PageTitle`, `Panel`, `KpiStrip`, `ObjectHeader` | `components/*.tsx` | **camada nova** — `.page-title`, `.panel`, `.kpi-strip`/`.ops-metrics`, Object Header do Figma |
-| `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">`. Desde D-431: `nome` (nome acessível, "Marketplace: Shopee") e `alinhamento="inicio"` para o PRIMEIRO menu da barra — alinhado pela direita, o painel mais largo que o botão vazava para baixo da lateral |
+| `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">`. Desde D-431: `nome` (nome acessível, "Marketplace: Shopee") e `alinhamento="inicio"` para o PRIMEIRO menu da barra — alinhado pela direita, o painel mais largo que o botão vazava para baixo da lateral. **Várias escolhas** (contas no consolidado de `/vendas`, D-440): cada opção é um link que liga ou desliga, com "✓" na marcada, e a URL guarda tudo num valor só — sem formulário, compatível com filtro salvo |
 | `tone.ts` (`TOM`, `tomDeStatus`) | `components/tone.ts` | **dono único** dos cinco tons do `.status`; `StatusPill`, `StatePill`, `KpiStrip`, `ObjectHeader` e a Home leem daqui (eram cinco mapas) |
 | `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |
 | `StatePill` (vocabulário da tela → tom) | `components/state-pill.tsx` | alinhado — era cápsula de contorno; virou o mesmo chip |
