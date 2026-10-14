@@ -352,6 +352,8 @@ describe("catálogo de métricas", () => {
       "shopee_pedidos",
       "shopee_recebido",
       "shopee_receita_bruta",
+      // D-439: o grao de SKU da receita da Shopee.
+      "shopee_receita_item",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
       "shopee_unidades",
@@ -3391,6 +3393,7 @@ describe("vendas Shopee (D-430)", () => {
       "shopee_pedidos",
       "shopee_recebido",
       "shopee_receita_bruta",
+      "shopee_receita_item",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
       "shopee_unidades",
@@ -4606,6 +4609,204 @@ describe("faturamento da Shopee (D-437)", () => {
     );
 
     expect(rows).toHaveLength(5);
+  });
+});
+
+/*
+  D-439: vendas por SKU entre marketplaces. O grão de SKU da Shopee
+  (shopee_sales_items), o ranking com o total no SQL e o balde sem SKU, e as
+  vendas de um SKU por conta e loja -- com as equivalências: a parte ML é a de
+  get_sku_sales_breakdown, e a soma dos SKUs da loja fecha com
+  get_shopee_sales_by_shop.
+*/
+describe("vendas por SKU entre marketplaces (D-439)", () => {
+  const ORG = "77777777-0000-4000-8000-00000000d439";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d439";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d439";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d439";
+  const CONTA_A = "aaaa4390-0000-4000-8000-0000000a0439";
+  const CONTA_B = "aaaa4390-0000-4000-8000-0000000b0439";
+  const LOJA = "dddd4390-0000-4000-8000-0000000a0439";
+  const SANDBOX = "dddd4390-0000-4000-8000-0000000b0439";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+  let skuX = "";
+  let skuY = "";
+
+  async function pedido(loja: string, sn: string, status: string) {
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, $4, '2026-10-10T15:00:00Z', '2026-10-10T15:00:00Z', '2026-10-10T15:01:00Z') on conflict do nothing`,
+      [loja, ORG, sn, status],
+    );
+  }
+
+  async function item(loja: string, sn: string, pos: number, skuId: string | null, qtd: number, preco: number) {
+    await client.query(
+      `insert into public.shopee_order_items
+         (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, $2, $3, $4, 1, $5, $6, $7, case when $7::uuid is null then null else 'SKU_DO_PEDIDO' end) on conflict do nothing`,
+      [loja, sn, pos, ORG, qtd, preco, skuId],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d439@rls.test'), ($2::uuid, 'analista-d439@rls.test'), ($3::uuid, 'membro-d439@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-439', 'org-d439') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1, 'D439-X', 'PRODUTO'), ($1, 'D439-Y', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku_key`,
+      [ORG],
+    );
+
+    skuX = skus.rows.find((r) => r.sku_key === "D439-X")?.id ?? "";
+    skuY = skus.rows.find((r) => r.sku_key === "D439-Y")?.id ?? "";
+
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $3, 'Conta A', 'rlstest-d439-a', 'CONNECTED', 9990439, now()), ($2, $3, 'Conta B', 'rlstest-d439-b', 'CONNECTED', 9990440, now())
+       on conflict (id) do nothing`,
+      [CONTA_A, CONTA_B, ORG],
+    );
+    await client.query(
+      `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $4, '2026-10-10', 3, 300, 3, 2), ($1, $2, null, '2026-10-10', 1, 40, 1, 1), ($1, $3, $5, '2026-10-11', 2, 100, 2, 2)
+       on conflict do nothing`,
+      [ORG, CONTA_A, CONTA_B, skuX, skuY],
+    );
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $3, 'live', 990439001, 'Loja Real', 'CONNECTED', now(), now(), now()),
+              ($2, $3, 'sandbox', 990439002, 'Teste', 'CONNECTED', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    // O1: X (2 x 90) e Y (1 x 50). O2: X de preço 0 (bundle). O3: item sem SKU.
+    // O4 cancelado. No sandbox, O5 com X que não soma.
+    await pedido(LOJA, "O1", "COMPLETED");
+    await item(LOJA, "O1", 0, skuX, 2, 90);
+    await item(LOJA, "O1", 1, skuY, 1, 50);
+    await pedido(LOJA, "O2", "COMPLETED");
+    await item(LOJA, "O2", 0, skuX, 1, 0);
+    await pedido(LOJA, "O3", "COMPLETED");
+    await item(LOJA, "O3", 0, null, 1, 20);
+    await pedido(LOJA, "O4", "CANCELLED");
+    await item(LOJA, "O4", 0, skuX, 5, 90);
+    await pedido(SANDBOX, "O5", "COMPLETED");
+    await item(SANDBOX, "O5", 0, skuX, 9, 10);
+
+    await client.query("insert into public.user_account_permissions (user_id, ml_account_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      CONTA_A,
+    ]);
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX]]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = any($1::uuid[])", [[CONTA_A, CONTA_B]]);
+  });
+
+  type Linha = Record<string, string | null>;
+
+  const ranking = (usuario: string, ordem = "receita", marketplaces = "array['ML','SHOPEE']") =>
+    asUser<Linha>(
+      usuario,
+      `select sku_id, unidades_ml, receita_ml, compras_ml, unidades_shopee, receita_shopee, itens_shopee_sem_receita, compras_shopee,
+              unidades, receita_bruta, compras, total_count
+         from public.get_marketplace_sku_sales('${ORG}', '${DE}', '${ATE}', ${marketplaces}, null, null, '${ordem}')`,
+    );
+
+  it("o ranking: colunas por marketplace e o total no SQL; o balde sem SKU numa linha; sandbox e cancelado fora", async () => {
+    const linhas = await ranking(ADMIN);
+
+    expect(linhas.map((l) => l.sku_id)).toEqual([skuX, skuY, null]);
+    expect(linhas[0]).toMatchObject({
+      unidades_ml: "3",
+      receita_ml: "300.00",
+      compras_ml: "2",
+      // O2 tem X de preço 0: unidade conta, receita é desconhecida.
+      unidades_shopee: "3",
+      receita_shopee: "180.00",
+      itens_shopee_sem_receita: "1",
+      compras_shopee: "2",
+      unidades: "6",
+      receita_bruta: "480.00",
+      compras: "4",
+      total_count: "3",
+    });
+    expect(linhas[1]).toMatchObject({ unidades: "3", receita_bruta: "150.00", compras: "3" });
+    expect(linhas[2]).toMatchObject({ unidades_ml: "1", receita_ml: "40.00", unidades_shopee: "1", receita_shopee: "20.00", unidades: "2", receita_bruta: "60.00" });
+    // Por unidades a ordem também é X, Y, sem SKU; só ML (o padrão) não traz a Shopee.
+    expect((await ranking(ADMIN, "unidades")).map((l) => l.unidades)).toEqual(["6", "3", "2"]);
+    expect((await ranking(ADMIN, "receita", "null")).every((l) => l.unidades_shopee === null)).toBe(true);
+  });
+
+  it("EQUIVALÊNCIA: a soma dos SKUs da loja fecha com get_shopee_sales_by_shop", async () => {
+    const linhas = await ranking(ADMIN);
+    const [loja] = await asUser<Linha>(
+      ADMIN,
+      `select unidades, receita_bruta, pedidos_sem_receita from public.get_shopee_sales_by_shop('${ORG}', '${DE}', '${ATE}') where shopee_shop_id = '${LOJA}'`,
+    );
+    const somaUnidades = linhas.reduce((s, l) => s + Number(l.unidades_shopee ?? 0), 0);
+    const somaReceita = linhas.reduce((s, l) => s + Number(l.receita_shopee ?? 0), 0);
+
+    expect(somaUnidades).toBe(Number(loja?.unidades));
+    expect(somaReceita).toBe(Number(loja?.receita_bruta));
+  });
+
+  it("as vendas de um SKU por conta e loja: ML igual a get_sku_sales_breakdown; sandbox marcado e fora do TOTAL", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, marketplace, account_id, environment, unidades, receita_bruta, itens_sem_receita, compras, preco_medio
+         from public.get_sku_sales_by_marketplace_account('${ORG}', '${skuX}', '${DE}', '${ATE}')
+        order by nivel desc, marketplace, environment`,
+    );
+
+    expect(linhas).toEqual([
+      { nivel: "TOTAL", marketplace: null, account_id: null, environment: null, unidades: "6", receita_bruta: "480.00", itens_sem_receita: "1", compras: "4", preco_medio: null },
+      { nivel: "CONTA", marketplace: "ML", account_id: CONTA_A, environment: "live", unidades: "3", receita_bruta: "300.00", itens_sem_receita: "0", compras: "2", preco_medio: "100.00" },
+      { nivel: "CONTA", marketplace: "SHOPEE", account_id: LOJA, environment: "live", unidades: "3", receita_bruta: "180.00", itens_sem_receita: "1", compras: "2", preco_medio: null },
+      { nivel: "CONTA", marketplace: "SHOPEE", account_id: SANDBOX, environment: "sandbox", unidades: "9", receita_bruta: "90.00", itens_sem_receita: "0", compras: "1", preco_medio: "10.00" },
+    ]);
+
+    const [ml] = await asUser<Linha>(
+      ADMIN,
+      `select units_sold, gross_revenue, purchases_count from public.get_sku_sales_breakdown('${ORG}', '${skuX}', '${DE}', '${ATE}')
+        where grain = 'conta' and ml_account_id = '${CONTA_A}'`,
+    );
+
+    expect([ml?.units_sold, ml?.gross_revenue, ml?.purchases_count]).toEqual(["3", "300.00", "2"]);
+  });
+
+  it("a permissão por conta e por loja vale; ordem e período inválidos são recusados", async () => {
+    const analista = await ranking(ANALISTA);
+    const y = analista.find((l) => l.sku_id === skuY);
+
+    // Sem a conta B, o Y do ML some; o da loja concedida fica.
+    expect(y).toMatchObject({ unidades_ml: null, unidades_shopee: "1", unidades: "1" });
+    expect(await ranking(MEMBRO)).toEqual([]);
+    expect(await ranking(DE_OUTRA_ORG)).toEqual([]);
+    await expect(ranking(ADMIN, "lucro")).rejects.toThrow(/ordem invalida/);
+    await expect(
+      asUser(ADMIN, `select * from public.get_sku_sales_by_marketplace_account('${ORG}', '${skuX}', '${ATE}', '${DE}')`),
+    ).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon("select * from public.shopee_sales_items")).rejects.toThrow(/permission denied/i);
   });
 });
 
