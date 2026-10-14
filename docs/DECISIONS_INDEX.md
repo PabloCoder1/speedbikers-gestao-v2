@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **437** (D-001 a D-446).
+Decisões registradas: **438** (D-001 a D-452).
 
 ## Por domínio
 
@@ -152,7 +152,7 @@ Decisões registradas: **437** (D-001 a D-446).
 - **D-380** — Central Full vira fila de envio: cobertura por linha, focos "Acabando" e "Pode enviar hoje", ordem por prioridade e CSV do recorte
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 
-### interface (51)
+### interface (52)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -205,6 +205,7 @@ Decisões registradas: **437** (D-001 a D-446).
 - **D-438** — Telas multicanais, etapa T3a: a loja Shopee aparece na saude da operacao -- o aviso do vigia com nome e destino, /sincronizacao com os limiares do vigia, e a contagem do topo pela fonte unica
 - **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
+- **D-452** — Telas multicanais, etapa T5b: o Faturamento da Shopee ganha a cascata do recebido componente a componente, a serie diaria e os produtos, sobre o C-61
 
 ### mercado-livre (77)
 

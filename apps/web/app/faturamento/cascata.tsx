@@ -36,7 +36,10 @@ export function Cascata({ degraus }: { degraus: readonly DegrauDaCascata[] }): R
             </span>
 
             <span className="sb-cascata-valor">
-              {degrau.tipo === "deducao" ? `− ${formatCurrency(Math.abs(degrau.valor))}` : formatCurrency(degrau.valor)}
+              {/* Na Shopee um componente pode ser crédito (D-452): sobe, com "+". */}
+              {degrau.tipo === "deducao"
+                ? `${degrau.valor > 0 ? "+" : "−"} ${formatCurrency(Math.abs(degrau.valor))}`
+                : formatCurrency(degrau.valor)}
             </span>
 
             <span className="sb-cascata-pct">
