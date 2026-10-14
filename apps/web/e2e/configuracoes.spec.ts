@@ -5,12 +5,12 @@ import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Hub de Configurações (D-232) — o que só se prova RODANDO (D-188) é a fiação:
- * a RPC `get_settings_overview` sob a RLS do usuário do seed, as sete seções
+ * a RPC `get_settings_overview` sob a RLS do usuário do seed, as oito seções
  * renderizadas com o estado honesto para um seed que tem UMA conta ML e
  * NENHUMA política de reposição, e a regra do item — apontar, não embutir —
  * visível como ausência total de botão.
  */
-test("Hub de Configurações: sete seções, estados honestos e nenhum botão — só links para a tela dona", async ({
+test("Hub de Configurações: oito seções, estados honestos e nenhum botão — só links para a tela dona", async ({
   page,
 }) => {
   const seed = await readSeedOutput();
@@ -20,8 +20,8 @@ test("Hub de Configurações: sete seções, estados honestos e nenhum botão �
   await expect(page).toHaveURL(/\/configuracoes$/);
   await expect(page.getByRole("heading", { level: 1, name: "Configurações" })).toBeVisible();
 
-  // As sete seções do item, cada uma como região nomeada.
-  for (const nome of ["Organização", "Reposição", "Notificações", "Mercado Livre", "IA / Copiloto", "Operação (atendimento)", "Preferências"]) {
+  // As oito seções do item, cada uma como região nomeada (a Shopee desde D-446).
+  for (const nome of ["Organização", "Reposição", "Notificações", "Mercado Livre", "Shopee", "IA / Copiloto", "Operação (atendimento)", "Preferências"]) {
     await expect(page.getByRole("region", { name: nome })).toBeVisible();
   }
 
@@ -29,6 +29,11 @@ test("Hub de Configurações: sete seções, estados honestos e nenhum botão �
   const mercadoLivre = page.getByRole("region", { name: "Mercado Livre" });
   await expect(mercadoLivre.getByText("1 de 1 conta conectada")).toBeVisible();
   await expect(mercadoLivre.getByRole("link", { name: "Contas ML" })).toBeVisible();
+
+  // Seed: uma loja Shopee conectada, de teste — contada e dita (D-446).
+  const shopee = page.getByRole("region", { name: "Shopee" });
+  await expect(shopee.getByText("1 de 1 loja conectada; 1 de teste, fora das somas.")).toBeVisible();
+  await expect(shopee.getByRole("link", { name: "Contas e lojas" })).toBeVisible();
 
   // Seed: nenhuma política de reposição — e a tela diz a consequência (D-144).
   const reposicao = page.getByRole("region", { name: "Reposição" });
@@ -73,7 +78,7 @@ test("/configuracoes: os dois interruptores do frame não entraram, e nada nesta
   await expect(page.getByRole("button", { name: /Salvar/i })).toHaveCount(0);
 });
 
-test("/configuracoes: a faixa conta as sete seções, e as partes fecham com o total", async ({ page }) => {
+test("/configuracoes: a faixa conta as oito seções, e as partes fecham com o total", async ({ page }) => {
   await login(page, "/configuracoes");
 
   const faixa = page.locator(".sb-kpi-strip");
@@ -102,11 +107,11 @@ test("/configuracoes: a faixa conta as sete seções, e as partes fecham com o t
   expect(configuradas + parciais + naoConfiguradas + naoEditaveis + indisponiveis).toBe(total);
 
   /*
-    O frame tem QUATRO abas; o sistema tem sete seções. As abas dele não
-    cobrem Mercado Livre, IA/Copiloto nem Reposição — e é justamente Reposição
-    que aparece "não configurado" aqui, com a consequência escrita.
+    O frame tem QUATRO abas; o sistema tem oito seções. As abas dele não
+    cobrem Mercado Livre, Shopee, IA/Copiloto nem Reposição — e é justamente
+    Reposição que aparece "não configurado" aqui, com a consequência escrita.
   */
-  expect(total).toBe(7);
+  expect(total).toBe(8);
 
   // O teto de IA mora no deploy: nem configurado, nem por configurar.
   expect(naoEditaveis).toBeGreaterThanOrEqual(1);
@@ -261,6 +266,9 @@ test("/configuracoes: o veredito do subtítulo diz os mesmos números que a faix
 
   const naoConfiguradas = await valor("Não configuradas");
   const parciais = await valor("Parciais");
+  // O total vem da própria faixa: uma seção nova (a Shopee, D-446) não pode
+  // quebrar o caso que só quer saber se as duas frases dizem o mesmo número.
+  const total = String(await valor("Seções"));
 
   // O veredito é o `<strong>` do subtítulo, logo abaixo do h1.
   const veredito = (
@@ -272,18 +280,18 @@ test("/configuracoes: o veredito do subtítulo diz os mesmos números que a faix
   ).trim();
 
   if (naoConfiguradas === 0 && parciais === 0) {
-    expect(veredito).toBe("As 7 áreas têm configuração.");
+    expect(veredito).toBe(`As ${total} áreas têm configuração.`);
     return;
   }
 
   if (naoConfiguradas > 0) {
-    expect(veredito).toMatch(new RegExp(`^${String(naoConfiguradas)} das 7 áreas ainda não (tem|têm) configuração`));
+    expect(veredito).toMatch(new RegExp(`^${String(naoConfiguradas)} das ${total} áreas ainda não (tem|têm) configuração`));
   } else {
     expect(veredito).not.toContain("ainda não");
   }
 
   if (parciais > 0) {
-    expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das 7 áreas )?(tem|têm) configuração parcial\\.$`));
+    expect(veredito).toMatch(new RegExp(`\\b${String(parciais)} (das ${total} áreas )?(tem|têm) configuração parcial\\.$`));
   } else {
     expect(veredito).not.toContain("parcial");
   }
