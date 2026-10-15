@@ -6,6 +6,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatCount, formatCurrency } from "../../lib/format";
 import {
   PAGE_SIZE,
@@ -301,7 +303,7 @@ export default async function VinculacoesPage({
         aside={
           <>
             {/* A busca do frame, como GET nativo (D-136). */}
-            <form method="get" action="/vinculacoes" className="sb-rep-busca" role="search">
+            <FormularioFiltro action="/vinculacoes" className="sb-rep-busca" role="search">
               {filters.state !== "todos" && <input type="hidden" name="estado" value={filters.state} />}
               {filters.sold !== "todos" && <input type="hidden" name="venda" value={filters.sold} />}
               {contaEscolhida !== null && <input type="hidden" name="conta" value={contaEscolhida.slug} />}
@@ -317,7 +319,7 @@ export default async function VinculacoesPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             <VincularPorMlb contas={contasOpcoes} />
           </>
         }
@@ -485,9 +487,9 @@ export default async function VinculacoesPage({
         }
         aside={
           filtroAtivo ? (
-            <Link className="sb-button" href="/vinculacoes">
+            <LinkDeFiltro className="sb-button" href="/vinculacoes">
               Limpar filtros
-            </Link>
+            </LinkDeFiltro>
           ) : null
         }
       >

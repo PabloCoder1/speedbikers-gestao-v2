@@ -6,6 +6,8 @@ import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { TOM, type Tom } from "../../components/tone";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import {
   DEFAULT_PAGE_SIZE,
   ORDENS,
@@ -491,7 +493,7 @@ export default async function ProdutosPage({
         subtitle="O catálogo do ERP e o que falta decidir nele: estoque virtual, marca do fornecedor, produto sem anúncio ou sem venda. A sugestão nunca se aplica sozinha."
         aside={
           <>
-            <form method="get" action="/produtos" className="sb-rep-busca">
+            <FormularioFiltro action="/produtos" className="sb-rep-busca">
               {/*
                 O GET manda só o que está no formulário: sem estes campos, buscar
                 descartaria o recorte inteiro (D-136).
@@ -517,7 +519,7 @@ export default async function ProdutosPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
           </>
         }
       />
@@ -696,9 +698,9 @@ export default async function ProdutosPage({
           {totalPaginas > 1 && (
             <nav className="sb-prod-paginas" aria-label="Páginas">
               {atual.page > 1 ? (
-                <Link className="sb-button" href={buildCurationHref(atual, { page: atual.page - 1 })}>
+                <LinkDeFiltro className="sb-button" href={buildCurationHref(atual, { page: atual.page - 1 })}>
                   ‹ Anterior
-                </Link>
+                </LinkDeFiltro>
               ) : (
                 <span />
               )}
@@ -706,9 +708,9 @@ export default async function ProdutosPage({
                 Página {formatCount(atual.page)} de {formatCount(totalPaginas)}
               </span>
               {atual.page < totalPaginas ? (
-                <Link className="sb-button" href={buildCurationHref(atual, { page: atual.page + 1 })}>
+                <LinkDeFiltro className="sb-button" href={buildCurationHref(atual, { page: atual.page + 1 })}>
                   Próxima ›
-                </Link>
+                </LinkDeFiltro>
               ) : (
                 <span />
               )}

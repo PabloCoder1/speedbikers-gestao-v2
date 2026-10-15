@@ -21,7 +21,7 @@
 | **Trocar de tela** (um segmento do caminho muda) | moldura na hora; esqueleto e barra só depois de 350 ms | `loading.tsx` por pasta → `CarregandoTela` | D-382 |
 | **Carga inicial** de uma tela | o mesmo esqueleto, no lugar do que vai chegar (título, faixa de KPIs, painel) | `CarregandoTela` / `CarregandoConteudo` | D-382 |
 | **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel | `<Suspense fallback={<CarregandoBloco/>}>` | D-382 |
-| **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `CarregandoSeODemorar` dentro do `<Link>`, `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500** |
+| **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
 | **Ação que grava** (salvar, assumir, remover) | o botão desabilita e diz o que está fazendo ("Salvando…") | por tela hoje; componente compartilhado na fila (§3, item 11) | — |
 
 **Regras** (valem para tela nova e para quem mexer numa existente):
@@ -32,9 +32,11 @@
    `router.push`, o `pending` da ação. Nada de temporizador para "mostrar que
    carregou"; o atraso de 100/350/400 ms é só para não piscar.
 3. Atualizar não é carregar: na mesma tela, o dado válido nunca é escondido.
-4. Filtro e busca são navegação suave (`<Link>`, `ItemDeMenu`,
+4. Filtro e busca são navegação suave (`LinkDeFiltro`, `ItemDeMenu`,
    `FormularioFiltro`) — `<a href>` e `<form method="get">` recarregam o
-   documento inteiro. `<a>` só para download e destino externo.
+   documento inteiro. `<a>` só para download e destino externo. A guarda
+   `check:navegacao-suave` reprova os dois; as telas que faltam estão na lista
+   de pendências dela, com o motivo.
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
 6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
@@ -51,13 +53,13 @@ robustez; **P3** = acabamento.
 | # | Achado | Evidência | Grav. | Situação |
 |---|---|---|---|---|
 | 1 | Opção de menu de filtro era `<a>`: cada escolha recarregava o documento | `FilterMenu` (63 usos em 26 arquivos), `SeletorMarketplace` (7), `SavedFilters` (4) | P1 | **corrigido** (D-500) |
-| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido em `/estoque`**; 24 na fila |
+| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido** em 18 dos 25 (`/estoque` na D-500, 17 na D-501); 7 nas telas pendentes do A2 |
 | 3 | Atualização na mesma tela trocava a tela inteira pelo esqueleto após 350 ms | `CarregandoSeODemorar` (~100 usos) | P1 | **corrigido** (D-500) |
 | 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **proposta ao dono** (§4) |
-| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | fila |
-| 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | fila (telas do A2) |
+| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
+| 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | fila |
-| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **A2, PR #175** (T-R6): 5 das 6 telas, com aviso provisório (`.sb-note-perigo`); `/curva-abc` depois do #164/#165 |
+| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha; o aviso é provisório até o `EstadoDaTela` |
 | 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | fila |
 | 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | fila |
 | 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | fila |
@@ -78,14 +80,12 @@ cobre as 59 pastas com página; o esqueleto não inventa dado da organização.
 
 Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois.
 
-1. **Atualização no lugar no resto do app** — os 45 `<Link>` do item 5 e os 24
-   formulários GET do item 2, começando pelas telas sem branch aberta do A2
-   (`/atendimento`, `/full`, `/notificacoes`, `/precos`, `/reposicao`,
-   `/fornecedores`, `/compras`, `/notas-fiscais`, `/usuarios`,
-   `/vinculacoes`); `/anuncios`, `/vendas/shopee`, `/curva-abc`,
-   `/faturamento` e `/produtos` quando o A2 liberar. Uma guarda estática
-   (`<form method="get">` e `<a href="?` / `href="/rota?`) fecha a porta para a
-   volta do padrão.
+1. ~~**Atualização no lugar no resto do app**~~ — **feita** (D-501): 17
+   buscas, 27 `<a>` e 41 `<Link>` em 22 arquivos, com a guarda
+   `check:navegacao-suave` e o `e2e/atualizacao-no-lugar.spec.ts`. Sobram as
+   telas da lista de pendências da guarda (`/central`, `/central/produtos`,
+   `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
+   de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
 2. **Botão pendente compartilhado** (`useFormStatus`) para ação de servidor —
    fecha o item 11.
 3. **`EstadoDaTela`**: erro, vazio (com e sem filtro), sem permissão — uma

@@ -9,6 +9,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { isPageBeyondEnd } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
@@ -461,7 +463,7 @@ export default async function AtendimentoPage({
           }
         >
           <div className="sb-inbox-toolbar">
-            <form method="get" action="/atendimento" className="sb-inbox-search" role="search">
+            <FormularioFiltro action="/atendimento" className="sb-inbox-search" role="search">
               {/* GET nativo só envia os campos do form: as outras dimensões vão escondidas. */}
               {filters.account !== null && <input type="hidden" name="account" value={filters.account} />}
               {channel !== null && <input type="hidden" name="canal" value={channel} />}
@@ -483,7 +485,7 @@ export default async function AtendimentoPage({
               <button className="sb-button" type="submit">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
 
             <div className="sb-inbox-toggles" aria-label="Recortes rápidos">
               <FilterPill href={buildSupportHref(current, { mine: !filters.mine })} active={filters.mine}>
@@ -500,9 +502,9 @@ export default async function AtendimentoPage({
                 Mediação
               </FilterPill>
               {recorteAtivo && (
-                <Link className="sb-text-button" href={buildSupportHref(current, limpo)}>
+                <LinkDeFiltro className="sb-text-button" href={buildSupportHref(current, limpo)}>
                   Limpar filtros
-                </Link>
+                </LinkDeFiltro>
               )}
             </div>
           </div>
@@ -524,9 +526,9 @@ export default async function AtendimentoPage({
             <div role="alert" className="sb-inbox-state sb-inbox-state-error">
               <strong>Não foi possível carregar os atendimentos.</strong>
               <span>{erro}</span>
-              <Link className="sb-button" href={buildSupportHref(current, { page: current.page })}>
+              <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: current.page })}>
                 Tentar de novo
-              </Link>
+              </LinkDeFiltro>
             </div>
           )}
 
@@ -535,9 +537,9 @@ export default async function AtendimentoPage({
             <div className="sb-inbox-state">
               <strong>Esta página não existe neste recorte.</strong>
               <span>A fila encolheu ou o link é antigo.</span>
-              <Link className="sb-button" href={buildSupportHref(current, { page: 1 })}>
+              <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: 1 })}>
                 Voltar à primeira página
-              </Link>
+              </LinkDeFiltro>
             </div>
           )}
 
@@ -681,9 +683,9 @@ export default async function AtendimentoPage({
           {erro === null && !paginaVazia && janela.totalPages > 1 && (
             <nav className="sb-inbox-pages" aria-label="Páginas">
               {filters.page > 1 ? (
-                <Link className="sb-button" href={buildSupportHref(current, { page: filters.page - 1 })}>
+                <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: filters.page - 1 })}>
                   ‹ Anterior
-                </Link>
+                </LinkDeFiltro>
               ) : (
                 <span />
               )}
@@ -691,9 +693,9 @@ export default async function AtendimentoPage({
                 Página {formatCount(filters.page)} de {formatCount(janela.totalPages)}
               </span>
               {filters.page < janela.totalPages ? (
-                <Link className="sb-button" href={buildSupportHref(current, { page: filters.page + 1 })}>
+                <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: filters.page + 1 })}>
                   Próxima ›
-                </Link>
+                </LinkDeFiltro>
               ) : (
                 <span />
               )}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 
@@ -286,9 +287,9 @@ export function UploadForm(): ReactNode {
                   </div>
 
                   {item.documentId !== null ? (
-                    <a className="sb-button sb-nf-escolhido-abrir" href={`/notas-fiscais/${item.documentId}`}>
+                    <Link className="sb-button sb-nf-escolhido-abrir" href={`/notas-fiscais/${item.documentId}`}>
                       Abrir conferência
-                    </a>
+                    </Link>
                   ) : (
                     <span className={`sb-nf-estado sb-nf-estado-${estado}`}>
                       {estado === "enviando" && <span className="sb-nf-girando" aria-hidden="true" />}

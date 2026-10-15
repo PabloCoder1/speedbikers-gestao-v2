@@ -7,6 +7,7 @@ import { Icone } from "../../../components/icons";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
 import type { SupportCaseLinkRow } from "../../../lib/support-case-reference";
@@ -298,9 +299,9 @@ export default async function PerguntasPage({
         <div role="alert" className="sb-inbox-state sb-inbox-state-error">
           <strong>Não foi possível carregar as perguntas.</strong>
           <span>{error}</span>
-          <Link className="sb-button" href={perguntasHref({ tab, page, account: accountSlug })}>
+          <LinkDeFiltro className="sb-button" href={perguntasHref({ tab, page, account: accountSlug })}>
             Tentar de novo
-          </Link>
+          </LinkDeFiltro>
         </div>
       )}
 
@@ -407,9 +408,9 @@ export default async function PerguntasPage({
                       ) : (
                         <p style={{ margin: "var(--sb-space-2) 0 0" }}>
                           {tab === "pendente" ? (
-                            <Link className="sb-button sb-button-sm" href={perguntasHref({ tab, page, account: accountSlug, pergunta: question.id })}>
+                            <LinkDeFiltro className="sb-button sb-button-sm" href={perguntasHref({ tab, page, account: accountSlug, pergunta: question.id })}>
                               Responder
-                            </Link>
+                            </LinkDeFiltro>
                           ) : (
                             <Link className="sb-text-button" href={caseHref}>
                               Ver conversa completa →
@@ -426,9 +427,9 @@ export default async function PerguntasPage({
             {totalPages > 1 && (
               <nav className="sb-inbox-pages" aria-label="Páginas da fila de perguntas">
                 {page > 1 ? (
-                  <Link className="sb-button" href={perguntasHref({ tab, page: page - 1, account: accountSlug })}>
+                  <LinkDeFiltro className="sb-button" href={perguntasHref({ tab, page: page - 1, account: accountSlug })}>
                     ‹ Anterior
-                  </Link>
+                  </LinkDeFiltro>
                 ) : (
                   <span />
                 )}
@@ -436,9 +437,9 @@ export default async function PerguntasPage({
                   Página {page} de {totalPages}
                 </span>
                 {page < totalPages ? (
-                  <Link className="sb-button" href={perguntasHref({ tab, page: page + 1, account: accountSlug })}>
+                  <LinkDeFiltro className="sb-button" href={perguntasHref({ tab, page: page + 1, account: accountSlug })}>
                     Próxima ›
-                  </Link>
+                  </LinkDeFiltro>
                 ) : (
                   <span />
                 )}

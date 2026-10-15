@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { Shell } from "../../components/shell";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { hrefDeFaturamento } from "../../lib/faturamento-multicanal";
 import { formatBusinessDate } from "../../lib/format";
 import { carregarLimites } from "../../lib/limites-central";
@@ -188,7 +189,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
                 label: `Últimos ${String(preset)} dias`,
               }))}
             >
-              <form method="get" className="sb-periodo-form">
+              <FormularioFiltro action="/faturamento" className="sb-periodo-form">
                 {contaSlug !== null && <input type="hidden" name="account" value={contaSlug} />}
                 <input
                   type="date"
@@ -207,7 +208,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
                 <button type="submit" className="sb-button sb-button-primary">
                   Aplicar período
                 </button>
-              </form>
+              </FormularioFiltro>
             </FilterMenu>
 
             <a className="sb-button" href="#ads">

@@ -283,7 +283,7 @@ branco embutido.
 | `CommandPalette` | `components/command-palette.tsx` | alinhado em A2 — `.sb-command` (520px a 16vh, cabeçalho, ✕, `ESC`, resultados agrupados por tipo) |
 | `FilterPill` | `components/filter-pill.tsx` | **legado** — 8 telas não migradas ainda o usam; some quando a fila D13+ fechar |
 | ~~`th`/`td`/`tdNumber`/`cardStyle`~~ | ~~`components/table-styles.ts`~~ | **NÃO EXISTE MAIS** — apagado em D35 (D-275), quando os dois últimos consumidores migraram. A linha anterior aqui ainda o dava como legado vivo; conferido em D38, o arquivo não está no repositório |
-| `CarregandoTela`/`CarregandoConteudo`/`CarregandoBloco`, `AtualizandoTela` (via `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` | `components/carregando*.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx` | **o padrão de espera** (D-382, D-500): trocar de tela → esqueleto; atualizar a mesma tela → o dado fica, com barra e esmaecimento. Qual usar em cada caso: `docs/UX_SYSTEM.md` §1 |
+| `CarregandoTela`/`CarregandoConteudo`/`CarregandoBloco`, `AtualizandoTela` (via `CarregandoSeODemorar`), `LinkDeFiltro`, `ItemDeMenu`, `FormularioFiltro` | `components/carregando*.tsx`, `link-de-filtro.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx` | **o padrão de espera** (D-382, D-500, D-501): trocar de tela → esqueleto; atualizar a mesma tela → o dado fica, com barra e esmaecimento. Qual usar em cada caso: `docs/UX_SYSTEM.md` §1 |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 

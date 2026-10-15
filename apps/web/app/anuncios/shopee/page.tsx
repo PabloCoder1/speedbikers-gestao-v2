@@ -20,6 +20,8 @@ import { Panel } from "../../../components/panel";
 import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
+import { FormularioFiltro } from "../../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { pageNumbers } from "../../../lib/listings-dashboard";
@@ -344,7 +346,7 @@ export default async function AnunciosShopeePage({
               ]}
             />
 
-            <form method="get" action="/anuncios/shopee" className="sb-an-busca" role="search">
+            <FormularioFiltro action="/anuncios/shopee" className="sb-an-busca" role="search">
               {/* Um GET nativo envia SÓ os campos do formulário: sem os
                   hidden, buscar descartaria a loja e o estado (D-136). */}
               {hidden("loja", filters.loja)}
@@ -363,7 +365,7 @@ export default async function AnunciosShopeePage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
           </>
         }
       />
@@ -398,14 +400,14 @@ export default async function AnunciosShopeePage({
             <div className="sb-an-chips" aria-label="Filtros ativos">
               <span className="sb-an-chips-rotulo">Filtros ativos:</span>
               {chips.map((chip) => (
-                <a key={chip.rotulo} className="sb-an-chip" href={chip.href} aria-label={`Tirar o filtro ${chip.rotulo}`}>
+                <LinkDeFiltro key={chip.rotulo} className="sb-an-chip" href={chip.href} aria-label={`Tirar o filtro ${chip.rotulo}`}>
                   {chip.rotulo}
                   <span aria-hidden="true">×</span>
-                </a>
+                </LinkDeFiltro>
               ))}
-              <a className="sb-text-button sb-an-limpar" href={limpar}>
+              <LinkDeFiltro className="sb-text-button sb-an-limpar" href={limpar}>
                 Limpar filtros
-              </a>
+              </LinkDeFiltro>
             </div>
           )}
 
@@ -440,9 +442,9 @@ export default async function AnunciosShopeePage({
           {lista.error !== null && (
             <Estado titulo="Não foi possível carregar os anúncios da Shopee." erro>
               <span>{sanitizeErrorText(lista.error.message) ?? "A leitura falhou neste carregamento."}</span>
-              <a className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina })}>
+              <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina })}>
                 Tentar de novo
-              </a>
+              </LinkDeFiltro>
             </Estado>
           )}
 
@@ -450,15 +452,15 @@ export default async function AnunciosShopeePage({
             rows.length === 0 &&
             (filters.pagina > 1 ? (
               <Estado titulo="Esta página passou do fim da lista.">
-                <a className="sb-button" href={buildShopeeListingsHref(filters, { pagina: 1 })}>
+                <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: 1 })}>
                   Voltar à primeira página
-                </a>
+                </LinkDeFiltro>
               </Estado>
             ) : temFiltro ? (
               <Estado titulo="Nenhum anúncio corresponde a estes filtros.">
-                <a className="sb-button" href={limpar}>
+                <LinkDeFiltro className="sb-button" href={limpar}>
                   Limpar filtros
-                </a>
+                </LinkDeFiltro>
               </Estado>
             ) : contagens === null ? (
               // Sem os contadores não se sabe se o catálogo já foi lido: a tela
@@ -667,9 +669,9 @@ export default async function AnunciosShopeePage({
               <span className="sb-an-suave">{janela.label}</span>
               <div className="sb-an-paginas">
                 {filters.pagina > 1 ? (
-                  <a className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina - 1 })}>
+                  <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina - 1 })}>
                     ‹ Anterior
-                  </a>
+                  </LinkDeFiltro>
                 ) : (
                   <span className="sb-button" aria-disabled="true">
                     ‹ Anterior
@@ -681,7 +683,7 @@ export default async function AnunciosShopeePage({
                       …
                     </span>
                   ) : (
-                    <a
+                    <LinkDeFiltro
                       key={numeroDaPagina}
                       className={numeroDaPagina === filters.pagina ? "sb-an-pagina sb-an-pagina-atual" : "sb-an-pagina"}
                       href={buildShopeeListingsHref(filters, { pagina: numeroDaPagina })}
@@ -689,13 +691,13 @@ export default async function AnunciosShopeePage({
                       aria-label={`Página ${String(numeroDaPagina)}`}
                     >
                       {formatCount(numeroDaPagina)}
-                    </a>
+                    </LinkDeFiltro>
                   ),
                 )}
                 {filters.pagina < janela.totalPages ? (
-                  <a className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina + 1 })}>
+                  <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina + 1 })}>
                     Próxima ›
-                  </a>
+                  </LinkDeFiltro>
                 ) : (
                   <span className="sb-button" aria-disabled="true">
                     Próxima ›
