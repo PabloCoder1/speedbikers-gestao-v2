@@ -360,9 +360,13 @@ const SUPPORT_DEADLINE_KIND: Record<string, string> = {
 export const SEARCH_ENTITY_TYPES = [
   "sku",
   "anuncio",
+  // D-476 (C-57): a Shopee ao lado do que já existia de cada coisa.
+  "anuncio_shopee",
   "conta",
+  "loja",
   "fornecedor",
   "pedido_compra",
+  "pedido_shopee",
   "atendimento",
   "nota_fiscal",
 ] as const;
@@ -384,9 +388,12 @@ export type SearchEntityType = (typeof SEARCH_ENTITY_TYPES)[number];
 const SEARCH_ENTITY: Record<SearchEntityType, string> = {
   sku: "SKU",
   anuncio: "Anúncio",
+  anuncio_shopee: "Anúncio Shopee",
   conta: "Conta",
+  loja: "Loja Shopee",
   fornecedor: "Fornecedor",
   pedido_compra: "Pedido de compra",
+  pedido_shopee: "Pedido Shopee",
   atendimento: "Atendimento",
   nota_fiscal: "NF-e",
 };
@@ -447,7 +454,13 @@ export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_S
 export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);
 export const supportDeadlineSourceLabel = (code: string): string => lookup(SUPPORT_DEADLINE_SOURCE, code);
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
-export const searchEntityLabel = (code: string): string => lookup(SEARCH_ENTITY, code);
+/**
+ * O cabeçalho do grupo na Busca Universal. Tipo que esta lista ainda não
+ * conhece (a função do banco à frente da web) vira "Outros", nunca o código cru
+ * como cabeçalho — a armadilha de D-208 (D-476).
+ */
+export const searchEntityLabel = (code: string): string =>
+  (SEARCH_ENTITY as Readonly<Record<string, string | undefined>>)[code] ?? "Outros";
 
 /**
  * O que a Busca Universal alcança, numa frase — DERIVADA da lista (A15, D-323).

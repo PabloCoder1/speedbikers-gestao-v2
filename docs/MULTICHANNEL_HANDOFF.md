@@ -23,10 +23,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `2809d35f` (15/10: #172 e #179 do A1, D-453; #170, #171, #173, #175 e #177 do A2) |
-| Branches abertas | A1: `docs/arquivo-handoff` (#198: só docs) · A2: nenhuma (o #177 entrou) |
+| Branches abertas | A1: `feat/busca-shopee` (#201: C-57, D-467) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
-| Migrations em produção | até `20261015100000` (D-441 a D-465, runs `38726738817`, `38755993771`, `38760462816` e `38773241495`, 15/10) |
+| Migrations em produção | até `20261015105000` (D-441 a D-469, runs `38726738817`, `38755993771`, `38760462816`, `38773241495` e `38784180221`, 15/10); a `110000` (C-57) depois da T7 |
 | Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -51,6 +51,7 @@
 - E7c, repasse da Shopee (D-451): **em código e validada localmente** — `get_escrow_list` conferida na documentação (o extrato da carteira e o `get_income_detail` ficam para depois do sandbox: sem identificador e formato contraditório); `shopee_escrow_releases` com a cobertura; job `shopee.escrow-releases.sync`; integração (5 testes) e 15 mutações; na `main` pelo #169 — **em produção desde 15/10** (migration no run `38726738817`; worker `worker-00046-zfl` e depois `-00047-mmw`). Cadência em `/saude`: `shopee.escrow-releases.sync` = 60 min, no #170 do A2.
 - D-455, Ads sem dado: ROAS/ACOS do C-63 só com os dias que têm gasto e venda; `dias_sem_gasto`/`dias_sem_venda` (achado do A2); 3 mutações; **em produção desde 15/10** (#188, run `38755993771`).
 - C-65, demanda da Shopee na cobertura e na reposição (D-459): **em produção desde 15/10** (#188, run `38755993771`) — idêntica às funções antigas com os dados reais do Dev (cobertura, sugestão, visão, pedido e alcance; zero diferença, inclusive na ordem) e com o mesmo custo como `authenticated` (`docs/PERFORMANCE.md`); integração (5 testes) e 13 mutações. Entrou antes do Go Live, como pedido.
+- C-57, busca universal com a Shopee (D-467): **em código e validada** — `search_entities` estendida (loja, anúncio e pedido da Shopee; colunas `marketplace`, `entity_id`, `account_id` no fim; destinos reais) e `get_shopee_orders` com `p_order_sn`; integração (8 testes), 10 mutações, mesmas linhas da atual no Dev; #201. **Produção depois da T7 no ar** (os rótulos dos tipos novos são da tela).
 - E7d, push da Shopee (D-453): **em produção e conferido (15/10)** — `POST /push/shopee` antecipa `shopee.orders.sync` (3) e `shopee.returns.sync` (29) da loja em janelas de 5 minutos; a Shopee assina com a **Test Push Partner Key** da tela Set Push (segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, achado pelas amostras offline), não com a Partner Key; `code` em texto (`"29"`) aceito; autoteste assinado: aceito. No Go Live: a chave de push de produção.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
@@ -82,7 +83,8 @@
 - T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **na `main`, #192**.
 - E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Na `main`, #197.**
 - E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Na `main`, #197.**
-- E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Em código e validada** (suíte e2e inteira), no PR próprio.
+- E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Na `main`, #203.**
+- T7 — a Shopee na Busca Universal (D-476, consome o C-57): "Loja Shopee", "Anúncio Shopee" e "Pedido Shopee" na paleta, "Outros" para tipo que a tela não conhece (nunca o código cru), e a `/vendas/shopee` abrindo o pedido que a busca achou (`?pedido=` como filtro, com chip e "Limpar filtros"). **Em código e validada** (suíte e2e inteira), no #205, que leva o #201.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -90,10 +92,10 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada: a D-474 (os estados do SKU) está no PR próprio.
+- T7 (D-476) no #205, que leva o #201 do A1: os dois entram juntos, a Vercel publica, e só então o A1 roda a `20261015110000`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T7 busca universal — o A1 faz o C-57 (D-467) estendendo a `search_entities` (lojas, anúncios e pedidos da Shopee, com marketplace e ids); a T7 entra empilhada no PR dele, com os rótulos dos grupos novos e o `?pedido=` na `/vendas/shopee`. → T8 central e meta (Go Live).
+- T8 central e meta (Go Live).
 
 **Bloqueios**
 - Tudo o que é Shopee só mostra números com loja **live**: hoje só há a sandbox. O Go Live do app é do dono (o Cloud NAT com IP fixo já está em produção, D-457).
@@ -166,7 +168,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 | C-64 | Repasse da Shopee: `get_shopee_repasse_overview` (pelo dia da liberação, com o previsto e a diferença), `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.12 | A1 | `/faturamento` (conciliação) — a tela é do A2 | em código (D-451) | NÃO somar ao recebido nem ao resultado; o liberado é do dia da liberação, não da venda; unidade do valor a conferir no sandbox |
 | C-65 | Demanda da Shopee na cobertura e na reposição: `get_stock_coverage` (`units_sold_ml`, `units_sold_shopee`, `units_30d_shopee`, `units_90d_shopee`), `get_purchase_suggestions` (`units_30d_shopee`, `units_90d_shopee`), visão, pedido de compra e alcance; `docs/MULTICHANNEL_CONTRACTS.md` §3.13 | A1 | `/reposicao`, `/cobertura`, a gaveta da Inspeção Rápida (T-R3, #186; T-R3b) | em produção (D-459, 15/10) | parte da Shopee NULA sem loja live lida |
 | C-63 | Ads da Shopee: `get_shopee_ads_overview` (TOTAL e por loja, com a cobertura) e `get_shopee_ads_daily`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.11 | A1 | `/faturamento` e a central (a tela é do A2) | em código (D-449) | rotular "Ads CPC da loja"; NÃO descontar do resultado até conferir o GMV Max com loja real |
-| C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal | aceito; depois da E2 (a busca não pode furar a permissão por loja) | resultado Shopee só para quem alcança a loja |
+| C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal (T7) | em código (D-467, #201) | resultado Shopee só para quem alcança a loja; produção depois da T7 |
 
 ---
 

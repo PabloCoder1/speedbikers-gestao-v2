@@ -1307,7 +1307,7 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 
 **Dev, como `authenticated`** (125 mil linhas de `daily_sku_metrics` em 365 dias; 90 dias com o anterior, a primeira página de 50; as funções novas em `pg_temp`, só leitura, oito execuções na mesma sessão): `get_sku_abc_analysis` em `language sql` com `SET` (o plano genérico de D-305) **~4.270 ms** (11.020 ms a frio) contra **~138 ms** (151 ms a frio) em `plpgsql` + `force_custom_plan`, a mesma saída; `get_sku_abc_breakdown` por conta, ~5.100 contra ~170 ms. Saída idêntica em 11 casos (1.719 SKUs, o painel em 5 dimensões, 3.352 linhas por conta). Migration `20261015000000`.
 
-### Home e `/skus/[skuId]`: o custo é o cache frio, e a timeline do SKU lia 37 mil páginas (D-461, 15/10/2026)
+### Home e `/skus/[skuId]`: o custo é o cache frio, e a timeline do SKU lia 37 mil acessos a páginas (D-461, 15/10/2026)
 
 **Origem:** os web vitals de produção (A3, 24 h) mostraram LCP de 7,6 s na Home (TTFB de 113 ms) e de 5,9 s num `/skus/[skuId]`.
 
@@ -1336,7 +1336,7 @@ Numa conexão nova, a listagem saiu em 138 ms. Então é página vinda do disco,
 | `get_sku_dashboard` | 1,3 mil |
 | `get_sku_listings` | 0,4 mil |
 | **`/skus`, aba Histórico** | |
-| `get_sku_timeline` | **~37 mil, para qualquer SKU** |
+| `get_sku_timeline` | **~37 mil acessos, para qualquer SKU** (~2,2 mil páginas distintas) |
 
 **A timeline (D-461, migration `20261015080000`).** A ramificação de pedidos convertia `entity_id::bigint` e lia os 35 mil eventos de pedido da organização. Com `entity_id = any(pedidos do SKU como texto)`, medido atual → nova:
 
@@ -1349,8 +1349,8 @@ Numa conexão nova, a listagem saiu em 138 ms. Então é página vinda do disco,
 A saída é a mesma em 379 SKUs (33,6 mil eventos).
 
 **Abertos (sem defeito medido, só volume):**
-- **A 2ª rodada da Home, ≈110 MB frios.** Proposta: uma contagem leve de "pausados com estoque" (A1) e a rodada fora da fila da organização (A2). O A3 propôs Suspense nos dois cartões (D-503).
-- **A curva ABC do cabeçalho do SKU, ~45 MB frios** — o Full saiu com a D-465; sobra a curva da organização em 90 dias, inerente ao cálculo.
+- **A 2ª rodada da Home** (≈110 MB contados em acessos; o volume distinto é menor, não medido). Proposta: uma contagem leve de "pausados com estoque" (A1) e a rodada fora da fila da organização (A2). O A3 propôs Suspense nos dois cartões (D-503).
+- **A curva ABC do cabeçalho do SKU** (~45 MB contados em acessos) — o Full saiu com a D-465; sobra a curva da organização em 90 dias, inerente ao cálculo.
 
 Para confirmar o cache frio em produção: em `extensions.pg_stat_statements`, filtrando `query like '%pgrst_source%'` (a função sai de `regexp_match(query, '"public"\."(\w+)"')`), um `shared_blks_read` alto com `mean_exec_time` baixo e `max_exec_time` alto.
 
@@ -1370,7 +1370,7 @@ Sem degradação na oitava execução. O Dev não tem loja Shopee, então a part
 | Chamada | Atual | Nova |
 |---|---|---|
 | 1 SKU, 5 dias | 21 ms, 9,0 mil páginas | 10 ms, 3,0 mil |
-| **100 SKUs, 5 dias** (`/diagnostico` e o detector do worker) | 172 ms, 125 mil (~1 GB) | **17 ms, 4,9 mil** |
+| **100 SKUs, 5 dias** (`/diagnostico` e o detector do worker) | 172 ms, 125 mil (11,9 mil distintas, ~93 MB) | **17 ms, 4,9 mil** |
 | 1 SKU, 30 dias | 105 ms, 51 mil | 47 ms, 25 mil |
 | 100 SKUs, 30 dias | 275 ms, 167 mil | 57 ms, 27 mil |
 
@@ -1399,6 +1399,22 @@ A saída é a mesma em 72 casos (6.884 linhas).
 | uma conta | 68 ms | 72 ms |
 
 Frio: ~16,5 mil → ~7 mil páginas distintas por chamada (só os pedidos e os itens do período). Um passo separado de `min/max(id)` em `orders` foi descartado: percorre a chave desde o menor id e ficou pior que o original (~300 ms, 370 mil acessos).
+
+### Busca Universal com a Shopee (D-467, 15/10/2026)
+
+**Dev, como `authenticated`, oito execuções, termos curtos e comuns** (`ca`, `capacete`, `13014`, `MLB`, `speed`, `2026`, `xq`): a versão nova devolve as mesmas linhas da atual e leva 33–38 ms contra 38–41 ms, sem degradação. **Pedido pelo prefixo com 50 mil pedidos sintéticos** (stack isolado, desfeito): prefixo raro pelo índice `shopee_orders_org_order_sn_idx`, 9 páginas; prefixo de 2 caracteres para nos 5 primeiros pela data, 28 páginas.
+
+### Correção: acessos a páginas não são páginas distintas (15/10/2026)
+
+As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que soma ACESSOS: num Index Scan a mesma página conta uma vez por linha lida. Com o cache frio custa a página DISTINTA. Recontadas pelo `ctid` das linhas lidas (Dev):
+
+| Leitura | Acessos (publicado) | Páginas distintas |
+|---|---|---|
+| Timeline antiga (D-461), eventos de pedido da organização | ~37 mil | ~2,2 mil (~18 MB) |
+| Correlação antiga (D-463), 100 candidatos | ~125 mil | 11,9 mil (~93 MB, quase toda a `order_items`) |
+| Full atual (D-465), antes → depois | 30,8 mil → 2,4 mil | ~2,6 mil → ~0,7 mil |
+
+As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 

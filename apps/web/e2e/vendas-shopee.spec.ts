@@ -356,3 +356,29 @@ test("/vendas/shopee: as devoluções dizem o que não se sabe e não chamam o v
   expect(dev).toBeGreaterThan(porLoja);
   expect(pedidos).toBeGreaterThan(dev);
 });
+
+/**
+ * D-476 (C-57): o pedido que a Busca Universal abre. A URL leva `?pedido=`, a
+ * lista mostra só ele (o número casa sem diferenciar maiúscula), o filtro
+ * aparece como chip e "Limpar filtros" devolve a lista inteira.
+ */
+test("/vendas/shopee?pedido=: só o pedido que a busca abriu, com o filtro à vista e o caminho de volta", async ({ page }) => {
+  const cancelado = E2E_SHOPEE_PEDIDOS.cancelado.orderSn;
+
+  await login(page, `/vendas/shopee?pedido=${cancelado.toLowerCase()}`);
+
+  await esperaPedidos(page, 1);
+  await expect(linhaDoPedido(page, cancelado)).toBeVisible();
+  await expect(page.getByRole("link", { name: `Tirar o filtro Pedido ${cancelado.toLowerCase()}` })).toBeVisible();
+
+  await page.getByRole("link", { name: "Limpar filtros" }).first().click();
+  await expect(page).not.toHaveURL(/pedido=/);
+  await esperaPedidos(page, ESPERADO.naLista);
+});
+
+test("/vendas/shopee?pedido=: o número que não está no recorte diz isso, e não 'nenhum pedido'", async ({ page }) => {
+  await login(page, "/vendas/shopee?pedido=NAO-EXISTE-123");
+
+  await expect(page.getByText("O pedido NAO-EXISTE-123 não está neste recorte.")).toBeVisible();
+  await expect(page.getByText("Nenhum pedido da Shopee no período.")).toHaveCount(0);
+});

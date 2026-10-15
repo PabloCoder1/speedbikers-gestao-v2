@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **472** (D-001 a D-509).
+Decisões registradas: **474** (D-001 a D-509).
 
 ## Por domínio
 
@@ -223,7 +223,7 @@ Decisões registradas: **472** (D-001 a D-509).
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique
 
-### mercado-livre (82)
+### mercado-livre (83)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -307,6 +307,7 @@ Decisões registradas: **472** (D-001 a D-509).
 - **D-449** — Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 - **D-454** — Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
 - **D-459** — C-65: a demanda da Shopee na cobertura e na sugestao de compra (ML + Shopee nas janelas), com a parte da Shopee a vista e nula sem loja live lida
+- **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 
 ### outros (64)
 
@@ -379,7 +380,7 @@ Decisões registradas: **472** (D-001 a D-509).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (45)
+### vendas/métricas (46)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -422,6 +423,7 @@ Decisões registradas: **472** (D-001 a D-509).
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 - **D-463** — get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
 - **D-470** — Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
+- **D-476** — Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
 - **D-506** — A metrica de producao dava o LCP a rota em que a aba se escondeu, nao a carregada: o SKU nao tem carga completa medida, a Home tem duas (3,5 e 7,6 s), e o depois da D-504 ainda nao tem amostra

@@ -180,7 +180,15 @@ export interface ShopeeSalesFilters {
   readonly loja: string | null;
   readonly situacao: ShopeeSituacaoSlug | null;
   readonly pagina: number;
+  /**
+   * O `order_sn` que a Busca Universal abriu (C-57, D-476): vai ao
+   * `p_order_sn` da `get_shopee_orders`, que o casa sem diferenciar maiúscula.
+   * Só letra, dígito e hífen, de 2 a 40 — a regra da busca no banco.
+   */
+  readonly pedido: string | null;
 }
+
+const PEDIDO_VALIDO = /^[A-Za-z0-9-]{2,40}$/u;
 
 function primeiro(valor: string | string[] | undefined): string | undefined {
   return Array.isArray(valor) ? valor[0] : valor;
@@ -206,6 +214,7 @@ export function resolveShopeeSalesFilters(
   const { range, days, invalidCustom } = resolvePeriodRange(query, today);
   const loja = primeiro(query.loja);
   const situacao = primeiro(query.situacao);
+  const pedido = primeiro(query.pedido)?.trim();
 
   return {
     filters: {
@@ -214,6 +223,7 @@ export function resolveShopeeSalesFilters(
       loja: loja !== undefined && lojasDaOrganizacao.includes(loja) ? loja : null,
       situacao: SHOPEE_SITUACOES.find((s) => s.slug === situacao)?.slug ?? null,
       pagina: Math.min(resolvePageParam(primeiro(query.pagina)), PAGINA_MAX),
+      pedido: pedido !== undefined && PEDIDO_VALIDO.test(pedido) ? pedido : null,
     },
     invalidCustom,
   };
@@ -232,17 +242,19 @@ export function buildShopeeSalesHref(
     readonly loja?: string | null;
     readonly situacao?: ShopeeSituacaoSlug | null;
     readonly pagina?: number;
+    readonly pedido?: string | null;
   } = {},
 ): string {
   const loja = override.loja === undefined ? filters.loja : override.loja;
   const situacao = override.situacao === undefined ? filters.situacao : override.situacao;
+  const pedido = override.pedido === undefined ? filters.pedido : override.pedido;
   const days = override.days ?? filters.days;
   const periodo =
     days === null
       ? { from: filters.range.from, to: filters.range.to }
       : { days: days === DEFAULT_PERIOD_DAYS ? null : String(days) };
 
-  return buildFilterHref(SHOPEE_SALES_PATH, { ...periodo, loja, situacao }, override.pagina ?? 1);
+  return buildFilterHref(SHOPEE_SALES_PATH, { ...periodo, loja, situacao, pedido }, override.pagina ?? 1);
 }
 
 export function summarizeShopeeOrdersWindow(pagina: number, totalCount: number, rowsOnPage: number): PagedWindow {
