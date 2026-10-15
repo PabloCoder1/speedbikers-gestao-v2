@@ -15323,3 +15323,52 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **Suite inteira:** 224/224, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
 
 **Impacto:** `apps/web/lib/{curation-filters,products-overview}.ts` e o teste, `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/produtos.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
+## D-460 - Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
+
+**Contexto:** D-447 (C-62, A1) trouxe as devolucoes da Shopee em duas leituras:
+- `get_shopee_returns_summary`: TOTAL so de loja live ja lida e uma linha por loja (nunca lida = NULO), com `por_situacao` em jsonb;
+- `get_shopee_returns`: cada devolucao, com os itens e o SKU.
+
+A tela esperava a decisao do dono sobre onde ela fica. Em 15/10 ele decidiu pela proposta do A2: um painel em `/vendas/shopee`, ao lado do "Por loja", com a situacao como veio, o "valor de reembolso informado", os itens com SKU e nada do comprador.
+
+**1. ONDE.** Uma secao propria (`#devolucoes`) logo depois do "Por loja" e antes dos pedidos. "Ao lado", numa coluna, nao cabe: a tabela por loja ja ocupa a largura. As duas leituras partem junto com as da pagina e chegam por streaming. Recortam pela loja escolhida, como a lista. A situacao do PEDIDO (o outro filtro da tela) nao se aplica a devolucao.
+
+**2. O QUE MOSTRA.**
+- **Resumo:**
+  - as devolucoes do periodo, de quantos pedidos, as unidades e quantas sao so de reembolso;
+  - o "valor de reembolso informado", que diz "o que a Shopee informa, nao o que foi pago". Quando nenhuma devolucao veio com valor, diz isso em vez de R$ 0.
+- **"Por situacao":** cada situacao com o codigo que a Shopee manda (REQUESTED, ACCEPTED, CLOSED...), sem traducao, com as devolucoes, as unidades e o valor informado. Valor nulo aparece como "--".
+- **"Mais recentes":** as 10 ultimas do periodo, cada uma com:
+  - o pedido e a situacao, e o valor informado ("sem valor" quando nao veio);
+  - a loja e a data;
+  - o que pede ("devolucao e reembolso" ou "so reembolso");
+  - o motivo como veio;
+  - os itens com a quantidade e o SKU, com link para o painel do SKU. Item sem vinculo aparece como "sem SKU vinculado".
+- **"Por loja":** as devolucoes de cada loja e ate quando foram lidas. A loja de teste aparece marcada e fora do total.
+- **Ressalva sempre visivel:** a documentacao nao diz em qual situacao o reembolso foi pago, entao o valor e o informado, nao o reembolsado. Nada e descontado da receita aqui, porque o efeito no recebido ja esta no faturamento (C-61, em "outros").
+
+**3. AUSENCIA NAO E ZERO.**
+- Sem TOTAL, nao ha numeros: a tela diz "nenhuma loja real com as devolucoes ja lidas" e lista as lojas com "--".
+- `por_situacao` ou os itens fora do contrato sao recusados com aviso; nao viram lista vazia.
+- A funcao ausente (PGRST202) vira "ainda esta sendo ativada".
+- Nada do comprador: o banco nao guarda.
+
+**Publicacao:** so a web, sobre a `main`. A migration `20261015030000` ja esta em producao desde 15/10.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 9 em `lib/devolucoes-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira zeros, a loja de teste, a situacao como veio e ordenada, o valor nulo que continua nulo, o jsonb fora do contrato recusado, os itens com e sem SKU e a solucao em palavras.
+- **e2e `vendas-shopee` (7/7).** O teste novo usa o seed (so a loja de TESTE, com as devolucoes nunca lidas) e confere:
+  - a ressalva;
+  - nenhum total;
+  - a loja com "--" e "devolucoes ainda nao lidas · loja de teste, fora do total";
+  - "reembolsado" so na ressalva;
+  - o painel entre o "Por loja" e os pedidos.
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 5 devolucoes, uma fora do periodo, uma sem valor, uma so de reembolso, uma com dois itens e um item sem SKU; e uma segunda loja nunca lida.
+  - A conta a mao fecha com a funcao e com a tela: 4 devolucoes de 4 pedidos, 6 unidades, 1 so de reembolso, R$ 254,90 informados (a sem valor fica fora da soma e aparece como "sem valor").
+  - Na tela: as quatro situacoes com os codigos como vieram, os itens com os links dos SKUs e "2x sem SKU vinculado".
+  - Colunas de 524 px no desktop; nada transborda em 390 px.
+- **Suite inteira:** 225/225, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/devolucoes-shopee.ts` e o teste, `apps/web/app/vendas/shopee/{devolucoes,page}.tsx`, `apps/web/e2e/vendas-shopee.spec.ts`, `docs/{DECISIONS,DECISIONS_INDEX}.md` (o ROADMAP, o MULTICHANNEL_SCREENS, o PRODUCT_REQUIREMENTS e o handoff vao no PR de docs das etapas multicanal). Nenhuma migration, RPC, worker ou api.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **443** (D-001 a D-454).
+Decisões registradas: **444** (D-001 a D-460).
 
 ## Por domínio
 
@@ -362,7 +362,7 @@ Decisões registradas: **443** (D-001 a D-454).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (36)
+### vendas/métricas (37)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -400,6 +400,7 @@ Decisões registradas: **443** (D-001 a D-454).
 - **D-426** — Shopee, fatia 2: o worker renova o token antes de vencer e le os pedidos por janela de atualizacao, com marco por loja
 - **D-432** — Shopee, ingestao robusta (E1 da frente multicanal): o pedido recusado nao trava o financeiro, o lote de pedidos grava numa transacao que nao regride, e o erro da loja interrompe em vez de marcar item por item
 - **D-444** — Telas multicanais, etapa T6a: o ranking de produtos de /vendas chega ao Todos e a Shopee, a aba Vendas do SKU ganha o total entre marketplaces por conta e loja, e a loja de teste ganha o selo no painel Shopee do SKU
+- **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 
 ### worker/infra (82)
 
