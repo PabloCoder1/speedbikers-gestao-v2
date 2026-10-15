@@ -152,6 +152,18 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.13 Demanda da Shopee na cobertura e na reposição (C-65, D-459) — em código
+
+| Contrato | O que muda | Colunas novas |
+|---|---|---|
+| `get_stock_coverage` (e `get_stock_coverage_summary`) | `units_sold`, `avg_daily_sales`, `days_of_coverage`, `is_ruptura` e `units_15d`…`units_90d` = ML + Shopee; SKU só da Shopee entra | `units_sold_ml`, `units_sold_shopee`, `units_30d_shopee`, `units_90d_shopee` |
+| `get_purchase_suggestions` (e `get_purchase_state_counts`) | janelas, taxa de 30 dias, recusas, estado, cobertura e sugestão sobre ML + Shopee | `units_30d_shopee`, `units_90d_shopee` |
+| `get_replenishment_overview` | herda; as linhas do jsonb levam as duas colunas | — |
+| `get_purchase_order_suggestions` | herda; as linhas levam `units_30d_shopee` | — |
+| `get_replenishment_reach` | `skus_com_venda_30d` soma a Shopee; SKU só da Shopee entra no universo | — |
+
+**Demanda da Shopee:** unidades das vendas válidas (5S) das lojas live, por SKU e dia de São Paulo; loja de teste e cancelada fora. **A parte da Shopee é NULA sem loja live com pedidos lidos** (sem loja, só a de teste, ou real nunca lida) e 0 com ela sem venda; quem não tem permissão na loja vê NULA. `history_days_90` segue no ML (SKU só da Shopee pode sair como histórico curto). `get_sku_dashboard` não muda. **Ordem em produção:** esta migration antes do Go Live com loja real.
+
 ### 3.12 Repasse da Shopee (C-64, D-451) — em código
 
 | Contrato | Parâmetros | Devolve |
@@ -167,7 +179,7 @@ Coluna de marketplace nula = sem venda naquele canal no período (não é zero).
 
 | Contrato | Parâmetros | Devolve |
 |---|---|---|
-| `get_shopee_ads_overview` | `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]` | `nivel` TOTAL (só loja live com Ads lido) e CONTA (uma por loja; nunca lido = NULO): `cobertura_completa` (o período inteiro, até hoje, dentro da leitura), `dias_lidos`, `investimento`, `receita_ads` (amplo), `receita_ads_direta`, `pedidos_ads`, `cliques`, `impressoes`, `roas`, `acos`, `receita_bruta` (vendas válidas, 5S), `tacos`, `ultima_atualizacao` |
+| `get_shopee_ads_overview` | `p_organization_id`, `p_date_from`, `p_date_to`, `p_account_ids uuid[]` | `nivel` TOTAL (só loja live com Ads lido) e CONTA (uma por loja; nunca lido = NULO): `cobertura_completa` (o período inteiro, até hoje, dentro da leitura), `dias_lidos`, `dias_sem_gasto` e `dias_sem_venda` (D-455: fora do ROAS/ACOS), `investimento`, `receita_ads` (amplo), `receita_ads_direta`, `pedidos_ads`, `cliques`, `impressoes`, `roas`, `acos`, `receita_bruta` (vendas válidas, 5S), `tacos`, `ultima_atualizacao` |
 | `get_shopee_ads_daily` | os mesmos | uma linha por dia com dado, só lojas live: `investimento`, `receita_ads`, `receita_ads_direta`, `pedidos_ads`, `cliques`, `impressoes`, `roas`, `acos` |
 
 **É o Ads CPC da loja, não o total:** o GMV Max de loja pode ficar de fora (a documentação não diz) — a tela deve rotular "Ads CPC" e **não** descontar do resultado da venda; isso espera a conferência com loja real. Loja lida sem anúncio = 0; com `cobertura_completa = false`, os números são só dos dias lidos. Não soma com o Ads do ML.

@@ -5692,6 +5692,8 @@ export type Database = {
           cliques: number | null
           cobertura_completa: boolean | null
           dias_lidos: number | null
+          dias_sem_gasto: number | null
+          dias_sem_venda: number | null
           environment: string | null
           impressoes: number | null
           investimento: number | null
@@ -7058,6 +7060,9 @@ export type Database = {
           units_30d: number
           units_60d: number
           units_90d: number
+          // CORRECAO MANUAL (D-459, C-65): a parte da Shopee e NULA sem loja live com pedidos lidos.
+          units_30d_shopee: number | null
+          units_90d_shopee: number | null
         }[]
       }
       get_sales_daily_series: {
@@ -7782,6 +7787,11 @@ export type Database = {
           units_60d: number
           units_90d: number
           units_sold: number
+          // CORRECAO MANUAL (D-459, C-65): a parte da Shopee e NULA sem loja live com pedidos lidos.
+          units_sold_ml: number
+          units_sold_shopee: number | null
+          units_30d_shopee: number | null
+          units_90d_shopee: number | null
         }[]
       }
       get_stock_coverage_summary: {
