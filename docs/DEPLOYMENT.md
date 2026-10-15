@@ -197,6 +197,14 @@ No Console da Shopee (`open.shopee.com` → Console → **Push Mechanism** → o
 
 **Como verificar:** a verificação do endereço passa no Console; no log da api, `shopee_push_enqueued` depois de um pedido do sandbox mudar; `shopee_push_signature_rejected` repetido quer dizer endereço diferente do cadastrado. O push é só aviso: sem ele, o gatilho de hora em hora segue lendo.
 
+## 6.3 IP fixo de saída — Cloud NAT (D-457)
+
+Em produção, api e worker saem pela rede `v3-vpc` (sub-rede `v3-run-egress`, `--vpc-egress all-traffic`) e um Cloud NAT com **um IP reservado: `34.95.145.35`** — o IP da lista da Shopee (Console → o app → *IP Address Whitelist*). Criado em 15/10 por `infra/cloud-nat.sh` (idempotente); `infra/deploy-cloud-run.sh` passa a rede em todo deploy de produção e recusa antes do build se ela não existir. Custo ~US$ 8/mês (gateway por instância, IP e US$ 0,045/GiB; o tráfego do Cloud Tasks, Secret Manager e Logging vai pelo acesso privado do Google, fora do NAT).
+
+**Como verificar:** `gcloud compute routers get-status v3-router --region southamerica-east1 --project speedbikers-prod` mostra o IP e as instâncias com mapeamento; falta de porta aparece no log do NAT como `OUT_OF_RESOURCES` (log só de erro). Para provar o IP de uma conexão, ligar por minutos `--log-filter ALL` no `v3-nat` e voltar a `ERRORS_ONLY`.
+
+**Volta:** desligar a lista de IPs na Shopee; depois `gcloud run services update-traffic <serviço> --to-revisions <revisão anterior>=100`.
+
 ## 7. CI/CD
 
 **GitHub Actions** (`.github/workflows/ci.yml`), obrigatório antes de entrar na `main`:

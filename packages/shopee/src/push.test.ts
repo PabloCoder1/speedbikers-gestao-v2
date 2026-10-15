@@ -33,5 +33,8 @@ describe("push da Shopee (D-453)", () => {
       shopeePushSchema.parse({ data: { authorize_type: "expiry", shopid: 22000000, success: 1 }, code: 2, partner_id: 800000, timestamp: 1653026985 }),
     ).toMatchObject({ code: 2, partner_id: 800000 });
     expect(shopeePushSchema.safeParse({ shop_id: 1 }).success).toBe(false);
+    // O return_updates_push de teste (15/10) veio com o código em texto.
+    expect(shopeePushSchema.parse({ code: "29", shop_id: "727720655", timestamp: "1732796767" })).toMatchObject({ code: 29, shop_id: 727720655, timestamp: 1732796767 });
+    expect(shopeePushSchema.safeParse({ code: "2a" }).success).toBe(false);
   });
 });

@@ -24,11 +24,14 @@ export const PUSH_RETURN_UPDATES = 29;
 /** `shop_authorization_canceled_push`: os exemplos da documentação se contradizem no formato. */
 export const PUSH_AUTHORIZATION_CANCELED = 2;
 
+/** Número, ou texto só com dígitos: o `return_updates_push` de teste (15/10) mandou `"code": "29"`. */
+const inteiro = z.union([z.number().int(), z.string().regex(/^\d+$/).transform(Number)]);
+
 /** O envelope comum: `code` sempre; `shop_id` nos pushes de loja; o resto, por push. */
 export const shopeePushSchema = z.looseObject({
-  code: z.number().int(),
-  shop_id: z.number().int().optional(),
-  timestamp: z.number().int().optional(),
+  code: inteiro,
+  shop_id: inteiro.optional(),
+  timestamp: inteiro.optional(),
   data: z.unknown().optional(),
 });
 

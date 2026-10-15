@@ -71,6 +71,7 @@ bash infra/storage-buckets.sh
 | `storage-buckets.sh` | Buckets `raw-ml`, `erp-imports`, `documents`, ciclo de vida de 90 dias no primeiro, e IAM por bucket | Zero até haver objeto |
 | `deploy-cloud-run.sh` | Constrói a imagem no Cloud Build e publica `api` e `worker` | `api` tem `min-instances=1` |
 | `cloud-scheduler.sh` | Job `v3-heartbeat`, de hora em hora | Desprezível |
+| `cloud-nat.sh` | Só produção (D-457): rede `v3-vpc`, sub-rede `v3-run-egress`, IP `v3-nat-ip`, roteador `v3-router` e Cloud NAT `v3-nat` — o IP fixo de saída da api e do worker (lista de IPs da Shopee) | ~US$ 8/mês |
 
 Nenhum deles cria serviço do Cloud Run. Deploy é assunto do workflow de CI — ver `docs/DEPLOYMENT.md`.
 

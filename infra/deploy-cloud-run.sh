@@ -26,6 +26,15 @@ build_and_deploy() {
   local app="$1"
   local image="${REGISTRY}/${app}:${TAG}"
 
+  # D-457: em produção, api e worker saem pelo IP fixo do Cloud NAT
+  # (infra/cloud-nat.sh) — o IP que a Shopee tem na lista. Passado em todo
+  # deploy, e não só no primeiro: a configuração fica escrita aqui, não na
+  # memória de quem publicou.
+  local rede=()
+  if [ "${AMBIENTE}" = "prod" ]; then
+    rede=(--network "${VPC_NETWORK}" --subnet "${VPC_SUBNET}" --vpc-egress all-traffic)
+  fi
+
   # As guardas vêm ANTES do build (D-349). Nenhuma delas depende da imagem, e o
   # build não é barato: sobe o contexto inteiro e roda no Cloud Build. Recusar
   # depois dele é pagar um build para descobrir uma variável errada — foi assim
@@ -172,6 +181,7 @@ YAML
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_API}")" \
       --allow-unauthenticated \
+      "${rede[@]}" \
       --min-instances 1 \
       --max-instances 10 \
       --concurrency 80 \
@@ -207,6 +217,7 @@ YAML
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_WORKER}")" \
       --no-allow-unauthenticated \
+      "${rede[@]}" \
       --min-instances 0 \
       --max-instances 5 \
       --concurrency 4 \
@@ -256,6 +267,14 @@ YAML
 step "Pré-condições"
 require_auth
 require_project
+
+# D-457: produção sem a sub-rede do NAT sairia pelo pool dinâmico, fora da
+# lista de IPs da Shopee. Recusar antes do build.
+if [ "${AMBIENTE}" = "prod" ]; then
+  gc compute networks subnets describe "${VPC_SUBNET}" --region "${REGION}" >/dev/null 2>&1 ||
+    fail "produção sem a sub-rede ${VPC_SUBNET}: rode infra/cloud-nat.sh antes (D-457)."
+  info "saída: ${VPC_NETWORK}/${VPC_SUBNET}, todo o tráfego pelo Cloud NAT ${NAT_GATEWAY}"
+fi
 info "registry: ${REGISTRY}"
 info "tag: ${TAG}"
 
