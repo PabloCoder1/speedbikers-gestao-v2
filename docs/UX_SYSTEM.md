@@ -182,18 +182,20 @@ antes de cada fatia de performance; o número de antes/depois vai para
 
 ### Antes e depois da D-504 e da D-505 (D-506)
 
-Lido em 15/10, 16:52 UTC. A D-504 está em produção desde 16:44 UTC
-(`dpl_G6M3eoVm7f5XtNbAvyjuCJ5R6Zy7`, `691ab024`); a D-505 (#196) segue aberta.
+Lido em 15/10, 17:33 UTC. A D-504 está em produção desde 16:44 UTC
+(`dpl_G6M3eoVm7f5XtNbAvyjuCJ5R6Zy7`, `691ab024`) e a D-505 desde 17:04 UTC
+(`dpl_BFVfoWJJjGKdBL3LjBP8d3z3eMdH`, `27323206`).
 
 | tela | métrica | antes (13–15/10, pareado) | depois |
 |---|---|---|---|
 | Home | LCP | 3.500 e 7.612 ms (n = 2) | n = 0 |
 | Home | TTFB | 13,7, 108,8, 112,9 e 168,7 ms (n = 4) | n = 0 |
 | Home | CLS | 0 e 0 (n = 2) | n = 0 |
-| `/skus/[id]` | LCP, TTFB, CLS | n = 0 (nenhuma carga completa) | sem deploy |
+| `/skus/[id]` | LCP, TTFB, CLS | n = 0 (nenhuma carga completa) | n = 0 |
 
 Nenhum ganho afirmado sem amostra. **Próxima leitura:** 24 h depois de cada
-deploy (a da D-504 a partir de 16/10, 16:45 UTC), pareada pelo TTFB. No SKU,
+deploy (a da D-504 a partir de 16/10, 16:45 UTC; a da D-505, de 17:05 UTC),
+pareada pelo TTFB. No SKU,
 conte também o CLS rotulado `/skus/…` sem TTFB lá: o selo tardio da D-505
 desloca depois de uma navegação suave, e o deslocamento cai no documento que
 veio de outra tela. Se aparecer CLS num SKU sem classe ABC (o esqueleto do selo

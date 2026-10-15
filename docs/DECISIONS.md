@@ -16072,7 +16072,7 @@ Sem atraso, a pagina sai em ~260 ms (LCP ~550 ms). A aba Historico ganha igual (
 
 ## D-506 - A metrica de producao dava o LCP a rota em que a aba se escondeu, nao a carregada: o SKU nao tem carga completa medida, a Home tem duas (3,5 e 7,6 s), e o depois da D-504 ainda nao tem amostra
 
-**Contexto:** a releitura pedida depois da D-504 e da D-505 -- os web vitals de producao da Home e do `/skus/[skuId]`, separados por rota e metrica, contra a linha de base da D-503 (Home com LCP de 7,6 s e TTFB de 113 ms; SKU com 5,9 s). Em 15/10, 16:52 UTC: a D-504 esta em producao desde **16:44:43 UTC**, no deploy `dpl_G6M3eoVm7f5XtNbAvyjuCJ5R6Zy7` (`691ab024`, o merge do #195; o do #194 nao gerou deploy proprio); a D-505 (#196) segue aberta, sem deploy. Para comparar, a linha de base foi refeita envio a envio -- e o rotulo de rota do log nao era o que a D-503 leu.
+**Contexto:** a releitura pedida depois da D-504 e da D-505 -- os web vitals de producao da Home e do `/skus/[skuId]`, separados por rota e metrica, contra a linha de base da D-503 (Home com LCP de 7,6 s e TTFB de 113 ms; SKU com 5,9 s). Em 15/10, 16:52 UTC: a D-504 esta em producao desde **16:44:43 UTC**, no deploy `dpl_G6M3eoVm7f5XtNbAvyjuCJ5R6Zy7` (`691ab024`, o merge do #195; o do #194 nao gerou deploy proprio); a D-505 (#196) ainda estava aberta -- mergeou as 17:04:02 UTC e esta em producao desde **17:04:39 UTC**, no deploy `dpl_BFVfoWJJjGKdBL3LjBP8d3z3eMdH` (`27323206`). Para comparar, a linha de base foi refeita envio a envio -- e o rotulo de rota do log nao era o que a D-503 leu.
 
 **Como o reporter mede** (`app/web-vitals.tsx`, montado uma vez no `app/layout.tsx`, entao sobrevive a navegacao suave):
 - o **TTFB** sai na montagem, com a rota **carregada**;
@@ -16092,17 +16092,17 @@ Sem atraso, a pagina sai em ~260 ms (LCP ~550 ms). A aba Historico ganha igual (
 | `/vendas`, 13/10 17:42 | 38,4 ms | 1.556 ms | 0 | `/vendas` |
 | `/faturamento`, 14/10 16:14 e 20:10 | 132,1 e 31,9 ms | 3.276 e 772 ms | 0,07 e 0 | `/vendas` |
 
-Nenhum TTFB com `/skus/` nos tres dias: ninguem abriu um SKU do zero. Depois do deploy da D-504: **0 envios** ate 16:52 UTC.
+Nenhum TTFB com `/skus/` nos tres dias: ninguem abriu um SKU do zero. Depois do deploy da D-504: **0 envios** ate 17:33 UTC (o que inclui a janela da D-505 desde 17:04).
 
 **Decisao:**
 1. **O SKU nao tem LCP de producao.** O 5,9 s da D-503 e o de uma carga de `/vendas` que terminou num SKU por navegacao suave. A D-505 continua apoiada na leitura fria medida pelo A1 (`get_sku_abc_curve`, 5,4 mil paginas) e na medicao local, nao em numero de producao; o efeito dela so se le quando alguem abrir um SKU do zero.
 2. **A linha de base da Home sao duas cargas, nao uma:** LCP de 3,5 e 7,6 s, TTFB de 14 a 169 ms em quatro cargas (mediana 111), CLS 0 nas duas com envio. O 3,5 s estava rotulado `/vendas`.
 3. **`/vendas` tem quatro cargas proprias** (LCP de 1,1, 1,6, 4,7 e 5,9 s); o 3,3 s e o 0,8 s atribuidos a ela na D-503 sao de cargas de `/faturamento`. A ordem do streaming continua Home -> `/vendas`; o SKU sai dela por falta de amostra, nao por estar rapido. O CLS de 0,51 e de uma carga de `/vendas` de verdade, mas, somando o documento inteiro, pode vir de uma navegacao suave dentro da tela -- por isso nao se reproduz numa carga local.
 4. **Ate o reporter mudar, le-se assim:** cada LCP/CLS pertence a carga do TTFB anterior; a janela "depois do deploy" conta pelo horario do TTFB, nao pelo `dep=` do envio; e um CLS rotulado `/skus/...` conta como sinal do SKU mesmo sem TTFB la (o selo tardio da D-505 desloca depois de uma navegacao suave, e esse deslocamento cai no documento que veio de outra tela). Escrito em `docs/UX_SYSTEM.md` §5.
-5. **Nenhum ganho afirmado.** Depois da D-504: n = 0; depois da D-505: sem deploy. A releitura e 24 h depois de cada deploy, com o par; se aparecer CLS num SKU sem classe ABC (o esqueleto do selo some), reabre-se a reserva de espaco que o A2 sugeriu (localmente, a D-505 mediu CLS 0 tambem num SKU sem classe).
+5. **Nenhum ganho afirmado.** Depois da D-504 e da D-505: n = 0 ate 17:33 UTC. A releitura e 24 h depois de cada deploy, com o par; se aparecer CLS num SKU sem classe ABC (o esqueleto do selo some), reabre-se a reserva de espaco que o A2 sugeriu (localmente, a D-505 mediu CLS 0 tambem num SKU sem classe).
 
 **Encaminhado (A3, fatia propria):** o reporter guardar a rota na montagem e mandar LCP e CLS com ela, mais um sinal de que houve navegacao suave antes do envio; e mandar o LCP no primeiro clique ou tecla, como a biblioteca `web-vitals` faz -- duas das quatro cargas da Home nao mandaram nada. Fica fora desta fatia porque muda o formato do log, e a proxima releitura precisa saber de que lado do corte cada amostra esta.
 
-**Verificacao:** `list_deployments` e `get_deployment` de producao; `gh pr view 196` (aberto); os logs acima; a leitura de `app/web-vitals.tsx`, `app/layout.tsx` e `app/api/vitals/route.ts`.
+**Verificacao:** `list_deployments` e `get_deployment` de producao; `gh pr view 196` (aberto as 16:52; mergeado as 17:04) e o `get_deployment` do `dpl_BFVfoWJJjGKdBL3LjBP8d3z3eMdH`; os logs acima; a leitura de `app/web-vitals.tsx`, `app/layout.tsx` e `app/api/vitals/route.ts`.
 
 **Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,UX_SYSTEM}.md`. Nenhum codigo, migration ou leitura.
