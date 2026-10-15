@@ -135,6 +135,11 @@ export default async function DiagnosticoPage({
 
   const eventsBySku = new Map<string, CorrelatedEvent[]>();
   let eventsError: { message: string } | null = null;
+  // T-R6: a evidência adicional continua sem derrubar o diagnóstico, mas a
+  // falha dela é DITA — "sem sinal de SAC" e "impacto —" lidos de uma leitura
+  // que falhou não são o mesmo que "não houve".
+  let claimsError: { message: string } | null = null;
+  let precosError: { message: string } | null = null;
 
   // D-116 — SAC como evidência: reclamações ABERTAS por SKU candidato, sob
   // a MESMA RLS da tela. Falha degrada para "sem sinal de SAC" (evidência
@@ -173,6 +178,7 @@ export default async function DiagnosticoPage({
     ]);
 
     eventsError = eventsResult.error;
+    claimsError = claimLinks.error;
 
     for (const event of eventsResult.data ?? []) {
       const list = eventsBySku.get(event.sku_id) ?? [];
@@ -247,6 +253,8 @@ export default async function DiagnosticoPage({
       p_date_to: asOf,
     });
 
+    precosError = precos.error;
+
     const precoPorSku = new Map(
       (precos.data ?? []).map((linha) => [linha.sku_id, linha.average_price]),
     );
@@ -318,6 +326,15 @@ export default async function DiagnosticoPage({
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar: {error.message}
+        </p>
+      )}
+
+      {error === null && (claimsError !== null || precosError !== null) && (
+        <p role="alert" className="sb-note sb-note-atencao">
+          {claimsError !== null &&
+            `As reclamações abertas não foram lidas (${claimsError.message}): o sinal de SAC fica de fora, e isso não quer dizer que não haja reclamação. `}
+          {precosError !== null &&
+            `O preço médio não foi lido (${precosError.message}): o impacto estimado aparece como "—" por isso, não por falta de venda.`}
         </p>
       )}
 
