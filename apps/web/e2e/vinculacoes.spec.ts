@@ -52,10 +52,37 @@ function destaque(page: Page, rotulo: string) {
 
 const tabela = (page: Page) => page.getByRole("region", { name: "Anúncios do Mercado Livre" });
 
+/**
+ * O RESUMO CHEGOU — ou a página DIZ por que não (D-478).
+ *
+ * A tela é renderizada no servidor depois da leitura única
+ * (`get_listings_link_overview`, D-376). Se a leitura falha, ela cai na lista
+ * de sempre, SEM os cartões, com uma nota que dá o motivo. Uma falha que só
+ * dissesse "cartão não encontrado" não separava os dois casos: em 15/10 uma
+ * rodada inteira, com outra suíte no mesmo Docker, falhou assim e passou nas
+ * três seguintes (6 repetições depois, com e sem a CPU ocupada, sem reproduzir).
+ * Aqui:
+ *  - o resumo tem até 15 s para chegar (a renderização no servidor sob carga;
+ *    o teste tem 60), em vez dos 5 s do `expect`;
+ *  - se a página caiu na lista de sempre, o teste falha com o MOTIVO que ela
+ *    mostrou — é defeito, não lentidão.
+ */
+async function esperaResumo(page: Page): Promise<void> {
+  const resumo = page.getByRole("region", { name: "Resumo da integridade do catálogo" });
+  const semLeitura = page.getByText(/não estão disponíveis neste banco/);
+
+  await expect(resumo.or(semLeitura)).toBeVisible({ timeout: 15_000 });
+
+  if (await semLeitura.isVisible()) {
+    throw new Error(`a leitura do resumo falhou e a tela caiu na lista de sempre: ${await semLeitura.innerText()}`);
+  }
+}
+
 test("/vinculacoes: os cartões contam o que a tabela mostra, e vínculo por variação é vinculado", async ({
   page,
 }) => {
   await login(page, "/vinculacoes");
+  await esperaResumo(page);
 
   await expect(page.getByRole("heading", { name: "Integridade de Catálogo", level: 1 })).toBeVisible();
   await expect(page.getByText("ESTOQUE / VINCULAÇÕES")).toBeVisible();
@@ -77,6 +104,7 @@ test("/vinculacoes: os cartões contam o que a tabela mostra, e vínculo por var
 
 test("/vinculacoes: clicar em 'Vendeu sem vínculo' mostra exatamente aquelas linhas", async ({ page }) => {
   await login(page, "/vinculacoes");
+  await esperaResumo(page);
 
   // Um só no fixture, e é o quinto anúncio — o único sem vínculo COM venda.
   await expect(cartao(page, "Vendeu sem vínculo")).toContainText("1");
@@ -98,6 +126,7 @@ test("/vinculacoes: o zero de candidatos diz por que é zero, e a vinculação m
   page,
 }) => {
   await login(page, "/vinculacoes");
+  await esperaResumo(page);
 
   /*
     O seed não cria candidato — como o Dev, onde toda linha do ERP resolveu.
