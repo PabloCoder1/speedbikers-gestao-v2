@@ -111,7 +111,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-501, a atualização no lugar no resto do app: 17 buscas GET, 27 `<a>` e 41 `<Link>` de mesma tela em 22 arquivos (as telas livres e as quatro que o A2 liberou: `/vendas`, `/vendas/shopee`, `/faturamento` e `/anuncios/shopee`), o `LinkDeFiltro`, a guarda `check:navegacao-suave` na CI e o `e2e/atualizacao-no-lugar.spec.ts`.
 
 **Em andamento**
-- PR da D-501 (só web, sem migration).
+- D-501 no **#182** (só web, sem migration): entra quando a CI fechar verde e o A2 mergear.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Botão pendente compartilhado e `EstadoDaTela` (erro, vazio e permissão), que substitui o aviso provisório da T-R6.
