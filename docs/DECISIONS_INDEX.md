@@ -156,7 +156,7 @@ Decisões registradas: **462** (D-001 a D-504).
 - **D-451** — Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 - **D-464** — Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 - **D-466** — Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
-- **D-504** — A Home pinta sem esperar a cobertura e os pausados: so a "Atencao necessaria" espera a segunda rodada, e ela comeca quando a organizacao chega
+- **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
 ### interface (58)
 
