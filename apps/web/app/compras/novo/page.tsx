@@ -47,7 +47,7 @@ export default async function NovoPedidoDeCompraPage({
     return (
       <Shell>
         <PageTitle eyebrow="ESTOQUE / OPERAÇÃO" title="Novo pedido de compra" compacto />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </Shell>
     );
   }
