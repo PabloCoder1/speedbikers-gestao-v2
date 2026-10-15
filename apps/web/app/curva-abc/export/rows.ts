@@ -8,9 +8,16 @@
  * estoque) e a junção das três curvas numa linha por SKU.
  */
 
-export type AbcCriterionKey = "faturamento" | "unidades" | "pedidos";
+export type AbcCriterionKey = "faturamento" | "unidades" | "pedidos" | "compras";
 export type AbcClassLetter = "A" | "B" | "C";
-export type AbcDimension = "conta" | "marca" | "categoria" | "mes" | "migracao";
+export type AbcDimension = "conta" | "marca" | "categoria" | "mes" | "migracao" | "marketplace";
+
+/**
+ * A terceira curva (D-450): "pedidos" no recorte Mercado Livre, "compras" com a
+ * Shopee no recorte -- o pedido do ML não soma com o da Shopee, e a função o
+ * recusa lá (C-60). A compra é o pack do ML e o pedido da Shopee.
+ */
+export type TerceiroCriterio = "pedidos" | "compras";
 
 export interface AbcAnalysisRow {
   sku_id: string;
@@ -20,9 +27,11 @@ export interface AbcAnalysisRow {
   category: string | null;
   kind: string;
   purchase_cost: number | null;
-  revenue: number;
+  /** A receita CONHECIDA (C-60): itens Shopee de preço zero ficam fora e são contados. */
+  revenue: number | null;
   units: number;
-  orders: number;
+  /** Nulo com a Shopee no recorte: o pedido do ML não soma com o dela. */
+  orders: number | null;
   metric_value: number;
   /** Pontos percentuais (12,34 = 12,34%), como a RPC devolve. */
   metric_share: number;
@@ -31,11 +40,25 @@ export interface AbcAnalysisRow {
   class_revenue: AbcClassLetter | null;
   class_units: AbcClassLetter | null;
   class_orders: AbcClassLetter | null;
+  /*
+    As colunas da Curva ABC por marketplace (C-60, D-441). Opcionais aqui
+    porque o banco anterior à migration não as devolve; lidas com `?? null`.
+  */
+  purchases?: number;
+  class_purchases?: AbcClassLetter | null;
+  revenue_ml?: number | null;
+  units_ml?: number | null;
+  revenue_shopee?: number | null;
+  units_shopee?: number | null;
+  shopee_items_without_revenue?: number | null;
+  total_purchases?: number;
+  total_shopee_items_without_revenue?: number | null;
   prev_metric_value: number | null;
   prev_abc_class: AbcClassLetter | null;
   movement: string | null;
   local_stock: number | null;
-  full_stock: number;
+  /** Nulo sem o Mercado Livre no recorte: a Shopee não tem Full. */
+  full_stock: number | null;
   coverage_days: number | null;
   total_count: number;
   class_a_count: number;
@@ -45,9 +68,9 @@ export interface AbcAnalysisRow {
   class_b_value: number;
   class_c_value: number;
   without_full_count: number;
-  total_revenue: number;
+  total_revenue: number | null;
   total_units: number;
-  total_orders: number;
+  total_orders: number | null;
   moved_up_count: number;
   moved_down_count: number;
   kept_count: number;
@@ -62,6 +85,8 @@ export interface AbcBreakdownRow {
   revenue: number | null;
   units: number | null;
   orders: number | null;
+  /** C-60: as compras do grupo (o pack do ML e o pedido da Shopee). */
+  purchases?: number | null;
   sku_count: number;
   class_a_value: number | null;
   class_b_value: number | null;
@@ -70,11 +95,27 @@ export interface AbcBreakdownRow {
 
 export interface SkuAccountSales {
   sku_id: string;
-  // D-441: nulos na linha da loja Shopee; esta exportação ainda lê só o ML.
+  // D-441: nulo na linha da loja Shopee -- a chave de qualquer linha é `account_id`.
   ml_account_id: string | null;
+  /** A conta ML ou a loja Shopee da linha (C-60); o banco anterior só tem `ml_account_id`. */
+  account_id?: string | null;
   revenue: number | null;
   units: number;
   orders: number | null;
+}
+
+/** As três curvas do arquivo; a terceira é a de pedidos (ML) ou a de compras (com a Shopee). */
+export type AbcCurves = {
+  readonly faturamento: readonly AbcAnalysisRow[];
+  readonly unidades: readonly AbcAnalysisRow[];
+} & ({ readonly pedidos: readonly AbcAnalysisRow[] } | { readonly compras: readonly AbcAnalysisRow[] });
+
+export function terceiroCriterio(curves: AbcCurves): TerceiroCriterio {
+  return "compras" in curves ? "compras" : "pedidos";
+}
+
+export function terceiraCurva(curves: AbcCurves): readonly AbcAnalysisRow[] {
+  return "compras" in curves ? curves.compras : curves.pedidos;
 }
 
 export interface CurveSummary {
@@ -141,15 +182,17 @@ export interface ConsolidatedRow {
   category: string | null;
   classRevenue: AbcClassLetter | null;
   classUnits: AbcClassLetter | null;
+  /** A classe na terceira curva: pedidos (ML) ou compras (com a Shopee). */
   classOrders: AbcClassLetter | null;
-  /** "AAB" = A em faturamento, A em unidades, B em pedidos; "-" onde o SKU não entrou. */
+  /** "AAB" = A em faturamento, A em unidades, B no terceiro critério; "-" onde o SKU não entrou. */
   combinedClass: string;
-  revenue: number;
+  revenue: number | null;
   revenueShare: number | null;
   revenueCumulative: number | null;
   units: number;
-  orders: number;
-  /** Faturamento ÷ pedidos. Sem pedido, vazio — nunca zero (D-067). */
+  /** Pedidos (ML) ou compras (com a Shopee) -- o valor do terceiro critério. */
+  orders: number | null;
+  /** Faturamento ÷ pedidos, só no ML. Sem pedido, vazio — nunca zero (D-067). */
   averageTicket: number | null;
   /** Faturamento ÷ unidades. */
   averageUnitPrice: number | null;
@@ -159,12 +202,18 @@ export interface ConsolidatedRow {
   movement: string | null;
   purchaseCost: number | null;
   localStock: number | null;
-  fullStock: number;
+  /** Nulo sem o ML no recorte. */
+  fullStock: number | null;
   /** Estoque local (só o positivo) + Full; local não registrado deixa o total vazio. */
   totalStock: number | null;
   /** Custo unitário × estoque total. */
   stockValue: number | null;
   coverageDays: number | null;
+  /** A parte de cada canal (C-60), vazia no recorte ML e onde o canal não vendeu. */
+  revenueMl: number | null;
+  revenueShopee: number | null;
+  /** Itens Shopee de preço zero: a receita deles é desconhecida, e fica fora da soma. */
+  shopeeItemsWithoutRevenue: number | null;
 }
 
 const MOVIMENTO_TEXTO: Readonly<Record<string, string>> = {
@@ -184,11 +233,12 @@ export function movementLabel(movement: string | null): string | null {
  * depois, na ordem dela. O período anterior é o do faturamento: só existe
  * para quem está na curva de faturamento.
  */
-export function consolidateCurves(curves: Readonly<Record<AbcCriterionKey, readonly AbcAnalysisRow[]>>): ConsolidatedRow[] {
+export function consolidateCurves(curves: AbcCurves): ConsolidatedRow[] {
   const ordem: AbcAnalysisRow[] = [];
   const visto = new Set<string>();
+  const comCompras = terceiroCriterio(curves) === "compras";
 
-  for (const lista of [curves.faturamento, curves.unidades, curves.pedidos]) {
+  for (const lista of [curves.faturamento, curves.unidades, terceiraCurva(curves)]) {
     for (const linha of lista) {
       if (!visto.has(linha.sku_id)) {
         visto.add(linha.sku_id);
@@ -201,7 +251,11 @@ export function consolidateCurves(curves: Readonly<Record<AbcCriterionKey, reado
 
   return ordem.map((base) => {
     const f = faturamento.get(base.sku_id);
-    const totalStock = base.local_stock === null ? null : Math.max(base.local_stock, 0) + Math.max(base.full_stock, 0);
+    // Sem Full (recorte sem o ML), o total é o estoque local: não há o que somar.
+    const totalStock =
+      base.local_stock === null ? null : Math.max(base.local_stock, 0) + Math.max(base.full_stock ?? 0, 0);
+    const classeTerceira = comCompras ? (base.class_purchases ?? null) : base.class_orders;
+    const terceiroValor = comCompras ? (base.purchases ?? null) : base.orders;
 
     return {
       skuId: base.sku_id,
@@ -212,14 +266,15 @@ export function consolidateCurves(curves: Readonly<Record<AbcCriterionKey, reado
       category: base.category,
       classRevenue: base.class_revenue,
       classUnits: base.class_units,
-      classOrders: base.class_orders,
-      combinedClass: `${base.class_revenue ?? "-"}${base.class_units ?? "-"}${base.class_orders ?? "-"}`,
+      classOrders: classeTerceira,
+      combinedClass: `${base.class_revenue ?? "-"}${base.class_units ?? "-"}${classeTerceira ?? "-"}`,
       revenue: base.revenue,
       revenueShare: f === undefined ? null : f.metric_share / 100,
       revenueCumulative: f === undefined ? null : f.cumulative_share / 100,
       units: base.units,
-      orders: base.orders,
-      averageTicket: razao(base.revenue, base.orders),
+      orders: terceiroValor,
+      // O ticket é do ML (faturamento ÷ pedidos); com a Shopee o pedido não soma.
+      averageTicket: comCompras ? null : razao(base.revenue, base.orders),
       averageUnitPrice: razao(base.revenue, base.units),
       prevRevenue: f?.prev_metric_value ?? null,
       revenueChange: f === undefined ? null : variacao(f.metric_value, f.prev_metric_value),
@@ -231,6 +286,9 @@ export function consolidateCurves(curves: Readonly<Record<AbcCriterionKey, reado
       totalStock,
       stockValue: base.purchase_cost === null || totalStock === null ? null : base.purchase_cost * totalStock,
       coverageDays: base.coverage_days,
+      revenueMl: base.revenue_ml ?? null,
+      revenueShopee: base.revenue_shopee ?? null,
+      shopeeItemsWithoutRevenue: base.shopee_items_without_revenue ?? null,
     };
   });
 }
@@ -246,7 +304,7 @@ export interface AccountPivotRow {
   title: string;
   classRevenue: AbcClassLetter | null;
   /** Total do SKU no recorte (da curva, não somado aqui). */
-  revenue: number;
+  revenue: number | null;
   units: number;
   /** Por conta, na ordem de `accounts`; sem venda na conta, nulo (célula vazia). */
   revenueByAccount: (number | null)[];
@@ -266,7 +324,9 @@ export function pivotByAccount(
 
   for (const venda of sales) {
     const contas = porSku.get(venda.sku_id) ?? new Map<string, SkuAccountSales>();
-    if (venda.ml_account_id) contas.set(venda.ml_account_id, venda);
+    // A chave é a conta ML ou a loja Shopee (C-60); o banco anterior só tem a do ML.
+    const chave = venda.account_id ?? venda.ml_account_id;
+    if (chave !== null) contas.set(chave, venda);
     porSku.set(venda.sku_id, contas);
   }
 
@@ -327,10 +387,13 @@ export function describeAbcExport(input: {
   kindLabel: string | null;
   onlyWithoutFull: boolean;
   formatDay: (day: string) => string;
+  /** "Shopee" ou "todos os marketplaces"; nulo = o recorte Mercado Livre de sempre (D-450). */
+  marketplaceLabel?: string | null;
 }): string {
   const partes = [
     `${input.periodLabel} (${input.formatDay(input.dateFrom)} a ${input.formatDay(input.dateTo)})`,
     `comparado com ${input.formatDay(input.prevFrom)} a ${input.formatDay(input.prevTo)}`,
+    ...(input.marketplaceLabel === undefined || input.marketplaceLabel === null ? [] : [input.marketplaceLabel]),
     input.accountLabel === null ? "todas as contas" : `conta ${input.accountLabel}`,
     input.brand === null ? "todas as marcas" : `marca ${input.brand}`,
     input.category === null ? "todas as categorias" : `categoria ${input.category}`,

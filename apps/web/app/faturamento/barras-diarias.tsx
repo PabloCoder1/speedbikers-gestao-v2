@@ -1,20 +1,27 @@
 import { businessDateRangeLength, shiftBusinessDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
-import {
-  rotuloDaMargemMinima,
-  barraDaMargem,
-  escalaDasMargens,
-  tomDaMargem,
-  type DiaFaturamento,
-} from "../../lib/faturamento";
+import { rotuloDaMargemMinima, barraDaMargem, escalaDasMargens, tomDaMargem } from "../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../lib/format";
 
 function pct(fracao: number): string {
   return `${(fracao * 100).toFixed(2)}%`;
 }
 
-function leituraDoDia(dia: string, dado: DiaFaturamento | undefined): string {
+/**
+ * O que um dia do gráfico precisa ter. O dia do ML (`DiaFaturamento`) e o da
+ * Shopee (`get_shopee_faturamento_diario`, D-452) cabem nele; o da Shopee pode
+ * ter a receita DESCONHECIDA (só itens de preço zero), e aí não tem barra.
+ */
+export interface DiaDasBarras {
+  readonly dia: string;
+  readonly pedidos: number;
+  readonly receita_bruta: number | null;
+  readonly receita_coberta: number | null;
+  readonly margem_venda: number | null;
+}
+
+function leituraDoDia(dia: string, dado: DiaDasBarras | undefined): string {
   if (dado === undefined) return `${formatBusinessDate(dia)}: sem venda`;
 
   const margem =
@@ -22,7 +29,9 @@ function leituraDoDia(dia: string, dado: DiaFaturamento | undefined): string {
       ? "sem pedido coberto"
       : `margem ${formatPercent(dado.margem_venda)} sobre ${formatCurrency(dado.receita_coberta)} cobertos`;
 
-  return `${formatBusinessDate(dia)}: ${formatCurrency(dado.receita_bruta)} em ${formatCount(dado.pedidos)} pedidos · ${margem}`;
+  const receita = dado.receita_bruta === null ? "receita desconhecida (itens de preço zero)" : formatCurrency(dado.receita_bruta);
+
+  return `${formatBusinessDate(dia)}: ${receita} em ${formatCount(dado.pedidos)} pedidos · ${margem}`;
 }
 
 /**
@@ -44,7 +53,7 @@ export function BarrasDiarias({
   rangeTo,
   margemMinima,
 }: {
-  dias: readonly DiaFaturamento[];
+  dias: readonly DiaDasBarras[];
   rangeFrom: string;
   rangeTo: string;
   /** A linha de referência e o tom das barras (D-410). */
@@ -58,7 +67,8 @@ export function BarrasDiarias({
     return { dia, dado: porDia.get(dia) };
   });
 
-  const maiorReceita = Math.max(0, ...dias.map((d) => d.receita_bruta));
+  // Só para a ESCALA: o dia de receita desconhecida não tem barra (abaixo).
+  const maiorReceita = Math.max(0, ...dias.map((d) => d.receita_bruta ?? 0));
   const escala = escalaDasMargens(
     dias.map((d) => d.margem_venda),
     margemMinima,
@@ -80,7 +90,7 @@ export function BarrasDiarias({
       >
         {colunas.map(({ dia, dado }) => (
           <div key={dia} className="sb-barras-col" title={leituraDoDia(dia, dado)}>
-            {dado !== undefined && maiorReceita > 0 && (
+            {dado !== undefined && dado.receita_bruta !== null && maiorReceita > 0 && (
               <span className="sb-barras-barra" style={{ height: pct(dado.receita_bruta / maiorReceita) }} />
             )}
           </div>

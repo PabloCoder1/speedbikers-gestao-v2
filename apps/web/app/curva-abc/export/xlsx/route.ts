@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 import { toSalesMetricDate } from "@sb/domain";
 
-import { resolveAbcFilters, resolveAbcWindow } from "../../../../lib/abc-filters";
+import { aplicarContasDoRecorte, resolveAbcFilters, resolveAbcWindow } from "../../../../lib/abc-filters";
 import { formatBusinessDate } from "../../../../lib/format";
 import { currentMembership } from "../../../../lib/membership";
 import { createClient } from "../../../../lib/supabase/server";
+import { ROTULO_DO_ESCOPO, marketplacesDoEscopo, type ContaDoSeletor } from "../../../../lib/vendas-multicanal";
 import { loadAbcExportData } from "../load";
 import { describeAbcExport } from "../rows";
 import { buildAbcWorkbook } from "../workbook";
@@ -14,8 +15,8 @@ import { buildAbcWorkbook } from "../workbook";
  * `GET /curva-abc/export/xlsx` — o Excel da Curva ABC (D-422, D-424).
  *
  * Lê os MESMOS parâmetros da tela (`resolveAbcFilters`): o arquivo é o recorte
- * que está na frente de quem clicou -- período (com o anterior de mesmo
- * tamanho), conta, marca, categoria, tipo e "sem Full". Critério, classe,
+ * que está na frente de quem clicou -- marketplace e contas (D-450), período
+ * (com o anterior de mesmo tamanho), conta, marca, categoria, tipo e "sem Full". Critério, classe,
  * estoque, movimento e busca não restringem: o arquivo leva as três curvas
  * inteiras do recorte, e cada aba tem filtro automático.
  *
@@ -26,11 +27,21 @@ export async function GET(request: Request): Promise<NextResponse> {
   const supabase = await createClient();
   const url = new URL(request.url);
   const today = toSalesMetricDate(new Date());
-  const filters = resolveAbcFilters(Object.fromEntries(url.searchParams.entries()), today);
+  const pedidos = resolveAbcFilters(Object.fromEntries(url.searchParams.entries()), today);
+  const multicanal = pedidos.escopo !== "ml";
 
-  const [membership, accounts] = await Promise.all([
+  // Fora do ML, as contas e lojas vêm da fonte única (C-52): são as colunas da
+  // aba "Por conta" e o que valida as contas do link.
+  const [membership, accounts, contasDoRecorte] = await Promise.all([
     currentMembership(supabase),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
+    multicanal
+      ? supabase
+          .from("marketplace_accounts")
+          .select("account_id, marketplace, name, environment")
+          .order("marketplace", { ascending: true })
+          .order("name", { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   if (membership.error !== null) {
@@ -45,7 +56,20 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   // Conta desconhecida cai em "todas", a MESMA regra da tela.
   const contas = accounts.data ?? [];
-  const conta = contas.find((a) => a.slug === filters.accountSlug) ?? null;
+  const todasAsContas: ContaDoSeletor[] = contasDoRecorte.data ?? [];
+  const { filters, selecionadas, leMl } = aplicarContasDoRecorte(pedidos, todasAsContas);
+  const conta = filters.escopo === "ml" ? (contas.find((a) => a.slug === filters.accountSlug) ?? null) : null;
+  // As colunas da aba "Por conta": no ML, as contas; fora dele, as contas e
+  // lojas do recorte de marketplace (a loja de teste aparece, marcada).
+  const colunas =
+    filters.escopo === "ml"
+      ? contas.map((a) => ({ id: a.id, label: a.label }))
+      : todasAsContas
+          .filter((c) => filters.escopo === "todos" || c.marketplace === "SHOPEE")
+          .map((c) => ({
+            id: c.account_id,
+            label: `${c.name}${c.marketplace === "SHOPEE" ? " (Shopee)" : ""}${c.environment === "live" ? "" : " — teste"}`,
+          }));
   const now = new Date();
   const janela = resolveAbcWindow(filters, today);
 
@@ -60,6 +84,9 @@ export async function GET(request: Request): Promise<NextResponse> {
     category: filters.category,
     kind: filters.kind?.value ?? null,
     onlyWithoutFull: filters.onlyWithoutFull,
+    ...(filters.escopo === "ml"
+      ? {}
+      : { marketplaces: marketplacesDoEscopo(filters.escopo), accountIds: filters.contas }),
   });
 
   if (error !== null || data === null) {
@@ -70,7 +97,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     curves: data.curves,
     breakdowns: data.breakdowns,
     byAccount: data.byAccount,
-    accounts: contas.map((a) => ({ id: a.id, label: a.label })),
+    accounts: colunas,
+    leMl,
     organizationName: membership.organizationName,
     recorte: describeAbcExport({
       periodLabel: filters.custom === null ? `últimos ${String(filters.days)} dias` : "período personalizado",
@@ -78,7 +106,11 @@ export async function GET(request: Request): Promise<NextResponse> {
       dateTo: janela.to,
       prevFrom: janela.prevFrom,
       prevTo: janela.prevTo,
-      accountLabel: conta?.label ?? null,
+      accountLabel:
+        conta?.label ??
+        (selecionadas === null ? null : selecionadas.map((c) => c.name).join(", ")),
+      marketplaceLabel:
+        filters.escopo === "todos" ? ROTULO_DO_ESCOPO.todos.toLowerCase() : filters.escopo === "shopee" ? ROTULO_DO_ESCOPO.shopee : null,
       brand: filters.brand,
       category: filters.category,
       kindLabel: filters.kind?.label ?? null,
@@ -93,6 +125,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   // confundem na pasta de Downloads.
   const partes = [
     "curva-abc",
+    filters.escopo === "ml" ? null : filters.escopo,
     filters.custom === null ? `${String(filters.days)}-dias` : `${janela.from}-a`,
     conta?.slug,
     filters.brand,

@@ -366,7 +366,7 @@ function PilulaDaMargem({
  * A posição (1º, 2º…) é a ordem que a RPC já devolve: receita no primeiro
  * painel, da pior margem para a melhor no segundo. Nada é reordenado aqui.
  */
-function ListaProdutos({
+export function ListaProdutos({
   linhas,
   modo,
   margemMinima,

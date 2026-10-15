@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **445** (D-001 a D-500).
+Decisões registradas: **450** (D-001 a D-500).
 
 ## Por domínio
 
@@ -154,7 +154,7 @@ Decisões registradas: **445** (D-001 a D-500).
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 - **D-451** — Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 
-### interface (53)
+### interface (55)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -207,10 +207,12 @@ Decisões registradas: **445** (D-001 a D-500).
 - **D-438** — Telas multicanais, etapa T3a: a loja Shopee aparece na saude da operacao -- o aviso do vigia com nome e destino, /sincronizacao com os limiares do vigia, e a contagem do topo pela fonte unica
 - **D-442** — Telas multicanais, etapa T5: /faturamento tem os recortes Shopee e Todos; a Shopee mostra o resultado inteiro, definitivo e provisorio, e o Todos poe os dois marketplaces lado a lado, sem total
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
+- **D-452** — Telas multicanais, etapa T5b: o Faturamento da Shopee ganha a cascata do recebido componente a componente, a serie diaria e os produtos, sobre o C-61
 - **D-456** — Telas multicanais, etapa T5c: os Ads CPC da loja Shopee entram no /faturamento da Shopee como secao propria, rotulados "CPC da loja", fora do resultado e sem somar com o Mercado Ads
+- **D-458** — Telas multicanais, etapa T5d: o repasse da Shopee entra no /faturamento da Shopee como o realizado ao lado do previsto, pelo dia da liberacao, sem tocar no recebido nem no resultado
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
-### mercado-livre (80)
+### mercado-livre (81)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -290,6 +292,7 @@ Decisões registradas: **445** (D-001 a D-500).
 - **D-437** — Faturamento da Shopee (E5): resultado = recebido - custo nos pedidos cobertos, definitivo e provisorio separados, o custo pela regra de D-356 provada equivalente, e nada soma com o resultado do ML
 - **D-441** — Curva ABC por marketplace (E6b): marketplace e conta/loja como recortes nas tres funcoes da Curva ABC, com o ML identico e 30x mais rapido
 - **D-445** — /produtos com a Shopee (E6c, C-56): anuncio e venda olham os dois marketplaces, os campos do ML nao mudam e a loja de teste nao conta
+- **D-448** — Telas multicanais, etapa T6b: a Curva ABC ganha os recortes Todos e Shopee, com a compra como criterio que soma; o recorte ML continua identico, e o Excel multicanal fica para a T6b2
 - **D-449** — Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 - **D-454** — Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
 
@@ -364,7 +367,7 @@ Decisões registradas: **445** (D-001 a D-500).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (36)
+### vendas/métricas (38)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -402,6 +405,8 @@ Decisões registradas: **445** (D-001 a D-500).
 - **D-426** — Shopee, fatia 2: o worker renova o token antes de vencer e le os pedidos por janela de atualizacao, com marco por loja
 - **D-432** — Shopee, ingestao robusta (E1 da frente multicanal): o pedido recusado nao trava o financeiro, o lote de pedidos grava numa transacao que nao regride, e o erro da loja interrompe em vez de marcar item por item
 - **D-444** — Telas multicanais, etapa T6a: o ranking de produtos de /vendas chega ao Todos e a Shopee, a aba Vendas do SKU ganha o total entre marketplaces por conta e loja, e a loja de teste ganha o selo no painel Shopee do SKU
+- **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
+- **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 
 ### worker/infra (82)
 

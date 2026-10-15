@@ -321,3 +321,38 @@ test("/vendas/shopee no celular: as notas do cartão por loja ficam dentro da pr
 
   expect(transbordos.every((px) => px <= 0)).toBe(true);
 });
+
+/**
+ * D-460 (contrato C-62): as devoluções da Shopee em `/vendas/shopee`, logo
+ * depois do "Por loja" — decisão do dono de 15/10. O seed só tem a loja de
+ * TESTE, com as devoluções nunca lidas: sem total de zeros, a loja com "—" e o
+ * motivo, e a ressalva de que a situação vem como a Shopee manda e o valor é o
+ * "reembolso informado", nunca o "reembolsado".
+ */
+test("/vendas/shopee: as devoluções dizem o que não se sabe e não chamam o valor de reembolsado", async ({ page }) => {
+  await login(page, "/vendas/shopee");
+
+  const devolucoes = page.getByRole("region", { name: "Devoluções da Shopee" });
+
+  await expect(devolucoes.getByText("Devoluções", { exact: true })).toBeVisible();
+  await expect(devolucoes.getByRole("note").filter({ hasText: "como a Shopee manda" })).toBeVisible();
+  await expect(devolucoes.getByText(/Nenhuma loja real com as devoluções já lidas/)).toBeVisible();
+  await expect(devolucoes.getByText(/reembolsado/)).toHaveCount(1);
+
+  const loja = devolucoes.getByRole("list", { name: "Devoluções por loja" }).getByRole("listitem");
+
+  await expect(loja).toHaveCount(1);
+  await expect(loja).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(loja).toContainText("—");
+  await expect(loja).toContainText("devoluções ainda não lidas · loja de teste, fora do total");
+
+  // O painel fica entre o "Por loja" e os pedidos.
+  const titulos = await page.getByRole("heading", { level: 2 }).allInnerTexts();
+  const porLoja = titulos.findIndex((t) => t.trim() === "Por loja");
+  const dev = titulos.findIndex((t) => t.trim() === "Devoluções");
+  const pedidos = titulos.findIndex((t) => t.trim() === "Pedidos");
+
+  expect(porLoja).toBeGreaterThanOrEqual(0);
+  expect(dev).toBeGreaterThan(porLoja);
+  expect(pedidos).toBeGreaterThan(dev);
+});
