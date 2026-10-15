@@ -1384,6 +1384,10 @@ A saída é a mesma em 72 casos (6.884 linhas).
 
 **O que sobra na classe ABC do SKU:** a curva da organização em 90 dias, ~3,4 mil acessos à `daily_sku_metrics` (a tabela inteira tem 2,8 mil páginas no Dev). Esse custo é inerente ao cálculo; só um valor pré-calculado o tiraria.
 
+### Busca Universal com a Shopee (D-467, 15/10/2026)
+
+**Dev, como `authenticated`, oito execuções, termos curtos e comuns** (`ca`, `capacete`, `13014`, `MLB`, `speed`, `2026`, `xq`): a versão nova devolve as mesmas linhas da atual e leva 33–38 ms contra 38–41 ms, sem degradação. **Pedido pelo prefixo com 50 mil pedidos sintéticos** (stack isolado, desfeito): prefixo raro pelo índice `shopee_orders_org_order_sn_idx`, 9 páginas; prefixo de 2 caracteres para nos 5 primeiros pela data, 28 páginas.
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.

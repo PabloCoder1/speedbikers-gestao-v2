@@ -15792,6 +15792,53 @@ A gaveta mostra "Vendas (30 d) N un" com "K da Shopee" embaixo quando ha venda d
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-467 - C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
+
+**Contexto:** o A2 pediu o C-57 para a T7 (busca universal multicanal). Ele precisa de uma busca so que alcance a Shopee, com o tipo, um rotulo, o marketplace e um destino. A paleta e a `/busca` ja usam `search_entities` (D-060, sete entidades). Desenho combinado com o A2 em 15/10.
+
+**Decisao:**
+
+1. **Estender, nao duplicar.** As quatro colunas de hoje continuam (`entity_type`, `label`, `sublabel`, `href`), e tres entram no fim:
+   - `marketplace`: 'ML', 'SHOPEE' ou nulo -- a convencao de `marketplace_accounts`;
+   - `entity_id`: sku_id, item_id, order_sn...;
+   - `account_id`: a conta do ML ou a loja da Shopee.
+   - O `href` segue montado no SQL, e a tela pode usa-lo ou montar o seu destino com os ids.
+2. **Tres entidades novas, todas com destino REAL (D-060):**
+   - `loja`: a loja Shopee, com a de teste marcada ("Shopee · teste"); destino `/contas`.
+   - `anuncio_shopee`: casa o nome e o SKU do item ou da variacao por trecho, e o item_id exato. So entra loja live e item que nao foi apagado (a regra da lista). Destino `/anuncios/shopee?loja=<loja>&q=<item_id>`, que a lista acha pelo item_id.
+   - `pedido_shopee`: casa o `order_sn` por PREFIXO, sem diferenciar maiuscula, so de loja live. Destino `/vendas/shopee?loja=<loja>&from=<dia>&to=<dia>&pedido=<order_sn>`:
+     - leva o dia de Sao Paulo do pedido, porque a lista filtra por periodo;
+     - `get_shopee_orders` ganha `p_order_sn` no fim, e a T7 repassa o `?pedido=`.
+3. **O pedido de venda do ML continua fora:** nao ha pagina nem lista que o filtre pelo numero (D-060). Entra quando houver destino.
+4. **Permissao:** invoker; a RLS decide por conta (D-102) e por loja (D-433).
+5. **Desempenho:**
+   - indice `shopee_orders (organization_id, order_sn text_pattern_ops)`, porque a chave da tabela comeca pela loja;
+   - o termo so procura pedido quando e letra, digito ou hifen, de 2 a 40 caracteres, sem `%` nem `_` virando curinga;
+   - `plpgsql` + `force_custom_plan` (D-305), para o LIKE de prefixo ser planejado com o termo e usar o indice.
+6. **A ordem de chegada a producao e a da tela:**
+   - os rotulos dos tres tipos novos (`labels.ts`, a frase da busca e o e2e) sao da T7 do A2;
+   - a migration de producao so roda depois da T7 no ar, para a paleta nunca mostrar o codigo cru como cabecalho.
+
+**Verificacao:**
+- **Integracao** (organizacao propria, duas lojas live e uma de teste, oito testes), todos verdes:
+  - nome, SKU da variacao e item_id;
+  - prefixo do pedido, com o dia de Sao Paulo no destino;
+  - curinga recusado;
+  - loja de teste marcada;
+  - o ANALISTA sem a loja nao acha nada, e com a loja A acha so a A;
+  - SKU com as colunas novas;
+  - `p_order_sn`;
+  - o guarda que le os tipos do corpo da funcao, agora com dez.
+- **Mutacao:** 10 regras estragadas, todas derrubam teste (loja de teste no anuncio e no pedido, item apagado, curinga, maiuscula, dia em UTC, marca da loja de teste, SKU da variacao, entity_id, `p_order_sn`).
+- **Dev, como `authenticated`, oito execucoes, termos curtos e comuns:**
+  - as mesmas linhas da funcao atual nos sete termos (seis iguais linha a linha e um vazio nas duas);
+  - 33-38 ms contra 38-41 ms, sem degradacao.
+- **Indice com 50 mil pedidos sinteticos** (stack isolado, desfeito):
+  - prefixo raro: `shopee_orders_org_order_sn_idx`, 9 paginas;
+  - prefixo de 2 caracteres: para nos 5 primeiros, 28 paginas.
+
+**Impacto:** `supabase/migrations/20261015110000_busca_universal_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,DATABASE,PERFORMANCE,ROADMAP,HANDOFF}.md`. A tela (T7, rotulos, `?pedido=`) e do A2.
+
 ## D-468 - Telas multicanais: os avisos de leitura da T-R6 viram o EstadoDaTela, com "Tentar de novo" na mesma URL
 
 **Contexto:** a T-R6 (#175 e #180, D-067) fez seis telas dizerem a falha de leitura em vez de mostrar "nenhum": `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico`, `/skus/[skuId]` e `/curva-abc`. Os avisos eram provisorios (paragrafo vermelho, `.sb-note-perigo` ou `.sb-skud-danger`), com a mensagem tecnica crua no meio do texto. A D-502 (A3, #187) criou o `EstadoDaTela`, a forma unica do erro de leitura, e deixou esses avisos para o A2.
