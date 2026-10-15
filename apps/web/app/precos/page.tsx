@@ -10,6 +10,8 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import {
   formatBusinessDate,
   formatCount,
@@ -307,7 +309,7 @@ export default async function PrecosPage({
           </p>
         </div>
 
-        <form method="get" action="/precos" className="sb-price-toolbar" aria-label="Filtrar histórico de preços">
+        <FormularioFiltro action="/precos" className="sb-price-toolbar" aria-label="Filtrar histórico de preços">
           {/* GET nativo só envia os campos do form — preservar as dimensões de menu. */}
           {filters.direction !== null && <input type="hidden" name="direcao" value={filters.direction} />}
           {account !== null && <input type="hidden" name="conta" value={account} />}
@@ -349,7 +351,7 @@ export default async function PrecosPage({
             )}
             <FilterSubmit>Aplicar filtros</FilterSubmit>
           </div>
-        </form>
+        </FormularioFiltro>
 
         {error !== null && (
           <div className="sb-price-error" role="alert">
@@ -380,7 +382,7 @@ export default async function PrecosPage({
                   : "Quando um anúncio tiver uma alteração observada, ela aparecerá aqui."}
               </p>
             </div>
-            {filtrosAtivos > 0 && <Link className="sb-button" href="/precos">Limpar filtros</Link>}
+            {filtrosAtivos > 0 && <LinkDeFiltro className="sb-button" href="/precos">Limpar filtros</LinkDeFiltro>}
           </div>
         )}
 

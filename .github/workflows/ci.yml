@@ -105,6 +105,14 @@ jobs:
       - name: Guarda de tela de carregamento
         run: pnpm --filter @sb/web run check:loading
 
+      # Filtro, busca e paginacao na mesma tela sao navegacao SUAVE (D-500,
+      # D-501): `<form method="get">` e `<a href>` interno recarregam o
+      # documento inteiro -- HTML, JavaScript, hidratacao, Realtime e as
+      # leituras do Shell -- e build, typecheck e e2e passam com qualquer um.
+      # As telas que faltam estao numa lista que so diminui. Estatica, sem banco.
+      - name: Guarda de navegacao suave
+        run: pnpm --filter @sb/web run check:navegacao-suave
+
       # /configuracoes e um hub que APONTA (D-233): a linha "Inclui: ..." e a
       # unica coisa da tela que nao e numero do banco nem link -- e prosa sobre
       # o que mora em OUTRA tela. Trocar um rotulo na tela dona nao quebra nada

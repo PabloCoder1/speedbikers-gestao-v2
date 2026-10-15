@@ -5,6 +5,7 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { roleLabel } from "../../lib/labels";
 import {
@@ -388,7 +389,7 @@ export default async function UsuariosPage({
               estado é obrigatório — um form GET só envia os campos que tem, e
               buscar limparia o filtro de status.
             */
-            <form method="get" className="sb-busca-usuarios">
+            <FormularioFiltro action="/usuarios" className="sb-busca-usuarios">
               {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
               <Icone nome="lupa" tamanho={14} />
               <input
@@ -399,7 +400,7 @@ export default async function UsuariosPage({
                 placeholder={isAdmin ? "Buscar usuário ou e-mail…" : "Buscar usuário…"}
                 aria-label={isAdmin ? "Buscar por nome ou e-mail" : "Buscar por nome"}
               />
-            </form>
+            </FormularioFiltro>
           }
         >
           {/* O estado vem da janela: sem ela (quem não é ADMIN), não há o que filtrar. */}

@@ -9,6 +9,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { PAGE_SIZES } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
@@ -281,7 +283,7 @@ export default async function FullPage({
 
       {/* A leitura rápida responde à pergunta do operador antes da tabela. */}
       <section className="sb-full-insights" aria-label="O que pede ação no Full">
-        <Link
+        <LinkDeFiltro
           className={`sb-full-insight sb-full-insight-danger${atual.situation === "ruptura" && atual.focus === null ? " is-active" : ""}`}
           href={buildFullHref(atual, { situation: "ruptura", focus: null, page: 1 })}
         >
@@ -293,8 +295,8 @@ export default async function FullPage({
             <strong>{formatCount(contaFaceta(facetas, "ruptura"))} em ruptura</strong>
             <small>Venderam nos últimos {LOOKBACK_DAYS} dias e estão com saldo zero no Full.</small>
           </span>
-        </Link>
-        <Link
+        </LinkDeFiltro>
+        <LinkDeFiltro
           className={`sb-full-insight sb-full-insight-warning${atual.focus === "acabando" ? " is-active" : ""}`}
           href={buildFullHref(atual, { situation: null, focus: "acabando", page: 1 })}
         >
@@ -306,8 +308,8 @@ export default async function FullPage({
             <strong>{legado ? "—" : formatCount(acabando)} com menos de {LOW_COVERAGE_DAYS} dias</strong>
             <small>Saldo no Full dividido pela venda média diária da janela.</small>
           </span>
-        </Link>
-        <Link
+        </LinkDeFiltro>
+        <LinkDeFiltro
           className={`sb-full-insight sb-full-insight-primary${atual.focus === "enviavel" ? " is-active" : ""}`}
           href={buildFullHref(atual, { situation: null, focus: "enviavel", page: 1 })}
         >
@@ -319,7 +321,7 @@ export default async function FullPage({
             <strong>{legado ? "—" : formatCount(enviavel)} com saldo na loja</strong>
             <small>Em ruptura ou acabando, e com estoque local para mandar.</small>
           </span>
-        </Link>
+        </LinkDeFiltro>
       </section>
 
       <Panel
@@ -348,7 +350,7 @@ export default async function FullPage({
       >
 
         <div className="sb-full-toolbar">
-          <form method="get" className="sb-full-search" role="search">
+          <FormularioFiltro action="/full" className="sb-full-search" role="search">
             {/* GET nativo só envia os campos do form — preservar as outras dimensões. */}
             {atual.situation !== null && <input type="hidden" name="situacao" value={atual.situation} />}
             {atual.focus !== null && <input type="hidden" name="foco" value={atual.focus} />}
@@ -370,22 +372,22 @@ export default async function FullPage({
               Buscar
             </button>
             {atual.search !== null && (
-              <Link className="sb-text-button" href={buildFullHref(atual, { search: null, page: 1 })}>
+              <LinkDeFiltro className="sb-text-button" href={buildFullHref(atual, { search: null, page: 1 })}>
                 Limpar busca
-              </Link>
+              </LinkDeFiltro>
             )}
-          </form>
+          </FormularioFiltro>
 
           {criterioAtivo !== null && (
             <p className="sb-full-criterion">
               <span className="sb-full-chip">
                 {criterioAtivo.label}
-                <Link
+                <LinkDeFiltro
                   href={buildFullHref(atual, { situation: null, focus: null, page: 1 })}
                   aria-label={`Remover o filtro ${criterioAtivo.label}`}
                 >
                   ×
-                </Link>
+                </LinkDeFiltro>
               </span>
               {criterioAtivo.texto}.
             </p>
@@ -419,9 +421,9 @@ export default async function FullPage({
           <div role="alert" className="sb-full-state sb-full-state-error">
             <strong>Não foi possível carregar o Full.</strong>
             <span>{error.message}</span>
-            <Link className="sb-button" href={buildFullHref(atual, {})}>
+            <LinkDeFiltro className="sb-button" href={buildFullHref(atual, {})}>
               Tentar de novo
-            </Link>
+            </LinkDeFiltro>
           </div>
         )}
 
@@ -557,9 +559,9 @@ export default async function FullPage({
         {error === null && janela.totalPages > 1 && (
           <nav className="sb-full-pages" aria-label="Páginas">
             {atual.page > 1 ? (
-              <Link className="sb-button" href={buildFullHref(atual, { page: atual.page - 1 })}>
+              <LinkDeFiltro className="sb-button" href={buildFullHref(atual, { page: atual.page - 1 })}>
                 ‹ Anterior
-              </Link>
+              </LinkDeFiltro>
             ) : (
               <span />
             )}
@@ -567,9 +569,9 @@ export default async function FullPage({
               Página {formatCount(atual.page)} de {formatCount(janela.totalPages)}
             </span>
             {atual.page < janela.totalPages ? (
-              <Link className="sb-button" href={buildFullHref(atual, { page: atual.page + 1 })}>
+              <LinkDeFiltro className="sb-button" href={buildFullHref(atual, { page: atual.page + 1 })}>
                 Próxima ›
-              </Link>
+              </LinkDeFiltro>
             ) : (
               <span />
             )}

@@ -48,6 +48,7 @@ import {
   type AcaoAberta,
 } from "../../../lib/sku-diagnostico";
 import { FilterMenu } from "../../../components/filter-menu";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
@@ -2008,7 +2009,7 @@ export default async function SkuDashboardPage({
                     ))}
                     <li>
                       Shopee: este diagnóstico julga só os anúncios do Mercado Livre. Os anúncios da Shopee vinculados
-                      a este SKU estão na <Link href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</Link>, mas
+                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</LinkDeFiltro>, mas
                       preço, estoque anunciado e ações ainda não têm régua para eles aqui.
                     </li>
                     <li>

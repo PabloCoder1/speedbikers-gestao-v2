@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
@@ -207,7 +208,7 @@ export function VincularAnuncio({
 
             <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
               O vínculo é do <strong>anúncio inteiro</strong>. Vincular uma variação específica continua sendo feito
-              em <a href="/vinculacoes">Vinculações</a>, que é a tela dona do assunto.
+              em <Link href="/vinculacoes">Vinculações</Link>, que é a tela dona do assunto.
             </p>
 
             <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.75rem" }}>
