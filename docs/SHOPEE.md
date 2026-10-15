@@ -272,6 +272,10 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   se o cabeçalho veio, o formato, o tamanho, as chaves e o código (sem o valor),
   e a assinatura aceita só variações de FORMA do endereço (barra, esquema) e o
   corpo sem a quebra final — sempre com a chave do parceiro.
+- **Resolvido (15/10):** as amostras conferiram com a *Test Push Partner Key*
+  no formato `endereço|corpo` da documentação; com o segredo montado
+  (`api-00033-mwl`), um push assinado por ela é aceito. A amostra temporária
+  saiu do log.
 - **A chave do push é OUTRA (15/10):** a tela Set Push tem a *Test Push
   Partner Key*; as amostras gravadas na recusa não conferem com a Partner Key
   em nenhuma combinação. Segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, montado na
