@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { Panel } from "../../components/panel";
 import { StatePill } from "../../components/state-pill";
 import { TOM } from "../../components/tone";
@@ -95,18 +96,27 @@ export async function Numeros({
   leituras,
   range,
   todasAsContas,
+  tentarDeNovo,
+  limparFiltros,
 }: {
   leituras: Promise<readonly [RespostaRpc, RespostaRpc]>;
   range: PeriodRange;
   todasAsContas: boolean;
+  /** A mesma URL, para "Tentar de novo" (D-470). */
+  tentarDeNovo: string;
+  /** A tela sem a conta escolhida; nulo com todas as contas (aí o vazio é "nada ainda"). */
+  limparFiltros: string | null;
 }): Promise<ReactNode> {
   const [atualResult, anteriorResult] = await leituras;
+  const acao: AcaoDoEstado = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  const vazio = {
+    tipo: limparFiltros === null ? ("vazio" as const) : ("filtro" as const),
+    acao: limparFiltros === null ? undefined : { href: limparFiltros, rotulo: "Limpar filtros", mesmaTela: true },
+  };
 
   if (atualResult.error !== null) {
     return (
-      <p role="alert" style={AVISO}>
-        Não foi possível carregar o faturamento: {atualResult.error.message}
-      </p>
+      <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o faturamento" detalhe={atualResult.error.message} acao={acao} />
     );
   }
 
@@ -114,10 +124,12 @@ export async function Numeros({
 
   if (atual === null) {
     return (
-      <p role="alert" style={AVISO}>
-        A resposta do faturamento veio num formato que esta tela não reconhece — nenhum número foi mostrado para não
-        mostrar número errado.
-      </p>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="A resposta do faturamento veio num formato que esta tela não reconhece"
+        descricao="Nenhum número foi mostrado, para não mostrar número errado."
+        acao={acao}
+      />
     );
   }
 
@@ -131,9 +143,13 @@ export async function Numeros({
   return (
     <>
       {anterior === null && (
-        <p role="alert" style={AVISO}>
-          O período anterior não carregou — a comparação foi omitida, e isso não é zero.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O período anterior não carregou"
+          descricao="A comparação foi omitida, e isso não é zero."
+          detalhe={anteriorResult.error?.message}
+          acao={acao}
+        />
       )}
 
       <KpiStrip ancora cells={celulasDoResumo(resumo, anterior, atual.margemMinima)} />
@@ -148,10 +164,12 @@ export async function Numeros({
           }
         >
           {cascata === null ? (
-            <p className="sb-empty">
-              Nenhum pedido deste período tem frete e custo observados ao mesmo tempo. O frete do vendedor é capturado desde
-              14/09/2026, e o custo depende de o anúncio estar vinculado a um produto com custo cadastrado.
-            </p>
+            <EstadoDaTela
+              tipo={vazio.tipo}
+              titulo="Nenhum pedido deste período tem frete e custo observados ao mesmo tempo"
+              descricao="O frete do vendedor é capturado desde 14/09/2026, e o custo depende de o anúncio estar vinculado a um produto com custo cadastrado."
+              acao={vazio.acao}
+            />
           ) : (
             <>
               <Cascata degraus={cascata} />
@@ -219,7 +237,7 @@ export async function Numeros({
             subtitle="A receita é de todos os pedidos; a margem, dos pedidos cobertos de cada dia. Passe o ponteiro sobre um dia para ler os valores."
           >
             {atual.diario.length === 0 ? (
-              <p className="sb-empty">Nenhuma venda válida neste período.</p>
+              <EstadoDaTela tipo={vazio.tipo} titulo="Nenhuma venda válida neste período" acao={vazio.acao} />
             ) : (
               <BarrasDiarias
                 dias={atual.diario}
@@ -245,7 +263,7 @@ export async function Numeros({
             subtitle={`top ${String(atual.produtos.maiorReceita.length)} de ${formatCount(atual.produtos.skusComVenda)} produtos com venda · margem sobre os pedidos cobertos de cada um`}
           >
             {atual.produtos.maiorReceita.length === 0 ? (
-              <p className="sb-empty">Nenhum produto vinculado vendeu neste período.</p>
+              <EstadoDaTela tipo={vazio.tipo} titulo="Nenhum produto vinculado vendeu neste período" acao={vazio.acao} />
             ) : (
               <ListaProdutos linhas={atual.produtos.maiorReceita} modo="receita" margemMinima={atual.margemMinima} />
             )}
@@ -260,7 +278,7 @@ export async function Numeros({
             }
           >
             {atual.produtos.menorMargem.length === 0 ? (
-              <p className="sb-empty">Nenhum produto coberto com margem abaixo de 10% neste período.</p>
+              <EstadoDaTela tipo={vazio.tipo} titulo="Nenhum produto coberto com margem abaixo de 10% neste período" acao={vazio.acao} />
             ) : (
               <ListaProdutos linhas={atual.produtos.menorMargem} modo="margem" margemMinima={atual.margemMinima} />
             )}

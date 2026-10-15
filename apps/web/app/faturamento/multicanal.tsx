@@ -5,6 +5,7 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoBloco } from "../../components/carregando";
 import { FilterMenu } from "../../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
@@ -44,7 +45,7 @@ import {
 import { AdsShopee } from "./ads-shopee";
 import { BarrasDiarias } from "./barras-diarias";
 import { Cascata } from "./cascata";
-import { AVISO, ListaProdutos } from "./numeros";
+import { ListaProdutos } from "./numeros";
 import { LIBERACOES_A_VISTA, RepasseShopee } from "./repasse-shopee";
 
 /**
@@ -120,6 +121,8 @@ export async function FaturamentoMulticanal({
     escopo === "shopee" ? resolverContas(query.contas, todasAsContas, "shopee") : { selecionadas: null, descartadas: 0 };
   const contasIgnoradas = escopo === "todos" && typeof query.contas === "string" && query.contas.trim() !== "";
   const recorte: RecorteDeFaturamento = { escopo, periodo, contas: selecionadas };
+  // D-470: "Tentar de novo" é a mesma URL.
+  const tentarDeNovo = hrefDeFaturamento(recorte);
 
   const lojas = todasAsContas.filter((conta) => conta.marketplace === "SHOPEE");
   const historicoCurto = antesDoHistoricoShopee(escopo === "shopee" ? anterior.from : range.from, hoje);
@@ -274,9 +277,13 @@ export async function FaturamentoMulticanal({
       />
 
       {contasResult.error !== null && (
-        <p role="alert" style={AVISO}>
-          Não foi possível carregar as contas e lojas: o seletor e o filtro de lojas estão indisponíveis.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas e lojas"
+          descricao="O seletor e o filtro de lojas estão indisponíveis."
+          detalhe={contasResult.error.message}
+          acao={{ href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {descartadas > 0 && (
@@ -295,7 +302,7 @@ export async function FaturamentoMulticanal({
       )}
 
       {invalidCustom && (
-        <p role="alert" style={AVISO}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
         </p>
       )}
@@ -314,6 +321,7 @@ export async function FaturamentoMulticanal({
             }
           >
             <RepasseShopee
+              tentarDeNovo={tentarDeNovo}
               leitura={leiturasRepasse.leitura}
               pendente={leiturasRepasse.pendente}
               liberacoes={leiturasRepasse.liberacoes}
@@ -333,6 +341,7 @@ export async function FaturamentoMulticanal({
             }
           >
             <AdsShopee
+              tentarDeNovo={tentarDeNovo}
               leitura={leiturasAds.leitura}
               diaria={leiturasAds.diaria}
               periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
@@ -368,6 +377,15 @@ async function CorpoShopee({
 }): Promise<ReactNode> {
   const supabase = await createClient();
   const contas = recorte.contas === null ? null : recorte.contas.map((conta) => conta.account_id);
+  const acao: AcaoDoEstado = { href: hrefDeFaturamento(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  // Com lojas escolhidas, o vazio é do recorte e "Limpar filtros" volta a todas.
+  const vazio = {
+    tipo: recorte.contas === null ? ("vazio" as const) : ("filtro" as const),
+    acao:
+      recorte.contas === null
+        ? undefined
+        : { href: hrefDeFaturamento(recorte, { contas: null }), rotulo: "Limpar filtros", mesmaTela: true },
+  };
 
   const doPeriodo = { p_organization_id: organizationId, p_date_from: range.from, p_date_to: range.to, p_account_ids: contas };
 
@@ -396,9 +414,12 @@ async function CorpoShopee({
 
   if (atualResult.error !== null) {
     return (
-      <p role="alert" style={AVISO}>
-        Não foi possível carregar o faturamento da Shopee: {atualResult.error.message}
-      </p>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Não foi possível carregar o faturamento da Shopee"
+        detalhe={atualResult.error.message}
+        acao={acao}
+      />
     );
   }
 
@@ -413,9 +434,13 @@ async function CorpoShopee({
   return (
     <>
       {anteriorResult.error !== null && (
-        <p role="alert" style={AVISO}>
-          O período anterior não carregou — a comparação foi omitida, e isso não é zero.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O período anterior não carregou"
+          descricao="A comparação foi omitida, e isso não é zero."
+          detalhe={anteriorResult.error.message}
+          acao={acao}
+        />
       )}
 
       <KpiStrip ancora cells={celulasShopee(total, totalAnterior, margemMinima)} />
@@ -439,16 +464,21 @@ async function CorpoShopee({
           >
             <div className="sb-panel-body">
               {composicaoResult.error !== null && (
-                <p role="alert" style={AVISO}>
-                  Não foi possível carregar a composição do recebido: {composicaoResult.error.message}
-                </p>
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="Não foi possível carregar a composição do recebido"
+                  detalhe={composicaoResult.error.message}
+                  acao={acao}
+                />
               )}
 
               {composicaoResult.error === null && cascata === null && (
-                <p className="sb-empty">
-                  Nenhum pedido coberto tem a composição do recebido lida neste período: sem cascata, em vez de uma de
-                  zeros.
-                </p>
+                <EstadoDaTela
+                  tipo={vazio.tipo}
+                  titulo="Nenhum pedido coberto tem a composição do recebido lida neste período"
+                  descricao="Sem cascata, em vez de uma de zeros."
+                  acao={vazio.acao}
+                />
               )}
 
               {cascata !== null && (
@@ -568,11 +598,14 @@ async function CorpoShopee({
             subtitle="A receita é de todos os pedidos válidos; a margem, dos pedidos cobertos de cada dia. Dia de receita desconhecida fica sem barra."
           >
             {diarioResult.error !== null ? (
-              <p role="alert" style={AVISO}>
-                Não foi possível carregar a série diária: {diarioResult.error.message}
-              </p>
+              <EstadoDaTela
+                tipo="erro"
+                titulo="Não foi possível carregar a série diária"
+                detalhe={diarioResult.error.message}
+                acao={acao}
+              />
             ) : diarioResult.data.length === 0 ? (
-              <p className="sb-empty">Nenhuma venda válida neste período.</p>
+              <EstadoDaTela tipo={vazio.tipo} titulo="Nenhuma venda válida neste período" acao={vazio.acao} />
             ) : (
               <BarrasDiarias dias={diarioResult.data} rangeFrom={range.from} rangeTo={range.to} margemMinima={margemMinima} />
             )}
@@ -590,7 +623,7 @@ async function CorpoShopee({
                 : "a leitura dos produtos falhou"
             }
           >
-            <ProdutosShopee resultado={maisReceitaResult} modo="receita" margemMinima={margemMinima} />
+            <ProdutosShopee resultado={maisReceitaResult} modo="receita" margemMinima={margemMinima} acao={acao} vazio={vazio} />
           </Panel>
           <Panel
             title="Menor margem"
@@ -600,13 +633,13 @@ async function CorpoShopee({
                 : "a leitura dos produtos falhou"
             }
           >
-            <ProdutosShopee resultado={menorMargemResult} modo="margem" margemMinima={margemMinima} />
+            <ProdutosShopee resultado={menorMargemResult} modo="margem" margemMinima={margemMinima} acao={acao} vazio={vazio} />
           </Panel>
         </div>
       )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
-        <TabelaLojas total={total} lojas={lojas} margemMinima={margemMinima} />
+        <TabelaLojas total={total} lojas={lojas} margemMinima={margemMinima} vazio={vazio} />
       </div>
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
@@ -637,25 +670,27 @@ function ProdutosShopee({
   resultado,
   modo,
   margemMinima,
+  acao,
+  vazio,
 }: {
   resultado: { data: SkuShopee[] | null; error: { message: string } | null };
   modo: "receita" | "margem";
   margemMinima: number;
+  acao: AcaoDoEstado;
+  vazio: VazioDoRecorte;
 }): ReactNode {
   if (resultado.error !== null) {
-    return (
-      <p role="alert" style={AVISO}>
-        Não foi possível carregar os produtos: {resultado.error.message}
-      </p>
-    );
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os produtos" detalhe={resultado.error.message} acao={acao} />;
   }
 
   const linhas = (resultado.data ?? []).map(skuParaALista).filter((linha): linha is SkuFaturamento => linha !== null);
 
   return linhas.length === 0 ? (
-    <p className="sb-empty">
-      {modo === "receita" ? "Nenhum produto vinculado vendeu neste período." : "Nenhum produto com pedido coberto neste período."}
-    </p>
+    <EstadoDaTela
+      tipo={vazio.tipo}
+      titulo={modo === "receita" ? "Nenhum produto vinculado vendeu neste período" : "Nenhum produto com pedido coberto neste período"}
+      acao={vazio.acao}
+    />
   ) : (
     <ListaProdutos linhas={linhas} modo={modo} margemMinima={margemMinima} />
   );
@@ -749,14 +784,22 @@ function Margem({ margem, margemMinima }: { margem: number | null; margemMinima:
   return <StatePill tone={{ tom: tomDaMargem(margem, margemMinima), label: formatPercent(margem) }} />;
 }
 
+/** O vazio de um painel do recorte: "nada ainda" com todas as lojas, "filtro sem resultado" com algumas (D-470). */
+interface VazioDoRecorte {
+  readonly tipo: "vazio" | "filtro";
+  readonly acao: AcaoDoEstado | undefined;
+}
+
 function TabelaLojas({
   total,
   lojas,
   margemMinima,
+  vazio,
 }: {
   total: LinhaFaturamentoShopee | null;
   lojas: readonly LinhaFaturamentoShopee[];
   margemMinima: number;
+  vazio: VazioDoRecorte;
 }): ReactNode {
   return (
     <Panel
@@ -764,7 +807,7 @@ function TabelaLojas({
       subtitle="Recebido, custo, resultado e margem sobre os pedidos cobertos de cada loja. O total soma só as lojas reais já lidas."
     >
       {lojas.length === 0 ? (
-        <p className="sb-empty">Nenhuma loja Shopee neste recorte.</p>
+        <EstadoDaTela tipo={vazio.tipo} titulo="Nenhuma loja Shopee neste recorte" acao={vazio.acao} />
       ) : (
         <div className="sb-faturamento-tabela">
           <table className="sb-table" aria-label="Faturamento por loja Shopee">
@@ -871,10 +914,11 @@ function Cobertura({ total }: { total: LinhaFaturamentoShopee | null }): ReactNo
     >
       <div className="sb-panel-body">
         {total === null ? (
-          <p className="sb-empty">
-            Nenhuma loja real com pedidos lidos neste recorte: não há o que cobrir. A loja de teste e a loja nunca lida ficam
-            fora das somas.
-          </p>
+          <EstadoDaTela
+            tipo="vazio"
+            titulo="Nenhuma loja real com pedidos lidos neste recorte"
+            descricao="Não há o que cobrir. A loja de teste e a loja nunca lida ficam fora das somas."
+          />
         ) : (
           <div className="sb-stat-grid">
             <div className="sb-stat">
@@ -964,18 +1008,21 @@ async function CorpoTodos({
   const linhas = linhasDaComparacao(ml, shopee);
   const margemMinima = ml?.margemMinima;
 
-  const motivoMl =
+  /*
+    D-470: a falha de LEITURA de cada lado é erro, com a mensagem à parte; o
+    "nenhuma loja real" da Shopee não é falha e continua nota. Antes a falha da
+    Shopee saía como nota, no mesmo tom de "não há loja".
+  */
+  const acao: AcaoDoEstado = { href: hrefDeFaturamento(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  const falhaMl =
     mlResult.error !== null
-      ? `não carregou: ${mlResult.error.message}`
+      ? { titulo: "O Mercado Livre não carregou", detalhe: mlResult.error.message }
       : ml === null
-        ? "a resposta veio num formato que esta tela não reconhece"
+        ? { titulo: "A resposta do Mercado Livre veio num formato que esta tela não reconhece", detalhe: undefined }
         : null;
+  const falhaShopee = shopeeResult.error !== null ? { titulo: "A Shopee não carregou", detalhe: shopeeResult.error.message } : null;
   const motivoShopee =
-    shopeeResult.error !== null
-      ? `não carregou: ${shopeeResult.error.message}`
-      : shopee === null
-        ? "nenhuma loja real com pedidos lidos — a loja de teste fica fora"
-        : null;
+    shopeeResult.error === null && shopee === null ? "nenhuma loja real com pedidos lidos — a loja de teste fica fora" : null;
 
   return (
     <>
@@ -1049,12 +1096,13 @@ async function CorpoTodos({
             </table>
           </div>
 
-          {(motivoMl !== null || motivoShopee !== null) && (
+          {(falhaMl !== null || falhaShopee !== null || motivoShopee !== null) && (
             <div className="sb-panel-body">
-              {motivoMl !== null && (
-                <p role="alert" style={AVISO}>
-                  Mercado Livre: {motivoMl}.
-                </p>
+              {falhaMl !== null && (
+                <EstadoDaTela tipo="erro" titulo={falhaMl.titulo} detalhe={falhaMl.detalhe} acao={acao} />
+              )}
+              {falhaShopee !== null && (
+                <EstadoDaTela tipo="erro" titulo={falhaShopee.titulo} detalhe={falhaShopee.detalhe} acao={acao} />
               )}
               {motivoShopee !== null && (
                 <p role="note" className="sb-an-nota">

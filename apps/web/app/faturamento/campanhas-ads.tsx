@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { Panel } from "../../components/panel";
 import { StatePill } from "../../components/state-pill";
 import {
@@ -36,8 +37,20 @@ export const formatRoas = (roas: number | null): string => (roas === null ? "—
  * habilitado no Mercado Livre, conta ainda não verificada (o sync roda às 11h)
  * e conta habilitada sem campanha com métrica no período.
  */
-export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<RespostaAds>; periodo: string }): Promise<ReactNode> {
+export async function CampanhasAds({
+  leitura,
+  periodo,
+  tentarDeNovo,
+}: {
+  leitura: Promise<RespostaAds>;
+  periodo: string;
+  /** A mesma URL, para "Tentar de novo" (D-470). */
+  tentarDeNovo?: string;
+}): Promise<ReactNode> {
   const resposta = await leitura;
+  // D-470: "Tentar de novo" leva à mesma URL da tela.
+  const acao: AcaoDoEstado | undefined =
+    tentarDeNovo === undefined ? undefined : { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   /*
     A FUNÇÃO AINDA NÃO EXISTE NO BANCO (PGRST202). A web da branch principal
@@ -48,10 +61,11 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   if (resposta.error?.code === "PGRST202") {
     return (
       <Panel title="Mercado Ads" subtitle={periodo}>
-        <p className="sb-empty">
-          A análise de campanhas do Mercado Ads ainda está sendo ativada neste ambiente — os dados aparecem depois da
-          primeira sincronização.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="A análise de campanhas do Mercado Ads ainda está sendo ativada neste ambiente"
+          descricao="Os dados aparecem depois da primeira sincronização."
+        />
       </Panel>
     );
   }
@@ -59,9 +73,7 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   if (resposta.error !== null) {
     return (
       <Panel title="Mercado Ads" subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
-          Não foi possível carregar as campanhas: {resposta.error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as campanhas" detalhe={resposta.error.message} acao={acao} />
       </Panel>
     );
   }
@@ -71,9 +83,12 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
   if (visao === null) {
     return (
       <Panel title="Mercado Ads" subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
-          A leitura das campanhas voltou fora do contrato esperado — nada é mostrado para não exibir número errado.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="A leitura das campanhas voltou fora do contrato esperado"
+          descricao="Nada é mostrado, para não exibir número errado."
+          acao={acao}
+        />
       </Panel>
     );
   }
@@ -139,11 +154,14 @@ export async function CampanhasAds({ leitura, periodo }: { leitura: Promise<Resp
         <EstadoDasContas contas={contas} />
 
         {semNada ? (
-          <p className="sb-empty">
-            {contas.some((c) => c.ads === "habilitado")
-              ? "Nenhuma campanha com investimento neste período."
-              : "Sem campanhas para mostrar: nenhuma conta com Product Ads habilitado e sincronizado."}
-          </p>
+          <EstadoDaTela
+            tipo="vazio"
+            titulo={
+              contas.some((c) => c.ads === "habilitado")
+                ? "Nenhuma campanha com investimento neste período"
+                : "Sem campanhas para mostrar: nenhuma conta com Product Ads habilitado e sincronizado"
+            }
+          />
         ) : (
           <>
             <div className="sb-campanhas-ml-faixa">
@@ -245,7 +263,7 @@ export function BarrasAds({ dias }: { dias: readonly DiaAds[] }): ReactNode {
   const maximo = Math.max(0, ...dias.map((d) => Math.max(d.investimento, d.receita_ads)));
 
   if (dias.length === 0 || maximo === 0) {
-    return <p className="sb-empty">Nenhum dia com métrica neste período.</p>;
+    return <EstadoDaTela tipo="vazio" titulo="Nenhum dia com métrica neste período" />;
   }
 
   const altura = (valor: number): string => `${Math.max(valor > 0 ? 2 : 0, (valor / maximo) * 100).toFixed(1)}%`;
