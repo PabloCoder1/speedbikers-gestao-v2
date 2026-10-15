@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "./carregando-link";
 import { TOM, type Tom } from "./tone";
@@ -42,6 +42,35 @@ export interface ObjectBadge {
 }
 
 /**
+ * Um selo que CHEGA DEPOIS do resto do cabeçalho (D-505): um `<Suspense>` com
+ * um componente async dentro, na mesma posição da fileira — a ordem dos selos
+ * é a do frame, e um selo lento não pode ir para o fim só por ser lento.
+ *
+ * Existe para a leitura cara que só alimenta um selo (a curva ABC do SKU): sem
+ * ele, a tela inteira espera por um rótulo de sete letras. O `fallback` deve
+ * ser o `SeloCarregando` com o rótulo mais provável, para o lugar ficar
+ * reservado e a chegada não empurrar os vizinhos.
+ */
+export interface ObjectBadgeTardio {
+  readonly chave: string;
+  readonly tardio: ReactNode;
+}
+
+/**
+ * O lugar de um selo que ainda não chegou: o MESMO `.sb-status`, com o rótulo
+ * invisível dando a largura exata (a fonte é mono e em caixa alta, então
+ * "Curva A" e "Curva C" medem igual). Como o resto do carregamento (D-382), o
+ * traço só aparece depois de 350 ms — resposta rápida chega antes e nada pisca.
+ */
+export function SeloCarregando({ rotulo }: { rotulo: string }): ReactNode {
+  return (
+    <span aria-hidden="true" className="sb-status sb-selo-carregando">
+      {rotulo}
+    </span>
+  );
+}
+
+/**
  * Um fato de identidade do objeto: rótulo curto, valor, e a qualificação que
  * não cabe na célula.
  *
@@ -75,7 +104,7 @@ export function ObjectHeader({
 }: {
   identificador: string;
   titulo: string;
-  badges?: readonly ObjectBadge[];
+  badges?: readonly (ObjectBadge | ObjectBadgeTardio)[];
   meta?: ReactNode;
   /** Fatos de identidade do objeto, na fileira abaixo dos selos (D-310). */
   metricas?: readonly ObjectMetric[];
@@ -108,11 +137,15 @@ export function ObjectHeader({
 
           {(badges.length > 0 || meta !== undefined) && (
             <div className="sb-object-badges">
-              {badges.map((badge) => (
-                <span key={badge.label} className="sb-status" style={TOM[badge.tom]}>
-                  {badge.label}
-                </span>
-              ))}
+              {badges.map((badge) =>
+                "tardio" in badge ? (
+                  <Fragment key={badge.chave}>{badge.tardio}</Fragment>
+                ) : (
+                  <span key={badge.label} className="sb-status" style={TOM[badge.tom]}>
+                    {badge.label}
+                  </span>
+                ),
+              )}
               {meta !== undefined && <span className="sb-object-meta">{meta}</span>}
             </div>
           )}

@@ -11,7 +11,7 @@ import { formatBusinessDate } from "../../lib/format";
 import { carregarLimites } from "../../lib/limites-central";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
-import { AVISO } from "../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { Atencao } from "./atencao";
 import { Indicadores } from "./indicadores";
 import { SinalDeAds } from "./sinal-ads";
@@ -240,14 +240,19 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
         }
       />
 
+      {/* D-472: a forma única do erro de leitura (D-502); o período inválido não é falha (item 13, D-503). */}
       {accountsResult.error !== null && (
-        <p role="alert" style={AVISO}>
-          Não foi possível carregar as contas: o filtro de conta está indisponível.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta está indisponível."
+          detalhe={accountsResult.error.message}
+          acao={{ href: montarHref(periodoAtual, contaSlug), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {periodo.invalido && (
-        <p role="alert" style={AVISO}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando {periodo.rotulo.toLowerCase()}.
         </p>
       )}
@@ -272,6 +277,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraLimites={leituraLimites}
           periodo={periodo}
           podeEditar={podeEditar}
+          tentarDeNovo={montarHref(periodoAtual, contaSlug)}
         />
       </Suspense>
 

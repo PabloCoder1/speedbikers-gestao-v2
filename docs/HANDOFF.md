@@ -19,41 +19,13 @@
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`), 15/10, saindo pelo IP fixo `34.95.145.35` (D-457); Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`), Go Live em análise. Volta: `worker-00046-zfl`/`api-00029-xdl` (pool dinâmico — desligar antes a lista de IPs da Shopee). Worker fixo na revisão (D-342). Dev pausado (D-350). |
-| **Migrations** | Produção até `20261015080000` (D-441 a D-461, 15/10). **Próximas:** `20261015090000` e `…15100000` (D-463/D-465, #195). Dispara-se depois da CI da `main` do mesmo commit (com a entrada `confirmacao` = ref de produção), segurando merges até o job `origem` passar; aprovações no ambiente; sem `--include-all`; nunca MCP. |
-| **UX (Agente 3)** | D-500/501 no ar; D-502 a D-504 na main. D-507 (web vitals: rota da carga, `softNav`) na `fix/web-vitals-rota-da-carga`. Fila em `docs/UX_SYSTEM.md`. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015080000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461 no ar, D-463/D-465 em #195; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
+| **Migrations** | Produção até `20261015100000` (D-441 a D-465, 15/10). Nenhuma pendente. Dispara-se depois da CI da `main` do mesmo commit (com a entrada `confirmacao` = ref de produção), segurando merges até o job `origem` passar; aprovações no ambiente; sem `--include-all`; nunca MCP. |
+| **UX (Agente 3)** | D-500 a D-504 no ar (deploy `691ab024`, 15/10). D-505 (SKU) na main (#196). D-507 (web vitals: rota da carga, `softNav`) na `fix/web-vitals-rota-da-carga`. Fila em `docs/UX_SYSTEM.md`. |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 
-`/notificacoes` (D-393): triagem por severidade/família/conta; 556 ms → 63 ms; migration
-`20260923200000`. O PR #53 mexe nos mesmos arquivos.
-
-`/central` (D-394/D-395): indicadores contra o período anterior, meta do mês com projeção e imposto com vigência (cadastro em `/central/metas`). D-396 frete 100% desde 25/06; D-397/399 frete; D-398/401 Ads; D-400 atenção na central; D-402 ranking de produtos; D-403/D-404 alertas em `actions`, uma fonte por chamada; D-405 medidas do pacote por envio; D-406 datas comerciais na projeção (migration `20260923195955`); D-407 quem paga o frete (worker-00027); D-408 limites em `/central/limites`; D-409 detector lendo `shipping_sales`; D-410 margem mínima e piso do ROAS da organização no SQL. D-411: o alerta alto novo vira notificação (migration `20260925140000`). D-412: quem paga o frete, por envio (migration `20260925150000`). D-413: o frete do envio compartilhado conta uma vez (migration `20260925160000`).
-
-`/atendimento/conhecimento`: filtros, paginação e modal — já na `main` (`4c34bc68`).
-
-Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
-registrados. A trilha 5E entregou as seis centrais analíticas
-(Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,
-Fornecedor). A 8A entregou Usuários/Permissões (D-175) e Saúde do
-Sistema (D-176). **Integrações e Configurações também existem** — a checagem de
-D-271 desmentiu a nota anterior, que dizia faltarem.
-
-A `/estoque` segue o frame `Inventory` com a faixa única de indicadores,
-filtros dentro do painel, busca operacional, identidade de produto e ações
-compactas por linha. As recusas métricas de D-249 permanecem intactas; a
-mudança é de hierarquia e velocidade percebida, sem inventar agregado.
-
-`/anuncios`: D-381 (ordem, faixa numa passada, foto). **Worker só depois de `20260918150000`.**
-
-Entregas de tela fechadas em 18/09 (ajuste de estoque, `/full` D-380, `/estoque/movimentacoes`): `docs/archive/handoffs/2026-09-18_entregas-de-tela.md`.
-
-`/sincronizacao` resume por conta conexão, confiança, frescor, falhas e a
-cobertura do histórico de pedidos (365 dias, 100% só no fim do backfill;
-`docs/METRICS.md`). Migration `20260921114355` em Dev e produção.
-
-Página nova precisa de `loading.tsx` (D-382, guarda `check:loading`).
-`/anuncios`: resumo do recorte, visões rápidas, CSV e cartões no celular (D-385, migration `20260918200000`).
+Entregas de tela e de backend até setembro (as centrais, `/estoque`, `/anuncios`, `/sincronizacao`, `/notificacoes`, `/central`): `docs/archive/handoffs/2026-10-15_o-que-esta-pronto-de-setembro.md` e os arquivos de 18/09 e 14/10 na mesma pasta. O que está no ar agora: a linha **Frente atual** acima.
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.

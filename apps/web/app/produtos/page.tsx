@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { AcessoRestrito } from "../../components/acesso-restrito";
 import { FilterMenu } from "../../components/filter-menu";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { TOM, type Tom } from "../../components/tone";
@@ -43,6 +44,7 @@ import {
   type VisaoProdutos,
 } from "../../lib/products-overview";
 import { currentMembership } from "../../lib/request-membership";
+import { mesmaUrl } from "../../lib/mesma-url";
 import { createClient } from "../../lib/supabase/server";
 
 import { CurationTable } from "./curation-table";
@@ -285,13 +287,27 @@ function atalho(atual: CurationFilters, override: Partial<CurationFilters>): str
   );
 }
 
-function Erro({ mensagem }: { mensagem: string }): ReactNode {
+/** A tela inteira quando não há catálogo para mostrar (D-472): o que falhou, a mensagem à parte e "Tentar de novo". */
+function Erro({
+  titulo,
+  detalhe,
+  tentarDeNovo,
+  tipo = "erro",
+}: {
+  titulo: string;
+  detalhe?: string;
+  tentarDeNovo?: string;
+  tipo?: "erro" | "permissao";
+}): ReactNode {
   return (
     <Shell>
       <PageTitle eyebrow="CATÁLOGO / PRODUTOS" title="Produtos" compacto />
-      <p role="alert" className="sb-note sb-note-perigo" style={{ margin: 0 }}>
-        {mensagem}
-      </p>
+      <EstadoDaTela
+        tipo={tipo}
+        titulo={titulo}
+        detalhe={detalhe}
+        acao={tentarDeNovo === undefined ? undefined : { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     </Shell>
   );
 }
@@ -310,11 +326,17 @@ export default async function ProdutosPage({
 
   if (membership.error !== null) {
     // Distinto de "sem organização": falha de leitura transitória (D-067).
-    return <Erro mensagem={`Não foi possível confirmar sua organização: ${membership.error.message}`} />;
+    return (
+      <Erro
+        titulo="Não foi possível confirmar sua organização"
+        detalhe={membership.error.message}
+        tentarDeNovo={mesmaUrl("/produtos", params)}
+      />
+    );
   }
 
   if (organizationId === null) {
-    return <Erro mensagem="Sua conta não está associada a nenhuma organização." />;
+    return <Erro tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />;
   }
 
   // Duas leituras numa ida (D-185): a visão da tela e o resumo por marca, que
@@ -339,7 +361,13 @@ export default async function ProdutosPage({
     visao = lerVisaoProdutos(leitura.data);
 
     if (visao === null) {
-      return <Erro mensagem="Não foi possível carregar o catálogo: a leitura voltou fora do contrato esperado." />;
+      return (
+        <Erro
+          titulo="Não foi possível carregar o catálogo"
+          detalhe="a leitura voltou fora do contrato esperado"
+          tentarDeNovo={mesmaUrl("/produtos", params)}
+        />
+      );
     }
 
     linhas = visao.linhas;
@@ -353,7 +381,9 @@ export default async function ProdutosPage({
     });
 
     if (legado.error !== null) {
-      return <Erro mensagem={`Não foi possível carregar o catálogo: ${legado.error.message}`} />;
+      return (
+        <Erro titulo="Não foi possível carregar o catálogo" detalhe={legado.error.message} tentarDeNovo={mesmaUrl("/produtos", params)} />
+      );
     }
 
     const rows = legado.data as unknown as LinhaCuradoriaLegado[];
@@ -361,7 +391,9 @@ export default async function ProdutosPage({
     linhas = rows.map(linhaDoLegado);
     total = rows[0]?.total_count ?? 0;
   } else {
-    return <Erro mensagem={`Não foi possível carregar o catálogo: ${leitura.error.message}`} />;
+    return (
+      <Erro titulo="Não foi possível carregar o catálogo" detalhe={leitura.error.message} tentarDeNovo={mesmaUrl("/produtos", params)} />
+    );
   }
 
   const porMarca = ((resumoMarcas.data ?? []) as SummaryRow[]).filter((l) => !l.is_total);

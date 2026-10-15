@@ -22,7 +22,8 @@ import {
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { QuemPagaOFrete } from "./quem-paga";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
@@ -90,7 +91,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
     return (
       <>
         <Titulo subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </>
     );
   }
@@ -113,9 +114,12 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
             </p>
           </div>
         ) : (
-          <p role="alert" style={AVISO}>
-            Não foi possível carregar o detector: {resposta.error.message}
-          </p>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o detector"
+            detalhe={resposta.error.message}
+            acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
       </>
     );
@@ -127,9 +131,12 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
     return (
       <>
         <Titulo subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
-        <p role="alert" style={AVISO}>
-          O detector respondeu num formato que esta tela não reconhece — nada foi mostrado.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O detector respondeu num formato que esta tela não reconhece"
+          descricao="Nada foi mostrado."
+          acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </>
     );
   }
@@ -176,11 +183,16 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
           )}
 
           {alertas.length === 0 ? (
-            <p className="sb-empty">
-              {nivel === null
-                ? "Nenhum anúncio destoa: o frete de todos está dentro do próprio histórico, do mesmo produto, da categoria e da faixa de preço."
-                : "Nenhum anúncio neste nível."}
-            </p>
+            <EstadoDaTela
+              tipo={nivel === null ? "vazio" : "filtro"}
+              titulo={nivel === null ? "Nenhum anúncio destoa" : "Nenhum anúncio neste nível"}
+              descricao={
+                nivel === null
+                  ? "O frete de todos está dentro do próprio histórico, do mesmo produto, da categoria e da faixa de preço."
+                  : undefined
+              }
+              acao={nivel === null ? undefined : { href: hrefDoNivel(null), rotulo: "Limpar filtros", mesmaTela: true }}
+            />
           ) : (
             <ol className="sb-sinal-lista">
               {alertas.map((alerta) => (
@@ -193,7 +205,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
       {/* D-412: quem paga o frete, com leitura própria -- não espera o detector nem o segura. */}
       <Suspense fallback={<CarregandoBloco rotulo="quem paga o frete" />}>
-        <QuemPagaOFrete />
+        <QuemPagaOFrete tentarDeNovo={mesmaUrl("/central/frete", query)} />
       </Suspense>
 
       <ComoDecide detector={detector} />

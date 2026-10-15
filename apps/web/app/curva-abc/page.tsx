@@ -524,7 +524,7 @@ export default async function CurvaAbcPage({
       )}
 
       {filters.invalidCustom && (
-        <p role="alert" className="sb-note" style={{ marginBottom: "var(--sb-space-3)" }}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ marginBottom: "var(--sb-space-3)" }}>
           Período personalizado inválido (datas fora de ordem, no futuro ou com mais de dois anos) — mostrando os
           últimos {DEFAULT_PERIOD} dias.
         </p>

@@ -13,7 +13,7 @@ import {
   type QuemPagaFrete,
 } from "../../../lib/quem-paga-frete";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 
 /**
  * Quem paga o frete (D-412): o frete dos últimos 30 dias até ontem dividido
@@ -21,7 +21,8 @@ import { AVISO } from "../../faturamento/numeros";
  * envio. Bloco à parte do detector, com a sua própria leitura: um não espera
  * o outro.
  */
-export async function QuemPagaOFrete(): Promise<ReactNode> {
+export async function QuemPagaOFrete({ tentarDeNovo }: { tentarDeNovo: string }): Promise<ReactNode> {
+  const acao = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const hoje = toSalesMetricDate(new Date());
   const de = shiftBusinessDate(hoje, -30);
   const ate = shiftBusinessDate(hoje, -1);
@@ -40,9 +41,12 @@ export async function QuemPagaOFrete(): Promise<ReactNode> {
               <p>Este bloco está sendo ativado: o banco ainda não recebeu a função de D-412.</p>
             </div>
           ) : (
-            <p role="alert" style={AVISO}>
-              Não foi possível carregar quem paga o frete: {resposta.error.message}
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar quem paga o frete"
+              detalhe={resposta.error.message}
+              acao={acao}
+            />
           )}
         </div>
       </Panel>
@@ -55,9 +59,12 @@ export async function QuemPagaOFrete(): Promise<ReactNode> {
     return (
       <Panel title="Quem paga o frete" subtitle={subtitulo}>
         <div className="sb-panel-body">
-          <p role="alert" style={AVISO}>
-            A resposta veio num formato que esta tela não reconhece — nada foi mostrado.
-          </p>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="A resposta veio num formato que esta tela não reconhece"
+            descricao="Nada foi mostrado."
+            acao={acao}
+          />
         </div>
       </Panel>
     );
@@ -67,7 +74,7 @@ export async function QuemPagaOFrete(): Promise<ReactNode> {
     <Panel title="Quem paga o frete" subtitle={subtitulo}>
       <div className="sb-panel-body">
         {q.envios_com_detalhe === 0 ? (
-          <p className="sb-empty">{coberturaDoQuemPaga(q)}</p>
+          <EstadoDaTela tipo="vazio" titulo={coberturaDoQuemPaga(q)} />
         ) : (
           <>
             <KpiStrip cells={celulas(q)} />

@@ -23,10 +23,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `2809d35f` (15/10: #172 e #179 do A1, D-453; #170, #171, #173, #175 e #177 do A2) |
-| Branches abertas | A1: `fix/correlacao-pedidos` (#195: D-463 e D-465, desempenho) · A2: nenhuma (o #177 entrou) |
+| Branches abertas | A1: `docs/arquivo-handoff` (#198: só docs) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
-| Migrations em produção | até `20261015080000` (D-441 a D-461, runs `38726738817`, `38755993771` e `38760462816`, 15/10) |
+| Migrations em produção | até `20261015100000` (D-441 a D-465, runs `38726738817`, `38755993771`, `38760462816` e `38773241495`, 15/10) |
 | Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -79,7 +79,9 @@
 - As cadências de `/saude` para os jobs novos do A1: devoluções e repasse de hora em hora, Ads a cada 3 h (C-62, C-64, C-63). **Na `main`, #170.**
 - T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "só no ML", "só na Shopee" e "nos dois" nos filtros de anúncio e venda, os cartões de "sem anúncio/venda" em "nenhum marketplace" com o só do ML ao lado e a coluna de giro por marketplace, sem total. **Na `main`, #171.**
 - T5c — os Ads CPC da loja no `/faturamento` da Shopee (D-456, consome o C-63): seção própria, rotulada "CPC da loja", fora do resultado e sem somar com o Mercado Ads. **Na `main`, #173.**
-- T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **em código e validada** (suíte e2e inteira), no PR próprio.
+- T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **na `main`, #192**.
+- E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Em código e validada** (suíte e2e inteira), no PR próprio.
+- E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Em código e validada** (suíte e2e inteira), no PR próprio.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -87,7 +89,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada: a D-468 (os avisos da T-R6 no `EstadoDaTela`) está no PR próprio.
+- Nada: a D-472 (E3/E4) está no PR próprio. Com ela, todas as telas da fila do A2 usam o `EstadoDaTela`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T7 busca universal (C-57) → T8 central e meta (Go Live).
@@ -113,15 +115,16 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - Auditoria de carregamento, interação e estados especiais (14/10): 17 achados com evidência, `docs/UX_SYSTEM.md` §2.
 - D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms. **Em produção** desde 15/10 (#176, `899b1123`).
 - D-501, a atualização no lugar no resto do app: 17 buscas GET, 27 `<a>` e 41 `<Link>` de mesma tela em 22 arquivos (as telas livres e as quatro que o A2 liberou: `/vendas`, `/vendas/shopee`, `/faturamento` e `/anuncios/shopee`), o `LinkDeFiltro`, a guarda `check:navegacao-suave` na CI e o `e2e/atualizacao-no-lugar.spec.ts`. **Em produção** desde 15/10 (#182, `583d670a`).
-- D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos. Na main desde 15/10 (#187, `30d46390`).
-- D-503: o LCP real de produção por tela (Home 7,6 s, `/skus/[id]` 5,9 s, `/vendas` 3,3–4,7 s), um giro só, a busca de SKU de `/vinculacoes` de volta à forma compacta, e o item 13 da auditoria reavaliado. Na main desde 15/10 (#189, `967e3677`).
-- D-504: a Home pinta sem esperar a cobertura — só a "Atenção necessária" espera a segunda rodada, que começa quando a organização chega (indicadores de 3.220 para 209 ms com a leitura fria simulada; aprovado pelo A2, medido pelo A1). Os "Anúncios pausados" deixam a `get_listings_dashboard` por uma contagem direta em `listings` na primeira rodada (proposta do A1, pedido do A2; mesmo número no Dev e no stack de teste).
+- D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos. **Em produção** desde 15/10 (#187, `30d46390`).
+- D-503: o LCP real de produção por tela (Home 7,6 s, `/skus/[id]` 5,9 s, `/vendas` 3,3–4,7 s), um giro só, a busca de SKU de `/vinculacoes` de volta à forma compacta, e o item 13 da auditoria reavaliado. **Em produção** desde 15/10 (#189, `967e3677`).
+- D-504: a Home pinta sem esperar a cobertura — só a "Atenção necessária" espera a segunda rodada, que começa quando a organização chega (indicadores de 3.220 para 209 ms com a leitura fria simulada; aprovado pelo A2, medido pelo A1). Os "Anúncios pausados" deixam a `get_listings_dashboard` por uma contagem direta em `listings` na primeira rodada (proposta do A1, pedido do A2; mesmo número no Dev e no stack de teste). **Em produção** desde 15/10 (#194, `0fdb74df`; o deploy saiu com o `691ab024`, porque o merge do #194 não gerou deploy).
+- D-505: o `/skus/[skuId]` pinta sem esperar a curva ABC — só o selo "Curva X" do cabeçalho espera, no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando` no `ObjectHeader`); com a curva atrasada em 3 s, cabeçalho e LCP de ~3,1 s para ~0,2–0,5 s, CLS 0. Junto, o `EstadoDaTela` sem descrição deixa de pôr o detalhe ao lado do título (achado do A2).
 
 **Em andamento**
-- D-504 na `feat/ux-home-streaming` (só web, sem migration), rebaseada sobre a `main`: o PR sai quando o dono autorizar, e o A2 revisa no merge.
+- D-505 no **#196** (só web, sem migration): o A2 revisa no merge.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Streaming do `/skus/[id]` (a curva ABC da aba padrão; a T-R3b do A2 já entrou, #190) e de `/vendas` (`docs/UX_SYSTEM.md` §3 item 5, §5).
+- Streaming de `/vendas`, depois da fatia do `EstadoDaTela` do A2 nas telas dele (`docs/UX_SYSTEM.md` §3 item 5, §5).
 - Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**

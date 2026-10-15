@@ -1,12 +1,12 @@
 import { describeActionEvidence } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { CopilotContextBeacon } from "../../../components/copilot-context";
-import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { ObjectHeader, SeloCarregando, type ObjectBadge, type ObjectBadgeTardio } from "../../../components/object-header";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -56,6 +56,7 @@ import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
 import { VendasEntreMarketplaces } from "./vendas-entre-marketplaces";
+import { SeloCurvaAbc, type LeituraCurvaAbc } from "./selo-curva-abc";
 import { contarLojasShopee } from "../../../lib/marketplace";
 import { lastBusinessDays } from "../../../lib/business-window";
 
@@ -313,12 +314,44 @@ export default async function SkuDashboardPage({
   // geral nem o diagnóstico os leem, então a leitura não entra no gate deles.
   const needsShopee = tab === "anuncios";
 
+  /*
+    A CLASSE ABC do selo do cabeçalho (D-247). `p_sku_id` filtra DEPOIS do
+    ranking, então a classe continua sendo a posição do SKU na curva inteira
+    — não a de um conjunto de um.
+
+    **Custo declarado.** Esta é a leitura mais cara da página: a curva ordena
+    90 dias de `daily_sku_metrics` da organização inteira antes de devolver
+    uma linha (D-166 mediu a família em ~196 ms / 15 mil buffers no Dev; o A1
+    mediu ~5,4 mil páginas frias, D-461). Dentro do `Promise.all`, era ela que
+    definia o piso de TODAS as abas — e alimenta só um selo. Por isso ela sai
+    do `Promise.all` (D-505): começa junto com as outras e é aguardada só
+    dentro do `<Suspense>` do selo (`SeloCurvaAbc`). Se um dia pesar também
+    ali, a saída continua sendo uma coluna materializada de classe, nunca uma
+    segunda fórmula de ABC.
+
+    `Promise.resolve` chama o `then` do construtor do PostgREST, que só
+    executa nesse momento — sem ele, a leitura nem partiria. E o `.catch`
+    transforma em falha de leitura o que LANÇAR: a página pode falhar antes de
+    chegar ao `<Suspense>`, e a promessa não fica rejeitada sem ninguém esperar
+    por ela (a observação do A2 na D-504).
+  */
+  const curvaAbc: Promise<LeituraCurvaAbc> = Promise.resolve(
+    supabase
+      .rpc("get_sku_abc_curve", {
+        p_organization_id: sku.data.organization_id,
+        p_date_from: abcFrom,
+        p_date_to: dateTo,
+        p_sku_id: sku.data.id,
+        p_limit: 1,
+      })
+      .maybeSingle(),
+  ).catch((error: unknown) => ({ data: null, error: error ?? new Error("a leitura da curva ABC falhou") }));
+
   const [
     dashboardResult,
     listingsResult,
     contasResult,
     coverageResult,
-    abcResult,
     costHistoryResult,
     timelineResult,
     fullResult,
@@ -383,29 +416,6 @@ export default async function SkuDashboardPage({
         p_date_from: dateFrom,
         p_date_to: dateTo,
         p_sku_id: sku.data.id,
-      })
-      .maybeSingle(),
-    /*
-      A CLASSE ABC do selo do cabeçalho (D-247). `p_sku_id` filtra DEPOIS do
-      ranking, então a classe continua sendo a posição do SKU na curva inteira
-      — não a de um conjunto de um.
-
-      **Custo declarado.** Esta é a leitura mais cara da página: a curva ordena
-      90 dias de `daily_sku_metrics` da organização inteira antes de devolver
-      uma linha (D-166 mediu a família em ~196 ms / 15 mil buffers no Dev).
-      Ela entra no MESMO `Promise.all`, então custa uma ida (D-185) e não
-      soma ao relógio das outras — mas é ela que passa a definir o piso da
-      página. Vale porque o selo é dado canônico que o frame pede e a tela
-      inteira não tinha; se um dia pesar na medição do Dev, a saída é uma
-      coluna materializada de classe, nunca uma segunda fórmula de ABC.
-    */
-    supabase
-      .rpc("get_sku_abc_curve", {
-        p_organization_id: sku.data.organization_id,
-        p_date_from: abcFrom,
-        p_date_to: dateTo,
-        p_sku_id: sku.data.id,
-        p_limit: 1,
       })
       .maybeSingle(),
     // Histórico de custo cadastrado (D-149) — alimentado por trigger a cada
@@ -639,9 +649,6 @@ export default async function SkuDashboardPage({
   // `sku.data`, e um `!` esconderia justamente o caso de a leitura mudar.
   const skuCode = sku.data.sku;
   const coverage = coverageResult.data;
-  // Falha ou SKU sem venda no período: NENHUM selo. Um SKU fora da curva não é
-  // "classe C" — ele não foi classificado, e afirmar C seria inventar posição.
-  const abcClass = abcResult.error === null ? (abcResult.data?.abc_class ?? null) : null;
   const costHistory = costHistoryResult.data ?? [];
   const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
   // Descarta a LINHA-SENTINELA de D-265: `get_fulfillment_overview` devolve
@@ -734,17 +741,23 @@ export default async function SkuDashboardPage({
    */
   const coberturaTom = coverage?.stock_is_virtual === true ? "var(--sb-accent-ink)" : null;
 
-  const badges: ObjectBadge[] = [
+  const badges: (ObjectBadge | ObjectBadgeTardio)[] = [
     sku.data.is_discontinued
       ? { label: "Descontinuado", tom: "perigo" as const }
       : sku.data.is_active
         ? { label: "Ativo", tom: "ok" as const }
         : { label: "Inativo", tom: "neutro" as const },
-    // Classe ABC, como no frame ("Curva A"): A é o que sustenta a receita, e
-    // por isso leva o tom de atenção; B e C ficam neutros.
-    ...(abcClass === null
-      ? []
-      : [{ label: `Curva ${abcClass}`, tom: abcClass === "A" ? ("atencao" as const) : ("neutro" as const) }]),
+    // Classe ABC, como no frame ("Curva A"), na posição do frame — mas chega
+    // DEPOIS do resto da tela (D-505): é a leitura mais cara da página e só
+    // alimenta este selo. O esqueleto reserva o lugar com a largura do rótulo.
+    {
+      chave: "curva-abc",
+      tardio: (
+        <Suspense fallback={<SeloCarregando rotulo="Curva A" />}>
+          <SeloCurvaAbc leitura={curvaAbc} />
+        </Suspense>
+      ),
+    },
     ...(sku.data.stock_is_virtual ? [{ label: "Estoque virtual", tom: "atencao" as const }] : []),
     ...(sku.data.supplier_brand !== null ? [{ label: sku.data.supplier_brand, tom: "info" as const }] : []),
     ...(sku.data.is_imported ? [{ label: "Importado", tom: "neutro" as const }] : []),

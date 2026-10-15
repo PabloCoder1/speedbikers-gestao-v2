@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
@@ -112,6 +113,10 @@ export async function VendasMulticanal({
   const { selecionadas, descartadas } = resolverContas(query.contas, todasAsContas, escopo);
   const metrica = resolverMetricaMulticanal(query.metric);
   const recorte: RecorteDeVendas = { escopo, periodo, contas: selecionadas, metrica: metrica.key };
+  // D-470: "Tentar de novo" é a MESMA URL; "Limpar filtros" tira a escolha de contas (marketplace e período ficam).
+  const tentarDeNovo: AcaoDoEstado = { href: hrefDeVendas(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  const limparFiltros: AcaoDoEstado | null =
+    selecionadas === null ? null : { href: hrefDeVendas(recorte, { contas: null }), rotulo: "Limpar filtros", mesmaTela: true };
 
   const argumentos = {
     p_organization_id: organizationId,
@@ -311,10 +316,21 @@ export async function VendasMulticanal({
       />
 
       {(contasResult.error !== null || salvosResult.error !== null) && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
-          Alguns filtros podem estar incompletos — não foi possível carregar{" "}
-          {contasResult.error !== null ? "as contas" : "os filtros salvos"}.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Alguns filtros podem estar incompletos"
+          descricao={`Não foi possível carregar ${
+            contasResult.error !== null && salvosResult.error !== null
+              ? "as contas e os filtros salvos"
+              : contasResult.error !== null
+                ? "as contas"
+                : "os filtros salvos"
+          }.`}
+          detalhe={[contasResult.error?.message, salvosResult.error?.message]
+            .filter((mensagem): mensagem is string => mensagem !== undefined)
+            .join("; ")}
+          acao={tentarDeNovo}
+        />
       )}
 
       {descartadas > 0 && (
@@ -326,15 +342,13 @@ export async function VendasMulticanal({
       )}
 
       {invalidCustom && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
         </p>
       )}
 
       {erro !== null && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
-          Não foi possível carregar as vendas: {erro.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as vendas" detalhe={erro.message} acao={tentarDeNovo} />
       )}
 
       {erro === null && (
@@ -386,9 +400,12 @@ export async function VendasMulticanal({
               </div>
 
               {serie.pontos.length === 0 ? (
-                <p className="sb-empty">
-                  Nenhum dia com venda somável neste recorte — a loja de teste e a loja nunca lida ficam fora das somas.
-                </p>
+                <EstadoDaTela
+                  tipo={limparFiltros === null ? "vazio" : "filtro"}
+                  titulo="Nenhum dia com venda somável neste recorte"
+                  descricao="A loja de teste e a loja nunca lida ficam fora das somas."
+                  acao={limparFiltros ?? undefined}
+                />
               ) : (
                 <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
                   <SalesChart
@@ -417,7 +434,11 @@ export async function VendasMulticanal({
               }
             >
               {grupos.length === 0 ? (
-                <p className="sb-empty">Nenhuma conta neste recorte.</p>
+                <EstadoDaTela
+                  tipo={limparFiltros === null ? "vazio" : "filtro"}
+                  titulo="Nenhuma conta neste recorte"
+                  acao={limparFiltros ?? undefined}
+                />
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table className="sb-table" aria-label="Vendas por marketplace e conta">
@@ -462,6 +483,8 @@ export async function VendasMulticanal({
               linhas={rankingResult.data ?? []}
               escopo={escopo}
               ordem={ordem}
+              tentarDeNovo={tentarDeNovo}
+              limparFiltros={limparFiltros}
             />
           </div>
         </>
@@ -545,11 +568,15 @@ function RankingDeProdutos({
   linhas,
   escopo,
   ordem,
+  tentarDeNovo,
+  limparFiltros,
 }: {
   erro: { message: string } | null;
   linhas: readonly LinhaDoRanking[];
   escopo: EscopoMulticanal;
   ordem: "receita" | "unidades";
+  tentarDeNovo: AcaoDoEstado;
+  limparFiltros: AcaoDoEstado | null;
 }): ReactNode {
   const todos = escopo === "todos";
   const total = linhas[0]?.total_count ?? 0;
@@ -566,11 +593,13 @@ function RankingDeProdutos({
       }
     >
       {erro !== null ? (
-        <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar o ranking: {erro.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o ranking" detalhe={erro.message} acao={tentarDeNovo} />
       ) : linhas.length === 0 ? (
-        <p className="sb-empty">Nenhum produto com venda somável neste recorte.</p>
+        <EstadoDaTela
+          tipo={limparFiltros === null ? "vazio" : "filtro"}
+          titulo="Nenhum produto com venda somável neste recorte"
+          acao={limparFiltros ?? undefined}
+        />
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table className="sb-table" aria-label="Produtos que mais venderam">

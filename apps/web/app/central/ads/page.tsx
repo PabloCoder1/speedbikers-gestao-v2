@@ -25,7 +25,8 @@ import {
   type SinaisAds,
 } from "../../../lib/sinais-ads";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { mesmaUrl } from "../../../lib/mesma-url";
 
 export const metadata = { title: "Sinais de Ads — Speed Bikers Gestão" };
 
@@ -102,7 +103,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
     return (
       <>
         <Titulo subtitle={SUBTITULO_PADRAO} />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </>
     );
   }
@@ -125,9 +126,12 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
             </p>
           </div>
         ) : (
-          <p role="alert" style={AVISO}>
-            Não foi possível carregar os sinais de Ads: {resposta.error.message}
-          </p>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar os sinais de Ads"
+            detalhe={resposta.error.message}
+            acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
       </>
     );
@@ -139,9 +143,12 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
     return (
       <>
         <Titulo subtitle={SUBTITULO_PADRAO} />
-        <p role="alert" style={AVISO}>
-          Os sinais de Ads responderam num formato que esta tela não reconhece — nada foi mostrado.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Os sinais de Ads responderam num formato que esta tela não reconhece"
+          descricao="Nada foi mostrado."
+          acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </>
     );
   }
@@ -152,10 +159,11 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
     return (
       <>
         <Titulo subtitle={SUBTITULO_PADRAO} />
-        <p className="sb-empty">
-          Nenhuma semana de Ads consolidada nos últimos 21 dias: sem campanha com gasto e venda atribuída, não há o que
-          comparar.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
+          descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
+        />
       </>
     );
   }
@@ -205,11 +213,14 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
           </div>
 
           {lista.length === 0 ? (
-            <p className="sb-empty">
-              {nivel === null
-                ? "Nenhuma campanha com sinal nesta semana: todas perto da meta, sem gasto sem venda e sem espaço claro para escalar."
-                : "Nenhuma campanha neste nível."}
-            </p>
+            <EstadoDaTela
+              tipo={nivel === null ? "vazio" : "filtro"}
+              titulo={nivel === null ? "Nenhuma campanha com sinal nesta semana" : "Nenhuma campanha neste nível"}
+              descricao={
+                nivel === null ? "Todas perto da meta, sem gasto sem venda e sem espaço claro para escalar." : undefined
+              }
+              acao={nivel === null ? undefined : { href: hrefDoNivel(null), rotulo: "Limpar filtros", mesmaTela: true }}
+            />
           ) : (
             <ol className="sb-sinal-lista">
               {lista.map((c) => (
