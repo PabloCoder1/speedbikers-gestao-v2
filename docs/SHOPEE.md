@@ -165,6 +165,60 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   leitura, ou aberto e lido há mais de 24 h). Colunas e `order_income`
   inteiro em `shopee_orders`.
 
+## 4.2b Devoluções — CONFIRMADO na documentação (D-447)
+
+- **`GET /api/v2/returns/get_return_list`** (referência, guia "Return
+  Refund Management" e "V2.0 Data Definition", conferidos em 14/10/2026):
+  janela de `update_time` ou `create_time` de no máximo 15 dias; até 100
+  por página, `page_no` + `more` (a referência diz que começa em 0, o
+  exemplo usa 1 — **conferir no sandbox**). Um pedido pode ter várias
+  devoluções (`return_sn`).
+- **Situações:** REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED,
+  PROCESSING, SELLER_DISPUTE — só os nomes; a documentação não diz em
+  qual o reembolso foi pago. `return_solution`: 0 devolução e reembolso,
+  1 só reembolso. Permissão: o app Seller In House System pode chamar.
+- **Na V3:** job `shopee.returns.sync` (encadeado pelo de pedidos), tabelas
+  `shopee_returns`/`shopee_return_items` **sem o comprador** (nome,
+  e-mail, foto), sem as fotos e sem o texto livre; leitura por
+  `get_shopee_returns` e `get_shopee_returns_summary`.
+
+## 4.2c Ads — CONFIRMADO na documentação (D-449)
+
+- **`GET /api/v2/ads/get_all_cpc_ads_daily_performance`** (referência e
+  "Shopee On-Platform Ads API Guide", 14/10/2026): o desempenho diário dos
+  anúncios CPC da LOJA — impressões, cliques, pedidos, itens, GMV direto
+  e amplo (7 dias depois do clique), gasto. Datas `DD-MM-YYYY`, até 1
+  mês por chamada, até 6 meses atrás, início ≠ fim. Erros: `error_not_found`
+  (sem dado), `ads.performance.*` (período), `ads.rate_limit.*`
+  (passageiro). Permissão: Seller In House System.
+- **GMV Max de loja** (`POST get_gms_campaign_performance`): só o agregado
+  do período, exige loja habilitada; **não se sabe se o gasto está no CPC
+  da loja** — conferir com loja real.
+- **Na V3:** job `shopee.ads.sync` (encadeado pelo de pedidos, no máximo a
+  cada 3 h), `daily_shopee_ads_metrics` com a cobertura da leitura; leitura
+  por `get_shopee_ads_overview` e `get_shopee_ads_daily`.
+
+## 4.2d Repasse e extrato — CONFERIDO na documentação (D-451)
+
+- **`GET /api/v2/payment/get_escrow_list`** (14/10/2026): os pedidos cujo
+  escrow foi LIBERADO numa janela de `escrow_release_time`, com
+  `payout_amount` ("the settlement amount"). Sem janela máxima declarada
+  (a V3 usa 15 dias); 100 por página, `page_no` a partir de 1, `more`. O
+  exemplo traz o valor inteiro (57334) e a tabela, `float` — **conferir a
+  unidade no sandbox** contra o `escrow_amount`. Permissão: Seller In House.
+- **`get_payout_detail` / `get_payout_info`:** só vendedor internacional (CB).
+- **`get_wallet_transaction_list`** (extrato, só loja local): janela de 15
+  dias; tipos (escrow liberado, saque, ajuste, cobrança de Ads, escrow
+  rápido...); traz `buyer_name`; **sem identificador da transação** e com
+  `page_no` descrito como deslocamento — fica para depois do sandbox.
+- **`get_income_overview` / `get_income_detail`** (out/2025): pendente e
+  liberado como no Seller Center; o detalhe se contradiz no formato da
+  resposta — fica para depois do sandbox.
+- **Na V3:** job `shopee.escrow-releases.sync` (encadeado pelo de pedidos),
+  `shopee_escrow_releases` com a cobertura da leitura; leitura por
+  `get_shopee_repasse_overview`, `_daily`, `get_shopee_repasses` e
+  `get_shopee_repasse_pendente`.
+
 ## 4.3 Catálogo — CONFIRMADO (D-428)
 
 - **Lista** (`GET /api/v2/product/get_item_list`): `offset` e `page_size`
@@ -198,6 +252,21 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   unidade no catálogo sincronizado; remover pede motivo); histórico
   `shopee_sku_link_events`. **O manual vence o SKU do anúncio** — a
   precedência está na view.
+
+## 4.4 Push — CONFIRMADO na documentação (D-453)
+
+- **Guia "Push Mechanism notifications"** (developer-guide/18, 14/10/2026):
+  POST ao endereço cadastrado no Console; `Authorization` = HMAC-SHA256
+  (hex) da chave do parceiro sobre `<endereço>|<corpo cru>`; resposta 2xx
+  de corpo VAZIO em 3 s (senão repete em 300/1800/10800 s e a taxa de
+  sucesso baixa — abaixo de 30% a assinatura é desligada); sem ordem e
+  com repetição; só avisa, o dado vem da API.
+- **Códigos usados:** 3 `order_status_push` (`ordersn`, `status`) e 29
+  `return_updates_push` (`order_sn`, `return_sn`). O 2
+  (`shop_authorization_canceled_push`) tem exemplos contraditórios: só log.
+- **Na V3:** `POST /push/shopee` na api antecipa `shopee.orders.sync` ou
+  `shopee.returns.sync` da loja, uma tarefa por janela de 5 minutos; o
+  gatilho horário continua. Cadastro no Console: `docs/DEPLOYMENT.md` §6.2.
 
 ## 5. Sandbox — o roteiro
 
@@ -247,3 +316,8 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E6a | Vendas por SKU entre marketplaces: o grão de SKU da Shopee (`shopee_sales_items`), o ranking por SKU com o total e as vendas de um SKU por conta e loja; ABC (E6b) e `/produtos`/ranking com resultado (E6c) depois | código (D-439) |
 | E6b | Curva ABC por marketplace: marketplace e conta/loja como recortes nas três funções da Curva ABC (a tela, o painel do Excel e a aba por conta), com o ML idêntico; critério `compras`; `pedidos`, cobertura e Full só com o ML | código (D-441) |
 | C-61 | Composição do faturamento (pedido do A2): a cascata do recebido pelos termos da fórmula oficial do escrow com `outros`, a série diária e o por SKU sem rateio; o TOTAL do C-58 somando como a linha; o C-58 ~150x mais rápido | código (D-443) |
+| E6c | `/produtos` com a Shopee: anúncio vinculado e venda de 90 dias por SKU (só loja live), filtros, facetas e resumo olhando os dois marketplaces, o só do ML à parte | código (D-445) |
+| E7a | Devoluções: a API `returns` em tabela própria, sem o comprador, com a situação como veio, o SKU de cada item, a lista e o resumo por situação | código (D-447); chamada real a conferir no sandbox depois do deploy |
+| E7b | Ads CPC da loja: o desempenho diário com a cobertura da leitura, ROAS/ACOS/TACoS no SQL; fora do resultado até conferir o GMV Max com loja real | código (D-449); chamada real a conferir no sandbox depois do deploy |
+| E7c | Repasse: cada liberação do escrow por pedido (`get_escrow_list`) contra o previsto, com a cobertura da leitura; o a liberar; extrato da carteira e renda por pedido esperam o sandbox | código (D-451); chamada real e unidade do valor a conferir no sandbox depois do deploy |
+| E7d | Push: `POST /push/shopee` assinado antecipa a leitura de pedidos (3) e devoluções (29) da loja em janelas de 5 minutos; o gatilho horário continua | código (D-453); cadastrar o endereço no Console depois do deploy da api |

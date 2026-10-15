@@ -291,3 +291,33 @@ test("/vendas/shopee: o período personalizado aplica as datas e mantém a situa
   await expect(page.locator("details", { hasText: "Período personalizado" }).locator("summary")).toBeVisible();
   await esperaPedidos(page, ESPERADO.validasNaLista);
 });
+
+/**
+ * T-R5: no celular a tabela "Por loja" vira cartão, e as notas são frases
+ * ("a leitura é de hora em hora", "3 aguardando o financeiro"). Em linha e sem
+ * quebra, elas invadiam a célula vizinha -- medido em 390 px: 134 a 222 px
+ * além da própria célula. Este caso mede, em vez de olhar: nenhuma nota pode
+ * passar da borda da célula dela.
+ */
+test("/vendas/shopee no celular: as notas do cartão por loja ficam dentro da própria célula", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, "/vendas/shopee");
+
+  const tabela = page.getByRole("table", { name: "Vendas da Shopee por loja" });
+
+  await expect(tabela).toBeVisible();
+  // O seed sempre tem a nota da última leitura: o teste não passa vazio.
+  await expect(tabela.locator("td .sb-an-sub").first()).toBeVisible();
+
+  const transbordos = await tabela.locator("td .sb-an-sub").evaluateAll((notas) =>
+    notas.map((nota) => {
+      const celula = nota.closest("td");
+      const a = nota.getBoundingClientRect();
+      const b = celula?.getBoundingClientRect();
+
+      return b === undefined ? 0 : Math.round(a.right - b.right);
+    }),
+  );
+
+  expect(transbordos.every((px) => px <= 0)).toBe(true);
+});

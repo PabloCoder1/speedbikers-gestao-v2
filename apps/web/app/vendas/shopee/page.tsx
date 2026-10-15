@@ -358,7 +358,7 @@ export default async function VendasShopeePage({
                 agregação em JavaScript, e misturaria a loja de teste com as de
                 verdade. Um total da empresa nasce numa RPC que saiba separá-la.
               */}
-              <table className="sb-table sb-an-tabela" aria-label="Vendas da Shopee por loja">
+              <table className="sb-table sb-an-tabela sb-vendas-lojas" aria-label="Vendas da Shopee por loja">
                 <thead>
                   <tr>
                     <th>Loja</th>

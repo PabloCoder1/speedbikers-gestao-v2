@@ -38,7 +38,7 @@ import {
   shopeeModelUnavailable,
 } from "../../../lib/shopee-listings";
 import { createClient } from "../../../lib/supabase/server";
-import { descreverCobertura } from "../../../lib/sku-coverage-display";
+import { descreverCobertura, type CoberturaDescrita } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
 import {
   compararPrecoDaConta,
@@ -687,22 +687,34 @@ export default async function SkuDashboardPage({
     já imprime mantém a tela coerente consigo mesma; se a latente acender, as
     parcelas no `title` mostram onde.
   */
-  const cobertura = descreverCobertura(
-    coverage === null || dashboard === null
-      ? null
-      : {
-          local: dashboard.local_quantity,
-          full: dashboard.full_quantity,
-          transito: dashboard.transito_quantity,
-          reservado: dashboard.reservado_quantity,
-          stockIsVirtual: coverage.stock_is_virtual,
-          units15: coverage.units_15d,
-          units30: coverage.units_30d,
-          units60: coverage.units_60d,
-          units90: coverage.units_90d,
-          historyDays90: coverage.history_days_90,
-        },
-  );
+  /*
+    T-R6: a leitura da cobertura que FALHA não é "não calculada para este SKU"
+    (o texto de quando a RPC não devolve linha). Dizer que não foi lida.
+  */
+  const cobertura: CoberturaDescrita =
+    coverageResult.error !== null
+      ? {
+          dias: null,
+          valor: "—",
+          ressalva: "não foi possível ler a cobertura agora",
+          titulo: `a leitura da cobertura falhou: ${coverageResult.error.message}`,
+        }
+      : descreverCobertura(
+        coverage === null || dashboard === null
+          ? null
+          : {
+              local: dashboard.local_quantity,
+              full: dashboard.full_quantity,
+              transito: dashboard.transito_quantity,
+              reservado: dashboard.reservado_quantity,
+              stockIsVirtual: coverage.stock_is_virtual,
+              units15: coverage.units_15d,
+              units30: coverage.units_30d,
+              units60: coverage.units_60d,
+              units90: coverage.units_90d,
+              historyDays90: coverage.history_days_90,
+            },
+        );
 
   /*
    * O tom do cartão de cobertura. `is_ruptura` SAIU daqui (D-314): aquele flag
@@ -1195,6 +1207,14 @@ export default async function SkuDashboardPage({
           {listingsResult.error !== null && (
             <p className="sb-skud-danger" role="alert">
               Não foi possível carregar os anúncios: {listingsResult.error.message}
+            </p>
+          )}
+
+          {/* T-R6: sem as contas, "Vincular anúncio" abriria sem conta nenhuma para escolher. */}
+          {contasResult.error !== null && (
+            <p className="sb-skud-danger" role="alert">
+              Não foi possível carregar as contas: {contasResult.error.message}. O vínculo manual fica sem a lista de
+              contas até a leitura voltar.
             </p>
           )}
 
@@ -1811,6 +1831,16 @@ export default async function SkuDashboardPage({
             }
           >
             <div className="sb-panel-body">
+              {/*
+                T-R6: sem a leitura das ações, o diagnóstico sairia como se não
+                houvesse ação aberta — e o nível podia cair um degrau.
+              */}
+              {acoesAbertasResult.error !== null && (
+                <p className="sb-skud-danger" role="alert">
+                  As ações abertas deste SKU não foram lidas ({acoesAbertasResult.error.message}): o diagnóstico abaixo
+                  não as inclui, e o nível pode estar abaixo do real.
+                </p>
+              )}
               <div className="sb-stat-grid">
                 <div
                   className="sb-stat"
