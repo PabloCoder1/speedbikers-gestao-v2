@@ -167,7 +167,7 @@ export function BuscaSku({
       {resultados !== null && (
         <ul id={listaId} className="sb-vnc-resultados" role="listbox">
           {resultados.length === 0 ? (
-            <li className="sb-vnc-vazio">Nenhum SKU com “{termo.trim()}”.</li>
+            <li className="sb-vnc-busca-vazio">Nenhum SKU com “{termo.trim()}”.</li>
           ) : (
             resultados.map((opcao, indice) => (
               <li key={opcao.skuId} role="option" aria-selected={indice === ativo}>

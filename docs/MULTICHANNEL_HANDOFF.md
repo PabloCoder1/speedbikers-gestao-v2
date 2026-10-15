@@ -114,16 +114,17 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms. **Em produção** desde 15/10 (#176, `899b1123`).
 - D-501, a atualização no lugar no resto do app: 17 buscas GET, 27 `<a>` e 41 `<Link>` de mesma tela em 22 arquivos (as telas livres e as quatro que o A2 liberou: `/vendas`, `/vendas/shopee`, `/faturamento` e `/anuncios/shopee`), o `LinkDeFiltro`, a guarda `check:navegacao-suave` na CI e o `e2e/atualizacao-no-lugar.spec.ts`. **Em produção** desde 15/10 (#182, `583d670a`).
 - D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos.
+- D-503: o LCP real de produção por tela (Home 7,6 s, `/skus/[id]` 5,9 s, `/vendas` 3,3–4,7 s), um giro só, a busca de SKU de `/vinculacoes` de volta à forma compacta, e o item 13 da auditoria reavaliado.
 
 **Em andamento**
 - D-502 no **#187** (só web, sem migration): entra quando a CI fechar verde e o A2 mergear.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Item 13 da auditoria: `role="alert"` em aviso que não é falha, tela a tela.
-- Um giro só e o resto do CSS duplicado (`.sb-vnc-vazio`, `.sb-sync-empty`).
+- Streaming na Home, depois `/skus/[id]` e `/vendas` (`docs/UX_SYSTEM.md` §3 item 5, §5): espera o A1 medir as RPCs como `authenticated` e o sim do A2.
 - Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
+- "Período personalizado inválido — mostrando X" é aviso, não falha: vire `role="status"` quando tocar em `/central`, `/central/produtos`, `/faturamento` (e o multicanal), `/vendas` (e o multicanal) e `/vendas/shopee`; `e2e/central.spec.ts` procura por `getByRole("alert")` e muda junto (D-503).
 - O `EstadoDaTela` está no #187 (D-502): quando entrar, troque os seis avisos provisórios da T-R6 por `<EstadoDaTela tipo="erro" titulo="…" detalhe={error.message} acao={{ href: <a mesma URL>, rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />`, e use-o nos estados das telas da sua fila.
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos` e `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
