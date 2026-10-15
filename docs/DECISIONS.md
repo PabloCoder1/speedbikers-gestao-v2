@@ -15976,7 +15976,7 @@ Os textos que os e2e conferem continuam no titulo: "Nenhuma loja real com …", 
 
 ## D-471 - O alerta de produto no prejuizo da central: o detector pede ao ranking so os 30 dias que usa
 
-**Contexto:** na checagem de saude do worker de producao (15/10), o job diario `diagnostics.sync-central-alerts` falhou TODO DIA de 09 a 15/10, as 11:00 UTC, com "produto_prejuizo: canceling statement due to statement timeout" -- o teto de 8 s de cada fonte (D-404). A auditoria de 28/09 ja via o estouro em 3 de 8 execucoes, e o `work_mem` de 16 MB daquela correcao nao bastou. Com o detector parado, ninguem e avisado de produto vendendo no prejuizo: nem o alerta em `actions`, nem a notificacao da D-411.
+**Contexto:** na checagem de saude do worker de producao (15/10), o job diario `diagnostics.sync-central-alerts` falhou TODO DIA de 09 a 15/10, as 11:00 UTC, com "produto_prejuizo: canceling statement due to statement timeout" -- o teto de 8 s de cada fonte (D-404). A auditoria de 28/09 ja via o estouro em 3 de 8 execucoes, e o `work_mem` de 16 MB daquela correcao nao bastou. Com o detector parado, ninguem e avisado de produto vendendo no prejuizo: nem o alerta em `actions`, nem a notificacao da D-411. **(Corrigido no mesmo dia, abaixo: a 2ª tentativa gerava os alertas.)**
 
 A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior padrao, os 30 dias antes da janela. O ranking le os pedidos e os itens dos DOIS periodos, 60 dias, para preencher a comparacao (receita anterior, variacao), que o alerta nao usa.
 
@@ -15994,6 +15994,8 @@ A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior 
 - **Fica para depois do deploy:** o job das 11:00 UTC do dia seguinte precisa terminar sem o timeout. Leio no Cloud Logging.
 
 **Impacto:** `supabase/migrations/20261015120000_alerta_prejuizo_so_o_periodo.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O ranking e a tela `/central/produtos` nao mudam.
+
+**Correcao (15/10, mesmo dia):** o detector nao estava parado. Nos logs de 09 a 15/10, a 1ª tentativa (11:00 UTC, banco frio) estourava os 8 s em `produto_prejuizo`, e a 2ª do Cloud Tasks, um minuto depois, rodava as tres fontes inteiras e gerava os alertas e as notificacoes. O custo real era o job registrado como falho todo dia, o trabalho repetido e o risco de a 2ª tambem estourar num dia mais pesado. **Depois da migration** (disparo manual em 15/10, 20:18 UTC, autorizado pelo dono), as tres fontes passaram de primeira, com `produto_prejuizo` em ~2,1 s. A prova a frio continua sendo o job de 16/10, 11:00 UTC.
 
 ## D-472 - Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 
