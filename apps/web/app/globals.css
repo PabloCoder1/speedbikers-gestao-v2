@@ -5437,7 +5437,13 @@ body > .sb-atualizando-barra {
   min-width: 0;
 }
 
+/*
+ * Bloco, não inline: sem `descricao`, o `<p>` que quebrava a linha não existe,
+ * e o detalhe técnico (inline-block) subia para a MESMA linha do título —
+ * achado do A2 aplicando o estado na /faturamento com uma falha simulada.
+ */
 .sb-estado-texto strong {
+  display: block;
   color: var(--sb-primary);
 }
 
