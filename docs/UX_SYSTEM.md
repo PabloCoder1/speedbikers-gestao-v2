@@ -67,7 +67,7 @@ robustez; **P3** = acabamento.
 | 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
-| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha; o aviso é provisório até o `EstadoDaTela` |
+| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha, e desde a D-468 (#192) com o `EstadoDaTela` e "Tentar de novo" na mesma URL |
 | 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | **corrigido** nas mesmas 19 telas (tipos `vazio` × `filtro`, com \"Limpar filtros\") |
 | 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | **corrigido** (D-502): título da tela no cabeçalho, estado de permissão e \"Ir para o início\" |
 | 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | **corrigido** (D-502, `BotaoEnviar` e rótulos de pendente); sobra o \"Sair\" do cabeçalho |
@@ -95,9 +95,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
    de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
 2. ~~**Botão pendente compartilhado**~~ — **feito** (D-502, `BotaoEnviar`).
-3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas. Falta: os seis
-   avisos provisórios da T-R6 (o A2 troca na fatia dele), as telas da fila do
-   A2 e o item 13 (`role="alert"` em aviso que não é falha), tela a tela.
+3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas, e nos seis avisos
+   da T-R6 pelo A2 (D-468, #192). Falta: as telas da fila do A2 e o item 13
+   (`role="alert"` em aviso que não é falha, como o período inválido da
+   `/curva-abc`), tela a tela.
 4. **Shell num layout** (§4), se o dono aprovar.
 5. **Streaming nas telas pesadas** (item 14) — a ordem vem do LCP de
    produção (§5): Home, `/skus/[id]`, `/vendas`. **Home feita (D-504):** a

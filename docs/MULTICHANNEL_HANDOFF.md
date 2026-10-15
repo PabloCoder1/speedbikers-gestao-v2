@@ -126,7 +126,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 
 **Para o A2**
 - "Período personalizado inválido — mostrando X" é aviso, não falha: vire `role="status"` quando tocar em `/central`, `/central/produtos`, `/faturamento` (e o multicanal), `/vendas` (e o multicanal) e `/vendas/shopee`; `e2e/central.spec.ts` procura por `getByRole("alert")` e muda junto (D-503).
-- O `EstadoDaTela` já está na `main` (D-502): troque os seis avisos provisórios da T-R6 por `<EstadoDaTela tipo="erro" titulo="…" detalhe={error.message} acao={{ href: <a mesma URL>, rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />`, e use-o nos estados das telas da sua fila.
+- O `EstadoDaTela` (D-502) já cobre os avisos da T-R6 (D-468, #192): use-o também nos estados das telas da sua fila.
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos` e `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
