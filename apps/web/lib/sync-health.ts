@@ -186,6 +186,18 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "shopee.order-financials.sync": 60,
   "shopee.items.sync": 60,
   "shopee.items.hydrate": 60,
+  /*
+    Os jobs novos do Agente 1, encadeados atrás de cada leitura de pedidos
+    (`apps/worker/src/handlers/shopee-orders-sync.ts` nos PRs dele): as
+    devoluções (D-447, C-62) e o repasse (D-451, C-64) na mesma cadência; os
+    Ads (D-449, C-63) lidos no máximo a cada 3 h — a cadência é a do próprio
+    job, não a do encadeamento. Chegam aqui antes do worker de propósito: sem
+    execução em `job_runs`, a Saúde não julga nada, e quando o job aparecer
+    já é medido pela régua certa.
+  */
+  "shopee.returns.sync": 60,
+  "shopee.escrow-releases.sync": 60,
+  "shopee.ads.sync": 180,
 };
 
 /**

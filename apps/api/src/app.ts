@@ -62,6 +62,8 @@ import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
+import type { ShopeePushDeps } from "./shopee-push.js";
+import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
@@ -113,6 +115,8 @@ export interface AppDependencies {
   mlAccounts?: MlAccountsDeps;
   /** `undefined` sem as variáveis da Shopee (env.ts, D-425): as rotas dela respondem 503. */
   shopeeShops?: ShopeeShopsDeps;
+  /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
+  shopeePush?: ShopeePushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
   shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
   copilot?: CopilotDeps;
@@ -358,6 +362,29 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     return context.json({ connected: true, shops: outcome.shops });
   });
 
+
+  // --------------------------------------------------------------------
+  // Push da Shopee (D-453). Público como o webhook do Mercado Livre, mas
+  // FORA de `/webhooks/*`: a allowlist de IP de lá é do Mercado Livre. A
+  // autenticação é a assinatura HMAC do corpo cru, conferida em
+  // `receiveShopeePush` (push sem assinatura válida é ignorado). A Shopee
+  // conta como falha tudo que não for 2xx de corpo VAZIO em 3 s: só a falha
+  // passageira (ler a loja, enfileirar) devolve 503, para ela repetir.
+  // --------------------------------------------------------------------
+  app.post("/push/shopee", async (context) => {
+    const shopeePush = dependencies.shopeePush;
+
+    if (shopeePush === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await receiveShopeePush(shopeePush, {
+      rawBody: await context.req.text(),
+      authorization: context.req.header("authorization"),
+    });
+
+    return context.body(null, outcome.status === "unavailable" ? 503 : 200);
+  });
 
   // --------------------------------------------------------------------
   // Rotas internas: Cloud Scheduler e Cloud Tasks, autenticadas por OIDC.
