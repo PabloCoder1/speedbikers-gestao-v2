@@ -15545,6 +15545,40 @@ A tela esperava a decisao do dono sobre onde ela fica. Em 15/10 ele decidiu pela
 
 **Impacto:** `apps/web/lib/devolucoes-shopee.ts` e o teste, `apps/web/app/vendas/shopee/{devolucoes,page}.tsx`, `apps/web/e2e/vendas-shopee.spec.ts`, `docs/{DECISIONS,DECISIONS_INDEX}.md` (o ROADMAP, o MULTICHANNEL_SCREENS, o PRODUCT_REQUIREMENTS e o handoff vao no PR de docs das etapas multicanal). Nenhuma migration, RPC, worker ou api.
 
+## D-462 - Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
+
+**Contexto:** a T3b (D-446) pos a Shopee em `/integracoes` julgando quatro jobs (pedidos, financeiro, catalogo e detalhe do catalogo), e a T3a (D-438) pos as lojas em `/sincronizacao` com a ultima leitura de pedidos.
+
+Em 15/10 entraram em producao os jobs que o A1 encadeou atras dos pedidos:
+- `shopee.returns.sync` (D-447);
+- `shopee.escrow-releases.sync` (D-451);
+- `shopee.ads.sync` (D-449).
+
+As cadencias ja estavam em `/saude` (#170). Conferido em producao, so com leitura, nas 6 h anteriores: devolucoes e repasses com 7 execucoes cada, todas `done`; o Ads com 7 `failed`, porque o sandbox da Shopee responde 503. As telas de saude ainda nao mostravam nada disso.
+
+**1. /INTEGRACOES.** O cartao "Shopee" passa a julgar os SETE jobs, cada um pelo nome: devolucoes, repasses e Ads CPC entram junto dos quatro de antes, com a mesma regua de `/saude` (o Ads a cada 3 h). O escopo do cartao diz o que ele cobre agora. Um job que falha poe a leitura em ERRO e diz qual ("Ads CPC: ultima execucao FALHOU ha N h; K falha(s) em 24h"), sem esconder os que andam. Isso e verdade: hoje o Ads do sandbox falha, e o cartao mostra isso ate a loja real ou ate a Shopee responder.
+
+**2. /SINCRONIZACAO.** Cada loja Shopee ganha tres fatos, lidos de `shopee_shops` na mesma ida da pagina. A view C-52 so traz os pedidos; a RLS e a mesma, por loja (D-433).
+- "Devolucoes lidas ate": `returns_synced_until`.
+- "Repasses lidos ate": `escrow_releases_synced_until`.
+- "Ads CPC lidos em": `ads_synced_at`, com o ultimo dia coberto (`ads_read_until`).
+
+Sem leitura, o fato diz "nunca lidas/lidos". Se a leitura falhar, diz "nao foi possivel ler" (D-067), sem derrubar a tela. O veredito da loja continua o dos pedidos, com os limiares do vigia (D-435). A falha de um job aparece em Saude do sistema, como o texto da secao passa a dizer.
+
+**Publicacao:** so a web, sem migration (as colunas e os jobs ja estao em producao).
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** `lib/integrations.test.ts` com 36 testes, 3 novos ou ampliados:
+  - os sete jobs em dia sao ok, cada um nomeado no detalhe;
+  - o Ads que falha poe a leitura em erro com o nome e as falhas, e os outros continuam ditos;
+  - 5 h sem leitura do Ads e normal para ele e nao rebaixa o cartao.
+- **e2e:** `sincronizacao`, `integracoes` e `saude` 20/20, num stack isolado. A loja do seed mostra "nunca lidas/lidos" nos tres fatos, e o cartao diz o escopo novo.
+- **Fixtures de loja real** no banco isolado: cada loja mostra as proprias datas (devolucoes, repasses, Ads com o ultimo dia), e as que nao leram dizem "nunca".
+- **Suite inteira:** 232/232, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/integrations.ts` e o teste, `apps/web/app/sincronizacao/page.tsx`, `apps/web/e2e/{sincronizacao,integracoes}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
