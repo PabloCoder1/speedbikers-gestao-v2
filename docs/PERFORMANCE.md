@@ -1303,6 +1303,60 @@ Protótipo em produção, como `authenticated`, o corpo de `get_ranking_produtos
 
 **Dev, como `authenticated`** (125 mil linhas de `daily_sku_metrics` em 365 dias; 90 dias com o anterior, a primeira página de 50; as funções novas em `pg_temp`, só leitura, oito execuções na mesma sessão): `get_sku_abc_analysis` em `language sql` com `SET` (o plano genérico de D-305) **~4.270 ms** (11.020 ms a frio) contra **~138 ms** (151 ms a frio) em `plpgsql` + `force_custom_plan`, a mesma saída; `get_sku_abc_breakdown` por conta, ~5.100 contra ~170 ms. Saída idêntica em 11 casos (1.719 SKUs, o painel em 5 dimensões, 3.352 linhas por conta). Migration `20261015000000`.
 
+### Home e `/skus/[skuId]`: o custo é o cache frio, e a timeline do SKU lia 37 mil páginas (D-461, 15/10/2026)
+
+**Origem:** os web vitals de produção (A3, 24 h) mostraram LCP de 7,6 s na Home (TTFB de 113 ms) e de 5,9 s num `/skus/[skuId]`.
+
+**Dev, como `authenticated`.** Usuário ADMIN com 54 mil avisos e janela terminando em 14/09, o último dia com dado; oito execuções por chamada, em `begin ... rollback`.
+
+**Quentes, nenhuma RPC das duas telas passa de 150 ms, e nenhuma degrada na sexta execução.** O custo está na primeira chamada com o cache frio:
+- `get_listings_dashboard`: 2.719 ms frio, ~130 ms quente;
+- `get_sku_timeline`: 4.830 ms frio, 57 ms quente.
+
+Numa conexão nova, a listagem saiu em 138 ms. Então é página vinda do disco, não plano por sessão, e a medida útil é a de **páginas lidas**:
+
+| Chamada | Páginas (≈8 KB) |
+|---|---|
+| **Home, 2ª rodada** (só começa depois da 1ª, porque espera a organização) | |
+| `get_listings_dashboard(paused, in, limit 1)`: monta a lista inteira para devolver o `total_count`, e ainda grava temporário | **7,6 mil** |
+| `get_stock_coverage_summary` | **6,3 mil** |
+| **Home, 1ª rodada** | |
+| `get_sales_summary` | 326 |
+| `get_sales_daily_series` | 167 |
+| contagens de `actions` e `support_cases` | 291–957 |
+| avisos não lidos | 764 |
+| atividade | 66 |
+| **`/skus`, aba padrão** (tudo em paralelo) | |
+| `get_sku_abc_curve(90 d, limit 1)`: calcula a curva da organização para dar a classe de um SKU | 5,4 mil |
+| `get_stock_coverage` do SKU | 1,5 mil |
+| `get_sku_dashboard` | 1,3 mil |
+| `get_sku_listings` | 0,4 mil |
+| **`/skus`, aba Histórico** | |
+| `get_sku_timeline` | **~37 mil, para qualquer SKU** |
+
+**A timeline (D-461, migration `20261015080000`).** A ramificação de pedidos convertia `entity_id::bigint` e lia os 35 mil eventos de pedido da organização. Com `entity_id = any(pedidos do SKU como texto)`, medido atual → nova:
+
+| SKU | Atual | Nova |
+|---|---|---|
+| Mais vendido | 59 ms, 37,0 mil páginas | 36 ms, 4,1 mil |
+| Mediano | 50 ms, 34,8 mil | 5 ms, 649 |
+| Cauda | 49 ms, 34,6 mil | 2 ms, 58 |
+
+A saída é a mesma em 379 SKUs (33,6 mil eventos).
+
+**Abertos (sem defeito medido, só volume):**
+- **A 2ª rodada da Home, ≈110 MB frios.** Proposta: uma contagem leve de "pausados com estoque" (A1) e a rodada fora da fila da organização (A2). O A3 propôs Suspense nos dois cartões (D-503).
+- **A curva ABC do cabeçalho do SKU, ~45 MB frios.**
+
+Para confirmar o cache frio em produção: em `extensions.pg_stat_statements`, filtrando `query like '%pgrst_source%'` (a função sai de `regexp_match(query, '"public"\."(\w+)"')`), um `shared_blks_read` alto com `mean_exec_time` baixo e `max_exec_time` alto.
+
+**C-65 (D-459) como `authenticated`.** A equivalência da D-459 foi medida como `postgres`. Refeita no papel da tela, atual → nova:
+- cobertura de 30 dias: 50 → 50–51 ms, 5.943 → 5.959 páginas;
+- cobertura de um SKU: 14 → 15 ms;
+- sugestão: 150 → 153 ms, 16.414 → 16.430 páginas.
+
+Sem degradação na oitava execução. O Dev não tem loja Shopee, então a parte da Shopee não pesa ali.
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
