@@ -4,6 +4,7 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { Panel } from "../../components/panel";
 import {
   diasDasBarras,
+  diasForaDaRazao,
   estadoAdsLoja,
   lojaAdsDeTeste,
   separarAdsShopee,
@@ -114,6 +115,7 @@ function Resumo({
   serie: Resposta<DiaAdsShopee>;
   lojas: ReactNode;
 }): ReactNode {
+  const foraDaRazao = diasForaDaRazao(total);
   const celulas: KpiCellData[] = [
     {
       metricId: "shopee_investimento_ads",
@@ -133,16 +135,20 @@ function Resumo({
     {
       metricId: "shopee_roas",
       label: "ROAS",
-      formula: "vendas com Ads ÷ investimento — venda sobre investimento, não lucro",
+      formula:
+        "vendas com Ads ÷ investimento, só nos dias com os dois informados pela Shopee — venda sobre investimento, não lucro",
       value: formatRoas(total.roas),
       previous: null,
+      // D-466: o dia sem um dos dois fica fora da razão e dentro dos cartões ao lado (D-455).
+      ...(foraDaRazao === null ? {} : { ressalva: foraDaRazao }),
     },
     {
       metricId: "shopee_acos",
       label: "ACOS",
-      formula: "investimento ÷ vendas com Ads",
+      formula: "investimento ÷ vendas com Ads, só nos dias com os dois informados pela Shopee",
       value: formatPercent(total.acos),
       previous: null,
+      ...(foraDaRazao === null ? {} : { ressalva: foraDaRazao }),
     },
     {
       metricId: "shopee_tacos",
@@ -184,9 +190,9 @@ function Resumo({
             {formatCount(total.cliques)} cliques · {formatCount(total.impressoes)} impressões ·{" "}
             {formatCount(total.pedidos_ads)} pedidos com Ads.
             {semGasto > 0 &&
-              ` ${dias(semGasto)} sem o gasto informado pela Shopee (fora das barras e do investimento, com as vendas contando): o ROAS fica acima do real.`}
+              ` ${dias(semGasto)} sem o gasto informado pela Shopee, fora das barras.`}
             {semVenda > 0 &&
-              ` ${dias(semVenda)} sem as vendas informadas pela Shopee (fora das barras e das vendas, com o gasto contando): o ROAS fica abaixo do real.`}{" "}
+              ` ${dias(semVenda)} sem as vendas informadas pela Shopee, fora das barras.`}{" "}
             A Shopee ainda atribui venda até 7 dias depois do clique: os últimos dias podem subir na próxima leitura.
           </p>
         </div>
@@ -219,6 +225,8 @@ function Lojas({ lojas }: { lojas: readonly LinhaAdsShopee[] }): ReactNode {
             estado === "com_anuncio"
               ? `ROAS ${formatRoas(loja.roas)} · ACOS ${formatPercent(loja.acos)} · vendas com Ads ${formatCurrency(loja.receita_ads)}`
               : null,
+            // D-466: o dia da loja sem um dos dois fica fora do ROAS dela (D-455).
+            estado === "com_anuncio" ? diasForaDaRazao(loja) : null,
           ].filter((nota): nota is string => nota !== null);
 
           return (

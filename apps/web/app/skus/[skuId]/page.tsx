@@ -714,6 +714,8 @@ export default async function SkuDashboardPage({
               units60: coverage.units_60d,
               units90: coverage.units_90d,
               historyDays90: coverage.history_days_90,
+              // Chave ausente = a função de antes da migration do C-65: a Shopee não entra (D-466).
+              units30Shopee: coverage.units_30d_shopee ?? null,
             },
         );
 

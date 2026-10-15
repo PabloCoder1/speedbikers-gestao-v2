@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **458** (D-001 a D-503).
+Decisões registradas: **459** (D-001 a D-503).
 
 ## Por domínio
 
@@ -119,7 +119,7 @@ Decisões registradas: **458** (D-001 a D-503).
 - **D-439** — Vendas por SKU entre marketplaces (E6a): o grao de SKU da Shopee numa view, o ranking com o total no SQL e as vendas de um SKU por conta e loja
 - **D-440** — Telas multicanais, etapa T4: /vendas tem os recortes Todos, Mercado Livre e Shopee na mesma tela, lidos do consolidado do SQL, e o ML continua exatamente o de sempre
 
-### estoque (33)
+### estoque (34)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -154,6 +154,7 @@ Decisões registradas: **458** (D-001 a D-503).
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 - **D-451** — Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 - **D-464** — Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
+- **D-466** — Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
 
 ### interface (57)
 

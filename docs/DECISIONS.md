@@ -15671,6 +15671,49 @@ O efeito da barra passa a rodar de novo a cada `?busca`. Com isso, o "Marcar com
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-466 - Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
+
+**Contexto:** a T-R3 (D-464) pos a demanda da Shopee em `/reposicao` e `/compras/novo`. Ficaram de fora a gaveta da Inspecao Rapida de `/produtos` e o cartao de cobertura do SKU, que leem `get_stock_coverage` pelos tipos gerados: as colunas da Shopee so existiam com a migration do C-65 (D-459, #188).
+
+O mesmo PR do A1 trouxe a D-455: o ROAS e o ACOS dos Ads da Shopee passam a usar so os dias com o gasto E as vendas informados, e o `get_shopee_ads_overview` devolve `dias_sem_gasto` e `dias_sem_venda`, no TOTAL e por loja.
+
+**1. COBERTURA DO SKU E INSPECAO RAPIDA, PELO MESMO MODULO.** As duas superficies ja passavam por `descreverCobertura` (D-314), entao nao conseguem divergir. O modulo ganha `units30Shopee`:
+- a taxa ja soma a Shopee (as janelas do SQL a somam), e o titulo diz quanto veio de la: "A venda de 30 dias soma o ML e a Shopee: N un vieram da Shopee";
+- zero e nulo nao ganham texto. Nulo e "a Shopee nao entra", e quem diz isso e o selo de `/reposicao`;
+- "sem venda" com a Shopee na conta diz "no ML nem na Shopee". Fora da conta, nao promete a Shopee.
+
+A gaveta mostra "Vendas (30 d) N un" com "K da Shopee" embaixo quando ha venda dela.
+
+**2. CHAVE AUSENTE = NULO, TAMBEM AQUI.** A web pode entrar no ar antes da migration de producao, que precisa das duas aprovacoes do dono. As leituras novas usam `?? null`. Sem isso, a chave ausente chegaria como `undefined`, e o cartao diria "sem venda no ML nem na Shopee" com a Shopee fora da conta.
+
+**3. OS DIAS FORA DA RAZAO (Ads da Shopee, `/faturamento`).** O ROAS e o ACOS do SQL agora excluem o dia sem um dos dois campos, mas o investimento e as vendas com Ads continuam somando todos os dias lidos. Assim, o ROAS pode nao ser a razao dos dois cartoes ao lado.
+- A ressalva do ROAS e do ACOS (TOTAL) e a linha de cada loja dizem "fora da razao: N dias sem o gasto e M sem as vendas", com a conta do SQL (`diasForaDaRazao`).
+- As formulas dizem "so nos dias com os dois informados pela Shopee".
+- A nota da serie deixa de dizer que o ROAS "fica acima/abaixo do real" (deixou de ser verdade) e fala so das barras.
+- Zero, nulo (loja nunca lida) e chave ausente nao viram texto.
+
+**Fica de fora:** o Suspense da cobertura do SKU, proposto pelo A3. A cobertura e uma linha por SKU e alimenta o "Risco de ruptura" do cabecalho em todas as abas, e a medicao do A1 aponta a curva ABC (`get_sku_abc_curve`) como o bloco pesado da pagina. Fica com o A3.
+
+**Publicacao:** so a web, sem migration. As migrations `20261015060000` e `20261015070000` ja estao na `main` (#188) e vao a producao pelo workflow, com as duas aprovacoes do dono.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **Unitarios:** `lib/sku-coverage-display.test.ts` e `lib/ads-shopee.test.ts`, 21 testes, 5 novos:
+  - a taxa com a Shopee dentro e o titulo com a parte dela;
+  - zero e nulo sem texto;
+  - o "sem venda" nos dois canais;
+  - os dias fora da razao, incluindo nulo e chave ausente.
+- **Fixture no banco isolado, com as migrations do #188:** a loja do seed em producao com pedidos lidos. O SKU do seed passa a 8 un em 30 dias, 3 delas da Shopee:
+  - `/reposicao` diz "Shopee na demanda · pedidos lidos ha 1 min", com "3 un da Shopee em 30 d" na linha;
+  - a gaveta mostra "8 un · 3 da Shopee";
+  - o cartao do SKU da 198,8 dias (53 ÷ 0,27/dia, o mesmo numero de `/reposicao`), com "3 un vieram da Shopee" no titulo.
+- **Suite inteira:** 236/236, com o banco recriado do zero e as migrations do #188 (233 com o servidor na porta 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/{sku-coverage-display,ads-shopee}.ts` e os testes, `apps/web/app/produtos/{inspecao.ts,inspecao-rapida.tsx}`, `apps/web/app/skus/[skuId]/page.tsx` e `apps/web/app/faturamento/ads-shopee.tsx`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

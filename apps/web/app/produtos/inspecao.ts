@@ -68,6 +68,8 @@ export interface SkuInspection {
     `{retrato.avgDailySales}` de distância de voltar à tela.
   */
   units30d: number | null;
+  /** Quanto de `units30d` veio da Shopee (C-65, D-466); nulo = a Shopee não entra na conta. */
+  units30dShopee: number | null;
   localQuantity: number | null;
   reservedQuantity: number | null;
   transitQuantity: number | null;
@@ -90,6 +92,7 @@ const VAZIO: SkuInspection = {
   isRuptura: null,
   stockIsVirtual: false,
   units30d: null,
+  units30dShopee: null,
   localQuantity: null,
   reservedQuantity: null,
   transitQuantity: null,
@@ -200,11 +203,14 @@ export async function inspecionarSku(
             units60: coverage.units_60d,
             units90: coverage.units_90d,
             historyDays90: coverage.history_days_90,
+            // Chave ausente = a função de antes da migration do C-65: a Shopee não entra (D-466).
+            units30Shopee: coverage.units_30d_shopee ?? null,
           },
     ),
     isRuptura: coverage?.is_ruptura ?? null,
     stockIsVirtual: coverage?.stock_is_virtual ?? false,
     units30d: coverage?.units_30d ?? null,
+    units30dShopee: coverage?.units_30d_shopee ?? null,
     localQuantity: dashboard?.local_quantity ?? null,
     reservedQuantity: dashboard?.reservado_quantity ?? null,
     transitQuantity: dashboard?.transito_quantity ?? null,

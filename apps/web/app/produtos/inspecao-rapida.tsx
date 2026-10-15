@@ -182,7 +182,13 @@ function Retrato({ retrato }: { retrato: SkuInspection }): ReactNode {
 
       <div className="sb-detail-row">
         <span>Vendas (30 d)</span>
-        <b>{formatCount(retrato.units30d)} un</b>
+        <b>
+          {formatCount(retrato.units30d)} un
+          {/* D-466: a venda já soma a Shopee; a nota diz quanto veio de lá. */}
+          {retrato.units30dShopee !== null && retrato.units30dShopee > 0 && (
+            <small>{formatCount(retrato.units30dShopee)} da Shopee</small>
+          )}
+        </b>
       </div>
 
       <div className="sb-detail-row">

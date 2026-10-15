@@ -21,6 +21,8 @@ const SEED = {
   units60: 5,
   units90: 5,
   historyDays90: 90,
+  // Sem loja Shopee em produção com pedidos lidos: a venda é só a do ML (D-466).
+  units30Shopee: null,
 };
 
 describe("descreverCobertura", () => {
@@ -71,6 +73,28 @@ describe("descreverCobertura", () => {
 
     expect(r.dias).toBe(0);
     expect(r.valor).toBe("0,0 dias");
+  });
+
+  it("a Shopee na venda (D-466): a taxa já a soma, e o título diz quanto veio de lá", () => {
+    const r = descreverCobertura({ ...SEED, units15: 8, units30: 9, units60: 9, units90: 9, units30Shopee: 4 });
+
+    // 53 ÷ (9/30) — a mesma conta, com a Shopee dentro da taxa.
+    expect(r.ressalva).toBe("aproveitável 53 ÷ 0,30/dia");
+    expect(r.titulo).toContain("A venda de 30 dias soma o ML e a Shopee: 4 un vieram da Shopee");
+  });
+
+  it("Shopee na conta sem venda dela, ou fora da conta: o título não ganha texto", () => {
+    expect(descreverCobertura({ ...SEED, units30Shopee: 0 }).titulo).not.toContain("Shopee");
+    expect(descreverCobertura(SEED).titulo).not.toContain("Shopee");
+  });
+
+  it("sem venda com a Shopee na conta diz que é nos dois canais; fora da conta, não promete a Shopee", () => {
+    const zerado = { ...SEED, units15: 0, units30: 0, units60: 0, units90: 0 };
+
+    expect(descreverCobertura({ ...zerado, units30Shopee: 0 }).ressalva).toBe(
+      "sem venda nos últimos 30 dias, no ML nem na Shopee — não há taxa para dividir",
+    );
+    expect(descreverCobertura(zerado).ressalva).toBe("sem venda nos últimos 30 dias — não há taxa para dividir");
   });
 
   it("sem linha de cobertura a tela diz isso, e não inventa zero", () => {
