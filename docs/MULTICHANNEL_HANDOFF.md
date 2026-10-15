@@ -77,15 +77,14 @@
 - As cadências de `/saude` para os jobs novos do A1: devoluções e repasse de hora em hora, Ads a cada 3 h (C-62, C-64, C-63). **Na `main`, #170.**
 - T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "só no ML", "só na Shopee" e "nos dois" nos filtros de anúncio e venda, os cartões de "sem anúncio/venda" em "nenhum marketplace" com o só do ML ao lado e a coluna de giro por marketplace, sem total. **Na `main`, #171.**
 - T5c — os Ads CPC da loja no `/faturamento` da Shopee (D-456, consome o C-63): seção própria, rotulada "CPC da loja", fora do resultado e sem somar com o Mercado Ads. **Na `main`, #173.**
-- T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.**
+- T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 **Em andamento**
-- O merge do #177 (com a CI verde) e, depois dele, o #176 do A3 (D-500).
+- Nada: o #177 (que levou o #164, o #165, o #167 e o #174) e o #176 do A3 (D-500) estão na `main` e em produção.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - A tela da demanda da Shopee na cobertura e na sugestão de compra (T-R3), sobre o C-65 do A1 — espera o dono liberar a mudança da decisão de 14/10.
-- `/curva-abc`: as leituras que falham e viram lista vazia (achado do A3), depois do #177.
 - Os jobs novos (devoluções, Ads, repasse) no cartão Shopee de `/integracoes`, quando estiverem rodando em produção.
 - T7 busca universal (C-57) → T8 central e meta (Go Live).
 
