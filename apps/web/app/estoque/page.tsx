@@ -2,8 +2,10 @@ import { computeUsableStock } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { FilterPill } from "../../components/filter-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
@@ -346,7 +348,7 @@ export default async function EstoquePage({
           }
         >
           <div className="sb-stock-toolbar">
-            <form method="get" action="/estoque" className="sb-stock-search">
+            <FormularioFiltro action="/estoque" className="sb-stock-search">
               {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
               {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
               {filters.category !== null && <input type="hidden" name="categoria" value={filters.category} />}
@@ -368,9 +370,10 @@ export default async function EstoquePage({
               {filtrosAtivos.length > 0 && (
                 <Link className="sb-text-button" href="/estoque">
                   Limpar filtros
+                  <CarregandoSeODemorar />
                 </Link>
               )}
-            </form>
+            </FormularioFiltro>
 
             <p>
               <strong>Como ler:</strong> local é o saldo físico; reservado já está comprometido; Full pertence ao

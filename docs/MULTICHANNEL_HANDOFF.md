@@ -1,16 +1,19 @@
 # Handoff multicanal
 
 > Estado corrente da frente multicanal (Mercado Livre + Shopee), dividida entre
-> o **Agente 1** (integração, backend, dados) e o **Agente 2** (telas, filtros,
-> dashboards). **Só o AGORA, sem diário** (como `docs/HANDOFF.md`): o porquê vira
-> `D-xxx`; os contratos de dados detalhados estão em
-> `docs/MULTICHANNEL_CONTRACTS.md` (Agente 1); a auditoria de telas e o modelo do
-> filtro, em `docs/MULTICHANNEL_SCREENS.md` (Agente 2).
+> o **Agente 1** (integração, backend, dados), o **Agente 2** (telas, filtros,
+> dashboards) e o **Agente 3** (UX/UI, carregamento, design system). **Só o
+> AGORA, sem diário** (como `docs/HANDOFF.md`): o porquê vira `D-xxx`; os
+> contratos de dados detalhados estão em `docs/MULTICHANNEL_CONTRACTS.md`
+> (Agente 1); a auditoria de telas e o modelo do filtro, em
+> `docs/MULTICHANNEL_SCREENS.md` (Agente 2); o padrão de carregamento, a
+> auditoria de UX e a fila, em `docs/UX_SYSTEM.md` (Agente 3).
 >
 > **Regras:** cada agente edita só a própria seção; as seções comuns mudam por
-> acordo, com mensagem ao outro antes. Quem chega à `main` depois faz rebase,
+> acordo, com mensagem aos outros antes. Quem chega à `main` depois faz rebase,
 > fica com o arquivo da `main` e reaplica só a própria seção. Contratos: `C-01…`
-> do Agente 2 (consumo), `C-50…` do Agente 1 (dados).
+> do Agente 2 (consumo), `C-50…` do Agente 1 (dados). Decisões: Agente 1 nos
+> ímpares e Agente 2 nos pares abaixo de D-500; Agente 3 de D-500 em diante.
 
 ---
 
@@ -96,6 +99,28 @@
 - C-63: o TOTAL soma o gasto e as vendas ignorando o dia nulo, e um dia sem o gasto infla o ROAS. A tela avisa pela série; o A1 corrige no SQL (D-455).
 - C-58: o TOTAL vem com `receita_bruta` NULA quando as lojas somáveis não têm pedido no período, e a linha da loja vem 0 — a tela mostra "—" (não inventa o zero), mas o certo é o TOTAL dizer 0 quando há loja lida sem pedido. Pedido ao A1.
 - e2e: rodar a suíte duas vezes no mesmo banco quebra `atendimento` e `notificacoes` (o seed não desfaz caso assumido nem notificação lida) — `db reset` entre rodadas.
+
+---
+
+## Agente 3 — UX/UI, carregamento e design system
+
+Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na faixa **D-500+** (combinada com A1 e A2). Território: componentes compartilhados de carregamento e estado (`carregando*.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx`, `filter-menu.tsx`, `filter-pill.tsx`, `kpi-strip.tsx`, `saved-filters.tsx`), o bloco CARREGAMENTO de `globals.css` e as telas sem branch aberta do A2. Não muda dado, consulta, parâmetro de URL nem regra de negócio.
+
+**Concluído**
+- Auditoria de carregamento, interação e estados especiais (14/10): 17 achados com evidência, `docs/UX_SYSTEM.md` §2.
+- D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms.
+
+**Em andamento**
+- D-500 no **#176** (só web, sem migration): entra quando a CI fechar e o dono mergear.
+
+**Falta** (`docs/UX_SYSTEM.md` §3)
+- Atualização no lugar nos 45 `<Link>` sem indicador e nas 24 buscas GET restantes. Começa pelas telas sem branch do A2; `/anuncios`, `/vendas/shopee`, `/curva-abc`, `/faturamento` e `/produtos` só quando o A2 liberar.
+- Botão pendente compartilhado e `EstadoDaTela` (erro, vazio e permissão).
+- Shell num layout: proposta ao dono, depois de #164, #165 e #167.
+
+**Para o A2**
+- Falha de leitura mostrada como "nenhum" em `/vinculacoes`, `/usuarios` (histórico), `/curva-abc` (opções), `/compras/novo`, `/diagnostico` e `/skus/[skuId]` (`docs/UX_SYSTEM.md` §2, item 8). É lógica de tela, então fica com você; A3 dá a forma do estado de erro.
+- Tela nova de filtro: use `ItemDeMenu`/`FilterMenu`, `FilterPill` e `FormularioFiltro`, e nunca `<a href="?…">` ou `<form method="get">`.
 
 ---
 
