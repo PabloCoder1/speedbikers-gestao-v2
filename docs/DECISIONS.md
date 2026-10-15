@@ -16057,6 +16057,59 @@ A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-476 - Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
+
+**Contexto:** a Busca Universal (Ctrl+K, `search_entities`, D-060) achava SKU, anuncio e conta do ML, fornecedor, pedido de compra, atendimento e NF-e. Nao achava nada da Shopee (lacuna C-08 de `docs/MULTICHANNEL_SCREENS.md`).
+
+O A1 estendeu a mesma funcao no C-57 (D-467, #201), sem segunda busca. Ela ganha tres tipos:
+- `loja`: a loja Shopee; a de teste vem marcada no subtitulo, com destino em `/contas`;
+- `anuncio_shopee`: o destino e `/anuncios/shopee?loja=&q=<item_id>`;
+- `pedido_shopee`: o destino e `/vendas/shopee?loja=&from=&to=&pedido=<order_sn>`, com o dia do pedido.
+
+A funcao tambem ganha tres colunas no fim (`marketplace`, `entity_id`, `account_id`). A `get_shopee_orders` ganha `p_order_sn`. Anuncio e pedido da loja de teste ficam fora, como nas telas.
+
+**1. OS ROTULOS.** `SEARCH_ENTITY_TYPES` vai a dez, cada tipo da Shopee ao lado do que ja existia da mesma coisa: "Anuncio Shopee", "Loja Shopee" e "Pedido Shopee". A frase da caixa, derivada da lista (A15, D-323), passa a dizer as dez. O teste exato da frase e o e2e mudam junto, porque e o momento de alguem ler o que a tela promete.
+
+**2. "OUTROS", NUNCA O CODIGO CRU.** O `searchEntityLabel` devolvia o codigo do banco quando faltava rotulo, e `anuncio_shopee` apareceria como cabecalho (a armadilha de D-208). Agora um tipo que a lista nao conhece vira "Outros".
+
+Isso e a rede para a ordem de publicacao, que fica assim:
+1. o #201 e a T7 entram juntos;
+2. a Vercel publica;
+3. so entao o A1 roda a migration `20261015110000`.
+
+Se a ordem escapar, a paleta mostra "Outros", e nao `pedido_shopee`.
+
+**3. A PALETA.** A `SearchResult` passa a declarar `marketplace`, opcional: a funcao de antes da migration nao a devolve, e o destino continua sendo o `href` que o SQL monta. A paleta ja agrupa por tipo, entao os grupos novos aparecem sem mudar a navegacao pelo teclado.
+
+**4. A /vendas/shopee ABRE O PEDIDO.**
+- `?pedido=` vira filtro: so letra, digito e hifen, de 2 a 40, a mesma regra do banco. Fora disso, nao e filtro, e a lista e a de sempre.
+- O filtro vai ao `p_order_sn`, que casa o numero sem diferenciar maiuscula.
+- Aparece como chip ("Pedido X", com o x para tirar), viaja com os outros filtros e com o periodo personalizado, e "Limpar filtros" o tira junto.
+- O numero que nao esta no recorte diz isso ("O pedido X nao esta neste recorte", com "Limpar filtros"), nunca "nenhum pedido no periodo".
+- O caminho de volta para `/vendas` nao leva o pedido.
+
+**Fica de fora:** o pedido de venda do ML, que nao tem destino real (D-060). Entra quando houver uma tela que o abra.
+
+**Publicacao:** web, junto com o #201 (que traz a migration `20261015110000`, que so roda depois da web no ar).
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **Unitarios:** `lib/labels.test.ts` e `lib/shopee-sales.test.ts`, 26 testes, 6 novos ou ampliados:
+  - a frase das dez entidades;
+  - "Outros" para o tipo desconhecido;
+  - o `?pedido=` valido, o fora da regra (inclusive com aspas) e o que viaja e sai nos links.
+- **e2e no banco isolado com a migration do C-57:** `busca` e `vendas-shopee` 12/12. Os 3 casos novos:
+  - a loja Shopee do seed aparece no grupo "Loja Shopee", marcada como teste, e abre Contas;
+  - `?pedido=` em minusculas mostra so aquele pedido, com o chip, e "Limpar filtros" devolve a lista;
+  - um numero fora do recorte diz isso.
+- **Fotos:** a paleta com o grupo "Loja Shopee" e o chip do pedido.
+- **Suite inteira:** 239/239, com o banco recriado do zero e a migration do C-57 (236 com o servidor na porta 3300, com os 3 casos novos, e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/{labels,shopee-sales}.ts` e os testes, `apps/web/components/command-palette.tsx`, `apps/web/app/vendas/shopee/page.tsx` e `apps/web/e2e/{busca,vendas-shopee}.spec.ts`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration nova, RPC, worker ou api (a migration e a do #201).
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

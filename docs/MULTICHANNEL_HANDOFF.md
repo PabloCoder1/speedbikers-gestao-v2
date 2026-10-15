@@ -83,7 +83,8 @@
 - T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **na `main`, #192**.
 - E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Na `main`, #197.**
 - E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Na `main`, #197.**
-- E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Em código e validada** (suíte e2e inteira), no PR próprio.
+- E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Na `main`, #203.**
+- T7 — a Shopee na Busca Universal (D-476, consome o C-57): "Loja Shopee", "Anúncio Shopee" e "Pedido Shopee" na paleta, "Outros" para tipo que a tela não conhece (nunca o código cru), e a `/vendas/shopee` abrindo o pedido que a busca achou (`?pedido=` como filtro, com chip e "Limpar filtros"). **Em código e validada** (suíte e2e inteira), empilhada no #201.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -91,10 +92,10 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada: a D-474 (os estados do SKU) está no PR próprio.
+- T7 (D-476) empilhada no #201 do A1: os dois entram juntos, a Vercel publica, e só então o A1 roda a `20261015110000`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T7 busca universal — o A1 faz o C-57 (D-467) estendendo a `search_entities` (lojas, anúncios e pedidos da Shopee, com marketplace e ids); a T7 entra empilhada no PR dele, com os rótulos dos grupos novos e o `?pedido=` na `/vendas/shopee`. → T8 central e meta (Go Live).
+- T8 central e meta (Go Live).
 
 **Bloqueios**
 - Tudo o que é Shopee só mostra números com loja **live**: hoje só há a sandbox. O Go Live do app é do dono (o Cloud NAT com IP fixo já está em produção, D-457).

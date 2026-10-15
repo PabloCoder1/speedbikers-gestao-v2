@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **472** (D-001 a D-509).
+Decisões registradas: **473** (D-001 a D-509).
 
 ## Por domínio
 
@@ -380,7 +380,7 @@ Decisões registradas: **472** (D-001 a D-509).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (44)
+### vendas/métricas (45)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -423,6 +423,7 @@ Decisões registradas: **472** (D-001 a D-509).
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 - **D-463** — get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
 - **D-470** — Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
+- **D-476** — Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
