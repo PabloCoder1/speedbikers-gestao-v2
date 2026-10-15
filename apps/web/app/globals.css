@@ -8349,32 +8349,6 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   min-width: 13rem;
 }
 
-.sb-rep-aviso {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sb-space-3);
-  margin: 0 0 var(--sb-space-3);
-  padding: 0.875rem var(--sb-space-3);
-  border: 1px solid var(--sb-border);
-  border-left: 3px solid var(--sb-accent-ink);
-  border-radius: var(--sb-radius);
-  background: var(--sb-accent-soft);
-}
-
-.sb-rep-aviso b {
-  display: block;
-  font-size: 0.8125rem;
-  color: var(--sb-primary);
-}
-
-.sb-rep-aviso span {
-  display: block;
-  margin-top: 0.125rem;
-  font-size: 0.75rem;
-  color: var(--sb-text-soft);
-}
-
 /* RESUMO DE DECISÃO — quatro cartões na mesma linha. */
 .sb-rep-resumo {
   display: grid;
@@ -8833,11 +8807,6 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
 @media (max-width: 850px) {
   .sb-rep-estados {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sb-rep-aviso {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .sb-rep-busca .sb-input {
@@ -16540,16 +16509,13 @@ td.sb-pco-num-linha {
 .sb-purchase-export-group > span { color: var(--sb-text-soft); font-size: 0.6875rem; }
 .sb-purchase-export-group > div { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.15rem; }
 .sb-purchase-export-internal { background: var(--sb-neutral-soft); }
-.sb-pod-error { margin: var(--sb-space-3) 1.25rem; color: var(--sb-danger); font-size: 0.8125rem; }
 .sb-pod-table-wrap { overflow-x: auto; }
 .sb-pod-item-title { display: block; color: var(--sb-text-soft); font-family: var(--sb-sans); font-size: 0.75rem; }
 .sb-pod-event { flex: 1; min-width: 0; }
-.sb-pod-state { display: grid; justify-items: center; gap: 0.4rem; margin-top: var(--sb-space-4); padding: 2rem 1rem; border: 1px solid var(--sb-danger); border-radius: var(--sb-radius); background: var(--sb-danger-soft); color: var(--sb-danger-ink); font-size: 0.8125rem; text-align: center; }
 
 /* DASHBOARD DO SKU (lote 4 do pente fino, 18/09): os estilos inline viraram classes, com os mesmos valores. */
 .sb-skud-bleed { margin: 0 calc(-1 * var(--sb-space-3)); }
 .sb-skud-caption { color: var(--sb-text-soft); font-size: 0.75rem; }
-.sb-skud-danger { color: var(--sb-danger); }
 .sb-skud-empty { margin: 0; padding: var(--sb-space-3); color: var(--sb-text-soft); font-size: 0.6875rem; }
 .sb-skud-footnote { margin: var(--sb-space-2) 0 0; color: var(--sb-text-soft); font-size: 0.625rem; }
 .sb-skud-grow { flex: 1; min-width: 0; }
@@ -16595,7 +16561,6 @@ td.sb-pco-num-linha {
 .sb-skud-block-soft { display: block; margin-top: 0.5rem; color: var(--sb-text-soft); }
 .sb-skud-block-xs { display: block; color: var(--sb-text-soft); font-size: 0.625rem; }
 .sb-skud-danger-border { color: var(--sb-danger); border-color: var(--sb-danger); }
-.sb-skud-lead-mb4 { margin-bottom: var(--sb-space-4); color: var(--sb-text-soft); font-size: 0.8125rem; }
 .sb-skud-note-mb { margin-bottom: var(--sb-space-3); color: var(--sb-text-soft); font-size: 0.6875rem; }
 .sb-skud-rule { border-top: 1px solid var(--sb-border); }
 

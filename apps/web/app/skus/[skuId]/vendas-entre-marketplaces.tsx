@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { Panel } from "../../../components/panel";
 import { StatePill } from "../../../components/state-pill";
 import { formatCount, formatCurrency } from "../../../lib/format";
 import { MARKETPLACE_ROTULO } from "../../../lib/marketplace";
-import { sanitizeErrorText } from "../../../lib/sanitize";
 import { contaDeTeste, separarVendasDoSku, type VendaDoSkuPorConta } from "../../../lib/vendas-por-sku";
 
 /**
@@ -22,17 +22,22 @@ export function VendasEntreMarketplaces({
   linhas,
   erro,
   dias,
+  tentarDeNovo,
 }: {
   linhas: readonly VendaDoSkuPorConta[];
   erro: { message: string } | null;
   dias: number;
+  /** A mesma URL, para "Tentar de novo" (D-474). */
+  tentarDeNovo?: string;
 }): ReactNode {
   if (erro !== null) {
     return (
-      <p className="sb-skud-danger" role="alert">
-        Não foi possível carregar as vendas entre marketplaces:{" "}
-        {sanitizeErrorText(erro.message) ?? "a leitura falhou neste carregamento."}
-      </p>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Não foi possível carregar as vendas entre marketplaces"
+        detalhe={erro.message}
+        acao={tentarDeNovo === undefined ? undefined : { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     );
   }
 
@@ -93,7 +98,7 @@ export function VendasEntreMarketplaces({
           subtitle="Preço médio é a razão sobre as somas de cada conta ou loja — nunca média de médias."
         >
           {contas.length === 0 ? (
-            <p className="sb-empty">Nenhuma venda deste produto no período, em nenhum marketplace.</p>
+            <EstadoDaTela tipo="vazio" titulo="Nenhuma venda deste produto no período, em nenhum marketplace" />
           ) : (
             <div className="sb-skud-scroll">
               <table className="sb-table sb-skud-min-44" aria-label="Vendas do produto por marketplace, conta e loja">

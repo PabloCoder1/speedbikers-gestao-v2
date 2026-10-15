@@ -31,7 +31,6 @@ import {
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { formatAge } from "../../../lib/relative-time";
-import { sanitizeErrorText } from "../../../lib/sanitize";
 import {
   formatShopeeMoney,
   isShopeeSchemaMissing,
@@ -266,6 +265,8 @@ export default async function SkuDashboardPage({
   const { skuId } = await params;
   const query = await searchParams;
   const tab = parseTab(query.aba);
+  // D-474: "Tentar de novo" é a MESMA URL, com a aba.
+  const tentarDeNovo = { href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   const supabase = await createClient();
 
@@ -852,9 +853,7 @@ export default async function SkuDashboardPage({
       {tab === "visao-geral" && (
         <>
           {dashboardResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar o resumo: {dashboardResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o resumo" detalhe={dashboardResult.error.message} acao={tentarDeNovo} />
           )}
 
           {dashboard !== null && (
@@ -1041,6 +1040,7 @@ export default async function SkuDashboardPage({
               linhas={vendasPorContaResult.data ?? []}
               erro={vendasPorContaResult.error}
               dias={LOOKBACK_DAYS}
+              tentarDeNovo={tentarDeNovo.href}
             />
           )}
 
@@ -1059,13 +1059,11 @@ export default async function SkuDashboardPage({
           */}
 
           {salesResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar as vendas: {salesResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as vendas" detalhe={salesResult.error.message} acao={tentarDeNovo} />
           )}
 
           {salesResult.error === null && salesTotal === null && (
-            <p className="sb-empty">Sem dado de vendas para este SKU.</p>
+            <EstadoDaTela tipo="vazio" titulo="Sem dado de vendas para este SKU" />
           )}
 
           {salesResult.error === null && salesTotal !== null && (
@@ -1165,9 +1163,7 @@ export default async function SkuDashboardPage({
       {tab === "estoque" && (
         <>
           {dashboardResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar o resumo: {dashboardResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o resumo" detalhe={dashboardResult.error.message} acao={tentarDeNovo} />
           )}
 
           {dashboard !== null && (
@@ -1223,9 +1219,7 @@ export default async function SkuDashboardPage({
           <div className="sb-panel-body">
 
           {listingsResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar os anúncios: {listingsResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os anúncios" detalhe={listingsResult.error.message} acao={tentarDeNovo} />
           )}
 
           {/* T-R6: sem as contas, "Vincular anúncio" abriria sem conta nenhuma para escolher. */}
@@ -1235,12 +1229,12 @@ export default async function SkuDashboardPage({
               titulo="Não foi possível carregar as contas"
               descricao="O vínculo manual fica sem a lista de contas até a leitura voltar."
               detalhe={contasResult.error.message}
-              acao={{ href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+              acao={tentarDeNovo}
             />
           )}
 
           {listingsResult.error === null && listings.length === 0 && (
-            <p className="sb-skud-soft">Nenhum anúncio vinculado a este SKU.</p>
+            <EstadoDaTela tipo="vazio" titulo="Nenhum anúncio vinculado a este SKU" />
           )}
 
           {listingsResult.error === null && listings.length > 0 && (
@@ -1363,18 +1357,20 @@ export default async function SkuDashboardPage({
           >
             <div className="sb-panel-body">
               {shopeeAusente && (
-                <p className="sb-skud-soft">Os anúncios da Shopee chegam com a próxima atualização do banco.</p>
+                <EstadoDaTela tipo="vazio" titulo="Os anúncios da Shopee chegam com a próxima atualização do banco." />
               )}
 
               {shopeeResult.error !== null && !shopeeAusente && (
-                <p className="sb-skud-danger" role="alert">
-                  Não foi possível carregar os anúncios da Shopee:{" "}
-                  {sanitizeErrorText(shopeeResult.error.message) ?? "a leitura falhou neste carregamento."}
-                </p>
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="Não foi possível carregar os anúncios da Shopee"
+                  detalhe={shopeeResult.error.message}
+                  acao={tentarDeNovo}
+                />
               )}
 
               {shopeeResult.error === null && anunciosShopee.length === 0 && (
-                <p className="sb-skud-soft">Nenhum anúncio Shopee vinculado a este SKU.</p>
+                <EstadoDaTela tipo="vazio" titulo="Nenhum anúncio Shopee vinculado a este SKU" />
               )}
 
               {shopeeResult.error === null && anunciosShopee.length > 0 && (
@@ -1475,16 +1471,15 @@ export default async function SkuDashboardPage({
           </p>
 
           {fullResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar o Full: {fullResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o Full" detalhe={fullResult.error.message} acao={tentarDeNovo} />
           )}
 
           {fullResult.error === null && full.length === 0 && (
-            <p className="sb-skud-soft">
-              Nenhuma conta com snapshot recente de Full para este SKU. Ausência de snapshot não é o mesmo que
-              saldo zero — é a falta do dado.
-            </p>
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhuma conta com snapshot recente de Full para este SKU"
+              descricao="Ausência de snapshot não é o mesmo que saldo zero — é a falta do dado."
+            />
           )}
 
           {fullResult.error === null && full.length > 0 && (
@@ -1566,16 +1561,19 @@ export default async function SkuDashboardPage({
           </p>
 
           {pricesResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar as mudanças de preço: {pricesResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as mudanças de preço" detalhe={pricesResult.error.message} acao={tentarDeNovo} />
           )}
 
           {pricesResult.error === null && prices.length === 0 && (
-            <p className="sb-empty">
-              Nenhuma mudança de preço observada neste período. Isso <strong>não</strong> quer dizer que o preço
-              ficou parado.
-            </p>
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhuma mudança de preço observada neste período"
+              descricao={
+                <>
+                  Isso <strong>não</strong> quer dizer que o preço ficou parado.
+                </>
+              }
+            />
           )}
 
           {pricesResult.error === null && prices.length > 0 && (
@@ -1682,13 +1680,11 @@ export default async function SkuDashboardPage({
           </p>
 
           {costHistoryResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar o histórico de custo: {costHistoryResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o histórico de custo" detalhe={costHistoryResult.error.message} acao={tentarDeNovo} />
           )}
 
           {costHistoryResult.error === null && costHistory.length === 0 && (
-            <p className="sb-empty">Nenhuma mudança registrada desde o início do rastreio (30/08/2026).</p>
+            <EstadoDaTela tipo="vazio" titulo="Nenhuma mudança registrada desde o início do rastreio (30/08/2026)" />
           )}
 
           {costHistoryResult.error === null && costHistory.length > 0 && (
@@ -1738,16 +1734,15 @@ export default async function SkuDashboardPage({
           */}
 
           {timelineResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar a linha do tempo: {timelineResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar a linha do tempo" detalhe={timelineResult.error.message} acao={tentarDeNovo} />
           )}
 
           {timelineResult.error === null && timeline.length === 0 && (
-            <p className="sb-skud-lead-mb4">
-              Nenhum evento registrado para este SKU — a linha do tempo nasce dos eventos de domínio (webhook e
-              reconciliações) e só enxerga o que o sistema registrou.
-            </p>
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhum evento registrado para este SKU"
+              descricao="A linha do tempo nasce dos eventos de domínio (webhook e reconciliações) e só enxerga o que o sistema registrou."
+            />
           )}
 
           {timelineResult.error === null && timeline.length > 0 && (
@@ -1862,7 +1857,7 @@ export default async function SkuDashboardPage({
                   titulo="As ações abertas deste SKU não foram lidas"
                   descricao="O diagnóstico abaixo não as inclui, e o nível pode estar abaixo do real."
                   detalhe={acoesAbertasResult.error.message}
-                  acao={{ href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+                  acao={tentarDeNovo}
                 />
               )}
               <div className="sb-stat-grid">
@@ -2069,29 +2064,35 @@ export default async function SkuDashboardPage({
           </p>
 
           {decisionsResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar as decisões: {decisionsResult.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as decisões" detalhe={decisionsResult.error.message} acao={tentarDeNovo} />
           )}
 
           {decisionsResult.error === null && decisions.length === 0 && (
-            <p className="sb-skud-soft">
-              Nenhuma decisão registrada para este SKU.{" "}
+            <>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Nenhuma decisão registrada para este SKU."
+                descricao={
+                  openActionsResult.error === null && openActions !== null && openActions > 0 ? (
+                    <>
+                      Há {formatCount(openActions)} ação(ões) aberta(s) dele na <Link href="/acoes">Central de Ações</Link>{" "}
+                      — é lá que uma decisão é registrada e depois medida.
+                    </>
+                  ) : openActionsResult.error === null && openActions === 0 ? (
+                    "Também não há ação aberta para ele na Central de Ações."
+                  ) : undefined
+                }
+              />
+              {/* A contagem que falha é dita à parte: "nenhuma decisão" continua verdade, a contagem é que não veio. */}
               {openActionsResult.error !== null && (
-                <span className="sb-skud-danger" role="alert">
-                  Não foi possível contar as ações abertas: {openActionsResult.error.message}
-                </span>
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="Não foi possível contar as ações abertas"
+                  detalhe={openActionsResult.error.message}
+                  acao={tentarDeNovo}
+                />
               )}
-              {openActionsResult.error === null && openActions !== null && openActions > 0 && (
-                <>
-                  Há {formatCount(openActions)} ação(ões) aberta(s) dele na{" "}
-                  <Link href="/acoes">Central de Ações</Link> — é lá que uma decisão é registrada e depois medida.
-                </>
-              )}
-              {openActionsResult.error === null && openActions === 0 && (
-                <>Também não há ação aberta para ele na Central de Ações.</>
-              )}
-            </p>
+            </>
           )}
 
           {decisionsResult.error === null && decisions.length > 0 && (
