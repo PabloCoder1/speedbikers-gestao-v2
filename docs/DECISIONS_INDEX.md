@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **442** (D-001 a D-500).
+Decisões registradas: **443** (D-001 a D-500).
 
 ## Por domínio
 
@@ -401,7 +401,7 @@ Decisões registradas: **442** (D-001 a D-500).
 - **D-432** — Shopee, ingestao robusta (E1 da frente multicanal): o pedido recusado nao trava o financeiro, o lote de pedidos grava numa transacao que nao regride, e o erro da loja interrompe em vez de marcar item por item
 - **D-444** — Telas multicanais, etapa T6a: o ranking de produtos de /vendas chega ao Todos e a Shopee, a aba Vendas do SKU ganha o total entre marketplaces por conta e loja, e a loja de teste ganha o selo no painel Shopee do SKU
 
-### worker/infra (81)
+### worker/infra (82)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -484,4 +484,5 @@ Decisões registradas: **442** (D-001 a D-500).
 - **D-406** — A projecao da meta pesa as datas comerciais pelo efeito medido dia a dia na ocorrencia do ano anterior
 - **D-414** — So a recusa definitiva da troca de token derruba a conta; o 403 de bloqueio de uma instancia do worker e passageiro
 - **D-443** — Composicao do faturamento da Shopee (C-61): uma definicao do pedido, a cascata pelos termos da formula oficial do escrow com "outros" fechando, a serie diaria, o por SKU sem rateio, o TOTAL do C-58 somando como a linha e o C-58 150x mais rapido
+- **D-453** — Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
 

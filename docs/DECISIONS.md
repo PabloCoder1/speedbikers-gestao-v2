@@ -15259,6 +15259,33 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `supabase/migrations/20261015050000_repasse_shopee.sql`, `packages/shopee/src/{escrow-list,escrow-list.test,index}.ts`, `apps/worker/src/handlers/{shopee-escrow-releases-sync,shopee-escrow-releases-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
 
+## D-453 - Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
+
+**Contexto:** a Shopee so e lida pelo gatilho de hora em hora (D-426) e pelo encadeamento dos jobs: um pedido novo ou cancelado leva ate uma hora para aparecer. A E7 lista o push ("Live Push") entre o que falta, conferido na documentacao antes.
+
+**Documentacao oficial conferida em 14/10/2026** (guia "Push Mechanism notifications", developer-guide/18, e as paginas `order_status_push`, `return_updates_push` e `shop_authorization_canceled_push`):
+- a Shopee manda um POST ao endereco cadastrado no Console (ou por `v2.push.set_push_config`); o app Seller In House System recebe todos os pushes;
+- o cabecalho `Authorization` traz o HMAC-SHA256 (hex) da chave do parceiro sobre `<endereco>|<corpo cru>` -- a documentacao pede para nao reserializar o corpo;
+- a resposta tem de ser 2xx de corpo VAZIO em 3 s; senao, repete em 300 s, 1800 s e 10800 s; com mais de 600 pushes em 6 h, abaixo de 70% de sucesso vem aviso e abaixo de 30% a assinatura e desligada;
+- sem ordem garantida e com repeticao; o push so avisa que algo mudou -- o dado vem da API;
+- `order_status_push` (codigo 3: `ordersn`, `status`, `update_time`), `return_updates_push` (29: `order_sn`, `return_sn`, campos alterados); `shop_authorization_canceled_push` (2) tem exemplos que se contradizem (`shop_id`, `shopid`, listas; `data` objeto ou lista).
+
+**Decisao:**
+
+1. **Rota publica `POST /push/shopee` na api**, FORA de `/webhooks/*` (a allowlist de IP de la e do Mercado Livre). A autenticacao e a assinatura sobre o corpo cru, comparada em tempo constante, com o endereco EXATO cadastrado: `SHOPEE_PUSH_URL`, ou a origem de `SHOPEE_REDIRECT_URI` + `/push/shopee` (o que o deploy ja monta).
+2. **Push sem assinatura valida e ignorado, mas recebe 200 de corpo vazio:** a verificacao do endereco no Console nao diz se vem assinada, e erro so baixaria a taxa de sucesso. Nada e feito com ele. So a falha passageira (ler a loja, enfileirar) responde 503, para a Shopee repetir.
+3. **O push so ANTECIPA o job de sempre:** codigo 3 -> `shopee.orders.sync`, codigo 29 -> `shopee.returns.sync`, da loja (ambiente da api, CONECTADA). Os avisos de uma loja numa janela de 5 minutos viram UMA tarefa no fim da janela (chave com o fim da janela e atraso ate ele): nenhum aviso se perde e a carga fica em 12 leituras por hora por loja. O gatilho de hora em hora continua como rede (o push nao tem entrega garantida).
+4. **Autorizacao cancelada (2) so vai para o log** (aviso): o formato e contraditorio, e a renovacao do token ja marca a loja quando a Shopee recusa. Os outros codigos: 200 e log.
+5. **Nenhuma tabela nova:** o push nao carrega dado que a V3 guarde; o que conta e a leitura que ele antecipa (`job_runs`).
+
+**Verificacao:**
+- **Assinatura:** o HMAC de um vetor calculado a parte (Python), maiusculas aceitas, endereco/corpo/chave trocados recusados, ausente e malformada recusadas; o envelope dos exemplos oficiais.
+- **Rota:** pedido -> tarefa de pedidos no fim da janela com o atraso certo e 200 de corpo vazio; devolucao -> tarefa de devolucoes, o aviso repetido na mesma tarefa; sem assinatura valida -> 200 sem consultar nada; loja desconhecida ou desconectada, codigo sem acao e autorizacao cancelada -> 200 sem enfileirar (a cancelada no log como aviso); falha ao ler a loja ou enfileirar -> 503; corpo invalido -> 200; sem configuracao -> 503; GET e caminhos vizinhos -> 404. A api inteira: 469 testes.
+- **Mutacao:** 7 regras estragadas (assinatura ignorada, janela pelo agora, sem atraso, qualquer ambiente, loja desconectada aceita, devolucao virando pedido, falha engolida) -- todas derrubam teste.
+- **A conferir depois do deploy da api:** cadastrar o endereco no Console (sandbox) e ver a verificacao passar e o primeiro push chegar.
+
+**Impacto:** `packages/shopee/src/{push,push.test,index}.ts`, `apps/api/src/{shopee-push,shopee-push.test,app,index,env}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,SHOPEE,DEPLOYMENT,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem migration. Publicacao: a api (o worker nao muda); depois, o dono cadastra `https://<api>/push/shopee` no Console e marca os pushes 3 e 29.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

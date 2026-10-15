@@ -186,6 +186,17 @@ real do Mercado Livre. Nenhuma requisição = o painel ainda não está enviando
 
 ---
 
+## 6.2 Configuração externa — push da Shopee (D-453)
+
+No Console da Shopee (`open.shopee.com` → Console → **Push Mechanism** → o app → **Set Push**), depois de publicar a api:
+
+| O quê | Valor | Por quê |
+|---|---|---|
+| Callback URL | `https://<api>/push/shopee` — em produção, `https://api-p6gzq3hzca-rj.a.run.app/push/shopee` | Entra na assinatura: tem de ser IGUAL ao que a api usa (`SHOPEE_PUSH_URL`, ou a origem de `SHOPEE_REDIRECT_URI` + `/push/shopee`, que o deploy já monta) |
+| Pushes | `order_status_push` (3) e `return_updates_push` (29) | Os dois com ação; os outros só iriam para o log |
+
+**Como verificar:** a verificação do endereço passa no Console; no log da api, `shopee_push_enqueued` depois de um pedido do sandbox mudar; `shopee_push_signature_rejected` repetido quer dizer endereço diferente do cadastrado. O push é só aviso: sem ele, o gatilho de hora em hora segue lendo.
+
 ## 7. CI/CD
 
 **GitHub Actions** (`.github/workflows/ci.yml`), obrigatório antes de entrar na `main`:
