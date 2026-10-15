@@ -5996,6 +5996,8 @@ body > .sb-atualizando-barra {
   }
 }
 
+/* O GIRO do app — um só (D-503). Era repetido como `sb-pco-girar` e
+   `sb-vnc-girar`, idênticos; cada giro escolhe só a velocidade e o tamanho. */
 @keyframes sb-girar {
   to {
     transform: rotate(360deg);
@@ -11340,13 +11342,7 @@ td.sb-pco-num-linha {
   border: 2px solid var(--sb-border);
   border-top-color: var(--sb-secondary);
   border-radius: 50%;
-  animation: sb-pco-girar 0.7s linear infinite;
-}
-
-@keyframes sb-pco-girar {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: sb-girar 0.7s linear infinite;
 }
 
 /* ESTOQUE — camada visual de decisão rápida. */
@@ -12943,13 +12939,7 @@ td.sb-pco-num-linha {
   border: 2px solid var(--sb-border);
   border-top-color: var(--sb-secondary);
   border-radius: 50%;
-  animation: sb-vnc-girar 0.7s linear infinite;
-}
-
-@keyframes sb-vnc-girar {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: sb-girar 0.7s linear infinite;
 }
 
 .sb-vnc-ultimo {
@@ -13209,7 +13199,10 @@ td.sb-pco-num-linha {
   background: var(--sb-secondary-soft);
 }
 
-.sb-vnc-vazio {
+/* A linha "nenhum SKU" da busca: compacta, dentro da lista. Dividia o nome com o
+   vazio da página, e a regra da página (D-376) a sobrescrevia — a linha saía
+   centralizada e com 2,5 rem de respiro dentro de um menu (D-503). */
+.sb-vnc-busca-vazio {
   padding: 0.5rem;
   font-size: 0.6875rem;
   color: var(--sb-text-soft);
@@ -13694,22 +13687,6 @@ td.sb-pco-num-linha {
 
 .sb-vnc-conta-celula .sb-vnc-mudo {
   font-size: 0.625rem;
-}
-
-/* O vazio que não parece erro: diz o que houve e oferece a saída. */
-.sb-vnc-vazio {
-  display: grid;
-  justify-items: center;
-  gap: 0.5rem;
-  padding: 2.5rem var(--sb-space-3);
-  text-align: center;
-  font-size: 0.75rem;
-  color: var(--sb-text-soft);
-}
-
-.sb-vnc-vazio b {
-  font-size: 0.875rem;
-  color: var(--sb-primary);
 }
 
 /* A conferência com os pedidos, embaixo da comparação (chega por Suspense). */

@@ -15779,3 +15779,29 @@ O ganho de tempo e real so onde havia recarga (busca e menu); na pilula o tempo 
 **Verificacao:** typecheck, lint, testes e build da web, as sete guardas, a suite e2e inteira contra o build num stack isolado recriado do zero e o navegador.
 
 **Impacto:** `apps/web/components/{estado-da-tela,botao-enviar,acesso-restrito}.tsx`, 19 telas e 8 componentes de cliente em `apps/web/app` (so a forma do estado e o rotulo/trava do botao; nenhuma leitura, parametro ou regra muda), `apps/web/app/globals.css`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION,HANDOFF,MULTICHANNEL_HANDOFF}.md`. So web.
+
+## D-503 - A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
+
+**Contexto:** a quarta etapa do Agente 3 tinha tres itens de acabamento na fila (`docs/UX_SYSTEM.md` §2: 12, um giro so; 13, `role="alert"` em conteudo estatico; 16, CSS duplicado) e um de performance percebida (14, telas pesadas sem streaming) que a auditoria mandou "medir antes". A web ja grava os web vitals de cada carga completa no log da Vercel (`app/web-vitals.tsx` -> `POST /api/vitals` -> `web_vital`, sem dado pessoal), e ninguem os tinha lido.
+
+**Medido** no log de producao (`speedbikers-prod`, 14 e 15/10; amostra pequena e so de carga completa -- navegacao suave nao reporta):
+
+| tela | LCP | TTFB |
+|---|---|---|
+| `/` (Home) | **7.612 ms** | 113 ms |
+| `/skus/[id]` | **5.868 ms** | -- |
+| `/vendas` | **3.276 e 4.724 ms** (outras duas: 772 e 1.112) | 23-149 ms |
+| `/vendas/shopee` | 792 e 2.112 ms | 25-103 ms |
+| `/faturamento`, `/vinculacoes`, `/anuncios/MLB...` | 476-812 ms | 22-132 ms |
+
+O TTFB baixo em todas diz que o esqueleto chega rapido; o que demora e o conteudo -- leitura, nao rede. Um CLS de 0,51 apareceu numa carga de `/vendas` (as outras: 0 e 0,07); num build local com 400 ms de latencia, as 17 telas principais deram CLS 0, e o caso nao se reproduz.
+
+**Decisao:**
+1. **A ordem do item 14 vem da medicao, nao do tamanho do arquivo**: Home, SKU e Vendas, nessa ordem. A Home espera 11 leituras e depois uma segunda rodada em serie (`get_stock_coverage_summary` e `get_listings_dashboard`) antes de pintar qualquer coisa, e a secao "Atencao necessaria" ordena e conta TODOS os cartoes juntos -- inclusive os dois da rodada lenta. O streaming dela so vale se a lentidao for dessa rodada -- e o A1 mediu que e (15/10, no Dev, como `authenticated`, usuario ADMIN real, 8 execucoes por RPC): quentes, nenhuma passa de 150 ms; o que pesa e o cache FRIO, e a segunda rodada le ~110 MB de disco (`get_listings_dashboard` com `p_limit 1` monta a lista inteira para devolver o `total_count`: 7,6 mil paginas e arquivo temporario; `get_stock_coverage_summary`: 6,3 mil paginas), enquanto a primeira rodada inteira fica abaixo de mil paginas por leitura. No SKU, a aba padrao tem a `get_sku_abc_curve` (5,4 mil paginas para achar a classe de um SKU), e a aba Historico tinha um defeito real -- `get_sku_timeline` varria ~300 MB para qualquer SKU porque `entity_id::bigint` desligava o indice -- que vira a D-461 do A1. Encaminhado: o A1 propoe uma contagem leve de "pausados com estoque" para a Home e corrige a timeline; o streaming dos cartoes da segunda rodada (A3) e tirar essa rodada da fila (A2) ficam para a proxima etapa, com o sim do A2, dono das telas.
+2. **Um giro so**: `sb-pco-girar` e `sb-vnc-girar` eram copias identicas de `sb-girar` e saem; cada giro escolhe so velocidade e tamanho.
+3. **O "CSS duplicado" era um defeito visivel**: a busca de SKU de `/vinculacoes` e o vazio da pagina dividiam `.sb-vnc-vazio`, e a regra da pagina (D-376) sobrescrevia a da busca (D-374) -- a linha "Nenhum SKU com ..." saia centralizada e com 2,5 rem de respiro dentro do menu. A busca ganha `.sb-vnc-busca-vazio`; o vazio da pagina vira `EstadoDaTela` e a regra dele sai. `.sb-sync-empty` NAO era duplicado: e base compartilhada com `.sb-sync-account-error` mais a variacao propria.
+4. **Item 13 reavaliado com o codigo na mao**: dos `role="alert"` renderizados no servidor, quase todos sao falha real de leitura -- e o alerta continua certo para eles, inclusive porque, na navegacao suave, o React troca o conteudo e o leitor de tela precisa ouvir a falha nova. O que sobra de aviso que nao e falha e o "Periodo personalizado invalido -- mostrando X", em seis telas do A2 (`/central`, `/central/produtos`, `/faturamento` e multicanal, `/vendas` e multicanal, `/vendas/shopee`), e `e2e/central.spec.ts` o procura por `getByRole("alert")`. Fica com o A2, como `role="status"`, quando ele tocar nessas telas.
+
+**Verificacao:** typecheck, lint, testes, build e as guardas; os e2e de `/vinculacoes` e `/compras` contra o build; a medicao de CLS das 17 telas.
+
+**Impacto:** `apps/web/app/globals.css` (giro e `.sb-vnc-*`), `apps/web/app/vinculacoes/{page,busca-sku}.tsx`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_HANDOFF}.md`. So web.
