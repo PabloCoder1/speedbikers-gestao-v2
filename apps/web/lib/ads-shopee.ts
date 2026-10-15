@@ -65,10 +65,32 @@ export interface DiaDasBarrasAds {
  * Shopee não mandou o campo) não vira barra de zero: fica de fora e é
  * contado, para a tela dizer.
  *
- * Os dois contam separados porque mexem no ROAS em sentidos opostos: as somas
- * do banco ignoram o nulo, então o dia sem GASTO entra nas vendas e não no
- * investimento (ROAS acima do real), e o dia sem VENDAS, o contrário.
+ * Desde D-455 o ROAS e o ACOS do SQL só usam os dias com os dois campos, e a
+ * conta dos dias fora da razão vem do banco (`diasForaDaRazao`). Esta contagem
+ * fica só para as barras.
  */
+/**
+ * OS DIAS FORA DA RAZÃO (D-455, D-466). O ROAS e o ACOS só usam os dias com o
+ * gasto E as vendas informados pela Shopee; o investimento e as vendas com Ads
+ * continuam somando todos os dias lidos. Então o ROAS pode não ser a razão dos
+ * dois cartões ao lado, e a tela diz por quê, com a conta do SQL.
+ *
+ * `null` = nada a dizer: todos os dias com os dois campos, loja nunca lida
+ * (nulo), ou a função de antes da migration (chave ausente). Zero nunca vira
+ * texto.
+ */
+export function diasForaDaRazao(linha: Pick<LinhaAdsShopee, "dias_sem_gasto" | "dias_sem_venda">): string | null {
+  const semGasto = linha.dias_sem_gasto ?? null;
+  const semVenda = linha.dias_sem_venda ?? null;
+  const dias = (n: number): string => `${String(n)} ${n === 1 ? "dia" : "dias"}`;
+  const partes: string[] = [];
+
+  if (semGasto !== null && semGasto > 0) partes.push(`${dias(semGasto)} sem o gasto`);
+  if (semVenda !== null && semVenda > 0) partes.push(`${dias(semVenda)} sem as vendas`);
+
+  return partes.length === 0 ? null : `fora da razão: ${partes.join(" e ")}`;
+}
+
 export function diasDasBarras(dias: readonly DiaAdsShopee[] | null): {
   readonly barras: readonly DiaDasBarrasAds[];
   readonly semGasto: number;

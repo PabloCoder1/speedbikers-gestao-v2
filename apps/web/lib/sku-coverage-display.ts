@@ -33,6 +33,11 @@ export interface EntradaDeCobertura {
   readonly units60: number;
   readonly units90: number;
   readonly historyDays90: number;
+  /**
+   * Quanto de `units30` veio da Shopee (C-65, D-466) — as janelas já a somam.
+   * Nulo = sem loja Shopee em produção com pedidos lidos: a venda é só a do ML.
+   */
+  readonly units30Shopee: number | null;
 }
 
 export interface CoberturaDescrita {
@@ -97,7 +102,11 @@ export function descreverCobertura(entrada: EntradaDeCobertura | null): Cobertur
     return {
       dias: null,
       valor: "—",
-      ressalva: "sem venda nos últimos 30 dias — não há taxa para dividir",
+      // Com a Shopee na conta, "sem venda" vale para os dois canais — e diz isso (D-466).
+      ressalva:
+        entrada.units30Shopee === null
+          ? "sem venda nos últimos 30 dias — não há taxa para dividir"
+          : "sem venda nos últimos 30 dias, no ML nem na Shopee — não há taxa para dividir",
       titulo: partes,
     };
   }
@@ -124,6 +133,14 @@ export function descreverCobertura(entrada: EntradaDeCobertura | null): Cobertur
       novo.
     */
     ressalva: `aproveitável ${String(aproveitavel)} ÷ ${TAXA.format(trend.rateRecent)}/dia`,
-    titulo: partes,
+    /*
+      D-466: a taxa já soma a Shopee; o título diz quanto veio de lá. Zero e
+      nulo não ganham texto — nulo é "a Shopee não entra", e quem diz isso é o
+      selo de /reposicao.
+    */
+    titulo:
+      entrada.units30Shopee !== null && entrada.units30Shopee > 0
+        ? `${partes}. A venda de 30 dias soma o ML e a Shopee: ${String(entrada.units30Shopee)} un vieram da Shopee`
+        : partes,
   };
 }

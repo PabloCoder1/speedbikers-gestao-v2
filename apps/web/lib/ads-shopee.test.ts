@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   diasDasBarras,
+  diasForaDaRazao,
   estadoAdsLoja,
   lojaAdsDeTeste,
   separarAdsShopee,
@@ -98,6 +99,20 @@ describe("o estado de cada loja (D-456)", () => {
     expect(lojaAdsDeTeste(NUNCA_LIDA)).toBe(true);
     expect(lojaAdsDeTeste(linha({}))).toBe(false);
     expect(lojaAdsDeTeste(linha({ nivel: "TOTAL", environment: null }))).toBe(false);
+  });
+});
+
+describe("diasForaDaRazao (D-455, D-466)", () => {
+  it("o dia sem o gasto ou sem as vendas fica fora do ROAS e do ACOS, e a tela diz quantos", () => {
+    expect(diasForaDaRazao({ dias_sem_gasto: 2, dias_sem_venda: 1 })).toBe("fora da razão: 2 dias sem o gasto e 1 dia sem as vendas");
+    expect(diasForaDaRazao({ dias_sem_gasto: 0, dias_sem_venda: 3 })).toBe("fora da razão: 3 dias sem as vendas");
+  });
+
+  it("todos os dias com os dois, loja nunca lida (nulo) ou a função de antes da migration: nada a dizer", () => {
+    expect(diasForaDaRazao({ dias_sem_gasto: 0, dias_sem_venda: 0 })).toBeNull();
+    expect(diasForaDaRazao({ dias_sem_gasto: null, dias_sem_venda: null })).toBeNull();
+    // Chave ausente: a resposta antiga não traz as colunas.
+    expect(diasForaDaRazao({} as { dias_sem_gasto: number | null; dias_sem_venda: number | null })).toBeNull();
   });
 });
 
