@@ -213,8 +213,13 @@ export default async function VendasShopeePage({
       p_date_to: filters.range.to,
       p_shopee_shop_id: filters.loja,
       p_situacao: situacaoAtiva?.codigo ?? null,
-      // D-476: o pedido que a Busca Universal abriu (nulo = a lista de sempre).
-      p_order_sn: filters.pedido,
+      /*
+        D-476: o pedido que a Busca Universal abriu. SÓ vai quando há pedido: o
+        PostgREST escolhe a função pelos NOMES dos argumentos, e até a migration
+        20261015110000 a de produção não tem `p_order_sn` — mandá-lo nulo
+        derrubaria a tela inteira para todo mundo na janela entre a web e o banco.
+      */
+      ...(filters.pedido === null ? {} : { p_order_sn: filters.pedido }),
       p_limit: SHOPEE_ORDERS_PAGE_SIZE,
       p_offset: (filters.pagina - 1) * SHOPEE_ORDERS_PAGE_SIZE,
     }),

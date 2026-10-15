@@ -16088,6 +16088,8 @@ Se a ordem escapar, a paleta mostra "Outros", e nao `pedido_shopee`.
 - O numero que nao esta no recorte diz isso ("O pedido X nao esta neste recorte", com "Limpar filtros"), nunca "nenhum pedido no periodo".
 - O caminho de volta para `/vendas` nao leva o pedido.
 
+**5. A JANELA ENTRE A WEB E O BANCO.** O `p_order_sn` so vai na chamada quando ha pedido. O PostgREST escolhe a funcao pelos NOMES dos argumentos, e ate a migration `20261015110000` a `get_shopee_orders` de producao nao o tem. Mandado nulo, ele derrubaria a `/vendas/shopee` inteira para todo mundo entre a publicacao da web e a migration. Conferido no banco isolado SEM a 110000: com `p_order_sn` nulo, PGRST202 ("Searched for the function ... with parameters ... p_order_sn"); sem ele, a funcao e encontrada, e os 7 e2e da `/vendas/shopee` passam.
+
 **Fica de fora:** o pedido de venda do ML, que nao tem destino real (D-060). Entra quando houver uma tela que o abra.
 
 **Publicacao:** web, junto com o #201 (que traz a migration `20261015110000`, que so roda depois da web no ar).
