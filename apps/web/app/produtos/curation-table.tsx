@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 
+import { EstadoDaTela } from "../../components/estado-da-tela";
 import { TOM } from "../../components/tone";
 import { formatCount, formatCurrency, formatDateTime, formatDay } from "../../lib/format";
 import type { LinhaProduto } from "../../lib/products-overview";
@@ -421,7 +422,12 @@ export function CurationTable({
       )}
 
       {rows.length === 0 ? (
-        <p className="sb-empty">Nenhum SKU neste recorte. Tire um filtro ou busque outro termo.</p>
+        <EstadoDaTela
+          tipo="filtro"
+          titulo="Nenhum SKU neste recorte"
+          descricao="Tire um filtro ou busque outro termo."
+          acao={{ href: "/produtos", rotulo: "Limpar filtros", mesmaTela: true }}
+        />
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table className="sb-table sb-prod-tabela">

@@ -11,6 +11,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { FormularioFiltro } from "../../components/formulario-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -248,24 +249,21 @@ export default async function ReposicaoPage({
       />
 
       {erro !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Não foi possível carregar a reposição: {erro}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar a reposição"
+          detalhe={erro}
+          acao={{ href: buildReplenishmentHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {erro === null && settings.length === 0 && (
-        <div role="alert" className="sb-rep-aviso">
-          <div>
-            <b>Nenhuma configuração de reposição cadastrada</b>
-            <span>
-              Sem prazo do fornecedor e cobertura desejada, a sugestão recusa número para todos os SKUs — de
-              propósito, em vez de inventar uma política.
-            </span>
-          </div>
-          <Link className="sb-button sb-button-primary" href="/reposicao/configuracoes">
-            Cadastrar a primeira regra
-          </Link>
-        </div>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="Nenhuma configuração de reposição cadastrada"
+          descricao="Sem prazo do fornecedor e cobertura desejada, a sugestão recusa número para todos os SKUs — de propósito, em vez de inventar uma política."
+          acao={{ href: "/reposicao/configuracoes", rotulo: "Cadastrar a primeira regra" }}
+        />
       )}
 
       {visao !== null && (
@@ -429,10 +427,11 @@ export default async function ReposicaoPage({
             }
           >
             {visao.linhas.length === 0 && (
-              <p className="sb-empty">
-                Nenhum SKU corresponde a estes filtros.{" "}
-                {filtroAtivo && <Link href="/reposicao">Ver todos</Link>}
-              </p>
+              <EstadoDaTela
+                tipo={filtroAtivo ? "filtro" : "vazio"}
+                titulo={filtroAtivo ? "Nenhum SKU corresponde a estes filtros" : "Nenhum SKU no catálogo ainda"}
+                acao={filtroAtivo ? { href: "/reposicao", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+              />
             )}
 
             {visao.linhas.length > 0 && (

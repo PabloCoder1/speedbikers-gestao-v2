@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando";
 import { FilterMenu } from "../../components/filter-menu";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
@@ -20,7 +21,7 @@ import { resolverEscopoVendas } from "../../lib/vendas-multicanal";
 import { CalculadoraPreco } from "./calculadora-preco";
 import { CampanhasAds } from "./campanhas-ads";
 import { FaturamentoMulticanal } from "./multicanal";
-import { AVISO, Numeros } from "./numeros";
+import { Numeros } from "./numeros";
 
 export const metadata = { title: "Faturamento — Speed Bikers Gestão" };
 
@@ -226,20 +227,31 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         }
       />
 
+      {/* D-470: a forma única do erro de leitura (D-502). */}
       {accountsResult.error !== null && (
-        <p role="alert" style={AVISO}>
-          Não foi possível carregar as contas: o filtro de conta está indisponível.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta está indisponível."
+          detalhe={accountsResult.error.message}
+          acao={{ href: montarHref("/faturamento", periodo, contaSlug), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {invalidCustom && (
-        <p role="alert" style={AVISO}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
         </p>
       )}
 
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>
-        <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
+        <Numeros
+          leituras={leituras}
+          range={range}
+          todasAsContas={selectedAccount === null}
+          tentarDeNovo={montarHref("/faturamento", periodo, contaSlug)}
+          limparFiltros={contaSlug === null ? null : montarHref("/faturamento", periodo, null)}
+        />
       </Suspense>
 
       <section id="ads" className="sb-campanhas-ml" aria-label="Mercado Ads">
@@ -252,6 +264,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         >
           <CampanhasAds
             leitura={Promise.resolve(leituraAds)}
+            tentarDeNovo={montarHref("/faturamento", periodo, contaSlug)}
             periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
           />
         </Suspense>

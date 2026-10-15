@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FormularioFiltro } from "../../components/formulario-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -134,7 +135,7 @@ export default async function ComprasPage({
           title="Pedidos de Compra"
           subtitle="Planeje, aprove e acompanhe o abastecimento."
         />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </Shell>
     );
   }
@@ -238,9 +239,12 @@ export default async function ComprasPage({
       />
 
       {erro !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Não foi possível carregar os pedidos: {erro}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os pedidos"
+          detalhe={erro}
+          acao={{ href: buildPurchaseOrderHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {semNenhumPedido && (
@@ -412,9 +416,11 @@ export default async function ComprasPage({
           }
         >
           {linhas.length === 0 && (
-            <p className="sb-empty">
-              {janela.label} <Link href="/compras">Ver todos</Link>
-            </p>
+            <EstadoDaTela
+              tipo="filtro"
+              titulo={janela.label}
+              acao={{ href: "/compras", rotulo: "Limpar filtros", mesmaTela: true }}
+            />
           )}
 
           {linhas.length > 0 && (

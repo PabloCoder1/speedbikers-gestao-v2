@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { ProcessSteps } from "../../../components/process-steps";
@@ -93,13 +94,12 @@ export default async function PedidoDeCompraPage({
           aside={<Voltar href="/compras" rotulo="Pedidos de compra" />}
           compacto
         />
-        <div role="alert" className="sb-pod-state">
-          <strong>Não foi possível carregar este pedido agora.</strong>
-          <span>O pedido não foi alterado. Tente de novo em instantes.</span>
-          <Link className="sb-button" href={`/compras/${id}`}>
-            Tentar de novo
-          </Link>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar este pedido agora."
+          descricao="O pedido não foi alterado. Tente de novo em instantes."
+          acao={{ href: `/compras/${id}`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </Shell>
     );
   }
@@ -215,7 +215,7 @@ export default async function PedidoDeCompraPage({
       </div>
 
       {info.status === "CANCELLED" && info.cancel_reason !== null && (
-        <p role="alert" className="sb-pod-cancelled">
+        <p role="status" className="sb-pod-cancelled">
           <strong>Cancelado:</strong> {info.cancel_reason}
         </p>
       )}
@@ -245,13 +245,15 @@ export default async function PedidoDeCompraPage({
           subtitle="SKU, quantidade e custo ficam gravados no pedido — o preço de hoje não reescreve o de ontem. A origem é a do cadastro atual do SKU."
         >
           {items.error !== null && (
-            <p role="alert" className="sb-pod-error">
-              Não foi possível carregar os itens agora. Tente recarregar a página.
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os itens agora"
+              acao={{ href: `/compras/${id}`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {items.error === null && items.data.length === 0 && (
-            <p className="sb-empty">Nenhum item neste pedido ainda.</p>
+            <EstadoDaTela tipo="vazio" titulo="Nenhum item neste pedido ainda" />
           )}
 
           {items.error === null && items.data.length > 0 && (
@@ -304,13 +306,15 @@ export default async function PedidoDeCompraPage({
       <div className="sb-pod-section">
         <Panel title="Histórico" subtitle="Cada mudança de etapa, com quem fez e quando. O histórico nunca é reescrito.">
           {events.error !== null && (
-            <p role="alert" className="sb-pod-error">
-              Não foi possível carregar o histórico agora. Tente recarregar a página.
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar o histórico agora"
+              acao={{ href: `/compras/${id}`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {events.error === null && events.data.length === 0 && (
-            <p className="sb-empty">Sem eventos ainda.</p>
+            <EstadoDaTela tipo="vazio" titulo="Sem eventos ainda" />
           )}
 
           {/*

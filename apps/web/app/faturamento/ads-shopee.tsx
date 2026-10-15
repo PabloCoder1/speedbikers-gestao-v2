@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { Panel } from "../../components/panel";
 import {
   diasDasBarras,
@@ -44,12 +45,18 @@ export async function AdsShopee({
   leitura,
   diaria,
   periodo,
+  tentarDeNovo,
 }: {
   leitura: PromiseLike<Resposta<LinhaAdsShopee>>;
   diaria: PromiseLike<Resposta<DiaAdsShopee>>;
   periodo: string;
+  /** A mesma URL, para "Tentar de novo" (D-470). */
+  tentarDeNovo?: string;
 }): Promise<ReactNode> {
   const [resposta, serie] = await Promise.all([leitura, diaria]);
+  // D-470: "Tentar de novo" leva à mesma URL da tela.
+  const acao: AcaoDoEstado | undefined =
+    tentarDeNovo === undefined ? undefined : { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   /*
     A FUNÇÃO AINDA NÃO EXISTE NO BANCO (PGRST202): a web chega à produção antes
@@ -58,10 +65,11 @@ export async function AdsShopee({
   if (resposta.error?.code === "PGRST202") {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p className="sb-empty">
-          A leitura dos Ads da Shopee ainda está sendo ativada neste ambiente — os números aparecem depois da primeira
-          leitura das lojas.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="A leitura dos Ads da Shopee ainda está sendo ativada neste ambiente"
+          descricao="Os números aparecem depois da primeira leitura das lojas."
+        />
       </Panel>
     );
   }
@@ -69,9 +77,7 @@ export async function AdsShopee({
   if (resposta.error !== null) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
-          Não foi possível carregar os Ads da Shopee: {resposta.error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os Ads da Shopee" detalhe={resposta.error.message} acao={acao} />
       </Panel>
     );
   }
@@ -92,15 +98,16 @@ export async function AdsShopee({
 
       {total === null ? (
         <>
-          <p className="sb-empty">
-            Nenhuma loja real com os Ads já lidos: sem números para o período. A leitura dos Ads começa sozinha depois
-            da primeira leitura de pedidos de cada loja.
-          </p>
+          <EstadoDaTela
+            tipo="vazio"
+            titulo="Nenhuma loja real com os Ads já lidos"
+            descricao="Sem números para o período. A leitura dos Ads começa sozinha depois da primeira leitura de pedidos de cada loja."
+          />
           {lojas.length > 0 && <Lojas lojas={lojas} />}
         </>
       ) : (
         // Com números, as lojas vão na coluna ao lado da série, como as campanhas do Mercado Ads.
-        <Resumo total={total} serie={serie} lojas={<Lojas lojas={lojas} />} />
+        <Resumo total={total} serie={serie} lojas={<Lojas lojas={lojas} />} acao={acao} />
       )}
     </Panel>
   );
@@ -110,10 +117,12 @@ function Resumo({
   total,
   serie,
   lojas,
+  acao,
 }: {
   total: LinhaAdsShopee;
   serie: Resposta<DiaAdsShopee>;
   lojas: ReactNode;
+  acao: AcaoDoEstado | undefined;
 }): ReactNode {
   const foraDaRazao = diasForaDaRazao(total);
   const celulas: KpiCellData[] = [
@@ -182,9 +191,7 @@ function Resumo({
           {serie.error === null ? (
             <BarrasAds dias={barras} />
           ) : (
-            <p role="alert" className="sb-note sb-note-perigo">
-              Não foi possível carregar a série diária: {serie.error.message}
-            </p>
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar a série diária" detalhe={serie.error.message} acao={acao} />
           )}
           <p className="sb-campanhas-ml-nota">
             {formatCount(total.cliques)} cliques · {formatCount(total.impressoes)} impressões ·{" "}

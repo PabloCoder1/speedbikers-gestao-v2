@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../../components/estado-da-tela";
 import { Panel } from "../../../components/panel";
 import {
   lerItensDevolvidos,
@@ -48,21 +49,26 @@ export async function DevolucoesShopee({
   resumo,
   lista,
   periodo,
+  tentarDeNovo,
 }: {
   resumo: PromiseLike<Resposta<LinhaResumoDevolucoes>>;
   lista: PromiseLike<Resposta<LinhaDevolucao>>;
   periodo: string;
+  /** A mesma URL da tela, para "Tentar de novo" (D-470). */
+  tentarDeNovo: string;
 }): Promise<ReactNode> {
+  const acao: AcaoDoEstado = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const [r, l] = await Promise.all([resumo, lista]);
 
   // A web pode chegar antes da migration de D-447: a novidade ainda não chegou, não é erro.
   if (isShopeeSchemaMissing(r.error)) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p className="sb-empty">
-          A leitura das devoluções da Shopee ainda está sendo ativada neste ambiente — os números aparecem depois da
-          primeira leitura das lojas.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="A leitura das devoluções da Shopee ainda está sendo ativada neste ambiente"
+          descricao="Os números aparecem depois da primeira leitura das lojas."
+        />
       </Panel>
     );
   }
@@ -70,9 +76,7 @@ export async function DevolucoesShopee({
   if (r.error !== null) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo">
-          Não foi possível carregar as devoluções: {r.error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" detalhe={r.error.message} acao={acao} />
       </Panel>
     );
   }
@@ -88,12 +92,13 @@ export async function DevolucoesShopee({
       </p>
 
       {total === null ? (
-        <p className="sb-empty">
-          Nenhuma loja real com as devoluções já lidas: sem números para o período. A leitura começa sozinha junto com a
-          de pedidos de cada loja.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="Nenhuma loja real com as devoluções já lidas"
+          descricao="Sem números para o período. A leitura começa sozinha junto com a de pedidos de cada loja."
+        />
       ) : (
-        <Resumo total={total} lista={l} />
+        <Resumo total={total} lista={l} acao={acao} />
       )}
 
       {lojas.length > 0 && <Lojas lojas={lojas} />}
@@ -101,7 +106,15 @@ export async function DevolucoesShopee({
   );
 }
 
-function Resumo({ total, lista }: { total: LinhaResumoDevolucoes; lista: Resposta<LinhaDevolucao> }): ReactNode {
+function Resumo({
+  total,
+  lista,
+  acao,
+}: {
+  total: LinhaResumoDevolucoes;
+  lista: Resposta<LinhaDevolucao>;
+  acao: AcaoDoEstado;
+}): ReactNode {
   const situacoes = lerPorSituacao(total.por_situacao);
 
   return (
@@ -129,11 +142,14 @@ function Resumo({ total, lista }: { total: LinhaResumoDevolucoes; lista: Respost
 
         <h3 className="sb-campanhas-ml-titulo">Por situação</h3>
         {situacoes === null ? (
-          <p role="alert" className="sb-note sb-note-perigo">
-            A divisão por situação voltou fora do contrato esperado — nada é mostrado para não exibir número errado.
-          </p>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="A divisão por situação voltou fora do contrato esperado"
+            descricao="Nada é mostrado para não exibir número errado."
+            acao={acao}
+          />
         ) : situacoes.length === 0 ? (
-          <p className="sb-empty">Nenhuma devolução no período.</p>
+          <EstadoDaTela tipo="vazio" titulo="Nenhuma devolução no período" />
         ) : (
           <ul className="sb-valores" aria-label="Devoluções por situação">
             {situacoes.map((s) => (
@@ -153,25 +169,21 @@ function Resumo({ total, lista }: { total: LinhaResumoDevolucoes; lista: Respost
         <h3 className="sb-campanhas-ml-titulo">
           Mais recentes <small>no período</small>
         </h3>
-        <Lista lista={lista} />
+        <Lista lista={lista} acao={acao} />
       </div>
     </div>
   );
 }
 
-function Lista({ lista }: { lista: Resposta<LinhaDevolucao> }): ReactNode {
+function Lista({ lista, acao }: { lista: Resposta<LinhaDevolucao>; acao: AcaoDoEstado }): ReactNode {
   if (lista.error !== null) {
-    return (
-      <p role="alert" className="sb-note sb-note-perigo">
-        Não foi possível carregar as devoluções: {lista.error.message}
-      </p>
-    );
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" detalhe={lista.error.message} acao={acao} />;
   }
 
   const linhas = lista.data ?? [];
 
   if (linhas.length === 0) {
-    return <p className="sb-empty">Nenhuma devolução no período.</p>;
+    return <EstadoDaTela tipo="vazio" titulo="Nenhuma devolução no período" />;
   }
 
   const total = linhas[0]?.total_count ?? linhas.length;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 
+import { EstadoDaTela } from "../../components/estado-da-tela";
 import { Drawer } from "../../components/drawer";
 import { TOM } from "../../components/tone";
 import { formatCount, formatDateTime } from "../../lib/format";
@@ -136,9 +137,7 @@ export function InspecaoRapida({
             {retrato === null || lendo ? (
               <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o retrato deste SKU…</p>
             ) : retrato.error !== null ? (
-              <p role="alert" className="sb-note sb-note-perigo" style={{ fontSize: "0.6875rem" }}>
-                {retrato.error}
-              </p>
+              <EstadoDaTela tipo="erro" titulo={retrato.error} descricao="Feche e abra a inspeção de novo." />
             ) : (
               <Retrato retrato={retrato} />
             )}

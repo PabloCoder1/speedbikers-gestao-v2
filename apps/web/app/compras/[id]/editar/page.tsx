@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { PageTitle } from "../../../../components/page-title";
 import { AcessoRestrito } from "../../../../components/acesso-restrito";
 import { Shell } from "../../../../components/shell";
@@ -73,10 +74,13 @@ export default async function EditarPedidoDeCompraPage({
           <Link href={`/compras/${id}`}>← Voltar ao pedido</Link>
         </p>
 
-        <p role="alert" style={{ marginTop: "var(--sb-space-3)", color: "var(--sb-danger)" }}>
-          Não foi possível carregar os itens deste pedido: {items.error.message}. Edite novamente mais tarde — editar
-          agora apagaria os itens reais.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os itens deste pedido"
+          descricao="Edite novamente mais tarde — editar agora apagaria os itens reais."
+          detalhe={items.error.message}
+          acao={{ href: `/compras/${id}/editar`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </Shell>
     );
   }
@@ -88,7 +92,7 @@ export default async function EditarPedidoDeCompraPage({
           <Link href={`/compras/${id}`}>← Voltar ao pedido</Link>
         </p>
 
-        <p role="alert" style={{ marginTop: "var(--sb-space-3)", color: "var(--sb-danger)" }}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ marginTop: "var(--sb-space-3)" }}>
           Este pedido não está mais em rascunho — não é possível editar os itens depois de aprovado.
         </p>
       </Shell>
@@ -134,9 +138,13 @@ export default async function EditarPedidoDeCompraPage({
       />
 
       {suppliers.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>
-          Não foi possível carregar os fornecedores: {suppliers.error.message}. A lista abaixo pode estar vazia.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os fornecedores"
+          descricao="A lista abaixo pode estar vazia."
+          detalhe={suppliers.error.message}
+          acao={{ href: `/compras/${id}/editar`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       <PurchaseOrderForm suppliers={suppliers.data ?? []} orderId={id} initial={initial} />

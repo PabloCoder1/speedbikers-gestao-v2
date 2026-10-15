@@ -12,7 +12,7 @@ import { formatBusinessDate, formatCurrency } from "../../../lib/format";
 import { formatarAliquota, rotuloDoMes } from "../../../lib/metas-imposto";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { remover } from "./actions";
 import { FormularioAliquota, FormularioMeta } from "./formularios";
 
@@ -125,11 +125,18 @@ async function MetasContent(): Promise<ReactNode> {
             {podeEditar && <FormularioMeta mesPadrao={mesAtual.slice(0, 7)} />}
 
             {metas.error !== null ? (
-              <p role="alert" style={AVISO}>
-                Não foi possível carregar as metas: {metas.error.message}
-              </p>
+              <EstadoDaTela
+                tipo="erro"
+                titulo="Não foi possível carregar as metas"
+                detalhe={metas.error.message}
+                acao={{ href: "/central/metas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+              />
             ) : metas.data.length === 0 ? (
-              <p className="sb-empty">Nenhuma meta cadastrada. Sem meta, a central mostra a projeção do mês sozinha.</p>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Nenhuma meta cadastrada."
+                descricao="Sem meta, a central mostra a projeção do mês sozinha."
+              />
             ) : (
               <table className="sb-table sb-cadastro-tabela">
                 <thead>
@@ -173,11 +180,14 @@ async function MetasContent(): Promise<ReactNode> {
             {podeEditar && <FormularioAliquota dataPadrao={`${hoje.slice(0, 4)}-01-01`} />}
 
             {aliquotas.error !== null ? (
-              <p role="alert" style={AVISO}>
-                Não foi possível carregar as alíquotas: {aliquotas.error.message}
-              </p>
+              <EstadoDaTela
+                tipo="erro"
+                titulo="Não foi possível carregar as alíquotas"
+                detalhe={aliquotas.error.message}
+                acao={{ href: "/central/metas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+              />
             ) : aliquotas.data.length === 0 ? (
-              <p className="sb-empty">Nenhuma alíquota cadastrada.</p>
+              <EstadoDaTela tipo="vazio" titulo="Nenhuma alíquota cadastrada." />
             ) : (
               <table className="sb-table sb-cadastro-tabela">
                 <thead>

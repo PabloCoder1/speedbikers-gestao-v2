@@ -351,7 +351,7 @@ export default async function VendasShopeePage({
       />
 
       {invalidCustom && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
         </p>
       )}
@@ -504,6 +504,7 @@ export default async function VendasShopeePage({
           <DevolucoesShopee
             resumo={resumoDevolucoes}
             lista={listaDevolucoes}
+            tentarDeNovo={buildShopeeSalesHref(filters, { pagina: filters.pagina })}
             periodo={`${de} a ${ate}${lojaAtiva === null ? "" : ` · ${nomeDaLojaShopee(lojaAtiva)}`}`}
           />
         </Suspense>

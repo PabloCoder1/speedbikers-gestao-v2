@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { Panel } from "../../components/panel";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import {
@@ -46,22 +47,29 @@ export async function RepasseShopee({
   pendente,
   liberacoes,
   periodo,
+  tentarDeNovo,
 }: {
   leitura: PromiseLike<Resposta<LinhaRepasse>>;
   pendente: PromiseLike<Resposta<LinhaPendente>>;
   liberacoes: PromiseLike<Resposta<Liberacao>>;
   periodo: string;
+  /** A mesma URL, para "Tentar de novo" (D-470). */
+  tentarDeNovo?: string;
 }): Promise<ReactNode> {
   const [resposta, agora, lista] = await Promise.all([leitura, pendente, liberacoes]);
+  // D-470: "Tentar de novo" leva à mesma URL da tela.
+  const acao: AcaoDoEstado | undefined =
+    tentarDeNovo === undefined ? undefined : { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   // A web chega à produção antes da migration de D-451 (PGRST202).
   if (resposta.error?.code === "PGRST202") {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p className="sb-empty">
-          A leitura dos repasses da Shopee ainda está sendo ativada neste ambiente — os números aparecem depois da
-          primeira leitura das lojas.
-        </p>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="A leitura dos repasses da Shopee ainda está sendo ativada neste ambiente"
+          descricao="Os números aparecem depois da primeira leitura das lojas."
+        />
       </Panel>
     );
   }
@@ -69,9 +77,7 @@ export async function RepasseShopee({
   if (resposta.error !== null) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <p role="alert" className="sb-note sb-note-perigo sb-campanhas-ml-aviso">
-          Não foi possível carregar os repasses da Shopee: {resposta.error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os repasses da Shopee" detalhe={resposta.error.message} acao={acao} />
       </Panel>
     );
   }
@@ -89,10 +95,11 @@ export async function RepasseShopee({
 
       {total === null ? (
         <>
-          <p className="sb-empty">
-            Nenhuma loja real com os repasses já lidos: sem números para o período. A leitura começa sozinha junto com a
-            de pedidos de cada loja.
-          </p>
+          <EstadoDaTela
+            tipo="vazio"
+            titulo="Nenhuma loja real com os repasses já lidos"
+            descricao="Sem números para o período. A leitura começa sozinha junto com a de pedidos de cada loja."
+          />
           {lojas.length > 0 && <Lojas lojas={lojas} pendentes={pendentes?.lojas ?? null} />}
         </>
       ) : (
@@ -101,6 +108,7 @@ export async function RepasseShopee({
           pendente={pendentes === null ? { erro: agora.error?.message ?? "" } : pendentes.total}
           lista={lista}
           lojas={<Lojas lojas={lojas} pendentes={pendentes?.lojas ?? null} />}
+          acao={acao}
         />
       )}
     </Panel>
@@ -112,11 +120,13 @@ function Resumo({
   pendente,
   lista,
   lojas,
+  acao,
 }: {
   total: LinhaRepasse;
   pendente: LinhaPendente | null | { erro: string };
   lista: Resposta<Liberacao>;
   lojas: ReactNode;
+  acao: AcaoDoEstado | undefined;
 }): ReactNode {
   const semValor = total.liberacoes_sem_valor ?? 0;
   const aLiberar = pendente !== null && "erro" in pendente ? null : pendente;
@@ -192,7 +202,7 @@ function Resumo({
           <h3 className="sb-campanhas-ml-titulo">
             Últimas liberações <small>no período</small>
           </h3>
-          <Liberacoes lista={lista} />
+          <Liberacoes lista={lista} acao={acao} />
         </div>
 
         <div className="sb-campanhas-ml-coluna">{lojas}</div>
@@ -201,19 +211,15 @@ function Resumo({
   );
 }
 
-function Liberacoes({ lista }: { lista: Resposta<Liberacao> }): ReactNode {
+function Liberacoes({ lista, acao }: { lista: Resposta<Liberacao>; acao: AcaoDoEstado | undefined }): ReactNode {
   if (lista.error !== null) {
-    return (
-      <p role="alert" className="sb-note sb-note-perigo">
-        Não foi possível carregar as liberações: {lista.error.message}
-      </p>
-    );
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as liberações" detalhe={lista.error.message} acao={acao} />;
   }
 
   const linhas = lista.data ?? [];
 
   if (linhas.length === 0) {
-    return <p className="sb-empty">Nenhuma liberação lida neste período.</p>;
+    return <EstadoDaTela tipo="vazio" titulo="Nenhuma liberação lida neste período" />;
   }
 
   const total = linhas[0]?.total_count ?? linhas.length;

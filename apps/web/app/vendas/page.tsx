@@ -8,6 +8,7 @@ import type { SavedFilter } from "../../components/saved-filters";
 import Link from "next/link";
 import { SavedFilters } from "../../components/saved-filters";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -573,6 +574,19 @@ async function VendasContent({
   const marcaLabel =
     brand.kind === "todas" ? "Todas as marcas" : brand.kind === "sem_marca" ? "Sem marca" : brand.value;
 
+  /*
+    D-470: os destinos dos estados — "Tentar de novo" é a MESMA URL, e "Limpar
+    filtros" tira conta e marca (o período fica: há sempre um).
+  */
+  const recorteAtual = { period, accountSlug, metricKey: metric.key, brand };
+  const tentarDeNovo = { href: buildHref(recorteAtual, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  const recorteAtivo = accountSlug !== null || brand.kind !== "todas";
+  const limparFiltros = {
+    href: buildHref(recorteAtual, { accountSlug: null, brand: { kind: "todas" } }),
+    rotulo: "Limpar filtros",
+    mesmaTela: true,
+  };
+
   return (
     <>
       <PageTitle
@@ -741,29 +755,31 @@ async function VendasContent({
       />
 
       {(accountsResult.error !== null || membershipResult.error !== null || savedFiltersResult.error !== null) && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
-          Alguns filtros podem estar incompletos — não foi possível carregar{" "}
-          {[
-            accountsResult.error !== null ? "contas" : null,
-            membershipResult.error !== null ? "organização" : null,
-            savedFiltersResult.error !== null ? "filtros salvos" : null,
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Alguns filtros podem estar incompletos"
+          descricao={`Não foi possível carregar ${[
+            accountsResult.error !== null ? "as contas" : null,
+            membershipResult.error !== null ? "a organização" : null,
+            savedFiltersResult.error !== null ? "os filtros salvos" : null,
           ]
             .filter((item): item is string => item !== null)
-            .join(", ")}
-          .
-        </p>
+            .join(", ")}.`}
+          detalhe={[accountsResult.error?.message, membershipResult.error?.message, savedFiltersResult.error?.message]
+            .filter((mensagem): mensagem is string => mensagem !== undefined)
+            .join("; ")}
+          acao={tentarDeNovo}
+        />
       )}
 
       {invalidCustom && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_DAYS} dias.
         </p>
       )}
 
       {error !== null && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
-          Não foi possível carregar as métricas: {error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as métricas" detalhe={error.message} acao={tentarDeNovo} />
       )}
 
       {/*
@@ -867,10 +883,12 @@ async function VendasContent({
             </div>
 
             {dailySeries.length === 0 ? (
-              <p className="sb-empty">
-                Nenhum dia com métrica calculada neste período — o recálculo só materializa dias tocados pela
-                reconciliação, e não fabrica zero.
-              </p>
+              <EstadoDaTela
+                tipo={recorteAtivo ? "filtro" : "vazio"}
+                titulo="Nenhum dia com métrica calculada neste período"
+                descricao="O recálculo só materializa dias tocados pela reconciliação, e não fabrica zero."
+                acao={recorteAtivo ? limparFiltros : undefined}
+              />
             ) : (
               <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
                 <SalesChart
@@ -895,7 +913,14 @@ async function VendasContent({
       */}
       {error === null && summary !== null && (
         <Suspense fallback={<CarregandoBloco rotulo="ranking" />}>
-          <SalesRanking result={topPromise} metricLabel={metric.label} contaLabel={contaLabel} marcaLabel={marcaLabel} />
+          <SalesRanking
+            result={topPromise}
+            metricLabel={metric.label}
+            contaLabel={contaLabel}
+            marcaLabel={marcaLabel}
+            tentarDeNovo={tentarDeNovo}
+            limparFiltros={recorteAtivo ? limparFiltros : null}
+          />
         </Suspense>
       )}
 
@@ -904,11 +929,21 @@ async function VendasContent({
 }
 
 
-async function SalesRanking({ result, metricLabel, contaLabel, marcaLabel }: {
+async function SalesRanking({
+  result,
+  metricLabel,
+  contaLabel,
+  marcaLabel,
+  tentarDeNovo,
+  limparFiltros,
+}: {
   result: Promise<{ data: TopSkuRow[] | null; error: { message: string } | null }>;
   metricLabel: string;
   contaLabel: string;
   marcaLabel: string;
+  tentarDeNovo: AcaoDoEstado;
+  /** Nulo sem conta nem marca no recorte: aí o vazio é "nada ainda", não "filtro sem resultado". */
+  limparFiltros: AcaoDoEstado | null;
 }): Promise<ReactNode> {
   const topResult = await result;
   const topSkus = topResult.error === null ? topResult.data ?? [] : [];
@@ -924,11 +959,18 @@ async function SalesRanking({ result, metricLabel, contaLabel, marcaLabel }: {
             }
           >
             {topResult.error !== null ? (
-              <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
-                Não foi possível carregar o ranking: {topResult.error.message}
-              </p>
+              <EstadoDaTela
+                tipo="erro"
+                titulo="Não foi possível carregar o ranking"
+                detalhe={topResult.error.message}
+                acao={tentarDeNovo}
+              />
             ) : topSkus.length === 0 ? (
-              <p className="sb-empty">Nenhum SKU com venda calculada neste recorte.</p>
+              <EstadoDaTela
+                tipo={limparFiltros === null ? "vazio" : "filtro"}
+                titulo="Nenhum SKU com venda calculada neste recorte"
+                acao={limparFiltros ?? undefined}
+              />
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table className="sb-table">
