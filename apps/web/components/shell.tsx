@@ -11,6 +11,7 @@ import { CopilotLauncher } from "./copilot-launcher";
 import { MeuPerfil } from "./meu-perfil";
 import { NotificationToasts } from "./notification-toasts";
 import { Marca } from "./marca";
+import { PularParaConteudo } from "./pular-para-conteudo";
 import { SidebarNav, SidebarRodapeLink } from "./nav";
 import { currentMembership } from "../lib/request-membership";
 
@@ -150,6 +151,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     */
     <CopilotContextProvider>
     <div className="sb-shell">
+      {/* O primeiro ponto de foco da tela: sem ele, 42 paradas de Tab antes do conteúdo (D-508). */}
+      <PularParaConteudo />
       <aside className="sb-sidebar">
         {/*
           A LOGO DA SPEED BIKERS (D-355) no lugar das iniciais da organização.
@@ -233,7 +236,10 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           </div>
         </header>
 
-        <main className="sb-content">{children}</main>
+        {/* `tabIndex={-1}`: o alvo do "Pular para o conteúdo" recebe o foco sem entrar na ordem do Tab. */}
+        <main className="sb-content" id="conteudo" tabIndex={-1}>
+          {children}
+        </main>
       </div>
 
       {/*
