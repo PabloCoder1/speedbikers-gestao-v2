@@ -15641,6 +15641,34 @@ Sem leitura, o fato diz "nunca lidas/lidos". Se a leitura falhar, diz "nao foi p
 
 **Impacto:** `apps/web/lib/integrations.ts` e o teste, `apps/web/app/sincronizacao/page.tsx`, `apps/web/e2e/{sincronizacao,integracoes}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-463 - get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
+
+**Contexto:** a D-461 deixou anotado que a correlacao (D-152) usava a mesma conversao `entity_id::bigint` da timeline. Medi como `authenticated` no Dev, na forma dos tres consumidores (`/diagnostico`, o painel do SKU e o detector de anomalia do worker: candidatos e janela de 5 dias). O custo era bem maior do que a anotacao supunha. A ramificacao de pedidos lia **todos os itens de pedido dos candidatos, de sempre**, e so depois cruzava com os poucos cancelamentos e devolucoes da janela. Com 100 candidatos, foram 146 mil itens lidos para 477 eventos: **~125 mil paginas (~1 GB) por chamada**.
+
+**Decisao:**
+
+1. **Os eventos de pedido partem da janela.** Primeiro vem a lista dos cancelamentos e devolucoes do periodo. Depois, so os itens DESSES pedidos (`order_id = any(lista)`, pelo indice `(order_id, position)`), filtrados pelos candidatos. As ramificacoes do proprio SKU e dos anuncios nao mudam.
+2. **A conversao nao estoura.** `entity_id::bigint` so roda quando o texto e um numero que cabe em bigint (ate 19 digitos e no maximo `9223372036854775807`), dentro de um CASE, que garante a ordem da avaliacao. Antes, um id so de digitos maior que bigint dentro da janela derrubava a correlacao dos tres consumidores. Agora ele nao casa com pedido nenhum, porque nao ha pedido com esse id.
+3. **A ordem ganha desempate** (`sku_id`, `event_type`) depois do instante.
+4. **`language plpgsql` + `force_custom_plan`** (D-305).
+5. **O que nao muda:** o contrato, o vocabulario fechado, a janela `[p_from, p_to)`, a permissao (invoker) e o `distinct` da ramificacao de pedidos. A diferenca teorica e um id com zeros a esquerda e mais de 19 caracteres, que antes casava e agora nao. O id do pedido do ML tem 16 digitos.
+
+**Verificacao:**
+- **Dev, como `authenticated`, oito execucoes** (versao nova num esquema temporario, ja apagado), atual -> nova:
+
+| Chamada | Atual | Nova |
+|---|---|---|
+| 1 SKU, 5 dias | 21 ms, 9,0 mil paginas | 10 ms, 3,0 mil |
+| **100 SKUs, 5 dias** (a forma de `/diagnostico` e do worker) | 172 ms, 125 mil | **17 ms, 4,9 mil** |
+| 1 SKU, 30 dias | 105 ms, 51 mil | 47 ms, 25 mil |
+| 100 SKUs, 30 dias | 275 ms, 167 mil | 57 ms, 27 mil |
+
+- **Mesma saida:** 72 casos (4 conjuntos de candidatos, inclusive vazio e um SKU so, em 18 janelas de 5 dias entre junho e setembro), 6.884 linhas, zero diferenca. A ordem por instante se mantem, e a ramificacao de pedidos aparece em ~4,5 mil das linhas.
+- **Integracao:** teste novo com um cancelamento de id maior que bigint dentro da janela, na mesma transacao (o `rollback` desfaz, porque `domain_events` e append-only); os testes da D-152 seguem verdes. Suite inteira: 1006/1006.
+- **Mutacao:** com a funcao antiga, o teste novo cai com "value \"99999999999999999999999\" is out of range for type bigint".
+
+**Impacto:** `supabase/migrations/20261015090000_correlacao_pedidos_pela_janela.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O worker e as telas nao mudam.
+
 ## D-464 - Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 
 **Contexto:** o dono confirmou em 15/10 que a planilha do UpSeller ja vem com a venda da Shopee descontada do estoque. A reposicao, porem, so contava a demanda do ML. Resultado: cobertura alta demais e sugestao baixa demais para SKU que vende na Shopee (risco T-R3 de `docs/MULTICHANNEL_SCREENS.md`).
@@ -15697,6 +15725,29 @@ O efeito da barra passa a rodar de novo a cada `?busca`. Com isso, o "Marcar com
 - web: `apps/web/lib/replenishment-overview.ts` e o teste, `apps/web/app/reposicao/{page,selecao-pedido}.tsx`, `apps/web/app/compras/page.tsx`, `apps/web/app/compras/novo/{sugestoes.ts,sugestoes.test.ts,item-row.tsx}`, `apps/web/app/globals.css`, `apps/web/e2e/reposicao.spec.ts` e `apps/web/scripts/check-navegacao-suave.mjs`;
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-465 - O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
+
+**Contexto:** ao medir a classe ABC do cabecalho do SKU (aberta na D-461), apareceu que ~2,1 mil das paginas vinham do Full, para achar **zero** linhas. No Dev nao ha captura desde 14/09.
+
+Nove funcoes leem o Full atual da organizacao inteira do mesmo jeito: `organization_id = p_organization_id and captured_at >= now() - interval '3 days'`, seguido do `distinct on (ml_account_id, inventory_id)`. Sao elas: `get_listings_dashboard` (que a Home chama), `get_listings_dashboard_counts`, `get_listings_link_overview`, `get_purchase_suggestions`, `get_replenishment_overview`, `get_fulfillment_overview`, `get_sku_abc_curve`, `get_sku_abc_analysis` e `get_stock_summary`.
+
+Nenhum indice comecava por (organizacao, instante). O banco percorria o `timeline_idx` (conta, inventario, instante) inteiro e ia a tabela em cada linha da janela so para conferir a organizacao. Simulando producao (o "agora" na ultima captura do Dev), sao 28,7 mil linhas na janela e **30,8 mil paginas** por leitura. O custo cresce com o historico, e producao captura todo dia.
+
+**Decisao:**
+1. **Indice `fulfillment_stock_snapshots_org_captured_idx`** em `(organization_id, captured_at desc)`, sem mudar funcao nem contrato.
+2. **Simples, nao cobrindo.** Um indice que cobrisse as colunas lidas (`include (ml_account_id, inventory_id, sku_id, quantity)`) leria ~1,4 mil paginas contra ~2,4 mil do simples. Mas e maior e depende do vacuum para nao ir a tabela; mediu 9,5 mil idas a tabela no Dev. O ganho que importa (30,8 mil -> 2,4 mil) vem do simples.
+3. **O `timeline_idx` continua.** E ele que serve a ordem do `distinct on` quando a conta esta fixa. `get_sku_dashboard` e `get_stock_balances` filtram pelo SKU e seguem no `fulfillment_stock_snapshots_sku_idx`.
+
+**Verificacao:**
+- **A leitura do Full atual** (a consulta das funcoes, com o "agora" em 14/09): 30,8 mil -> **2,4 mil paginas**.
+- **As funcoes reais no Dev, como `authenticated`**, com o indice criado numa transacao desfeita. A janela do Dev esta vazia, entao este e o ganho minimo; em producao soma os ~28 mil acima:
+  - `get_listings_dashboard` (a chamada da Home): 8,6 mil -> **4,1 mil**;
+  - `get_sku_abc_curve` (o cabecalho do SKU): 5,6 mil -> **3,2 mil**;
+  - `get_purchase_suggestions`: 17,7 mil -> **12,2 mil**.
+- **Integracao:** suite inteira verde com a migration.
+
+**Impacto:** `supabase/migrations/20261015100000_full_atual_pelo_indice.sql`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O resto do custo da classe ABC do SKU (a curva da organizacao em 90 dias, a tabela de metricas quase inteira) e inerente ao calculo. So um valor pre-calculado o tiraria, e isso fica para quando a tela pedir.
 
 ## D-466 - Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
 
