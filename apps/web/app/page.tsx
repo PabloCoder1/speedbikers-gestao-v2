@@ -247,8 +247,8 @@ function sobrancelhaData(agora: Date): string {
 }
 
 /**
- * A segunda rodada da Home (D-504): as duas leituras que exigem a organização.
- * Começa assim que `currentMembership()` responde — sem esperar as outras dez
+ * A segunda rodada da Home (D-504): a leitura que exige a organização.
+ * Começa assim que `currentMembership()` responde — sem esperar as outras
  * leituras da primeira rodada — e é aguardada só dentro do `<Suspense>` da
  * seção "Atenção necessária".
  */
@@ -257,24 +257,11 @@ function lerSegundaRodada(
   organizationId: string,
   janela: { from: string; to: string },
 ) {
-  return Promise.all([
-    supabase.rpc("get_stock_coverage_summary", {
-      p_organization_id: organizationId,
-      p_date_from: janela.from,
-      p_date_to: janela.to,
-    }),
-    // "Anúncios pausados" é um dos quatro cartões do frame da Home, e tem dado
-    // real: a MESMA função de `/anuncios`, com o MESMO predicado do link —
-    // pausado E com estoque (um pausado sem estoque não tem o que reativar).
-    supabase.rpc("get_listings_dashboard", {
-      p_organization_id: organizationId,
-      p_date_from: janela.from,
-      p_date_to: janela.to,
-      p_status: "paused",
-      p_stock: "in",
-      p_limit: 1,
-    }),
-  ]);
+  return supabase.rpc("get_stock_coverage_summary", {
+    p_organization_id: organizationId,
+    p_date_from: janela.from,
+    p_date_to: janela.to,
+  });
 }
 
 type SegundaRodada = Awaited<ReturnType<typeof lerSegundaRodada>>;
@@ -290,14 +277,15 @@ interface Contagem {
  * Medido em produção (web vitals, 14–15/10): a Home levava 7,6 s até o conteúdo
  * principal, com o primeiro byte em 113 ms. O A1 mediu a causa no Dev, como
  * `authenticated`: quentes, todas as leituras ficam abaixo de 150 ms; frias, a
- * segunda rodada lê ~110 MB de disco (`get_listings_dashboard` monta a lista
- * inteira só para devolver o `total_count`; `get_stock_coverage_summary`) — e a
- * tela inteira esperava por ela.
+ * segunda rodada lia ~110 MB de disco (`get_listings_dashboard` montava a lista
+ * inteira só para devolver o `total_count` dos pausados;
+ * `get_stock_coverage_summary`) — e a tela inteira esperava por ela.
  *
- * Esta seção ordena e conta TODOS os cartões juntos, inclusive os dois da
- * segunda rodada: por isso ela inteira espera, e só ela. Saudação, indicadores,
- * gráfico e atividade pintam com a primeira rodada. Nenhuma leitura, número ou
- * texto muda — muda onde o `await` acontece.
+ * Esta seção ordena e conta TODOS os cartões juntos, inclusive o da cobertura:
+ * por isso ela inteira espera, e só ela. Saudação, indicadores, gráfico e
+ * atividade pintam com a primeira rodada. Os pausados viraram uma contagem
+ * direta na primeira rodada (combinado com A1 e A2): mesmo predicado, mesmo
+ * número.
  */
 async function AtencaoNecessaria({
   segundaRodada,
@@ -306,6 +294,7 @@ async function AtencaoNecessaria({
   openCases,
   mediations,
   unread,
+  pausados,
 }: {
   // Nula só sem organização — e aí a página já voltou antes de chegar aqui.
   segundaRodada: Promise<SegundaRodada | null>;
@@ -314,17 +303,13 @@ async function AtencaoNecessaria({
   openCases: Contagem;
   mediations: Contagem;
   unread: Contagem;
+  pausados: Contagem;
 }): Promise<ReactNode> {
-  const rodada = await segundaRodada;
+  const coverage = await segundaRodada;
 
-  if (rodada === null) return null;
-
-  const [coverage, pausados] = rodada;
+  if (coverage === null) return null;
 
   const coverageRow = primeira(coverage.data) as { em_ruptura: number | null } | null;
-  const pausadosRow = Array.isArray(pausados.data) && pausados.data.length > 0
-    ? (pausados.data[0] as { total_count: number })
-    : null;
 
   const cards: readonly Card[] = [
     {
@@ -406,7 +391,8 @@ async function AtencaoNecessaria({
       href: "/anuncios?estado=paused&estoque=in",
       cta: "Ver anúncios",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "anúncio pausado com estoque" : "anúncios pausados com estoque"}`,
-      count: pausados.error !== null ? null : (pausadosRow?.total_count ?? 0),
+      // Com erro, `count` vem nulo e o cartão diz que não leu — nunca "0".
+      count: pausados.error !== null ? null : pausados.count,
       severidade: "importante",
       failed: pausados.error !== null,
     },
@@ -551,17 +537,17 @@ export default async function HomePage({
   } = await supabase.auth.getSession();
   const userId = session?.user.id ?? null;
 
-  // A organização chega pela PRIMEIRA leitura da lista abaixo, e as duas
-  // leituras que a exigem (cobertura e pausados) começam no instante em que ela
-  // chega — sem esperar as outras dez — e são aguardadas só dentro do
-  // `<Suspense>` da seção "Atenção necessária" (D-504). Antes eram uma
-  // segunda rodada em fila depois de todas, e a tela inteira esperava por elas.
+  // A organização chega pela PRIMEIRA leitura da lista abaixo, e a leitura que
+  // a exige (a cobertura) começa no instante em que ela chega — sem esperar as
+  // outras — e é aguardada só dentro do `<Suspense>` da seção "Atenção
+  // necessária" (D-504). Antes era uma segunda rodada em fila depois de todas,
+  // e a tela inteira esperava por ela.
   const membershipPromise = currentMembership();
   const segundaRodada = membershipPromise.then((m) =>
     m.error === null && m.organizationId !== null ? lerSegundaRodada(supabase, m.organizationId, janela) : null,
   );
 
-  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, vendas, vendasAntes, serieDiaria, atividade, perfil] =
+  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendas, vendasAntes, serieDiaria, atividade, perfil] =
     await Promise.all([
       membershipPromise,
       supabase
@@ -591,6 +577,17 @@ export default async function HomePage({
         // desde que existe (D-241).
         .select("notification_id", { count: "exact", head: true })
         .is("read_at", null),
+      // "Anúncios pausados" com estoque: o MESMO predicado de `/anuncios` com
+      // pausados e com estoque (`status = 'paused'` e `available_quantity > 0`),
+      // contado direto. Era `get_listings_dashboard` com `p_limit 1`, que monta a
+      // lista inteira só para devolver o total — 7,6 mil páginas frias, medido
+      // pelo A1 (D-504). Quem restringe às contas visíveis é a RLS de `listings`,
+      // a mesma que a função (security invoker) usava. Mesmo número no Dev.
+      supabase
+        .from("listings")
+        .select("item_id", { count: "exact", head: true })
+        .eq("status", "paused")
+        .gt("available_quantity", 0),
       supabase.rpc("get_sales_summary", { p_date_from: janela.from, p_date_to: janela.to }),
       supabase.rpc("get_sales_summary", { p_date_from: anterior.from, p_date_to: anterior.to }),
       supabase.rpc("get_sales_daily_series", { p_date_from: serie.from, p_date_to: serie.to }),
@@ -712,6 +709,7 @@ export default async function HomePage({
           openCases={openCases}
           mediations={mediations}
           unread={unread}
+          pausados={pausados}
         />
       </Suspense>
 
