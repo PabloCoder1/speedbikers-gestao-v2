@@ -15925,6 +15925,45 @@ A `/central` era a ultima a usar a constante `AVISO`, que morava em `faturamento
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-474 - Telas do A2, etapa E5: os estados do /skus/[skuId] no EstadoDaTela, e as regras CSS que ficaram sem uso saem
+
+**Contexto:** a D-468 trocou os dois avisos da T-R6 no SKU (contas e acoes abertas), e a D-472 fechou as outras telas da fila do A2. Sobrou o `/skus/[skuId]`, a pagina de detalhe com mais estados do app:
+- **onze avisos vermelhos** (`.sb-skud-danger` com `role="alert"`), cada um com a mensagem tecnica crua no meio da frase. Um deles ainda passava a mensagem por `sanitizeErrorText` na mao;
+- **os vazios das abas** em tres formas: `.sb-empty`, `.sb-skud-soft` e `.sb-skud-lead-mb4`.
+
+A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
+
+**1. A MESMA REGRA DA D-470/D-472.**
+- Toda falha de leitura vira `tipo="erro"`, com o detalhe sanitizado pelo componente e "Tentar de novo". A acao e uma constante so (`tentarDeNovo`), com a MESMA URL e a aba incluida: tentar de novo no historico de custo volta ao historico de custo. Os dois da D-468 passam a usa-la.
+- Os vazios viram `tipo="vazio"`. O SKU nao tem filtro proprio, entao nao ha "filtro sem resultado".
+- As ressalvas que davam sentido ao vazio continuam na descricao: "ausencia de snapshot nao e saldo zero"; "isso nao quer dizer que o preco ficou parado"; "a linha do tempo so enxerga o que o sistema registrou".
+
+**2. AS DECISOES.** O vazio "Nenhuma decisao registrada" levava, dentro do mesmo paragrafo, a contagem das acoes abertas ou a falha dela. Agora:
+- o vazio diz se ha acao aberta na Central de Acoes;
+- a falha da contagem e um erro a parte. "Nenhuma decisao" continua verdade; a contagem e que nao veio.
+
+**3. VENDAS ENTRE MARKETPLACES.** O componente ganha `tentarDeNovo` (opcional) e deixa de sanitizar a mensagem na mao: o `EstadoDaTela` ja faz isso.
+
+**4. FICA COMO ESTA.** O painel de diagnostico ("O que aconteceu?") e a narracao com IA mostram o RESULTADO de uma acao do usuario, nao o estado da tela. Mesma regra da D-472 para os retornos de formulario.
+
+**5. CSS SEM USO.** Cinco regras ficaram sem nenhum uso em codigo ou e2e depois das D-470, D-472 e D-474, conferidas classe a classe, e saem:
+- `.sb-skud-danger` e `.sb-skud-lead-mb4` (SKU);
+- `.sb-pod-state` e `.sb-pod-error` (detalhe do pedido de compra);
+- `.sb-rep-aviso`, com a variante do celular (`/reposicao`).
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web, incluindo `check:table-styles` e `check:control-styles` depois da limpeza do CSS.
+- **e2e:** `sku-dashboard`, `sku-shopee` e `vendas-por-sku-multicanal` 13/13.
+- **Falha simulada no banco isolado:** sem o SELECT de `sku_cost_history` para `authenticated`, a aba Historico mostra "Nao foi possivel carregar o historico de custo", com a mensagem embaixo do titulo (o CSS do A3 na D-505) e "Tentar de novo" para `/skus/<id>?aba=historico`. A permissao voltou em seguida, e a foto foi conferida.
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000). Uma primeira rodada deu 235: o `vinculacoes` "o zero de candidatos" falhou uma vez e passou sozinho e na rodada inteira seguinte; nao toca codigo desta fatia, e fica anotado como intermitente.
+
+**Impacto:**
+- web: `apps/web/app/skus/[skuId]/{page,vendas-entre-marketplaces}.tsx` e `apps/web/app/globals.css` (cinco regras a menos);
+- docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
