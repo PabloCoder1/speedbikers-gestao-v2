@@ -120,6 +120,8 @@ export const envSchema = z.object({
    * `SHOPEE_REDIRECT_URI` + `/push/shopee`.
    */
   SHOPEE_PUSH_URL: z.url().optional(),
+  /** Chave de assinatura do push, se diferente da do parceiro (segredo; D-453). */
+  SHOPEE_PUSH_PARTNER_KEY: z.string().min(16).optional(),
 
   /**
    * Copiloto (D-082) — narração de diagnóstico via Claude Haiku 4.5. Segredo,

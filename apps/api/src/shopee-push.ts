@@ -40,6 +40,12 @@ export interface ShopeePushDeps {
   logger: Logger;
   environment: ShopeeEnvironment;
   partnerKey: string;
+  /**
+   * Chave de assinatura do push, se a Shopee usar uma diferente da do
+   * parceiro (os pushes de teste de 15/10 vieram assinados e não conferiram
+   * com a de teste). Tentada antes da do parceiro.
+   */
+  pushKey?: string;
   /** O endereço EXATO cadastrado no Console: entra na assinatura. */
   pushUrl: string;
   now?: () => Date;
@@ -117,10 +123,21 @@ export async function receiveShopeePush(
   // O corpo exato e, por garantia, sem a quebra de linha do fim (o mesmo
   // conteúdo; a assinatura continua exigindo a chave do parceiro).
   const corpos = [...new Set([input.rawBody, input.rawBody.replace(/\s+$/, "")])];
-  const endereco = enderecosDoPush(deps.pushUrl).find((e) => corpos.some((corpo) => verifyPushSignature(deps.partnerKey, e.url, corpo, cabecalho)));
+  const chaves = deps.pushKey === undefined ? [deps.partnerKey] : [deps.pushKey, deps.partnerKey];
+  const endereco = enderecosDoPush(deps.pushUrl).find((e) =>
+    chaves.some((chave) => corpos.some((corpo) => verifyPushSignature(chave, e.url, corpo, cabecalho))),
+  );
 
   if (endereco === undefined) {
-    deps.logger.warn("shopee_push_signature_rejected", diagnosticoDaRecusa(input));
+    deps.logger.warn("shopee_push_signature_rejected", {
+      ...diagnosticoDaRecusa(input),
+      // AMOSTRA TEMPORÁRIA (15/10): o corpo cru e a assinatura recebida, para
+      // achar offline a chave e o texto que a Shopee usa. Não é segredo — a
+      // assinatura não revela a chave, e o push não traz dado de comprador
+      // (loja, pedido, devolução). Sai quando a assinatura fechar.
+      amostra_corpo: input.rawBody.slice(0, 2000),
+      amostra_assinatura: cabecalho ?? null,
+    });
 
     return { status: "invalid_signature" };
   }
