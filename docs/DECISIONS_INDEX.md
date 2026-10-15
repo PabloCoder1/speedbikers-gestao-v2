@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **476** (D-001 a D-509).
+Decisões registradas: **477** (D-001 a D-509).
 
 ## Por domínio
 
