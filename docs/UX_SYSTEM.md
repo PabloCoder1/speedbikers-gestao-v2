@@ -185,10 +185,24 @@ primeiro deploy de produção com a D-507: data e `dpl_` **a preencher no
 deploy** (`list_deployments`). Aba aberta antes dele manda o formato antigo até
 recarregar: conte pelo campo, não pelo horário.
 
-Leitura de 14–15/10 (amostra pequena): Home com LCP de 7,6 s, `/skus/[id]` com
-5,9 s, `/vendas` com 3,3–4,7 s; o resto abaixo de 1 s, e o TTFB sempre abaixo de
-150 ms — o esqueleto chega rápido e quem demora é a leitura. Um CLS de 0,51 numa
-carga de `/vendas` não se reproduz no build local (17 telas com CLS 0).
+**Como ler (D-506).** O reporter monta uma vez por documento, no layout raiz.
+O TTFB sai na montagem, com a rota **carregada**; LCP e CLS saem quando a aba
+se esconde, com a rota **daquele momento** — depois de uma navegação suave, o
+log põe o LCP da carga na rota de destino. Então: pareie cada LCP/CLS com o
+TTFB anterior (é ele que diz qual tela abriu do zero); conte a janela "depois
+do deploy" pelo horário do TTFB, não pelo `dep=` do envio (é o deploy que
+recebeu, não o que serviu); e lembre que o CLS soma o documento inteiro,
+inclusive as navegações suaves.
+
+Leitura de 13–15/10, antes da D-504, pareada (uma pessoa, poucas cargas): Home
+com quatro cargas completas, LCP em duas (3,5 e 7,6 s), TTFB de 14 a 169 ms,
+CLS 0; `/vendas` com LCP de 1,1, 1,6, 4,7 e 5,9 s; `/faturamento` com uma de
+3,3 s; `/skus/[id]` **sem nenhuma carga completa** — o 5,9 s que a D-503 leu
+como SKU era uma carga de `/vendas` que terminou num SKU. O TTFB fica abaixo de
+170 ms em todas, menos uma `/contas` de 13/10 (1,1 s): o esqueleto chega rápido
+e quem demora é a leitura. O CLS de 0,51 é de uma carga de `/vendas` de verdade,
+mas pode vir de uma navegação suave dentro dela — por isso não se reproduz numa
+carga local (17 telas com CLS 0).
 
 **A causa, medida pelo A1** (15/10, Dev, como `authenticated`): quentes, as RPCs
 dessas telas ficam abaixo de 150 ms; o que pesa é o cache frio. Na Home, a
@@ -200,3 +214,24 @@ acessos a páginas; desde a D-505 só o selo da curva espera por ela) e, na aba 
 corrigida na D-461 do A1). Os números são **acessos** a páginas (`Buffers: shared hit`), não páginas distintas — o A1 corrigiu em 15/10, e os "MB" que estavam aqui eram acessos × 8 KB. Releia
 antes de cada fatia de performance; o número de antes/depois vai para
 `docs/PERFORMANCE.md`.
+
+### Antes e depois da D-504 e da D-505 (D-506)
+
+Lido em 15/10, 17:33 UTC. A D-504 está em produção desde 16:44 UTC
+(`dpl_G6M3eoVm7f5XtNbAvyjuCJ5R6Zy7`, `691ab024`) e a D-505 desde 17:04 UTC
+(`dpl_BFVfoWJJjGKdBL3LjBP8d3z3eMdH`, `27323206`).
+
+| tela | métrica | antes (13–15/10, pareado) | depois |
+|---|---|---|---|
+| Home | LCP | 3.500 e 7.612 ms (n = 2) | n = 0 |
+| Home | TTFB | 13,7, 108,8, 112,9 e 168,7 ms (n = 4) | n = 0 |
+| Home | CLS | 0 e 0 (n = 2) | n = 0 |
+| `/skus/[id]` | LCP, TTFB, CLS | n = 0 (nenhuma carga completa) | n = 0 |
+
+Nenhum ganho afirmado sem amostra. **Próxima leitura:** 24 h depois de cada
+deploy (a da D-504 a partir de 16/10, 16:45 UTC; a da D-505, de 17:05 UTC),
+pareada pelo TTFB. No SKU,
+conte também o CLS rotulado `/skus/…` sem TTFB lá: o selo tardio da D-505
+desloca depois de uma navegação suave, e o deslocamento cai no documento que
+veio de outra tela. Se aparecer CLS num SKU sem classe ABC (o esqueleto do selo
+some), reabra a reserva de espaço que o A2 sugeriu.
