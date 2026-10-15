@@ -152,6 +152,20 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.15 Metas por marketplace (C-66, D-473) — em código
+
+`get_meta_do_mes(p_organization_id, p_mes, p_hoje)` — a mesma da central (D-395), sem parâmetro novo. As chaves de sempre continuam no topo e são as do GERAL; a resposta ganha `escopos`.
+
+| Chave | Quando vem | Série e meta |
+|---|---|---|
+| `escopos.GERAL` | sempre (igual ao topo) | ML + Shopee; meta de `monthly_goals` (nula sem meta) |
+| `escopos.ML` | sempre | `daily_account_metrics`; meta de `monthly_goals_marketplace` (`ML`; nula sem meta) |
+| `escopos.SHOPEE` | sempre como chave; **NULA** sem loja live com pedidos lidos, ou para quem não alcança a loja | vendas válidas das lojas live (C-53); meta de `monthly_goals_marketplace` (`SHOPEE`) |
+
+Cada escopo traz os mesmos campos do topo (realizado, atingimento, ritmo, projeção, perfil, datas comerciais, ano anterior). **GERAL = ML + SHOPEE sempre**: pedido de loja live ainda não lida não entra em nenhum. Num mês que atravessa o Go Live, o GERAL muda de base a partir da primeira leitura de pedidos da loja live — a tela avisa.
+
+`monthly_goals_marketplace` (organização, `month` com dia 1, `marketplace` `ML`|`SHOPEE`, `revenue_goal > 0`, `note` ≤ 300): única em (organização, mês, marketplace) — upsert com `onConflict: "organization_id,month,marketplace"`; membro lê, ADMIN/GESTOR grava. A meta GERAL continua em `monthly_goals`. Antes da migration: a chave `escopos` não vem e a tabela não existe (PGRST205/42P01).
+
 ### 3.14 Busca universal com a Shopee (C-57, D-467) — em produção
 
 `search_entities(p_organization_id, p_query)` — a mesma da paleta e da `/busca`, estendida (não há segunda busca).

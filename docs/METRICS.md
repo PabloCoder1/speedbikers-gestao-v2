@@ -428,6 +428,8 @@ Os números da tabela são os **padrões**; cada organização muda os seus em `
 
 Granularidade: `organization`. `security invoker`: quem não vê uma conta não vê a receita dela, e o realizado contra a meta da empresa fica menor — o caso é de um usuário com permissão parcial, não do ADMIN.
 
+**Por marketplace (D-473, C-66).** O mesmo cálculo roda por escopo: `GERAL` (ML + Shopee, meta de `monthly_goals`), `ML` (`daily_account_metrics`, meta de `monthly_goals_marketplace`) e `SHOPEE` (vendas válidas das lojas live, 5S, meta de `monthly_goals_marketplace`). A Shopee só entra com loja live de pedidos lidos; sem ela o escopo é NULO e GERAL = ML. Vale sempre GERAL = ML + SHOPEE. Num mês que atravessa o Go Live, o GERAL muda de base a partir da primeira leitura de pedidos da loja live.
+
 ## 5K. Imposto e margem de contribuição (D-395) — DEFINIDAS E IMPLEMENTADAS
 
 > O dono escolheu **uma alíquota efetiva sobre o faturamento, com vigência** (`tax_rates`). `get_faturamento` aplica, pedido a pedido, a alíquota vigente no dia de negócio da venda. Sai de 5.5 a `margem_contribuicao`, que esperava imposto e Ads.
