@@ -285,6 +285,7 @@ branco embutido.
 | ~~`th`/`td`/`tdNumber`/`cardStyle`~~ | ~~`components/table-styles.ts`~~ | **NÃO EXISTE MAIS** — apagado em D35 (D-275), quando os dois últimos consumidores migraram. A linha anterior aqui ainda o dava como legado vivo; conferido em D38, o arquivo não está no repositório |
 | `CarregandoTela`/`CarregandoConteudo`/`CarregandoBloco`, `AtualizandoTela` (via `CarregandoSeODemorar`), `LinkDeFiltro`, `ItemDeMenu`, `FormularioFiltro` | `components/carregando*.tsx`, `link-de-filtro.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx` | **o padrão de espera** (D-382, D-500, D-501): trocar de tela → esqueleto; atualizar a mesma tela → o dado fica, com barra e esmaecimento. Qual usar em cada caso: `docs/UX_SYSTEM.md` §1 |
 | `EstadoDaTela`, `BotaoEnviar` | `components/estado-da-tela.tsx`, `botao-enviar.tsx` | **o estado sem tabela e a ação que grava** (D-502): erro, vazio, filtro e permissão numa forma só (`.sb-estado`), e o botão de ação de servidor que desabilita e diz o que faz. Quando usar cada tipo: `docs/UX_SYSTEM.md` §1 |
+| `ObjectBadgeTardio`, `SeloCarregando` | `components/object-header.tsx` | **o selo que chega depois** (D-505): um `Suspense` na posição do frame dentro da fileira de selos do `ObjectHeader`, com o lugar reservado pelo rótulo transparente e a revelação de 350 ms; hoje, a curva ABC do SKU |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
