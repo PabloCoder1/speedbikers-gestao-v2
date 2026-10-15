@@ -16112,6 +16112,35 @@ Se a ordem escapar, a paleta mostra "Outros", e nao `pedido_shopee`.
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration nova, RPC, worker ou api (a migration e a do #201).
 
+## D-478 - A falha intermitente da /vinculacoes nao era estado deixado por outro spec: o teste passa a esperar o resumo ou a dizer o motivo da queda
+
+**Contexto:** na suite inteira da D-474, o caso "/vinculacoes: o zero de candidatos diz por que e zero" falhou uma vez, com "cartao CANDIDATOS DO ERP nao encontrado". Ele passou sozinho e em tres rodadas inteiras depois. A hipotese anotada era estado deixado por outro spec.
+
+**O que a investigacao mostrou:**
+- **Nao e ordem nem estado.** A suite roda com um worker so e `fullyParallel: false`: a ordem e sempre a mesma, e estado deixado por outro spec reprovaria toda rodada.
+- **A rodada que falhou estava lenta inteira.** Os vizinhos levaram 5,7 s, 5,0 s e 7,8 s, contra cerca de 2 s nas outras; o caso, 15,3 s, contra 1,5 s. A rodada levou 9,2 min, contra 7,9 a 8,7 min. Naquele horario, outra sessao rodava a suite inteira dela no mesmo Docker.
+- **A CPU ocupada sozinha nao reproduz.** Com 12 processos em laco (12 nucleos), o caso levou de 1,8 a 3,4 s e passou (3 de 3). Sem carga, 1,5 a 1,7 s (3 de 3).
+- **O sintoma combina com a queda para a lista de sempre.** A tela e renderizada no servidor depois da leitura unica (`get_listings_link_overview`, D-376). Se ela falha, a pagina cai na lista de sempre SEM o resumo, com uma nota que da o motivo. "Cartao nao encontrado" nao separava esse caso de uma renderizacao lenta.
+
+**A mudanca (so no teste):** `esperaResumo` nos tres casos que leem o resumo.
+- O resumo OU a nota da lista de sempre tem ate 15 s para aparecer (o `expect` padrao e 5 s, e o teste tem 60): renderizacao lenta sob carga passa.
+- Se a pagina caiu na lista de sempre, o teste falha com o MOTIVO que ela mostrou. Conferido sem o EXECUTE da `get_listings_link_overview` no banco isolado: "a leitura do resumo falhou e a tela caiu na lista de sempre: ... permission denied for function get_listings_link_overview".
+
+Nao muda tela, banco nem limiar de produto. A proxima falha diz qual dos dois casos foi.
+
+**Publicacao:** so teste e docs (`docs/TESTING.md`, armadilha conhecida).
+
+**Verificacao:**
+- `vinculacoes` 7/7 contra o build.
+- O caso isolado 3/3 sem carga e 3/3 com a CPU ocupada.
+- A queda simulada (sem o EXECUTE) falha com o motivo; a permissao voltou em seguida.
+- typecheck, lint e as guardas.
+
+**Impacto:**
+- teste: `apps/web/e2e/vinculacoes.spec.ts`;
+- docs: `docs/{TESTING,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`;
+- nenhum codigo de tela, migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
