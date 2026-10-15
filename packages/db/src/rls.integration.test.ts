@@ -13412,7 +13412,7 @@ describe("search_entities (Busca Universal)", () => {
    * alguem acrescentar a oitava entidade, ele falha aqui e a mensagem manda
    * atualizar o mapa de rotulos.
    */
-  it("emite exatamente as sete entidades que a interface sabe rotular", async () => {
+  it("emite exatamente as dez entidades que a interface sabe rotular", async () => {
     const def = await client.query<{ src: string }>(
       `select pg_get_functiondef(p.oid) as src
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -13422,9 +13422,19 @@ describe("search_entities (Busca Universal)", () => {
     const tipos = [...(def.rows[0]?.src ?? "").matchAll(/select\s+'([a-z_]+)'/g)].map((m) => m[1]);
 
     // Se este array mudar, atualize SEARCH_ENTITY em apps/web/lib/labels.ts.
-    expect(tipos.sort()).toEqual(
-      ["anuncio", "atendimento", "conta", "fornecedor", "nota_fiscal", "pedido_compra", "sku"],
-    );
+    // D-467: a loja, o anúncio e o pedido da Shopee (C-57).
+    expect(tipos.sort()).toEqual([
+      "anuncio",
+      "anuncio_shopee",
+      "atendimento",
+      "conta",
+      "fornecedor",
+      "loja",
+      "nota_fiscal",
+      "pedido_compra",
+      "pedido_shopee",
+      "sku",
+    ]);
   });
 
   /**
@@ -13862,6 +13872,206 @@ describe("RLS por conjunto em vez de por linha (D-181)", () => {
       { proname: "accessible_accounts", seguro: true },
       { proname: "accessible_orgs", seguro: true },
     ]);
+  });
+});
+
+/*
+  D-467 (C-57): a Busca Universal acha a loja, o anúncio e o pedido da Shopee.
+  Organização própria (eventos de acesso são append-only). Duas lojas live e
+  uma de teste; o ANALISTA só alcança a que for concedida (D-433).
+*/
+describe("busca universal com a Shopee (D-467, C-57)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d467";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d467";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d467";
+  const LIVE_A = "dddd4670-0000-4000-8000-0000000a0467";
+  const LIVE_B = "dddd4670-0000-4000-8000-0000000b0467";
+  const TESTE = "dddd4670-0000-4000-8000-0000000c0467";
+  const LOJAS = [
+    { id: LIVE_A, sufixo: "A", item: 4670001 },
+    { id: LIVE_B, sufixo: "B", item: 4670002 },
+    { id: TESTE, sufixo: "T", item: 4670003 },
+  ] as const;
+
+  let skuId = "";
+
+  interface Achado {
+    entity_type: string;
+    label: string;
+    sublabel: string;
+    href: string;
+    marketplace: string | null;
+    entity_id: string;
+    account_id: string | null;
+  }
+
+  const busca = (usuario: string, termo: string, tipo: string): Promise<Achado[]> =>
+    asUser<Achado>(
+      usuario,
+      `select * from public.search_entities('${ORG}', '${termo}') where entity_type = '${tipo}' order by href`,
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d467@rls.test'), ($2::uuid, 'analista-d467@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-467', 'org-d467') on conflict (id) do nothing",
+      [ORG],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, orders_synced_until)
+       values ($1, $4, 'live', 990467001, 'Speed Loja A', 'CONNECTED', now()),
+              ($2, $4, 'live', 990467002, 'Speed Loja B', 'CONNECTED', now()),
+              ($3, $4, 'sandbox', 990467003, 'Speed Loja Teste', 'CONNECTED', now())`,
+      [LIVE_A, LIVE_B, TESTE, ORG],
+    );
+    // Um item (com variação) e um pedido por loja.
+    for (const loja of LOJAS) {
+      await client.query(
+        `insert into public.shopee_items
+           (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+         values ($1, $2, $3, 'NORMAL', now(), $4, null, true, now(), now())`,
+        [loja.id, ORG, loja.item, `Capacete Busca ${loja.sufixo}`],
+      );
+      await client.query(
+        `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku)
+         values ($1, $2, 1, $3, 'Tamanho M', $4)`,
+        [loja.id, loja.item, ORG, `CAP-VAR-${loja.sufixo}`],
+      );
+      await client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+         values ($1, $2, $3, 'COMPLETED', '2026-10-10T02:30:00Z', now(), '2026-10-10T02:31:00Z')`,
+        [loja.id, ORG, `241009BUSCA${loja.sufixo}`],
+      );
+    }
+    // O item apagado da loja A não pode sair: a lista também não o mostra.
+    await client.query(
+      `insert into public.shopee_items
+         (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+       values ($1, $2, 4670009, 'SELLER_DELETE', now(), 'Capacete Busca apagado', null, false, now(), now())`,
+      [LIVE_A, ORG],
+    );
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title, kind) values ($1, 'D467-SKU', 'Capacete de busca', 'PRODUTO')
+       on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id`,
+      [ORG],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LIVE_A, LIVE_B, TESTE]]);
+  });
+
+  it("anúncio Shopee pelo nome: só loja live, sem o apagado, com destino da lista filtrada e as colunas novas", async () => {
+    const linhas = await busca(ADMIN, "capacete busca", "anuncio_shopee");
+
+    expect(linhas).toEqual([
+      {
+        entity_type: "anuncio_shopee",
+        label: "Capacete Busca A",
+        sublabel: "4670001 · Speed Loja A",
+        href: `/anuncios/shopee?loja=${LIVE_A}&q=4670001`,
+        marketplace: "SHOPEE",
+        entity_id: "4670001",
+        account_id: LIVE_A,
+      },
+      {
+        entity_type: "anuncio_shopee",
+        label: "Capacete Busca B",
+        sublabel: "4670002 · Speed Loja B",
+        href: `/anuncios/shopee?loja=${LIVE_B}&q=4670002`,
+        marketplace: "SHOPEE",
+        entity_id: "4670002",
+        account_id: LIVE_B,
+      },
+    ]);
+  });
+
+  it("anúncio Shopee pelo SKU da variação e pelo item_id exato", async () => {
+    expect((await busca(ADMIN, "cap-var-b", "anuncio_shopee")).map((l) => l.entity_id)).toEqual(["4670002"]);
+    expect((await busca(ADMIN, "4670001", "anuncio_shopee")).map((l) => l.entity_id)).toEqual(["4670001"]);
+  });
+
+  it("pedido Shopee pelo prefixo, sem diferenciar maiúscula; destino com o dia de São Paulo; loja de teste fora", async () => {
+    const linhas = await busca(ADMIN, "241009busca", "pedido_shopee");
+
+    // 02:30 UTC de 10/10 ainda é 09/10 em São Paulo.
+    expect(linhas.map((l) => [l.label, l.href, l.entity_id, l.account_id])).toEqual([
+      ["Pedido 241009BUSCAA", `/vendas/shopee?loja=${LIVE_A}&from=2026-10-09&to=2026-10-09&pedido=241009BUSCAA`, "241009BUSCAA", LIVE_A],
+      ["Pedido 241009BUSCAB", `/vendas/shopee?loja=${LIVE_B}&from=2026-10-09&to=2026-10-09&pedido=241009BUSCAB`, "241009BUSCAB", LIVE_B],
+    ]);
+    expect(linhas[0]?.sublabel).toBe("Speed Loja A · 09/10/2026");
+  });
+
+  it("termo com curinga não procura pedido", async () => {
+    expect(await busca(ADMIN, "2410%", "pedido_shopee")).toEqual([]);
+    expect(await busca(ADMIN, "241009BUSC_", "pedido_shopee")).toEqual([]);
+  });
+
+  it("a loja aparece, e a de teste vem marcada", async () => {
+    const linhas = await busca(ADMIN, "speed loja", "loja");
+
+    expect(linhas.map((l) => [l.label, l.sublabel, l.href, l.marketplace]).sort()).toEqual([
+      ["Speed Loja A", "Shopee", "/contas", "SHOPEE"],
+      ["Speed Loja B", "Shopee", "/contas", "SHOPEE"],
+      ["Speed Loja Teste", "Shopee · teste", "/contas", "SHOPEE"],
+    ]);
+  });
+
+  it("sem concessão o ANALISTA não acha nada da Shopee; com a loja A, só a A", async () => {
+    const termos: Record<string, string> = {
+      anuncio_shopee: "capacete busca",
+      pedido_shopee: "241009BUSCA",
+      loja: "speed loja",
+    };
+    for (const [tipo, termo] of Object.entries(termos)) {
+      expect(await busca(ANALISTA, termo, tipo)).toEqual([]);
+    }
+
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)", [ANALISTA, LIVE_A]);
+    try {
+      for (const [tipo, termo] of Object.entries(termos)) {
+        expect((await busca(ANALISTA, termo, tipo)).map((l) => l.account_id), tipo).toEqual([LIVE_A]);
+      }
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1", [ANALISTA]);
+    }
+  });
+
+  it("os tipos de antes ganham as colunas novas: o SKU vem sem marketplace, com o id dele", async () => {
+    const [linha] = await busca(ADMIN, "D467-SKU", "sku");
+
+    expect(linha).toEqual({
+      entity_type: "sku",
+      label: "D467-SKU",
+      sublabel: "Capacete de busca",
+      href: `/skus/${skuId}`,
+      marketplace: null,
+      entity_id: skuId,
+      account_id: null,
+    });
+  });
+
+  it("get_shopee_orders filtra pelo pedido (p_order_sn), sem diferenciar maiúscula; nulo é a lista de sempre", async () => {
+    const pedidos = (filtro: string): Promise<{ order_sn: string; total_count: string }[]> =>
+      asUser(
+        ADMIN,
+        `select order_sn, total_count from public.get_shopee_orders('${ORG}', '2026-10-09', '2026-10-09', p_order_sn => ${filtro})`,
+      );
+
+    expect(await pedidos("'241009buscab'")).toEqual([{ order_sn: "241009BUSCAB", total_count: "1" }]);
+    expect((await pedidos("null")).map((p) => p.order_sn).sort()).toEqual(["241009BUSCAA", "241009BUSCAB", "241009BUSCAT"]);
   });
 });
 
