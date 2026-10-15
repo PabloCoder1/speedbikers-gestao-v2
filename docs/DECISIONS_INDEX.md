@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **477** (D-001 a D-509).
+Decisões registradas: **478** (D-001 a D-509).
 
 ## Por domínio
 
@@ -310,7 +310,7 @@ Decisões registradas: **477** (D-001 a D-509).
 - **D-459** — C-65: a demanda da Shopee na cobertura e na sugestao de compra (ML + Shopee nas janelas), com a parte da Shopee a vista e nula sem loja live lida
 - **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 
-### outros (65)
+### outros (66)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -376,6 +376,7 @@ Decisões registradas: **477** (D-001 a D-509).
 - **D-368** — Novo pedido de compra: resumo fixo, ficha do fornecedor, prazo em um clique e itens com subtotal, ultimo custo e lista colada
 - **D-393** — A Central de Notificacoes deixou de ser uma parede cronologica: os numeros que D-269 pediu chegaram, e a raiz da consulta estava errada
 - **D-408** — Os limites que julgam os numeros da central viram configuracao da organizacao, com os padroes de antes
+- **D-473** — Metas por marketplace (C-66): uma meta por marketplace e uma geral, e o GERAL so soma a Shopee com loja real lida
 - **D-478** — A falha intermitente da /vinculacoes nao era estado deixado por outro spec: o teste passa a esperar o resumo ou a dizer o motivo da queda
 
 ### processo/docs (1)

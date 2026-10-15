@@ -16041,6 +16041,31 @@ A `/central` era a ultima a usar a constante `AVISO`, que morava em `faturamento
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-473 - Metas por marketplace (C-66): uma meta por marketplace e uma geral, e o GERAL so soma a Shopee com loja real lida
+
+**Contexto:** decisao do dono de 15/10, trazida pelo A2 (T8 da central): **uma meta por marketplace e uma geral**, construida ja, com a Shopee de fora ate haver loja real. Hoje a meta do mes (D-395) e uma so, da organizacao, em `monthly_goals`, comparada pela `get_meta_do_mes` com a receita bruta do ML (`daily_account_metrics`). A Shopee ainda e so sandbox (Go Live em analise).
+
+**Decisao:**
+1. **`monthly_goals` nao muda e continua sendo a meta GERAL.** As linhas de hoje viram a geral. Trocar a unica dela para (organizacao, mes, escopo) quebraria o `upsert ... onConflict: organization_id,month` da tela de hoje no instante da migration, a mesma classe de risco do `p_order_sn` (D-476). As metas de ML e Shopee vao numa tabela nova, **`monthly_goals_marketplace`** (organizacao, mes com dia 1, `marketplace` em `ML`/`SHOPEE`, `revenue_goal > 0`, nota de ate 300), unica em (organizacao, mes, marketplace), no molde da `monthly_goals`: membro le, ADMIN/GESTOR grava, anon nao alcanca.
+2. **`get_meta_do_mes` roda o calculo de sempre uma vez por escopo** (perfil semanal, datas comerciais, ritmos, projecao, ano anterior), cada um sobre a sua serie diaria:
+   - `GERAL` = receita bruta do ML + a da Shopee; meta de `monthly_goals`;
+   - `ML` = a de hoje (`daily_account_metrics`); meta de `monthly_goals_marketplace`;
+   - `SHOPEE` = vendas validas das lojas live (a do consolidado, C-53, pelo dia de Sao Paulo; receita desconhecida fora da soma); meta de `monthly_goals_marketplace`.
+3. **A Shopee so entra com loja live de pedidos ja lidos** (`orders_synced_until`, a regra do C-65). Sem ela, `escopos.SHOPEE` vem NULO (ausencia nao e zero) e **pedido de loja live ainda nao lida nao entra em nenhum escopo** -- vale sempre GERAL = ML + SHOPEE, e GERAL = ML em numero quando a Shopee vem nula. Quem nao alcanca a loja (D-433) tambem ve a Shopee nula: a funcao segue `security invoker`.
+4. **O formato:** as chaves de sempre sao as do GERAL (a tela de antes nao muda), e os tres vem em `escopos`. `escopos.GERAL` e `escopos.ML` vem **sempre**, com `meta` nula quando nao cadastrada; `escopos.SHOPEE` vem sempre como chave, nula sem loja live lida. Sem parametro novo: a web de antes e a de depois funcionam nos dois bancos (a nova le `escopos` so quando a chave vem).
+5. **A meta geral de um mes que atravessa o Go Live muda de base no meio:** a partir da primeira leitura de pedidos da loja live, o realizado do GERAL passa a somar a Shopee (e o perfil, os ritmos e a projecao do GERAL tambem). E a decisao do dono ("uma geral"); a tela diz isso na nota da meta (T8b do A2).
+6. **Imposto e aliquota (D-395) seguem da empresa, sem escopo.**
+
+**Verificacao:**
+- **Dev, dados reais, como `authenticated`** (ADMIN, a funcao nova num esquema temporario apagado depois): o topo e `escopos.GERAL` identicos a funcao atual; `escopos.SHOPEE` nulo (so ha loja sandbox). Antes, numa transacao desfeita, 10 cenarios (mes corrente, encerrados, futuro, sem meta) com o topo e o GERAL identicos e o ML com a mesma serie. O Dev ficou sem a tabela e com a funcao atual (mesmo md5).
+- **Custo (Dev, mediana de 8 execucoes alternadas):** 5,9 ms -> 16,5 ms. Sem loja live sao dois escopos calculados (GERAL e ML); com loja, tres. Pequeno para a central (`docs/PERFORMANCE.md`).
+- **Integracao:** describe proprio com organizacao propria (conta ML, loja live lida, loja de teste, pedidos validos e cancelado): GERAL = ML + Shopee so com as validas da live, cada escopo com a sua meta, o topo igual ao GERAL; mes sem meta por marketplace com ML e SHOPEE presentes e meta nula; loja live nao lida -> SHOPEE nula e o GERAL com a serie do ML; ANALISTA sem a loja -> SHOPEE nula; RLS e `check` da tabela nova. Suite inteira **1019/1019** com o banco recriado do zero.
+- **Achado dos testes:** a 1a versao somava no GERAL o pedido de loja live ainda nao lida enquanto a SHOPEE vinha nula; corrigido (item 3).
+- **Mutacao:** 8 regras estragadas (loja nao lida no GERAL, loja de teste na receita, cancelado na receita, loja de teste contando como lida, Shopee nunca nula, meta sempre a geral, meta do marketplace sem o escopo, topo virando o ML) -- todas derrubam teste.
+- **Tipos:** `monthly_goals_marketplace` em `packages/db/src/types.ts`, igual ao gerado do banco; `get_meta_do_mes` continua `Json`.
+
+**Impacto:** `supabase/migrations/20261015130000_metas_por_marketplace.sql`, `packages/db/src/{rls.integration.test,types}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,METRICS,DATABASE,PERFORMANCE,HANDOFF,MULTICHANNEL_HANDOFF,ROADMAP}.md`. A tela (central e `/central/metas`) e a T8b do A2. Em producao: a migration depois do merge e da CI da `main`; a web de hoje segue igual antes e depois dela.
+
 ## D-474 - Telas do A2, etapa E5: os estados do /skus/[skuId] no EstadoDaTela, e as regras CSS que ficaram sem uso saem
 
 **Contexto:** a D-468 trocou os dois avisos da T-R6 no SKU (contas e acoes abertas), e a D-472 fechou as outras telas da fila do A2. Sobrou o `/skus/[skuId]`, a pagina de detalhe com mais estados do app:

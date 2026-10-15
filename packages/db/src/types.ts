@@ -2228,6 +2228,57 @@ export type Database = {
           },
         ]
       }
+      monthly_goals_marketplace: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          marketplace: string
+          month: string
+          note: string | null
+          organization_id: string
+          revenue_goal: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          marketplace: string
+          month: string
+          note?: string | null
+          organization_id: string
+          revenue_goal: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          marketplace?: string
+          month?: string
+          note?: string | null
+          organization_id?: string
+          revenue_goal?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_goals_marketplace_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_goals_marketplace_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_preferences: {
         Row: {
           created_at: string

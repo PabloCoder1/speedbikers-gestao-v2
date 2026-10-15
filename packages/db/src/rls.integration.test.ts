@@ -19350,6 +19350,195 @@ describe("metas e imposto — monthly_goals, tax_rates e get_meta_do_mes (D-395)
   });
 });
 
+/*
+  D-473 (C-66): a meta do mês por marketplace e a geral. Organização própria:
+  uma conta do ML (1.000 por dia), uma loja Shopee live com pedidos lidos e
+  uma de teste. GERAL = ML + Shopee (vendas válidas das lojas live); a meta
+  GERAL segue em monthly_goals e as de ML e Shopee em monthly_goals_marketplace.
+*/
+describe("meta do mês por marketplace (D-473, C-66)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d473";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d473";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d473";
+  const CONTA = "bbbb4730-0000-4000-8000-00000000d473";
+  const LOJA_LIVE = "dddd4730-0000-4000-8000-0000000a0473";
+  const LOJA_TESTE = "dddd4730-0000-4000-8000-0000000b0473";
+  const HOJE = "2024-04-10";
+
+  type Escopo = Record<string, unknown>;
+  type Meta = Escopo & { escopos: Record<string, Escopo | null> };
+
+  // O que não depende da meta: com a mesma série, GERAL e ML têm de bater.
+  const DA_SERIE = [
+    "realizado",
+    "realizado_ate_ontem",
+    "realizado_hoje",
+    "media_diaria",
+    "ritmos",
+    "projecao",
+    "inicio_historico",
+    "fatores",
+    "perfil_semanal",
+    "dias_sem_venda",
+    "ano_anterior",
+  ];
+  const daSerie = (e: Escopo | null | undefined): Escopo => Object.fromEntries(DA_SERIE.map((k) => [k, e?.[k]]));
+
+  const chamada = (mes: string | null = null): string =>
+    `select public.get_meta_do_mes('${ORG}', ${mes === null ? "null" : `date '${mes}'`}, date '${HOJE}') as r`;
+
+  async function meta(usuario: string, mes: string | null = null): Promise<Meta> {
+    const [linha] = await asUser<{ r: Meta }>(usuario, chamada(mes));
+    if (linha === undefined) throw new Error("get_meta_do_mes não devolveu linha");
+    return linha.r;
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d473@rls.test'), ($2::uuid, 'analista-d473@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-473', 'org-d473') on conflict (id) do nothing",
+      [ORG],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA],
+    );
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1, $2, 'Conta D-473', 'rlstest-d473', 473001, 'CONNECTED', now()) on conflict do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.daily_account_metrics
+         (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       select $1, $2, d::date, 1, 1000, 1, 1
+       from generate_series(timestamp '2024-02-01', timestamp '${HOJE}', interval '1 day') d
+       on conflict (ml_account_id, metric_date) do nothing`,
+      [ORG, CONTA],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, orders_synced_until)
+       values ($1, $3, 'live', 990473001, 'Loja D-473', 'CONNECTED', now()),
+              ($2, $3, 'sandbox', 990473002, 'Teste D-473', 'CONNECTED', now())`,
+      [LOJA_LIVE, LOJA_TESTE, ORG],
+    );
+    // Válidos da loja live: 200 e 300. O cancelado da live e o válido da de
+    // teste ficam fora de qualquer total.
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at, order_income)
+       values ($1, $3, 'D473-A', 'COMPLETED', '2024-04-05T15:00:00Z', now(), '2024-04-05T15:01:00Z', '{"order_discounted_price": 200}'),
+              ($1, $3, 'D473-B', 'COMPLETED', '2024-04-08T15:00:00Z', now(), '2024-04-08T15:01:00Z', '{"order_discounted_price": 300}'),
+              ($1, $3, 'D473-C', 'CANCELLED', '2024-04-06T15:00:00Z', now(), '2024-04-06T15:01:00Z', '{"order_discounted_price": 500}'),
+              ($2, $3, 'D473-D', 'COMPLETED', '2024-04-07T15:00:00Z', now(), '2024-04-07T15:01:00Z', '{"order_discounted_price": 700}')`,
+      [LOJA_LIVE, LOJA_TESTE, ORG],
+    );
+    await client.query(
+      "insert into public.monthly_goals (organization_id, month, revenue_goal) values ($1, date '2024-04-01', 40000) on conflict (organization_id, month) do nothing",
+      [ORG],
+    );
+    await client.query(
+      `insert into public.monthly_goals_marketplace (organization_id, month, marketplace, revenue_goal)
+       values ($1, date '2024-04-01', 'ML', 30000), ($1, date '2024-04-01', 'SHOPEE', 2000)
+       on conflict (organization_id, month, marketplace) do nothing`,
+      [ORG],
+    );
+  });
+
+  afterAll(async () => {
+    // Apagar a loja leva os pedidos junto (on delete cascade).
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA_LIVE, LOJA_TESTE]]);
+    await client.query("delete from public.daily_account_metrics where ml_account_id = $1", [CONTA]);
+    await client.query("delete from public.monthly_goals_marketplace where organization_id = $1", [ORG]);
+    await client.query("delete from public.monthly_goals where organization_id = $1", [ORG]);
+  });
+
+  it("GERAL = ML + Shopee (só válidas da loja live), cada escopo com a sua meta; as chaves de sempre são o GERAL", async () => {
+    const r = await meta(ADMIN);
+
+    expect(r.escopos.GERAL).toMatchObject({ meta: 40000, realizado: 10500, atingimento: 0.2625, situacao: "em_curso" });
+    expect(r.escopos.ML).toMatchObject({ meta: 30000, realizado: 10000, atingimento: 0.3333 });
+    expect(r.escopos.SHOPEE).toMatchObject({ meta: 2000, realizado: 500, atingimento: 0.25, inicio_historico: "2024-04-05" });
+
+    const { escopos, ...topo } = r;
+    expect(topo).toEqual(escopos.GERAL);
+  });
+
+  it("mês sem meta por marketplace: ML e SHOPEE vêm assim mesmo, com a meta nula", async () => {
+    const r = await meta(ADMIN, "2024-03-01");
+
+    expect(r.escopos.GERAL).toMatchObject({ meta: null, realizado: 31000, situacao: "encerrado" });
+    expect(r.escopos.ML).toMatchObject({ meta: null, realizado: 31000 });
+    expect(r.escopos.SHOPEE).toMatchObject({ meta: null, realizado: 0 });
+  });
+
+  it("sem loja live lida, a Shopee vem nula e o GERAL é o ML", async () => {
+    let r: Meta | undefined;
+
+    await client.query("begin");
+    try {
+      await client.query("update public.shopee_shops set orders_synced_until = null where id = $1", [LOJA_LIVE]);
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+      const { rows } = await client.query<{ r: Meta }>(chamada());
+      r = rows[0]?.r;
+    } finally {
+      await client.query("rollback");
+    }
+
+    expect(r?.escopos.SHOPEE).toBeNull();
+    expect(daSerie(r?.escopos.GERAL)).toEqual(daSerie(r?.escopos.ML));
+    expect(r?.escopos.GERAL).toMatchObject({ meta: 40000, realizado: 10000 });
+    expect(r?.escopos.ML).toMatchObject({ meta: 30000 });
+  });
+
+  it("quem não alcança a loja vê a Shopee nula (D-433)", async () => {
+    const r = await meta(ANALISTA);
+
+    expect(r.escopos.SHOPEE).toBeNull();
+  });
+
+  it("monthly_goals_marketplace: membro lê, só ADMIN/GESTOR grava; marketplace fora de ML/SHOPEE é recusado", async () => {
+    const lidas = await asUser<{ marketplace: string }>(
+      ANALISTA,
+      `select marketplace from public.monthly_goals_marketplace where organization_id = '${ORG}' order by marketplace`,
+    );
+    expect(lidas.map((l) => l.marketplace)).toEqual(["ML", "SHOPEE"]);
+
+    await expect(
+      asUser(
+        ANALISTA,
+        `insert into public.monthly_goals_marketplace (organization_id, month, marketplace, revenue_goal) values ('${ORG}', date '2024-05-01', 'ML', 1000)`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    const gravadas = await asUser<{ revenue_goal: string }>(
+      ADMIN,
+      `insert into public.monthly_goals_marketplace (organization_id, month, marketplace, revenue_goal)
+       values ('${ORG}', date '2024-04-01', 'ML', 31000)
+       on conflict (organization_id, month, marketplace) do update set revenue_goal = excluded.revenue_goal
+       returning revenue_goal::text`,
+    );
+    expect(gravadas).toEqual([{ revenue_goal: "31000.00" }]);
+
+    await expect(
+      asUser(
+        ADMIN,
+        `insert into public.monthly_goals_marketplace (organization_id, month, marketplace, revenue_goal) values ('${ORG}', date '2024-05-01', 'AMAZON', 1000)`,
+      ),
+    ).rejects.toThrow(/check constraint/i);
+
+    await expect(asAnon("select 1 from public.monthly_goals_marketplace")).rejects.toThrow(/permission denied/i);
+  });
+});
+
 /**
  * Detector de frete (D-397): um caso por sinal, com a conta feita à mão.
  *

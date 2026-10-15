@@ -1420,6 +1420,10 @@ As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e
 
 **Produção:** a 1ª tentativa de `diagnostics.sync-central-alerts` falhou todo dia de 09 a 15/10 (11:00 UTC) em `produto_prejuizo`, por `statement timeout` (o teto de 8 s por fonte, D-404); a 2ª, um minuto depois e com o banco já quente, passava. **Depois da migration** (disparo manual em 15/10, 20:18 UTC, autorizado pelo dono): as três fontes de primeira, `produto_prejuizo` em ~2,1 s. **Dev** (`get_ranking_produtos` na chamada do detector, 30 dias até 13/09, `work_mem` 16 MB, quatro execuções): **695 ms** por página com o período anterior padrão (30 dias: o ranking lê 60 dias de pedidos e itens) contra **427 ms** com o anterior de um dia (−40%), os mesmos 18 SKUs no prejuízo e os mesmos campos do período atual. Migration `20261015120000`. A prova de produção é o job das 11:00 UTC sem o timeout.
 
+### A meta do mês por marketplace (D-473, 15/10/2026)
+
+**Dev, como `authenticated`** (ADMIN, mês corrente, a função nova num esquema temporário, 8 execuções alternadas): **5,9 ms → 16,5 ms** (mediana; máximos 17,3 e 26,0 ms). O cálculo de D-395 roda uma vez por escopo: sem loja live, dois (GERAL e ML); com loja live lida, três. As séries são pequenas (um valor por dia), e o custo segue desprezível para a central. Migration `20261015130000`.
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
