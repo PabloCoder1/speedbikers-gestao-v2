@@ -40,6 +40,10 @@
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
 6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
+7. Rolagem lateral se mede no `.sb-content` — quem rola é o `<main>`, e o
+   `<html>` diz sempre que não rola —, com celular emulado (barra
+   sobreposta). Tela nova com forma nova entra na lista de
+   `e2e/tela-estreita-e-acessibilidade.spec.ts` (D-510).
 
 **Quando não há tabela para mostrar**, a forma é uma só: `EstadoDaTela`
 (D-502). `erro` = a leitura falhou (o dado pode existir; é o único com
@@ -89,10 +93,14 @@ sem dependência nova, em 20 telas do build local:
 | Imagem sem `alt`; id repetido | nenhum |
 | Contraste AA | nenhuma falha real; os alertas eram texto claro sobre gradiente (sidebar 8,2–14:1, cartão-âncora 5,2–16,9:1) |
 | Paradas de Tab até o conteúdo | 42 em todas as telas → **"Pular para o conteúdo"**: Tab + Enter |
+| Rolagem lateral a 390 px (celular, no `.sb-content`) | 3 de 56 rotas rolavam — Home 106 px, `/central/metas` e `/faturamento` 8 px — **corrigidas** (D-510) |
 | Foco visível | os 9 `outline: none` têm anel no contêiner ou são a única entrada de um diálogo |
 
-O roteiro fica fora do Git (é medição, como o de web vitals); virar guarda de
-CI é decisão à parte (§3).
+Desde a D-510, as regras viraram guarda de e2e
+(`e2e/tela-estreita-e-acessibilidade.spec.ts`, 22 rotas): tela estreita, h1,
+títulos, nomes, `alt`, ids e o primeiro Tab. O contraste fica fora — a medida
+por `background-color` não enxerga gradiente, e guarda que alarma em falso vira
+ruído.
 
 **O que a auditoria conferiu e está certo:** `app/error.tsx` usa `retry` (é a
 API do Next 16.3, conferida em `docs/01-app/.../error.md`); `loading.tsx`
@@ -132,9 +140,8 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    está, esqueleto do mesmo tamanho e o sim do dono da tela.
 6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 7. ~~**Acessibilidade dos compartilhados**~~ — **feita** (D-508): o "Pular
-   para o conteúdo" e o h2 da `/acoes`. Falta decidir se a auditoria vira um
-   e2e de guarda (sem dependência nova, as mesmas regras), para nenhuma tela
-   nova perder o h1, o nome dos controles ou o alvo do salto.
+   para o conteúdo" e o h2 da `/acoes`; e a guarda de e2e, com a tela
+   estreita junto (D-510), que corrigiu a Home e a `.sb-pair-grid` no celular.
 
 ---
 

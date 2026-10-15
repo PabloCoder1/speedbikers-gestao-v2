@@ -187,6 +187,12 @@ sinais sai da tela.
 Prioridade: desktop operacional → tablet razoável → telas menores sem quebra
 grave. Tabelas já usam `overflow-x: auto` com `minWidth`.
 
+**Medir no lugar certo (D-510):** quem rola é o `.sb-content`, não o `<html>`.
+A 390 px, com celular emulado, nenhuma das 56 rotas rola para o lado depois da
+D-510; a guarda é `e2e/tela-estreita-e-acessibilidade.spec.ts`. Grade de dois
+painéis usa piso `min(20rem, 100%)`; grade de cartões com botão desce a uma
+coluna abaixo de 560 px.
+
 ---
 
 ## O passo branco e o passo cinza
