@@ -574,6 +574,8 @@ Cinco entidades, cada uma com o destino de navegação REAL que existe hoje na V
 
 Consumida por `apps/web/components/command-palette.tsx` (componente cliente, `Ctrl+K`/`Cmd+K` ou clique, busca a cada tecla sem debounce — mesmo padrão já usado em `apps/web/app/compras/novo/item-row.tsx`), montado em `Shell` e por isso disponível em toda tela autenticada.
 
+**D-467 (15/10/2026):** dez entidades — entram `loja`, `anuncio_shopee` e `pedido_shopee` — e três colunas no fim (`marketplace`, `entity_id`, `account_id`); `plpgsql` + `force_custom_plan`; índice `shopee_orders_org_order_sn_idx` `(organization_id, order_sn text_pattern_ops)` para o prefixo do pedido; `get_shopee_orders` com `p_order_sn`. Contrato em `docs/MULTICHANNEL_CONTRACTS.md` §3.14.
+
 ### `saved_filters` — Filtros salvos (D-062)
 
 **Implementado em 2026-08-23**, migration `20260823235730_create_saved_filters.sql`, fecha a metade "Filtros salvos" do mesmo item de checklist de `search_entities` acima (D-060 separou as duas por tamanho). Presets de filtro POR USUÁRIO (não compartilhados na organização) e por TELA:

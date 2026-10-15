@@ -69,7 +69,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
-| Busca universal | Ctrl+K | 2 | — | `search_entities` | sem loja, anúncio ou pedido Shopee | C-08 → T7 |
+| Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
 | Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas | futuro |
 | Shell e menu | todas | 2 | — | contagem de contas ML conectadas | "N contas conectadas" ignora lojas | E3 → T3 |
 | Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | nenhuma exportação Shopee; `/vendas` não exporta | junto da tela |
@@ -252,7 +252,7 @@ número.
 | **T5 ✔** | **código 2026-10-14, D-442.** `/faturamento` com marketplace e a linha por loja; "Todos" lado a lado, sem total; **T5b ✔ código 2026-10-14, D-452:** a cascata do recebido, a série diária e os produtos (C-61); **T5c ✔ código 2026-10-14, D-456:** os Ads CPC da loja (C-63) numa seção própria, fora do resultado e sem somar com o Mercado Ads; **T5d ✔ código 2026-10-14, D-458:** o repasse ao lado do previsto, pelo dia da liberação (C-64) | E5 | componentes não comparáveis nunca somados |
 | **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); **T6b ✔ código 2026-10-14, D-448:** curva ABC com "Todos" e "Shopee" (C-60), e **T6b2 ✔ D-450** o Excel com o recorte; **T6c ✔ código 2026-10-14, D-454:** `/produtos` com a Shopee (C-56) | E6 | — |
 | **Devoluções ✔** | **código 2026-10-15, D-460.** As devoluções da Shopee em `/vendas/shopee`, logo depois do "Por loja" (C-62), decisão do dono de 15/10 | E7a | situação como a Shopee manda; "valor de reembolso informado", nunca "reembolsado" |
-| **T7** | Busca universal com a Shopee (C-08) | C-08 | — |
+| **T7** | Busca universal com a Shopee (C-08) | C-08/C-57 | ✔ D-476 |
 | **T8** | Central e meta do mês com a Shopee | Go Live + dono | — |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,

@@ -20,7 +20,7 @@ const HOJE = "2026-10-14";
 describe("resolveShopeeSalesFilters", () => {
   it("URL vazia: últimos 30 dias até hoje, sem loja nem situação, página 1", () => {
     expect(resolveShopeeSalesFilters({}, [LOJA], HOJE)).toEqual({
-      filters: { range: { from: "2026-09-15", to: HOJE }, days: 30, loja: null, situacao: null, pagina: 1 },
+      filters: { range: { from: "2026-09-15", to: HOJE }, days: 30, loja: null, situacao: null, pagina: 1, pedido: null },
       invalidCustom: false,
     });
   });
@@ -61,6 +61,33 @@ describe("resolveShopeeSalesFilters", () => {
     expect(
       resolveShopeeSalesFilters({ pagina: "999999999999" }, [], HOJE).filters.pagina * SHOPEE_ORDERS_PAGE_SIZE,
     ).toBeLessThanOrEqual(2_147_483_647);
+  });
+});
+
+describe("o pedido que a Busca Universal abriu (D-476)", () => {
+  it("?pedido= vale com letra, dígito e hífen, de 2 a 40 — a regra da busca no banco", () => {
+    expect(resolveShopeeSalesFilters({ pedido: "2510150ABCDEF" }, [], HOJE).filters.pedido).toBe("2510150ABCDEF");
+    expect(resolveShopeeSalesFilters({ pedido: " E2E-SHP-CANCELADO " }, [], HOJE).filters.pedido).toBe("E2E-SHP-CANCELADO");
+  });
+
+  it("fora da regra não vira filtro: a lista de sempre, nunca uma busca que o banco recusaria", () => {
+    expect(resolveShopeeSalesFilters({ pedido: "a" }, [], HOJE).filters.pedido).toBeNull();
+    expect(resolveShopeeSalesFilters({ pedido: "x' or 1=1" }, [], HOJE).filters.pedido).toBeNull();
+    expect(resolveShopeeSalesFilters({ pedido: "x".repeat(41) }, [], HOJE).filters.pedido).toBeNull();
+    expect(resolveShopeeSalesFilters({}, [], HOJE).filters.pedido).toBeNull();
+  });
+
+  it("o pedido viaja com os outros filtros, e tirá-lo devolve a lista", () => {
+    const comPedido = resolveShopeeSalesFilters(
+      { from: "2026-10-10", to: "2026-10-10", loja: LOJA, pedido: "2510100ABC" },
+      [LOJA],
+      HOJE,
+    ).filters;
+
+    expect(buildShopeeSalesHref(comPedido, { situacao: "validas" })).toBe(
+      `/vendas/shopee?from=2026-10-10&to=2026-10-10&loja=${LOJA}&situacao=validas&pedido=2510100ABC`,
+    );
+    expect(buildShopeeSalesHref(comPedido, { pedido: null })).toBe(`/vendas/shopee?from=2026-10-10&to=2026-10-10&loja=${LOJA}`);
   });
 });
 

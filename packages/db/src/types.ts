@@ -5924,6 +5924,8 @@ export type Database = {
           p_date_to: string
           p_limit?: number
           p_offset?: number
+          // D-467: o pedido que a Busca Universal abriu (order_sn exato).
+          p_order_sn?: string | null
           p_organization_id: string
           p_situacao?: string | null
           p_shopee_shop_id?: string | null
@@ -8148,9 +8150,14 @@ export type Database = {
       search_entities: {
         Args: { p_organization_id: string; p_query: string }
         Returns: {
+          // D-467: a conta do ML ou a loja Shopee; nulo quando nao se aplica.
+          account_id: string | null
+          entity_id: string
           entity_type: string
           href: string
           label: string
+          // D-467: 'ML' | 'SHOPEE'; nulo para SKU, fornecedor, compra e NF-e.
+          marketplace: string | null
           sublabel: string
         }[]
       }

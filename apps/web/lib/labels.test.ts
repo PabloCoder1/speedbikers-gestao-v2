@@ -96,10 +96,15 @@ describe("rótulos de estado de republicação (D-295)", () => {
  * prometer.
  */
 describe("texto das entidades da Busca Universal", () => {
-  it("diz as sete entidades, com siglas em caixa alta e o resto no meio da frase", () => {
+  it("diz as dez entidades, com siglas em caixa alta e o resto no meio da frase", () => {
     expect(textoDasEntidadesBuscaveis()).toBe(
-      "SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e",
+      "SKU, anúncio, anúncio Shopee, conta, loja Shopee, fornecedor, pedido de compra, pedido Shopee, atendimento e NF-e",
     );
+  });
+
+  it("tipo que a lista não conhece vira 'Outros', nunca o código cru como cabeçalho (D-476)", () => {
+    expect(searchEntityLabel("tipo_que_ainda_nao_existe")).toBe("Outros");
+    expect(searchEntityLabel("pedido_shopee")).toBe("Pedido Shopee");
   });
 
   it("toda entidade da lista tem rótulo, e nenhum volta cru para a frase", () => {

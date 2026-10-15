@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_SKU_CODE } from "./constants.js";
+import { E2E_SHOPEE_SHOP, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -74,7 +74,7 @@ test("busca do shell: o gatilho cabe sem cortar a promessa, e a caixa diz tudo o
   expect(perfilDepois?.x, "o bloco do perfil não se desloca ao abrir a busca").toBe(perfilAntes?.x);
   // Desde o lote 3 do pente fino a caixa também acha TELAS e anda pelo teclado.
   await expect(caixa.getByText(/A busca alcança/)).toHaveText(
-    "Digite o nome de uma tela ou ao menos duas letras de um registro. A busca alcança SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e. Use ↑ ↓ e Enter.",
+    "Digite o nome de uma tela ou ao menos duas letras de um registro. A busca alcança SKU, anúncio, anúncio Shopee, conta, loja Shopee, fornecedor, pedido de compra, pedido Shopee, atendimento e NF-e. Use ↑ ↓ e Enter.",
   );
 
   // Campo e linhas no padrão de lista navegável (combobox + option), lote 3.
@@ -104,4 +104,31 @@ test("busca do shell: acha a tela pelo nome e abre com Enter", async ({ page }) 
   await campo.press("Enter");
 
   await expect(page).toHaveURL(/\/estoque\/movimentacoes$/);
+});
+
+/**
+ * D-476 (C-57, D-467): a busca alcança a Shopee. O seed tem uma loja em
+ * ambiente de TESTE: ela aparece no grupo "Loja Shopee", marcada como teste no
+ * subtítulo, e leva a Contas. Anúncio e pedido da loja de teste ficam fora da
+ * busca, como nas telas (só live) — por isso não há grupo deles aqui.
+ */
+test("busca do shell: acha a loja Shopee, marcada como teste, no grupo dela", async ({ page }) => {
+  await login(page, "/");
+
+  await page.getByRole("button", { name: /Buscar SKU, anúncio, NF-e/ }).click();
+
+  const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
+
+  await caixa.getByRole("combobox", { name: "Buscar" }).fill(E2E_SHOPEE_SHOP.name);
+
+  const grupo = caixa.getByRole("group", { name: "Loja Shopee" });
+  const loja = grupo.getByRole("option", { name: new RegExp(E2E_SHOPEE_SHOP.name) });
+
+  await expect(loja).toBeVisible();
+  await expect(loja).toContainText("teste");
+  // O cabeçalho é o rótulo, nunca o código cru do banco.
+  await expect(caixa.getByText("loja", { exact: true })).toHaveCount(0);
+
+  await loja.click();
+  await expect(page).toHaveURL(/\/contas/);
 });

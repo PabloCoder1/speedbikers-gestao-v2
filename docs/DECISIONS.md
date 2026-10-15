@@ -15607,6 +15607,8 @@ A causa esta na ramificacao de pedidos, que juntava evento e item por `oi.order_
 
 **Impacto:** `supabase/migrations/20261015080000_timeline_sku_pedidos_pelo_indice.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. A tela nao muda. O diagnostico das outras telas lentas (Home: `get_listings_dashboard` e `get_stock_coverage_summary` na segunda rodada, ≈110 MB frios) esta em `docs/PERFORMANCE.md` e na D-503 do A3.
 
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. Os eventos de pedido que a versao antiga lia ocupam ~1,9 mil paginas da tabela; com o indice, ~2,2 mil paginas distintas (~18 MB), e nao ~300 MB. A melhora continua: 37 mil acessos viram ~0,6 mil no SKU mediano, e a primeira chamada fria media 4,8 s.
+
 ## D-462 - Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
 
 **Contexto:** a T3b (D-446) pos a Shopee em `/integracoes` julgando quatro jobs (pedidos, financeiro, catalogo e detalhe do catalogo), e a T3a (D-438) pos as lojas em `/sincronizacao` com a ultima leitura de pedidos.
@@ -15668,6 +15670,8 @@ Sem leitura, o fato diz "nunca lidas/lidos". Se a leitura falhar, diz "nao foi p
 - **Mutacao:** com a funcao antiga, o teste novo cai com "value \"99999999999999999999999\" is out of range for type bigint".
 
 **Impacto:** `supabase/migrations/20261015090000_correlacao_pedidos_pela_janela.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O worker e as telas nao mudam.
+
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. Os itens de pedido que a versao antiga lia ocupam 11,9 mil paginas distintas (~93 MB, quase toda a `order_items` do Dev), e nao ~1 GB. A versao nova toca so os itens dos pedidos da janela.
 
 ## D-464 - Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 
@@ -15749,6 +15753,8 @@ Nenhum indice comecava por (organizacao, instante). O banco percorria o `timelin
 
 **Impacto:** `supabase/migrations/20261015100000_full_atual_pelo_indice.sql`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O resto do custo da classe ABC do SKU (a curva da organizacao em 90 dias, a tabela de metricas quase inteira) e inerente ao calculo. So um valor pre-calculado o tiraria, e isso fica para quando a tela pedir.
 
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. A janela de 3 dias ocupa 529 paginas da tabela, e a versao antiga lia ainda o `timeline_idx` inteiro (2,1 mil paginas): ~2,6 mil paginas distintas contra ~0,7 mil, e nao 30,8 mil contra 2,4 mil. O custo antigo cresce com o historico (o indice inteiro); o novo, so com a janela.
+
 ## D-466 - Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
 
 **Contexto:** a T-R3 (D-464) pos a demanda da Shopee em `/reposicao` e `/compras/novo`. Ficaram de fora a gaveta da Inspecao Rapida de `/produtos` e o cartao de cobertura do SKU, que leem `get_stock_coverage` pelos tipos gerados: as colunas da Shopee so existiam com a migration do C-65 (D-459, #188).
@@ -15791,6 +15797,53 @@ A gaveta mostra "Vendas (30 d) N un" com "K da Shopee" embaixo quando ha venda d
 - web: `apps/web/lib/{sku-coverage-display,ads-shopee}.ts` e os testes, `apps/web/app/produtos/{inspecao.ts,inspecao-rapida.tsx}`, `apps/web/app/skus/[skuId]/page.tsx` e `apps/web/app/faturamento/ads-shopee.tsx`;
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-467 - C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
+
+**Contexto:** o A2 pediu o C-57 para a T7 (busca universal multicanal). Ele precisa de uma busca so que alcance a Shopee, com o tipo, um rotulo, o marketplace e um destino. A paleta e a `/busca` ja usam `search_entities` (D-060, sete entidades). Desenho combinado com o A2 em 15/10.
+
+**Decisao:**
+
+1. **Estender, nao duplicar.** As quatro colunas de hoje continuam (`entity_type`, `label`, `sublabel`, `href`), e tres entram no fim:
+   - `marketplace`: 'ML', 'SHOPEE' ou nulo -- a convencao de `marketplace_accounts`;
+   - `entity_id`: sku_id, item_id, order_sn...;
+   - `account_id`: a conta do ML ou a loja da Shopee.
+   - O `href` segue montado no SQL, e a tela pode usa-lo ou montar o seu destino com os ids.
+2. **Tres entidades novas, todas com destino REAL (D-060):**
+   - `loja`: a loja Shopee, com a de teste marcada ("Shopee · teste"); destino `/contas`.
+   - `anuncio_shopee`: casa o nome e o SKU do item ou da variacao por trecho, e o item_id exato. So entra loja live e item que nao foi apagado (a regra da lista). Destino `/anuncios/shopee?loja=<loja>&q=<item_id>`, que a lista acha pelo item_id.
+   - `pedido_shopee`: casa o `order_sn` por PREFIXO, sem diferenciar maiuscula, so de loja live. Destino `/vendas/shopee?loja=<loja>&from=<dia>&to=<dia>&pedido=<order_sn>`:
+     - leva o dia de Sao Paulo do pedido, porque a lista filtra por periodo;
+     - `get_shopee_orders` ganha `p_order_sn` no fim, e a T7 repassa o `?pedido=`.
+3. **O pedido de venda do ML continua fora:** nao ha pagina nem lista que o filtre pelo numero (D-060). Entra quando houver destino.
+4. **Permissao:** invoker; a RLS decide por conta (D-102) e por loja (D-433).
+5. **Desempenho:**
+   - indice `shopee_orders (organization_id, order_sn text_pattern_ops)`, porque a chave da tabela comeca pela loja;
+   - o termo so procura pedido quando e letra, digito ou hifen, de 2 a 40 caracteres, sem `%` nem `_` virando curinga;
+   - `plpgsql` + `force_custom_plan` (D-305), para o LIKE de prefixo ser planejado com o termo e usar o indice.
+6. **A ordem de chegada a producao e a da tela:**
+   - os rotulos dos tres tipos novos (`labels.ts`, a frase da busca e o e2e) sao da T7 do A2;
+   - a migration de producao so roda depois da T7 no ar, para a paleta nunca mostrar o codigo cru como cabecalho.
+
+**Verificacao:**
+- **Integracao** (organizacao propria, duas lojas live e uma de teste, oito testes), todos verdes:
+  - nome, SKU da variacao e item_id;
+  - prefixo do pedido, com o dia de Sao Paulo no destino;
+  - curinga recusado;
+  - loja de teste marcada;
+  - o ANALISTA sem a loja nao acha nada, e com a loja A acha so a A;
+  - SKU com as colunas novas;
+  - `p_order_sn`;
+  - o guarda que le os tipos do corpo da funcao, agora com dez.
+- **Mutacao:** 10 regras estragadas, todas derrubam teste (loja de teste no anuncio e no pedido, item apagado, curinga, maiuscula, dia em UTC, marca da loja de teste, SKU da variacao, entity_id, `p_order_sn`).
+- **Dev, como `authenticated`, oito execucoes, termos curtos e comuns:**
+  - as mesmas linhas da funcao atual nos sete termos (seis iguais linha a linha e um vazio nas duas);
+  - 33-38 ms contra 38-41 ms, sem degradacao.
+- **Indice com 50 mil pedidos sinteticos** (stack isolado, desfeito):
+  - prefixo raro: `shopee_orders_org_order_sn_idx`, 9 paginas;
+  - prefixo de 2 caracteres: para nos 5 primeiros, 28 paginas.
+
+**Impacto:** `supabase/migrations/20261015110000_busca_universal_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,DATABASE,PERFORMANCE,ROADMAP,HANDOFF}.md`. A tela (T7, rotulos, `?pedido=`) e do A2.
 
 ## D-468 - Telas multicanais: os avisos de leitura da T-R6 viram o EstadoDaTela, com "Tentar de novo" na mesma URL
 
@@ -16003,6 +16056,61 @@ A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
 - web: `apps/web/app/skus/[skuId]/{page,vendas-entre-marketplaces}.tsx` e `apps/web/app/globals.css` (cinco regras a menos);
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-476 - Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
+
+**Contexto:** a Busca Universal (Ctrl+K, `search_entities`, D-060) achava SKU, anuncio e conta do ML, fornecedor, pedido de compra, atendimento e NF-e. Nao achava nada da Shopee (lacuna C-08 de `docs/MULTICHANNEL_SCREENS.md`).
+
+O A1 estendeu a mesma funcao no C-57 (D-467, #201), sem segunda busca. Ela ganha tres tipos:
+- `loja`: a loja Shopee; a de teste vem marcada no subtitulo, com destino em `/contas`;
+- `anuncio_shopee`: o destino e `/anuncios/shopee?loja=&q=<item_id>`;
+- `pedido_shopee`: o destino e `/vendas/shopee?loja=&from=&to=&pedido=<order_sn>`, com o dia do pedido.
+
+A funcao tambem ganha tres colunas no fim (`marketplace`, `entity_id`, `account_id`). A `get_shopee_orders` ganha `p_order_sn`. Anuncio e pedido da loja de teste ficam fora, como nas telas.
+
+**1. OS ROTULOS.** `SEARCH_ENTITY_TYPES` vai a dez, cada tipo da Shopee ao lado do que ja existia da mesma coisa: "Anuncio Shopee", "Loja Shopee" e "Pedido Shopee". A frase da caixa, derivada da lista (A15, D-323), passa a dizer as dez. O teste exato da frase e o e2e mudam junto, porque e o momento de alguem ler o que a tela promete.
+
+**2. "OUTROS", NUNCA O CODIGO CRU.** O `searchEntityLabel` devolvia o codigo do banco quando faltava rotulo, e `anuncio_shopee` apareceria como cabecalho (a armadilha de D-208). Agora um tipo que a lista nao conhece vira "Outros".
+
+Isso e a rede para a ordem de publicacao, que fica assim:
+1. o #201 e a T7 entram juntos;
+2. a Vercel publica;
+3. so entao o A1 roda a migration `20261015110000`.
+
+Se a ordem escapar, a paleta mostra "Outros", e nao `pedido_shopee`.
+
+**3. A PALETA.** A `SearchResult` passa a declarar `marketplace`, opcional: a funcao de antes da migration nao a devolve, e o destino continua sendo o `href` que o SQL monta. A paleta ja agrupa por tipo, entao os grupos novos aparecem sem mudar a navegacao pelo teclado.
+
+**4. A /vendas/shopee ABRE O PEDIDO.**
+- `?pedido=` vira filtro: so letra, digito e hifen, de 2 a 40, a mesma regra do banco. Fora disso, nao e filtro, e a lista e a de sempre.
+- O filtro vai ao `p_order_sn`, que casa o numero sem diferenciar maiuscula.
+- Aparece como chip ("Pedido X", com o x para tirar), viaja com os outros filtros e com o periodo personalizado, e "Limpar filtros" o tira junto.
+- O numero que nao esta no recorte diz isso ("O pedido X nao esta neste recorte", com "Limpar filtros"), nunca "nenhum pedido no periodo".
+- O caminho de volta para `/vendas` nao leva o pedido.
+
+**5. A JANELA ENTRE A WEB E O BANCO.** O `p_order_sn` so vai na chamada quando ha pedido. O PostgREST escolhe a funcao pelos NOMES dos argumentos, e ate a migration `20261015110000` a `get_shopee_orders` de producao nao o tem. Mandado nulo, ele derrubaria a `/vendas/shopee` inteira para todo mundo entre a publicacao da web e a migration. Conferido no banco isolado SEM a 110000: com `p_order_sn` nulo, PGRST202 ("Searched for the function ... with parameters ... p_order_sn"); sem ele, a funcao e encontrada, e os 7 e2e da `/vendas/shopee` passam.
+
+**Fica de fora:** o pedido de venda do ML, que nao tem destino real (D-060). Entra quando houver uma tela que o abra.
+
+**Publicacao:** web, junto com o #201 (que traz a migration `20261015110000`, que so roda depois da web no ar).
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **Unitarios:** `lib/labels.test.ts` e `lib/shopee-sales.test.ts`, 26 testes, 6 novos ou ampliados:
+  - a frase das dez entidades;
+  - "Outros" para o tipo desconhecido;
+  - o `?pedido=` valido, o fora da regra (inclusive com aspas) e o que viaja e sai nos links.
+- **e2e no banco isolado com a migration do C-57:** `busca` e `vendas-shopee` 12/12. Os 3 casos novos:
+  - a loja Shopee do seed aparece no grupo "Loja Shopee", marcada como teste, e abre Contas;
+  - `?pedido=` em minusculas mostra so aquele pedido, com o chip, e "Limpar filtros" devolve a lista;
+  - um numero fora do recorte diz isso.
+- **Fotos:** a paleta com o grupo "Loja Shopee" e o chip do pedido.
+- **Suite inteira:** 239/239, com o banco recriado do zero e a migration do C-57 (236 com o servidor na porta 3300, com os 3 casos novos, e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/{labels,shopee-sales}.ts` e os testes, `apps/web/components/command-palette.tsx`, `apps/web/app/vendas/shopee/page.tsx` e `apps/web/e2e/{busca,vendas-shopee}.spec.ts`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration nova, RPC, worker ou api (a migration e a do #201).
 
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
