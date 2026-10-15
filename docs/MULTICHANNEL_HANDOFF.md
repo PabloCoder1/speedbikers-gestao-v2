@@ -68,34 +68,19 @@
 - T4 — `/vendas` com "Todos os marketplaces" e "Shopee" na mesma tela (D-440, consome o C-53): faixa consolidada com o período anterior, várias contas por clique, gráfico de faturamento, unidades e compras e a tabela por marketplace e conta; `/vendas/shopee` vira o detalhe de pedidos e lojas. **Na `main`, #156** (`bcf33111`, deploy de produção da Vercel `success`).
 - T5 — `/faturamento` com "Shopee" e "Todos" (D-442, consome o C-58): na Shopee, faixa com o período anterior, o resultado inteiro com o definitivo e o provisório ao lado, "da receita ao resultado", tabela por loja e a cobertura com os quatro motivos e onde se resolve; no "Todos", ML e Shopee lado a lado, **sem total de resultado**, com a receita somada a um clique em Vendas. **Na `main`, #158** (`8496b016`); a suíte e2e inteira passou localmente (219/219).
 - T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Na `main`, #159** (`caafb616`, deploy de produção `success`), depois da migration `20261014230000` em produção (run `38612642381`).
-<<<<<<< HEAD
-- T3b — a Shopee nas telas de administração (D-446, consome o C-52): cartão em `/integracoes` (conexão pelo veredito de `/sincronizacao` e a autorização perto de vencer; sincronização pelos quatro jobs `shopee.*`) e a seção "Shopee" em `/configuracoes` (contagens no banco, na mesma ida da RPC); de carona, os cartões de `/integracoes` deixam de quebrar letra por letra no celular. **Em código e validada localmente** (suíte e2e 220/220). **Na `main`, #162** (`558eacd1`, deploy de produção `success`).
-- T6b — a Curva ABC com "Todos" e "Shopee" (D-448, consome o C-60): seletor e contas por clique na URL, "Compras" como critério que soma, "Pedidos" virando "Compras" fora do ML, "sem Full" só com conta ML no recorte; o recorte ML chama a função como antes. **Em código e validada localmente** (suíte e2e 225/225; o primeiro e2e da Curva ABC prova que, só com a loja de teste, o "Todos" é a curva do ML) no **rascunho #164**, empilhada sobre o #157.
-- T6b2 — o Excel da Curva ABC com o recorte da tela (D-450): a terceira curva é a de compras com a Shopee, as lojas viram colunas da aba por conta, o "Todos" ganha o recorte por marketplace, e o que não existe (ticket, Full, cobertura) fica vazio; a regra de contas é uma só para a tela e o arquivo. De carona, `shopee.returns.sync` na cadência de `/saude` (pedido do A1, C-62). **Em código e validada localmente** (suíte e2e 227/227; o e2e baixa o Excel do "Todos" e o do ML e abre os dois) no **rascunho #165**, empilhada sobre a T6b. O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
-=======
 - T3b — a Shopee nas telas de administração (D-446, consome o C-52): cartão em `/integracoes` (conexão pelo veredito de `/sincronizacao` e a autorização perto de vencer; sincronização pelos quatro jobs `shopee.*`) e a seção "Shopee" em `/configuracoes` (contagens no banco, na mesma ida da RPC); de carona, os cartões de `/integracoes` deixam de quebrar letra por letra no celular. **Na `main`, #162** (`558eacd1`). O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
 - T6b — a Curva ABC com "Todos" e "Shopee" (D-448, consome o C-60): seletor e contas por clique na URL, "Compras" como critério que soma, "Pedidos" virando "Compras" fora do ML, "sem Full" só com conta ML no recorte; o recorte ML chama a função como antes. **Em código e validada localmente** (suíte e2e 225/225; o primeiro e2e da Curva ABC prova que, só com a loja de teste, o "Todos" é a curva do ML) no **rascunho #164**, empilhada sobre o #157. O Excel multicanal é a T6b2. O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
->>>>>>> feat/multicanal-t6b-curva-abc
+- T6b2 — o Excel da Curva ABC com o recorte da tela (D-450): a terceira curva é a de compras com a Shopee, as lojas viram colunas da aba por conta, o "Todos" ganha o recorte por marketplace, e o que não existe (ticket, Full, cobertura) fica vazio; a regra de contas é uma só para a tela e o arquivo. De carona, `shopee.returns.sync` na cadência de `/saude` (pedido do A1, C-62). **Em código e validada localmente** (suíte e2e 227/227; o e2e baixa o Excel do "Todos" e o do ML e abre os dois) no **rascunho #165**, empilhada sobre a T6b. O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
 
 - T-R5 — o cartão "Por loja" de `/vendas/shopee` no celular: as notas ("a leitura é de hora em hora", "3 aguardando o financeiro") e a última leitura invadiam a célula vizinha (medido em 390 px: 134 a 222 px); só nesta tabela a célula quebra e a nota desce, e um e2e mede o transbordo (zero). **Em código e validada localmente** (suíte e2e 224/224), no PR próprio (só web).
 
 **Em andamento**
-<<<<<<< HEAD
-- T6b no **rascunho #164** e T6b2 empilhada sobre ela: entram depois do #157 na `main` e da migration `20261015000000` em produção.
-
-**Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T5b — no recorte Shopee de `/faturamento`: a cascata com os componentes do recebido (comissão, taxas, frete, cupons, afiliados, "outros"), a série diária e, se o rateio fechar, os produtos — sobre o C-61 (D-443, A1).
-- Devoluções da Shopee (C-62, #163) numa tela — o contrato chegou; falta decidir com o dono onde elas moram (o detalhe de `/vendas/shopee` ou uma tela de pós-venda). O valor é o "de reembolso informado", nunca "reembolsado" (a Shopee não diz quando pagou).
-- T6c `/produtos` com a Shopee e o ranking com resultado (C-56, E6c, #161) → T7 busca universal (C-57) → T8 central e meta (Go Live).
-- T-R5: sobreposição de texto no cartão "Por loja" de `/vendas/shopee` no celular (preexistente, D-430).
-=======
 - T6b (#164, D-448) e T6b2 (#165, D-450): em código e validadas, atualizadas com a `main` `05537181`; o #157 já entrou, falta a migration `20261015000000` em produção.
 - T5b (#167, D-452): em código e validada; o #160 já entrou, falta a migration `20261015010000` em produção.
 - T6c — `/produtos` com a Shopee (C-56), sobre o #161.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T6c `/produtos` com a Shopee (C-56, #161) → o painel "Ads CPC da loja" (C-63, #166) e as devoluções (C-62, #163, depois da decisão do dono) → T7 busca universal (C-57) → T8 central e meta (Go Live). O ranking com resultado da central fica para depois do Go Live (D-445 §6).
->>>>>>> feat/multicanal-t6b-curva-abc
 
 **Bloqueios**
 - T6b e T6b2 esperam a migration `20261015000000` em produção; T5b, a `20261015010000` (as duas são ato do dono). T6c espera o merge do #161 (A1) e a `20261015020000`.
