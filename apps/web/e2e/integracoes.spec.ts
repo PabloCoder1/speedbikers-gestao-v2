@@ -158,6 +158,10 @@ test("ADMIN: o cartão da Shopee nomeia a loja de teste, diz que ela fica fora d
 
   await expect(shopee.getByRole("row", { name: /Conexão/ })).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
   await expect(shopee.getByRole("row", { name: /Configuração/ })).toContainText("1 loja(s) em ambiente de teste, fora das somas");
+  // D-462: o cartão cobre os sete jobs da Shopee, e diz isso.
+  await expect(
+    shopee.getByText("Pedidos, financeiro dos pedidos, catálogo, devoluções, repasses e Ads CPC, por loja autorizada."),
+  ).toBeVisible();
   await expect(shopee.getByRole("link", { name: "Contas e lojas" })).toHaveAttribute("href", "/contas");
   await expect(shopee.getByRole("link", { name: "Sincronização" })).toHaveAttribute("href", "/sincronizacao");
 });

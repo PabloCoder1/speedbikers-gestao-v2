@@ -98,6 +98,9 @@ function base(): IntegrationsInput {
       jobShopee("shopee.order-financials.sync", 0.4),
       jobShopee("shopee.items.sync", 0.3),
       jobShopee("shopee.items.hydrate", 0.3),
+      jobShopee("shopee.returns.sync", 0.4),
+      jobShopee("shopee.escrow-releases.sync", 0.4),
+      jobShopee("shopee.ads.sync", 2),
       {
         job_type: "maintenance.check-ai-budget",
         job_status: "done",
@@ -379,8 +382,8 @@ describe("Webhook", () => {
   });
 });
 
-describe("Shopee (D-446) — o veredito da loja é o de /sincronizacao, e a leitura é a dos quatro jobs", () => {
-  it("loja conectada com pedidos lidos há meia hora e os quatro jobs em dia é ok, com o instante da leitura", () => {
+describe("Shopee (D-446, D-462) — o veredito da loja é o de /sincronizacao, e a leitura é a dos sete jobs", () => {
+  it("loja conectada com pedidos lidos há meia hora e os sete jobs em dia é ok, com o instante da leitura", () => {
     const shopee = card(base(), "shopee");
 
     expect(shopee.connection?.state).toBe("ok");
@@ -388,6 +391,32 @@ describe("Shopee (D-446) — o veredito da loja é o de /sincronizacao, e a leit
     expect(shopee.connection?.detail).toContain("Speed Bikers Oficial: pedidos em dia");
     expect(shopee.sync?.state).toBe("ok");
     expect(shopee.sync?.detail).toContain("financeiro dos pedidos");
+    // D-462: os três jobs novos entram na leitura, cada um com o nome dele.
+    expect(shopee.sync?.detail).toContain("devoluções: há 0.4 h");
+    expect(shopee.sync?.detail).toContain("repasses: há 0.4 h");
+    expect(shopee.sync?.detail).toContain("Ads CPC: há 2 h");
+  });
+
+  it("o Ads que falha (o sandbox responde 503) põe a leitura em erro e diz qual job e quantas vezes (D-462)", () => {
+    const input = base();
+    input.jobs = (input.jobs ?? []).map((job) =>
+      job.job_type === "shopee.ads.sync" ? { ...job, job_status: "failed", job_failures_24h: 7 } : job,
+    );
+    const sync = card(input, "shopee").sync;
+
+    expect(sync?.state).toBe("erro");
+    expect(sync?.detail).toContain("Ads CPC: última execução FALHOU há 2 h; 7 falha(s) em 24h");
+    // Os outros continuam ditos como estão: a falha não esconde o que anda.
+    expect(sync?.detail).toContain("devoluções: há 0.4 h");
+  });
+
+  it("o Ads lê a cada 3 h: 5 h sem leitura é normal para ele, e não rebaixa o cartão (D-462)", () => {
+    const input = base();
+    input.jobs = (input.jobs ?? []).map((job) =>
+      job.job_type === "shopee.ads.sync" ? { ...job, job_last_run_at: horasAtras(5), job_age_hours: 5 } : job,
+    );
+
+    expect(card(input, "shopee").sync?.state).toBe("ok");
   });
 
   it("os limiares são os do vigia: 4 h sem leitura é atenção, 13 h é erro — com o nome da loja", () => {
