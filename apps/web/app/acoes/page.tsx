@@ -290,7 +290,15 @@ export default async function AcoesPage({
           </nav>
 
           <div>
-            <section className="sb-panel" aria-label="Fila de ações">
+            {/*
+              O título da fila existe para o leitor de tela (D-508): os cartões
+              são h3, e sem um h2 entre eles e o h1 da tela a estrutura pulava
+              um nível. A faixa visível já diz o recorte, por isso ele é oculto.
+            */}
+            <section className="sb-panel" aria-labelledby="fila-de-acoes-titulo">
+              <h2 className="sb-sr-only" id="fila-de-acoes-titulo">
+                Fila de ações
+              </h2>
               <div className="sb-inbox-bar">
                 <b>{janela.label}</b>
                 {/*

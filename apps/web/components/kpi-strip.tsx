@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "./carregando-link";
 import { TOM, type Tom } from "./tone";
@@ -90,62 +90,124 @@ export interface KpiCellData {
   readonly variacao?: { readonly texto: string; readonly tom: Tom; readonly titulo: string };
 }
 
+/**
+ * Uma célula que CHEGA DEPOIS do resto da faixa (D-509): um `<Suspense>` com um
+ * componente async que devolve `<KpiCell>`, na posição dela. A faixa já nasce
+ * com a coluna contada (`--sb-kpi-cols`), então a chegada não desloca nada.
+ *
+ * Existe para a leitura cara que alimenta uma célula só — a taxa de
+ * cancelamento de `/vendas`, que custava 3,8 s a frio para um número entre
+ * cinco. O `fallback` deve ser o `KpiCellCarregando` com o rótulo de verdade.
+ */
+export interface KpiCellTardia {
+  readonly chave: string;
+  readonly tardia: ReactNode;
+}
+
 export function KpiStrip({
   cells,
   ancora = false,
 }: {
-  cells: readonly KpiCellData[];
+  cells: readonly (KpiCellData | KpiCellTardia)[];
   ancora?: boolean;
 }): ReactNode {
   // Colunas FIXAS, como `.kpi-strip{repeat(5,1fr)}` do export: a faixa declara
   // quantas células tem e o CSS nunca deixa uma órfã. Faixas de 5 ou mais
   // descem a 3 colunas em 1150px (o degrau do `.ops-metrics`); todas descem a
-  // 2 em 850px.
+  // 2 em 850px. A célula tardia conta desde o começo.
   const classes = ["sb-kpi-strip", ancora ? "sb-kpi-strip-ancora" : null, cells.length >= 5 ? "sb-kpi-strip-larga" : null]
     .filter((c): c is string => c !== null)
     .join(" ");
 
   return (
     <div className={classes} style={{ ["--sb-kpi-cols" as string]: String(cells.length) }}>
-      {cells.map((cell) => (
-        // O id da métrica pode repetir na mesma faixa (os três cenários da
-        // projeção são a mesma métrica, D-395); o rótulo não repete.
-        <div className="sb-kpi" key={`${cell.metricId ?? ""}:${cell.label}`} title={cell.formula}>
-          <span
-            className="sb-kpi-label"
-            style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
-          >
-            {cell.label}
-          </span>
-          <strong
-            className="sb-kpi-value"
-            style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
-          >
-            {cell.value}
-          </strong>
+      {cells.map((cell) =>
+        "tardia" in cell ? (
+          <Fragment key={cell.chave}>{cell.tardia}</Fragment>
+        ) : (
+          // O id da métrica pode repetir na mesma faixa (os três cenários da
+          // projeção são a mesma métrica, D-395); o rótulo não repete.
+          <KpiCell key={`${cell.metricId ?? ""}:${cell.label}`} cell={cell} />
+        ),
+      )}
+    </div>
+  );
+}
 
-          {cell.variacao !== undefined && (
-            <span className="sb-kpi-var" style={TOM[cell.variacao.tom]} title={cell.variacao.titulo}>
-              {cell.variacao.texto}
-            </span>
-          )}
+/** Uma célula da faixa — exportada para a célula tardia (D-509) devolver a MESMA marcação. */
+export function KpiCell({ cell }: { cell: KpiCellData }): ReactNode {
+  return (
+    <div className="sb-kpi" title={cell.formula}>
+      <span className="sb-kpi-label" style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}>
+        {cell.label}
+      </span>
+      <strong className="sb-kpi-value" style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}>
+        {cell.value}
+      </strong>
 
-          {cell.previous !== null && (
-            <span className="sb-kpi-prev">período anterior: {cell.previous}</span>
-          )}
+      {cell.variacao !== undefined && (
+        <span className="sb-kpi-var" style={TOM[cell.variacao.tom]} title={cell.variacao.titulo}>
+          {cell.variacao.texto}
+        </span>
+      )}
 
-          {cell.ressalva !== undefined && <span className="sb-kpi-note">{cell.ressalva}</span>}
+      {cell.previous !== null && <span className="sb-kpi-prev">período anterior: {cell.previous}</span>}
 
-          {cell.metricId !== undefined && <span className="sb-kpi-id">{cell.metricId}</span>}
+      {cell.ressalva !== undefined && <span className="sb-kpi-note">{cell.ressalva}</span>}
 
-          {cell.href !== undefined && (
-            <Link className="sb-kpi-link" href={cell.href} style={TOM[cell.tom ?? "info"]}>
-              ver lista
-              <CarregandoSeODemorar />
-            </Link>
-          )}
-        </div>
-      ))}
+      {cell.metricId !== undefined && <span className="sb-kpi-id">{cell.metricId}</span>}
+
+      {cell.href !== undefined && (
+        <Link className="sb-kpi-link" href={cell.href} style={TOM[cell.tom ?? "info"]}>
+          ver lista
+          <CarregandoSeODemorar />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O lugar de uma célula que ainda não chegou (D-509). Tudo o que é ESTÁTICO sai
+ * de verdade — rótulo, ressalva e id —, e o valor e o período anterior viram
+ * traços com as MESMAS classes da célula pronta e um texto-modelo transparente:
+ * a linha tem a altura exata, e a faixa não cresce quando o número chega.
+ * Medido na `/vendas`: sem a ressalva no esqueleto, a faixa ia de 114 a 148 px
+ * na chegada (CLS 0,011). Como o resto do carregamento (D-382), os traços só
+ * aparecem depois de 350 ms.
+ */
+export function KpiCellCarregando({
+  label,
+  metricId,
+  ressalva,
+  comparacao = true,
+  modelo = "00,0%",
+}: {
+  label: string;
+  metricId?: string;
+  /** A ressalva da célula pronta, quando ela tem uma: é texto fixo, não dado. */
+  ressalva?: string;
+  /** Sem comparação, a célula de verdade não tem a linha do período anterior. */
+  comparacao?: boolean;
+  /** Um valor com a forma do que vem ("00,0%", "R$ 00.000,00"), só para dar a largura do traço. */
+  modelo?: string;
+}): ReactNode {
+  return (
+    <div className="sb-kpi" aria-busy="true">
+      <span className="sb-kpi-label">{label}</span>
+      <span className="sb-sr-only" role="status">
+        Carregando {label.toLowerCase()}…
+      </span>
+      <strong aria-hidden="true" className="sb-kpi-value sb-kpi-carregando">
+        {modelo}
+      </strong>
+      {comparacao && (
+        <span aria-hidden="true" className="sb-kpi-prev sb-kpi-carregando">
+          período anterior: {modelo}
+        </span>
+      )}
+      {ressalva !== undefined && <span className="sb-kpi-note">{ressalva}</span>}
+      {metricId !== undefined && <span className="sb-kpi-id">{metricId}</span>}
     </div>
   );
 }
