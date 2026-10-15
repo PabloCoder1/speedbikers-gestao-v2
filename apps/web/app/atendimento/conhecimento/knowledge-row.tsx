@@ -31,21 +31,25 @@ export function KnowledgeRow({
   entry: KnowledgeRowData;
   canManage: boolean;
 }): ReactNode {
-  const [busy, setBusy] = useState(false);
+  // O status que está sendo gravado: o botão dele diz o que faz, e todos esperam (D-502).
+  const [gravando, setGravando] = useState<"VALIDADO" | "REJEITADO" | "OBSOLETO" | null>(null);
+  const busy = gravando !== null;
   const [error, setError] = useState<string | null>(null);
 
   function change(status: "VALIDADO" | "REJEITADO" | "OBSOLETO"): void {
-    setBusy(true);
+    setGravando(status);
     setError(null);
 
     void setKnowledgeStatus(entry.id, status).then((result) => {
-      setBusy(false);
+      setGravando(null);
 
       if (!result.ok) {
         setError(result.message);
       }
     });
   }
+
+  const GRAVANDO = { VALIDADO: "Validando…", REJEITADO: "Rejeitando…", OBSOLETO: "Marcando como obsoleto…" } as const;
 
   const actionButton = (label: string, status: "VALIDADO" | "REJEITADO" | "OBSOLETO"): ReactNode => (
     <button
@@ -56,7 +60,7 @@ export function KnowledgeRow({
         change(status);
       }}
     >
-      {label}
+      {gravando === status ? GRAVANDO[status] : label}
     </button>
   );
 
@@ -94,7 +98,7 @@ export function KnowledgeRow({
 
         {canManage && (
           <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.375rem", flexWrap: "wrap" }}>
-            {entry.status !== "VALIDADO" && actionButton(busy ? "…" : "Validar", "VALIDADO")}
+            {entry.status !== "VALIDADO" && actionButton("Validar", "VALIDADO")}
             {entry.status === "SUGERIDO" && actionButton("Rejeitar", "REJEITADO")}
             {entry.status === "VALIDADO" && actionButton("Tornar obsoleto", "OBSOLETO")}
           </div>

@@ -54,7 +54,9 @@ export function DocumentItemRow({
   const [results, setResults] = useState<SkuResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SkuResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  // O que está sendo gravado: o botão dele diz o que faz, e todos esperam (D-502).
+  const [acao, setAcao] = useState<"vinculando" | "desvinculando" | null>(null);
+  const busy = acao !== null;
   const [error, setError] = useState<string | null>(null);
 
   // Número da busca mais recente: a resposta que não for dela é descartada.
@@ -113,14 +115,14 @@ export function DocumentItemRow({
   async function confirm(): Promise<void> {
     if (selected === null) return;
 
-    setBusy(true);
+    setAcao("vinculando");
     setError(null);
 
     const result = await linkDocumentItem(itemId, selected.id, documentId);
 
     if (!result.ok) {
       setError(result.message);
-      setBusy(false);
+      setAcao(null);
 
       return;
     }
@@ -129,25 +131,25 @@ export function DocumentItemRow({
     setEditing(false);
     setSelected(null);
     setQuery("");
-    setBusy(false);
+    setAcao(null);
   }
 
   async function unlink(): Promise<void> {
-    setBusy(true);
+    setAcao("desvinculando");
     setError(null);
 
     const result = await linkDocumentItem(itemId, null, documentId);
 
     if (!result.ok) {
       setError(result.message);
-      setBusy(false);
+      setAcao(null);
 
       return;
     }
 
     setCurrent(null);
     setEditing(false);
-    setBusy(false);
+    setAcao(null);
   }
 
   if (!editable) {
@@ -233,7 +235,7 @@ export function DocumentItemRow({
           }}
           disabled={busy || selected === null}
         >
-          Vincular
+          {acao === "vinculando" ? "Vinculando…" : "Vincular"}
         </button>
 
         {/* Trocando um vínculo que existe: "Cancelar" desiste da troca e o SKU
@@ -267,7 +269,7 @@ export function DocumentItemRow({
           }}
           disabled={busy}
         >
-          Desvincular {current.sku}
+          {acao === "desvinculando" ? "Desvinculando…" : `Desvincular ${current.sku}`}
         </button>
       )}
 

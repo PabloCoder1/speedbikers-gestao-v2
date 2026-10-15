@@ -2,6 +2,7 @@ import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { BotaoEnviar } from "../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../components/carregando";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -44,9 +45,9 @@ function BotaoRemover({ tabela, id, rotulo }: { tabela: "monthly_goals" | "tax_r
     <form action={remover}>
       <input type="hidden" name="tabela" value={tabela} />
       <input type="hidden" name="id" value={id} />
-      <button type="submit" className="sb-text-button" aria-label={rotulo}>
+      <BotaoEnviar className="sb-text-button" aria-label={rotulo} pendente="removendo…">
         remover
-      </button>
+      </BotaoEnviar>
     </form>
   );
 }

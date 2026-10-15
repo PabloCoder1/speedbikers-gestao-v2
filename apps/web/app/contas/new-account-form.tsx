@@ -75,7 +75,7 @@ export function NewAccountForm(): ReactNode {
         }}
         disabled={busy || label.trim() === "" || slug.trim() === ""}
       >
-        Cadastrar conta
+        {busy ? "Cadastrando…" : "Cadastrar conta"}
       </button>
 
       {error !== null && (
