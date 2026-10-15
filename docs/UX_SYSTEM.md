@@ -185,10 +185,10 @@ primeiro deploy de produção com a D-507: data e `dpl_` **a preencher no
 deploy** (`list_deployments`). Aba aberta antes dele manda o formato antigo até
 recarregar: conte pelo campo, não pelo horário.
 
-**Como ler (D-506).** O reporter monta uma vez por documento, no layout raiz.
-O TTFB sai na montagem, com a rota **carregada**; LCP e CLS saem quando a aba
-se esconde, com a rota **daquele momento** — depois de uma navegação suave, o
-log põe o LCP da carga na rota de destino. Então: pareie cada LCP/CLS com o
+**Como ler as linhas sem `softNav` (D-506).** Até a D-507, o TTFB saía na
+montagem, com a rota **carregada**, e LCP e CLS saíam quando a aba se escondia,
+com a rota **daquele momento** — depois de uma navegação suave, o log punha o
+LCP da carga na rota de destino. Então: pareie cada LCP/CLS com o
 TTFB anterior (é ele que diz qual tela abriu do zero); conte a janela "depois
 do deploy" pelo horário do TTFB, não pelo `dep=` do envio (é o deploy que
 recebeu, não o que serviu); e lembre que o CLS soma o documento inteiro,
