@@ -293,9 +293,9 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 
 - **Lista de IPs (obrigatória para todos):** declarar os IPs que chamam a API
   e ligar *Enable IP Address Whitelist*; depois disso, só eles chamam. O Cloud
-  Run sai por **IP dinâmico** → precisa de **Cloud NAT com IP fixo** antes do
-  Go Live (decisão de custo do dono; resolve também o 403 por instância do
-  Mercado Livre).
+  Run saía por IP dinâmico; desde 15/10 api e worker saem pelo Cloud NAT com
+  o IP fixo **`34.95.145.35`** (D-457, `docs/DEPLOYMENT.md` §6.3) — é ele que
+  vai na lista. Ligar a lista só depois dos dois saírem por ele (feito).
 - Product Brief: URL da solução, usuário e senha de teste, descrição, print.
 - Live Redirect URL Domain.
 - Declaração de infraestrutura: IPs dos servidores de banco de dados e outros.

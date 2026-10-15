@@ -15415,6 +15415,32 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/lib/ads-shopee.ts` e o teste, `apps/web/app/faturamento/{ads-shopee,multicanal,campanhas-ads}.tsx` (`BarrasAds` e `formatRoas` exportados), `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-457 - IP fixo de saida em producao: api e worker saem por um Cloud NAT com um IP reservado (34.95.145.35), para a lista de IPs do Go Live da Shopee
+
+**Contexto:** o formulario de Go Live da Shopee exige a lista de IPs que chamam a API ("APP IP Address Management", obrigatorio) e, ligada a lista, so esses IPs chamam (SHOPEE 6). O Cloud Run sai por um pool de IPs dinamicos do Google; o projeto de producao nem tinha a API do Compute Engine habilitada. O mesmo pool esta por tras dos 403 do Mercado Livre por instancia (25 e 27/09).
+
+**Documentacao conferida em 15/10/2026:** "Static outbound IP address" do Cloud Run (saida VPC direta recomendada; Cloud Router + Cloud NAT manual com o IP reservado; `--vpc-egress all-traffic`) e a pagina de precos do Cloud NAT (gateway US$ 0,0014 por instancia-hora ate 32, US$ 0,045 por GiB processado, US$ 0,005 por hora de IP).
+
+**Custo medido, nao estimado no escuro:** 30 dias do Cloud Monitoring -- media de 1,03 instancia da api e 2,5 do worker; ~17 GiB/mes para a internet (quase tudo do worker). Gateway ~US$ 3,50 + IP US$ 3,60 + dados ~US$ 0,80 = **~US$ 8/mes**. Autorizado pelo dono em 15/10 ("pode fazer tudo que precisar para liberar o campo 7").
+
+**Decisao:**
+
+1. **`infra/cloud-nat.sh`** (idempotente, so `AMBIENTE=prod`): habilita o Compute Engine, cria a rede `v3-vpc` (modo custom), a sub-rede `v3-run-egress` (`10.20.0.0/24`, com acesso privado aos servicos do Google -- Cloud Tasks, Secret Manager e Logging nao passam pelo NAT), o IP `v3-nat-ip`, o roteador `v3-router` e o NAT `v3-nat` (IP manual, 1024 portas por instancia -- o worker abre varias conexoes ao mesmo destino; um IP cobre 63 instancias contra o teto de 15 -- e log so de erro).
+2. **`infra/deploy-cloud-run.sh`** passa `--network v3-vpc --subnet v3-run-egress --vpc-egress all-traffic` em todo deploy de producao, e recusa antes do build se a sub-rede nao existir: a configuracao fica no script, nao na memoria de quem publicou. O Dev segue no pool dinamico.
+3. **O IP da lista da Shopee e `34.95.145.35`.** A lista so deve ser LIGADA depois de api e worker sairem por ele -- feito em 15/10.
+4. A rede `default` (modo auto) que o Compute Engine cria ao ser habilitado ficou sem uso; nao tem VM, logo nada exposto.
+
+**Verificacao (15/10):**
+- `infra/cloud-nat.sh` criou tudo; o NAT reporta o IP `34.95.145.35` e 0 IP extra necessario.
+- `worker-00047-mmw` e `api-00030-cbh` (imagem `11dbd5f4`, so a rede mudou) com 100% do trafego e `vpc-access-egress = all-traffic`; `/health` ok.
+- Log de traducao do NAT ligado por alguns minutos: as conexoes de saida (Cloudflare do Supabase, CloudFront) com `nat_ip = 34.95.145.35`, alocacao OK; depois, de volta a so erros.
+- O worker novo processou webhooks do ML (`webhook_fast_path_done`) e estornos sem nenhum aviso ou erro.
+- `bash -n` e `infra/ambiente.test.sh` verdes; arquivos em LF.
+
+**Volta:** `gcloud run services update-traffic <servico> --to-revisions <revisao anterior>=100` (`worker-00046-zfl`, `api-00029-xdl` saem pelo pool dinamico); desligar a lista da Shopee antes.
+
+**Impacto:** `infra/{cloud-nat.sh,lib.sh,deploy-cloud-run.sh,README.md}`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,SHOPEE,HANDOFF,MULTICHANNEL_HANDOFF}.md`.
+
 ## D-458 - Telas multicanais, etapa T5d: o repasse da Shopee entra no /faturamento da Shopee como o realizado ao lado do previsto, pelo dia da liberacao, sem tocar no recebido nem no resultado
 
 **Contexto:** D-451 (C-64, A1) trouxe as liberacoes do escrow por pedido. Sao quatro leituras:
