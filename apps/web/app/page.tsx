@@ -264,7 +264,12 @@ function lerSegundaRodada(
   });
 }
 
-type SegundaRodada = Awaited<ReturnType<typeof lerSegundaRodada>>;
+// O que a seção lê da segunda rodada: a resposta da RPC, ou a falha de quem
+// lançou em vez de devolver `error` (ver o `.catch` na página).
+interface Leitura {
+  readonly data: unknown;
+  readonly error: unknown;
+}
 
 interface Contagem {
   readonly count: number | null;
@@ -297,7 +302,7 @@ async function AtencaoNecessaria({
   pausados,
 }: {
   // Nula só sem organização — e aí a página já voltou antes de chegar aqui.
-  segundaRodada: Promise<SegundaRodada | null>;
+  segundaRodada: Promise<Leitura | null>;
   acoesAltas: Contagem;
   acoesOutras: Contagem;
   openCases: Contagem;
@@ -543,9 +548,15 @@ export default async function HomePage({
   // necessária" (D-504). Antes era uma segunda rodada em fila depois de todas,
   // e a tela inteira esperava por ela.
   const membershipPromise = currentMembership();
-  const segundaRodada = membershipPromise.then((m) =>
-    m.error === null && m.organizationId !== null ? lerSegundaRodada(supabase, m.organizationId, janela) : null,
-  );
+  const segundaRodada: Promise<Leitura | null> = membershipPromise
+    .then((m) =>
+      m.error === null && m.organizationId !== null ? lerSegundaRodada(supabase, m.organizationId, janela) : null,
+    )
+    // Se a organização ou a leitura LANÇAR em vez de devolver `error`, a
+    // promessa não fica rejeitada sem ninguém esperar por ela (a página pode
+    // falhar antes de chegar ao `<Suspense>`): vira falha de leitura, e o
+    // cartão diz que não leu.
+    .catch((error: unknown) => ({ data: null, error: error ?? new Error("segunda rodada da Home falhou") }));
 
   const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendas, vendasAntes, serieDiaria, atividade, perfil] =
     await Promise.all([
