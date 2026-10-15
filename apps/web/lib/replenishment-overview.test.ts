@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { idadeDaLeitura, lerVisaoReposicao, posicaoCobertura } from "./replenishment-overview";
+import {
+  demandaDaShopee,
+  idadeDaLeitura,
+  lerVisaoReposicao,
+  posicaoCobertura,
+  seloDaShopee,
+} from "./replenishment-overview";
 
 const agregado = { skus: 3, unidades: 40, investimento: 1234.5, sem_custo: 1 };
 
@@ -90,5 +96,83 @@ describe("idadeDaLeitura", () => {
 
   it("nunca capturado é nulo, não 'agora'", () => {
     expect(idadeDaLeitura(null, agora)).toBeNull();
+  });
+});
+
+describe("a Shopee na demanda (C-65, D-464)", () => {
+  it("a chave ausente é a função de antes da migration: lê como nulo, a demanda é só a do ML", () => {
+    const visao = lerVisaoReposicao(resposta);
+
+    expect(visao?.linhas[0]?.units_30d_shopee).toBeNull();
+    expect(visao?.linhas[0]?.units_90d_shopee).toBeNull();
+    expect(demandaDaShopee(visao?.linhas ?? [])).toBe("fora");
+  });
+
+  it("número é a parte da Shopee, e zero é zero (há loja e o SKU não vendeu nela)", () => {
+    const visao = lerVisaoReposicao({
+      ...resposta,
+      linhas: [
+        { ...linha, units_30d: 9, units_30d_shopee: 4, units_90d_shopee: 6 },
+        { ...linha, sku: "E2E-SKU-002", units_30d_shopee: 0, units_90d_shopee: 0 },
+      ],
+    });
+
+    expect(visao?.linhas[0]?.units_30d_shopee).toBe(4);
+    expect(visao?.linhas[1]?.units_30d_shopee).toBe(0);
+    expect(demandaDaShopee(visao?.linhas ?? [])).toBe("inclui");
+  });
+
+  it("a parte da Shopee em texto continua fora do contrato: recusa INTEIRA", () => {
+    expect(lerVisaoReposicao({ ...resposta, linhas: [{ ...linha, units_30d_shopee: "4" }] })).toBeNull();
+  });
+
+  it("página sem linha não diz se a Shopee entra", () => {
+    expect(demandaDaShopee([])).toBe("sem-linhas");
+    expect(seloDaShopee("sem-linhas", [], new Date())).toBeNull();
+  });
+});
+
+describe("seloDaShopee", () => {
+  const agora = new Date("2026-10-15T15:00:00Z");
+  const live = (orders_synced_at: string | null) => ({ environment: "live", orders_synced_at });
+  const teste = { environment: "test", orders_synced_at: "2026-10-15T14:30:00Z" };
+
+  it("inclui: diz quando os pedidos foram lidos, e a loja mais atrasada manda", () => {
+    expect(seloDaShopee("inclui", [live("2026-10-15T14:20:00Z")], agora)).toMatchObject({
+      texto: "Shopee na demanda · pedidos lidos há 40 min",
+      alerta: false,
+    });
+    expect(seloDaShopee("inclui", [live("2026-10-15T14:20:00Z"), live("2026-10-15T10:00:00Z"), teste], agora))
+      .toMatchObject({ texto: "Shopee na demanda · 2 lojas, a mais atrasada lida há 5 h", alerta: true });
+  });
+
+  it("inclui com a leitura das lojas falhando: diz que entra, sem inventar frescor", () => {
+    expect(seloDaShopee("inclui", null, agora)).toMatchObject({
+      texto: "Shopee na demanda · frescor não lido",
+      alerta: false,
+    });
+  });
+
+  it("fora com só loja de teste: a Shopee não entra, e isso é normal", () => {
+    expect(seloDaShopee("fora", [teste], agora)).toMatchObject({
+      texto: "Shopee fora da demanda · nenhuma loja em produção lida",
+      alerta: false,
+    });
+  });
+
+  it("fora com loja em produção já lida: a conta ainda não a soma, e isso pede atenção", () => {
+    expect(seloDaShopee("fora", [live("2026-10-15T14:20:00Z")], agora)).toMatchObject({
+      texto: "Shopee fora da demanda · a conta ainda não a soma",
+      alerta: true,
+    });
+  });
+
+  it("organização sem loja Shopee não ganha selo; leitura das lojas falhando diz só que é o ML", () => {
+    expect(seloDaShopee("fora", [], agora)).toBeNull();
+    expect(seloDaShopee("fora", null, agora)).toMatchObject({ texto: "Shopee fora da demanda", alerta: false });
+  });
+
+  it("loja em produção que nunca leu pedidos não conta como lida", () => {
+    expect(seloDaShopee("fora", [live(null)], agora)?.alerta).toBe(false);
   });
 });

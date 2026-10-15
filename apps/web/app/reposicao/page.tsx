@@ -10,6 +10,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -22,7 +23,13 @@ import {
   resolveReplenishmentFilters,
   summarizeReplenishmentWindow,
 } from "../../lib/replenishment-filters";
-import { idadeDaLeitura, lerVisaoReposicao, posicaoCobertura } from "../../lib/replenishment-overview";
+import {
+  demandaDaShopee,
+  idadeDaLeitura,
+  lerVisaoReposicao,
+  posicaoCobertura,
+  seloDaShopee,
+} from "../../lib/replenishment-overview";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 
@@ -135,8 +142,8 @@ export default async function ReposicaoPage({
   const filters = resolveReplenishmentFilters(query);
   const dateTo = toSalesMetricDate(new Date());
 
-  // Três leituras numa ida (D-185). A pesada é UMA agora (D-358).
-  const [overviewResult, settingsResult, brandsResult] = await Promise.all([
+  // Quatro leituras numa ida (D-185). A pesada é UMA agora (D-358).
+  const [overviewResult, settingsResult, brandsResult, lojasShopeeResult] = await Promise.all([
     supabase.rpc("get_replenishment_overview", {
       p_organization_id: organizationId,
       p_date_to: dateTo,
@@ -153,6 +160,12 @@ export default async function ReposicaoPage({
       ),
     // D-194: a agregação das marcas é do BANCO.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+    /*
+      D-464: o frescor da demanda da Shopee — a última leitura de pedidos de
+      cada loja (C-52, a mesma RLS por loja de D-433). Se a soma entra ou não
+      quem diz é a RPC; isto só diz de quando é a venda da Shopee somada.
+    */
+    supabase.from("marketplace_accounts").select("environment, orders_synced_at").eq("marketplace", "SHOPEE"),
   ]);
 
   const visao = overviewResult.error === null ? lerVisaoReposicao(overviewResult.data) : null;
@@ -178,6 +191,12 @@ export default async function ReposicaoPage({
   const agora = new Date();
   const frescorVendas = idadeDaLeitura(visao?.vendasCalculadasEm ?? null, agora);
   const frescorFull = idadeDaLeitura(visao?.fullCapturadoEm ?? null, agora);
+  // Falha da leitura das lojas não derruba a tela: o selo diz se a Shopee entra, sem frescor (D-067).
+  const seloShopee = seloDaShopee(
+    demandaDaShopee(visao?.linhas ?? []),
+    lojasShopeeResult.error === null ? lojasShopeeResult.data : null,
+    agora,
+  );
 
   const contagem = new Map((visao?.contagens ?? []).map((c) => [c.state, c]));
   const windowInfo = summarizeReplenishmentWindow(filters.page, visao?.total ?? 0, visao?.linhas.length ?? 0);
@@ -205,7 +224,7 @@ export default async function ReposicaoPage({
                 })),
               ]}
             />
-            <form method="get" action="/reposicao" className="sb-rep-busca">
+            <FormularioFiltro action="/reposicao" className="sb-rep-busca">
               {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
               {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
               {filters.state !== null && <input type="hidden" name="estado" value={filters.state} />}
@@ -220,7 +239,7 @@ export default async function ReposicaoPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             <Link className="sb-button" href="/reposicao/configuracoes">
               Configurações
             </Link>
@@ -293,6 +312,15 @@ export default async function ReposicaoPage({
                 <i aria-hidden="true" />
                 Full {frescorFull === null ? "sem captura nos últimos 3 dias" : `capturado ${frescorFull.texto}`}
               </span>
+              {seloShopee !== null && (
+                <span
+                  className={seloShopee.alerta ? "sb-rep-selo sb-rep-selo-velho" : "sb-rep-selo"}
+                  title={seloShopee.titulo}
+                >
+                  <i aria-hidden="true" />
+                  {seloShopee.texto}
+                </span>
+              )}
             </div>
           </section>
 
@@ -345,7 +373,9 @@ export default async function ReposicaoPage({
             <summary>Como a conta é feita</summary>
             <div>
               <p>
-                <b>Sugestão = venda/dia (30d) × janela de demanda − estoque aproveitável.</b> A janela vem da{" "}
+                <b>Sugestão = venda/dia (30d) × janela de demanda − estoque aproveitável.</b> A venda soma o Mercado
+                Livre e as lojas Shopee em produção com pedidos lidos — a planilha de estoque já desconta o que saiu
+                pela Shopee, então a demanda dela tem de entrar na conta; loja de teste fica fora. A janela vem da{" "}
                 <Link href="/reposicao/configuracoes">configuração de reposição</Link> (prazo + cobertura +
                 segurança); o aproveitável soma local, Full e trânsito, com o reservado fora. É cálculo
                 determinístico, nunca IA — e quando falta base (configuração, estoque real, histórico ou amostra), a
@@ -408,11 +438,12 @@ export default async function ReposicaoPage({
             {visao.linhas.length > 0 && (
               <>
                 {/*
-                  A ponte cobertura→pedido (D-151): GET nativo para /compras/novo
-                  com pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce como
-                  RASCUNHO e segue a aprovação humana de D-055.
+                  A ponte cobertura→pedido (D-151): GET para /compras/novo com
+                  pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce como
+                  RASCUNHO e segue a aprovação humana de D-055. Navegação suave
+                  desde D-464 (D-501); sem JavaScript, continua o GET nativo.
                 */}
-                <form id="rep-pedido" action="/compras/novo" method="get">
+                <FormularioFiltro id="rep-pedido" action="/compras/novo">
                   <div style={{ overflowX: "auto" }}>
                     <table className="sb-table sb-rep-tabela">
                       <thead>
@@ -422,7 +453,9 @@ export default async function ReposicaoPage({
                           </th>
                           <th>SKU</th>
                           <th title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">Classe</th>
-                          <th className="sb-num" title="Venda média diária dos últimos 30 dias">Venda/dia</th>
+                          <th className="sb-num" title="Venda média diária dos últimos 30 dias — Mercado Livre e lojas Shopee em produção">
+                            Venda/dia
+                          </th>
                           <th>Tendência</th>
                           <th className="sb-num" title="Local + Full + trânsito, com o reservado fora">
                             Aproveitável
@@ -493,7 +526,15 @@ export default async function ReposicaoPage({
                                   <span className={`sb-rep-abc sb-rep-abc-${row.abc_class.toLowerCase()}`}>{row.abc_class}</span>
                                 )}
                               </td>
-                              <td className="sb-num">{RATE.format(breakdown.dailyRate)}</td>
+                              <td className="sb-num">
+                                {RATE.format(breakdown.dailyRate)}
+                                {/* D-464: quanto da venda de 30 dias veio da Shopee — já está na média. */}
+                                {row.units_30d_shopee !== null && row.units_30d_shopee > 0 && (
+                                  <small className="sb-rep-canal">
+                                    {formatCount(row.units_30d_shopee)} un da Shopee em 30 d
+                                  </small>
+                                )}
+                              </td>
                               <td>
                                 <TrendBadge
                                   units15={row.units_15d}
@@ -619,7 +660,7 @@ export default async function ReposicaoPage({
                       </tbody>
                     </table>
                   </div>
-                </form>
+                </FormularioFiltro>
 
                 {/* A seleção vira pedido de compra, e só ADMIN/GESTOR cria pedido
                     (`check_purchase_order_writer`) — lote 1 do pente fino, 18/09. */}

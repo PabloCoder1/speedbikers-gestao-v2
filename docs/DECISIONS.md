@@ -15579,6 +15579,63 @@ Sem leitura, o fato diz "nunca lidas/lidos". Se a leitura falhar, diz "nao foi p
 
 **Impacto:** `apps/web/lib/integrations.ts` e o teste, `apps/web/app/sincronizacao/page.tsx`, `apps/web/e2e/{sincronizacao,integracoes}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-464 - Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
+
+**Contexto:** o dono confirmou em 15/10 que a planilha do UpSeller ja vem com a venda da Shopee descontada do estoque. A reposicao, porem, so contava a demanda do ML. Resultado: cobertura alta demais e sugestao baixa demais para SKU que vende na Shopee (risco T-R3 de `docs/MULTICHANNEL_SCREENS.md`).
+
+O dono liberou somar a demanda da Shopee, e o A1 desenhou o C-65 (D-459). As janelas `units_15d/30d/60d/90d` de `get_purchase_suggestions` (herdadas por `get_replenishment_overview` e `get_purchase_order_suggestions`) e de `get_stock_coverage` passam a ser ML + Shopee. A parte da Shopee vem em colunas separadas (`units_30d_shopee`, `units_90d_shopee`, `units_sold_shopee`), com uma regra:
+- NULA quando a organizacao nao tem loja Shopee em producao com pedidos ja lidos;
+- 0 quando ha essa loja e o SKU nao vendeu nela.
+
+O `history_days_90` continua sendo o do ML.
+
+**1. O SINAL E A RESPOSTA, NAO UMA REGRA REFEITA NA TELA.** `/reposicao` decide se a Shopee entra na demanda pela propria resposta: alguma linha com `units_30d_shopee` nao nulo quer dizer que a soma entrou.
+
+Ler a regra pela C-52 (loja `live` com pedidos lidos) mentiria na janela entre a publicacao da web e a migration de producao: a loja existe e a conta ainda nao a soma.
+
+A chave AUSENTE (a funcao de antes da migration) vale como nula. Chave presente com outra coisa que numero ou nulo continua fora do contrato e recusa a resposta inteira, como todo o resto de `lib/replenishment-overview.ts`. Pagina sem linha (filtro vazio) nao diz nada.
+
+**2. O SELO EM "DADOS USADOS".** Ao lado de "Vendas recalculadas" e "Full capturado", um terceiro selo diz a situacao da Shopee:
+- "Shopee na demanda · pedidos lidos ha N": a idade e a da loja mais atrasada, com o limiar do vigia (3 h, D-435). Acima disso o selo pede atencao, porque a venda recente da Shopee pode estar faltando.
+- "Shopee fora da demanda · nenhuma loja em producao lida": o caso de hoje, so com a sandbox. E normal e fica sem destaque.
+- "Shopee fora da demanda · a conta ainda nao a soma", em destaque: ha loja em producao lida, mas a conta ainda e so do ML. O titulo diz o efeito: cobertura alta, sugestao baixa.
+
+Organizacao sem loja Shopee nao ganha selo. Se a leitura das lojas falhar, o selo diz se a Shopee entra, sem inventar frescor (D-067). A leitura das lojas (`marketplace_accounts`, C-52, RLS por loja de D-433) vai na mesma ida da pagina.
+
+**3. A PARTE DA SHOPEE ONDE A VENDA APARECE.**
+- `/reposicao`: embaixo da "Venda/dia", "N un da Shopee em 30 d" quando ha venda da Shopee. A media ja a soma: a linha so diz quanto veio de la.
+- `/compras/novo`: "vendeu N em 30 dias (K na Shopee)".
+- Zero nao ganha texto. A conta (`composeSkuReplenishment`) nao muda: ela le as janelas que o SQL ja soma, e a tela nao faz conta nova (regra da formula unica, D-293).
+- O "Como a conta e feita" e o titulo da coluna dizem que a venda soma o ML e as lojas Shopee em producao, e que loja de teste fica fora.
+
+**4. A NAVEGACAO SUAVE (D-501).** A busca de `/reposicao`, a de `/compras` e a ponte cobertura→pedido (`rep-pedido`, GET para `/compras/novo`, D-151) viram `FormularioFiltro`. As duas telas saem dos pendentes de `check:navegacao-suave`. Sem JavaScript, continua o GET nativo.
+
+O `FormularioFiltro` renasce a cada `?busca`, e a barra de selecao (`SelecaoPedido`) observava o formulario pelo id so na montagem. Medido no stack isolado, sem a correcao: depois de clicar num estado, a caixa estava desmarcada e a barra ainda dizia "1 SKU(s) · 382 un"; marcar e desmarcar nao mudava nada. O botao "Criar pedido" ficava habilitado sem nada marcado.
+
+O efeito da barra passa a rodar de novo a cada `?busca`. Com isso, o "Marcar compra agora" tambem deixa de ficar velho depois de uma navegacao suave.
+
+**Fica para a T-R3b:** a parte da Shopee na gaveta da Inspecao Rapida de `/produtos` e na cobertura do SKU. As duas leem `get_stock_coverage` pelos tipos gerados, que so trazem `units_sold_shopee` com a migration do A1. Entra logo depois do C-65.
+
+**Publicacao:** so a web, sem migration. Com a funcao de hoje, a tela diz "Shopee fora da demanda". Quando a migration do C-65 chegar em producao (com loja live), passa a "Shopee na demanda" sem nova publicacao.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web (`check:navegacao-suave` com 3 telas pendentes).
+- **Unitarios:** `lib/replenishment-overview.test.ts` e `app/compras/novo/sugestoes.test.ts`, 25 testes, 12 novos ou ampliados:
+  - chave ausente vale nula;
+  - numero e zero passam como vieram;
+  - texto recusa a resposta inteira;
+  - os seis casos do selo, incluindo a loja mais atrasada, a leitura que falha e a loja que nunca leu pedidos.
+- **e2e:** `reposicao`, `compras` e `pedido-compra` 13/13. O caso novo: a loja de teste do seed fica fora da demanda, e a tela diz isso.
+- **Fixtures no banco isolado:**
+  - a loja do seed em producao com pedidos lidos: o selo vira "a conta ainda nao a soma", em destaque (foto conferida);
+  - historico de 90 dias e uma regra global, para o SKU do seed ganhar sugestao (382): a barra conta certo depois de um estado, de uma busca e no envio ao pedido (`/compras/novo?sku=<uuid>:382`). A mesma sequencia sem a correcao reproduz o defeito do item 4.
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/replenishment-overview.ts` e o teste, `apps/web/app/reposicao/{page,selecao-pedido}.tsx`, `apps/web/app/compras/page.tsx`, `apps/web/app/compras/novo/{sugestoes.ts,sugestoes.test.ts,item-row.tsx}`, `apps/web/app/globals.css`, `apps/web/e2e/reposicao.spec.ts` e `apps/web/scripts/check-navegacao-suave.mjs`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

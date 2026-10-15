@@ -498,7 +498,10 @@ function CelulaSugestao({
 
   const estado = sugestao.state === null ? undefined : ESTADO_SUGESTAO[sugestao.state];
   const contexto = [
-    `vendeu ${formatCount(sugestao.units30d)} em 30 dias`,
+    // D-464: a venda já soma a Shopee; o parêntese diz quanto veio de lá.
+    sugestao.units30dShopee !== null && sugestao.units30dShopee > 0
+      ? `vendeu ${formatCount(sugestao.units30d)} em 30 dias (${formatCount(sugestao.units30dShopee)} na Shopee)`
+      : `vendeu ${formatCount(sugestao.units30d)} em 30 dias`,
     sugestao.aproveitavel === null ? "estoque virtual" : `aproveitável ${formatCount(sugestao.aproveitavel)}`,
     sugestao.coverageDays === null ? null : `cobertura ${sugestao.coverageDays.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} dias`,
   ]
