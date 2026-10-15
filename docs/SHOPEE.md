@@ -272,6 +272,10 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   se o cabeçalho veio, o formato, o tamanho, as chaves e o código (sem o valor),
   e a assinatura aceita só variações de FORMA do endereço (barra, esquema) e o
   corpo sem a quebra final — sempre com a chave do parceiro.
+- **A chave do push é OUTRA (15/10):** a tela Set Push tem a *Test Push
+  Partner Key*; as amostras gravadas na recusa não conferem com a Partner Key
+  em nenhuma combinação. Segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, montado na
+  api como `SHOPEE_PUSH_PARTNER_KEY` (`docs/DEPLOYMENT.md` §6.2).
 
 ## 5. Sandbox — o roteiro
 

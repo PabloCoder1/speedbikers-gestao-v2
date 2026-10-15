@@ -168,6 +168,15 @@ SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-${api_url}/oauth/shopee/callback}"
 YAML
       shopee_secret=",SHOPEE_PARTNER_KEY=${SECRET_SHOPEE_PARTNER_KEY}:latest"
       info "Shopee ligada: ${SHOPEE_ENVIRONMENT}, partner_id ${SHOPEE_PARTNER_ID}"
+
+      # D-453: o push é assinado com uma chave própria (a "Test Push Partner
+      # Key" do Console), não com a Partner Key. Só a api recebe push; o
+      # segredo só é montado se existir (a conta da api precisa de
+      # secretAccessor nele antes, pelo mesmo motivo de cima).
+      if gc secrets describe "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" >/dev/null 2>&1; then
+        shopee_secret="${shopee_secret},SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
+        info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
+      fi
     fi
 
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la

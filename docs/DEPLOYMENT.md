@@ -194,6 +194,7 @@ No Console da Shopee (`open.shopee.com` → Console → **Push Mechanism** → o
 |---|---|---|
 | Callback URL | `https://<api>/push/shopee` — em produção, `https://api-p6gzq3hzca-rj.a.run.app/push/shopee` | Entra na assinatura: tem de ser IGUAL ao que a api usa (`SHOPEE_PUSH_URL`, ou a origem de `SHOPEE_REDIRECT_URI` + `/push/shopee`, que o deploy já monta) |
 | Pushes | `order_status_push` (3) e `return_updates_push` (29) | Os dois com ação; os outros só iriam para o log |
+| Chave do push | O campo **Test Push Partner Key** da mesma tela (no Go Live, a de produção) → segredo `SHOPEE_TEST_PUSH_PARTNER_KEY` no Secret Manager de `speedbikers-prod`, criado pelo dono (a chave nunca passa pelo chat); a conta `v3-api-runtime` recebe `secretAccessor` e o deploy da api o monta como `SHOPEE_PUSH_PARTNER_KEY` só se ele existir | A Shopee assina o push com ESTA chave, não com a Partner Key: 18 combinações com a Partner Key não conferiram com as amostras de 15/10 (D-453) |
 
 **Como verificar:** a verificação do endereço passa no Console; no log da api, `shopee_push_enqueued` depois de um pedido do sandbox mudar; `shopee_push_signature_rejected` repetido quer dizer endereço diferente do cadastrado. O push é só aviso: sem ele, o gatilho de hora em hora segue lendo.
 

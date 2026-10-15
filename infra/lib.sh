@@ -198,6 +198,10 @@ SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
 SHOPEE_PARTNER_ID="${SHOPEE_PARTNER_ID:-}"
 SHOPEE_ENVIRONMENT="${SHOPEE_ENVIRONMENT:-sandbox}"
 SHOPEE_REDIRECT_URI="${SHOPEE_REDIRECT_URI:-}"
+SECRET_SHOPEE_PARTNER_KEY="${SECRET_SHOPEE_PARTNER_KEY:-SHOPEE_TEST_PARTNER_KEY}"
+# O push tem chave própria (D-453): "Test Push Partner Key" no Console (Push
+# Mechanism → Set Push), diferente da Partner Key. No Go Live, a de produção.
+SECRET_SHOPEE_PUSH_PARTNER_KEY="${SECRET_SHOPEE_PUSH_PARTNER_KEY:-SHOPEE_TEST_PUSH_PARTNER_KEY}"
 
 # IP fixo de saída (D-457). A Shopee exige declarar os IPs que chamam a API
 # (lista obrigatória no Go Live), e o Cloud Run sai por um pool de IPs
@@ -210,7 +214,6 @@ VPC_SUBNET_RANGE="10.20.0.0/24"
 NAT_ROUTER="v3-router"
 NAT_GATEWAY="v3-nat"
 NAT_IP_NAME="v3-nat-ip"
-SECRET_SHOPEE_PARTNER_KEY="${SECRET_SHOPEE_PARTNER_KEY:-SHOPEE_TEST_PARTNER_KEY}"
 
 # Copiloto (D-082): Claude Haiku 4.5. Só a api consome — o Copiloto roda
 # inteiro em apps/api (POST /v1/copilot/query), o worker nunca chama a
