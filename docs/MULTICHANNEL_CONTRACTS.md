@@ -152,6 +152,25 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.14 Busca universal com a Shopee (C-57, D-467) — em código
+
+`search_entities(p_organization_id, p_query)` — a mesma da paleta e da `/busca`, estendida (não há segunda busca).
+
+| Coluna | O que é |
+|---|---|
+| `entity_type`, `label`, `sublabel`, `href` | as de antes (D-060) |
+| `marketplace` | `'ML'`, `'SHOPEE'` ou nulo (SKU, fornecedor, compra, NF-e) |
+| `entity_id` | o id do destino: sku_id, item_id, order_sn, id da loja, do caso, da nota |
+| `account_id` | a conta do ML ou a loja Shopee; nulo quando não se aplica |
+
+| Tipo novo | Casa | Destino |
+|---|---|---|
+| `loja` | nome da loja, `shop_id` exato | `/contas` (a de teste com o sublabel "Shopee · teste") |
+| `anuncio_shopee` | nome, SKU do item ou da variação (trecho), `item_id` exato — só loja live, sem item apagado | `/anuncios/shopee?loja=<loja>&q=<item_id>` |
+| `pedido_shopee` | prefixo do `order_sn` (letra, dígito, hífen; 2 a 40), sem diferenciar maiúscula — só loja live | `/vendas/shopee?loja=<loja>&from=<dia>&to=<dia>&pedido=<order_sn>` (o dia de São Paulo do pedido) |
+
+`get_shopee_orders` ganha `p_order_sn` no fim (o `order_sn` exato, sem diferenciar maiúscula; nulo = a lista de sempre). O pedido de venda do ML continua fora até haver destino (D-060). Até 5 por tipo; a RLS decide por conta e por loja.
+
 ### 3.13 Demanda da Shopee na cobertura e na reposição (C-65, D-459) — em código
 
 | Contrato | O que muda | Colunas novas |
