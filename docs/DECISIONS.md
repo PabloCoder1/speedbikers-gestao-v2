@@ -16294,6 +16294,26 @@ Nenhum TTFB com `/skus/` nos tres dias: ninguem abriu um SKU do zero. Depois do 
 
 **Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,UX_SYSTEM}.md`. Nenhum codigo, migration ou leitura.
 
+## D-507 - A metrica de producao sai com a rota carregada e diz se houve navegacao suave antes do envio; o LCP sai no primeiro clique ou tecla, uma vez so
+
+**Contexto:** a D-506 achou que o reporter (`app/web-vitals.tsx`, montado uma vez no `app/layout.tsx`, entao sobrevive a navegacao suave) dava ao LCP e ao CLS a rota em que a aba se escondeu -- depois de uma navegacao suave, a de destino (o "SKU 5,9 s" da D-503 era uma carga de `/vendas`) -- e que duas de quatro cargas da Home nao mandaram LCP nem CLS. A releitura de antes e depois da D-504 e da D-505 precisa de um rotulo que diga qual tela abriu do zero, e de saber de que lado do corte cada amostra esta.
+
+**Decisao:**
+1. **Uma carga, uma rota.** A rota e lida na montagem (o `window.location.pathname` de quando o documento abriu, o mesmo que o TTFB ja usava) e vai em TTFB, LCP, CLS e INP. A navegacao suave nao muda mais o rotulo.
+2. **`softNav`: a URL mudou no mesmo documento antes do envio.** Vem de `usePathname` e `useSearchParams` -- rota nova ou so filtro novo (a D-500 fez do filtro, da busca e da paginacao navegacao suave) -- e voltar a URL da carga nao desfaz. Por causa do `useSearchParams`, o componente fica num `Suspense`. Le-se: o TTFB sai sempre `false`; o LCP quase sempre `false` (sai no primeiro gesto, antes de a navegacao terminar; `true` so se a URL trocou sem gesto); no CLS e no INP, `true` quer dizer que o numero soma telas que vieram depois da carregada, e o CLS da tela e o das linhas com `false`. Nada pessoal entra: so rota, nome, valor e o sinal; a rota segue cortada em 120 caracteres na API.
+3. **O LCP sai no primeiro clique ou tecla** (`click`/`keydown` na captura, fora do tratador), ou na primeira vez que a aba se esconde, o que vier antes -- uma vez so. Como na biblioteca `web-vitals`: o navegador para de emitir LCP no primeiro gesto, entao esperar a aba se esconder so arrisca perder o envio. Antes de enviar, o `takeRecords` esvazia o que o navegador ainda nao entregou (no CLS e no INP tambem).
+4. **Dois ajustes no mesmo corte, para nao haver um segundo depois:** o CLS e o INP saem so quando a aba se **esconde** (o `once` antigo disparava tambem no `visibilitychange` da aba que **aparece** -- a aberta em segundo plano mandava ao ser vista, antes da hora); e o LCP so conta o que pintou antes da primeira vez que a aba se escondeu -- aba aberta em segundo plano nao manda LCP, que mediria quando alguem olhou, nao a carga. O `pagehide` fica de reserva para o Safari antigo, que sai da pagina sem avisar a visibilidade. O INP segue como era (a maior duracao de evento), fora desta fatia.
+5. **A API aceita `softNav` opcional e booleano** (400 se vier de outro tipo) e so o escreve no log quando vem. Aba aberta antes do deploy continua mandando o formato antigo ate recarregar: a linha **sem** `softNav` e do reporter antigo e se le pela regra da D-506 (o par com o TTFB anterior); a linha **com** `softNav` e do novo. O campo, nao o horario, diz de que lado do corte a amostra esta.
+
+**O corte:** o primeiro deploy de producao com este commit. O merge depende do sim do dono, entao data e `dpl_` ficam em `docs/UX_SYSTEM.md` §5, preenchidos no deploy (`list_deployments` em `speedbikers-prod`); no log, a primeira linha com `softNav` o marca.
+
+**Achado de passagem:** sem sessao, o `proxy` desvia o `POST /api/vitals` para o login (visto no navegador: `/login?next=%2Fapi%2Fvitals`). O TTFB e o LCP de `/login` nunca chegaram ao log; o CLS chega, porque sai depois de entrar. Fica como esta: o login nao esta na fila do streaming, e abrir uma rota da API sem sessao e decisao de seguranca (D-331), nao de medicao.
+
+**Verificacao:** typecheck, lint, testes (a rota: o sinal no log, a linha antiga sem o campo, o corte em 120, `softNav` de outro tipo recusado) e build. No navegador contra o build (`next start`), lendo o `web_vital` do log do servidor: carga de `/` e clique em Vendas pelo menu -> `TTFB` e `LCP` com `path: '/'` e `softNav: false`, o LCP uma vez, no clique; ao sair do documento, `CLS` com `path: '/'` e `softNav: true`, sem segundo LCP. Em `/estoque`, a primeira tecla mandou o LCP; o filtro "Saldo negativo" (so a busca muda) marcou `softNav: true` no CLS. O documento de `/login`, que entra na Home por navegacao suave, mandou o CLS com `path: '/login'` e `softNav: true`. Os LCP da verificacao (22 e 27 s) sao do painel do navegador, que nao desenhava a pagina ate a primeira captura -- nao medem a tela.
+
+**Impacto:** `apps/web/app/web-vitals.tsx`, `apps/web/app/api/vitals/{route,route.test}.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,HANDOFF}.md`. So web; o `web_vital` ganha um campo.
+
+
 ## D-508 - Acessibilidade dos componentes compartilhados: a auditoria sem dependencia nova, o "Pular para o conteudo" e o titulo que faltava na /acoes
 
 **Contexto:** a auditoria de 14/10 (D-500) cobriu carregamento, interacao e estados especiais; a acessibilidade, que tambem e do A3, nao tinha sido medida. O repositorio nao tem axe nem jsx-a11y, e dependencia nova pede decisao (`docs/ARCHITECTURE.md` secao 1).
