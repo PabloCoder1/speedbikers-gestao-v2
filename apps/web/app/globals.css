@@ -5324,6 +5324,35 @@ table {
 }
 
 /*
+ * O lugar de um selo que ainda não chegou (D-505, `SeloCarregando` em
+ * `components/object-header.tsx`): o MESMO `.sb-status`, com o rótulo
+ * transparente dando a largura exata, o traço do esqueleto e a mesma revelação
+ * de 350 ms do resto do carregamento (D-382). O selo de verdade entra no lugar
+ * sem empurrar os vizinhos.
+ */
+.sb-status.sb-selo-carregando {
+  color: transparent;
+  user-select: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 25%,
+    color-mix(in srgb, var(--sb-secondary) 3%, transparent) 50%,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  animation:
+    sb-revela 240ms ease-out 350ms forwards,
+    sb-brilho 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-status.sb-selo-carregando {
+    animation: sb-revela 240ms ease-out 350ms forwards;
+  }
+}
+
+/*
  * A ATUALIZAÇÃO NO LUGAR (D-500) — navegação que fica na MESMA tela: filtro,
  * busca, paginação, aba, "ver lista" (`components/carregando-link.tsx`,
  * `components/formulario-filtro.tsx`).
@@ -5437,7 +5466,13 @@ body > .sb-atualizando-barra {
   min-width: 0;
 }
 
+/*
+ * Bloco, não inline: sem `descricao`, o `<p>` que quebrava a linha não existe,
+ * e o detalhe técnico (inline-block) subia para a MESMA linha do título —
+ * achado do A2 aplicando o estado na /faturamento com uma falha simulada.
+ */
 .sb-estado-texto strong {
+  display: block;
   color: var(--sb-primary);
 }
 

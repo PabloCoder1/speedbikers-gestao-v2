@@ -16000,3 +16000,28 @@ O ganho medido aqui e de percepcao: a secao lenta continua com o tempo da cobert
 **Verificacao:** typecheck, lint, testes, build e as guardas; a suite e2e inteira contra o build num stack isolado recriado do zero (233 de 236 -- as 3 de convite redirecionam para a porta 3000, sem servidor na worktree); fotos da Home durante e depois da espera; a medicao acima; e a contagem direta contra a funcao como o usuario do e2e.
 
 **Impacto:** `apps/web/app/page.tsx`, `apps/web/app/globals.css` (`.sb-attention-carregando`), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_HANDOFF}.md`. So web.
+
+## D-505 - O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
+
+**Contexto:** a D-503 mediu um `/skus/[id]` em producao com LCP de 5,9 s, e o A1 (D-461) achou duas leituras frias pesadas: a `get_sku_timeline` da aba Historico (~37 mil paginas, corrigida na D-461) e, na aba padrao, a `get_sku_abc_curve` (~5,4 mil paginas, ~45 MB), a mais cara da aba -- as outras ficam entre 0,4 e 1,5 mil. A curva estava no `Promise.all` de TODAS as abas e alimenta uma coisa so: o selo "Curva A/B/C" do cabecalho (D-247). A tela inteira esperava por um rotulo de sete letras. O A2, dono da tela, liberou a pagina depois da T-R3b (#190) e da D-468.
+
+**Decisao:**
+1. **A curva sai do `Promise.all`, e so o selo espera.** A leitura comeca junto com as outras (`Promise.resolve` chama o `then` do construtor do PostgREST, que so executa nesse momento) e e aguardada dentro do `<Suspense>` de `SeloCurvaAbc`. Mesma funcao, mesmos parametros, mesma regra: falha ou SKU sem venda em 90 dias, nenhum selo -- um SKU fora da curva nao vira "classe C". Um `.catch` transforma em falha de leitura o que lancar (a observacao do A2 na D-504).
+2. **O selo chega na posicao do frame**, nao no fim da fileira: o `ObjectHeader` aceita um selo tardio (`ObjectBadgeTardio`, `{ chave, tardio }`) no meio da lista. As outras seis telas que usam o cabecalho nao mudam.
+3. **O lugar fica reservado** (`SeloCarregando`): o mesmo `.sb-status`, com o rotulo transparente dando a largura exata (mono e caixa alta: "Curva A" e "Curva C" medem igual), o traco do esqueleto e a revelacao de 350 ms do resto do carregamento (D-382); sem o brilho com movimento reduzido.
+4. **Junto, um defeito do `EstadoDaTela`, achado pelo A2:** sem `descricao`, o detalhe tecnico (inline-block) subia para a mesma linha do titulo (inline). O titulo vira bloco. Hoje isso vale para quatro telas do A2 (`/curva-abc`, `/usuarios` e duas de `/vinculacoes`), que se corrigem sem mudar o codigo delas.
+
+**Medido** num build de producao local com o stack isolado, a `get_sku_abc_curve` atrasada em 3 s so no banco de teste e duas series de 3 cargas completas da aba padrao (medianas):
+
+| | antes | depois |
+|---|---|---|
+| cabecalho, abas e conteudo da aba | 3.138 e 3.140 ms | **220 e 301 ms** |
+| LCP | 3.184 e 3.184 ms | **480 e 548 ms** |
+| selo "Curva B" | junto com a tela | 3.143 e 3.174 ms, no lugar reservado |
+| CLS | 0 | 0 (tambem num SKU sem classe, em que o esqueleto some) |
+
+Sem atraso, a pagina sai em ~260 ms (LCP ~550 ms). A aba Historico ganha igual (cabecalho em 189 ms com a curva atrasada), porque a curva era lida em todas as abas. O ganho medido e de percepcao: o selo continua com o tempo da curva. A curva fria continua com o A1; o codigo ja diz a saida -- uma coluna materializada de classe, nunca uma segunda formula de ABC.
+
+**Verificacao:** typecheck, lint, testes, build e as guardas; a suite e2e inteira contra o build num stack isolado recriado do zero (233 de 236 -- as 3 de convite redirecionam para a porta 3000, sem servidor na worktree); fotos do cabecalho esperando e pronto a 1440 e a 390 px, sem rolagem lateral; o `EstadoDaTela` com falha real (execucao da `get_sku_abc_analysis` revogada no banco de teste), antes e depois.
+
+**Impacto:** `apps/web/app/skus/[skuId]/{page,selo-curva-abc}.tsx`, `apps/web/components/object-header.tsx`, `apps/web/app/globals.css` (`.sb-selo-carregando`, `.sb-estado-texto strong`), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_HANDOFF,DESIGN_IMPLEMENTATION,HANDOFF}.md`. So web.
