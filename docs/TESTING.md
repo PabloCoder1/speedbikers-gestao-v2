@@ -105,6 +105,8 @@ attrib -R "apps\web\.next\*" /S /D; attrib -R "apps\web\.next"; Remove-Item -Lit
 
 **Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
+**Armadilha conhecida (2026-10-15, D-478):** duas suítes e2e no MESMO Docker (outra sessão rodando a dela) deixam a rodada inteira lenta, e um caso que espera um elemento renderizado no servidor estoura os 5 s do `expect`. Sinal: os vizinhos também lentos e o total da rodada acima do normal. Não é estado (a suíte roda com um worker só, na mesma ordem). Num teste que depende de uma leitura que tem caminho alternativo, espere o conteúdo OU a nota do caminho alternativo e falhe com o motivo dela (`esperaResumo` em `vinculacoes.spec.ts`), em vez de só aumentar o tempo.
+
 ---
 
 ## 4. Portões de CI
