@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **463** (D-001 a D-505).
+Decisões registradas: **465** (D-001 a D-505).
 
 ## Por domínio
 
@@ -75,7 +75,7 @@ Decisões registradas: **463** (D-001 a D-505).
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 
-### banco/rls (42)
+### banco/rls (43)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -119,6 +119,7 @@ Decisões registradas: **463** (D-001 a D-505).
 - **D-439** — Vendas por SKU entre marketplaces (E6a): o grao de SKU da Shopee numa view, o ranking com o total no SQL e as vendas de um SKU por conta e loja
 - **D-440** — Telas multicanais, etapa T4: /vendas tem os recortes Todos, Mercado Livre e Shopee na mesma tela, lidos do consolidado do SQL, e o ML continua exatamente o de sempre
 - **D-461** — get_sku_timeline: os eventos de pedido pelo indice (entity_id = any(pedidos do SKU como texto)), sem converter o entity_id em numero
+- **D-465** — O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
 
 ### estoque (35)
 
@@ -375,7 +376,7 @@ Decisões registradas: **463** (D-001 a D-505).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (41)
+### vendas/métricas (42)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -416,6 +417,7 @@ Decisões registradas: **463** (D-001 a D-505).
 - **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
 - **D-455** — Ads da Shopee (C-63): ROAS e ACOS so sobre os dias com o gasto E a venda atribuida; dias_sem_gasto e dias_sem_venda contam os outros
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
+- **D-463** — get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
 

@@ -1348,7 +1348,7 @@ A saída é a mesma em 379 SKUs (33,6 mil eventos).
 
 **Abertos (sem defeito medido, só volume):**
 - **A 2ª rodada da Home, ≈110 MB frios.** Proposta: uma contagem leve de "pausados com estoque" (A1) e a rodada fora da fila da organização (A2). O A3 propôs Suspense nos dois cartões (D-503).
-- **A curva ABC do cabeçalho do SKU, ~45 MB frios.**
+- **A curva ABC do cabeçalho do SKU, ~45 MB frios** — o Full saiu com a D-465; sobra a curva da organização em 90 dias, inerente ao cálculo.
 
 Para confirmar o cache frio em produção: em `extensions.pg_stat_statements`, filtrando `query like '%pgrst_source%'` (a função sai de `regexp_match(query, '"public"\."(\w+)"')`), um `shared_blks_read` alto com `mean_exec_time` baixo e `max_exec_time` alto.
 
@@ -1358,6 +1358,31 @@ Para confirmar o cache frio em produção: em `extensions.pg_stat_statements`, f
 - sugestão: 150 → 153 ms, 16.414 → 16.430 páginas.
 
 Sem degradação na oitava execução. O Dev não tem loja Shopee, então a parte da Shopee não pesa ali.
+
+### A correlação do diagnóstico e o Full atual (D-463 e D-465, 15/10/2026)
+
+**Dev, como `authenticated`** (o mesmo método da D-461; versões novas em esquema temporário ou índice numa transação desfeita).
+
+**`get_sku_correlated_events` (D-463, migration `20261015090000`).** A ramificação de pedidos lia todos os itens de pedido dos candidatos, de sempre; agora parte dos cancelamentos e devoluções da janela.
+
+| Chamada | Atual | Nova |
+|---|---|---|
+| 1 SKU, 5 dias | 21 ms, 9,0 mil páginas | 10 ms, 3,0 mil |
+| **100 SKUs, 5 dias** (`/diagnostico` e o detector do worker) | 172 ms, 125 mil (~1 GB) | **17 ms, 4,9 mil** |
+| 1 SKU, 30 dias | 105 ms, 51 mil | 47 ms, 25 mil |
+| 100 SKUs, 30 dias | 275 ms, 167 mil | 57 ms, 27 mil |
+
+A saída é a mesma em 72 casos (6.884 linhas).
+
+**O Full atual (D-465, migration `20261015100000`).** Nove funções leem "a captura dos últimos 3 dias da organização" e não havia índice por (organização, instante). Com o "agora" na última captura do Dev (28,7 mil linhas na janela), a leitura custava 30,8 mil páginas sem o índice e **2,4 mil** com ele. Nas funções reais do Dev (janela vazia, então o ganho mínimo):
+
+| Função | Sem o índice | Com o índice |
+|---|---|---|
+| `get_listings_dashboard` (Home) | 8,6 mil | **4,1 mil** |
+| `get_sku_abc_curve` (cabeçalho do SKU) | 5,6 mil | **3,2 mil** |
+| `get_purchase_suggestions` | 17,7 mil | **12,2 mil** |
+
+**O que sobra na classe ABC do SKU:** a curva da organização em 90 dias, ~3,4 mil acessos à `daily_sku_metrics` (a tabela inteira tem 2,8 mil páginas no Dev). Esse custo é inerente ao cálculo; só um valor pré-calculado o tiraria.
 
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
