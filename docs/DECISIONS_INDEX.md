@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **473** (D-001 a D-509).
+Decisões registradas: **474** (D-001 a D-509).
 
 ## Por domínio
 
@@ -380,7 +380,7 @@ Decisões registradas: **473** (D-001 a D-509).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (45)
+### vendas/métricas (46)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -426,6 +426,7 @@ Decisões registradas: **473** (D-001 a D-509).
 - **D-476** — Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
+- **D-506** — A metrica de producao dava o LCP a rota em que a aba se escondeu, nao a carregada: o SKU nao tem carga completa medida, a Home tem duas (3,5 e 7,6 s), e o depois da D-504 ainda nao tem amostra
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 
 ### worker/infra (85)
