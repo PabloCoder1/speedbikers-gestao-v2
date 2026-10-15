@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../components/carregando-link";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -205,11 +206,11 @@ export default async function ComprasPage({
         aside={
           <>
             {/*
-              Busca como GET nativo: o recorte fica na URL. Os `hidden` são
+              Busca como GET, com navegação suave (D-501): o recorte fica na URL. Os `hidden` são
               obrigatórios porque um form GET só envia os campos que tem — sem
               eles, buscar limparia o estado e o "só atrasados" (D-136).
             */}
-            <form method="get" action="/compras" className="sb-rep-busca">
+            <FormularioFiltro action="/compras" className="sb-rep-busca">
               {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
               {filters.overdue && <input type="hidden" name="atrasados" value="1" />}
               <input
@@ -223,7 +224,7 @@ export default async function ComprasPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             <Link className="sb-button" href="/reposicao">
               Sugestão de compra
             </Link>

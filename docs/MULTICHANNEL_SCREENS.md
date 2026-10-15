@@ -55,7 +55,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
-| Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) | demanda Shopee fora até a fatia 5 — ver risco T-R3 | E8 + dono |
+| Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) + Shopee (C-65) | T-R3 ✔ (D-464): a demanda da Shopee dita pela própria RPC, o selo em "Dados usados" e a parte da Shopee na venda; T-R3b (gaveta e SKU) depois do C-65 | E8 + dono |
 | Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug, ML) · `marketplace` + `contas` (uuid) + filtros salvos | `get_sku_abc_*` com `p_marketplaces`/`p_account_ids` (C-60) | — | T6b ✔ (D-448: "Todos" e "Shopee", compras como critério); T6b2 ✔ (D-450: o Excel com o recorte) |
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
@@ -274,6 +274,6 @@ primeiro menu cortado atrás da lateral (corrigido com `alinhamento="inicio"`).
 |---|---|---|---|
 | T-R1 | Usuário restrito a uma conta ML vê todas as lojas Shopee (S1) | qualquer seletor de loja expõe o que a pessoa não deveria ver | E2 antes de T3; até lá, nenhuma tela nova lista lojas além das que já listam |
 | T-R2 | Comparar período com mais de 90 dias | a Shopee parece ter crescido do nada | declarar a cobertura do histórico na comparação (T4) |
-| T-R3 | A planilha do UpSeller já desconta a venda Shopee do estoque, mas a demanda da reposição só conta o ML | cobertura alta demais e sugestão de compra baixa demais para SKU que vende na Shopee — **inferência**, a medir com dado real | registrado para o dono e o A1 (fatia 5) |
+| T-R3 | A planilha do UpSeller já desconta a venda Shopee do estoque, mas a demanda da reposição só conta o ML | cobertura alta demais e sugestão de compra baixa demais para SKU que vende na Shopee — **inferência**, a medir com dado real | o dono liberou em 15/10; C-65 do A1 (D-459) e a tela (D-464) |
 | T-R4 | `/vendas/shopee` e `/anuncios/shopee` ficam fora do menu | quem não passa pelo link do subtítulo não acha | **resolvido na T1** (D-431): a troca é o primeiro menu do cabeçalho das telas de vendas e de anúncios |
 | T-R5 | No celular, o cartão "Por loja" de `/vendas/shopee` sobrepõe as notas pequenas ("1 sem receita conhecida", "3 aguardando o financeiro") ao valor ao lado — **preexistente** (D-430), visto nas fotos da T1 | leitura difícil na largura de 390 px | **corrigido em 14/10**: só na tabela "Por loja" (`.sb-vendas-lojas`), a célula do cartão quebra e a nota desce; o e2e `vendas-shopee` mede que nenhuma nota passa da própria célula |

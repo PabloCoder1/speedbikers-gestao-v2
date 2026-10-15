@@ -13,12 +13,21 @@
 
 import type { SkuReplenishmentRow } from "@sb/domain";
 
+import { LIMIAR_ATRASO_H, lojaDeTeste } from "./saude-loja-shopee";
+
 export interface LinhaReposicao extends SkuReplenishmentRow {
   readonly purchase_cost: number | null;
   readonly abc_class: string | null;
   readonly coverage_days: number | null;
   readonly state: string | null;
   readonly suggested_quantity: number | null;
+  /**
+   * A parte da Shopee em `units_30d`/`units_90d` (C-65, D-464), que já a somam.
+   * Nulo = a organização não tem loja Shopee em produção com pedidos lidos e a
+   * demanda é só a do ML; 0 = há loja e o SKU não vendeu nela.
+   */
+  readonly units_30d_shopee: number | null;
+  readonly units_90d_shopee: number | null;
 }
 
 export interface AgregadoReposicao {
@@ -90,7 +99,19 @@ function lerLinha(v: unknown): LinhaReposicao | null {
     numeros[campo] = valor;
   }
 
+  /*
+    C-65 (D-464). Chave AUSENTE é a função de antes da migration — a demanda
+    ainda é só a do ML, o mesmo que nulo. Chave presente com outra coisa que
+    número ou nulo continua fora do contrato.
+  */
+  const shopee30 = v.units_30d_shopee ?? null;
+  const shopee90 = v.units_90d_shopee ?? null;
+
+  if (!numOuNulo(shopee30) || !numOuNulo(shopee90)) return null;
+
   return {
+    units_30d_shopee: shopee30,
+    units_90d_shopee: shopee90,
     sku_id: v.sku_id,
     sku: v.sku,
     title: v.title,
@@ -155,6 +176,101 @@ export function posicaoCobertura(coberturaDias: number | null, janelaDias: numbe
   if (coberturaDias === null || janelaDias === null || janelaDias <= 0) return null;
 
   return Math.min(100, Math.max(0, (coberturaDias / (janelaDias * 2)) * 100));
+}
+
+/**
+ * A SHOPEE NA DEMANDA (C-65, D-464). O sinal é a PRÓPRIA resposta da RPC, não
+ * uma regra refeita aqui: o SQL devolve a parte da Shopee nula para a
+ * organização inteira quando não há loja em produção com pedidos lidos, e
+ * número quando há. Ler a regra da C-52 mentiria entre a publicação da web e a
+ * migration de produção, quando a loja existe e a conta ainda não a soma.
+ * Página sem linha (filtro vazio) não diz nada.
+ */
+export type DemandaShopee = "inclui" | "fora" | "sem-linhas";
+
+export function demandaDaShopee(linhas: readonly LinhaReposicao[]): DemandaShopee {
+  if (linhas.length === 0) return "sem-linhas";
+
+  return linhas.some((linha) => linha.units_30d_shopee !== null) ? "inclui" : "fora";
+}
+
+/** A loja como a C-52 a entrega, só o que o selo usa. */
+export interface LojaDaDemanda {
+  readonly environment: string | null;
+  /** A última leitura de pedidos que TERMINOU. */
+  readonly orders_synced_at: string | null;
+}
+
+export interface SeloShopee {
+  readonly texto: string;
+  /** Pede atenção: leitura atrasada, ou loja lida que a conta não soma. */
+  readonly alerta: boolean;
+  readonly titulo: string;
+}
+
+/**
+ * O selo da Shopee em "Dados usados". `lojas` nulo = a leitura da C-52 falhou:
+ * o selo ainda diz se a Shopee entra, sem inventar frescor. A idade é a da loja
+ * mais atrasada, com o limiar do vigia (D-435): é a mesma loja que o sino avisa.
+ * `null` = nada a dizer (sem linha, ou organização sem loja Shopee).
+ */
+export function seloDaShopee(
+  demanda: DemandaShopee,
+  lojas: readonly LojaDaDemanda[] | null,
+  agora: Date,
+): SeloShopee | null {
+  if (demanda === "sem-linhas") return null;
+
+  const lidas = (lojas ?? [])
+    .flatMap((loja) => (!lojaDeTeste(loja) && loja.orders_synced_at !== null ? [loja.orders_synced_at] : []))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+  if (demanda === "inclui") {
+    const maisAntiga = lidas[0];
+
+    if (maisAntiga === undefined) {
+      return {
+        texto: lojas === null ? "Shopee na demanda · frescor não lido" : "Shopee na demanda",
+        alerta: false,
+        titulo: "A venda soma o Mercado Livre e as lojas Shopee em produção.",
+      };
+    }
+
+    const horas = (agora.getTime() - new Date(maisAntiga).getTime()) / 3_600_000;
+    const idade = idadeDaLeitura(maisAntiga, agora)?.texto ?? "";
+
+    return {
+      texto:
+        lidas.length === 1
+          ? `Shopee na demanda · pedidos lidos ${idade}`
+          : `Shopee na demanda · ${String(lidas.length)} lojas, a mais atrasada lida ${idade}`,
+      alerta: horas > LIMIAR_ATRASO_H,
+      titulo: `A venda soma o Mercado Livre e as lojas Shopee em produção. A partir de ${String(LIMIAR_ATRASO_H)} h sem leitura de pedidos, a venda recente da Shopee pode estar faltando.`,
+    };
+  }
+
+  if (lojas === null) {
+    return { texto: "Shopee fora da demanda", alerta: false, titulo: "A venda é só a do Mercado Livre." };
+  }
+
+  if (lojas.length === 0) return null;
+
+  // Loja em produção já lida e a conta sem ela: a migration ainda não chegou.
+  if (lidas.length > 0) {
+    return {
+      texto: "Shopee fora da demanda · a conta ainda não a soma",
+      alerta: true,
+      titulo:
+        "Há loja Shopee em produção com pedidos lidos, mas a conta desta tela ainda é só a do Mercado Livre: a cobertura sai alta demais e a sugestão baixa demais para quem vende na Shopee.",
+    };
+  }
+
+  return {
+    texto: "Shopee fora da demanda · nenhuma loja em produção lida",
+    alerta: false,
+    titulo:
+      "A venda é só a do Mercado Livre: a Shopee entra quando houver loja em produção com pedidos lidos. Loja de teste fica fora.",
+  };
 }
 
 /** "há 3 h", "há 2 dias" — idade de uma leitura, para o selo de frescor. */

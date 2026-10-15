@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { formatCount, formatCurrency } from "../../lib/format";
@@ -16,8 +17,8 @@ const VAZIA: Selecao = { skus: 0, unidades: 0, custo: 0, semCusto: 0 };
 /**
  * A BARRA DE SELEÇÃO do pedido de compra (D-358).
  *
- * A tabela continua Server Component e o formulário continua um GET nativo para
- * `/compras/novo` (D-151): esta barra só OBSERVA as caixas marcadas do
+ * A tabela continua Server Component e o formulário continua um GET para
+ * `/compras/novo` (D-151), suave desde D-464: esta barra só OBSERVA as caixas marcadas do
  * formulário e diz o que vai para o pedido — quantos SKUs, quantas unidades e o
  * custo estimado. É o total da escolha da pessoa, não um número do catálogo:
  * este vem do SQL, nos cartões.
@@ -32,6 +33,13 @@ const VAZIA: Selecao = { skus: 0, unidades: 0, custo: 0, semCusto: 0 };
 export function SelecaoPedido({ formId }: { formId: string }): ReactNode {
   const [selecao, setSelecao] = useState<Selecao>(VAZIA);
   const [temUrgente, setTemUrgente] = useState(false);
+  /*
+    A cada `?busca` nova (estado, marca, página) o `FormularioFiltro` RENASCE —
+    outro elemento, com outras linhas — e esta barra fica no lugar. O efeito
+    roda de novo para observar o formulário novo; sem isso a barra contaria as
+    caixas de um formulário que já saiu da tela.
+  */
+  const busca = useSearchParams();
 
   useEffect(() => {
     const form = document.getElementById(formId);
@@ -68,7 +76,7 @@ export function SelecaoPedido({ formId }: { formId: string }): ReactNode {
     return () => {
       form.removeEventListener("change", recalcular);
     };
-  }, [formId]);
+  }, [formId, busca]);
 
   function marcar(filtro: (caixa: HTMLInputElement) => boolean, valor: boolean): void {
     const form = document.getElementById(formId);
