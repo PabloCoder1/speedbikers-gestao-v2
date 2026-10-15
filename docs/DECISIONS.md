@@ -15201,6 +15201,24 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.
 
+## D-448 - Telas multicanais, etapa T6b: a Curva ABC ganha os recortes Todos e Shopee, com a compra como criterio que soma; o recorte ML continua identico, e o Excel multicanal fica para a T6b2
+
+**Contexto:** D-441 (E6b, Agente 1, C-60) deu as tres funcoes da Curva ABC (D-424) dois parametros no fim -- `p_marketplaces` (nulo = so ML, o resultado de antes) e `p_account_ids` (ids de `marketplace_accounts`) -- e as regras do que nao soma: com a Shopee no recorte, `orders`, `class_orders` e `coverage_days` vem NULOS, o criterio `pedidos` e RECUSADO (use `compras`) e `p_ml_account_id` tambem; sem o ML, `full_stock` e NULO e `p_only_without_full` e RECUSADO.
+
+**1. O MESMO RECORTE DE VENDAS E FATURAMENTO.** `/curva-abc` ganha o seletor de marketplace no inicio da barra e, fora do ML, o menu de contas e lojas por clique, num valor so na URL (`marketplace=todos|shopee`, `contas=a,b`). Sem `marketplace`, a tela chama a funcao EXATAMENTE como antes (so `p_ml_account_id`), e a curva do Mercado Livre nao muda. A linha passa a ter o tipo gerado da funcao: o tipo escrito a mao dizia `revenue: number` e esconderia os nulos novos.
+
+**2. A COMPRA E O CRITERIO QUE SOMA.** "Compras" (o pack do ML e o pedido da Shopee, `multicanal_compras`) entra como criterio e como ordem nos tres recortes. "Pedidos" so existe no ML: um link antigo, ou a troca de recorte, leva a "Compras" -- e o que a propria funcao manda usar. A ordem por pedidos vira por compras e a por cobertura volta a curva. "Sem Full" so vale com alguma conta ML no recorte (a tela calcula isso pelas contas escolhidas) e o cartao do Full some sem ela. A tela nunca envia uma combinacao que a funcao recusa.
+
+**3. O QUE NAO SOMA SAI, E E DITO.** Fora do ML a tabela troca pedidos e ticket por compras, perde a cobertura em dias e, no "Todos", ganha a parte de cada canal (receita e unidades do ML e da Shopee); a faixa troca pedidos por compras e perde o ticket (o ticket entre marketplaces mora em `/vendas`, recalculado no banco). Item Shopee de receita desconhecida e contado ao lado da receita, na faixa e na linha. Uma nota diz o que ficou de fora e, quando o periodo anterior comeca antes dos 90 dias de historico da Shopee, que o movimento de classe dela aparece como "novo" ou "subiu" (risco T-R2).
+
+**4. O EXCEL FICA PARA A T6B2.** O arquivo (D-422) tem tres curvas e a aba por conta presas ao ML. Em vez de baixar outro recorte calado, fora do ML o botao vira "Baixar Excel (so Mercado Livre)" e baixa o do ML. A T6b2 leva o mesmo recorte ao arquivo: `get_sku_abc_breakdown` com a dimensao `marketplace` e `get_sku_sales_by_account` por `account_id`.
+
+**Publicacao:** so a web, e so DEPOIS do #157 (E6b) na `main` e da migration `20261015000000` em producao -- sem ela, o recorte ML continua funcionando, mas "Todos" e "Shopee" chamariam parametros que a funcao de producao nao tem.
+
+**Verificacao:** typecheck, lint e as seis guardas da web verdes. Unitarios: `lib/abc-filters.test.ts` (6 novos -- o recorte da URL; a conta por slug so no ML e por id fora dele; "Pedidos" vira "Compras" e as ordens que nao existem fora do ML se ajustam; "sem Full" fora da Shopee; a troca de recorte leva periodo e recortes e deixa a conta; o recorte conta como filtro ativo); 1.202 na web. e2e num stack isolado com o banco recriado (as 255 migrations, com a do #157): o spec novo `curva-abc-multicanal` -- o primeiro e2e da Curva ABC -- (3: o seletor com "Todos" leva o periodo e troca "Pedidos" por "Compras"; **com so a loja de teste, o "Todos" tem o mesmo faturamento do recorte, os mesmos SKUs listados e o mesmo primeiro SKU, com a mesma receita, do ML**, sem pedidos nem cobertura; o recorte Shopee so com a loja de teste nao inventa SKU, nao mostra Full, e o Excel diz que e do ML); e a suite inteira 225/225 (os 3 de convite com o servidor na porta 3000). Fotos com a loja live de dados de foto: a Coroa deu 8.994 do ML + 285 da Shopee = 9.279, e o recorte Shopee 485 em 5 unidades e 4 compras -- a conta feita a mao.
+
+**Impacto:** `apps/web/app/curva-abc/page.tsx`, `apps/web/lib/abc-filters.ts` e o teste, `apps/web/e2e/curva-abc-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-449 - Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 
 **Contexto:** o faturamento do ML ja tem Ads (5G, D-363) e o lucro apos imposto e Ads (5K); o da Shopee nao (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
@@ -15229,6 +15247,26 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **A conferir no sandbox, depois do deploy do worker:** a chamada real; com loja real, se o GMV Max entra no CPC da loja.
 
 **Impacto:** `supabase/migrations/20261015040000_ads_shopee.sql`, `packages/shopee/src/{ads,ads.test,index}.ts`, `apps/worker/src/handlers/{shopee-ads-sync,shopee-ads-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
+## D-450 - Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
+
+**Contexto:** a T6b (D-448) levou a Curva ABC aos recortes "Todos" e "Shopee", mas o Excel (D-422/D-424) era preso ao Mercado Livre: tres curvas (faturamento, unidades, pedidos), a aba "Por conta" pela conta ML e o ticket, o Full e a cobertura em toda linha. Fora do ML, a T6b oferecia o Excel do ML com o aviso no botao.
+
+**1. O ARQUIVO E O RECORTE DA TELA.** A rota le os mesmos parametros (`marketplace`, `contas`) e aplica a MESMA regra de contas da tela -- `aplicarContasDoRecorte` em `lib/abc-filters.ts`, usada pelas duas: ficam as contas que a pessoa alcanca e que cabem no recorte, e "sem Full" so vale com conta ML. No recorte ML, as chamadas sao EXATAMENTE as de antes; fora dele, `p_marketplaces` e `p_account_ids` (C-60). O botao volta a ser um so, "Baixar Excel", com o recorte na URL.
+
+**2. A TERCEIRA CURVA E A DE COMPRAS.** Com a Shopee no recorte, a aba "Pedidos" vira "Compras" (o pack do ML e o pedido da Shopee): o pedido do ML nao soma com o dela, e a funcao o recusa. As classes combinadas viram F/U/C, o painel troca pedidos por compras e, no lugar do ticket (que e do ML), mostra os itens Shopee sem receita. As curvas sao um tipo so (`AbcCurves`, com `pedidos` OU `compras`), e quem le pergunta qual e a terceira.
+
+**3. O QUE NAO EXISTE FICA VAZIO, NUNCA ZERO.** Ticket, Full, cobertura e "sem Full" saem como celula vazia onde nao existem (Shopee no recorte, ou sem conta ML); o estoque total sem Full e o local. As colunas novas do Consolidado -- faturamento do ML e da Shopee no "Todos", itens Shopee sem receita -- vao NO FIM: as de antes nao mudam de letra, e a formatacao condicional (K, S, AA) e os graficos continuam apontando para o lugar certo.
+
+**4. AS LOJAS NA ABA POR CONTA, E O RECORTE POR MARKETPLACE.** A aba "Por conta" pivota por `account_id` (a conta ML ou a loja Shopee, C-60), com uma coluna por conta e loja do recorte -- a loja de teste marcada. No "Todos", o painel ganha o recorte "Por marketplace" (`get_sku_abc_breakdown` com a dimensao `marketplace`, somado no banco). O glossario diz o que muda com a Shopee.
+
+**5. AS DEVOLUCOES NO /SAUDE FORAM PARA O #170.** A cadencia de `shopee.returns.sync` (pedido do A1, D-447, C-62) entrou primeiro nesta fatia e saiu dela: foi para o #170, junto com a do repasse e a dos Ads, para valer antes dos workers sem esperar a migration da T6b2. O cartao da Shopee em `/integracoes` so incluira os jobs novos depois de eles rodarem em producao (senao a sincronizacao cairia para "sem atividade").
+
+**Publicacao:** so a web, empilhada sobre a T6b (#164) e o #157 -- entra depois deles e da migration `20261015000000` em producao.
+
+**Verificacao:** typecheck, lint e as seis guardas da web verdes. Unitarios: `app/curva-abc/export/rows.test.ts` (6 novos -- a terceira curva de compras com a classe, o valor e o ticket vazio; o estoque total sem Full; o pivo pela loja; o marketplace na frase do recorte; o arquivo do "Todos" com a aba Compras, o recorte por marketplace e as colunas da Shopee; o da Shopee sozinha sem as colunas de cada canal) e o de `lib/sync-health.test.ts` com o job novo; 1.216 na web. e2e num stack isolado com o banco recriado: `curva-abc-multicanal` (4 -- inclusive **o teste que baixa o Excel do "Todos" pela tela, abre o arquivo e confere a aba Compras sem a de Pedidos, o recorte por marketplace e a loja de teste como coluna da aba por conta, e baixa o do ML para provar que ele nao mudou**); e a suite inteira 227/227 (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/app/curva-abc/{page.tsx,export/load.ts,export/rows.ts,export/rows.test.ts,export/workbook.ts,export/xlsx/route.ts}`, `apps/web/lib/abc-filters.ts` e o teste, `apps/web/e2e/curva-abc-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
 ## D-451 - Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 
