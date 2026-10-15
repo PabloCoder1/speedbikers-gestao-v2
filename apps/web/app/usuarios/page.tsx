@@ -166,6 +166,15 @@ export default async function UsuariosPage({
     supabase.auth.getSession(),
   ]);
 
+  /*
+    T-R6: as duas leituras do ADMIN que, ao falhar, pareceriam "nada". A janela
+    de `auth.users` dá e-mail, situação e último acesso; sem ela, todos virariam
+    "ativo" e os convites pendentes, 0. O histórico vazio diria "nenhuma
+    mudança". Falha é dita, e o que dependia dela sai da tela.
+  */
+  const situacaoLida = isAdmin && detalheResult.error === null;
+  const historicoLido = isAdmin && eventsResult.error === null;
+
   const members = (membersResult.data ?? []) as unknown as MemberRow[];
   const accounts = accountsResult.data ?? [];
   const permissions = permissionsResult.data ?? [];
@@ -285,8 +294,10 @@ export default async function UsuariosPage({
     };
   });
 
+  // Sem a situação lida, o filtro por situação compararia com um "ativo" inventado: fica de fora.
+  const filtrosValidos = situacaoLida ? filters : { ...filters, status: null };
   const visiveis = linhas.filter((linha) =>
-    matchesMemberFilters({ nome: linha.nome, email: linha.email, status: linha.status }, filters),
+    matchesMemberFilters({ nome: linha.nome, email: linha.email, status: linha.status }, filtrosValidos),
   );
 
   const janela = summarizeMemberWindow(linhas.length, visiveis.length, filters);
@@ -314,10 +325,11 @@ export default async function UsuariosPage({
             label: "Convites pendentes",
             formula:
               "Pessoas com vínculo criado que ainda não entraram nenhuma vez (`auth.users.last_sign_in_at` nulo) e não estão suspensas.",
-            value: formatCount(porStatus.pendente),
+            value: situacaoLida ? formatCount(porStatus.pendente) : "—",
             previous: null,
-            tom: porStatus.pendente > 0 ? ("atencao" as const) : ("neutro" as const),
-            ...(porStatus.pendente > 0 ? { destaque: "atencao" as const } : {}),
+            tom: situacaoLida && porStatus.pendente > 0 ? ("atencao" as const) : ("neutro" as const),
+            ...(situacaoLida && porStatus.pendente > 0 ? { destaque: "atencao" as const } : {}),
+            ...(situacaoLida ? {} : { ressalva: "a situação dos membros não foi lida" }),
           } satisfies KpiCellData,
         ]
       : []),
@@ -359,6 +371,13 @@ export default async function UsuariosPage({
         </p>
       )}
 
+      {isAdmin && detalheResult.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível ler o e-mail, a situação (convite, suspensão) e o último acesso dos membros:{" "}
+          {detalheResult.error.message}. As colunas e o filtro por situação ficam fora até a leitura voltar.
+        </p>
+      )}
+
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel
           title="Gerenciar acessos"
@@ -384,7 +403,7 @@ export default async function UsuariosPage({
           }
         >
           {/* O estado vem da janela: sem ela (quem não é ADMIN), não há o que filtrar. */}
-          {isAdmin && (
+          {situacaoLida && (
             <div className="sb-usuarios-barra">
               <FiltroDeStatus filters={filters} contagens={porStatus} total={linhas.length} />
             </div>
@@ -396,7 +415,14 @@ export default async function UsuariosPage({
               <p>{janela}</p>
             </div>
           ) : (
-            <TabelaDeUsuarios linhas={visiveis} isAdmin={isAdmin} accounts={accounts} lojas={lojas} />
+            <TabelaDeUsuarios
+              linhas={visiveis}
+              isAdmin={isAdmin}
+              situacaoLida={situacaoLida}
+              historicoLido={historicoLido}
+              accounts={accounts}
+              lojas={lojas}
+            />
           )}
         </Panel>
       </div>
@@ -407,7 +433,12 @@ export default async function UsuariosPage({
             title="Histórico de acesso"
             subtitle="Gravado pelo próprio banco, append-only: nem esta tela nem a API conseguem editar ou apagar uma linha. O registro começa em 01/09/2026 — mudanças anteriores não existem aqui, e evento sintético seria dado inventado. Mostra as 50 mudanças mais recentes."
           >
-            {events.length === 0 ? (
+            {eventsResult.error !== null ? (
+              <p role="alert" className="sb-note sb-note-perigo" style={{ margin: 0 }}>
+                Não foi possível carregar o histórico de acesso: {eventsResult.error.message}. Ele não está vazio — só
+                não foi lido.
+              </p>
+            ) : events.length === 0 ? (
               <p className="sb-empty">Nenhuma mudança de acesso registrada ainda.</p>
             ) : (
               <div style={{ overflowX: "auto" }}>

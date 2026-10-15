@@ -15137,6 +15137,27 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/app/vendas/multicanal.tsx`, `apps/web/app/skus/[skuId]/{page,vendas-entre-marketplaces}.tsx`, `apps/web/lib/vendas-por-sku.ts` e o teste, `apps/web/e2e/{vendas-por-sku-multicanal,sku-dashboard}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,PRODUCT_REQUIREMENTS,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-445 - /produtos com a Shopee (E6c, C-56): anuncio e venda olham os dois marketplaces, os campos do ML nao mudam e a loja de teste nao conta
+
+**Contexto:** `get_products_overview` (D-373) contava anuncio e venda de 90 dias so do ML: um SKU que so a Shopee anuncia ou vende caia em "sem anuncio"/"sem venda" -- nos filtros, nas facetas e nos cartoes "ativos sem anuncio/venda" (C-07 do A2, aceito como C-56). O grao de SKU da Shopee existe desde D-439 e o anuncio Shopee ja e resolvido para o SKU (`shopee_listing_units`, D-429).
+
+**Decisao:**
+
+1. **Os campos do ML nao mudam** (`listing_count`, `units_sold_90d`). A linha ganha `shopee_listing_count` (anuncio Shopee vinculado ao SKU -- manual ou pelo SKU do anuncio --, um por item, so loja live; excluido pelo vendedor nao conta) e `shopee_units_sold_90d` (pedido valido de loja live nos ultimos 90 dias, o grao de D-439).
+2. **Anuncio e venda olham QUALQUER marketplace** nos filtros, nas facetas e no resumo: COM/SEM passam a ser "em algum marketplace"/"em nenhum". `p_listing` e `p_sales` ganham SO_ML, SO_SHOPEE e AMBOS, e as facetas trazem as mesmas contagens (com + sem = todos; so_ml + so_shopee + ambos = com).
+3. **O resumo guarda o so do ML a parte** (`sem_anuncio_ml`, `sem_venda_90d_ml`) -- o cartao de antes, para quem quer saber o que ainda nao esta no ML -- e diz se ha Shopee (`tem_shopee`).
+4. **Sem loja Shopee live, os numeros da Shopee sao NULOS** (nao ha o que dizer) e o resto e exatamente o de antes. Loja de teste nunca conta.
+5. **Continua `security definer` com ADMIN/GESTOR** (D-373/D-180): o catalogo e da organizacao, como as contagens do ML, que ja nao seguem a permissao por conta.
+6. **O ranking com resultado da central** (`get_ranking_produtos`, D-402) segue so ML: a central so recebe a Shopee depois do Go Live (D-430 secao 5). O resultado por produto da Shopee existe no faturamento (C-61, D-443).
+
+**Verificacao:**
+- **Sem Shopee = o de antes:** a funcao antiga recriada num schema de rascunho e comparada com a nova como ADMIN, numa organizacao sintetica (300 SKUs, 2 contas, vendas de 120 dias, anuncios e vinculos ML), em 25 combinacoes de filtro, ordem e paginacao: **identica**, tirando as chaves novas. No **Dev, catalogo real de 3.554 SKUs**, como `authenticated` ADMIN: identica em 5 casos; ~75 ms antes, ~78 ms agora.
+- **Com Shopee** (loja live e de teste, itens com e sem variacao, item apagado, vendas recentes, velhas e canceladas): os campos do ML de cada SKU iguais aos da funcao antiga; os numeros da Shopee iguais a contagem direta; as facetas fecham; cada recorte devolve a sua faceta; 31 SKUs anunciados so na Shopee deixam de ser "sem anuncio" (157 contra 185 so do ML).
+- **Integracao:** 3 testes com numeros exatos (cinco SKUs em cada combinacao, os recortes, a organizacao sem Shopee com os nulos e o ANALISTA recusado). Os de D-373 passam sem mudanca.
+- **Mutacao:** 7 regras estragadas (loja de teste contando, venda velha, cancelado, SEM so do ML, resumo so do ML, nulo virando zero, faceta errada) -- todas derrubam teste.
+
+**Impacto:** `supabase/migrations/20261015020000_produtos_com_shopee.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem tipo novo (a RPC devolve `jsonb`). Publicacao: so a migration; a tela (as colunas e os recortes novos) e do A2 -- sem mudanca nela, `/produtos` ja deixa de chamar de "sem anuncio/venda" o SKU que so a Shopee tem.
+
 ## D-446 - Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
 
 **Contexto:** a T3a (D-438) levou a loja Shopee a saude da operacao (sino, `/sincronizacao`, contagem do rodape). Faltavam as duas telas de administracao que resumem os canais: `/integracoes` (D-231/D-232), que separa conexao, sincronizacao e configuracao de cada integracao, e `/configuracoes` (o hub de D-265), que diz o que cada area tem configurado. Nas duas, a Shopee nao existia.
@@ -15154,6 +15175,116 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 **Verificacao:** typecheck, lint e as seis guardas da web verdes (a de vocabulario conferiu os dois termos novos: "Lojas Shopee" e "Conectar loja Shopee"). Unitarios: `lib/integrations.test.ts` (6 novos -- loja lida ha meia hora e jobs em dia e ok com o instante da leitura; 4 h e atencao e 13 h e erro com o nome da loja; ERROR com motivo sanitizado; autorizacao a 10 dias rebaixa; loja de teste nunca lida e sem atividade e dita na configuracao; zero lojas por papel; jobs restritos e jobs sem Shopee) e `lib/settings-hub.test.ts` (2 novos -- os estados e a saida da secao Shopee por papel; a contagem que falha derruba so a secao dela), mais os ajustes de oito secoes; 1.200 na web. e2e num stack isolado com o banco recriado: `integracoes` (o cartao nomeia a loja de teste, diz que ela fica fora das somas e aponta as telas donas; sete cartoes), `configuracoes` (oito secoes, a frase da Shopee e o link; o veredito comparado pelo total da faixa), `sincronizacao`, `contas` e `saude`; e a suite inteira 220/220 (os 3 de convite com o servidor na porta 3000). Fotos no desktop e no celular.
 
 **Impacto:** `apps/web/lib/{integrations,settings-hub}.ts` e testes, `apps/web/app/{integracoes,configuracoes}/page.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/{integracoes,configuracoes}.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
+## D-447 - Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
+
+**Contexto:** a E7 traz as fontes financeiras que faltavam da Shopee (R9), cada uma so depois de conferida na documentacao oficial. A primeira e a de devolucoes: hoje o sistema so sabe que um pedido teve devolucao pela lista `return_order_sns` do financeiro (`com_devolucao`, D-430), sem situacao, motivo, valor nem itens. O efeito em dinheiro ja esta no recebido e cai em "outros" na composicao (D-443).
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.returns.get_return_list`, o guia "Return Refund Management" e a "V2.0 Data Definition"): lista por janela de `update_time` (ou `create_time`) de no maximo 15 dias; ate 100 por pagina com `page_no` e `more` (a referencia diz que `page_no` comeca em 0, o exemplo usa 1); um pedido pode ter VARIAS devolucoes (`return_sn`); situacoes REQUESTED, ACCEPTED, CANCELLED, JUDGING, CLOSED, PROCESSING, SELLER_DISPUTE -- so os nomes, sem dizer em qual o reembolso foi pago (o fluxo e uma imagem); `confirm` (so reembolso) leva a ACCEPTED; `return_solution` 0 = devolucao e reembolso, 1 = so reembolso; o app (Seller In House System) tem permissao para a API.
+
+**Decisao:**
+
+1. **Tabelas proprias:** `shopee_returns` (uma por `return_sn`) e `shopee_return_items`, com RLS pela permissao por loja (D-433) e a organizacao amarrada a loja (D-432). O pedido nao e FK: a devolucao pode chegar antes dele.
+2. **Sem o comprador:** nome, e-mail e foto (`user`), as fotos da devolucao e o texto livre que o comprador escreveu nao sao lidos nem gravados -- o schema do cliente os descarta, e o teste prova com o exemplo oficial.
+3. **A situacao como veio, sem interpretar:** a documentacao nao diz quando o reembolso e pago, entao nada se chama "reembolsado"; o resumo conta por situacao (`por_situacao`) e soma o `refund_amount` que a Shopee informa.
+4. **O SKU do item como o do pedido** (D-430): o vinculo manual, o SKU do anuncio e, por ultimo, o SKU que a devolucao traz (`variation_sku` com variacao, senao `item_sku`).
+5. **O job `shopee.returns.sync`** (fila `backfill`) segue o de pedidos (D-426/D-432): janela de ate 15 dias por `update_time` a partir do marco `returns_synced_until` (10 minutos de sobreposicao; sem marco, 90 dias atras), o marco so avanca depois de gravar e nunca recua, cada lote numa transacao (`shopee_upsert_returns`) que nao regride. E enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora -- sem agendamento novo, so o worker muda. Pagina que so repete devolucoes ja vistas enquanto a Shopee diz que ha mais para a tarefa com o motivo (a semantica de `page_no` se confere no sandbox).
+6. **Leitura:** `get_shopee_returns` (a lista do periodo, com os itens e o SKU; filtros de loja, situacao e pedido; ate 200 por pagina) e `get_shopee_returns_summary` (TOTAL so de loja live ja lida, e por loja: quantas, de quantos pedidos, quantas so de reembolso, unidades, o valor informado e o mesmo por situacao; loja lida sem devolucao = 0; nunca lida = NULO).
+7. **Fica para depois:** o estoque de volta (fatia 5), o detalhe por devolucao (`get_return_detail`), as acoes (aceitar, disputar) e a devolucao por SKU numa metrica.
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial da referencia lido sem o comprador, as fotos e o texto livre; pagina vazia sem a lista.
+- **Worker:** a primeira leitura (90 dias, janela de 15, enfileira a seguinte), com marco (10 min antes, paginas 0 e 1, a mesma devolucao em duas paginas fica com a mais nova, normalizacao de vazio e modelo 0, solucao 0/1), a paginacao que repete (para sem girar), erro passageiro e falha ao gravar sem avancar o marco, loja desconectada; e o job de pedidos encadeando as devolucoes.
+- **Integracao** num stack isolado: 4 testes -- a gravacao sem regredir com o SKU (manual vencendo o da devolucao, variacao), o marco que nao recua, a lista com os filtros, o resumo por situacao com a loja de teste fora do TOTAL, a loja sem devolucao zerada e a nunca lida nula, a permissao por loja, so o worker gravando e as recusas.
+- **Mutacao:** 7 regras estragadas (regredir, SKU da devolucao vencendo o manual, variacao ignorada, TOTAL com a loja de teste, nunca lida virando zero, sem devolucao virando nulo, lista sem o filtro de situacao) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real e a semantica de `page_no`.
+
+**Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.
+
+## D-449 - Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
+
+**Contexto:** o faturamento do ML ja tem Ads (5G, D-363) e o lucro apos imposto e Ads (5K); o da Shopee nao (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
+
+**Documentacao oficial conferida em 14/10/2026** (`v2.ads.get_all_cpc_ads_daily_performance`, `v2.ads.get_gms_campaign_performance` e o "Shopee On-Platform Ads API Guide"):
+- o desempenho DIARIO dos anuncios CPC da loja: impressoes, cliques, pedidos, itens e GMV atribuidos (DIRETO = o item clicado; AMPLO = qualquer item da loja ate 7 dias depois do clique), gasto (`expense`) e ROAS;
+- datas `DD-MM-YYYY`, periodo de no maximo 1 mes, ate 6 meses atras, sem data futura e com inicio diferente do fim;
+- o app (Seller In House System) tem permissao; o guia restringe o uso a operacao da loja, que e o caso;
+- os anuncios GMV Max de LOJA tem consulta propria (`get_gms_campaign_performance`, POST), que so devolve o AGREGADO do periodo e exige loja habilitada: nao ha dia a dia, e a documentacao nao diz se o gasto deles esta no CPC da loja.
+
+**Decisao:**
+
+1. **`daily_shopee_ads_metrics`** (loja, dia), como a Shopee manda, com RLS pela permissao por loja; campo ausente fica NULO.
+2. **E "Ads CPC da loja", NAO o total de Ads** -- o GMV Max de loja pode ficar de fora. Por isso **nada disso entra no resultado da venda** (C-58/C-61): o "resultado apos Ads" da Shopee espera a conferencia com loja real (o numero da tela contra o Seller Center), no Go Live (E8).
+3. **A cobertura da leitura** (`shopee_shops.ads_read_from`/`ads_read_until`, so cresce): dentro dela, dia sem linha e dia sem anuncio (0); fora, desconhecido. O resumo diz se o periodo inteiro esta coberto (`cobertura_completa`).
+4. **A releitura mais nova vale:** o GMV atribuido muda ate 7 dias depois do clique, e o job rele as duas ultimas semanas; a primeira leitura pega 90 dias em pedacos de 30.
+5. **O job `shopee.ads.sync`** (fila `backfill`), enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora, no maximo uma leitura a cada 3 horas; `error_not_found` = loja sem dado de Ads (periodo vazio); `ads.rate_limit.*` = passageiro. O dia e o de Sao Paulo.
+6. **Leitura:** `get_shopee_ads_overview` (TOTAL de loja live com Ads lido, e por loja; nunca lido = NULO; loja lida sem anuncio = 0) com investimento, vendas com Ads (amplo e direto), pedidos, cliques, impressoes, ROAS, ACOS e TACoS sobre a receita bruta das vendas validas (5S) -- tudo sobre as somas; e `get_shopee_ads_daily` (serie, so live).
+7. Metricas `shopee_investimento_ads`, `shopee_receita_ads`, `shopee_roas`, `shopee_acos`, `shopee_tacos` (METRICS 5V), com a ressalva "CPC da loja, nao o total".
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial; o formato das datas; lista ausente = vazio; inicio igual ao fim recusado antes de chamar.
+- **Worker:** o dia de Sao Paulo, os pedacos de ate 30 dias sem dia sozinho, a primeira leitura (90 dias em tres chamadas), a releitura de 14 dias, o intervalo de 3 horas, `error_not_found` como vazio, o limite de requisicoes passageiro, a falha ao gravar; e o job de pedidos encadeando o Ads.
+- **Integracao** num stack isolado: 4 testes -- a gravacao (dia fora da janela ignorado, releitura mais nova vale, mais velha nao, cobertura que so cresce), o resumo com os numeros exatos (R$ 15 investidos, R$ 100 de vendas com Ads, ROAS 6,67, ACOS 15%, TACoS 7,5% sobre R$ 200), a loja lida sem anuncio em 0, a nunca lida nula, a loja de teste fora do TOTAL, a cobertura incompleta, a serie, a permissao por loja e as recusas.
+- **Mutacao:** 8 regras estragadas (cobertura encolhendo, releitura velha sobrescrevendo, dia fora da janela, TOTAL com a loja de teste, lida sem anuncio virando nulo, ROAS invertido, cobertura ignorando o inicio, serie com a loja de teste) -- todas derrubam teste.
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real; com loja real, se o GMV Max entra no CPC da loja.
+
+**Impacto:** `supabase/migrations/20261015040000_ads_shopee.sql`, `packages/shopee/src/{ads,ads.test,index}.ts`, `apps/worker/src/handlers/{shopee-ads-sync,shopee-ads-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
+## D-451 - Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
+
+**Contexto:** o recebido da Shopee (5S, D-427) e o `escrow_amount` -- o que a Shopee DIZ que a loja vai receber, provisorio ate o pedido completar. Faltava o realizado: quando e quanto foi liberado (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
+
+**Documentacao oficial conferida em 14/10/2026** (modulo Payment da referencia v2):
+- `v2.payment.get_escrow_list`: "the accounting list of order" -- os pedidos cujo escrow foi liberado numa janela de `escrow_release_time`, com `payout_amount` ("the settlement amount"); `release_time_from`/`_to` obrigatorios, sem janela maxima declarada; ate 100 por pagina, `page_no` a partir de 1, `more`. O exemplo traz `payout_amount` inteiro (57334) e a tabela diz `float` (5733.04): a unidade se confere no sandbox. Permissao: Seller In House System.
+- `get_payout_detail` e `get_payout_info`: so vendedor internacional (CB) -- nao servem para a loja brasileira.
+- `get_wallet_transaction_list` (o extrato da carteira, so loja local): janela de 15 dias, tipos de transacao (escrow liberado, saque, ajuste, cobranca de Ads, escrow rapido...), `buyer_name` na resposta, **sem identificador da transacao** e com `page_no` descrito como deslocamento ("Default is 0").
+- `get_income_overview`/`get_income_detail` (novas, out/2025): o retrato "pendente/liberado" do Seller Center; a referencia do detalhe se contradiz no formato da resposta (`income_detail_list_item` na tabela, `list` no exemplo, fora de `response`).
+
+**Decisao:**
+
+1. **O repasse vem de `get_escrow_list`**, a unica das quatro com formato claro: `shopee_escrow_releases` (loja, pedido, momento da liberacao, valor como veio; ausente = NULO), RLS pela permissao por loja. Um pedido pode ter mais de uma liberacao (a chave inclui o momento).
+2. **Previsto x realizado, sem mexer no recebido:** o `escrow_amount` do pedido e o previsto; a soma das liberacoes do pedido e o realizado; a diferenca por pedido e conciliacao -- nada aqui muda o recebido, o resultado (C-58/C-61) nem o faturamento.
+3. **A cobertura da leitura** (`escrow_releases_read_from` e o marco `escrow_releases_synced_until`, que so avanca, gravados na mesma transacao das liberacoes): liberacao fora dela e desconhecida. O resumo diz se o periodo esta coberto, tolerando 2 h de atraso no fim (o job anda com o ciclo de pedidos).
+4. **O "a liberar" so olha pedidos validos (5S) criados depois do inicio da leitura** -- um pedido anterior pode ter sido liberado antes dela e pareceria pendente para sempre.
+5. **O job `shopee.escrow-releases.sync`** (fila `backfill`), enfileirado por `shopee.orders.sync` quando os pedidos alcancam agora: janelas de 15 dias (o limite das outras listas do pagamento) a partir do marco com 10 min de sobreposicao; a primeira leitura comeca 90 dias atras. "Nada liberado" (`income_not_found`, `error_not_found`, `error_data` com "data not exist") e janela vazia; `error_data` com "parse data failed" e falha. Pagina que so repete encerra com o motivo.
+6. **Leitura:** `get_shopee_repasse_overview` (pelo dia da liberacao em Sao Paulo: liberado, pedidos, liberacoes sem valor, previsto dos mesmos pedidos, diferenca e pedidos divergentes -- a diferenca soma TODAS as liberacoes do pedido, e e desconhecida se alguma veio sem valor), `get_shopee_repasse_daily` (so live), `get_shopee_repasses` (a lista paginada, com o previsto e a diferenca do pedido) e `get_shopee_repasse_pendente` (retrato de agora). TOTAL so de loja live lida; lida sem repasse = 0; nunca lida = NULO.
+7. **Fora desta etapa, por falta de conferencia:** o extrato da carteira (sem identificador, nao ha chave para regravar sem duplicar) e o detalhe da renda (formato contraditorio) -- primeiro a resposta real do sandbox. Metricas `shopee_repasse_liberado`, `shopee_repasse_diferenca`, `shopee_a_liberar` (METRICS 5W).
+
+**Verificacao:**
+- **Cliente:** o exemplo oficial; a janela e a pagina na URL; pagina sem lista; valor ausente nulo; "nada liberado" contra "parse data failed".
+- **Worker:** a primeira leitura (90 dias, janela de 15, duas paginas numa gravacao, a proxima janela enfileirada), o marco com sobreposicao, a pagina que repete, "nada liberado" como vazio, erro passageiro e falha ao gravar sem gravar; e o job de pedidos encadeando o de repasses.
+- **Integracao** num stack isolado: 5 testes -- a gravacao (liberacao fora da janela, releitura mais nova e mais velha, cobertura e marco), o resumo com numeros exatos (R$ 165 liberados, R$ 190 previstos, diferenca R$ 5 num pedido liberado em dois dias), o dia isolado, a cobertura incompleta, a serie, a lista e a paginacao, o a liberar (cancelado, anterior a leitura e loja de teste fora), a permissao por loja e as recusas.
+- **Mutacao:** 15 regras estragadas -- todas derrubam teste (duas so depois de fixtures novos: o pedido com liberacao sem valor fora do periodo e o pedido pendente na loja de teste).
+- **A conferir no sandbox, depois do deploy do worker:** a chamada real, a unidade de `payout_amount` contra o `escrow_amount`, e o que vem numa janela sem repasse.
+
+**Impacto:** `supabase/migrations/20261015050000_repasse_shopee.sql`, `packages/shopee/src/{escrow-list,escrow-list.test,index}.ts`, `apps/worker/src/handlers/{shopee-escrow-releases-sync,shopee-escrow-releases-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
+## D-453 - Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
+
+**Contexto:** a Shopee so e lida pelo gatilho de hora em hora (D-426) e pelo encadeamento dos jobs: um pedido novo ou cancelado leva ate uma hora para aparecer. A E7 lista o push ("Live Push") entre o que falta, conferido na documentacao antes.
+
+**Documentacao oficial conferida em 14/10/2026** (guia "Push Mechanism notifications", developer-guide/18, e as paginas `order_status_push`, `return_updates_push` e `shop_authorization_canceled_push`):
+- a Shopee manda um POST ao endereco cadastrado no Console (ou por `v2.push.set_push_config`); o app Seller In House System recebe todos os pushes;
+- o cabecalho `Authorization` traz o HMAC-SHA256 (hex) da chave do parceiro sobre `<endereco>|<corpo cru>` -- a documentacao pede para nao reserializar o corpo;
+- a resposta tem de ser 2xx de corpo VAZIO em 3 s; senao, repete em 300 s, 1800 s e 10800 s; com mais de 600 pushes em 6 h, abaixo de 70% de sucesso vem aviso e abaixo de 30% a assinatura e desligada;
+- sem ordem garantida e com repeticao; o push so avisa que algo mudou -- o dado vem da API;
+- `order_status_push` (codigo 3: `ordersn`, `status`, `update_time`), `return_updates_push` (29: `order_sn`, `return_sn`, campos alterados); `shop_authorization_canceled_push` (2) tem exemplos que se contradizem (`shop_id`, `shopid`, listas; `data` objeto ou lista).
+
+**Decisao:**
+
+1. **Rota publica `POST /push/shopee` na api**, FORA de `/webhooks/*` (a allowlist de IP de la e do Mercado Livre). A autenticacao e a assinatura sobre o corpo cru, comparada em tempo constante, com o endereco EXATO cadastrado: `SHOPEE_PUSH_URL`, ou a origem de `SHOPEE_REDIRECT_URI` + `/push/shopee` (o que o deploy ja monta).
+2. **Push sem assinatura valida e ignorado, mas recebe 200 de corpo vazio:** a verificacao do endereco no Console nao diz se vem assinada, e erro so baixaria a taxa de sucesso. Nada e feito com ele. So a falha passageira (ler a loja, enfileirar) responde 503, para a Shopee repetir.
+3. **O push so ANTECIPA o job de sempre:** codigo 3 -> `shopee.orders.sync`, codigo 29 -> `shopee.returns.sync`, da loja (ambiente da api, CONECTADA). Os avisos de uma loja numa janela de 5 minutos viram UMA tarefa no fim da janela (chave com o fim da janela e atraso ate ele): nenhum aviso se perde e a carga fica em 12 leituras por hora por loja. O gatilho de hora em hora continua como rede (o push nao tem entrega garantida).
+4. **Autorizacao cancelada (2) so vai para o log** (aviso): o formato e contraditorio, e a renovacao do token ja marca a loja quando a Shopee recusa. Os outros codigos: 200 e log.
+5. **Nenhuma tabela nova:** o push nao carrega dado que a V3 guarde; o que conta e a leitura que ele antecipa (`job_runs`).
+
+**Verificacao:**
+- **Assinatura:** o HMAC de um vetor calculado a parte (Python), maiusculas aceitas, endereco/corpo/chave trocados recusados, ausente e malformada recusadas; o envelope dos exemplos oficiais.
+- **Rota:** pedido -> tarefa de pedidos no fim da janela com o atraso certo e 200 de corpo vazio; devolucao -> tarefa de devolucoes, o aviso repetido na mesma tarefa; sem assinatura valida -> 200 sem consultar nada; loja desconhecida ou desconectada, codigo sem acao e autorizacao cancelada -> 200 sem enfileirar (a cancelada no log como aviso); falha ao ler a loja ou enfileirar -> 503; corpo invalido -> 200; sem configuracao -> 503; GET e caminhos vizinhos -> 404. A api inteira: 469 testes.
+- **Mutacao:** 7 regras estragadas (assinatura ignorada, janela pelo agora, sem atraso, qualquer ambiente, loja desconectada aceita, devolucao virando pedido, falha engolida) -- todas derrubam teste.
+- **A conferir depois do deploy da api:** cadastrar o endereco no Console (sandbox) e ver a verificacao passar e o primeiro push chegar.
+
+**Impacto:** `packages/shopee/src/{push,push.test,index}.ts`, `apps/api/src/{shopee-push,shopee-push.test,app,index,env}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,SHOPEE,DEPLOYMENT,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem migration. Publicacao: a api (o worker nao muda); depois, o dono cadastra `https://<api>/push/shopee` no Console e marca os pushes 3 e 29.
 
 ## D-452 - Telas multicanais, etapa T5b: o Faturamento da Shopee ganha a cascata do recebido componente a componente, a serie diaria e os produtos, sobre o C-61
 

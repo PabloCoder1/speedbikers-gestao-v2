@@ -345,19 +345,29 @@ describe("catálogo de métricas", () => {
       "resultado_contribuicao",
       "resultado_venda",
       "roas",
+      // D-451: o repasse da Shopee (a liberar, diferenca, liberado).
+      "shopee_a_liberar",
+      // D-449: Ads CPC da loja Shopee (ACOS, investimento, vendas com Ads, ROAS, TACoS).
+      "shopee_acos",
       // D-443: a composicao do recebido da Shopee.
       "shopee_composicao_recebido",
       // D-437 (METRICS 5U): o faturamento da Shopee, entre as de vendas (5S).
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
+      "shopee_investimento_ads",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
+      "shopee_receita_ads",
       "shopee_receita_bruta",
       // D-439: o grao de SKU da receita da Shopee.
       "shopee_receita_item",
+      "shopee_repasse_diferenca",
+      "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
+      "shopee_roas",
+      "shopee_tacos",
       "shopee_unidades",
       "skus_distintos_vendidos",
       "tacos",
@@ -3389,16 +3399,24 @@ describe("vendas Shopee (D-430)", () => {
 
     // D-437 acrescentou as cinco do faturamento (METRICS 5U); D-443, a composicao.
     expect(definicoes.rows.map((r) => r.id)).toEqual([
+      "shopee_a_liberar",
+      "shopee_acos",
       "shopee_composicao_recebido",
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
+      "shopee_investimento_ads",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
+      "shopee_receita_ads",
       "shopee_receita_bruta",
       "shopee_receita_item",
+      "shopee_repasse_diferenca",
+      "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
       "shopee_resultado_venda",
+      "shopee_roas",
+      "shopee_tacos",
       "shopee_unidades",
     ]);
   });
@@ -4612,6 +4630,782 @@ describe("faturamento da Shopee (D-437)", () => {
     );
 
     expect(rows).toHaveLength(5);
+  });
+});
+
+/*
+  D-451: repasse da Shopee (C-64). Cada liberação do escrow (get_escrow_list)
+  com a cobertura da leitura; o liberado pelo dia da liberação contra o
+  previsto (escrow_amount) por pedido, somando todas as liberações dele; o "a
+  liberar" só de pedidos válidos criados depois do início da leitura; loja de
+  teste fora do TOTAL; nunca lida nula.
+*/
+describe("Repasse da Shopee (D-451)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d451";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d451";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d451";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d451";
+  const LOJA = "dddd4510-0000-4000-8000-0000000a0451";
+  const SEM_REPASSE = "dddd4510-0000-4000-8000-0000000b0451";
+  const SANDBOX = "dddd4510-0000-4000-8000-0000000c0451";
+  const NUNCA = "dddd4510-0000-4000-8000-0000000d0451";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+  // 01/10 à meia-noite de São Paulo: o início da leitura.
+  const INICIO = "2026-10-01T03:00:00.000Z";
+  const LIDO_ATE = new Date().toISOString();
+
+  const gravar = async (loja: string, repasses: unknown[], de: string, ate: string, quando = "2026-10-12T12:00:00Z") =>
+    (
+      await client.query<{ n: number }>("select public.shopee_upsert_escrow_releases($1, $2::jsonb, $3, $4, $5) as n", [
+        loja,
+        JSON.stringify(repasses),
+        de,
+        ate,
+        quando,
+      ])
+    ).rows[0]?.n;
+
+  const repasse = (order_sn: string, released_at: string, payout_amount: number | null) => ({ order_sn, released_at, payout_amount });
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d451@rls.test'), ($2::uuid, 'analista-d451@rls.test'), ($3::uuid, 'membro-d451@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-451', 'org-d451') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $5, 'live', 990451001, 'Loja Real', 'CONNECTED', now()),
+              ($2, $5, 'live', 990451002, 'Sem Repasse', 'CONNECTED', now()),
+              ($3, $5, 'sandbox', 990451003, 'Teste', 'CONNECTED', now()),
+              ($4, $5, 'live', 990451004, 'Nunca Lida', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, SEM_REPASSE, SANDBOX, NUNCA, ORG],
+    );
+    // Os pedidos da loja real: (pedido, situação, criado em, previsto; nulo = financeiro não lido, devoluções).
+    const pedidos: [string, string, string, number | null, string[] | null][] = [
+      ["P1", "COMPLETED", "2026-10-05T12:00:00Z", 100, null],
+      ["P2", "COMPLETED", "2026-10-06T12:00:00Z", 50, null],
+      ["P3", "SHIPPED", "2026-10-08T12:00:00Z", 80, null],
+      ["P4", "SHIPPED", "2026-10-09T12:00:00Z", null, null],
+      ["P5", "CANCELLED", "2026-10-08T12:00:00Z", 60, null],
+      // Antes do início da leitura: pode ter sido liberado antes dela.
+      ["P6", "COMPLETED", "2026-09-20T12:00:00Z", 90, null],
+      ["P7", "COMPLETED", "2026-10-07T12:00:00Z", 70, ["R1"]],
+      ["P8", "COMPLETED", "2026-10-06T13:00:00Z", 40, null],
+    ];
+
+    for (const [sn, situacao, criado, previsto, devolucoes] of pedidos) {
+      await client.query(
+        `insert into public.shopee_orders
+           (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+            escrow_amount, financials_synced_at, order_income, return_order_sns)
+         values ($1, $2, $3, $4, $5, $5, $5, $6, case when $6::numeric is null then null else now() end,
+                 case when $6::numeric is null then null else '{}'::jsonb end, $7)
+         on conflict do nothing`,
+        [LOJA, ORG, sn, situacao, criado, previsto, devolucoes],
+      );
+    }
+
+    // Um pedido pendente na loja de teste: fora do TOTAL do a liberar.
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at, escrow_amount, financials_synced_at, order_income)
+       values ($1, $2, 'T1', 'SHIPPED', '2026-10-08T12:00:00Z', '2026-10-08T12:00:00Z', '2026-10-08T12:00:00Z', 500, now(), '{}'::jsonb)
+       on conflict do nothing`,
+      [SANDBOX, ORG],
+    );
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SEM_REPASSE, SANDBOX, NUNCA]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("grava a janela: liberação fora dela não entra, a releitura mais nova vale e a cobertura só cresce", async () => {
+    expect(
+      await gravar(
+        LOJA,
+        [
+          repasse("P1", "2026-10-10T15:00:00Z", 100),
+          repasse("P2", "2026-10-10T16:00:00Z", 30),
+          // O mesmo pedido liberado de novo no dia seguinte.
+          repasse("P2", "2026-10-11T15:00:00Z", 25),
+          // Um pedido que o sistema não leu.
+          repasse("X9", "2026-10-11T18:00:00Z", 9),
+          repasse("P8", "2026-10-11T19:00:00Z", null),
+          // Fora do periodo do resumo: o P8 tem uma liberacao sem valor, entao a diferenca dele e desconhecida.
+          repasse("P8", "2026-10-12T12:00:00Z", 15),
+          repasse("FORA", "2026-09-15T12:00:00Z", 999),
+        ],
+        INICIO,
+        LIDO_ATE,
+      ),
+    ).toBe(6);
+    // Releitura: o valor do X9 corrigido.
+    expect(await gravar(LOJA, [repasse("X9", "2026-10-11T18:00:00Z", 10)], "2026-10-11T00:00:00Z", "2026-10-12T00:00:00Z", "2026-10-13T12:00:00Z")).toBe(1);
+    // Releitura mais velha que a guardada não sobrescreve.
+    expect(await gravar(LOJA, [repasse("P1", "2026-10-10T15:00:00Z", 1)], "2026-10-10T00:00:00Z", "2026-10-11T00:00:00Z", "2026-10-11T12:00:00Z")).toBe(0);
+    await gravar(SEM_REPASSE, [], INICIO, LIDO_ATE);
+    await gravar(SANDBOX, [repasse("S1", "2026-10-10T14:00:00Z", 999)], INICIO, LIDO_ATE);
+
+    const { rows } = await client.query<{ desde: string; ate: string; fora: string; x9: string }>(
+      `select escrow_releases_read_from = $2::timestamptz as desde, escrow_releases_synced_until = $3::timestamptz as ate,
+              (select count(*) from public.shopee_escrow_releases where shopee_shop_id = $1 and order_sn = 'FORA')::text as fora,
+              (select payout_amount::text from public.shopee_escrow_releases where shopee_shop_id = $1 and order_sn = 'X9') as x9
+         from public.shopee_shops where id = $1`,
+      [LOJA, INICIO, LIDO_ATE],
+    );
+
+    // As janelas menores de dentro não encolheram a cobertura.
+    expect(rows[0]).toEqual({ desde: true, ate: true, fora: "0", x9: "10.00" });
+  });
+
+  it("o resumo pelo dia da liberação: liberado, previsto e a diferença por pedido; lida sem repasse em 0; nunca lida nula; teste fora do TOTAL", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, cobertura_completa, liberado, pedidos_liberados, liberacoes_sem_valor, previsto, pedidos_com_previsto,
+              diferenca, pedidos_divergentes
+         from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}') order by nivel desc, account_name`,
+    );
+    const total = {
+      cobertura_completa: true,
+      liberado: "165.00",
+      pedidos_liberados: "4",
+      liberacoes_sem_valor: "1",
+      previsto: "190.00",
+      pedidos_com_previsto: "3",
+      diferenca: "5.00",
+      pedidos_divergentes: "1",
+    };
+
+    expect(linhas).toEqual([
+      { nivel: "TOTAL", account_name: null, ...total },
+      { nivel: "CONTA", account_name: "Loja Real", ...total },
+      {
+        nivel: "CONTA",
+        account_name: "Nunca Lida",
+        cobertura_completa: null,
+        liberado: null,
+        pedidos_liberados: null,
+        liberacoes_sem_valor: null,
+        previsto: null,
+        pedidos_com_previsto: null,
+        diferenca: null,
+        pedidos_divergentes: null,
+      },
+      {
+        nivel: "CONTA",
+        account_name: "Sem Repasse",
+        cobertura_completa: true,
+        liberado: "0.00",
+        pedidos_liberados: "0",
+        liberacoes_sem_valor: "0",
+        previsto: "0.00",
+        pedidos_com_previsto: "0",
+        diferenca: "0.00",
+        pedidos_divergentes: "0",
+      },
+      expect.objectContaining({ account_name: "Teste", liberado: "999.00" }),
+    ]);
+
+    // Só o dia 10: o P2 liberou 30 nele, mas a diferença dele soma as duas liberações (55 - 50).
+    const [dia10] = await asUser<Linha>(
+      ADMIN,
+      `select liberado, previsto, diferenca from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${DE}') where nivel = 'TOTAL'`,
+    );
+
+    expect(dia10).toEqual({ liberado: "130.00", previsto: "150.00", diferenca: "5.00" });
+
+    // Começando antes da leitura, a cobertura não é completa.
+    const [antes] = await asUser<Linha>(ADMIN, `select cobertura_completa from public.get_shopee_repasse_overview('${ORG}', '2026-09-25', '${ATE}') where nivel = 'TOTAL'`);
+
+    expect(antes?.cobertura_completa).toBe(false);
+  });
+
+  it("a série por dia fecha com o TOTAL, sem a loja de teste; a lista traz o previsto e a diferença do pedido", async () => {
+    const dias = await asUser<Linha>(ADMIN, `select dia::text, liberado, pedidos, liberacoes_sem_valor from public.get_shopee_repasse_daily('${ORG}', '${DE}', '${ATE}')`);
+
+    expect(dias).toEqual([
+      { dia: DE, liberado: "130.00", pedidos: "2", liberacoes_sem_valor: "0" },
+      { dia: ATE, liberado: "35.00", pedidos: "3", liberacoes_sem_valor: "1" },
+    ]);
+
+    const lista = await asUser<Linha>(
+      ADMIN,
+      `select order_sn, environment, payout_amount, previsto, diferenca_do_pedido, liberacoes_do_pedido, order_status, total_count
+         from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}')`,
+    );
+
+    expect(lista).toEqual([
+      { order_sn: "P8", environment: "live", payout_amount: null, previsto: "40.00", diferenca_do_pedido: null, liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "X9", environment: "live", payout_amount: "10.00", previsto: null, diferenca_do_pedido: null, liberacoes_do_pedido: "1", order_status: null, total_count: "6" },
+      { order_sn: "P2", environment: "live", payout_amount: "25.00", previsto: "50.00", diferenca_do_pedido: "5.00", liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "P2", environment: "live", payout_amount: "30.00", previsto: "50.00", diferenca_do_pedido: "5.00", liberacoes_do_pedido: "2", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "P1", environment: "live", payout_amount: "100.00", previsto: "100.00", diferenca_do_pedido: "0.00", liberacoes_do_pedido: "1", order_status: "COMPLETED", total_count: "6" },
+      { order_sn: "S1", environment: "sandbox", payout_amount: "999.00", previsto: null, diferenca_do_pedido: null, liberacoes_do_pedido: "1", order_status: null, total_count: "6" },
+    ]);
+
+    const pagina = await asUser<Linha>(ADMIN, `select order_sn, total_count from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}', null, 'P2', 1, 1)`);
+
+    expect(pagina).toEqual([{ order_sn: "P2", total_count: "2" }]);
+  });
+
+  it("o a liberar: válidos sem liberação criados depois do início; cancelado e anterior fora; nunca lida nula", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, pedidos, a_liberar, pedidos_sem_financeiro, pedidos_completos, pedidos_com_devolucao, mais_antigo::text,
+              lido_desde = '${INICIO}'::timestamptz as desde
+         from public.get_shopee_repasse_pendente('${ORG}') order by nivel desc, account_name`,
+    );
+    // P3 (80), P4 (sem financeiro) e P7 (70, completo, com devolução).
+    const loja = {
+      pedidos: "3",
+      a_liberar: "150.00",
+      pedidos_sem_financeiro: "1",
+      pedidos_completos: "1",
+      pedidos_com_devolucao: "1",
+      mais_antigo: "2026-10-07 12:00:00+00",
+      desde: true,
+    };
+
+    expect(linhas).toEqual([
+      { nivel: "TOTAL", account_name: null, ...loja },
+      { nivel: "CONTA", account_name: "Loja Real", ...loja },
+      {
+        nivel: "CONTA",
+        account_name: "Nunca Lida",
+        pedidos: null,
+        a_liberar: null,
+        pedidos_sem_financeiro: null,
+        pedidos_completos: null,
+        pedidos_com_devolucao: null,
+        mais_antigo: null,
+        desde: null,
+      },
+      expect.objectContaining({ account_name: "Sem Repasse", pedidos: "0", a_liberar: "0.00", mais_antigo: null }),
+      expect.objectContaining({ account_name: "Teste", pedidos: "1", a_liberar: "500.00" }),
+    ]);
+  });
+
+  it("a permissão por loja vale; só o worker grava; período inválido é recusado", async () => {
+    const analista = await asUser<Linha>(ANALISTA, "select distinct shopee_shop_id from public.shopee_escrow_releases");
+
+    expect(analista).toEqual([{ shopee_shop_id: LOJA }]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_escrow_releases")).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}')`)).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_repasse_pendente('${ORG}')`)).toEqual([]);
+    await expect(asUser(ADMIN, `select public.shopee_upsert_escrow_releases('${LOJA}', '[]'::jsonb, now(), now())`)).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_repasse_daily('${ORG}', '${ATE}', '${DE}')`)).rejects.toThrow(/periodo invalido/);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_repasses('${ORG}', '${DE}', '${ATE}', null, null, 500)`)).rejects.toThrow(/p_limit/);
+    await expect(asAnon(`select * from public.get_shopee_repasse_overview('${ORG}', '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/*
+  D-449: Ads da Shopee (C-63). O desempenho diário dos anúncios CPC da loja,
+  com a cobertura da leitura (dentro dela, dia sem linha é dia sem anúncio);
+  ROAS, ACOS e TACoS sobre as somas; loja de teste fora do TOTAL; nunca lida
+  nula.
+*/
+describe("Ads da Shopee (D-449)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d449";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d449";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d449";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d449";
+  const LOJA = "dddd4490-0000-4000-8000-0000000a0449";
+  const SEM_ANUNCIO = "dddd4490-0000-4000-8000-0000000b0449";
+  const SANDBOX = "dddd4490-0000-4000-8000-0000000c0449";
+  const NUNCA = "dddd4490-0000-4000-8000-0000000d0449";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+
+  const gravar = async (loja: string, dias: unknown[], de: string, ate: string, quando = "2026-10-12T12:00:00Z") =>
+    (
+      await client.query<{ n: number }>("select public.shopee_upsert_ads_days($1, $2::jsonb, $3, $4, $5) as n", [
+        loja,
+        JSON.stringify(dias),
+        de,
+        ate,
+        quando,
+      ])
+    ).rows[0]?.n;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d449@rls.test'), ($2::uuid, 'analista-d449@rls.test'), ($3::uuid, 'membro-d449@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-449', 'org-d449') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $5, 'live', 990449001, 'Loja Real', 'CONNECTED', now()),
+              ($2, $5, 'live', 990449002, 'Sem Anuncio', 'CONNECTED', now()),
+              ($3, $5, 'sandbox', 990449003, 'Teste', 'CONNECTED', now()),
+              ($4, $5, 'live', 990449004, 'Nunca Lida', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, SEM_ANUNCIO, SANDBOX, NUNCA, ORG],
+    );
+    // A venda válida do dia 10 na loja real: R$ 200 de receita bruta (o denominador do TACoS).
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, 'V1', 'COMPLETED', '2026-10-10T15:00:00Z', '2026-10-10T15:00:00Z', '2026-10-10T15:01:00Z') on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price)
+       values ($1, 'V1', 0, $2, 1, 2, 100) on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SEM_ANUNCIO, SANDBOX, NUNCA]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("grava a leitura: dias da janela, a releitura mais nova vale e a cobertura só cresce", async () => {
+    const dia10 = { metric_date: "2026-10-10", impressions: 1000, clicks: 20, broad_orders: 3, direct_gmv: 60, broad_gmv: 80, expense: 10 };
+    const dia11 = { metric_date: "2026-10-11", impressions: 300, clicks: 5, broad_orders: 0, direct_gmv: 0, broad_gmv: 0, expense: 5 };
+
+    // Um dia fora da janela pedida não entra.
+    expect(await gravar(LOJA, [dia10, dia11, { metric_date: "2026-09-15", expense: 99 }], "2026-10-01", "2026-10-11")).toBe(2);
+    // Releitura: o GMV atribuído do dia 10 mudou.
+    expect(await gravar(LOJA, [{ ...dia10, broad_gmv: 100 }], "2026-10-05", "2026-10-14", "2026-10-14T12:00:00Z")).toBe(1);
+    // Releitura mais velha que a guardada não sobrescreve.
+    expect(await gravar(LOJA, [{ ...dia10, broad_gmv: 1 }], "2026-10-05", "2026-10-14", "2026-10-13T12:00:00Z")).toBe(0);
+    await gravar(SEM_ANUNCIO, [], "2026-10-01", "2026-10-14");
+    await gravar(SANDBOX, [{ metric_date: "2026-10-10", expense: 99, broad_gmv: 500 }], "2026-10-01", "2026-10-14");
+
+    const { rows } = await client.query<{ ads_read_from: string; ads_read_until: string; fora: string }>(
+      `select ads_read_from::text, ads_read_until::text,
+              (select count(*) from public.daily_shopee_ads_metrics where shopee_shop_id = $1 and metric_date = '2026-09-15')::text as fora
+         from public.shopee_shops where id = $1`,
+      [LOJA],
+    );
+
+    expect(rows[0]).toEqual({ ads_read_from: "2026-10-01", ads_read_until: "2026-10-14", fora: "0" });
+  });
+
+  it("o resumo: somas, ROAS, ACOS e TACoS sobre as somas; loja lida sem anúncio em 0; nunca lida nula; teste fora do TOTAL", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, cobertura_completa, dias_lidos, investimento, receita_ads, receita_ads_direta, pedidos_ads, cliques, impressoes,
+              roas, acos, receita_bruta, tacos
+         from public.get_shopee_ads_overview('${ORG}', '${DE}', '${ATE}') order by nivel desc, account_name`,
+    );
+
+    expect(linhas).toEqual([
+      {
+        nivel: "TOTAL",
+        account_name: null,
+        cobertura_completa: true,
+        dias_lidos: "2",
+        investimento: "15.00",
+        receita_ads: "100.00",
+        receita_ads_direta: "60.00",
+        pedidos_ads: "3",
+        cliques: "25",
+        impressoes: "1300",
+        roas: "6.6667",
+        acos: "0.1500",
+        receita_bruta: "200.00",
+        tacos: "0.0750",
+      },
+      expect.objectContaining({ account_name: "Loja Real", investimento: "15.00", receita_bruta: "200.00" }),
+      expect.objectContaining({ account_name: "Nunca Lida", cobertura_completa: null, investimento: null, roas: null, receita_bruta: null }),
+      expect.objectContaining({ account_name: "Sem Anuncio", cobertura_completa: true, investimento: "0.00", receita_ads: "0.00", roas: null, tacos: null }),
+      expect.objectContaining({ account_name: "Teste", investimento: "99.00" }),
+    ]);
+
+    // Começando antes da leitura, a cobertura não é completa.
+    const [total] = await asUser<Linha>(ADMIN, `select cobertura_completa from public.get_shopee_ads_overview('${ORG}', '2026-09-25', '${ATE}') where nivel = 'TOTAL'`);
+
+    expect(total?.cobertura_completa).toBe(false);
+  });
+
+  it("a série diária soma o TOTAL, sem a loja de teste", async () => {
+    const dias = await asUser<Linha>(ADMIN, `select dia::text, investimento, receita_ads, roas from public.get_shopee_ads_daily('${ORG}', '${DE}', '${ATE}')`);
+
+    expect(dias).toEqual([
+      { dia: DE, investimento: "10.00", receita_ads: "100.00", roas: "10.0000" },
+      { dia: ATE, investimento: "5.00", receita_ads: "0.00", roas: "0.0000" },
+    ]);
+  });
+
+  it("a permissão por loja vale; só o worker grava; período inválido é recusado", async () => {
+    const analista = await asUser<Linha>(ANALISTA, "select shopee_shop_id, metric_date::text from public.daily_shopee_ads_metrics order by 2");
+
+    expect(analista.map((l) => l.shopee_shop_id)).toEqual([LOJA, LOJA]);
+    expect(await asUser(MEMBRO, "select * from public.daily_shopee_ads_metrics")).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_ads_overview('${ORG}', '${DE}', '${ATE}')`)).toEqual([]);
+    await expect(asUser(ADMIN, `select public.shopee_upsert_ads_days('${LOJA}', '[]'::jsonb, '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_ads_daily('${ORG}', '${ATE}', '${DE}')`)).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon(`select * from public.get_shopee_ads_overview('${ORG}', '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/*
+  D-447: devoluções da Shopee (C-62). A gravação em lote sem regredir, com o
+  SKU de cada item; a permissão por loja; a lista e o resumo por situação,
+  como a Shopee manda; loja de teste fora do TOTAL; loja nunca lida nula.
+*/
+describe("devoluções da Shopee (D-447)", () => {
+  const ORG = "44444444-0000-4000-8000-00000000d447";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d447";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d447";
+  const MEMBRO = "aaaaaaaa-0000-4000-8000-00000002d447";
+  const LOJA = "dddd4470-0000-4000-8000-0000000a0447";
+  const SANDBOX = "dddd4470-0000-4000-8000-0000000b0447";
+  const SEM_DEVOLUCAO = "dddd4470-0000-4000-8000-0000000c0447";
+  const NUNCA_LIDA = "dddd4470-0000-4000-8000-0000000d0447";
+  const DE = "2026-10-10";
+  const ATE = "2026-10-11";
+  let skuX = "";
+  let skuY = "";
+
+  const devolucao = (sn: string, pedido: string, status: string, solucao: string, valor: number | null, atualizada: string, itens: unknown[]) => ({
+    return_sn: sn,
+    order_sn: pedido,
+    status,
+    reason: "ITEM_DAMAGED",
+    return_solution: solucao,
+    refund_amount: valor,
+    currency: "BRL",
+    needs_logistics: solucao === "RETURN_REFUND",
+    shopee_created_at: "2026-10-10T15:00:00Z",
+    shopee_updated_at: atualizada,
+    itens,
+  });
+
+  const gravar = async (loja: string, lote: unknown[]) =>
+    (await client.query<{ n: number }>("select public.shopee_upsert_returns($1, $2::jsonb) as n", [loja, JSON.stringify(lote)])).rows[0]?.n;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d447@rls.test'), ($2::uuid, 'analista-d447@rls.test'), ($3::uuid, 'membro-d447@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA, MEMBRO],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-447', 'org-d447') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'ADMIN'), ($1, $3, 'ANALISTA'), ($1, $4, 'ANALISTA') on conflict do nothing`,
+      [ORG, ADMIN, ANALISTA, MEMBRO],
+    );
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1, 'D447-X', 'PRODUTO'), ($1, 'D447-Y', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku_key`,
+      [ORG],
+    );
+
+    skuX = skus.rows.find((r) => r.sku_key === "D447-X")?.id ?? "";
+    skuY = skus.rows.find((r) => r.sku_key === "D447-Y")?.id ?? "";
+
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, returns_synced_until)
+       values ($1, $5, 'live', 990447001, 'Loja Real', 'CONNECTED', now(), now()),
+              ($2, $5, 'sandbox', 990447002, 'Teste', 'CONNECTED', now(), now()),
+              ($3, $5, 'live', 990447003, 'Sem Devolucao', 'CONNECTED', now(), now()),
+              ($4, $5, 'live', 990447004, 'Nunca Lida', 'CONNECTED', now(), null)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, SEM_DEVOLUCAO, NUNCA_LIDA, ORG],
+    );
+    // Vinculo manual do item 77/modelo 5 com Y: vale sobre o SKU da devolucao.
+    await client.query(
+      `insert into public.shopee_sku_links (shopee_shop_id, organization_id, item_id, model_id, sku_id)
+       values ($1, $2, 77, 5, $3) on conflict do nothing`,
+      [LOJA, ORG, skuY],
+    );
+    await client.query("insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing", [
+      ANALISTA,
+      LOJA,
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX, SEM_DEVOLUCAO, NUNCA_LIDA]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("grava sem regredir: a leitura mais velha é ignorada; os itens são substituídos e o SKU resolvido", async () => {
+    // R1: X pelo SKU do item (sem modelo) e o item 77/5 pelo vínculo manual (Y), mesmo trazendo o SKU de X.
+    const r1 = devolucao("R1", "P1", "REQUESTED", "RETURN_REFUND", 100, "2026-10-10T16:00:00Z", [
+      { position: 0, item_id: 9, model_id: null, item_sku: "d447-x ", quantity: 2, item_price: 30 },
+      { position: 1, item_id: 77, model_id: 5, item_sku: "PAI", variation_sku: "D447-X", quantity: 1, item_price: 40 },
+    ]);
+    const r2 = devolucao("R2", "P1", "ACCEPTED", "REFUND", 50, "2026-10-10T16:00:00Z", [
+      { position: 0, item_id: 8, model_id: 3, variation_sku: "D447-Y", quantity: 1, item_price: 50 },
+    ]);
+
+    expect(await gravar(LOJA, [r1, r2])).toBe(2);
+    // Mais velha que a guardada: nada muda.
+    expect(await gravar(LOJA, [{ ...r1, status: "CANCELLED", shopee_updated_at: "2026-10-10T15:30:00Z", itens: [] }])).toBe(0);
+    // Mais nova: a situação muda.
+    expect(await gravar(LOJA, [{ ...r1, status: "PROCESSING", shopee_updated_at: "2026-10-10T17:00:00Z" }])).toBe(1);
+    await gravar(SANDBOX, [devolucao("RS", "PS", "REQUESTED", "REFUND", 999, "2026-10-10T16:00:00Z", [])]);
+
+    const { rows } = await client.query<{ return_sn: string; status: string; position: number; sku_id: string | null; vinculo_via: string | null }>(
+      `select r.return_sn, r.status, i.position, i.sku_id, i.vinculo_via
+         from public.shopee_returns r join public.shopee_return_items i using (shopee_shop_id, return_sn)
+        where r.shopee_shop_id = $1 order by 1, 3`,
+      [LOJA],
+    );
+
+    expect(rows).toEqual([
+      { return_sn: "R1", status: "PROCESSING", position: 0, sku_id: skuX, vinculo_via: "SKU_DA_DEVOLUCAO" },
+      { return_sn: "R1", status: "PROCESSING", position: 1, sku_id: skuY, vinculo_via: "MANUAL" },
+      { return_sn: "R2", status: "ACCEPTED", position: 0, sku_id: skuY, vinculo_via: "SKU_DA_DEVOLUCAO" },
+    ]);
+    // O marco nunca recua.
+    const marco = await client.query<{ m: string }>("select public.shopee_advance_returns_synced_until($1, '2020-01-01') as m", [LOJA]);
+
+    expect(new Date(marco.rows[0]?.m ?? 0).getFullYear()).toBeGreaterThan(2020);
+  });
+
+  it("a lista: período, situação, pedido e os itens com o SKU", async () => {
+    const lista = await asUser<Linha>(
+      ADMIN,
+      `select return_sn, order_sn, status, return_solution, refund_amount, itens, total_count, environment
+         from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}', array['${LOJA}']::uuid[])`,
+    );
+    const aceitas = await asUser<Linha>(ADMIN, `select return_sn from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}', p_status => array['ACCEPTED'])`);
+
+    expect(lista.map((l) => [l.return_sn, l.status, l.return_solution, l.refund_amount, l.total_count])).toEqual([
+      ["R1", "PROCESSING", "RETURN_REFUND", "100", "2"],
+      ["R2", "ACCEPTED", "REFUND", "50", "2"],
+    ]);
+    expect(lista[0]?.itens).toEqual([
+      expect.objectContaining({ item_id: 9, quantidade: 2, sku: "D447-X", vinculo_via: "SKU_DA_DEVOLUCAO" }),
+      expect.objectContaining({ item_id: 77, model_id: 5, quantidade: 1, sku: "D447-Y", vinculo_via: "MANUAL" }),
+    ]);
+    expect(aceitas.map((l) => l.return_sn)).toEqual(["R2"]);
+  });
+
+  it("o resumo: por situação como a Shopee manda; TOTAL sem a loja de teste; loja sem devolução zerada; nunca lida nula", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, devolucoes, pedidos_com_devolucao, so_reembolso, unidades, valor_reembolso, por_situacao
+         from public.get_shopee_returns_summary('${ORG}', '${DE}', '${ATE}') order by nivel desc, account_name`,
+    );
+
+    expect(linhas[0]).toMatchObject({
+      nivel: "TOTAL",
+      devolucoes: "2",
+      pedidos_com_devolucao: "1",
+      so_reembolso: "1",
+      unidades: "4",
+      valor_reembolso: "150.00",
+      por_situacao: { PROCESSING: { devolucoes: 1, valor_reembolso: 100, unidades: 3 }, ACCEPTED: { devolucoes: 1, valor_reembolso: 50, unidades: 1 } },
+    });
+    expect(linhas.slice(1).map((l) => [l.account_name, l.devolucoes, l.valor_reembolso])).toEqual([
+      ["Loja Real", "2", "150.00"],
+      ["Nunca Lida", null, null],
+      ["Sem Devolucao", "0", "0.00"],
+      ["Teste", "1", "999.00"],
+    ]);
+  });
+
+  it("a permissão por loja vale; só o worker grava; período inválido é recusado", async () => {
+    const analista = await asUser<Linha>(ANALISTA, "select return_sn from public.shopee_returns order by 1");
+
+    expect(analista.map((l) => l.return_sn)).toEqual(["R1", "R2"]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_returns")).toEqual([]);
+    expect(await asUser(MEMBRO, "select * from public.shopee_return_items")).toEqual([]);
+    expect(await asUser(DE_OUTRA_ORG, `select * from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}')`)).toEqual([]);
+    await expect(asUser(ADMIN, `select public.shopee_upsert_returns('${LOJA}', '[]'::jsonb)`)).rejects.toThrow(/permission denied/i);
+    await expect(asUser(ADMIN, `select * from public.get_shopee_returns_summary('${ORG}', '${ATE}', '${DE}')`)).rejects.toThrow(/periodo invalido/);
+    await expect(asAnon(`select * from public.get_shopee_returns('${ORG}', '${DE}', '${ATE}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/*
+  D-445: /produtos com a Shopee (C-56). Anúncio e venda olham os dois
+  marketplaces; os campos do ML não mudam; loja de teste não conta; sem loja
+  Shopee live, os números da Shopee são nulos e o resto é o de antes.
+*/
+describe("get_products_overview com a Shopee (D-445)", () => {
+  const ORG = "55555555-0000-4000-8000-00000000d445";
+  const ORG_SEM_SHOPEE = "55555555-0000-4000-8000-00000001d445";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d445";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d445";
+  const CONTA = "aaaa4450-0000-4000-8000-0000000a0445";
+  const LOJA = "dddd4450-0000-4000-8000-0000000a0445";
+  const SANDBOX = "dddd4450-0000-4000-8000-0000000b0445";
+  const sku: Record<"a" | "b" | "c" | "d" | "e", string> = { a: "", b: "", c: "", d: "", e: "" };
+
+  async function anuncioShopee(loja: string, itemId: number, skuTexto: string) {
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at)
+       values ($1, $2, $3, 'NORMAL', now(), 'Anuncio', $4, false, now()) on conflict do nothing`,
+      [loja, ORG, itemId, skuTexto],
+    );
+  }
+
+  async function vendaShopee(loja: string, sn: string, skuId: string, diasAtras: number, status = "COMPLETED") {
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, $5, now() - make_interval(days => $4), now(), now() - make_interval(days => $4)) on conflict do nothing`,
+      [loja, ORG, sn, diasAtras, status],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, $2, 0, $3, 1, 2, 30, $4, 'SKU_DO_PEDIDO') on conflict do nothing`,
+      [loja, sn, ORG, skuId],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d445@rls.test'), ($2::uuid, 'analista-d445@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-445', 'org-d445'), ($2, 'Org D-445 sem Shopee', 'org-d445-b') on conflict (id) do nothing",
+      [ORG, ORG_SEM_SHOPEE],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $3, 'ADMIN'), ($1, $4, 'ANALISTA'), ($2, $3, 'ADMIN') on conflict do nothing`,
+      [ORG, ORG_SEM_SHOPEE, ADMIN, ANALISTA],
+    );
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1, 'D445-A', 'PRODUTO'), ($1, 'D445-B', 'PRODUTO'), ($1, 'D445-C', 'PRODUTO'), ($1, 'D445-D', 'PRODUTO'), ($1, 'D445-E', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku_key`,
+      [ORG],
+    );
+
+    for (const chave of ["a", "b", "c", "d", "e"] as const) {
+      sku[chave] = skus.rows.find((r) => r.sku_key === `D445-${chave.toUpperCase()}`)?.id ?? "";
+    }
+
+    await client.query("insert into public.skus (organization_id, sku, kind) values ($1, 'D445-Z', 'PRODUTO') on conflict do nothing", [
+      ORG_SEM_SHOPEE,
+    ]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta D-445', 'rlstest-d445', 'CONNECTED', 9990455, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    // ML: A e E anunciados e vendidos.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB4450001', 'A', 'active', 10, 'BRL', 1, $3), ($1, $2, 'MLB4450005', 'E', 'active', 10, 'BRL', 1, $4)
+       on conflict do nothing`,
+      [ORG, CONTA, sku.a, sku.e],
+    );
+    await client.query(
+      `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $3, current_date - 3, 4, 40, 4, 4), ($1, $2, $4, current_date - 3, 1, 10, 1, 1) on conflict do nothing`,
+      [ORG, CONTA, sku.a, sku.e],
+    );
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $3, 'live', 990445001, 'Loja Real', 'CONNECTED', now(), now(), now()),
+              ($2, $3, 'sandbox', 990445002, 'Teste', 'CONNECTED', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    // Shopee: B anunciado e vendido na loja real; E anunciado nela; C só na loja
+    // de teste (não conta); D vendeu há 120 dias (fora dos 90).
+    await anuncioShopee(LOJA, 4450002, "D445-B");
+    await anuncioShopee(LOJA, 4450005, "D445-E");
+    await anuncioShopee(SANDBOX, 4450003, "D445-C");
+    await vendaShopee(LOJA, "V-B", sku.b, 5);
+    await vendaShopee(SANDBOX, "V-C", sku.c, 5);
+    await vendaShopee(LOJA, "V-D", sku.d, 120);
+    // Cancelado não é venda: A continua sem venda na Shopee.
+    await vendaShopee(LOJA, "V-A", sku.a, 5, "CANCELLED");
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX]]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = $1", [CONTA]);
+    await client.query("delete from public.listings where ml_account_id = $1", [CONTA]);
+  });
+
+  interface Visao {
+    total: number;
+    linhas: { sku: string; listing_count: number; units_sold_90d: number; shopee_listing_count: number | null; shopee_units_sold_90d: number | null }[];
+    facetas: Record<"anuncios" | "vendas", Record<"todos" | "com" | "sem" | "so_ml" | "so_shopee" | "ambos", number>>;
+    resumo: Record<"sem_anuncio" | "sem_anuncio_ml" | "sem_venda_90d" | "sem_venda_90d_ml", number> & { tem_shopee: boolean };
+  }
+
+  const visao = async (args = "", org = ORG) => {
+    const [linha] = await asUser<{ v: Visao }>(ADMIN, `select public.get_products_overview('${org}', p_order => 'criado'${args}) as v`);
+
+    return linha?.v;
+  };
+
+  it("anúncio e venda dos dois marketplaces; os campos do ML não mudam; a loja de teste não conta", async () => {
+    const v = await visao();
+    const por = new Map(v?.linhas.map((l) => [l.sku, [l.listing_count, l.units_sold_90d, l.shopee_listing_count, l.shopee_units_sold_90d]]));
+
+    expect(Object.fromEntries(por)).toEqual({
+      "D445-A": [1, 4, 0, 0],
+      "D445-B": [0, 0, 1, 2],
+      "D445-C": [0, 0, 0, 0],
+      "D445-D": [0, 0, 0, 0],
+      "D445-E": [1, 1, 1, 0],
+    });
+    expect(v?.facetas.anuncios).toEqual({ todos: 5, com: 3, sem: 2, so_ml: 1, so_shopee: 1, ambos: 1 });
+    expect(v?.facetas.vendas).toEqual({ todos: 5, com: 3, sem: 2, so_ml: 2, so_shopee: 1, ambos: 0 });
+    // O "sem anúncio/venda" de qualquer marketplace, e o só do ML à parte.
+    expect(v?.resumo).toMatchObject({ sem_anuncio: 2, sem_anuncio_ml: 3, sem_venda_90d: 2, sem_venda_90d_ml: 3, tem_shopee: true });
+  });
+
+  it("os recortes por marketplace", async () => {
+    const skus = async (args: string) => (await visao(args))?.linhas.map((l) => l.sku).sort();
+
+    expect(await skus(", p_listing => 'SO_SHOPEE'")).toEqual(["D445-B"]);
+    expect(await skus(", p_listing => 'AMBOS'")).toEqual(["D445-E"]);
+    expect(await skus(", p_listing => 'SEM'")).toEqual(["D445-C", "D445-D"]);
+    expect(await skus(", p_sales => 'SO_ML'")).toEqual(["D445-A", "D445-E"]);
+    expect(await skus(", p_sales => 'COM'")).toEqual(["D445-A", "D445-B", "D445-E"]);
+  });
+
+  it("sem loja Shopee live, os números da Shopee são nulos; ANALISTA continua de fora", async () => {
+    const v = await visao("", ORG_SEM_SHOPEE);
+
+    expect(v?.linhas.map((l) => [l.sku, l.shopee_listing_count, l.shopee_units_sold_90d])).toEqual([["D445-Z", null, null]]);
+    expect(v?.resumo.tem_shopee).toBe(false);
+    await expect(asUser(ANALISTA, `select public.get_products_overview('${ORG}')`)).rejects.toThrow(/sem permissao/);
   });
 });
 
