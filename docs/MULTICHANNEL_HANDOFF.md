@@ -23,10 +23,10 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `2809d35f` (15/10: #172 e #179 do A1, D-453; #170, #171, #173, #175 e #177 do A2) |
-| Branches abertas | A1: `feat/busca-shopee` (#201: C-57, D-467) · A2: nenhuma (o #177 entrou) |
+| Branches abertas | A1: nenhuma (o #201 entrou com o #205) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
-| Migrations em produção | até `20261015105000` (D-441 a D-469, runs `38726738817`, `38755993771`, `38760462816`, `38773241495` e `38784180221`, 15/10); a `110000` (C-57) depois da T7 |
+| Migrations em produção | até `20261015110000` (D-441 a D-469, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221` e `38792203548`, 15/10) |
 | Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -51,7 +51,7 @@
 - E7c, repasse da Shopee (D-451): **em código e validada localmente** — `get_escrow_list` conferida na documentação (o extrato da carteira e o `get_income_detail` ficam para depois do sandbox: sem identificador e formato contraditório); `shopee_escrow_releases` com a cobertura; job `shopee.escrow-releases.sync`; integração (5 testes) e 15 mutações; na `main` pelo #169 — **em produção desde 15/10** (migration no run `38726738817`; worker `worker-00046-zfl` e depois `-00047-mmw`). Cadência em `/saude`: `shopee.escrow-releases.sync` = 60 min, no #170 do A2.
 - D-455, Ads sem dado: ROAS/ACOS do C-63 só com os dias que têm gasto e venda; `dias_sem_gasto`/`dias_sem_venda` (achado do A2); 3 mutações; **em produção desde 15/10** (#188, run `38755993771`).
 - C-65, demanda da Shopee na cobertura e na reposição (D-459): **em produção desde 15/10** (#188, run `38755993771`) — idêntica às funções antigas com os dados reais do Dev (cobertura, sugestão, visão, pedido e alcance; zero diferença, inclusive na ordem) e com o mesmo custo como `authenticated` (`docs/PERFORMANCE.md`); integração (5 testes) e 13 mutações. Entrou antes do Go Live, como pedido.
-- C-57, busca universal com a Shopee (D-467): **em código e validada** — `search_entities` estendida (loja, anúncio e pedido da Shopee; colunas `marketplace`, `entity_id`, `account_id` no fim; destinos reais) e `get_shopee_orders` com `p_order_sn`; integração (8 testes), 10 mutações, mesmas linhas da atual no Dev; #201. **Produção depois da T7 no ar** (os rótulos dos tipos novos são da tela).
+- C-57, busca universal com a Shopee (D-467): **em código e validada** — `search_entities` estendida (loja, anúncio e pedido da Shopee; colunas `marketplace`, `entity_id`, `account_id` no fim; destinos reais) e `get_shopee_orders` com `p_order_sn`; integração (8 testes), 10 mutações, mesmas linhas da atual no Dev; **em produção desde 15/10** (#201 dentro do #205, com a T7; migration `20261015110000` no run `38792203548`, depois do deploy da T7; conferido em produção pelo A2, só leitura: as colunas e os dez tipos, e a loja de teste marcada).
 - E7d, push da Shopee (D-453): **em produção e conferido (15/10)** — `POST /push/shopee` antecipa `shopee.orders.sync` (3) e `shopee.returns.sync` (29) da loja em janelas de 5 minutos; a Shopee assina com a **Test Push Partner Key** da tela Set Push (segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, achado pelas amostras offline), não com a Partner Key; `code` em texto (`"29"`) aceito; autoteste assinado: aceito. No Go Live: a chave de push de produção.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
@@ -168,7 +168,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 | C-64 | Repasse da Shopee: `get_shopee_repasse_overview` (pelo dia da liberação, com o previsto e a diferença), `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.12 | A1 | `/faturamento` (conciliação) — a tela é do A2 | em código (D-451) | NÃO somar ao recebido nem ao resultado; o liberado é do dia da liberação, não da venda; unidade do valor a conferir no sandbox |
 | C-65 | Demanda da Shopee na cobertura e na reposição: `get_stock_coverage` (`units_sold_ml`, `units_sold_shopee`, `units_30d_shopee`, `units_90d_shopee`), `get_purchase_suggestions` (`units_30d_shopee`, `units_90d_shopee`), visão, pedido de compra e alcance; `docs/MULTICHANNEL_CONTRACTS.md` §3.13 | A1 | `/reposicao`, `/cobertura`, a gaveta da Inspeção Rápida (T-R3, #186; T-R3b) | em produção (D-459, 15/10) | parte da Shopee NULA sem loja live lida |
 | C-63 | Ads da Shopee: `get_shopee_ads_overview` (TOTAL e por loja, com a cobertura) e `get_shopee_ads_daily`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.11 | A1 | `/faturamento` e a central (a tela é do A2) | em código (D-449) | rotular "Ads CPC da loja"; NÃO descontar do resultado até conferir o GMV Max com loja real |
-| C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal (T7) | em código (D-467, #201) | resultado Shopee só para quem alcança a loja; produção depois da T7 |
+| C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal (T7) | em produção (D-467, 15/10) | resultado Shopee só para quem alcança a loja |
 
 ---
 
