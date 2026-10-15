@@ -22,7 +22,7 @@
 | **Carga inicial** de uma tela | o mesmo esqueleto, no lugar do que vai chegar (título, faixa de KPIs, painel) | `CarregandoTela` / `CarregandoConteudo` | D-382 |
 | **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel | `<Suspense fallback={<CarregandoBloco/>}>` | D-382 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
-| **Ação que grava** (salvar, assumir, remover) | o botão desabilita e diz o que está fazendo ("Salvando…") | por tela hoje; componente compartilhado na fila (§3, item 11) | — |
+| **Ação que grava** (salvar, assumir, remover) | o botão desabilita, põe `aria-busy` e diz o que está fazendo ("Removendo…") até a resposta | `BotaoEnviar` (ação de servidor, `useFormStatus`); nos formulários de cliente, o rótulo do botão que corre | **D-502** |
 
 **Regras** (valem para tela nova e para quem mexer numa existente):
 
@@ -41,6 +41,14 @@
    esmaecimento sem transição, giros mais lentos).
 6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
 
+**Quando não há tabela para mostrar**, a forma é uma só: `EstadoDaTela`
+(D-502). `erro` = a leitura falhou (o dado pode existir; é o único com
+`role="alert"`, com o detalhe técnico sanitizado e "Tentar de novo"); `vazio`
+= leu e não há nada (diz quando passa a haver); `filtro` = há dados, não neste
+recorte (oferece "Limpar filtros"); `permissao` = o papel não alcança (diz o
+papel e o caminho de volta). Ausência de dado nunca vira "nenhum": falha de
+leitura é `erro`, não `vazio`.
+
 ---
 
 ## 2. Auditoria de 2026-10-14 (Etapa 1)
@@ -58,17 +66,17 @@ robustez; **P3** = acabamento.
 | 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **proposta ao dono** (§4) |
 | 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
-| 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | fila |
+| 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
 | 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha; o aviso é provisório até o `EstadoDaTela` |
-| 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | fila |
-| 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | fila |
-| 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | fila |
+| 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | **corrigido** nas mesmas 19 telas (tipos `vazio` × `filtro`, com \"Limpar filtros\") |
+| 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | **corrigido** (D-502): título da tela no cabeçalho, estado de permissão e \"Ir para o início\" |
+| 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | **corrigido** (D-502, `BotaoEnviar` e rótulos de pendente); sobra o \"Sair\" do cabeçalho |
 | 12 | Três animações de giro e 8 giros locais; textos de espera sem vocabulário comum | `sb-girar`, `sb-pco-girar`, `sb-vnc-girar` | P2 | fila |
 | 13 | `role="alert"` em conteúdo estático renderizado no servidor — o leitor de tela anuncia como alerta a cada carga | 191 usos em 111 arquivos | P2 | fila |
 | 14 | Só 10 de 58 páginas têm `Suspense` interno; as mais pesadas esperam todas as leituras para pintar qualquer coisa | `/skus/[skuId]` (2.123 linhas), `/anuncios/[itemId]`, `/anuncios`, `/sincronizacao`, Home | P2 | fila (medir antes) |
 | 15 | Dois giros da NF-e sem regra de movimento reduzido | `.sb-nf-girando`, `.sb-nf-estado-doc-icone-girando` | P3 | **corrigido** (D-500) |
-| 16 | CSS duplicado | `.sb-full-state*` ≡ `.sb-inbox-state*`; `.sb-vnc-vazio` e `.sb-sync-empty` definidos duas vezes | P3 | fila |
-| 17 | "Tentar de novo" × "Tentar novamente" | 7 × 3 | P3 | fila |
+| 16 | CSS duplicado | `.sb-full-state*` ≡ `.sb-inbox-state*`; `.sb-vnc-vazio` e `.sb-sync-empty` definidos duas vezes | P3 | **em parte**: as 13 famílias de estado por módulo saíram (59 regras, D-502); sobram `.sb-vnc-vazio` e `.sb-sync-empty` duplicados |
+| 17 | "Tentar de novo" × "Tentar novamente" | 7 × 3 | P3 | **corrigido** (`TENTAR_DE_NOVO`, D-502) |
 
 **O que a auditoria conferiu e está certo:** `app/error.tsx` usa `retry` (é a
 API do Next 16.3, conferida em `docs/01-app/.../error.md`); `loading.tsx`
@@ -86,11 +94,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    telas da lista de pendências da guarda (`/central`, `/central/produtos`,
    `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
    de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
-2. **Botão pendente compartilhado** (`useFormStatus`) para ação de servidor —
-   fecha o item 11.
-3. **`EstadoDaTela`**: erro, vazio (com e sem filtro), sem permissão — uma
-   forma, um vocabulário, a mensagem sanitizada e a ação de recuperação. Fecha 7,
-   9, 10, 13 e 17; e troca o aviso provisório do item 8 (o A2 usa a forma nova quando ela existir).
+2. ~~**Botão pendente compartilhado**~~ — **feito** (D-502, `BotaoEnviar`).
+3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas. Falta: os seis
+   avisos provisórios da T-R6 (o A2 troca na fatia dele), as telas da fila do
+   A2 e o item 13 (`role="alert"` em aviso que não é falha), tela a tela.
 4. **Shell num layout** (§4), se o dono aprovar.
 5. **Streaming nas telas pesadas** (item 14): medir quanto cada bloco espera e
    pôr `Suspense` só onde a primeira pintura melhora de fato.

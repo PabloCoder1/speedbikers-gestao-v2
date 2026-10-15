@@ -1390,19 +1390,6 @@ summary[aria-disabled="true"] {
 .sb-knowledge-search .sb-input { min-width: 0; flex: 1; }
 .sb-knowledge-actions { flex-wrap: wrap; }
 
-.sb-knowledge-state {
-  display: grid;
-  justify-items: start;
-  gap: 0.5rem;
-  padding: 2.5rem var(--sb-space-4);
-  color: var(--sb-text-soft);
-  text-align: left;
-}
-
-.sb-knowledge-state strong { color: var(--sb-text); }
-.sb-knowledge-state-error strong,
-.sb-knowledge-state-error span { color: var(--sb-danger); }
-
 .sb-knowledge-pages {
   justify-content: space-between;
   padding: var(--sb-space-3) 1.25rem;
@@ -4492,69 +4479,6 @@ table {
 }
 
 /* CANAIS E PARCEIROS — administração de contas e integrações. */
-.sb-channel-empty,
-.sb-channel-error {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 6.5rem;
-  padding: var(--sb-space-4);
-}
-
-.sb-channel-empty-panel {
-  margin-top: var(--sb-space-3);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius-md);
-  background: var(--sb-surface);
-}
-
-.sb-channel-empty > div,
-.sb-channel-error > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-channel-empty strong,
-.sb-channel-error strong {
-  color: var(--sb-primary);
-}
-
-.sb-channel-empty p,
-.sb-channel-error p {
-  margin: 0.25rem 0 0;
-  max-width: 48rem;
-  color: var(--sb-text-soft);
-  font-size: 0.6875rem;
-  line-height: 1.5;
-}
-
-.sb-channel-empty-icon,
-.sb-channel-error-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--sb-radius);
-}
-
-.sb-channel-empty-icon {
-  background: var(--sb-secondary-soft);
-  color: var(--sb-secondary);
-}
-
-.sb-channel-error {
-  margin: var(--sb-space-3) 0;
-  border: 1px solid var(--sb-danger-soft);
-  border-radius: var(--sb-radius-md);
-  background: var(--sb-danger-soft);
-}
-
-.sb-channel-error-icon {
-  background: var(--sb-surface);
-  color: var(--sb-danger-ink);
-}
 
 .sb-account-meta {
   display: block;
@@ -5125,18 +5049,6 @@ table {
 }
 
 @media (max-width: 700px) {
-  .sb-channel-empty,
-  .sb-channel-error {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .sb-channel-error .sb-button,
-  .sb-channel-empty .sb-button {
-    width: 100%;
-    justify-content: center;
-    margin-left: 3.25rem;
-  }
 
   .sb-account-form {
     align-items: stretch;
@@ -5288,7 +5200,6 @@ table {
   white-space: nowrap;
   border: 0;
 }
-
 
 .sb-carregando-revela {
   display: flex;
@@ -5501,6 +5412,86 @@ body > .sb-atualizando-barra {
   .sb-content[aria-busy="true"] {
     transition-duration: 0s;
   }
+}
+
+/*
+ * ESTADOS DA TELA (D-502) — erro de leitura, nada ainda, filtro sem resultado e
+ * sem permissão (`components/estado-da-tela.tsx`).
+ *
+ * A forma é a que `/estoque/movimentacoes` e `/precos` já tinham (ícone num
+ * quadrado, o que aconteceu, o que fazer, a ação à direita) — e que mais treze
+ * módulos repetiam com nome próprio. O erro troca o fundo para o tom de perigo
+ * suave; os outros três ficam neutros, porque não são falha.
+ */
+.sb-estado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 7rem;
+  padding: var(--sb-space-4);
+}
+
+.sb-estado-texto {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.sb-estado-texto strong {
+  color: var(--sb-primary);
+}
+
+.sb-estado-texto p {
+  margin: 0.25rem 0 0;
+  max-width: 42rem;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.sb-estado-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--sb-radius);
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-estado-detalhe {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  overflow-wrap: anywhere;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-surface);
+  color: var(--sb-neutral-ink);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+}
+
+.sb-estado-erro {
+  border-radius: var(--sb-radius);
+  background: var(--sb-danger-soft);
+}
+
+.sb-estado-erro .sb-estado-icone {
+  background: var(--sb-surface);
+  color: var(--sb-danger-ink);
+}
+
+/* Quando o estado É a tela (recusa de papel): um cartão no chão, centralizado. */
+.sb-estado-tela {
+  max-width: 40rem;
+  margin: var(--sb-space-4) auto 0;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
 }
 
 /* --- Copiloto e Central de Notificações: refinamento operacional --- */
@@ -5930,87 +5921,6 @@ body > .sb-atualizando-barra {
   margin: 0;
   font-size: 0.6875rem;
   color: var(--sb-danger);
-}
-
-.sb-notification-error-bloco {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: var(--sb-space-3);
-  padding: var(--sb-space-3);
-  border: 1px solid var(--sb-border);
-  border-radius: var(--sb-radius);
-  background: var(--sb-danger-soft);
-}
-
-.sb-notification-error-bloco > span:first-child {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--sb-radius);
-  background: var(--sb-surface);
-  color: var(--sb-danger-ink);
-}
-
-.sb-notification-error-bloco > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-notification-error-bloco strong {
-  color: var(--sb-primary);
-}
-
-.sb-notification-error-bloco p {
-  margin: 0.25rem 0 0;
-  max-width: 42rem;
-  color: var(--sb-text-soft);
-  font-size: 0.6875rem;
-}
-
-.sb-notification-vazio {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 7rem;
-  padding: var(--sb-space-4);
-}
-
-.sb-notification-vazio > span:first-child {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--sb-radius);
-  background: var(--sb-secondary-soft);
-  color: var(--sb-secondary);
-}
-
-.sb-notification-vazio > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-notification-vazio strong {
-  color: var(--sb-primary);
-}
-
-.sb-notification-vazio p {
-  margin: 0.25rem 0 0;
-  max-width: 42rem;
-  color: var(--sb-text-soft);
-  font-size: 0.6875rem;
-}
-
-.sb-notification-vazio-pagina {
-  margin: 0 0 var(--sb-space-3);
-  color: var(--sb-text-soft);
-  font-size: 0.75rem;
 }
 
 .sb-notification-paginador {
@@ -11691,7 +11601,6 @@ td.sb-pco-num-linha {
 .sb-full-insight strong { color: var(--sb-primary); font-size: 0.9375rem; letter-spacing: -0.01em; }
 .sb-full-insight small { color: var(--sb-text-soft); font-size: 0.6875rem; line-height: 1.4; }
 
-
 .sb-full-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: var(--sb-space-3) 1.25rem 0; }
 .sb-full-search { position: relative; display: flex; flex: 1 1 22rem; flex-wrap: wrap; align-items: center; gap: 0.4rem; max-width: 36rem; }
 .sb-full-search .sb-input { flex: 1 1 14rem; min-width: 0; padding-left: 2rem; }
@@ -11730,12 +11639,6 @@ td.sb-pco-num-linha {
 .sb-full-coverage-text { color: var(--sb-full-cov); font-size: 0.6875rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sb-full-captured { color: var(--sb-text-soft); white-space: nowrap; }
 .sb-full-action { font-weight: 600; }
-
-.sb-full-state { display: grid; justify-items: center; gap: 0.35rem; margin: var(--sb-space-4) 1.25rem; padding: 2rem 1rem; border: 1px dashed var(--sb-border); border-radius: var(--sb-radius); color: var(--sb-text-soft); font-size: 0.75rem; text-align: center; }
-.sb-full-state strong { color: var(--sb-primary); font-size: 0.875rem; }
-.sb-full-state-icon { display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border-radius: 999px; background: var(--sb-neutral-soft); color: var(--sb-primary); }
-.sb-full-state-error { border-style: solid; border-color: var(--sb-danger); background: var(--sb-danger-soft); color: var(--sb-danger-ink); }
-.sb-full-state-error strong { color: var(--sb-danger-ink); }
 
 .sb-full-pages { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: var(--sb-space-3) 1.25rem; border-top: 1px solid var(--sb-border); color: var(--sb-text-soft); font-size: 0.75rem; }
 
@@ -13563,17 +13466,6 @@ td.sb-pco-num-linha {
   gap: var(--sb-space-2);
 }
 
-.sb-stock-message {
-  margin: 0;
-  padding: var(--sb-space-3);
-  font-size: 0.75rem;
-}
-
-.sb-stock-message-error {
-  color: var(--sb-danger);
-  background: var(--sb-danger-soft);
-}
-
 .sb-stock-pagination {
   display: flex;
   align-items: center;
@@ -15387,56 +15279,6 @@ td.sb-pco-num-linha {
   color: var(--sb-accent-ink);
 }
 
-.sb-mov-empty,
-.sb-mov-error {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 7rem;
-  padding: var(--sb-space-4);
-}
-
-.sb-mov-empty > div,
-.sb-mov-error > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-mov-empty strong,
-.sb-mov-error strong {
-  color: var(--sb-primary);
-}
-
-.sb-mov-empty p,
-.sb-mov-error p {
-  margin: 0.25rem 0 0;
-  max-width: 42rem;
-  color: var(--sb-text-soft);
-  font-size: 0.6875rem;
-}
-
-.sb-mov-empty-icon,
-.sb-mov-error-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--sb-radius);
-  background: var(--sb-secondary-soft);
-  color: var(--sb-secondary);
-}
-
-.sb-mov-error {
-  background: var(--sb-danger-soft);
-}
-
-.sb-mov-error-icon {
-  background: var(--sb-surface);
-  color: var(--sb-danger-ink);
-}
-
 .sb-mov-pagination {
   display: flex;
   align-items: center;
@@ -15594,59 +15436,6 @@ td.sb-pco-num-linha {
 
 .sb-price-delta {
   font-weight: 700;
-}
-
-.sb-price-error,
-.sb-price-empty {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 7rem;
-  padding: var(--sb-space-4);
-}
-
-.sb-price-error > div,
-.sb-price-empty > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-price-error strong,
-.sb-price-empty strong {
-  color: var(--sb-primary);
-}
-
-.sb-price-error p,
-.sb-price-empty p {
-  margin: 0.25rem 0 0;
-  max-width: 42rem;
-  color: var(--sb-text-soft);
-  font-size: 0.6875rem;
-}
-
-.sb-price-error {
-  background: var(--sb-danger-soft);
-}
-
-.sb-price-error-icon,
-.sb-price-empty-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--sb-radius);
-}
-
-.sb-price-error-icon {
-  background: var(--sb-surface);
-  color: var(--sb-danger-ink);
-}
-
-.sb-price-empty-icon {
-  background: var(--sb-secondary-soft);
-  color: var(--sb-secondary);
 }
 
 .sb-price-recap {
@@ -15810,19 +15599,6 @@ td.sb-pco-num-linha {
     white-space: normal;
   }
 
-  .sb-price-error,
-  .sb-price-empty {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .sb-price-error .sb-button,
-  .sb-price-empty .sb-button {
-    width: 100%;
-    justify-content: center;
-    margin-left: 3.25rem;
-  }
-
   .sb-price-pagination {
     justify-content: space-between;
   }
@@ -15945,19 +15721,6 @@ td.sb-pco-num-linha {
 
   .sb-mov-delta {
     justify-self: end;
-  }
-
-  .sb-mov-empty,
-  .sb-mov-error {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    padding: var(--sb-space-3);
-  }
-
-  .sb-mov-empty > .sb-button,
-  .sb-mov-error > .sb-button {
-    width: 100%;
-    justify-content: center;
   }
 
   .sb-mov-pagination {
@@ -16257,30 +16020,6 @@ td.sb-pco-num-linha {
 }
 
 /* Estados sem tabela: vazio e erro. */
-.sb-an-estado {
-  display: grid;
-  justify-items: center;
-  gap: 0.5rem;
-  margin: var(--sb-space-3);
-  padding: var(--sb-space-5) var(--sb-space-3);
-  border: 1px dashed var(--sb-border);
-  border-radius: var(--sb-radius);
-  font-size: 0.75rem;
-  color: var(--sb-text-soft);
-  text-align: center;
-}
-
-.sb-an-estado b {
-  font-size: 0.8125rem;
-  color: var(--sb-primary);
-}
-
-.sb-an-estado-erro {
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--sb-danger) 35%, var(--sb-border));
-  background: var(--sb-danger-soft);
-  color: var(--sb-danger-ink);
-}
 
 /* Paginação numerada, no pé do painel. */
 .sb-an-paginacao {
@@ -16645,11 +16384,6 @@ td.sb-pco-num-linha {
 .sb-inbox-deadline-atencao { background: var(--sb-accent-soft); color: var(--sb-accent-ink); }
 .sb-inbox-row-late td:first-child { box-shadow: inset 3px 0 0 var(--sb-danger); }
 .sb-inbox-open { min-height: 2rem; white-space: nowrap; }
-.sb-inbox-state { display: grid; justify-items: center; gap: 0.35rem; margin: var(--sb-space-4) 1.25rem; padding: 2rem 1rem; border: 1px dashed var(--sb-border); border-radius: var(--sb-radius); color: var(--sb-text-soft); font-size: 0.75rem; text-align: center; }
-.sb-inbox-state strong { color: var(--sb-primary); font-size: 0.875rem; }
-.sb-inbox-state-icon { display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border-radius: 999px; background: var(--sb-neutral-soft); color: var(--sb-primary); }
-.sb-inbox-state-error { border-style: solid; border-color: var(--sb-danger); background: var(--sb-danger-soft); color: var(--sb-danger-ink); }
-.sb-inbox-state-error strong { color: var(--sb-danger-ink); }
 .sb-inbox-section { margin-top: var(--sb-space-4); }
 .sb-claims-guidance { display: flex; gap: var(--sb-space-3); align-items: flex-start; margin-top: var(--sb-space-3); padding: 0.9rem 1rem; border: 1px solid var(--sb-danger); border-radius: var(--sb-radius); background: linear-gradient(110deg, var(--sb-danger-soft), var(--sb-surface) 66%); }
 .sb-claims-guidance-icon { display: grid; flex: 0 0 2.25rem; width: 2.25rem; height: 2.25rem; place-items: center; border-radius: var(--sb-radius-md); background: var(--sb-danger); color: white; }

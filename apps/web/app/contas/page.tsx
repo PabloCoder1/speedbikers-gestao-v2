@@ -8,6 +8,7 @@ import { StatePill } from "../../components/state-pill";
 import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { TOM, tomDeStatus } from "../../components/tone";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
 import { currentMembership } from "../../lib/request-membership";
@@ -68,15 +69,11 @@ export default async function ContasPage(): Promise<ReactNode> {
       <Shell>
         <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Contas e lojas" compacto />
         <Panel title="Acesso indisponível">
-          <div className="sb-channel-empty">
-            <span className="sb-channel-empty-icon" aria-hidden="true">
-              <Icone nome="etiqueta" tamanho={20} />
-            </span>
-            <div>
-              <strong>Sua conta ainda não pertence a uma organização.</strong>
-              <p>Peça a um administrador para concluir o vínculo antes de gerenciar contas do Mercado Livre.</p>
-            </div>
-          </div>
+          <EstadoDaTela
+            tipo="permissao"
+            titulo="Sua conta ainda não pertence a uma organização."
+            descricao="Peça a um administrador para concluir o vínculo antes de gerenciar contas do Mercado Livre."
+          />
         </Panel>
       </Shell>
     );
@@ -171,26 +168,22 @@ export default async function ContasPage(): Promise<ReactNode> {
       <KpiStrip cells={accountKpis} />
 
       {error !== null && (
-        <div className="sb-channel-error" role="alert">
-          <span className="sb-channel-error-icon" aria-hidden="true">
-            <Icone nome="pulso" tamanho={18} />
-          </span>
-          <div>
-            <strong>Não foi possível carregar as contas agora.</strong>
-            <p>{sanitizeErrorText(error.message) ?? "A leitura falhou neste carregamento."}</p>
-          </div>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas agora."
+          descricao="A leitura falhou neste carregamento."
+          detalhe={error.message}
+          acao={{ href: "/contas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && accounts.length === 0 && (
-        <div className="sb-channel-empty sb-channel-empty-panel">
-          <span className="sb-channel-empty-icon" aria-hidden="true">
-            <Icone nome="etiqueta" tamanho={20} />
-          </span>
-          <div>
-            <strong>Nenhuma conta cadastrada ainda.</strong>
-            <p>Cadastre o identificador da loja abaixo e conclua o login no Mercado Livre para iniciar as sincronizações.</p>
-          </div>
+        <div className="sb-panel">
+          <EstadoDaTela
+            tipo="vazio"
+            titulo="Nenhuma conta cadastrada ainda."
+            descricao="Cadastre o identificador da loja abaixo e conclua o login no Mercado Livre para iniciar as sincronizações."
+          />
         </div>
       )}
 

@@ -17,6 +17,7 @@ import { Canais, temCanal } from "../canais";
 import { ExcluirFornecedor } from "../excluir-fornecedor";
 import { LogoFornecedor } from "../logo";
 import { Voltar } from "../../../components/voltar";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
@@ -210,9 +211,15 @@ export default async function FornecedorPage({
       </ObjectHeader>
 
       {secondaryError !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)", marginTop: "var(--sb-space-3)" }}>
-          Não foi possível carregar parte do dashboard: {secondaryError.message}
-        </p>
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar parte do dashboard."
+            descricao="O cadastro acima está certo; o que falhou foi uma das leituras de pedidos ou de produtos. Tente de novo."
+            detalhe={secondaryError.message}
+            acao={{ href: `/fornecedores/${supplierId}`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
+        </div>
       )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>

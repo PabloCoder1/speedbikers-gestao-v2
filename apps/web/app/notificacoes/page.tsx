@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
 import { FilterPill } from "../../components/filter-pill";
-import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { businessDayOf, formatBusinessDate, formatCount, formatWeekday } from "../../lib/format";
 import { severityLabel } from "../../lib/labels";
 import {
@@ -449,32 +449,24 @@ export default async function NotificacoesPage({
       />
 
       {error !== null && (
-        <div className="sb-notification-error-bloco" role="alert">
-          <span aria-hidden="true">
-            <Icone nome="pulso" tamanho={18} />
-          </span>
-          <div>
-            <strong>Não foi possível carregar a Central agora.</strong>
-            <p>Seus filtros foram preservados e nada foi marcado como lido. {error.message}</p>
-          </div>
-          <Link className="sb-button" href={buildNotificationHref(filters, { page: filters.page })}>
-            Tentar novamente
-            <CarregandoSeODemorar />
-          </Link>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar a Central agora."
+          descricao="Seus filtros foram preservados e nada foi marcado como lido. Tente de novo."
+          detalhe={error.message}
+          acao={{ href: buildNotificationHref(filters, { page: filters.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && <KpiStrip cells={celulas} />}
 
       {paginaVazia && (
-        <p className="sb-notification-vazio-pagina">
-          Esta página não existe neste recorte — a lista encolheu ou o link é antigo.{" "}
-          <Link href={buildNotificationHref(filters, { page: 1 })}>
-            Voltar à primeira página
-            <CarregandoSeODemorar />
-          </Link>
-          .
-        </p>
+        <EstadoDaTela
+          tipo="filtro"
+          titulo="Esta página não existe neste recorte."
+          descricao="A lista encolheu ou o link é antigo."
+          acao={{ href: buildNotificationHref(filters, { page: 1 }), rotulo: "Voltar à primeira página", mesmaTela: true }}
+        />
       )}
 
       {error === null && !paginaVazia && (
@@ -571,29 +563,16 @@ export default async function NotificacoesPage({
           </div>
 
           {rows.length === 0 ? (
-            <div className="sb-notification-vazio">
-              <span aria-hidden="true">
-                <Icone nome="megafone" tamanho={20} />
-              </span>
-              <div>
-                <strong>
-                  {filtrosAtivos > 0
-                    ? "Nenhuma notificação neste recorte."
-                    : "Nenhuma notificação ainda."}
-                </strong>
-                <p>
-                  {filtrosAtivos > 0
-                    ? "Amplie o recorte para ver o resto da Central — o histórico completo continua lá."
-                    : "Quando a operação mudar, o evento aparece aqui com contexto suficiente para agir."}
-                </p>
-              </div>
-              {filtrosAtivos > 0 && (
-                <Link className="sb-button" href="/notificacoes">
-                  Limpar filtros
-                  <CarregandoSeODemorar />
-                </Link>
-              )}
-            </div>
+            <EstadoDaTela
+              tipo={filtrosAtivos > 0 ? "filtro" : "vazio"}
+              titulo={filtrosAtivos > 0 ? "Nenhuma notificação neste recorte." : "Nenhuma notificação ainda."}
+              descricao={
+                filtrosAtivos > 0
+                  ? "Amplie o recorte para ver o resto da Central — o histórico completo continua lá."
+                  : "Quando a operação mudar, o evento aparece aqui com contexto suficiente para agir."
+              }
+              acao={filtrosAtivos > 0 ? { href: "/notificacoes", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+            />
           ) : (
             <div className="sb-notification-dias">
               {grupos.map((grupo) => (

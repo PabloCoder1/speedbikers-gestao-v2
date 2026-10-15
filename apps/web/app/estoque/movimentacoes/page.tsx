@@ -9,6 +9,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import {
   LOCATION_KINDS,
@@ -81,15 +82,11 @@ export default async function MovimentacoesPage({
           subtitle="Histórico auditável de entradas, saídas e ajustes de estoque."
         />
         <Panel title="Acesso indisponível">
-          <div className="sb-mov-empty">
-            <span className="sb-mov-empty-icon" aria-hidden="true">
-              <Icone nome="armazem" tamanho={20} />
-            </span>
-            <div>
-              <strong>Sua conta ainda não pertence a uma organização.</strong>
-              <p>Peça a um administrador para concluir o vínculo antes de consultar o histórico de estoque.</p>
-            </div>
-          </div>
+          <EstadoDaTela
+            tipo="permissao"
+            titulo="Sua conta ainda não pertence a uma organização."
+            descricao="Peça a um administrador para concluir o vínculo antes de consultar o histórico de estoque."
+          />
         </Panel>
       </Shell>
     );
@@ -305,46 +302,34 @@ export default async function MovimentacoesPage({
         )}
 
         {ledger.error !== null && (
-          <div className="sb-mov-error" role="alert">
-            <span className="sb-mov-error-icon" aria-hidden="true">
-              <Icone nome="pulso" tamanho={18} />
-            </span>
-            <div>
-              <strong>Não foi possível carregar o histórico agora.</strong>
-              <p>Seus filtros foram preservados. Tente novamente; nenhum dado de estoque foi alterado.</p>
-            </div>
-            <Link className="sb-button" href={buildMovementHref(filters, { page: filters.page })}>
-              Tentar novamente
-              <CarregandoSeODemorar />
-            </Link>
-          </div>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o histórico agora."
+            descricao="Seus filtros foram preservados. Tente de novo; nenhum dado de estoque foi alterado."
+            detalhe={ledger.error.message}
+            acao={{ href: buildMovementHref(filters, { page: filters.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
 
         {ledger.error === null && rows.length === 0 && (
-          <div className="sb-mov-empty">
-            <span className="sb-mov-empty-icon" aria-hidden="true">
-              <Icone nome="setas" tamanho={20} />
-            </span>
-            <div>
-              <strong>{paginaForaDoRecorte ? "Esta página não faz mais parte do recorte." : "Nenhum movimento encontrado."}</strong>
-              <p>
-                {paginaForaDoRecorte
-                  ? "O histórico pode ter mudado desde a última visita. Volte à primeira página para continuar."
-                  : filtrosAtivos > 0
-                    ? "Revise ou remova os filtros para ampliar a busca."
-                    : "Assim que o estoque receber uma entrada, saída ou ajuste, o registro aparecerá aqui."}
-              </p>
-            </div>
-            {(filtrosAtivos > 0 || paginaForaDoRecorte) && (
-              <Link
-                className="sb-button"
-                href={paginaForaDoRecorte ? buildMovementHref(filters, { page: 1 }) : "/estoque/movimentacoes"}
-              >
-                {paginaForaDoRecorte ? "Ir para a primeira página" : "Limpar filtros"}
-                <CarregandoSeODemorar />
-              </Link>
-            )}
-          </div>
+          <EstadoDaTela
+            tipo={paginaForaDoRecorte || filtrosAtivos > 0 ? "filtro" : "vazio"}
+            titulo={paginaForaDoRecorte ? "Esta página não faz mais parte do recorte." : "Nenhum movimento encontrado."}
+            descricao={
+              paginaForaDoRecorte
+                ? "O histórico pode ter mudado desde a última visita. Volte à primeira página para continuar."
+                : filtrosAtivos > 0
+                  ? "Revise ou remova os filtros para ampliar a busca."
+                  : "Assim que o estoque receber uma entrada, saída ou ajuste, o registro aparecerá aqui."
+            }
+            acao={
+              paginaForaDoRecorte
+                ? { href: buildMovementHref(filters, { page: 1 }), rotulo: "Ir para a primeira página", mesmaTela: true }
+                : filtrosAtivos > 0
+                  ? { href: "/estoque/movimentacoes", rotulo: "Limpar filtros", mesmaTela: true }
+                  : undefined
+            }
+          />
         )}
 
         {ledger.error === null && rows.length > 0 && (

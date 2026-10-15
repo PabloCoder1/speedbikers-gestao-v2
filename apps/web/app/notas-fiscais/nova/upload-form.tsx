@@ -171,18 +171,22 @@ export function UploadForm(): ReactNode {
       }),
     );
 
-    setEnviando(false);
-
     const enviados = documentos.filter((id): id is string => id !== null);
 
     // Um arquivo só e aceito: a conferência dele é o próximo passo, e abrir
     // direto poupa um clique. Vários, ou qualquer recusa, e a fila fica na
     // tela — cada linha diz o que aconteceu com o seu arquivo.
+    //
+    // O botão continua desabilitado até a conferência abrir (D-502): liberá-lo
+    // antes do `push` deixava um segundo clique reenviar o mesmo arquivo
+    // enquanto a tela nova carregava.
     if (lote.length === 1 && enviados.length === 1 && fila.length === 1) {
       router.push(`/notas-fiscais/${String(enviados[0])}`);
 
       return;
     }
+
+    setEnviando(false);
 
     setAviso(
       enviados.length === lote.length

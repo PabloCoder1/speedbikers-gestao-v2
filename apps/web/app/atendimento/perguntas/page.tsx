@@ -8,6 +8,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
 import type { SupportCaseLinkRow } from "../../../lib/support-case-reference";
@@ -296,13 +297,13 @@ export default async function PerguntasPage({
       </div>
 
       {error !== null && (
-        <div role="alert" className="sb-inbox-state sb-inbox-state-error">
-          <strong>Não foi possível carregar as perguntas.</strong>
-          <span>{error}</span>
-          <LinkDeFiltro className="sb-button" href={perguntasHref({ tab, page, account: accountSlug })}>
-            Tentar de novo
-          </LinkDeFiltro>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as perguntas."
+          descricao="A aba e a conta escolhidas foram preservadas. Tente de novo; nenhuma pergunta foi alterada."
+          detalhe={error}
+          acao={{ href: perguntasHref({ tab, page, account: accountSlug }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && (
@@ -312,17 +313,15 @@ export default async function PerguntasPage({
             subtitle={total > 0 ? `${formatCount(total)} ${total === 1 ? "pergunta" : "perguntas"} nesta aba` : undefined}
           >
             {questions.length === 0 && (
-              <div className="sb-inbox-state">
-                <span className="sb-inbox-state-icon" aria-hidden="true">
-                  <Icone nome="duvida" tamanho={20} />
-                </span>
-                <strong>Nenhuma pergunta {abaAtual.label.toLowerCase()}</strong>
-                <span>
-                  {tab === "pendente"
+              <EstadoDaTela
+                tipo="vazio"
+                titulo={`Nenhuma pergunta ${abaAtual.label.toLowerCase()}`}
+                descricao={
+                  tab === "pendente"
                     ? "A sincronização traz perguntas novas pelo webhook em segundos."
-                    : "Nada nesta aba com o recorte atual."}
-                </span>
-              </div>
+                    : "Nada nesta aba com o recorte atual."
+                }
+              />
             )}
 
             {questions.length > 0 && (

@@ -22,13 +22,13 @@ import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { pageNumbers } from "../../../lib/listings-dashboard";
 import { contarContasMl } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../lib/period";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
-import { sanitizeErrorText } from "../../../lib/sanitize";
 import { isShopeeSchemaMissing } from "../../../lib/shopee-listings";
 import {
   SHOPEE_ORDERS_PAGE_SIZE,
@@ -75,15 +75,6 @@ export const dynamic = "force-dynamic";
  * pelo worker, de hora em hora; esta tela nunca a chama.
  */
 
-/** Estado sem tabela (vazio, banco anterior, erro), na forma de `/anuncios/shopee`. */
-function Estado({ titulo, children, erro = false }: { titulo: string; children?: ReactNode; erro?: boolean }): ReactNode {
-  return (
-    <div className={erro ? "sb-an-estado sb-an-estado-erro" : "sb-an-estado"} role={erro ? "alert" : undefined}>
-      <b>{titulo}</b>
-      {children}
-    </div>
-  );
-}
 
 const SUBTITULO_GERAL = (
   <>
@@ -140,7 +131,7 @@ export default async function VendasShopeePage({
   if (organizationId === null) {
     return (
       <SemVendas>
-        <Estado titulo="Sua conta não está associada a nenhuma organização." />
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </SemVendas>
     );
   }
@@ -149,11 +140,14 @@ export default async function VendasShopeePage({
     return (
       <SemVendas>
         {isShopeeSchemaMissing(lojasResult.error) ? (
-          <Estado titulo="As vendas da Shopee chegam com a próxima atualização do banco." />
+          <EstadoDaTela tipo="vazio" titulo="As vendas da Shopee chegam com a próxima atualização do banco." />
         ) : (
-          <Estado titulo="Não foi possível ler as lojas Shopee." erro>
-            <span>{sanitizeErrorText(lojasResult.error.message) ?? "A leitura falhou neste carregamento."}</span>
-          </Estado>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível ler as lojas Shopee."
+            descricao="A leitura falhou neste carregamento."
+            detalhe={lojasResult.error.message}
+          />
         )}
       </SemVendas>
     );
@@ -164,12 +158,12 @@ export default async function VendasShopeePage({
   if (lojas.length === 0) {
     return (
       <SemVendas>
-        <Estado titulo="Nenhuma loja Shopee conectada.">
-          <span>Conecte a loja em Contas; os pedidos são lidos de hora em hora depois da conexão.</span>
-          <Link className="sb-button" href="/contas">
-            Conectar loja em Contas
-          </Link>
-        </Estado>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="Nenhuma loja Shopee conectada."
+          descricao="Conecte a loja em Contas; os pedidos são lidos de hora em hora depois da conexão."
+          acao={{ href: "/contas", rotulo: "Conectar loja em Contas" }}
+        />
       </SemVendas>
     );
   }
@@ -229,7 +223,7 @@ export default async function VendasShopeePage({
   if (isShopeeSchemaMissing(porLoja.error) || isShopeeSchemaMissing(pedidos.error)) {
     return (
       <SemVendas>
-        <Estado titulo="As vendas da Shopee chegam com a próxima atualização do banco." />
+        <EstadoDaTela tipo="vazio" titulo="As vendas da Shopee chegam com a próxima atualização do banco." />
       </SemVendas>
     );
   }
@@ -368,11 +362,14 @@ export default async function VendasShopeePage({
           subtitle={`${de} a ${ate} · uma linha por loja · cancelados e não pagos ficam fora das somas`}
         >
           {porLoja.error !== null ? (
-            <Estado titulo="Não foi possível carregar as vendas por loja." erro>
-              <span>{sanitizeErrorText(porLoja.error.message) ?? "A leitura falhou neste carregamento."}</span>
-            </Estado>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar as vendas por loja."
+              descricao="A leitura falhou neste carregamento."
+              detalhe={porLoja.error.message}
+            />
           ) : porLoja.data.length === 0 ? (
-            <Estado titulo="Nenhuma loja Shopee para mostrar." />
+            <EstadoDaTela tipo="vazio" titulo="Nenhuma loja Shopee para mostrar." />
           ) : (
             <div className="sb-an-rolagem">
               {/*
@@ -557,49 +554,51 @@ export default async function VendasShopeePage({
           )}
 
           {pedidos.error !== null && (
-            <Estado titulo="Não foi possível carregar os pedidos da Shopee." erro>
-              <span>{sanitizeErrorText(pedidos.error.message) ?? "A leitura falhou neste carregamento."}</span>
-              <LinkDeFiltro className="sb-button" href={buildShopeeSalesHref(filters, { pagina: filters.pagina })}>
-                Tentar de novo
-              </LinkDeFiltro>
-            </Estado>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os pedidos da Shopee."
+              descricao="A leitura falhou neste carregamento."
+              detalhe={pedidos.error.message}
+              acao={{
+                href: buildShopeeSalesHref(filters, { pagina: filters.pagina }),
+                rotulo: TENTAR_DE_NOVO,
+                mesmaTela: true,
+              }}
+            />
           )}
 
           {pedidos.error === null &&
             rows.length === 0 &&
             (alemDoFim ? (
-              <Estado titulo="Esta página passou do fim da lista.">
-                <LinkDeFiltro className="sb-button" href={buildShopeeSalesHref(filters, { pagina: 1 })}>
-                  Voltar à primeira página
-                </LinkDeFiltro>
-              </Estado>
+              <EstadoDaTela
+                tipo="filtro"
+                titulo="Esta página passou do fim da lista."
+                acao={{ href: buildShopeeSalesHref(filters, { pagina: 1 }), rotulo: "Voltar à primeira página", mesmaTela: true }}
+              />
             ) : escopoNuncaLido ? (
-              <Estado titulo="Os pedidos da Shopee ainda não foram lidos.">
-                {leituraParada ? (
-                  <>
-                    <span>A conexão da loja está com erro, e a leitura só roda com a loja conectada.</span>
-                    <Link className="sb-button" href="/contas">
-                      Reconectar em Contas
-                    </Link>
-                  </>
-                ) : (
-                  <span>A primeira leitura acontece na próxima hora — os pedidos são lidos de hora em hora.</span>
-                )}
-              </Estado>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Os pedidos da Shopee ainda não foram lidos."
+                descricao={
+                  leituraParada
+                    ? "A conexão da loja está com erro, e a leitura só roda com a loja conectada."
+                    : "A primeira leitura acontece na próxima hora — os pedidos são lidos de hora em hora."
+                }
+                acao={leituraParada ? { href: "/contas", rotulo: "Reconectar em Contas" } : undefined}
+              />
             ) : situacaoAtiva !== null ? (
-              <Estado titulo="Nenhum pedido nesta situação no período.">
-                <LinkDeFiltro className="sb-button" href={limpar}>
-                  Limpar filtros
-                </LinkDeFiltro>
-              </Estado>
+              <EstadoDaTela
+                tipo="filtro"
+                titulo="Nenhum pedido nesta situação no período."
+                acao={{ href: limpar, rotulo: "Limpar filtros", mesmaTela: true }}
+              />
             ) : (
-              <Estado titulo={lojaAtiva === null ? "Nenhum pedido da Shopee no período." : "Nenhum pedido desta loja no período."}>
-                <span>
-                  Nenhum pedido criado de {de} até {ate}; os pedidos são lidos de hora em hora.
-                </span>
-              </Estado>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo={lojaAtiva === null ? "Nenhum pedido da Shopee no período." : "Nenhum pedido desta loja no período."}
+                descricao={`Nenhum pedido criado de ${de} até ${ate}; os pedidos são lidos de hora em hora.`}
+              />
             ))}
-
           {pedidos.error === null && rows.length > 0 && (
             <div className="sb-an-rolagem">
               <table className="sb-table sb-an-tabela" aria-label="Pedidos da Shopee">
