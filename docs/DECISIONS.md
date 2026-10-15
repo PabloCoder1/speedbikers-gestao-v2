@@ -16162,6 +16162,47 @@ Nao muda tela, banco nem limiar de produto. A proxima falha diz qual dos dois ca
 - docs: `docs/{TESTING,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`;
 - nenhum codigo de tela, migration, RPC, worker ou api.
 
+## D-480 - Telas multicanais, etapa T8a: a Shopee na /central, lado a lado e sem total de resultado; as metas por marketplace ficam para a T8b, sobre o C-66 do A1
+
+**Contexto:** a D-430 §5 deixou a meta do mes e os indicadores da `/central` com a Shopee para depois do Go Live, com uma decisao do dono sobre o total da empresa. Em 15/10 o dono decidiu, perguntado pelo A2:
+1. **Meta:** uma meta POR MARKETPLACE e uma GERAL.
+2. **Indicadores do periodo:** lado a lado, com a receita somada e sem total de resultado, como o "Todos" de `/faturamento` (D-442).
+3. **Quando:** construir ja, antes do Go Live, com "Shopee fora" ate a loja real, como nas outras telas da frente.
+
+Em producao, so ha a loja de teste da Shopee (lida as 19:20 UTC de 15/10).
+
+**1. T8a: OS INDICADORES, LADO A LADO.** Os indicadores da `/central` sao todos do Mercado Livre: faturamento, frete, comissao, custo, ACOS/TACoS, a comparacao com o anterior e as frases do resumo. Refazer cada um por marketplace duplicaria a conta do `/faturamento`.
+
+A central ganha a secao "Por marketplace" com o MESMO bloco do "Todos" de `/faturamento` (`CorpoTodos`, agora exportado): Mercado Livre e Shopee em colunas, a receita que soma ligada ao consolidado de vendas, e o resultado de cada um na coluna dele, sem total. As mesmas leituras e os mesmos numeros, porque e a mesma peca.
+- A comparacao e da empresa inteira. Com uma conta do ML escolhida, a secao some: so um lado estaria no recorte.
+- Sem loja live, o bloco diz que a Shopee ainda nao entra ("nenhuma loja real com pedidos lidos — a loja de teste fica fora"). Com a loja real, passa a mostrar os numeros dela, sem nova publicacao.
+
+**2. T8b: AS METAS POR MARKETPLACE (C-66, D-473 do A1).** O cadastro tem uma meta por organizacao e mes (`monthly_goals`), e a `get_meta_do_mes` mede so o ML.
+
+O A1 desenhou o C-66 pensando na janela entre a web e o banco. Trocar a unica da `monthly_goals` quebraria o `upsert` da tela atual no instante da migration, a mesma classe do `p_order_sn` (D-476 §5). Por isso:
+- a `monthly_goals` continua sendo a meta GERAL;
+- as metas de ML e Shopee vao numa tabela nova, `monthly_goals_marketplace`;
+- a `get_meta_do_mes` mantem as chaves de hoje, que passam a ser o GERAL (ML + Shopee), e ganha `escopos` (GERAL, ML, SHOPEE), com a Shopee nula sem loja live.
+
+A T8b entra empilhada no C-66, e a central so mostra os escopos quando a resposta trouxer `escopos`.
+
+**3. A GUARDA DE NAVEGACAO.** A `/central` e a `/central/produtos` estavam nos pendentes de `check:navegacao-suave`, "na fila do A2 (T8)". Os dois formularios de periodo personalizado viram `FormularioFiltro`, e as duas telas saem da lista; sobra so a `/curva-abc`.
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas, com `check:navegacao-suave` em 1 tela pendente.
+- **e2e:** `central` e `faturamento` 16/16 contra o build, mais o caso novo:
+  - a secao "Por marketplace" tem a tabela lado a lado, a nota "Sem total de resultado" e "nenhuma loja real com pedidos lidos";
+  - com `?account=e2e-loja`, ela some.
+- **Foto:** a secao na central.
+- **Suite inteira:** 240/240 com o banco recriado do zero (237 na 3300 e os 3 de convite na 3000). A 390 px, a `/central` e o "Todos" de `/faturamento` não rolam para o lado: o `.sb-content` tem sobra 0 e a tabela cabe nos 290 px da caixa, com as notas quebrando dentro da célula.
+
+**Impacto:**
+- web: `apps/web/app/central/{page,produtos/page}.tsx`, `apps/web/app/faturamento/multicanal.tsx` (o `CorpoTodos` exportado), `apps/web/scripts/check-navegacao-suave.mjs` e `apps/web/e2e/central.spec.ts`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
