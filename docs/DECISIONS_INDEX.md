@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **445** (D-001 a D-456).
+Decisões registradas: **446** (D-001 a D-458).
 
 ## Por domínio
 
@@ -154,7 +154,7 @@ Decisões registradas: **445** (D-001 a D-456).
 - **D-412** — Quem paga o frete aparece na central somado por envio, das quatro partes de D-407, com a cobertura do detalhe dita
 - **D-451** — Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 
-### interface (53)
+### interface (54)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -209,6 +209,7 @@ Decisões registradas: **445** (D-001 a D-456).
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
 - **D-452** — Telas multicanais, etapa T5b: o Faturamento da Shopee ganha a cascata do recebido componente a componente, a serie diaria e os produtos, sobre o C-61
 - **D-456** — Telas multicanais, etapa T5c: os Ads CPC da loja Shopee entram no /faturamento da Shopee como secao propria, rotulados "CPC da loja", fora do resultado e sem somar com o Mercado Ads
+- **D-458** — Telas multicanais, etapa T5d: o repasse da Shopee entra no /faturamento da Shopee como o realizado ao lado do previsto, pelo dia da liberacao, sem tocar no recebido nem no resultado
 
 ### mercado-livre (80)
 
