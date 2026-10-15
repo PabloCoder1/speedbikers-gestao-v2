@@ -199,6 +199,25 @@ export default async function CurvaAbcPage({
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
   const categories = (categoriesResult.data ?? []).map((r) => r.category);
 
+  /*
+    T-R6 (achado do A3, D-067): as leituras de apoio que, ao falhar, virariam
+    "nada" — o menu de contas vazio, a conta do link caindo em "todas" calada,
+    as listas de marca e categoria sem opção, os filtros salvos sumindo. A
+    curva continua (ela é a leitura principal); a tela diz o que faltou.
+  */
+  const leiturasQueFalharam = [
+    accountsResult.error === null
+      ? null
+      : `as contas do Mercado Livre (${accountsResult.error.message}): o filtro por conta do ML fica fora, e a curva mostra todas as contas`,
+    contasDoRecorte.error === null
+      ? null
+      : `as contas e lojas do recorte (${contasDoRecorte.error.message}): a escolha de contas fica fora, e a curva mostra o recorte inteiro`,
+    brandsResult.error === null && categoriesResult.error === null
+      ? null
+      : `as listas de marca e categoria (${(brandsResult.error ?? categoriesResult.error)?.message ?? ""}): os filtros por elas ficam sem opções`,
+    savedFiltersResult.error === null ? null : `os filtros salvos (${savedFiltersResult.error.message})`,
+  ].filter((falha): falha is string => falha !== null);
+
   const rows: AbcAnalysisRow[] = data ?? [];
   const first = rows[0];
   const totalCount = first?.total_count ?? 0;
@@ -463,7 +482,15 @@ export default async function CurvaAbcPage({
         }
       />
 
-      {descartadas > 0 && (
+      {leiturasQueFalharam.length > 0 && (
+        <p role="alert" className="sb-note sb-note-perigo" style={{ marginBottom: "var(--sb-space-3)" }}>
+          Não foi possível ler {leiturasQueFalharam.join("; ")}. O que aparece vazio por isso não quer dizer que não
+          existe.
+        </p>
+      )}
+
+      {/* Sem a leitura das contas, "não estão disponíveis para você" seria mentira: o aviso de cima diz o porquê. */}
+      {descartadas > 0 && contasDoRecorte.error === null && (
         <p role="note" className="sb-an-nota">
           {descartadas === 1
             ? "1 conta do link não está disponível para você neste recorte e ficou de fora."
