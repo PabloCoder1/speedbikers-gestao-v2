@@ -83,13 +83,13 @@
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
-- T-R3 — a demanda da Shopee em `/reposicao` e `/compras/novo` (D-464, consome o C-65): se a Shopee entra na conta, quem diz é a própria resposta da RPC (a parte da Shopee nula = só ML; chave ausente, antes da migration, também), com o selo em "Dados usados" (na demanda, com a idade da loja mais atrasada; fora, e por quê; "a conta ainda não a soma" em destaque quando há loja em produção lida e a conta sem ela), "N un da Shopee em 30 d" embaixo da venda/dia e "(K na Shopee)" no item do pedido. A busca, a de `/compras` e a ponte ao pedido viram navegação suave; a barra de seleção passa a seguir o formulário que renasce (sem isso, contava as caixas de um formulário que já saiu da tela). **Em código e validada** (suíte e2e inteira), no PR próprio.
+- T-R3 — a demanda da Shopee em `/reposicao` e `/compras/novo` (D-464, consome o C-65): se a Shopee entra na conta, quem diz é a própria resposta da RPC (a parte da Shopee nula = só ML; chave ausente, antes da migration, também), com o selo em "Dados usados" (na demanda, com a idade da loja mais atrasada; fora, e por quê; "a conta ainda não a soma" em destaque quando há loja em produção lida e a conta sem ela), "N un da Shopee em 30 d" embaixo da venda/dia e "(K na Shopee)" no item do pedido. A busca, a de `/compras` e a ponte ao pedido viram navegação suave; a barra de seleção passa a seguir o formulário que renasce (sem isso, contava as caixas de um formulário que já saiu da tela). **Na `main`, #186.**
+- T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Em código e validada** (suíte e2e inteira), no PR próprio.
 
 **Em andamento**
-- T-R3b — a parte da Shopee na gaveta da Inspeção Rápida de `/produtos` e na cobertura do SKU: as duas leem `get_stock_coverage` pelos tipos gerados, que só trazem `units_sold_shopee` com a migration do C-65 (branch `feat/demanda-shopee` do A1, #188).
+- Nada: a T-R3b está no PR próprio.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T-R3b, logo depois do C-65.
 - T7 busca universal (C-57) → T8 central e meta (Go Live).
 
 **Bloqueios**
@@ -99,7 +99,7 @@
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
 - **T-R3 confirmado pelo dono (15/10):** a planilha do UpSeller já vem com a venda da Shopee descontada do estoque, e a reposição só conta a demanda do ML — cobertura alta demais e sugestão baixa demais para SKU que vende na Shopee. O dono liberou somar a demanda da Shopee (15/10): o A1 faz o C-65 (D-459) e a tela já o lê (D-464). O `history_days_90` continua sendo o do ML: SKU que só vende na Shopee pode aparecer com histórico curto.
-- C-63: o TOTAL soma o gasto e as vendas ignorando o dia nulo, e um dia sem o gasto infla o ROAS. A tela avisa pela série; o A1 corrige no SQL (D-455).
+- C-63: o TOTAL soma o gasto e as vendas ignorando o dia nulo, e um dia sem o gasto infla o ROAS. O A1 corrigiu no SQL (D-455: o ROAS e o ACOS só sobre os dias com os dois), e a tela diz os dias fora da razão (D-466).
 - C-58: o TOTAL vem com `receita_bruta` NULA quando as lojas somáveis não têm pedido no período, e a linha da loja vem 0 — a tela mostra "—" (não inventa o zero), mas o certo é o TOTAL dizer 0 quando há loja lida sem pedido. Pedido ao A1.
 - e2e: rodar a suíte duas vezes no mesmo banco quebra `atendimento` e `notificacoes` (o seed não desfaz caso assumido nem notificação lida) — `db reset` entre rodadas.
 
