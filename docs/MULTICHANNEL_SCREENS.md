@@ -64,10 +64,10 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
-| Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) · `marketplace_accounts` (C-52) | frescor do catálogo da loja | T3a ✔ (D-438) |
+| Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) · `marketplace_accounts` (C-52) e `shopee_shops` | frescor do catálogo da loja | T3a ✔ (D-438); T3c ✔ (D-462: devoluções, repasses e Ads lidos até quando) |
 | Saúde | `/saude` | 1 | — | `job_runs` (já inclui os jobs Shopee) | cadência dos jobs Shopee em `lib/sync-health.ts` | T1 (C-09) |
 | Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
-| Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee) |
+| Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | sem loja, anúncio ou pedido Shopee | C-08 → T7 |
 | Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas | futuro |

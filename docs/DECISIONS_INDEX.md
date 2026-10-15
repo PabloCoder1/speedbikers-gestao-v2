@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **451** (D-001 a D-500).
+Decisões registradas: **452** (D-001 a D-500).
 
 ## Por domínio
 
@@ -408,7 +408,7 @@ Decisões registradas: **451** (D-001 a D-500).
 - **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 
-### worker/infra (83)
+### worker/infra (84)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -493,4 +493,5 @@ Decisões registradas: **451** (D-001 a D-500).
 - **D-443** — Composicao do faturamento da Shopee (C-61): uma definicao do pedido, a cascata pelos termos da formula oficial do escrow com "outros" fechando, a serie diaria, o por SKU sem rateio, o TOTAL do C-58 somando como a linha e o C-58 150x mais rapido
 - **D-453** — Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
 - **D-457** — IP fixo de saida em producao: api e worker saem por um Cloud NAT com um IP reservado (34.95.145.35), para a lista de IPs do Go Live da Shopee
+- **D-462** — Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
 

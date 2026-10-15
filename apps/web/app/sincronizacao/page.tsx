@@ -144,7 +144,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     );
   }
 
-  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult, lojasResult] = await Promise.all([
+  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult, lojasResult, leiturasResult] =
+    await Promise.all([
     supabase
       .from("ml_accounts")
       .select("id, label, slug, status, last_error, connected_at, backfill_covered_until")
@@ -169,6 +170,15 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       .select("account_id, name, environment, connection_status, last_error, connected_at, orders_synced_at, authorization_expires_at")
       .eq("marketplace", "SHOPEE")
       .order("name", { ascending: true }),
+    /*
+      D-462: até quando cada dado da loja foi lido, além dos pedidos — as
+      devoluções (D-447), os repasses (D-451) e os Ads (D-449). As colunas são
+      da própria loja (`shopee_shops`, a mesma RLS por loja de D-433); a view
+      C-52 só traz os pedidos.
+    */
+    supabase
+      .from("shopee_shops")
+      .select("id, returns_synced_until, escrow_releases_synced_until, ads_synced_at, ads_read_until"),
   ]);
 
   const accounts = accountsResult.data ?? [];
@@ -180,6 +190,10 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const lojasAusentes = isShopeeSchemaMissing(lojasResult.error);
   const lojas = lojasAusentes ? [] : (lojasResult.data ?? []);
   const nomeDaLoja = new Map(lojas.map((loja) => [loja.account_id, loja.name]));
+  // Falha desta leitura não derruba a tela: cada fato diz "não foi possível ler", nunca "nunca lido" (D-067).
+  const leituraDaLoja = new Map((leiturasResult.data ?? []).map((leitura) => [leitura.id, leitura]));
+  const fatoDeLeitura = (valor: string | null | undefined, nunca: string): string =>
+    leiturasResult.error !== null ? "não foi possível ler" : valor == null ? nunca : formatDateTime(valor);
 
   // Falha em QUALQUER uma das cinco: mostrar erro, nunca "sem dado" (D-067)
   // — numa tela que existe para pegar exatamente esse tipo de problema.
@@ -502,8 +516,10 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                   <span className="sb-eyebrow">SHOPEE</span>
                   <h2 id="sync-lojas-title">Lojas Shopee</h2>
                   <p>
-                    Pedidos lidos de hora em hora. O veredito mede a última leitura de pedidos que terminou: a partir de
-                    3 h a loja está atrasada e a partir de 12 h, parada — os mesmos limites do aviso.
+                    Pedidos lidos de hora em hora; devoluções e repasses vêm atrás de cada leitura de pedidos, e os Ads
+                    no máximo a cada 3 h. O veredito mede a última leitura de pedidos que terminou: a partir de 3 h a loja
+                    está atrasada e a partir de 12 h, parada — os mesmos limites do aviso. Falha de um job aparece em
+                    Saúde do sistema.
                   </p>
                 </div>
               </div>
@@ -513,6 +529,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                   const veredito = vereditoDaLoja(loja, now);
                   const autorizacao = avisoDaAutorizacao(loja, now);
                   const teste = lojaDeTeste(loja);
+                  const leitura = leituraDaLoja.get(loja.account_id) ?? null;
                   const conexao: PillTone =
                     loja.connection_status === "CONNECTED"
                       ? { tom: "ok", label: "Conectada" }
@@ -549,6 +566,27 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                         <div>
                           <dt>Última leitura de pedidos que terminou</dt>
                           <dd>{loja.orders_synced_at === null ? "—" : formatDateTime(loja.orders_synced_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>Devoluções lidas até</dt>
+                          <dd>{fatoDeLeitura(leitura?.returns_synced_until, "nunca lidas")}</dd>
+                        </div>
+                        <div>
+                          <dt>Repasses lidos até</dt>
+                          <dd>
+                            {fatoDeLeitura(leitura?.escrow_releases_synced_until, "nunca lidos")}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt title="A Shopee guarda o desempenho por dia; a leitura cobre até o dia indicado">
+                            Ads CPC lidos em
+                          </dt>
+                          <dd>
+                            {fatoDeLeitura(leitura?.ads_synced_at, "nunca lidos")}
+                            {leiturasResult.error === null && leitura?.ads_read_until != null && (
+                              <small> · dias até {formatDay(leitura.ads_read_until)}</small>
+                            )}
+                          </dd>
                         </div>
                         <div>
                           <dt>Conectada em</dt>

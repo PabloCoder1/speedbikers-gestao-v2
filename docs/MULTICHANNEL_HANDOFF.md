@@ -80,12 +80,13 @@
 - T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
+- T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Em código e validada** (suíte e2e inteira), no PR próprio.
+
 **Em andamento**
 - Nada: o #177 (que levou o #164, o #165, o #167 e o #174) e o #176 do A3 (D-500) estão na `main` e em produção.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - A tela da demanda da Shopee na cobertura e na sugestão de compra (T-R3), sobre o C-65 do A1 — espera o dono liberar a mudança da decisão de 14/10.
-- Os jobs novos (devoluções, Ads, repasse) no cartão Shopee de `/integracoes`, quando estiverem rodando em produção.
 - T7 busca universal (C-57) → T8 central e meta (Go Live).
 
 **Bloqueios**
