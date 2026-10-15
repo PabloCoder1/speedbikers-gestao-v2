@@ -163,9 +163,9 @@ describe("POST /push/shopee (D-453)", () => {
       expect.objectContaining({ assinatura_presente: true, assinatura_tamanho: 9, assinatura_formato: "outro" }),
     ]);
     expect(JSON.stringify(recusas)).not.toContain("REDACTED");
-    // A amostra temporária (15/10): o corpo cru e a assinatura recebida, para achar a chave offline.
-    expect(recusas[0]).toMatchObject({ amostra_corpo: PEDIDO, amostra_assinatura: null });
-    expect(recusas[1]).toMatchObject({ amostra_corpo: PEDIDO, amostra_assinatura: "nao-e-hex" });
+    // A amostra temporária de 15/10 já saiu: nem o corpo nem a assinatura vão para o log.
+    expect(JSON.stringify(recusas)).not.toContain("nao-e-hex");
+    expect(recusas[0]).not.toHaveProperty("amostra_corpo");
   });
 
   it("o código em texto (\"29\") é a devolução; a chave de push, se configurada, assina", async () => {

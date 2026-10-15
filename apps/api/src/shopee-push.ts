@@ -129,15 +129,7 @@ export async function receiveShopeePush(
   );
 
   if (endereco === undefined) {
-    deps.logger.warn("shopee_push_signature_rejected", {
-      ...diagnosticoDaRecusa(input),
-      // AMOSTRA TEMPORÁRIA (15/10): o corpo cru e a assinatura recebida, para
-      // achar offline a chave e o texto que a Shopee usa. Não é segredo — a
-      // assinatura não revela a chave, e o push não traz dado de comprador
-      // (loja, pedido, devolução). Sai quando a assinatura fechar.
-      amostra_corpo: input.rawBody.slice(0, 2000),
-      amostra_assinatura: cabecalho ?? null,
-    });
+    deps.logger.warn("shopee_push_signature_rejected", diagnosticoDaRecusa(input));
 
     return { status: "invalid_signature" };
   }
