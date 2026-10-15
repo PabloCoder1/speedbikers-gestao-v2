@@ -308,7 +308,8 @@ export function participacao(parte: number | null, todo: number | null): number 
 }
 
 export interface DegrauDaCascata {
-  readonly chave: "receita" | "comissao" | "frete" | "recebido" | "custo" | "resultado";
+  /** Identifica o degrau na lista; o ML usa receita, comissão, frete, recebido, custo e resultado, a Shopee os componentes do recebido (D-452). */
+  readonly chave: string;
   readonly rotulo: string;
   readonly metricId: string;
   readonly tipo: "total" | "deducao" | "subtotal" | "resultado";

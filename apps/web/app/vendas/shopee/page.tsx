@@ -11,8 +11,9 @@
  */
 import { toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
+import { CarregandoBloco } from "../../../components/carregando";
 import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -42,6 +43,8 @@ import {
 } from "../../../lib/shopee-sales";
 import { createClient } from "../../../lib/supabase/server";
 import { hrefDeVendas, type RecorteDeVendas } from "../../../lib/vendas-multicanal";
+
+import { DEVOLUCOES_A_VISTA, DevolucoesShopee } from "./devolucoes";
 
 export const metadata = { title: "Vendas da Shopee — Speed Bikers Gestão" };
 
@@ -185,6 +188,23 @@ export default async function VendasShopeePage({
     as somas (válidos) dos contadores (cancelados) — filtrá-lo por ela daria
     zero ou o próprio número.
   */
+  /*
+    AS DEVOLUÇÕES (D-460, C-62): partem AGORA, junto com as duas de baixo
+    (`Promise.resolve` dispara o builder do supabase-js), e chegam por
+    streaming num painel próprio. Recortam pela loja escolhida, como a lista;
+    a situação do PEDIDO não se aplica a elas.
+  */
+  const doPeriodoDevolucoes = {
+    p_organization_id: organizationId,
+    p_date_from: filters.range.from,
+    p_date_to: filters.range.to,
+    p_account_ids: filters.loja === null ? null : [filters.loja],
+  };
+  const resumoDevolucoes = Promise.resolve(supabase.rpc("get_shopee_returns_summary", doPeriodoDevolucoes));
+  const listaDevolucoes = Promise.resolve(
+    supabase.rpc("get_shopee_returns", { ...doPeriodoDevolucoes, p_limit: DEVOLUCOES_A_VISTA }),
+  );
+
   const [porLoja, pedidos] = await Promise.all([
     supabase.rpc("get_shopee_sales_by_shop", {
       p_organization_id: organizationId,
@@ -472,6 +492,23 @@ export default async function VendasShopeePage({
           )}
         </Panel>
       </div>
+
+      {/* Decisão do dono (15/10): as devoluções logo depois do "Por loja", antes dos pedidos. */}
+      <section id="devolucoes" className="sb-campanhas-ml" aria-label="Devoluções da Shopee">
+        <Suspense
+          fallback={
+            <Panel title="Devoluções" subtitle="Carregando as devoluções do período">
+              <CarregandoBloco rotulo="devoluções da Shopee" />
+            </Panel>
+          }
+        >
+          <DevolucoesShopee
+            resumo={resumoDevolucoes}
+            lista={listaDevolucoes}
+            periodo={`${de} a ${ate}${lojaAtiva === null ? "" : ` · ${nomeDaLojaShopee(lojaAtiva)}`}`}
+          />
+        </Suspense>
+      </section>
 
       <div className="sb-an-lista">
         <Panel

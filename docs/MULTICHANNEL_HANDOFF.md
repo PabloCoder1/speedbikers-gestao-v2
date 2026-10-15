@@ -70,26 +70,30 @@
 - T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Na `main`, #159** (`caafb616`, deploy de produção `success`), depois da migration `20261014230000` em produção (run `38612642381`).
 - T3b — a Shopee nas telas de administração (D-446, consome o C-52): cartão em `/integracoes` (conexão pelo veredito de `/sincronizacao` e a autorização perto de vencer; sincronização pelos quatro jobs `shopee.*`) e a seção "Shopee" em `/configuracoes` (contagens no banco, na mesma ida da RPC); de carona, os cartões de `/integracoes` deixam de quebrar letra por letra no celular. **Na `main`, #162** (`558eacd1`). O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
 
-- T-R5 — o cartão "Por loja" de `/vendas/shopee` no celular: as notas ("a leitura é de hora em hora", "3 aguardando o financeiro") e a última leitura invadiam a célula vizinha (medido em 390 px: 134 a 222 px); só nesta tabela a célula quebra e a nota desce, e um e2e mede o transbordo (zero). **Na `main`, #168** (`95918297`, deploy de produção `success`).
-
-- As cadências de `/saude` para os jobs novos do A1: devoluções e repasse de hora em hora, Ads a cada 3 h (C-62, C-64, C-63). Entram antes do worker (sem execução, nada é julgado). **#170** (só web).
-
-- T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "Anúncios" e "Vendas" ganham "só no ML", "só na Shopee" e "nos dois" com a contagem do banco; os cartões de "sem anúncio/venda" dizem "em nenhum marketplace" com o só do ML ao lado; a coluna de giro mostra cada marketplace, **sem total**; a Inspeção Rápida separa os anúncios. Sem loja live, ou sobre a função antiga, a tela é a de antes. **Em código e validada localmente** (suíte e2e 224/224 e um fixture com loja live no banco isolado).
+- T-R5 — o cartão "Por loja" de `/vendas/shopee` no celular: as notas invadiam a célula vizinha (medido em 390 px: 134 a 222 px); só nesta tabela a célula quebra e a nota desce, e um e2e mede o transbordo. **Na `main`, #168.**
+- As cadências de `/saude` para os jobs novos do A1: devoluções e repasse de hora em hora, Ads a cada 3 h (C-62, C-64, C-63). **Na `main`, #170.**
+- T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "só no ML", "só na Shopee" e "nos dois" nos filtros de anúncio e venda, os cartões de "sem anúncio/venda" em "nenhum marketplace" com o só do ML ao lado e a coluna de giro por marketplace, sem total. **Na `main`, #171.**
+- T5c — os Ads CPC da loja no `/faturamento` da Shopee (D-456, consome o C-63): seção própria, rotulada "CPC da loja", fora do resultado e sem somar com o Mercado Ads. **Na `main`, #173.**
+- T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.**
+- T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 **Em andamento**
-- T6b (#164, D-448) e T6b2 (#165, D-450): em código e validadas, atualizadas com a `main` `05537181`; o #157 já entrou, falta a migration `20261015000000` em produção.
-- T5b (#167, D-452): em código e validada; o #160 já entrou, falta a migration `20261015010000` em produção.
+- O merge do #177 (com a CI verde) e, depois dele, o #176 do A3 (D-500).
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- O painel "Ads CPC da loja" (C-63, na `main` pelo #166), o repasse ao lado do previsto (C-64, #169) e as devoluções (C-62, na `main` pelo #163; a tela depois da decisão do dono) → T7 busca universal (C-57) → T8 central e meta (Go Live). O ranking com resultado da central fica para depois do Go Live (D-445 §6).
+- A tela da demanda da Shopee na cobertura e na sugestão de compra (T-R3), sobre o C-65 do A1 — espera o dono liberar a mudança da decisão de 14/10.
+- `/curva-abc`: as leituras que falham e viram lista vazia (achado do A3), depois do #177.
+- Os jobs novos (devoluções, Ads, repasse) no cartão Shopee de `/integracoes`, quando estiverem rodando em produção.
+- T7 busca universal (C-57) → T8 central e meta (Go Live).
 
 **Bloqueios**
-- T6b e T6b2 esperam a migration `20261015000000` em produção; T5b, a `20261015010000` (as duas são ato do dono). T6c: o #161 já entrou; ela pode ir antes da `20261015020000` em produção (D-454 §6).
+- Tudo o que é Shopee só mostra números com loja **live**: hoje só há a sandbox. O Go Live do app é do dono (o Cloud NAT com IP fixo já está em produção, D-457).
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
-- Inferência a medir: a planilha do UpSeller desconta a venda Shopee do estoque, mas a reposição só conta a demanda do ML — cobertura alta demais para SKU que vende na Shopee (T-R3, R11 do A1).
+- **T-R3 confirmado pelo dono (15/10):** a planilha do UpSeller já vem com a venda da Shopee descontada do estoque, e a reposição só conta a demanda do ML — cobertura alta demais e sugestão baixa demais para SKU que vende na Shopee. O A1 desenha o C-65 (a demanda da Shopee somada no SQL, em colunas separadas); falta o dono liberar a mudança da decisão de 14/10.
+- C-63: o TOTAL soma o gasto e as vendas ignorando o dia nulo, e um dia sem o gasto infla o ROAS. A tela avisa pela série; o A1 corrige no SQL (D-455).
 - C-58: o TOTAL vem com `receita_bruta` NULA quando as lojas somáveis não têm pedido no período, e a linha da loja vem 0 — a tela mostra "—" (não inventa o zero), mas o certo é o TOTAL dizer 0 quando há loja lida sem pedido. Pedido ao A1.
 - e2e: rodar a suíte duas vezes no mesmo banco quebra `atendimento` e `notificacoes` (o seed não desfaz caso assumido nem notificação lida) — `db reset` entre rodadas.
 
@@ -131,7 +135,7 @@
 | Arquivo | Regra |
 |---|---|
 | `supabase/migrations/**`, `packages/db/src/types.ts` | só A1; carimbo conferido na pasta principal antes de criar (memória de sessões paralelas) |
-| `apps/web/**` (telas e `apps/web/lib`) | só A2 |
+| `apps/web/**` (telas e `apps/web/lib`) | A2; o A3 só em `components/carregando*`, `item-de-menu`, `formulario-filtro`, `filter-*`, `kpi-strip`, `saved-filters`, no bloco CARREGAMENTO de `globals.css` e em `lib/destino-do-formulario.ts` |
 | `docs/METRICS.md` | A1 escreve a definição; A2 avisa se a tela precisar de uma métrica que não está lá |
 | `docs/HANDOFF.md` | os dois, só a linha da própria frente, perto do limite de 25 KB do `docs:check` |
 | `docs/MULTICHANNEL_HANDOFF.md` | este arquivo — cada um na sua seção |

@@ -6,7 +6,7 @@
  * filtros que valem DEPOIS da curva.
  *
  * Dois tipos de filtro, e a diferença é a curva inteira (D-424):
- * - **recortes** (conta, marca, categoria, tipo): a curva é RECALCULADA dentro
+ * - **recortes** (marketplace, conta, marca, categoria, tipo): a curva é RECALCULADA dentro
  *   deles -- as participações somam 100% do recorte;
  * - **filtros** (classe, Full, estoque, movimento, busca): a curva é a do
  *   recorte, e o filtro só esconde linhas -- a classe de cada SKU não muda.
@@ -15,6 +15,7 @@
 import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
+import { resolverContas, resolverEscopoVendas, type ContaDoSeletor, type EscopoVendas } from "./vendas-multicanal";
 
 /**
  * Cinquenta linhas mantêm a leitura analítica sem mandar uma tabela longa no
@@ -30,9 +31,21 @@ export const ABC_CRITERIA = [
   { key: "faturamento", label: "Faturamento", definitionId: "receita_bruta", format: "currency" },
   { key: "unidades", label: "Unidades", definitionId: "unidades_vendidas", format: "count" },
   { key: "pedidos", label: "Pedidos", definitionId: "pedidos", format: "count" },
+  // D-448: a compra do cliente -- o pack do ML e, com a Shopee no recorte, o
+  // pedido dela (C-60). É o critério que soma entre marketplaces.
+  { key: "compras", label: "Compras", definitionId: "multicanal_compras", format: "count" },
 ] as const;
 
 export type AbcCriterion = (typeof ABC_CRITERIA)[number];
+
+/**
+ * Os critérios que valem no recorte (D-448). "Pedidos" é do Mercado Livre: o
+ * pedido do ML é uma linha de item e o da Shopee é o carrinho, e a função
+ * RECUSA "pedidos" com a Shopee no recorte (C-60) -- lá o comparável é a compra.
+ */
+export function criteriosDoEscopo(escopo: EscopoVendas): readonly AbcCriterion[] {
+  return escopo === "ml" ? ABC_CRITERIA : ABC_CRITERIA.filter((criterio) => criterio.key !== "pedidos");
+}
 
 /**
  * Presets do período. 90 continua o padrão: classificação ABC precisa de sinal
@@ -76,6 +89,7 @@ export const ABC_ORDERS = [
   { key: "faturamento", label: "Maior faturamento" },
   { key: "unidades", label: "Mais unidades" },
   { key: "pedidos", label: "Mais pedidos" },
+  { key: "compras", label: "Mais compras" },
   { key: "crescimento", label: "Maior crescimento" },
   { key: "queda", label: "Maior queda" },
   { key: "estoque", label: "Mais estoque" },
@@ -84,6 +98,15 @@ export const ABC_ORDERS = [
 ] as const;
 
 export type AbcOrder = (typeof ABC_ORDERS)[number];
+
+/**
+ * As ordens que valem no recorte (D-448). Com a Shopee, o pedido do ML não
+ * soma (vem nulo) e a cobertura também (o estoque da Shopee é a fatia 5): ordenar
+ * por elas seria ordenar por nada.
+ */
+export function ordensDoEscopo(escopo: EscopoVendas): readonly AbcOrder[] {
+  return escopo === "ml" ? ABC_ORDERS : ABC_ORDERS.filter((ordem) => ordem.key !== "pedidos" && ordem.key !== "cobertura");
+}
 
 /** A busca vai ao banco como texto puro (`strpos`); o teto evita URL de um parágrafo. */
 const MAX_SEARCH = 80;
@@ -94,7 +117,16 @@ export interface AbcCustomRange {
 }
 
 export interface AbcFilters {
+  /** O recorte de marketplace (`marketplace=todos|shopee`, D-448); `ml` é a curva de sempre. */
+  escopo: EscopoVendas;
+  /** Só no recorte ML: a conta pelo slug (`conta=`), como sempre. */
   accountSlug: string | null;
+  /**
+   * Fora do ML: as contas e lojas da URL (`contas=a,b`, ids de
+   * `marketplace_accounts`), num valor só, como em `/vendas`. A página confere
+   * contra as que a pessoa alcança e descarta as demais.
+   */
+  contas: readonly string[] | null;
   /**
    * `skus.supplier_brand`, NUNCA `skus.brand` (D-129/D-235): a segunda guarda
    * a categoria do UpSeller e diverge da marca real em 2.320 dos 3.554 SKUs.
@@ -127,8 +159,31 @@ function porChave<T extends { key: string }>(lista: readonly T[], raw: unknown):
   return typeof raw === "string" ? (lista.find((item) => item.key === raw) ?? null) : null;
 }
 
-export function resolveAbcCriterion(raw: unknown): AbcCriterion {
-  return porChave(ABC_CRITERIA, raw) ?? ABC_CRITERIA[0];
+export function resolveAbcCriterion(raw: unknown, escopo: EscopoVendas = "ml"): AbcCriterion {
+  const criterio = porChave(ABC_CRITERIA, raw) ?? ABC_CRITERIA[0];
+
+  return escopo === "ml" ? criterio : paraOMulticanal(criterio);
+}
+
+/** "Pedidos" fora do ML vira "Compras": é o que a própria função manda usar (C-60). */
+function paraOMulticanal(criterio: AbcCriterion): AbcCriterion {
+  return criterio.key === "pedidos" ? (ABC_CRITERIA.find((c) => c.key === "compras") ?? ABC_CRITERIA[0]) : criterio;
+}
+
+function ordemNoEscopo(ordem: AbcOrder, escopo: EscopoVendas): AbcOrder {
+  if (escopo === "ml") return ordem;
+  if (ordem.key === "pedidos") return ABC_ORDERS.find((o) => o.key === "compras") ?? ABC_ORDERS[0];
+  if (ordem.key === "cobertura") return ABC_ORDERS[0];
+
+  return ordem;
+}
+
+function lerContas(raw: unknown): string[] | null {
+  if (typeof raw !== "string") return null;
+
+  const ids = [...new Set(raw.split(",").map((id) => id.trim()).filter((id) => id !== ""))];
+
+  return ids.length === 0 ? null : ids;
 }
 
 /**
@@ -191,9 +246,14 @@ export function resolveAbcFilters(
 ): AbcFilters {
   const { custom, invalid } = resolveAbcCustomRange(query, today);
   const search = readParam(query.busca);
+  // Valor desconhecido cai na curva de sempre, em silêncio -- como em /vendas.
+  const escopo = resolverEscopoVendas(query.marketplace);
 
   return {
-    accountSlug: typeof query.conta === "string" && query.conta !== "" ? query.conta : null,
+    escopo,
+    // A conta pelo slug é do ML; fora dele, as contas vêm por id em `contas`.
+    accountSlug: escopo === "ml" && typeof query.conta === "string" && query.conta !== "" ? query.conta : null,
+    contas: escopo === "ml" ? null : lerContas(query.contas),
     // Marca desconhecida NÃO cai num default: ela vai ao banco e a curva volta
     // vazia, que é a resposta certa para "não há SKU dessa marca" — diferente
     // do critério e do período, onde o default é o comportamento correto.
@@ -201,18 +261,19 @@ export function resolveAbcFilters(
     // Mesma regra da marca.
     category: readParam(query.categoria),
     kind: porChave(ABC_KINDS, query.tipo),
-    criterion: resolveAbcCriterion(query.criterio),
+    criterion: resolveAbcCriterion(query.criterio, escopo),
     days: resolveAbcPeriod(query.dias),
     custom,
     invalidCustom: invalid,
     // `semFull=1` liga; qualquer outra coisa desliga. A URL antiga usava a
     // mera presença do parâmetro, o que fazia `?semFull=0` LIGAR o filtro.
-    onlyWithoutFull: query.semFull === "1",
+    // Na Shopee não há Full: a função recusa o filtro sem o ML no recorte (C-60).
+    onlyWithoutFull: escopo !== "shopee" && query.semFull === "1",
     abcClass: resolveAbcClass(query.classe),
     stock: porChave(ABC_STOCK_STATES, query.estoque),
     movement: porChave(ABC_MOVEMENTS, query.movimento),
     search: search === null ? null : search.slice(0, MAX_SEARCH),
-    order: porChave(ABC_ORDERS, query.ordem) ?? ABC_ORDERS[0],
+    order: ordemNoEscopo(porChave(ABC_ORDERS, query.ordem) ?? ABC_ORDERS[0], escopo),
     page: resolvePageParam(query.pagina),
   };
 }
@@ -220,12 +281,15 @@ export function resolveAbcFilters(
 export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>): string {
   // Escolher um preset descarta o período personalizado: os dois juntos na URL
   // deixariam o botão dizendo um e a curva mostrando o outro.
-  const next = { ...current, ...(override.days !== undefined ? { custom: null } : {}), ...override };
+  const merged = { ...current, ...(override.days !== undefined ? { custom: null } : {}), ...override };
+  const next = override.escopo === undefined || override.escopo === current.escopo ? merged : trocarEscopo(merged);
 
   return buildFilterHref(
     "/curva-abc",
     {
-      conta: next.accountSlug,
+      marketplace: next.escopo === "ml" ? null : next.escopo,
+      conta: next.escopo === "ml" ? next.accountSlug : null,
+      contas: next.escopo === "ml" || next.contas === null || next.contas.length === 0 ? null : next.contas.join(","),
       marca: next.brand,
       categoria: next.category,
       tipo: next.kind?.key ?? null,
@@ -246,10 +310,60 @@ export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>)
   );
 }
 
+/**
+ * As contas do link que valem no recorte (D-448), e o que decorre delas -- a
+ * MESMA regra na tela e no Excel (D-450). Ficam as que a pessoa alcança (a
+ * lista já vem da RLS) e que cabem no recorte; as outras caem, contadas para a
+ * tela avisar. O Full só é lido com alguma conta ML no recorte, e "sem Full"
+ * sem ela seria recusado pela função (C-60): sai.
+ */
+export function aplicarContasDoRecorte(
+  pedidos: AbcFilters,
+  todasAsContas: readonly ContaDoSeletor[],
+): { filters: AbcFilters; selecionadas: ContaDoSeletor[] | null; descartadas: number; leMl: boolean } {
+  const { selecionadas, descartadas } =
+    pedidos.escopo === "ml"
+      ? { selecionadas: null, descartadas: 0 }
+      : resolverContas(pedidos.contas?.join(","), todasAsContas, pedidos.escopo);
+  const leMl =
+    pedidos.escopo === "ml" ||
+    (pedidos.escopo === "todos" && (selecionadas === null || selecionadas.some((c) => c.marketplace === "ML")));
+
+  return {
+    filters: {
+      ...pedidos,
+      contas: selecionadas === null ? null : selecionadas.map((c) => c.account_id),
+      onlyWithoutFull: leMl && pedidos.onlyWithoutFull,
+    },
+    selecionadas,
+    descartadas,
+    leMl,
+  };
+}
+
+/**
+ * Trocar de marketplace (D-448) leva o período, a marca, a categoria, o tipo e
+ * os filtros de linha; a conta não atravessa (a do ML é slug, a de fora é id),
+ * e o que não existe do outro lado volta ao equivalente: "Pedidos" vira
+ * "Compras", a ordem por cobertura volta à curva, e "sem Full" sai na Shopee.
+ */
+function trocarEscopo(f: AbcFilters): AbcFilters {
+  return {
+    ...f,
+    accountSlug: null,
+    contas: null,
+    criterion: f.escopo === "ml" ? f.criterion : paraOMulticanal(f.criterion),
+    order: ordemNoEscopo(f.order, f.escopo),
+    onlyWithoutFull: f.escopo === "shopee" ? false : f.onlyWithoutFull,
+  };
+}
+
 /** Quantos filtros/recortes fora do padrão estão ligados -- o botão "Limpar filtros". */
 export function countActiveAbcFilters(filters: AbcFilters): number {
   return [
+    filters.escopo !== "ml",
     filters.accountSlug !== null,
+    filters.contas !== null,
     filters.brand !== null,
     filters.category !== null,
     filters.kind !== null,
