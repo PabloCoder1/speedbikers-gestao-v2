@@ -147,3 +147,75 @@ test("/faturamento?marketplace=shopee: as lojas ligam e desligam por clique, e c
   await expect(page).toHaveURL(/\/faturamento\?marketplace=todos$/);
   await expect(menu(page, "Lojas")).toHaveCount(0);
 });
+
+/**
+ * D-456 (T5c, contrato C-63): os Ads CPC da loja no recorte Shopee. O seed tem
+ * só a loja de TESTE, com os Ads nunca lidos — a prova de que a seção não
+ * inventa: sem loja real lida não há faixa nem total de zeros, a loja aparece
+ * com "—" e o motivo, e a ressalva "não é o total de Ads" está sempre lá. A
+ * seção é só da Shopee: o ML tem o Mercado Ads, e o "Todos" não soma os dois.
+ */
+test("/faturamento?marketplace=shopee: os Ads CPC da loja dizem o que não se sabe, sem inventar zero", async ({
+  page,
+}) => {
+  await login(page, "/faturamento?marketplace=shopee");
+
+  const ads = page.getByRole("region", { name: "Ads CPC da loja Shopee" });
+
+  await expect(ads.getByText("Ads CPC da loja — Shopee")).toBeVisible();
+  await expect(ads.getByRole("note").filter({ hasText: "Não é o total de Ads" })).toBeVisible();
+  await expect(ads.getByText(/Nenhuma loja real com os Ads já lidos/)).toBeVisible();
+  // Sem loja lida, nenhuma faixa: "R$ 0,00 investidos" seria inventado.
+  await expect(ads.locator(".sb-kpi")).toHaveCount(0);
+
+  const loja = ads.getByRole("list", { name: "Ads CPC por loja" }).getByRole("listitem");
+
+  await expect(loja).toHaveCount(1);
+  await expect(loja).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(loja).toContainText("—");
+  await expect(loja).toContainText("Ads ainda não lidos · loja de teste, fora do total");
+
+  // No ML e no "Todos" a seção não existe.
+  await page.goto("/faturamento?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Ads CPC da loja Shopee" })).toHaveCount(0);
+  await page.goto("/faturamento");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Ads CPC da loja Shopee" })).toHaveCount(0);
+});
+
+/**
+ * D-458 (T5d, contrato C-64): o repasse da Shopee no recorte Shopee — o
+ * realizado ao lado do previsto. O seed só tem a loja de TESTE, com os
+ * repasses nunca lidos: sem total de zeros, a loja com "—" e o motivo, e a
+ * ressalva de que o liberado é do dia da liberação, não da venda. A seção vem
+ * antes dos Ads e não existe no ML nem no "Todos".
+ */
+test("/faturamento?marketplace=shopee: o repasse diz o que não se sabe e não se compara com a receita", async ({
+  page,
+}) => {
+  await login(page, "/faturamento?marketplace=shopee");
+
+  const repasse = page.getByRole("region", { name: "Repasse da Shopee" });
+
+  await expect(repasse.getByText("Repasse da Shopee", { exact: true })).toBeVisible();
+  await expect(repasse.getByRole("note").filter({ hasText: "contado pelo dia da liberação" })).toBeVisible();
+  await expect(repasse.getByText(/Nenhuma loja real com os repasses já lidos/)).toBeVisible();
+  await expect(repasse.locator(".sb-kpi")).toHaveCount(0);
+
+  const loja = repasse.getByRole("list", { name: "Repasse por loja" }).getByRole("listitem");
+
+  await expect(loja).toHaveCount(1);
+  await expect(loja).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(loja).toContainText("—");
+  await expect(loja).toContainText("repasses ainda não lidos · loja de teste, fora do total");
+
+  // O repasse vem antes dos Ads: o realizado fica junto do resultado.
+  const secoes = await page.locator("section.sb-campanhas-ml").evaluateAll((s) => s.map((e) => e.id));
+
+  expect(secoes).toEqual(["repasse", "ads"]);
+
+  await page.goto("/faturamento?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Repasse da Shopee" })).toHaveCount(0);
+});

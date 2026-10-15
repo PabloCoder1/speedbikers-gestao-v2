@@ -10,6 +10,10 @@ import {
   separarLinhasShopee,
   type LinhaFaturamentoShopee,
   type RecorteDeFaturamento,
+  montarCascataShopee,
+  skuParaALista,
+  type ComposicaoShopee,
+  type SkuShopee,
 } from "./faturamento-multicanal";
 import type { ContaDoSeletor } from "./vendas-multicanal";
 
@@ -172,5 +176,110 @@ describe("linhasDaComparacao", () => {
     expect(semShopee.every((l) => l.shopee === null)).toBe(true);
     expect(semShopee.find((l) => l.rotulo === "Resultado após imposto")?.ml).toBeNull();
     expect(linhasDaComparacao(null, TOTAL).every((l) => l.ml === null)).toBe(true);
+  });
+});
+
+describe("montarCascataShopee (D-452, sobre o C-61)", () => {
+  /** O TOTAL da composição: 1.000 de receita coberta, 800 recebidos. */
+  const composicao: ComposicaoShopee = {
+    nivel: "TOTAL",
+    account_id: null,
+    account_name: null,
+    environment: null,
+    pedidos_cobertos: 10,
+    receita_coberta: 1000,
+    comissao: 120,
+    taxa_servico: 40,
+    taxa_transacao: 20,
+    frete_loja: 30,
+    frete_devolucao: null,
+    cupom_loja: 0,
+    afiliados: 10,
+    taxa_por_pedido: null,
+    // Crédito: a Shopee repassou mais do que os componentes explicam.
+    outros: -20,
+    recebido_coberto: 800,
+    comissao_liquida: null,
+    taxa_servico_liquida: null,
+    cupom_shopee: 15,
+    moedas_shopee: null,
+    desconto_shopee: null,
+    pedidos_com_ajuste: 0,
+    ajustes: null,
+  };
+
+  it("da receita ao resultado, componente a componente: o último degrau antes do recebido termina nele", () => {
+    const cascata = montarCascataShopee(composicao, 500, 300);
+
+    expect(cascata?.degraus.map((d) => d.chave)).toEqual([
+      "receita",
+      "comissao",
+      "taxa_servico",
+      "taxa_transacao",
+      "frete_loja",
+      "afiliados",
+      "outros",
+      "recebido",
+      "custo",
+      "resultado",
+    ]);
+
+    // 1 − 0,12 − 0,04 − 0,02 − 0,03 − 0,01 + 0,02 = 0,80: a identidade do banco, sem conta aqui.
+    const outros = cascata?.degraus.find((d) => d.chave === "outros");
+
+    expect(outros?.inicio).toBeCloseTo(0.78);
+    expect((outros?.inicio ?? 0) + (outros?.largura ?? 0)).toBeCloseTo(0.8);
+    expect(cascata?.degraus.find((d) => d.chave === "recebido")?.fracao).toBeCloseTo(0.8);
+  });
+
+  it("o crédito sobe: 'outros' negativo vira valor positivo, e o desconto fica negativo", () => {
+    const cascata = montarCascataShopee(composicao, 500, 300);
+
+    expect(cascata?.degraus.find((d) => d.chave === "outros")?.valor).toBe(20);
+    expect(cascata?.degraus.find((d) => d.chave === "comissao")?.valor).toBe(-120);
+  });
+
+  it("componente nulo fica fora e é dito; o zerado também sai das barras e é dito à parte", () => {
+    const cascata = montarCascataShopee(composicao, 500, 300);
+
+    expect(cascata?.naoInformados).toEqual(["Frete de devolução", "Taxa por pedido"]);
+    expect(cascata?.zerados).toEqual(["Cupons da loja"]);
+  });
+
+  it("sem cobertura, sem recebido, sem custo ou sem resultado não há cascata -- nunca uma de zeros", () => {
+    expect(montarCascataShopee(null, 500, 300)).toBeNull();
+    expect(montarCascataShopee({ ...composicao, pedidos_cobertos: 0 }, 500, 300)).toBeNull();
+    expect(montarCascataShopee({ ...composicao, recebido_coberto: null }, 500, 300)).toBeNull();
+    expect(montarCascataShopee(composicao, null, 300)).toBeNull();
+    expect(montarCascataShopee(composicao, 500, null)).toBeNull();
+  });
+});
+
+describe("skuParaALista", () => {
+  const sku: SkuShopee = {
+    sku_id: "s-1",
+    sku: "ABC",
+    title: "Capacete",
+    custo_atual: false,
+    unidades: 3,
+    pedidos: 3,
+    receita_bruta: 300,
+    pedidos_cobertos: 2,
+    receita_coberta: 200,
+    recebido_coberto: 160,
+    custo_produtos: 100,
+    resultado_venda: 60,
+    margem_venda: 0.3,
+    pedidos_varios_skus: 1,
+    receita_varios_skus: 90,
+    total_count: 1,
+  };
+
+  it("muda de nome para a lista do Faturamento: comissão e frete do ML ficam nulos", () => {
+    expect(skuParaALista(sku)).toMatchObject({ sku_id: "s-1", receita_bruta: 300, taxas_ml: null, frete_vendedor: null, margem_venda: 0.3 });
+  });
+
+  it("receita desconhecida não vira zero: o SKU sai da lista", () => {
+    expect(skuParaALista({ ...sku, receita_bruta: null })).toBeNull();
   });
 });

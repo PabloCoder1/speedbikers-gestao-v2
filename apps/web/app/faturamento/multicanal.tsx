@@ -9,17 +9,20 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { StatePill } from "../../components/state-pill";
-import { lerFaturamento, participacao, tomDaMargem } from "../../lib/faturamento";
+import { lerFaturamento, participacao, tomDaMargem, type SkuFaturamento } from "../../lib/faturamento";
 import {
   hrefDeFaturamento,
   linhasDaComparacao,
   lojaDeTeste,
   lojaNuncaLida,
+  montarCascataShopee,
   motivosForaDaCobertura,
   separarLinhasShopee,
+  skuParaALista,
   type FormatoDaComparacao,
   type LinhaFaturamentoShopee,
   type RecorteDeFaturamento,
+  type SkuShopee,
 } from "../../lib/faturamento-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { carregarLimites } from "../../lib/limites-central";
@@ -36,7 +39,11 @@ import {
   type EscopoMulticanal,
   type Periodo,
 } from "../../lib/vendas-multicanal";
-import { AVISO } from "./numeros";
+import { AdsShopee } from "./ads-shopee";
+import { BarrasDiarias } from "./barras-diarias";
+import { Cascata } from "./cascata";
+import { AVISO, ListaProdutos } from "./numeros";
+import { LIBERACOES_A_VISTA, RepasseShopee } from "./repasse-shopee";
 
 /**
  * `/faturamento` COM A SHOPEE (D-442, etapa T5 da frente multicanal).
@@ -121,6 +128,42 @@ export async function FaturamentoMulticanal({
         ? (selecionadas[0]?.name ?? "1 loja")
         : `${String(selecionadas.length)} lojas`;
   const rotuloPeriodo = days === null ? "Período personalizado" : `Últimos ${String(days)} dias`;
+
+  /*
+    O repasse (D-458, C-64) e os Ads CPC da loja (D-456, C-63), só no recorte
+    Shopee. As leituras partem AGORA (`Promise.resolve` dispara o builder do
+    supabase-js) e chegam por streaming em seções próprias, como o Mercado Ads
+    na tela do ML: não esperam o faturamento, nem o faturamento as espera.
+  */
+  const doPeriodoShopee = {
+    p_organization_id: organizationId,
+    p_date_from: range.from,
+    p_date_to: range.to,
+    p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
+  };
+  const leiturasAds =
+    escopo === "shopee"
+      ? {
+          leitura: Promise.resolve(supabase.rpc("get_shopee_ads_overview", doPeriodoShopee)),
+          diaria: Promise.resolve(supabase.rpc("get_shopee_ads_daily", doPeriodoShopee)),
+        }
+      : null;
+  const leiturasRepasse =
+    escopo === "shopee"
+      ? {
+          leitura: Promise.resolve(supabase.rpc("get_shopee_repasse_overview", doPeriodoShopee)),
+          // O "a liberar" é um retrato de agora: não tem período.
+          pendente: Promise.resolve(
+            supabase.rpc("get_shopee_repasse_pendente", {
+              p_organization_id: organizationId,
+              p_account_ids: doPeriodoShopee.p_account_ids,
+            }),
+          ),
+          liberacoes: Promise.resolve(
+            supabase.rpc("get_shopee_repasses", { ...doPeriodoShopee, p_limit: LIBERACOES_A_VISTA }),
+          ),
+        }
+      : null;
 
   const corpo =
     escopo === "shopee" ? (
@@ -258,6 +301,44 @@ export async function FaturamentoMulticanal({
       {/* O cabeçalho e os filtros saem antes; os números chegam por streaming, como na tela do ML. */}
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>{corpo}</Suspense>
 
+      {/* O realizado ao lado do previsto: logo depois do resultado, antes dos Ads. */}
+      {leiturasRepasse !== null && (
+        <section id="repasse" className="sb-campanhas-ml" aria-label="Repasse da Shopee">
+          <Suspense
+            fallback={
+              <Panel title="Repasse da Shopee" subtitle="Carregando o que a Shopee liberou no período">
+                <CarregandoBloco rotulo="repasses da Shopee" />
+              </Panel>
+            }
+          >
+            <RepasseShopee
+              leitura={leiturasRepasse.leitura}
+              pendente={leiturasRepasse.pendente}
+              liberacoes={leiturasRepasse.liberacoes}
+              periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+            />
+          </Suspense>
+        </section>
+      )}
+
+      {leiturasAds !== null && (
+        <section id="ads" className="sb-campanhas-ml" aria-label="Ads CPC da loja Shopee">
+          <Suspense
+            fallback={
+              <Panel title="Ads CPC da loja — Shopee" subtitle="Carregando o investimento e as vendas com Ads do período">
+                <CarregandoBloco rotulo="Ads da Shopee" />
+              </Panel>
+            }
+          >
+            <AdsShopee
+              leitura={leiturasAds.leitura}
+              diaria={leiturasAds.diaria}
+              periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+            />
+          </Suspense>
+        </section>
+      )}
+
       {historicoCurto && (
         <p role="note" className="sb-an-nota" style={{ marginTop: "var(--sb-space-3)" }}>
           A Shopee guarda {String(HISTORICO_SHOPEE_DIAS)} dias de histórico: um período mais antigo que isso subestima a
@@ -286,7 +367,12 @@ async function CorpoShopee({
   const supabase = await createClient();
   const contas = recorte.contas === null ? null : recorte.contas.map((conta) => conta.account_id);
 
-  const [atualResult, anteriorResult, limites] = await Promise.all([
+  const doPeriodo = { p_organization_id: organizationId, p_date_from: range.from, p_date_to: range.to, p_account_ids: contas };
+
+  // Tudo numa ida (D-185): o C-58 do período e do anterior e, do C-61 (D-452),
+  // a composição do recebido, a série diária e os produtos -- sobre os MESMOS
+  // pedidos cobertos. Cada leitura nova falha sozinha, no painel dela.
+  const [atualResult, anteriorResult, limites, composicaoResult, diarioResult, maisReceitaResult, menorMargemResult] = await Promise.all([
     supabase.rpc("get_shopee_faturamento", {
       p_organization_id: organizationId,
       p_date_from: range.from,
@@ -300,6 +386,10 @@ async function CorpoShopee({
       p_account_ids: contas,
     }),
     carregarLimites(supabase, organizationId),
+    supabase.rpc("get_shopee_faturamento_composicao", doPeriodo),
+    supabase.rpc("get_shopee_faturamento_diario", doPeriodo),
+    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "receita", p_limit: 30 }),
+    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "margem", p_limit: 20 }),
   ]);
 
   if (atualResult.error !== null) {
@@ -314,6 +404,9 @@ async function CorpoShopee({
   // Falhar o período anterior não pode parecer "o anterior não vendeu" (D-067).
   const totalAnterior = anteriorResult.error === null ? separarLinhasShopee(anteriorResult.data).total : null;
   const margemMinima = limites.margemMinima;
+  const composicao =
+    composicaoResult.error === null ? (composicaoResult.data.find((linha) => linha.nivel === "TOTAL") ?? null) : null;
+  const cascata = total === null ? null : montarCascataShopee(composicao, total.custo_produtos, total.resultado_venda);
 
   return (
     <>
@@ -335,78 +428,177 @@ async function CorpoShopee({
       {total !== null && (
         <div className="sb-lower-grid" style={{ marginTop: "var(--sb-space-3)" }}>
           <Panel
-            title="Definitivo e provisório"
-            subtitle="O escrow só fecha quando o pedido completa: até lá o resultado ainda pode mudar."
+            title="Para onde vai o dinheiro"
+            subtitle={
+              cascata === null
+                ? "Da receita ao resultado, componente a componente."
+                : `${formatCount(total.pedidos_cobertos)} pedidos cobertos, ${formatPercent(participacao(total.receita_coberta, total.receita_bruta))} da receita do período — tudo sobre os mesmos pedidos.`
+            }
           >
             <div className="sb-panel-body">
-              <div className="sb-stat-grid">
-                <div className="sb-stat">
-                  <span className="sb-stat-label">Definitivo</span>
-                  <strong className="sb-stat-value">{formatCurrency(total.resultado_definitivo)}</strong>
-                  <span className="sb-stat-note">{formatCount(total.pedidos_definitivos)} pedidos completos</span>
-                </div>
-                <div className="sb-stat">
-                  <span className="sb-stat-label">Provisório</span>
-                  <strong className="sb-stat-value">{formatCurrency(total.resultado_provisorio)}</strong>
-                  <span className="sb-stat-note">
-                    {formatCount(total.pedidos_provisorios)} pedidos ainda em andamento · o escrow pode mudar
+              {composicaoResult.error !== null && (
+                <p role="alert" style={AVISO}>
+                  Não foi possível carregar a composição do recebido: {composicaoResult.error.message}
+                </p>
+              )}
+
+              {composicaoResult.error === null && cascata === null && (
+                <p className="sb-empty">
+                  Nenhum pedido coberto tem a composição do recebido lida neste período: sem cascata, em vez de uma de
+                  zeros.
+                </p>
+              )}
+
+              {cascata !== null && (
+                <>
+                  <Cascata degraus={cascata.degraus} />
+                  <p className="sb-cascata-margem">
+                    Margem sobre a venda <strong>{formatPercent(total.margem_venda)}</strong>{" "}
+                    <span>= resultado ÷ receita dos mesmos pedidos</span>
+                  </p>
+                  {cascata.naoInformados.length > 0 && (
+                    <p className="sb-an-nota">A Shopee não informou, em nenhum pedido coberto: {cascata.naoInformados.join(", ")}.</p>
+                  )}
+                  {cascata.zerados.length > 0 && (
+                    <p className="sb-an-nota">Sem valor no período: {cascata.zerados.join(", ")}.</p>
+                  )}
+                </>
+              )}
+
+              <ul className="sb-valores">
+                <li title="receita coberta × alíquota vigente no dia">
+                  <span className="sb-valores-rotulo">Imposto estimado</span>
+                  <strong className="sb-valores-valor">{formatCurrency(total.imposto_coberto)}</strong>
+                  <span className="sb-valores-nota">
+                    {(total.pedidos_sem_aliquota ?? 0) > 0 ? (
+                      <>
+                        {formatCount(total.pedidos_sem_aliquota)} pedidos sem alíquota no dia: o imposto não é parcial ·{" "}
+                        <Link href="/central/metas">cadastrar alíquota</Link>
+                      </>
+                    ) : (
+                      "pela alíquota vigente no dia de cada pedido"
+                    )}
                   </span>
-                </div>
-                <div className="sb-stat">
-                  <span className="sb-stat-label">Resultado da venda</span>
-                  <strong className="sb-stat-value">{formatCurrency(total.resultado_venda)}</strong>
-                  <span className="sb-stat-note">os dois juntos · {formatCount(total.pedidos_cobertos)} pedidos cobertos</span>
-                </div>
-              </div>
+                </li>
+                <li title="resultado_venda − imposto estimado">
+                  <span className="sb-valores-rotulo">Resultado após imposto</span>
+                  <strong className="sb-valores-valor">{formatCurrency(total.resultado_apos_imposto)}</strong>
+                  <span className="sb-valores-nota">
+                    margem após imposto {formatPercent(total.margem_apos_imposto)} · Ads e despesas fixas ficam fora
+                  </span>
+                </li>
+                {/*
+                  Os informativos do C-61, fora da cascata: cada um com o valor
+                  que veio do banco, sem total -- somar aqui seria agregar fora
+                  do SQL. Nulo (nenhum pedido informou) não aparece.
+                */}
+                {composicao !== null &&
+                  (
+                    [
+                      ["Cupons da Shopee", composicao.cupom_shopee, "bancado pela Shopee — não sai do recebido da loja"],
+                      ["Moedas da Shopee", composicao.moedas_shopee, "bancado pela Shopee — não sai do recebido da loja"],
+                      ["Desconto da Shopee", composicao.desconto_shopee, "bancado pela Shopee — não sai do recebido da loja"],
+                      [
+                        "Comissão líquida (Brasil)",
+                        composicao.comissao_liquida,
+                        "informativo: a cascata usa a comissão do escrow; a diferença, se houver, cai em Outros",
+                      ],
+                      [
+                        "Taxa de serviço líquida (Brasil)",
+                        composicao.taxa_servico_liquida,
+                        "informativo: a cascata usa a taxa do escrow; a diferença, se houver, cai em Outros",
+                      ],
+                    ] as const
+                  )
+                    .filter(([, valor]) => valor !== null)
+                    .map(([rotulo, valor, nota]) => (
+                      <li key={rotulo} title="informativo do C-61: não entra na cascata">
+                        <span className="sb-valores-rotulo">{rotulo}</span>
+                        <strong className="sb-valores-valor">{formatCurrency(valor)}</strong>
+                        <span className="sb-valores-nota">{nota}</span>
+                      </li>
+                    ))}
+                {composicao !== null && (composicao.pedidos_com_ajuste ?? 0) > 0 && (
+                  <li title="ajustes da Shopee depois do escrow">
+                    <span className="sb-valores-rotulo">Ajustes depois do repasse</span>
+                    <strong className="sb-valores-valor">{formatCurrency(composicao.ajustes)}</strong>
+                    <span className="sb-valores-nota">
+                      em {formatCount(composicao.pedidos_com_ajuste)} pedidos — o recebido acima não os inclui
+                    </span>
+                  </li>
+                )}
+              </ul>
             </div>
           </Panel>
 
-          <Panel title="Da receita ao resultado" subtitle="Tudo sobre os mesmos pedidos cobertos.">
+          <Panel
+            title="Definitivo e provisório"
+            subtitle="O escrow só fecha quando o pedido completa: até lá o resultado ainda pode mudar."
+          >
+            {/* Lista, não grade de cartões: na coluna estreita, ao lado da cascata, três cartões não cabem. */}
             <ul className="sb-valores">
-              <li title="receita bruta dos pedidos cobertos">
-                <span className="sb-valores-rotulo">Receita coberta</span>
-                <strong className="sb-valores-valor">{formatCurrency(total.receita_coberta)}</strong>
+              <li title="resultado dos pedidos COMPLETED">
+                <span className="sb-valores-rotulo">Definitivo</span>
+                <strong className="sb-valores-valor">{formatCurrency(total.resultado_definitivo)}</strong>
+                <span className="sb-valores-nota">{formatCount(total.pedidos_definitivos)} pedidos completos</span>
+              </li>
+              <li title="resultado dos pedidos ainda em andamento">
+                <span className="sb-valores-rotulo">Provisório</span>
+                <strong className="sb-valores-valor">{formatCurrency(total.resultado_provisorio)}</strong>
                 <span className="sb-valores-nota">
-                  {formatPercent(participacao(total.receita_coberta, total.receita_bruta))} da receita do período
+                  {formatCount(total.pedidos_provisorios)} pedidos ainda em andamento · o escrow pode mudar
                 </span>
               </li>
-              <li title="escrow_amount dos pedidos cobertos">
-                <span className="sb-valores-rotulo">Recebido da Shopee</span>
-                <strong className="sb-valores-valor">{formatCurrency(total.recebido_coberto)}</strong>
-                <span className="sb-valores-nota">
-                  {formatPercent(participacao(total.recebido_coberto, total.receita_coberta))} da receita coberta · a
-                  Shopee já descontou comissão, taxas, frete, cupons da loja e afiliados
-                </span>
-              </li>
-              <li title="custo na data do pedido, sobre pedidos cobertos">
-                <span className="sb-valores-rotulo">Custo dos produtos</span>
-                <strong className="sb-valores-valor">{formatCurrency(total.custo_produtos)}</strong>
-                <span className="sb-valores-nota">
-                  {formatPercent(participacao(total.custo_produtos, total.receita_coberta))} da receita coberta
-                </span>
-              </li>
-              <li title="receita coberta × alíquota vigente no dia">
-                <span className="sb-valores-rotulo">Imposto estimado</span>
-                <strong className="sb-valores-valor">{formatCurrency(total.imposto_coberto)}</strong>
-                <span className="sb-valores-nota">
-                  {(total.pedidos_sem_aliquota ?? 0) > 0 ? (
-                    <>
-                      {formatCount(total.pedidos_sem_aliquota)} pedidos sem alíquota no dia: o imposto não é parcial ·{" "}
-                      <Link href="/central/metas">cadastrar alíquota</Link>
-                    </>
-                  ) : (
-                    "pela alíquota vigente no dia de cada pedido"
-                  )}
-                </span>
-              </li>
-              <li title="resultado_venda − imposto estimado">
-                <span className="sb-valores-rotulo">Resultado após imposto</span>
-                <strong className="sb-valores-valor">{formatCurrency(total.resultado_apos_imposto)}</strong>
-                <span className="sb-valores-nota">
-                  margem após imposto {formatPercent(total.margem_apos_imposto)} · Ads e despesas fixas ficam fora
-                </span>
+              <li title="recebido − custo dos pedidos cobertos">
+                <span className="sb-valores-rotulo">Resultado da venda</span>
+                <strong className="sb-valores-valor">{formatCurrency(total.resultado_venda)}</strong>
+                <span className="sb-valores-nota">os dois juntos · {formatCount(total.pedidos_cobertos)} pedidos cobertos</span>
               </li>
             </ul>
+          </Panel>
+        </div>
+      )}
+
+      {total !== null && (
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Receita e margem por dia"
+            subtitle="A receita é de todos os pedidos válidos; a margem, dos pedidos cobertos de cada dia. Dia de receita desconhecida fica sem barra."
+          >
+            {diarioResult.error !== null ? (
+              <p role="alert" style={AVISO}>
+                Não foi possível carregar a série diária: {diarioResult.error.message}
+              </p>
+            ) : diarioResult.data.length === 0 ? (
+              <p className="sb-empty">Nenhuma venda válida neste período.</p>
+            ) : (
+              <BarrasDiarias dias={diarioResult.data} rangeFrom={range.from} rangeTo={range.to} margemMinima={margemMinima} />
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {total !== null && (
+        <div className="sb-pair-grid">
+          <Panel
+            title="Produtos que mais faturaram"
+            subtitle={
+              maisReceitaResult.error === null
+                ? notaDosProdutos(maisReceitaResult.data, "receita")
+                : "a leitura dos produtos falhou"
+            }
+          >
+            <ProdutosShopee resultado={maisReceitaResult} modo="receita" margemMinima={margemMinima} />
+          </Panel>
+          <Panel
+            title="Menor margem"
+            subtitle={
+              menorMargemResult.error === null
+                ? notaDosProdutos(menorMargemResult.data, "margem")
+                : "a leitura dos produtos falhou"
+            }
+          >
+            <ProdutosShopee resultado={menorMargemResult} modo="margem" margemMinima={margemMinima} />
           </Panel>
         </div>
       )}
@@ -419,6 +611,51 @@ async function CorpoShopee({
         <Cobertura total={total} />
       </div>
     </>
+  );
+}
+
+/**
+ * A frase das listas de produtos da Shopee. Só entra pedido de UM produto: o
+ * recebido é do pedido, e ratear entre produtos inventaria uma margem (C-61).
+ * O que ficou de fora é dito.
+ */
+function notaDosProdutos(linhas: readonly SkuShopee[], modo: "receita" | "margem"): string {
+  const primeira = linhas[0];
+  const fora =
+    primeira === undefined || primeira.pedidos_varios_skus === 0
+      ? ""
+      : ` · ${formatCount(primeira.pedidos_varios_skus)} pedidos com mais de um produto (${formatCurrency(primeira.receita_varios_skus)}) ficam fora`;
+
+  return modo === "receita"
+    ? `top ${String(linhas.length)} de ${formatCount(primeira?.total_count ?? 0)} produtos com venda${fora}`
+    : `da pior para a melhor, só pedidos cobertos${fora}`;
+}
+
+function ProdutosShopee({
+  resultado,
+  modo,
+  margemMinima,
+}: {
+  resultado: { data: SkuShopee[] | null; error: { message: string } | null };
+  modo: "receita" | "margem";
+  margemMinima: number;
+}): ReactNode {
+  if (resultado.error !== null) {
+    return (
+      <p role="alert" style={AVISO}>
+        Não foi possível carregar os produtos: {resultado.error.message}
+      </p>
+    );
+  }
+
+  const linhas = (resultado.data ?? []).map(skuParaALista).filter((linha): linha is SkuFaturamento => linha !== null);
+
+  return linhas.length === 0 ? (
+    <p className="sb-empty">
+      {modo === "receita" ? "Nenhum produto vinculado vendeu neste período." : "Nenhum produto com pedido coberto neste período."}
+    </p>
+  ) : (
+    <ListaProdutos linhas={linhas} modo={modo} margemMinima={margemMinima} />
   );
 }
 
