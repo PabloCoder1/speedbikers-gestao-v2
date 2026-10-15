@@ -20,7 +20,7 @@
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00045-c2f` e api `api-00028-qmw` em `93304ac3` (D-432/433/435, 14/10), Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`). Volta: `worker-00044-p8d`/`api-00027-p7c`. Worker fixo na revisão (`update-traffic --to-revisions`, D-342). Webhooks só em produção; Dev pausado (D-350). |
 | **Migrations** | Produção até `20261015050000` (D-441 a D-451, run `38726738817`, 15/10). Dono dispara (depois da CI da `main`, com a entrada `confirmacao` = ref de produção) e aprova; sem `--include-all`; nunca MCP. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): fatias 0–4, 6a e E1–E3 no ar (sandbox); E4–E6a (vendas consolidadas, faturamento Shopee e vendas por SKU, D-436/437/439) no ar; E6b, E6c, C-61, E7a, E7b e E7c (curva ABC por marketplace, `/produtos`, composição do faturamento, devoluções, Ads e repasse da Shopee; D-441/445/443/447/449/451) na `main`, esperando a migration de produção; E7d (push, D-453) em código; 5 (estoque) adiada para o Go Live. A 5J segue com o detector de frete (D-405). |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015050000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar, assinatura em diagnóstico (#179); telas T4–T6c, Ads (T5c) e T-R6 no ar; T5b, T5d, T6b/T6b2 e devoluções no #177; Go Live da Shopee em análise (15/10); C-65 (demanda Shopee na cobertura, liberado pelo dono) a seguir; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 
