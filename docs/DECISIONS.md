@@ -15873,3 +15873,31 @@ O TTFB baixo em todas diz que o esqueleto chega rapido; o que demora e o conteud
 **Verificacao:** typecheck, lint, testes, build e as guardas; os e2e de `/vinculacoes` e `/compras` contra o build; a medicao de CLS das 17 telas.
 
 **Impacto:** `apps/web/app/globals.css` (giro e `.sb-vnc-*`), `apps/web/app/vinculacoes/{page,busca-sku}.tsx`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_HANDOFF}.md`. So web.
+
+## D-504 - A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
+
+**Contexto:** a D-503 mediu a Home em producao com LCP de 7,6 s e o primeiro byte em 113 ms, e o A1 mediu a causa no Dev, como `authenticated`: quentes, todas as leituras da tela ficam abaixo de 150 ms; frias, a segunda rodada (`get_stock_coverage_summary`, 6,3 mil paginas, e `get_listings_dashboard` com `p_limit 1`, 7,6 mil paginas e arquivo temporario, que monta a lista inteira so para devolver o `total_count`) le ~110 MB de disco. E a tela inteira esperava por ela: a pagina fazia as 11 leituras da primeira rodada, depois a segunda em fila (dependia da organizacao) e so entao pintava qualquer coisa. O A2, dono da Home, aprovou o Suspense em 15/10.
+
+**Decisao:**
+1. **So a secao "Atencao necessaria" espera a segunda rodada.** Ela ordena e conta TODOS os cartoes juntos (o que falhou, depois por severidade, depois os limpos), inclusive o da cobertura ("Risco de ruptura") -- entao ela inteira vira um componente async (`AtencaoNecessaria`) dentro de `<Suspense>`, e so ela. Saudacao, faixa de indicadores, grafico e atividade pintam com a primeira rodada.
+2. **A segunda rodada comeca quando a organizacao chega**, nao depois das outras leituras: `currentMembership()` vira uma promessa compartilhada, e `lerSegundaRodada` encadeia nela. A cobertura nao muda -- mesma funcao, mesmos parametros, mesmo numero e texto; muda onde o `await` acontece. O `check:waterfalls` continua verde. Como a promessa nasce antes do `<Suspense>` e a pagina pode falhar antes de chegar a ele, um `.catch` transforma em falha de leitura o que LANCAR em vez de devolver `error` -- sem rejeicao solta no log do Node, e o cartao diz que nao leu (observacao do A2 na revisao).
+3. **O esqueleto ocupa o lugar do que vem** (`AtencaoCarregando`): o cabecalho de verdade (o titulo e estatico; a contagem e a cor esperam o dado) e duas fileiras de cartoes com a altura de um cartao real -- tres fileiras em duas colunas --, mais a linha dos "medidos e limpos". Os tracos se revelam depois de 350 ms, como o resto do carregamento (D-382). Medido contra a secao pronta no seed (5 cartoes detectados): 446 x 438 px no desktop, 678 x 714 px a 390 px.
+4. **"Anuncios pausados" vira contagem direta, na primeira rodada** (proposta e medida pelo A1, pedida pelo A2): `listings` com `count: "exact", head: true`, `status = 'paused'` e `available_quantity > 0` -- o mesmo predicado do destino do cartao (`/anuncios` com pausados e com estoque). Quem restringe as contas visiveis e a RLS de `listings`, a mesma que a funcao (security invoker) usava, como nas contagens de `actions` e `support_cases`; por isso a leitura nao depende da organizacao e sobe para a primeira rodada, e a segunda fica so com a cobertura. Mesmo numero no Dev (19 = 19, A1) e no stack de teste como o usuario do e2e (1 = 1). Com erro, `count` vem nulo e o cartao diz que nao leu -- nunca "0 pausados".
+
+**Medido** num build de producao local com o stack isolado, a `get_stock_coverage_summary` atrasada em 3 s so no banco de teste (para simular a leitura fria) e mediana de 3 cargas completas da Home:
+
+| | antes | depois |
+|---|---|---|
+| faixa de indicadores e grafico | 3.220 ms | **209 ms** |
+| "Atencao necessaria" pronta | 3.220 ms | 3.147 ms |
+| CLS | 0 | 0,001 (0,059 com o esqueleto de uma fileira, corrigido) |
+
+Remedido com a contagem direta dos pausados (item 4), no mesmo arranjo, em duas series de 3 cargas: indicadores e grafico em 175 e 231 ms (medianas), "Atencao necessaria" em 3.126 e 3.167 ms, CLS 0,001 -- o mesmo resultado.
+
+O ganho medido aqui e de percepcao: a secao lenta continua com o tempo da cobertura. A contagem direta tira da tela a leitura fria mais pesada (2,7 s fria no Dev, pelo A1), mas o stack local nao reproduz cache frio, e o efeito dela so se le em producao, nos web vitals (`docs/UX_SYSTEM.md` §5). A cobertura fria continua com o A1.
+
+**O que continua fora:** `/skus/[skuId]` (a curva ABC da aba padrao, depois da T-R3b do A2; a cobertura fica fora do Suspense porque alimenta o "Risco de ruptura" do cabecalho em todas as abas) e `/vendas`. O CLS de 0,51 de uma carga de `/vendas` nao se reproduz localmente.
+
+**Verificacao:** typecheck, lint, testes, build e as guardas; a suite e2e inteira contra o build num stack isolado recriado do zero (233 de 236 -- as 3 de convite redirecionam para a porta 3000, sem servidor na worktree); fotos da Home durante e depois da espera; a medicao acima; e a contagem direta contra a funcao como o usuario do e2e.
+
+**Impacto:** `apps/web/app/page.tsx`, `apps/web/app/globals.css` (`.sb-attention-carregando`), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_HANDOFF}.md`. So web.

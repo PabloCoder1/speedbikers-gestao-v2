@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { businessDateRangeLength, previousBusinessDateRange, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { FilterMenu } from "../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../components/kpi-strip";
@@ -246,151 +246,75 @@ function sobrancelhaData(agora: Date): string {
   return `${DIAS[semana] ?? ""}, ${pegar("day")} ${MESES[mes] ?? ""}`;
 }
 
-export default async function HomePage({
-  searchParams,
+/**
+ * A segunda rodada da Home (D-504): a leitura que exige a organização.
+ * Começa assim que `currentMembership()` responde — sem esperar as outras
+ * leituras da primeira rodada — e é aguardada só dentro do `<Suspense>` da
+ * seção "Atenção necessária".
+ */
+function lerSegundaRodada(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  janela: { from: string; to: string },
+) {
+  return supabase.rpc("get_stock_coverage_summary", {
+    p_organization_id: organizationId,
+    p_date_from: janela.from,
+    p_date_to: janela.to,
+  });
+}
+
+// O que a seção lê da segunda rodada: a resposta da RPC, ou a falha de quem
+// lançou em vez de devolver `error` (ver o `.catch` na página).
+interface Leitura {
+  readonly data: unknown;
+  readonly error: unknown;
+}
+
+interface Contagem {
+  readonly count: number | null;
+  readonly error: unknown;
+}
+
+/**
+ * "ATENÇÃO NECESSÁRIA" ESPERA SÓ O QUE É DELA (D-504).
+ *
+ * Medido em produção (web vitals, 14–15/10): a Home levava 7,6 s até o conteúdo
+ * principal, com o primeiro byte em 113 ms. O A1 mediu a causa no Dev, como
+ * `authenticated`: quentes, todas as leituras ficam abaixo de 150 ms; frias, a
+ * segunda rodada lia ~110 MB de disco (`get_listings_dashboard` montava a lista
+ * inteira só para devolver o `total_count` dos pausados;
+ * `get_stock_coverage_summary`) — e a tela inteira esperava por ela.
+ *
+ * Esta seção ordena e conta TODOS os cartões juntos, inclusive o da cobertura:
+ * por isso ela inteira espera, e só ela. Saudação, indicadores, gráfico e
+ * atividade pintam com a primeira rodada. Os pausados viraram uma contagem
+ * direta na primeira rodada (combinado com A1 e A2): mesmo predicado, mesmo
+ * número.
+ */
+async function AtencaoNecessaria({
+  segundaRodada,
+  acoesAltas,
+  acoesOutras,
+  openCases,
+  mediations,
+  unread,
+  pausados,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  // Nula só sem organização — e aí a página já voltou antes de chegar aqui.
+  segundaRodada: Promise<Leitura | null>;
+  acoesAltas: Contagem;
+  acoesOutras: Contagem;
+  openCases: Contagem;
+  mediations: Contagem;
+  unread: Contagem;
+  pausados: Contagem;
 }): Promise<ReactNode> {
-  const supabase = await createClient();
-  const query = await searchParams;
+  const coverage = await segundaRodada;
 
-  const agora = new Date();
-  const hoje = toSalesMetricDate(agora);
-  const janela = { from: shiftBusinessDate(hoje, -(JANELA_DIAS - 1)), to: hoje };
-  const anterior = previousBusinessDateRange(janela.from, janela.to);
-
-  /*
-    `?serie=` TERMINA NA SÉRIE, e o nome do parâmetro é a defesa disso.
-
-    `janela` (30 dias) alimenta a faixa de indicadores, a comparação com o
-    período anterior, a cobertura e a contagem de anúncios pausados — os
-    números dos cartões de atenção. Ligar o seletor do GRÁFICO nela faria os
-    contadores da tela inteira mudarem por causa de um controle que está no
-    cabeçalho de um painel, e ninguém pediu isso. Um controle, um bloco.
-  */
-  const serieDias = resolvePeriodDays(query.serie, HOME_SERIE_DEFAULT_DAYS);
-  const serie = { from: shiftBusinessDate(hoje, -(serieDias - 1)), to: hoje };
-
-  // Consultas independentes em paralelo, nunca em cascata
-  // (`docs/ARCHITECTURE.md` secao 21, regra 4). Nenhuma delas recebe
-  // organização — quem restringe é a RLS —, então todas cabem numa ida só
-  // (D-185: o custo é o round trip, não o SQL).
-  // O id do usuário vem do cookie (`getSession()`), sem ida ao Auth: só para
-  // filtrar a PRÓPRIA linha de `profiles`. Sem o filtro, com dois perfis
-  // visíveis (D-234), `maybeSingle()` falhava e a saudação nunca tinha nome —
-  // a auditoria de fidelidade viu "Boa tarde." onde o frame diz "Bom dia, João."
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const userId = session?.user.id ?? null;
-
-  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, vendas, vendasAntes, serieDiaria, atividade, perfil] =
-    await Promise.all([
-      currentMembership(),
-      supabase
-        .from("actions")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["novo", "em_andamento"])
-        .eq("severity", "alta"),
-      supabase
-        .from("actions")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["novo", "em_andamento"])
-        .in("severity", ["media", "baixa"]),
-      supabase
-        .from("support_cases")
-        .select("id", { count: "exact", head: true })
-        .neq("internal_status", "RESOLVIDO"),
-      supabase
-        .from("support_cases")
-        .select("id", { count: "exact", head: true })
-        .eq("is_mediation", true)
-        .neq("internal_status", "RESOLVIDO"),
-      supabase
-        .from("notification_recipients")
-        // `notification_id`, e NÃO `id`: esta tabela não tem coluna `id` — a
-        // chave é composta `(notification_id, user_id)`. Pedir `id` fazia o
-        // PostgREST recusar, e este card dizia "Não foi possível carregar"
-        // desde que existe (D-241).
-        .select("notification_id", { count: "exact", head: true })
-        .is("read_at", null),
-      supabase.rpc("get_sales_summary", { p_date_from: janela.from, p_date_to: janela.to }),
-      supabase.rpc("get_sales_summary", { p_date_from: anterior.from, p_date_to: anterior.to }),
-      supabase.rpc("get_sales_daily_series", { p_date_from: serie.from, p_date_to: serie.to }),
-      // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
-      // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de
-      // destinatários do próprio usuário (policy
-      // `notification_recipients_select_own`), com a notificação embutida.
-      // Pela raiz `notifications`, a ordem não tinha índice que servisse e o
-      // banco filtrava e ordenava as ~66 mil linhas a cada visita: média de
-      // 1,7 s e máximo de 4,6 s no `pg_stat_statements` de produção (auditoria
-      // de 2026-09-28). Com `(user_id, created_at desc)` ele para na quinta
-      // linha: no Dev, como `authenticated` e com o usuário de 54 mil avisos,
-      // 826 ms e 17 mil páginas lidas viraram 16 ms e 43 — a mesma troca que `/notificacoes` fez em D-393, e a mesma
-      // ordem, porque o fan-out grava as duas linhas na mesma transação.
-      supabase
-        .from("notification_recipients")
-        /*
-          `occurred_at` ENTRA NO EMBED (D-311), e a coluna importa: ela é
-          QUANDO A MUDANÇA ACONTECEU, enquanto `notifications.created_at` é o
-          instante em que o fan-out gravou o aviso. Os dois costumam ser
-          próximos e não são a mesma coisa — o desvio máximo medido nesta base
-          foi de 278 dias (D-060), num backfill. Uma linha dizendo "há 12 min"
-          sobre um fato de março seria número inventado.
-
-          É a mesma expressão que `/notificacoes` já usa, e depois desta fatia
-          as duas telas passam a mostrar o mesmo instante para o mesmo evento.
-        */
-        .select(
-          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label)))",
-        )
-        .order("created_at", { ascending: false })
-        .limit(ATIVIDADE_LIMITE),
-      userId === null
-        ? Promise.resolve({ data: null, error: null })
-        : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
-    ]);
-
-  const organizationId = membership.organizationId;
-
-  if (membership.error !== null || organizationId === null) {
-    return (
-      <Shell>
-        <PageTitle eyebrow="VISÃO GERAL" title="Visão Geral" />
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          Sua conta não está associada a nenhuma organização.
-        </p>
-      </Shell>
-    );
-  }
-
-  // fila-justificada: `get_stock_coverage_summary` exige `p_organization_id`, e
-  // a organização só se conhece depois da leitura acima. É UMA ida a mais, e
-  // ela compra o card que o brief põe como primeiro exemplo de crítico —
-  // ruptura, que o motor de ações não emite.
-  const [coverage, pausados] = await Promise.all([
-    supabase.rpc("get_stock_coverage_summary", {
-      p_organization_id: organizationId,
-      p_date_from: janela.from,
-      p_date_to: janela.to,
-    }),
-    // "Anúncios pausados" é um dos quatro cartões do frame da Home, e tem dado
-    // real: a MESMA função de `/anuncios`, com o MESMO predicado do link —
-    // pausado E com estoque (um pausado sem estoque não tem o que reativar).
-    supabase.rpc("get_listings_dashboard", {
-      p_organization_id: organizationId,
-      p_date_from: janela.from,
-      p_date_to: janela.to,
-      p_status: "paused",
-      p_stock: "in",
-      p_limit: 1,
-    }),
-  ]);
+  if (coverage === null) return null;
 
   const coverageRow = primeira(coverage.data) as { em_ruptura: number | null } | null;
-  const pausadosRow = Array.isArray(pausados.data) && pausados.data.length > 0
-    ? (pausados.data[0] as { total_count: number })
-    : null;
 
   const cards: readonly Card[] = [
     {
@@ -472,7 +396,8 @@ export default async function HomePage({
       href: "/anuncios?estado=paused&estoque=in",
       cta: "Ver anúncios",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "anúncio pausado com estoque" : "anúncios pausados com estoque"}`,
-      count: pausados.error !== null ? null : (pausadosRow?.total_count ?? 0),
+      // Com erro, `count` vem nulo e o cartão diz que não leu — nunca "0".
+      count: pausados.error !== null ? null : pausados.count,
       severidade: "importante",
       failed: pausados.error !== null,
     },
@@ -498,6 +423,232 @@ export default async function HomePage({
   // (medido e limpo é diferente de não medido, D-067) sem ocupar a grade.
   const detectados = ordenados.filter((card) => grau(card) < 2);
   const limpos = ordenados.filter((card) => grau(card) === 2);
+
+  return (
+    <section className="sb-attention" aria-label="Atenção necessária">
+      <div className="sb-attention-head">
+        <h2 className="sb-attention-title" style={{ color: pedemAtencao > 0 ? "var(--sb-danger)" : "var(--sb-text-soft)" }}>
+          <span
+            aria-hidden="true"
+            className="sb-attention-dot"
+            style={{ background: pedemAtencao > 0 ? "var(--sb-danger)" : "var(--sb-muted-ink)" }}
+          />
+          Atenção necessária
+        </h2>
+
+        <span className="sb-attention-count">
+          {pedemAtencao === 0
+            ? "nada aberto no momento — um dia sem pendência é um resultado"
+            : `${String(pedemAtencao)} ${pedemAtencao === 1 ? "situação detectada" : "situações detectadas"}`}
+        </span>
+      </div>
+
+      {detectados.length > 0 && (
+        <div className="sb-attention-grid">
+          {detectados.map((card) => (
+            <AttentionCard card={card} key={card.label} />
+          ))}
+        </div>
+      )}
+
+      {limpos.length > 0 && (
+        <p className="sb-attention-clean">
+          <span>Medidos e limpos:</span>
+          {limpos.map((card) => (
+            <Link key={card.label} href={card.href} title={card.caption}>
+              <b>0</b> {card.label}
+            </Link>
+          ))}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * O lugar da seção enquanto a segunda rodada não chega: o cabeçalho de verdade
+ * (o título é estático) e o espaço de uma fileira de cartões, para a chegada do
+ * conteúdo não empurrar indicadores e gráfico para baixo. Os traços só se
+ * revelam depois de 350 ms, como o resto do carregamento (D-382): resposta
+ * rápida chega antes e nada pisca.
+ */
+function AtencaoCarregando(): ReactNode {
+  return (
+    <section className="sb-attention" aria-label="Atenção necessária" aria-busy="true">
+      <div className="sb-attention-head">
+        <h2 className="sb-attention-title" style={{ color: "var(--sb-text-soft)" }}>
+          <span aria-hidden="true" className="sb-attention-dot" style={{ background: "var(--sb-muted-ink)" }} />
+          Atenção necessária
+        </h2>
+        <span className="sb-sr-only" role="status">
+          Conferindo o que precisa da sua atenção…
+        </span>
+      </div>
+      <div aria-hidden="true" className="sb-attention-grid sb-attention-carregando sb-carregando-revela">
+        {/* Oito lugares e o CSS mostra duas fileiras em cada largura (4, 3 ou 2
+            colunas): é a forma mais comum em produção, com vários cartões
+            detectados. */}
+        {Array.from({ length: 8 }, (_, indice) => (
+          <div key={indice} className="sb-attention-card">
+            <span className="sb-esqueleto" style={{ width: "60%", height: "0.75rem" }} />
+            <span className="sb-esqueleto" style={{ width: "85%", height: "1rem" }} />
+            <span className="sb-esqueleto" style={{ width: "70%", height: "0.625rem" }} />
+            <span className="sb-esqueleto" style={{ width: "40%", height: "0.625rem" }} />
+          </div>
+        ))}
+      </div>
+      <div aria-hidden="true" className="sb-attention-clean sb-carregando-revela">
+        <span className="sb-esqueleto" style={{ width: "min(28rem, 70%)", height: "0.625rem" }} />
+      </div>
+    </section>
+  );
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const supabase = await createClient();
+  const query = await searchParams;
+
+  const agora = new Date();
+  const hoje = toSalesMetricDate(agora);
+  const janela = { from: shiftBusinessDate(hoje, -(JANELA_DIAS - 1)), to: hoje };
+  const anterior = previousBusinessDateRange(janela.from, janela.to);
+
+  /*
+    `?serie=` TERMINA NA SÉRIE, e o nome do parâmetro é a defesa disso.
+
+    `janela` (30 dias) alimenta a faixa de indicadores, a comparação com o
+    período anterior, a cobertura e a contagem de anúncios pausados — os
+    números dos cartões de atenção. Ligar o seletor do GRÁFICO nela faria os
+    contadores da tela inteira mudarem por causa de um controle que está no
+    cabeçalho de um painel, e ninguém pediu isso. Um controle, um bloco.
+  */
+  const serieDias = resolvePeriodDays(query.serie, HOME_SERIE_DEFAULT_DAYS);
+  const serie = { from: shiftBusinessDate(hoje, -(serieDias - 1)), to: hoje };
+
+  // Consultas independentes em paralelo, nunca em cascata
+  // (`docs/ARCHITECTURE.md` secao 21, regra 4). Nenhuma delas recebe
+  // organização — quem restringe é a RLS —, então todas cabem numa ida só
+  // (D-185: o custo é o round trip, não o SQL).
+  // O id do usuário vem do cookie (`getSession()`), sem ida ao Auth: só para
+  // filtrar a PRÓPRIA linha de `profiles`. Sem o filtro, com dois perfis
+  // visíveis (D-234), `maybeSingle()` falhava e a saudação nunca tinha nome —
+  // a auditoria de fidelidade viu "Boa tarde." onde o frame diz "Bom dia, João."
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user.id ?? null;
+
+  // A organização chega pela PRIMEIRA leitura da lista abaixo, e a leitura que
+  // a exige (a cobertura) começa no instante em que ela chega — sem esperar as
+  // outras — e é aguardada só dentro do `<Suspense>` da seção "Atenção
+  // necessária" (D-504). Antes era uma segunda rodada em fila depois de todas,
+  // e a tela inteira esperava por ela.
+  const membershipPromise = currentMembership();
+  const segundaRodada: Promise<Leitura | null> = membershipPromise
+    .then((m) =>
+      m.error === null && m.organizationId !== null ? lerSegundaRodada(supabase, m.organizationId, janela) : null,
+    )
+    // Se a organização ou a leitura LANÇAR em vez de devolver `error`, a
+    // promessa não fica rejeitada sem ninguém esperar por ela (a página pode
+    // falhar antes de chegar ao `<Suspense>`): vira falha de leitura, e o
+    // cartão diz que não leu.
+    .catch((error: unknown) => ({ data: null, error: error ?? new Error("segunda rodada da Home falhou") }));
+
+  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendas, vendasAntes, serieDiaria, atividade, perfil] =
+    await Promise.all([
+      membershipPromise,
+      supabase
+        .from("actions")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["novo", "em_andamento"])
+        .eq("severity", "alta"),
+      supabase
+        .from("actions")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["novo", "em_andamento"])
+        .in("severity", ["media", "baixa"]),
+      supabase
+        .from("support_cases")
+        .select("id", { count: "exact", head: true })
+        .neq("internal_status", "RESOLVIDO"),
+      supabase
+        .from("support_cases")
+        .select("id", { count: "exact", head: true })
+        .eq("is_mediation", true)
+        .neq("internal_status", "RESOLVIDO"),
+      supabase
+        .from("notification_recipients")
+        // `notification_id`, e NÃO `id`: esta tabela não tem coluna `id` — a
+        // chave é composta `(notification_id, user_id)`. Pedir `id` fazia o
+        // PostgREST recusar, e este card dizia "Não foi possível carregar"
+        // desde que existe (D-241).
+        .select("notification_id", { count: "exact", head: true })
+        .is("read_at", null),
+      // "Anúncios pausados" com estoque: o MESMO predicado de `/anuncios` com
+      // pausados e com estoque (`status = 'paused'` e `available_quantity > 0`),
+      // contado direto. Era `get_listings_dashboard` com `p_limit 1`, que monta a
+      // lista inteira só para devolver o total — 7,6 mil páginas frias, medido
+      // pelo A1 (D-504). Quem restringe às contas visíveis é a RLS de `listings`,
+      // a mesma que a função (security invoker) usava. Mesmo número no Dev.
+      supabase
+        .from("listings")
+        .select("item_id", { count: "exact", head: true })
+        .eq("status", "paused")
+        .gt("available_quantity", 0),
+      supabase.rpc("get_sales_summary", { p_date_from: janela.from, p_date_to: janela.to }),
+      supabase.rpc("get_sales_summary", { p_date_from: anterior.from, p_date_to: anterior.to }),
+      supabase.rpc("get_sales_daily_series", { p_date_from: serie.from, p_date_to: serie.to }),
+      // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
+      // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de
+      // destinatários do próprio usuário (policy
+      // `notification_recipients_select_own`), com a notificação embutida.
+      // Pela raiz `notifications`, a ordem não tinha índice que servisse e o
+      // banco filtrava e ordenava as ~66 mil linhas a cada visita: média de
+      // 1,7 s e máximo de 4,6 s no `pg_stat_statements` de produção (auditoria
+      // de 2026-09-28). Com `(user_id, created_at desc)` ele para na quinta
+      // linha: no Dev, como `authenticated` e com o usuário de 54 mil avisos,
+      // 826 ms e 17 mil páginas lidas viraram 16 ms e 43 — a mesma troca que `/notificacoes` fez em D-393, e a mesma
+      // ordem, porque o fan-out grava as duas linhas na mesma transação.
+      supabase
+        .from("notification_recipients")
+        /*
+          `occurred_at` ENTRA NO EMBED (D-311), e a coluna importa: ela é
+          QUANDO A MUDANÇA ACONTECEU, enquanto `notifications.created_at` é o
+          instante em que o fan-out gravou o aviso. Os dois costumam ser
+          próximos e não são a mesma coisa — o desvio máximo medido nesta base
+          foi de 278 dias (D-060), num backfill. Uma linha dizendo "há 12 min"
+          sobre um fato de março seria número inventado.
+
+          É a mesma expressão que `/notificacoes` já usa, e depois desta fatia
+          as duas telas passam a mostrar o mesmo instante para o mesmo evento.
+        */
+        .select(
+          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label)))",
+        )
+        .order("created_at", { ascending: false })
+        .limit(ATIVIDADE_LIMITE),
+      userId === null
+        ? Promise.resolve({ data: null, error: null })
+        : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+    ]);
+
+  const organizationId = membership.organizationId;
+
+  if (membership.error !== null || organizationId === null) {
+    return (
+      <Shell>
+        <PageTitle eyebrow="VISÃO GERAL" title="Visão Geral" />
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          Sua conta não está associada a nenhuma organização.
+        </p>
+      </Shell>
+    );
+  }
+
 
   const atual = primeira(vendas.data);
   const antes = primeira(vendasAntes.data);
@@ -561,43 +712,17 @@ export default async function HomePage({
         subtitle="O que precisa da sua atenção hoje na operação."
       />
 
-      <section className="sb-attention" aria-label="Atenção necessária">
-        <div className="sb-attention-head">
-          <h2 className="sb-attention-title" style={{ color: pedemAtencao > 0 ? "var(--sb-danger)" : "var(--sb-text-soft)" }}>
-            <span
-              aria-hidden="true"
-              className="sb-attention-dot"
-              style={{ background: pedemAtencao > 0 ? "var(--sb-danger)" : "var(--sb-muted-ink)" }}
-            />
-            Atenção necessária
-          </h2>
-
-          <span className="sb-attention-count">
-            {pedemAtencao === 0
-              ? "nada aberto no momento — um dia sem pendência é um resultado"
-              : `${String(pedemAtencao)} ${pedemAtencao === 1 ? "situação detectada" : "situações detectadas"}`}
-          </span>
-        </div>
-
-        {detectados.length > 0 && (
-          <div className="sb-attention-grid">
-            {detectados.map((card) => (
-              <AttentionCard card={card} key={card.label} />
-            ))}
-          </div>
-        )}
-
-        {limpos.length > 0 && (
-          <p className="sb-attention-clean">
-            <span>Medidos e limpos:</span>
-            {limpos.map((card) => (
-              <Link key={card.label} href={card.href} title={card.caption}>
-                <b>0</b> {card.label}
-              </Link>
-            ))}
-          </p>
-        )}
-      </section>
+      <Suspense fallback={<AtencaoCarregando />}>
+        <AtencaoNecessaria
+          segundaRodada={segundaRodada}
+          acoesAltas={acoesAltas}
+          acoesOutras={acoesOutras}
+          openCases={openCases}
+          mediations={mediations}
+          unread={unread}
+          pausados={pausados}
+        />
+      </Suspense>
 
       <div className="sb-section-label">
         <span>Indicadores gerais</span>

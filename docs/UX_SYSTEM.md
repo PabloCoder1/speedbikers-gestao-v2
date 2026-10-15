@@ -20,7 +20,7 @@
 |---|---|---|---|
 | **Trocar de tela** (um segmento do caminho muda) | moldura na hora; esqueleto e barra só depois de 350 ms | `loading.tsx` por pasta → `CarregandoTela` | D-382 |
 | **Carga inicial** de uma tela | o mesmo esqueleto, no lugar do que vai chegar (título, faixa de KPIs, painel) | `CarregandoTela` / `CarregandoConteudo` | D-382 |
-| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel | `<Suspense fallback={<CarregandoBloco/>}>` | D-382 |
+| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home) | D-382, D-504 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
 | **Ação que grava** (salvar, assumir, remover) | o botão desabilita, põe `aria-busy` e diz o que está fazendo ("Removendo…") até a resposta | `BotaoEnviar` (ação de servidor, `useFormStatus`); nos formulários de cliente, o rótulo do botão que corre | **D-502** |
 
@@ -67,13 +67,13 @@ robustez; **P3** = acabamento.
 | 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
-| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha; o aviso é provisório até o `EstadoDaTela` |
+| 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha, e desde a D-468 (#192) com o `EstadoDaTela` e "Tentar de novo" na mesma URL |
 | 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | **corrigido** nas mesmas 19 telas (tipos `vazio` × `filtro`, com \"Limpar filtros\") |
 | 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | **corrigido** (D-502): título da tela no cabeçalho, estado de permissão e \"Ir para o início\" |
 | 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | **corrigido** (D-502, `BotaoEnviar` e rótulos de pendente); sobra o \"Sair\" do cabeçalho |
 | 12 | Três animações de giro e 8 giros locais; textos de espera sem vocabulário comum | `sb-girar`, `sb-pco-girar`, `sb-vnc-girar` | P2 | **corrigido** (D-503): as três animações viraram `sb-girar`; os giros locais ficam, cada um com a sua velocidade |
 | 13 | `role="alert"` em conteúdo estático renderizado no servidor — o leitor de tela anuncia como alerta a cada carga | 191 usos em 111 arquivos | P2 | **reavaliado** (D-503): quase todos são falha real e ficam; sobra o \"Período personalizado inválido\" em seis telas do A2, que vira `role=\"status\"` quando ele tocar nelas |
-| 14 | Só 10 de 58 páginas têm `Suspense` interno; as mais pesadas esperam todas as leituras para pintar qualquer coisa | `/skus/[skuId]` (2.123 linhas), `/anuncios/[itemId]`, `/anuncios`, `/sincronizacao`, Home | P2 | **medido** (D-503): o LCP real de produção aponta Home (7,6 s), `/skus/[id]` (5,9 s) e `/vendas` (3,3–4,7 s); o streaming espera a medição das RPCs pelo A1 e o sim do A2 |
+| 14 | Só 10 de 58 páginas têm `Suspense` interno; as mais pesadas esperam todas as leituras para pintar qualquer coisa | `/skus/[skuId]` (2.123 linhas), `/anuncios/[itemId]`, `/anuncios`, `/sincronizacao`, Home | P2 | **Home feita** (D-504: Suspense na "Atenção necessária" e pausados em contagem direta); **medido** (D-503): o LCP real de produção aponta Home (7,6 s), `/skus/[id]` (5,9 s) e `/vendas` (3,3–4,7 s); o streaming espera a medição das RPCs pelo A1 e o sim do A2 |
 | 15 | Dois giros da NF-e sem regra de movimento reduzido | `.sb-nf-girando`, `.sb-nf-estado-doc-icone-girando` | P3 | **corrigido** (D-500) |
 | 16 | CSS duplicado | `.sb-full-state*` ≡ `.sb-inbox-state*`; `.sb-vnc-vazio` e `.sb-sync-empty` definidos duas vezes | P3 | **corrigido**: as 13 famílias de estado por módulo saíram (59 regras, D-502); `.sb-vnc-vazio` era um defeito visível na busca de SKU, corrigido em D-503; `.sb-sync-empty` não era duplicado |
 | 17 | "Tentar de novo" × "Tentar novamente" | 7 × 3 | P3 | **corrigido** (`TENTAR_DE_NOVO`, D-502) |
@@ -95,16 +95,20 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
    de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
 2. ~~**Botão pendente compartilhado**~~ — **feito** (D-502, `BotaoEnviar`).
-3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas. Falta: os seis
-   avisos provisórios da T-R6 (o A2 troca na fatia dele), as telas da fila do
-   A2 e o item 13 (`role="alert"` em aviso que não é falha), tela a tela.
+3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas, e nos seis avisos
+   da T-R6 pelo A2 (D-468, #192). Falta: as telas da fila do A2 e o item 13
+   (`role="alert"` em aviso que não é falha, como o período inválido da
+   `/curva-abc`), tela a tela.
 4. **Shell num layout** (§4), se o dono aprovar.
 5. **Streaming nas telas pesadas** (item 14) — a ordem vem do LCP de
-   produção (§5): Home, `/skus/[id]`, `/vendas`. Na Home, a seção "Atenção
-   necessária" ordena todos os cartões juntos, inclusive os dois da segunda
-   rodada (`get_stock_coverage_summary`, `get_listings_dashboard`): streaming
-   só se a lentidão for dela (A1 mede como `authenticated`), com esqueleto do
-   mesmo tamanho para não deslocar o layout, e com o sim do A2 (telas dele).
+   produção (§5): Home, `/skus/[id]`, `/vendas`. **Home feita (D-504):** a
+   "Atenção necessária" espera sozinha a segunda rodada; indicadores e gráfico
+   de 3.220 para 209 ms com a cobertura atrasada em 3 s no banco de teste; e os
+   "Anúncios pausados" deixam a `get_listings_dashboard` (a leitura fria mais
+   pesada, medida pelo A1) por uma contagem direta na primeira rodada. Falta o
+   SKU (a curva ABC, depois da T-R3b do A2) e `/vendas`, com a mesma receita:
+   streaming só onde a lentidão medida está, esqueleto do mesmo tamanho para não
+   deslocar o layout, e o sim do A2 (telas dele).
 6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 
 ---
@@ -150,9 +154,10 @@ carga de `/vendas` não se reproduz no build local (17 telas com CLS 0).
 
 **A causa, medida pelo A1** (15/10, Dev, como `authenticated`): quentes, as RPCs
 dessas telas ficam abaixo de 150 ms; o que pesa é o cache frio. Na Home, a
-segunda rodada lê ~110 MB de disco (`get_listings_dashboard` com `p_limit 1`
-monta a lista inteira só para contar; `get_stock_coverage_summary`) e só começa
-depois da primeira. No SKU, a `get_sku_abc_curve` da aba padrão (5,4 mil
+segunda rodada lia ~110 MB de disco (`get_listings_dashboard` com `p_limit 1`
+montava a lista inteira só para contar os pausados; `get_stock_coverage_summary`)
+e só começava depois da primeira — desde a D-504, os pausados são uma contagem
+direta na primeira rodada e só a cobertura fica na segunda, dentro do Suspense. No SKU, a `get_sku_abc_curve` da aba padrão (5,4 mil
 páginas) e, na aba Histórico, a `get_sku_timeline` (~300 MB para qualquer SKU,
 corrigida na D-461 do A1). Releia
 antes de cada fatia de performance; o número de antes/depois vai para
