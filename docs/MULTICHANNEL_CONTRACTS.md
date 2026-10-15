@@ -152,7 +152,7 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
-### 3.14 Busca universal com a Shopee (C-57, D-467) — em código
+### 3.14 Busca universal com a Shopee (C-57, D-467) — em produção
 
 `search_entities(p_organization_id, p_query)` — a mesma da paleta e da `/busca`, estendida (não há segunda busca).
 
