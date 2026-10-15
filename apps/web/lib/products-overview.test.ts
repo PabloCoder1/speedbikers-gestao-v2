@@ -5,10 +5,12 @@ import {
   SEM_CATEGORIA,
   buildCurationHref,
   filtrosAtivos,
+  presencaPorMarketplace,
   resolveCurationFilters,
+  toCurationRpcArgs,
   toOverviewRpcArgs,
 } from "./curation-filters";
-import { lerVisaoProdutos, linhaDoLegado, opcoesDeLista } from "./products-overview";
+import { contagemDaPresenca, lerVisaoProdutos, linhaDoLegado, opcoesDeLista } from "./products-overview";
 
 const linha = {
   sku_id: "9a3bde68-678d-4a0b-8078-29d83cbe865d",
@@ -162,5 +164,128 @@ describe("filtros de catálogo na URL (D-373)", () => {
     const atual = resolveCurationFilters({ categoria: "MANETE", pagina: "3" });
 
     expect(buildCurationHref(atual, { tipo: "kit" })).toBe("/produtos?categoria=MANETE&tipo=kit");
+  });
+});
+
+/**
+ * D-454 (sobre D-445, C-56): a leitura com a Shopee. Três respostas possíveis
+ * — a anterior a D-445 (sem as chaves), a nova sem loja live (nulos) e a nova
+ * com loja live (números) — e nenhuma pode virar a outra.
+ */
+describe("lerVisaoProdutos com a Shopee (D-454)", () => {
+  const facetasNovas = {
+    ...resposta.facetas,
+    anuncios: { todos: 1, com: 1, sem: 0, so_ml: 0, so_shopee: 1, ambos: 0 },
+    vendas: { todos: 1, com: 1, sem: 0, so_ml: 1, so_shopee: 0, ambos: 0 },
+  };
+  const comShopee = {
+    ...resposta,
+    linhas: [{ ...linha, listing_count: 0, shopee_listing_count: 1, shopee_units_sold_90d: 0 }],
+    facetas: facetasNovas,
+    resumo: { ...resposta.resumo, sem_anuncio_ml: 1, sem_venda_90d_ml: 0, tem_shopee: true },
+  };
+  const semLojaLive = {
+    ...resposta,
+    linhas: [{ ...linha, shopee_listing_count: null, shopee_units_sold_90d: null }],
+    facetas: facetasNovas,
+    resumo: { ...resposta.resumo, sem_anuncio_ml: 0, sem_venda_90d_ml: 0, tem_shopee: false },
+  };
+
+  it("a leitura anterior a D-445 não sabe: tudo nulo, nunca zero", () => {
+    const visao = lerVisaoProdutos(resposta);
+
+    expect(visao?.linhas[0]?.shopee_listing_count).toBeNull();
+    expect(visao?.linhas[0]?.shopee_units_sold_90d).toBeNull();
+    expect(visao?.facetas.anuncios.porMarketplace).toBeNull();
+    expect(visao?.resumo.tem_shopee).toBeNull();
+    expect(visao?.resumo.sem_anuncio_ml).toBeNull();
+  });
+
+  it("com loja live, os números da Shopee e o só do ML chegam como o banco disse", () => {
+    const visao = lerVisaoProdutos(comShopee);
+
+    expect(visao?.linhas[0]?.shopee_listing_count).toBe(1);
+    expect(visao?.linhas[0]?.shopee_units_sold_90d).toBe(0);
+    expect(visao?.facetas.anuncios.porMarketplace).toEqual({ so_ml: 0, so_shopee: 1, ambos: 0 });
+    expect(visao?.resumo).toMatchObject({ tem_shopee: true, sem_anuncio_ml: 1, sem_venda_90d_ml: 0 });
+  });
+
+  it("sem loja live, a leitura nova diz que não há Shopee e as linhas ficam nulas", () => {
+    const visao = lerVisaoProdutos(semLojaLive);
+
+    expect(visao?.resumo.tem_shopee).toBe(false);
+    expect(visao?.linhas[0]?.shopee_listing_count).toBeNull();
+  });
+
+  it("linha que discorda do resumo é contrato quebrado: nem zero inventado, nem número perdido", () => {
+    // "0 na Shopee" para quem não tem Shopee.
+    expect(
+      lerVisaoProdutos({ ...semLojaLive, linhas: [{ ...linha, shopee_listing_count: 0, shopee_units_sold_90d: 0 }] }),
+    ).toBeNull();
+    // Loja live e uma linha sem o número.
+    expect(
+      lerVisaoProdutos({ ...comShopee, linhas: [{ ...linha, shopee_listing_count: 1, shopee_units_sold_90d: null }] }),
+    ).toBeNull();
+  });
+
+  it("chave nova pela metade ou com tipo errado recusa a resposta inteira", () => {
+    expect(
+      lerVisaoProdutos({ ...comShopee, facetas: { ...facetasNovas, anuncios: { todos: 1, com: 1, sem: 0, so_ml: 0 } } }),
+    ).toBeNull();
+    expect(lerVisaoProdutos({ ...comShopee, resumo: { ...comShopee.resumo, tem_shopee: "sim" } })).toBeNull();
+    expect(
+      lerVisaoProdutos({ ...comShopee, resumo: { ...resposta.resumo, sem_anuncio_ml: 1, tem_shopee: true } }),
+    ).toBeNull();
+    expect(
+      lerVisaoProdutos({ ...comShopee, linhas: [{ ...linha, shopee_listing_count: "1", shopee_units_sold_90d: 0 }] }),
+    ).toBeNull();
+  });
+
+  it("a contagem de cada opção vem da faceta; sem a faceta por marketplace, a opção fica sem número", () => {
+    const nova = lerVisaoProdutos(comShopee);
+    const antiga = lerVisaoProdutos(resposta);
+
+    expect(nova === null || antiga === null).toBe(false);
+    if (nova === null || antiga === null) return;
+
+    expect(contagemDaPresenca(nova.facetas.anuncios, "so-shopee")).toBe(1);
+    expect(contagemDaPresenca(nova.facetas.anuncios, "ambos")).toBe(0);
+    expect(contagemDaPresenca(nova.facetas.vendas, "so-ml")).toBe(1);
+    expect(contagemDaPresenca(antiga.facetas.anuncios, "com")).toBe(1);
+    expect(contagemDaPresenca(antiga.facetas.anuncios, "so-ml")).toBeNull();
+  });
+
+  it("a leitura de antes de D-373 também não sabe da Shopee", () => {
+    const nova = linhaDoLegado({ ...linha, total_count: 5 });
+
+    expect(nova.shopee_listing_count).toBeNull();
+    expect(nova.shopee_units_sold_90d).toBeNull();
+  });
+});
+
+describe("recortes por marketplace na URL (D-454)", () => {
+  it("lê os três recortes novos e os traduz para o vocabulário de D-445", () => {
+    const atual = resolveCurationFilters({ anuncios: "so-shopee", vendas: "ambos" });
+
+    expect(atual.anuncios).toBe("so-shopee");
+    expect(atual.vendas).toBe("ambos");
+    expect(toOverviewRpcArgs(atual)).toMatchObject({ p_listing: "SO_SHOPEE", p_sales: "AMBOS" });
+    expect(toOverviewRpcArgs(resolveCurationFilters({ anuncios: "so-ml" })).p_listing).toBe("SO_ML");
+    expect(buildCurationHref(atual, {})).toBe("/produtos?anuncios=so-shopee&vendas=ambos");
+  });
+
+  it("só os três novos dependem da leitura de D-445", () => {
+    expect(presencaPorMarketplace(null)).toBe(false);
+    expect(presencaPorMarketplace("com")).toBe(false);
+    expect(presencaPorMarketplace("sem")).toBe(false);
+    expect(presencaPorMarketplace("so-ml")).toBe(true);
+    expect(presencaPorMarketplace("so-shopee")).toBe(true);
+    expect(presencaPorMarketplace("ambos")).toBe(true);
+  });
+
+  it("a fila antiga (antes de D-373) não recebe recorte de presença nenhum", () => {
+    const args = toCurationRpcArgs(resolveCurationFilters({ anuncios: "so-shopee" }));
+
+    expect(args).not.toHaveProperty("p_listing");
   });
 });

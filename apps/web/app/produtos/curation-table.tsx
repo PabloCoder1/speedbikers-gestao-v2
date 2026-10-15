@@ -57,6 +57,37 @@ function Sugestao({ row }: { row: CurationRow }): ReactNode {
 }
 
 /**
+ * O giro de um marketplace: unidades em 90 dias em cima, anúncios embaixo.
+ * Zero é dado (apagado, não escondido). `canal` nulo é a célula de antes de
+ * D-454, sem Shopee: nada a distinguir.
+ */
+function Giro({
+  canal,
+  unidades,
+  anuncios,
+}: {
+  canal: "ML" | "Shopee" | null;
+  unidades: number;
+  anuncios: number;
+}): ReactNode {
+  return (
+    <>
+      <span className={unidades === 0 ? "sb-prod-preco sb-prod-zero" : "sb-prod-preco"}>
+        {formatCount(unidades)} un
+        {canal !== null && (
+          <small className="sb-prod-canal">
+            {canal === "ML" ? <abbr title="Mercado Livre">ML</abbr> : canal}
+          </small>
+        )}
+      </span>
+      <span className={anuncios === 0 ? "sb-prod-sub sb-prod-zero" : "sb-prod-sub"}>
+        {anuncios === 1 ? "1 anúncio" : `${formatCount(anuncios)} anúncios`}
+      </span>
+    </>
+  );
+}
+
+/**
  * "Tipo de Estoque" do frame: um chip por estado — `info` para o decidido,
  * `atencao` para o indefinido ("Requer revisão" no frame). O texto continua
  * dizendo tudo; o tom só reforça.
@@ -108,6 +139,9 @@ export function CurationTable({
   const [pendente, setPendente] = useState<Pendente | null>(null);
   const [resultado, setResultado] = useState<{ texto: string; erro: boolean; desfazer: string[] } | null>(null);
   const [emCurso, startTransition] = useTransition();
+  // D-454: a leitura garante que as linhas têm os números da Shopee todas ou
+  // nenhuma (loja live ou não, `lib/products-overview.ts`).
+  const comShopee = rows.some((r) => r.shopee_listing_count !== null);
 
   const ids = [...selecionados];
   const nada = ids.length === 0;
@@ -408,7 +442,14 @@ export function CurationTable({
                   Saldo no ERP
                 </th>
                 {/* Vendas e anúncios juntos: as duas medidas de giro, numa coluna (D-373). */}
-                <th className="sb-num" title="Unidades vendidas em 90 dias, e quantos anúncios vendem o SKU (D-122)">
+                <th
+                  className="sb-num"
+                  title={
+                    comShopee
+                      ? "Unidades vendidas em 90 dias e anúncios que vendem o SKU, por marketplace (D-122, D-445): Mercado Livre e Shopee, sem a loja de teste. Sem total: cada um na sua linha"
+                      : "Unidades vendidas em 90 dias, e quantos anúncios vendem o SKU (D-122)"
+                  }
+                >
                   Vendas 90d
                   <br />
                   Anúncios
@@ -483,6 +524,7 @@ export function CurationTable({
                         supplierBrand={row.supplier_brand}
                         classificacao={classificacaoDe(row)}
                         listingCount={row.listing_count}
+                        shopeeListingCount={row.shopee_listing_count}
                       />
                     </span>
                     {row.decision_diverges_from_signature && (
@@ -521,14 +563,21 @@ export function CurationTable({
                       <Sugestao row={row} />
                     </span>
                   </td>
-                  <td className="sb-num">
-                    <span className={row.units_sold_90d === 0 ? "sb-prod-preco sb-prod-zero" : "sb-prod-preco"}>
-                      {formatCount(row.units_sold_90d)} un
-                    </span>
-                    <span className={row.listing_count === 0 ? "sb-prod-sub sb-prod-zero" : "sb-prod-sub"}>
-                      {row.listing_count === 1 ? "1 anúncio" : `${formatCount(row.listing_count)} anúncios`}
-                    </span>
-                  </td>
+                  {row.shopee_listing_count === null || row.shopee_units_sold_90d === null ? (
+                    <td className="sb-num">
+                      <Giro canal={null} unidades={row.units_sold_90d} anuncios={row.listing_count} />
+                    </td>
+                  ) : (
+                    /*
+                      D-454: com loja Shopee live, um marketplace por bloco.
+                      Sem total: o banco não o devolve, e somar aqui seria a
+                      tela fazendo a conta (D-445).
+                    */
+                    <td className="sb-num sb-prod-giro">
+                      <Giro canal="ML" unidades={row.units_sold_90d} anuncios={row.listing_count} />
+                      <Giro canal="Shopee" unidades={row.shopee_units_sold_90d} anuncios={row.shopee_listing_count} />
+                    </td>
+                  )}
                   <td>
                     <Classificacao row={row} />
                   </td>

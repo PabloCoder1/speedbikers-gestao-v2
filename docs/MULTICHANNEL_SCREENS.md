@@ -49,14 +49,14 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | Shopee só depois do Go Live (D-430 §5) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
-| Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | contrato C-07 + E6 |
+| Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | C-56 (D-445) → **T6c ✔ (D-454)** |
 | SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
 | Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | na Shopee faltam vendas, exportação e filtros salvos | T1 ✔ (D-431: seletor levando a busca); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
 | Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) | demanda Shopee fora até a fatia 5 — ver risco T-R3 | E8 + dono |
-| Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug, ML) · `marketplace` + `contas` (uuid) + filtros salvos | `get_sku_abc_*` com `p_marketplaces`/`p_account_ids` (C-60) | o Excel multicanal (T6b2) | T6b ✔ (D-448: "Todos" e "Shopee", compras como critério) |
+| Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug) + filtros salvos | `daily_sku_metrics` | marketplace como recorte; filtro "sem Full" só faz sentido com ML | E6 → T6 |
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
@@ -201,7 +201,9 @@ Shopee, por faixa — D-359).
   de teste (a RPC não devolve o ambiente — C-06) e **vendas por canal** — a aba
   Vendas e a visão geral leem só `daily_sku_metrics` (E6).
 - **`/produtos`** conta anúncio e venda só do ML: um SKU que só a Shopee
-  anuncia ou vende cai em "sem anúncio"/"sem venda" (C-07).
+  anuncia ou vende cai em "sem anúncio"/"sem venda" (C-07). **Resolvido na
+  T6c (D-454):** com loja live, os filtros dizem em que marketplace, os cartões
+  dizem "em nenhum marketplace" e a coluna de giro mostra cada um, sem total.
 - **Anúncios** ficam em duas listas, com razão: o anúncio ML e o Shopee têm
   estados, campos e ações diferentes (Full, promoção, relist só no ML). A
   experiência única vem da troca de marketplace na mesma posição do cabeçalho
@@ -225,10 +227,10 @@ linhas.
 | C-01 | Seletor Marketplace/Conta (§4) em toda tela que filtra por conta; `/contas`, `/sincronizacao` e o shell com as lojas | C-52 `marketplace_accounts` (com o slug do ML para os links antigos; permissão por conta e por loja) | E3 (+E2) → T3 |
 | C-02 | `/vendas` e a faixa de vendas da Home com "todos", "ml" e "shopee", várias contas, marca e frescor por canal | C-53 `get_marketplace_sales_summary` + série diária | E4 → T4 |
 | C-03 | `/faturamento` com marketplace: resumo Shopee (§5), linha por loja na tabela por conta, cobertura por canal | C-58 (D-437) | T5 ✔ (D-442) |
-| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | C-59 (D-439), C-60 (curva) | T6a ✔ (D-444); T6b ✔ (D-448), Excel na T6b2 |
+| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | C-59 (D-439), C-60 (curva) | T6a ✔ (D-444); curva na T6b |
 | C-05 | Concessão de loja em `/usuarios` | C-54 | E2 → T2 |
 | C-06 | Selo de loja de teste no painel Shopee do SKU | `get_sku_shopee_listings` devolvendo o ambiente da loja — **pedido novo** | pequeno |
-| C-07 | `/produtos` sem chamar de "sem anúncio"/"sem venda" o SKU que só a Shopee tem | `get_products_overview` contando anúncio e venda Shopee — **pedido novo** | depois de E6 |
+| C-07 | `/produtos` sem chamar de "sem anúncio"/"sem venda" o SKU que só a Shopee tem | `get_products_overview` contando anúncio e venda Shopee — **pedido novo** | C-56 (D-445) → T6c ✔ (D-454) |
 | C-08 | Busca universal (Ctrl+K) achando loja, anúncio e pedido Shopee | `search_entities` com a Shopee — **pedido novo** | depois de E3 |
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | nada novo: `job_runs` já os tem; falta a cadência em `apps/web/lib/sync-health.ts` (horários: pedidos e financeiro às :20, catálogo às :25) | T1 |
 
@@ -248,7 +250,7 @@ número.
 | **T3a ✔ / T3b ✔** | **T3b, código 2026-10-14, D-446:** o cartão da Shopee em `/integracoes` e a seção em `/configuracoes`; o seletor fica nas tabelas-base (a view só valeria o custo onde se lê o frescor). **T3a, código 2026-10-14, D-438:** o aviso da loja (D-435) com nome e destino, as lojas em `/sincronizacao` com os limiares do vigia e a contagem do shell por `marketplace_accounts`. **T3b:** seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
 | **T4 ✔** | **código 2026-10-14, D-440.** `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
 | **T5 ✔** | **código 2026-10-14, D-442.** `/faturamento` com marketplace e a linha por loja; "Todos" lado a lado, sem total; T5b (componentes do recebido e série diária) espera o C-61 | E5 | componentes não comparáveis nunca somados |
-| **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); **T6b ✔ código 2026-10-14, D-448:** a Curva ABC com "Todos" e "Shopee" (C-60), o Excel na T6b2; T6c `/produtos` (C-56) | E6 | — |
+| **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); T6b curva ABC (C-60); **T6c ✔ código 2026-10-14, D-454:** `/produtos` com a Shopee (C-56) | E6 | — |
 | **T7** | Busca universal com a Shopee (C-08) | C-08 | — |
 | **T8** | Central e meta do mês com a Shopee | Go Live + dono | — |
 
