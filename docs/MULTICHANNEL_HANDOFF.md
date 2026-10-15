@@ -103,23 +103,24 @@
 
 ## Agente 3 — UX/UI, carregamento e design system
 
-Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na faixa **D-500+** (combinada com A1 e A2). Território: componentes compartilhados de carregamento e estado (`carregando*.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx`, `filter-menu.tsx`, `filter-pill.tsx`, `kpi-strip.tsx`, `saved-filters.tsx`), o bloco CARREGAMENTO de `globals.css` e as telas sem branch aberta do A2. Não muda dado, consulta, parâmetro de URL nem regra de negócio.
+Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na faixa **D-500+** (combinada com A1 e A2). Território: componentes compartilhados de carregamento e estado (`carregando*.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx`, `link-de-filtro.tsx`, `filter-menu.tsx`, `filter-pill.tsx`, `kpi-strip.tsx`, `saved-filters.tsx`), o bloco CARREGAMENTO de `globals.css` e as telas sem branch aberta do A2. Não muda dado, consulta, parâmetro de URL nem regra de negócio.
 
 **Concluído**
 - Auditoria de carregamento, interação e estados especiais (14/10): 17 achados com evidência, `docs/UX_SYSTEM.md` §2.
-- D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms.
+- D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms. **Em produção** desde 15/10 (#176, `899b1123`).
+- D-501, a atualização no lugar no resto do app: 17 buscas GET, 27 `<a>` e 41 `<Link>` de mesma tela em 22 arquivos (as telas livres e as quatro que o A2 liberou: `/vendas`, `/vendas/shopee`, `/faturamento` e `/anuncios/shopee`), o `LinkDeFiltro`, a guarda `check:navegacao-suave` na CI e o `e2e/atualizacao-no-lugar.spec.ts`.
 
 **Em andamento**
-- D-500 no **#176** (só web, sem migration): entra quando a CI fechar e o dono mergear.
+- PR da D-501 (só web, sem migration).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Atualização no lugar nos 45 `<Link>` sem indicador e nas 24 buscas GET restantes. Começa pelas telas sem branch do A2; `/anuncios`, `/vendas/shopee`, `/curva-abc`, `/faturamento` e `/produtos` só quando o A2 liberar.
-- Botão pendente compartilhado e `EstadoDaTela` (erro, vazio e permissão).
-- Shell num layout: proposta ao dono, depois de #164, #165 e #167.
+- Botão pendente compartilhado e `EstadoDaTela` (erro, vazio e permissão), que substitui o aviso provisório da T-R6.
+- Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
-- Falha de leitura mostrada como "nenhum" em `/vinculacoes`, `/usuarios` (histórico), `/curva-abc` (opções), `/compras/novo`, `/diagnostico` e `/skus/[skuId]` (`docs/UX_SYSTEM.md` §2, item 8). É lógica de tela, então fica com você; A3 dá a forma do estado de erro.
-- Tela nova de filtro: use `ItemDeMenu`/`FilterMenu`, `FilterPill` e `FormularioFiltro`, e nunca `<a href="?…">` ou `<form method="get">`.
+- A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos`, `/compras`, `/curva-abc` e `/reposicao`. Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
+- `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
+- Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
 
 ---
 
