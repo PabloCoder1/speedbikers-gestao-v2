@@ -695,6 +695,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-18 | Faixa de `/anuncios` — **medido em produção**, `authenticated` | 6 × `get_listings_dashboard(p_limit 1)`, ~115 ms cada (~0,7 s) | **63 ms** as seis, `get_listings_dashboard_counts` | contagens sem os CTEs de venda e visitas; predicado copiado e preso por teste de integração | D-381 |
 | 2026-09-23 | `/notificacoes`, primeira pagina | **556 ms** | **63 ms** | raiz da consulta em `notification_recipients` (a tabela cuja linha a tela mostra) + indice `(user_id, created_at desc)`: o planejador anda pela ordem e para na centesima linha, em vez de materializar as 54.306 do usuario e ordenar no fim | D-393 |
 | 2026-10-14 | `/estoque`: busca e opção do menu de filtro (navegador, build de produção, 600 ms de latência, mediana de 5) | busca 1.304 ms e menu 1.268 ms, recarregando o documento | **663 ms** e **926 ms**, sem recarga | navegação suave (`FormularioFiltro`, `ItemDeMenu`); a pílula, que já era suave, fica igual (903 → 908 ms) e passa a mostrar o dado durante a espera | D-500 |
+| 2026-10-15 | LCP real por tela (web vitals de produção, `web_vital` no log da Vercel, 14–15/10, só carga completa) | Home 7.612 ms, `/skus/[id]` 5.868 ms, `/vendas` 3.276–4.724 ms; o resto < 1 s; TTFB < 150 ms em todas | — (linha de base) | leitura do log; a ordem do streaming (Home → SKU → Vendas) vem daqui, e as RPCs foram ao A1 | D-503 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)

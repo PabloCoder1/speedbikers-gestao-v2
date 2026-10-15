@@ -71,11 +71,11 @@ robustez; **P3** = acabamento.
 | 9 | Estado vazio sem distinguir "sem dado" de "filtro sem resultado" | `.sb-empty` em 94 usos/45 arquivos + ~15 classes por módulo; só 9 telas oferecem "limpar filtros" dentro do vazio | P2 | **corrigido** nas mesmas 19 telas (tipos `vazio` × `filtro`, com \"Limpar filtros\") |
 | 10 | Acesso restrito sem caminho de volta nem papel ARIA, e 6 telas com tratamento próprio | `AcessoRestrito` (9 telas) | P2 | **corrigido** (D-502): título da tela no cabeçalho, estado de permissão e \"Ir para o início\" |
 | 11 | Ação sem proteção contra duplo envio ou sem rótulo de pendente | `/central/metas` (remover), `/central/limites` (voltar aos padrões), upload de NF-e reabilita antes de navegar, vincular anúncio; 5 botões desabilitam sem dizer nada | P2 | **corrigido** (D-502, `BotaoEnviar` e rótulos de pendente); sobra o \"Sair\" do cabeçalho |
-| 12 | Três animações de giro e 8 giros locais; textos de espera sem vocabulário comum | `sb-girar`, `sb-pco-girar`, `sb-vnc-girar` | P2 | fila |
-| 13 | `role="alert"` em conteúdo estático renderizado no servidor — o leitor de tela anuncia como alerta a cada carga | 191 usos em 111 arquivos | P2 | fila |
-| 14 | Só 10 de 58 páginas têm `Suspense` interno; as mais pesadas esperam todas as leituras para pintar qualquer coisa | `/skus/[skuId]` (2.123 linhas), `/anuncios/[itemId]`, `/anuncios`, `/sincronizacao`, Home | P2 | fila (medir antes) |
+| 12 | Três animações de giro e 8 giros locais; textos de espera sem vocabulário comum | `sb-girar`, `sb-pco-girar`, `sb-vnc-girar` | P2 | **corrigido** (D-503): as três animações viraram `sb-girar`; os giros locais ficam, cada um com a sua velocidade |
+| 13 | `role="alert"` em conteúdo estático renderizado no servidor — o leitor de tela anuncia como alerta a cada carga | 191 usos em 111 arquivos | P2 | **reavaliado** (D-503): quase todos são falha real e ficam; sobra o \"Período personalizado inválido\" em seis telas do A2, que vira `role=\"status\"` quando ele tocar nelas |
+| 14 | Só 10 de 58 páginas têm `Suspense` interno; as mais pesadas esperam todas as leituras para pintar qualquer coisa | `/skus/[skuId]` (2.123 linhas), `/anuncios/[itemId]`, `/anuncios`, `/sincronizacao`, Home | P2 | **medido** (D-503): o LCP real de produção aponta Home (7,6 s), `/skus/[id]` (5,9 s) e `/vendas` (3,3–4,7 s); o streaming espera a medição das RPCs pelo A1 e o sim do A2 |
 | 15 | Dois giros da NF-e sem regra de movimento reduzido | `.sb-nf-girando`, `.sb-nf-estado-doc-icone-girando` | P3 | **corrigido** (D-500) |
-| 16 | CSS duplicado | `.sb-full-state*` ≡ `.sb-inbox-state*`; `.sb-vnc-vazio` e `.sb-sync-empty` definidos duas vezes | P3 | **em parte**: as 13 famílias de estado por módulo saíram (59 regras, D-502); sobram `.sb-vnc-vazio` e `.sb-sync-empty` duplicados |
+| 16 | CSS duplicado | `.sb-full-state*` ≡ `.sb-inbox-state*`; `.sb-vnc-vazio` e `.sb-sync-empty` definidos duas vezes | P3 | **corrigido**: as 13 famílias de estado por módulo saíram (59 regras, D-502); `.sb-vnc-vazio` era um defeito visível na busca de SKU, corrigido em D-503; `.sb-sync-empty` não era duplicado |
 | 17 | "Tentar de novo" × "Tentar novamente" | 7 × 3 | P3 | **corrigido** (`TENTAR_DE_NOVO`, D-502) |
 
 **O que a auditoria conferiu e está certo:** `app/error.tsx` usa `retry` (é a
@@ -99,9 +99,13 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    avisos provisórios da T-R6 (o A2 troca na fatia dele), as telas da fila do
    A2 e o item 13 (`role="alert"` em aviso que não é falha), tela a tela.
 4. **Shell num layout** (§4), se o dono aprovar.
-5. **Streaming nas telas pesadas** (item 14): medir quanto cada bloco espera e
-   pôr `Suspense` só onde a primeira pintura melhora de fato.
-6. Um giro só (item 12) e a limpeza do CSS duplicado (item 16).
+5. **Streaming nas telas pesadas** (item 14) — a ordem vem do LCP de
+   produção (§5): Home, `/skus/[id]`, `/vendas`. Na Home, a seção "Atenção
+   necessária" ordena todos os cartões juntos, inclusive os dois da segunda
+   rodada (`get_stock_coverage_summary`, `get_listings_dashboard`): streaming
+   só se a lentidão for dela (A1 mede como `authenticated`), com esqueleto do
+   mesmo tamanho para não deslocar o layout, e com o sim do A2 (telas dele).
+6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 
 ---
 
@@ -128,3 +132,28 @@ mergeados, com aviso antes.
 **Ganho esperado (a medir na fatia, não prometido):** hoje a página espera as
 leituras dela e SÓ DEPOIS o `Shell` faz as dele — uma ida em série a menos por
 navegação entre telas, e moldura que nunca pisca.
+
+---
+
+## 5. A espera medida em produção (web vitals)
+
+A web grava cada carga completa no log da Vercel (`app/web-vitals.tsx` →
+`POST /api/vitals` → `web_vital`, só nome, valor e rota). Para ler: Vercel MCP
+`get_runtime_logs` no projeto `speedbikers-prod`, `query: "web_vital"`, janela
+de 24 h (7 dias estoura o tempo da consulta). Navegação suave não reporta: o
+número é de quem abriu a tela do zero.
+
+Leitura de 14–15/10 (amostra pequena): Home com LCP de 7,6 s, `/skus/[id]` com
+5,9 s, `/vendas` com 3,3–4,7 s; o resto abaixo de 1 s, e o TTFB sempre abaixo de
+150 ms — o esqueleto chega rápido e quem demora é a leitura. Um CLS de 0,51 numa
+carga de `/vendas` não se reproduz no build local (17 telas com CLS 0).
+
+**A causa, medida pelo A1** (15/10, Dev, como `authenticated`): quentes, as RPCs
+dessas telas ficam abaixo de 150 ms; o que pesa é o cache frio. Na Home, a
+segunda rodada lê ~110 MB de disco (`get_listings_dashboard` com `p_limit 1`
+monta a lista inteira só para contar; `get_stock_coverage_summary`) e só começa
+depois da primeira. No SKU, a `get_sku_abc_curve` da aba padrão (5,4 mil
+páginas) e, na aba Histórico, a `get_sku_timeline` (~300 MB para qualquer SKU,
+corrigida na D-461 do A1). Releia
+antes de cada fatia de performance; o número de antes/depois vai para
+`docs/PERFORMANCE.md`.

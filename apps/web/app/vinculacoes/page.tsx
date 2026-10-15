@@ -8,6 +8,7 @@ import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../components/link-de-filtro";
+import { EstadoDaTela } from "../../components/estado-da-tela";
 import { formatCount, formatCurrency } from "../../lib/format";
 import {
   PAGE_SIZE,
@@ -494,20 +495,16 @@ export default async function VinculacoesPage({
         }
       >
         {linhas.length === 0 ? (
-          <div className="sb-vnc-vazio">
-            <b>{window.label}</b>
-            {filtroAtivo ? (
-              <>
-                <span>Nenhum anúncio neste recorte.</span>
-                <Link className="sb-button" href="/vinculacoes">
-                  Limpar filtros
-                  <CarregandoSeODemorar />
-                </Link>
-              </>
-            ) : (
-              <span>Assim que a sincronização trouxer anúncios, eles aparecem aqui.</span>
-            )}
-          </div>
+          <EstadoDaTela
+            tipo={filtroAtivo ? "filtro" : "vazio"}
+            titulo={window.label}
+            descricao={
+              filtroAtivo
+                ? "Nenhum anúncio neste recorte."
+                : "Assim que a sincronização trouxer anúncios, eles aparecem aqui."
+            }
+            acao={filtroAtivo ? { href: "/vinculacoes", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+          />
         ) : (
           <TabelaVinculos
             linhas={linhas}
