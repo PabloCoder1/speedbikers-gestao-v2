@@ -1385,6 +1385,20 @@ A saída é a mesma em 72 casos (6.884 linhas).
 
 **O que sobra na classe ABC do SKU:** a curva da organização em 90 dias, ~3,4 mil acessos à `daily_sku_metrics` (a tabela inteira tem 2,8 mil páginas no Dev). Esse custo é inerente ao cálculo; só um valor pré-calculado o tiraria.
 
+### `/vendas`: a `get_sales_expanded_summary` pela janela (D-469, 15/10/2026)
+
+**Dev, como `authenticated`** (30 dias, todas as contas, sem marca; páginas DISTINTAS contadas pelo `ctid`). A tela faz duas rodadas; tudo nela fica abaixo de 5 mil acessos por chamada, menos as duas `get_sales_expanded_summary` (período atual e anterior): 3.840 ms na primeira chamada fria, ~150 ms quente, ~16,5 mil páginas distintas cada (os pedidos sem a organização no filtro percorriam o índice inteiro, e a tarifa lia a `order_items` inteira). Com a D-469 (migration `20261015105000`), o mesmo resultado em 8 recortes:
+
+| Recorte | Atual | Nova |
+|---|---|---|
+| 30 dias | 151 ms, 146 mil acessos | **108 ms, 59 mil** |
+| 7 dias | 44 ms | 25 ms |
+| 1 dia | 18 ms | 5 ms |
+| marca / sem marca | 194 ms | 102–107 ms |
+| uma conta | 68 ms | 72 ms |
+
+Frio: ~16,5 mil → ~7 mil páginas distintas por chamada (só os pedidos e os itens do período). Um passo separado de `min/max(id)` em `orders` foi descartado: percorre a chave desde o menor id e ficou pior que o original (~300 ms, 370 mil acessos).
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
