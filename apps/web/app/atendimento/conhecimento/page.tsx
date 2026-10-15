@@ -7,6 +7,7 @@ import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { isPageBeyondEnd, summarizePagedWindow } from "../../../lib/filters";
 import { formatCount, formatPercent } from "../../../lib/format";
 import {
@@ -131,9 +132,35 @@ export default async function ConhecimentoPage({
         </div>
       </div>
 
-      {listError !== null && <div role="alert" className="sb-knowledge-state sb-knowledge-state-error"><strong>Não foi possível carregar os conhecimentos.</strong><span>{listError}</span><LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page })}>Tentar de novo</LinkDeFiltro></div>}
-      {pageBeyondEnd && <div className="sb-knowledge-state"><strong>Esta página não existe neste recorte.</strong><span>O conjunto mudou ou o link é antigo.</span><LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: 1 })}>Voltar à primeira página</LinkDeFiltro></div>}
-      {listError === null && !pageBeyondEnd && rows.length === 0 && <div className="sb-knowledge-state"><strong>{hasFilters ? "Nenhum conhecimento com estes filtros" : "A base ainda não tem conhecimentos"}</strong><span>{hasFilters ? "Troque o recorte ou limpe os filtros para ver outros registros." : "Registre um fato como sugerido; ele só vira evidência após a validação humana."}</span></div>}
+      {listError !== null && (
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os conhecimentos."
+          descricao="Seus filtros foram preservados. Tente de novo; nenhum registro foi alterado."
+          detalhe={listError}
+          acao={{ href: buildKnowledgeHref(filters, { page: filters.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      )}
+      {pageBeyondEnd && (
+        <EstadoDaTela
+          tipo="filtro"
+          titulo="Esta página não existe neste recorte."
+          descricao="O conjunto mudou ou o link é antigo."
+          acao={{ href: buildKnowledgeHref(filters, { page: 1 }), rotulo: "Voltar à primeira página", mesmaTela: true }}
+        />
+      )}
+      {listError === null && !pageBeyondEnd && rows.length === 0 && (
+        <EstadoDaTela
+          tipo={hasFilters ? "filtro" : "vazio"}
+          titulo={hasFilters ? "Nenhum conhecimento com estes filtros" : "A base ainda não tem conhecimentos"}
+          descricao={
+            hasFilters
+              ? "Troque o recorte ou limpe os filtros para ver outros registros."
+              : "Registre um fato como sugerido; ele só vira evidência após a validação humana."
+          }
+          acao={hasFilters ? { href: "/atendimento/conhecimento", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+        />
+      )}
       {listError === null && !pageBeyondEnd && rows.length > 0 && <div style={{ overflowX: "auto" }}><table className="sb-table"><thead><tr><th>SKU</th><th>Tipo</th><th>Conhecimento</th><th>Fonte</th><th>Confirmado por</th><th>Atualizado</th><th>Status</th></tr></thead><tbody>{rows.map((entry) => <KnowledgeRow key={entry.id} entry={entry} canManage={canManage} />)}</tbody></table></div>}
       {listError === null && !pageBeyondEnd && window.totalPages > 1 && <nav className="sb-knowledge-pages" aria-label="Páginas da base de conhecimento">
         {filters.page > 1 ? <LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page - 1 })}>‹ Anterior</LinkDeFiltro> : <span />}

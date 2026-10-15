@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { BotaoEnviar } from "../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../components/carregando";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -137,9 +138,9 @@ async function LimitesContent(): Promise<ReactNode> {
 
           {podeEditar && limites.personalizados && (
             <form action={voltarAosPadroes} className="sb-central-bloco">
-              <button type="submit" className="sb-text-button">
+              <BotaoEnviar className="sb-text-button" pendente="Voltando aos padrões…">
                 Voltar aos padrões
-              </button>
+              </BotaoEnviar>
             </form>
           )}
 

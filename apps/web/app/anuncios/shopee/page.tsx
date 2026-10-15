@@ -22,13 +22,13 @@ import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { pageNumbers } from "../../../lib/listings-dashboard";
 import { contarContasMl, hrefDosAnuncios } from "../../../lib/marketplace";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
-import { sanitizeErrorText } from "../../../lib/sanitize";
 import { acaoDoVinculoShopee, podeVincularShopee, skuQueOAnuncioIndica } from "../../../lib/shopee-link";
 import {
   SHOPEE_LINK_STATES,
@@ -94,15 +94,6 @@ const SUBTITULO = (
   </>
 );
 
-/** Estado sem tabela (vazio, banco anterior, erro), na forma de `/anuncios`. */
-function Estado({ titulo, children, erro = false }: { titulo: string; children?: ReactNode; erro?: boolean }): ReactNode {
-  return (
-    <div className={erro ? "sb-an-estado sb-an-estado-erro" : "sb-an-estado"} role={erro ? "alert" : undefined}>
-      <b>{titulo}</b>
-      {children}
-    </div>
-  );
-}
 
 /** A tela sem catálogo para listar: o cabeçalho e um painel com o motivo. */
 function SemCatalogo({ children }: { children: ReactNode }): ReactNode {
@@ -142,7 +133,7 @@ export default async function AnunciosShopeePage({
   if (organizationId === null) {
     return (
       <SemCatalogo>
-        <Estado titulo="Sua conta não está associada a nenhuma organização." />
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </SemCatalogo>
     );
   }
@@ -153,11 +144,14 @@ export default async function AnunciosShopeePage({
     return (
       <SemCatalogo>
         {isShopeeSchemaMissing(lojasResult.error) ? (
-          <Estado titulo="Os anúncios da Shopee chegam com a próxima atualização do banco." />
+          <EstadoDaTela tipo="vazio" titulo="Os anúncios da Shopee chegam com a próxima atualização do banco." />
         ) : (
-          <Estado titulo="Não foi possível ler as lojas Shopee." erro>
-            <span>{sanitizeErrorText(lojasResult.error.message) ?? "A leitura falhou neste carregamento."}</span>
-          </Estado>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível ler as lojas Shopee."
+            descricao="A leitura falhou neste carregamento."
+            detalhe={lojasResult.error.message}
+          />
         )}
       </SemCatalogo>
     );
@@ -170,12 +164,12 @@ export default async function AnunciosShopeePage({
   if (lojas.length === 0) {
     return (
       <SemCatalogo>
-        <Estado titulo="Nenhuma loja Shopee conectada.">
-          <span>Conecte a loja em Contas; o catálogo é lido de hora em hora depois da conexão.</span>
-          <Link className="sb-button" href="/contas">
-            Conectar loja em Contas
-          </Link>
-        </Estado>
+        <EstadoDaTela
+          tipo="vazio"
+          titulo="Nenhuma loja Shopee conectada."
+          descricao="Conecte a loja em Contas; o catálogo é lido de hora em hora depois da conexão."
+          acao={{ href: "/contas", rotulo: "Conectar loja em Contas" }}
+        />
       </SemCatalogo>
     );
   }
@@ -226,7 +220,7 @@ export default async function AnunciosShopeePage({
   if (catalogoAusente) {
     return (
       <SemCatalogo>
-        <Estado titulo="O catálogo da Shopee chega com a próxima atualização do banco." />
+        <EstadoDaTela tipo="vazio" titulo="O catálogo da Shopee chega com a próxima atualização do banco." />
       </SemCatalogo>
     );
   }
@@ -440,51 +434,62 @@ export default async function AnunciosShopeePage({
           )}
 
           {lista.error !== null && (
-            <Estado titulo="Não foi possível carregar os anúncios da Shopee." erro>
-              <span>{sanitizeErrorText(lista.error.message) ?? "A leitura falhou neste carregamento."}</span>
-              <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: filters.pagina })}>
-                Tentar de novo
-              </LinkDeFiltro>
-            </Estado>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os anúncios da Shopee."
+              descricao="A leitura falhou neste carregamento."
+              detalhe={lista.error.message}
+              acao={{
+                href: buildShopeeListingsHref(filters, { pagina: filters.pagina }),
+                rotulo: TENTAR_DE_NOVO,
+                mesmaTela: true,
+              }}
+            />
           )}
 
           {lista.error === null &&
             rows.length === 0 &&
             (filters.pagina > 1 ? (
-              <Estado titulo="Esta página passou do fim da lista.">
-                <LinkDeFiltro className="sb-button" href={buildShopeeListingsHref(filters, { pagina: 1 })}>
-                  Voltar à primeira página
-                </LinkDeFiltro>
-              </Estado>
+              <EstadoDaTela
+                tipo="filtro"
+                titulo="Esta página passou do fim da lista."
+                acao={{
+                  href: buildShopeeListingsHref(filters, { pagina: 1 }),
+                  rotulo: "Voltar à primeira página",
+                  mesmaTela: true,
+                }}
+              />
             ) : temFiltro ? (
-              <Estado titulo="Nenhum anúncio corresponde a estes filtros.">
-                <LinkDeFiltro className="sb-button" href={limpar}>
-                  Limpar filtros
-                </LinkDeFiltro>
-              </Estado>
+              <EstadoDaTela
+                tipo="filtro"
+                titulo="Nenhum anúncio corresponde a estes filtros."
+                acao={{ href: limpar, rotulo: "Limpar filtros", mesmaTela: true }}
+              />
             ) : contagens === null ? (
               // Sem os contadores não se sabe se o catálogo já foi lido: a tela
               // não afirma nem "nunca lido" nem "lido e vazio".
-              <Estado titulo="Nenhum anúncio na lista.">
-                <span>Não foi possível conferir agora se o catálogo já foi lido.</span>
-              </Estado>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Nenhum anúncio na lista."
+                descricao="Não foi possível conferir agora se o catálogo já foi lido."
+              />
             ) : ultimaLeitura === null ? (
-              <Estado titulo="O catálogo da Shopee ainda não foi lido.">
-                {leituraParada ? (
-                  <>
-                    <span>A conexão da loja está com erro, e a leitura só roda com a loja conectada.</span>
-                    <Link className="sb-button" href="/contas">
-                      Reconectar em Contas
-                    </Link>
-                  </>
-                ) : (
-                  <span>A primeira leitura acontece na próxima hora — o catálogo é lido de hora em hora.</span>
-                )}
-              </Estado>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="O catálogo da Shopee ainda não foi lido."
+                descricao={
+                  leituraParada
+                    ? "A conexão da loja está com erro, e a leitura só roda com a loja conectada."
+                    : "A primeira leitura acontece na próxima hora — o catálogo é lido de hora em hora."
+                }
+                acao={leituraParada ? { href: "/contas", rotulo: "Reconectar em Contas" } : undefined}
+              />
             ) : (
-              <Estado titulo={lojasNoEscopo.length > 1 ? "Nenhum anúncio nas lojas Shopee." : "Nenhum anúncio nesta loja."}>
-                <span>A última leitura do catálogo não encontrou anúncio; itens apagados ficam de fora.</span>
-              </Estado>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo={lojasNoEscopo.length > 1 ? "Nenhum anúncio nas lojas Shopee." : "Nenhum anúncio nesta loja."}
+                descricao="A última leitura do catálogo não encontrou anúncio; itens apagados ficam de fora."
+              />
             ))}
 
           {lista.error === null && rows.length > 0 && (

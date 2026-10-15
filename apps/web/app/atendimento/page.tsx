@@ -11,6 +11,7 @@ import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { isPageBeyondEnd } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
@@ -523,40 +524,38 @@ export default async function AtendimentoPage({
           )}
 
           {erro !== null && (
-            <div role="alert" className="sb-inbox-state sb-inbox-state-error">
-              <strong>Não foi possível carregar os atendimentos.</strong>
-              <span>{erro}</span>
-              <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: current.page })}>
-                Tentar de novo
-              </LinkDeFiltro>
-            </div>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os atendimentos."
+              descricao="Seus filtros foram preservados. Tente de novo; nenhum atendimento foi alterado."
+              detalhe={erro}
+              acao={{ href: buildSupportHref(current, { page: current.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {/* Página além do fim não é "fila vazia": o recorte pode estar cheio. */}
           {paginaVazia && erro === null && (
-            <div className="sb-inbox-state">
-              <strong>Esta página não existe neste recorte.</strong>
-              <span>A fila encolheu ou o link é antigo.</span>
-              <LinkDeFiltro className="sb-button" href={buildSupportHref(current, { page: 1 })}>
-                Voltar à primeira página
-              </LinkDeFiltro>
-            </div>
+            <EstadoDaTela
+              tipo="filtro"
+              titulo="Esta página não existe neste recorte."
+              descricao="A fila encolheu ou o link é antigo."
+              acao={{ href: buildSupportHref(current, { page: 1 }), rotulo: "Voltar à primeira página", mesmaTela: true }}
+            />
           )}
 
           {erro === null && !paginaVazia && cases.length === 0 && (
-            <div className="sb-inbox-state">
-              <span className="sb-inbox-state-icon" aria-hidden="true">
-                <Icone nome="bandeja" tamanho={20} />
-              </span>
-              <strong>{recorteAtivo ? "Nenhum atendimento com estes filtros" : "Nenhum atendimento em aberto"}</strong>
-              <span>
-                {recorteAtivo
+            <EstadoDaTela
+              tipo={recorteAtivo ? "filtro" : "vazio"}
+              titulo={recorteAtivo ? "Nenhum atendimento com estes filtros" : "Nenhum atendimento em aberto"}
+              descricao={
+                recorteAtivo
                   ? filters.search !== null
                     ? "A busca procura o número do caso, o número do pedido, o MLB do anúncio ou o código do SKU."
                     : "Troque o recorte ou limpe os filtros."
-                  : "A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."}
-              </span>
-            </div>
+                  : "A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."
+              }
+              acao={recorteAtivo ? { href: buildSupportHref(current, limpo), rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+            />
           )}
 
           {erro === null && cases.length > 0 && (

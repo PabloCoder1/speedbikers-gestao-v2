@@ -78,7 +78,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 export function ActionCard({ action, userId }: { action: ActionCardData; userId: string }): ReactNode {
   const [status, setStatus] = useState(action.status);
   const [assigneeId, setAssigneeId] = useState(action.assignee_id);
-  const [busy, setBusy] = useState(false);
+  // Qual ação está correndo (o status de destino, ou "decisao"): o botão dela diz o
+  // que está fazendo, e todos ficam desabilitados até a resposta (D-502).
+  const [emCurso, setEmCurso] = useState<string | null>(null);
+  const busy = emCurso !== null;
   const [error, setError] = useState<string | null>(null);
 
   const [explanation, setExplanation] = useState<string | null>(null);
@@ -139,21 +142,21 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
     next: string,
     nextAssigneeId?: string,
   ): Promise<void> {
-    setBusy(true);
+    setEmCurso(next);
     setError(null);
 
     const result = await fn();
 
     if (!result.ok) {
       setError(result.message);
-      setBusy(false);
+      setEmCurso(null);
 
       return;
     }
 
     setStatus(next);
     if (nextAssigneeId !== undefined) setAssigneeId(nextAssigneeId);
-    setBusy(false);
+    setEmCurso(null);
   }
 
   async function handleRegisterDecision(): Promise<void> {
@@ -161,12 +164,12 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
 
     if (decision === null || decision.trim() === "") return;
 
-    setBusy(true);
+    setEmCurso("decisao");
     setError(null);
 
     const result = await registerDecision(action.id, decision.trim());
 
-    setBusy(false);
+    setEmCurso(null);
 
     if (!result.ok) {
       setError(result.message);
@@ -264,7 +267,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                   void run(() => claimAction(action.id, userId), "em_andamento", userId);
                 }}
               >
-                Assumir
+                {emCurso === "em_andamento" ? "Assumindo…" : "Assumir"}
               </button>
             )}
             <button
@@ -275,7 +278,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                 void run(() => resolveAction(action.id), "resolvido");
               }}
             >
-              Resolver
+              {emCurso === "resolvido" ? "Resolvendo…" : "Resolver"}
             </button>
             <button
               className="sb-button"
@@ -285,7 +288,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                 void run(() => dismissAction(action.id), "descartado");
               }}
             >
-              Descartar
+              {emCurso === "descartado" ? "Descartando…" : "Descartar"}
             </button>
             <button
               className="sb-button"
@@ -295,7 +298,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                 void handleRegisterDecision();
               }}
             >
-              Registrar decisão
+              {emCurso === "decisao" ? "Registrando…" : "Registrar decisão"}
             </button>
             {/*
               IA explicando a AÇÃO (D-155) — nunca no carregamento da página

@@ -11,6 +11,7 @@ import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
 import { PAGE_SIZE, buildStockHref, resolveStockFilters, summarizeStockWindow } from "../../lib/stock-filters";
 import { createClient } from "../../lib/supabase/server";
@@ -382,14 +383,29 @@ export default async function EstoquePage({
           </div>
 
           {error !== null && (
-            <p role="alert" className="sb-stock-message sb-stock-message-error">
-              Não foi possível carregar: {error.message}
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar o estoque."
+              descricao="Seus filtros foram preservados. Tente de novo; nenhum saldo foi alterado."
+              detalhe={error.message}
+              acao={{ href: buildStockHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {error === null && (
             <>
-              {rows.length === 0 && <p className="sb-empty">Nenhum SKU corresponde a estes filtros.</p>}
+              {rows.length === 0 && (
+                <EstadoDaTela
+                  tipo={filtrosAtivos.length > 0 ? "filtro" : "vazio"}
+                  titulo={filtrosAtivos.length > 0 ? "Nenhum SKU corresponde a estes filtros." : "Nenhum SKU com estoque ainda."}
+                  descricao={
+                    filtrosAtivos.length > 0
+                      ? "Revise ou remova os filtros para ampliar a busca."
+                      : "Os SKUs aparecem aqui assim que tiverem saldo ou movimento no ledger."
+                  }
+                  acao={filtrosAtivos.length > 0 ? { href: "/estoque", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+                />
+              )}
               {rows.length > 0 && (
                 <div className="sb-stock-table-wrap">
                   <table className="sb-table sb-stock-table">

@@ -13,6 +13,7 @@ import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { monogramaDeProduto } from "../../lib/initials";
 import { listingStatusLabel } from "../../lib/labels";
@@ -705,26 +706,22 @@ export default async function AnunciosPage({
           )}
 
           {error !== null && (
-            <div role="alert" className="sb-an-estado sb-an-estado-erro">
-              <b>Não foi possível carregar os anúncios.</b>
-              <span>{error.message}</span>
-              <LinkDeFiltro className="sb-button" href={buildHref(filters, { page: filters.page })}>
-                Tentar de novo
-              </LinkDeFiltro>
-            </div>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os anúncios."
+              descricao="Seus filtros foram preservados. Tente de novo; nenhum anúncio foi alterado."
+              detalhe={error.message}
+              acao={{ href: buildHref(filters, { page: filters.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {error === null && rows.length === 0 && !promocaoSemBanco && (
-            <div className="sb-an-estado">
-              <b>Nenhum anúncio corresponde a estes filtros.</b>
-              {chips.length > 0 ? (
-                <LinkDeFiltro className="sb-button" href={limpar}>
-                  Limpar filtros
-                </LinkDeFiltro>
-              ) : (
-                <span>O catálogo desta conta ainda não foi sincronizado.</span>
-              )}
-            </div>
+            <EstadoDaTela
+              tipo={chips.length > 0 ? "filtro" : "vazio"}
+              titulo="Nenhum anúncio corresponde a estes filtros."
+              descricao={chips.length > 0 ? undefined : "O catálogo desta conta ainda não foi sincronizado."}
+              acao={chips.length > 0 ? { href: limpar, rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+            />
           )}
 
           {error === null && rows.length > 0 && (

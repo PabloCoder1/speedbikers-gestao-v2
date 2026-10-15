@@ -12,6 +12,7 @@ import { AcessoRestrito } from "../../../components/acesso-restrito";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { TOM, tomDeStatus } from "../../../components/tone";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { erpImportEtapas } from "../../../lib/erp-import-steps";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import {
@@ -234,9 +235,13 @@ export default async function ConferenciaPage({
           }
         >
           {rows.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)" }}>
-              Não foi possível carregar as linhas: {rows.error.message}
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar as linhas desta importação."
+              descricao="Nada foi aplicado ao estoque. Tente de novo."
+              detalhe={rows.error.message}
+              acao={{ href: `/importacoes/${id}`, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {rows.error === null && rows.data.length === 0 && (

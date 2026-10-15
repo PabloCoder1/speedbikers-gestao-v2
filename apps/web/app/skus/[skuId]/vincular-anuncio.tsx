@@ -322,7 +322,8 @@ export function VincularAnuncio({
                 marginTop: "var(--sb-space-3)",
               }}
             >
-              <button type="button" className="sb-button" onClick={fechar}>
+              {/* Durante a gravação, cancelar fecharia a janela sem desfazer nada (D-502). */}
+              <button type="button" className="sb-button" onClick={fechar} disabled={estado.kind === "gravando"}>
                 Cancelar
               </button>
 
@@ -341,7 +342,7 @@ export function VincularAnuncio({
                   disabled={estado.kind === "buscando" || estado.kind === "gravando"}
                   onClick={() => void buscar()}
                 >
-                  {estado.kind === "buscando" ? "Procurando…" : "Procurar anúncio"}
+                  {estado.kind === "buscando" ? "Procurando…" : estado.kind === "gravando" ? "Gravando o vínculo…" : "Procurar anúncio"}
                 </button>
               )}
             </div>
