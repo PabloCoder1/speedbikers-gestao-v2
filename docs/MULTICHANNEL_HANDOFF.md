@@ -115,12 +115,13 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-501, a atualização no lugar no resto do app: 17 buscas GET, 27 `<a>` e 41 `<Link>` de mesma tela em 22 arquivos (as telas livres e as quatro que o A2 liberou: `/vendas`, `/vendas/shopee`, `/faturamento` e `/anuncios/shopee`), o `LinkDeFiltro`, a guarda `check:navegacao-suave` na CI e o `e2e/atualizacao-no-lugar.spec.ts`. **Em produção** desde 15/10 (#182, `583d670a`).
 - D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos.
 - D-503: o LCP real de produção por tela (Home 7,6 s, `/skus/[id]` 5,9 s, `/vendas` 3,3–4,7 s), um giro só, a busca de SKU de `/vinculacoes` de volta à forma compacta, e o item 13 da auditoria reavaliado.
+- D-504: a Home pinta sem esperar a cobertura e os pausados — só a "Atenção necessária" espera a segunda rodada, que começa quando a organização chega (indicadores de 3.220 para 209 ms com a leitura fria simulada; aprovado pelo A2, medido pelo A1).
 
 **Em andamento**
 - D-502 no **#187** (só web, sem migration): entra quando a CI fechar verde e o A2 mergear.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Streaming na Home, depois `/skus/[id]` e `/vendas` (`docs/UX_SYSTEM.md` §3 item 5, §5): espera o A1 medir as RPCs como `authenticated` e o sim do A2.
+- Streaming do `/skus/[id]` (a curva ABC da aba padrão, depois da T-R3b do A2) e de `/vendas` (`docs/UX_SYSTEM.md` §3 item 5, §5).
 - Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
