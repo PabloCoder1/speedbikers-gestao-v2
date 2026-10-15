@@ -44,6 +44,20 @@ const shopeeShops =
       }
     : undefined;
 
+// D-453: o push da Shopee, com a mesma chave do parceiro e o endereço que
+// entra na assinatura (o cadastrado no Console).
+const shopeePush =
+  shopeeShops !== undefined && env.SHOPEE_PARTNER_KEY !== undefined && env.SHOPEE_REDIRECT_URI !== undefined
+    ? {
+        db,
+        enqueuer,
+        logger,
+        environment: env.SHOPEE_ENVIRONMENT,
+        partnerKey: env.SHOPEE_PARTNER_KEY,
+        pushUrl: env.SHOPEE_PUSH_URL ?? new URL("/push/shopee", env.SHOPEE_REDIRECT_URI).toString(),
+      }
+    : undefined;
+
 const nfeImportDeps =
   env.DOCUMENTS_BUCKET !== undefined
     ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
@@ -80,6 +94,7 @@ const app = createApp({
   // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
   ...(shopeeShops !== undefined ? { shopeeShops } : {}),
+  ...(shopeePush !== undefined ? { shopeePush } : {}),
   // D-426: o gatilho horário dos pedidos, só com a Shopee configurada.
   ...(shopeeShops !== undefined
     ? { shopeeOrdersSchedule: { db, enqueuer, logger, environment: env.SHOPEE_ENVIRONMENT } }

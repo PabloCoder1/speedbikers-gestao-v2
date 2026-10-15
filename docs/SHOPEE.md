@@ -253,6 +253,21 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   `shopee_sku_link_events`. **O manual vence o SKU do anúncio** — a
   precedência está na view.
 
+## 4.4 Push — CONFIRMADO na documentação (D-453)
+
+- **Guia "Push Mechanism notifications"** (developer-guide/18, 14/10/2026):
+  POST ao endereço cadastrado no Console; `Authorization` = HMAC-SHA256
+  (hex) da chave do parceiro sobre `<endereço>|<corpo cru>`; resposta 2xx
+  de corpo VAZIO em 3 s (senão repete em 300/1800/10800 s e a taxa de
+  sucesso baixa — abaixo de 30% a assinatura é desligada); sem ordem e
+  com repetição; só avisa, o dado vem da API.
+- **Códigos usados:** 3 `order_status_push` (`ordersn`, `status`) e 29
+  `return_updates_push` (`order_sn`, `return_sn`). O 2
+  (`shop_authorization_canceled_push`) tem exemplos contraditórios: só log.
+- **Na V3:** `POST /push/shopee` na api antecipa `shopee.orders.sync` ou
+  `shopee.returns.sync` da loja, uma tarefa por janela de 5 minutos; o
+  gatilho horário continua. Cadastro no Console: `docs/DEPLOYMENT.md` §6.2.
+
 ## 5. Sandbox — o roteiro
 
 Fonte: `open.shopee.com/developer-guide/644` (Sandbox Testing V2) e `/744`.
@@ -305,3 +320,4 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E7a | Devoluções: a API `returns` em tabela própria, sem o comprador, com a situação como veio, o SKU de cada item, a lista e o resumo por situação | código (D-447); chamada real a conferir no sandbox depois do deploy |
 | E7b | Ads CPC da loja: o desempenho diário com a cobertura da leitura, ROAS/ACOS/TACoS no SQL; fora do resultado até conferir o GMV Max com loja real | código (D-449); chamada real a conferir no sandbox depois do deploy |
 | E7c | Repasse: cada liberação do escrow por pedido (`get_escrow_list`) contra o previsto, com a cobertura da leitura; o a liberar; extrato da carteira e renda por pedido esperam o sandbox | código (D-451); chamada real e unidade do valor a conferir no sandbox depois do deploy |
+| E7d | Push: `POST /push/shopee` assinado antecipa a leitura de pedidos (3) e devoluções (29) da loja em janelas de 5 minutos; o gatilho horário continua | código (D-453); cadastrar o endereço no Console depois do deploy da api |

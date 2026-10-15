@@ -384,7 +384,7 @@ contrato novo também cobre o ML, há teste de equivalência contra a RPC atual.
   não leem a Shopee** até a fatia 5 (decisão do dono, 14/10).
 - **Contrato entregue:** ranking e ABC com canal.
 
-### E7 — Fontes financeiras que faltam (R9) e Live Push — E7a (devoluções, D-447), E7b (Ads CPC, D-449) e E7c (repasse, D-451) em código
+### E7 — Fontes financeiras que faltam (R9) e Live Push — E7a (devoluções, D-447), E7b (Ads CPC, D-449) e E7c (repasse, D-451) na `main`; E7d (push, D-453) em código
 
 Devoluções (API `returns`), reembolso pelo `order_income`, lote do
 financeiro (`get_escrow_detail_batch`, a conferir no sandbox), Ads da
