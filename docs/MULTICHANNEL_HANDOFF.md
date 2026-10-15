@@ -100,7 +100,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-500, atualização no lugar: filtro, busca, paginação e aba na mesma tela mantêm o dado velho visível (barra da moldura, conteúdo esmaecido, `aria-busy`). As opções de menu de filtro e as visões salvas passam a ser navegação suave (antes: `<a>`, recarga do documento). A busca de `/estoque` usa o `FormularioFiltro`. Em `/estoque`, com 600 ms de latência: busca de 1.304 para 663 ms e menu de 1.268 para 926 ms.
 
 **Em andamento**
-- PR da D-500 (só web).
+- D-500 no **#176** (só web, sem migration): entra quando a CI fechar e o dono mergear.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Atualização no lugar nos 45 `<Link>` sem indicador e nas 24 buscas GET restantes. Começa pelas telas sem branch do A2; `/anuncios`, `/vendas/shopee`, `/curva-abc`, `/faturamento` e `/produtos` só quando o A2 liberar.
