@@ -125,7 +125,8 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
 
   const secaoMeta = page.getByRole("region", { name: "Meta e projeção" });
 
-  await expect(secaoMeta.getByRole("progressbar", { name: "Realizado da meta do mês" })).toBeVisible();
+  // exact: a meta de cada marketplace (D-482) tem a barra dela, com o nome do marketplace no fim.
+  await expect(secaoMeta.getByRole("progressbar", { name: "Realizado da meta do mês", exact: true })).toBeVisible();
   await expect(secaoMeta.getByText(/1\.234\.567,89/).first()).toBeVisible();
 
   // Limpa o que o teste gravou, pela própria tela.
@@ -134,6 +135,58 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
   await expect(page.getByRole("cell", { name: /1\.234\.567,89/ })).toHaveCount(0);
   await page.getByRole("button", { name: /^Remover a alíquota de / }).first().click();
   await expect(page.getByText("Nenhuma alíquota cadastrada.")).toBeVisible();
+});
+
+/**
+ * Metas por marketplace (D-473, T8b; decisão do dono de 15/10): o ADMIN do
+ * seed cadastra a meta do Mercado Livre, ela aparece na tabela e na central ao
+ * lado da geral, e a Shopee diz que ainda não entra (o seed não tem loja live
+ * lida). Valor inválido volta com o erro no campo, sem gravar. Num banco sem a
+ * migration o painel diz "sendo ativado" e o teste para aí.
+ */
+test("/central/metas: a meta do Mercado Livre aparece na central ao lado da geral, e a Shopee ainda não entra", async ({
+  page,
+}) => {
+  await login(page, "/central/metas");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Metas e imposto" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a tabela de D-473");
+  }
+
+  const formulario = page.getByRole("form", { name: "Cadastrar meta por marketplace" });
+
+  await formulario.getByLabel("Meta do marketplace (R$)").fill("0");
+  await formulario.getByRole("button", { name: "Salvar meta do marketplace" }).click();
+  await expect(formulario.getByRole("alert")).toHaveText("A meta precisa ser maior que zero.");
+
+  await formulario.getByLabel("Marketplace", { exact: true }).selectOption("ML");
+  await formulario.getByLabel("Meta do marketplace (R$)").fill("765.432,10");
+  await formulario.getByRole("button", { name: "Salvar meta do marketplace" }).click();
+  await expect(formulario.getByRole("status")).toHaveText("Meta do Mercado Livre salva.");
+
+  const tabela = page.getByRole("table", { name: "Metas por marketplace" });
+
+  await expect(tabela.getByRole("row", { name: /Mercado Livre.*765\.432,10/ })).toBeVisible();
+
+  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+
+  const cadaMarketplace = page.getByRole("region", { name: "Meta de cada marketplace" });
+
+  await expect(cadaMarketplace.getByText(/^meta de R\$\s765\.432,10$/)).toBeVisible();
+  await expect(cadaMarketplace.getByText("A Shopee ainda não entra na meta")).toBeVisible();
+
+  // A geral continua sendo a de sempre, agora com o nome que diz que soma os dois.
+  await expect(
+    page.getByRole("region", { name: "Meta e projeção" }).getByRole("heading", { name: /^Meta geral de / }),
+  ).toBeVisible();
+
+  // Limpa o que o teste gravou, pela própria tela.
+  await page.goto("/central/metas");
+  await page.getByRole("button", { name: /^Remover a meta do Mercado Livre de / }).first().click();
+  await expect(page.getByText("Nenhuma meta por marketplace cadastrada.")).toBeVisible();
 });
 
 /**

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { formatarAliquota, lerData, lerMes, lerNota, lerPercentual, lerValorEmReais, rotuloDoMes } from "./metas-imposto";
+import {
+  formatarAliquota,
+  lerData,
+  lerMarketplaceDaMeta,
+  lerMes,
+  lerNota,
+  lerPercentual,
+  lerValorEmReais,
+  doMarketplaceDaMeta,
+  rotuloDoMarketplaceDaMeta,
+  rotuloDoMes,
+} from "./metas-imposto";
 
 describe("lerValorEmReais", () => {
   it("aceita o dinheiro como se escreve no Brasil", () => {
@@ -66,5 +77,28 @@ describe("rótulos", () => {
     expect(formatarAliquota(0.06)).toBe("6%");
     expect(formatarAliquota(0.065)).toBe("6,5%");
     expect(formatarAliquota(0.11375)).toBe("11,375%");
+  });
+});
+
+describe("lerMarketplaceDaMeta", () => {
+  it("aceita só os dois marketplaces que o banco aceita (D-473)", () => {
+    expect(lerMarketplaceDaMeta("ML")).toEqual({ ok: true, valor: "ML" });
+    expect(lerMarketplaceDaMeta(" SHOPEE ")).toEqual({ ok: true, valor: "SHOPEE" });
+
+    for (const texto of ["", "GERAL", "ml", "Shopee", "MERCADO_LIVRE"]) {
+      expect(lerMarketplaceDaMeta(texto), texto).toEqual({ ok: false, erro: "Escolha o marketplace da meta." });
+    }
+  });
+
+  it("dá o nome, e nunca o código cru de um marketplace que a tela não conhece", () => {
+    expect(rotuloDoMarketplaceDaMeta("ML")).toBe("Mercado Livre");
+    expect(rotuloDoMarketplaceDaMeta("SHOPEE")).toBe("Shopee");
+    expect(rotuloDoMarketplaceDaMeta("TIKTOK")).toBe("Outro marketplace");
+  });
+
+  it("põe a preposição certa: do Mercado Livre, da Shopee", () => {
+    expect(doMarketplaceDaMeta("ML")).toBe("do Mercado Livre");
+    expect(doMarketplaceDaMeta("SHOPEE")).toBe("da Shopee");
+    expect(doMarketplaceDaMeta("TIKTOK")).toBe("de outro marketplace");
   });
 });

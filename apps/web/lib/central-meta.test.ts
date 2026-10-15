@@ -136,6 +136,38 @@ describe("lerMetaDoMes", () => {
     expect(lerMetaDoMes({ ...RESPOSTA, datas_comerciais: [{ ...BLACK_FRIDAY, medido: "sim" }] })).toBeNull();
     expect(lerMetaDoMes({ ...RESPOSTA, datas_comerciais: [{ ...BLACK_FRIDAY, dias: [{ dia: "2022-11-25" }] }] })).toBeNull();
   });
+
+  it("sem `escopos` (banco anterior a D-473), lê só a geral", () => {
+    expect(lerMetaDoMes(RESPOSTA)?.escopos).toBeNull();
+  });
+
+  it("lê as metas por marketplace (D-473): o topo é a geral, e a Shopee vem nula sem loja live", () => {
+    const ml = { ...RESPOSTA, meta: 2_000_000, realizado: 1_000_000 };
+    const m = lerMetaDoMes({ ...RESPOSTA, escopos: { GERAL: RESPOSTA, ML: ml, SHOPEE: null } });
+
+    expect(m?.meta).toBe(2_800_000);
+    expect(m?.escopos?.ml.meta).toBe(2_000_000);
+    expect(m?.escopos?.ml.realizado).toBe(1_000_000);
+    expect(m?.escopos?.ml.escopos).toBeNull();
+    expect(m?.escopos?.shopee).toBeNull();
+
+    const comShopee = lerMetaDoMes({
+      ...RESPOSTA,
+      escopos: { GERAL: RESPOSTA, ML: ml, SHOPEE: { ...RESPOSTA, meta: null, realizado: 310_533.39 } },
+    });
+
+    expect(comShopee?.escopos?.shopee?.meta).toBeNull();
+    expect(comShopee?.escopos?.shopee?.realizado).toBe(310_533.39);
+  });
+
+  it("um escopo fora do contrato recusa a resposta inteira", () => {
+    expect(lerMetaDoMes({ ...RESPOSTA, escopos: null })).toBeNull();
+    expect(lerMetaDoMes({ ...RESPOSTA, escopos: { GERAL: RESPOSTA, SHOPEE: null } })).toBeNull();
+    expect(lerMetaDoMes({ ...RESPOSTA, escopos: { GERAL: RESPOSTA, ML: RESPOSTA } })).toBeNull();
+    expect(
+      lerMetaDoMes({ ...RESPOSTA, escopos: { GERAL: RESPOSTA, ML: RESPOSTA, SHOPEE: { ...RESPOSTA, situacao: "talvez" } } }),
+    ).toBeNull();
+  });
 });
 
 describe("fraseDaDataComercial", () => {
