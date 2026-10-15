@@ -15762,6 +15762,8 @@ Os avisos trocados:
 
 **2. A MESMA URL.** As telas sem construtor de href proprio usam `lib/mesma-url.ts`, que repete cada parametro como veio, inclusive os repetidos (`sku=…&sku=…` da ponte ao pedido). Tentar de novo e pedir a MESMA leitura. `/diagnostico` e `/vinculacoes` usam os construtores que ja tinham.
 
+**3. A CONTAGEM DO INDICE DE DECISOES.** Dois ramos que somam uma decisao cada gravam o MESMO numero na linha "Decisoes registradas", e o git mescla sem conflito, com a conta errada. Na `main` de 15/10 ela dizia 459 com 460 decisoes, depois do #190 e do #191. O `docs:check` passa a conferir a linha contra as decisoes e reprova com "Rode `pnpm docs:index`". Este PR traz a contagem certa (461).
+
 **Fica de fora:**
 - O aviso de periodo personalizado invalido da `/curva-abc` nao e falha de leitura. Ele entra no item 13 da auditoria do A3 (`role="alert"` em aviso que nao e falha).
 - Os demais `.sb-skud-danger` do SKU sao estados das telas da fila do A2, a revisar tela a tela.
@@ -15777,6 +15779,7 @@ Os avisos trocados:
 **Impacto:**
 - web: `apps/web/lib/mesma-url.ts` e o teste, `apps/web/app/{compras/novo,usuarios,vinculacoes,diagnostico,curva-abc}/page.tsx` e `apps/web/app/skus/[skuId]/page.tsx`;
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- `scripts/docs-check.mjs` (a conferencia da contagem);
 - nenhuma migration, RPC, worker ou api.
 
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento

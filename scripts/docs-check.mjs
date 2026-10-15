@@ -97,6 +97,17 @@ if (decisoes !== null && indice !== null) {
       `docs/DECISIONS_INDEX.md: desatualizado — faltam ${faltando.slice(0, 5).join(", ")}${faltando.length > 5 ? "…" : ""}. Rode \`pnpm docs:index\`.`,
     );
   }
+
+  // A linha da contagem: dois ramos que somam uma decisão cada gravam o MESMO
+  // número, e o git mescla sem conflito com a conta errada (a `main` disse 459
+  // com 460 decisões em 15/10, D-468). Rode `pnpm docs:index` depois de mesclar.
+  const contagem = /Decisões registradas: \*\*(\d+)\*\*/u.exec(indice);
+
+  if (contagem !== null && Number(contagem[1]) !== idsFonte.size) {
+    problemas.push(
+      `docs/DECISIONS_INDEX.md: a contagem diz ${contagem[1]} e há ${String(idsFonte.size)} decisões. Rode \`pnpm docs:index\`.`,
+    );
+  }
 }
 
 if (problemas.length > 0) {
