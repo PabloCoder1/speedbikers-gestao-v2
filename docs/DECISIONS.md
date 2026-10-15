@@ -15886,6 +15886,46 @@ Os avisos trocados:
 - `scripts/docs-check.mjs` (a conferencia da contagem);
 - nenhuma migration, RPC, worker ou api.
 
+## D-469 - get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
+
+**Contexto:** o A3 separou as cargas de producao por rota (D-506). A `/vendas` virou a tela lenta, com LCP de 1,1 a 5,9 s e o primeiro byte baixo. Medi a tela no Dev, como `authenticated`, contando paginas DISTINTAS (a correcao da medida de D-461/463/465).
+
+As duas chamadas de `get_sales_expanded_summary`, periodo atual e anterior, dominam a tela:
+- 3.840 ms na primeira chamada fria e ~150 ms quente;
+- ~16,5 mil paginas distintas por chamada (~130 MB);
+- o resto da tela fica abaixo de 5 mil acessos por chamada.
+
+As causas:
+1. `pedidos` filtrava `orders` so pela data. O indice de data e `(organization_id, date_created)`, e, sem a organizacao no filtro, era percorrido inteiro.
+2. A tarifa (`sale_fee * quantity`) juntava os pedidos com a `order_items` inteira (11,9 mil paginas no Dev).
+3. `language sql` com `SET` (D-305): na funcao, o plano generico fazia 146 mil acessos, contra 43 mil do corpo com os valores.
+
+**Decisao:**
+1. **As organizacoes das contas visiveis entram no filtro de `orders`** (`array(select distinct organization_id from ml_accounts)`, com a RLS de `ml_accounts`). Agora o indice resolve a janela. O resultado nao muda: a RLS de `orders` ja limitava as contas acessiveis, que sao dessas organizacoes, e quem passa por cima da RLS continua vendo todas.
+2. **Os itens so na faixa de ids dos pedidos da janela** (`order_id between min e max`, pelo indice `(order_id, position)`). E uma condicao a mais, nunca a menos: todo pedido da janela esta entre o seu menor e o seu maior id. O id do pedido do ML cresce com a data (correlacao 0,999 no Dev), entao a faixa traz so os itens do periodo.
+3. **A faixa vem da mesma consulta**, calculada sobre os pedidos ja filtrados. Um passo separado de `min/max` sobre `orders` percorria a chave desde o menor id ate achar a janela. Medido: ~300 ms e 370 mil acessos, pior que o original, e foi descartado.
+4. **`plpgsql` + `force_custom_plan`** (D-305). O contrato nao muda: colunas, recortes e o trio de cancelamento NULO sob marca.
+
+**Verificacao:**
+- **Dev, como `authenticated`, oito execucoes**, com o mesmo resultado nos 8 recortes (30 dias, anterior, 7 dias, 1 dia, uma conta, uma marca, sem marca, periodo sem pedidos):
+
+| Recorte | Atual | Nova |
+|---|---|---|
+| 30 dias | 151 ms, 146 mil acessos | 108 ms, 59 mil |
+| anterior | 135 ms | 96 ms |
+| 7 dias | 44 ms | 25 ms |
+| 1 dia | 18 ms | 5 ms |
+| uma conta | 68 ms | 72 ms |
+| marca | 194 ms | 102 ms |
+| sem marca | 194 ms | 107 ms |
+| sem pedidos | 14 ms | 1 ms |
+
+- **Com o cache frio:** de ~16,5 mil para ~7 mil paginas distintas por chamada, ou seja, os pedidos (2,2 mil) e os itens (4,7 mil) so do periodo, mais o pedaco dos indices.
+- **Integracao:** os testes da D-157 (os numeros expandidos, recortes de marca e conta) seguem verdes; suite inteira verde.
+- **Mutacao: nao se aplica as duas condicoes novas.** Elas so podem estreitar a leitura, nunca mudar o resultado, por isso nenhum teste de resultado as pegaria. O que as protege e a comparacao lado a lado acima.
+
+**Impacto:** `supabase/migrations/20261015105000_vendas_expandida_pela_janela.sql` (carimbo antes da 110000 do C-57, que espera a tela do A2), `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. A tela nao muda. O A3 pode por em Suspense o bloco que usa esses numeros, se ainda quiser.
+
 ## D-470 - Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
 
 **Contexto:** a D-502 (A3) criou o `EstadoDaTela` e deixou para o A2 as telas da fila dele. A auditoria do A3 (`docs/UX_SYSTEM.md` §2) mediu nessas telas:
@@ -15975,6 +16015,45 @@ A `/central` era a ultima a usar a constante `AVISO`, que morava em `faturamento
 
 **Impacto:**
 - web: `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/reposicao/{page,configuracoes/page}.tsx`, `apps/web/app/compras/{page,novo/page,[id]/page,[id]/editar/page}.tsx`, `apps/web/app/central/**` (dez arquivos), `apps/web/app/faturamento/numeros.tsx` (sai o `AVISO`) e `apps/web/e2e/central.spec.ts`;
+- docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-474 - Telas do A2, etapa E5: os estados do /skus/[skuId] no EstadoDaTela, e as regras CSS que ficaram sem uso saem
+
+**Contexto:** a D-468 trocou os dois avisos da T-R6 no SKU (contas e acoes abertas), e a D-472 fechou as outras telas da fila do A2. Sobrou o `/skus/[skuId]`, a pagina de detalhe com mais estados do app:
+- **onze avisos vermelhos** (`.sb-skud-danger` com `role="alert"`), cada um com a mensagem tecnica crua no meio da frase. Um deles ainda passava a mensagem por `sanitizeErrorText` na mao;
+- **os vazios das abas** em tres formas: `.sb-empty`, `.sb-skud-soft` e `.sb-skud-lead-mb4`.
+
+A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
+
+**1. A MESMA REGRA DA D-470/D-472.**
+- Toda falha de leitura vira `tipo="erro"`, com o detalhe sanitizado pelo componente e "Tentar de novo". A acao e uma constante so (`tentarDeNovo`), com a MESMA URL e a aba incluida: tentar de novo no historico de custo volta ao historico de custo. Os dois da D-468 passam a usa-la.
+- Os vazios viram `tipo="vazio"`. O SKU nao tem filtro proprio, entao nao ha "filtro sem resultado".
+- As ressalvas que davam sentido ao vazio continuam na descricao: "ausencia de snapshot nao e saldo zero"; "isso nao quer dizer que o preco ficou parado"; "a linha do tempo so enxerga o que o sistema registrou".
+
+**2. AS DECISOES.** O vazio "Nenhuma decisao registrada" levava, dentro do mesmo paragrafo, a contagem das acoes abertas ou a falha dela. Agora:
+- o vazio diz se ha acao aberta na Central de Acoes;
+- a falha da contagem e um erro a parte. "Nenhuma decisao" continua verdade; a contagem e que nao veio.
+
+**3. VENDAS ENTRE MARKETPLACES.** O componente ganha `tentarDeNovo` (opcional) e deixa de sanitizar a mensagem na mao: o `EstadoDaTela` ja faz isso.
+
+**4. FICA COMO ESTA.** O painel de diagnostico ("O que aconteceu?") e a narracao com IA mostram o RESULTADO de uma acao do usuario, nao o estado da tela. Mesma regra da D-472 para os retornos de formulario.
+
+**5. CSS SEM USO.** Cinco regras ficaram sem nenhum uso em codigo ou e2e depois das D-470, D-472 e D-474, conferidas classe a classe, e saem:
+- `.sb-skud-danger` e `.sb-skud-lead-mb4` (SKU);
+- `.sb-pod-state` e `.sb-pod-error` (detalhe do pedido de compra);
+- `.sb-rep-aviso`, com a variante do celular (`/reposicao`).
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web, incluindo `check:table-styles` e `check:control-styles` depois da limpeza do CSS.
+- **e2e:** `sku-dashboard`, `sku-shopee` e `vendas-por-sku-multicanal` 13/13.
+- **Falha simulada no banco isolado:** sem o SELECT de `sku_cost_history` para `authenticated`, a aba Historico mostra "Nao foi possivel carregar o historico de custo", com a mensagem embaixo do titulo (o CSS do A3 na D-505) e "Tentar de novo" para `/skus/<id>?aba=historico`. A permissao voltou em seguida, e a foto foi conferida.
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000). Uma primeira rodada deu 235: o `vinculacoes` "o zero de candidatos" falhou uma vez e passou sozinho e na rodada inteira seguinte; nao toca codigo desta fatia, e fica anotado como intermitente.
+
+**Impacto:**
+- web: `apps/web/app/skus/[skuId]/{page,vendas-entre-marketplaces}.tsx` e `apps/web/app/globals.css` (cinco regras a menos);
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 

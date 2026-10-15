@@ -26,7 +26,7 @@
 | Branches abertas | A1: `feat/busca-shopee` (#201: C-57, D-467) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
-| Migrations em produção | até `20261015100000` (D-441 a D-465, runs `38726738817`, `38755993771`, `38760462816` e `38773241495`, 15/10) |
+| Migrations em produção | até `20261015105000` (D-441 a D-469, runs `38726738817`, `38755993771`, `38760462816`, `38773241495` e `38784180221`, 15/10); a `110000` (C-57) depois da T7 |
 | Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -81,8 +81,9 @@
 - T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "só no ML", "só na Shopee" e "nos dois" nos filtros de anúncio e venda, os cartões de "sem anúncio/venda" em "nenhum marketplace" com o só do ML ao lado e a coluna de giro por marketplace, sem total. **Na `main`, #171.**
 - T5c — os Ads CPC da loja no `/faturamento` da Shopee (D-456, consome o C-63): seção própria, rotulada "CPC da loja", fora do resultado e sem somar com o Mercado Ads. **Na `main`, #173.**
 - T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **na `main`, #192**.
-- E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Em código e validada** (suíte e2e inteira), no PR próprio.
-- E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Em código e validada** (suíte e2e inteira), no PR próprio.
+- E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Na `main`, #197.**
+- E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Na `main`, #197.**
+- E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Em código e validada** (suíte e2e inteira), no PR próprio.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -90,10 +91,10 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada: a D-472 (E3/E4) está no PR próprio. Com ela, todas as telas da fila do A2 usam o `EstadoDaTela`.
+- Nada: a D-474 (os estados do SKU) está no PR próprio.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T7 busca universal (C-57) → T8 central e meta (Go Live).
+- T7 busca universal — o A1 faz o C-57 (D-467) estendendo a `search_entities` (lojas, anúncios e pedidos da Shopee, com marketplace e ids); a T7 entra empilhada no PR dele, com os rótulos dos grupos novos e o `?pedido=` na `/vendas/shopee`. → T8 central e meta (Go Live).
 
 **Bloqueios**
 - Tudo o que é Shopee só mostra números com loja **live**: hoje só há a sandbox. O Go Live do app é do dono (o Cloud NAT com IP fixo já está em produção, D-457).
@@ -103,7 +104,6 @@
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
 - **T-R3 confirmado pelo dono (15/10):** a planilha do UpSeller já vem com a venda da Shopee descontada do estoque, e a reposição só conta a demanda do ML — cobertura alta demais e sugestão baixa demais para SKU que vende na Shopee. O dono liberou somar a demanda da Shopee (15/10): o A1 faz o C-65 (D-459) e a tela já o lê (D-464). O `history_days_90` continua sendo o do ML: SKU que só vende na Shopee pode aparecer com histórico curto.
 - C-63: o TOTAL soma o gasto e as vendas ignorando o dia nulo, e um dia sem o gasto infla o ROAS. O A1 corrigiu no SQL (D-455: o ROAS e o ACOS só sobre os dias com os dois), e a tela diz os dias fora da razão (D-466).
-- C-58: o TOTAL vem com `receita_bruta` NULA quando as lojas somáveis não têm pedido no período, e a linha da loja vem 0 — a tela mostra "—" (não inventa o zero), mas o certo é o TOTAL dizer 0 quando há loja lida sem pedido. Pedido ao A1.
 - e2e: rodar a suíte duas vezes no mesmo banco quebra `atendimento` e `notificacoes` (o seed não desfaz caso assumido nem notificação lida) — `db reset` entre rodadas.
 
 ---
