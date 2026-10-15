@@ -7,7 +7,7 @@ import { CarregandoSeODemorar } from "../../components/carregando-link";
 import type { SavedFilter } from "../../components/saved-filters";
 import Link from "next/link";
 import { SavedFilters } from "../../components/saved-filters";
-import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { KpiCell, KpiCellCarregando, KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -25,6 +25,7 @@ import { contarLojasShopee } from "../../lib/marketplace";
 import { hrefDeVendas, resolverEscopoVendas } from "../../lib/vendas-multicanal";
 import { VendasMulticanal } from "./multicanal";
 import { currentMembership } from "../../lib/request-membership";
+import { sanitizeErrorText } from "../../lib/sanitize";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
 
@@ -290,16 +291,21 @@ function buildCards(current: SalesSummary, previous: SalesSummary | null): Metri
  * embutiria o atraso do recálculo na razão — 0,1% medido). Por isso podem
  * divergir ligeiramente dos cards L3 acima, e a seção declara a fonte.
  */
+/** A identidade da célula de cancelamento: a mesma no cartão pronto e no que não pôde ser lido (D-509). */
+const CANCELAMENTO = {
+  metricId: "taxa_cancelamento",
+  label: "Taxa de cancelamento",
+  formula: "cancelados ÷ elegíveis (válidos + cancelados)",
+  ressalva: "Denominador: pedidos elegíveis, os dois lados da mesma leitura de orders.",
+} as const;
+
 function buildExpandedCards(current: ExpandedSummary, previous: ExpandedSummary | null): MetricCardSpec[] {
   return [
     {
-      metricId: "taxa_cancelamento",
-      label: "Taxa de cancelamento",
-      formula: "cancelados ÷ elegíveis (válidos + cancelados)",
+      ...CANCELAMENTO,
       format: formatPercent,
       current: current.taxa_cancelamento,
       previous: previous?.taxa_cancelamento ?? null,
-      ressalva: "Denominador: pedidos elegíveis, os dois lados da mesma leitura de orders.",
     },
   ];
 }
@@ -455,13 +461,42 @@ async function VendasContent({
       p_limit: 10,
     }));
 
+  /*
+    A TAXA DE CANCELAMENTO NÃO SEGURA A TELA (D-509).
+
+    As duas `get_sales_expanded_summary` (período atual e anterior) são as
+    leituras mais caras da `/vendas`: o A1 mediu 3.840 e 929 ms a frio no Dev,
+    ~16 mil páginas cada, contra menos de 25 ms de TODAS as outras (a correção
+    no banco é a D-469, com ele). E alimentam UMA célula — a 5ª da faixa âncora.
+    Dentro do `Promise.all`, a tela inteira esperava por ela.
+
+    Agora elas começam no mesmo instante que as outras e são aguardadas só no
+    `<Suspense>` da célula (`CelulaDeCancelamento`). Mesma função, mesmos
+    parâmetros, mesmo número. O `.catch` transforma em falha de leitura o que
+    LANÇAR — a página pode falhar antes de chegar ao `<Suspense>`.
+  */
+  const expandidas: Promise<readonly [LeituraExpandida, LeituraExpandida]> = Promise.all([
+    supabase
+      .rpc("get_sales_expanded_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
+      .single(),
+    supabase
+      .rpc("get_sales_expanded_summary", {
+        p_date_from: previousRange.from,
+        p_date_to: previousRange.to,
+        ...accountFilter, ...brandFilter,
+      })
+      .single(),
+  ]).catch((erro: unknown) => {
+    const falha: LeituraExpandida = { data: null, error: { message: erro instanceof Error ? erro.message : String(erro) } };
+
+    return [falha, falha] as const;
+  });
+
   const [
     currentResult,
     previousResult,
     seriesResult,
     previousSeriesResult,
-    expandedResult,
-    previousExpandedResult,
     todayResult,
     brandsResult,
   ] = await Promise.all([
@@ -489,18 +524,8 @@ async function VendasContent({
       p_date_to: previousRange.to,
       ...accountFilter, ...brandFilter,
     }),
-    // Quinta e sexta (D-157): métricas 5C — cancelamentos, taxas e SKUs
-    // distintos, período atual e anterior, no mesmo paralelo.
-    supabase
-      .rpc("get_sales_expanded_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
-      .single(),
-    supabase
-      .rpc("get_sales_expanded_summary", {
-        p_date_from: previousRange.from,
-        p_date_to: previousRange.to,
-        ...accountFilter, ...brandFilter,
-      })
-      .single(),
+    // A quinta e a sexta (D-157, a taxa de cancelamento) saíram daqui: são as
+    // `expandidas`, logo acima, aguardadas só na célula delas (D-509).
     // Sétima (D-158): visão "hoje" ao vivo sobre orders (L1) — independente
     // do período selecionado, respeita só o filtro de conta.
     supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter, ...brandFilter }).single(),
@@ -533,21 +558,18 @@ async function VendasContent({
   // gráfico SEM a linha de comparação — visualmente idêntico a "o período
   // anterior não teve venda", que é uma afirmação sobre o negócio, não sobre
   // a rede. É exatamente a classe de defeito que D-067 existe para impedir.
-  // As duas de D-157 entram na MESMA agregação: falhar só a expandida
-  // produziria a tela sem a seção de cancelamentos — visualmente idêntico a
-  // "não houve cancelamento", afirmação sobre o negócio, não sobre a rede.
+  // As duas de D-157 (a taxa de cancelamento) saíram desta agregação na
+  // D-509: a falha delas é dita NA CÉLULA ("não foi possível ler agora", com o
+  // motivo), nunca como "—" mudo nem como "0%" — continua sendo afirmação sobre
+  // a rede, não sobre o negócio, só que sem esconder as outras quatro.
   const error =
     currentResult.error ??
     previousResult.error ??
     seriesResult.error ??
     previousSeriesResult.error ??
-    expandedResult.error ??
-    previousExpandedResult.error ??
     todayResult.error ??
     null;
 
-  const expanded: ExpandedSummary | null = expandedResult.data ?? null;
-  const previousExpanded: ExpandedSummary | null = previousExpandedResult.data ?? null;
   const todaySummary: TodaySummary | null = todayResult.data ?? null;
   // Falha aqui NÃO derruba a tela: a tabela recusa sozinha, com o aviso, e o
   // resto continua — o ranking é leitura própria, não parte do resumo.
@@ -788,14 +810,34 @@ async function VendasContent({
         continua a mesma que o operador vai reconhecer quando o recálculo
         alcançar a janela (D-023: nada aqui vira zero).
       */}
-      {error === null && summary !== null && expanded !== null && (
+      {error === null && summary !== null && (
         <KpiStrip
           ancora
-          cells={toCells(
-            pick([...buildCards(summary, previousSummary), ...buildExpandedCards(expanded, previousExpanded)], ANCORA_IDS),
-            previousHasData,
-            neverComputed ? "não calculado para este período — o recálculo só materializa dias tocados pela reconciliação" : undefined,
-          )}
+          cells={[
+            ...toCells(pick(buildCards(summary, previousSummary), ANCORA_IDS), previousHasData, neverComputed ? NUNCA_CALCULADO : undefined),
+            // A 5ª célula chega depois, na posição dela (D-509).
+            {
+              chave: CANCELAMENTO.metricId,
+              tardia: (
+                <Suspense
+                  fallback={
+                    <KpiCellCarregando
+                      label={CANCELAMENTO.label}
+                      metricId={CANCELAMENTO.metricId}
+                      ressalva={neverComputed ? NUNCA_CALCULADO : CANCELAMENTO.ressalva}
+                      comparacao={previousHasData && !neverComputed}
+                    />
+                  }
+                >
+                  <CelulaDeCancelamento
+                    leitura={expandidas}
+                    showPrevious={previousHasData}
+                    indisponivel={neverComputed ? NUNCA_CALCULADO : undefined}
+                  />
+                </Suspense>
+              ),
+            },
+          ]}
         />
       )}
 
@@ -928,6 +970,49 @@ async function VendasContent({
   );
 }
 
+
+/** O que a célula de cancelamento lê: a linha da RPC, ou a falha (inclusive a de quem lançou). */
+interface LeituraExpandida {
+  readonly data: ExpandedSummary | null;
+  readonly error: { readonly message: string } | null;
+}
+
+const NUNCA_CALCULADO = "não calculado para este período — o recálculo só materializa dias tocados pela reconciliação";
+
+/**
+ * A 5ª célula da faixa âncora, que chega depois do resto (D-509). As duas
+ * leituras dela são as mais caras da tela (3,8 s e 0,9 s a frio, A1); o lugar
+ * fica reservado pelo `KpiCellCarregando`, com o rótulo de verdade.
+ *
+ * Falha: a célula DIZ que não leu, com o motivo — nunca "—" mudo, nunca "0%".
+ * "Nunca calculado": o mesmo "—" com a mesma ressalva das outras quatro.
+ */
+async function CelulaDeCancelamento({
+  leitura,
+  showPrevious,
+  indisponivel,
+}: {
+  leitura: Promise<readonly [LeituraExpandida, LeituraExpandida]>;
+  showPrevious: boolean;
+  indisponivel: string | undefined;
+}): Promise<ReactNode> {
+  const [atual, anterior] = await leitura;
+  const falha = atual.error ?? anterior.error;
+
+  if (falha !== null || atual.data === null) {
+    const motivo = sanitizeErrorText(falha?.message) ?? "sem resposta";
+
+    return (
+      <KpiCell
+        cell={{ ...CANCELAMENTO, value: "—", previous: null, ressalva: `não foi possível ler agora (${motivo})` }}
+      />
+    );
+  }
+
+  const [celula] = toCells(pick(buildExpandedCards(atual.data, anterior.data), [CANCELAMENTO.metricId]), showPrevious, indisponivel);
+
+  return celula === undefined ? null : <KpiCell cell={celula} />;
+}
 
 async function SalesRanking({
   result,

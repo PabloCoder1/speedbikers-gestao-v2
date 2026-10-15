@@ -5385,6 +5385,35 @@ table {
 }
 
 /*
+ * O lugar do valor de uma CÉLULA da faixa que ainda não chegou (D-509,
+ * `KpiCellCarregando` em `components/kpi-strip.tsx`): o próprio `.sb-kpi-value`
+ * ou `.sb-kpi-prev`, com o texto-modelo transparente dando a altura da linha e
+ * a largura do traço, e a mesma revelação de 350 ms do resto do carregamento.
+ */
+.sb-kpi-carregando {
+  border-radius: var(--sb-radius-sm);
+  color: transparent;
+  user-select: none;
+  opacity: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 25%,
+    color-mix(in srgb, var(--sb-secondary) 3%, transparent) 50%,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation:
+    sb-revela 240ms ease-out 350ms forwards,
+    sb-brilho 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-kpi-carregando {
+    animation: sb-revela 240ms ease-out 350ms forwards;
+  }
+}
+
+/*
  * A ATUALIZAÇÃO NO LUGAR (D-500) — navegação que fica na MESMA tela: filtro,
  * busca, paginação, aba, "ver lista" (`components/carregando-link.tsx`,
  * `components/formulario-filtro.tsx`).
