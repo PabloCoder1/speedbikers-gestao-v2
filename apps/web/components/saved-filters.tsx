@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { ItemDeMenu } from "./item-de-menu";
 import { deleteFilter, saveFilter } from "./saved-filters-actions";
 
 /**
@@ -125,9 +126,7 @@ export function SavedFilters({
           <div className="sb-menu-panel">
             {filters.map((filter) => (
               <span key={filter.id} className="sb-menu-row">
-                <a className="sb-menu-item" href={toHref(screen, filter.params)}>
-                  {filter.name}
-                </a>
+                <ItemDeMenu href={toHref(screen, filter.params)}>{filter.name}</ItemDeMenu>
                 <button
                   type="button"
                   className="sb-menu-remove"
