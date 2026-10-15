@@ -45,7 +45,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 |---|---|---|---|---|---|---|
 | Home | `/` | 2 | — | `get_sales_summary`/`series` (`daily_*`), cobertura, anúncios pausados | faixa de vendas com o marketplace | E4 → T4 |
 | Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje", ranking e cancelamento consolidados (esperam o grão de SKU, E6) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas) |
-| Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58) | componentes do recebido, série diária e produtos da Shopee (C-61, T5b) | T5 ✔ (D-442, rascunho #158: "Shopee" e "Todos" lado a lado, sem total) |
+| Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58), `get_shopee_faturamento_*` (C-61), `get_shopee_ads_*` (C-63), `get_shopee_repasse*` (C-64) | — | T5 ✔ (D-442: "Shopee" e "Todos" lado a lado, sem total); T5b ✔ (D-452: a cascata, a série e os produtos); T5c ✔ (D-456: Ads CPC da loja); T5d ✔ (D-458: repasse) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | Shopee só depois do Go Live (D-430 §5) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`) | dono, pós Go Live |
@@ -56,12 +56,12 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
 | Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) | demanda Shopee fora até a fatia 5 — ver risco T-R3 | E8 + dono |
-| Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug) + filtros salvos | `daily_sku_metrics` | marketplace como recorte; filtro "sem Full" só faz sentido com ML | E6 → T6 |
+| Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug, ML) · `marketplace` + `contas` (uuid) + filtros salvos | `get_sku_abc_*` com `p_marketplaces`/`p_account_ids` (C-60) | — | T6b ✔ (D-448: "Todos" e "Shopee", compras como critério); T6b2 ✔ (D-450: o Excel com o recorte) |
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
 | Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | filtro e preferências por loja | T3a ✔ (rótulo e destino, D-438) |
-| Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat/devolução Shopee integrados | fora do plano (E7: devoluções) |
+| Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
 | Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) · `marketplace_accounts` (C-52) | frescor do catálogo da loja | T3a ✔ (D-438) |
@@ -226,8 +226,8 @@ linhas.
 |---|---|---|---|
 | C-01 | Seletor Marketplace/Conta (§4) em toda tela que filtra por conta; `/contas`, `/sincronizacao` e o shell com as lojas | C-52 `marketplace_accounts` (com o slug do ML para os links antigos; permissão por conta e por loja) | E3 (+E2) → T3 |
 | C-02 | `/vendas` e a faixa de vendas da Home com "todos", "ml" e "shopee", várias contas, marca e frescor por canal | C-53 `get_marketplace_sales_summary` + série diária | E4 → T4 |
-| C-03 | `/faturamento` com marketplace: resumo Shopee (§5), linha por loja na tabela por conta, cobertura por canal | C-58 (D-437) | T5 ✔ (D-442) |
-| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | C-59 (D-439), C-60 (curva) | T6a ✔ (D-444); curva na T6b |
+| C-03 | `/faturamento` com marketplace: resumo Shopee (§5), linha por loja na tabela por conta, cobertura por canal | C-58 (D-437), C-61 (D-443), C-63 (D-449), C-64 (D-451) | T5 ✔ (D-442); T5b ✔ (D-452); T5c ✔ (D-456); T5d ✔ (D-458) |
+| C-04 | Ranking, curva ABC e aba Vendas do SKU com marketplace | C-59 (D-439), C-60 (curva) | T6a ✔ (D-444); T6b ✔ (D-448); Excel na T6b2 ✔ (D-450) |
 | C-05 | Concessão de loja em `/usuarios` | C-54 | E2 → T2 |
 | C-06 | Selo de loja de teste no painel Shopee do SKU | `get_sku_shopee_listings` devolvendo o ambiente da loja — **pedido novo** | pequeno |
 | C-07 | `/produtos` sem chamar de "sem anúncio"/"sem venda" o SKU que só a Shopee tem | `get_products_overview` contando anúncio e venda Shopee — **pedido novo** | C-56 (D-445) → T6c ✔ (D-454) |
@@ -249,8 +249,9 @@ número.
 | **T2 ✔** | Concessão de loja em `/usuarios`: gaveta, coluna, histórico e convite | E2 (C-54) | **código 2026-10-14, D-434** — o ADMIN concede e retira, e o efeito chega à tela de quem recebe (e2e) |
 | **T3a ✔ / T3b ✔** | **T3b, código 2026-10-14, D-446:** o cartão da Shopee em `/integracoes` e a seção em `/configuracoes`; o seletor fica nas tabelas-base (a view só valeria o custo onde se lê o frescor). **T3a, código 2026-10-14, D-438:** o aviso da loja (D-435) com nome e destino, as lojas em `/sincronizacao` com os limiares do vigia e a contagem do shell por `marketplace_accounts`. **T3b:** seletor lendo C-52; lojas em `/sincronizacao`, `/saude`, `/integracoes`, `/configuracoes` e na contagem do shell | E3 | uma fonte de contas em todas as telas que filtram por conta |
 | **T4 ✔** | **código 2026-10-14, D-440.** `/vendas` com "todos", "ml" e "shopee" na mesma estrutura, várias contas, comparação e gráfico; `/vendas/shopee` vira o detalhe de pedidos do recorte Shopee; faixa de vendas da Home | E4 | ML idêntico ao de hoje; "todos" = linha de total do SQL; sandbox fora |
-| **T5 ✔** | **código 2026-10-14, D-442.** `/faturamento` com marketplace e a linha por loja; "Todos" lado a lado, sem total; T5b (componentes do recebido e série diária) espera o C-61 | E5 | componentes não comparáveis nunca somados |
-| **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); T6b curva ABC (C-60); **T6c ✔ código 2026-10-14, D-454:** `/produtos` com a Shopee (C-56) | E6 | — |
+| **T5 ✔** | **código 2026-10-14, D-442.** `/faturamento` com marketplace e a linha por loja; "Todos" lado a lado, sem total; **T5b ✔ código 2026-10-14, D-452:** a cascata do recebido, a série diária e os produtos (C-61); **T5c ✔ código 2026-10-14, D-456:** os Ads CPC da loja (C-63) numa seção própria, fora do resultado e sem somar com o Mercado Ads; **T5d ✔ código 2026-10-14, D-458:** o repasse ao lado do previsto, pelo dia da liberação (C-64) | E5 | componentes não comparáveis nunca somados |
+| **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); **T6b ✔ código 2026-10-14, D-448:** curva ABC com "Todos" e "Shopee" (C-60), e **T6b2 ✔ D-450** o Excel com o recorte; **T6c ✔ código 2026-10-14, D-454:** `/produtos` com a Shopee (C-56) | E6 | — |
+| **Devoluções ✔** | **código 2026-10-15, D-460.** As devoluções da Shopee em `/vendas/shopee`, logo depois do "Por loja" (C-62), decisão do dono de 15/10 | E7a | situação como a Shopee manda; "valor de reembolso informado", nunca "reembolsado" |
 | **T7** | Busca universal com a Shopee (C-08) | C-08 | — |
 | **T8** | Central e meta do mês com a Shopee | Go Live + dono | — |
 

@@ -22,7 +22,8 @@ interface RespostaAds {
 
 const ROAS = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const formatRoas = (roas: number | null): string => (roas === null ? "—" : `${ROAS.format(roas)}x`);
+/** Também no painel dos Ads da Shopee (D-456): o mesmo formato nos dois. */
+export const formatRoas = (roas: number | null): string => (roas === null ? "—" : `${ROAS.format(roas)}x`);
 
 /**
  * MERCADO ADS NO FATURAMENTO (D-363) — "o que as campanhas estão dando?".
@@ -239,7 +240,8 @@ function EstadoDasContas({ contas }: { contas: readonly ContaAds[] }): ReactNode
  * maior valor do período — nunca dois eixos, que fariam a barra menor parecer
  * maior. Dia sem linha não tem barra: a série vem só dos dias com métrica lida.
  */
-function BarrasAds({ dias }: { dias: readonly DiaAds[] }): ReactNode {
+/** Também no painel dos Ads da Shopee (D-456), com os dias que o banco deu. */
+export function BarrasAds({ dias }: { dias: readonly DiaAds[] }): ReactNode {
   const maximo = Math.max(0, ...dias.map((d) => Math.max(d.investimento, d.receita_ads)));
 
   if (dias.length === 0 || maximo === 0) {

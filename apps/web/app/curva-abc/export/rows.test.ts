@@ -266,3 +266,145 @@ describe("buildAbcWorkbook", () => {
     expect(Object.keys(zip.files).filter((f) => /^xl\/charts\/chart\d+\.xml$/.test(f))).toHaveLength(1);
   });
 });
+
+describe("o recorte com a Shopee (D-450, sobre o C-60)", () => {
+  /** Uma linha da curva com a Shopee no recorte: sem pedido nem Full, com compras e a parte de cada canal. */
+  function comShopee(sku: string, metric: number, classe: "A" | "B" | "C", extra: Partial<AbcAnalysisRow> = {}): AbcAnalysisRow {
+    return linha(sku, metric, classe, {
+      orders: null,
+      class_orders: null,
+      full_stock: null,
+      coverage_days: null,
+      total_orders: null,
+      purchases: 9,
+      class_purchases: "B",
+      revenue_ml: 600,
+      revenue_shopee: 200,
+      units_ml: 7,
+      units_shopee: 3,
+      shopee_items_without_revenue: 1,
+      total_purchases: 15,
+      total_shopee_items_without_revenue: 1,
+      ...extra,
+    });
+  }
+
+  it("a terceira curva é a de compras: classe, valor e o ticket que não existe fora do ML", () => {
+    const [x] = consolidateCurves({ faturamento: [comShopee("X", 800, "A")], unidades: [], compras: [comShopee("X", 9, "B")] });
+
+    expect(x).toMatchObject({
+      classOrders: "B",
+      combinedClass: "ABB",
+      orders: 9,
+      averageTicket: null,
+      revenueMl: 600,
+      revenueShopee: 200,
+      shopeeItemsWithoutRevenue: 1,
+    });
+  });
+
+  it("sem Full (recorte sem o ML), o estoque total é o local, e nada vira zero", () => {
+    const [x] = consolidateCurves({ faturamento: [comShopee("X", 800, "A")], unidades: [], compras: [] });
+
+    expect(x).toMatchObject({ fullStock: null, localStock: 12, totalStock: 12, coverageDays: null });
+  });
+
+  it("a aba por conta pivota pela conta ou loja (account_id): a loja Shopee vira coluna", () => {
+    const consolidado = consolidateCurves({ faturamento: [comShopee("X", 800, "A")], unidades: [], compras: [] });
+    const [p] = pivotByAccount(
+      consolidado,
+      [
+        { sku_id: "id-X", ml_account_id: "c1", account_id: "c1", revenue: 600, units: 7, orders: null },
+        { sku_id: "id-X", ml_account_id: null, account_id: "loja-1", revenue: 200, units: 3, orders: null },
+      ],
+      [
+        { id: "c1", label: "Loja 1" },
+        { id: "loja-1", label: "Speed Bikers Oficial (Shopee)" },
+      ],
+    );
+
+    expect(p?.revenueByAccount).toEqual([600, 200]);
+    expect(p?.unitsByAccount).toEqual([7, 3]);
+  });
+
+  it("a frase do recorte diz o marketplace logo depois da comparação", () => {
+    const frase = describeAbcExport({
+      periodLabel: "últimos 90 dias",
+      dateFrom: "2026-07-10",
+      dateTo: "2026-10-07",
+      prevFrom: "2026-04-11",
+      prevTo: "2026-07-09",
+      accountLabel: null,
+      brand: null,
+      category: null,
+      kindLabel: null,
+      onlyWithoutFull: false,
+      formatDay: (d) => d,
+      marketplaceLabel: "todos os marketplaces",
+    });
+
+    expect(frase).toBe(
+      "últimos 90 dias (2026-07-10 a 2026-10-07) · comparado com 2026-04-11 a 2026-07-09 · todos os marketplaces · todas as contas · todas as marcas · todas as categorias · produtos e kits",
+    );
+  });
+
+  it("o arquivo do 'Todos' tem a aba Compras (não Pedidos), o recorte por marketplace e as colunas da Shopee", async () => {
+    const curva = [comShopee("X", 800, "A"), comShopee("Y", 200, "B")];
+    const porMarketplace: AbcBreakdownRow = {
+      group_key: "SHOPEE",
+      group_label: "Shopee",
+      revenue: 400,
+      units: 6,
+      orders: null,
+      purchases: 5,
+      sku_count: 2,
+      class_a_value: 300,
+      class_b_value: 100,
+      class_c_value: 0,
+    };
+    const arquivo = await buildAbcWorkbook({
+      curves: { faturamento: curva, unidades: curva, compras: curva },
+      breakdowns: { conta: [], marca: [], categoria: [], mes: [], migracao: [], marketplace: [porMarketplace] },
+      byAccount: [],
+      accounts: [{ id: "loja-1", label: "Speed Bikers Oficial (Shopee)" }],
+      leMl: true,
+      organizationName: "Speed Bikers",
+      recorte: "todos os marketplaces",
+      dayCount: 90,
+      generatedAt: new Date("2026-10-07T12:00:00Z"),
+    });
+    const zip = await JSZip.loadAsync(arquivo);
+    const workbook = (await zip.file("xl/workbook.xml")?.async("string")) ?? "";
+    const textos = (await zip.file("xl/sharedStrings.xml")?.async("string")) ?? "";
+
+    for (const aba of ["Painel", "Consolidado", "Faturamento", "Unidades", "Compras", "Por conta", "Glossário"]) {
+      expect(workbook).toContain(`name="${aba}"`);
+    }
+    expect(workbook).not.toContain('name="Pedidos"');
+    expect(textos).toContain("Por marketplace");
+    expect(textos).toContain("Faturamento Shopee (R$)");
+    expect(textos).toContain("Itens Shopee sem receita");
+    expect(textos).toContain("Classes (F/U/C)");
+  });
+
+  it("só a Shopee (sem o ML): sem as colunas de cada canal, sem 'SKUs sem Full' contado", async () => {
+    const curva = [comShopee("X", 800, "A", { revenue_ml: null, units_ml: null })];
+    const arquivo = await buildAbcWorkbook({
+      curves: { faturamento: curva, unidades: curva, compras: curva },
+      breakdowns: { conta: [], marca: [], categoria: [], mes: [], migracao: [] },
+      byAccount: [],
+      accounts: [],
+      leMl: false,
+      organizationName: null,
+      recorte: "Shopee",
+      dayCount: 90,
+      generatedAt: new Date("2026-10-07T12:00:00Z"),
+    });
+    const zip = await JSZip.loadAsync(arquivo);
+    const textos = (await zip.file("xl/sharedStrings.xml")?.async("string")) ?? "";
+
+    expect(textos).not.toContain("Faturamento ML (R$)");
+    expect(textos).toContain("Itens Shopee sem receita");
+    expect(textos).not.toContain("Por marketplace");
+  });
+});

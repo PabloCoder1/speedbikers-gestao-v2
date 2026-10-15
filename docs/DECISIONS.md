@@ -15201,6 +15201,24 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `supabase/migrations/20261015030000_devolucoes_shopee.sql`, `packages/shopee/src/{returns,returns.test,index}.ts`, `apps/worker/src/handlers/{shopee-returns-sync,shopee-returns-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker (o job le a coluna nova); a api nao muda. A cadencia do job em `/saude` e do A2.
 
+## D-448 - Telas multicanais, etapa T6b: a Curva ABC ganha os recortes Todos e Shopee, com a compra como criterio que soma; o recorte ML continua identico, e o Excel multicanal fica para a T6b2
+
+**Contexto:** D-441 (E6b, Agente 1, C-60) deu as tres funcoes da Curva ABC (D-424) dois parametros no fim -- `p_marketplaces` (nulo = so ML, o resultado de antes) e `p_account_ids` (ids de `marketplace_accounts`) -- e as regras do que nao soma: com a Shopee no recorte, `orders`, `class_orders` e `coverage_days` vem NULOS, o criterio `pedidos` e RECUSADO (use `compras`) e `p_ml_account_id` tambem; sem o ML, `full_stock` e NULO e `p_only_without_full` e RECUSADO.
+
+**1. O MESMO RECORTE DE VENDAS E FATURAMENTO.** `/curva-abc` ganha o seletor de marketplace no inicio da barra e, fora do ML, o menu de contas e lojas por clique, num valor so na URL (`marketplace=todos|shopee`, `contas=a,b`). Sem `marketplace`, a tela chama a funcao EXATAMENTE como antes (so `p_ml_account_id`), e a curva do Mercado Livre nao muda. A linha passa a ter o tipo gerado da funcao: o tipo escrito a mao dizia `revenue: number` e esconderia os nulos novos.
+
+**2. A COMPRA E O CRITERIO QUE SOMA.** "Compras" (o pack do ML e o pedido da Shopee, `multicanal_compras`) entra como criterio e como ordem nos tres recortes. "Pedidos" so existe no ML: um link antigo, ou a troca de recorte, leva a "Compras" -- e o que a propria funcao manda usar. A ordem por pedidos vira por compras e a por cobertura volta a curva. "Sem Full" so vale com alguma conta ML no recorte (a tela calcula isso pelas contas escolhidas) e o cartao do Full some sem ela. A tela nunca envia uma combinacao que a funcao recusa.
+
+**3. O QUE NAO SOMA SAI, E E DITO.** Fora do ML a tabela troca pedidos e ticket por compras, perde a cobertura em dias e, no "Todos", ganha a parte de cada canal (receita e unidades do ML e da Shopee); a faixa troca pedidos por compras e perde o ticket (o ticket entre marketplaces mora em `/vendas`, recalculado no banco). Item Shopee de receita desconhecida e contado ao lado da receita, na faixa e na linha. Uma nota diz o que ficou de fora e, quando o periodo anterior comeca antes dos 90 dias de historico da Shopee, que o movimento de classe dela aparece como "novo" ou "subiu" (risco T-R2).
+
+**4. O EXCEL FICA PARA A T6B2.** O arquivo (D-422) tem tres curvas e a aba por conta presas ao ML. Em vez de baixar outro recorte calado, fora do ML o botao vira "Baixar Excel (so Mercado Livre)" e baixa o do ML. A T6b2 leva o mesmo recorte ao arquivo: `get_sku_abc_breakdown` com a dimensao `marketplace` e `get_sku_sales_by_account` por `account_id`.
+
+**Publicacao:** so a web, e so DEPOIS do #157 (E6b) na `main` e da migration `20261015000000` em producao -- sem ela, o recorte ML continua funcionando, mas "Todos" e "Shopee" chamariam parametros que a funcao de producao nao tem.
+
+**Verificacao:** typecheck, lint e as seis guardas da web verdes. Unitarios: `lib/abc-filters.test.ts` (6 novos -- o recorte da URL; a conta por slug so no ML e por id fora dele; "Pedidos" vira "Compras" e as ordens que nao existem fora do ML se ajustam; "sem Full" fora da Shopee; a troca de recorte leva periodo e recortes e deixa a conta; o recorte conta como filtro ativo); 1.202 na web. e2e num stack isolado com o banco recriado (as 255 migrations, com a do #157): o spec novo `curva-abc-multicanal` -- o primeiro e2e da Curva ABC -- (3: o seletor com "Todos" leva o periodo e troca "Pedidos" por "Compras"; **com so a loja de teste, o "Todos" tem o mesmo faturamento do recorte, os mesmos SKUs listados e o mesmo primeiro SKU, com a mesma receita, do ML**, sem pedidos nem cobertura; o recorte Shopee so com a loja de teste nao inventa SKU, nao mostra Full, e o Excel diz que e do ML); e a suite inteira 225/225 (os 3 de convite com o servidor na porta 3000). Fotos com a loja live de dados de foto: a Coroa deu 8.994 do ML + 285 da Shopee = 9.279, e o recorte Shopee 485 em 5 unidades e 4 compras -- a conta feita a mao.
+
+**Impacto:** `apps/web/app/curva-abc/page.tsx`, `apps/web/lib/abc-filters.ts` e o teste, `apps/web/e2e/curva-abc-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-449 - Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 
 **Contexto:** o faturamento do ML ja tem Ads (5G, D-363) e o lucro apos imposto e Ads (5K); o da Shopee nao (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
@@ -15230,6 +15248,26 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `supabase/migrations/20261015040000_ads_shopee.sql`, `packages/shopee/src/{ads,ads.test,index}.ts`, `apps/worker/src/handlers/{shopee-ads-sync,shopee-ads-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
 
+## D-450 - Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
+
+**Contexto:** a T6b (D-448) levou a Curva ABC aos recortes "Todos" e "Shopee", mas o Excel (D-422/D-424) era preso ao Mercado Livre: tres curvas (faturamento, unidades, pedidos), a aba "Por conta" pela conta ML e o ticket, o Full e a cobertura em toda linha. Fora do ML, a T6b oferecia o Excel do ML com o aviso no botao.
+
+**1. O ARQUIVO E O RECORTE DA TELA.** A rota le os mesmos parametros (`marketplace`, `contas`) e aplica a MESMA regra de contas da tela -- `aplicarContasDoRecorte` em `lib/abc-filters.ts`, usada pelas duas: ficam as contas que a pessoa alcanca e que cabem no recorte, e "sem Full" so vale com conta ML. No recorte ML, as chamadas sao EXATAMENTE as de antes; fora dele, `p_marketplaces` e `p_account_ids` (C-60). O botao volta a ser um so, "Baixar Excel", com o recorte na URL.
+
+**2. A TERCEIRA CURVA E A DE COMPRAS.** Com a Shopee no recorte, a aba "Pedidos" vira "Compras" (o pack do ML e o pedido da Shopee): o pedido do ML nao soma com o dela, e a funcao o recusa. As classes combinadas viram F/U/C, o painel troca pedidos por compras e, no lugar do ticket (que e do ML), mostra os itens Shopee sem receita. As curvas sao um tipo so (`AbcCurves`, com `pedidos` OU `compras`), e quem le pergunta qual e a terceira.
+
+**3. O QUE NAO EXISTE FICA VAZIO, NUNCA ZERO.** Ticket, Full, cobertura e "sem Full" saem como celula vazia onde nao existem (Shopee no recorte, ou sem conta ML); o estoque total sem Full e o local. As colunas novas do Consolidado -- faturamento do ML e da Shopee no "Todos", itens Shopee sem receita -- vao NO FIM: as de antes nao mudam de letra, e a formatacao condicional (K, S, AA) e os graficos continuam apontando para o lugar certo.
+
+**4. AS LOJAS NA ABA POR CONTA, E O RECORTE POR MARKETPLACE.** A aba "Por conta" pivota por `account_id` (a conta ML ou a loja Shopee, C-60), com uma coluna por conta e loja do recorte -- a loja de teste marcada. No "Todos", o painel ganha o recorte "Por marketplace" (`get_sku_abc_breakdown` com a dimensao `marketplace`, somado no banco). O glossario diz o que muda com a Shopee.
+
+**5. AS DEVOLUCOES NO /SAUDE FORAM PARA O #170.** A cadencia de `shopee.returns.sync` (pedido do A1, D-447, C-62) entrou primeiro nesta fatia e saiu dela: foi para o #170, junto com a do repasse e a dos Ads, para valer antes dos workers sem esperar a migration da T6b2. O cartao da Shopee em `/integracoes` so incluira os jobs novos depois de eles rodarem em producao (senao a sincronizacao cairia para "sem atividade").
+
+**Publicacao:** so a web, empilhada sobre a T6b (#164) e o #157 -- entra depois deles e da migration `20261015000000` em producao.
+
+**Verificacao:** typecheck, lint e as seis guardas da web verdes. Unitarios: `app/curva-abc/export/rows.test.ts` (6 novos -- a terceira curva de compras com a classe, o valor e o ticket vazio; o estoque total sem Full; o pivo pela loja; o marketplace na frase do recorte; o arquivo do "Todos" com a aba Compras, o recorte por marketplace e as colunas da Shopee; o da Shopee sozinha sem as colunas de cada canal) e o de `lib/sync-health.test.ts` com o job novo; 1.216 na web. e2e num stack isolado com o banco recriado: `curva-abc-multicanal` (4 -- inclusive **o teste que baixa o Excel do "Todos" pela tela, abre o arquivo e confere a aba Compras sem a de Pedidos, o recorte por marketplace e a loja de teste como coluna da aba por conta, e baixa o do ML para provar que ele nao mudou**); e a suite inteira 227/227 (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/app/curva-abc/{page.tsx,export/load.ts,export/rows.ts,export/rows.test.ts,export/workbook.ts,export/xlsx/route.ts}`, `apps/web/lib/abc-filters.ts` e o teste, `apps/web/e2e/curva-abc-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-451 - Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 
 **Contexto:** o recebido da Shopee (5S, D-427) e o `escrow_amount` -- o que a Shopee DIZ que a loja vai receber, provisorio ate o pedido completar. Faltava o realizado: quando e quanto foi liberado (R9). A E7 traz as fontes que faltam, cada uma conferida na documentacao oficial antes.
@@ -15258,6 +15296,24 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 - **A conferir no sandbox, depois do deploy do worker:** a chamada real, a unidade de `payout_amount` contra o `escrow_amount`, e o que vem numa janela sem repasse.
 
 **Impacto:** `supabase/migrations/20261015050000_repasse_shopee.sql`, `packages/shopee/src/{escrow-list,escrow-list.test,index}.ts`, `apps/worker/src/handlers/{shopee-escrow-releases-sync,shopee-escrow-releases-sync.test,shopee-orders-sync,shopee-orders-sync.test}.ts`, `apps/worker/src/index.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,API,SHOPEE,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Publicacao: a migration ANTES do worker; a api nao muda; a cadencia do job em `/saude` e do A2.
+
+## D-452 - Telas multicanais, etapa T5b: o Faturamento da Shopee ganha a cascata do recebido componente a componente, a serie diaria e os produtos, sobre o C-61
+
+**Contexto:** a T5 (D-442) mostrou o resultado da Shopee (escrow - custo), mas o recebido era um numero so: a Shopee ja desconta comissao, taxas, frete, cupons e afiliados, e a tela nao dizia quanto de cada. D-443 (Agente 1, C-61) deu, sobre os MESMOS pedidos cobertos do C-58, a composicao do recebido (`get_shopee_faturamento_composicao`, com "outros" fechando `receita - componentes - outros = recebido` em toda linha), a serie diaria (`get_shopee_faturamento_diario`) e os produtos de um SKU por pedido (`get_shopee_faturamento_por_sku`).
+
+**1. A CASCATA DO RECEBIDO.** O painel "Da receita ao resultado" vira "Para onde vai o dinheiro", a mesma cascata do Faturamento do ML (`Cascata`): receita coberta, cada componente na ordem da formula oficial (comissao, taxa de servico, taxa de transacao, frete da loja, frete de devolucao, cupons da loja, afiliados, taxa por pedido, outros), o recebido, o custo e o resultado. E uma cascata de verdade: cada componente comeca onde o anterior terminou, e um credito (componente negativo, como "outros" ou o frete que sobrou) SOBE e aparece com "+". O custo e o resultado vem do C-58, que cobre os mesmos pedidos. A geometria e pura (`montarCascataShopee`), sem soma: os valores e a identidade vem do banco.
+
+**2. NULO NAO E ZERO, NEM NA CASCATA.** Componente que nenhum pedido coberto informou (NULO no contrato) fica fora das barras e e dito ("a Shopee nao informou: ..."); o que veio zerado sai das barras e e dito numa linha a parte. Sem cobertura, sem recebido, sem custo ou sem resultado nao ha cascata -- a tela diz por que, em vez de desenhar uma de zeros. Os informativos fora da cascata (cupons, moedas e desconto bancados pela Shopee; comissao e taxa liquidas do Brasil; ajustes depois do repasse) aparecem um a um, cada um com o valor do banco, SEM total -- somar ali seria agregar fora do SQL.
+
+**3. A SERIE DIARIA E OS PRODUTOS.** "Receita e margem por dia" usa as barras do ML (`BarrasDiarias`), que passam a aceitar a receita nula de um dia (so itens de preco zero): o dia fica sem barra e a leitura diz "receita desconhecida", nunca zero; o ML nao muda. "Produtos que mais faturaram" e "Menor margem" usam a lista do ML (`ListaProdutos`, agora exportada): so pedidos de UM produto entram (ratear o recebido entre produtos inventaria margem), e o subtitulo diz quantos pedidos com mais de um produto ficaram fora e quanto eles somam; produto de receita desconhecida sai da lista em vez de virar R$ 0.
+
+**4. A ORDEM DOS PAINEIS.** A cascata ocupa a coluna larga e "Definitivo e provisorio" a estreita, como uma lista (`sb-valores`): na primeira foto a cascata na coluna estreita cortava as barras e os percentuais, e depois os tres cartoes nao cabiam ao lado dela.
+
+**Publicacao:** so a web, empilhada sobre o #160 (C-61) -- entra depois dele na `main` e da migration `20261015010000` em producao (que tambem corrige o TOTAL do C-58 e o deixa ~150x mais rapido).
+
+**Verificacao:** typecheck, lint e as seis guardas da web verdes. Unitarios: `lib/faturamento-multicanal.test.ts` (6 novos -- a cascata da receita ao resultado termina no recebido; o credito sobe e o desconto desce; nulo e zerado ficam fora e sao ditos; sem cobertura, recebido, custo ou resultado nao ha cascata; o SKU vira linha da lista com comissao e frete do ML nulos; receita desconhecida sai da lista); 1.210 na web. e2e num stack isolado com o banco recriado (as migrations do #160): `faturamento-multicanal` e `faturamento` (7/7) e a suite inteira 223/223 (os 3 de convite com o servidor na porta 3000). Os paineis novos so aparecem com loja real lida, e o seed tem so a de teste (por desenho: as provas de equivalencia das outras telas dependem disso); por isso a prova e o fixture de foto no banco isolado: com os componentes preenchidos, a composicao fechou `390 - 46,80 - 15,60 - 6,24 - 6,66 = 314,70` no proprio banco, e a cascata desenhou os mesmos numeros, com afiliados, frete de devolucao e taxa por pedido ditos como nao informados e frete e cupons da loja como zerados.
+
+**Impacto:** `apps/web/app/faturamento/{multicanal,barras-diarias,cascata,numeros}.tsx`, `apps/web/lib/{faturamento,faturamento-multicanal}.ts` e o teste, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,PRODUCT_REQUIREMENTS,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
 ## D-453 - Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
 
@@ -15324,6 +15380,41 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/lib/{curation-filters,products-overview}.ts` e o teste, `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/produtos.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-456 - Telas multicanais, etapa T5c: os Ads CPC da loja Shopee entram no /faturamento da Shopee como secao propria, rotulados "CPC da loja", fora do resultado e sem somar com o Mercado Ads
+
+**Contexto:** D-449 (C-63, A1) trouxe o desempenho diario dos anuncios CPC das lojas Shopee: `get_shopee_ads_overview` (TOTAL so de loja live com Ads lido; por loja, com Ads nunca lidos NULOS e loja lida sem anuncio em 0) e `get_shopee_ads_daily` (a serie, so live). O ML ja mostra o Mercado Ads no `/faturamento` (D-363). A Shopee nao mostrava Ads em lugar nenhum. O proprio contrato pede tres cuidados: dizer "Ads CPC" (o GMV Max de loja pode ficar de fora), nao descontar do resultado da venda e nao somar com o Ads do ML.
+
+**1. ONDE.** No recorte Shopee de `/faturamento`, numa secao propria (`#ads`) depois dos numeros, como o Mercado Ads na tela do ML. As duas leituras partem junto com a pagina (`Promise.resolve` dispara o builder) e chegam por streaming: nao esperam o faturamento, nem o faturamento as espera. A secao nao existe no ML (la esta o Mercado Ads) nem no "Todos" (os dois nao se somam).
+
+**2. O QUE MOSTRA.**
+- **Faixa:** investimento, vendas com Ads (a atribuicao AMPLA, com a direta e os pedidos na ressalva), ROAS, ACOS e TACoS (com a receita bruta do denominador na ressalva). Os ids sao os de METRICS 5V.
+- **Serie:** "Investimento × vendas por dia", com as barras do Mercado Ads (o mesmo componente).
+- **Por loja:** ao lado da serie, cada loja com o investimento e o que se sabe dela -- "Ads ainda nao lidos", "sem anuncio no periodo", "so os dias ja lidos", e ROAS, ACOS e vendas com Ads quando ha anuncio. A loja de teste aparece marcada e "fora do total".
+- **Ressalva sempre visivel:** "Nao e o total de Ads: os anuncios GMV Max de loja podem ficar de fora. Por isso nada daqui e descontado do resultado da venda, e nao soma com o Mercado Ads."
+
+**3. AUSENCIA NAO E ZERO.**
+- Sem TOTAL (nenhuma loja live com Ads lido), nao ha faixa: "R$ 0,00 investidos" seria inventado. A tela diz "nenhuma loja real com os Ads ja lidos" e lista as lojas com "--".
+- Periodo fora da leitura (`cobertura_completa = false`): aviso de que os numeros sao so dos dias ja lidos.
+- Dia com o gasto ou as vendas NULOS nao vira barra de zero. O dia fica fora das barras e e contado pelo campo que faltou. A nota diz o efeito, porque as somas do banco ignoram o nulo: dia sem gasto conta as vendas e nao o investimento (ROAS acima do real); dia sem vendas, o contrario. Pedido ao A1 (o TOTAL nao diz quantos dias vieram assim): registrado no handoff.
+- A Shopee ainda atribui venda ate 7 dias depois do clique: a nota avisa que os ultimos dias podem subir.
+
+**4. A WEB PODE CHEGAR ANTES DA MIGRATION.** Como no Mercado Ads, a funcao ausente (PGRST202) vira "a leitura dos Ads da Shopee ainda esta sendo ativada neste ambiente", e o resto da tela segue. Conferido no banco isolado com as duas funcoes renomeadas: a resposta do servidor traz a frase, sem alerta de erro.
+
+**Publicacao:** so a web, sobre a `main` (a migration `20261015040000` ja esta nela e no Dev). Pode entrar antes da migration em producao (item 4). Ate a primeira loja live com Ads lido, a secao mostra a loja de teste e diz que nao ha numeros.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 9 em `lib/ads-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira total de zeros, o estado de cada loja (nunca lida, lida sem anuncio, com investimento, venda ou clique), a loja de teste e os dias sem valor contados pelo campo que faltou.
+- **e2e:** `faturamento-multicanal` 5/5 e `faturamento` 3/3, num stack isolado com as migrations da `main`. O teste novo usa o seed (so a loja de TESTE, com os Ads nunca lidos) e confere: a secao com a ressalva, nenhuma faixa, a loja com "--" e "Ads ainda nao lidos · loja de teste, fora do total". No ML e no "Todos", a secao nao existe.
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 20 dias lidos de um periodo de 30, um dia sem linha, um dia com o gasto nulo, 25 vendas validas, uma segunda loja live com os Ads nunca lidos.
+  - A secao mostra exatamente o que a funcao devolve: R$ 276,00 investidos, R$ 3.005,00 de vendas com Ads (R$ 1.689,00 diretas, 38 pedidos), ROAS 10,89x, ACOS 9,2%, TACoS 6,8% sobre R$ 4.075,00.
+  - Aparecem o aviso de periodo incompleto e "1 dia sem o gasto informado pela Shopee".
+  - Por loja: a de teste e a segunda loja com "--", a real com o investimento e "so os dias ja lidos".
+  - No desktop as duas colunas ficam com 524 px cada; no celular (390 px) nada passa da largura.
+- **Suite inteira:** 224 de 225 na rodada inteira, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000). A que falhou, em `/conhecimento` (fora desta fatia: a linha validada nao apareceu a tempo), passou ao repetir o spec no mesmo banco -- intermitente.
+
+**Impacto:** `apps/web/lib/ads-shopee.ts` e o teste, `apps/web/app/faturamento/{ads-shopee,multicanal,campanhas-ads}.tsx` (`BarrasAds` e `formatRoas` exportados), `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-457 - IP fixo de saida em producao: api e worker saem por um Cloud NAT com um IP reservado (34.95.145.35), para a lista de IPs do Go Live da Shopee
 
 **Contexto:** o formulario de Go Live da Shopee exige a lista de IPs que chamam a API ("APP IP Address Management", obrigatorio) e, ligada a lista, so esses IPs chamam (SHOPEE 6). O Cloud Run sai por um pool de IPs dinamicos do Google; o projeto de producao nem tinha a API do Compute Engine habilitada. O mesmo pool esta por tras dos 403 do Mercado Livre por instancia (25 e 27/09).
@@ -15349,3 +15440,107 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 **Volta:** `gcloud run services update-traffic <servico> --to-revisions <revisao anterior>=100` (`worker-00046-zfl`, `api-00029-xdl` saem pelo pool dinamico); desligar a lista da Shopee antes.
 
 **Impacto:** `infra/{cloud-nat.sh,lib.sh,deploy-cloud-run.sh,README.md}`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,SHOPEE,HANDOFF,MULTICHANNEL_HANDOFF}.md`.
+
+## D-458 - Telas multicanais, etapa T5d: o repasse da Shopee entra no /faturamento da Shopee como o realizado ao lado do previsto, pelo dia da liberacao, sem tocar no recebido nem no resultado
+
+**Contexto:** D-451 (C-64, A1) trouxe as liberacoes do escrow por pedido. Sao quatro leituras:
+- `get_shopee_repasse_overview`: pelo dia da liberacao, o liberado, o previsto dos mesmos pedidos e a diferenca;
+- `get_shopee_repasse_daily`: a serie;
+- `get_shopee_repasses`: cada liberacao;
+- `get_shopee_repasse_pendente`: o que falta liberar agora.
+
+O contrato pede tres cuidados:
+- nao somar o repasse ao recebido nem ao resultado;
+- nao comparar o liberado com a receita do mesmo periodo (o dinheiro sai em outro dia);
+- nao chamar a diferenca de cobranca enquanto a unidade de `payout_amount` nao for conferida no sandbox.
+
+**1. ONDE.** No recorte Shopee de `/faturamento`, numa secao propria (`#repasse`) logo depois dos numeros e antes dos Ads: o realizado fica junto do resultado que ele confere. As tres leituras partem junto com a pagina e chegam por streaming. A secao nao existe no ML nem no "Todos".
+
+**2. O QUE MOSTRA.**
+- **Faixa:**
+  - "Liberado no periodo" (`shopee_repasse_liberado`), com os pedidos e as liberacoes sem valor, que ficam fora da soma;
+  - "Previsto desses pedidos", com "N de M pedidos com o previsto lido" (os dois numeros do banco, sem conta na tela);
+  - "Diferenca" (`shopee_repasse_diferenca`), com os pedidos divergentes e a ressalva da unidade;
+  - "A liberar agora" (`shopee_a_liberar`), com os pedidos, os sem financeiro e o mais antigo.
+- **"Ultimas liberacoes":** as 10 mais recentes do periodo, cada uma com a loja, o dia, o previsto do pedido, a diferenca quando ha e "N liberacoes do pedido" quando ele saiu em parcelas. O total do periodo vem do banco ("mostrando as 10 mais recentes de N").
+- **"Por loja":** ao lado, o liberado de cada loja, os divergentes, o a liberar e ate quando foi lido. A loja de teste aparece marcada e fora do total.
+- **Ressalva sempre visivel:** o repasse e contado pelo dia da liberacao, nao o da venda, e nao muda o recebido nem o resultado.
+
+**3. A UNIDADE NAO CONFERIDA.** A celula da diferenca diz sempre que a unidade do valor liberado ainda nao foi conferida com a Shopee. Quando TODOS os pedidos comparaveis divergem (pelo menos 3, pelas contagens do banco), aparece um aviso de atencao: antes de tratar como cobranca, confira a unidade, porque uma unidade trocada produz exatamente isso. Nenhuma razao e calculada na tela; so as contagens do SQL sao lidas.
+
+**4. AUSENCIA NAO E ZERO.**
+- Sem TOTAL (nenhuma loja live lida), nao ha faixa; as lojas aparecem com "--" e "repasses ainda nao lidos".
+- Periodo fora da leitura gera aviso, com o "lida ate".
+- Liberacao sem valor aparece como "sem valor", nao R$ 0.
+- Pedido sem o financeiro aparece como "previsto nao lido".
+- Se o "a liberar" falhar, a celula diz isso, sem derrubar o resto.
+
+**5. A WEB PODE CHEGAR ANTES DA MIGRATION** (`20261015050000`): PGRST202 vira "a leitura dos repasses da Shopee ainda esta sendo ativada", como nos Ads (D-456).
+
+**Publicacao:** so a web, empilhada na T5c (#173). O merge vem depois dela e pode ir antes da migration em producao.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 6 em `lib/repasse-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira zeros, a loja de teste e o sinal de unidade trocada (todos os comparaveis, pelo menos 3; um so ou parte deles nao alarma; sem leitura, nada).
+- **e2e:** `faturamento-multicanal` 6/6 e `faturamento` 3/3. O teste novo usa o seed (so a loja de TESTE, nunca lida) e confere:
+  - a secao com a ressalva do dia da liberacao;
+  - nenhuma faixa;
+  - a loja com "--" e "repasses ainda nao lidos · loja de teste, fora do total";
+  - a ordem das secoes (repasse antes dos Ads);
+  - a ausencia da secao no "Todos".
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 12 pedidos, 8 liberados no periodo (um em duas parcelas, um R$ 5 abaixo do previsto, um sem valor, um sem o financeiro lido) e 4 ainda nao liberados (um sem financeiro).
+  - A conta a mao fecha com a funcao e com a tela: liberado R$ 711,00 (8 pedidos, 1 liberacao sem valor), previsto R$ 730,00 (7 de 8), diferenca -R$ 5,00 (1 pedido divergente), a liberar R$ 330,00 (4 pedidos, 1 sem financeiro).
+  - As 9 liberacoes aparecem na lista, com as parcelas, o "sem valor", o "previsto nao lido" e a diferenca.
+  - No desktop, as colunas ficam com 524 px; no celular (390 px), nada passa da largura.
+- **Suite inteira:** 226/226, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/repasse-shopee.ts` e o teste, `apps/web/app/faturamento/{repasse-shopee,multicanal}.tsx`, `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
+## D-460 - Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
+
+**Contexto:** D-447 (C-62, A1) trouxe as devolucoes da Shopee em duas leituras:
+- `get_shopee_returns_summary`: TOTAL so de loja live ja lida e uma linha por loja (nunca lida = NULO), com `por_situacao` em jsonb;
+- `get_shopee_returns`: cada devolucao, com os itens e o SKU.
+
+A tela esperava a decisao do dono sobre onde ela fica. Em 15/10 ele decidiu pela proposta do A2: um painel em `/vendas/shopee`, ao lado do "Por loja", com a situacao como veio, o "valor de reembolso informado", os itens com SKU e nada do comprador.
+
+**1. ONDE.** Uma secao propria (`#devolucoes`) logo depois do "Por loja" e antes dos pedidos. "Ao lado", numa coluna, nao cabe: a tabela por loja ja ocupa a largura. As duas leituras partem junto com as da pagina e chegam por streaming. Recortam pela loja escolhida, como a lista. A situacao do PEDIDO (o outro filtro da tela) nao se aplica a devolucao.
+
+**2. O QUE MOSTRA.**
+- **Resumo:**
+  - as devolucoes do periodo, de quantos pedidos, as unidades e quantas sao so de reembolso;
+  - o "valor de reembolso informado", que diz "o que a Shopee informa, nao o que foi pago". Quando nenhuma devolucao veio com valor, diz isso em vez de R$ 0.
+- **"Por situacao":** cada situacao com o codigo que a Shopee manda (REQUESTED, ACCEPTED, CLOSED...), sem traducao, com as devolucoes, as unidades e o valor informado. Valor nulo aparece como "--".
+- **"Mais recentes":** as 10 ultimas do periodo, cada uma com:
+  - o pedido e a situacao, e o valor informado ("sem valor" quando nao veio);
+  - a loja e a data;
+  - o que pede ("devolucao e reembolso" ou "so reembolso");
+  - o motivo como veio;
+  - os itens com a quantidade e o SKU, com link para o painel do SKU. Item sem vinculo aparece como "sem SKU vinculado".
+- **"Por loja":** as devolucoes de cada loja e ate quando foram lidas. A loja de teste aparece marcada e fora do total.
+- **Ressalva sempre visivel:** a documentacao nao diz em qual situacao o reembolso foi pago, entao o valor e o informado, nao o reembolsado. Nada e descontado da receita aqui, porque o efeito no recebido ja esta no faturamento (C-61, em "outros").
+
+**3. AUSENCIA NAO E ZERO.**
+- Sem TOTAL, nao ha numeros: a tela diz "nenhuma loja real com as devolucoes ja lidas" e lista as lojas com "--".
+- `por_situacao` ou os itens fora do contrato sao recusados com aviso; nao viram lista vazia.
+- A funcao ausente (PGRST202) vira "ainda esta sendo ativada".
+- Nada do comprador: o banco nao guarda.
+
+**Publicacao:** so a web, sobre a `main`. A migration `20261015030000` ja esta em producao desde 15/10.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 9 em `lib/devolucoes-shopee.test.ts`. Cobrem a separacao TOTAL/loja sem somar, a ausencia de TOTAL que nao vira zeros, a loja de teste, a situacao como veio e ordenada, o valor nulo que continua nulo, o jsonb fora do contrato recusado, os itens com e sem SKU e a solucao em palavras.
+- **e2e `vendas-shopee` (7/7).** O teste novo usa o seed (so a loja de TESTE, com as devolucoes nunca lidas) e confere:
+  - a ressalva;
+  - nenhum total;
+  - a loja com "--" e "devolucoes ainda nao lidas · loja de teste, fora do total";
+  - "reembolsado" so na ressalva;
+  - o painel entre o "Por loja" e os pedidos.
+- **Com loja live**, num fixture no banco isolado (nunca commitado): 5 devolucoes, uma fora do periodo, uma sem valor, uma so de reembolso, uma com dois itens e um item sem SKU; e uma segunda loja nunca lida.
+  - A conta a mao fecha com a funcao e com a tela: 4 devolucoes de 4 pedidos, 6 unidades, 1 so de reembolso, R$ 254,90 informados (a sem valor fica fora da soma e aparece como "sem valor").
+  - Na tela: as quatro situacoes com os codigos como vieram, os itens com os links dos SKUs e "2x sem SKU vinculado".
+  - Colunas de 524 px no desktop; nada transborda em 390 px.
+- **Suite inteira:** 225/225, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/devolucoes-shopee.ts` e o teste, `apps/web/app/vendas/shopee/{devolucoes,page}.tsx`, `apps/web/e2e/vendas-shopee.spec.ts`, `docs/{DECISIONS,DECISIONS_INDEX}.md` (o ROADMAP, o MULTICHANNEL_SCREENS, o PRODUCT_REQUIREMENTS e o handoff vao no PR de docs das etapas multicanal). Nenhuma migration, RPC, worker ou api.

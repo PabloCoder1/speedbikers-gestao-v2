@@ -267,6 +267,11 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
 - **Na V3:** `POST /push/shopee` na api antecipa `shopee.orders.sync` ou
   `shopee.returns.sync` da loja, uma tarefa por janela de 5 minutos; o
   gatilho horário continua. Cadastro no Console: `docs/DEPLOYMENT.md` §6.2.
+- **Recusa diagnosticável (15/10):** os 3 primeiros pushes reais (verificação e
+  "Push Test Data" de 3 e 29) foram recusados; o log da recusa passou a dizer
+  se o cabeçalho veio, o formato, o tamanho, as chaves e o código (sem o valor),
+  e a assinatura aceita só variações de FORMA do endereço (barra, esquema) e o
+  corpo sem a quebra final — sempre com a chave do parceiro.
 
 ## 5. Sandbox — o roteiro
 

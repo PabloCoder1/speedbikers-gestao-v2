@@ -131,6 +131,40 @@ describe("POST /push/shopee (D-453)", () => {
     expect(filtros).toEqual([]);
   });
 
+  it("assinada com outra forma do endereço (barra no fim) ou com espaço no cabeçalho: aceita, com aviso da variação", async () => {
+    const { enviar, enfileirados, logs } = cenario();
+
+    expect((await enviar(PEDIDO, signPush(CHAVE, `${URL_PUSH}/`, PEDIDO))).status).toBe(200);
+    expect((await enviar(PEDIDO, ` ${signPush(CHAVE, URL_PUSH, PEDIDO)} `)).status).toBe(200);
+    expect(enfileirados).toHaveLength(2);
+    expect(logs.filter((l) => l.message === "shopee_push_url_variant").map((l) => (l as unknown as { variante: string }).variante)).toEqual([
+      "com_barra",
+    ]);
+  });
+
+  it("a recusa diz o que chegou sem expor a assinatura: cabeçalho, formato, tamanho, chaves e código", async () => {
+    const { enviar, logs } = cenario();
+
+    await enviar(PEDIDO, null);
+    await enviar(PEDIDO, "nao-e-hex");
+
+    const recusas = logs.filter((l) => l.message === "shopee_push_signature_rejected") as unknown as Record<string, unknown>[];
+
+    expect(recusas).toEqual([
+      expect.objectContaining({
+        assinatura_presente: false,
+        assinatura_tamanho: 0,
+        assinatura_formato: null,
+        corpo_bytes: PEDIDO.length,
+        corpo_chaves: ["data", "shop_id", "code", "timestamp"],
+        code: 3,
+      }),
+      expect.objectContaining({ assinatura_presente: true, assinatura_tamanho: 9, assinatura_formato: "outro" }),
+    ]);
+    expect(JSON.stringify(recusas)).not.toContain("REDACTED");
+    expect(JSON.stringify(recusas)).not.toContain("nao-e-hex");
+  });
+
   it("loja desconhecida ou desconectada, push sem ação e autorização cancelada: 200 sem enfileirar", async () => {
     const desconhecida = cenario({ loja: null });
     const desconectada = cenario({ loja: { ...LOJA, status: "ERROR" } });
