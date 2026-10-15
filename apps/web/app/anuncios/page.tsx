@@ -11,6 +11,8 @@ import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { monogramaDeProduto } from "../../lib/initials";
 import { listingStatusLabel } from "../../lib/labels";
@@ -164,7 +166,7 @@ function Cabecalho({
       aria-sort={ativa ? (crescente ? "ascending" : "descending") : "none"}
       title={dica}
     >
-      <a
+      <LinkDeFiltro
         className={ativa ? "sb-an-ordem sb-an-ordem-ativa" : "sb-an-ordem"}
         href={buildHref(filters, { order: nextOrder(filters.order, coluna) })}
       >
@@ -172,7 +174,7 @@ function Cabecalho({
         <span className="sb-an-ordem-seta" aria-hidden="true">
           {ativa ? (crescente ? "↑" : "↓") : "↕"}
         </span>
-      </a>
+      </LinkDeFiltro>
     </th>
   );
 }
@@ -520,7 +522,7 @@ export default async function AnunciosPage({
               }))}
             />
 
-            <form method="get" action="/anuncios" className="sb-an-busca" role="search">
+            <FormularioFiltro action="/anuncios" className="sb-an-busca" role="search">
               {/*
                 Hidden para cada dimensão ativa: um GET nativo envia SÓ os campos
                 do formulário, então sem isto buscar descartaria o resto do
@@ -550,7 +552,7 @@ export default async function AnunciosPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
           </>
         }
       />
@@ -632,14 +634,14 @@ export default async function AnunciosPage({
             <div className="sb-an-chips" aria-label="Filtros ativos">
               <span className="sb-an-chips-rotulo">Filtros ativos:</span>
               {chips.map((chip) => (
-                <a key={chip.rotulo} className="sb-an-chip" href={chip.href} aria-label={`Tirar o filtro ${chip.rotulo}`}>
+                <LinkDeFiltro key={chip.rotulo} className="sb-an-chip" href={chip.href} aria-label={`Tirar o filtro ${chip.rotulo}`}>
                   {chip.rotulo}
                   <span aria-hidden="true">×</span>
-                </a>
+                </LinkDeFiltro>
               ))}
-              <a className="sb-text-button sb-an-limpar" href={limpar}>
+              <LinkDeFiltro className="sb-text-button sb-an-limpar" href={limpar}>
                 Limpar filtros
-              </a>
+              </LinkDeFiltro>
             </div>
           )}
 
@@ -653,7 +655,7 @@ export default async function AnunciosPage({
           {promocaoSemBanco && (
             <p role="note" className="sb-an-nota">
               O filtro de promoção chega com a próxima atualização do banco.{" "}
-              <a href={buildHref(filters, { promo: "all" })}>Ver todos os anúncios</a>
+              <LinkDeFiltro href={buildHref(filters, { promo: "all" })}>Ver todos os anúncios</LinkDeFiltro>
             </p>
           )}
 
@@ -706,9 +708,9 @@ export default async function AnunciosPage({
             <div role="alert" className="sb-an-estado sb-an-estado-erro">
               <b>Não foi possível carregar os anúncios.</b>
               <span>{error.message}</span>
-              <a className="sb-button" href={buildHref(filters, { page: filters.page })}>
+              <LinkDeFiltro className="sb-button" href={buildHref(filters, { page: filters.page })}>
                 Tentar de novo
-              </a>
+              </LinkDeFiltro>
             </div>
           )}
 
@@ -716,9 +718,9 @@ export default async function AnunciosPage({
             <div className="sb-an-estado">
               <b>Nenhum anúncio corresponde a estes filtros.</b>
               {chips.length > 0 ? (
-                <a className="sb-button" href={limpar}>
+                <LinkDeFiltro className="sb-button" href={limpar}>
                   Limpar filtros
-                </a>
+                </LinkDeFiltro>
               ) : (
                 <span>O catálogo desta conta ainda não foi sincronizado.</span>
               )}
@@ -965,9 +967,9 @@ export default async function AnunciosPage({
               {window.totalPages > 1 && (
                 <div className="sb-an-paginas">
                   {filters.page > 1 ? (
-                    <a className="sb-button" href={buildHref(filters, { page: filters.page - 1 })}>
+                    <LinkDeFiltro className="sb-button" href={buildHref(filters, { page: filters.page - 1 })}>
                       ‹ Anterior
-                    </a>
+                    </LinkDeFiltro>
                   ) : (
                     <span className="sb-button" aria-disabled="true">
                       ‹ Anterior
@@ -979,7 +981,7 @@ export default async function AnunciosPage({
                         …
                       </span>
                     ) : (
-                      <a
+                      <LinkDeFiltro
                         key={numeroDaPagina}
                         className={numeroDaPagina === filters.page ? "sb-an-pagina sb-an-pagina-atual" : "sb-an-pagina"}
                         href={buildHref(filters, { page: numeroDaPagina })}
@@ -987,13 +989,13 @@ export default async function AnunciosPage({
                         aria-label={`Página ${String(numeroDaPagina)}`}
                       >
                         {formatCount(numeroDaPagina)}
-                      </a>
+                      </LinkDeFiltro>
                     ),
                   )}
                   {filters.page < window.totalPages ? (
-                    <a className="sb-button" href={buildHref(filters, { page: filters.page + 1 })}>
+                    <LinkDeFiltro className="sb-button" href={buildHref(filters, { page: filters.page + 1 })}>
                       Próxima ›
-                    </a>
+                    </LinkDeFiltro>
                   ) : (
                     <span className="sb-button" aria-disabled="true">
                       Próxima ›

@@ -8,6 +8,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
@@ -179,7 +181,7 @@ export default async function FornecedoresPage({
         subtitle="Cadastro e relacionamento de compra — o que foi pedido a cada fornecedor."
         aside={
           <>
-            <form method="get" action="/fornecedores" className="sb-rep-busca" role="search">
+            <FormularioFiltro action="/fornecedores" className="sb-rep-busca" role="search">
               {/* GET nativo só envia os campos do form (D-136): as dimensões ativas vão escondidas. */}
               {filters.state !== "todos" && <input type="hidden" name="estado" value={filters.state} />}
               {filters.order !== "nome" && <input type="hidden" name="ordem" value={filters.order} />}
@@ -195,7 +197,7 @@ export default async function FornecedoresPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             {podeEditar && (
               <Link className="sb-button sb-button-primary" href="/fornecedores/novo">
                 <Icone nome="mais" tamanho={14} />
@@ -384,9 +386,9 @@ export default async function FornecedoresPage({
                         ? `Nada encontrado para “${filters.search}”. Confira a grafia ou busque pelo CNPJ.`
                         : "Troque o recorte acima para ver os demais."}
                     </span>
-                    <Link className="sb-button" href="/fornecedores">
+                    <LinkDeFiltro className="sb-button" href="/fornecedores">
                       Ver todos
-                    </Link>
+                    </LinkDeFiltro>
                   </>
                 )}
               </div>

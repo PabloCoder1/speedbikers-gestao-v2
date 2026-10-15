@@ -18,6 +18,8 @@ import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../l
 import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 import { FilterMenu } from "../../components/filter-menu";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { contarLojasShopee } from "../../lib/marketplace";
 import { hrefDeVendas, resolverEscopoVendas } from "../../lib/vendas-multicanal";
 import { VendasMulticanal } from "./multicanal";
@@ -663,8 +665,7 @@ async function VendasContent({
                 label: `Últimos ${String(preset)} dias`,
               }))}
             >
-                <form
-                  method="get"
+                <FormularioFiltro action="/vendas"
                   style={{
                     display: "grid",
                     gap: "0.375rem",
@@ -705,7 +706,7 @@ async function VendasContent({
                   <button type="submit" className="sb-button sb-button-primary" style={{ justifyContent: "center" }}>
                     Aplicar período
                   </button>
-                </form>
+                </FormularioFiltro>
             </FilterMenu>
 
             {organizationId !== null && (
@@ -854,14 +855,14 @@ async function VendasContent({
           >
             <div className="sb-segmented" role="group" aria-label="Métrica do gráfico">
               {SALES_METRICS.map((option) => (
-                <Link
+                <LinkDeFiltro
                   key={option.key}
                   href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { metricKey: option.key })}
                   aria-current={option.key === metric.key ? "true" : undefined}
                 >
                   {option.label}
                   <CarregandoSeODemorar />
-                </Link>
+                </LinkDeFiltro>
               ))}
             </div>
 

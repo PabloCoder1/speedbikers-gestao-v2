@@ -9,6 +9,8 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { StatePill } from "../../components/state-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { lerFaturamento, participacao, tomDaMargem, type SkuFaturamento } from "../../lib/faturamento";
 import {
   hrefDeFaturamento,
@@ -239,7 +241,7 @@ export async function FaturamentoMulticanal({
               }))}
             >
               {/* Um GET nativo envia só os campos do formulário: os hidden mantêm o recorte. */}
-              <form method="get" action="/faturamento" className="sb-periodo-form">
+              <FormularioFiltro action="/faturamento" className="sb-periodo-form">
                 <input type="hidden" name="marketplace" value={escopo} />
                 {selecionadas !== null && (
                   <input type="hidden" name="contas" value={selecionadas.map((conta) => conta.account_id).join(",")} />
@@ -261,7 +263,7 @@ export async function FaturamentoMulticanal({
                 <button type="submit" className="sb-button sb-button-primary">
                   Aplicar período
                 </button>
-              </form>
+              </FormularioFiltro>
             </FilterMenu>
 
             <Link className="sb-button" href={hrefDeVendas({ escopo, periodo, contas: selecionadas, metrica: "faturamento" })}>
@@ -421,7 +423,7 @@ async function CorpoShopee({
       <p role="note" className="sb-an-nota">
         Resultado = o que a Shopee diz que a loja recebe (escrow) − o custo dos produtos. Não soma com o resultado do
         Mercado Livre, que desconta menos coisas —{" "}
-        <Link href={hrefDeFaturamento(recorte, { escopo: "todos" })}>veja os dois lado a lado</Link>. A loja Shopee de
+        <LinkDeFiltro href={hrefDeFaturamento(recorte, { escopo: "todos" })}>veja os dois lado a lado</LinkDeFiltro>. A loja Shopee de
         teste nunca entra nas somas.
       </p>
 
@@ -997,10 +999,10 @@ async function CorpoTodos({
                 <tr>
                   <th>Métrica</th>
                   <th className="sb-num">
-                    <Link href={hrefDeFaturamento(recorte, { escopo: "ml" })}>Mercado Livre</Link>
+                    <LinkDeFiltro href={hrefDeFaturamento(recorte, { escopo: "ml" })}>Mercado Livre</LinkDeFiltro>
                   </th>
                   <th className="sb-num">
-                    <Link href={hrefDeFaturamento(recorte, { escopo: "shopee" })}>Shopee</Link>
+                    <LinkDeFiltro href={hrefDeFaturamento(recorte, { escopo: "shopee" })}>Shopee</LinkDeFiltro>
                   </th>
                 </tr>
               </thead>

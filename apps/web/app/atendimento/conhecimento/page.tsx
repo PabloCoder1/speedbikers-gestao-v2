@@ -5,6 +5,8 @@ import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
+import { FormularioFiltro } from "../../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { isPageBeyondEnd, summarizePagedWindow } from "../../../lib/filters";
 import { formatCount, formatPercent } from "../../../lib/format";
 import {
@@ -116,27 +118,27 @@ export default async function ConhecimentoPage({
       </>}
     >
       <div className="sb-knowledge-toolbar">
-        <form method="get" action="/atendimento/conhecimento" className="sb-knowledge-search" role="search">
+        <FormularioFiltro action="/atendimento/conhecimento" className="sb-knowledge-search" role="search">
           {filters.status !== null && <input type="hidden" name="status" value={filters.status} />}
           {filters.kind !== null && <input type="hidden" name="tipo" value={filters.kind} />}
           {filters.source !== null && <input type="hidden" name="fonte" value={filters.source} />}
           <input className="sb-input" type="search" name="busca" defaultValue={filters.search ?? ""} placeholder="Buscar no fato registrado" aria-label="Buscar no fato registrado" />
           <button className="sb-button" type="submit">Buscar</button>
-        </form>
+        </FormularioFiltro>
         <div className="sb-knowledge-actions">
-          {pending !== null && pending > 0 && filters.status !== "SUGERIDO" && <Link className="sb-button" href={buildKnowledgeHref(filters, { status: "SUGERIDO" })}>Revisar {formatCount(pending)} sugestões</Link>}
-          {hasFilters && <Link className="sb-text-button" href="/atendimento/conhecimento">Limpar filtros</Link>}
+          {pending !== null && pending > 0 && filters.status !== "SUGERIDO" && <LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { status: "SUGERIDO" })}>Revisar {formatCount(pending)} sugestões</LinkDeFiltro>}
+          {hasFilters && <LinkDeFiltro className="sb-text-button" href="/atendimento/conhecimento">Limpar filtros</LinkDeFiltro>}
         </div>
       </div>
 
-      {listError !== null && <div role="alert" className="sb-knowledge-state sb-knowledge-state-error"><strong>Não foi possível carregar os conhecimentos.</strong><span>{listError}</span><Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page })}>Tentar de novo</Link></div>}
-      {pageBeyondEnd && <div className="sb-knowledge-state"><strong>Esta página não existe neste recorte.</strong><span>O conjunto mudou ou o link é antigo.</span><Link className="sb-button" href={buildKnowledgeHref(filters, { page: 1 })}>Voltar à primeira página</Link></div>}
+      {listError !== null && <div role="alert" className="sb-knowledge-state sb-knowledge-state-error"><strong>Não foi possível carregar os conhecimentos.</strong><span>{listError}</span><LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page })}>Tentar de novo</LinkDeFiltro></div>}
+      {pageBeyondEnd && <div className="sb-knowledge-state"><strong>Esta página não existe neste recorte.</strong><span>O conjunto mudou ou o link é antigo.</span><LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: 1 })}>Voltar à primeira página</LinkDeFiltro></div>}
       {listError === null && !pageBeyondEnd && rows.length === 0 && <div className="sb-knowledge-state"><strong>{hasFilters ? "Nenhum conhecimento com estes filtros" : "A base ainda não tem conhecimentos"}</strong><span>{hasFilters ? "Troque o recorte ou limpe os filtros para ver outros registros." : "Registre um fato como sugerido; ele só vira evidência após a validação humana."}</span></div>}
       {listError === null && !pageBeyondEnd && rows.length > 0 && <div style={{ overflowX: "auto" }}><table className="sb-table"><thead><tr><th>SKU</th><th>Tipo</th><th>Conhecimento</th><th>Fonte</th><th>Confirmado por</th><th>Atualizado</th><th>Status</th></tr></thead><tbody>{rows.map((entry) => <KnowledgeRow key={entry.id} entry={entry} canManage={canManage} />)}</tbody></table></div>}
       {listError === null && !pageBeyondEnd && window.totalPages > 1 && <nav className="sb-knowledge-pages" aria-label="Páginas da base de conhecimento">
-        {filters.page > 1 ? <Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page - 1 })}>‹ Anterior</Link> : <span />}
+        {filters.page > 1 ? <LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page - 1 })}>‹ Anterior</LinkDeFiltro> : <span />}
         <span>Página {formatCount(filters.page)} de {formatCount(window.totalPages)}</span>
-        {filters.page < window.totalPages ? <Link className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page + 1 })}>Próxima ›</Link> : <span />}
+        {filters.page < window.totalPages ? <LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { page: filters.page + 1 })}>Próxima ›</LinkDeFiltro> : <span />}
       </nav>}
     </Panel>
   </Shell>;

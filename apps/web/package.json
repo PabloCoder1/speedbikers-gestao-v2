@@ -17,6 +17,7 @@
     "check:table-styles": "node scripts/check-table-styles.mjs",
     "check:control-styles": "node scripts/check-control-styles.mjs",
     "check:loading": "node scripts/check-loading.mjs",
+    "check:navegacao-suave": "node scripts/check-navegacao-suave.mjs",
     "check:settings-vocabulary": "node scripts/check-settings-vocabulary.mjs"
   },
   "dependencies": {

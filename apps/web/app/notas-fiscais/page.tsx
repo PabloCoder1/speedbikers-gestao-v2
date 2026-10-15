@@ -8,6 +8,8 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { TOM } from "../../components/tone";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import {
   DOCUMENT_STATUSES,
   DOCUMENT_TYPES,
@@ -233,7 +235,7 @@ export default async function NotasFiscaisPage({
               obrigatórios porque um form GET só envia os campos que tem — sem
               eles, buscar limparia os outros recortes (D-136).
             */}
-            <form method="get" action="/notas-fiscais" className="sb-rep-busca">
+            <FormularioFiltro action="/notas-fiscais" className="sb-rep-busca">
               {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
               {filters.operation !== null && <input type="hidden" name="direcao" value={filters.operation} />}
               {filters.type !== null && <input type="hidden" name="tipo" value={filters.type} />}
@@ -248,7 +250,7 @@ export default async function NotasFiscaisPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             <Link className="sb-button sb-button-primary" href="/notas-fiscais/nova">
               Enviar documento
             </Link>
@@ -481,7 +483,7 @@ export default async function NotasFiscaisPage({
         >
           {linhas.length === 0 && (
             <p className="sb-empty">
-              {janela.label} <Link href="/notas-fiscais">Ver todos</Link>
+              {janela.label} <LinkDeFiltro href="/notas-fiscais">Ver todos</LinkDeFiltro>
             </p>
           )}
 

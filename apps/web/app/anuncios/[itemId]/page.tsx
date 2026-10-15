@@ -13,6 +13,7 @@ import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { TOM, tomDeRelist, tomDeStatus } from "../../../components/tone";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { formatEventDiff } from "../../../lib/event-format";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, relistStatusLabel, statusTone } from "../../../lib/labels";
@@ -663,10 +664,10 @@ export default async function AnuncioPage({
               afordância que não leva a lugar nenhum.
             */}
             {tab !== "historico" && (
-              <Link className="sb-text-button" href={href("historico")}>
+              <LinkDeFiltro className="sb-text-button" href={href("historico")}>
                 Republicações
                 <span aria-hidden="true">→</span>
-              </Link>
+              </LinkDeFiltro>
             )}
 
             <CopiarMlb itemId={row.item_id} />
@@ -704,9 +705,9 @@ export default async function AnuncioPage({
               <Link className="sb-menu-item" href={`/anuncios?busca=${encodeURIComponent(row.item_id)}`}>
                 Achar na lista de anúncios
               </Link>
-              <Link className="sb-menu-item" href={href("historico")}>
+              <LinkDeFiltro className="sb-menu-item" href={href("historico")}>
                 Linha do tempo e republicações
-              </Link>
+              </LinkDeFiltro>
               <Link className="sb-menu-item" href="/acoes">
                 Ver ações abertas
               </Link>
@@ -814,9 +815,9 @@ export default async function AnuncioPage({
                 title="Vendas por dia"
                 subtitle={`unidades vendidas, últimos ${String(LOOKBACK_DAYS)} dias`}
                 aside={
-                  <Link className="sb-anuncio-link" href={href("vendas")}>
+                  <LinkDeFiltro className="sb-anuncio-link" href={href("vendas")}>
                     Detalhar →
-                  </Link>
+                  </LinkDeFiltro>
                 }
               >
                 <div className="sb-panel-body">
@@ -836,9 +837,9 @@ export default async function AnuncioPage({
                 title="Visitas por dia"
                 subtitle={`coletadas por varredura, últimos ${String(LOOKBACK_DAYS)} dias`}
                 aside={
-                  <Link className="sb-anuncio-link" href={href("trafego")}>
+                  <LinkDeFiltro className="sb-anuncio-link" href={href("trafego")}>
                     Detalhar →
-                  </Link>
+                  </LinkDeFiltro>
                 }
               >
                 <div className="sb-panel-body">

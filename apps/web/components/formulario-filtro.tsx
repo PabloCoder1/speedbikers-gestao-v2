@@ -70,6 +70,11 @@ export function FormularioFiltro({
 
     ultimoDestino.current = href;
 
+    // Formulário dentro de um menu (o período personalizado do `FilterMenu`):
+    // a recarga fechava o `<details>`; na navegação suave ele fecharia só se
+    // alguém o fechasse — como a opção do menu faz (`ItemDeMenu`).
+    formulario.closest("details")?.removeAttribute("open");
+
     const emFoco = document.activeElement;
 
     campoEmFoco.current =

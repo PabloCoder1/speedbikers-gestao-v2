@@ -8,6 +8,7 @@ import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
+import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import {
   LOCATION_KINDS,
@@ -254,7 +255,7 @@ export default async function MovimentacoesPage({
           </>
         }
       >
-        <form method="get" action="/estoque/movimentacoes" className="sb-mov-toolbar" aria-label="Filtrar movimentações">
+        <FormularioFiltro action="/estoque/movimentacoes" className="sb-mov-toolbar" aria-label="Filtrar movimentações">
           {filters.movementType !== null && <input type="hidden" name="tipo" value={filters.movementType} />}
           {filters.locationKind !== null && <input type="hidden" name="local" value={filters.locationKind} />}
           {filters.sourceType !== null && <input type="hidden" name="origem" value={filters.sourceType} />}
@@ -295,7 +296,7 @@ export default async function MovimentacoesPage({
               Aplicar filtros
             </button>
           </div>
-        </form>
+        </FormularioFiltro>
 
         {resumo.error !== null && ledger.error === null && (
           <p className="sb-mov-message sb-mov-message-warning" role="status">
