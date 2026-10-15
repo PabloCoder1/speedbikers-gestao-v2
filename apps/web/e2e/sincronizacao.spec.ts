@@ -221,6 +221,17 @@ test("/sincronizacao: a loja Shopee aparece com a marca de teste, a conexão e a
   await expect(ultimaLeitura.getByRole("definition")).toHaveText("—");
   await expect(loja.getByText("Autorização vence em")).toBeVisible();
 
+  /*
+    D-462: até quando cada dado da loja foi lido. A loja do seed nunca teve
+    devoluções, repasses nem Ads lidos — "nunca lidos", não uma data
+    inventada nem um zero.
+  */
+  const fato = (rotulo: string) => loja.getByText(rotulo, { exact: true }).locator("..").getByRole("definition");
+
+  await expect(fato("Devoluções lidas até")).toHaveText("nunca lidas");
+  await expect(fato("Repasses lidos até")).toHaveText("nunca lidos");
+  await expect(fato("Ads CPC lidos em")).toHaveText("nunca lidos");
+
   // O caminho para reconectar é o da tela que conecta as duas.
   await expect(page.getByRole("link", { name: "Contas e lojas →" })).toHaveAttribute("href", "/contas");
 

@@ -502,14 +502,22 @@ function webhook(input: IntegrationsInput): IntegrationCard {
 }
 
 /**
- * OS QUATRO JOBS DA SHOPEE (D-427/D-429), horários (`JOB_CADENCE_MIN` desde
- * D-431): a mesma régua de `/saude` para dizer se a leitura está andando.
+ * OS JOBS DA SHOPEE, com a mesma régua de `/saude` (`JOB_CADENCE_MIN`) para
+ * dizer se a leitura está andando: os quatro de pedidos e catálogo (D-427/
+ * D-429, horários desde D-431) e, desde D-462, os três que o A1 encadeou atrás
+ * dos pedidos e que já rodam em produção — devoluções (D-447) e repasses
+ * (D-451) de hora em hora, Ads CPC (D-449) a cada 3 h. Um job que FALHA (o Ads
+ * do sandbox responde 503) põe o cartão em erro e diz qual: é verdade, e é o
+ * que se quer ver aqui.
  */
 const SHOPEE_JOBS: readonly { jobType: string; label: string }[] = [
   { jobType: "shopee.orders.sync", label: "pedidos" },
   { jobType: "shopee.order-financials.sync", label: "financeiro dos pedidos" },
   { jobType: "shopee.items.sync", label: "catálogo" },
   { jobType: "shopee.items.hydrate", label: "detalhe do catálogo" },
+  { jobType: "shopee.returns.sync", label: "devoluções" },
+  { jobType: "shopee.escrow-releases.sync", label: "repasses" },
+  { jobType: "shopee.ads.sync", label: "Ads CPC" },
 ];
 
 /** O tom do veredito da loja (`lib/saude-loja-shopee.ts`) no vocabulário desta tela. */
@@ -593,7 +601,7 @@ function shopee(input: IntegrationsInput): IntegrationCard {
   return {
     id: "shopee",
     label: "Shopee",
-    scope: "Pedidos, financeiro dos pedidos e catálogo, por loja autorizada.",
+    scope: "Pedidos, financeiro dos pedidos, catálogo, devoluções, repasses e Ads CPC, por loja autorizada.",
     links: [
       { label: "Contas e lojas", href: "/contas" },
       { label: "Sincronização", href: "/sincronizacao" },
