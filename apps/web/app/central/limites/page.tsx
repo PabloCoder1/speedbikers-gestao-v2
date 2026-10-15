@@ -10,7 +10,7 @@ import { StatePill } from "../../../components/state-pill";
 import { descreverLimites, LIMITES_PADRAO, lerLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { voltarAosPadroes } from "./actions";
 import { FormularioLimites } from "./formulario";
 
@@ -95,9 +95,13 @@ async function LimitesContent(): Promise<ReactNode> {
       <Titulo />
 
       {resposta?.error != null && (
-        <p role="alert" style={AVISO}>
-          Não foi possível carregar os limites: {resposta.error.message}. A central está julgando com os padrões.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os limites"
+          descricao="A central está julgando com os padrões."
+          detalhe={resposta.error.message}
+          acao={{ href: "/central/limites", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {!podeEditar && (

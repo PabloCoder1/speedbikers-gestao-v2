@@ -80,7 +80,9 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
 test("/central: personalizado inválido avisa e cai no padrão", async ({ page }) => {
   await login(page, "/central?from=2026-09-10&to=2026-09-01");
 
-  await expect(page.getByRole("alert").filter({ hasText: "Período personalizado inválido" })).toBeVisible();
+  // D-472: não é falha — a tela já mostra o padrão. É status, não alerta (item 13, D-503).
+  await expect(page.getByRole("status").filter({ hasText: "Período personalizado inválido" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Período personalizado inválido" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
 });
 

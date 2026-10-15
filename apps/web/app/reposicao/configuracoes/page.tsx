@@ -2,6 +2,7 @@ import { toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
@@ -107,7 +108,7 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
     return (
       <Shell>
         <PageTitle eyebrow="ESTOQUE / PLANEJAMENTO" title="Configuração de reposição" compacto />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </Shell>
     );
   }
@@ -134,9 +135,12 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
     return (
       <Shell>
         <PageTitle eyebrow="ESTOQUE / PLANEJAMENTO" title="Configuração de reposição" compacto />
-        <p role="alert" className="sb-note sb-note-perigo">
-          Não foi possível carregar as regras de reposição: {settingsResult.error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as regras de reposição"
+          detalhe={settingsResult.error.message}
+          acao={{ href: "/reposicao/configuracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </Shell>
     );
   }
@@ -235,10 +239,13 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
       <AvisoDaConfiguracao />
 
       {reachResult.error !== null && (
-        <p role="alert" className="sb-note sb-note-atencao sb-cfg-mensagem">
-          O alcance das regras não pôde ser lido ({reachResult.error.message}). As regras continuam editáveis; os números
-          de quantos SKUs cada uma cobre voltam quando a leitura voltar.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O alcance das regras não pôde ser lido"
+          descricao="As regras continuam editáveis; os números de quantos SKUs cada uma cobre voltam quando a leitura voltar."
+          detalhe={reachResult.error.message}
+          acao={{ href: "/reposicao/configuracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {totais !== null && (
@@ -429,7 +436,11 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
           subtitle="A regra da marca vence o padrão. Em ordem de quem mais destrava: venda recente primeiro."
         >
           {linhas.length === 0 ? (
-            <p className="sb-empty">Nenhuma marca no catálogo ainda — a marca do fornecedor vem do cadastro de SKU.</p>
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhuma marca no catálogo ainda"
+              descricao="A marca do fornecedor vem do cadastro de SKU."
+            />
           ) : (
             <ListaDeMarcas
               linhas={linhas}

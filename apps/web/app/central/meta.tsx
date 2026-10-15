@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { Panel } from "../../components/panel";
 import { StatePill } from "../../components/state-pill";
 import { TOM } from "../../components/tone";
@@ -207,15 +208,29 @@ function BarraDaMeta({ m }: { m: MetaDoMes }): ReactNode {
  * empresa inteira: a meta não é por conta e não muda com o período escolhido
  * na central — o subtítulo diz isso, para ninguém comparar a meta com um recorte.
  */
+/**
+ * Por que a meta não veio (D-472): sem organização (permissão), função ainda
+ * não ativada (vazio), erro de leitura ou resposta fora do contrato (erro).
+ */
+export interface MetaIndisponivel {
+  readonly tipo: "erro" | "vazio" | "permissao";
+  readonly titulo: string;
+  readonly descricao?: string;
+  readonly detalhe?: string;
+}
+
 export function SecaoMeta({
   meta,
   indisponivel,
   podeEditar,
   atrasoDaMeta,
+  tentarDeNovo,
 }: {
   meta: MetaDoMes | null;
-  /** Texto do motivo quando a leitura não veio (função ausente, erro, contrato). */
-  indisponivel: string | null;
+  /** O motivo quando a leitura não veio (função ausente, erro, contrato). */
+  indisponivel: MetaIndisponivel | null;
+  /** A mesma URL, para "Tentar de novo" no erro. */
+  tentarDeNovo?: string;
   podeEditar: boolean;
   /** O atraso contra o esperado que ainda é atenção (D-408). */
   atrasoDaMeta: number;
@@ -231,7 +246,17 @@ export function SecaoMeta({
     return (
       <section aria-label="Meta e projeção" id="meta-e-projecao">
         {cabecalho}
-        <p className="sb-empty">{indisponivel ?? "A meta do mês não carregou."}</p>
+        <EstadoDaTela
+          tipo={indisponivel?.tipo ?? "erro"}
+          titulo={indisponivel?.titulo ?? "A meta do mês não carregou."}
+          descricao={indisponivel?.descricao}
+          detalhe={indisponivel?.detalhe}
+          acao={
+            (indisponivel?.tipo ?? "erro") === "erro" && tentarDeNovo !== undefined
+              ? { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }
+              : undefined
+          }
+        />
       </section>
     );
   }
@@ -284,10 +309,11 @@ export function SecaoMeta({
       {meta.situacao === "em_curso" && (
         <div className="sb-central-bloco">
           {projecao.length === 0 ? (
-            <p className="sb-empty">
-              Sem histórico suficiente para projetar o fechamento: a projeção precisa de ao menos 7 dias completos de
-              vendas.
-            </p>
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Sem histórico suficiente para projetar o fechamento"
+              descricao="A projeção precisa de ao menos 7 dias completos de vendas."
+            />
           ) : (
             <>
               <div className="sb-section-label">
