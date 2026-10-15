@@ -36,6 +36,11 @@ interface SearchResult {
   label: string;
   sublabel: string;
   href: string;
+  /**
+   * C-57 (D-467): 'ML', 'SHOPEE' ou nulo. Ausente na função de antes da
+   * migration — a tela não depende dele para abrir o resultado (o `href`).
+   */
+  marketplace?: string | null;
 }
 
 /**

@@ -213,6 +213,8 @@ export default async function VendasShopeePage({
       p_date_to: filters.range.to,
       p_shopee_shop_id: filters.loja,
       p_situacao: situacaoAtiva?.codigo ?? null,
+      // D-476: o pedido que a Busca Universal abriu (nulo = a lista de sempre).
+      p_order_sn: filters.pedido,
       p_limit: SHOPEE_ORDERS_PAGE_SIZE,
       p_offset: (filters.pagina - 1) * SHOPEE_ORDERS_PAGE_SIZE,
     }),
@@ -254,7 +256,10 @@ export default async function VendasShopeePage({
   const ate = formatBusinessDate(filters.range.to);
   const periodoLabel = filters.days === null ? "Período personalizado" : `Últimos ${String(filters.days)} dias`;
   // O caminho de volta leva o período junto, como o link de lá traz o de lá.
-  const hrefVendas = buildShopeeSalesHref(filters, { loja: null, situacao: null }).replace(/^\/vendas\/shopee/, "/vendas");
+  const hrefVendas = buildShopeeSalesHref(filters, { loja: null, situacao: null, pedido: null }).replace(
+    /^\/vendas\/shopee/,
+    "/vendas",
+  );
   // O mesmo período, para o resumo da Shopee e o consolidado (D-440); loja e situação ficam aqui.
   const recorteDaVolta: RecorteDeVendas = {
     escopo: "shopee",
@@ -268,8 +273,11 @@ export default async function VendasShopeePage({
     ...(situacaoAtiva === null
       ? []
       : [{ rotulo: situacaoAtiva.plural, href: buildShopeeSalesHref(filters, { situacao: null }) }]),
+    ...(filters.pedido === null
+      ? []
+      : [{ rotulo: `Pedido ${filters.pedido}`, href: buildShopeeSalesHref(filters, { pedido: null }) }]),
   ];
-  const limpar = buildShopeeSalesHref(filters, { loja: null, situacao: null });
+  const limpar = buildShopeeSalesHref(filters, { loja: null, situacao: null, pedido: null });
 
   return (
     <Shell>
@@ -327,6 +335,7 @@ export default async function VendasShopeePage({
               <FormularioFiltro action="/vendas/shopee" className="sb-periodo-form">
                 {filters.loja !== null && <input type="hidden" name="loja" value={filters.loja} />}
                 {filters.situacao !== null && <input type="hidden" name="situacao" value={filters.situacao} />}
+                {filters.pedido !== null && <input type="hidden" name="pedido" value={filters.pedido} />}
                 <input
                   type="date"
                   name="from"
@@ -586,6 +595,14 @@ export default async function VendasShopeePage({
                     : "A primeira leitura acontece na próxima hora — os pedidos são lidos de hora em hora."
                 }
                 acao={leituraParada ? { href: "/contas", rotulo: "Reconectar em Contas" } : undefined}
+              />
+            ) : filters.pedido !== null ? (
+              // D-476: o pedido que a busca abriu e não está neste recorte (outro dia, outra loja, outra situação).
+              <EstadoDaTela
+                tipo="filtro"
+                titulo={`O pedido ${filters.pedido} não está neste recorte.`}
+                descricao="Ele pode ser de outro período, de outra loja ou de outra situação."
+                acao={{ href: limpar, rotulo: "Limpar filtros", mesmaTela: true }}
               />
             ) : situacaoAtiva !== null ? (
               <EstadoDaTela
