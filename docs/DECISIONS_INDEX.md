@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **443** (D-001 a D-500).
+Decisões registradas: **444** (D-001 a D-500).
 
 ## Por domínio
 
@@ -209,7 +209,7 @@ Decisões registradas: **443** (D-001 a D-500).
 - **D-446** — Telas multicanais, etapa T3b: a Shopee ganha cartao em /integracoes e secao em /configuracoes; o seletor continua lendo as tabelas-base; e os cartoes de /integracoes deixam de quebrar letra por letra no celular
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
-### mercado-livre (79)
+### mercado-livre (80)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -290,6 +290,7 @@ Decisões registradas: **443** (D-001 a D-500).
 - **D-441** — Curva ABC por marketplace (E6b): marketplace e conta/loja como recortes nas tres funcoes da Curva ABC, com o ML identico e 30x mais rapido
 - **D-445** — /produtos com a Shopee (E6c, C-56): anuncio e venda olham os dois marketplaces, os campos do ML nao mudam e a loja de teste nao conta
 - **D-449** — Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
+- **D-454** — Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
 
 ### outros (64)
 

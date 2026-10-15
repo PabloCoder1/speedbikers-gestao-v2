@@ -15286,6 +15286,44 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `packages/shopee/src/{push,push.test,index}.ts`, `apps/api/src/{shopee-push,shopee-push.test,app,index,env}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,SHOPEE,DEPLOYMENT,ROADMAP,HANDOFF,MULTICHANNEL_HANDOFF,MULTICHANNEL_CONTRACTS}.md`. Sem migration. Publicacao: a api (o worker nao muda); depois, o dono cadastra `https://<api>/push/shopee` no Console e marca os pushes 3 e 29.
 
+## D-454 - Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
+
+**Contexto:** D-445 (C-56, A1) fez `get_products_overview` olhar os dois marketplaces. COM e SEM viraram "em algum" e "em nenhum"; `p_listing`/`p_sales` ganharam SO_ML, SO_SHOPEE e AMBOS; a linha ganhou `shopee_listing_count` e `shopee_units_sold_90d` (nulos sem loja live); o resumo ganhou `sem_anuncio_ml`, `sem_venda_90d_ml` e `tem_shopee`. A tela so lia as chaves de antes (o leitor ignora chave a mais). Por isso mostrava o numero novo do "sem anuncio" sem avisar que o sentido tinha mudado, e nao deixava ver em que marketplace o SKU esta.
+
+**1. SO COM LOJA LIVE.** Tudo depende de `resumo.tem_shopee`. Sem loja Shopee live, ou antes da migration de D-445, a tela e a de antes: duas opcoes por eixo, a coluna e os cartoes de sempre. Hoje, em producao, so ha a loja sandbox. Sem Shopee, "so no ML" repetiria o "com", e "so na Shopee" e "nos dois" estariam sempre vazios.
+
+**2. OS FILTROS.** Com Shopee, os grupos "Anuncios" e "Vendas" tem cinco opcoes, cada uma com a contagem facetada do banco: com, sem, so no ML, so na Shopee, no ML e na Shopee. Na URL, `anuncios` e `vendas` aceitam `so-ml`, `so-shopee` e `ambos`. Os rotulos dizem o eixo ("Anuncio so na Shopee", "Vendeu so na Shopee") porque tambem viram chip fora do grupo. Um recorte por marketplace que chegou pela URL continua visivel no grupo, para poder ser tirado ali.
+
+**3. OS CARTOES.** Pelo banco, "Ativos sem anuncio" e "Ativos sem venda" ja contam "em nenhum marketplace". Com Shopee, a nota passa a dizer isso e traz o numero so do ML, que era o cartao de antes (`sem_anuncio_ml`, `sem_venda_90d_ml`). Exemplo: "em nenhum marketplace · 1 sem anuncio no ML". Os dois numeros vem do SQL; a tela nao subtrai nada.
+
+**4. A COLUNA DE GIRO.** Com Shopee, cada marketplace tem o seu bloco: as unidades de 90 dias com o nome do canal (ML ou Shopee) e, embaixo, os anuncios. **Nao ha total:** o banco nao devolve a soma, e somar na tela seria agregar em JavaScript. Medido a 1440 px, a coluna fica com 83 px e a tabela continua cabendo (855 de 855 px). A Inspecao Rapida mostra dois chips, "ML: N anuncio(s)" e "Shopee: M anuncio(s)". O cabecalho da lista avisa: "anuncios e vendas do ML e da Shopee, sem a loja de teste".
+
+**5. O CONTRATO E CONFERIDO, NAO SUPOSTO.** `lib/products-overview.ts` le as chaves novas assim:
+- ausentes (funcao anterior a D-445): viram nulo, nunca zero;
+- com tipo errado, ou pela metade (as tres facetas por marketplace, as tres chaves do resumo): a resposta inteira e recusada;
+- a linha tem de concordar com o resumo: com loja live, numeros; sem ela, nulos. Mostrar "0 na Shopee" para quem nao tem Shopee seria inventar dado.
+
+**6. A WEB PODE CHEGAR ANTES DA MIGRATION.** Sobre a funcao antiga, a tela e a de antes; isso foi conferido no banco isolado, com a funcao antiga recriada. Se alguem digitar `so-ml`, `so-shopee` ou `ambos` na URL, o filtro vai para a funcao antiga, que nao o conhece e devolve a lista vazia sem erro. A tela diz isso num aviso, em vez de mostrar "0 produtos" calada.
+
+**Publicacao:** so a web, empilhada no #161 (D-445). O merge vem depois do #161 e pode ir antes da migration `20261015020000` em producao (item 6). Em producao a tela so muda quando houver a primeira loja live.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as seis guardas da web.
+- **Unitarios:** 10 novos em `lib/products-overview.test.ts`. Cobrem as tres respostas (anterior, nova sem loja live, nova com loja live), a linha que discorda do resumo, a chave pela metade ou de tipo errado, a contagem de cada opcao, a URL e a traducao para SO_ML/SO_SHOPEE/AMBOS.
+- **Mutacao:** 4 regras do leitor estragadas -- sem a concordancia entre linha e resumo, faceta pela metade aceita, chave ausente virando 0, opcao sem faceta herdando o "com". Todas derrubam teste.
+- **e2e `produtos` (5/5)**, num stack isolado com as migrations do #161:
+  - sem loja live, cada eixo fica com duas opcoes e a coluna fica sem marketplace;
+  - "so no ML" pela URL da o mesmo que "com anuncio", na lista e na faceta;
+  - "so na Shopee" acha 0. O seed tem a loja de TESTE com 2 anuncios vinculados e 4 itens vendidos em 90 dias, entao o zero prova que ela nao conta.
+- **Com loja live**, num fixture no banco isolado (nunca commitado): um SKU no ML e na Shopee, um so na Shopee, um anuncio apagado, uma venda velha e uma cancelada.
+  - Facetas: 2 com, 0 sem, 0 so no ML, 1 so na Shopee, 1 nos dois.
+  - Coluna: "60 un ML · 0 anuncios / 3 un Shopee · 1 anuncio". A venda velha, a cancelada e o anuncio apagado ficam fora.
+  - Cartao: "0 -- em nenhum marketplace · 1 sem anuncio no ML". A gaveta mostra os dois chips.
+  - No celular (390 px), nada transborda.
+- **Suite inteira:** 224/224, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
+
+**Impacto:** `apps/web/lib/{curation-filters,products-overview}.ts` e o teste, `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/produtos.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

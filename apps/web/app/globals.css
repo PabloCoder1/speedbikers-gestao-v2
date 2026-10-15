@@ -12722,6 +12722,28 @@ td.sb-pco-num-linha {
   color: var(--sb-muted-ink);
 }
 
+/*
+  D-454: com loja Shopee live, a coluna de giro tem um bloco por marketplace,
+  e o nome dele vai ao lado das unidades. Pequeno e em maiúsculas para não
+  competir com o número; o espaço entre os blocos separa ML de Shopee.
+*/
+.sb-prod-canal {
+  margin-left: 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+.sb-prod-canal abbr {
+  text-decoration: none;
+}
+
+.sb-prod-giro .sb-prod-sub + .sb-prod-preco {
+  margin-top: 0.375rem;
+}
+
 .sb-prod-linha-revisar td {
   background: var(--sb-accent-soft);
 }
