@@ -10309,6 +10309,39 @@ describe("get_sku_correlated_events (D-152, Fase 6B)", () => {
     expect(rows.every((r) => r.sku_id === skuId)).toBe(true);
   });
 
+  /**
+   * D-463: os eventos de pedido partem da janela e buscam só os itens desses
+   * pedidos, e a conversão do id para bigint fica dentro de um CASE que só a
+   * faz quando cabe. Um cancelamento com entity_id só de dígitos maior que
+   * bigint, NA janela, derrubava a correlação dos três consumidores ("value
+   * out of range"); agora ele não casa com pedido nenhum e o resto sai igual.
+   * Entra e sai na mesma transação (`domain_events` é append-only).
+   */
+  it("correlação (D-463): cancelamento com id maior que bigint na janela não derruba", async () => {
+    let types: string[];
+
+    await client.query("begin");
+    try {
+      await client.query(
+        `insert into public.domain_events
+           (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+         values ($1,$2,'2025-01-10T15:00:00Z','order.cancelled','order','99999999999999999999999','importante','system','corrtest:estouro-correlacao')`,
+        [ORG_SB, CONTA],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN_SB })]);
+
+      const result = await client.query<{ event_type: string }>(
+        `select * from public.get_sku_correlated_events('${ORG_SB}', array['${skuId}']::uuid[], '${FROM}', '${TO}')`,
+      );
+      types = result.rows.map((r) => r.event_type).sort();
+    } finally {
+      await client.query("rollback");
+    }
+
+    expect(types).toEqual(["listing.price.changed", "order.cancelled", "stock.depleted"]);
+  });
+
   it("SKU fora da lista de candidatos não traz nada — o filtro é por SKU, não por janela", async () => {
     const rows = await asUser<{ sku_id: string }>(
       ADMIN_SB,
@@ -10390,8 +10423,7 @@ describe("get_sku_correlated_events (D-152, Fase 6B)", () => {
    * derruba a timeline (antes, a conversão estourava para TODOS os SKUs da
    * organização), e o pedido com dois itens do SKU sai uma vez só. As duas
    * linhas entram e saem na MESMA transação (o `rollback` as desfaz;
-   * `domain_events` é append-only e não aceita DELETE), porque a correlação
-   * (D-152) ainda converte.
+   * `domain_events` é append-only e não aceita DELETE).
    */
   it("timeline (D-461): entity_id maior que bigint não derruba; pedido com dois itens do SKU sai uma vez", async () => {
     let rows: { event_type: string; entity_type: string; entity_id: string }[] = [];
