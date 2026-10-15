@@ -984,7 +984,11 @@ const NUNCA_CALCULADO = "não calculado para este período — o recálculo só 
  * leituras dela são as mais caras da tela (3,8 s e 0,9 s a frio, A1); o lugar
  * fica reservado pelo `KpiCellCarregando`, com o rótulo de verdade.
  *
- * Falha: a célula DIZ que não leu, com o motivo — nunca "—" mudo, nunca "0%".
+ * Falha do período ATUAL: a célula DIZ que não leu, com o motivo — nunca "—"
+ * mudo, nunca "0%". Falha só do período ANTERIOR: o número de agora existe e
+ * aparece, e a comparação é omitida e DITA ("a comparação foi omitida, e isso
+ * não é zero", a regra da faixa na D-470) — nunca "sem dado", que seria
+ * afirmação sobre o negócio (D-067). Achado do A2 na revisão do #204.
  * "Nunca calculado": o mesmo "—" com a mesma ressalva das outras quatro.
  */
 async function CelulaDeCancelamento({
@@ -997,14 +1001,33 @@ async function CelulaDeCancelamento({
   indisponivel: string | undefined;
 }): Promise<ReactNode> {
   const [atual, anterior] = await leitura;
-  const falha = atual.error ?? anterior.error;
 
-  if (falha !== null || atual.data === null) {
-    const motivo = sanitizeErrorText(falha?.message) ?? "sem resposta";
+  if (atual.error !== null || atual.data === null) {
+    const motivo = sanitizeErrorText(atual.error?.message) ?? "sem resposta";
 
     return (
       <KpiCell
         cell={{ ...CANCELAMENTO, value: "—", previous: null, ressalva: `não foi possível ler agora (${motivo})` }}
+      />
+    );
+  }
+
+  if (anterior.error !== null) {
+    const motivo = sanitizeErrorText(anterior.error.message) ?? "sem resposta";
+    const [semComparacao] = toCells(pick(buildExpandedCards(atual.data, null), [CANCELAMENTO.metricId]), false, indisponivel);
+
+    if (semComparacao === undefined) return null;
+
+    return (
+      <KpiCell
+        cell={
+          indisponivel === undefined
+            ? {
+                ...semComparacao,
+                ressalva: `${CANCELAMENTO.ressalva} A comparação foi omitida, e isso não é zero: o período anterior não pôde ser lido (${motivo}).`,
+              }
+            : semComparacao
+        }
       />
     );
   }
