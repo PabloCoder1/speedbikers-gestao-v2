@@ -56,8 +56,29 @@ export const TIPOS = { produto: "PRODUTO", kit: "KIT" } as const;
 /** `ENCERRANDO` = "ESTOQUE INATIVO" do ERP (`is_discontinued`, D-039); `INATIVO` = `is_active` falso. */
 export const SITUACOES = { ativo: "ATIVO", encerrando: "ENCERRANDO", inativo: "INATIVO" } as const;
 
-/** Com ou sem anúncio que venda o SKU (D-122), e com ou sem venda em 90 dias. */
-export const PRESENCAS = { com: "COM", sem: "SEM" } as const;
+/**
+ * Com ou sem anúncio que venda o SKU (D-122), e com ou sem venda em 90 dias.
+ *
+ * Desde D-445 (C-56) o banco olha os dois marketplaces: `com` é "em algum",
+ * `sem` é "em nenhum", e os três de baixo dizem onde. Sem loja Shopee live,
+ * `so-ml` é o `com` de antes e os outros dois não têm ninguém — por isso a tela
+ * só os oferece quando há Shopee (D-454).
+ */
+export const PRESENCAS = {
+  com: "COM",
+  sem: "SEM",
+  "so-ml": "SO_ML",
+  "so-shopee": "SO_SHOPEE",
+  ambos: "AMBOS",
+} as const;
+
+/** As duas presenças de antes de D-445, as únicas que não dependem da Shopee. */
+export const PRESENCAS_SEM_SHOPEE = ["com", "sem"] as const satisfies readonly PresencaChave[];
+
+/** Recorte que só existe com a leitura de D-445: antes dela, a função antiga não o conhece. */
+export function presencaPorMarketplace(chave: PresencaChave | null): boolean {
+  return chave !== null && !(PRESENCAS_SEM_SHOPEE as readonly PresencaChave[]).includes(chave);
+}
 
 export type TipoChave = keyof typeof TIPOS;
 export type SituacaoChave = keyof typeof SITUACOES;
