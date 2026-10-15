@@ -15607,6 +15607,8 @@ A causa esta na ramificacao de pedidos, que juntava evento e item por `oi.order_
 
 **Impacto:** `supabase/migrations/20261015080000_timeline_sku_pedidos_pelo_indice.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. A tela nao muda. O diagnostico das outras telas lentas (Home: `get_listings_dashboard` e `get_stock_coverage_summary` na segunda rodada, ≈110 MB frios) esta em `docs/PERFORMANCE.md` e na D-503 do A3.
 
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. Os eventos de pedido que a versao antiga lia ocupam ~1,9 mil paginas da tabela; com o indice, ~2,2 mil paginas distintas (~18 MB), e nao ~300 MB. A melhora continua: 37 mil acessos viram ~0,6 mil no SKU mediano, e a primeira chamada fria media 4,8 s.
+
 ## D-462 - Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
 
 **Contexto:** a T3b (D-446) pos a Shopee em `/integracoes` julgando quatro jobs (pedidos, financeiro, catalogo e detalhe do catalogo), e a T3a (D-438) pos as lojas em `/sincronizacao` com a ultima leitura de pedidos.
@@ -15668,6 +15670,8 @@ Sem leitura, o fato diz "nunca lidas/lidos". Se a leitura falhar, diz "nao foi p
 - **Mutacao:** com a funcao antiga, o teste novo cai com "value \"99999999999999999999999\" is out of range for type bigint".
 
 **Impacto:** `supabase/migrations/20261015090000_correlacao_pedidos_pela_janela.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O worker e as telas nao mudam.
+
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. Os itens de pedido que a versao antiga lia ocupam 11,9 mil paginas distintas (~93 MB, quase toda a `order_items` do Dev), e nao ~1 GB. A versao nova toca so os itens dos pedidos da janela.
 
 ## D-464 - Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 
@@ -15748,6 +15752,8 @@ Nenhum indice comecava por (organizacao, instante). O banco percorria o `timelin
 - **Integracao:** suite inteira verde com a migration.
 
 **Impacto:** `supabase/migrations/20261015100000_full_atual_pelo_indice.sql`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O resto do custo da classe ABC do SKU (a curva da organizacao em 90 dias, a tabela de metricas quase inteira) e inerente ao calculo. So um valor pre-calculado o tiraria, e isso fica para quando a tela pedir.
+
+**Correcao da medida (15/10, mesmo dia):** os numeros de "paginas" desta decisao sao ACESSOS a paginas (`Buffers: shared hit`), nao paginas distintas: num Index Scan a mesma pagina conta uma vez por linha lida. Com o cache frio, o que custa e a pagina distinta, contada aqui pelo `ctid` das linhas lidas. A janela de 3 dias ocupa 529 paginas da tabela, e a versao antiga lia ainda o `timeline_idx` inteiro (2,1 mil paginas): ~2,6 mil paginas distintas contra ~0,7 mil, e nao 30,8 mil contra 2,4 mil. O custo antigo cresce com o historico (o indice inteiro); o novo, so com a janela.
 
 ## D-466 - Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
 
