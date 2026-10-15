@@ -15833,6 +15833,46 @@ Os avisos trocados:
 - `scripts/docs-check.mjs` (a conferencia da contagem);
 - nenhuma migration, RPC, worker ou api.
 
+## D-469 - get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
+
+**Contexto:** o A3 separou as cargas de producao por rota (D-506). A `/vendas` virou a tela lenta, com LCP de 1,1 a 5,9 s e o primeiro byte baixo. Medi a tela no Dev, como `authenticated`, contando paginas DISTINTAS (a correcao da medida de D-461/463/465).
+
+As duas chamadas de `get_sales_expanded_summary`, periodo atual e anterior, dominam a tela:
+- 3.840 ms na primeira chamada fria e ~150 ms quente;
+- ~16,5 mil paginas distintas por chamada (~130 MB);
+- o resto da tela fica abaixo de 5 mil acessos por chamada.
+
+As causas:
+1. `pedidos` filtrava `orders` so pela data. O indice de data e `(organization_id, date_created)`, e, sem a organizacao no filtro, era percorrido inteiro.
+2. A tarifa (`sale_fee * quantity`) juntava os pedidos com a `order_items` inteira (11,9 mil paginas no Dev).
+3. `language sql` com `SET` (D-305): na funcao, o plano generico fazia 146 mil acessos, contra 43 mil do corpo com os valores.
+
+**Decisao:**
+1. **As organizacoes das contas visiveis entram no filtro de `orders`** (`array(select distinct organization_id from ml_accounts)`, com a RLS de `ml_accounts`). Agora o indice resolve a janela. O resultado nao muda: a RLS de `orders` ja limitava as contas acessiveis, que sao dessas organizacoes, e quem passa por cima da RLS continua vendo todas.
+2. **Os itens so na faixa de ids dos pedidos da janela** (`order_id between min e max`, pelo indice `(order_id, position)`). E uma condicao a mais, nunca a menos: todo pedido da janela esta entre o seu menor e o seu maior id. O id do pedido do ML cresce com a data (correlacao 0,999 no Dev), entao a faixa traz so os itens do periodo.
+3. **A faixa vem da mesma consulta**, calculada sobre os pedidos ja filtrados. Um passo separado de `min/max` sobre `orders` percorria a chave desde o menor id ate achar a janela. Medido: ~300 ms e 370 mil acessos, pior que o original, e foi descartado.
+4. **`plpgsql` + `force_custom_plan`** (D-305). O contrato nao muda: colunas, recortes e o trio de cancelamento NULO sob marca.
+
+**Verificacao:**
+- **Dev, como `authenticated`, oito execucoes**, com o mesmo resultado nos 8 recortes (30 dias, anterior, 7 dias, 1 dia, uma conta, uma marca, sem marca, periodo sem pedidos):
+
+| Recorte | Atual | Nova |
+|---|---|---|
+| 30 dias | 151 ms, 146 mil acessos | 108 ms, 59 mil |
+| anterior | 135 ms | 96 ms |
+| 7 dias | 44 ms | 25 ms |
+| 1 dia | 18 ms | 5 ms |
+| uma conta | 68 ms | 72 ms |
+| marca | 194 ms | 102 ms |
+| sem marca | 194 ms | 107 ms |
+| sem pedidos | 14 ms | 1 ms |
+
+- **Com o cache frio:** de ~16,5 mil para ~7 mil paginas distintas por chamada, ou seja, os pedidos (2,2 mil) e os itens (4,7 mil) so do periodo, mais o pedaco dos indices.
+- **Integracao:** os testes da D-157 (os numeros expandidos, recortes de marca e conta) seguem verdes; suite inteira verde.
+- **Mutacao: nao se aplica as duas condicoes novas.** Elas so podem estreitar a leitura, nunca mudar o resultado, por isso nenhum teste de resultado as pegaria. O que as protege e a comparacao lado a lado acima.
+
+**Impacto:** `supabase/migrations/20261015105000_vendas_expandida_pela_janela.sql` (carimbo antes da 110000 do C-57, que espera a tela do A2), `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. A tela nao muda. O A3 pode por em Suspense o bloco que usa esses numeros, se ainda quiser.
+
 ## D-470 - Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
 
 **Contexto:** a D-502 (A3) criou o `EstadoDaTela` e deixou para o A2 as telas da fila dele. A auditoria do A3 (`docs/UX_SYSTEM.md` §2) mediu nessas telas:

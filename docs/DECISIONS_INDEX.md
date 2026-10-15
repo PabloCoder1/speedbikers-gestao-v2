@@ -75,7 +75,7 @@ Decisões registradas: **468** (D-001 a D-505).
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 
-### banco/rls (43)
+### banco/rls (44)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -120,6 +120,7 @@ Decisões registradas: **468** (D-001 a D-505).
 - **D-440** — Telas multicanais, etapa T4: /vendas tem os recortes Todos, Mercado Livre e Shopee na mesma tela, lidos do consolidado do SQL, e o ML continua exatamente o de sempre
 - **D-461** — get_sku_timeline: os eventos de pedido pelo indice (entity_id = any(pedidos do SKU como texto)), sem converter o entity_id em numero
 - **D-465** — O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
+- **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 
 ### estoque (36)
 
