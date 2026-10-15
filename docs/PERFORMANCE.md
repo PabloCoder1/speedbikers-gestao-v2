@@ -1416,6 +1416,10 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### O alerta de produto no prejuízo da central (D-471, 15/10/2026)
+
+**Produção:** `diagnostics.sync-central-alerts` falhou todo dia de 09 a 15/10 (11:00 UTC) em `produto_prejuizo`, por `statement timeout` (o teto de 8 s por fonte, D-404). **Dev** (`get_ranking_produtos` na chamada do detector, 30 dias até 13/09, `work_mem` 16 MB, quatro execuções): **695 ms** por página com o período anterior padrão (30 dias: o ranking lê 60 dias de pedidos e itens) contra **427 ms** com o anterior de um dia (−40%), os mesmos 18 SKUs no prejuízo e os mesmos campos do período atual. Migration `20261015120000`. A prova de produção é o job das 11:00 UTC sem o timeout.
+
 ### `get_link_integrity` (`/vinculacoes`): plano custom (auditoria de 28/09/2026)
 
 **Produção, `pg_stat_statements` de 18 a 28/09:** máximo de 7.540 ms, a 0,46 s do `statement_timeout` de 8 s, com ~73 MB lidos do disco por chamada. **Dev, como `authenticated`** (5.093 anúncios, 68 mil pedidos em 90 dias): **7.256 ms** na versão `language sql`, contra 456 ms do mesmo corpo com a organização literal -- o plano genérico de D-305. Em `plpgsql` + `force_custom_plan` (migration `20260928150000`), num ensaio em `begin ... rollback`: **375–716 ms** em sete execuções seguidas, as mesmas 4 linhas.
