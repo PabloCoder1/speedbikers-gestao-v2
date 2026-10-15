@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **466** (D-001 a D-505).
+Decisões registradas: **467** (D-001 a D-505).
 
 ## Por domínio
 
@@ -121,7 +121,7 @@ Decisões registradas: **466** (D-001 a D-505).
 - **D-461** — get_sku_timeline: os eventos de pedido pelo indice (entity_id = any(pedidos do SKU como texto)), sem converter o entity_id em numero
 - **D-465** — O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
 
-### estoque (35)
+### estoque (36)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -157,6 +157,7 @@ Decisões registradas: **466** (D-001 a D-505).
 - **D-451** — Repasse da Shopee (E7c, C-64): cada liberacao do escrow por pedido, contra o previsto, com a cobertura da leitura; extrato da carteira e renda por pedido so depois do sandbox
 - **D-464** — Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 - **D-466** — Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
+- **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
 ### interface (58)

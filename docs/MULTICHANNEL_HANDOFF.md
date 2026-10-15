@@ -81,6 +81,7 @@
 - T5c — os Ads CPC da loja no `/faturamento` da Shopee (D-456, consome o C-63): seção própria, rotulada "CPC da loja", fora do resultado e sem somar com o Mercado Ads. **Na `main`, #173.**
 - T-R6 — leitura que falha deixa de aparecer como "nenhum" em `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico` e no SKU (achado do A3, D-067). **Na `main`, #175.** A `/curva-abc` (as contas, as listas de marca e categoria e os filtros salvos; e o falso "não estão disponíveis para você" quando a leitura das contas falha) vem no PR da correção dela. Os avisos viraram o `EstadoDaTela` do A3 (D-468), com "Tentar de novo" na mesma URL: **na `main`, #192**.
 - E1/E2 — os estados de `/vendas` e `/faturamento` no `EstadoDaTela` (D-470): erro com a mensagem à parte e "Tentar de novo" na mesma URL, vazio × filtro ("Limpar filtros" tira conta, marca ou lojas), a falha da Shopee no "Todos" do faturamento deixa de sair como nota, e o "período personalizado inválido" vira `role="status"` (item 13 do A3). **Em código e validada** (suíte e2e inteira), no PR próprio.
+- E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Em código e validada** (suíte e2e inteira), no PR próprio.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -88,7 +89,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- E3–E5: os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela`, nesta ordem (a `/central` leva junto a constante `AVISO` e o e2e do período).
+- Nada: a D-472 (E3/E4) está no PR próprio. Com ela, todas as telas da fila do A2 usam o `EstadoDaTela`.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - T7 busca universal (C-57) → T8 central e meta (Go Live).

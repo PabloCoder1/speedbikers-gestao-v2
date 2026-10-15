@@ -15881,6 +15881,50 @@ Os textos que os e2e conferem continuam no titulo: "Nenhuma loja real com …", 
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-472 - Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
+
+**Contexto:** a D-470 levou o `EstadoDaTela` (D-502) a `/vendas` e `/faturamento`. Faltavam as outras telas da fila do A2: `/produtos`, `/reposicao` (com a configuracao), `/compras` (lista, novo, detalhe e edicao) e a `/central` inteira (resumo, indicadores, meta, Ads, frete, limites, metas e produtos).
+
+A `/central` era a ultima a usar a constante `AVISO`, que morava em `faturamento/numeros.tsx` desde que a D-470 tirou dela o uso do faturamento.
+
+**1. A MESMA REGRA DA D-470.**
+- Falha de leitura vira `tipo="erro"`: o que falhou, o efeito, a mensagem tecnica a parte e "Tentar de novo" na mesma URL. As URLs vem dos construtores das telas (`buildReplenishmentHref`, `buildPurchaseOrderHref`, `montarHref` da central e do ranking, `mesmaUrl` onde nao ha construtor).
+- O vazio diz se e `filtro` (com "Limpar filtros": nivel, recorte ou busca) ou `vazio`.
+- "Sua conta nao esta associada a nenhuma organizacao" vira `tipo="permissao"`, como o A3 fez nas telas dele.
+
+**2. CASOS QUE MERECEM NOTA.**
+- `/produtos`: o `Erro` da tela inteira (organizacao, catalogo fora do contrato, falha de leitura) passa a separar titulo e detalhe.
+- `/reposicao`: o aviso "Nenhuma configuracao de reposicao cadastrada" tinha `role="alert"` sem ser falha. Vira `vazio`, com "Cadastrar a primeira regra" como acao.
+- `/reposicao/configuracoes`: o alcance que nao foi lido era uma nota de atencao. Passa a ser o que e, uma falha de leitura (as regras continuam editaveis).
+- `/central` (meta): o motivo de a meta nao vir era um texto so, que misturava quatro situacoes. Agora e um objeto (`MetaIndisponivel`), e cada situacao tem o seu tipo:
+  - sem organizacao: `permissao`;
+  - funcao ainda nao ativada: `vazio`;
+  - falha e resposta fora do contrato: `erro`.
+- `/compras/[id]`: "Cancelado: motivo" e "nao esta mais em rascunho" nao sao falhas. Viram `role="status"` (item 13, D-503).
+- O periodo personalizado invalido da `/central` e do ranking vira `role="status"`. O e2e da `/central` passa a conferir `status`, e que ali nao ha `alert`.
+
+**3. O QUE FICA COMO ESTA.**
+- Os erros de campo (`sb-campo-erro`) e os retornos de acao de formulario: salvar o pedido, salvar regra, "Trazer da reposicao". Sao respostas a uma acao, nao estados da tela.
+- O vazio de marcas da configuracao, que desfaz o proprio filtro com um botao de cliente, sem URL.
+- O vazio "Nenhum pedido de compra ainda", com dois caminhos (sugestao de compra e pedido do zero). O `EstadoDaTela` tem uma acao so.
+
+**4. A CONSTANTE AVISO SAI.** Sem nenhum uso, sai de `faturamento/numeros.tsx`. Os oito imports da `/central` viram o `EstadoDaTela`.
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **e2e:**
+  - `central` 7/7, com o periodo como `status`; o titulo "Nenhuma aliquota cadastrada." manteve o ponto, que o spec confere;
+  - `produtos`, `reposicao`, `compras` e `pedido-compra` 18/18.
+- **Fotos no banco isolado:** o vazio "Nenhuma configuracao de reposicao cadastrada", com a acao para a configuracao; e o filtro sem resultado de `/compras`, com "Limpar filtros".
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/reposicao/{page,configuracoes/page}.tsx`, `apps/web/app/compras/{page,novo/page,[id]/page,[id]/editar/page}.tsx`, `apps/web/app/central/**` (dez arquivos), `apps/web/app/faturamento/numeros.tsx` (sai o `AVISO`) e `apps/web/e2e/central.spec.ts`;
+- docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
