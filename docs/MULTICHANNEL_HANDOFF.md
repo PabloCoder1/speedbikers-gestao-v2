@@ -70,20 +70,21 @@
 - T6a — o ranking de produtos no `/vendas` "Todos" e "Shopee" e a aba Vendas do SKU com o total entre marketplaces por conta e loja (D-444, consome o C-59), mais o selo "Teste" no painel Shopee do SKU (C-06). **Na `main`, #159** (`caafb616`, deploy de produção `success`), depois da migration `20261014230000` em produção (run `38612642381`).
 - T3b — a Shopee nas telas de administração (D-446, consome o C-52): cartão em `/integracoes` (conexão pelo veredito de `/sincronizacao` e a autorização perto de vencer; sincronização pelos quatro jobs `shopee.*`) e a seção "Shopee" em `/configuracoes` (contagens no banco, na mesma ida da RPC); de carona, os cartões de `/integracoes` deixam de quebrar letra por letra no celular. **Na `main`, #162** (`558eacd1`). O seletor **continua** lendo `ml_accounts`/`shopee_shops`: a view calcularia a reconciliação de cada conta ML só para contar (D-446 §3).
 
-- T-R5 — o cartão "Por loja" de `/vendas/shopee` no celular: as notas ("a leitura é de hora em hora", "3 aguardando o financeiro") e a última leitura invadiam a célula vizinha (medido em 390 px: 134 a 222 px); só nesta tabela a célula quebra e a nota desce, e um e2e mede o transbordo (zero). **Em código e validada localmente** (suíte e2e 224/224), no PR próprio (só web).
+- T-R5 — o cartão "Por loja" de `/vendas/shopee` no celular: as notas ("a leitura é de hora em hora", "3 aguardando o financeiro") e a última leitura invadiam a célula vizinha (medido em 390 px: 134 a 222 px); só nesta tabela a célula quebra e a nota desce, e um e2e mede o transbordo (zero). **Na `main`, #168** (`95918297`, deploy de produção `success`).
 
-- T5b — o Faturamento da Shopee com a cascata do recebido componente a componente, a série diária e os produtos de um SKU por pedido (D-452, consome o C-61): o crédito sobe, o componente nulo ou zerado é dito, os informativos aparecem sem total. **Em código e validada localmente** (o fixture de foto fechou a composição no banco e na cascata; suíte e2e 223/223) no **rascunho #167**, empilhada sobre o #160.
+- As cadências de `/saude` para os jobs novos do A1: devoluções e repasse de hora em hora, Ads a cada 3 h (C-62, C-64, C-63). Entram antes do worker (sem execução, nada é julgado). **#170** (só web).
+
+- T6c — `/produtos` com a Shopee (D-454, consome o C-56): com loja live, "Anúncios" e "Vendas" ganham "só no ML", "só na Shopee" e "nos dois" com a contagem do banco; os cartões de "sem anúncio/venda" dizem "em nenhum marketplace" com o só do ML ao lado; a coluna de giro mostra cada marketplace, **sem total**; a Inspeção Rápida separa os anúncios. Sem loja live, ou sobre a função antiga, a tela é a de antes. **Em código e validada localmente** (suíte e2e 224/224 e um fixture com loja live no banco isolado).
 
 **Em andamento**
 - T6b (#164, D-448) e T6b2 (#165, D-450): em código e validadas, atualizadas com a `main` `05537181`; o #157 já entrou, falta a migration `20261015000000` em produção.
 - T5b (#167, D-452): em código e validada; o #160 já entrou, falta a migration `20261015010000` em produção.
-- T6c — `/produtos` com a Shopee (C-56), sobre o #161.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T6c `/produtos` com a Shopee (C-56, #161) → o painel "Ads CPC da loja" (C-63, #166) e as devoluções (C-62, #163, depois da decisão do dono) → T7 busca universal (C-57) → T8 central e meta (Go Live). O ranking com resultado da central fica para depois do Go Live (D-445 §6).
+- O painel "Ads CPC da loja" (C-63, na `main` pelo #166), o repasse ao lado do previsto (C-64, #169) e as devoluções (C-62, na `main` pelo #163; a tela depois da decisão do dono) → T7 busca universal (C-57) → T8 central e meta (Go Live). O ranking com resultado da central fica para depois do Go Live (D-445 §6).
 
 **Bloqueios**
-- T6b e T6b2 esperam a migration `20261015000000` em produção; T5b, a `20261015010000` (as duas são ato do dono). T6c espera o merge do #161 (A1) e a `20261015020000`.
+- T6b e T6b2 esperam a migration `20261015000000` em produção; T5b, a `20261015010000` (as duas são ato do dono). T6c: o #161 já entrou; ela pode ir antes da `20261015020000` em produção (D-454 §6).
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
