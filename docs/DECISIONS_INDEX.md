@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **462** (D-001 a D-504).
+Decisões registradas: **463** (D-001 a D-504).
 
 ## Por domínio
 
@@ -375,7 +375,7 @@ Decisões registradas: **462** (D-001 a D-504).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (40)
+### vendas/métricas (41)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -416,6 +416,7 @@ Decisões registradas: **462** (D-001 a D-504).
 - **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
 - **D-455** — Ads da Shopee (C-63): ROAS e ACOS so sobre os dias com o gasto E a venda atribuida; dias_sem_gasto e dias_sem_venda contam os outros
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
+- **D-470** — Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 
 ### worker/infra (84)

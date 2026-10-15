@@ -15782,6 +15782,54 @@ Os avisos trocados:
 - `scripts/docs-check.mjs` (a conferencia da contagem);
 - nenhuma migration, RPC, worker ou api.
 
+## D-470 - Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
+
+**Contexto:** a D-502 (A3) criou o `EstadoDaTela` e deixou para o A2 as telas da fila dele. A auditoria do A3 (`docs/UX_SYSTEM.md` §2) mediu nessas telas:
+- falha de leitura em paragrafo vermelho solto e na constante `AVISO`, com a mensagem tecnica crua no meio da frase;
+- vazios em `.sb-empty` sem distinguir "nada ainda" de "filtro sem resultado".
+
+O item 13 (reavaliado na D-503) pediu que o "Periodo personalizado invalido" das seis telas do A2 virasse `role="status"`: nao e falha, a tela ja mostra o periodo padrao.
+
+A etapa e por tela, na prioridade do projeto (Vendas e Faturamento primeiro). Esta decisao cobre `/vendas` (ML, "Todos", "Shopee" e as devolucoes) e `/faturamento` (ML, "Todos", "Shopee", Mercado Ads, Ads e repasse da Shopee), mais o periodo da `/curva-abc`.
+
+**1. ERRO.** Toda falha de leitura vira `<EstadoDaTela tipo="erro">`:
+- `titulo`: o que nao carregou;
+- `descricao`: o efeito, quando ha um ("a comparacao foi omitida, e isso nao e zero");
+- `detalhe`: a mensagem tecnica, sanitizada pelo componente;
+- "Tentar de novo" na MESMA URL, pelos construtores que cada tela ja tem (`buildHref`, `hrefDeVendas`, `montarHref`, `hrefDeFaturamento`, `buildShopeeSalesHref`).
+
+A resposta fora do contrato tambem e erro, sem detalhe: nada e mostrado para nao exibir numero errado. Os paineis em streaming (Mercado Ads, Ads e repasse da Shopee, devolucoes) recebem o href como prop.
+
+**2. VAZIO OU FILTRO.** O vazio diz qual dos dois e:
+- `filtro`, com "Limpar filtros", quando ha conta, marca ou lojas escolhidas. Limpa so essas escolhas: o periodo fica, porque sempre ha um, e o marketplace tambem;
+- `vazio` quando nao ha escolha.
+
+Os textos que os e2e conferem continuam no titulo: "Nenhuma loja real com …", "Nenhum dia com venda somavel neste recorte".
+
+**3. A FALHA DA SHOPEE NO "TODOS" DO FATURAMENTO.** Saia como NOTA, no mesmo tom de "nenhuma loja real com pedidos lidos". Agora a falha de leitura de cada lado e erro, e o "nenhuma loja real" continua nota, porque nao e falha.
+
+**4. O PERIODO INVALIDO.** Em `/vendas` (ML, "Todos" e Shopee), `/faturamento` (ML e multicanal) e `/curva-abc`, o aviso vira `role="status"` com `.sb-note-atencao`, a classe do estado que nao e falha mas muda a leitura. A `/central` fica para a fatia dela; o e2e de la ainda confere `role="alert"`.
+
+**Fica para a proxima etapa:**
+- `/produtos`, `/reposicao`, `/compras` e `/central`, nesta ordem. A `/central` e a ultima a usar a constante `AVISO`, que mora em `faturamento/numeros.tsx` e por isso fica la ate a fatia dela.
+- Ao A3: o titulo do `EstadoDaTela` e inline, e sem `descricao` o detalhe fica na mesma linha dele. A correcao e do CSS do componente.
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **e2e:** `vendas*`, `curva-abc*` e `faturamento*` 28/28 contra o build, com o banco recriado.
+- **Falhas simuladas no banco isolado** (o EXECUTE voltou em seguida):
+  - sem EXECUTE em `get_shopee_faturamento`, o "Shopee" do faturamento diz "Nao foi possivel carregar o faturamento da Shopee", com a mensagem a parte e "Tentar de novo" para `/faturamento?marketplace=shopee`;
+  - o "Todos" diz "A Shopee nao carregou", como erro e nao como nota.
+- **Fotos:** o vazio do recorte Shopee de `/vendas` e o periodo invalido como `status` (ambar, sem `alert`).
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/app/vendas/{page,multicanal}.tsx`, `apps/web/app/vendas/shopee/{page,devolucoes}.tsx`, `apps/web/app/faturamento/{page,numeros,multicanal,campanhas-ads,ads-shopee,repasse-shopee}.tsx` e `apps/web/app/curva-abc/page.tsx`;
+- docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
