@@ -15976,7 +15976,7 @@ Os textos que os e2e conferem continuam no titulo: "Nenhuma loja real com …", 
 
 ## D-471 - O alerta de produto no prejuizo da central: o detector pede ao ranking so os 30 dias que usa
 
-**Contexto:** na checagem de saude do worker de producao (15/10), o job diario `diagnostics.sync-central-alerts` falhou TODO DIA de 09 a 15/10, as 11:00 UTC, com "produto_prejuizo: canceling statement due to statement timeout" -- o teto de 8 s de cada fonte (D-404). A auditoria de 28/09 ja via o estouro em 3 de 8 execucoes, e o `work_mem` de 16 MB daquela correcao nao bastou. Com o detector parado, ninguem e avisado de produto vendendo no prejuizo: nem o alerta em `actions`, nem a notificacao da D-411.
+**Contexto:** na checagem de saude do worker de producao (15/10), o job diario `diagnostics.sync-central-alerts` falhou TODO DIA de 09 a 15/10, as 11:00 UTC, com "produto_prejuizo: canceling statement due to statement timeout" -- o teto de 8 s de cada fonte (D-404). A auditoria de 28/09 ja via o estouro em 3 de 8 execucoes, e o `work_mem` de 16 MB daquela correcao nao bastou. Com o detector parado, ninguem e avisado de produto vendendo no prejuizo: nem o alerta em `actions`, nem a notificacao da D-411. **(Corrigido no mesmo dia, abaixo: a 2ª tentativa gerava os alertas.)**
 
 A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior padrao, os 30 dias antes da janela. O ranking le os pedidos e os itens dos DOIS periodos, 60 dias, para preencher a comparacao (receita anterior, variacao), que o alerta nao usa.
 
@@ -15994,6 +15994,8 @@ A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior 
 - **Fica para depois do deploy:** o job das 11:00 UTC do dia seguinte precisa terminar sem o timeout. Leio no Cloud Logging.
 
 **Impacto:** `supabase/migrations/20261015120000_alerta_prejuizo_so_o_periodo.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O ranking e a tela `/central/produtos` nao mudam.
+
+**Correcao (15/10, mesmo dia):** o detector nao estava parado. Nos logs de 09 a 15/10, a 1ª tentativa (11:00 UTC, banco frio) estourava os 8 s em `produto_prejuizo`, e a 2ª do Cloud Tasks, um minuto depois, rodava as tres fontes inteiras e gerava os alertas e as notificacoes. O custo real era o job registrado como falho todo dia, o trabalho repetido e o risco de a 2ª tambem estourar num dia mais pesado. **Depois da migration** (disparo manual em 15/10, 20:18 UTC, autorizado pelo dono), as tres fontes passaram de primeira, com `produto_prejuizo` em ~2,1 s. A prova a frio continua sendo o job de 16/10, 11:00 UTC.
 
 ## D-472 - Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 
@@ -16038,6 +16040,31 @@ A `/central` era a ultima a usar a constante `AVISO`, que morava em `faturamento
 - web: `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/reposicao/{page,configuracoes/page}.tsx`, `apps/web/app/compras/{page,novo/page,[id]/page,[id]/editar/page}.tsx`, `apps/web/app/central/**` (dez arquivos), `apps/web/app/faturamento/numeros.tsx` (sai o `AVISO`) e `apps/web/e2e/central.spec.ts`;
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-473 - Metas por marketplace (C-66): uma meta por marketplace e uma geral, e o GERAL so soma a Shopee com loja real lida
+
+**Contexto:** decisao do dono de 15/10, trazida pelo A2 (T8 da central): **uma meta por marketplace e uma geral**, construida ja, com a Shopee de fora ate haver loja real. Hoje a meta do mes (D-395) e uma so, da organizacao, em `monthly_goals`, comparada pela `get_meta_do_mes` com a receita bruta do ML (`daily_account_metrics`). A Shopee ainda e so sandbox (Go Live em analise).
+
+**Decisao:**
+1. **`monthly_goals` nao muda e continua sendo a meta GERAL.** As linhas de hoje viram a geral. Trocar a unica dela para (organizacao, mes, escopo) quebraria o `upsert ... onConflict: organization_id,month` da tela de hoje no instante da migration, a mesma classe de risco do `p_order_sn` (D-476). As metas de ML e Shopee vao numa tabela nova, **`monthly_goals_marketplace`** (organizacao, mes com dia 1, `marketplace` em `ML`/`SHOPEE`, `revenue_goal > 0`, nota de ate 300), unica em (organizacao, mes, marketplace), no molde da `monthly_goals`: membro le, ADMIN/GESTOR grava, anon nao alcanca.
+2. **`get_meta_do_mes` roda o calculo de sempre uma vez por escopo** (perfil semanal, datas comerciais, ritmos, projecao, ano anterior), cada um sobre a sua serie diaria:
+   - `GERAL` = receita bruta do ML + a da Shopee; meta de `monthly_goals`;
+   - `ML` = a de hoje (`daily_account_metrics`); meta de `monthly_goals_marketplace`;
+   - `SHOPEE` = vendas validas das lojas live (a do consolidado, C-53, pelo dia de Sao Paulo; receita desconhecida fora da soma); meta de `monthly_goals_marketplace`.
+3. **A Shopee so entra com loja live de pedidos ja lidos** (`orders_synced_until`, a regra do C-65). Sem ela, `escopos.SHOPEE` vem NULO (ausencia nao e zero) e **pedido de loja live ainda nao lida nao entra em nenhum escopo** -- vale sempre GERAL = ML + SHOPEE, e GERAL = ML em numero quando a Shopee vem nula. Quem nao alcanca a loja (D-433) tambem ve a Shopee nula: a funcao segue `security invoker`.
+4. **O formato:** as chaves de sempre sao as do GERAL (a tela de antes nao muda), e os tres vem em `escopos`. `escopos.GERAL` e `escopos.ML` vem **sempre**, com `meta` nula quando nao cadastrada; `escopos.SHOPEE` vem sempre como chave, nula sem loja live lida. Sem parametro novo: a web de antes e a de depois funcionam nos dois bancos (a nova le `escopos` so quando a chave vem).
+5. **A meta geral de um mes que atravessa o Go Live muda de base no meio:** a partir da primeira leitura de pedidos da loja live, o realizado do GERAL passa a somar a Shopee (e o perfil, os ritmos e a projecao do GERAL tambem). E a decisao do dono ("uma geral"); a tela diz isso na nota da meta (T8b do A2).
+6. **Imposto e aliquota (D-395) seguem da empresa, sem escopo.**
+
+**Verificacao:**
+- **Dev, dados reais, como `authenticated`** (ADMIN, a funcao nova num esquema temporario apagado depois): o topo e `escopos.GERAL` identicos a funcao atual; `escopos.SHOPEE` nulo (so ha loja sandbox). Antes, numa transacao desfeita, 10 cenarios (mes corrente, encerrados, futuro, sem meta) com o topo e o GERAL identicos e o ML com a mesma serie. O Dev ficou sem a tabela e com a funcao atual (mesmo md5).
+- **Custo (Dev, mediana de 8 execucoes alternadas):** 5,9 ms -> 16,5 ms. Sem loja live sao dois escopos calculados (GERAL e ML); com loja, tres. Pequeno para a central (`docs/PERFORMANCE.md`).
+- **Integracao:** describe proprio com organizacao propria (conta ML, loja live lida, loja de teste, pedidos validos e cancelado): GERAL = ML + Shopee so com as validas da live, cada escopo com a sua meta, o topo igual ao GERAL; mes sem meta por marketplace com ML e SHOPEE presentes e meta nula; loja live nao lida -> SHOPEE nula e o GERAL com a serie do ML; ANALISTA sem a loja -> SHOPEE nula; RLS e `check` da tabela nova. Suite inteira **1019/1019** com o banco recriado do zero.
+- **Achado dos testes:** a 1a versao somava no GERAL o pedido de loja live ainda nao lida enquanto a SHOPEE vinha nula; corrigido (item 3).
+- **Mutacao:** 8 regras estragadas (loja nao lida no GERAL, loja de teste na receita, cancelado na receita, loja de teste contando como lida, Shopee nunca nula, meta sempre a geral, meta do marketplace sem o escopo, topo virando o ML) -- todas derrubam teste.
+- **Tipos:** `monthly_goals_marketplace` em `packages/db/src/types.ts`, igual ao gerado do banco; `get_meta_do_mes` continua `Json`.
+
+**Impacto:** `supabase/migrations/20261015130000_metas_por_marketplace.sql`, `packages/db/src/{rls.integration.test,types}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,METRICS,DATABASE,PERFORMANCE,HANDOFF,MULTICHANNEL_HANDOFF,ROADMAP}.md`. A tela (central e `/central/metas`) e a T8b do A2. Em producao: a migration depois do merge e da CI da `main`; a web de hoje segue igual antes e depois dela.
 
 ## D-474 - Telas do A2, etapa E5: os estados do /skus/[skuId] no EstadoDaTela, e as regras CSS que ficaram sem uso saem
 

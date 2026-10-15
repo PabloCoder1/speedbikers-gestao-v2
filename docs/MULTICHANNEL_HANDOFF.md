@@ -26,7 +26,7 @@
 | Branches abertas | A1: nenhuma (o #201 entrou com o #205) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
-| Migrations em produção | até `20261015110000` (D-441 a D-469, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221` e `38792203548`, 15/10) |
+| Migrations em produção | até `20261015120000` (D-441 a D-471, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548` e `38799663780`, 15/10) |
 | Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
@@ -52,6 +52,7 @@
 - D-455, Ads sem dado: ROAS/ACOS do C-63 só com os dias que têm gasto e venda; `dias_sem_gasto`/`dias_sem_venda` (achado do A2); 3 mutações; **em produção desde 15/10** (#188, run `38755993771`).
 - C-65, demanda da Shopee na cobertura e na reposição (D-459): **em produção desde 15/10** (#188, run `38755993771`) — idêntica às funções antigas com os dados reais do Dev (cobertura, sugestão, visão, pedido e alcance; zero diferença, inclusive na ordem) e com o mesmo custo como `authenticated` (`docs/PERFORMANCE.md`); integração (5 testes) e 13 mutações. Entrou antes do Go Live, como pedido.
 - C-57, busca universal com a Shopee (D-467): **em código e validada** — `search_entities` estendida (loja, anúncio e pedido da Shopee; colunas `marketplace`, `entity_id`, `account_id` no fim; destinos reais) e `get_shopee_orders` com `p_order_sn`; integração (8 testes), 10 mutações, mesmas linhas da atual no Dev; **em produção desde 15/10** (#201 dentro do #205, com a T7; migration `20261015110000` no run `38792203548`, depois do deploy da T7; conferido em produção pelo A2, só leitura: as colunas e os dez tipos, e a loja de teste marcada).
+- C-66, metas por marketplace (D-473): **em código e validada** — `monthly_goals_marketplace` (as metas de ML e Shopee; a GERAL segue em `monthly_goals`) e `get_meta_do_mes` com `escopos` (GERAL, ML e SHOPEE; as chaves de sempre são o GERAL; SHOPEE nula sem loja live lida; GERAL = ML + SHOPEE sempre); idêntica à atual no Dev; integração 1019/1019 com o banco do zero e 8 mutações; no PR `feat/metas-por-marketplace` — a T8b do A2 empilha nele. Falta a migration `20261015130000` (depois do merge e da CI da `main`).
 - E7d, push da Shopee (D-453): **em produção e conferido (15/10)** — `POST /push/shopee` antecipa `shopee.orders.sync` (3) e `shopee.returns.sync` (29) da loja em janelas de 5 minutos; a Shopee assina com a **Test Push Partner Key** da tela Set Push (segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, achado pelas amostras offline), não com a Partner Key; `code` em texto (`"29"`) aceito; autoteste assinado: aceito. No Go Live: a chave de push de produção.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
