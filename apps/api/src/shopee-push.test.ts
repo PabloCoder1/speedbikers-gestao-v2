@@ -31,7 +31,7 @@ const DEVOLUCAO = JSON.stringify({
 // `shop_authorization_canceled_push`, um dos exemplos oficiais.
 const CANCELADA = '{"data":{"authorize_type":"expiry","shopid":727720655,"success":1,"extra":"The authorization is expired."},"code":2,"partner_id":800000,"timestamp":1653026985}';
 
-function cenario(opcoes: { loja?: typeof LOJA | null; falhaNaLoja?: boolean; falhaAoEnfileirar?: boolean; deduplica?: boolean } = {}) {
+function cenario(opcoes: { loja?: typeof LOJA | null; falhaNaLoja?: boolean; falhaAoEnfileirar?: boolean; deduplica?: boolean; pushKey?: string } = {}) {
   const enfileirados: EnqueueRequest[] = [];
   const filtros: [string, unknown][] = [];
   const logs: { severity: string; message: string }[] = [];
@@ -65,6 +65,7 @@ function cenario(opcoes: { loja?: typeof LOJA | null; falhaNaLoja?: boolean; fal
     partnerKey: CHAVE,
     pushUrl: URL_PUSH,
     now: () => NOW,
+    ...(opcoes.pushKey === undefined ? {} : { pushKey: opcoes.pushKey }),
   };
   const app = createApp({ logger: createLogger({}, { sink: () => undefined }), shopeePush: deps });
   const enviar = (corpo: string, assinatura: string | null = signPush(CHAVE, URL_PUSH, corpo)) =>
@@ -162,7 +163,25 @@ describe("POST /push/shopee (D-453)", () => {
       expect.objectContaining({ assinatura_presente: true, assinatura_tamanho: 9, assinatura_formato: "outro" }),
     ]);
     expect(JSON.stringify(recusas)).not.toContain("REDACTED");
-    expect(JSON.stringify(recusas)).not.toContain("nao-e-hex");
+    // A amostra temporária (15/10): o corpo cru e a assinatura recebida, para achar a chave offline.
+    expect(recusas[0]).toMatchObject({ amostra_corpo: PEDIDO, amostra_assinatura: null });
+    expect(recusas[1]).toMatchObject({ amostra_corpo: PEDIDO, amostra_assinatura: "nao-e-hex" });
+  });
+
+  it("o código em texto (\"29\") é a devolução; a chave de push, se configurada, assina", async () => {
+    const { enviar, enfileirados } = cenario();
+    const devolucaoEmTexto = DEVOLUCAO.replace('"code":29', '"code":"29"');
+
+    expect(devolucaoEmTexto).toContain('"code":"29"');
+    expect((await enviar(devolucaoEmTexto)).status).toBe(200);
+    expect(enfileirados.map((e) => e.jobType)).toEqual(["shopee.returns.sync"]);
+
+    const comChave = cenario({ pushKey: "chave-de-push-de-teste-nao-real" });
+
+    expect((await comChave.enviar(PEDIDO, signPush("chave-de-push-de-teste-nao-real", URL_PUSH, PEDIDO))).status).toBe(200);
+    // A do parceiro continua valendo.
+    expect((await comChave.enviar(PEDIDO)).status).toBe(200);
+    expect(comChave.enfileirados).toHaveLength(2);
   });
 
   it("loja desconhecida ou desconectada, push sem ação e autorização cancelada: 200 sem enfileirar", async () => {

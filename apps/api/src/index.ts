@@ -55,6 +55,7 @@ const shopeePush =
         environment: env.SHOPEE_ENVIRONMENT,
         partnerKey: env.SHOPEE_PARTNER_KEY,
         pushUrl: env.SHOPEE_PUSH_URL ?? new URL("/push/shopee", env.SHOPEE_REDIRECT_URI).toString(),
+        ...(env.SHOPEE_PUSH_PARTNER_KEY !== undefined ? { pushKey: env.SHOPEE_PUSH_PARTNER_KEY } : {}),
       }
     : undefined;
 
