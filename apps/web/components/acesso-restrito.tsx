@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { EstadoDaTela } from "./estado-da-tela";
+import { PageTitle } from "./page-title";
 import { Shell } from "./shell";
 
 /**
@@ -21,10 +23,21 @@ import { Shell } from "./shell";
  * papel exigido.
  */
 export function AcessoRestrito({ titulo, papel = "ADMIN" }: { titulo: string; papel?: string }): ReactNode {
+  /*
+    O título da tela continua no cabeçalho (`PageTitle`): quem chegou por um link
+    antigo precisa saber ONDE está antes de saber que não pode ficar. A recusa
+    vira o estado de permissão (D-502), com o caminho de volta que faltava.
+  */
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>{titulo}</h1>
-      <p style={{ color: "var(--sb-text-soft)" }}>Esta tela é restrita a {papel}.</p>
+      <PageTitle eyebrow="ACESSO RESTRITO" title={titulo} compacto />
+      <EstadoDaTela
+        tipo="permissao"
+        nivel="tela"
+        titulo={`Esta tela é restrita a ${papel}.`}
+        descricao="Se você precisa dela, peça a quem administra a organização para ajustar o seu papel em Usuários."
+        acao={{ href: "/", rotulo: "Ir para o início" }}
+      />
     </Shell>
   );
 }

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import {
   ACTIONS_PAGE_SIZE,
   buildActionsHref,
@@ -226,9 +227,13 @@ export default async function AcoesPage({
       />
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as ações."
+          descricao="Seus filtros foram preservados. Tente de novo; nenhuma ação foi alterada."
+          detalhe={error.message}
+          acao={{ href: buildActionsHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && (

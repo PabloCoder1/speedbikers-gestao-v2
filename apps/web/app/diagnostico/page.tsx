@@ -8,6 +8,7 @@ import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import {
   buildDiagnosticHref,
   filterByConfidence,
@@ -81,9 +82,13 @@ export default async function DiagnosticoPage({
     return (
       <Shell>
         <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Diagnóstico</h1>
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível confirmar sua organização: {membership.error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Sem a organização, o diagnóstico não sabe quais contas ler. Tente de novo em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: "/diagnostico", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </Shell>
     );
   }
@@ -324,9 +329,13 @@ export default async function DiagnosticoPage({
       </p>
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar o diagnóstico."
+          descricao="Seus filtros foram preservados. Tente de novo; nada foi alterado."
+          detalhe={error.message}
+          acao={{ href: buildDiagnosticHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && (claimsError !== null || precosError !== null) && (

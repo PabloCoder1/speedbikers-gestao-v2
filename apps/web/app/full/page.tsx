@@ -11,6 +11,7 @@ import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PAGE_SIZES } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
@@ -122,7 +123,7 @@ export default async function FullPage({
     return (
       <Shell>
         <PageTitle eyebrow="ESTOQUE / FULL" title="Central Full" />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </Shell>
     );
   }
@@ -418,27 +419,34 @@ export default async function FullPage({
         </details>
 
         {error !== null && (
-          <div role="alert" className="sb-full-state sb-full-state-error">
-            <strong>Não foi possível carregar o Full.</strong>
-            <span>{error.message}</span>
-            <LinkDeFiltro className="sb-button" href={buildFullHref(atual, {})}>
-              Tentar de novo
-            </LinkDeFiltro>
-          </div>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o Full."
+            descricao="Seus filtros foram preservados. Tente de novo; nada no Full foi alterado."
+            detalhe={error.message}
+            acao={{ href: buildFullHref(atual, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
 
         {error === null && rows.length === 0 && (
-          <div className="sb-full-state">
-            <span className="sb-full-state-icon" aria-hidden="true">
-              <Icone nome="armazem" tamanho={20} />
-            </span>
-            <strong>{janela.label}</strong>
-            <span>
-              {atual.search !== null || criterioAtivo !== null
+          <EstadoDaTela
+            tipo={atual.search !== null || criterioAtivo !== null ? "filtro" : "vazio"}
+            titulo={janela.label}
+            descricao={
+              atual.search !== null || criterioAtivo !== null
                 ? "Troque a visão acima ou limpe a busca para ver os outros SKUs."
-                : `Nenhum saldo do Full foi capturado nos últimos ${String(FRESHNESS_DAYS)} dias.`}
-            </span>
-          </div>
+                : `Nenhum saldo do Full foi capturado nos últimos ${String(FRESHNESS_DAYS)} dias.`
+            }
+            acao={
+              atual.search !== null || criterioAtivo !== null
+                ? {
+                    href: buildFullHref(atual, { search: null, situation: null, focus: null, page: 1 }),
+                    rotulo: "Ver todos os SKUs",
+                    mesmaTela: true,
+                  }
+                : undefined
+            }
+          />
         )}
 
         {error === null && rows.length > 0 && (

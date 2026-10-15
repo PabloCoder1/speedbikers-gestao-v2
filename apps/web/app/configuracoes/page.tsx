@@ -1,16 +1,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import type { PillTone } from "../../components/state-pill";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatCount } from "../../lib/format";
 import { currentMembership } from "../../lib/request-membership";
-import { sanitizeErrorText } from "../../lib/sanitize";
 import { describeSettings, incluiPara, placarDe, quemAltera, vereditoDe, zonaDe } from "../../lib/settings-hub";
 import type { SettingsSection, SettingState } from "../../lib/settings-hub";
 import { createClient } from "../../lib/supabase/server";
@@ -200,15 +199,13 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
       <Shell>
         <PageTitle eyebrow={EYEBROW} title="Configurações" subtitle={APONTA} compacto />
 
-        <div className="sb-channel-error" role="alert">
-          <span className="sb-channel-error-icon" aria-hidden="true">
-            <Icone nome="pulso" tamanho={18} />
-          </span>
-          <div>
-            <strong>Não foi possível ler sua organização.</strong>
-            <p>{sanitizeErrorText(membership.error.message) ?? "A leitura falhou neste carregamento."}</p>
-          </div>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível ler sua organização."
+          descricao="A leitura falhou neste carregamento."
+          detalhe={membership.error.message}
+          acao={{ href: "/configuracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
 
         <Zonas secoes={describeSettings(null)} papel={null} />
       </Shell>
@@ -223,15 +220,11 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
         <PageTitle eyebrow={EYEBROW} title="Configurações" compacto />
 
         <Panel title="Acesso indisponível">
-          <div className="sb-channel-empty">
-            <span className="sb-channel-empty-icon" aria-hidden="true">
-              <Icone nome="pessoas" tamanho={20} />
-            </span>
-            <div>
-              <strong>Sua conta ainda não pertence a nenhuma organização.</strong>
-              <p>Peça a um administrador para incluir você.</p>
-            </div>
-          </div>
+          <EstadoDaTela
+            tipo="permissao"
+            titulo="Sua conta ainda não pertence a nenhuma organização."
+            descricao="Peça a um administrador para incluir você."
+          />
         </Panel>
       </Shell>
     );
@@ -377,15 +370,13 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
           sete pílulas e em cada resumo. Aqui ela é dita no alerta, e as áreas
           que dependiam dela caem na zona "NÃO FOI POSSÍVEL LER". */}
       {overview.error !== null && (
-        <div className="sb-channel-error" role="alert">
-          <span className="sb-channel-error-icon" aria-hidden="true">
-            <Icone nome="pulso" tamanho={18} />
-          </span>
-          <div>
-            <strong>Não foi possível ler a visão geral.</strong>
-            <p>{sanitizeErrorText(overview.error.message) ?? "A leitura falhou neste carregamento."}</p>
-          </div>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível ler a visão geral."
+          descricao="A leitura falhou neste carregamento."
+          detalhe={overview.error.message}
+          acao={{ href: "/configuracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {/*

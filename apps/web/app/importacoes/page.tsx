@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { StatusPill } from "../../components/status-pill";
 import { Shell } from "../../components/shell";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { batchStatusLabel, kindLabel } from "../../lib/labels";
@@ -116,9 +117,13 @@ export default async function ImportacoesPage({
       </section>
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as importações."
+          descricao="Nenhuma importação foi alterada. Tente de novo."
+          detalhe={error.message}
+          acao={{ href: "/importacoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && (

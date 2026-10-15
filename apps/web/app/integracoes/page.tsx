@@ -6,8 +6,8 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import type { PillTone } from "../../components/state-pill";
-import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { apiBaseUrl, fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
 import { describeIntegrations } from "../../lib/integrations";
@@ -112,13 +112,13 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
     return (
       <Shell>
         <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Integrações" compacto />
-        <div className="sb-channel-error" role="alert">
-          <span className="sb-channel-error-icon" aria-hidden="true"><Icone nome="pulso" tamanho={18} /></span>
-          <div>
-            <strong>Não foi possível ler sua organização.</strong>
-            <p>{sanitizeErrorText(membership.error.message) ?? "A leitura falhou neste carregamento."}</p>
-          </div>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível ler sua organização."
+          descricao="A leitura falhou neste carregamento."
+          detalhe={membership.error.message}
+          acao={{ href: "/integracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </Shell>
     );
   }
@@ -130,13 +130,11 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
       <Shell>
         <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Integrações" compacto />
         <Panel title="Acesso indisponível">
-          <div className="sb-channel-empty">
-            <span className="sb-channel-empty-icon" aria-hidden="true"><Icone nome="tomada" tamanho={20} /></span>
-            <div>
-              <strong>Sua conta ainda não pertence a uma organização.</strong>
-              <p>Peça a um administrador para concluir o vínculo antes de consultar as integrações.</p>
-            </div>
-          </div>
+          <EstadoDaTela
+            tipo="permissao"
+            titulo="Sua conta ainda não pertence a uma organização."
+            descricao="Peça a um administrador para concluir o vínculo antes de consultar as integrações."
+          />
         </Panel>
       </Shell>
     );
@@ -330,13 +328,12 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
       <KpiStrip cells={integrationKpis} />
 
       {falhas.length > 0 && (
-        <div className="sb-channel-error" role="alert">
-          <span className="sb-channel-error-icon" aria-hidden="true"><Icone nome="pulso" tamanho={18} /></span>
-          <div>
-            <strong>Algumas leituras falharam neste carregamento.</strong>
-            <p>{falhas.join(" · ")}</p>
-          </div>
-        </div>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Algumas leituras falharam neste carregamento."
+          descricao={falhas.join(" · ")}
+          acao={{ href: "/integracoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {/*

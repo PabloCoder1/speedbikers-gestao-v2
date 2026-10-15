@@ -11,7 +11,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { FormularioFiltro } from "../../components/formulario-filtro";
-import { LinkDeFiltro } from "../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import {
   formatBusinessDate,
   formatCount,
@@ -100,15 +100,11 @@ export default async function PrecosPage({
           subtitle="Histórico e análise das alterações de preço observadas nos anúncios."
         />
         <Panel title="Acesso indisponível">
-          <div className="sb-price-empty">
-            <span className="sb-price-empty-icon" aria-hidden="true">
-              <Icone nome="etiqueta" tamanho={20} />
-            </span>
-            <div>
-              <strong>Sua conta ainda não pertence a uma organização.</strong>
-              <p>Peça a um administrador para concluir o vínculo antes de consultar o histórico de preços.</p>
-            </div>
-          </div>
+          <EstadoDaTela
+            tipo="permissao"
+            titulo="Sua conta ainda não pertence a uma organização."
+            descricao="Peça a um administrador para concluir o vínculo antes de consultar o histórico de preços."
+          />
         </Panel>
       </Shell>
     );
@@ -354,36 +350,26 @@ export default async function PrecosPage({
         </FormularioFiltro>
 
         {error !== null && (
-          <div className="sb-price-error" role="alert">
-            <span className="sb-price-error-icon" aria-hidden="true">
-              <Icone nome="pulso" tamanho={18} />
-            </span>
-            <div>
-              <strong>Não foi possível carregar o histórico agora.</strong>
-              <p>Seus filtros foram preservados. Tente novamente; nenhum preço foi alterado.</p>
-            </div>
-            <Link className="sb-button" href={buildPriceHref(filters, { page: filters.page })}>
-              Tentar novamente
-              <CarregandoSeODemorar />
-            </Link>
-          </div>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o histórico agora."
+            descricao="Seus filtros foram preservados. Tente de novo; nenhum preço foi alterado."
+            detalhe={error.message}
+            acao={{ href: buildPriceHref(filters, { page: filters.page }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
 
         {error === null && rows.length === 0 && (
-          <div className="sb-price-empty">
-            <span className="sb-price-empty-icon" aria-hidden="true">
-              <Icone nome="tendencia" tamanho={20} />
-            </span>
-            <div>
-              <strong>Nenhuma alteração de preço encontrada.</strong>
-              <p>
-                {filtrosAtivos > 0
-                  ? "Revise ou remova os filtros para ampliar a busca."
-                  : "Quando um anúncio tiver uma alteração observada, ela aparecerá aqui."}
-              </p>
-            </div>
-            {filtrosAtivos > 0 && <LinkDeFiltro className="sb-button" href="/precos">Limpar filtros</LinkDeFiltro>}
-          </div>
+          <EstadoDaTela
+            tipo={filtrosAtivos > 0 ? "filtro" : "vazio"}
+            titulo="Nenhuma alteração de preço encontrada."
+            descricao={
+              filtrosAtivos > 0
+                ? "Revise ou remova os filtros para ampliar a busca."
+                : "Quando um anúncio tiver uma alteração observada, ela aparecerá aqui."
+            }
+            acao={filtrosAtivos > 0 ? { href: "/precos", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+          />
         )}
 
         {error === null && rows.length > 0 && (
