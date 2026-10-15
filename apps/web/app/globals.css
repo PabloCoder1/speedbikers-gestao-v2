@@ -5494,6 +5494,35 @@ body > .sb-atualizando-barra {
   box-shadow: var(--sb-shadow-panel);
 }
 
+/*
+ * O lugar da "Atenção necessária" da Home enquanto a segunda rodada não chega
+ * (D-504). A grade e a altura de um cartão de verdade, para a chegada não empurrar
+ * os indicadores: duas fileiras em 4 ou 3 colunas, três em 2 — medido contra a
+ * seção pronta, 446 × 438 px no desktop. Duas classes: `.sb-carregando-revela` (declarada depois) é
+ * `flex` em coluna e empilharia os quatro cartões.
+ */
+.sb-attention-grid.sb-attention-carregando {
+  display: grid;
+}
+
+.sb-attention-carregando .sb-attention-card {
+  min-height: 10.5rem;
+  gap: 0.625rem;
+}
+
+@media (max-width: 1150px) {
+  .sb-attention-carregando .sb-attention-card:nth-child(n + 7) {
+    display: none;
+  }
+}
+
+/* Em duas colunas, três fileiras: os cinco a sete cartões comuns em produção. */
+@media (max-width: 850px) {
+  .sb-attention-carregando .sb-attention-card {
+    min-height: 11.5rem;
+  }
+}
+
 /* --- Copiloto e Central de Notificações: refinamento operacional --- */
 .sb-copilot-panel-body {
   display: grid;
