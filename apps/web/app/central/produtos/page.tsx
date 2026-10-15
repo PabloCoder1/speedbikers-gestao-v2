@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoConteudo } from "../../../components/carregando";
+import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { FilterMenu } from "../../../components/filter-menu";
 import { FilterPill } from "../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
@@ -157,7 +158,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
               label: preset.label,
             }))}
           >
-            <form method="get" className="sb-periodo-form">
+            <FormularioFiltro action="/central/produtos" className="sb-periodo-form">
               {conta !== null && <input type="hidden" name="account" value={conta} />}
               {ordem !== ORDEM_PADRAO && <input type="hidden" name="ordem" value={ordem} />}
               <input
@@ -177,7 +178,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
               <button type="submit" className="sb-button sb-button-primary">
                 Aplicar período
               </button>
-            </form>
+            </FormularioFiltro>
           </FilterMenu>
 
           <Link className="sb-button" href="/central">
