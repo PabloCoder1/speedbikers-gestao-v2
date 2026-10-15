@@ -23,7 +23,7 @@
 |---|---|
 | Atualizado em | 2026-10-14 |
 | `origin/main` | `2809d35f` (15/10: #172 e #179 do A1, D-453; #170, #171, #173, #175 e #177 do A2) |
-| Branches abertas | A1: nenhuma (o #191 entrou) · A2: nenhuma (o #177 entrou) |
+| Branches abertas | A1: `fix/correlacao-pedidos` (#195: D-463 e D-465, desempenho) · A2: nenhuma (o #177 entrou) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
 | Worker / api em produção | worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log), 15/10, 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
 | Migrations em produção | até `20261015080000` (D-441 a D-461, runs `38726738817`, `38755993771` e `38760462816`, 15/10) |
