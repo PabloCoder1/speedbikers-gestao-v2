@@ -423,6 +423,17 @@ export default async function VinculacoesPage({
         })}
       </nav>
 
+      {/*
+        T-R6: sem a leitura das contas, os selos somem e a conta do link cai em
+        "todas" calada. Dizer — a tabela continua, sem o recorte.
+      */}
+      {contas.error !== null && (
+        <p role="alert" className="sb-note sb-note-perigo">
+          Não foi possível carregar as contas: {contas.error.message}. O filtro por conta fica fora, e a lista mostra todas
+          as contas que você alcança.
+        </p>
+      )}
+
       {/* AS CONTAS como selos: quatro contas não pedem um menu suspenso. */}
       {accounts.length > 1 && (
         <nav className="sb-vnc-contas" aria-label="Filtrar por conta">
@@ -550,11 +561,16 @@ export default async function VinculacoesPage({
 
         {/* Leitura de volta: o operador vê o que acabou de vincular à mão. */}
         <Panel title="Últimos vínculos manuais" subtitle="Os mais recentes feitos por pessoas, nesta conta ou em todas.">
-          {(manuais.data ?? []).length === 0 ? (
+          {/* T-R6: leitura que falha não vira "nenhum vínculo manual". */}
+          {manuais.error !== null ? (
+            <p role="alert" className="sb-note sb-note-perigo">
+              Não foi possível carregar os últimos vínculos manuais: {manuais.error.message}
+            </p>
+          ) : manuais.data.length === 0 ? (
             <p className="sb-empty">Nenhum vínculo manual ainda.</p>
           ) : (
             <ul className="sb-vnc-recentes">
-              {(manuais.data ?? []).map((m) => (
+              {manuais.data.map((m) => (
                 <li key={m.id}>
                   <b className="sb-mono">{m.skus.sku}</b>
                   <span aria-hidden="true">←</span>
