@@ -1,16 +1,19 @@
 # Handoff multicanal
 
 > Estado corrente da frente multicanal (Mercado Livre + Shopee), dividida entre
-> o **Agente 1** (integração, backend, dados) e o **Agente 2** (telas, filtros,
-> dashboards). **Só o AGORA, sem diário** (como `docs/HANDOFF.md`): o porquê vira
-> `D-xxx`; os contratos de dados detalhados estão em
-> `docs/MULTICHANNEL_CONTRACTS.md` (Agente 1); a auditoria de telas e o modelo do
-> filtro, em `docs/MULTICHANNEL_SCREENS.md` (Agente 2).
+> o **Agente 1** (integração, backend, dados), o **Agente 2** (telas, filtros,
+> dashboards) e o **Agente 3** (UX/UI, carregamento, design system). **Só o
+> AGORA, sem diário** (como `docs/HANDOFF.md`): o porquê vira `D-xxx`; os
+> contratos de dados detalhados estão em `docs/MULTICHANNEL_CONTRACTS.md`
+> (Agente 1); a auditoria de telas e o modelo do filtro, em
+> `docs/MULTICHANNEL_SCREENS.md` (Agente 2); o padrão de carregamento, a
+> auditoria de UX e a fila, em `docs/UX_SYSTEM.md` (Agente 3).
 >
 > **Regras:** cada agente edita só a própria seção; as seções comuns mudam por
-> acordo, com mensagem ao outro antes. Quem chega à `main` depois faz rebase,
+> acordo, com mensagem aos outros antes. Quem chega à `main` depois faz rebase,
 > fica com o arquivo da `main` e reaplica só a própria seção. Contratos: `C-01…`
-> do Agente 2 (consumo), `C-50…` do Agente 1 (dados).
+> do Agente 2 (consumo), `C-50…` do Agente 1 (dados). Decisões: Agente 1 nos
+> ímpares e Agente 2 nos pares abaixo de D-500; Agente 3 de D-500 em diante.
 
 ---
 
