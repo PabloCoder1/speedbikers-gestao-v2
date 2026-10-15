@@ -7,6 +7,7 @@ import { toSalesMetricDate } from "@sb/domain";
 import { FilterMenu } from "../../components/filter-menu";
 import { FilterGroup, FilterPill } from "../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
@@ -34,6 +35,7 @@ import {
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../lib/format";
 import { contarLojasShopee } from "../../lib/marketplace";
 import { currentMembership } from "../../lib/request-membership";
+import { mesmaUrl } from "../../lib/mesma-url";
 import { createClient } from "../../lib/supabase/server";
 import {
   HISTORICO_SHOPEE_DIAS,
@@ -205,18 +207,28 @@ export default async function CurvaAbcPage({
     as listas de marca e categoria sem opção, os filtros salvos sumindo. A
     curva continua (ela é a leitura principal); a tela diz o que faltou.
   */
+  // D-468: o que faltou e o efeito na tela; a mensagem técnica vai à parte, sanitizada pelo `EstadoDaTela`.
   const leiturasQueFalharam = [
     accountsResult.error === null
       ? null
-      : `as contas do Mercado Livre (${accountsResult.error.message}): o filtro por conta do ML fica fora, e a curva mostra todas as contas`,
+      : {
+          oQue: "as contas do Mercado Livre: o filtro por conta do ML fica fora, e a curva mostra todas as contas",
+          mensagem: accountsResult.error.message,
+        },
     contasDoRecorte.error === null
       ? null
-      : `as contas e lojas do recorte (${contasDoRecorte.error.message}): a escolha de contas fica fora, e a curva mostra o recorte inteiro`,
+      : {
+          oQue: "as contas e lojas do recorte: a escolha de contas fica fora, e a curva mostra o recorte inteiro",
+          mensagem: contasDoRecorte.error.message,
+        },
     brandsResult.error === null && categoriesResult.error === null
       ? null
-      : `as listas de marca e categoria (${(brandsResult.error ?? categoriesResult.error)?.message ?? ""}): os filtros por elas ficam sem opções`,
-    savedFiltersResult.error === null ? null : `os filtros salvos (${savedFiltersResult.error.message})`,
-  ].filter((falha): falha is string => falha !== null);
+      : {
+          oQue: "as listas de marca e categoria: os filtros por elas ficam sem opções",
+          mensagem: (brandsResult.error ?? categoriesResult.error)?.message ?? "",
+        },
+    savedFiltersResult.error === null ? null : { oQue: "os filtros salvos", mensagem: savedFiltersResult.error.message },
+  ].filter((falha): falha is { oQue: string; mensagem: string } => falha !== null);
 
   const rows: AbcAnalysisRow[] = data ?? [];
   const first = rows[0];
@@ -483,10 +495,13 @@ export default async function CurvaAbcPage({
       />
 
       {leiturasQueFalharam.length > 0 && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ marginBottom: "var(--sb-space-3)" }}>
-          Não foi possível ler {leiturasQueFalharam.join("; ")}. O que aparece vazio por isso não quer dizer que não
-          existe.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Parte da Curva ABC não foi lida"
+          descricao={`Faltou ler ${leiturasQueFalharam.map((falha) => falha.oQue).join("; ")}. O que aparece vazio por isso não quer dizer que não existe.`}
+          detalhe={leiturasQueFalharam.map((falha) => falha.mensagem).join("; ")}
+          acao={{ href: mesmaUrl("/curva-abc", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {/* Sem a leitura das contas, "não estão disponíveis para você" seria mentira: o aviso de cima diz o porquê. */}

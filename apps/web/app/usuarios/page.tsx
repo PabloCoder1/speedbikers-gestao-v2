@@ -4,10 +4,12 @@ import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { Shell } from "../../components/shell";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { roleLabel } from "../../lib/labels";
+import { mesmaUrl } from "../../lib/mesma-url";
 import {
   matchesMemberFilters,
   resolveMemberFilters,
@@ -91,7 +93,8 @@ export default async function UsuariosPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  const filters = resolveMemberFilters(await searchParams);
+  const query = await searchParams;
+  const filters = resolveMemberFilters(query);
   const supabase = await createClient();
 
   /*
@@ -366,17 +369,19 @@ export default async function UsuariosPage({
       */}
       <KpiStrip cells={celulas} />
 
+      {/* D-468: a forma única do erro de leitura (D-502), no lugar dos avisos provisórios da T-R6. */}
       {erro !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar os membros: {erro.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os membros" detalhe={erro.message} acao={{ href: mesmaUrl("/usuarios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />
       )}
 
       {isAdmin && detalheResult.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível ler o e-mail, a situação (convite, suspensão) e o último acesso dos membros:{" "}
-          {detalheResult.error.message}. As colunas e o filtro por situação ficam fora até a leitura voltar.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível ler o e-mail, a situação e o último acesso dos membros"
+          descricao="As colunas e o filtro por situação (convite, suspensão) ficam fora até a leitura voltar."
+          detalhe={detalheResult.error.message}
+          acao={{ href: mesmaUrl("/usuarios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
@@ -435,10 +440,13 @@ export default async function UsuariosPage({
             subtitle="Gravado pelo próprio banco, append-only: nem esta tela nem a API conseguem editar ou apagar uma linha. O registro começa em 01/09/2026 — mudanças anteriores não existem aqui, e evento sintético seria dado inventado. Mostra as 50 mudanças mais recentes."
           >
             {eventsResult.error !== null ? (
-              <p role="alert" className="sb-note sb-note-perigo" style={{ margin: 0 }}>
-                Não foi possível carregar o histórico de acesso: {eventsResult.error.message}. Ele não está vazio — só
-                não foi lido.
-              </p>
+              <EstadoDaTela
+                tipo="erro"
+                titulo="Não foi possível carregar o histórico de acesso"
+                descricao="Ele não está vazio — só não foi lido."
+                detalhe={eventsResult.error.message}
+                acao={{ href: mesmaUrl("/usuarios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+              />
             ) : events.length === 0 ? (
               <p className="sb-empty">Nenhuma mudança de acesso registrada ainda.</p>
             ) : (

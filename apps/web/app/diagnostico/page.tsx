@@ -338,13 +338,26 @@ export default async function DiagnosticoPage({
         />
       )}
 
+      {/* D-468: a forma única do erro de leitura (D-502), no lugar do aviso provisório da T-R6. */}
       {error === null && (claimsError !== null || precosError !== null) && (
-        <p role="alert" className="sb-note sb-note-atencao">
-          {claimsError !== null &&
-            `As reclamações abertas não foram lidas (${claimsError.message}): o sinal de SAC fica de fora, e isso não quer dizer que não haja reclamação. `}
-          {precosError !== null &&
-            `O preço médio não foi lido (${precosError.message}): o impacto estimado aparece como "—" por isso, não por falta de venda.`}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Parte do diagnóstico não foi lida"
+          descricao={[
+            claimsError === null
+              ? null
+              : "As reclamações abertas ficaram de fora: o sinal de SAC não aparece, e isso não quer dizer que não haja reclamação.",
+            precosError === null
+              ? null
+              : 'O preço médio ficou de fora: o impacto estimado aparece como "—" por isso, não por falta de venda.',
+          ]
+            .filter((parte): parte is string => parte !== null)
+            .join(" ")}
+          detalhe={[claimsError?.message, precosError?.message]
+            .filter((mensagem): mensagem is string => mensagem !== undefined)
+            .join("; ")}
+          acao={{ href: buildDiagnosticHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && visiveis.length === 0 && (

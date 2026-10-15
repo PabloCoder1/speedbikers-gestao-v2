@@ -7,6 +7,7 @@ import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { CopilotContextBeacon } from "../../../components/copilot-context";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { TOM } from "../../../components/tone";
@@ -37,6 +38,7 @@ import {
   shopeeItemStatus,
   shopeeModelUnavailable,
 } from "../../../lib/shopee-listings";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura, type CoberturaDescrita } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
@@ -1215,10 +1217,13 @@ export default async function SkuDashboardPage({
 
           {/* T-R6: sem as contas, "Vincular anúncio" abriria sem conta nenhuma para escolher. */}
           {contasResult.error !== null && (
-            <p className="sb-skud-danger" role="alert">
-              Não foi possível carregar as contas: {contasResult.error.message}. O vínculo manual fica sem a lista de
-              contas até a leitura voltar.
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar as contas"
+              descricao="O vínculo manual fica sem a lista de contas até a leitura voltar."
+              detalhe={contasResult.error.message}
+              acao={{ href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           )}
 
           {listingsResult.error === null && listings.length === 0 && (
@@ -1839,10 +1844,13 @@ export default async function SkuDashboardPage({
                 houvesse ação aberta — e o nível podia cair um degrau.
               */}
               {acoesAbertasResult.error !== null && (
-                <p className="sb-skud-danger" role="alert">
-                  As ações abertas deste SKU não foram lidas ({acoesAbertasResult.error.message}): o diagnóstico abaixo
-                  não as inclui, e o nível pode estar abaixo do real.
-                </p>
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="As ações abertas deste SKU não foram lidas"
+                  descricao="O diagnóstico abaixo não as inclui, e o nível pode estar abaixo do real."
+                  detalhe={acoesAbertasResult.error.message}
+                  acao={{ href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+                />
               )}
               <div className="sb-stat-grid">
                 <div
