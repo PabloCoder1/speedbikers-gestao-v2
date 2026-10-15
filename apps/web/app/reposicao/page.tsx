@@ -10,6 +10,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../components/carregando-link";
 import { FilterMenu } from "../../components/filter-menu";
+import { FormularioFiltro } from "../../components/formulario-filtro";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -223,7 +224,7 @@ export default async function ReposicaoPage({
                 })),
               ]}
             />
-            <form method="get" action="/reposicao" className="sb-rep-busca">
+            <FormularioFiltro action="/reposicao" className="sb-rep-busca">
               {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
               {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
               {filters.state !== null && <input type="hidden" name="estado" value={filters.state} />}
@@ -238,7 +239,7 @@ export default async function ReposicaoPage({
               <button type="submit" className="sb-button">
                 Buscar
               </button>
-            </form>
+            </FormularioFiltro>
             <Link className="sb-button" href="/reposicao/configuracoes">
               Configurações
             </Link>
@@ -437,11 +438,12 @@ export default async function ReposicaoPage({
             {visao.linhas.length > 0 && (
               <>
                 {/*
-                  A ponte cobertura→pedido (D-151): GET nativo para /compras/novo
-                  com pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce como
-                  RASCUNHO e segue a aprovação humana de D-055.
+                  A ponte cobertura→pedido (D-151): GET para /compras/novo com
+                  pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce como
+                  RASCUNHO e segue a aprovação humana de D-055. Navegação suave
+                  desde D-464 (D-501); sem JavaScript, continua o GET nativo.
                 */}
-                <form id="rep-pedido" action="/compras/novo" method="get">
+                <FormularioFiltro id="rep-pedido" action="/compras/novo">
                   <div style={{ overflowX: "auto" }}>
                     <table className="sb-table sb-rep-tabela">
                       <thead>
@@ -658,7 +660,7 @@ export default async function ReposicaoPage({
                       </tbody>
                     </table>
                   </div>
-                </form>
+                </FormularioFiltro>
 
                 {/* A seleção vira pedido de compra, e só ADMIN/GESTOR cria pedido
                     (`check_purchase_order_writer`) — lote 1 do pente fino, 18/09. */}

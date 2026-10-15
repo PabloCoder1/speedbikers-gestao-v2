@@ -52,9 +52,7 @@ const ISENTOS = new Map([
 const PENDENTES = new Map([
   ["app/central/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
   ["app/central/produtos/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
-  ["app/compras/page.tsx", "na fila do Agente 2 (T-R3, sugestão de compra)"],
   ["app/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
-  ["app/reposicao/page.tsx", "na fila do Agente 2 (T-R3, demanda da Shopee na cobertura)"],
 ]);
 
 /** Fim da tag de abertura, respeitando chaves, aspas e template strings. */
