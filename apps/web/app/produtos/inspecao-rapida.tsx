@@ -46,6 +46,7 @@ export function InspecaoRapida({
   supplierBrand,
   classificacao,
   listingCount,
+  shopeeListingCount,
 }: {
   organizationId: string;
   skuId: string;
@@ -55,6 +56,8 @@ export function InspecaoRapida({
   /** O mesmo texto do chip da coluna "Classificação" — um vocabulário só. */
   classificacao: { texto: string; tom: "info" | "atencao" };
   listingCount: number;
+  /** D-454: `null` sem loja Shopee live — o chip continua um só, como antes. */
+  shopeeListingCount: number | null;
 }): ReactNode {
   const [aberta, setAberta] = useState(false);
   const [retrato, setRetrato] = useState<SkuInspection | null>(null);
@@ -113,9 +116,20 @@ export function InspecaoRapida({
                 {supplierBrand}
               </span>
             )}
-            <span className="sb-status" style={TOM.neutro}>
-              {formatCount(listingCount)} anúncio(s)
-            </span>
+            {shopeeListingCount === null ? (
+              <span className="sb-status" style={TOM.neutro}>
+                {formatCount(listingCount)} anúncio(s)
+              </span>
+            ) : (
+              <>
+                <span className="sb-status" style={TOM.neutro}>
+                  ML: {formatCount(listingCount)} anúncio(s)
+                </span>
+                <span className="sb-status" style={TOM.neutro}>
+                  Shopee: {formatCount(shopeeListingCount)} anúncio(s)
+                </span>
+              </>
+            )}
           </div>
 
           <div style={{ marginTop: "var(--sb-space-3)" }}>
