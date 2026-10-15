@@ -198,6 +198,18 @@ SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
 SHOPEE_PARTNER_ID="${SHOPEE_PARTNER_ID:-}"
 SHOPEE_ENVIRONMENT="${SHOPEE_ENVIRONMENT:-sandbox}"
 SHOPEE_REDIRECT_URI="${SHOPEE_REDIRECT_URI:-}"
+
+# IP fixo de saída (D-457). A Shopee exige declarar os IPs que chamam a API
+# (lista obrigatória no Go Live), e o Cloud Run sai por um pool de IPs
+# dinâmicos do Google. Em produção, api e worker saem pela VPC com
+# `--vpc-egress all-traffic` e um Cloud NAT com UM IP reservado
+# (infra/cloud-nat.sh). Nomes fixos por projeto, como as service accounts.
+VPC_NETWORK="v3-vpc"
+VPC_SUBNET="v3-run-egress"
+VPC_SUBNET_RANGE="10.20.0.0/24"
+NAT_ROUTER="v3-router"
+NAT_GATEWAY="v3-nat"
+NAT_IP_NAME="v3-nat-ip"
 SECRET_SHOPEE_PARTNER_KEY="${SECRET_SHOPEE_PARTNER_KEY:-SHOPEE_TEST_PARTNER_KEY}"
 
 # Copiloto (D-082): Claude Haiku 4.5. Só a api consome — o Copiloto roda

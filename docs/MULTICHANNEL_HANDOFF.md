@@ -22,9 +22,9 @@
 | `origin/main` | `391c7165` (#157, #160, #161, #163, #166 e #169: D-441, D-443, D-445, D-447, D-449 e D-451; #168 do A2) |
 | Branches abertas | A1: `feat/push-shopee` (#172: E7d) · A2: T6b (D-448, empilhada no #157) |
 | Web em produção | `93304ac3` (merge na `main` publica) |
-| Worker / api em produção | worker `worker-00045-c2f` e api `api-00028-qmw`, os dois em `93304ac3` (14/10, 100% do tráfego, `/health` da api ok); Shopee **sandbox** |
-| Migrations em produção | até `20261014230000` (D-439, run `38612642381`, 14/10). Pendentes, **todas na `main`**: `20261015000000` (E6b, #157), `20261015010000` (C-61, #160), `20261015020000` (E6c, #161), `20261015030000` (E7a, #163), `20261015040000` (E7b, #166) e `20261015050000` (E7c, #169) — esperam o workflow do dono |
-| Dev | até `20261015010000` (conferido no Dev em 14/10, CI da `main` `38628067773`); `…15020000` a `…15050000` entram pelo job da CI da `main` `38634675932` (`391c7165`), em andamento; serviços pausados (D-350) |
+| Worker / api em produção | worker `worker-00047-mmw` e api `api-00030-cbh`, imagem `11dbd5f4` (15/10, 100% do tráfego, `/health` ok), saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457); Shopee **sandbox**; push no ar, falta o Set Push no Console |
+| Migrations em produção | até `20261015050000` (D-441 a D-451, run `38726738817`, 15/10) |
+| Dev | todas as migrations da `main` (até `20261015050000`); serviços pausados (D-350) |
 | Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha em 7 dias. Nenhuma loja real |
 
 ---
