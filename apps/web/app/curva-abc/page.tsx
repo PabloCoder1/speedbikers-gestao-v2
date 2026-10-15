@@ -732,9 +732,12 @@ export default async function CurvaAbcPage({
       )}
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar a Curva ABC"
+          detalhe={error.message}
+          acao={{ href: mesmaUrl("/curva-abc", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {error === null && (

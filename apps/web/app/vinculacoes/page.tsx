@@ -8,7 +8,7 @@ import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
 import { FormularioFiltro } from "../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../components/link-de-filtro";
-import { EstadoDaTela } from "../../components/estado-da-tela";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
 import { formatCount, formatCurrency } from "../../lib/format";
 import {
   PAGE_SIZE,
@@ -430,11 +430,15 @@ export default async function VinculacoesPage({
         T-R6: sem a leitura das contas, os selos somem e a conta do link cai em
         "todas" calada. Dizer — a tabela continua, sem o recorte.
       */}
+      {/* D-468: a forma única do erro de leitura (D-502), no lugar do aviso provisório da T-R6. */}
       {contas.error !== null && (
-        <p role="alert" className="sb-note sb-note-perigo">
-          Não foi possível carregar as contas: {contas.error.message}. O filtro por conta fica fora, e a lista mostra todas
-          as contas que você alcança.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro por conta fica fora, e a lista mostra todas as contas que você alcança."
+          detalhe={contas.error.message}
+          acao={{ href: buildLinkIntegrityHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {/* AS CONTAS como selos: quatro contas não pedem um menu suspenso. */}
@@ -541,9 +545,12 @@ export default async function VinculacoesPage({
           subtitle="Linhas da planilha que citaram um SKU inexistente no catálogo. Match exato resolve sozinho numa importação futura; esta fila é a confirmação humana do resto."
         >
           {candidatos.error !== null ? (
-            <p role="alert" className="sb-note sb-note-perigo">
-              Não foi possível carregar os candidatos: {candidatos.error.message}
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os candidatos"
+              detalhe={candidatos.error.message}
+              acao={{ href: buildLinkIntegrityHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           ) : (
             <FilaCandidatos
               contas={contasOpcoes}
@@ -562,9 +569,13 @@ export default async function VinculacoesPage({
         <Panel title="Últimos vínculos manuais" subtitle="Os mais recentes feitos por pessoas, nesta conta ou em todas.">
           {/* T-R6: leitura que falha não vira "nenhum vínculo manual". */}
           {manuais.error !== null ? (
-            <p role="alert" className="sb-note sb-note-perigo">
-              Não foi possível carregar os últimos vínculos manuais: {manuais.error.message}
-            </p>
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar os últimos vínculos manuais"
+              descricao="A lista não está vazia — só não foi lida."
+              detalhe={manuais.error.message}
+              acao={{ href: buildLinkIntegrityHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
           ) : manuais.data.length === 0 ? (
             <p className="sb-empty">Nenhum vínculo manual ainda.</p>
           ) : (
@@ -851,9 +862,7 @@ async function SemALeituraNova({
       </p>
 
       {error !== null ? (
-        <p role="alert" className="sb-note sb-note-perigo">
-          Não foi possível carregar os anúncios: {error.message}
-        </p>
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os anúncios" detalhe={error.message} acao={{ href: buildLinkIntegrityHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />
       ) : (
         <Panel title="Anúncios do Mercado Livre" subtitle={window.label}>
           {rows.length === 0 ? (
