@@ -248,7 +248,7 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Nome | Tendencia de venda |
 | Formula | `taxa_recente = unidades(ultimos 30d)/30`; `taxa_anterior = unidades((30,90] dias atras)/60`; `razao = taxa_recente/taxa_anterior`. CRESCENDO se razao >= 1,25; CAINDO se <= 0,75; ESTAVEL entre elas. Janelas NAO sobrepostas de proposito: comparar "ultimos 15" com "ultimos 90" contaria as vendas recentes dos dois lados e diluiria o sinal |
 | Recusas | AMOSTRA_INSUFICIENTE quando unidades(90d) < 12 (~1/semana: razao sobre meia duzia de vendas e ruido); HISTORICO_INCOMPLETO quando a organizacao tem < 84 dos 90 dias com metrica recomputada -- a guarda nasceu de caso real (2026-08-30: junho com 13/30 dias fazia 86% dos SKUs parecerem "crescendo") |
-| Fonte | `daily_sku_metrics.units_sold`, janelas trailing encerradas em `p_date_to` (`get_stock_coverage`) |
+| Fonte | `daily_sku_metrics.units_sold` + a demanda da Shopee (unidades das vendas válidas das lojas live, `shopee_sales_items`; D-459/C-65), janelas trailing encerradas em `p_date_to` (`get_stock_coverage`); a parte da Shopee à parte, NULA sem loja live com pedidos lidos |
 | Granularidade | SKU, organizacao (soma todas as contas -- estoque local e compartilhado) |
 | Implementacao canonica | `classifySalesTrend` em `@sb/domain/purchasing` (formula unica; versao SQL futura exigira teste de equivalencia) |
 | Limiares | +-25%, fixados APOS medicao no dado real pos-reparo: 239 crescendo / 174 caindo / 152 estavel em 565 classificaveis |
@@ -281,7 +281,7 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | LOCAL negativo | AUMENTA a sugestao: unidades devidas tambem precisam ser compradas (5D.2) |
 | Custo estimado | custo CADASTRADO x sugestao, rotulado como tal -- custo de simulacao separado e item aberto da fase |
 | Implementacao canonica | `computePurchaseSuggestion` em `@sb/domain/purchasing`, reusando `simulateRequiredQuantity` (D-080) e `demandWindowDays` (D-144) |
-| Fonte | RPC `get_purchase_suggestions` entrega INGREDIENTES (saldo pivotado, Full da ultima captura, janelas, `history_days_90`, marca, custo); `replenishment_settings` resolve a politica. A formula NUNCA roda em SQL enquanto a ordenacao nao precisar dela |
+| Fonte | RPC `get_purchase_suggestions` entrega INGREDIENTES (saldo pivotado, Full da ultima captura, janelas de venda = ML + Shopee desde D-459/C-65, `history_days_90` = cobertura de dados do ML, marca, custo); `replenishment_settings` resolve a politica. A formula NUNCA roda em SQL enquanto a ordenacao nao precisar dela |
 
 ### 5D.4 Estados operacionais de estoque (D-148)
 
@@ -597,8 +597,8 @@ Lidas por `get_shopee_ads_overview` e `get_shopee_ads_daily`, do desempenho diá
 |---|---|
 | `shopee_investimento_ads` | `SUM(expense)` — o gasto dos anúncios CPC da loja. |
 | `shopee_receita_ads` | `SUM(broad_gmv)` — a atribuição ampla da Shopee (qualquer item da loja até 7 dias depois do clique); a direta (o item clicado) à parte. |
-| `shopee_roas` | `receita_ads / investimento`, sobre as somas. NULO sem investimento. Venda sobre investimento, não lucro. |
-| `shopee_acos` | `investimento / receita_ads`, sobre as somas. NULO sem venda com Ads. |
+| `shopee_roas` | `receita_ads / investimento`, sobre as somas **dos dias com o gasto e a venda** (D-455; os outros em `dias_sem_gasto`/`dias_sem_venda`). NULO sem investimento. Venda sobre investimento, não lucro. |
+| `shopee_acos` | `investimento / receita_ads`, sobre as somas dos dias com os dois campos (D-455). NULO sem venda com Ads. |
 | `shopee_tacos` | `investimento / receita bruta` das vendas válidas (5S) das mesmas lojas e dias. NULO sem receita. |
 
 - **CPC da loja, não o total de Ads:** os anúncios GMV Max de loja têm consulta própria, só com o agregado do período, e a documentação não diz se o gasto deles está aqui. **Nada disso entra no resultado da venda** até a conferência com loja real.

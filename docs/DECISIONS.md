@@ -15380,6 +15380,20 @@ O gatilho horario existente (`/internal/schedule/shopee-orders`) enfileira tambe
 
 **Impacto:** `apps/web/lib/{curation-filters,products-overview}.ts` e o teste, `apps/web/app/produtos/{page,curation-table,inspecao-rapida}.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/produtos.spec.ts`, `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
 
+## D-455 - Ads da Shopee (C-63): ROAS e ACOS so sobre os dias com o gasto E a venda atribuida; dias_sem_gasto e dias_sem_venda contam os outros
+
+**Contexto:** achado do A2 (15/10). No resumo de Ads (D-449), `sum()` ignora nulo: um dia lido com `broad_gmv` e sem `expense` (campo ausente na resposta da Shopee) entrava so no numerador -- ROAS acima do real, ACOS abaixo. Na serie diaria, o mesmo acontecia entre lojas no mesmo dia.
+
+**Decisao:**
+
+1. **ROAS e ACOS so sobre os pares:** no resumo (TOTAL e por loja) e na serie, a razao usa so os dias (e, na serie, as lojas) com os dois campos. Investimento, vendas com Ads e TACoS continuam somando o que veio.
+2. **`dias_sem_gasto` e `dias_sem_venda`** em `get_shopee_ads_overview` (logo depois de `dias_lidos`): a tela diz quantos dias ficaram fora da razao. Nunca lida = NULO; lida sem anuncio = 0.
+3. Com os campos sempre presentes (o normal), tudo identico ao da D-449. O catalogo (`shopee_roas`, `shopee_acos`) e o METRICS 5V registram a regra.
+
+**Verificacao:** integracao com dias sem gasto, sem venda e uma segunda loja so com a venda no dia 10 (ROAS 5 em vez de 7 na serie; contagens 3 e 1 no TOTAL); os testes da D-449 seguem verdes. Mutacao: 3 regras estragadas (razao com todos os dias, contagens trocadas, serie sem o filtro de pares) -- todas derrubam teste.
+
+**Impacto:** `supabase/migrations/20261015060000_ads_shopee_dias_sem_dado.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF}.md`. A tela (T5c) so ganha colunas.
+
 ## D-456 - Telas multicanais, etapa T5c: os Ads CPC da loja Shopee entram no /faturamento da Shopee como secao propria, rotulados "CPC da loja", fora do resultado e sem somar com o Mercado Ads
 
 **Contexto:** D-449 (C-63, A1) trouxe o desempenho diario dos anuncios CPC das lojas Shopee: `get_shopee_ads_overview` (TOTAL so de loja live com Ads lido; por loja, com Ads nunca lidos NULOS e loja lida sem anuncio em 0) e `get_shopee_ads_daily` (a serie, so live). O ML ja mostra o Mercado Ads no `/faturamento` (D-363). A Shopee nao mostrava Ads em lugar nenhum. O proprio contrato pede tres cuidados: dizer "Ads CPC" (o GMV Max de loja pode ficar de fora), nao descontar do resultado da venda e nao somar com o Ads do ML.
@@ -15495,6 +15509,27 @@ O contrato pede tres cuidados:
 - **Suite inteira:** 226/226, com o banco recriado do zero (os 3 de convite com o servidor na porta 3000).
 
 **Impacto:** `apps/web/lib/repasse-shopee.ts` e o teste, `apps/web/app/faturamento/{repasse-shopee,multicanal}.tsx`, `apps/web/e2e/faturamento-multicanal.spec.ts`, `docs/{MULTICHANNEL_SCREENS,ROADMAP,PRODUCT_REQUIREMENTS,DECISIONS,DECISIONS_INDEX}.md`. Nenhuma migration, RPC, worker ou api.
+
+## D-459 - C-65: a demanda da Shopee na cobertura e na sugestao de compra (ML + Shopee nas janelas), com a parte da Shopee a vista e nula sem loja live lida
+
+**Contexto:** o dono confirmou (15/10) que a planilha do UpSeller ja desconta do estoque a venda da Shopee. Com a demanda so do ML (`daily_sku_metrics`), um SKU que tambem vende la aparecia com cobertura alta demais e sugestao de compra baixa demais. Decisao do dono, que substitui a de 14/10 ("nao ler a Shopee ate a fatia 5"): "Sim, pode somar a demanda da Shopee agora".
+
+**Decisao:**
+
+1. **A demanda da Shopee:** unidades dos itens de vendas VALIDAS (5S; a regra mora em `shopee_sales_orders`) das lojas LIVE, por SKU e dia de Sao Paulo (`shopee_sales_items`). A loja de teste nunca entra; venda cancelada nao conta. A mesma leitura nas tres funcoes que leem demanda (o papel `authenticated` nao tem acesso ao esquema `private`, entao nao ha auxiliar compartilhada; a regra de venda valida continua num lugar so, a view).
+2. **`get_stock_coverage`:** vendas do periodo, venda/dia, dias de cobertura, ruptura e janelas de 15/30/60/90 dias = ML + Shopee; um SKU so da Shopee entra. Colunas novas: `units_sold_ml`, `units_sold_shopee`, `units_30d_shopee`, `units_90d_shopee`. `get_stock_coverage_summary` herda.
+3. **`get_purchase_suggestions`:** as janelas somam os dois, entao a taxa de 30 dias, a recusa de 12 em 90, o estado, a cobertura e a sugestao veem a demanda inteira. Colunas novas: `units_30d_shopee`, `units_90d_shopee`. Quem le por POSICAO (`get_replenishment_overview`, `get_purchase_order_suggestions`) ganha os dois nomes; a visao os leva no jsonb das linhas e o pedido de compra leva `units_30d_shopee` (pedido do A2). `get_purchase_state_counts` herda.
+4. **`get_replenishment_reach`:** a venda de 30 dias soma a Shopee; o SKU so da Shopee entra no universo.
+5. **Ausencia nao e zero:** a parte da Shopee e NULA sem loja live com pedidos ja lidos (`orders_synced_until`): sem loja, so com a de teste ou com uma real nunca lida. Com ela, 0 quando o SKU nao vendeu. A permissao por loja vale: quem nao ve a loja ve a parte da Shopee nula.
+6. **O que nao muda:** `history_days_90` segue sendo a cobertura de dados do ML (o "historico curto"); um SKU so da Shopee pode aparecer como historico curto, e a tela avisa. `get_sku_dashboard` (o card de vendas) segue no ML; a venda por marketplace vem do E6a.
+7. **Ordem em producao:** a migration ANTES do Go Live com loja real -- com loja live lida e a funcao antiga, a tela (T-R3) avisa que a conta ainda nao soma a Shopee.
+
+**Verificacao:**
+- **Equivalencia com dados reais do Dev** (2.450 SKUs com venda, 16 regras, nenhuma loja Shopee): as funcoes novas, num esquema temporario, contra as atuais -- cobertura em 5 recortes (ate 3.292 SKUs; periodos de 7, 30 e 90 dias, um SKU), sugestao em 7 (tres datas, marca, estado, paginacao; 469 com estado), visao em 3, pedido de compra em 2 e alcance em 2 datas: **zero diferenca**, inclusive na ORDEM das linhas; colunas novas: parte do ML = total, Shopee NULA. Tempo (como `postgres`): sugestao 146-164 ms antes e depois; cobertura 35-37 -> 40-43 ms. Esquema temporario apagado.
+- **Integracao** (stack isolado): 5 testes -- A (ML + Shopee), B (so Shopee), C (ML antigo), D (Shopee antiga), E (cancelada e loja de teste, fora), a organizacao so com loja de teste e uma real nunca lida (parte da Shopee nula), a visao e o pedido de compra com a parte da Shopee, o alcance, e a permissao por loja. A suite inteira verde.
+- **Mutacao:** 13 regras estragadas (loja de teste e cancelada na cobertura e na sugestao, totais e janelas sem a Shopee, zero em vez de nulo, loja nunca lida contando, alcance, o pedido sem a coluna, a visao com a lista de colunas antiga) -- todas derrubam teste.
+
+**Impacto:** `supabase/migrations/20261015070000_demanda_shopee_reposicao.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,ROADMAP,HANDOFF}.md`. A tela e do A2 (T-R3 no #186; a gaveta e a cobertura do SKU na T-R3b).
 
 ## D-460 - Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 
