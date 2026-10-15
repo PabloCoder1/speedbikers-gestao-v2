@@ -114,6 +114,12 @@ export const envSchema = z.object({
   SHOPEE_PARTNER_KEY: z.string().min(16).optional(),
   SHOPEE_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
   SHOPEE_REDIRECT_URI: z.url().optional(),
+  /**
+   * O endereço do push da Shopee (D-453) EXATAMENTE como cadastrado no
+   * Console: ele entra na assinatura. Sem ela, vale a origem de
+   * `SHOPEE_REDIRECT_URI` + `/push/shopee`.
+   */
+  SHOPEE_PUSH_URL: z.url().optional(),
 
   /**
    * Copiloto (D-082) — narração de diagnóstico via Claude Haiku 4.5. Segredo,
