@@ -15741,6 +15741,47 @@ A gaveta mostra "Vendas (30 d) N un" com "K da Shopee" embaixo quando ha venda d
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-468 - Telas multicanais: os avisos de leitura da T-R6 viram o EstadoDaTela, com "Tentar de novo" na mesma URL
+
+**Contexto:** a T-R6 (#175 e #180, D-067) fez seis telas dizerem a falha de leitura em vez de mostrar "nenhum": `/usuarios`, `/vinculacoes`, `/compras/novo`, `/diagnostico`, `/skus/[skuId]` e `/curva-abc`. Os avisos eram provisorios (paragrafo vermelho, `.sb-note-perigo` ou `.sb-skud-danger`), com a mensagem tecnica crua no meio do texto. A D-502 (A3, #187) criou o `EstadoDaTela`, a forma unica do erro de leitura, e deixou esses avisos para o A2.
+
+**1. A TROCA.** Cada aviso vira `<EstadoDaTela tipo="erro">` com tres partes:
+- `titulo`: o que falhou;
+- `descricao`: o efeito na tela, por exemplo "a lista abaixo pode estar vazia" ou "o diagnostico abaixo nao as inclui";
+- `detalhe`: a mensagem tecnica, que o componente sanitiza (antes ela ia crua na frase).
+
+O `role="alert"` continua (so o tipo erro o tem), e "Tentar de novo" leva a mesma URL pela atualizacao no lugar (`mesmaTela`).
+
+Os avisos trocados:
+- `/compras/novo`: fornecedores, itens vindos da Reposicao e marcas;
+- `/usuarios`: membros, detalhe dos membros e historico de acesso;
+- `/vinculacoes`: contas e ultimos vinculos manuais, mais os candidatos e os anuncios, que tinham a mesma forma e ficariam como a unica diferenca da tela;
+- `/diagnostico`: a leitura parcial de reclamacoes e preco, que deixa de ser "atencao" e passa a ser o que e, uma falha de leitura;
+- `/skus/[skuId]`: contas e acoes abertas;
+- `/curva-abc`: as leituras secundarias que falharam (uma lista do que faltou e do efeito, com as mensagens a parte) e tambem o erro da leitura principal da curva.
+
+**2. A MESMA URL.** As telas sem construtor de href proprio usam `lib/mesma-url.ts`, que repete cada parametro como veio, inclusive os repetidos (`sku=…&sku=…` da ponte ao pedido). Tentar de novo e pedir a MESMA leitura. `/diagnostico` e `/vinculacoes` usam os construtores que ja tinham.
+
+**3. A CONTAGEM DO INDICE DE DECISOES.** Dois ramos que somam uma decisao cada gravam o MESMO numero na linha "Decisoes registradas", e o git mescla sem conflito, com a conta errada. Na `main` de 15/10 ela dizia 459 com 460 decisoes, depois do #190 e do #191. O `docs:check` passa a conferir a linha contra as decisoes e reprova com "Rode `pnpm docs:index`". Este PR traz a contagem certa (461).
+
+**Fica de fora:**
+- O aviso de periodo personalizado invalido da `/curva-abc` nao e falha de leitura. Ele entra no item 13 da auditoria do A3 (`role="alert"` em aviso que nao e falha).
+- Os demais `.sb-skud-danger` do SKU sao estados das telas da fila do A2, a revisar tela a tela.
+
+**Publicacao:** so a web, sem migration.
+
+**Verificacao:**
+- **Estatica:** typecheck, lint e as guardas da web.
+- **Unitarios:** `lib/mesma-url.test.ts`, 3 testes: sem busca, parametros repetidos e codificacao.
+- **Falha simulada no banco isolado:** sem o SELECT de `organization_access_events` para `authenticated`, `/usuarios` mostra "Nao foi possivel carregar o historico de acesso", com o efeito, a mensagem tecnica a parte, `role="alert"` e "Tentar de novo" para `/usuarios`. Foto conferida, e a permissao voltou em seguida. Sem o SELECT de `ml_accounts`, a `/curva-abc` continua com a curva e diz "Parte da Curva ABC nao foi lida: faltou ler as contas do Mercado Livre", com o efeito e a mensagem a parte (foto conferida).
+- **Suite inteira:** 236/236, com o banco recriado do zero (233 com o servidor na porta 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/mesma-url.ts` e o teste, `apps/web/app/{compras/novo,usuarios,vinculacoes,diagnostico,curva-abc}/page.tsx` e `apps/web/app/skus/[skuId]/page.tsx`;
+- docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
+- `scripts/docs-check.mjs` (a conferencia da contagem);
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

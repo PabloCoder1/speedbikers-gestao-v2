@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PageTitle } from "../../../components/page-title";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { Shell } from "../../../components/shell";
 import { Voltar } from "../../../components/voltar";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { currentMembership } from "../../../lib/request-membership";
 import { podeOperarCompras } from "../../../lib/purchase-order-permission";
 import { AcessoRestrito } from "../../../components/acesso-restrito";
@@ -172,25 +174,40 @@ export default async function NovoPedidoDeCompraPage({
         compacto
       />
 
+      {/* D-468: a forma única do erro de leitura (D-502), no lugar do aviso provisório da T-R6. */}
       {erroFornecedores !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Não foi possível carregar os fornecedores: {erroFornecedores}. A lista abaixo pode estar vazia — o rascunho
-          ainda pode ser criado sem fornecedor.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar os fornecedores"
+          descricao="A lista abaixo pode estar vazia — o rascunho ainda pode ser criado sem fornecedor."
+          detalhe={erroFornecedores}
+          acao={{ href: mesmaUrl("/compras/novo", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {erroDaReposicao !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Os {prefill.length} item(ns) vindos da Reposição não puderam ser carregados: {erroDaReposicao}. O rascunho abre
-          sem eles — volte à <Link href="/reposicao">Reposição</Link> e tente de novo.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo={`Os ${String(prefill.length)} item(ns) vindos da Reposição não puderam ser carregados`}
+          descricao={
+            <>
+              O rascunho abre sem eles. Tente de novo, ou volte à <Link href="/reposicao">Reposição</Link> e marque de
+              novo.
+            </>
+          }
+          detalhe={erroDaReposicao}
+          acao={{ href: mesmaUrl("/compras/novo", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {erroDasMarcas !== null && (
-        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Não foi possível carregar as marcas do catálogo: {erroDasMarcas}. O &quot;Trazer da reposição&quot; fica sem a
-          lista de marcas.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as marcas do catálogo"
+          descricao="O “Trazer da reposição” fica sem a lista de marcas."
+          detalhe={erroDasMarcas}
+          acao={{ href: mesmaUrl("/compras/novo", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {prefillItems.length > 0 && (
