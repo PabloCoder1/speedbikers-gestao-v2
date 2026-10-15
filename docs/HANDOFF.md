@@ -12,16 +12,16 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-10-14 |
+| **Atualizado em** | 2026-10-15 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | `main` em `f984b647` (PR #103) em 25/09 — envelhece a cada merge: confira com `git log -1 origin/main`. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | Worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00031-zhh` (`2809d35f`), 15/10, saindo pelo IP fixo `34.95.145.35` (D-457); Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`), Go Live em análise. Volta: `worker-00046-zfl`/`api-00029-xdl` (pool dinâmico — desligar antes a lista de IPs da Shopee). Worker fixo na revisão (D-342). Dev pausado (D-350). |
-| **Migrations** | Produção até `20261015050000` (D-441 a D-451, run `38726738817`, 15/10). **Próximas:** `20261015060000` e `…15070000` (D-455/459). Dono dispara (depois da CI da `main`, com a entrada `confirmacao` = ref de produção) e aprova; sem `--include-all`; nunca MCP. |
+| **Produção** | Worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`), 15/10, saindo pelo IP fixo `34.95.145.35` (D-457); Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`), Go Live em análise. Volta: `worker-00046-zfl`/`api-00029-xdl` (pool dinâmico — desligar antes a lista de IPs da Shopee). Worker fixo na revisão (D-342). Dev pausado (D-350). |
+| **Migrations** | Produção até `20261015070000` (D-441 a D-459, run `38755993771`, 15/10). **Próxima:** `20261015080000` (D-461, #191). Dispara-se depois da CI da `main` do mesmo commit (com a entrada `confirmacao` = ref de produção), segurando merges até o job `origem` passar; aprovações no ambiente; sem `--include-all`; nunca MCP. |
 | **UX (Agente 3)** | D-500/501 no ar: filtro e busca sem recarga, dado visível. D-502: `EstadoDaTela` e `BotaoEnviar`. Fila em `docs/UX_SYSTEM.md`. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015050000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); D-455 e C-65 (D-459, demanda Shopee na cobertura e na reposição) em código, #188; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
+| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015070000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); D-455 e C-65 (D-459, demanda Shopee na cobertura e na reposição) em produção (15/10); D-461 (timeline do SKU pelo índice, achado da medição do A3) em #191; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
 

@@ -15580,6 +15580,33 @@ A tela esperava a decisao do dono sobre onde ela fica. Em 15/10 ele decidiu pela
 
 **Impacto:** `apps/web/lib/devolucoes-shopee.ts` e o teste, `apps/web/app/vendas/shopee/{devolucoes,page}.tsx`, `apps/web/e2e/vendas-shopee.spec.ts`, `docs/{DECISIONS,DECISIONS_INDEX}.md` (o ROADMAP, o MULTICHANNEL_SCREENS, o PRODUCT_REQUIREMENTS e o handoff vao no PR de docs das etapas multicanal). Nenhuma migration, RPC, worker ou api.
 
+## D-461 - get_sku_timeline: os eventos de pedido pelo indice (entity_id = any(pedidos do SKU como texto)), sem converter o entity_id em numero
+
+**Contexto:** o A3 trouxe evidencia de producao (web vitals de 24 h): o LCP da Home em 7,6 s e o de um `/skus/[skuId]` em 5,9 s. Medi no Dev, como `authenticated` e com o metodo da D-305. Quentes, as RPCs das duas telas ficam abaixo de 150 ms. O custo aparece com o **cache frio** e e proporcional as paginas lidas. A `get_sku_timeline` (aba Historico do SKU) era a pior: cerca de **37 mil paginas (≈300 MB) para QUALQUER SKU** -- o mais vendido, o mediano e o de cauda --, com 4,8 s na primeira chamada e 57 ms depois.
+
+A causa esta na ramificacao de pedidos, que juntava evento e item por `oi.order_id = e.entity_id::bigint`. Com a conversao do lado do evento, o indice `domain_events_entity_idx` (organization_id, entity_type, entity_id, occurred_at) so servia ate `entity_type`. O banco lia todos os eventos de pedido da organizacao (35 mil) e so depois juntava com os pedidos do SKU. O planejador achava essa varredura barata, mas cada evento custa uma pagina, porque as linhas sao largas (`before`/`after`).
+
+**Decisao:**
+
+1. **Os pedidos do SKU viram uma lista de textos** (`array(select distinct oi.order_id::text ...)`). O evento e procurado por `e.entity_id = any(lista)`, e o indice resolve organizacao, tipo e id de uma vez. As ramificacoes do proprio SKU e dos anuncios nao mudam: ja iam pelo indice.
+2. **A conversao sai.** Um `entity_id` so de digitos maior que bigint passava no filtro `~ '^[0-9]+$'`, e a conversao derrubava a timeline de **todos** os SKUs da organizacao ("value out of range for type bigint"). O texto nao estoura.
+3. **A ordem fica deterministica:** `order by occurred_at desc, id desc`. Antes, com eventos do mesmo instante no corte do limite, qual deles entrava era arbitrario. No Dev, um SKU tinha 4 empatados no 50º.
+4. **`language plpgsql` + `force_custom_plan`** (D-305), no lugar do corpo SQL.
+5. **O que nao muda:** o contrato (colunas, limite), a permissao (invoker, RLS de cada tabela) e o pedido com dois itens do SKU, que sai uma vez so. A diferenca teorica e um id de pedido com zero a esquerda, que deixaria de casar: o id do ML nao tem, e o Dev tem zero eventos assim.
+6. **Fica anotado, sem mudar:** a `get_sku_correlated_events` (D-152) usa a mesma conversao. Ali o custo e limitado pela janela e pelo vocabulario de eventos, mas o estouro do bigint vale igual. Ela entra quando for tocada.
+
+**Verificacao:**
+- **Dev, como `authenticated`, oito execucoes** (a versao nova num esquema temporario, ja apagado), atual -> nova:
+  - SKU mais vendido: 59 ms e 37,0 mil paginas -> **36 ms e 4,1 mil**;
+  - SKU mediano: 50 ms e 34,8 mil -> **5 ms e 649**;
+  - SKU de cauda: 49 ms e 34,6 mil -> **2 ms e 58**.
+  - Sem degradacao na sexta execucao.
+- **Mesma saida:** 379 SKUs (os 150 com mais itens e uma amostra de 10% dos demais), 33,6 mil eventos, zero diferenca no conjunto. Nos 50 primeiros, a unica diferenca e o empate de horario no corte (decisao 3), que agora tem ordem fixa.
+- **Integracao:** um teste novo na mesma transacao (o evento com id maior que bigint e o segundo item do pedido entram e saem no `rollback`, porque `domain_events` e append-only) e os testes da D-153 verdes. Suite inteira: 1005/1005.
+- **Mutacao:** com a funcao antiga, o teste novo cai com "value \"99999999999999999999999\" is out of range for type bigint".
+
+**Impacto:** `supabase/migrations/20261015080000_timeline_sku_pedidos_pelo_indice.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. A tela nao muda. O diagnostico das outras telas lentas (Home: `get_listings_dashboard` e `get_stock_coverage_summary` na segunda rodada, ≈110 MB frios) esta em `docs/PERFORMANCE.md` e na D-503 do A3.
+
 ## D-462 - Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
 
 **Contexto:** a T3b (D-446) pos a Shopee em `/integracoes` julgando quatro jobs (pedidos, financeiro, catalogo e detalhe do catalogo), e a T3a (D-438) pos as lojas em `/sincronizacao` com a ultima leitura de pedidos.
