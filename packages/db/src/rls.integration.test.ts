@@ -10382,6 +10382,51 @@ describe("get_sku_correlated_events (D-152, Fase 6B)", () => {
     );
     expect(outra).toHaveLength(0);
   });
+
+  /**
+   * D-461: os eventos de pedido vêm pelo índice (`entity_id = any(pedidos do
+   * SKU como texto)`), sem converter o entity_id em número. O teste prende os
+   * dois efeitos visíveis: um entity_id só de dígitos maior que bigint não
+   * derruba a timeline (antes, a conversão estourava para TODOS os SKUs da
+   * organização), e o pedido com dois itens do SKU sai uma vez só. As duas
+   * linhas entram e saem na MESMA transação (o `rollback` as desfaz;
+   * `domain_events` é append-only e não aceita DELETE), porque a correlação
+   * (D-152) ainda converte.
+   */
+  it("timeline (D-461): entity_id maior que bigint não derruba; pedido com dois itens do SKU sai uma vez", async () => {
+    let rows: { event_type: string; entity_type: string; entity_id: string }[] = [];
+
+    await client.query("begin");
+    try {
+      await client.query(
+        `insert into public.order_items
+           (order_id, organization_id, ml_account_id, position, item_id, title, quantity, unit_price, currency_id, sku_id)
+         values ($1,$2,$3,2,'MLB900700100','Item correlacionado (2)',1,100,'BRL',$4)`,
+        [ORDER_ID, ORG_SB, CONTA, skuId],
+      );
+      await client.query(
+        `insert into public.domain_events
+           (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+         values ($1,$2,'2025-01-10T15:00:00Z','order.paid','order','99999999999999999999999','informativo','system','corrtest:estouro')`,
+        [ORG_SB, CONTA],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN_SB })]);
+
+      const result = await client.query(`select * from public.get_sku_timeline('${ORG_SB}', '${skuId}', 50)`);
+      rows = result.rows as typeof rows;
+    } finally {
+      await client.query("rollback");
+    }
+
+    expect(rows.map((r) => r.event_type).sort()).toEqual([
+      "listing.available_quantity.changed",
+      "listing.price.changed",
+      "order.cancelled",
+      "stock.depleted",
+    ]);
+    expect(rows.filter((r) => r.entity_type === "order").map((r) => r.entity_id)).toEqual([ORDER_ID]);
+  });
 });
 
 describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
