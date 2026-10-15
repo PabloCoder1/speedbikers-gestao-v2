@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **454** (D-001 a D-501).
+Decisões registradas: **456** (D-001 a D-501).
 
 ## Por domínio
 
@@ -214,7 +214,7 @@ Decisões registradas: **454** (D-001 a D-501).
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 
-### mercado-livre (81)
+### mercado-livre (82)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -297,6 +297,7 @@ Decisões registradas: **454** (D-001 a D-501).
 - **D-448** — Telas multicanais, etapa T6b: a Curva ABC ganha os recortes Todos e Shopee, com a compra como criterio que soma; o recorte ML continua identico, e o Excel multicanal fica para a T6b2
 - **D-449** — Ads da Shopee (E7b, C-63): o desempenho diario dos anuncios CPC da loja, com a cobertura da leitura, sem entrar no resultado ate a conferencia com loja real
 - **D-454** — Telas multicanais, etapa T6c: /produtos com a Shopee -- os filtros de anuncio e venda dizem onde, os cartoes de "sem anuncio/venda" passam a dizer "em nenhum marketplace" com o so do ML ao lado, e a coluna de giro mostra cada marketplace, sem total
+- **D-459** — C-65: a demanda da Shopee na cobertura e na sugestao de compra (ML + Shopee nas janelas), com a parte da Shopee a vista e nula sem loja live lida
 
 ### outros (64)
 
@@ -369,7 +370,7 @@ Decisões registradas: **454** (D-001 a D-501).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (38)
+### vendas/métricas (39)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -408,6 +409,7 @@ Decisões registradas: **454** (D-001 a D-501).
 - **D-432** — Shopee, ingestao robusta (E1 da frente multicanal): o pedido recusado nao trava o financeiro, o lote de pedidos grava numa transacao que nao regride, e o erro da loja interrompe em vez de marcar item por item
 - **D-444** — Telas multicanais, etapa T6a: o ranking de produtos de /vendas chega ao Todos e a Shopee, a aba Vendas do SKU ganha o total entre marketplaces por conta e loja, e a loja de teste ganha o selo no painel Shopee do SKU
 - **D-450** — Telas multicanais, etapa T6b2: o Excel da Curva ABC leva o recorte multicanal -- a terceira curva e a de compras, as lojas viram colunas da aba por conta, e o "Todos" ganha o recorte por marketplace
+- **D-455** — Ads da Shopee (C-63): ROAS e ACOS so sobre os dias com o gasto E a venda atribuida; dias_sem_gasto e dias_sem_venda contam os outros
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 
 ### worker/infra (84)

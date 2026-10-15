@@ -4917,6 +4917,302 @@ describe("Repasse da Shopee (D-451)", () => {
 });
 
 /*
+  D-459 (C-65): a demanda da Shopee na cobertura e na sugestao de compra. As
+  vendas e as janelas passam a ser ML + Shopee (vendas validas das lojas live);
+  as colunas _shopee mostram a parte da Shopee -- NULAS sem loja live com
+  pedidos lidos, 0 com ela e sem venda. Cancelada e loja de teste nao contam.
+*/
+describe("Demanda da Shopee na cobertura e na reposição (D-459, C-65)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d459";
+  const ORG_SEM_LIVE = "33333333-0000-4000-8000-00000001d459";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d459";
+  const ANALISTA = "aaaaaaaa-0000-4000-8000-00000001d459";
+  const CONTA = "cccccccc-0000-4000-8000-00000000d459";
+  const CONTA_2 = "cccccccc-0000-4000-8000-00000001d459";
+  const LOJA = "dddd4590-0000-4000-8000-0000000a0459";
+  const SANDBOX = "dddd4590-0000-4000-8000-0000000c0459";
+  const SANDBOX_2 = "dddd4590-0000-4000-8000-0000000d0459";
+  const LIVE_SEM_LEITURA = "dddd4590-0000-4000-8000-0000000e0459";
+  const sku: Record<string, string> = {};
+
+  async function vendaShopee(loja: string, org: string, sn: string, skuId: string, diasAtras: number, status = "COMPLETED") {
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, $5, now() - make_interval(days => $4), now(), now() - make_interval(days => $4)) on conflict do nothing`,
+      [loja, org, sn, diasAtras, status],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, $2, 0, $3, 1, 2, 30, $4, 'SKU_DO_PEDIDO') on conflict do nothing`,
+      [loja, sn, org, skuId],
+    );
+  }
+
+  async function vendaMl(org: string, conta: string, skuId: string, diasAtras: number, unidades: number) {
+    await client.query(
+      `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $3, current_date - $4::int, $5::int, $5::int * 10, $5::int, $5::int) on conflict do nothing`,
+      [org, conta, skuId, diasAtras, unidades],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       select u.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', u.email, 'x', now(), '{}', now(), now()
+       from (values ($1::uuid, 'admin-d459@rls.test'), ($2::uuid, 'analista-d459@rls.test')) as u (id, email)
+       on conflict (id) do nothing`,
+      [ADMIN, ANALISTA],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-459', 'org-d459'), ($2, 'Org D-459 sem live', 'org-d459-b') on conflict (id) do nothing",
+      [ORG, ORG_SEM_LIVE],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $3, 'ADMIN'), ($1, $4, 'ANALISTA'), ($2, $3, 'ADMIN') on conflict do nothing`,
+      [ORG, ORG_SEM_LIVE, ADMIN, ANALISTA],
+    );
+    const criados = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1, 'D459-A', 'PRODUTO'), ($1, 'D459-B', 'PRODUTO'), ($1, 'D459-C', 'PRODUTO'), ($1, 'D459-D', 'PRODUTO'), ($1, 'D459-E', 'PRODUTO'),
+              ($2, 'D459-Z', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku`,
+      [ORG, ORG_SEM_LIVE],
+    );
+
+    for (const r of criados.rows) sku[r.sku.slice(-1)] = r.id;
+
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $3, 'Conta D-459', 'rlstest-d459', 'CONNECTED', 9990459, now()),
+              ($2, $4, 'Conta D-459 B', 'rlstest-d459b', 'CONNECTED', 9990460, now())
+       on conflict (id) do nothing`,
+      [CONTA, CONTA_2, ORG, ORG_SEM_LIVE],
+    );
+    await client.query(
+      `insert into public.shopee_shops
+         (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $4, 'live', 990459001, 'Loja Real', 'CONNECTED', now(), now(), now()),
+              ($2, $4, 'sandbox', 990459002, 'Teste', 'CONNECTED', now(), now(), now()),
+              ($3, $5, 'sandbox', 990459003, 'Teste B', 'CONNECTED', now(), now(), now()),
+              -- Loja real conectada, mas sem nenhuma leitura de pedidos: a parte da Shopee segue nula.
+              ($6, $5, 'live', 990459004, 'Real sem leitura', 'CONNECTED', now(), null, null)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, SANDBOX_2, ORG, ORG_SEM_LIVE, LIVE_SEM_LEITURA],
+    );
+    await client.query(
+      `insert into public.inventory_balances (organization_id, sku_id, location_kind, quantity)
+       values ($1, $3, 'LOCAL', 10), ($1, $4, 'LOCAL', 4), ($1, $5, 'LOCAL', 0), ($1, $6, 'LOCAL', 5), ($2, $7, 'LOCAL', 3)
+       on conflict do nothing`,
+      [ORG, ORG_SEM_LIVE, sku.A, sku.B, sku.C, sku.E, sku.Z],
+    );
+
+    // A: 6 no ML e 4 na Shopee (dois pedidos de 2), dentro dos 30 dias.
+    await vendaMl(ORG, CONTA, sku.A ?? "", 3, 6);
+    await vendaShopee(LOJA, ORG, "D459-V1", sku.A ?? "", 5);
+    await vendaShopee(LOJA, ORG, "D459-V2", sku.A ?? "", 6);
+    // B: só na Shopee.
+    await vendaShopee(LOJA, ORG, "D459-V3", sku.B ?? "", 5);
+    // C: só no ML, há 40 dias (fora dos 30, dentro dos 90).
+    await vendaMl(ORG, CONTA, sku.C ?? "", 40, 3);
+    // D: só na Shopee, há 40 dias.
+    await vendaShopee(LOJA, ORG, "D459-V4", sku.D ?? "", 40);
+    // E: cancelada na loja real e vendida na loja de teste -- nenhuma conta.
+    await vendaShopee(LOJA, ORG, "D459-V5", sku.E ?? "", 5, "CANCELLED");
+    await vendaShopee(SANDBOX, ORG, "D459-V6", sku.E ?? "", 5);
+    // Z (organização só com loja de teste): ML 3; a venda da loja de teste não conta.
+    await vendaMl(ORG_SEM_LIVE, CONTA_2, sku.Z ?? "", 3, 3);
+    await vendaShopee(SANDBOX_2, ORG_SEM_LIVE, "D459-V7", sku.Z ?? "", 5);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX, SANDBOX_2, LIVE_SEM_LEITURA]]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = any($1::uuid[])", [[CONTA, CONTA_2]]);
+    await client.query("delete from public.inventory_balances where organization_id = any($1::uuid[])", [[ORG, ORG_SEM_LIVE]]);
+  });
+
+  type Linha = Record<string, unknown>;
+  const colunas = (l: Linha | undefined, nomes: string[]) => Object.fromEntries(nomes.map((n) => [n, l?.[n]]));
+
+  it("cobertura: vendas e janelas = ML + Shopee, a parte da Shopee à parte; cancelada e loja de teste fora", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select sku, units_sold, units_sold_ml, units_sold_shopee, avg_daily_sales, days_of_coverage, units_30d, units_90d, units_30d_shopee, units_90d_shopee
+         from public.get_stock_coverage('${ORG}', current_date - 29, current_date) order by sku`,
+    );
+
+    expect(linhas).toEqual([
+      // 10 unidades em 30 dias: 0,333/dia; 10 em estoque = 30 dias.
+      { sku: "D459-A", units_sold: "10", units_sold_ml: "6", units_sold_shopee: "4", avg_daily_sales: "0.333", days_of_coverage: "30.0", units_30d: "10", units_90d: "10", units_30d_shopee: "4", units_90d_shopee: "4" },
+      // Só da Shopee: aparece, com a cobertura pela venda dela.
+      { sku: "D459-B", units_sold: "2", units_sold_ml: "0", units_sold_shopee: "2", avg_daily_sales: "0.067", days_of_coverage: "60.0", units_30d: "2", units_90d: "2", units_30d_shopee: "2", units_90d_shopee: "2" },
+      { sku: "D459-C", units_sold: "0", units_sold_ml: "0", units_sold_shopee: "0", avg_daily_sales: "0.000", days_of_coverage: null, units_30d: "0", units_90d: "3", units_30d_shopee: "0", units_90d_shopee: "0" },
+      // D (só venda antiga, sem estoque) fica fora, como um SKU do ML na mesma situação.
+      { sku: "D459-E", units_sold: "0", units_sold_ml: "0", units_sold_shopee: "0", avg_daily_sales: "0.000", days_of_coverage: null, units_30d: "0", units_90d: "0", units_30d_shopee: "0", units_90d_shopee: "0" },
+    ]);
+  });
+
+  it("sem loja live com pedidos lidos (só a de teste e uma real nunca lida): a parte da Shopee nula e o total só do ML", async () => {
+    const [z] = await asUser<Linha>(
+      ADMIN,
+      `select sku, units_sold, units_sold_ml, units_sold_shopee, units_30d_shopee, units_90d_shopee
+         from public.get_stock_coverage('${ORG_SEM_LIVE}', current_date - 29, current_date)`,
+    );
+
+    expect(z).toEqual({ sku: "D459-Z", units_sold: "3", units_sold_ml: "3", units_sold_shopee: null, units_30d_shopee: null, units_90d_shopee: null });
+
+    const [sugestao] = await asUser<Linha>(
+      ADMIN,
+      `select units_30d, units_90d, units_30d_shopee, units_90d_shopee from public.get_purchase_suggestions('${ORG_SEM_LIVE}', current_date)`,
+    );
+
+    expect(sugestao).toEqual({ units_30d: "3", units_90d: "3", units_30d_shopee: null, units_90d_shopee: null });
+  });
+
+  it("sugestão: janelas = ML + Shopee; a visão da reposição e o pedido de compra levam a parte da Shopee", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select sku, units_30d, units_90d, units_30d_shopee, units_90d_shopee from public.get_purchase_suggestions('${ORG}', current_date) order by sku`,
+    );
+    const por = Object.fromEntries(linhas.map((l) => [String(l.sku), colunas(l, ["units_30d", "units_90d", "units_30d_shopee", "units_90d_shopee"])]));
+
+    expect(por).toEqual({
+      "D459-A": { units_30d: "10", units_90d: "10", units_30d_shopee: "4", units_90d_shopee: "4" },
+      "D459-B": { units_30d: "2", units_90d: "2", units_30d_shopee: "2", units_90d_shopee: "2" },
+      "D459-C": { units_30d: "0", units_90d: "3", units_30d_shopee: "0", units_90d_shopee: "0" },
+      // Só venda antiga da Shopee: entra pelas janelas, como um SKU do ML.
+      "D459-D": { units_30d: "0", units_90d: "2", units_30d_shopee: "0", units_90d_shopee: "2" },
+      "D459-E": { units_30d: "0", units_90d: "0", units_30d_shopee: "0", units_90d_shopee: "0" },
+    });
+
+    const [visao] = await asUser<{ v: { linhas: Linha[] } }>(ADMIN, `select public.get_replenishment_overview('${ORG}', current_date) as v`);
+    const a = visao?.v.linhas.find((l) => l.sku === "D459-A");
+
+    expect(colunas(a, ["units_30d", "units_30d_shopee", "units_90d_shopee"])).toEqual({ units_30d: 10, units_30d_shopee: 4, units_90d_shopee: 4 });
+
+    const [pedido] = await asUser<{ v: { linhas: Linha[] } }>(
+      ADMIN,
+      `select public.get_purchase_order_suggestions('${ORG}', array['${sku.A ?? ""}']::uuid[]) as v`,
+    );
+
+    expect(colunas(pedido?.v.linhas[0], ["sku", "units_30d", "units_30d_shopee"])).toEqual({ sku: "D459-A", units_30d: 10, units_30d_shopee: 4 });
+  });
+
+  it("alcance da reposição: o SKU que só vende na Shopee entra e conta como venda de 30 dias", async () => {
+    const [linha] = await asUser<Linha>(
+      ADMIN,
+      `select skus, skus_na_reposicao, skus_com_venda_30d from public.get_replenishment_reach('${ORG}', current_date) where supplier_brand is null`,
+    );
+
+    // A, B, C, D e E; com venda nos 30 dias: A (ML + Shopee) e B (só Shopee).
+    expect(linha).toEqual({ skus: "5", skus_na_reposicao: "5", skus_com_venda_30d: "2" });
+  });
+
+  it("sem permissão na loja, a parte da Shopee some para quem consulta (nula), como a própria loja", async () => {
+    const [a] = await asUser<Linha>(
+      ANALISTA,
+      `select units_sold_shopee, units_30d_shopee from public.get_stock_coverage('${ORG}', current_date - 29, current_date, '${sku.A ?? ""}')`,
+    );
+
+    expect(a).toEqual({ units_sold_shopee: null, units_30d_shopee: null });
+  });
+});
+
+/*
+  D-455: no resumo de Ads da Shopee (C-63), ROAS e ACOS so sobre os dias com o
+  gasto E a venda atribuida; dias_sem_gasto e dias_sem_venda contam os outros.
+  Um dia com venda e sem gasto (campo ausente) nao infla o ROAS.
+*/
+describe("Ads da Shopee: dias sem gasto ou sem venda (D-455)", () => {
+  const ORG = "33333333-0000-4000-8000-00000000d455";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d455";
+  const LOJA = "dddd4550-0000-4000-8000-0000000a0455";
+  const NUNCA = "dddd4550-0000-4000-8000-0000000d0455";
+  const LOJA_DOIS = "dddd4550-0000-4000-8000-0000000b0455";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-d455@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-455', 'org-d455') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $3, 'live', 990455001, 'Loja Real', 'CONNECTED', now()),
+              ($2, $3, 'live', 990455002, 'Nunca Lida', 'CONNECTED', now()),
+              ($4, $3, 'live', 990455003, 'Loja Dois', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, NUNCA, ORG, LOJA_DOIS],
+    );
+    await client.query("select public.shopee_upsert_ads_days($1, $2::jsonb, '2026-10-01', '2026-10-14', '2026-10-14T12:00:00Z')", [
+      LOJA,
+      JSON.stringify([
+        { metric_date: "2026-10-10", clicks: 10, broad_orders: 2, broad_gmv: 50, expense: 10 },
+        // A Shopee mandou a venda atribuida e nao o gasto: fora do ROAS e do ACOS.
+        { metric_date: "2026-10-11", clicks: 5, broad_orders: 1, broad_gmv: 40 },
+        // E o contrario: gasto sem a venda.
+        { metric_date: "2026-10-12", clicks: 2, broad_orders: 0, expense: 4 },
+        // Mais um sem gasto: as duas contagens nao empatam.
+        { metric_date: "2026-10-13", clicks: 1, broad_orders: 1, broad_gmv: 10 },
+      ]),
+    ]);
+    // A segunda loja no dia 10 so com a venda: na serie, o ROAS do dia nao pode somar a venda dela.
+    await client.query("select public.shopee_upsert_ads_days($1, $2::jsonb, '2026-10-01', '2026-10-14', '2026-10-14T12:00:00Z')", [
+      LOJA_DOIS,
+      JSON.stringify([{ metric_date: "2026-10-10", clicks: 3, broad_orders: 1, broad_gmv: 20 }]),
+    ]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, NUNCA, LOJA_DOIS]]);
+  });
+
+  type Linha = Record<string, unknown>;
+
+  it("ROAS e ACOS so dos dias com os dois campos; os outros contados; nunca lida nula", async () => {
+    const linhas = await asUser<Linha>(
+      ADMIN,
+      `select nivel, account_name, dias_lidos, dias_sem_gasto, dias_sem_venda, investimento, receita_ads, roas, acos
+         from public.get_shopee_ads_overview('${ORG}', '2026-10-10', '2026-10-13') order by nivel desc, account_name`,
+    );
+
+    expect(linhas).toEqual([
+      // Investimento e vendas com Ads somam o que veio (14 e 120); ROAS = 50/10 e ACOS = 10/50, so do dia 10 da Loja Real.
+      { nivel: "TOTAL", account_name: null, dias_lidos: "5", dias_sem_gasto: "3", dias_sem_venda: "1", investimento: "14.00", receita_ads: "120.00", roas: "5.0000", acos: "0.2000" },
+      { nivel: "CONTA", account_name: "Loja Dois", dias_lidos: "1", dias_sem_gasto: "1", dias_sem_venda: "0", investimento: "0.00", receita_ads: "20.00", roas: null, acos: null },
+      { nivel: "CONTA", account_name: "Loja Real", dias_lidos: "4", dias_sem_gasto: "2", dias_sem_venda: "1", investimento: "14.00", receita_ads: "100.00", roas: "5.0000", acos: "0.2000" },
+      {
+        nivel: "CONTA",
+        account_name: "Nunca Lida",
+        dias_lidos: null,
+        dias_sem_gasto: null,
+        dias_sem_venda: null,
+        investimento: null,
+        receita_ads: null,
+        roas: null,
+        acos: null,
+      },
+    ]);
+  });
+
+  it("a serie: o ROAS do dia so com as lojas que tem os dois campos; o dia sem par fica sem ROAS", async () => {
+    const dias = await asUser<Linha>(ADMIN, `select dia::text, investimento, receita_ads, roas, acos from public.get_shopee_ads_daily('${ORG}', '2026-10-10', '2026-10-13')`);
+
+    expect(dias).toEqual([
+      // Dia 10: 70 de vendas com Ads, mas o ROAS so com a Loja Real (50/10).
+      { dia: "2026-10-10", investimento: "10.00", receita_ads: "70.00", roas: "5.0000", acos: "0.2000" },
+      { dia: "2026-10-11", investimento: null, receita_ads: "40.00", roas: null, acos: null },
+      { dia: "2026-10-12", investimento: "4.00", receita_ads: null, roas: null, acos: null },
+      { dia: "2026-10-13", investimento: null, receita_ads: "10.00", roas: null, acos: null },
+    ]);
+  });
+});
+
+/*
   D-449: Ads da Shopee (C-63). O desempenho diário dos anúncios CPC da loja,
   com a cobertura da leitura (dentro dela, dia sem linha é dia sem anúncio);
   ROAS, ACOS e TACoS sobre as somas; loja de teste fora do TOTAL; nunca lida

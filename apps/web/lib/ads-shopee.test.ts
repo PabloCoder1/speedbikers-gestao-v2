@@ -18,6 +18,9 @@ function linha(sobre: Partial<LinhaAdsShopee>): LinhaAdsShopee {
     environment: "live",
     cobertura_completa: true,
     dias_lidos: 7,
+    // D-455: os dias lidos sem gasto ou sem venda (fora do ROAS e do ACOS).
+    dias_sem_gasto: 0,
+    dias_sem_venda: 0,
     investimento: 15,
     receita_ads: 100,
     receita_ads_direta: 60,

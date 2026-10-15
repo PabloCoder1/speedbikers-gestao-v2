@@ -179,6 +179,10 @@ Migration `20261014210000`. `get_marketplace_sales_summary(org, de, ate, p_marke
 
 Migration `20261014220000`. `get_shopee_faturamento(org, de, ate, p_account_ids)` (`security invoker`): por loja e o TOTAL (lojas live já lidas), resultado = `escrow_amount` − custo e margem nos pedidos cobertos, definitivo (`COMPLETED`) e provisório separados, imposto pela alíquota do dia (`tax_rates`), o que não cobre contado por motivo. O custo é a regra de D-356 escrita dentro da RPC (como em `get_faturamento`; `private` não é alcançável por `security invoker`), travada por teste de equivalência. Definições em `docs/METRICS.md` 5U e `metric_definitions` (`shopee_custo_produtos`, `shopee_resultado_venda`, `shopee_margem_venda`, `shopee_imposto_estimado`, `shopee_resultado_apos_imposto`).
 
+### Demanda da Shopee na reposição (D-459) e Ads sem dado (D-455)
+
+Migrations `20261015060000` (D-455: ROAS/ACOS do resumo e da série de Ads só com os dias que têm gasto e venda; `dias_sem_gasto`/`dias_sem_venda`) e `20261015070000` (D-459, C-65): `get_stock_coverage` e `get_purchase_suggestions` somam nas vendas e janelas a demanda da Shopee (vendas válidas das lojas live, de `shopee_sales_items`), com colunas `_shopee` NULAS sem loja live com pedidos lidos; a visão da reposição, o pedido de compra e o alcance herdam. Sem tabela nova.
+
 ### Repasse da Shopee (D-451)
 
 Migration `20261015050000`. `shopee_escrow_releases` (loja, pedido, momento da liberação; `payout_amount` como a Shopee manda), RLS pela permissão por loja; um pedido pode ter mais de uma liberação. `shopee_shops.escrow_releases_read_from` e o marco `escrow_releases_synced_until` são a cobertura da leitura, gravados na mesma transação (`shopee_upsert_escrow_releases`, só o worker). Leitura: `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`. Métricas 5W.
