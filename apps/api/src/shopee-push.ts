@@ -58,14 +58,77 @@ const JOB_DO_PUSH: Record<number, { jobType: string; prefixo: string }> = {
   [PUSH_RETURN_UPDATES]: { jobType: "shopee.returns.sync", prefixo: "shopee-returns-push" },
 };
 
+/**
+ * Os endereços que valem na assinatura: o cadastrado e as variações que só
+ * mudam a forma (barra no fim, http no lugar de https). Todas exigem a chave
+ * do parceiro — aceitar a variação não enfraquece nada, e evita perder push
+ * por uma barra digitada a mais no Console.
+ */
+export function enderecosDoPush(pushUrl: string): { nome: string; url: string }[] {
+  const semBarra = pushUrl.replace(/\/+$/, "");
+  const outroEsquema = semBarra.startsWith("https://") ? `http://${semBarra.slice(8)}` : `https://${semBarra.replace(/^http:\/\//, "")}`;
+
+  return [
+    { nome: "cadastrado", url: pushUrl },
+    { nome: "sem_barra", url: semBarra },
+    { nome: "com_barra", url: `${semBarra}/` },
+    { nome: "outro_esquema", url: outroEsquema },
+  ].filter((e, i, todos) => todos.findIndex((o) => o.url === e.url) === i);
+}
+
+/**
+ * O que dá para dizer de um push recusado SEM expor a assinatura nem o
+ * corpo: se o cabeçalho veio, o formato e o tamanho dele, o tamanho do corpo,
+ * as chaves e o código. Os nomes evitam as palavras que a redação de log
+ * apaga (`authorization`, `token`…) — `has_authorization` saía `[REDACTED]`.
+ */
+function diagnosticoDaRecusa(input: { rawBody: string; authorization: string | undefined }): Record<string, unknown> {
+  let chaves: string[] | null = null;
+  let code: unknown = null;
+
+  try {
+    const corpo = JSON.parse(input.rawBody) as unknown;
+
+    if (corpo !== null && typeof corpo === "object" && !Array.isArray(corpo)) {
+      chaves = Object.keys(corpo).slice(0, 12);
+      code = (corpo as { code?: unknown }).code ?? null;
+    }
+  } catch {
+    chaves = null;
+  }
+
+  const cabecalho = input.authorization;
+
+  return {
+    assinatura_presente: cabecalho !== undefined,
+    assinatura_tamanho: cabecalho?.length ?? 0,
+    assinatura_formato: cabecalho === undefined ? null : /^[0-9a-f]{64}$/i.test(cabecalho) ? "hex64" : /^\s|\s$/.test(cabecalho) ? "hex_com_espaco" : "outro",
+    corpo_bytes: Buffer.byteLength(input.rawBody, "utf8"),
+    corpo_chaves: chaves,
+    code,
+  };
+}
+
 export async function receiveShopeePush(
   deps: ShopeePushDeps,
   input: { rawBody: string; authorization: string | undefined },
 ): Promise<ShopeePushOutcome> {
-  if (!verifyPushSignature(deps.partnerKey, deps.pushUrl, input.rawBody, input.authorization)) {
-    deps.logger.warn("shopee_push_signature_rejected", { has_authorization: input.authorization !== undefined });
+  const cabecalho = input.authorization?.trim();
+  // O corpo exato e, por garantia, sem a quebra de linha do fim (o mesmo
+  // conteúdo; a assinatura continua exigindo a chave do parceiro).
+  const corpos = [...new Set([input.rawBody, input.rawBody.replace(/\s+$/, "")])];
+  const endereco = enderecosDoPush(deps.pushUrl).find((e) => corpos.some((corpo) => verifyPushSignature(deps.partnerKey, e.url, corpo, cabecalho)));
+
+  if (endereco === undefined) {
+    deps.logger.warn("shopee_push_signature_rejected", diagnosticoDaRecusa(input));
 
     return { status: "invalid_signature" };
+  }
+
+  if (endereco.nome !== "cadastrado") {
+    // Confere, mas com outra forma do endereço: o Console tem algo diferente
+    // de SHOPEE_PUSH_URL. Funciona; o aviso é para acertar a configuração.
+    deps.logger.warn("shopee_push_url_variant", { variante: endereco.nome });
   }
 
   let corpo: unknown;
