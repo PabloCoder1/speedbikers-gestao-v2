@@ -24,6 +24,7 @@ e a maior parte é irrelevante para qualquer tarefa específica.
 | Shopee, multicanal (ML + Shopee) | `docs/SHOPEE.md`, `docs/MULTICHANNEL_HANDOFF.md` (estado e coordenação entre agentes), `docs/MULTICHANNEL_CONTRACTS.md` (contratos de dados), `docs/MULTICHANNEL_SCREENS.md` (telas e filtro Marketplace/Conta) |
 | Tela, componente, UX | `docs/PRODUCT_REQUIREMENTS.md` + a seção relevante do `docs/ROADMAP.md` |
 | **Aparência** de tela ou componente | `docs/DESIGN_IMPLEMENTATION.md` — Design Contract e fila visual |
+| Carregamento, filtro, busca, estados de erro/vazio | `docs/UX_SYSTEM.md` — o padrão de cada espera e a fila do Agente 3 |
 | Métrica, número exibido | `docs/METRICS.md` |
 | Performance, benchmark | `docs/PERFORMANCE.md`, `docs/ARCHITECTURE.md` |
 | Worker, fila, deploy | `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md` |
