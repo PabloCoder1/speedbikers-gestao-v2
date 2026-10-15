@@ -9,6 +9,7 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
 import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
@@ -385,9 +386,9 @@ export default async function FornecedoresPage({
                         ? `Nada encontrado para “${filters.search}”. Confira a grafia ou busque pelo CNPJ.`
                         : "Troque o recorte acima para ver os demais."}
                     </span>
-                    <Link className="sb-button" href="/fornecedores">
+                    <LinkDeFiltro className="sb-button" href="/fornecedores">
                       Ver todos
-                    </Link>
+                    </LinkDeFiltro>
                   </>
                 )}
               </div>

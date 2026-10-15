@@ -7,6 +7,7 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TOM } from "../../components/tone";
 import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatCount, formatCurrency } from "../../lib/format";
 import {
   PAGE_SIZE,
@@ -486,9 +487,9 @@ export default async function VinculacoesPage({
         }
         aside={
           filtroAtivo ? (
-            <Link className="sb-button" href="/vinculacoes">
+            <LinkDeFiltro className="sb-button" href="/vinculacoes">
               Limpar filtros
-            </Link>
+            </LinkDeFiltro>
           ) : null
         }
       >

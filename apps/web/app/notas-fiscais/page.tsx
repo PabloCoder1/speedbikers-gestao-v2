@@ -9,6 +9,7 @@ import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { TOM } from "../../components/tone";
 import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import {
   DOCUMENT_STATUSES,
   DOCUMENT_TYPES,
@@ -482,7 +483,7 @@ export default async function NotasFiscaisPage({
         >
           {linhas.length === 0 && (
             <p className="sb-empty">
-              {janela.label} <Link href="/notas-fiscais">Ver todos</Link>
+              {janela.label} <LinkDeFiltro href="/notas-fiscais">Ver todos</LinkDeFiltro>
             </p>
           )}
 

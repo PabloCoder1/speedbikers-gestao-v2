@@ -127,7 +127,7 @@ export default async function ConhecimentoPage({
         </FormularioFiltro>
         <div className="sb-knowledge-actions">
           {pending !== null && pending > 0 && filters.status !== "SUGERIDO" && <LinkDeFiltro className="sb-button" href={buildKnowledgeHref(filters, { status: "SUGERIDO" })}>Revisar {formatCount(pending)} sugestões</LinkDeFiltro>}
-          {hasFilters && <Link className="sb-text-button" href="/atendimento/conhecimento">Limpar filtros</Link>}
+          {hasFilters && <LinkDeFiltro className="sb-text-button" href="/atendimento/conhecimento">Limpar filtros</LinkDeFiltro>}
         </div>
       </div>
 
