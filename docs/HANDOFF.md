@@ -20,7 +20,7 @@
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
 | **Produção** | Worker `worker-00047-mmw` (`11dbd5f4`) e api `api-00034-qxw` (`e3b125c6`), 15/10, saindo pelo IP fixo `34.95.145.35` (D-457); Shopee sandbox (`SHOPEE_PARTNER_ID=1248019`), Go Live em análise. Volta: `worker-00046-zfl`/`api-00029-xdl` (pool dinâmico — desligar antes a lista de IPs da Shopee). Worker fixo na revisão (D-342). Dev pausado (D-350). |
 | **Migrations** | Produção até `20261015100000` (D-441 a D-465, 15/10). **Próxima:** `20261015105000` (D-469, a `/vendas`, #202). Dispara-se depois da CI da `main` do mesmo commit (com a entrada `confirmacao` = ref de produção), segurando merges até o job `origem` passar; aprovações no ambiente; sem `--include-all`; nunca MCP. |
-| **UX (Agente 3)** | D-500 a D-504 no ar (deploy `691ab024`, 15/10). D-505 (SKU) no #196. Fila em `docs/UX_SYSTEM.md`. |
+| **UX (Agente 3)** | D-500 a D-505 no ar. D-508 (acessibilidade) e D-509 (`/vendas`) na `feat/ux-a11y-vendas`. Fila em `docs/UX_SYSTEM.md`. |
 | **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
