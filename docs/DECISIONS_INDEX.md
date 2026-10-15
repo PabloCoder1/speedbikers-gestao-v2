@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **464** (D-001 a D-504).
+Decisões registradas: **465** (D-001 a D-507).
 
 ## Por domínio
 
@@ -376,7 +376,7 @@ Decisões registradas: **464** (D-001 a D-504).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (41)
+### vendas/métricas (42)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -419,6 +419,7 @@ Decisões registradas: **464** (D-001 a D-504).
 - **D-460** — Telas multicanais: as devolucoes da Shopee entram em /vendas/shopee, logo depois do "Por loja", com a situacao como a Shopee manda e o "valor de reembolso informado"
 - **D-463** — get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
+- **D-507** — A metrica de producao sai com a rota carregada e diz se houve navegacao suave antes do envio; o LCP sai no primeiro clique ou tecla, uma vez so
 
 ### worker/infra (84)
 

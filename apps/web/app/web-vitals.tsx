@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 type MetricName = "TTFB" | "LCP" | "CLS" | "INP";
 
-function report(name: MetricName, value: number): void {
-  const payload = JSON.stringify({ name, value: Math.round(value * 100) / 100, path: window.location.pathname });
+const INPUTS = ["keydown", "click"] as const;
+
+function report(name: MetricName, value: number, path: string, softNav: boolean): void {
+  const payload = JSON.stringify({ name, value: Math.round(value * 100) / 100, path, softNav });
   try {
     if (navigator.sendBeacon("/api/vitals", new Blob([payload], { type: "application/json" }))) return;
   } catch {
@@ -14,39 +18,100 @@ function report(name: MetricName, value: number): void {
   void fetch("/api/vitals", { method: "POST", body: payload, headers: { "content-type": "application/json" }, keepalive: true });
 }
 
-/** Métricas de experiência sem conteúdo pessoal: uma amostra por rota e carga. */
-export function WebVitals(): null {
-  useEffect(() => {
-    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    if (navigation !== undefined) report("TTFB", navigation.responseStart);
+/**
+ * O componente monta uma vez por documento e sobrevive à navegação suave, então a rota de cada
+ * métrica é a CARREGADA, guardada na montagem — antes, LCP e CLS saíam com a rota em que a aba se
+ * escondeu (D-506, D-507). `softNav` diz se a URL mudou antes do envio: o CLS e o INP somam o
+ * documento inteiro, inclusive o que veio depois da tela carregada.
+ */
+function Coleta(): null {
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  const softNav = useRef(false);
+  const lastUrl = useRef<string | null>(null);
 
+  // Rota ou filtro novo no mesmo documento é navegação suave; voltar à URL da carga não desfaz.
+  useEffect(() => {
+    const url = `${pathname}?${search}`;
+    if (lastUrl.current !== null && lastUrl.current !== url) softNav.current = true;
+    lastUrl.current = url;
+  }, [pathname, search]);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    const send = (name: MetricName, value: number): void => { report(name, value, path, softNav.current); };
+
+    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (navigation !== undefined) send("TTFB", navigation.responseStart);
+
+    // Aba aberta em segundo plano só pinta quando alguém olha: o LCP dela mediria a pessoa, não a carga.
+    let hiddenAt = document.visibilityState === "hidden" ? 0 : Number.POSITIVE_INFINITY;
     let lcp = 0;
     let cls = 0;
     let inp = 0;
-    const observers: PerformanceObserver[] = [];
-    const observe = (type: string, callback: (entry: PerformanceEntry) => void): void => {
+    const observe = (type: string, callback: (entry: PerformanceEntry) => void): (() => void) => {
       try {
         const observer = new PerformanceObserver((list) => {
           list.getEntries().forEach((entry) => { callback(entry); });
         });
         observer.observe({ type, buffered: true });
-        observers.push(observer);
+        // Esvazia o que o navegador ainda não entregou antes de parar de ouvir.
+        return () => { observer.takeRecords().forEach((entry) => { callback(entry); }); observer.disconnect(); };
       } catch {
         // Navegadores sem suporte à métrica são simplesmente excluídos da amostra.
+        return () => undefined;
       }
     };
-    observe("largest-contentful-paint", (entry) => { lcp = entry.startTime; });
-    observe("layout-shift", (entry) => { const shift = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number }; if (!shift.hadRecentInput) { cls += shift.value ?? 0; } });
-    observe("event", (entry) => { inp = Math.max(inp, (entry as PerformanceEntry & { duration: number }).duration); });
+    const stopLcp = observe("largest-contentful-paint", (entry) => { if (entry.startTime < hiddenAt) lcp = entry.startTime; });
+    const stopCls = observe("layout-shift", (entry) => { const shift = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number }; if (!shift.hadRecentInput) { cls += shift.value ?? 0; } });
+    const stopInp = observe("event", (entry) => { inp = Math.max(inp, (entry as PerformanceEntry & { duration: number }).duration); });
 
-    const flush = (): void => {
-      if (lcp > 0) report("LCP", lcp);
-      report("CLS", cls);
-      if (inp > 0) report("INP", inp);
-      observers.forEach((observer) => { observer.disconnect(); });
+    // O navegador para de emitir LCP no primeiro clique ou tecla; como na biblioteca web-vitals, ele
+    // sai ali, com a aba viva, em vez de esperar ela se esconder.
+    let lcpSent = false;
+    const sendLcp = (): void => {
+      if (lcpSent) return;
+      lcpSent = true;
+      stopLcp();
+      if (lcp > 0) send("LCP", lcp);
     };
-    document.addEventListener("visibilitychange", flush, { once: true });
-    return () => { document.removeEventListener("visibilitychange", flush); observers.forEach((observer) => { observer.disconnect(); }); };
+    let inputTimer: number | undefined;
+    const onInput = (): void => {
+      INPUTS.forEach((type) => { window.removeEventListener(type, onInput, true); });
+      // Fora do tratador, para não pesar na própria interação.
+      inputTimer = window.setTimeout(sendLcp, 0);
+    };
+
+    let flushed = false;
+    const flush = (): void => {
+      if (flushed) return;
+      flushed = true;
+      hiddenAt = Math.min(hiddenAt, performance.now());
+      sendLcp();
+      stopCls();
+      stopInp();
+      send("CLS", cls);
+      if (inp > 0) send("INP", inp);
+      removeListeners();
+    };
+    const onVisibilityChange = (): void => { if (document.visibilityState === "hidden") flush(); };
+    const removeListeners = (): void => {
+      INPUTS.forEach((type) => { window.removeEventListener(type, onInput, true); });
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", flush);
+    };
+
+    INPUTS.forEach((type) => { window.addEventListener(type, onInput, true); });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    // Safari antigo sai da página sem avisar a troca de visibilidade.
+    window.addEventListener("pagehide", flush);
+    return () => { removeListeners(); window.clearTimeout(inputTimer); stopLcp(); stopCls(); stopInp(); };
   }, []);
   return null;
+}
+
+/** Métricas de experiência sem conteúdo pessoal: uma amostra por carga, só nome, valor, rota e `softNav`. */
+export function WebVitals(): ReactNode {
+  // `useSearchParams` só existe na requisição: sem o limite, o build não pré-renderiza.
+  return <Suspense fallback={null}><Coleta /></Suspense>;
 }

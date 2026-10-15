@@ -142,10 +142,23 @@ navegação entre telas, e moldura que nunca pisca.
 ## 5. A espera medida em produção (web vitals)
 
 A web grava cada carga completa no log da Vercel (`app/web-vitals.tsx` →
-`POST /api/vitals` → `web_vital`, só nome, valor e rota). Para ler: Vercel MCP
-`get_runtime_logs` no projeto `speedbikers-prod`, `query: "web_vital"`, janela
-de 24 h (7 dias estoura o tempo da consulta). Navegação suave não reporta: o
-número é de quem abriu a tela do zero.
+`POST /api/vitals` → `web_vital`, só nome, valor, rota e `softNav`). Para ler:
+Vercel MCP `get_runtime_logs` no projeto `speedbikers-prod`, `query:
+"web_vital"`, janela de 24 h (7 dias estoura o tempo da consulta). Desde a
+D-507, uma carga tem uma rota só — a de quando o documento abriu: o TTFB sai na
+montagem, o LCP no primeiro clique ou tecla (ou quando a aba se esconde) e o
+CLS e o INP quando a aba se esconde. `softNav: true` = a URL (rota ou filtro)
+mudou no mesmo documento antes do envio, e o CLS/INP soma as telas que vieram
+depois; o CLS da tela é o das linhas com `softNav: false`. Aba aberta em
+segundo plano não manda LCP. Sem sessão, o `proxy` desvia o envio para o login:
+de `/login` só chega o que sai depois de entrar (o CLS).
+
+**Corte do reporter (D-507).** Linha **com** `softNav` é do reporter novo;
+**sem** ele, do antigo, que dava ao LCP e ao CLS a rota em que a aba se
+escondeu — leia essas pelo par com o TTFB anterior (D-506). O corte é o
+primeiro deploy de produção com a D-507: data e `dpl_` **a preencher no
+deploy** (`list_deployments`). Aba aberta antes dele manda o formato antigo até
+recarregar: conte pelo campo, não pelo horário.
 
 Leitura de 14–15/10 (amostra pequena): Home com LCP de 7,6 s, `/skus/[id]` com
 5,9 s, `/vendas` com 3,3–4,7 s; o resto abaixo de 1 s, e o TTFB sempre abaixo de
