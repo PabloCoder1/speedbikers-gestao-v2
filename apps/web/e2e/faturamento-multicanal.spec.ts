@@ -147,3 +147,39 @@ test("/faturamento?marketplace=shopee: as lojas ligam e desligam por clique, e c
   await expect(page).toHaveURL(/\/faturamento\?marketplace=todos$/);
   await expect(menu(page, "Lojas")).toHaveCount(0);
 });
+
+/**
+ * D-456 (T5c, contrato C-63): os Ads CPC da loja no recorte Shopee. O seed tem
+ * só a loja de TESTE, com os Ads nunca lidos — a prova de que a seção não
+ * inventa: sem loja real lida não há faixa nem total de zeros, a loja aparece
+ * com "—" e o motivo, e a ressalva "não é o total de Ads" está sempre lá. A
+ * seção é só da Shopee: o ML tem o Mercado Ads, e o "Todos" não soma os dois.
+ */
+test("/faturamento?marketplace=shopee: os Ads CPC da loja dizem o que não se sabe, sem inventar zero", async ({
+  page,
+}) => {
+  await login(page, "/faturamento?marketplace=shopee");
+
+  const ads = page.getByRole("region", { name: "Ads CPC da loja Shopee" });
+
+  await expect(ads.getByText("Ads CPC da loja — Shopee")).toBeVisible();
+  await expect(ads.getByRole("note").filter({ hasText: "Não é o total de Ads" })).toBeVisible();
+  await expect(ads.getByText(/Nenhuma loja real com os Ads já lidos/)).toBeVisible();
+  // Sem loja lida, nenhuma faixa: "R$ 0,00 investidos" seria inventado.
+  await expect(ads.locator(".sb-kpi")).toHaveCount(0);
+
+  const loja = ads.getByRole("list", { name: "Ads CPC por loja" }).getByRole("listitem");
+
+  await expect(loja).toHaveCount(1);
+  await expect(loja).toContainText(`${E2E_SHOPEE_SHOP.name} (teste)`);
+  await expect(loja).toContainText("—");
+  await expect(loja).toContainText("Ads ainda não lidos · loja de teste, fora do total");
+
+  // No ML e no "Todos" a seção não existe.
+  await page.goto("/faturamento?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Ads CPC da loja Shopee" })).toHaveCount(0);
+  await page.goto("/faturamento");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Ads CPC da loja Shopee" })).toHaveCount(0);
+});
