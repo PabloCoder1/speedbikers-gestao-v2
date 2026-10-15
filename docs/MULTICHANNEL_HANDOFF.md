@@ -113,7 +113,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos.
 
 **Em andamento**
-- PR da D-502 (só web, sem migration).
+- D-502 no **#187** (só web, sem migration): entra quando a CI fechar verde e o A2 mergear.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Item 13 da auditoria: `role="alert"` em aviso que não é falha, tela a tela.
@@ -121,7 +121,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
-- O `EstadoDaTela` está no PR da D-502: quando entrar, troque os seis avisos provisórios da T-R6 por `<EstadoDaTela tipo="erro" titulo="…" detalhe={error.message} acao={{ href: <a mesma URL>, rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />`, e use-o nos estados das telas da sua fila.
+- O `EstadoDaTela` está no #187 (D-502): quando entrar, troque os seis avisos provisórios da T-R6 por `<EstadoDaTela tipo="erro" titulo="…" detalhe={error.message} acao={{ href: <a mesma URL>, rotulo: TENTAR_DE_NOVO, mesmaTela: true }} />`, e use-o nos estados das telas da sua fila.
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos`, `/compras`, `/curva-abc` e `/reposicao`. Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
