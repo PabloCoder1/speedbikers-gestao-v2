@@ -20413,6 +20413,7 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
       primeira_deteccao: string;
       ultima_deteccao: string;
       encerramento?: { em: string; por: string; motivo: string };
+      detector?: Record<string, unknown>;
     };
   }
 
@@ -20542,6 +20543,11 @@ describe("sincronizar_alertas_central: o ciclo de vida (D-403)", () => {
     expect(produto?.evidence.evidencias[0]?.descricao).toBe(
       "De 11/07/2023 a 09/08/2023: 3 pedidos cobertos, R$ 300,00 de receita e resultado de -R$ 45,00 (margem -15,0%).",
     );
+    // D-471: o detector pede só os 30 dias; a evidência guarda o período do
+    // alerta e nada da comparação com o anterior (que agora seria de um dia).
+    const detector = produto?.evidence.detector ?? {};
+    expect(Object.keys(detector).filter((k) => k.endsWith("_anterior") || k.startsWith("variacao_"))).toEqual([]);
+    expect(detector).toMatchObject({ pedidos_cobertos: 3 });
 
     expect(await sincronizar("2023-08-10")).toMatchObject({ criadas: 0, notificadas: 0, atualizadas: 3 });
     expect(await acoes("ads_campanha")).toHaveLength(2);

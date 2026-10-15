@@ -15974,6 +15974,27 @@ Os textos que os e2e conferem continuam no titulo: "Nenhuma loja real com …", 
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-471 - O alerta de produto no prejuizo da central: o detector pede ao ranking so os 30 dias que usa
+
+**Contexto:** na checagem de saude do worker de producao (15/10), o job diario `diagnostics.sync-central-alerts` falhou TODO DIA de 09 a 15/10, as 11:00 UTC, com "produto_prejuizo: canceling statement due to statement timeout" -- o teto de 8 s de cada fonte (D-404). A auditoria de 28/09 ja via o estouro em 3 de 8 execucoes, e o `work_mem` de 16 MB daquela correcao nao bastou. Com o detector parado, ninguem e avisado de produto vendendo no prejuizo: nem o alerta em `actions`, nem a notificacao da D-411.
+
+A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior padrao, os 30 dias antes da janela. O ranking le os pedidos e os itens dos DOIS periodos, 60 dias, para preencher a comparacao (receita anterior, variacao), que o alerta nao usa.
+
+**Decisao:**
+1. **O periodo anterior vai de um dia** (`p_anterior_from = p_anterior_to = v_hoje - 31`, o ultimo dia antes da janela). Assim a janela lida cai de 60 para 31 dias. Saem identicos os campos do periodo atual, que decidem o alerta, a severidade, a confianca, o impacto e o texto.
+2. **A evidencia guardada (`detector`) sai sem as colunas de comparacao** (`*_anterior`, `variacao_*`), que passariam a falar de um dia. Nenhuma tela as le.
+3. **O `work_mem` de 16 MB entra no corpo.** A migration de 28/09 o pos com `alter function`, e o `create or replace` o apagaria.
+4. **O resto da funcao e o da D-411, sem mudanca.** Antes de editar, conferi que o corpo em producao (pelo Dev, que tem as mesmas migrations) e byte a byte o da migration `20260925140000`, com o mesmo md5.
+
+**Verificacao:**
+- **Dev, `get_ranking_produtos` na chamada do detector** (30 dias ate 13/09, `work_mem` 16 MB, quatro execucoes): 695 ms por pagina com o anterior de 30 dias, **427 ms** com o de um dia (-40%). No banco frio de producao a economia e de paginas: o periodo anterior e metade dos pedidos e itens lidos.
+- **Mesma decisao:** os mesmos 18 SKUs no prejuizo no Dev. Entre as duas versoes so mudam `pedidos_anterior`, `receita_anterior`, `unidades_anterior` e `variacao_receita`.
+- **Integracao:** o teste do ciclo de vida (D-403) segue verde e agora confere que a evidencia do produto no prejuizo nao tem coluna do periodo anterior e mantem a do atual; suite inteira verde.
+- **Mutacao:** com a funcao antiga, o teste do ciclo de vida cai.
+- **Fica para depois do deploy:** o job das 11:00 UTC do dia seguinte precisa terminar sem o timeout. Leio no Cloud Logging.
+
+**Impacto:** `supabase/migrations/20261015120000_alerta_prejuizo_so_o_periodo.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O ranking e a tela `/central/produtos` nao mudam.
+
 ## D-472 - Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 
 **Contexto:** a D-470 levou o `EstadoDaTela` (D-502) a `/vendas` e `/faturamento`. Faltavam as outras telas da fila do A2: `/produtos`, `/reposicao` (com a configuracao), `/compras` (lista, novo, detalhe e edicao) e a `/central` inteira (resumo, indicadores, meta, Ads, frete, limites, metas e produtos).
