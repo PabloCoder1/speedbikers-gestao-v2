@@ -22,8 +22,9 @@ import { lerFaturamento } from "../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
 import type { LimitesDaCentral } from "../../lib/limites-central";
 import { textoDaVariacao } from "../../lib/variacao";
-import { AVISO, type RespostaRpc } from "../faturamento/numeros";
-import { SecaoMeta } from "./meta";
+import type { RespostaRpc } from "../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../components/estado-da-tela";
+import { SecaoMeta, type MetaIndisponivel } from "./meta";
 
 function formatar(valor: number | null, formato: Formato): string {
   switch (formato) {
@@ -193,23 +194,32 @@ export interface RespostaComCodigo {
  * erro: a web da `main` chega à produção antes de a migration passar pelo
  * workflow, e a tela diz que a meta está sendo ativada — o precedente de D-363.
  */
-function lerMeta(resposta: RespostaComCodigo | null): { meta: MetaDoMes | null; indisponivel: string | null } {
-  if (resposta === null) return { meta: null, indisponivel: "Sessão sem organização: a meta não pode ser lida." };
+function lerMeta(resposta: RespostaComCodigo | null): { meta: MetaDoMes | null; indisponivel: MetaIndisponivel | null } {
+  if (resposta === null) {
+    return { meta: null, indisponivel: { tipo: "permissao", titulo: "Sessão sem organização: a meta não pode ser lida." } };
+  }
 
   if (resposta.error !== null) {
     return {
       meta: null,
       indisponivel:
         resposta.error.code === "PGRST202"
-          ? "A meta e a projeção estão sendo ativadas neste ambiente."
-          : `Não foi possível carregar a meta: ${resposta.error.message}`,
+          ? { tipo: "vazio", titulo: "A meta e a projeção estão sendo ativadas neste ambiente." }
+          : { tipo: "erro", titulo: "Não foi possível carregar a meta", detalhe: resposta.error.message },
     };
   }
 
   const meta = lerMetaDoMes(resposta.data);
 
   return meta === null
-    ? { meta: null, indisponivel: "A meta veio num formato que esta tela não reconhece — nada foi mostrado." }
+    ? {
+        meta: null,
+        indisponivel: {
+          tipo: "erro",
+          titulo: "A meta veio num formato que esta tela não reconhece",
+          descricao: "Nada foi mostrado.",
+        },
+      }
     : { meta, indisponivel: null };
 }
 
@@ -234,13 +244,17 @@ export async function Indicadores({
   leituraLimites,
   periodo,
   podeEditar,
+  tentarDeNovo,
 }: {
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
   leituraMeta: Promise<RespostaComCodigo> | null;
   leituraLimites: Promise<LimitesDaCentral>;
   periodo: PeriodoCentral;
   podeEditar: boolean;
+  /** A mesma URL, para "Tentar de novo" (D-472). */
+  tentarDeNovo: string;
 }): Promise<ReactNode> {
+  const acao = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites] = await Promise.all([
     leituras,
     leituraMeta,
@@ -250,9 +264,7 @@ export async function Indicadores({
 
   if (atualResult.error !== null) {
     return (
-      <p role="alert" style={AVISO}>
-        Não foi possível carregar o período: {atualResult.error.message}
-      </p>
+      <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o período" detalhe={atualResult.error.message} acao={acao} />
     );
   }
 
@@ -260,10 +272,12 @@ export async function Indicadores({
 
   if (atual === null) {
     return (
-      <p role="alert" style={AVISO}>
-        A resposta do faturamento veio num formato que esta tela não reconhece — nenhum número foi mostrado para não
-        mostrar número errado.
-      </p>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="A resposta do faturamento veio num formato que esta tela não reconhece"
+        descricao="Nenhum número foi mostrado, para não mostrar número errado."
+        acao={acao}
+      />
     );
   }
 
@@ -285,9 +299,13 @@ export async function Indicadores({
   return (
     <>
       {anterior === null && (
-        <p role="alert" style={AVISO}>
-          O período anterior não carregou — a comparação foi omitida, e isso não é zero.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O período anterior não carregou"
+          descricao="A comparação foi omitida, e isso não é zero."
+          detalhe={anteriorResult.error?.message}
+          acao={acao}
+        />
       )}
 
       <Panel
@@ -313,7 +331,13 @@ export async function Indicadores({
         </div>
       </Panel>
 
-      <SecaoMeta meta={meta} indisponivel={indisponivel} podeEditar={podeEditar} atrasoDaMeta={limites.atrasoDaMeta} />
+      <SecaoMeta
+        meta={meta}
+        indisponivel={indisponivel}
+        podeEditar={podeEditar}
+        atrasoDaMeta={limites.atrasoDaMeta}
+        tentarDeNovo={tentarDeNovo}
+      />
 
       {GRUPOS.map((grupo, indice) => (
         <section key={grupo.id} aria-label={grupo.titulo}>

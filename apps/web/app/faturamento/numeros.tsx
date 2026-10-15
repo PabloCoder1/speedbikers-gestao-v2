@@ -27,8 +27,6 @@ export interface RespostaRpc {
   error: { message: string } | null;
 }
 
-export const AVISO: React.CSSProperties = { margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" };
-
 const BLOCO: React.CSSProperties = { marginTop: "var(--sb-space-3)" };
 
 function celulasDoResumo(

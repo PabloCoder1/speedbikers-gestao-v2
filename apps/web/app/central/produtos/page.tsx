@@ -31,7 +31,7 @@ import {
   type RankingDeProdutos,
 } from "../../../lib/ranking-produtos";
 import { createClient } from "../../../lib/supabase/server";
-import { AVISO } from "../../faturamento/numeros";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
 
@@ -203,9 +203,12 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
             </p>
           </div>
         ) : (
-          <p role="alert" style={AVISO}>
-            Não foi possível carregar o ranking de produtos: {resposta.error.message}
-          </p>
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o ranking de produtos"
+            detalhe={resposta.error.message}
+            acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
         )}
       </>
     );
@@ -217,9 +220,12 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         {titulo}
-        <p role="alert" style={AVISO}>
-          O ranking respondeu num formato que esta tela não reconhece — nada foi mostrado.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="O ranking respondeu num formato que esta tela não reconhece"
+          descricao="Nada foi mostrado."
+          acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       </>
     );
   }
@@ -229,13 +235,17 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
       {titulo}
 
       {accountsResult.error !== null && (
-        <p role="alert" style={AVISO}>
-          Não foi possível carregar as contas: o filtro de conta está indisponível.
-        </p>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta está indisponível."
+          detalhe={accountsResult.error.message}
+          acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
       )}
 
       {periodo.invalido && (
-        <p role="alert" style={AVISO}>
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando {periodo.rotulo.toLowerCase()}.
         </p>
       )}
@@ -391,7 +401,7 @@ function Lista({
         </nav>
 
         {ranking.itens.length === 0 ? (
-          <p className="sb-empty">{vazio(ranking.ordem, estado.pagina)}</p>
+          <EstadoDaTela tipo="vazio" titulo={vazio(ranking.ordem, estado.pagina)} />
         ) : (
           <div className="sb-central-tabela">
             <table className="sb-table sb-rank-tabela">
