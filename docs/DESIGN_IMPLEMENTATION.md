@@ -286,6 +286,8 @@ branco embutido.
 | `CarregandoTela`/`CarregandoConteudo`/`CarregandoBloco`, `AtualizandoTela` (via `CarregandoSeODemorar`), `LinkDeFiltro`, `ItemDeMenu`, `FormularioFiltro` | `components/carregando*.tsx`, `link-de-filtro.tsx`, `item-de-menu.tsx`, `formulario-filtro.tsx` | **o padrão de espera** (D-382, D-500, D-501): trocar de tela → esqueleto; atualizar a mesma tela → o dado fica, com barra e esmaecimento. Qual usar em cada caso: `docs/UX_SYSTEM.md` §1 |
 | `EstadoDaTela`, `BotaoEnviar` | `components/estado-da-tela.tsx`, `botao-enviar.tsx` | **o estado sem tabela e a ação que grava** (D-502): erro, vazio, filtro e permissão numa forma só (`.sb-estado`), e o botão de ação de servidor que desabilita e diz o que faz. Quando usar cada tipo: `docs/UX_SYSTEM.md` §1 |
 | `ObjectBadgeTardio`, `SeloCarregando` | `components/object-header.tsx` | **o selo que chega depois** (D-505): um `Suspense` na posição do frame dentro da fileira de selos do `ObjectHeader`, com o lugar reservado pelo rótulo transparente e a revelação de 350 ms; hoje, a curva ABC do SKU |
+| `KpiCellTardia`, `KpiCellCarregando`, `KpiCell` | `components/kpi-strip.tsx` | **a célula que chega depois** (D-509): um `Suspense` na posição dela dentro da faixa, com o rótulo, a ressalva e o id de verdade e o valor como traço da mesma classe; hoje, a taxa de cancelamento da `/vendas` |
+| `PularParaConteudo` | `components/pular-para-conteudo.tsx` | **o primeiro ponto de foco** (D-508): leva o foco ao `<main id="conteudo">` sem criar entrada no histórico (o App Router recarrega a página no "voltar" de uma âncora) |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 

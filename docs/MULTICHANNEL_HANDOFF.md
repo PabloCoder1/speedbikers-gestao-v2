@@ -119,18 +119,20 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-502: o `EstadoDaTela` (erro, vazio, filtro e permissão) em 19 telas e no `AcessoRestrito`, o `BotaoEnviar` nos dois formulários destrutivos de `/central`, rótulos de pendente nos botões de cliente e 59 regras CSS mortas a menos. **Em produção** desde 15/10 (#187, `30d46390`).
 - D-503: o LCP real de produção por tela (Home 7,6 s, `/skus/[id]` 5,9 s, `/vendas` 3,3–4,7 s), um giro só, a busca de SKU de `/vinculacoes` de volta à forma compacta, e o item 13 da auditoria reavaliado. **Em produção** desde 15/10 (#189, `967e3677`).
 - D-504: a Home pinta sem esperar a cobertura — só a "Atenção necessária" espera a segunda rodada, que começa quando a organização chega (indicadores de 3.220 para 209 ms com a leitura fria simulada; aprovado pelo A2, medido pelo A1). Os "Anúncios pausados" deixam a `get_listings_dashboard` por uma contagem direta em `listings` na primeira rodada (proposta do A1, pedido do A2; mesmo número no Dev e no stack de teste). **Em produção** desde 15/10 (#194, `0fdb74df`; o deploy saiu com o `691ab024`, porque o merge do #194 não gerou deploy).
-- D-505: o `/skus/[skuId]` pinta sem esperar a curva ABC — só o selo "Curva X" do cabeçalho espera, no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando` no `ObjectHeader`); com a curva atrasada em 3 s, cabeçalho e LCP de ~3,1 s para ~0,2–0,5 s, CLS 0. Junto, o `EstadoDaTela` sem descrição deixa de pôr o detalhe ao lado do título (achado do A2).
+- D-505: o `/skus/[skuId]` pinta sem esperar a curva ABC — só o selo "Curva X" do cabeçalho espera, no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando` no `ObjectHeader`); com a curva atrasada em 3 s, cabeçalho e LCP de ~3,1 s para ~0,2–0,5 s, CLS 0. Junto, o `EstadoDaTela` sem descrição deixa de pôr o detalhe ao lado do título (achado do A2). **Em produção** desde 15/10 (#196, `27323206`; deploy do `63200d6d`).
+- D-508: acessibilidade dos compartilhados, auditada sem dependência nova em 20 telas (h1, regiões, nomes, rótulos, alt, ids e contraste limpos — os alertas de contraste eram gradiente); o "Pular para o conteúdo" no `Shell` (42 paradas de Tab viram Tab + Enter, sem entrada no histórico) e o h2 que faltava na fila da `/acoes`.
+- D-509: a `/vendas` pinta sem esperar a taxa de cancelamento — as duas `get_sales_expanded_summary` (3,8 s e 0,9 s a frio, A1) só seguram a 5ª célula da faixa âncora, que chega no lugar reservado (`KpiCellTardia`); faixa e gráfico de ~3,3 s para ~0,45 s com a leitura atrasada em 3 s, CLS 0. A falha só delas é dita na célula, sem derrubar a tela. A correção no banco é a D-469 do A1 (#202).
 
 **Em andamento**
-- D-505 no **#196** (só web, sem migration): o A2 revisa no merge.
+- D-508 e D-509 na `feat/ux-a11y-vendas` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa no merge (a `/vendas` é dele; as cinco restrições estão na D-509).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Streaming de `/vendas`, depois da fatia do `EstadoDaTela` do A2 nas telas dele (`docs/UX_SYSTEM.md` §3 item 5, §5).
+- Decidir se a auditoria de acessibilidade vira um e2e de guarda (sem dependência nova), para tela nova não perder o h1, o nome dos controles ou o alvo do salto (`docs/UX_SYSTEM.md` §3 item 7).
+- Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
 - Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
-- "Período personalizado inválido — mostrando X" é aviso, não falha: vire `role="status"` quando tocar em `/central`, `/central/produtos`, `/faturamento` (e o multicanal), `/vendas` (e o multicanal) e `/vendas/shopee`; `e2e/central.spec.ts` procura por `getByRole("alert")` e muda junto (D-503).
-- O `EstadoDaTela` (D-502) já cobre os avisos da T-R6 (D-468, #192): use-o também nos estados das telas da sua fila.
+- Tela nova: os estados vão no `EstadoDaTela` (D-502); um pedaço que espera uma leitura cara vai num `Suspense` com o lugar reservado — bloco: esqueleto do tamanho dele (Home, D-504); selo do cabeçalho: `ObjectBadgeTardio` (D-505); célula da faixa: `KpiCellTardia` (D-509).
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos` e `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
