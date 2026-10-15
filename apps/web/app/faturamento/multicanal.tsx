@@ -39,6 +39,7 @@ import {
   type EscopoMulticanal,
   type Periodo,
 } from "../../lib/vendas-multicanal";
+import { AdsShopee } from "./ads-shopee";
 import { BarrasDiarias } from "./barras-diarias";
 import { Cascata } from "./cascata";
 import { AVISO, ListaProdutos } from "./numeros";
@@ -126,6 +127,26 @@ export async function FaturamentoMulticanal({
         ? (selecionadas[0]?.name ?? "1 loja")
         : `${String(selecionadas.length)} lojas`;
   const rotuloPeriodo = days === null ? "Período personalizado" : `Últimos ${String(days)} dias`;
+
+  /*
+    Os Ads CPC da loja (D-456, C-63), só no recorte Shopee. As duas leituras
+    partem AGORA (`Promise.resolve` dispara o builder do supabase-js) e
+    chegam por streaming numa seção própria, como o Mercado Ads na tela do ML:
+    não esperam o faturamento, nem o faturamento as espera.
+  */
+  const adsDoPeriodo = {
+    p_organization_id: organizationId,
+    p_date_from: range.from,
+    p_date_to: range.to,
+    p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
+  };
+  const leiturasAds =
+    escopo === "shopee"
+      ? {
+          leitura: Promise.resolve(supabase.rpc("get_shopee_ads_overview", adsDoPeriodo)),
+          diaria: Promise.resolve(supabase.rpc("get_shopee_ads_daily", adsDoPeriodo)),
+        }
+      : null;
 
   const corpo =
     escopo === "shopee" ? (
@@ -262,6 +283,24 @@ export async function FaturamentoMulticanal({
 
       {/* O cabeçalho e os filtros saem antes; os números chegam por streaming, como na tela do ML. */}
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>{corpo}</Suspense>
+
+      {leiturasAds !== null && (
+        <section id="ads" className="sb-campanhas-ml" aria-label="Ads CPC da loja Shopee">
+          <Suspense
+            fallback={
+              <Panel title="Ads CPC da loja — Shopee" subtitle="Carregando o investimento e as vendas com Ads do período">
+                <CarregandoBloco rotulo="Ads da Shopee" />
+              </Panel>
+            }
+          >
+            <AdsShopee
+              leitura={leiturasAds.leitura}
+              diaria={leiturasAds.diaria}
+              periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+            />
+          </Suspense>
+        </section>
+      )}
 
       {historicoCurto && (
         <p role="note" className="sb-an-nota" style={{ marginTop: "var(--sb-space-3)" }}>
