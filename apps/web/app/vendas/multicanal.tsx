@@ -10,6 +10,8 @@ import { Panel } from "../../components/panel";
 import { SavedFilters, type SavedFilter } from "../../components/saved-filters";
 import { SeletorDeMarketplace } from "../../components/seletor-marketplace";
 import { StatePill } from "../../components/state-pill";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../components/link-de-filtro";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { MARKETPLACE_ROTULO } from "../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../lib/period";
@@ -266,7 +268,7 @@ export async function VendasMulticanal({
               }))}
             >
               {/* Um GET nativo envia só os campos do formulário: os hidden mantêm o recorte. */}
-              <form method="get" action="/vendas" className="sb-periodo-form">
+              <FormularioFiltro action="/vendas" className="sb-periodo-form">
                 <input type="hidden" name="marketplace" value={escopo} />
                 {selecionadas !== null && (
                   <input type="hidden" name="contas" value={selecionadas.map((conta) => conta.account_id).join(",")} />
@@ -289,7 +291,7 @@ export async function VendasMulticanal({
                 <button type="submit" className="sb-button sb-button-primary">
                   Aplicar período
                 </button>
-              </form>
+              </FormularioFiltro>
             </FilterMenu>
 
             <SavedFilters screen="/vendas" organizationId={organizationId} filters={salvos} />
@@ -347,7 +349,7 @@ export async function VendasMulticanal({
           */}
           <p role="note" className="sb-an-nota">
             Marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre —{" "}
-            <Link href={hrefDeVendas(recorte, { escopo: "ml" })}>veja no recorte Mercado Livre</Link>. A loja Shopee de
+            <LinkDeFiltro href={hrefDeVendas(recorte, { escopo: "ml" })}>veja no recorte Mercado Livre</LinkDeFiltro>. A loja Shopee de
             teste nunca entra nas somas.
             {historicoCurto &&
               ` A Shopee guarda ${String(HISTORICO_SHOPEE_DIAS)} dias de histórico: a comparação com um período mais antigo subestima a Shopee.`}
@@ -372,14 +374,14 @@ export async function VendasMulticanal({
             >
               <div className="sb-segmented" role="group" aria-label="Métrica do gráfico">
                 {METRICAS_MULTICANAL.map((opcao) => (
-                  <Link
+                  <LinkDeFiltro
                     key={opcao.key}
                     href={hrefDeVendas(recorte, { metrica: opcao.key })}
                     aria-current={opcao.key === metrica.key ? "true" : undefined}
                   >
                     {opcao.label}
                     <CarregandoSeODemorar />
-                  </Link>
+                  </LinkDeFiltro>
                 ))}
               </div>
 

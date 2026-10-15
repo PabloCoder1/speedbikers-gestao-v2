@@ -50,17 +50,11 @@ const ISENTOS = new Map([
  * daqui quem migrar; ninguém entra.
  */
 const PENDENTES = new Map([
-  ["app/anuncios/shopee/page.tsx", "tela do Agente 2 (multicanal)"],
   ["app/central/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
   ["app/central/produtos/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
   ["app/compras/page.tsx", "na fila do Agente 2 (T-R3, sugestão de compra)"],
-  ["app/curva-abc/page.tsx", "PR #180 do Agente 2 aberto"],
-  ["app/faturamento/multicanal.tsx", "tela do Agente 2 (multicanal)"],
-  ["app/faturamento/page.tsx", "tela do Agente 2 (multicanal)"],
+  ["app/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
   ["app/reposicao/page.tsx", "na fila do Agente 2 (T-R3, demanda da Shopee na cobertura)"],
-  ["app/vendas/multicanal.tsx", "tela do Agente 2 (multicanal)"],
-  ["app/vendas/page.tsx", "tela do Agente 2 (multicanal)"],
-  ["app/vendas/shopee/page.tsx", "tela do Agente 2 (multicanal)"],
 ]);
 
 /** Fim da tag de abertura, respeitando chaves, aspas e template strings. */
