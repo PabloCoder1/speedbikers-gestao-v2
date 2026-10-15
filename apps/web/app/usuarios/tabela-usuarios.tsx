@@ -101,11 +101,21 @@ function Alcance({
 export function TabelaDeUsuarios({
   linhas,
   isAdmin,
+  situacaoLida,
+  historicoLido,
   accounts,
   lojas,
 }: {
   linhas: readonly LinhaDeUsuario[];
   isAdmin: boolean;
+  /**
+   * T-R6: e-mail, situação e último acesso vêm de outra leitura (a janela de
+   * `auth.users`). Se ela falhou, as duas colunas saem — "ativo" e "—" seriam
+   * dado inventado, e a página diz por quê.
+   */
+  situacaoLida: boolean;
+  /** O mesmo para o histórico: sem a leitura, a gaveta não diz "nenhuma mudança". */
+  historicoLido: boolean;
   accounts: AccountOption[];
   /** As lojas Shopee que quem olha alcança (D-434). Sem nenhuma, a coluna não existe. */
   lojas: AccountOption[];
@@ -122,8 +132,8 @@ export function TabelaDeUsuarios({
             <th>Contas ML permitidas</th>
             {temLojas && <th>Lojas Shopee permitidas</th>}
             {/* Só para ADMIN: coluna vazia prometeria um dado que o usuário não vê. */}
-            {isAdmin && <th>Status</th>}
-            {isAdmin && <th className="sb-num">Último acesso</th>}
+            {situacaoLida && <th>Status</th>}
+            {situacaoLida && <th className="sb-num">Último acesso</th>}
           </tr>
         </thead>
         <tbody>
@@ -151,7 +161,7 @@ export function TabelaDeUsuarios({
                       lojasNomes={linha.lojas}
                       lojasConcedidas={linha.lojasConcedidas}
                       historico={linha.historico}
-                      historicoVisivel={isAdmin}
+                      historicoVisivel={isAdmin && historicoLido}
                       nome={linha.nome}
                       organizationId={linha.organizationId}
                       role={linha.role}
@@ -189,7 +199,7 @@ export function TabelaDeUsuarios({
                   />
                 </td>
               )}
-              {isAdmin && (
+              {situacaoLida && (
                 <td>
                   <span className="sb-estado-pessoa" data-status={linha.status}>
                     <i aria-hidden="true" />
@@ -197,7 +207,7 @@ export function TabelaDeUsuarios({
                   </span>
                 </td>
               )}
-              {isAdmin && (
+              {situacaoLida && (
                 <td className="sb-num">
                   <span className="sb-acesso-celula">
                     {/* Nunca entrou é "—", não uma data inventada. */}

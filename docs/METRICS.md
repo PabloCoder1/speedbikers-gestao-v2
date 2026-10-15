@@ -589,6 +589,35 @@ Lidas por `get_shopee_faturamento` (TOTAL e uma linha por loja). A conta é a da
 - **`shopee_composicao_recebido` (D-443):** para onde vai o dinheiro nos MESMOS cobertos — `receita coberta − (comissão + taxa de serviço + taxa de transação + frete da loja + frete de devolução + cupom da loja + afiliados + taxa por pedido) − outros = recebido coberto`, pelos termos da fórmula oficial do `escrow_amount`. Frete da loja = frete real − pago pelo comprador − subsídio da Shopee − desconto do 3PL (negativo = sobrou); `final_shipping_fee` não entra. **Outros** é o que a lista não explica e pode ser negativo. Componente que nenhum pedido informa = NULO. Informativos fora da cascata: comissão e taxa líquidas (Brasil), o bancado pela Shopee e os ajustes depois do escrow. Conferido na documentação e num pedido de sandbox sem taxas; fechar com loja real é verificação do Go Live.
 - **Por dia e por SKU (D-443):** o dia de São Paulo, só lojas live lidas (os dias somam o TOTAL); por SKU, só pedidos de um SKU — sem rateio do recebido entre itens; os de vários SKUs são contados.
 
+## 5V. Ads da Shopee (D-449) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_shopee_ads_overview` e `get_shopee_ads_daily`, do desempenho diário dos **anúncios CPC da loja** (`v2.ads.get_all_cpc_ads_daily_performance`).
+
+| Id | Definição |
+|---|---|
+| `shopee_investimento_ads` | `SUM(expense)` — o gasto dos anúncios CPC da loja. |
+| `shopee_receita_ads` | `SUM(broad_gmv)` — a atribuição ampla da Shopee (qualquer item da loja até 7 dias depois do clique); a direta (o item clicado) à parte. |
+| `shopee_roas` | `receita_ads / investimento`, sobre as somas. NULO sem investimento. Venda sobre investimento, não lucro. |
+| `shopee_acos` | `investimento / receita_ads`, sobre as somas. NULO sem venda com Ads. |
+| `shopee_tacos` | `investimento / receita bruta` das vendas válidas (5S) das mesmas lojas e dias. NULO sem receita. |
+
+- **CPC da loja, não o total de Ads:** os anúncios GMV Max de loja têm consulta própria, só com o agregado do período, e a documentação não diz se o gasto deles está aqui. **Nada disso entra no resultado da venda** até a conferência com loja real.
+- **Cobertura:** dentro da leitura (`ads_read_from`/`ads_read_until`), dia sem linha é dia sem anúncio (0); o resumo diz se o período está inteiro coberto. Loja nunca lida: NULO.
+- **Não soma com o Ads do ML** (5G): atribuições diferentes.
+
+## 5W. Repasse da Shopee (D-451) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee_repasses` e `get_shopee_repasse_pendente`, das liberações do escrow por pedido (`v2.payment.get_escrow_list`).
+
+| Id | Definição |
+|---|---|
+| `shopee_repasse_liberado` | `SUM(payout_amount)` das liberações, pelo **dia da liberação** (São Paulo) — não o da venda. Liberação sem valor fica fora da soma e é contada à parte. |
+| `shopee_repasse_diferenca` | Por pedido liberado no período: a soma de **todas** as liberações dele menos o `escrow_amount` (o previsto, 5S). Desconhecida se o financeiro não foi lido ou se alguma liberação veio sem valor. Conciliação: não entra no recebido nem no resultado. |
+| `shopee_a_liberar` | Retrato de agora: `SUM(escrow_amount)` dos pedidos válidos sem liberação lida, **criados depois do início da leitura** (um anterior pode ter sido liberado antes dela); os sem financeiro são contados. |
+
+- **Cobertura:** liberação fora da leitura (`escrow_releases_read_from` até o marco) é desconhecida; o resumo diz se o período está coberto, tolerando 2 h de atraso no fim. Loja nunca lida: NULO; lida sem repasse: 0.
+- **Não muda o recebido** (`shopee_recebido` segue o `escrow_amount`): o repasse é o realizado ao lado do previsto.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
