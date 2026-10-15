@@ -71,3 +71,17 @@ test("a navegação tem UMA entrada para cobertura e reposição, não duas", as
   await expect(nav.getByRole("link", { name: "Cobertura", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("link", { name: "Reposição", exact: true })).toHaveCount(0);
 });
+
+test("/reposicao: a loja Shopee de teste fica fora da demanda, e a tela diz isso (D-464)", async ({ page }) => {
+  await login(page, "/reposicao");
+
+  /*
+    O seed tem uma loja Shopee em ambiente de TESTE e nenhuma em produção: a
+    RPC devolve a parte da Shopee nula, e a venda é só a do ML. O selo diz por
+    quê, em vez de calar — e nenhuma linha ganha "da Shopee".
+  */
+  const dados = page.locator(".sb-rep-frescor");
+
+  await expect(dados.getByText("Shopee fora da demanda · nenhuma loja em produção lida")).toBeVisible();
+  await expect(page.locator("tbody tr", { hasText: E2E_SKU_CODE })).not.toContainText("da Shopee");
+});

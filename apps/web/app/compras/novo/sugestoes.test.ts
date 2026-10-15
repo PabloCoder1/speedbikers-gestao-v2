@@ -32,12 +32,19 @@ describe("lerSugestoes", () => {
     expect(r?.linhas[0]).toMatchObject({ state: null, suggestedQuantity: null, aproveitavel: null, purchaseCost: null });
   });
 
+  it("a parte da Shopee (D-464): ausente é a função de antes, nulo; número e zero passam como vieram", () => {
+    expect(lerSugestoes({ total: 1, linhas: [linha] })?.linhas[0]?.units30dShopee).toBeNull();
+    expect(lerSugestoes({ total: 1, linhas: [{ ...linha, units_30d_shopee: 5 }] })?.linhas[0]?.units30dShopee).toBe(5);
+    expect(lerSugestoes({ total: 1, linhas: [{ ...linha, units_30d_shopee: 0 }] })?.linhas[0]?.units30dShopee).toBe(0);
+  });
+
   it("campo renomeado ou tipo trocado recusa a resposta inteira", () => {
     const semCampo: Record<string, unknown> = { ...linha };
     delete semCampo.suggested_quantity;
 
     expect(lerSugestoes({ total: 1, linhas: [semCampo] })).toBeNull();
     expect(lerSugestoes({ total: 1, linhas: [{ ...linha, units_30d: "18" }] })).toBeNull();
+    expect(lerSugestoes({ total: 1, linhas: [{ ...linha, units_30d_shopee: "4" }] })).toBeNull();
     expect(lerSugestoes({ linhas: [] })).toBeNull();
     expect(lerSugestoes(null)).toBeNull();
   });

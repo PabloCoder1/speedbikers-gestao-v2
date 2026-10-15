@@ -23,6 +23,11 @@ export interface SugestaoItem {
   readonly suggestedQuantity: number | null;
   readonly coverageDays: number | null;
   readonly units30d: number;
+  /**
+   * Quanto de `units30d` veio da Shopee (C-65, D-464). Nulo = sem loja Shopee em
+   * produção com pedidos lidos, ou a função de antes da migration: só o ML.
+   */
+  readonly units30dShopee: number | null;
   /** Local + Full + trânsito − reservado. Nulo em estoque virtual (D-127). */
   readonly aproveitavel: number | null;
 }
@@ -47,6 +52,11 @@ function lerLinha(v: unknown): SugestaoItem | null {
   if (!numOuNulo(v.aproveitavel) || !ehNum(v.units_30d)) return null;
   if (v.is_imported !== null && typeof v.is_imported !== "boolean") return null;
 
+  // Chave ausente = a função de antes da migration, o mesmo que nulo (D-464).
+  const shopee30 = v.units_30d_shopee ?? null;
+
+  if (!numOuNulo(shopee30)) return null;
+
   return {
     skuId: v.sku_id,
     sku: v.sku,
@@ -58,6 +68,7 @@ function lerLinha(v: unknown): SugestaoItem | null {
     suggestedQuantity: v.suggested_quantity,
     coverageDays: v.coverage_days,
     units30d: v.units_30d,
+    units30dShopee: shopee30,
     aproveitavel: v.aproveitavel,
   };
 }
