@@ -2344,6 +2344,19 @@ summary[aria-disabled="true"] {
 }
 
 /*
+ * UMA COLUNA NO CELULAR (D-510). O cartão não encolhe abaixo de ~179 px — o
+ * título e o selo dividem uma linha, e o botão tem rótulo inteiro —, e a caixa
+ * útil a 390 px é de 292 px: duas colunas transbordavam 106 px para o lado, e
+ * quem rolava era o `.sb-content` (o `<html>` não mostra). Espremer as colunas
+ * com `minmax(0, 1fr)` só trocaria a rolagem por texto cortado dentro do cartão.
+ */
+@media (max-width: 560px) {
+  .sb-attention-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*
   A linha dos medidos-e-limpos. O frame so desenha as situacoes DETECTADAS
   (`attention.map(...)` sobre 4 itens) e conta "N situacoes detectadas"; os
   contadores zerados nao viram cartao — viram esta linha compacta, para o
@@ -2770,10 +2783,15 @@ summary[aria-disabled="true"] {
   border-top: 1px solid var(--sb-table-rule);
 }
 
-/* Dois painéis lado a lado, como a grade inferior do frame. */
+/*
+ * Dois painéis lado a lado, como a grade inferior do frame. O piso é
+ * `min(20rem, 100%)` (D-510): com `20rem` puro, numa caixa útil de 292 px o
+ * painel saía com 320 px e a tela rolava 8 px para o lado em `/central/metas` e
+ * `/faturamento` — a mesma correção que as zonas de `/configuracoes` já tinham.
+ */
 .sb-pair-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: var(--sb-space-3);
   margin-top: var(--sb-space-3);
 }
@@ -5612,10 +5630,37 @@ body > .sb-atualizando-barra {
   }
 }
 
-/* Em duas colunas, três fileiras: os cinco a sete cartões comuns em produção. */
+/*
+ * Em duas colunas, três fileiras: os cinco a sete cartões comuns em produção.
+ * 10,5rem é a altura de um cartão real nessa faixa (168 px medidos a 600 px,
+ * D-510); os 11,5rem de antes vinham do cartão espremido a 390 px, que a grade
+ * de uma coluna aposentou.
+ */
 @media (max-width: 850px) {
   .sb-attention-carregando .sb-attention-card {
-    min-height: 11.5rem;
+    min-height: 10.5rem;
+  }
+}
+
+/*
+ * Em uma coluna (celular, D-510): cinco cartões, calibrados para a seção pronta
+ * a 390 px (977 px). Seis cartões de 184 px davam 1.278 px de esqueleto. No
+ * tablet em pé (701–850 px) o cartão real é mais baixo (142 px a 800 px), e a
+ * faixa própria acima evita os 57 px de sobra que as três fileiras davam.
+ */
+@media (min-width: 701px) and (max-width: 850px) {
+  .sb-attention-carregando .sb-attention-card {
+    min-height: 9.25rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .sb-attention-carregando .sb-attention-card {
+    min-height: 10.25rem;
+  }
+
+  .sb-attention-carregando .sb-attention-card:nth-child(n + 6) {
+    display: none;
   }
 }
 
