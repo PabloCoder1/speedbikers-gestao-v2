@@ -16105,6 +16105,22 @@ A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-475 - O Ads da Shopee nao repete na fila: a retentativa e o proximo ciclo da loja
+
+**Contexto:** na checagem de producao de 15/10, o `shopee.ads.sync` registrava cerca de **10 falhas por hora** desde o deploy da E7b (D-449): o endpoint `get_all_cpc_ads_daily_performance` responde 503 de corpo vazio para a loja sandbox. Cada rodada horaria enfileirava uma leitura nova, e cada uma era repetida pelo Cloud Tasks ate esgotar as tentativas (backoff de 10 s a 600 s). O dado de Ads nao chegava de nenhum jeito, e o custo era execucao de worker, linhas de `job_runs` e ruido no log e na taxa de falha de `/integracoes` (D-462). Nenhum outro job da Shopee falha.
+
+**Decisao:**
+1. **Falha da Shopee no Ads (5xx, `error_server`, rede, limite de requisicoes `ads.rate_limit.*`) e registrada como falha sem retentativa** (`retryable: false`; o worker responde 200 para o Cloud Tasks, D-201). O motivo continua o da Shopee, com "O proximo ciclo da loja le de novo." no fim.
+2. **A retentativa e o proximo ciclo.** O `shopee.orders.sync` de cada loja roda de hora em hora (`v3-shopee-orders`, minuto 20) e, ao alcancar o presente, enfileira outra leitura de Ads; a leitura bem-sucedida so se repete depois de 3 h. Repetir dentro da hora nao adianta o dado.
+3. **O resto nao muda:** `error_not_found` segue periodo vazio; falha ao ler ou gravar no banco e falha do token seguem repetindo; nada e gravado sem leitura (a cobertura nao avanca sobre periodo nao lido).
+
+**Verificacao:**
+- Teste novo no worker: 503 e `ads.rate_limit.exceed_shop_api` saem `retryable: false`, com o motivo da Shopee e nada gravado; a falha ao gravar continua repetindo. 5/5.
+- Mutacao: sem a regra, o teste novo cai.
+- Fica para depois do deploy do worker: no Cloud Logging, ~1 falha do `shopee.ads.sync` por hora no sandbox, em vez de ~10.
+
+**Impacto:** `apps/worker/src/handlers/shopee-ads-sync{,.test}.ts` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`. Publica o worker; sem migration, api ou web. Com loja real, um 503 passageiro atrasa o Ads em no maximo uma hora.
+
 ## D-476 - Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
 
 **Contexto:** a Busca Universal (Ctrl+K, `search_entities`, D-060) achava SKU, anuncio e conta do ML, fornecedor, pedido de compra, atendimento e NF-e. Nao achava nada da Shopee (lacuna C-08 de `docs/MULTICHANNEL_SCREENS.md`).

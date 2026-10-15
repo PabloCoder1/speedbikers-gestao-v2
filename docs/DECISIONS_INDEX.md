@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **478** (D-001 a D-509).
+Decisões registradas: **479** (D-001 a D-509).
 
 ## Por domínio
 
@@ -433,7 +433,7 @@ Decisões registradas: **478** (D-001 a D-509).
 - **D-507** — A metrica de producao sai com a rota carregada e diz se houve navegacao suave antes do envio; o LCP sai no primeiro clique ou tecla, uma vez so
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 
-### worker/infra (85)
+### worker/infra (86)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -519,5 +519,6 @@ Decisões registradas: **478** (D-001 a D-509).
 - **D-453** — Push da Shopee (E7d): o aviso de pedido ou devolucao antecipa a leitura da loja, assinado, em janelas de 5 minutos; o gatilho de hora em hora continua
 - **D-457** — IP fixo de saida em producao: api e worker saem por um Cloud NAT com um IP reservado (34.95.145.35), para a lista de IPs do Go Live da Shopee
 - **D-462** — Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
+- **D-475** — O Ads da Shopee nao repete na fila: a retentativa e o proximo ciclo da loja
 - **D-508** — Acessibilidade dos componentes compartilhados: a auditoria sem dependencia nova, o "Pular para o conteudo" e o titulo que faltava na /acoes
 

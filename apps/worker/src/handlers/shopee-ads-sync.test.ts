@@ -72,10 +72,14 @@ function fakeDb(loja: Loja, opcoes: { erroNaGravacao?: string } = {}) {
   return { db, chamadas };
 }
 
-function fakeShopee(opcoes: { dias?: unknown[]; erro?: string } = {}) {
+function fakeShopee(opcoes: { dias?: unknown[]; erro?: string; status?: number } = {}) {
   const pedidos: URLSearchParams[] = [];
   const fetchImpl = (url: URL) => {
     pedidos.push(url.searchParams);
+
+    if (opcoes.status !== undefined) {
+      return Promise.resolve(new Response("", { status: opcoes.status }));
+    }
 
     if (opcoes.erro !== undefined) {
       return Promise.resolve(new Response(JSON.stringify({ error: opcoes.erro, message: "x" }), { status: 200 }));
@@ -177,18 +181,28 @@ describe("shopee.ads.sync (D-449)", () => {
     expect(recente.pedidos).toEqual([]);
   });
 
-  it("sem dado de Ads é período vazio; limite de requisições é passageiro; falha ao gravar repete", async () => {
+  it("sem dado de Ads é período vazio; falha ao gravar repete", async () => {
     const vazio = await rodar(LOJA, fakeShopee({ erro: "error_not_found" }));
 
     expect(vazio.outcome.status).toBe("done");
     expect(vazio.chamadas[0]).toMatchObject({ p_dias: [] });
 
-    const limite = await rodar(LOJA, fakeShopee({ erro: "ads.rate_limit.exceed_shop_api" }));
-
-    expect(limite.outcome).toMatchObject({ status: "failed", retryable: true });
-
     const gravacao = await rodar(LOJA, fakeShopee(), { erroNaGravacao: "boom" });
 
     expect(gravacao.outcome).toMatchObject({ status: "failed", retryable: true });
+  });
+
+  it("falha da Shopee (503, limite de requisições) não repete na fila: o próximo ciclo da loja lê de novo (D-475)", async () => {
+    const indisponivel = await rodar(LOJA, fakeShopee({ status: 503 }));
+    const limite = await rodar(LOJA, fakeShopee({ erro: "ads.rate_limit.exceed_shop_api" }));
+
+    for (const { outcome, chamadas } of [indisponivel, limite]) {
+      expect(outcome).toMatchObject({ status: "failed", retryable: false });
+      expect(outcome.status === "failed" ? outcome.reason : "").toMatch(/próximo ciclo da loja/);
+      // Nada gravado: a cobertura não avança sobre um período não lido.
+      expect(chamadas).toEqual([]);
+    }
+
+    expect(indisponivel.outcome.status === "failed" ? indisponivel.outcome.reason : "").toMatch(/^Shopee respondeu 503 para GET \/api\/v2\/ads\//);
   });
 });
