@@ -16344,6 +16344,25 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api (o banco é o C-66 do A1).
 
+## D-483 - A taxa de protecao de envio da Shopee como componente do recebido (C-61), em duas fases
+
+**Contexto:** a auditoria da primeira leitura real (16/10, `docs/SHOPEE.md` secao 8) mediu o "outros" do C-61 -- o que a formula oficial do `escrow_amount` nao explica -- em 0,46% da receita coberta de 30 dias, presente em quase todo pedido. **Em 100% dos pedidos cobertos, o outros e exatamente o campo `shipping_seller_protection_fee_amount` do `order_income`** (R$ 0,49 fixo por pedido), que a formula oficial usada na D-443 nao lista. Fora ele, a cascata fecha centavo a centavo; o resultado (recebido - custo) nao depende disso.
+
+**Decisao:**
+1. **A taxa vira componente proprio, `protecao_envio`**, em `get_shopee_faturamento_pedidos` (por pedido) e `get_shopee_faturamento_composicao` (TOTAL e CONTA). Nula quando o financeiro nao foi lido ou o campo nao veio (ausencia nao e zero), como os outros componentes.
+2. **Duas fases, combinadas com o A2, para a cascata visivel nunca deixar de fechar.**
+   - **Fase 1 (esta):** as duas funcoes ganham, no FIM, `protecao_envio` e `outros_restante` (o outros sem a taxa, **calculado no SQL** -- o navegador nao faz conta, AGENTS.md). O `outros` continua o de hoje, ainda com a taxa: a tela de antes segue fechando. A tela nova (A2) mostra "Protecao de envio" e usa `outros_restante` quando a coluna vem (pela presenca, sem flag). Vale sempre **receita - componentes - protecao_envio - outros_restante = recebido**.
+   - **Fase 2 (depois da tela):** o `outros` passa a ser o restante e `outros_restante` sai, com aviso ao A2 antes.
+3. **Drop + create:** mudar as colunas de retorno exige recriar as duas funcoes. Quem le `_pedidos` (`get_shopee_faturamento`, `_diario`, `_por_sku`, `_composicao`) le `k.*` numa CTE e usa as colunas pelo nome -- colunas no fim nao o afetam. O resto de cada funcao e o de producao (D-479 e D-443), byte a byte; permissoes e comentarios reaplicados.
+4. **Tipos:** os dois campos entram como opcionais em `types.ts` (ausentes antes da migration), sem perder as correcoes manuais da D-443.
+
+**Verificacao:**
+- **Integracao:** o describe da D-443 ganhou a taxa no P1 (0,49 dos 2 de "outros") e um teste: o TOTAL com `outros` 2,00 (o de sempre), `protecao_envio` 0,49 e `outros_restante` 1,51; a loja de teste sem a taxa (nula) e o restante igual ao outros; por pedido, a identidade fecha nos tres cobertos, e pedido sem o campo tem a protecao nula, nao zero. Os 6 testes da D-443 verdes.
+- **Mutacao:** campo errado, restante sem tirar a taxa, composicao sem somar a taxa e protecao zero quando ausente -- cada uma derruba o teste novo.
+- **Estatica:** `pnpm run check` verde; o `tsc` da web passa com os campos opcionais.
+
+**Impacto:** `supabase/migrations/20261016180000_protecao_envio_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,METRICS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF}.md`. Em producao: a migration depois do merge e da CI da `main`; a web de hoje segue igual; a tela nova e do A2, empilhada nesta branch.
+
 ## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 
 **Contexto:** a D-500 e a D-501 (A3) trocaram a recarga do documento pela navegação suave nas telas e deixaram, no `check:navegacao-suave`, a lista das telas que ainda recarregavam, "só diminui". Depois da T8a (D-480), sobrou uma: a `/curva-abc`, com dois `<form method="get">` (o período personalizado e a busca com a ordem). O "Para o A2" do handoff multicanal também apontava a `/produtos`: as opções e o "limpar" dos grupos de filtro, os cartões de atalho, o "limpar tudo" e os chips eram `<Link>` para a própria tela, sem sinal nenhum durante a espera. Uma navegação para a mesma tela não troca segmento, então o indicador de navegação do layout (D-512, só para outro caminho) também não aparece.
