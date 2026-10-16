@@ -40,7 +40,8 @@
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
 6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
-7. Rolagem lateral se mede no `.sb-content` — quem rola é o `<main>`, e o
+7. Rolagem lateral se mede no `.sb-content`, pela borda INTERNA (sem o respiro:
+   texto que invade o respiro num sistema sai dele em outro) — quem rola é o `<main>`, e o
    `<html>` diz sempre que não rola —, com celular emulado (barra
    sobreposta). E tabela larga vai num contêiner que rola: o `.sb-panel` tem
    `overflow: hidden`, e a tabela solta some pela borda. Tela nova com forma
