@@ -16591,6 +16591,43 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-494 - Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
+
+**Contexto:** os filtros salvos (`saved_filters`, "Salvar visão" e "Visões salvas") existiam em `/vendas`, `/anuncios` e `/curva-abc`. As duas telas próprias da Shopee, `/anuncios/shopee` e `/vendas/shopee`, não os tinham. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "na Shopee faltam vendas e filtros salvos". Nenhum e2e cobria os filtros salvos, em tela nenhuma.
+
+**1. O mesmo componente, com a chave de cada tela.**
+- `/anuncios/shopee` e `/vendas/shopee` montam o `SavedFilters` de `/vendas`, `/anuncios` e `/curva-abc`, logo depois do seletor de marketplace, como em `/anuncios`.
+- A chave da tela é o próprio caminho (`/anuncios/shopee`, `/vendas/shopee`). Assim, a visão aparece só na tela em que foi salva e abre de volta nela.
+- A visão guarda a URL inteira: loja, vínculo, busca e página; ou período, loja, situação e página.
+- A leitura sai junto com o membership, como em `/anuncios` (D-195): a tabela é por usuário, e a RLS a recorta.
+- **Só web:** `saved_filters.screen` aceita qualquer texto de 1 a 60 caracteres. Não há migration nem RPC nova.
+
+**2. A leitura que falha é dita.** Uma lista vazia por falha pareceria "nenhuma visão salva". As duas telas mostram "Os filtros salvos não carregaram", com o motivo e o "Tentar de novo", como a `/vendas` já fazia. O resto da tela não depende da lista.
+
+**3. O atalho da configuração com as cinco telas.** As Preferências de `/configuracoes` (`lib/settings-hub.ts`) apontavam só Vendas e Anúncios. A `/curva-abc` tem filtros salvos desde a T6b e faltava ali. Agora são cinco: Vendas, Vendas da Shopee, Anúncios, Anúncios da Shopee e Curva ABC. O resumo continua sem dizer em qual tela, porque `saved_filters_mine` conta sem filtrar a tela.
+
+**4. O primeiro e2e dos filtros salvos (`e2e/filtros-salvos.spec.ts`).** Em cada tela da Shopee:
+- salvar, com a janela dizendo o parâmetro que será salvo;
+- abrir a visão da tela sem recorte e voltar ao recorte salvo;
+- a tela vizinha (`/anuncios` do ML, o consolidado de `/vendas`) não listar a visão;
+- apagar.
+O spec apaga o que cria. Com nome fixo, uma rodada interrompida é sobrescrita na seguinte (upsert por usuário, tela e nome).
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica e unitarios:** `pnpm run check` 33/33; `settings-hub.test.ts` 43/43, com a lista das cinco telas.
+- **e2e:**
+  - o spec novo, mais `anuncios-shopee`, `vendas-shopee` e `configuracoes`: 31/31;
+  - **mutação:** a `/anuncios/shopee` salvando com a chave do ML (`/anuncios`) derruba o caso dela.
+- **Suite inteira:** **253/253** com o banco recriado do zero (250 na 3300 e os 3 de convite na 3000) e o `loja-live` **6/6**, sobre a `main` da T11 (a D-492 entrou depois e só toca a cascata do faturamento).
+
+**Impacto:**
+- web: `apps/web/app/(app)/anuncios/shopee/page.tsx`, `apps/web/app/(app)/vendas/shopee/page.tsx` e `apps/web/lib/settings-hub.ts` com o teste;
+- e2e: `filtros-salvos.spec.ts` (novo);
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

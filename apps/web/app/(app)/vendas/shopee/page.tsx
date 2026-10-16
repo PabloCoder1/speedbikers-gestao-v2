@@ -18,6 +18,7 @@ import { FilterMenu } from "../../../../components/filter-menu";
 import { Icone } from "../../../../components/icons";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
+import { SavedFilters, type SavedFilter } from "../../../../components/saved-filters";
 import { SeletorDeMarketplace } from "../../../../components/seletor-marketplace";
 import { StatePill } from "../../../../components/state-pill";
 import { FormularioFiltro } from "../../../../components/formulario-filtro";
@@ -113,9 +114,9 @@ export default async function VendasShopeePage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As lojas não dependem da organização (a RLS já as restringe): saem junto
-  // com o membership, como em `/anuncios/shopee`.
-  const [membership, lojasResult, contasMl] = await Promise.all([
+  // As lojas e os filtros salvos não dependem da organização (a RLS já os
+  // restringe): saem junto com o membership, como em `/anuncios/shopee`.
+  const [membership, lojasResult, contasMl, salvosResult] = await Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
@@ -124,6 +125,8 @@ export default async function VendasShopeePage({
     // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
     // marketplace oferecer a volta a `/vendas`.
     contarContasMl(supabase),
+    // D-494: as visões salvas desta tela -- a tabela é por usuário e por tela.
+    supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas/shopee").order("name"),
   ]);
 
   const organizationId = membership.organizationId;
@@ -154,6 +157,11 @@ export default async function VendasShopeePage({
   }
 
   const lojas = lojasResult.data.filter((loja) => loja.organization_id === organizationId);
+  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
+    id: linha.id,
+    name: linha.name,
+    params: linha.params as Record<string, string>,
+  }));
 
   if (lojas.length === 0) {
     return (
@@ -309,6 +317,10 @@ export default async function VendasShopeePage({
               }}
             />
 
+            {/* D-494: a visão salva guarda a URL inteira (período, loja,
+                situação e página), como em `/vendas`. */}
+            <SavedFilters screen="/vendas/shopee" organizationId={organizationId} filters={salvos} />
+
             {/* Todo o recorte vive na URL, nunca em estado React — link
                 compartilhável e voltar do navegador, como em `/vendas`. */}
             <FilterMenu
@@ -361,6 +373,17 @@ export default async function VendasShopeePage({
           </>
         }
       />
+
+      {/* Leitura que falhou não vira "nenhuma visão salva" (D-494, como em `/vendas`). */}
+      {salvosResult.error !== null && (
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Os filtros salvos não carregaram"
+          descricao="A lista de visões salvas pode estar incompleta; o resto da tela não depende dela."
+          detalhe={salvosResult.error.message}
+          acao={{ href: buildShopeeSalesHref(filters, { pagina: filters.pagina }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      )}
 
       {invalidCustom && (
         <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
