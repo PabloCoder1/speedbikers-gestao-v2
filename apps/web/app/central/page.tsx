@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando";
+import { FormularioFiltro } from "../../components/formulario-filtro";
+import { CorpoTodos } from "../faturamento/multicanal";
 import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
@@ -191,7 +193,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
                 label: preset.label,
               }))}
             >
-              <form method="get" className="sb-periodo-form">
+              <FormularioFiltro action="/central" className="sb-periodo-form">
                 {contaSlug !== null && <input type="hidden" name="account" value={contaSlug} />}
                 <input
                   type="date"
@@ -210,7 +212,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
                 <button type="submit" className="sb-button sb-button-primary">
                   Aplicar período
                 </button>
-              </form>
+              </FormularioFiltro>
             </FilterMenu>
 
             <Link className="sb-button" href="/central/metas">
@@ -280,6 +282,30 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           tentarDeNovo={montarHref(periodoAtual, contaSlug)}
         />
       </Suspense>
+
+      {/*
+        D-480 (T8a, decisão do dono de 15/10): os indicadores acima são do
+        Mercado Livre; a Shopee entra LADO A LADO, com a receita somada e sem
+        total de resultado — o mesmo bloco do "Todos" de /faturamento (D-442),
+        os mesmos números. É da empresa inteira, então só aparece sem conta do
+        ML escolhida. Sem loja Shopee em produção com pedidos lidos, ele mesmo
+        diz que a Shopee ainda não entra.
+      */}
+      {membership.organizationId !== null && selectedAccount === null && (
+        <section aria-label="Por marketplace">
+          <div className="sb-section-label">
+            <span>Por marketplace</span>
+            <span className="sb-section-note">a receita soma; o resultado de cada marketplace fica no dele</span>
+          </div>
+          <Suspense fallback={<CarregandoBloco rotulo="o lado a lado dos marketplaces" />}>
+            <CorpoTodos
+              organizationId={membership.organizationId}
+              recorte={{ escopo: "todos", periodo: { from: periodo.atual.from, to: periodo.atual.to }, contas: null }}
+              range={periodo.atual}
+            />
+          </Suspense>
+        </section>
+      )}
 
       <Suspense fallback={<CarregandoBloco rotulo="detector de frete" />}>
         <SinalDoFrete leitura={leituraFrete} />
