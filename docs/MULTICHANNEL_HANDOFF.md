@@ -131,10 +131,11 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-509: a `/vendas` pinta sem esperar a taxa de cancelamento — as duas `get_sales_expanded_summary` (3,8 s e 0,9 s a frio, A1) só seguram a 5ª célula da faixa âncora, que chega no lugar reservado (`KpiCellTardia`); faixa e gráfico de ~3,3 s para ~0,45 s com a leitura atrasada em 3 s, CLS 0. A falha só delas é dita na célula, sem derrubar a tela. A correção no banco é a D-469 do A1 (#202). **D-508 e D-509 em produção** desde 15/10 (#204, `897bd9ca`).
 - D-510: tela estreita — a Home (106 px) e a `.sb-pair-grid` (`/central/metas` e `/faturamento`, 8 px) deixam de rolar para o lado no celular (medido no `.sb-content`, com celular emulado); o esqueleto da D-504 recalibrado (CLS 0 a 390 e 800 px); e a guarda de e2e `tela-estreita-e-acessibilidade.spec.ts` em 22 rotas. **Em produção** desde 16/10 (#214, `c65a2df7`).
 - D-511: o `Shell` num layout, medido antes num protótipo local — o ganho maior era a trava de ~300 ms do esqueleto em toda troca de tela, não o `Shell`.
-- D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos.
+- D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos. **D-511 e D-512 em produção** desde 16/10 (#219, `a0202e1f`, `dpl_G7FBTKScphC4AwPVyathde1Kstig`), sem erro de execução nas 2 h seguintes.
+- D-513: a troca de tela por código também tem sinal — a paleta de busca, que fecha e chama `router.push`, ficava sem retorno nenhum desde a D-512; agora avisa o `IndicadorDeNavegacao` (`avisarTrocaDeTela`). Com ela, o `e2e/troca-de-tela.spec.ts`: sidebar, link no conteúdo e paleta, com a tela de destino segurada por 1,5 s.
 
 **Em andamento**
-- D-511/D-512 no #219 (`feat/ux-shell-layout`, só web, sem migration), aberto com a autorização do dono; o A2 segura branch nova de tela até ele entrar (combinado em 16/10).
+- D-513 no #221 (`feat/ux-navegacao-por-codigo`, só web, sem migration), aberto com a autorização do dono; entra depois do "liberado" do A1 (a migration da D-479).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
@@ -144,7 +145,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: só a `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464; a `/central` e a `/central/produtos` na T8a, D-480). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
-- Tela nova autenticada (D-512): `app/(app)/<rota>/page.tsx`, SEM `<Shell>` (a moldura vem do layout) e SEM `loading.tsx` (a `check:loading` reprova os dois). Bloco lento vai num `Suspense`; o link para outra tela já tem sinal pelo `IndicadorDeNavegacao`.
+- Tela nova autenticada (D-512): `app/(app)/<rota>/page.tsx`, SEM `<Shell>` (a moldura vem do layout) e SEM `loading.tsx` (a `check:loading` reprova os dois). Bloco lento vai num `Suspense`; o link para outra tela já tem sinal pelo `IndicadorDeNavegacao`. Navegação por código (`router.push`) para outra tela, sem outro retorno na própria tela, chama `avisarTrocaDeTela(href)` antes (D-513); botão que continua pendente até a tela nova abrir não precisa.
 - Tela nova com forma nova (ou a seção "Por marketplace" da `/central`, T8a): entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts`. A rolagem se mede no `.sb-content`, nunca no `<html>`; grade de dois painéis com `.sb-pair-grid` já não transborda; tabela larga vai num contêiner com `overflow-x: auto` (o `.sb-panel` corta, e a guarda acusa a tabela cortada).
 
 ---
