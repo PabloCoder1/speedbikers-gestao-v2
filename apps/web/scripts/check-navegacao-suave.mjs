@@ -41,8 +41,8 @@ const RAIZES = ["app", "components"];
 /** O componente que IMPLEMENTA o GET suave renderiza um `<form method="get">` de verdade. */
 const ISENTOS = new Map([
   ["components/formulario-filtro.tsx", "é o formulário GET suave: o `method` fica para antes do JavaScript carregar"],
-  ["app/compras/[id]/export-actions.tsx", "links de download do Excel e do PDF do pedido (rota de arquivo)"],
-  ["app/fornecedores/canais.tsx", "WhatsApp, telefone, e-mail e site do fornecedor (destinos externos)"],
+  ["app/(app)/compras/[id]/export-actions.tsx", "links de download do Excel e do PDF do pedido (rota de arquivo)"],
+  ["app/(app)/fornecedores/canais.tsx", "WhatsApp, telefone, e-mail e site do fornecedor (destinos externos)"],
 ]);
 
 /**
@@ -50,7 +50,7 @@ const ISENTOS = new Map([
  * daqui quem migrar; ninguém entra.
  */
 const PENDENTES = new Map([
-  ["app/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
+  ["app/(app)/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
 ]);
 
 /** Fim da tag de abertura, respeitando chaves, aspas e template strings. */

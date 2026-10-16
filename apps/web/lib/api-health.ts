@@ -1,5 +1,5 @@
 /**
- * Lê o `/health` da API no Cloud Run — extraído de `app/saude/page.tsx` em
+ * Lê o `/health` da API no Cloud Run — extraído de `app/(app)/saude/page.tsx` em
  * D-231, porque a Central de Integrações precisa da MESMA leitura e um
  * formato só. Qualquer falha — rede, timeout, resposta estranha — vira
  * `null`, e o chamador transforma isso em "não medido" com o motivo. Nunca

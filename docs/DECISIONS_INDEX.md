@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **484** (D-001 a D-510).
+Decisões registradas: **486** (D-001 a D-512).
 
 ## Por domínio
 
@@ -161,7 +161,7 @@ Decisões registradas: **484** (D-001 a D-510).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (63)
+### interface (64)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -226,6 +226,7 @@ Decisões registradas: **484** (D-001 a D-510).
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique
 - **D-510** — Tela estreita: a Home e a sb-pair-grid deixam de rolar para o lado no celular, e as duas auditorias viram guarda de e2e
+- **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
 
 ### mercado-livre (83)
 
@@ -437,7 +438,7 @@ Decisões registradas: **484** (D-001 a D-510).
 - **D-507** — A metrica de producao sai com a rota carregada e diz se houve navegacao suave antes do envio; o LCP sai no primeiro clique ou tecla, uma vez so
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 
-### worker/infra (87)
+### worker/infra (88)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -526,4 +527,5 @@ Decisões registradas: **484** (D-001 a D-510).
 - **D-475** — O Ads da Shopee nao repete na fila: a retentativa e o proximo ciclo da loja
 - **D-477** — O passo do store do pnpm na CI falha onde o pnpm falha, e nao no cache
 - **D-508** — Acessibilidade dos componentes compartilhados: a auditoria sem dependencia nova, o "Pular para o conteudo" e o titulo que faltava na /acoes
+- **D-511** — O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
 

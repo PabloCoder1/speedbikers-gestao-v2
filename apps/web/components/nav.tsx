@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { CarregandoSeODemorar } from "./carregando-link";
 import { Icone, type NomeDoIcone } from "./icons";
 
 /**
@@ -332,15 +333,23 @@ export function SidebarNav({
                 const contagem = contagens?.[item.href] ?? null;
 
                 return (
+                  /*
+                    O link pendente esmaece e a barra da moldura aparece (D-500,
+                    `useLinkStatus`): a troca de tela não tem mais `loading.tsx`
+                    (D-512). `data-pendente-proprio` avisa o
+                    `IndicadorDeNavegacao` para não desenhar a barra de novo.
+                  */
                   <Link
                     key={item.href}
                     href={item.href}
                     aria-current={ativo ? "page" : undefined}
                     className="sb-nav-link"
                     title={item.label}
+                    data-pendente-proprio=""
                   >
                     <Icone nome={item.icone} />
                     <span className="sb-nav-texto">{item.label}</span>
+                    <CarregandoSeODemorar />
                     {contagem !== null && contagem > 0 && (
                       <em className="sb-nav-count">{contagem > 99 ? "99+" : contagem}</em>
                     )}
@@ -372,9 +381,10 @@ export function SidebarRodapeLink({
   const ativo = pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <Link href={href} className="sb-sidebar-link" aria-current={ativo ? "page" : undefined}>
+    <Link href={href} className="sb-sidebar-link" aria-current={ativo ? "page" : undefined} data-pendente-proprio="">
       <Icone nome={icone} />
       <span>{label}</span>
+      <CarregandoSeODemorar />
     </Link>
   );
 }

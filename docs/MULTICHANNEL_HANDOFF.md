@@ -25,10 +25,10 @@
 | `origin/main` | `5d25ebdc` (16/10: #212 e #213 do A1, C-66 e D-475; #211 e #215 do A2, T8a e T8b; #214 do A3, D-510) |
 | Branches abertas | A1: `docs/estado-d475` (#216, o estado da D-475) e `fix/ci-store-path` (o passo do store do pnpm no `ci.yml`) · A2: nenhuma (o #215 entrou) · A3: o Shell num layout de grupo (`app/(app)/`, aprovado pelo dono, a partir de `5d25ebdc`) — segura as branches que tocam `apps/web/app/**` até entrar |
 | Web em produção | `5d25ebdc` (#215, `dpl_9Am1ouYBvf75hETwocjxqE9TaKXx`, READY; merge na `main` publica) |
-| Worker / api em produção | worker `worker-00048-hl2` (`0d4883c2`, 16/10, com a D-475) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log, 15/10), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
+| Worker / api em produção | worker `worker-00049-sfg` e api `api-00035-58x` (`bacdf782`, 16/10), **Shopee LIVE** (partner `2048641`, segredos `SHOPEE_LIVE_*`), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Go Live aprovado pela Shopee e publicado em 16/10; o push live cadastrado no Console pelo dono (a conferir no primeiro `shopee_push_enqueued`) |
 | Migrations em produção | até `20261015130000` (D-441 a D-473, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548`, `38799663780` (15/10) e `38893049400` (16/10)) |
 | Dev | todas as migrations da `main` (até `20261015130000`, pela CI da `main`); serviços pausados (D-350) |
-| Dado Shopee | 1 loja sandbox, 1 pedido, 1 item de catálogo; jobs horários sem falha, menos o Ads: o sandbox responde 503 ao `get_all_cpc_ads_daily_performance` (D-475). Nenhuma loja real |
+| Dado Shopee | **1 loja real** (`shop_id` 427275919, conectada em 16/10 14:15 UTC pelo `/contas`): 90 dias de pedidos lidos na primeira rodada (~95 por dia), 570 anúncios, devoluções, repasses e financeiro chegando sem falha. A loja sandbox fica parada (outro ambiente) e fora dos totais |
 
 ---
 
@@ -129,20 +129,22 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-505: o `/skus/[skuId]` pinta sem esperar a curva ABC — só o selo "Curva X" do cabeçalho espera, no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando` no `ObjectHeader`); com a curva atrasada em 3 s, cabeçalho e LCP de ~3,1 s para ~0,2–0,5 s, CLS 0. Junto, o `EstadoDaTela` sem descrição deixa de pôr o detalhe ao lado do título (achado do A2). **Em produção** desde 15/10 (#196, `27323206`; deploy do `63200d6d`).
 - D-508: acessibilidade dos compartilhados, auditada sem dependência nova em 20 telas (h1, regiões, nomes, rótulos, alt, ids e contraste limpos — os alertas de contraste eram gradiente); o "Pular para o conteúdo" no `Shell` (42 paradas de Tab viram Tab + Enter, sem entrada no histórico) e o h2 que faltava na fila da `/acoes`.
 - D-509: a `/vendas` pinta sem esperar a taxa de cancelamento — as duas `get_sales_expanded_summary` (3,8 s e 0,9 s a frio, A1) só seguram a 5ª célula da faixa âncora, que chega no lugar reservado (`KpiCellTardia`); faixa e gráfico de ~3,3 s para ~0,45 s com a leitura atrasada em 3 s, CLS 0. A falha só delas é dita na célula, sem derrubar a tela. A correção no banco é a D-469 do A1 (#202). **D-508 e D-509 em produção** desde 15/10 (#204, `897bd9ca`).
-- D-510: tela estreita — a Home (106 px) e a `.sb-pair-grid` (`/central/metas` e `/faturamento`, 8 px) deixam de rolar para o lado no celular (medido no `.sb-content`, com celular emulado); o esqueleto da D-504 recalibrado (CLS 0 a 390 e 800 px); e a guarda de e2e `tela-estreita-e-acessibilidade.spec.ts` em 22 rotas.
+- D-510: tela estreita — a Home (106 px) e a `.sb-pair-grid` (`/central/metas` e `/faturamento`, 8 px) deixam de rolar para o lado no celular (medido no `.sb-content`, com celular emulado); o esqueleto da D-504 recalibrado (CLS 0 a 390 e 800 px); e a guarda de e2e `tela-estreita-e-acessibilidade.spec.ts` em 22 rotas. **Em produção** desde 16/10 (#214, `c65a2df7`).
+- D-511: o `Shell` num layout, medido antes num protótipo local — o ganho maior era a trava de ~300 ms do esqueleto em toda troca de tela, não o `Shell`.
+- D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos.
 
 **Em andamento**
-- D-510 na `feat/ux-tela-estreita` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa no merge (a Home e a `.sb-pair-grid` aparecem em telas dele).
+- D-511/D-512 no #219 (`feat/ux-shell-layout`, só web, sem migration), aberto com a autorização do dono; o A2 segura branch nova de tela até ele entrar (combinado em 16/10).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
-- Shell num layout: proposta ao dono; entra num PR próprio, depois da pilha que mexe em `page.tsx`, e com aviso antes ao A2.
 
 **Para o A2**
 - Tela nova: os estados vão no `EstadoDaTela` (D-502); um pedaço que espera uma leitura cara vai num `Suspense` com o lugar reservado — bloco: esqueleto do tamanho dele (Home, D-504); selo do cabeçalho: `ObjectBadgeTardio` (D-505); célula da faixa: `KpiCellTardia` (D-509).
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: só a `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464; a `/central` e a `/central/produtos` na T8a, D-480). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
+- Tela nova autenticada (D-512): `app/(app)/<rota>/page.tsx`, SEM `<Shell>` (a moldura vem do layout) e SEM `loading.tsx` (a `check:loading` reprova os dois). Bloco lento vai num `Suspense`; o link para outra tela já tem sinal pelo `IndicadorDeNavegacao`.
 - Tela nova com forma nova (ou a seção "Por marketplace" da `/central`, T8a): entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts`. A rolagem se mede no `.sb-content`, nunca no `<html>`; grade de dois painéis com `.sb-pair-grid` já não transborda; tabela larga vai num contêiner com `overflow-x: auto` (o `.sb-panel` corta, e a guarda acusa a tabela cortada).
 
 ---

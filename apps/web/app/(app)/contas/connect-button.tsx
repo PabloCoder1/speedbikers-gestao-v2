@@ -1,0 +1,109 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+
+import { createClient } from "../../../lib/supabase/browser";
+
+/**
+ * Início da autorização OAuth de uma conta (`POST /v1/ml-accounts/connect`,
+ * `docs/API.md` secao 2).
+ *
+ * Chama a `api` direto do navegador — não uma Server Action — pelo mesmo
+ * motivo do upload da planilha (`apps/web/app/(app)/importacoes/nova/upload-form.tsx`):
+ * o `web` nunca fala com o Mercado Livre, e é a `api` quem monta a
+ * `authorizationUrl` usando o `client_id` (segredo que o navegador nunca vê).
+ * O token da sessão vai no header `Authorization`; a `api` reavalia o papel
+ * no banco.
+ */
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+interface ConnectResponse {
+  authorizationUrl: string;
+}
+
+interface ErrorResponse {
+  error: { code: string; message?: string };
+}
+
+export function ConnectButton({
+  mlAccountId,
+  label,
+  reconectar = false,
+}: {
+  mlAccountId: string;
+  label: string;
+  /** Conta conectada com a credencial parada: o mesmo fluxo, com o nome certo. */
+  reconectar?: boolean;
+}): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect(): Promise<void> {
+    setBusy(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (token === undefined) {
+      setError("Sua sessão expirou. Entre de novo.");
+      setBusy(false);
+
+      return;
+    }
+
+    let response: Response;
+
+    try {
+      response = await fetch(`${API_URL}/v1/ml-accounts/connect`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mlAccountId }),
+      });
+    } catch {
+      setError("Não foi possível contatar o servidor. Tente novamente.");
+      setBusy(false);
+
+      return;
+    }
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as ErrorResponse | null;
+
+      setError(body?.error.message ?? "Não foi possível iniciar a conexão.");
+      setBusy(false);
+
+      return;
+    }
+
+    const body = (await response.json()) as ConnectResponse;
+
+    // Redirecionamento de página inteira DE PROPÓSITO — é o Mercado Livre
+    // pedindo login e consentimento; não é uma chamada de API comum.
+    window.location.href = body.authorizationUrl;
+  }
+
+  return (
+    <div className="sb-account-connect">
+      <button
+        className="sb-button sb-button-primary"
+        type="button"
+        onClick={() => {
+          void connect();
+        }}
+        disabled={busy}
+        aria-label={`${reconectar ? "Reconectar" : "Conectar"} ${label} ao Mercado Livre`}
+      >
+        {busy ? "Abrindo o Mercado Livre…" : reconectar ? "Reconectar" : "Conectar"}
+      </button>
+
+      {error !== null && (
+        <span role="alert" className="sb-account-connect-error">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}

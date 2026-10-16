@@ -1,0 +1,2177 @@
+import { describeActionEvidence } from "@sb/domain";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Suspense, type ReactNode } from "react";
+
+import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
+import { CarregandoSeODemorar } from "../../../../components/carregando-link";
+import { CopilotContextBeacon } from "../../../../components/copilot-context";
+import { ObjectHeader, SeloCarregando, type ObjectBadge, type ObjectBadgeTardio } from "../../../../components/object-header";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
+import { PageTitle } from "../../../../components/page-title";
+import { Panel } from "../../../../components/panel";
+import { TOM } from "../../../../components/tone";
+import { StatePill } from "../../../../components/state-pill";
+import { StatusPill } from "../../../../components/status-pill";
+import {
+  autorDaDecisao,
+  formatDecisionSnapshot,
+  OUTCOME_WINDOWS_DAYS,
+  outcomeWindowLabel,
+} from "../../../../lib/decision-format";
+import { entityLabel, formatEventDiff } from "../../../../lib/event-format";
+import {
+  formatBusinessDate,
+  formatCount,
+  formatCurrency,
+  formatDateTime,
+  formatPercent,
+} from "../../../../lib/format";
+import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../../lib/labels";
+import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../../lib/full-filters";
+import { formatAge } from "../../../../lib/relative-time";
+import {
+  formatShopeeMoney,
+  isShopeeSchemaMissing,
+  shopeeItemStatus,
+  shopeeModelUnavailable,
+} from "../../../../lib/shopee-listings";
+import { mesmaUrl } from "../../../../lib/mesma-url";
+import { createClient } from "../../../../lib/supabase/server";
+import { descreverCobertura, type CoberturaDescrita } from "../../../../lib/sku-coverage-display";
+import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../../lib/sku-listings";
+import {
+  compararPrecoDaConta,
+  diagnosticarSku,
+  NIVEL,
+  TETO_DISPERSAO_PCT,
+  type AcaoAberta,
+} from "../../../../lib/sku-diagnostico";
+import { FilterMenu } from "../../../../components/filter-menu";
+import { LinkDeFiltro } from "../../../../components/link-de-filtro";
+import { RemoverVinculo } from "./remover-vinculo";
+import { VincularAnuncio } from "./vincular-anuncio";
+import { DiagnosisPanel } from "./diagnosis-panel";
+import { SimulatorPanel } from "./simulator-panel";
+import { VendasEntreMarketplaces } from "./vendas-entre-marketplaces";
+import { SeloCurvaAbc, type LeituraCurvaAbc } from "./selo-curva-abc";
+import { contarLojasShopee } from "../../../../lib/marketplace";
+import { lastBusinessDays } from "../../../../lib/business-window";
+
+export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
+
+// A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
+// pessoa. Mesmo raciocínio das demais telas.
+export const dynamic = "force-dynamic";
+
+/**
+ * "Dashboard de SKU" (Fase 5B) em ABAS (D-169), no escopo final de NOVE abas
+ * de D-224 — progressive disclosure alinhado ao Figma: cada aba só dispara as
+ * consultas de que precisa (o resto vira `Promise.resolve`).
+ *
+ * Ordem e nomes são os aprovados em D-224:
+ * `Visão geral | Vendas | Estoque | Anúncios | Preços | Full | Histórico | Diagnóstico | Decisões`.
+ * `Tráfego` e `Atendimento` saíram lá, com motivo escrito. `Full` (D-225) e
+ * `Preços` (D-226) saíram por reuso de RPC existente. `Vendas` (D-227) é a
+ * única com RPC própria — `get_sku_sales_breakdown` devolve TOTAL, por CONTA
+ * e por DIA num único round trip (grouping sets no banco): a regra
+ * inegociável é agregar em SQL (docs/ARCHITECTURE.md secao 15), e D-185 mediu
+ * que o custo de uma chamada é a viagem, não o SQL. `Decisões` (D-228) é
+ * leitura direta sob RLS — `action_decisions` com o embed `actions!inner`
+ * filtrado pelo SKU da ação, num round trip — e o estado vazio É a tela:
+ * havia UMA decisão registrada em todo o Dev quando ela nasceu.
+ *
+ * A aba vive na URL (`?aba=`, mesmo padrão dos filtros de Movimentações):
+ * valor fora do conjunto fechado cai para a Visão geral antes de tocar o
+ * banco. Janela FIXA de 30 dias, mesma convenção de /cobertura.
+ */
+
+const LOOKBACK_DAYS = 30;
+
+/** Janela da curva ABC — fixa em 90 dias desde D-140, e não é a de cima. */
+const ABC_LOOKBACK_DAYS = 90;
+
+/** A linha do tempo mostra os últimos N — e diz isso quando o corte agiu. */
+const TIMELINE_LIMIT = 50;
+
+// Na ordem aprovada em D-224 (Preços ANTES de Full — a ordem anterior estava
+// trocada em relação ao PRD).
+const TAB_KEYS = [
+  "visao-geral",
+  "vendas",
+  "estoque",
+  "anuncios",
+  "precos",
+  "full",
+  "historico",
+  "diagnostico",
+  "decisoes",
+] as const;
+type TabKey = (typeof TAB_KEYS)[number];
+
+const TAB_LABELS: Record<TabKey, string> = {
+  "visao-geral": "Visão geral",
+  vendas: "Vendas",
+  estoque: "Estoque",
+  anuncios: "Anúncios",
+  precos: "Preços",
+  full: "Full",
+  historico: "Histórico",
+  diagnostico: "Diagnóstico",
+  decisoes: "Decisões",
+};
+
+function parseTab(value: string | string[] | undefined): TabKey {
+  return typeof value === "string" && (TAB_KEYS as readonly string[]).includes(value)
+    ? (value as TabKey)
+    : "visao-geral";
+}
+
+/**
+ * Nulidade real conferida contra o corpo da RPC (o gerador não marca
+ * `account_label` do left join como anulável) — mesmo padrão das demais
+ * telas.
+ */
+interface TimelineRow {
+  id: string;
+  occurred_at: string;
+  event_type: string;
+  entity_type: string;
+  entity_id: string;
+  severity: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  account_label: string | null;
+}
+
+
+function StockBoxes({
+  dashboard,
+}: {
+  dashboard: {
+    local_quantity: number;
+    reservado_quantity: number;
+    transito_quantity: number;
+    full_quantity: number;
+  };
+}): ReactNode {
+  return (
+    <div className="sb-stat-grid sb-skud-mb3">
+      {[
+        { rotulo: "Local", valor: dashboard.local_quantity, nota: "saldo físico da organização" },
+        { rotulo: "Reservado", valor: dashboard.reservado_quantity, nota: "comprometido com pedido" },
+        { rotulo: "Em trânsito", valor: dashboard.transito_quantity, nota: "comprado e ainda não recebido" },
+        { rotulo: "Full", valor: dashboard.full_quantity, nota: "no centro do Mercado Livre" },
+      ].map((caixa) => (
+        <div className="sb-stat" key={caixa.rotulo}>
+          <span className="sb-stat-label">{caixa.rotulo}</span>
+          <b className="sb-stat-value">{formatCount(caixa.valor)}</b>
+          <span className="sb-stat-note">{caixa.nota}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Os SEIS números canônicos de venda no grão SKU (docs/METRICS.md 5.2), lidos
+ * da linha `total` de `get_sku_sales_breakdown`. Nenhuma métrica nova: são os
+ * mesmos ids de `/vendas`, e a RPC é a implementação deles neste grão. As
+ * duas razões chegam calculadas sobre as SOMAS no banco (nunca média de
+ * médias diárias) e vêm NULL com denominador zero — `formatCurrency(null)`
+ * imprime "—", não R$ 0,00.
+ */
+interface SalesTotals {
+  units_sold: number;
+  gross_revenue: number;
+  orders_count: number;
+  purchases_count: number;
+  average_ticket: number | null;
+  average_selling_price: number | null;
+}
+
+interface SalesCard {
+  metricId: string;
+  label: string;
+  formula: string;
+  value: string;
+}
+
+function buildSalesCards(total: SalesTotals): SalesCard[] {
+  return [
+    {
+      metricId: "unidades_vendidas",
+      label: "Unidades vendidas",
+      formula: "SUM(order_items.quantity)",
+      value: formatCount(total.units_sold),
+    },
+    {
+      metricId: "receita_bruta",
+      label: "Receita bruta",
+      formula: "SUM(orders.total_amount) — pedidos pagos ou parcialmente reembolsados",
+      value: formatCurrency(total.gross_revenue),
+    },
+    {
+      metricId: "pedidos",
+      label: "Pedidos",
+      formula: "COUNT(DISTINCT orders.id)",
+      value: formatCount(total.orders_count),
+    },
+    {
+      metricId: "pedidos_por_pack",
+      label: "Compras (por pack)",
+      formula: "COUNT(DISTINCT pack_id, com order_id como fallback)",
+      value: formatCount(total.purchases_count),
+    },
+    {
+      metricId: "ticket_medio",
+      label: "Ticket médio",
+      formula: "receita_bruta / pedidos_por_pack",
+      value: formatCurrency(total.average_ticket),
+    },
+    {
+      metricId: "preco_medio_praticado",
+      label: "Preço médio praticado",
+      formula: "receita_bruta / unidades_vendidas",
+      value: formatCurrency(total.average_selling_price),
+    },
+  ];
+}
+
+/**
+ * Os seis números como UMA faixa de KPIs — a mesma apresentação que `/vendas`
+ * dá às mesmas métricas (mesmos ids canônicos). Eram seis cartões soltos em
+ * `auto-fit`, que a 1440px quebravam em 5 + 1 órfão; a auditoria de
+ * fidelidade apontou, e o design system já tinha a resposta.
+ */
+function salesCells(total: SalesTotals): KpiCellData[] {
+  return buildSalesCards(total).map((card) => ({
+    metricId: card.metricId,
+    label: card.label,
+    formula: card.formula,
+    value: card.value,
+    previous: null,
+  }));
+}
+
+export default async function SkuDashboardPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ skuId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const { skuId } = await params;
+  const query = await searchParams;
+  const tab = parseTab(query.aba);
+  // D-474: "Tentar de novo" é a MESMA URL, com a aba.
+  const tentarDeNovo = { href: mesmaUrl(`/skus/${skuId}`, query), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+
+  const supabase = await createClient();
+
+  const sku = await supabase
+    .from("skus")
+    .select(
+      // Os campos dos SELOS vêm da MESMA linha — zero ida a mais
+      // (D-185: o custo é o round trip). `brand` é a CATEGORIA do UpSeller
+      // (D-129) e por isso não vira selo de marca; quem é marca é
+      // `supplier_brand`, que é decisão humana.
+      "id, sku, title, organization_id, purchase_cost, is_active, is_discontinued, is_imported, stock_is_virtual, supplier_brand, updated_at",
+    )
+    .eq("id", skuId)
+    .maybeSingle();
+
+  // `null` aqui pode ser "não existe" ou "a policy escondeu" — mesmo
+  // raciocínio já usado em apps/web/app/(app)/compras/[id]/page.tsx.
+  if (sku.error !== null || sku.data === null) {
+    notFound();
+  }
+
+  const now = new Date();
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
+  // A curva ABC tem janela PRÓPRIA de 90 dias (D-140): classificação precisa
+  // de sinal mais estável que a janela de 30 dias do resto da tela.
+  const abcFrom = lastBusinessDays(ABC_LOOKBACK_DAYS, now).from;
+
+  // Cada aba só dispara as consultas de que precisa (progressive disclosure
+  // de verdade, não só visual); o que a aba ativa não usa vira
+  // Promise.resolve — mesmo padrão do Full no Dashboard de Anúncio.
+  /*
+    O DIAGNÓSTICO PASSA A LER (D-317). A aba era uma linha só — um botão que
+    calculava no clique —, então ela não disparava consulta nenhuma. Agora ela
+    precisa dos anúncios (estado, preço, estoque por conta), do estoque interno
+    e das ações abertas; as três entram nos gates que já existem, no MESMO
+    `Promise.all`.
+  */
+  const needsDashboard = tab === "visao-geral" || tab === "estoque" || tab === "diagnostico";
+  const needsListings = tab === "visao-geral" || tab === "anuncios" || tab === "diagnostico";
+  const needsHistory = tab === "historico";
+  const needsFull = tab === "full";
+  const needsPrices = tab === "precos";
+  const needsSales = tab === "vendas";
+  const needsDecisions = tab === "visao-geral" || tab === "decisoes";
+  // Os anúncios da Shopee (D-429) só aparecem na aba Anúncios: nem a visão
+  // geral nem o diagnóstico os leem, então a leitura não entra no gate deles.
+  const needsShopee = tab === "anuncios";
+
+  /*
+    A CLASSE ABC do selo do cabeçalho (D-247). `p_sku_id` filtra DEPOIS do
+    ranking, então a classe continua sendo a posição do SKU na curva inteira
+    — não a de um conjunto de um.
+
+    **Custo declarado.** Esta é a leitura mais cara da página: a curva ordena
+    90 dias de `daily_sku_metrics` da organização inteira antes de devolver
+    uma linha (D-166 mediu a família em ~196 ms / 15 mil buffers no Dev; o A1
+    mediu ~5,4 mil páginas frias, D-461). Dentro do `Promise.all`, era ela que
+    definia o piso de TODAS as abas — e alimenta só um selo. Por isso ela sai
+    do `Promise.all` (D-505): começa junto com as outras e é aguardada só
+    dentro do `<Suspense>` do selo (`SeloCurvaAbc`). Se um dia pesar também
+    ali, a saída continua sendo uma coluna materializada de classe, nunca uma
+    segunda fórmula de ABC.
+
+    `Promise.resolve` chama o `then` do construtor do PostgREST, que só
+    executa nesse momento — sem ele, a leitura nem partiria. E o `.catch`
+    transforma em falha de leitura o que LANÇAR: a página pode falhar antes de
+    chegar ao `<Suspense>`, e a promessa não fica rejeitada sem ninguém esperar
+    por ela (a observação do A2 na D-504).
+  */
+  const curvaAbc: Promise<LeituraCurvaAbc> = Promise.resolve(
+    supabase
+      .rpc("get_sku_abc_curve", {
+        p_organization_id: sku.data.organization_id,
+        p_date_from: abcFrom,
+        p_date_to: dateTo,
+        p_sku_id: sku.data.id,
+        p_limit: 1,
+      })
+      .maybeSingle(),
+  ).catch((error: unknown) => ({ data: null, error: error ?? new Error("a leitura da curva ABC falhou") }));
+
+  const [
+    dashboardResult,
+    listingsResult,
+    contasResult,
+    coverageResult,
+    costHistoryResult,
+    timelineResult,
+    fullResult,
+    pricesResult,
+    salesResult,
+    decisionsResult,
+    openActionsResult,
+    acoesAbertasResult,
+    membrosResult,
+    shopeeResult,
+    vendasPorContaResult,
+    lojasShopee,
+  ] = await Promise.all([
+    needsDashboard
+      ? supabase
+          .rpc("get_sku_dashboard", {
+            p_organization_id: sku.data.organization_id,
+            p_sku_id: sku.data.id,
+            p_date_from: dateFrom,
+            p_date_to: dateTo,
+          })
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      OS ANÚNCIOS DO SKU, PELA DEFINIÇÃO CANÔNICA (D-316).
+
+      Era `.eq("sku_id", ...)` — a definição MAIS ESTREITA de "vinculado" que
+      este repositório tem, e ela perde o vínculo por VARIAÇÃO: D-122 mediu
+      1.013 de 1.917 anúncios (52,8%) com `sku_id` nulo E vínculo em
+      `sku_listing_links`. A tela dizia "1 anúncio deste SKU" onde `/produtos`
+      dizia 2, para o mesmo SKU, porque a coluna de lá já usa a régua certa
+      desde D-245.
+
+      A união é SQL (`get_sku_listings`) e não duas idas: o PostgREST não tem
+      relação entre `listings` e `sku_listing_links` para embutir, e agregar
+      duas listas em JS seria a terceira definição da mesma palavra.
+    */
+    needsListings
+      ? supabase.rpc("get_sku_listings", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      As contas para o seletor de "Vincular anúncio" — só as CONECTADAS.
+      Vincular a uma conta revogada gravaria um vínculo que o sync nunca vai
+      reconciliar, porque ele só varre `CONNECTED`. Mesma ida do `Promise.all`,
+      e só na aba que tem o botão.
+    */
+    needsListings
+      ? supabase.from("ml_accounts").select("id, label").eq("status", "CONNECTED").order("label")
+      : Promise.resolve({ data: null, error: null }),
+    // Mesma janela de 30 dias do resumo — venda média diária real, só para
+    // pré-preencher a premissa do simulador (D-080); o usuário pode ajustar
+    // livremente a partir daí.
+    // Em TODAS as abas: o cabeçalho de entidade precisa da cobertura para o
+    // "Risco de ruptura" (o botão em tom de perigo do frame) — uma linha por
+    // SKU, custo desprezível dentro do mesmo `Promise.all`.
+    supabase
+      .rpc("get_stock_coverage", {
+        p_organization_id: sku.data.organization_id,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_sku_id: sku.data.id,
+      })
+      .maybeSingle(),
+    // Histórico de custo cadastrado (D-149) — alimentado por trigger a cada
+    // mudança de `skus.purchase_cost`. Sem backfill: o registro começa em
+    // 30/08/2026 e a tela diz isso.
+    needsHistory
+      ? supabase
+          .from("sku_cost_history")
+          .select("id, previous_cost, new_cost, changed_by_role, changed_at")
+          .eq("sku_id", sku.data.id)
+          .order("changed_at", { ascending: false })
+          .limit(20)
+      : Promise.resolve({ data: null, error: null }),
+    // Linha do tempo (D-153): todos os eventos mapeáveis ao SKU — dele, dos
+    // seus anúncios e dos seus pedidos. História, não causa: aqui o
+    // vocabulário é ABERTO (contrato oposto ao da correlação de D-152).
+    needsHistory
+      ? supabase.rpc("get_sku_timeline", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_limit: TIMELINE_LIMIT,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    // Full por CONTA (D-224). Reusa `get_fulfillment_overview`, que já aceita
+    // `p_sku_id` desde D-173 — nenhuma RPC nova, e o grão certo vem de graça:
+    // a soma é por bucket `inventory_id`, que é o achado que D-173 mediu em
+    // 15,6% de unidades a menos quando se colapsa por (sku, conta).
+    // `p_limit` pequeno porque um SKU existe em poucas contas.
+      needsFull
+        ? supabase.rpc("get_fulfillment_overview", {
+            p_organization_id: sku.data.organization_id,
+            p_date_from: dateFrom,
+            p_date_to: dateTo,
+            p_ml_account_id: null,
+            p_situation: null,
+            p_search: null,
+            p_sku_id: sku.data.id,
+            p_limit: 20,
+            p_offset: 0,
+          })
+        : Promise.resolve({ data: null, error: null }),
+    // Preços (D-226). Reusa `get_price_changes` de D-172, que ganhou
+    // `p_sku_id` — nenhuma RPC nova. A janela aqui é a MESMA de 30 dias das
+    // outras abas, e não a de 7 dias da Central de Preços: a pergunta desta
+    // tela é "o que aconteceu com este SKU no período que a página inteira
+    // está mostrando", não "o que mudou esta semana na operação".
+    needsPrices
+      ? supabase.rpc("get_price_changes", {
+          p_organization_id: sku.data.organization_id,
+          // As demais RPCs desta página recebem `p_date_to` como DIA e o
+          // tratam como inclusivo. `get_price_changes` não: ela recebe
+          // timestamptz e corta em `occurred_at < p_date_to`. Passar
+          // `dateTo` cru esconderia as mudanças de HOJE, sem erro nenhum na
+          // tela. O +1 dia é a mesma correção que /precos já faz.
+          p_date_from: `${dateFrom}T00:00:00Z`,
+          p_date_to: new Date(new Date(`${dateTo}T00:00:00Z`).getTime() + 86_400_000).toISOString(),
+          p_ml_account_id: null,
+          p_direction: null,
+          p_search: null,
+          p_sku_id: sku.data.id,
+          p_limit: 50,
+          p_offset: 0,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    // Vendas (D-227). A única aba com RPC própria: `get_sku_sales_breakdown`
+    // devolve TOTAL, por CONTA e por DIA numa chamada só (grouping sets no
+    // banco). Três perguntas, um round trip (D-185) — e nenhuma soma em
+    // JavaScript: as razões já chegam calculadas sobre as somas.
+    needsSales
+      ? supabase.rpc("get_sku_sales_breakdown", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    // Decisões (D-228). Leitura direta sob RLS, sem RPC: `action_decisions`
+    // com o embed `actions!inner` (o SKU vive na AÇÃO, não na decisão) e o
+    // embed reverso `action_outcomes`. As três tabelas têm a MESMA policy
+    // (`organization_id in (select private.accessible_orgs())`, a forma de
+    // conjunto de D-181), então o embed não volta nulo para
+    // linha visível (a regra de D-206) — e `!inner` faz o filtro pelo SKU
+    // descartar a decisão inteira, nunca anular a ação. Sem cast.
+    needsDecisions
+      ? supabase
+          .from("action_decisions")
+          .select(
+            "id, decision, baseline_snapshot, created_at, created_by, actions!inner(id, kind, status, evidence, recommendation), action_outcomes(window_days, outcome_snapshot, measured_at)",
+          )
+          .eq("actions.sku_id", sku.data.id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: null, error: null }),
+    // Quantas ações ABERTAS este SKU tem — contado no BANCO (`head: true`
+    // devolve só o count), não em JS. Medido em 03/09/2026: máximo de 8
+    // ações por SKU, então caberia contar em JS; a regra não é sobre o
+    // tamanho de hoje.
+    needsDecisions
+      ? supabase
+          .from("actions")
+          .select("id", { count: "exact", head: true })
+          .eq("sku_id", sku.data.id)
+          .in("status", ["novo", "em_andamento"])
+      : Promise.resolve({ data: null, error: null, count: null }),
+    /*
+      AS AÇÕES ABERTAS COM DETALHE, só no diagnóstico (D-317). A Central de
+      Ações já manda o operador para esta aba, e até aqui a ação que o job
+      diário persistiu para este mesmo SKU não aparecia em lugar nenhum dela.
+      A tela LÊ o que já existe — não cria ação, e não recalcula severidade.
+    */
+    tab === "diagnostico"
+      ? supabase
+          .from("actions")
+          .select("id, kind, severity, recommendation, mlb_id")
+          .eq("sku_id", sku.data.id)
+          .in("status", ["novo", "em_andamento"])
+          .order("severity")
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      QUEM DECIDIU (A12, D-320). `action_decisions.created_by` referencia
+      `auth.users`, e não `profiles` — não há FK para o embed do PostgREST, e
+      ler os perfis DEPOIS das decisões seria a leitura em fila que
+      `check:waterfalls` reprova. Então os membros da organização entram no
+      MESMO `Promise.all`: `organization_members.user_id` referencia
+      `profiles`, a policy de membros é `is_member_of` (qualquer membro vê os
+      colegas, não só o ADMIN), e a de perfis foi escrita, nas palavras da
+      própria migration, para "exibir responsável por ação, autor de decisão".
+    */
+    needsDecisions
+      ? supabase
+          .from("organization_members")
+          .select("user_id, profiles(full_name)")
+          .eq("organization_id", sku.data.organization_id)
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      OS ANÚNCIOS DA SHOPEE DESTE SKU (D-429). `get_sku_shopee_listings` lê a
+      view `shopee_listing_units` com a precedência da casa — o vínculo
+      MANUAL vence o pelo SKU do anúncio —, a mesma régua de
+      `/anuncios/shopee`. Mesma ida do `Promise.all`, só na aba que os mostra.
+    */
+    needsShopee
+      ? supabase.rpc("get_sku_shopee_listings", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      AS VENDAS ENTRE MARKETPLACES (D-444, C-59): o total da operação e uma
+      linha por conta ML e loja Shopee, no mesmo período da aba. E o número de
+      lojas Shopee, que decide se a seção aparece: sem loja, ela só repetiria a
+      tabela por conta do ML. Mesma ida, só na aba Vendas.
+    */
+    needsSales
+      ? supabase.rpc("get_sku_sales_by_marketplace_account", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    needsSales ? contarLojasShopee(supabase) : Promise.resolve(null),
+  ]);
+
+  const dashboard = dashboardResult.data;
+  const listings: AnuncioDoSku[] = ((listingsResult.data ?? []) as LinhaDeAnuncio[]).map(lerAnuncio);
+  const contasParaVinculo = contasResult.data ?? [];
+  // Ausente (banco anterior a D-429) não é erro nem "nenhum": a tela diz que a
+  // novidade ainda não chegou, como `/contas` (D-425).
+  const shopeeAusente = isShopeeSchemaMissing(shopeeResult.error);
+  const anunciosShopee = shopeeResult.data ?? [];
+
+  /*
+    O ESCOPO DO DIAGNÓSTICO vive na URL, como a aba (D-317): lista fechada
+    (as contas que ESTE SKU alcança) e valor desconhecido cai em "visão geral"
+    ANTES de tocar qualquer conta — o mesmo molde de `parseTab`.
+
+    Novas contas entram sozinhas: as opções saem dos anúncios, não de uma lista
+    escrita. Plataforma não é dimensão aqui: o diagnóstico julga só os
+    anúncios do Mercado Livre. Os da Shopee (D-429) aparecem na aba Anúncios,
+    mas nenhuma verificação daqui tem régua para eles ainda — a tela diz isso
+    em vez de oferecer um seletor que não recorta nada.
+  */
+  const contasDoSku = [...new Map(listings.map((l) => [l.ml_account_id, l.account_label])).entries()].map(
+    ([id, label]) => ({ id, label: label ?? "conta desconhecida" }),
+  );
+  const escopoBruto = typeof query.escopo === "string" ? query.escopo : null;
+  const contaEscopo = contasDoSku.find((c) => c.id === escopoBruto) ?? null;
+  const anunciosDoEscopo =
+    contaEscopo === null ? listings : listings.filter((l) => l.ml_account_id === contaEscopo.id);
+  /*
+    O DIAGNÓSTICO é calculado aqui, no servidor, sobre o que a página já leu —
+    nenhuma ida nova, nenhuma escrita, nenhum veredito persistido. "Reler
+    agora" é recarregar a página: os dados são lidos a cada renderização, então
+    não existe cache de análise a invalidar nem carimbo de "última análise" a
+    guardar — o instante do dado é o `synced_at` de cada anúncio, que a aba
+    Anúncios mostra.
+  */
+  const diagnostico = diagnosticarSku({
+    anuncios: anunciosDoEscopo,
+    estoqueInterno:
+      dashboard === null
+        ? null
+        : {
+            local: dashboard.local_quantity,
+            reservado: dashboard.reservado_quantity,
+            transito: dashboard.transito_quantity,
+            full: dashboard.full_quantity,
+            virtual: sku.data.stock_is_virtual,
+          },
+    acoesAbertas: ((acoesAbertasResult.data ?? []) as {
+      id: string;
+      kind: string;
+      severity: string;
+      recommendation: string | null;
+      mlb_id: string | null;
+    }[]).map(
+      (linha): AcaoAberta => ({
+        id: linha.id,
+        kind: linha.kind,
+        severity: linha.severity,
+        recommendation: linha.recommendation,
+        mlbId: linha.mlb_id,
+      }),
+    ),
+    agora: new Date(),
+    contaEscopo: contaEscopo?.label ?? null,
+  });
+
+  const comparacaoDeConta = contaEscopo === null ? null : compararPrecoDaConta(listings, contaEscopo.id);
+
+  // Capturado aqui porque dentro do JSX o compilador perde o estreitamento de
+  // `sku.data`, e um `!` esconderia justamente o caso de a leitura mudar.
+  const skuCode = sku.data.sku;
+  const coverage = coverageResult.data;
+  const costHistory = costHistoryResult.data ?? [];
+  const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
+  // Descarta a LINHA-SENTINELA de D-265: `get_fulfillment_overview` devolve
+  // sempre ao menos uma linha, com as colunas do SKU em NULL, para as contagens
+  // da faixa de `/full` sobreviverem a um recorte vazio. Sem o filtro, um SKU
+  // sem saldo no Full renderizaria uma linha fantasma em vez do estado vazio.
+  const full = (fullResult.data ?? []).filter(isFullRow);
+  const prices = pricesResult.data ?? [];
+  const sales = salesResult.data ?? [];
+  // Particionar as (no máximo) 1 + contas + 30 linhas por `grain` não é
+  // agregar: as somas e razões vieram prontas do banco.
+  const salesTotal = sales.find((linha) => linha.grain === "total") ?? null;
+  const salesByAccount = sales.filter((linha) => linha.grain === "conta");
+  const salesByDay = sales.filter((linha) => linha.grain === "dia");
+  const decisions = decisionsResult.data ?? [];
+  const openActions = openActionsResult.count ?? null;
+  // `null` quando a leitura falhou: aí ninguém vira "fora da organização" por
+  // engano — `autorDaDecisao` diz que o autor não carregou.
+  const membros =
+    membrosResult.error !== null || membrosResult.data === null
+      ? null
+      : new Map(membrosResult.data.map((membro) => [membro.user_id, membro.profiles.full_name]));
+
+  /*
+   * Os selos do cabeçalho de entidade. Todos vêm da linha de `skus` já lida —
+   * nenhum é decorativo e nenhum custa ida nova. A ordem é a do frame: estado
+   * primeiro, classificação depois, procedência por último.
+   */
+  /*
+    A COBERTURA, PELA CONTA CANÔNICA (D-314).
+
+    O cartão imprimia `days_of_coverage` da RPC, que é `local ÷ venda média` —
+    a definição que D-288 aposentou. Agora ele lê a mesma peça de `/reposicao`
+    (`aproveitável ÷ taxa de 30 dias`), com as quatro parcelas que esta página
+    JÁ tem em mãos: zero consulta nova.
+
+    A ressalva sai do mesmo módulo, então as duas superfícies que mostram
+    cobertura de SKU — este cartão e a gaveta Inspeção Rápida — não conseguem
+    divergir no texto.
+
+    ⚠️ O Full aqui vem de `get_sku_dashboard`, que agrupa por
+    (conta, anúncio, variação) SEM janela de frescor, enquanto a definição
+    canônica de D-173 agrupa por (conta, inventory_id) com 3 dias. A migration
+    20260909150000 mediu as duas no Dev em 02/09: **mesmo número** (648 SKUs,
+    7.873 unidades) — a divergência é LATENTE. Usar o Full que o cartão vizinho
+    já imprime mantém a tela coerente consigo mesma; se a latente acender, as
+    parcelas no `title` mostram onde.
+  */
+  /*
+    T-R6: a leitura da cobertura que FALHA não é "não calculada para este SKU"
+    (o texto de quando a RPC não devolve linha). Dizer que não foi lida.
+  */
+  const cobertura: CoberturaDescrita =
+    coverageResult.error !== null
+      ? {
+          dias: null,
+          valor: "—",
+          ressalva: "não foi possível ler a cobertura agora",
+          titulo: `a leitura da cobertura falhou: ${coverageResult.error.message}`,
+        }
+      : descreverCobertura(
+        coverage === null || dashboard === null
+          ? null
+          : {
+              local: dashboard.local_quantity,
+              full: dashboard.full_quantity,
+              transito: dashboard.transito_quantity,
+              reservado: dashboard.reservado_quantity,
+              stockIsVirtual: coverage.stock_is_virtual,
+              units15: coverage.units_15d,
+              units30: coverage.units_30d,
+              units60: coverage.units_60d,
+              units90: coverage.units_90d,
+              historyDays90: coverage.history_days_90,
+              // Chave ausente = a função de antes da migration do C-65: a Shopee não entra (D-466).
+              units30Shopee: coverage.units_30d_shopee ?? null,
+            },
+        );
+
+  /*
+   * O tom do cartão de cobertura. `is_ruptura` SAIU daqui (D-314): aquele flag
+   * descreve o saldo LOCAL, e pintar com ele um número que já não é local
+   * reemitiria a incoerência que D-288 fechou — o cartão diria "perigo" com
+   * 318 dias de cobertura porque o local zerou, enquanto o Full sustenta a
+   * venda. O sinal de saldo local zerado não se perde: ele mora no botão "Sem
+   * saldo local" do cabeçalho, onde D-288 o pôs.
+   *
+   * Fica UM caso, e ele não é veredito: estoque virtual em tom de atenção,
+   * porque o número está em branco de propósito.
+   */
+  const coberturaTom = coverage?.stock_is_virtual === true ? "var(--sb-accent-ink)" : null;
+
+  const badges: (ObjectBadge | ObjectBadgeTardio)[] = [
+    sku.data.is_discontinued
+      ? { label: "Descontinuado", tom: "perigo" as const }
+      : sku.data.is_active
+        ? { label: "Ativo", tom: "ok" as const }
+        : { label: "Inativo", tom: "neutro" as const },
+    // Classe ABC, como no frame ("Curva A"), na posição do frame — mas chega
+    // DEPOIS do resto da tela (D-505): é a leitura mais cara da página e só
+    // alimenta este selo. O esqueleto reserva o lugar com a largura do rótulo.
+    {
+      chave: "curva-abc",
+      tardio: (
+        <Suspense fallback={<SeloCarregando rotulo="Curva A" />}>
+          <SeloCurvaAbc leitura={curvaAbc} />
+        </Suspense>
+      ),
+    },
+    ...(sku.data.stock_is_virtual ? [{ label: "Estoque virtual", tom: "atencao" as const }] : []),
+    ...(sku.data.supplier_brand !== null ? [{ label: sku.data.supplier_brand, tom: "info" as const }] : []),
+    ...(sku.data.is_imported ? [{ label: "Importado", tom: "neutro" as const }] : []),
+  ];
+
+  return (
+    <>
+      {/*
+        Como no frame: a página abre com um cabeçalho de página (sobrancelha +
+        "Detalhe do SKU" + uma linha), e o cartão de entidade vem abaixo com o
+        nome do produto como título do cartão. O h1 da tela é o cabeçalho.
+      */}
+      <PageTitle
+        compacto
+        eyebrow="CATÁLOGO / DETALHE DO PRODUTO"
+        title="Detalhe do SKU"
+        subtitle="Visão completa de performance, estoque e histórico."
+      />
+
+      {/*
+        O contexto para a gaveta do Copiloto (D-294). Ele publica o CÓDIGO do
+        SKU, não o UUID da rota: é o código que a ferramenta usa e o que o
+        operador lê. Some sozinho ao sair da tela.
+      */}
+      <CopilotContextBeacon kind="sku" id={sku.data.sku} label={`SKU ${sku.data.sku}`} />
+
+      <ObjectHeader
+        identificador={`SKU ${sku.data.sku}`}
+        titulo={sku.data.title ?? sku.data.sku}
+        badges={badges}
+        meta={`atualizado em ${formatDateTime(sku.data.updated_at)}`}
+        acoes={
+          <>
+            {/*
+              O ESTADO como ação, como no frame ("Risco de Ruptura !" em tom de
+              perigo): só aparece quando o saldo LOCAL acabou, e leva à tela que
+              dá o veredito. Nunca decorativo.
+
+              **O rótulo deixou de dizer "ruptura" em D-288.** `is_ruptura` de
+              `get_stock_coverage` mede uma coisa boa e barata — vende e o
+              estoque local zerou —, mas não é o veredito de ruptura da casa
+              desde a fusão: **150 dos 325 SKUs que ela acusava tinham Full ou
+              trânsito**. O selo passou a dizer o que mede, e a palavra
+              "ruptura" tem um dono só: o estado da tela de Cobertura e
+              reposição, que é para onde este botão leva — já com o SKU buscado.
+            */}
+            {coverage?.is_ruptura === true && (
+              <Link
+                href={`/reposicao?busca=${encodeURIComponent(sku.data.sku)}`}
+                className="sb-button sb-skud-danger-border"
+               
+              >
+                Sem saldo local
+                <span className="sb-status" style={TOM.perigo}>
+                  !
+                </span>
+              </Link>
+            )}
+            {/* "Ações ⌄" — o menu primário do frame, com as ações REAIS do SKU. */}
+            <details className="sb-menu">
+              <summary className="sb-button sb-button-primary">
+                Ações
+                <span aria-hidden="true" className="sb-menu-chevron">
+                  ⌄
+                </span>
+              </summary>
+              <div className="sb-menu-panel sb-skud-menu-right">
+                <Link className="sb-menu-item" href={`/estoque/${skuId}/ajuste`}>
+                  Ajustar estoque
+                </Link>
+                <Link className="sb-menu-item" href="/acoes">
+                  Registrar decisão na Central de Ações
+                </Link>
+                <Link className="sb-menu-item" href={`/reposicao?busca=${encodeURIComponent(sku.data.sku)}`}>
+                  Ver cobertura e reposição
+                </Link>
+                <Link className="sb-menu-item" href="/estoque">
+                  Voltar ao estoque
+                </Link>
+              </div>
+            </details>
+          </>
+        }
+        rotuloAbas="Abas do SKU"
+        abas={TAB_KEYS.map((key) => ({
+          href: key === "visao-geral" ? `/skus/${skuId}` : `/skus/${skuId}?aba=${key}`,
+          label: TAB_LABELS[key],
+          active: key === tab,
+        }))}
+      >
+
+      {tab === "visao-geral" && (
+        <>
+          {dashboardResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o resumo" detalhe={dashboardResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {dashboard !== null && (
+            <>
+              {/*
+                Os quatro indicadores do frame. O terceiro leva BORDA NO TOM
+                quando o estado importa — é o gesto do `.attention-card`, aqui
+                aplicado ao número que decide reposição.
+
+                **Estoque não vira soma.** O frame mostra "Estoque Total 32 un ·
+                29 Local · 3 Full"; somar Local + Reservado + Trânsito + Full
+                seria um agregado que o sistema não define, e agregado sem
+                definição é a classe de número que este projeto recusa. O
+                cartão mostra o LOCAL — o saldo físico da organização — e a
+                nota carrega os outros três, sem perder nenhum.
+              */}
+              <div className="sb-stat-grid">
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Vendas ({LOOKBACK_DAYS}d)</span>
+                  <b className="sb-stat-value">{formatCount(dashboard.units_sold)}</b>
+                  <span className="sb-stat-note">unidades de pedidos válidos</span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Faturamento ({LOOKBACK_DAYS}d)</span>
+                  <b className="sb-stat-value">{formatCurrency(dashboard.gross_revenue)}</b>
+                  <span className="sb-stat-note">
+                    receita bruta —{" "}
+                    {sku.data.purchase_cost === null
+                      ? "sem custo cadastrado"
+                      : `custo cadastrado ${formatCurrency(sku.data.purchase_cost)}`}
+                  </span>
+                </div>
+
+                <div
+                  className="sb-stat"
+                  style={
+                    coberturaTom === null
+                      ? undefined
+                      : { ["--sb-tone" as string]: coberturaTom, ["--sb-tone-ink" as string]: coberturaTom }
+                  }
+                >
+                  <span className="sb-stat-label">Cobertura</span>
+                  <b className="sb-stat-value" title={cobertura.titulo}>
+                    {cobertura.valor}
+                  </b>
+                  <span className="sb-stat-note">{cobertura.ressalva}</span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Estoque local</span>
+                  <b className="sb-stat-value">{formatCount(dashboard.local_quantity)}</b>
+                  <span className="sb-stat-note">
+                    {formatCount(dashboard.reservado_quantity)} reservado ·{" "}
+                    {formatCount(dashboard.transito_quantity)} em trânsito ·{" "}
+                    {formatCount(dashboard.full_quantity)} no Full
+                  </span>
+                </div>
+              </div>
+
+              {/*
+                Os dois painéis do frame. Eles não substituem as abas: são o
+                atalho para o que se olha primeiro, e cada um leva à aba dona do
+                assunto — "um dado, um dono" (D-224).
+              */}
+              <div className="sb-pair-grid">
+                <Panel
+                  title="Anúncios vinculados"
+                  subtitle={
+                    listingsResult.error !== null ? "não foi possível carregar" : resumoDeAnuncios(listings.length)
+                  }
+                  aside={
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`}>
+                      Ver aba →
+                      <CarregandoSeODemorar />
+                    </Link>
+                  }
+                >
+                  {listings.length === 0 ? (
+                    <p className="sb-skud-empty">
+                      Nenhum anúncio vinculado a este SKU.
+                    </p>
+                  ) : (
+                    listings.slice(0, 4).map((linha) => (
+                      <div key={`${linha.ml_account_id}:${linha.item_id}`} className="sb-feed-row">
+                        <span className="sb-skud-grow">
+                          {/* O MLB abre o Dashboard do Anúncio, como na aba Anúncios —
+                              aqui era texto (lote 3 do pente fino). */}
+                          <Link className="sb-skud-id-link"
+                            href={`/anuncios/${linha.item_id}`}
+                           
+                          >
+                            {linha.item_id}
+                          </Link>
+                          <small className="sb-skud-meta-xs">
+                            {linha.account_label ?? "conta desconhecida"}
+                          </small>
+                        </span>
+                        <span className="sb-skud-right">
+                          <b className="sb-skud-value">{formatCurrency(linha.price)}</b>
+                          {linha.status === null ? (
+                            <small className="sb-skud-soft">não sincronizado</small>
+                          ) : (
+                            <StatusPill code={linha.status} label={listingStatusLabel(linha.status)} />
+                          )}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </Panel>
+
+                <Panel
+                  title="Últimas decisões"
+                  subtitle={
+                    decisionsResult.error !== null
+                      ? "não foi possível carregar"
+                      : `${formatCount(decisions.length)} registrada(s) para este SKU`
+                  }
+                  aside={
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`}>
+                      Ver aba →
+                      <CarregandoSeODemorar />
+                    </Link>
+                  }
+                >
+                  {decisions.length === 0 ? (
+                    <p className="sb-skud-empty">
+                      Nenhuma decisão registrada. Uma decisão nasce em <Link href="/acoes">Ações</Link>, e é ela que
+                      permite medir o depois contra o antes.
+                    </p>
+                  ) : (
+                    /*
+                      A ANATOMIA DO FRAME (A12, D-320): avatar de quem decidiu,
+                      título curto, o texto, e autor · idade. Até aqui a linha
+                      era só o texto e a data absoluta — sem QUEM, que é a
+                      primeira pergunta de quem discorda de uma decisão, e sem
+                      o PORQUÊ, que é a ação que a originou.
+
+                      O título é o TIPO da ação ("Venda anômala · Queda"), como
+                      o frame põe "Preço ajustado" em negrito e a narrativa
+                      embaixo. A idade é a de D-311 — `formatAge` com o `now`
+                      desta renderização e a data exata no `title`.
+
+                      O avatar "IA" do frame NÃO entra: `created_by` referencia
+                      `auth.users`, então toda decisão é humana por esquema. A
+                      recomendação do sistema mora na AÇÃO, e o diagnóstico
+                      (D-317) já a mostra.
+                    */
+                    decisions.slice(0, 3).map((linha) => {
+                      const acao = describeActionEvidence(linha.actions.kind, linha.actions.evidence);
+                      const autor = autorDaDecisao(linha.created_by, membros);
+
+                      return (
+                        <div key={linha.id} className="sb-feed-row">
+                          <span aria-hidden="true" className="sb-avatar sb-avatar-feed">
+                            {autor.monograma}
+                          </span>
+                          <span className="sb-skud-grow">
+                            <b>
+                              {acao.kindLabel}
+                              {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                            </b>
+                            <span className="sb-feed-text">{linha.decision}</span>
+                            <small title={formatDateTime(linha.created_at)}>
+                              {autor.rotulo} · {formatAge(linha.created_at, now) ?? formatDateTime(linha.created_at)}
+                            </small>
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </Panel>
+              </div>
+
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "vendas" && (
+        <>
+          {lojasShopee !== null && lojasShopee > 0 && (
+            <VendasEntreMarketplaces
+              linhas={vendasPorContaResult.data ?? []}
+              erro={vendasPorContaResult.error}
+              dias={LOOKBACK_DAYS}
+              tentarDeNovo={tentarDeNovo.href}
+            />
+          )}
+
+          <div className="sb-section-label sb-skud-mt0">
+            <span>{lojasShopee !== null && lojasShopee > 0 ? "No Mercado Livre" : "Vendas do SKU"}</span>
+            <span className="sb-section-note">últimos {LOOKBACK_DAYS} dias, somadas entre as contas no banco</span>
+          </div>
+
+          {/*
+            D-227. A fonte é o recálculo por conta e por dia (`daily_sku_metrics`,
+            refeito a cada reconciliação horária de pedidos nos dias que
+            mudaram) — não é leitura ao vivo de `orders`. Somar entre contas é
+            seguro porque pack e pedido pertencem a UMA conta (D-017/D-050), e
+            somar entre dias também: medido em 03/09/2026, 172.624 packs, ZERO
+            em mais de um dia.
+          */}
+
+          {salesResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as vendas" detalhe={salesResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {salesResult.error === null && salesTotal === null && (
+            <EstadoDaTela tipo="vazio" titulo="Sem dado de vendas para este SKU" />
+          )}
+
+          {salesResult.error === null && salesTotal !== null && (
+            <>
+              <div className="sb-skud-mb3">
+                <KpiStrip ancora cells={salesCells(salesTotal)} />
+              </div>
+
+              {salesTotal.units_sold === 0 && (
+                <p className="sb-skud-note-mb">
+                  Nenhuma venda válida contabilizada para este SKU no período. É o que o recálculo registrou: um
+                  pedido ainda não reconciliado, ou vendido por anúncio sem vínculo com este SKU, não entra aqui.
+                </p>
+              )}
+
+              {salesByAccount.length > 0 && (
+                  <Panel title="Por conta" subtitle="Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias diárias.">
+                  <div className="sb-skud-scroll">
+                    <table className="sb-table sb-skud-min-44">
+                      <thead>
+                        <tr>
+                          <th>Conta</th>
+                          <th className="sb-num">Unidades</th>
+                          <th className="sb-num">Receita bruta</th>
+                          <th className="sb-num">Pedidos</th>
+                          <th className="sb-num">Compras</th>
+                          <th className="sb-num">Ticket médio</th>
+                          <th className="sb-num">Preço médio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesByAccount.map((linha) => (
+                          <tr key={linha.ml_account_id ?? linha.account_label ?? "conta"}>
+                            {/* `account_label` vem de LEFT JOIN em ml_accounts: uma conta
+                                que a RLS não mostre (ou que tenha sido removida) deixa a
+                                venda visível e o rótulo nulo — a venda aconteceu. */}
+                            <td>{linha.account_label ?? "Conta não identificada"}</td>
+                            <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                            <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                            <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                            <td className="sb-num">{formatCount(linha.purchases_count)}</td>
+                            <td className="sb-num">{formatCurrency(linha.average_ticket)}</td>
+                            <td className="sb-num">{formatCurrency(linha.average_selling_price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              )}
+
+              {salesByDay.length > 0 && (
+                <div className="sb-skud-mt3">
+                  <Panel title="Por dia" subtitle="Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas). Duas contas no mesmo dia viram uma linha só.">
+                  <div className="sb-skud-scroll">
+                    <table className="sb-table sb-skud-min-32">
+                      <thead>
+                        <tr>
+                          <th>Dia</th>
+                          <th className="sb-num">Unidades</th>
+                          <th className="sb-num">Receita bruta</th>
+                          <th className="sb-num">Pedidos</th>
+                          <th className="sb-num">Compras</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesByDay.map((linha) => (
+                          <tr key={linha.metric_date ?? "dia"}>
+                            {/* `metric_date` é DATA DE NEGÓCIO (YYYY-MM-DD): formatar por
+                                string, nunca por `new Date` (deslocaria o dia civil). */}
+                            <td className="sb-skud-nowrap">
+                              {linha.metric_date === null ? "—" : formatBusinessDate(linha.metric_date)}
+                            </td>
+                            <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                            <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                            <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                            <td className="sb-num">{formatCount(linha.purchases_count)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+                </div>
+              )}
+
+              {salesTotal.last_computed_at !== null && (
+                <p className="sb-skud-small">
+                  Última mudança entre as linhas mostradas: {formatDateTime(salesTotal.last_computed_at)}.
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "estoque" && (
+        <>
+          {dashboardResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o resumo" detalhe={dashboardResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {dashboard !== null && (
+            <>
+              <div className="sb-section-label sb-skud-mt0">
+                <span>Saldo por local</span>
+                <span className="sb-section-note">
+                  os quatro estados do ledger — nenhum deles é a soma dos outros
+                </span>
+              </div>
+
+              <StockBoxes dashboard={dashboard} />
+
+              <Panel
+                title="Simulador de cobertura"
+                subtitle="Premissas pré-preenchidas com o saldo local e a venda média medida; mudar qualquer uma delas muda só a simulação, nunca o dado."
+                aside={
+                  <Link className="sb-skud-link" href={`/estoque/${skuId}/ajuste`}>
+                    Ajustar estoque →
+                  </Link>
+                }
+              >
+                <div className="sb-skud-pad">
+                  <SimulatorPanel
+                    asOf={dateTo}
+                    initialStockQuantity={coverage?.local_quantity ?? 0}
+                    initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
+                  />
+
+                  <p className="sb-skud-footnote">
+                    Todo ajuste manual de estoque exige motivo e fica no ledger — ele é movimento auditável, não
+                    correção silenciosa.
+                  </p>
+                </div>
+              </Panel>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "anuncios" && (
+        <>
+        <Panel
+          title="Anúncios vinculados"
+          subtitle={listingsResult.error === null ? resumoDeAnuncios(listings.length) : undefined}
+          /*
+            O BOTÃO DO PEDIDO, no slot que o `Panel` já tem. A lista de contas
+            é a das CONECTADAS: vincular a uma conta revogada gravaria um
+            vínculo que o sync nunca vai reconciliar.
+          */
+          aside={<VincularAnuncio skuId={sku.data.id} skuCode={skuCode} contas={contasParaVinculo} />}
+        >
+          <div className="sb-panel-body">
+
+          {listingsResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os anúncios" detalhe={listingsResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {/* T-R6: sem as contas, "Vincular anúncio" abriria sem conta nenhuma para escolher. */}
+          {contasResult.error !== null && (
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar as contas"
+              descricao="O vínculo manual fica sem a lista de contas até a leitura voltar."
+              detalhe={contasResult.error.message}
+              acao={tentarDeNovo}
+            />
+          )}
+
+          {listingsResult.error === null && listings.length === 0 && (
+            <EstadoDaTela tipo="vazio" titulo="Nenhum anúncio vinculado a este SKU" />
+          )}
+
+          {listingsResult.error === null && listings.length > 0 && (
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-48">
+                <thead>
+                  <tr>
+                    <th>Conta</th>
+                    <th>Anúncio</th>
+                    <th>Estado</th>
+                    <th className="sb-num">Estoque</th>
+                    <th className="sb-num">Preço</th>
+                    <th>Vínculo</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {listings.map((listing) => {
+                    const acao = acaoDeVinculo(listing);
+
+                    return (
+                      <tr key={`${listing.ml_account_id}:${listing.item_id}`}>
+                        <td>{listing.account_label ?? "—"}</td>
+                        <td>
+                          {/*
+                            O anúncio pode ter vínculo e ainda não ter sido
+                            sincronizado: o que falta é a linha de `listings`,
+                            não o vínculo. A tela mostra o MLB e diz o resto.
+                          */}
+                          {listing.title ?? <span className="sb-skud-soft">ainda não sincronizado</span>}
+                          <div className="sb-skud-mono-caption">
+                            <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
+                          </div>
+                        </td>
+                        <td>
+                          {listing.status === null ? (
+                            "—"
+                          ) : (
+                            <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
+                          )}
+                        </td>
+                        {/*
+                          ESTOQUE DO ANÚNCIO, e o rótulo da coluna não basta:
+                          esta tela mostra três saldos de origens diferentes
+                          (o do anúncio no ML, o do Full e o do ERP). O `title`
+                          carrega a qualificação, como a faixa de KPIs faz.
+                        */}
+                        <td
+                          className="sb-num"
+                          title="estoque DESTE anúncio no Mercado Livre, na última sincronização — não é o saldo do ERP nem o do Full"
+                        >
+                          {listing.available_quantity === null ? "—" : formatCount(listing.available_quantity)}
+                        </td>
+                        <td className="sb-num">{formatCurrency(listing.price)}</td>
+                        <td className="sb-skud-caption">{acao.rotuloForma}</td>
+                        <td>
+                          <span className="sb-skud-row">
+                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`}>
+                              Ver
+                            </Link>
+
+                            {acao.linkId === null ? (
+                              /*
+                                SEM LINHA DE VÍNCULO NÃO HÁ O QUE REMOVER, e
+                                a tela diz isso em vez de mostrar um botão que
+                                a RPC recusaria com "vinculo nao encontrado".
+                              */
+                              <span className="sb-skud-xs" title={acao.motivoSemAcao ?? undefined}>
+                                —
+                              </span>
+                            ) : (
+                              <RemoverVinculo
+                                linkId={acao.linkId}
+                                itemId={listing.item_id}
+                                skuCode={skuCode}
+                              />
+                            )}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/*
+            A RÉGUA, ESCRITA. O número de anúncios SUBIU quando a tela passou a
+            usar a definição canônica (D-316), e número que sobe sem explicação
+            se lê como defeito.
+          */}
+          {listingsResult.error === null && (
+            <p className="sb-skud-note-top">
+              Conta como vinculado o anúncio que aponta para este SKU pela última sincronização <strong>ou</strong>{" "}
+              que tem linha de vínculo — a mesma régua de <Link href="/vinculacoes">Vinculações</Link> e de{" "}
+              <Link href="/produtos">Produtos</Link>. Estoque e preço são os da última sincronização do anúncio.
+            </p>
+          )}
+          </div>
+        </Panel>
+
+        {/*
+          A SHOPEE (D-429), em painel próprio e depois do Mercado Livre: são
+          canais com tabelas próprias (D-425), e misturar as linhas numa tabela
+          só pediria colunas que um dos dois não tem (conta × loja, MLB ×
+          item/variação). Só leitura aqui — o vínculo manual se grava em
+          Anúncios da Shopee, que é para onde o número do item leva.
+        */}
+        <div className="sb-skud-mt3">
+          <Panel
+            title="Anúncios da Shopee"
+            subtitle="Vínculo manual, que vence, ou pelo SKU que o vendedor digitou no anúncio — a mesma régua de Anúncios da Shopee."
+            aside={
+              <Link className="sb-skud-link" href="/anuncios/shopee">
+                Todos os anúncios da Shopee →
+              </Link>
+            }
+          >
+            <div className="sb-panel-body">
+              {shopeeAusente && (
+                <EstadoDaTela tipo="vazio" titulo="Os anúncios da Shopee chegam com a próxima atualização do banco." />
+              )}
+
+              {shopeeResult.error !== null && !shopeeAusente && (
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="Não foi possível carregar os anúncios da Shopee"
+                  detalhe={shopeeResult.error.message}
+                  acao={tentarDeNovo}
+                />
+              )}
+
+              {shopeeResult.error === null && anunciosShopee.length === 0 && (
+                <EstadoDaTela tipo="vazio" titulo="Nenhum anúncio Shopee vinculado a este SKU" />
+              )}
+
+              {shopeeResult.error === null && anunciosShopee.length > 0 && (
+                <div className="sb-skud-scroll">
+                  <table className="sb-table sb-skud-min-48" aria-label="Anúncios da Shopee deste SKU">
+                    <thead>
+                      <tr>
+                        <th>Loja</th>
+                        <th>Anúncio</th>
+                        <th title="O SKU que o vendedor digitou no anúncio: o da variação, ou o do item sem variação">
+                          SKU do anúncio
+                        </th>
+                        <th className="sb-num">Preço</th>
+                        <th className="sb-num">Estoque</th>
+                        <th>Status</th>
+                        <th>Vínculo</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {anunciosShopee.map((anuncio) => {
+                        const status = shopeeItemStatus(anuncio.item_status);
+
+                        return (
+                          <tr
+                            key={`${anuncio.shopee_shop_id}:${String(anuncio.item_id)}:${anuncio.model_id === null ? "item" : String(anuncio.model_id)}`}
+                          >
+                            <td>
+                              {anuncio.shop_name ?? "—"}
+                              {/* C-06: a loja de sandbox marcada, como em toda tela da Shopee. */}
+                              {anuncio.environment !== "live" && (
+                                <span className="sb-an-meta">
+                                  <StatePill tone={{ tom: "atencao", label: "Teste" }} />
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {anuncio.item_name ?? <span className="sb-skud-soft">nome ainda não lido</span>}
+                              {anuncio.model_name !== null && (
+                                <span className="sb-skud-meta">{anuncio.model_name}</span>
+                              )}
+                              <div className="sb-skud-mono-caption">
+                                {/* O item abre a lista da Shopee já buscada por ele,
+                                    onde o vínculo manual se troca ou remove. */}
+                                <Link
+                                  href={`/anuncios/shopee?q=${String(anuncio.item_id)}`}
+                                  title="Abrir em Anúncios da Shopee"
+                                >
+                                  {anuncio.item_id}
+                                </Link>
+                                {anuncio.model_id !== null && ` · variação ${String(anuncio.model_id)}`}
+                              </div>
+                            </td>
+                            <td className="sb-skud-mono">{anuncio.sku_anuncio ?? "—"}</td>
+                            <td className="sb-num">{formatShopeeMoney(anuncio.current_price, anuncio.currency)}</td>
+                            {/* Ausente é "—", nunca zero (D-067); e o saldo é o DO
+                                ANÚNCIO na Shopee, não o do ERP. */}
+                            <td
+                              className="sb-num"
+                              title="estoque DESTE anúncio na Shopee, na última leitura do catálogo — não é o saldo do ERP"
+                            >
+                              {anuncio.available_stock === null ? "—" : formatCount(anuncio.available_stock)}
+                            </td>
+                            <td>
+                              <StatePill tone={{ tom: status.tom, label: status.rotulo }} />
+                              {shopeeModelUnavailable(anuncio.model_status) && (
+                                <span className="sb-skud-meta">variação indisponível</span>
+                              )}
+                            </td>
+                            <td className="sb-skud-caption">
+                              {anuncio.vinculo_via === "MANUAL"
+                                ? "vínculo manual"
+                                : anuncio.vinculo_via === "SKU_DO_ANUNCIO"
+                                  ? "pelo SKU do anúncio"
+                                  : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Panel>
+        </div>
+        </>
+      )}
+
+      {tab === "full" && (
+        <Panel title="Full por conta">
+          <div className="sb-panel-body">
+
+          <p className="sb-skud-lead">
+            Saldo no Full de cada conta, somado por bucket de variação — o grão que D-173 mediu como certo. O
+            estoque LOCAL aparece em coluna separada de propósito: são quatro estados com autoridades
+            diferentes, e somá-los daria um número que não existe.
+          </p>
+
+          {fullResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o Full" detalhe={fullResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {fullResult.error === null && full.length === 0 && (
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhuma conta com snapshot recente de Full para este SKU"
+              descricao="Ausência de snapshot não é o mesmo que saldo zero — é a falta do dado."
+            />
+          )}
+
+          {fullResult.error === null && full.length > 0 && (
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-40">
+                <thead>
+                  <tr>
+                    <th>Conta</th>
+                    <th className="sb-num">No Full</th>
+                    <th className="sb-num">Buckets</th>
+                    <th className="sb-num">Local (org.)</th>
+                    <th className="sb-num">Vendas {LOOKBACK_DAYS}d</th>
+                    <th>Situação</th>
+                    <th>Capturado</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {full.map((linha) => (
+                    <tr key={linha.ml_account_id}>
+                      <td>{linha.account_label}</td>
+                      <td className="sb-num">{formatCount(linha.full_quantity)}</td>
+                      <td className="sb-num">{formatCount(linha.buckets)}</td>
+                      <td className="sb-num">{formatCount(linha.local_quantity)}</td>
+                      <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                      {/*
+                        Estado é CHIP, como em toda tabela do frame — era texto
+                        pintado de vermelho só na ruptura, com o critério
+                        escondido no `title`. O critério continua no `title`; o
+                        tom agora diz o estado sem depender de cor sozinha.
+                      */}
+                      <td title={fullSituationCriterion(linha.situation)}>
+                        <span className="sb-status" style={TOM[fullSituationTom(linha.situation)]}>
+                          {fullSituationLabel(linha.situation)}
+                        </span>
+                      </td>
+                      {/* Sem checagem de nulo, e a razão foi conferida no SQL, não no
+                          compilador (D-192/D-206): a consulta é DIRIGIDA pelo snapshot —
+                          `vendas` e `saldo_local` é que entram por left join —, então
+                          toda linha devolvida tem `captured_at`. O nulo é inalcançável. */}
+                      <td className="sb-skud-text-soft">
+                        {formatDateTime(linha.captured_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </div>
+        </Panel>
+      )}
+
+      {tab === "precos" && (
+        <Panel title="Mudanças de preço observadas">
+          <div className="sb-panel-body">
+
+          {/*
+            D-226. A palavra "observadas" não é enfeite: `listing.price.changed`
+            é um DIFF entre dois snapshots de 6 em 6 horas, então uma mudança que
+            sobe e volta dentro da mesma janela não existe aqui, e a primeira
+            aparição de um anúncio não gera evento (não há "antes").
+          */}
+          {/*
+            A ressalva do DIFF vive aqui, no texto permanente, e não só no
+            estado vazio: "uma alteração feita e desfeita entre duas
+            sincronizações não deixa registro" continua verdade quando há
+            linhas — e é aí que ela mais importa, porque a lista cheia parece
+            completa. Ela morava só no ramo `prices.length === 0`.
+          */}
+          <p className="sb-skud-lead">
+            Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
+            {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas sincronizações não deixa registro.{" "}
+            {/* A data cravada ("24/08/2026") era a da primeira organização — a mesma
+                classe que D-234 tirou de /precos. A série de cada uma começa na
+                primeira sincronização dela. */}
+            <strong>Não há análise de impacto</strong>: a série de preços ainda é curta e a mediana é de uma mudança
+            por SKU — ligar preço a venda com isso seria inventar causa.
+          </p>
+
+          {pricesResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as mudanças de preço" detalhe={pricesResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {pricesResult.error === null && prices.length === 0 && (
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhuma mudança de preço observada neste período"
+              descricao={
+                <>
+                  Isso <strong>não</strong> quer dizer que o preço ficou parado.
+                </>
+              }
+            />
+          )}
+
+          {pricesResult.error === null && prices.length > 0 && (
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-42">
+                <thead>
+                  <tr>
+                    <th>Quando</th>
+                    <th>Anúncio</th>
+                    <th>Conta</th>
+                    <th className="sb-num">De</th>
+                    <th className="sb-num">Para</th>
+                    <th className="sb-num">Δ</th>
+                    <th className="sb-num">Δ %</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {prices.map((linha) => {
+                    const subiu = linha.delta > 0;
+                    const cor = subiu ? "var(--sb-secondary)" : "var(--sb-danger)";
+
+                    return (
+                      <tr key={linha.event_id}>
+                        <td className="sb-skud-text-soft">
+                          {formatDateTime(linha.occurred_at)}
+                        </td>
+                        <td>
+                          <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
+                          {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
+                              catálogo depois do evento, e o evento continua sendo
+                              verdade. Mostrar o MLB sem título é mais honesto do que
+                              esconder a linha (contrato de D-172). */}
+                          {linha.title !== null && (
+                            <div className="sb-skud-text-soft">{linha.title}</div>
+                          )}
+                        </td>
+                        <td>{linha.account_label}</td>
+                        <td className="sb-num">{formatCurrency(linha.price_before)}</td>
+                        <td className="sb-num">{formatCurrency(linha.price_after)}</td>
+                        <td className="sb-num" style={{ color: cor }}>
+                          {subiu ? "+" : ""}
+                          {formatCurrency(linha.delta)}
+                        </td>
+                        <td className="sb-num" style={{ color: cor }}>
+                          {/* NULL quando o preço anterior era zero — a fração não
+                              existe, e "0%" seria mentira. */}
+                          {linha.delta_ratio === null ? "—" : `${subiu ? "+" : ""}${formatPercent(linha.delta_ratio)}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </div>
+        </Panel>
+      )}
+
+      {tab === "historico" && (
+        <>
+        <Panel title="Custo cadastrado">
+          <div className="sb-panel-body">
+          {/*
+            Custo cadastrado + histórico (D-149). Duas honestidades: o
+            registro começa em 30/08/2026 (não há como historiar o que a
+            importação já sobrescreveu antes), e o custo de PEDIDO é outro
+            número — vive em purchase_order_items.unit_cost e nunca escreve
+            de volta aqui.
+          */}
+
+          {/*
+            Um número com nome e nota é um CARTÃO DE INDICADOR, não uma frase.
+            Era "Custo atual: —" em texto corrido, e na tela isso lia como
+            "Custo atual: — — sobrescrito a cada…".
+          */}
+          <div className="sb-stat-grid" style={{ ["--sb-stat-cols" as string]: "2", marginBottom: "var(--sb-space-3)" }}>
+            <div className="sb-stat">
+              <span className="sb-stat-label">Custo cadastrado</span>
+              <b className="sb-stat-value">{formatCurrency(sku.data.purchase_cost)}</b>
+              <span className="sb-stat-note">
+                {sku.data.purchase_cost === null
+                  ? "sem custo cadastrado — a importação do UpSeller o preenche"
+                  : "sobrescrito a cada importação do UpSeller"}
+              </span>
+            </div>
+
+            <div className="sb-stat">
+              <span className="sb-stat-label">Mudanças registradas</span>
+              <b className="sb-stat-value">
+                {costHistoryResult.error === null ? formatCount(costHistory.length) : "—"}
+              </b>
+              <span className="sb-stat-note">
+                {costHistoryResult.error === null
+                  ? "desde 30/08/2026, quando o rastreio começou"
+                  : "não foi possível carregar o histórico"}
+              </span>
+            </div>
+          </div>
+
+          <p className="sb-skud-sub-sm">
+            O custo usado num pedido de compra é editável no próprio pedido e nunca altera este cadastro.
+          </p>
+
+          {costHistoryResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o histórico de custo" detalhe={costHistoryResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {costHistoryResult.error === null && costHistory.length === 0 && (
+            <EstadoDaTela tipo="vazio" titulo="Nenhuma mudança registrada desde o início do rastreio (30/08/2026)" />
+          )}
+
+          {costHistoryResult.error === null && costHistory.length > 0 && (
+            <div className="sb-skud-scroll">
+              <table className="sb-table sb-skud-min-32">
+                <thead>
+                  <tr>
+                    <th>Quando</th>
+                    <th>De</th>
+                    <th>Para</th>
+                    <th>Origem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {costHistory.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="sb-skud-nowrap">{formatDateTime(entry.changed_at)}</td>
+                      {/* `De` vazio = primeiro registro (o SKU nasceu com custo). */}
+                      <td className="sb-num">{formatCurrency(entry.previous_cost)}</td>
+                      <td className="sb-num">{formatCurrency(entry.new_cost)}</td>
+                      <td className="sb-skud-soft">
+                        {entry.changed_by_role === "service_role"
+                          ? "importação (worker)"
+                          : entry.changed_by_role === "postgres"
+                            ? "operação direta no banco"
+                            : entry.changed_by_role}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          </div>
+        </Panel>
+
+        <div className="sb-skud-mt3">
+          <Panel title="Linha do tempo">
+            <div className="sb-panel-body">
+          {/*
+            Linha do tempo (D-153) — a ordem dos acontecimentos. Vocabulário
+            ABERTO de propósito (contrato oposto ao da correlação): história
+            não edita o passado. Diff só para formatos documentados
+            (formatEventDiff devolve null para o resto — nunca leitura
+            inventada).
+          */}
+
+          {timelineResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar a linha do tempo" detalhe={timelineResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {timelineResult.error === null && timeline.length === 0 && (
+            <EstadoDaTela
+              tipo="vazio"
+              titulo="Nenhum evento registrado para este SKU"
+              descricao="A linha do tempo nasce dos eventos de domínio (webhook e reconciliações) e só enxerga o que o sistema registrou."
+            />
+          )}
+
+          {timelineResult.error === null && timeline.length > 0 && (
+            <>
+              {timeline.length >= TIMELINE_LIMIT && (
+                <p className="sb-skud-sub">
+                  Mostrando os {TIMELINE_LIMIT} eventos mais recentes.
+                </p>
+              )}
+              <div className="sb-skud-scroll">
+                <table className="sb-table sb-skud-min-48">
+                  <thead>
+                    <tr>
+                      <th>Quando</th>
+                      <th>Evento</th>
+                      <th>Mudança</th>
+                      <th>Onde</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timeline.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="sb-skud-nowrap">{formatDateTime(entry.occurred_at)}</td>
+                        <td>
+                          <span
+                            style={
+                              entry.severity === "critico"
+                                ? { color: "var(--sb-danger)", fontWeight: 600 }
+                                : entry.severity === "importante"
+                                  ? { color: "var(--sb-accent-ink)" }
+                                  : undefined
+                            }
+                          >
+                            {eventTypeLabel(entry.event_type)}
+                          </span>
+                        </td>
+                        <td>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
+                        <td className="sb-skud-text-soft">
+                          {entityLabel(entry.entity_type)}
+                          {entry.entity_type !== "sku" && (
+                            <span className="sb-skud-mono"> {entry.entity_id}</span>
+                          )}
+                          {entry.account_label !== null && <> · {entry.account_label}</>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          </div>
+          </Panel>
+        </div>
+        </>
+      )}
+
+      {tab === "diagnostico" && (
+        <>
+          {/*
+            O DIAGNÓSTICO (D-317). Três níveis, cada um com régua escrita: o
+            dono pediu quatro e escolheu três quando soube que esta casa não
+            tem escala de quatro com limiar definido. O que não tem régua não
+            vira selo — vira linha em "o que não dá para julgar", logo abaixo.
+          */}
+          <Panel
+            title="Saúde do SKU"
+            subtitle={
+              diagnostico.nivel === null
+                ? "sem anúncio vinculado — não há o que diagnosticar"
+                : `${String(diagnostico.anuncios)} anúncio(s) · ${String(diagnostico.contas)} conta(s) · ${String(diagnostico.problemas.length)} problema(s)`
+            }
+            aside={
+              <span className="sb-skud-row">
+                {/*
+                  O SELETOR DE ESCOPO, na URL. As opções saem dos anúncios
+                  deste SKU, então conta nova aparece sozinha — o pedido do
+                  dono de "adicionar contas sem mexer na estrutura da tela".
+                */}
+                {contasDoSku.length > 1 && (
+                  <FilterMenu
+                    rotulo={contaEscopo === null ? "Visão geral" : contaEscopo.label}
+                    opcoes={[
+                      {
+                        href: `/skus/${skuId}?aba=diagnostico`,
+                        label: "Visão geral",
+                        ativo: contaEscopo === null,
+                      },
+                      ...contasDoSku.map((c) => ({
+                        href: `/skus/${skuId}?aba=diagnostico&escopo=${encodeURIComponent(c.id)}`,
+                        label: c.label,
+                        ativo: contaEscopo?.id === c.id,
+                      })),
+                    ]}
+                  />
+                )}
+                <Link href={`/skus/${skuId}?aba=diagnostico${contaEscopo === null ? "" : `&escopo=${contaEscopo.id}`}`}>
+                  Reler agora →
+                  <CarregandoSeODemorar />
+                </Link>
+              </span>
+            }
+          >
+            <div className="sb-panel-body">
+              {/*
+                T-R6: sem a leitura das ações, o diagnóstico sairia como se não
+                houvesse ação aberta — e o nível podia cair um degrau.
+              */}
+              {acoesAbertasResult.error !== null && (
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="As ações abertas deste SKU não foram lidas"
+                  descricao="O diagnóstico abaixo não as inclui, e o nível pode estar abaixo do real."
+                  detalhe={acoesAbertasResult.error.message}
+                  acao={tentarDeNovo}
+                />
+              )}
+              <div className="sb-stat-grid">
+                <div
+                  className="sb-stat"
+                  style={
+                    diagnostico.nivel === null
+                      ? undefined
+                      : {
+                          ["--sb-tone" as string]: TOM[NIVEL[diagnostico.nivel].tom].color,
+                          ["--sb-tone-ink" as string]: TOM[NIVEL[diagnostico.nivel].tom].color,
+                        }
+                  }
+                >
+                  <span className="sb-stat-label">Nível</span>
+                  <b className="sb-stat-value">
+                    {diagnostico.nivel === null ? "—" : NIVEL[diagnostico.nivel].rotulo}
+                  </b>
+                  <span className="sb-stat-note">
+                    {contaEscopo === null ? "todas as contas deste SKU" : contaEscopo.label}
+                  </span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Anúncios</span>
+                  <b className="sb-stat-value">{formatCount(diagnostico.anuncios)}</b>
+                  <span className="sb-stat-note">
+                    {formatCount(diagnostico.ativos)} ativos · {formatCount(diagnostico.pausados)} pausados
+                    {diagnostico.outros > 0 && ` · ${formatCount(diagnostico.outros)} em outro estado`}
+                  </span>
+                </div>
+
+                {/*
+                  ESTOQUE: o anunciado é a soma do que os anúncios declaram no
+                  ML; o interno é da ORGANIZAÇÃO. Os dois lado a lado, sem
+                  subtração — "divergência" exigiria que os dois tivessem o
+                  mesmo grão, e o interno não tem conta em tabela nenhuma.
+                */}
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Estoque anunciado</span>
+                  <b className="sb-stat-value">{formatCount(diagnostico.estoqueAnunciado)}</b>
+                  <span className="sb-stat-note">
+                    {dashboard === null
+                      ? "estoque interno não lido"
+                      : `interno: ${formatCount(dashboard.local_quantity)} local · ${formatCount(dashboard.full_quantity)} no Full`}
+                  </span>
+                </div>
+
+                <div className="sb-stat">
+                  {/*
+                    "Preço ao comprador", não "Preço anunciado" (D-389): o
+                    número é o EFETIVO — promocional quando o anúncio tem
+                    campanha ativa do Mercado Livre, senão o cadastrado. O
+                    rótulo antigo prometia o valor cadastrado e a dispersão
+                    calculada aqui não era mais esse número.
+                  */}
+                  <span className="sb-stat-label">Preço ao comprador</span>
+                  <b className="sb-stat-value">
+                    {diagnostico.precos === null ? "—" : formatCurrency(diagnostico.precos.media)}
+                  </b>
+                  <span className="sb-stat-note">
+                    {diagnostico.precos === null
+                      ? "nenhum preço sincronizado"
+                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% sobre o menor (teto ${String(TETO_DISPERSAO_PCT)}%) · já considera promoção ativa do Mercado Livre`}
+                  </span>
+                </div>
+              </div>
+
+              {/*
+                A COMPARAÇÃO COM AS DEMAIS CONTAS (o "diagnóstico comparativo"
+                do pedido). Só existe com outra conta para comparar: contra si
+                mesma daria 0% e pareceria medição.
+              */}
+              {comparacaoDeConta !== null && (
+                <p className="sb-skud-p-top">
+                  Preço médio nesta conta: <strong>{formatCurrency(comparacaoDeConta.daConta)}</strong> · nas demais:{" "}
+                  <strong>{formatCurrency(comparacaoDeConta.dasOutras)}</strong> ·{" "}
+                  <strong>
+                    {comparacaoDeConta.diferencaPct > 0 ? "+" : ""}
+                    {String(comparacaoDeConta.diferencaPct).replace(".", ",")}%
+                  </strong>{" "}
+                  de diferença. É um fato, não um veredito: preço diferente entre contas pode ser estratégia.
+                </p>
+              )}
+            </div>
+          </Panel>
+
+          <div className="sb-skud-mt3">
+            <Panel
+              title="Problemas encontrados"
+              subtitle={
+                diagnostico.problemas.length === 0
+                  ? "nenhum problema com régua escrita — o que não tem régua está listado abaixo"
+                  : `${String(diagnostico.problemas.length)} problema(s), do mais grave para o menos`
+              }
+            >
+              <div className="sb-panel-body">
+                {diagnostico.problemas.length === 0 ? (
+                  <p className="sb-skud-p">
+                    Nenhuma das verificações acendeu. Isso não quer dizer "tudo certo em tudo": quer dizer que as
+                    condições que esta tela sabe julgar não foram satisfeitas.
+                  </p>
+                ) : (
+                  [...diagnostico.problemas]
+                    .sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "critico" ? -1 : 1))
+                    .map((problema) => (
+                      <div key={problema.chave} className="sb-drawer-card sb-skud-mb3">
+                        <span className="sb-skud-row">
+                          <span className="sb-status" style={TOM[NIVEL[problema.nivel].tom]}>
+                            {NIVEL[problema.nivel].rotulo}
+                          </span>
+                          <b>{problema.titulo}</b>
+                          {problema.onde !== null && (
+                            <small className="sb-skud-soft">{problema.onde}</small>
+                          )}
+                        </span>
+
+                        <dl className="sb-fact-grid sb-skud-mt2">
+                          <div>
+                            <dt>Problema</dt>
+                            <dd>{problema.problema}</dd>
+                          </div>
+                          <div>
+                            <dt>Possível causa</dt>
+                            <dd>{problema.causa}</dd>
+                          </div>
+                          <div>
+                            <dt>Recomendação</dt>
+                            <dd>{problema.recomendacao}</dd>
+                          </div>
+                        </dl>
+
+                        {/*
+                          A RÉGUA FICA VISÍVEL. É ela que separa um veredito de
+                          um palpite, e é o primeiro que alguém vai querer
+                          conferir quando discordar do selo.
+                        */}
+                        <small className="sb-skud-block-soft">
+                          acendeu por: {problema.regua}
+                        </small>
+                      </div>
+                    ))
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          {/*
+            ESTE PAINEL NÃO É CONDICIONAL, e a primeira versão dele era — o que
+            deixava a tela calada justamente no SKU sem nenhuma ressalva
+            situacional. As duas últimas linhas são verdade SEMPRE (o
+            diagnóstico não julga a Shopee — D-429 trouxe os anúncios dela para
+            a aba Anúncios, não para estas réguas —, e quatro campos do Mercado
+            Livre não são sincronizados), e limite permanente que só aparece às vezes é
+            pior do que limite nenhum: ensina que a ausência significa "tudo
+            coberto".
+          */}
+          <div className="sb-skud-mt3">
+              <Panel
+                title="O que esta tela NÃO julga"
+                subtitle="cada linha é uma pergunta que a fonte não responde — dizer isso é o que impede a tela de responder errado"
+              >
+                <div className="sb-panel-body">
+                  <ul className="sb-skud-list">
+                    {diagnostico.semRegua.map((linha) => (
+                      <li key={linha}>{linha}</li>
+                    ))}
+                    <li>
+                      Shopee: este diagnóstico julga só os anúncios do Mercado Livre. Os anúncios da Shopee vinculados
+                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</LinkDeFiltro>, mas
+                      preço, estoque anunciado e ações ainda não têm régua para eles aqui.
+                    </li>
+                    <li>
+                      Tipo de anúncio, catálogo, logística e qualidade da publicação: nenhuma dessas colunas é
+                      sincronizada hoje.
+                    </li>
+                  </ul>
+                </div>
+              </Panel>
+          </div>
+
+          <div className="sb-skud-mt3">
+            <DiagnosisPanel skuId={sku.data.id} problemasDeAnuncio={diagnostico.problemas.length} />
+          </div>
+        </>
+      )}
+
+      {tab === "decisoes" && (
+        <Panel title="Decisões registradas">
+          <div className="sb-panel-body">
+
+          {/*
+            D-228. Memória de decisões (Fase 6, D-064/D-065): a decisão nasce de
+            uma AÇÃO na Central e guarda o retrato do SKU no momento
+            (get_sku_decision_snapshot); o job de medição refaz o retrato 7, 15
+            e 30 dias depois. Comparação BRUTA lado a lado, nunca uma % de
+            "resultado" — e "depois" não é "por causa".
+          */}
+          <p className="sb-skud-lead">
+            Cada decisão nasce de uma ação da <Link href="/acoes">Central de Ações</Link> e guarda um retrato do
+            SKU no momento — venda de 7 dias, preço médio e estoque local. O job de medição refaz o mesmo retrato 7,
+            15 e 30 dias depois. A comparação é <strong>lado a lado, bruta</strong>: nenhuma porcentagem de
+            resultado é sintetizada, e &ldquo;depois&rdquo; não quer dizer &ldquo;por causa&rdquo;.
+          </p>
+
+          {decisionsResult.error !== null && (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as decisões" detalhe={decisionsResult.error.message} acao={tentarDeNovo} />
+          )}
+
+          {decisionsResult.error === null && decisions.length === 0 && (
+            <>
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Nenhuma decisão registrada para este SKU."
+                descricao={
+                  openActionsResult.error === null && openActions !== null && openActions > 0 ? (
+                    <>
+                      Há {formatCount(openActions)} ação(ões) aberta(s) dele na <Link href="/acoes">Central de Ações</Link>{" "}
+                      — é lá que uma decisão é registrada e depois medida.
+                    </>
+                  ) : openActionsResult.error === null && openActions === 0 ? (
+                    "Também não há ação aberta para ele na Central de Ações."
+                  ) : undefined
+                }
+              />
+              {/* A contagem que falha é dita à parte: "nenhuma decisão" continua verdade, a contagem é que não veio. */}
+              {openActionsResult.error !== null && (
+                <EstadoDaTela
+                  tipo="erro"
+                  titulo="Não foi possível contar as ações abertas"
+                  detalhe={openActionsResult.error.message}
+                  acao={tentarDeNovo}
+                />
+              )}
+            </>
+          )}
+
+          {decisionsResult.error === null && decisions.length > 0 && (
+            <div className="sb-skud-bleed">
+              {decisions.map((decision) => {
+                // A visão normalizada da ação (`describeActionEvidence` é total
+                // para qualquer `kind`, D-116) — a mesma que a Central usa.
+                const acao = describeActionEvidence(decision.actions.kind, decision.actions.evidence);
+                // Ordenar 3 medições e listar as janelas ausentes não é agregar.
+                const medidas = [...decision.action_outcomes].sort((a, b) => a.window_days - b.window_days);
+                const pendentes = OUTCOME_WINDOWS_DAYS.filter(
+                  (dias) => !medidas.some((medida) => medida.window_days === dias),
+                );
+
+                return (
+                  /*
+                    Uma decisão é um item de FEED (título em negrito, uma linha
+                    de contexto, o instante) seguido do retrato "antes × depois"
+                    em tabela — em vez de cinco parágrafos iguais. A comparação
+                    continua bruta e lado a lado (D-228).
+                  */
+                  <article key={decision.id} className="sb-panel-body sb-skud-rule">
+                    <div className="sb-skud-row-wrap">
+                      <span className="sb-skud-grow">
+                        <b className="sb-skud-block-sm">{decision.decision}</b>
+                        <small className="sb-skud-meta">
+                          {acao.kindLabel}
+                          {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                          {/* O autor também aqui (D-320): o painel da visão geral não pode dizer mais que a aba dona. */}
+                          {` · ${autorDaDecisao(decision.created_by, membros).rotulo}`}
+                          {` · ${formatDateTime(decision.created_at)}`}
+                        </small>
+                      </span>
+                      <StatusPill code={decision.actions.status} label={actionStatusLabel(decision.actions.status)} />
+                    </div>
+
+                    <p className="sb-skud-note">
+                      Recomendação da ação: {decision.actions.recommendation}
+                    </p>
+
+                    <table className="sb-table">
+                      <thead>
+                        <tr>
+                          <th>Momento</th>
+                          <th>Retrato</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="sb-skud-nowrap">No momento da decisão</td>
+                          <td className="sb-skud-wrap">{formatDecisionSnapshot(decision.baseline_snapshot)}</td>
+                        </tr>
+                        {medidas.map((medida) => (
+                          <tr key={medida.window_days}>
+                            <td className="sb-skud-nowrap">
+                              {outcomeWindowLabel(medida.window_days)}
+                              <span className="sb-skud-block-xs">
+                                {formatDateTime(medida.measured_at)}
+                              </span>
+                            </td>
+                            <td className="sb-skud-wrap">{formatDecisionSnapshot(medida.outcome_snapshot)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {pendentes.length > 0 && (
+                      <p className="sb-skud-footnote">
+                        Ainda sem medição: {pendentes.map(outcomeWindowLabel).join(", ")}.
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          </div>
+        </Panel>
+      )}
+      </ObjectHeader>
+    </>
+  );
+}

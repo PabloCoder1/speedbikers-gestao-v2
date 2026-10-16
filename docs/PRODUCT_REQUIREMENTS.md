@@ -111,7 +111,7 @@ Toda simulação deve exibir as premissas e nunca ser apresentada como certeza.
 
 ## Sugestões de features via Copiloto
 
-**Captura + Central de Sugestões implementadas em 2026-08-25 (D-079)** — `apps/web/app/sugestoes`. Estruturação por IA continua pendente (ver abaixo).
+**Captura + Central de Sugestões implementadas em 2026-08-25 (D-079)** — `apps/web/app/(app)/sugestoes`. Estruturação por IA continua pendente (ver abaixo).
 
 Usuários autorizados poderão enviar ideias de melhoria em linguagem natural pelo assistente.
 
