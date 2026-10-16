@@ -22,8 +22,8 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-16 |
-| `origin/main` | `5d25ebdc` (16/10: #212 e #213 do A1, C-66 e D-475; #211 e #215 do A2, T8a e T8b; #214 do A3, D-510) |
-| Branches abertas | A1: `docs/estado-d475` (#216, o estado da D-475) e `fix/ci-store-path` (o passo do store do pnpm no `ci.yml`) · A2: nenhuma (o #215 entrou) · A3: o Shell num layout de grupo (`app/(app)/`, aprovado pelo dono, a partir de `5d25ebdc`) — segura as branches que tocam `apps/web/app/**` até entrar |
+| `origin/main` | `a0202e1f` (16/10: #212, #213, #216 e #217 do A1 — C-66, D-475, o estado e o `ci.yml` (D-477); #211, #215 e #218 do A2 — T8a, T8b e o estado; #214 e #219 do A3 — D-510 e o Shell num layout de grupo, D-511/D-512) |
+| Branches abertas | A1: `perf/faturamento-shopee-sem-laco` (#220, D-479, com a migration `20261016140000`) · A2: a D-484 (navegação suave na `/curva-abc` e na `/produtos`, só web) · A3: nenhuma (o #219 entrou; as telas autenticadas agora ficam em `apps/web/app/(app)/`) |
 | Web em produção | `5d25ebdc` (#215, `dpl_9Am1ouYBvf75hETwocjxqE9TaKXx`, READY; merge na `main` publica) |
 | Worker / api em produção | worker `worker-00049-sfg` e api `api-00035-58x` (`bacdf782`, 16/10), **Shopee LIVE** (partner `2048641`, segredos `SHOPEE_LIVE_*`), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Go Live aprovado pela Shopee e publicado em 16/10; o push live cadastrado no Console pelo dono (a conferir no primeiro `shopee_push_enqueued`) |
 | Migrations em produção | até `20261015130000` (D-441 a D-473, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548`, `38799663780` (15/10) e `38893049400` (16/10)) |
