@@ -16483,6 +16483,54 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-490 - Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
+
+**Contexto:** as telas do Mercado Livre exportam: anúncios e Full em CSV (D-385, D-380), e curva ABC, preços e compras em Excel. As da Shopee não exportavam nada (o inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "nenhuma exportação Shopee"). Desde o Go Live de 16/10 há pedidos reais da Shopee para conferir fora da tela.
+
+**1. O mesmo desenho do CSV do ML.**
+- Uma rota na pasta da tela: `/vendas/shopee/exportar` e `/anuncios/shopee/exportar`.
+- Ela lê a MESMA URL com o MESMO resolvedor de filtros (`resolveShopeeSalesFilters`, `resolveShopeeListingsFilters`) e chama a MESMA RPC (`get_shopee_orders`, `get_shopee_listings`) em páginas (`lerPaginasDaRpc`), só sem página.
+- Sessão do usuário e RPC `security invoker`: a planilha vê só as lojas que a pessoa alcança (D-433).
+- Teto de 5.000 linhas (`EXPORT_LIMIT`), dito no nome do arquivo quando o recorte passa dele (D-131).
+- O pedido aberto pela busca (`?pedido=`) só vai quando existe, como na tela (D-476 §5).
+
+**2. As palavras da tela (`lib/shopee-export.ts`).**
+- Mesmo formato do `lib/csv.ts`: `;`, vírgula decimal, BOM, CRLF e a defesa contra fórmula.
+- A situação do pedido, o estado do vínculo (no singular da linha), o status do item e a origem do SKU com os rótulos que as telas usam.
+- Ausência é célula vazia, nunca zero: receita desconhecida, recebido não lido, preço e estoque de item aguardando leitura.
+- Código desconhecido vira "Outra situação" ou "Outro estado", nunca o código cru (D-476).
+- O pedido diz se a loja é Real ou Teste. Os itens vão numa coluna ("2× Nome — Variação (SKU)").
+- Sem dado pessoal: as RPCs não devolvem comprador nem endereço.
+
+**3. O botão.** "Exportar CSV" no cabeçalho do painel da lista (Pedidos e Anúncios e vínculos), só quando há linhas no recorte, como em `/anuncios`. É `<a download>`, que o `check:navegacao-suave` aceita.
+
+**4. O fixture da loja live (D-486) mais fiel a produção.** O caso novo do ensaio pegou que o pedido com devolução não estava marcado. `com_devolucao` vem do `return_order_sns` do próprio pedido (o financeiro da Shopee), e não da tabela de devoluções. O fixture passa a gravar `return_order_sns` no pedido da devolução, como o worker grava.
+
+**5. Inventário corrigido.** A linha "Shell e menu" de `docs/MULTICHANNEL_SCREENS.md` dizia que o "N contas conectadas" ignora as lojas. Desde a D-438 o Shell conta pela `marketplace_accounts`, com contas e lojas: a linha estava desatualizada.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica e unitarios:** typecheck e lint. `shopee-export.test.ts` tem 7 casos:
+  - o cabeçalho, as palavras e a vírgula decimal;
+  - receita e recebido desconhecidos vazios;
+  - a loja de teste dita;
+  - código desconhecido nunca cru;
+  - a fórmula neutralizada;
+  - item aguardando leitura com preço, estoque e data vazios.
+- **e2e, casos novos:**
+  - `/vendas/shopee`: o CSV tem o MESMO número de pedidos da lista, e o pedido com financeiro sai com "Teste" e "Sim";
+  - `/anuncios/shopee`: o MESMO número de linhas da lista, e o item vinculado sai "Vinculado", "Ativo" e "pelo SKU do anúncio";
+  - no ensaio da loja live: os 12 pedidos do período, todos da loja real, o cancelado como "Cancelada" e o 1º com a devolução.
+  - `vendas-shopee` e `anuncios-shopee`: 19 de 19; `loja-live`: 6 de 6.
+- **Suite inteira:** 251/251 com o banco recriado do zero (248 na 3300 e os 3 de convite na 3000), e o projeto `loja-live` 6/6 em seguida, no mesmo banco.
+
+**Impacto:**
+- web: `apps/web/lib/shopee-export.ts` com o teste, `apps/web/app/(app)/vendas/shopee/{page.tsx,exportar/route.ts}` e `apps/web/app/(app)/anuncios/shopee/{page.tsx,exportar/route.ts}`;
+- e2e: `vendas-shopee.spec.ts`, `anuncios-shopee.spec.ts`, `ensaio-loja-live.spec.ts` e `loja-shopee-live.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
