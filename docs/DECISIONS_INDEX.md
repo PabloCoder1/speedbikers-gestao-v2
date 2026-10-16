@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **495** (D-001 a D-515).
+Decisões registradas: **496** (D-001 a D-515).
 
 ## Por domínio
 
@@ -317,7 +317,7 @@ Decisões registradas: **495** (D-001 a D-515).
 - **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 - **D-490** — Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 
-### outros (69)
+### outros (70)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -387,6 +387,7 @@ Decisões registradas: **495** (D-001 a D-515).
 - **D-478** — A falha intermitente da /vinculacoes nao era estado deixado por outro spec: o teste passa a esperar o resumo ou a dizer o motivo da queda
 - **D-479** — O faturamento da Shopee sem o laco aninhado entre CTEs, e o ensaio de volume do Go Live (R7)
 - **D-483** — A taxa de protecao de envio da Shopee como componente do recebido (C-61), em duas fases
+- **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
 
 ### processo/docs (1)
