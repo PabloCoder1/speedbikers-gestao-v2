@@ -112,8 +112,8 @@ const CASOS = [
     nome: "le os pares da tabela",
     fonte: `export const INCLUI = {
   reposicao: [
-    { termo: "Prazo do fornecedor", arquivo: "app/reposicao/configuracoes/page.tsx" },
-    { termo: "Teto", arquivo: "app/reposicao/configuracoes/page.tsx" },
+    { termo: "Prazo do fornecedor", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
+    { termo: "Teto", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
   ],
 } as const satisfies Record<X, Y>;`,
     esperado: "2/0",
@@ -139,9 +139,9 @@ const DEPOIS = [{ termo: "Depois", arquivo: "y.tsx" }];`,
     nome: "le chaves em qualquer ordem, aspas simples e campo a mais",
     fonte: `export const INCLUI = {
   reposicao: [
-    { arquivo: "app/reposicao/configuracoes/page.tsx", termo: "Teto máximo inexistente" },
-    { termo: 'Segurança', arquivo: 'app/reposicao/configuracoes/page.tsx' },
-    { termo: "Conectar conta", arquivo: "app/contas/page.tsx", somenteAdmin: true },
+    { arquivo: "app/(app)/reposicao/configuracoes/page.tsx", termo: "Teto máximo inexistente" },
+    { termo: 'Segurança', arquivo: 'app/(app)/reposicao/configuracoes/page.tsx' },
+    { termo: "Conectar conta", arquivo: "app/(app)/contas/page.tsx", somenteAdmin: true },
   ],
 } as const satisfies Record<X, Y>;`,
     esperado: "3/0",
@@ -153,8 +153,8 @@ const DEPOIS = [{ termo: "Depois", arquivo: "y.tsx" }];`,
     nome: "termo que nao vira par e contado como ilegivel",
     fonte: `export const INCLUI = {
   reposicao: [
-    { termo: \`Prazo do fornecedor\`, arquivo: "app/reposicao/configuracoes/page.tsx" },
-    { termo: "Teto", arquivo: "app/reposicao/configuracoes/page.tsx" },
+    { termo: \`Prazo do fornecedor\`, arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
+    { termo: "Teto", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
   ],
 } as const satisfies Record<X, Y>;`,
     esperado: "1/1",

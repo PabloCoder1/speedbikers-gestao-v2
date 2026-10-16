@@ -8,7 +8,7 @@ import { CarregandoBloco } from "./carregando";
 import { useCopilotScreenContext, type CopilotScreenContext } from "./copilot-context";
 import { Drawer } from "./drawer";
 
-const CopilotChat = dynamic(() => import("../app/copiloto/chat").then((module) => module.CopilotChat), {
+const CopilotChat = dynamic(() => import("../app/(app)/copiloto/chat").then((module) => module.CopilotChat), {
   ssr: false,
   loading: () => <CarregandoBloco rotulo="Copiloto" />,
 });

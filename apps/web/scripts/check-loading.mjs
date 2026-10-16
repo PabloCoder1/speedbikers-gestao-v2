@@ -1,126 +1,100 @@
 /**
- * Toda pasta de `app/` que tem página (nela ou abaixo dela) precisa de um
- * `loading.tsx`.
+ * A moldura e o carregamento das telas (D-512, que substituiu a regra da D-382).
  *
- * **Por que existe.** `loading.tsx` só aparece quando o segmento em que ele mora
- * troca de filho. Com um só, na raiz, a tela de carregamento entrava ao trocar
- * de SEÇÃO (`/vendas` → `/anuncios`) e NÃO entrava dentro dela: `/anuncios` →
- * `/anuncios/MLB…`, `/estoque` → `/estoque/movimentacoes`, `/notas-fiscais` →
- * `/notas-fiscais/nova` congelavam a tela antiga até a nova chegar. Medido em
- * 2026-09-18 com as respostas de navegação atrasadas em 2,5 s: 6 de 8
- * navegações sem carregamento nenhum.
+ * **O que mudou.** Até a D-512, o `Shell` morava dentro de cada página e toda
+ * pasta precisava de um `loading.tsx` com a moldura: sem ele, trocar de tela
+ * dentro da mesma seção congelava a tela antiga (D-382 mediu 6 de 8 navegações
+ * sem retorno nenhum). Mas o React só deixa o conteúdo substituir um esqueleto
+ * 300 ms depois de mostrá-lo (`globalMostRecentFallbackTime + 300` no
+ * `react-dom`), e com um esqueleto por pasta TODA troca de tela travava nesse
+ * piso — 336 ms com o dado instantâneo, medido na D-511.
  *
- * Build, typecheck e lint passam sem o arquivo — a página funciona, só fica
- * parada. É exatamente o tipo de falta que ninguém vê em teste rápido.
- *
- * **E o arquivo tem de trazer a MOLDURA.** O `Shell` mora dentro de cada
- * página, não num layout: o `loading.tsx` de uma pasta substitui a tela
- * inteira, sidebar e barra superior incluídas. Um `loading.tsx` próprio que
- * desenhe só o miolo apaga a moldura a cada navegação para aquela pasta — foi
- * o que `/configuracoes` fez em 2026-09-22, com esta guarda verde porque ela só
- * conferia que o arquivo existia. Agora todo `loading.tsx` abaixo da raiz ou
- * reexporta o da raiz, ou usa `CarregandoTela` (que aceita o miolo próprio
- * como `children`). `/login` é a exceção deliberada: a porta de entrada fica
- * fora da moldura de um sistema em que a pessoa ainda não entrou.
- *
- * **O que ele NÃO pega:** troca só de `?filtro=` na MESMA página por `<Link>`
- * (nenhum segmento muda, nenhum `loading.tsx` entra). Isso é a ATUALIZAÇÃO NO
- * LUGAR de D-500: `CarregandoSeODemorar` nos componentes compartilhados que
- * fazem esse tipo de link (`KpiStrip`, `FilterPill`, `ObjectHeader`, as opções
- * do `FilterMenu`) e `FormularioFiltro` na busca GET; `<a>` comum recarrega a
- * página, e aí o `loading.tsx` aparece pelo streaming.
+ * **A regra agora:**
+ * - as telas autenticadas moram no grupo `app/(app)/`, cujo `layout.tsx`
+ *   desenha o `Shell` uma vez — ele persiste entre as telas;
+ * - nenhuma pasta do grupo tem `loading.tsx`: a troca de tela mantém a tela
+ *   anterior com o sinal da D-500 (`IndicadorDeNavegacao` no `Shell`, e
+ *   `useLinkStatus` nos links da sidebar). Bloco lento dentro da tela vai num
+ *   `Suspense` com esqueleto do tamanho dele (D-504, D-505, D-509);
+ * - nenhuma página do grupo embrulha o próprio conteúdo no `Shell` — a moldura
+ *   sairia dobrada;
+ * - `app/loading.tsx`, ACIMA do layout do grupo, é o esqueleto da carga fria:
+ *   aparece na primeira visita e não dispara na navegação entre as telas;
+ * - página fora do grupo é exceção declarada: a entrada (`/login`, que fica
+ *   fora da moldura de um sistema em que a pessoa ainda não entrou) e o
+ *   redirecionamento de `/cobertura` (D-288).
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const APP = "app";
+const GRUPO = join(APP, "(app)");
 
-/** Pastas que não precisam: `/cobertura` só redireciona (D-288), nunca desenha. */
-const ISENTAS = new Set(["cobertura"]);
+/** Rotas com página que ficam FORA do grupo de propósito. */
+const FORA_DO_GRUPO = new Set(["login", "cobertura"]);
 
-/** Pastas cujo carregamento fica FORA da moldura de propósito (`app/login/loading.tsx`). */
-const SEM_MOLDURA = new Set(["login"]);
+const problemas = [];
 
-/**
- * O `loading.tsx` traz a moldura se reexporta o da raiz (`../loading`, um
- * `../` por nível) ou se usa `CarregandoTela` — o único componente que a
- * desenha.
- */
-function trazMoldura(arquivo) {
-  const texto = readFileSync(arquivo, "utf8");
-
-  return /export\s*\{\s*default\s*\}\s*from\s*["'](?:\.\.\/)+loading["']/.test(texto) || /<CarregandoTela[\s>/]/.test(texto);
-}
-
-const semMoldura = [];
-
-function temPagina(dir) {
-  for (const entrada of readdirSync(dir)) {
-    const caminho = join(dir, entrada);
-
-    if (statSync(caminho).isDirectory()) {
-      if (temPagina(caminho)) return true;
-    } else if (entrada === "page.tsx") {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-const faltando = [];
-let verificadas = 0;
-
-function varrer(dir) {
-  const rel = relative(APP, dir).replaceAll("\\", "/");
-
-  if (ISENTAS.has(rel.split("/")[0] ?? "")) return;
-
-  if (temPagina(dir)) {
-    verificadas += 1;
-
-    const arquivo = join(dir, "loading.tsx");
-
-    if (!existsSync(arquivo)) {
-      faltando.push(rel === "" ? "app/" : `app/${rel}/`);
-    } else if (rel !== "" && !SEM_MOLDURA.has(rel.split("/")[0] ?? "") && !trazMoldura(arquivo)) {
-      semMoldura.push(`app/${rel}/loading.tsx`);
-    }
-  }
+function listar(dir, nome) {
+  const achados = [];
 
   for (const entrada of readdirSync(dir)) {
     const caminho = join(dir, entrada);
 
-    if (statSync(caminho).isDirectory()) varrer(caminho);
+    if (statSync(caminho).isDirectory()) achados.push(...listar(caminho, nome));
+    else if (entrada === nome) achados.push(caminho);
+  }
+
+  return achados;
+}
+
+const rel = (caminho) => relative(".", caminho).replaceAll("\\", "/");
+
+if (!existsSync(join(APP, "loading.tsx"))) {
+  problemas.push("app/loading.tsx não existe: a carga fria fica sem esqueleto.");
+}
+
+const layout = join(GRUPO, "layout.tsx");
+
+if (!existsSync(layout) || !/<Shell[\s>]/.test(readFileSync(layout, "utf8"))) {
+  problemas.push("app/(app)/layout.tsx não existe ou não desenha o <Shell>: a moldura não persiste entre as telas.");
+}
+
+for (const arquivo of existsSync(GRUPO) ? listar(GRUPO, "loading.tsx") : []) {
+  problemas.push(
+    `${rel(arquivo)}: loading.tsx dentro do grupo — o React trava a troca de tela em ~300 ms depois de mostrar o esqueleto. Tire o arquivo; bloco lento vai num Suspense dentro da tela.`,
+  );
+}
+
+for (const pagina of existsSync(GRUPO) ? listar(GRUPO, "page.tsx") : []) {
+  if (/<Shell[\s>]/.test(readFileSync(pagina, "utf8"))) {
+    problemas.push(`${rel(pagina)}: a página embrulha o próprio conteúdo no <Shell> — a moldura já vem do layout do grupo.`);
   }
 }
 
-varrer(APP);
+for (const entrada of readdirSync(APP)) {
+  const caminho = join(APP, entrada);
 
-if (faltando.length > 0) {
-  console.error(`check:loading — ${String(faltando.length)} pasta(s) com página e sem loading.tsx:\n`);
+  if (!statSync(caminho).isDirectory() || entrada === "(app)" || FORA_DO_GRUPO.has(entrada)) continue;
 
-  for (const pasta of faltando) console.error(`  ${pasta}`);
+  for (const pagina of listar(caminho, "page.tsx")) {
+    problemas.push(`${rel(pagina)}: página fora do grupo app/(app)/ — tela autenticada nova mora no grupo, para herdar a moldura.`);
+  }
+}
 
-  console.error(
-    '\nCrie `loading.tsx` com uma linha, reexportando o da raiz: `export { default } from "../loading";`\n' +
-      "(um `../` por nível). Sem ele, navegar para esta pasta a partir da mesma seção congela a tela antiga.",
-  );
+if (existsSync(join(APP, "page.tsx"))) {
+  problemas.push("app/page.tsx: a Home mora no grupo, em app/(app)/page.tsx.");
+}
+
+if (problemas.length > 0) {
+  console.error(`check:loading — ${String(problemas.length)} problema(s):\n`);
+
+  for (const problema of problemas) console.error(`  ${problema}`);
+
   process.exit(1);
 }
 
-if (semMoldura.length > 0) {
-  console.error(`check:loading — ${String(semMoldura.length)} loading.tsx sem a moldura do app:\n`);
+const telas = listar(GRUPO, "page.tsx").length;
 
-  for (const arquivo of semMoldura) console.error(`  ${arquivo}`);
-
-  console.error(
-    "\nO `Shell` mora dentro da página: este fallback substitui a tela inteira, e sem a moldura a sidebar e a\n" +
-      'barra superior somem a cada navegação para cá. Reexporte o da raiz (`export { default } from "../loading";`)\n' +
-      "ou, se a tela tem forma própria, passe o miolo para `CarregandoTela` como children.",
-  );
-  process.exit(1);
-}
-
-console.log(`check:loading ok — ${String(verificadas)} pasta(s) com página, todas com loading.tsx e a moldura do app.`);
+console.log(`check:loading ok — ${String(telas)} telas no grupo (app), moldura no layout, nenhum loading.tsx no grupo.`);
