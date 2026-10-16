@@ -259,7 +259,10 @@ function MetaDoMarketplace({
 
 /**
  * As metas por marketplace (D-473, C-66; decisão do dono de 15/10): o Mercado
- * Livre e a Shopee, cada um contra a meta dele, ao lado da geral. Sem loja
+ * Livre e a Shopee, cada um contra a meta dele, ao lado da geral. O REALIZADO
+ * soma (geral = ML + Shopee); a PROJEÇÃO não: cada escopo projeta pela janela
+ * que o próprio histórico cobre (28, 14 ou 7 dias, D-473), e uma loja nova
+ * projeta pelo ritmo curto dela (D-486). Sem loja
  * Shopee live com pedidos lidos, a Shopee vem nula — e a tela diz que ela ainda
  * não entra, nunca um zero.
  */
@@ -276,7 +279,9 @@ function MetaPorMarketplace({
     <section aria-label="Meta de cada marketplace" className="sb-central-bloco">
       <div className="sb-section-label">
         <span>Meta de cada marketplace</span>
-        <span className="sb-section-note">cada marketplace contra a meta dele · a geral acima soma os dois</span>
+        <span className="sb-section-note">
+          cada marketplace contra a meta dele · a geral acima soma o realizado dos dois; as projeções não somam
+        </span>
       </div>
 
       <div className="sb-pair-grid">

@@ -107,6 +107,8 @@ attrib -R "apps\web\.next\*" /S /D; attrib -R "apps\web\.next"; Remove-Item -Lit
 
 **Armadilha conhecida (2026-10-15, D-478):** duas suítes e2e no MESMO Docker (outra sessão rodando a dela) deixam a rodada inteira lenta, e um caso que espera um elemento renderizado no servidor estoura os 5 s do `expect`. Sinal: os vizinhos também lentos e o total da rodada acima do normal. Não é estado (a suíte roda com um worker só, na mesma ordem). Num teste que depende de uma leitura que tem caminho alternativo, espere o conteúdo OU a nota do caminho alternativo e falhe com o motivo dela (`esperaResumo` em `vinculacoes.spec.ts`), em vez de só aumentar o tempo.
 
+**Loja Shopee live no e2e (2026-10-16, D-486):** o seed tem só a loja Shopee de TESTE, de propósito (as provas de equivalência contam com isso), e nenhum spec do projeto principal vê o caminho "com Shopee". Quem confere esse caminho é `e2e/ensaio-loja-live.spec.ts`, no projeto `loja-live` do `playwright.config.ts`, que depende do principal e roda DEPOIS dele: o spec cria a loja live com a chave de serviço local (`e2e/loja-shopee-live.ts`) e a apaga no fim. O SKU próprio dele fica no banco, porque `sku_cost_history` é só de inserção. Se algum caso do principal falhar, o Playwright pula o ensaio; para rodá-lo sozinho, `--project loja-live --no-deps`, com `SUPABASE_SERVICE_ROLE_KEY` e `NEXT_PUBLIC_SUPABASE_URL` do stack local exportadas.
+
 ---
 
 ## 4. Portões de CI

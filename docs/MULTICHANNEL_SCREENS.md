@@ -254,6 +254,7 @@ número.
 | **Devoluções ✔** | **código 2026-10-15, D-460.** As devoluções da Shopee em `/vendas/shopee`, logo depois do "Por loja" (C-62), decisão do dono de 15/10 | E7a | situação como a Shopee manda; "valor de reembolso informado", nunca "reembolsado" |
 | **T7** | Busca universal com a Shopee (C-08) | C-08/C-57 | ✔ D-476 |
 | **T8** | Central e meta do mês com a Shopee | dono (15/10) + C-66 | T8a ✔ D-480; T8b ✔ D-482 |
+| **T9** | Ensaio do Go Live das telas: uma loja live no e2e, no projeto `loja-live` | Go Live (16/10) | ✔ D-486 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
