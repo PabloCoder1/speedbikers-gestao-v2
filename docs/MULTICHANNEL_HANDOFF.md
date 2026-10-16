@@ -135,7 +135,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-513: a troca de tela por código também tem sinal — a paleta de busca, que fecha e chama `router.push`, ficava sem retorno nenhum desde a D-512; agora avisa o `IndicadorDeNavegacao` (`avisarTrocaDeTela`). Com ela, o `e2e/troca-de-tela.spec.ts`: sidebar, link no conteúdo e paleta, com a tela de destino segurada por 1,5 s.
 
 **Em andamento**
-- D-513 na `feat/ux-navegacao-por-codigo` (só web, sem migration): o PR sai com a autorização do dono.
+- D-513 no #221 (`feat/ux-navegacao-por-codigo`, só web, sem migration), aberto com a autorização do dono; entra depois do "liberado" do A1 (a migration da D-479).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
