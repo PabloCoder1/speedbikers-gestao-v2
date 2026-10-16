@@ -24,10 +24,11 @@ const SEM_ERRO = /Não foi possível|formato que esta tela não reconhece/u;
 
 let db: ClienteDeServico;
 let skuId = "";
+let lojaId = "";
 
 test.beforeAll(async () => {
   db = clienteDeServico();
-  ({ skuId } = await criarLojaLive(db));
+  ({ skuId, lojaId } = await criarLojaLive(db));
 });
 
 test.afterAll(async () => {
@@ -177,4 +178,21 @@ test("o SKU, a busca e a sincronização enxergam a loja live", async ({ page })
   await expect(page.getByText(LOJA_LIVE.nome).first()).toBeVisible();
   await expect(page.getByText("PEDIDOS EM DIA").first()).toBeVisible();
   await semErro(page);
+});
+
+test("o CSV dos pedidos da loja live tem os 12 pedidos do período, com a situação de cada um (D-490)", async ({ page }) => {
+  await entrar(page, `/vendas/shopee?loja=${lojaId}`);
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("region", { name: "Pedidos", exact: true }).getByRole("link", { name: /Exportar CSV/ }).click(),
+  ]);
+  const { readFileSync } = await import("node:fs");
+  const linhas = readFileSync(await download.path(), "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+
+  // 10 cobertos, 1 aguardando o financeiro e 1 cancelado — todos da loja real.
+  expect(linhas).toHaveLength(1 + 12);
+  expect(linhas.slice(1).every((linha) => linha.includes(`;${LOJA_LIVE.nome};Real;`))).toBe(true);
+  expect(linhas.find((linha) => linha.startsWith("E2ELIVE-CANCEL;"))).toContain(";Cancelada;");
+  expect(linhas.find((linha) => linha.startsWith("E2ELIVE01;"))).toContain(";100;80;Sim;Sim;");
 });

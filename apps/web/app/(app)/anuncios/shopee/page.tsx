@@ -225,6 +225,8 @@ export default async function AnunciosShopeePage({
   }
 
   const rows = lista.data ?? [];
+  // D-490: o CSV leva o recorte da tela inteiro, sem a página (`/anuncios/shopee/exportar`).
+  const exportar = buildShopeeListingsHref(filters, {}).replace(/^\/anuncios\/shopee/u, "/anuncios/shopee/exportar");
   // `total_count` vem repetido em toda linha (window function); zero linhas é
   // zero no conjunto filtrado.
   const totalCount = rows[0]?.total_count ?? 0;
@@ -372,6 +374,12 @@ export default async function AnunciosShopeePage({
           title="Anúncios e vínculos"
           subtitle={lista.error === null && !alemDoFim ? janela.label : undefined}
           aside={
+            <>
+            {lista.error === null && rows.length > 0 && (
+              <a className="sb-button" href={exportar} download>
+                <Icone nome="baixar" tamanho={14} /> Exportar CSV
+              </a>
+            )}
             <FilterMenu
               rotulo={estadoAtivo?.rotulo ?? "Todos os vínculos"}
               opcoes={[
@@ -387,6 +395,7 @@ export default async function AnunciosShopeePage({
                 })),
               ]}
             />
+            </>
           }
         >
           {chips.length > 0 && (
