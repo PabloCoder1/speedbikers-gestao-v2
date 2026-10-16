@@ -16,6 +16,12 @@ import { login } from "./helpers.js";
  * sempre "não rola" — o erro da varredura de D-383 (ver
  * `e2e/configuracoes.spec.ts`) e, de novo, das fotos das D-504 a D-509.
  *
+ * **E a tabela não pode ficar CORTADA.** O `.sb-panel` tem `overflow: hidden`:
+ * uma tabela larga solta no painel não faz a página rolar — some pela borda, e
+ * a última coluna fica inalcançável. Toda tabela mais larga que o painel
+ * precisa de um contêiner que role (`.sb-faturamento-tabela`,
+ * `.sb-stock-table-wrap`...).
+ *
  * As rotas cobrem as formas compartilhadas (faixa, `sb-pair-grid`, grade de
  * cartões, tabela, cabeçalho de entidade) e os escopos multicanal. Tela nova
  * com forma nova entra aqui.
@@ -55,7 +61,7 @@ test.describe("tela estreita (390 px, celular)", () => {
   // Celular de verdade: a barra de rolagem é sobreposta e não come largura.
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-  test("o conteúdo não rola para o lado em nenhuma tela da lista", async ({ page }) => {
+  test("o conteúdo não rola para o lado, e nenhuma tabela fica cortada, em nenhuma tela da lista", async ({ page }) => {
     test.setTimeout(180_000);
     await entrar(page);
 
@@ -70,6 +76,30 @@ test.describe("tela estreita (390 px, celular)", () => {
       }));
 
       if (rolagem > visivel) transbordos.push(`${rota}: ${String(rolagem - visivel)} px para o lado`);
+
+      // Tabela mais larga que o primeiro ancestral que a corta, sem um rolável no meio.
+      const cortadas = await page.evaluate(() => {
+        const saida: string[] = [];
+
+        for (const tabela of document.querySelectorAll<HTMLElement>(".sb-content table")) {
+          const direita = tabela.getBoundingClientRect().right;
+
+          for (let ancestral = tabela.parentElement; ancestral !== null && !ancestral.classList.contains("sb-content"); ancestral = ancestral.parentElement) {
+            const rolagemX = getComputedStyle(ancestral).overflowX;
+
+            if (rolagemX === "auto" || rolagemX === "scroll") break;
+            if (rolagemX === "hidden" || rolagemX === "clip") {
+              const corte = direita - ancestral.getBoundingClientRect().right;
+              if (corte > 1) saida.push(`tabela cortada em ${String(Math.round(corte))} px (${tabela.className})`);
+              break;
+            }
+          }
+        }
+
+        return saida;
+      });
+
+      transbordos.push(...cortadas.map((cortada) => `${rota}: ${cortada}`));
     }
 
     expect(transbordos).toEqual([]);

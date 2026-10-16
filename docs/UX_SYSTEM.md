@@ -42,8 +42,9 @@
 6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
 7. Rolagem lateral se mede no `.sb-content` — quem rola é o `<main>`, e o
    `<html>` diz sempre que não rola —, com celular emulado (barra
-   sobreposta). Tela nova com forma nova entra na lista de
-   `e2e/tela-estreita-e-acessibilidade.spec.ts` (D-510).
+   sobreposta). E tabela larga vai num contêiner que rola: o `.sb-panel` tem
+   `overflow: hidden`, e a tabela solta some pela borda. Tela nova com forma
+   nova entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts` (D-510).
 
 **Quando não há tabela para mostrar**, a forma é uma só: `EstadoDaTela`
 (D-502). `erro` = a leitura falhou (o dado pode existir; é o único com

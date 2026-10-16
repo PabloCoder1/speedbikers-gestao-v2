@@ -140,7 +140,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - A guarda `check:navegacao-suave` tem as suas telas pendentes na lista, com o motivo: `/central`, `/central/produtos` e `/curva-abc` (a `/compras` e a `/reposicao` saíram na T-R3, D-464). Quando tocar numa delas, troque `<form method="get">` por `FormularioFiltro` e `<a href>` interno por `<Link>`/`LinkDeFiltro`, e tire a tela da lista no mesmo PR (a guarda reprova a tela que ficou limpa e continua na lista).
 - `/produtos`: os grupos de filtro, os estados e os chips são `<Link>` sem indicador. Use o `LinkDeFiltro` quando mexer neles (T6c e T-R3).
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
-- Tela nova com forma nova (ou a seção "Por marketplace" da `/central`, T8a): entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts`. A rolagem se mede no `.sb-content`, nunca no `<html>`; grade de dois painéis com `.sb-pair-grid` já não transborda.
+- Tela nova com forma nova (ou a seção "Por marketplace" da `/central`, T8a): entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts`. A rolagem se mede no `.sb-content`, nunca no `<html>`; grade de dois painéis com `.sb-pair-grid` já não transborda; tabela larga vai num contêiner com `overflow-x: auto` (o `.sb-panel` corta, e a guarda acusa a tabela cortada).
 
 ---
 
