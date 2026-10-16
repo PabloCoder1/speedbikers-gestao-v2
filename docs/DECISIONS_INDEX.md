@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **488** (D-001 a D-513).
+Decisões registradas: **489** (D-001 a D-513).
 
 ## Por domínio
 
@@ -389,7 +389,7 @@ Decisões registradas: **488** (D-001 a D-513).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (48)
+### vendas/métricas (49)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -433,6 +433,7 @@ Decisões registradas: **488** (D-001 a D-513).
 - **D-463** — get_sku_correlated_events: os eventos de pedido partem da janela e buscam so os itens desses pedidos; a conversao do id nao estoura mais
 - **D-470** — Telas do A2, etapa E1/E2: os estados de /vendas e /faturamento no EstadoDaTela, e o periodo invalido como status
 - **D-476** — Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
+- **D-481** — Uma leitura de pedidos por loja Shopee de cada vez: a trava do orders.sync
 - **D-484** — Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho

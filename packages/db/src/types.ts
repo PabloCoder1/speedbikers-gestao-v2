@@ -3934,6 +3934,7 @@ export type Database = {
           items_hydrate_locked_until: string | null
           items_synced_until: string | null
           orders_last_success_at: string | null
+          orders_sync_locked_until: string | null
           orders_synced_until: string | null
           returns_synced_until: string | null
           organization_id: string
@@ -3961,6 +3962,7 @@ export type Database = {
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
           orders_last_success_at?: string | null
+          orders_sync_locked_until?: string | null
           orders_synced_until?: string | null
           returns_synced_until?: string | null
           organization_id: string
@@ -3988,6 +3990,7 @@ export type Database = {
           items_hydrate_locked_until?: string | null
           items_synced_until?: string | null
           orders_last_success_at?: string | null
+          orders_sync_locked_until?: string | null
           orders_synced_until?: string | null
           returns_synced_until?: string | null
           organization_id?: string
@@ -6241,6 +6244,10 @@ export type Database = {
         }[]
       }
       shopee_items_hydrate_lock: {
+        Args: { p_shopee_shop_id: string; p_ttl_seconds?: number }
+        Returns: boolean
+      }
+      shopee_orders_sync_lock: {
         Args: { p_shopee_shop_id: string; p_ttl_seconds?: number }
         Returns: boolean
       }
