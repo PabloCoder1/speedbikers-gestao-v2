@@ -16389,7 +16389,7 @@ O Go Live real foi em 16/10: duas lojas live em produção desde 14:15 e 14:29 U
   - 10 cobertos (receita R$ 100, recebido R$ 80, comissão, serviço, transação e frete; financeiro lido; item com SKU de custo R$ 20);
   - 1 válido aguardando o financeiro;
   - 1 cancelado.
-- Também: 1 devolução, 5 repasses e 7 dias de Ads CPC dentro da cobertura.
+- Também: 1 anúncio lido com o SKU próprio, 1 devolução, 5 repasses e 7 dias de Ads CPC dentro da cobertura. O anúncio foi sugestão do A1 na revisão, para a `/anuncios/shopee` e os filtros de anúncio da `/produtos` (C-56) verem a loja live.
 - Os números fecham de cabeça: 11 pedidos válidos, R$ 1.100 de receita, R$ 800 de recebido, R$ 200 de custo, resultado R$ 600 e cobertura de 90,9%.
 - Os tipos vêm do banco (`createClient<Database>`), então uma coluna errada reprova no typecheck.
 
@@ -16406,7 +16406,7 @@ O Go Live real foi em 16/10: duas lojas live em produção desde 14:15 e 14:29 U
   - no recorte Shopee: o resultado, os 5 repasses e os Ads (R$ 70, ROAS 20x);
   - no "Todos": a coluna da Shopee (receita, recebido, resultado, cobertura) e nada de "nenhuma loja real".
 - `/central`: o lado a lado (D-480) com a Shopee e a "Meta de cada marketplace" (D-482) com o realizado da Shopee, sem "ainda não entra".
-- `/produtos` ("vendeu só na Shopee" = 1), `/curva-abc` (o SKU com R$ 1.100) e `/reposicao` ("Shopee na demanda", "11 un da Shopee em 30 d").
+- `/anuncios/shopee` (o anúncio da loja live, "pelo SKU do anúncio"), `/produtos` ("anúncio só na Shopee" e "vendeu só na Shopee" = 1), `/curva-abc` (o SKU com R$ 1.100) e `/reposicao` ("Shopee na demanda", "11 un da Shopee em 30 d").
 - A aba Vendas do SKU, a busca (o pedido da loja live abre a `/vendas/shopee?pedido=`, D-476) e `/sincronizacao` ("pedidos em dia").
 - Em todas as telas: nenhum estado de erro.
 

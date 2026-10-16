@@ -25,7 +25,8 @@ export type ClienteDeServico = ReturnType<typeof createClient<Database>>;
  *   próprio, de custo R$ 20 — financeiro lido, item com SKU e custo conhecido;
  * - 1 pedido válido AGUARDANDO O FINANCEIRO (sem `order_income` nem recebido);
  * - 1 pedido CANCELADO, que não entra em nada;
- * - 1 devolução, do 1º pedido; o repasse de 5 pedidos; 7 dias de Ads CPC.
+ * - 1 anúncio lido, com o SKU próprio; 1 devolução, do 1º pedido; o repasse de 5
+ *   pedidos; 7 dias de Ads CPC.
  * Válidos no período: 11 pedidos e R$ 1.100 de receita.
  */
 
@@ -195,6 +196,27 @@ export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: str
   );
 
   erro("itens da loja live", insercaoItens.error);
+
+  // O ANÚNCIO da loja (D-428): o item lido, com o SKU próprio — é o que faz a
+  // /anuncios/shopee e os filtros de anúncio da /produtos (C-56) verem a loja live.
+  const anuncio = await db.from("shopee_items").insert({
+    shopee_shop_id: lojaId,
+    organization_id: organizationId,
+    item_id: 990777001,
+    item_status: "NORMAL",
+    shopee_updated_at: agora,
+    item_name: LOJA_LIVE.skuTitulo,
+    item_sku: LOJA_LIVE.sku,
+    has_model: false,
+    currency: "BRL",
+    current_price: LOJA_LIVE.receitaPorPedido,
+    original_price: 120,
+    available_stock: 7,
+    details_synced_at: agora,
+    details_update_time: agora,
+  });
+
+  erro("anúncio da loja live", anuncio.error);
 
   const devolucao = await db.from("shopee_returns").insert({
     shopee_shop_id: lojaId,

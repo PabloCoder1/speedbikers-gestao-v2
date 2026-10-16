@@ -118,13 +118,23 @@ test("/central: a Shopee entra no lado a lado e na meta de cada marketplace (D-4
   await semErro(page);
 });
 
-test("/produtos, /curva-abc e /reposicao: o SKU que só vende na Shopee aparece, e a demanda da Shopee entra na cobertura", async ({
+test("/anuncios/shopee, /produtos, /curva-abc e /reposicao: o anúncio e o SKU da loja live aparecem, e a demanda da Shopee entra na cobertura", async ({
   page,
 }) => {
-  await entrar(page, "/produtos?vendas=so-shopee");
-  await expect(page.getByText("1 produto", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: new RegExp(LOJA_LIVE.skuTitulo) }).first()).toBeVisible();
+  await entrar(page, "/anuncios/shopee");
+  const anuncio = page.getByRole("row", { name: new RegExp(LOJA_LIVE.skuTitulo) });
+
+  await expect(anuncio).toContainText(LOJA_LIVE.nome);
+  await expect(anuncio).toContainText("pelo SKU do anúncio");
   await semErro(page);
+
+  // O SKU só tem anúncio e venda na Shopee: os dois filtros de C-56 o acham.
+  for (const filtro of ["anuncios=so-shopee", "vendas=so-shopee"]) {
+    await page.goto(`/produtos?${filtro}`);
+    await expect(page.getByText("1 produto", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: new RegExp(LOJA_LIVE.skuTitulo) }).first()).toBeVisible();
+    await semErro(page);
+  }
 
   await page.goto("/curva-abc?marketplace=shopee");
   const linha = page.locator(".sb-abc-table-wrap table").getByRole("row", { name: new RegExp(LOJA_LIVE.sku) });
