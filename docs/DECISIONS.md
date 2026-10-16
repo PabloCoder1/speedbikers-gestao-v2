@@ -16415,9 +16415,10 @@ O Go Live real foi em 16/10: duas lojas live em produção desde 14:15 e 14:29 U
 Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral acima soma os dois", o que vale para o realizado e não para as projeções. Ela passa a dizer "a geral acima soma o realizado dos dois; as projeções não somam". Os painéis continuam lado a lado, cada um contra a meta dele, sem virar parcelas da geral.
 
 **Produção (só leitura, 16/10):**
-- As duas lojas live estão CONNECTED e lidas (cerca de 21 mil pedidos, 17,8 mil válidos).
-- A `get_meta_do_mes` de outubro: GERAL R$ 1.937.544,78 = ML R$ 1.590.838,88 + SHOPEE R$ 346.705,90.
-- A meta geral cadastrada (R$ 3,2 mi) passou a comparar com os dois marketplaces, e as metas por marketplace ainda não estão cadastradas. Fica para o dono.
+- As duas lojas live estão CONNECTED e com os pedidos lidos.
+- A `get_meta_do_mes` de outubro fecha: o realizado GERAL é exatamente ML + SHOPEE, e a SHOPEE vem preenchida.
+- A meta geral cadastrada passou a comparar com os dois marketplaces, e as metas por marketplace ainda não estão cadastradas. Fica para o dono.
+- Os valores reais ficam fora deste documento: o repositório é público.
 - Nenhum erro de execução na Vercel desde o Go Live.
 
 **Publicação:** o teste e o config do e2e, mais a nota da "Meta de cada marketplace". Sem migration, RPC, worker ou api.
@@ -16436,7 +16437,7 @@ Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral
 
 ## D-488 - Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
 
-**Contexto:** desde o Go Live de 16/10, as duas lojas Shopee live entram nas telas com o recorte "Todos" ou "Shopee". Mas a Home e a `/vendas` sem `marketplace` ainda abriam no Mercado Livre. Em outubro, a Shopee é cerca de 18% da receita (R$ 346 mil de R$ 1,94 milhão, só leitura em produção). A primeira tela do sistema mostrava a receita da empresa a menos, sem dizer.
+**Contexto:** desde o Go Live de 16/10, as duas lojas Shopee live entram nas telas com o recorte "Todos" ou "Shopee". Mas a Home e a `/vendas` sem `marketplace` ainda abriam no Mercado Livre. Em outubro, a Shopee já é uma parte relevante da receita (conferido só lendo em produção; os valores ficam fora daqui, porque o repositório é público). A primeira tela do sistema mostrava a receita da empresa a menos, sem dizer.
 
 O dono decidiu em 16/10, perguntado pelo A2:
 1. A faixa de vendas da Home é de **todos os marketplaces**.

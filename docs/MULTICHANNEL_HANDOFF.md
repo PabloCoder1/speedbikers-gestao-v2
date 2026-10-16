@@ -109,7 +109,7 @@
 - Nada nas telas da frente (T0 a T8). Os números da Shopee aparecem sozinhos com a loja live (Go Live, do dono).
 
 **Bloqueios**
-- Nenhum. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada (R$ 3,2 mi) passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
+- Nenhum. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
 
 **Achados para o dono e o A1**
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
