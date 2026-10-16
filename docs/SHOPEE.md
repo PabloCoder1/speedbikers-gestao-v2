@@ -10,7 +10,7 @@ porquê moram em `docs/DECISIONS.md` (D-425 em diante).
 |---|---|
 | Console | `open.shopee.com` → Console → App List → "Analytics Lojas Shopee" |
 | Tipo | **Seller In House System** (sistema próprio do vendedor) |
-| Estado | **Developing** (sandbox) desde 13/10/2026 — Go Live pendente (seção 6) |
+| Estado | **Live** desde 16/10/2026 (partner_id de produção `2048641`, não é segredo; Partner Key e Push Partner Key em `SHOPEE_LIVE_PARTNER_KEY` e `SHOPEE_LIVE_PUSH_PARTNER_KEY`). A loja se conecta SÓ pelo `/contas` → Conectar loja Shopee: o "Authorize" do Console volta sem o `state` e a api recusa. Antes, Developing (sandbox) desde 13/10 |
 | Test partner_id | `1248019` (não é segredo) |
 | Test Partner Key | Secret Manager `SHOPEE_TEST_PARTNER_KEY` (projeto `speedbikers-prod`) — **nunca** em chat, print, `.env` versionado ou Git |
 | Test Redirect URL Domain | `https://api-p6gzq3hzca-rj.a.run.app` (só o domínio; o caminho vai no link) |

@@ -16215,6 +16215,25 @@ Nao muda tela, banco nem limiar de produto. A proxima falha diz qual dos dois ca
 - docs: `docs/{TESTING,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`;
 - nenhum codigo de tela, migration, RPC, worker ou api.
 
+## D-479 - O faturamento da Shopee sem o laco aninhado entre CTEs, e o ensaio de volume do Go Live (R7)
+
+**Contexto:** o plano da frente (E8, risco R7) pedia um ensaio de volume antes da loja real. Ele rodou em 16/10, no banco local isolado, com 40 mil pedidos simulados em 120 dias (2 lojas live, 80 mil itens, 3.000 SKUs com custo, ~85% com o financeiro lido), medindo cada leitura da Shopee 5 vezes como `authenticated`. Quase tudo ficou abaixo de 0,7 s em 90 dias: a view de vendas, o consolidado (C-53), os pedidos, o ranking (C-59), a cobertura e a sugestao de compra (C-65), produtos (C-56) e a busca (C-57). **Duas leituras nao:**
+- **o faturamento da Shopee** (`get_shopee_faturamento`, `_composicao`, `_diario`, `_por_sku`, todas sobre `get_shopee_faturamento_pedidos`): ~3,5 s em 30 dias e **~32 a 37 s em 90** -- o teto de 8 s derruba a tela;
+- **a Curva ABC com a Shopee** (C-60): ~10 s em 30 e em 90 dias.
+
+A loja real (conectada em 16/10) tem ~95 pedidos por dia. Com ela so, o faturamento de 90 dias ficaria em ~4 s; com a segunda loja, passaria do teto, porque o custo era quadratico.
+
+**Decisao:**
+1. **`get_shopee_faturamento_pedidos` le os componentes do recebido do proprio pedido**, pela chave primaria de `shopee_orders` e so quando o financeiro foi lido. Antes eram duas CTEs (`renda` e `componentes`) ligadas a `por_pedido` no fim; o Postgres nao estima linhas de CTE e escolhia laco aninhado: 8.333 x 7.076 = **59 milhoes de comparacoes** em 30 dias, 95% do tempo. Os campos e a formula sao os de antes; o resto da funcao e o da `20261015010000`, byte a byte. Assinatura, colunas e permissoes nao mudam.
+2. **A Curva ABC nao muda.** Os 10 s eram um plano ruim montado com estatisticas velhas de `shopee_shops` e `organization_members`, tabelas pequenas que entram na RLS: depois do `autoanalyze` delas (14:30:24), a mesma chamada caiu para ~145 ms, com a Shopee, e 46 ms so com o ML. **Fica o aviso para producao:** uma tabela pequena so e reanalisada sozinha depois de ~50 linhas mudadas; se a Curva ABC com a Shopee demorar com a loja real, a primeira coisa a fazer e `analyze` dessas tabelas.
+
+**Verificacao:**
+- **Equivalencia** (banco local, a funcao antiga copiada num esquema `antes`, `except all` nos dois sentidos, como `authenticated`): **zero diferencas** em 30, 90 e 120 dias (33.748 linhas), com o filtro de uma loja e num dia so.
+- **Tempo, 5 execucoes, mediana:** o faturamento da Shopee de **~3,5 s para ~0,22 s** em 30 dias e de **~34 s para ~0,65 s** em 90 (as quatro funcoes).
+- **Integracao:** os 100 testes da Shopee verdes com a funcao nova; suite inteira na CI do PR.
+
+**Impacto:** `supabase/migrations/20261016140000_faturamento_shopee_sem_laco.sql` e `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`. Em producao: a migration depois do merge e da CI da `main`; a web e o worker nao mudam.
+
 ## D-480 - Telas multicanais, etapa T8a: a Shopee na /central, lado a lado e sem total de resultado; as metas por marketplace ficam para a T8b, sobre o C-66 do A1
 
 **Contexto:** a D-430 §5 deixou a meta do mes e os indicadores da `/central` com a Shopee para depois do Go Live, com uma decisao do dono sobre o total da empresa. Em 15/10 o dono decidiu, perguntado pelo A2:
