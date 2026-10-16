@@ -133,7 +133,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos.
 
 **Em andamento**
-- D-511/D-512 na `feat/ux-shell-layout` (só web, sem migration): o PR sai com a autorização do dono; o A2 segura branch nova de tela até ele entrar (combinado em 16/10).
+- D-511/D-512 no #219 (`feat/ux-shell-layout`, só web, sem migration), aberto com a autorização do dono; o A2 segura branch nova de tela até ele entrar (combinado em 16/10).
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
