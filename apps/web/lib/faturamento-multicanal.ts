@@ -284,27 +284,6 @@ export const COMPONENTES_DO_RECEBIDO: readonly { chave: ChaveDoComponente; rotul
   { chave: "outros", rotulo: "Outros (fecha com o recebido)" },
 ];
 
-/**
- * O valor de um componente na versão do contrato que o banco serve (D-492),
- * lida pela PRESENÇA da coluna -- a tela vale antes e depois da migration:
- *
- * - **antes da D-483:** `protecao_envio` não vem (`undefined`) e o degrau nem
- *   existe; o `outros` ainda traz a taxa e fecha a conta como sempre;
- * - **fase 1:** `protecao_envio` vem, e o outros que fecha a conta COM ela é o
- *   `outros_restante` (o `outros` ainda tem a taxa: usá-lo contaria duas vezes);
- * - **fase 2:** o `outros_restante` sai e o `outros` já é o restante.
- *
- * `undefined` é "a coluna não existe", fora da cascata e sem nota; `null` é
- * "nenhum pedido coberto informou", dito na tela. Nada é calculado aqui.
- */
-function valorDoComponente(composicao: ComposicaoShopee, chave: ChaveDoComponente): number | null | undefined {
-  if (chave === "outros" && composicao.protecao_envio !== undefined && composicao.outros_restante !== undefined) {
-    return composicao.outros_restante;
-  }
-
-  return composicao[chave];
-}
-
 function faixa(a: number, b: number): { inicio: number; largura: number } {
   const limitar = (v: number): number => Math.min(1, Math.max(0, v));
   const inicio = limitar(Math.min(a, b));
@@ -361,8 +340,10 @@ export function montarCascataShopee(
   let nivel = 1;
 
   for (const componente of COMPONENTES_DO_RECEBIDO) {
-    const valor = valorDoComponente(composicao, componente.chave);
+    const valor = composicao[componente.chave];
 
+    // Coluna ausente (o banco antes da D-483, ainda no tipo): fora da cascata e sem
+    // nota. Desde a fase 2 (16/10) o `outros` já é o restante, sem a taxa.
     if (valor === undefined) continue;
 
     if (valor === null) {

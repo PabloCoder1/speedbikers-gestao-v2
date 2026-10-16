@@ -16591,6 +16591,8 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+**Fase 2 (16/10):** a `20261016200000` foi aplicada em produção (A1, conferida nas lojas reais: `outros` zero em todos os cobertos e a identidade fechando pedido a pedido). A tela deixou de ler o `outros_restante`: o `outros` já é o restante. Fica só a tolerância à coluna `protecao_envio` ausente, porque ela segue opcional no tipo. O A1 tira o `outros_restante?` do `types.ts`.
+
 ## D-494 - Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
 
 **Contexto:** os filtros salvos (`saved_filters`, "Salvar visão" e "Visões salvas") existiam em `/vendas`, `/anuncios` e `/curva-abc`. As duas telas próprias da Shopee, `/anuncios/shopee` e `/vendas/shopee`, não os tinham. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "na Shopee faltam vendas e filtros salvos". Nenhum e2e cobria os filtros salvos, em tela nenhuma.
