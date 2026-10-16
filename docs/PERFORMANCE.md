@@ -1419,6 +1419,10 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### A fila do financeiro da Shopee relida depois do repasse (D-485, 16/10/2026)
+
+**Banco local, uma loja com 30 mil pedidos e 25 mil liberações** (`shopee_orders_financials_pending`, limite 100, 3 execuções). A fila de antes: **5–6 ms**. Com a liberação por `exists` (uma busca no índice por pedido, 27 mil buscas): **48–75 ms**. Com as liberações da loja agregadas numa junção (a versão da migration): **18–23 ms**. Continua linear nos pedidos da loja, como antes; a chamada é do worker, uma por execução da leitura do financeiro.
+
 ### Ensaio de volume do Go Live e o faturamento da Shopee (D-479, 16/10/2026)
 
 **Banco local, 40 mil pedidos simulados em 120 dias** (2 lojas live, 80 mil itens, 3.000 SKUs), cada leitura 5 vezes como `authenticated`, mediana. Em 90 dias: view de vendas 45 ms, vendas por loja 0,2 s, consolidado 0,27 s, ranking 0,27 s, pedidos 0,69 s, cobertura 0,21 s, sugestão de compra 0,33 s, produtos 0,14 s, busca 6 ms. **Faturamento da Shopee** (as quatro funções sobre `get_shopee_faturamento_pedidos`): **3,5 s → 0,22 s** em 30 dias e **34 s → 0,65 s** em 90 — o laço aninhado entre duas CTEs no fim (59 milhões de comparações em 30 dias) virou a leitura do pedido pela chave primária. **Curva ABC com a Shopee:** ~10 s com estatísticas velhas de `shopee_shops`/`organization_members` (RLS), ~145 ms depois do `autoanalyze` delas — tabela pequena só se reanalisa sozinha depois de ~50 linhas mudadas. Migration `20261016140000`.

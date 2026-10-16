@@ -16401,6 +16401,27 @@ Esperou o #219 (o Shell num layout, D-512) entrar, como combinado com o A3: as d
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-485 - Os ajustes da Shopee depois do repasse descontados do resultado, e o financeiro relido depois da liberacao
+
+**Contexto:** a auditoria da primeira leitura real (16/10, `docs/SHOPEE.md` secao 8, achado 2) mostrou que o `total_adjustment_amount` (negativo) e cobrado FORA do repasse: a Shopee libera o `escrow_amount` cheio e cobra o ajuste a parte. O C-58 so mostrava os ajustes como informativos (no C-61); o resultado (recebido - custo) nao os descontava e dizia que sobrava mais do que sobra -- cerca de 0,4% da receita coberta em 30 dias. E o pedido concluido so era relido se mudasse na Shopee: um ajuste lancado depois da leitura nao chegava. O dono delegou a decisao (16/10: os ajustes e as formulas "do jeito que voce achar mais recomendado").
+
+**Decisao:**
+1. **Resultado = recebido (escrow) + ajustes - custo**, nos pedidos cobertos: no C-58 (TOTAL e CONTA; definitivo e provisorio tambem), na serie diaria e no por SKU (os dias seguem somando o TOTAL). A margem, o resultado apos imposto e a margem apos imposto vem dele. O `recebido_coberto` continua o escrow (e o que o repasse paga, e o C-64 compara com ele), e a cascata do C-61 nao muda: o ajuste nao faz parte do escrow, fica la como informativo.
+2. **Coluna nova `ajustes_cobertos`, no FIM do C-58** (drop + create, permissoes e comentario reaplicados), para a tela mostrar o degrau "Ajustes depois do repasse" entre o recebido e o custo. Loja nunca lida: nula, como o resto.
+3. **Catalogo (espelho de METRICS 5U):** a formula de `shopee_resultado_venda` ganha o ajuste, e `shopee_ajustes_pos_repasse` entra com definicao propria.
+4. **Uma releitura depois da liberacao:** `shopee_orders_financials_pending` rele o pedido quando a ultima liberacao dele (`shopee_escrow_releases`) e posterior a ultima leitura. As liberacoes da loja entram agregadas numa juncao, nao numa busca por pedido: no ensaio de volume (uma loja com 30 mil pedidos e 25 mil liberacoes), a fila de antes leva 5-6 ms, a busca por pedido 48-75 ms e a juncao 18-23 ms (`docs/PERFORMANCE.md`). O historico liberado antes da leitura nao volta para a fila: nenhuma rajada no deploy. Limite: ajuste lancado depois dessa releitura so entra se o pedido mudar na Shopee (dito no catalogo).
+5. **Fora desta decisao:** os Ads na margem de contribuicao da Shopee (D-487, a seguir) e o imposto (depende da aliquota, ato do dono).
+
+**Ordem (duas fases, como a D-483):** a migration so vai a producao depois da tela do A2 com o degrau "Ajustes" no ar, lendo `ajustes_cobertos` pela presenca. Sem ela, a cascata "Recebido - Custo = Resultado" deixaria de fechar: a barra do custo engoliria o ajuste. O merge deste PR nao toca a producao (a migration so entra pelo workflow), e o tipo novo e opcional.
+
+**Verificacao:**
+- **Integracao (D-443):** o TOTAL do C-58 com resultado 135 (325 - 10 - 180), margem 0,3375, definitivo 80, provisorio 55, `ajustes_cobertos` -10 e apos imposto 95; o dia do P1 com 115 e 0,3833; o SKU X com 60 e 0,30; o catalogo com as duas formulas.
+- **Integracao (D-427):** o pedido lido antes da liberacao volta para a fila (na ordem da leitura mais antiga) e sai depois de relido; o lido depois da liberacao nao volta.
+- **Mutacao:** o C-58, o diario e o por SKU sem o ajuste, e a fila sem a liberacao -- cada uma derruba um teste.
+- **Suite inteira:** 1022/1022 com o banco recriado do zero.
+
+**Impacto:** `supabase/migrations/20261016220000_ajustes_shopee_no_resultado.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP,PERFORMANCE}.md`. Worker e api nao mudam (a fila e SQL). O degrau na tela e do A2.
+
 ## D-486 - Telas multicanais, etapa T9: o ensaio do Go Live das telas, com uma loja Shopee LIVE criada e apagada pelo próprio e2e, num projeto do Playwright que roda por último
 
 **Contexto:** o seed do e2e tem só a loja Shopee de TESTE, de propósito. As provas de equivalência das outras telas (o "Todos" igual ao Mercado Livre, D-440 a D-454) dependem de nenhuma loja live existir, e as telas deixam a loja de teste fora de toda soma. Com isso, nenhum spec renderizava o caminho "com Shopee". Ele só tinha sido provado nos unitários das telas (a leitura de cada RPC) e na integração do A1 (o SQL).
