@@ -18,7 +18,7 @@
 
 | Situação | O que a pessoa vê | Componente | Desde |
 |---|---|---|---|
-| **Trocar de tela** (o caminho muda) | a tela anterior FICA, com o sinal da atualização no lugar: o link clicado esmaece, a barra da moldura aparece aos 100 ms e o conteúdo esmaece aos 400 ms; a moldura nunca sai (é do layout) | `IndicadorDeNavegacao` no `Shell` (todo link interno) e `CarregandoSeODemorar` nos links da sidebar → `AtualizandoTela` | **D-512** (até ela, `loading.tsx` por pasta, D-382) |
+| **Trocar de tela** (o caminho muda) | a tela anterior FICA, com o sinal da atualização no lugar: o link clicado esmaece, a barra da moldura aparece aos 100 ms e o conteúdo esmaece aos 400 ms; a moldura nunca sai (é do layout) | `IndicadorDeNavegacao` no `Shell` (todo link interno, e `avisarTrocaDeTela` antes do `router.push` de quem navega por código, como a paleta de busca) e `CarregandoSeODemorar` nos links da sidebar → `AtualizandoTela` | **D-512**, D-513 (até a D-512, `loading.tsx` por pasta, D-382) |
 | **Carga inicial** de uma tela (primeira visita, recarga) | o esqueleto com a moldura, no lugar do que vai chegar | `app/loading.tsx`, acima do layout do grupo `(app)` → `CarregandoTela` | D-382, D-512 |
 | **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
@@ -42,7 +42,10 @@
 6. Tela autenticada mora em `app/(app)/` e NÃO tem `loading.tsx`: o React só
    troca um esqueleto mostrado pelo conteúdo 300 ms depois, e isso travava toda
    troca de tela (D-511). Bloco lento vai num `Suspense` dentro da tela
-   (`check:loading`, D-512).
+   (`check:loading`, D-512). Quem troca de tela por código (`router.push`) e
+   não tem outro retorno na própria tela chama `avisarTrocaDeTela(href)` antes
+   — sem `<a>`, o indicador não vê o clique (D-513); o
+   `e2e/troca-de-tela.spec.ts` segura a tela de destino e confere o sinal.
 7. Rolagem lateral se mede no `.sb-content`, pela borda INTERNA (sem o respiro:
    texto que invade o respiro num sistema sai dele em outro) — quem rola é o `<main>`, e o
    `<html>` diz sempre que não rola —, com celular emulado (barra
@@ -72,7 +75,7 @@ robustez; **P3** = acabamento.
 | 1 | Opção de menu de filtro era `<a>`: cada escolha recarregava o documento | `FilterMenu` (63 usos em 26 arquivos), `SeletorMarketplace` (7), `SavedFilters` (4) | P1 | **corrigido** (D-500) |
 | 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido** em 18 dos 25 (`/estoque` na D-500, 17 na D-501); 7 nas telas pendentes do A2 |
 | 3 | Atualização na mesma tela trocava a tela inteira pelo esqueleto após 350 ms | `CarregandoSeODemorar` (~100 usos) | P1 | **corrigido** (D-500) |
-| 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **proposta ao dono** (§4) |
+| 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **corrigido**: medido na D-511 e migrado na D-512 (troca de tela de 336 para 102 ms, 6 leituras a menos); a paleta de busca, que navega por código, ganhou o sinal na D-513 |
 | 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
@@ -109,7 +112,7 @@ ruído.
 
 **O que a auditoria conferiu e está certo:** `app/error.tsx` usa `retry` (é a
 API do Next 16.3, conferida em `docs/01-app/.../error.md`); `loading.tsx`
-cobre as 59 pastas com página; o esqueleto não inventa dado da organização.
+cobria as 59 pastas com página (desde a D-512 só fica o da raiz, acima do layout do grupo); o esqueleto não inventa dado da organização.
 
 ---
 
@@ -203,8 +206,8 @@ de `/login` só chega o que sai depois de entrar (o CLS).
 **Corte do reporter (D-507).** Linha **com** `softNav` é do reporter novo;
 **sem** ele, do antigo, que dava ao LCP e ao CLS a rota em que a aba se
 escondeu — leia essas pelo par com o TTFB anterior (D-506). O corte é o
-primeiro deploy de produção com a D-507: data e `dpl_` **a preencher no
-deploy** (`list_deployments`). Aba aberta antes dele manda o formato antigo até
+primeiro deploy de produção com a D-507: 15/10, 19:42 UTC
+(`dpl_HHLJgBuE9XbucQ3AeRXXvEaYx7gr`, #200, `c2803f54`). Aba aberta antes dele manda o formato antigo até
 recarregar: conte pelo campo, não pelo horário.
 
 **Como ler as linhas sem `softNav` (D-506).** Até a D-507, o TTFB saía na
