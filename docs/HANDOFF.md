@@ -47,7 +47,6 @@ e `docs/PERFORMANCE.md`.
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
-- **`produto_prejuizo` estourava os 8 s na 1ª tentativa, todo dia de 09 a 15/10** (banco frio, 11:00 UTC); a 2ª, um minuto depois, gerava os alertas. D-471 (#208) pede ao ranking só os 30 dias; no disparo manual de 15/10 20:18 UTC as três fontes passaram de primeira, o produto em ~2,1 s. A prova a frio é o job de 16/10 11:00 UTC.
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
