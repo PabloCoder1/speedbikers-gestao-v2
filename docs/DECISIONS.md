@@ -16117,7 +16117,7 @@ A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
 **Verificacao:**
 - Teste novo no worker: 503 e `ads.rate_limit.exceed_shop_api` saem `retryable: false`, com o motivo da Shopee e nada gravado; a falha ao gravar continua repetindo. 5/5.
 - Mutacao: sem a regra, o teste novo cai.
-- Fica para depois do deploy do worker: no Cloud Logging, ~1 falha do `shopee.ads.sync` por hora no sandbox, em vez de ~10.
+- **Em producao (16/10, worker `worker-00048-hl2`, `0d4883c2`):** no ciclo das 12:20 UTC o `shopee.ads.sync` falhou uma vez (503 do sandbox, `attempt` 1, `retryable: false`) e não repetiu; as três tarefas antigas que ainda repetiam desde antes do deploy (tentativas 7, 9 e 10) terminaram na primeira entrega à revisão nova. Antes, ~10 falhas por hora.
 
 **Impacto:** `apps/worker/src/handlers/shopee-ads-sync{,.test}.ts` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`. Publica o worker; sem migration, api ou web. Com loja real, um 503 passageiro atrasa o Ads em no maximo uma hora.
 
