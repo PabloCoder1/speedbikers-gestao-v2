@@ -203,3 +203,30 @@ test("o CSV dos pedidos da loja live tem os 12 pedidos do período, com a situa�
   expect(linhas.find((linha) => linha.startsWith("E2ELIVE-CANCEL;"))).toContain(";Cancelada;");
   expect(linhas.find((linha) => linha.startsWith("E2ELIVE01;"))).toContain(";100;80;Sim;Sim;");
 });
+
+test("o CSV de /vendas tem a loja live com os números da tabela, e um dia por dia com venda (D-496)", async ({ page }) => {
+  await entrar(page, "/vendas?marketplace=todos");
+
+  const { readFileSync } = await import("node:fs");
+  const baixar = async (nome: string): Promise<string[]> => {
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link", { name: nome, exact: true }).click(),
+    ]);
+
+    return readFileSync(await download.path(), "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+  };
+
+  // 11 pedidos válidos de R$ 100, R$ 800 recebidos e 1 aguardando o financeiro: a linha da tabela, coluna a coluna.
+  const contas = await baixar("Exportar CSV por conta");
+
+  expect(contas.find((linha) => linha.includes(`;${LOJA_LIVE.nome};`))).toContain(";Real;1100;0;11;11;100;;800;1;");
+
+  // No recorte Shopee, um dia por dia com venda (os 10 dos pedidos), sem a linha do total.
+  await page.goto("/vendas?marketplace=shopee");
+  const dias = await baixar("Exportar CSV por dia");
+
+  expect(dias).toHaveLength(1 + 10);
+  expect(dias.slice(1).every((linha) => linha.split(";")[1] === "Shopee")).toBe(true);
+  await semErro(page);
+});
