@@ -16552,6 +16552,43 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-492 - A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
+
+**Contexto:** a D-483 (A1, fase 1) achou o "outros" do C-61 igual, na leitura real, à taxa de proteção de envio do vendedor (`shipping_seller_protection_fee_amount`), que a fórmula oficial do escrow não lista. `get_shopee_faturamento_composicao` e `_pedidos` ganharam no fim `protecao_envio` (nula sem o campo) e `outros_restante` (o outros sem a taxa, calculado no SQL); o `outros` segue o de antes, ainda com a taxa. Vale `receita − componentes − protecao_envio − outros_restante = recebido`. A cascata "Para onde vai o dinheiro" do `/faturamento?marketplace=shopee` (D-452) mostrava a taxa inteira como "Outros (fecha com o recebido)".
+
+**1. Um degrau próprio, logo antes de "Outros".** "Proteção de envio" entra em `COMPONENTES_DO_RECEBIDO` depois de "Taxa por pedido". Com a leitura real, o "Outros" fica zero e sai das barras para a linha "Sem valor no período", como qualquer componente zerado.
+
+**2. Pela presença da coluna, a tela vale antes e depois da migration (`valorDoComponente`).**
+- **Antes da D-483:** `protecao_envio` não vem (`undefined`). O degrau nem existe, nem como nota, e o `outros` (com a taxa) fecha a conta como sempre.
+- **Fase 1:** `protecao_envio` vem. O "Outros" passa a ser o `outros_restante`: usar o `outros` contaria a taxa duas vezes.
+- **Fase 2 (A1, com aviso):** o `outros_restante` sai e o `outros` já é o restante. A tela usa o `outros` sem mudança.
+- `undefined` é "a coluna não existe"; `null` é "nenhum pedido coberto informou", dito em "A Shopee não informou". Zero vai para "Sem valor no período". Nada é calculado no navegador: os dois valores vêm do SQL.
+
+**3. Só a composição tem consumidor.** A web lê `get_shopee_faturamento_composicao` (o TOTAL). `get_shopee_faturamento_pedidos` não tem consumidor na tela.
+
+**4. O ensaio da loja live (D-486) com a taxa.** O fixture grava `shipping_seller_protection_fee_amount` no `order_income` dos pedidos cobertos e baixa a taxa de serviço no mesmo valor. O recebido, o custo e o resultado não mudam, e o "outros" de antes passa a ser exatamente a taxa, como na leitura real. O ensaio confere o degrau com o valor do período e o "Outros" em "Sem valor no período".
+
+**Publicação:** só a web. Ela lê as colunas da migration `20261016180000` (D-483) quando existem e funciona sem elas. Por isso não precisa esperar a migration de produção, e um parâmetro novo não é mandado (não há nenhum).
+
+**Verificacao:**
+- **Unitários (`faturamento-multicanal.test.ts`, 24):**
+  - antes da migration, sem o degrau nem a nota;
+  - fase 1, com o degrau terminando no recebido e o restante zero dito;
+  - fase 1 com restante, ao lado da proteção;
+  - loja sem o campo, com a proteção dita e o restante fechando;
+  - fase 2, com o `outros` já sendo o restante.
+- **Mutação:**
+  - usar o `outros` na fase 1 derruba dois testes;
+  - tratar a coluna ausente como "não informou" derruba outros dois.
+- **e2e:** o ensaio da loja live, com o degrau e o "Outros" sem valor.
+- **Suite inteira:** **251/251** com o banco recriado do zero (248 na 3300 e os 3 de convite na 3000) e o `loja-live` **6/6**, já com a T11.
+
+**Impacto:**
+- web: `apps/web/lib/faturamento-multicanal.ts` com o teste;
+- e2e: `loja-shopee-live.ts` e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
