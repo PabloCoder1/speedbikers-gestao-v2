@@ -72,7 +72,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
 | Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas | futuro |
 | Shell e menu | todas | 2 | — | `marketplace_accounts` conectadas (contas do ML e lojas Shopee) | — (o "N contas conectadas" conta as lojas desde a D-438; a lacuna antiga estava desatualizada, D-490 §5) | ✔ D-438 |
-| Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | `/vendas` não exporta | T11 ✔ (D-490): pedidos e anúncios da Shopee em CSV, com o recorte da tela |
+| Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | o recorte do Mercado Livre em `/vendas` não exporta (filtros que o C-53 não conhece: marca, conta única, pacotes) | T11 ✔ (D-490): pedidos e anúncios da Shopee em CSV, com o recorte da tela; D-496 ✔: `/vendas` no "Todos" e na Shopee, por dia e por conta |
 | Sugestões, fornecedores, NF-e, importações, login | — | 1 / 5 | — | organização / ERP | — | — |
 
 ---
@@ -259,6 +259,7 @@ número.
 | **T11** | Os pedidos e os anúncios da Shopee em CSV | — | ✔ D-490 |
 | **D-492** | A proteção de envio da Shopee como degrau da cascata do faturamento | A1 (D-483) | ✔ D-492 |
 | **D-494** | Filtros salvos em `/anuncios/shopee` e `/vendas/shopee` | — | ✔ D-494 |
+| **D-496** | O CSV de `/vendas` no "Todos" e na Shopee, e a série diária em páginas | — | ✔ D-496 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

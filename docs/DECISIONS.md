@@ -16628,6 +16628,55 @@ O spec apaga o que cria. Com nome fixo, uma rodada interrompida é sobrescrita n
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-496 - O CSV de /vendas no "Todos" e na Shopee, e a série diária em páginas
+
+**Contexto:** a `/vendas` era a última tela de resultados sem exportação, uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2 ("`/vendas` não exporta"). Desde a T10 (D-488) ela abre em "Todos". Na mesma leitura apareceu um defeito da tela: o gráfico lia a `get_marketplace_sales_daily` numa ida só. O período personalizado não tem teto, e no "Todos" (três linhas por dia) acima de ~333 dias a série passaria do `max_rows = 1000` do PostgREST e seria cortada em silêncio.
+
+**1. Um CSV por painel, no recorte da tela.**
+- "Desempenho no período" e "Por marketplace e conta" ganham "Exportar CSV", só quando o painel tem linhas.
+- O nome acessível diz qual é: "Exportar CSV por dia" e "Exportar CSV por conta".
+- O endereço é o da tela (`hrefDeVendas`), trocando só o caminho para `/vendas/exportar` e dizendo a tabela (`hrefDaExportacao`). Assim o arquivo nunca tem outro recorte.
+- A rota lê a URL com os mesmos resolvedores (marketplace, período e contas) e chama as mesmas RPCs do C-53, com a sessão do usuário e a RLS.
+
+**2. As palavras e a ordem da tela (`lib/vendas-export.ts`).**
+- **Por dia:** um dia por marketplace e, no "Todos", o total do dia ("Todos os marketplaces", por último). No recorte de um marketplace o total sai, porque repetiria a linha dele.
+  - Só os dias com venda, como o banco devolve: dia sem linha não vira zero.
+  - Receita desconhecida é célula vazia, com os pedidos sem receita contados ao lado.
+- **Por conta:** a tabela linha por linha, com o total na frente no "Todos" (na tela ele é a faixa). Vêm a soma de cada marketplace e as contas abaixo.
+  - A loja de teste sai "Teste — fora das somas", a nunca lida "pedidos ainda não lidos", e o marketplace sem soma "nada somável", como na tela.
+  - Pedidos do ML e recebido da Shopee ficam cada um na sua linha.
+- **Nada é somado no navegador:** cada número, o total inclusive, vem do SQL.
+
+**3. O recorte do Mercado Livre não exporta, por enquanto.** A tela dele tem filtros que o C-53 não conhece (marca, conta única, pacotes), e um CSV pelo C-53 divergiria do que se vê. A rota recusa com o motivo, e o botão não aparece lá.
+
+**4. A série diária em páginas (`lib/serie-de-vendas.ts`).**
+- `lerSerieDiaria` lê a série inteira com `lerPaginasDaRpc`, em ordem estável (`order(dia)`, `order(marketplace)` com o total por último, `range`), até 5.000 linhas (~4,5 anos no "Todos").
+- O gráfico e o CSV usam a MESMA leitura e não divergem.
+- Passou do teto: a tela diz "Período longo demais para o gráfico", e o CSV recusa com o motivo. Nunca corta calado (D-131).
+- A Home lê a série numa janela fixa e curta, e não muda.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica e unitarios:** typecheck e lint; `vendas-export.test.ts` com 6 casos:
+  - a ordem e as palavras do por dia;
+  - o total fora no recorte de um marketplace;
+  - a ordem da tabela no por conta;
+  - teste, nunca lida e o recebido;
+  - o marketplace sem soma;
+  - o endereço com o mesmo recorte.
+- **Mutação:** sem tirar o total no recorte Shopee, um teste cai.
+- **e2e:**
+  - `vendas-multicanal`: o por conta tem o cabeçalho, o total e cada linha da tabela, com a loja de teste marcada; o por dia, o formato e o total do dia; o recorte do ML não tem botão;
+  - no ensaio da loja live: a linha dela coluna a coluna (R$ 1.100, 11 compras, 11 unidades, ticket R$ 100, R$ 800 recebidos, 1 aguardando) e, no recorte Shopee, um dia por dia com venda (10), sem o total.
+- **Suite inteira:** **252/252** com o banco recriado do zero (249 na 3300 e os 3 de convite na 3000) e o `loja-live` **7/7**, sobre a `main` a8fe7688; a fase 2 da D-483 e a D-494 entraram depois, sem tocar o que a D-496 muda.
+
+**Impacto:**
+- web: `apps/web/lib/vendas-export.ts` com o teste, `apps/web/lib/serie-de-vendas.ts`, `apps/web/app/(app)/vendas/exportar/route.ts` e `apps/web/app/(app)/vendas/multicanal.tsx`;
+- e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

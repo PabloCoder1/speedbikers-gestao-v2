@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **497** (D-001 a D-515).
+Decisões registradas: **498** (D-001 a D-515).
 
 ## Por domínio
 
@@ -394,7 +394,7 @@ Decisões registradas: **497** (D-001 a D-515).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (51)
+### vendas/métricas (52)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -441,6 +441,7 @@ Decisões registradas: **497** (D-001 a D-515).
 - **D-481** — Uma leitura de pedidos por loja Shopee de cada vez: a trava do orders.sync
 - **D-484** — Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 - **D-488** — Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
+- **D-496** — O CSV de /vendas no "Todos" e na Shopee, e a série diária em páginas
 - **D-503** — A espera medida em producao: o LCP real por tela aponta Home, SKU e Vendas; um giro so; e o role="alert" da auditoria era quase todo falha de verdade
 - **D-505** — O SKU pinta sem esperar a curva ABC: so o selo "Curva A/B/C" chega depois, no lugar reservado do cabecalho
 - **D-506** — A metrica de producao dava o LCP a rota em que a aba se escondeu, nao a carregada: o SKU nao tem carga completa medida, a Home tem duas (3,5 e 7,6 s), e o depois da D-504 ainda nao tem amostra
