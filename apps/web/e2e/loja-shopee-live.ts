@@ -21,8 +21,9 @@ export type ClienteDeServico = ReturnType<typeof createClient<Database>>;
  *
  * Os números são feitos para conferir de cabeça (regras do A1, 16/10):
  * - 10 pedidos COBERTOS nos últimos 10 dias: R$ 100 de receita cada, R$ 80 de
- *   recebido (comissão 10, serviço 5, transação 3, frete 2), 1 unidade do SKU
- *   próprio, de custo R$ 20 — financeiro lido, item com SKU e custo conhecido;
+ *   recebido (comissão 10, serviço 4, transação 3, frete 2 e proteção de envio
+ *   1, D-492), 1 unidade do SKU próprio, de custo R$ 20 — financeiro lido, item
+ *   com SKU e custo conhecido;
  * - 1 pedido válido AGUARDANDO O FINANCEIRO (sem `order_income` nem recebido);
  * - 1 pedido CANCELADO, que não entra em nada;
  * - 1 anúncio lido, com o SKU próprio; 1 devolução, do 1º pedido; o repasse de 5
@@ -163,12 +164,15 @@ export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: str
         ? {
             escrow_amount: LOJA_LIVE.recebidoPorPedido,
             commission_fee: 10,
-            service_fee: 5,
+            service_fee: 4,
             seller_transaction_fee: 3,
             actual_shipping_fee: 2,
             order_income: {
               order_discounted_price: LOJA_LIVE.receitaPorPedido,
               escrow_amount: LOJA_LIVE.recebidoPorPedido,
+              // D-492: a taxa de proteção de envio, que a fórmula oficial do escrow não
+              // lista. Como na leitura real, o "outros" de antes é ela inteira.
+              shipping_seller_protection_fee_amount: 1,
             },
             financials_synced_at: agora,
             // A devolução do 1º pedido vem no financeiro dele, como o worker grava (`com_devolucao`).

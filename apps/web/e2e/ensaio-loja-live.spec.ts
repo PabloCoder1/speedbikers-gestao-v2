@@ -99,6 +99,13 @@ test("/faturamento: o recorte Shopee fecha o resultado, o repasse e os Ads; o 'T
 
   await expect(ads.getByText(dinheiro("70,00")).first()).toBeVisible();
   await expect(ads.getByText("20,00x").first()).toBeVisible();
+
+  // D-492: a proteção de envio é degrau próprio (R$ 1 em cada um dos 10 cobertos),
+  // e o "outros" que sobra é zero -- fora das barras, dito à parte.
+  const dinheiroVai = page.getByRole("region", { name: "Para onde vai o dinheiro" });
+
+  await expect(dinheiroVai.getByRole("listitem").filter({ hasText: "Proteção de envio" })).toContainText(dinheiro("10,00"));
+  await expect(dinheiroVai.getByText(/Sem valor no período: Outros \(fecha com o recebido\)\./u)).toBeVisible();
   await semErro(page);
 
   await page.goto("/faturamento?marketplace=todos");
