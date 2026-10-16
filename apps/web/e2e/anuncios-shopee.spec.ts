@@ -354,3 +354,30 @@ test("/anuncios: o código MLB da busca não vai para a Shopee", async ({ page }
     "/anuncios/shopee",
   );
 });
+
+/**
+ * D-490: o CSV dos anúncios sai com o recorte da lista — o mesmo número de
+ * linhas da tela, o estado do vínculo e a origem do SKU com as palavras dela.
+ */
+test("/anuncios/shopee: o CSV sai com o recorte da lista e as palavras da tela (D-490)", async ({ page }) => {
+  await login(page, "/anuncios/shopee");
+  await expect(tabela(page)).toBeVisible();
+
+  const naTela = await tabela(page).locator("tbody > tr").count();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("region", { name: "Anúncios e vínculos" }).getByRole("link", { name: /Exportar CSV/ }).click(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(/^anuncios-shopee-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const { readFileSync } = await import("node:fs");
+  const linhas = readFileSync(await download.path(), "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+
+  expect(linhas).toHaveLength(1 + naTela);
+
+  const doItem = linhas.find((linha) => linha.startsWith(`${String(skuNoItem.itemId)};`));
+
+  expect(doItem).toContain(";Vinculado;Ativo;");
+  expect(doItem).toContain(";pelo SKU do anúncio;");
+});

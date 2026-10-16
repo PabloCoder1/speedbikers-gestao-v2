@@ -15,6 +15,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { CarregandoBloco } from "../../../../components/carregando";
 import { FilterMenu } from "../../../../components/filter-menu";
+import { Icone } from "../../../../components/icons";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { SeletorDeMarketplace } from "../../../../components/seletor-marketplace";
@@ -236,6 +237,8 @@ export default async function VendasShopeePage({
 
   const linhasPorLoja = porLoja.error === null ? porLoja.data : null;
   const rows = pedidos.data ?? [];
+  // D-490: o CSV leva o recorte da tela inteiro, sem a página (`/vendas/shopee/exportar`).
+  const exportar = buildShopeeSalesHref(filters, {}).replace(/^\/vendas\/shopee/u, "/vendas/shopee/exportar");
   // `total_count` vem repetido em toda linha (window function); zero linhas é
   // zero no conjunto filtrado.
   const totalCount = rows[0]?.total_count ?? 0;
@@ -524,6 +527,12 @@ export default async function VendasShopeePage({
           title="Pedidos"
           subtitle={pedidos.error === null && !alemDoFim ? janela.label : undefined}
           aside={
+            <>
+            {pedidos.error === null && rows.length > 0 && (
+              <a className="sb-button" href={exportar} download>
+                <Icone nome="baixar" tamanho={14} /> Exportar CSV
+              </a>
+            )}
             <FilterMenu
               rotulo={situacaoAtiva?.plural ?? "Todas as situações"}
               opcoes={[
@@ -539,6 +548,7 @@ export default async function VendasShopeePage({
                 })),
               ]}
             />
+            </>
           }
         >
           {chips.length > 0 && (
