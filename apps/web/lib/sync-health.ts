@@ -85,7 +85,7 @@ export function calculateBackfillProgress(
  * cadência contra a qual o frescor é julgado — **um dono só** (D-224, D-273).
  *
  * Eram DOIS mapas: a cadência aqui e o rótulo dentro de
- * `app/sincronizacao/page.tsx`. Eles divergiram, e a divergência era visível
+ * `app/(app)/sincronizacao/page.tsx`. Eles divergiram, e a divergência era visível
  * na tela: `order_financials` tinha entrada em `JOB_CADENCE_MIN` (o mapa
  * irmão, por `job_type`) e em nenhum dos dois daqui — então a tela mostrava
  * o identificador cru do banco no lugar do nome, e um travessão no lugar do

@@ -400,7 +400,7 @@ const SEARCH_ENTITY: Record<SearchEntityType, string> = {
 
 /**
  * `actions.status` (D-064) — vocabulário fechado no CHECK da tabela. Vivia
- * privado em `apps/web/app/acoes/action-card.tsx`; extraído em D-228 porque a
+ * privado em `apps/web/app/(app)/acoes/action-card.tsx`; extraído em D-228 porque a
  * aba Decisões do SKU mostra o mesmo status e não pode importar de um módulo
  * `"use client"`.
  */

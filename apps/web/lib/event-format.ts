@@ -5,7 +5,7 @@ import { listingStatusLabel } from "./labels";
 
 /**
  * Leitura de `domain_events.before`/`after` compartilhada entre a Central de
- * Notificações (`app/notificacoes/notification-row.tsx`, D-074) e os toasts
+ * Notificações (`app/(app)/notificacoes/notification-row.tsx`, D-074) e os toasts
  * em tempo real (`components/notification-toasts.tsx`, D-075) — mesmo
  * evento, mesma leitura, sem duas implementações divergindo cedo ou tarde.
  */

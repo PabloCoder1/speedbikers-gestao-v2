@@ -30,7 +30,7 @@ export function iniciais(texto: string): string {
  * O MONOGRAMA de um PRODUTO — as letras do `.product-thumb` do frame ("XR",
  * "PF", "CB"), no lugar onde a foto estaria.
  *
- * É OUTRA regra, e de propósito. Nasceu privada em `app/anuncios/page.tsx` e
+ * É OUTRA regra, e de propósito. Nasceu privada em `app/(app)/anuncios/page.tsx` e
  * saiu para cá quando a gaveta do pedido (A13, D-321) virou o segundo
  * consumidor. Título de produto não é nome de gente: "Kit Relação E2E — vende e
  * tem visita" tem travessão e código, então só contam as palavras que têm LETRA;

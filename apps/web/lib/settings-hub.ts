@@ -188,41 +188,41 @@ const RESSALVA_QUEM: Partial<Record<SettingsSection["id"], string>> = {
  */
 export const INCLUI = {
   organizacao: [
-    { termo: "Gerenciar acessos", arquivo: "app/usuarios/page.tsx" },
+    { termo: "Gerenciar acessos", arquivo: "app/(app)/usuarios/page.tsx" },
     // `...(isAdmin ? [{ label: "Convites pendentes" … }] : [])` na faixa.
-    { termo: "Convites pendentes", arquivo: "app/usuarios/page.tsx", somenteAdmin: true },
+    { termo: "Convites pendentes", arquivo: "app/(app)/usuarios/page.tsx", somenteAdmin: true },
     // `{isAdmin && (<Panel title="Histórico de acesso" …`.
-    { termo: "Histórico de acesso", arquivo: "app/usuarios/page.tsx", somenteAdmin: true },
+    { termo: "Histórico de acesso", arquivo: "app/(app)/usuarios/page.tsx", somenteAdmin: true },
   ],
   reposicao: [
-    { termo: "Prazo do fornecedor", arquivo: "app/reposicao/configuracoes/page.tsx" },
-    { termo: "Cobertura desejada", arquivo: "app/reposicao/configuracoes/page.tsx" },
-    { termo: "Segurança", arquivo: "app/reposicao/configuracoes/page.tsx" },
-    { termo: "Teto", arquivo: "app/reposicao/configuracoes/page.tsx" },
+    { termo: "Prazo do fornecedor", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
+    { termo: "Cobertura desejada", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
+    { termo: "Segurança", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
+    { termo: "Teto", arquivo: "app/(app)/reposicao/configuracoes/page.tsx" },
   ],
   notificacoes: [
-    { termo: "Regras de alerta", arquivo: "app/notificacoes/preferencias/page.tsx" },
-    { termo: "Severidade mínima", arquivo: "app/notificacoes/preferencias/new-preference-form.tsx" },
+    { termo: "Regras de alerta", arquivo: "app/(app)/notificacoes/preferencias/page.tsx" },
+    { termo: "Severidade mínima", arquivo: "app/(app)/notificacoes/preferencias/new-preference-form.tsx" },
   ],
   mercado_livre: [
     // A célula da faixa de /contas, que todo papel vê: sem ela quem não é
     // ADMIN ficaria com a linha "Inclui:" vazia.
-    { termo: "Contas cadastradas", arquivo: "app/contas/page.tsx" },
+    { termo: "Contas cadastradas", arquivo: "app/(app)/contas/page.tsx" },
     // `{ehAdmin && (<Panel title="Conectar conta" …`.
-    { termo: "Conectar conta", arquivo: "app/contas/page.tsx", somenteAdmin: true },
+    { termo: "Conectar conta", arquivo: "app/(app)/contas/page.tsx", somenteAdmin: true },
   ],
   shopee: [
     // O painel de /contas que todo papel vê.
-    { termo: "Lojas Shopee", arquivo: "app/contas/page.tsx" },
+    { termo: "Lojas Shopee", arquivo: "app/(app)/contas/page.tsx" },
     // O botão só aparece a ADMIN (`{ehAdmin && <ShopeeConnectButton />}`).
-    { termo: "Conectar loja Shopee", arquivo: "app/contas/shopee-connect-button.tsx", somenteAdmin: true },
+    { termo: "Conectar loja Shopee", arquivo: "app/(app)/contas/shopee-connect-button.tsx", somenteAdmin: true },
   ],
   // A IA não tem tela dona (D-232): quem compõe uso e custo é a Central de
   // Integrações, e é o item do menu que leva até ela.
   ia: [{ termo: "Integrações", arquivo: "components/nav.tsx" }],
   operacao: [
-    { termo: "Templates de resposta", arquivo: "app/atendimento/templates/page.tsx" },
-    { termo: "Revisão pendente", arquivo: "app/atendimento/conhecimento/page.tsx" },
+    { termo: "Templates de resposta", arquivo: "app/(app)/atendimento/templates/page.tsx" },
+    { termo: "Revisão pendente", arquivo: "app/(app)/atendimento/conhecimento/page.tsx" },
   ],
   preferencias: [{ termo: "Salvar visão", arquivo: "components/saved-filters.tsx" }],
 } as const satisfies Record<SettingsSection["id"], readonly TermoDaTelaDona[]>;

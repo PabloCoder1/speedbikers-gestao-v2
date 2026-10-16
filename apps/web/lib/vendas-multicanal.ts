@@ -240,7 +240,7 @@ export interface DiaDeVendas {
   readonly pedidos_sem_receita: number;
 }
 
-/** O ponto que o gráfico de `/vendas` desenha (`app/vendas/sales-chart.tsx`). */
+/** O ponto que o gráfico de `/vendas` desenha (`app/(app)/vendas/sales-chart.tsx`). */
 export interface PontoDoGrafico {
   readonly metric_date: string;
   readonly gross_revenue: number;

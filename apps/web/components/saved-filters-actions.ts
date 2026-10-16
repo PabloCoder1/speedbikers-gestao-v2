@@ -7,7 +7,7 @@ import { createClient } from "../lib/supabase/server";
 /**
  * Filtros salvos (Fase 5B, "Busca Universal / Command Palette e Filtros
  * salvos" — metade separada em D-060) — Server Actions (D-012), mesmo
- * padrão de `apps/web/app/vinculacoes/actions.ts`: escrita simples no
+ * padrão de `apps/web/app/(app)/vinculacoes/actions.ts`: escrita simples no
  * escopo do usuário, sem segredo, só chama a RPC. `screen` é o PATHNAME da
  * tela (ex.: `/vendas`) — dobra como chave de agrupamento e como alvo de
  * `revalidatePath`, sem precisar de um mapa separado.

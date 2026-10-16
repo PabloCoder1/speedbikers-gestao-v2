@@ -18,8 +18,8 @@
 
 | Situação | O que a pessoa vê | Componente | Desde |
 |---|---|---|---|
-| **Trocar de tela** (um segmento do caminho muda) | moldura na hora; esqueleto e barra só depois de 350 ms | `loading.tsx` por pasta → `CarregandoTela` | D-382 |
-| **Carga inicial** de uma tela | o mesmo esqueleto, no lugar do que vai chegar (título, faixa de KPIs, painel) | `CarregandoTela` / `CarregandoConteudo` | D-382 |
+| **Trocar de tela** (o caminho muda) | a tela anterior FICA, com o sinal da atualização no lugar: o link clicado esmaece, a barra da moldura aparece aos 100 ms e o conteúdo esmaece aos 400 ms; a moldura nunca sai (é do layout) | `IndicadorDeNavegacao` no `Shell` (todo link interno) e `CarregandoSeODemorar` nos links da sidebar → `AtualizandoTela` | **D-512** (até ela, `loading.tsx` por pasta, D-382) |
+| **Carga inicial** de uma tela (primeira visita, recarga) | o esqueleto com a moldura, no lugar do que vai chegar | `app/loading.tsx`, acima do layout do grupo `(app)` → `CarregandoTela` | D-382, D-512 |
 | **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
 | **Ação que grava** (salvar, assumir, remover) | o botão desabilita, põe `aria-busy` e diz o que está fazendo ("Removendo…") até a resposta | `BotaoEnviar` (ação de servidor, `useFormStatus`); nos formulários de cliente, o rótulo do botão que corre | **D-502** |
@@ -39,7 +39,10 @@
    de pendências dela, com o motivo.
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
-6. `loading.tsx` em toda pasta com página, com a moldura (`check:loading`).
+6. Tela autenticada mora em `app/(app)/` e NÃO tem `loading.tsx`: o React só
+   troca um esqueleto mostrado pelo conteúdo 300 ms depois, e isso travava toda
+   troca de tela (D-511). Bloco lento vai num `Suspense` dentro da tela
+   (`check:loading`, D-512).
 7. Rolagem lateral se mede no `.sb-content`, pela borda INTERNA (sem o respiro:
    texto que invade o respiro num sistema sai dele em outro) — quem rola é o `<main>`, e o
    `<html>` diz sempre que não rola —, com celular emulado (barra
@@ -124,7 +127,9 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas, nos seis avisos
    da T-R6 (D-468, #192) e nas telas da fila do A2 (D-470/D-472, #197), que
    também fechou o item 13 (o período inválido como `role="status"`).
-4. **Shell num layout** (§4), se o dono aprovar.
+4. ~~**Shell num layout**~~ — **feito**: medido na D-511 e migrado na D-512 —
+   a troca de tela foi de 336 para 102 ms sem atraso no banco (255 com 30 ms por
+   chamada), com 6 leituras a menos por troca.
 5. **Streaming nas telas pesadas** (item 14) — a ordem vem do LCP de
    produção (§5): Home, `/skus/[id]`, `/vendas`. **Home feita (D-504):** a
    "Atenção necessária" espera sozinha a segunda rodada; indicadores e gráfico
@@ -147,7 +152,15 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 
 ---
 
-## 4. Proposta estrutural — o `Shell` num layout (aguarda o dono)
+## 4. Proposta estrutural — o `Shell` num layout (feita: D-511 e D-512)
+
+**Feita.** O dono escolheu medir antes (D-511): o ganho maior não era o
+`Shell`, e sim a trava de ~300 ms que o React põe depois de mostrar um
+esqueleto — e as duas coisas só andam juntas, porque o `loading.tsx` da raiz
+dispara em toda troca de primeiro nível. Aprovada, a migração (D-512) pôs o
+`Shell` em `app/(app)/layout.tsx`, tirou os `loading.tsx` do grupo e deu a
+toda troca de tela o sinal da D-500. O texto abaixo é a proposta como foi
+escrita em 14/10.
 
 **Problema medido no código:** o `Shell` é um Server Component chamado por cada
 `page.tsx`. Um `layout.tsx` persiste entre navegações; uma página não. Por isso

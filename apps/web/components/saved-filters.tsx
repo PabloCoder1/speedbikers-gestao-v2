@@ -8,7 +8,7 @@ import { deleteFilter, saveFilter } from "./saved-filters-actions";
 
 /**
  * Filtros salvos — lista os presets já pré-buscados pelo servidor (mesmo
- * padrão de `apps/web/app/vinculacoes/candidate-row.tsx`: a LISTA vem
+ * padrão de `apps/web/app/(app)/vinculacoes/candidate-row.tsx`: a LISTA vem
  * server-side, só a ação é cliente) e permite salvar o recorte atual da URL ou
  * apagar um preset existente.
  *

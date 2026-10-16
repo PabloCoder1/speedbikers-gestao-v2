@@ -16563,3 +16563,64 @@ Sem atraso, a tela sai em ~500 ms antes e depois. O ganho medido e de percepcao:
 **Verificacao:** a medicao das 56 rotas antes e depois (antes: 3 de 56 rolavam; depois: 0 de 56, sem redirecionamento nem erro de carga); nenhuma tabela cortada nas 56 rotas, com o detector provado por mutacao (uma tabela forcada a 800 px num conteiner sem rolagem foi acusada, cortada em 894 px); a guarda nova passa (2 de 2); alturas do esqueleto contra a secao pronta em seis larguras; CLS a 390, 800 e 1440 px; typecheck, lint, testes, build e as guardas estaticas; a suite e2e inteira contra o build (238 de 241 -- as 3 de convite redirecionam para a porta 3000, sem servidor na worktree).
 
 **Impacto:** `apps/web/app/globals.css` (`.sb-pair-grid`, `.sb-attention-grid`, `.sb-attention-carregando`), `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web.
+
+## D-511 - O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
+
+**Contexto:** a proposta da `docs/UX_SYSTEM.md` §4 (o `Shell` num `app/(app)/layout.tsx`) esperava o dono desde 14/10. Em 16/10 ele escolheu "medir antes": um prototipo local, sem publicar, em tres telas, para decidir com o numero na mao. O que o codigo ja mostrava: o `Shell` faz 7 leituras num `Promise.all` (uma delas no servidor de Auth) e, nas 44 das 56 paginas que nao usam `Suspense`, elas so comecam depois das leituras da propria pagina.
+
+**Como foi medido:** o prototipo moveu `/acoes`, `/precos` e `/full` para um grupo `(proto)` com o `Shell` no layout (branch local `proto/shell-layout`, nunca publicada), a partir do mesmo commit da linha de base. A troca de tela pela sidebar (cinco voltas pelas tres telas, mediana de 15) foi medida DENTRO da pagina -- do `pointerdown` no link ao h1 da tela nova no DOM, por `MutationObserver`; o `expect` do Playwright confere em degraus (100, 250, 500, 1000 ms) e quantizava a primeira tentativa. Como a Vercel (`gru1`) e o Supabase (`sa-east-1`) estao na mesma cidade e o custo de cada ida em producao nao esta medido, cada chamada do servidor ao Supabase local ganhou um atraso de 0, 30 e 60 ms (um `--require` so no ambiente do A3), e o servidor registrou cada leitura para contar as idas por navegacao.
+
+**Medido** (mediana da troca de tela, ms):
+
+| latencia por chamada | main (Shell na pagina) | Shell no layout | Shell no layout, sem `loading.tsx` |
+|---|---|---|---|
+| 0 ms | 336 | 320 | **99** |
+| 30 ms | 360 | 328 | **245** |
+| 60 ms | 459 | 338 | 344 |
+
+Leituras ao Supabase por navegacao: 10 a 11 na main (duas no Auth); 4 a 6 com o `Shell` no layout. Reassinaturas do Realtime: zero nas tres variantes -- o custo que a §4 supunha nao apareceu.
+
+**O que os numeros dizem:**
+1. **O Shell no layout tira 6 leituras de cada navegacao** (uma no Auth), e o ganho de tempo cresce com a latencia: -16 ms sem atraso, -32 com 30, -121 com 60.
+2. **O piso de ~320 ms e do React, nao do banco.** O conteudo so substitui um esqueleto ja mostrado 300 ms depois dele (`globalMostRecentFallbackTime + 300` no `react-dom` que vem com o Next). Toda pasta tem `loading.tsx` (D-382), entao toda troca de tela mostra o esqueleto na hora e nunca termina antes de ~300 ms -- mesmo com o dado instantaneo. O esqueleto so aparece aos 350 ms (por CSS), mas o React ja o conta como mostrado.
+3. **As duas coisas andam juntas.** O `loading.tsx` da raiz dispara em toda troca de primeiro nivel (`/acoes` -> `/precos`): tirar so os das pastas nao basta. Com o `Shell` num layout de grupo, o esqueleto da raiz fica ACIMA do layout -- aparece na carga fria e nao dispara na navegacao entre telas do grupo. Juntas, a troca cai de 336 para 99 ms sem atraso e de 360 para 245 com 30 ms; com 60 ms o dado ja passa dos 300 ms e a trava some sozinha.
+
+**Proposta ao dono**, aprovada em 16/10 e implementada na D-512 (com a janela combinada com o A2, porque toca as 56 paginas):
+- o `Shell` num `app/(app)/layout.tsx`, as pastas autenticadas no grupo (a URL nao muda);
+- sem `loading.tsx` nas pastas do grupo: a troca de tela mantem a tela anterior com o sinal da D-500 (o link pendente esmaece e a barra da moldura aparece aos 100 ms; o conteudo esmaece aos 400 ms), e o esqueleto fica para a carga fria (o da raiz) e para o bloco lento dentro da tela (D-504, D-505, D-509);
+- os links da sidebar ganham o `CarregandoSeODemorar` (hoje nao tem sinal nenhum de pendente);
+- a guarda `check:loading` muda de "toda pasta tem `loading.tsx`" para "o grupo tem layout e a raiz tem esqueleto";
+- os contadores do cabecalho deixam de se renovar a cada troca: o de notificacoes ja e Realtime; os de atendimentos e contas pedem `router.refresh()` onde mudam.
+
+**Verificacao:** as tres variantes medidas com o mesmo roteiro e a mesma base; a trava conferida no codigo do `react-dom`; o prototipo passou no typecheck, no lint e no build antes de medir.
+
+**Impacto:** so a medicao; a mudanca e a D-512. O prototipo fica na branch local `proto/shell-layout` e nao vai para o Git remoto.
+
+## D-512 - O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
+
+**Contexto:** a D-511 mediu o `Shell` num layout e achou dois ganhos que andam juntos: 6 leituras a menos por troca de tela, e o fim da trava de ~300 ms que o React poe entre um esqueleto mostrado e o conteudo -- toda pasta tinha `loading.tsx` (D-382). O dono aprovou em 16/10 a migracao inteira: o `Shell` num layout de grupo, sem `loading.tsx` na troca de tela e com sinal de pendente nos links da sidebar. A janela foi combinada com o A2 (o #215 entrou antes; ele nao abre branch de tela ate esta entrar) e o A1 confirmou que nao tem nada em `apps/web/app/**`.
+
+**Decisao:**
+1. **As telas autenticadas moram em `app/(app)/`**, com o `Shell` em `app/(app)/layout.tsx`. As URLs nao mudam. As 28 pastas e a Home foram movidas; ficam fora so as rotas sem moldura: `/login`, `/auth` (sign-out), `/api` e o redirecionamento de `/cobertura`. As 56 paginas deixaram de embrulhar o proprio conteudo no `<Shell>`, inclusive no retorno antecipado de acesso restrito. Os imports relativos foram reescritos pelo caminho RESOLVIDO de cada um (1.167), nao por regra cega -- uma primeira versao do roteiro confundiu `../pdf` (o arquivo) com a propria pasta `pdf/`.
+2. **Nenhuma pasta do grupo tem `loading.tsx`** (57 sairam, inclusive o esqueleto proprio de `/configuracoes`). O `app/loading.tsx` fica ACIMA do layout do grupo: e o esqueleto da carga fria e nao dispara na navegacao entre as telas. Bloco lento dentro da tela continua num `Suspense` com esqueleto do tamanho dele (D-504, D-505, D-509).
+3. **Toda troca de tela tem o sinal da D-500**, sem esqueleto: o `IndicadorDeNavegacao`, montado no `Shell` (que agora persiste), escuta o clique em qualquer `<a>` interno para OUTRO caminho e mostra o `AtualizandoTela` -- a barra da moldura aos 100 ms, o conteudo esmaecido aos 400 ms, o `aria-busy` -- ate o caminho mudar, que e o fim da propria navegacao. Ficam fora a troca so de `?filtro=` (os componentes da D-500), link externo, nova aba, download, tecla modificadora e os links que se marcam com `data-pendente-proprio`. Uma rede de seguranca de 15 s desliga o sinal de uma navegacao que falhou.
+4. **Os links da sidebar tem o pendente proprio** (`CarregandoSeODemorar`, com `useLinkStatus`): o link clicado esmaece e a barra aparece; `data-pendente-proprio` evita a barra dobrada.
+5. **O erro de uma tela do grupo aparece dentro da moldura** (`app/(app)/error.tsx`, o mesmo componente da raiz): a sidebar fica e a pessoa continua navegando. O `not-found.tsx` da raiz, que desenha o proprio `Shell`, nao muda.
+6. **Os contadores do cabecalho continuam certos sem a troca de tela:** uma acao de servidor que chama `revalidatePath` faz o Next redesenhar a arvore inteira da tela atual, layout incluido (conferido: ler uma notificacao leva o sino de 2 para 1 sem recarregar), e o "marcar todas" ja chama `router.refresh()`. De quebra, o rotulo do sino deixa de dizer "1 nao lidas".
+7. **A guarda `check:loading` mudou de regra:** a raiz tem o esqueleto da carga fria; o grupo tem layout com o `<Shell>`; nenhuma pasta do grupo tem `loading.tsx`; nenhuma pagina do grupo usa `<Shell>`; e pagina nova fora do grupo reprova (excecoes declaradas: `/login` e `/cobertura`). As listas de caminho das guardas (`check-navegacao-suave`, `check-settings-vocabulary`) e do `lib/settings-hub.ts` passaram a `app/(app)/...`.
+
+**Medido** com o roteiro da D-511 (troca de tela pela sidebar, mediana de 15, tempo dentro da pagina), agora com TODAS as telas no grupo:
+
+| latencia por chamada | antes (main) | depois |
+|---|---|---|
+| 0 ms | 336 ms | **102 ms** |
+| 30 ms | 360 ms | **255 ms** |
+| 60 ms | 459 ms | **336 ms** |
+
+Leituras ao Supabase por troca de tela: de 10 a 11 para 4 a 6. Com 150 ms por chamada, o sinal aparece logo apos o clique e some no instante em que a tela nova chega -- tanto num link comum (cartao da Home) quanto num da sidebar.
+
+**O que fica de fora:** a navegacao por `router.push` fora dos componentes da D-500 (a paleta de busca, o redirecionamento depois de um formulario) nao passa pelo indicador -- ela tem o retorno dela ou e rapida; entra se a medicao mostrar espera. Os tres PRs antigos do dono (#53, #74, #76, de 23/09) mexem em arquivos movidos e vao precisar da main nova.
+
+**Verificacao:** typecheck, lint, testes, build e as guardas; a suite e2e inteira contra o build num stack isolado recriado do zero (240 de 243; as 3 que falham sao as do convite, que redirecionam para a porta 3000 e falham igual na main fora dela), inclusive a guarda de tela estreita e acessibilidade da D-510; a medicao acima; o sinal com latencia; o sino depois de ler uma notificacao e de marcar todas.
+
+**Impacto:** `apps/web/app/(app)/**` (as telas movidas, o `layout.tsx` e o `error.tsx`), `apps/web/components/{shell,nav,indicador-de-navegacao}.tsx`, `apps/web/scripts/{check-loading,check-navegacao-suave,check-settings-vocabulary}.mjs`, `apps/web/lib/settings-hub.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`; os comentarios de `apps/web` e os docs de estado (`DATABASE`, `COPILOT`, `NOTIFICATIONS`, `PRODUCT_REQUIREMENTS`) que citavam uma tela pelo caminho antigo passam a `app/(app)/...` -- os de migration, do `types.ts` gerado e do historico de decisoes ficam como estao. So web: sem migration, sem RPC, sem leitura nova.
