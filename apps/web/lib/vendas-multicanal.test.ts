@@ -4,10 +4,12 @@ import {
   agruparLinhas,
   alternarConta,
   antesDoHistoricoShopee,
+  celulasDaFaixaMulticanal,
   hrefDeVendas,
   marketplacesDoEscopo,
   pontosDoTotal,
   resolverContas,
+  resolverEscopoDaTelaDeVendas,
   resolverEscopoVendas,
   resolverMetricaMulticanal,
   type ContaDoSeletor,
@@ -64,32 +66,92 @@ describe("alternarConta", () => {
   });
 });
 
+describe("resolverEscopoDaTelaDeVendas (D-488)", () => {
+  it("sem marketplace, a /vendas abre em Todos; o pedido explícito vale", () => {
+    expect(resolverEscopoDaTelaDeVendas({})).toBe("todos");
+    expect(resolverEscopoDaTelaDeVendas({ days: "7" })).toBe("todos");
+    expect(resolverEscopoDaTelaDeVendas({ marketplace: "ml" })).toBe("ml");
+    expect(resolverEscopoDaTelaDeVendas({ marketplace: "shopee" })).toBe("shopee");
+    expect(resolverEscopoDaTelaDeVendas({ marketplace: "todos", account: "e2e-loja" })).toBe("todos");
+  });
+
+  it("o link de antes, com parâmetro que só o ML entende, continua no ML", () => {
+    expect(resolverEscopoDaTelaDeVendas({ account: "e2e-loja" })).toBe("ml");
+    expect(resolverEscopoDaTelaDeVendas({ marca: "Brembo" })).toBe("ml");
+    expect(resolverEscopoDaTelaDeVendas({ semMarca: "1" })).toBe("ml");
+    expect(resolverEscopoDaTelaDeVendas({ metric: "pedidos" })).toBe("ml");
+    expect(resolverEscopoDaTelaDeVendas({ metric: "packs" })).toBe("ml");
+    // Métrica que o consolidado também tem não decide nada.
+    expect(resolverEscopoDaTelaDeVendas({ metric: "unidades" })).toBe("todos");
+  });
+
+  it("valor desconhecido não vira um recorte inventado", () => {
+    expect(resolverEscopoDaTelaDeVendas({ marketplace: "amazon" })).toBe("todos");
+  });
+});
+
 describe("hrefDeVendas", () => {
   const TODOS: RecorteDeVendas = { escopo: "todos", periodo: { days: 7 }, contas: [ML, LOJA], metrica: "compras" };
 
-  it("o recorte inteiro na URL, sem o que é padrão", () => {
-    expect(hrefDeVendas(TODOS)).toBe("/vendas?marketplace=todos&days=7&contas=ml-1%2Csp-1&metric=compras");
-    expect(hrefDeVendas({ ...TODOS, periodo: { days: 30 }, contas: null, metrica: "faturamento" })).toBe(
-      "/vendas?marketplace=todos",
-    );
+  it("o recorte inteiro na URL, sem o que é padrão — e Todos é o padrão da /vendas (D-488)", () => {
+    expect(hrefDeVendas(TODOS)).toBe("/vendas?days=7&contas=ml-1%2Csp-1&metric=compras");
+    expect(hrefDeVendas({ ...TODOS, periodo: { days: 30 }, contas: null, metrica: "faturamento" })).toBe("/vendas");
   });
 
-  it("para a Shopee só vai a loja; para o ML, nem conta nem a métrica do consolidado", () => {
+  it("para a Shopee só vai a loja; o ML é explícito, sem conta nem a métrica do consolidado", () => {
     expect(hrefDeVendas(TODOS, { escopo: "shopee" })).toBe("/vendas?marketplace=shopee&days=7&contas=sp-1");
-    expect(hrefDeVendas(TODOS, { escopo: "ml" })).toBe("/vendas?days=7");
+    expect(hrefDeVendas(TODOS, { escopo: "ml" })).toBe("/vendas?marketplace=ml&days=7");
   });
 
   it("do ML para o consolidado, o período vai junto", () => {
     const doMl: RecorteDeVendas = { escopo: "ml", periodo: { from: "2026-10-01", to: "2026-10-10" }, contas: null, metrica: "unidades" };
 
-    expect(hrefDeVendas(doMl, { escopo: "todos" })).toBe("/vendas?marketplace=todos&from=2026-10-01&to=2026-10-10");
+    expect(hrefDeVendas(doMl, { escopo: "todos" })).toBe("/vendas?from=2026-10-01&to=2026-10-10");
   });
 
   it("trocar a conta ou a métrica mantém o resto", () => {
-    expect(hrefDeVendas(TODOS, { contas: null })).toBe("/vendas?marketplace=todos&days=7&metric=compras");
-    expect(hrefDeVendas(TODOS, { metrica: "unidades" })).toBe(
-      "/vendas?marketplace=todos&days=7&contas=ml-1%2Csp-1&metric=unidades",
+    expect(hrefDeVendas(TODOS, { contas: null })).toBe("/vendas?days=7&metric=compras");
+    expect(hrefDeVendas(TODOS, { metrica: "unidades" })).toBe("/vendas?days=7&contas=ml-1%2Csp-1&metric=unidades");
+  });
+
+  it("toda URL que sai daqui volta para o mesmo recorte", () => {
+    for (const escopo of ["ml", "todos", "shopee"] as const) {
+      const url = new URL(hrefDeVendas(TODOS, { escopo }), "http://local");
+
+      expect(resolverEscopoDaTelaDeVendas(Object.fromEntries(url.searchParams))).toBe(escopo);
+    }
+  });
+});
+
+describe("celulasDaFaixaMulticanal (D-488)", () => {
+  it("as quatro células do consolidado, com o anterior ao lado", () => {
+    const celulas = celulasDaFaixaMulticanal(
+      linha({ nivel: "TOTAL", receita_bruta: 1_600, compras: 16, unidades: 16, ticket_medio: 100 }),
+      linha({ nivel: "TOTAL", receita_bruta: 400, compras: 3, unidades: 3, ticket_medio: 133.33 }),
     );
+
+    expect(celulas.map((c) => c.metricId)).toEqual([
+      "multicanal_receita_bruta",
+      "multicanal_compras",
+      "multicanal_unidades",
+      "multicanal_ticket_medio",
+    ]);
+    expect(celulas.map((c) => c.label)).toEqual(["Receita bruta", "Compras", "Unidades vendidas", "Ticket médio"]);
+    expect(celulas[1]?.value).toBe("16");
+    expect(celulas[1]?.previous).toBe("3");
+  });
+
+  it("sem nada somável, o traço diz por quê; sem anterior, não há comparação", () => {
+    const celulas = celulasDaFaixaMulticanal(null, null);
+
+    expect(celulas.every((c) => c.value === "—" && c.previous === null)).toBe(true);
+    expect(celulas[0]?.ressalva).toBe("nenhuma conta com venda somável neste recorte");
+  });
+
+  it("pedido Shopee de receita desconhecida fica fora da soma, e a célula diz quantos", () => {
+    const [receita] = celulasDaFaixaMulticanal(linha({ nivel: "TOTAL", receita_bruta: 100, pedidos_sem_receita: 2 }), null);
+
+    expect(receita?.ressalva).toBe("2 pedidos Shopee sem receita conhecida, fora da soma");
   });
 });
 

@@ -85,7 +85,7 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   // rastreabilidade até `metric_definitions`, e não depende do seed ter
   // métrica calculada (com a tabela vazia a tela diz "nunca calculado", que é
   // o estado certo, e a linha de "período anterior" nem existe).
-  await expect(page.getByText("receita_bruta", { exact: true })).toBeVisible();
+  await expect(page.getByText("multicanal_receita_bruta", { exact: true })).toBeVisible();
 
   // Os dois painéis da grade inferior, que o frame do Figma põe lado a lado.
   await expect(page.getByRole("region", { name: "Faturamento diário" })).toBeVisible();
@@ -114,7 +114,7 @@ test("Home: o seletor do gráfico existe, e ele termina na série", async ({ pag
   // (`lib/period.ts`), e uma sexta opção só para a Home recriaria a divergência
   // de vocabulário que D-308 fechou.
   await expect(menu.locator("summary")).toContainText("Últimos 15 dias");
-  await expect(grafico.getByText(/últimos 15 dias · todas as contas conectadas/)).toBeVisible();
+  await expect(grafico.getByText(/últimos 15 dias · Mercado Livre e Shopee, todas as contas e lojas/)).toBeVisible();
 
   // A faixa, em 30 dias — o outro bloco, com a outra janela.
   await expect(page.getByText(/últimos 30 dias \(/)).toBeVisible();

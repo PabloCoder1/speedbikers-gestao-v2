@@ -58,7 +58,8 @@ type Periodo = { days: number } | PeriodRange;
 
 /** Mesmos parâmetros de `/vendas`: trocar de tela leva conta e período junto. */
 function montarHref(base: "/faturamento" | "/vendas", periodo: Periodo, contaSlug: string | null): string {
-  const search = new URLSearchParams();
+  // Esta é a tela do ML: a /vendas do ML é `marketplace=ml` (sem ele, a /vendas abre em "Todos", D-488).
+  const search = new URLSearchParams(base === "/vendas" ? { marketplace: "ml" } : {});
 
   if ("from" in periodo) {
     search.set("from", periodo.from);
