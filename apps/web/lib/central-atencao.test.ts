@@ -115,6 +115,7 @@ const META_ATRASADA: MetaDoMes = {
   ano_anterior: null,
   dias_sem_venda: 0,
   datas_comerciais: [],
+  escopos: null,
 };
 
 function entrada(parcial: Partial<EntradaDaAtencao> = {}): EntradaDaAtencao {

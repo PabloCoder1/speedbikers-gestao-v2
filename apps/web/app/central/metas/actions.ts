@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 
 import { currentMembership } from "../../../lib/membership";
-import { lerData, lerMes, lerNota, lerPercentual, lerValorEmReais } from "../../../lib/metas-imposto";
+import {
+  lerData,
+  lerMarketplaceDaMeta,
+  lerMes,
+  lerNota,
+  lerPercentual,
+  lerValorEmReais,
+  doMarketplaceDaMeta,
+} from "../../../lib/metas-imposto";
 import { createClient } from "../../../lib/supabase/server";
 
 /**
@@ -12,9 +20,12 @@ import { createClient } from "../../../lib/supabase/server";
  * (`has_org_role`), o padrão de `replenishment_settings` (D-144/D-361). A
  * autorização mora no banco; a tela só traduz o erro quando a policy nega.
  *
- * As duas gravações são UPSERT pela chave natural — (organização, mês) e
- * (organização, início da vigência): cadastrar de novo o mesmo mês corrige a
- * meta, em vez de recusar com "já existe".
+ * As gravações são UPSERT pela chave natural — (organização, mês), (organização,
+ * mês, marketplace) e (organização, início da vigência): cadastrar de novo o
+ * mesmo mês corrige a meta, em vez de recusar com "já existe".
+ *
+ * D-473 (C-66): a meta GERAL continua em `monthly_goals`; a de cada
+ * marketplace vai em `monthly_goals_marketplace`, com a mesma RLS.
  */
 
 export interface ResultadoDoCadastro {
@@ -83,6 +94,58 @@ export async function salvarMeta(_anterior: ResultadoDoCadastro, formData: FormD
   return { ok: true, mensagem: "Meta salva.", erros: {} };
 }
 
+export async function salvarMetaDoMarketplace(
+  _anterior: ResultadoDoCadastro,
+  formData: FormData,
+): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+
+  const marketplace = lerMarketplaceDaMeta(texto(formData, "marketplace"));
+  const mes = lerMes(texto(formData, "month"));
+  const valor = lerValorEmReais(texto(formData, "revenue_goal"));
+  const nota = lerNota(texto(formData, "note"));
+  const erros: Record<string, string> = {};
+
+  if (!marketplace.ok) erros.marketplace = marketplace.erro;
+  if (!mes.ok) erros.month = mes.erro;
+  if (!valor.ok) erros.revenue_goal = valor.erro;
+  if (!nota.ok) erros.note = nota.erro;
+
+  if (!marketplace.ok || !mes.ok || !valor.ok || !nota.ok) return { ...SEM_ERRO, erros };
+
+  const { data, error } = await supabase
+    .from("monthly_goals_marketplace")
+    .upsert(
+      {
+        organization_id: membership.organizationId,
+        month: mes.valor,
+        marketplace: marketplace.valor,
+        revenue_goal: valor.valor,
+        note: nota.valor,
+      },
+      { onConflict: "organization_id,month,marketplace" },
+    )
+    .select("id");
+
+  if (error !== null) {
+    // A web chega antes da migration de D-473: tabela ausente não é "não foi possível".
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { ...SEM_ERRO, mensagem: "As metas por marketplace ainda estão sendo ativadas neste ambiente." };
+    }
+
+    return traduzir(error);
+  }
+
+  if (data.length === 0) return { ...SEM_ERRO, mensagem: "A meta não foi gravada: você não tem permissão." };
+
+  revalidar();
+
+  return { ok: true, mensagem: `Meta ${doMarketplaceDaMeta(marketplace.valor)} salva.`, erros: {} };
+}
+
 export async function salvarAliquota(_anterior: ResultadoDoCadastro, formData: FormData): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
@@ -121,7 +184,7 @@ export async function remover(formData: FormData): Promise<void> {
   const tabela = texto(formData, "tabela");
   const id = texto(formData, "id");
 
-  if ((tabela !== "monthly_goals" && tabela !== "tax_rates") || id === "") return;
+  if ((tabela !== "monthly_goals" && tabela !== "monthly_goals_marketplace" && tabela !== "tax_rates") || id === "") return;
 
   const supabase = await createClient();
 

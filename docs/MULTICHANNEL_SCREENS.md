@@ -48,7 +48,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58), `get_shopee_faturamento_*` (C-61), `get_shopee_ads_*` (C-63), `get_shopee_repasse*` (C-64) | — | T5 ✔ (D-442: "Shopee" e "Todos" lado a lado, sem total); T5b ✔ (D-452: a cascata, a série e os produtos); T5c ✔ (D-456: Ads CPC da loja); T5d ✔ (D-458: repasse) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | T8a ✔ (D-480): a Shopee lado a lado, sem total de resultado (o bloco do "Todos" de `/faturamento`) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
-| Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | a meta é medida só com ML (`get_meta_do_mes`); o dono decidiu uma por marketplace e uma geral (15/10) | T8b sobre o C-66 (D-473) |
+| Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | T8b ✔ (D-482): a meta de cada marketplace ao lado da geral, decisão do dono de 15/10 | C-66 (D-473) |
 | Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | C-56 (D-445) → **T6c ✔ (D-454)** |
 | SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
 | Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | na Shopee faltam vendas, exportação e filtros salvos | T1 ✔ (D-431: seletor levando a busca); E6 |
@@ -253,7 +253,7 @@ número.
 | **T6** | Ranking, curva ABC e aba Vendas do SKU com marketplace; `/produtos` (C-07). **T6a ✔ código 2026-10-14, D-444:** ranking no "Todos"/"Shopee" e a aba Vendas do SKU (C-59); **T6b ✔ código 2026-10-14, D-448:** curva ABC com "Todos" e "Shopee" (C-60), e **T6b2 ✔ D-450** o Excel com o recorte; **T6c ✔ código 2026-10-14, D-454:** `/produtos` com a Shopee (C-56) | E6 | — |
 | **Devoluções ✔** | **código 2026-10-15, D-460.** As devoluções da Shopee em `/vendas/shopee`, logo depois do "Por loja" (C-62), decisão do dono de 15/10 | E7a | situação como a Shopee manda; "valor de reembolso informado", nunca "reembolsado" |
 | **T7** | Busca universal com a Shopee (C-08) | C-08/C-57 | ✔ D-476 |
-| **T8** | Central e meta do mês com a Shopee | dono (15/10) + C-66 | T8a ✔ D-480; T8b espera o C-66 |
+| **T8** | Central e meta do mês com a Shopee | dono (15/10) + C-66 | T8a ✔ D-480; T8b ✔ D-482 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

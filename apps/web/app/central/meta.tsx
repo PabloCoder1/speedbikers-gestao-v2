@@ -12,9 +12,10 @@ import {
   rotuloDoDiaDaSemana,
   situacaoDaMeta,
   type MetaDoMes,
+  type MetasPorMarketplace,
 } from "../../lib/central-meta";
 import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
-import { rotuloDoMes } from "../../lib/metas-imposto";
+import { doMarketplaceDaMeta, rotuloDoMarketplaceDaMeta, rotuloDoMes, type MarketplaceDaMeta } from "../../lib/metas-imposto";
 
 const FATOR = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -38,7 +39,7 @@ function celulasDaMeta(m: MetaDoMes, atrasoDaMeta: number): KpiCellData[] {
       formula: "monthly_goals.revenue_goal — cadastrada em Metas e imposto",
       value: m.meta === null ? "sem meta" : formatCurrency(m.meta),
       previous: null,
-      ressalva: "da empresa inteira, todas as contas",
+      ressalva: m.escopos === null ? "da empresa inteira, todas as contas" : "geral: Mercado Livre e Shopee",
     },
     {
       metricId: "atingimento_meta",
@@ -170,7 +171,7 @@ function celulasDaProjecao(m: MetaDoMes): KpiCellData[] {
   return celulas;
 }
 
-function BarraDaMeta({ m }: { m: MetaDoMes }): ReactNode {
+function BarraDaMeta({ m, rotulo = "Realizado da meta do mês" }: { m: MetaDoMes; rotulo?: string }): ReactNode {
   if (m.meta === null || m.realizado === null) return null;
 
   const feito = Math.min(1, Math.max(0, m.realizado / m.meta));
@@ -181,7 +182,7 @@ function BarraDaMeta({ m }: { m: MetaDoMes }): ReactNode {
       <div
         className="sb-meta-barra"
         role="progressbar"
-        aria-label="Realizado da meta do mês"
+        aria-label={rotulo}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(feito * 100)}
@@ -200,6 +201,102 @@ function BarraDaMeta({ m }: { m: MetaDoMes }): ReactNode {
         {esperado !== null && <span> · o traço marca o esperado até ontem</span>}
       </p>
     </div>
+  );
+}
+
+/**
+ * A meta de um marketplace (D-473, C-66): a mesma leitura da geral — o
+ * veredito, a barra e o ritmo —, contra a meta DELE. Sem meta própria, o
+ * realizado continua aparecendo.
+ */
+function MetaDoMarketplace({
+  marketplace,
+  m,
+  podeEditar,
+  atrasoDaMeta,
+}: {
+  marketplace: MarketplaceDaMeta;
+  m: MetaDoMes;
+  podeEditar: boolean;
+  atrasoDaMeta: number;
+}): ReactNode {
+  const nome = rotuloDoMarketplaceDaMeta(marketplace);
+  const leitura = situacaoDaMeta(m, atrasoDaMeta);
+  const ritmo = ritmoDaMeta(m, atrasoDaMeta);
+
+  return (
+    <Panel
+      title={nome}
+      subtitle={m.meta === null ? "sem meta própria" : `meta de ${formatCurrency(m.meta)}`}
+      aside={<StatePill tone={{ tom: leitura.tom, label: leitura.rotulo }} />}
+    >
+      <div className="sb-panel-body sb-meta">
+        <p className="sb-meta-frase">{leitura.frase}</p>
+
+        <BarraDaMeta m={m} rotulo={`Realizado da meta do mês: ${nome}`} />
+
+        {ritmo !== null && (
+          <p className="sb-meta-ritmo" style={{ color: TOM[ritmo.tom].color }}>
+            {ritmo.texto}.
+          </p>
+        )}
+
+        {m.meta === null && m.situacao !== "futuro" && (
+          <p className="sb-texto-suave">
+            {m.situacao === "encerrado" ? "Realizado no mês" : "Realizado até agora"}: {formatCurrency(m.realizado)}.
+            {podeEditar && (
+              <>
+                {" "}
+                <Link href="/central/metas">Definir a meta {doMarketplaceDaMeta(marketplace)}</Link>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * As metas por marketplace (D-473, C-66; decisão do dono de 15/10): o Mercado
+ * Livre e a Shopee, cada um contra a meta dele, ao lado da geral. Sem loja
+ * Shopee live com pedidos lidos, a Shopee vem nula — e a tela diz que ela ainda
+ * não entra, nunca um zero.
+ */
+function MetaPorMarketplace({
+  escopos,
+  podeEditar,
+  atrasoDaMeta,
+}: {
+  escopos: MetasPorMarketplace;
+  podeEditar: boolean;
+  atrasoDaMeta: number;
+}): ReactNode {
+  return (
+    <section aria-label="Meta de cada marketplace" className="sb-central-bloco">
+      <div className="sb-section-label">
+        <span>Meta de cada marketplace</span>
+        <span className="sb-section-note">cada marketplace contra a meta dele · a geral acima soma os dois</span>
+      </div>
+
+      <div className="sb-pair-grid">
+        <MetaDoMarketplace marketplace="ML" m={escopos.ml} podeEditar={podeEditar} atrasoDaMeta={atrasoDaMeta} />
+
+        {escopos.shopee === null ? (
+          <Panel title="Shopee" subtitle="fora da meta por enquanto">
+            <div className="sb-panel-body">
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="A Shopee ainda não entra na meta"
+                descricao="Nenhuma loja real com pedidos lidos — a loja de teste fica fora. A meta da Shopee e a geral passam a contar a Shopee a partir da primeira leitura de pedidos da loja real."
+              />
+            </div>
+          </Panel>
+        ) : (
+          <MetaDoMarketplace marketplace="SHOPEE" m={escopos.shopee} podeEditar={podeEditar} atrasoDaMeta={atrasoDaMeta} />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -272,7 +369,7 @@ export function SecaoMeta({
       {cabecalho}
 
       <Panel
-        title={`Meta de ${nomeDoMes}`}
+        title={meta.escopos === null ? `Meta de ${nomeDoMes}` : `Meta geral de ${nomeDoMes}`}
         subtitle={
           meta.situacao === "em_curso" && diaDoMes !== null
             ? `Dia ${String(diaDoMes)} de ${String(meta.dias_no_mes)} — hoje entra pela média, não pelo parcial.`
@@ -305,6 +402,10 @@ export function SecaoMeta({
       <div className="sb-central-bloco">
         <KpiStrip cells={celulasDaMeta(meta, atrasoDaMeta)} />
       </div>
+
+      {meta.escopos !== null && (
+        <MetaPorMarketplace escopos={meta.escopos} podeEditar={podeEditar} atrasoDaMeta={atrasoDaMeta} />
+      )}
 
       {meta.situacao === "em_curso" && (
         <div className="sb-central-bloco">

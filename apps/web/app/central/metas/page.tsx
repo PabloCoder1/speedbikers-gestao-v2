@@ -9,12 +9,17 @@ import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatePill } from "../../../components/state-pill";
 import { formatBusinessDate, formatCurrency } from "../../../lib/format";
-import { formatarAliquota, rotuloDoMes } from "../../../lib/metas-imposto";
+import {
+  doMarketplaceDaMeta,
+  formatarAliquota,
+  rotuloDoMarketplaceDaMeta,
+  rotuloDoMes,
+} from "../../../lib/metas-imposto";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { remover } from "./actions";
-import { FormularioAliquota, FormularioMeta } from "./formularios";
+import { FormularioAliquota, FormularioMeta, FormularioMetaDoMarketplace } from "./formularios";
 
 export const metadata = { title: "Metas e imposto — Speed Bikers Gestão" };
 
@@ -40,7 +45,15 @@ export default function MetasPage(): ReactNode {
   );
 }
 
-function BotaoRemover({ tabela, id, rotulo }: { tabela: "monthly_goals" | "tax_rates"; id: string; rotulo: string }): ReactNode {
+function BotaoRemover({
+  tabela,
+  id,
+  rotulo,
+}: {
+  tabela: "monthly_goals" | "monthly_goals_marketplace" | "tax_rates";
+  id: string;
+  rotulo: string;
+}): ReactNode {
   return (
     <form action={remover}>
       <input type="hidden" name="tabela" value={tabela} />
@@ -59,10 +72,22 @@ async function MetasContent(): Promise<ReactNode> {
   const hoje = toSalesMetricDate(new Date());
   const mesAtual = `${hoje.slice(0, 8)}01`;
 
-  const [metas, aliquotas] = await Promise.all([
+  const [metas, aliquotas, metasDoMarketplace] = await Promise.all([
     supabase.from("monthly_goals").select("id, month, revenue_goal, note").order("month", { ascending: false }).limit(24),
     supabase.from("tax_rates").select("id, valid_from, rate, note").order("valid_from", { ascending: false }).limit(50),
+    // D-473 (C-66): 24 meses dos dois marketplaces.
+    supabase
+      .from("monthly_goals_marketplace")
+      .select("id, month, marketplace, revenue_goal, note")
+      .order("month", { ascending: false })
+      .order("marketplace", { ascending: true })
+      .limit(48),
   ]);
+
+  // A tabela de D-473 ausente só desliga o painel dela (a web chega antes da migration).
+  const marketplaceAusente =
+    metasDoMarketplace.error !== null &&
+    (metasDoMarketplace.error.code === "PGRST205" || metasDoMarketplace.error.code === "42P01");
 
   // Tabela ausente (PGRST205 no PostgREST, 42P01 no Postgres) não é erro: a
   // web da `main` vai ao ar antes de a migration passar pelo workflow de
@@ -118,8 +143,8 @@ async function MetasContent(): Promise<ReactNode> {
 
       <div className="sb-pair-grid">
         <Panel
-          title="Meta de faturamento"
-          subtitle="Uma por mês, da empresa inteira. Cadastrar de novo o mesmo mês corrige a meta."
+          title="Meta geral de faturamento"
+          subtitle="Uma por mês, da empresa inteira: Mercado Livre e Shopee. Cadastrar de novo o mesmo mês corrige a meta."
         >
           <div className="sb-panel-body">
             {podeEditar && <FormularioMeta mesPadrao={mesAtual.slice(0, 7)} />}
@@ -235,6 +260,90 @@ async function MetasContent(): Promise<ReactNode> {
                 Cada pedido paga a alíquota vigente no dia da venda, sobre o seu faturamento. Se algum pedido do período
                 cair num dia sem alíquota, o imposto do período fica em branco — nunca parcial. É uma estimativa pela
                 alíquota efetiva, não a apuração da guia.
+              </p>
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="sb-central-bloco">
+        <Panel
+          title="Meta por marketplace"
+          subtitle="Uma por mês para o Mercado Livre e outra para a Shopee, ao lado da geral. Cadastrar de novo o mesmo mês e marketplace corrige a meta."
+        >
+          <div className="sb-panel-body">
+            {marketplaceAusente ? (
+              <div className="sb-note">
+                <span>SENDO ATIVADO</span>
+                <p>
+                  As metas por marketplace estão sendo ativadas neste ambiente: o banco ainda não recebeu a tabela de
+                  D-473. A meta geral e a alíquota acima já funcionam.
+                </p>
+              </div>
+            ) : (
+              <>
+                {podeEditar && <FormularioMetaDoMarketplace mesPadrao={mesAtual.slice(0, 7)} />}
+
+                {metasDoMarketplace.error !== null ? (
+                  <EstadoDaTela
+                    tipo="erro"
+                    titulo="Não foi possível carregar as metas por marketplace"
+                    detalhe={metasDoMarketplace.error.message}
+                    acao={{ href: "/central/metas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+                  />
+                ) : metasDoMarketplace.data.length === 0 ? (
+                  <EstadoDaTela
+                    tipo="vazio"
+                    titulo="Nenhuma meta por marketplace cadastrada."
+                    descricao="Sem elas, a central mostra o realizado de cada marketplace sem meta para comparar."
+                  />
+                ) : (
+                  <div className="sb-cadastro-rolagem">
+                    <table className="sb-table sb-cadastro-tabela" aria-label="Metas por marketplace">
+                      <thead>
+                        <tr>
+                          <th>Mês</th>
+                          <th>Marketplace</th>
+                          <th className="sb-num">Meta</th>
+                          <th>Nota</th>
+                          {podeEditar && <th aria-label="Ações" />}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {metasDoMarketplace.data.map((m) => (
+                          <tr key={m.id}>
+                            <td>
+                              {rotuloDoMes(m.month)}{" "}
+                              {m.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
+                            </td>
+                            <td>{rotuloDoMarketplaceDaMeta(m.marketplace)}</td>
+                            <td className="sb-num">{formatCurrency(m.revenue_goal)}</td>
+                            <td className="sb-texto-suave">{m.note ?? "—"}</td>
+                            {podeEditar && (
+                              <td>
+                                <BotaoRemover
+                                  tabela="monthly_goals_marketplace"
+                                  id={m.id}
+                                  rotulo={`Remover a meta ${doMarketplaceDaMeta(m.marketplace)} de ${rotuloDoMes(m.month)}`}
+                                />
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="sb-note sb-central-bloco">
+              <span>A GERAL E A SHOPEE</span>
+              <p>
+                A meta geral mede a receita do Mercado Livre e da Shopee juntos, e cada marketplace é medido contra a
+                meta dele. Enquanto não houver loja Shopee real com pedidos lidos, a geral é só o Mercado Livre: a
+                Shopee passa a somar a partir da primeira leitura de pedidos da loja real — num mês que atravessa essa
+                data, a geral muda de base no meio do mês.
               </p>
             </div>
           </div>

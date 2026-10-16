@@ -86,6 +86,22 @@ export interface MetaDoMes {
   readonly dias_sem_venda: number;
   /** D-406. Vazio também quando o banco ainda não tem o calendário. */
   readonly datas_comerciais: readonly DataComercial[];
+  /**
+   * D-473 (C-66): a meta de cada marketplace. `null` = banco anterior à
+   * migration (a web chega antes) e dentro dos próprios escopos.
+   */
+  readonly escopos: MetasPorMarketplace | null;
+}
+
+/**
+ * As metas por marketplace (D-473, C-66; decisão do dono de 15/10): o topo da
+ * resposta é a meta GERAL (Mercado Livre + Shopee), e cada marketplace vem com
+ * a mesma conta contra a meta dele. A Shopee vem nula sem loja live com
+ * pedidos lidos — nunca zero.
+ */
+export interface MetasPorMarketplace {
+  readonly ml: MetaDoMes;
+  readonly shopee: MetaDoMes | null;
 }
 
 class ForaDoContrato extends Error {}
@@ -176,65 +192,90 @@ function lerDataComercial(valor: unknown): DataComercial {
   };
 }
 
-/** `null` = resposta fora do contrato. */
+/** Um escopo da meta (o topo ou um marketplace); fora do contrato lança. */
+function lerCorpo(valor: unknown): MetaDoMes {
+  const r = registro(valor);
+  const situacao = texto(r, "situacao");
+
+  if (situacao !== "em_curso" && situacao !== "encerrado" && situacao !== "futuro") throw new ForaDoContrato("situacao");
+  if (typeof r.perfil_semanal !== "boolean") throw new ForaDoContrato("perfil_semanal");
+  if (!Array.isArray(r.fatores)) throw new ForaDoContrato("fatores");
+
+  const anulaveis: Record<string, number | null> = {};
+
+  for (const chave of NUMEROS_ANULAVEIS) anulaveis[chave] = numeroOuNulo(r, chave);
+
+  const projecao =
+    r.projecao === null
+      ? null
+      : ((p: Registro): ProjecaoDoMes => ({
+          ritmo: numero(p, "ritmo"),
+          conservador: numero(p, "conservador"),
+          otimista: numero(p, "otimista"),
+        }))(registro(r.projecao));
+
+  const anoAnterior =
+    r.ano_anterior === null
+      ? null
+      : ((a: Registro): AnoAnterior => ({
+          receita_mes: numeroOuNulo(a, "receita_mes"),
+          receita_ate_mesmo_dia: numeroOuNulo(a, "receita_ate_mesmo_dia"),
+          projecao_sazonal: numeroOuNulo(a, "projecao_sazonal"),
+          crescimento: numeroOuNulo(a, "crescimento"),
+        }))(registro(r.ano_anterior));
+
+  return {
+    mes: texto(r, "mes"),
+    fim: texto(r, "fim"),
+    hoje: texto(r, "hoje"),
+    situacao,
+    inicio_historico: textoOuNulo(r, "inicio_historico"),
+    ...(anulaveis as Pick<MetaDoMes, (typeof NUMEROS_ANULAVEIS)[number]>),
+    dias_no_mes: numero(r, "dias_no_mes"),
+    perfil_semanal: r.perfil_semanal,
+    fatores: r.fatores.map((f: unknown) => {
+      const x = registro(f);
+
+      return { dia_semana: numero(x, "dia_semana"), fator: numero(x, "fator") };
+    }),
+    projecao,
+    ano_anterior: anoAnterior,
+    dias_sem_venda: numero(r, "dias_sem_venda"),
+    // Ausente = banco anterior a D-406 (a web chega antes da migration): lista vazia.
+    datas_comerciais:
+      "datas_comerciais" in r
+        ? (() => {
+            if (!Array.isArray(r.datas_comerciais)) throw new ForaDoContrato("datas_comerciais");
+
+            return r.datas_comerciais.map(lerDataComercial);
+          })()
+        : [],
+    escopos: null,
+  };
+}
+
+/**
+ * `null` = resposta fora do contrato. Um escopo fora do contrato recusa a
+ * resposta inteira, como qualquer outro campo.
+ */
 export function lerMetaDoMes(valor: unknown): MetaDoMes | null {
   try {
+    const geral = lerCorpo(valor);
     const r = registro(valor);
-    const situacao = texto(r, "situacao");
 
-    if (situacao !== "em_curso" && situacao !== "encerrado" && situacao !== "futuro") throw new ForaDoContrato("situacao");
-    if (typeof r.perfil_semanal !== "boolean") throw new ForaDoContrato("perfil_semanal");
-    if (!Array.isArray(r.fatores)) throw new ForaDoContrato("fatores");
+    // Ausente = banco anterior a D-473 (a web chega antes da migration): só a geral.
+    if (!("escopos" in r)) return geral;
 
-    const anulaveis: Record<string, number | null> = {};
+    const escopos = registro(r.escopos);
 
-    for (const chave of NUMEROS_ANULAVEIS) anulaveis[chave] = numeroOuNulo(r, chave);
-
-    const projecao =
-      r.projecao === null
-        ? null
-        : ((p: Registro): ProjecaoDoMes => ({
-            ritmo: numero(p, "ritmo"),
-            conservador: numero(p, "conservador"),
-            otimista: numero(p, "otimista"),
-          }))(registro(r.projecao));
-
-    const anoAnterior =
-      r.ano_anterior === null
-        ? null
-        : ((a: Registro): AnoAnterior => ({
-            receita_mes: numeroOuNulo(a, "receita_mes"),
-            receita_ate_mesmo_dia: numeroOuNulo(a, "receita_ate_mesmo_dia"),
-            projecao_sazonal: numeroOuNulo(a, "projecao_sazonal"),
-            crescimento: numeroOuNulo(a, "crescimento"),
-          }))(registro(r.ano_anterior));
+    if (!("SHOPEE" in escopos)) throw new ForaDoContrato("escopos.SHOPEE");
 
     return {
-      mes: texto(r, "mes"),
-      fim: texto(r, "fim"),
-      hoje: texto(r, "hoje"),
-      situacao,
-      inicio_historico: textoOuNulo(r, "inicio_historico"),
-      ...(anulaveis as Pick<MetaDoMes, (typeof NUMEROS_ANULAVEIS)[number]>),
-      dias_no_mes: numero(r, "dias_no_mes"),
-      perfil_semanal: r.perfil_semanal,
-      fatores: r.fatores.map((f: unknown) => {
-        const x = registro(f);
-
-        return { dia_semana: numero(x, "dia_semana"), fator: numero(x, "fator") };
-      }),
-      projecao,
-      ano_anterior: anoAnterior,
-      dias_sem_venda: numero(r, "dias_sem_venda"),
-      // Ausente = banco anterior a D-406 (a web chega antes da migration): lista vazia.
-      datas_comerciais:
-        "datas_comerciais" in r
-          ? (() => {
-              if (!Array.isArray(r.datas_comerciais)) throw new ForaDoContrato("datas_comerciais");
-
-              return r.datas_comerciais.map(lerDataComercial);
-            })()
-          : [],
+      ...geral,
+      escopos: {
+        ml: lerCorpo(escopos.ML),
+        shopee: escopos.SHOPEE === null ? null : lerCorpo(escopos.SHOPEE),
+      },
     };
   } catch (erro) {
     if (erro instanceof ForaDoContrato) return null;

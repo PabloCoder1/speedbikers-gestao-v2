@@ -2,7 +2,7 @@
 
 import { useActionState, useId, type ReactNode } from "react";
 
-import { salvarAliquota, salvarMeta, type ResultadoDoCadastro } from "./actions";
+import { salvarAliquota, salvarMeta, salvarMetaDoMarketplace, type ResultadoDoCadastro } from "./actions";
 
 const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
 
@@ -68,7 +68,7 @@ export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode 
       <Campo
         nome="revenue_goal"
         rotulo="Meta de faturamento (R$)"
-        dica="Receita bruta das vendas válidas, todas as contas. Ex.: 2.800.000"
+        dica="Receita bruta das vendas válidas, todas as contas e marketplaces. Ex.: 2.800.000"
         erro={resultado.erros.revenue_goal}
       >
         {(props) => <input {...props} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
@@ -81,6 +81,53 @@ export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode 
       <div className="sb-cadastro-acoes">
         <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
           {salvando ? "Salvando…" : "Salvar meta"}
+        </button>
+        <Mensagem resultado={resultado} />
+      </div>
+    </form>
+  );
+}
+
+/** A meta de um marketplace (D-473, C-66), ao lado da geral. */
+export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }): ReactNode {
+  const [resultado, enviar, salvando] = useActionState(salvarMetaDoMarketplace, INICIAL);
+
+  return (
+    <form action={enviar} className="sb-cadastro-form" aria-label="Cadastrar meta por marketplace">
+      <Campo
+        nome="marketplace"
+        rotulo="Marketplace"
+        dica="A meta compara só a receita deste marketplace."
+        erro={resultado.erros.marketplace}
+      >
+        {(props) => (
+          <select {...props} className="sb-input" name="marketplace" defaultValue="ML" required>
+            <option value="ML">Mercado Livre</option>
+            <option value="SHOPEE">Shopee</option>
+          </select>
+        )}
+      </Campo>
+
+      <Campo nome="month" rotulo="Mês" dica="A meta vale para o mês inteiro." erro={resultado.erros.month}>
+        {(props) => <input {...props} className="sb-input" type="month" name="month" defaultValue={mesPadrao} required />}
+      </Campo>
+
+      <Campo
+        nome="revenue_goal"
+        rotulo="Meta do marketplace (R$)"
+        dica="Receita bruta das vendas válidas do marketplace. Ex.: 1.500.000"
+        erro={resultado.erros.revenue_goal}
+      >
+        {(props) => <input {...props} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
+      </Campo>
+
+      <Campo nome="note" rotulo="Nota (opcional)" dica="Até 300 caracteres." erro={resultado.erros.note}>
+        {(props) => <input {...props} className="sb-input" name="note" maxLength={300} />}
+      </Campo>
+
+      <div className="sb-cadastro-acoes">
+        <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
+          {salvando ? "Salvando…" : "Salvar meta do marketplace"}
         </button>
         <Mensagem resultado={resultado} />
       </div>
