@@ -8,6 +8,7 @@ import {
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
 } from "./constants.js";
+import { atualizacaoTerminou, login, marcarSemRecarga, naoRecarregou } from "./helpers.js";
 
 /**
  * `/produtos` — a curadoria, depois da migração da composição para o Figma.
@@ -309,4 +310,51 @@ test("/produtos sem loja Shopee live: anúncio e venda como antes, e a loja de t
   await expect(contagem).toHaveText("0 produtos");
   await page.goto("/produtos?vendas=so-shopee");
   await expect(contagem).toHaveText("0 produtos");
+});
+
+/**
+ * D-484: os links de mesma tela da `/produtos` (atalhos, opções e "limpar" dos
+ * grupos de filtro e chips) viram `LinkDeFiltro` — o sinal de D-500 enquanto o
+ * recorte novo chega, e nunca recarga.
+ */
+test("/produtos: atalho, filtro, 'limpar' do grupo e chip atualizam no lugar, sem recarregar (D-484)", async ({ page }) => {
+  await login(page, "/produtos");
+
+  const atalhos = page.getByRole("navigation", { name: "Atalhos do catálogo" });
+
+  await atalhos.waitFor();
+  await marcarSemRecarga(page);
+
+  await atalhos.getByRole("link", { name: /^Não classificados/ }).click();
+  await expect(page).toHaveURL(/estado=pendente/);
+  await atualizacaoTerminou(page);
+
+  const filtros = page.getByRole("complementary", { name: "Filtros do catálogo" });
+  const tipo = filtros.getByRole("group", { name: "Tipo" });
+
+  // O sinal de pendente que o LinkDeFiltro trouxe: com a resposta da tela segurada
+  // por 1 s, a barra "Atualizando a tela…" aparece e depois sai. Um <Link> comum
+  // para a MESMA tela não mostrava nada (o indicador do layout é só para outro caminho).
+  await page.route("**/produtos**", async (rota) => {
+    if (rota.request().headers().rsc === "1") await new Promise((pronto) => setTimeout(pronto, 1_000));
+    await rota.continue();
+  });
+  await tipo.getByRole("link", { name: /^Produtos/ }).click();
+  await expect(page.locator(".sb-atualizando-barra")).toBeVisible();
+  await expect(page).toHaveURL(/tipo=produto/);
+  await atualizacaoTerminou(page);
+  await page.unroute("**/produtos**");
+
+  await tipo.getByRole("link", { name: "Limpar Tipo" }).click();
+  await expect(page).not.toHaveURL(/tipo=/);
+  await expect(page).toHaveURL(/estado=pendente/);
+  await atualizacaoTerminou(page);
+
+  await tipo.getByRole("link", { name: /^Produtos/ }).click();
+  await expect(page).toHaveURL(/tipo=produto/);
+  await page.getByRole("link", { name: "Tirar filtro Produtos" }).click();
+  await expect(page).not.toHaveURL(/tipo=/);
+  await atualizacaoTerminou(page);
+
+  await naoRecarregou(page);
 });

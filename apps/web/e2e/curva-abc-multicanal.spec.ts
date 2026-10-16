@@ -2,7 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 import JSZip from "jszip";
 
 import { E2E_SHOPEE_SHOP } from "./constants.js";
-import { login } from "./helpers.js";
+import { atualizacaoTerminou, login, marcarSemRecarga, naoRecarregou } from "./helpers.js";
 
 /**
  * `/curva-abc` com MAIS DE UM MARKETPLACE (D-448, etapa T6b), sobre o C-60
@@ -155,4 +155,48 @@ test("o Excel do 'Todos' traz Compras no lugar de Pedidos, o recorte por marketp
   expect(ml.abas).toContain('name="Pedidos"');
   expect(ml.abas).not.toContain('name="Compras"');
   expect(ml.textos).not.toContain("Por marketplace");
+});
+
+/**
+ * D-484: a última tela da lista de pendentes do `check:navegacao-suave`. A busca
+ * e o período personalizado eram `<form method="get">` e recarregavam o
+ * documento; o "Limpar filtros" era um `<Link>` sem sinal. Agora os três
+ * atualizam no lugar.
+ */
+test("/curva-abc: a busca, o período personalizado e o 'Limpar filtros' atualizam no lugar, sem recarregar (D-484)", async ({
+  page,
+}) => {
+  await login(page, "/curva-abc");
+
+  const busca = page.getByRole("searchbox", { name: "Buscar por SKU ou nome do produto" });
+
+  await busca.waitFor();
+  await marcarSemRecarga(page);
+  await busca.fill("E2E");
+  await busca.press("Enter");
+
+  await expect(page).toHaveURL(/[?&]busca=E2E(&|$)/);
+  await atualizacaoTerminou(page);
+  await naoRecarregou(page);
+
+  // O período personalizado, dentro do menu do período.
+  const hoje = new Date();
+  const dia = (atras: number): string => new Date(hoje.getTime() - atras * 86_400_000).toISOString().slice(0, 10);
+
+  // O resumo do menu também tem a seta ("⌄"): sem âncora no fim.
+  await page.locator("summary", { hasText: /^Últimos \d+ dias/ }).click();
+  await page.getByLabel("Data inicial").fill(dia(40));
+  await page.getByLabel("Data final").fill(dia(10));
+  await page.getByRole("button", { name: "Aplicar período" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`[?&]de=${dia(40)}`));
+  await expect(page).toHaveURL(/[?&]busca=E2E(&|$)/);
+  await atualizacaoTerminou(page);
+  await naoRecarregou(page);
+
+  await page.getByRole("link", { name: /^Limpar filtros/ }).click();
+  await expect(page).toHaveURL(/\/curva-abc$/);
+  await atualizacaoTerminou(page);
+  await expect(busca).toHaveValue("");
+  await naoRecarregou(page);
 });

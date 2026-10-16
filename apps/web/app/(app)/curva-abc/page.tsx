@@ -6,6 +6,8 @@ import { toSalesMetricDate } from "@sb/domain";
 
 import { FilterMenu } from "../../../components/filter-menu";
 import { FilterGroup, FilterPill } from "../../../components/filter-pill";
+import { FormularioFiltro } from "../../../components/formulario-filtro";
+import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
@@ -391,8 +393,8 @@ export default async function CurvaAbcPage({
                 ativo: filters.custom === null && filters.days === days,
               }))}
             >
-              {/* GET nativo manda SÓ os campos do formulário: os ocultos levam o resto do recorte. */}
-              <form method="get" className="sb-abc-periodo">
+              {/* O GET manda SÓ os campos do formulário: os ocultos levam o resto do recorte. */}
+              <FormularioFiltro action="/curva-abc" className="sb-abc-periodo">
                 {camposOcultos(filters, ["dias", "de", "ate"])}
                 <input
                   type="date"
@@ -415,7 +417,7 @@ export default async function CurvaAbcPage({
                 <button type="submit" className="sb-button sb-button-primary">
                   Aplicar período
                 </button>
-              </form>
+              </FormularioFiltro>
             </FilterMenu>
             {filters.escopo === "ml" ? (
               <FilterMenu
@@ -540,9 +542,9 @@ export default async function CurvaAbcPage({
           </div>
           <div className="sb-abc-controls-acoes">
             {filtrosAtivos > 0 && (
-              <Link className="sb-button" href="/curva-abc">
+              <LinkDeFiltro className="sb-button" href="/curva-abc">
                 Limpar filtros ({filtrosAtivos})
-              </Link>
+              </LinkDeFiltro>
             )}
             {/* O Excel leva o MESMO recorte da tela, marketplace e contas inclusive (D-450) -- `export/xlsx/route.ts`. */}
             <a className="sb-button sb-button-primary" href={exportHref} download>
@@ -610,7 +612,7 @@ export default async function CurvaAbcPage({
           </FilterGroup>
         </div>
 
-        <form method="get" className="sb-abc-busca" role="search">
+        <FormularioFiltro action="/curva-abc" className="sb-abc-busca" role="search">
           {camposOcultos(filters, ["busca", "ordem"])}
           <input
             type="search"
@@ -631,7 +633,7 @@ export default async function CurvaAbcPage({
           <button type="submit" className="sb-button">
             Aplicar
           </button>
-        </form>
+        </FormularioFiltro>
       </section>
 
       {first !== undefined && <KpiStrip cells={kpis} ancora />}
