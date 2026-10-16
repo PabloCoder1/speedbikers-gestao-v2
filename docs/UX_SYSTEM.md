@@ -35,8 +35,8 @@
 4. Filtro e busca são navegação suave (`LinkDeFiltro`, `ItemDeMenu`,
    `FormularioFiltro`) — `<a href>` e `<form method="get">` recarregam o
    documento inteiro. `<a>` só para download e destino externo. A guarda
-   `check:navegacao-suave` reprova os dois; as telas que faltam estão na lista
-   de pendências dela, com o motivo.
+   `check:navegacao-suave` reprova os dois; a lista de pendências dela está
+   vazia desde a D-484 (16/10).
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
 6. Tela autenticada mora em `app/(app)/` e NÃO tem `loading.tsx`: o React só
@@ -73,10 +73,10 @@ robustez; **P3** = acabamento.
 | # | Achado | Evidência | Grav. | Situação |
 |---|---|---|---|---|
 | 1 | Opção de menu de filtro era `<a>`: cada escolha recarregava o documento | `FilterMenu` (63 usos em 26 arquivos), `SeletorMarketplace` (7), `SavedFilters` (4) | P1 | **corrigido** (D-500) |
-| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido** em 18 dos 25 (`/estoque` na D-500, 17 na D-501); 7 nas telas pendentes do A2 |
+| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido**: 18 dos 25 pelo A3 (`/estoque` na D-500, 17 na D-501) e os 7 das telas do A2 nas T-R3 (D-464), T8a (D-480) e D-484 — a guarda está com 0 telas pendentes desde 16/10 |
 | 3 | Atualização na mesma tela trocava a tela inteira pelo esqueleto após 350 ms | `CarregandoSeODemorar` (~100 usos) | P1 | **corrigido** (D-500) |
 | 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **corrigido**: medido na D-511 e migrado na D-512 (troca de tela de 336 para 102 ms, 6 leituras a menos); a paleta de busca, que navega por código, ganhou o sinal na D-513 |
-| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
+| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`); os grupos de filtro, os atalhos e os chips de `/produtos` pelo A2 na D-484 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
 | 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha, e desde a D-468 (#192) com o `EstadoDaTela` e "Tentar de novo" na mesma URL |
@@ -122,10 +122,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 
 1. ~~**Atualização no lugar no resto do app**~~ — **feita** (D-501): 17
    buscas, 27 `<a>` e 41 `<Link>` em 22 arquivos, com a guarda
-   `check:navegacao-suave` e o `e2e/atualizacao-no-lugar.spec.ts`. Sobram as
-   telas da lista de pendências da guarda (`/central`, `/central/produtos`,
-   `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
-   de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
+   `check:navegacao-suave` e o `e2e/atualizacao-no-lugar.spec.ts`. As telas
+   que a guarda deixava pendentes saíram com o A2 (T-R3, T8a e, por último, a
+   `/curva-abc` e os filtros de `/produtos` na D-484): desde 16/10 a lista está
+   vazia, e tela nova entra limpa.
 2. ~~**Botão pendente compartilhado**~~ — **feito** (D-502, `BotaoEnviar`).
 3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas, nos seis avisos
    da T-R6 (D-468, #192) e nas telas da fila do A2 (D-470/D-472, #197), que
