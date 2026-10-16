@@ -22,9 +22,9 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-16 |
-| `origin/main` | `cbd8ad93` (16/10: #212 do A1, C-66; #211 do A2, T8a) |
-| Branches abertas | A1: `docs/estado-d475` (o estado da D-475) · A2: `feat/central-metas-t8b` (T8b, sobre o C-66) |
-| Web em produção | `93304ac3` (merge na `main` publica) |
+| `origin/main` | `5d25ebdc` (16/10: #212 e #213 do A1, C-66 e D-475; #211 e #215 do A2, T8a e T8b; #214 do A3, D-510) |
+| Branches abertas | A1: `docs/estado-d475` (#216, o estado da D-475) e `fix/ci-store-path` (o passo do store do pnpm no `ci.yml`) · A2: nenhuma (o #215 entrou) |
+| Web em produção | `5d25ebdc` (#215, `dpl_9Am1ouYBvf75hETwocjxqE9TaKXx`, READY; merge na `main` publica) |
 | Worker / api em produção | worker `worker-00048-hl2` (`0d4883c2`, 16/10, com a D-475) e api `api-00034-qxw` (`e3b125c6`, com a chave de push e sem a amostra no log, 15/10), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Shopee **sandbox**, Go Live em análise; push cadastrado e conferido (D-453; autoteste assinado de novo depois da `-00034`: aceito) |
 | Migrations em produção | até `20261015130000` (D-441 a D-473, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548`, `38799663780` (15/10) e `38893049400` (16/10)) |
 | Dev | todas as migrations da `main` (até `20261015130000`, pela CI da `main`); serviços pausados (D-350) |
