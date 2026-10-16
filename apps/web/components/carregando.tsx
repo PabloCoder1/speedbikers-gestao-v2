@@ -80,9 +80,19 @@ export function CarregandoConteudo({ rotulo = "Carregando a tela" }: { rotulo?: 
   );
 }
 
-export function CarregandoBloco({ rotulo }: { rotulo: string }): ReactNode {
+/**
+ * O esqueleto de um bloco que chega por streaming dentro de uma tela montada.
+ *
+ * `altura` reserva o lugar (D-515): quando o conteúdo é muito maior que o
+ * esqueleto e há blocos abaixo, a chegada empurra o que já está visível — na
+ * `/central`, 142 px de esqueleto para uns 3.000 de indicadores deram CLS de
+ * 0,39 em produção. Reservar ao menos a janela (`"100vh"`) põe o que vem abaixo
+ * fora dela desde o início, e a chegada não desloca nada visível. Sem `altura`,
+ * o bloco tem a altura dos traços, como sempre.
+ */
+export function CarregandoBloco({ rotulo, altura }: { rotulo: string; altura?: string }): ReactNode {
   return (
-    <div className="sb-carregando-bloco" role="status">
+    <div className="sb-carregando-bloco" role="status" style={altura === undefined ? undefined : { minHeight: altura }}>
       <span className="sb-sr-only">Carregando {rotulo}…</span>
       <div aria-hidden="true" className="sb-carregando-revela">
         <Barra largura="10rem" altura="0.875rem" />

@@ -20,7 +20,7 @@
 |---|---|---|---|
 | **Trocar de tela** (o caminho muda) | a tela anterior FICA, com o sinal da atualização no lugar: o link clicado esmaece, a barra da moldura aparece aos 100 ms e o conteúdo esmaece aos 400 ms; a moldura nunca sai (é do layout) | `IndicadorDeNavegacao` no `Shell` (todo link interno, e `avisarTrocaDeTela` antes do `router.push` de quem navega por código, como a paleta de busca) e `CarregandoSeODemorar` nos links da sidebar → `AtualizandoTela` | **D-512**, D-513 (até a D-512, `loading.tsx` por pasta, D-382) |
 | **Carga inicial** de uma tela (primeira visita, recarga) | o esqueleto com a moldura, no lugar do que vai chegar | `app/loading.tsx`, acima do layout do grupo `(app)` → `CarregandoTela` | D-382, D-512 |
-| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509 |
+| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home e o da `/central`); um bloco muito maior que o esqueleto, com outros abaixo, reserva ao menos a janela (`<CarregandoBloco altura="100vh"/>`, os indicadores da `/central`); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509, D-515 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
 | **Ação que grava** (salvar, assumir, remover) | o botão desabilita, põe `aria-busy` e diz o que está fazendo ("Removendo…") até a resposta | `BotaoEnviar` (ação de servidor, `useFormStatus`); nos formulários de cliente, o rótulo do botão que corre | **D-502** |
 
@@ -35,8 +35,8 @@
 4. Filtro e busca são navegação suave (`LinkDeFiltro`, `ItemDeMenu`,
    `FormularioFiltro`) — `<a href>` e `<form method="get">` recarregam o
    documento inteiro. `<a>` só para download e destino externo. A guarda
-   `check:navegacao-suave` reprova os dois; as telas que faltam estão na lista
-   de pendências dela, com o motivo.
+   `check:navegacao-suave` reprova os dois; a lista de pendências dela está
+   vazia desde a D-484 (16/10).
 5. `prefers-reduced-motion`: nada corre, mas o aviso continua (barra parada,
    esmaecimento sem transição, giros mais lentos).
 6. Tela autenticada mora em `app/(app)/` e NÃO tem `loading.tsx`: o React só
@@ -73,10 +73,10 @@ robustez; **P3** = acabamento.
 | # | Achado | Evidência | Grav. | Situação |
 |---|---|---|---|---|
 | 1 | Opção de menu de filtro era `<a>`: cada escolha recarregava o documento | `FilterMenu` (63 usos em 26 arquivos), `SeletorMarketplace` (7), `SavedFilters` (4) | P1 | **corrigido** (D-500) |
-| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido** em 18 dos 25 (`/estoque` na D-500, 17 na D-501); 7 nas telas pendentes do A2 |
+| 2 | Busca GET recarregava o documento | 25 `<form method="get">` | P1 | **corrigido**: 18 dos 25 pelo A3 (`/estoque` na D-500, 17 na D-501) e os 7 das telas do A2 nas T-R3 (D-464), T8a (D-480) e D-484 — a guarda está com 0 telas pendentes desde 16/10 |
 | 3 | Atualização na mesma tela trocava a tela inteira pelo esqueleto após 350 ms | `CarregandoSeODemorar` (~100 usos) | P1 | **corrigido** (D-500) |
 | 4 | `Shell` dentro de cada página: toda troca de tela refaz as 7 leituras do cabeçalho, desmonta sidebar e barra superior, reassina o Realtime das notificações, perde a rolagem do menu (contornada em `nav.tsx`) e o estado do Copiloto; o esqueleto repete as classes do shell e já armou 3 testes e2e | 56 `page.tsx`, 94 `<Shell>` | P1 | **corrigido**: medido na D-511 e migrado na D-512 (troca de tela de 336 para 102 ms, 6 leituras a menos); a paleta de busca, que navega por código, ganhou o sinal na D-513 |
-| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`) fora das telas pendentes; os grupos de filtro de `/produtos` ficam com o A2 |
+| 5 | `<Link>` de mesma tela sem sinal nenhum durante a espera | 45 links: `/atendimento` (3 telas), `/full`, `/produtos`, abas de `/anuncios/[itemId]`, `/faturamento` Todos, outros 8 | P1 | **corrigido** (D-501, `LinkDeFiltro`); os grupos de filtro, os atalhos e os chips de `/produtos` pelo A2 na D-484 |
 | 6 | `<a>` cru em ordenação, chips e paginação | 25 em `/anuncios`, `/anuncios/shopee`, `/vendas/shopee` | P1 | **corrigido** (D-501) |
 | 7 | Erro de leitura em 7 formas visuais diferentes; `error.message` cru na tela | parágrafo inline (17 arquivos), `AVISO` (28 usos), `.sb-note-perigo` (~20), cartões por módulo (5 classes), caixa tracejada (5), `.sb-empty` vermelho (6), `.sb-skud-danger` (13); mensagem crua em 38 arquivos, só ~10 sanitizam | P2 | **corrigido** em 19 telas (D-502, `EstadoDaTela`); sobram as telas da fila do A2 e a constante `AVISO` de `central/*` e `faturamento/*` |
 | 8 | Falha de leitura mostrada como "nenhum" | `/vinculacoes` (vínculos e contas), `/usuarios` (histórico de acesso), `/curva-abc` (opções), `/compras/novo`, `/diagnostico`, `/skus/[skuId]` | P2 | **resolvido pelo A2** (T-R6, #175 e #180): as seis telas dizem a falha, e desde a D-468 (#192) com o `EstadoDaTela` e "Tentar de novo" na mesma URL |
@@ -122,10 +122,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 
 1. ~~**Atualização no lugar no resto do app**~~ — **feita** (D-501): 17
    buscas, 27 `<a>` e 41 `<Link>` em 22 arquivos, com a guarda
-   `check:navegacao-suave` e o `e2e/atualizacao-no-lugar.spec.ts`. Sobram as
-   telas da lista de pendências da guarda (`/central`, `/central/produtos`,
-   `/compras`, `/curva-abc`, `/reposicao`, na fila do A2) e os grupos de filtro
-   de `/produtos` — quem tocar nelas troca pelo componente e tira da lista.
+   `check:navegacao-suave` e o `e2e/atualizacao-no-lugar.spec.ts`. As telas
+   que a guarda deixava pendentes saíram com o A2 (T-R3, T8a e, por último, a
+   `/curva-abc` e os filtros de `/produtos` na D-484): desde 16/10 a lista está
+   vazia, e tela nova entra limpa.
 2. ~~**Botão pendente compartilhado**~~ — **feito** (D-502, `BotaoEnviar`).
 3. ~~**`EstadoDaTela`**~~ — **feito** (D-502) em 19 telas, nos seis avisos
    da T-R6 (D-468, #192) e nas telas da fila do A2 (D-470/D-472, #197), que
@@ -147,11 +147,25 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    cancelamento — agora só ela espera; faixa e gráfico de ~3,3 s para ~0,45 s
    com a leitura atrasada em 3 s, CLS 0. A receita continua a mesma para a
    próxima tela que a medição apontar: streaming só onde a lentidão medida
-   está, esqueleto do mesmo tamanho e o sim do dono da tela.
+   está, esqueleto do mesmo tamanho e o sim do dono da tela. **Lido em
+   produção (D-514):** a `/vendas` foi a 960–1.460 ms nas três cargas
+   completas depois da D-509; o LCP da Home é a chegada da "Atenção", não a
+   primeira pintura (§5).
 6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 7. ~~**Acessibilidade dos compartilhados**~~ — **feita** (D-508): o "Pular
    para o conteúdo" e o h2 da `/acoes`; e a guarda de e2e, com a tela
    estreita junto (D-510), que corrigiu a Home e a `.sb-pair-grid` no celular.
+8. ~~**A `/central` sem deslocamento**~~ — **feita** (D-515; o A2 liberou a
+   tela): os indicadores reservam a janela (`CarregandoBloco altura`) e a
+   "Atenção" tem esqueleto do tamanho da lista de três itens (244 px para 244,
+   calibrado). No build local, CLS de 0,144 para 0 com as leituras juntas e de
+   0,278 para 0,046 com a "Atenção" depois — o resto é o banco local sem
+   itens. Confere-se na próxima leitura de produção.
+9. **Paleta para a mesma tela com outra `?busca`** (lacuna da D-513, achada
+   pelo A2): o "Pedido Shopee" estando em `/vendas/shopee` não ganha sinal,
+   porque o indicador termina na troca de caminho. Terminar pela URL inteira
+   pede `useSearchParams` no `Shell` (com o custo de `Suspense` dele) — entra
+   se aparecer espera.
 
 ---
 
@@ -260,3 +274,31 @@ conte também o CLS rotulado `/skus/…` sem TTFB lá: o selo tardio da D-505
 desloca depois de uma navegação suave, e o deslocamento cai no documento que
 veio de outra tela. Se aparecer CLS num SKU sem classe ABC (o esqueleto do selo
 some), reabra a reserva de espaço que o A2 sugeriu.
+
+### Leitura de 16/10, depois da D-504, D-505 e D-509 (D-514)
+
+Lida às 16:25 UTC, 45 linhas de 15/10 16:44 a 16/10 16:24 (uma pessoa,
+poucas cargas). Cada linha posta no deploy que a serviu (`list_deployments`);
+as de antes do corte da D-507, pareadas pelo TTFB.
+
+| tela | antes | depois (cargas completas) |
+|---|---|---|
+| `/vendas` | LCP 1,1, 1,6, 4,7, 5,9 s e 3,5 s (antes da D-509) | **960, 1.040 e 1.460 ms**, com a D-509 e a D-469; CLS da tela 0 |
+| Home | LCP 3,5 e 7,6 s | LCP 1,8 e 5,0 s; nenhum CLS próprio |
+| `/skus/[id]` | n = 0 | n = 0 |
+| `/central` (A2) | — | LCP 2,26 e 2,35 s; **CLS próprio de 0,39** |
+
+**O LCP da Home é a chegada da "Atenção necessária"** quando a segunda rodada
+demora: no build local, sem atraso o LCP é um parágrafo do "Faturamento
+diário" (~0,5 s) e, com 150 ms por chamada, um da "Atenção" (~0,9 s). Os
+5,0 s medem a cobertura fria (A1), não a primeira pintura.
+
+**A `/central` desloca na chegada dos indicadores:** o esqueleto deles é um
+`CarregandoBloco` de 142 px e o conteúdo tem uns 3.000 px; com 150 ms por
+chamada, CLS de 0,144 em toda carga local, e o "Por marketplace" sai da
+janela. O conserto (esqueleto dos indicadores da altura da janela e o da
+"Atenção" com o cabeçalho real) foi feito na D-515 — §3, item 8.
+
+**Próxima leitura:** quando houver carga completa de `/skus/[id]` e depois do
+conserto da `/central`. A navegação suave (D-512) não entra nestes números: o
+reporter mede só a carga completa.

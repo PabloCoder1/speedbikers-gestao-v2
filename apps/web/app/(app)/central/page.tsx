@@ -13,7 +13,7 @@ import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
-import { Atencao } from "./atencao";
+import { Atencao, AtencaoCarregando } from "./atencao";
 import { Indicadores } from "./indicadores";
 import { SinalDeAds } from "./sinal-ads";
 import { SinalDoFrete } from "./sinal-frete";
@@ -258,7 +258,13 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
         </p>
       )}
 
-      <Suspense fallback={<CarregandoBloco rotulo="o que precisa da sua atenção" />}>
+      {/*
+        D-515: os dois esqueletos reservam o lugar do que vem. A "Atenção" tem o
+        cabeçalho real e o espaço da lista; os indicadores (uns 3.000 px) ocupam
+        ao menos a janela, e o que vem abaixo começa fora dela — com 142 px de
+        esqueleto genérico, a chegada deles deu CLS de 0,39 em produção.
+      */}
+      <Suspense fallback={<AtencaoCarregando />}>
         <Atencao
           leituras={leituras}
           leituraMeta={leituraMeta}
@@ -271,7 +277,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
         />
       </Suspense>
 
-      <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" />}>
+      <Suspense fallback={<CarregandoBloco rotulo="indicadores do período" altura="100vh" />}>
         <Indicadores
           leituras={leituras}
           leituraMeta={leituraMeta}

@@ -29,6 +29,18 @@ interface RespostaComCodigo {
 
 type Leitura = PromiseLike<RespostaComCodigo> | null;
 
+const TITULO = "O que precisa da sua atenção";
+const SUBTITULO =
+  "Margem, frete, Ads e meta, do mais grave para a oportunidade. Estoque, atendimento e a fila de ações da operação ficam na Visão Geral.";
+
+function LinkDaVisaoGeral(): ReactNode {
+  return (
+    <Link className="sb-button" href="/">
+      Visão Geral
+    </Link>
+  );
+}
+
 /**
  * "O que precisa da sua atenção" (D-400) — a central de alertas no topo da
  * Central do negócio. Espera as mesmas leituras que a página já disparou (os
@@ -91,15 +103,7 @@ export async function Atencao({
   const contagem = contarPorSeveridade(itens);
 
   return (
-    <Panel
-      title="O que precisa da sua atenção"
-      subtitle="Margem, frete, Ads e meta, do mais grave para a oportunidade. Estoque, atendimento e a fila de ações da operação ficam na Visão Geral."
-      aside={
-        <Link className="sb-button" href="/">
-          Visão Geral
-        </Link>
-      }
-    >
+    <Panel title={TITULO} subtitle={SUBTITULO} aside={<LinkDaVisaoGeral />}>
       <div className="sb-panel-body">
         {itens.length === 0 ? (
           <p className="sb-meta-frase">
@@ -136,6 +140,51 @@ export async function Atencao({
             Fora desta lista por não terem carregado ou ainda estarem sendo ativados: {faltam.join(", ")}.
           </p>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+/** Quantas linhas o esqueleto reserva: a lista com itens é o estado comum em produção (A2, 16/10). */
+const LINHAS_DO_ESQUELETO = 3;
+
+/**
+ * O lugar da "Atenção" enquanto as leituras dela não chegam (D-515): o
+ * cabeçalho DE VERDADE (título, subtítulo e o botão são fixos) e o espaço da
+ * contagem e de três linhas da lista, com as mesmas classes da lista real (no
+ * celular o texto desce para a segunda linha, e o traço dele tem a altura de
+ * duas linhas de texto).
+ *
+ * Ela espera mais leituras que os indicadores (frete, Ads, produtos), então
+ * costuma chegar DEPOIS deles; com o `CarregandoBloco` genérico (142 px) no
+ * lugar, a chegada mudava a altura e deslocava os indicadores já visíveis. Os
+ * traços só se revelam depois de 350 ms (D-382): resposta rápida chega antes e
+ * nada pisca. O `display: block` no `.sb-carregando-revela` mantém o espaço da
+ * lista real, que o `gap` dele mudaria.
+ */
+export function AtencaoCarregando(): ReactNode {
+  return (
+    <Panel title={TITULO} subtitle={SUBTITULO} aside={<LinkDaVisaoGeral />}>
+      <div className="sb-panel-body" aria-busy="true">
+        <span className="sb-sr-only" role="status">
+          Conferindo o que precisa da sua atenção…
+        </span>
+        <div aria-hidden="true" className="sb-carregando-revela" style={{ display: "block" }}>
+          <p className="sb-atencao-contagem">
+            <span className="sb-esqueleto" style={{ width: "7rem", height: "1.35rem" }} />
+            <span className="sb-esqueleto" style={{ width: "6rem", height: "1.35rem" }} />
+          </p>
+          <ul className="sb-atencao-lista">
+            {Array.from({ length: LINHAS_DO_ESQUELETO }, (_, indice) => (
+              <li key={indice}>
+                <span className="sb-esqueleto" style={{ width: "5rem", height: "1.35rem" }} />
+                <span className="sb-esqueleto sb-atencao-categoria" style={{ width: "4rem", height: "0.75rem" }} />
+                <span className="sb-esqueleto sb-atencao-texto sb-atencao-texto-carregando" style={{ width: indice % 2 === 0 ? "78%" : "62%" }} />
+                <span className="sb-esqueleto" style={{ width: "1.5rem", height: "0.75rem" }} />
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </Panel>
   );
