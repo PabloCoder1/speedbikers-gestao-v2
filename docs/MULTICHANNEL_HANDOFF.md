@@ -133,13 +133,15 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-510: tela estreita — a Home (106 px) e a `.sb-pair-grid` (`/central/metas` e `/faturamento`, 8 px) deixam de rolar para o lado no celular (medido no `.sb-content`, com celular emulado); o esqueleto da D-504 recalibrado (CLS 0 a 390 e 800 px); e a guarda de e2e `tela-estreita-e-acessibilidade.spec.ts` em 22 rotas. **Em produção** desde 16/10 (#214, `c65a2df7`).
 - D-511: o `Shell` num layout, medido antes num protótipo local — o ganho maior era a trava de ~300 ms do esqueleto em toda troca de tela, não o `Shell`.
 - D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos. **D-511 e D-512 em produção** desde 16/10 (#219, `a0202e1f`, `dpl_G7FBTKScphC4AwPVyathde1Kstig`), sem erro de execução nas 2 h seguintes.
-- D-513: a troca de tela por código também tem sinal — a paleta de busca, que fecha e chama `router.push`, ficava sem retorno nenhum desde a D-512; agora avisa o `IndicadorDeNavegacao` (`avisarTrocaDeTela`). Com ela, o `e2e/troca-de-tela.spec.ts`: sidebar, link no conteúdo e paleta, com a tela de destino segurada por 1,5 s.
+- D-513: a troca de tela por código também tem sinal — a paleta de busca, que fecha e chama `router.push`, ficava sem retorno nenhum desde a D-512; agora avisa o `IndicadorDeNavegacao` (`avisarTrocaDeTela`). Com ela, o `e2e/troca-de-tela.spec.ts`: sidebar, link no conteúdo e paleta, com a tela de destino segurada por 1,5 s. **Em produção** desde 16/10 (#221, `2e10ab43`, `dpl_9nT575eH7ECPS1kPD8hTjoCCdeeb`), sem erro de execução na hora seguinte.
+- D-514: web vitals de produção depois da D-504/D-505/D-509 — a `/vendas` foi a 960–1.460 ms nas três cargas completas (antes, três de cinco acima de 3,5 s); o LCP da Home é a chegada da "Atenção necessária" (a cobertura fria, A1), não a primeira pintura; e a `/central` tem CLS próprio de 0,39 porque o esqueleto dos indicadores tem 142 px e o conteúdo uns 3.000 (medido local; o A2 liberou a tela para o A3 consertar).
 
 **Em andamento**
-- D-513 no #221 (`feat/ux-navegacao-por-codigo`, só web, sem migration), aberto com a autorização do dono; entra depois do "liberado" do A1 (a migration da D-479).
+- D-514 (só docs) na `docs/ux-leitura-web-vitals`.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Reler os web vitals de produção da `/vendas` depois da D-509 e da D-469 (a sessão dos web vitals, D-506/D-507).
+- A `/central` sem deslocamento (D-514): esqueleto dos indicadores da altura da janela e o da "Atenção" com o cabeçalho real; o A2 liberou a tela (16/10), o A3 faz e ele revisa; nomes das regiões do `central.spec` e o `CarregandoBloco` padrão ficam.
+- Reler os web vitals quando houver carga completa de `/skus/[id]` (zero até 16/10) e depois do conserto da `/central`.
 
 **Para o A2**
 - Tela nova: os estados vão no `EstadoDaTela` (D-502); um pedaço que espera uma leitura cara vai num `Suspense` com o lugar reservado — bloco: esqueleto do tamanho dele (Home, D-504); selo do cabeçalho: `ObjectBadgeTardio` (D-505); célula da faixa: `KpiCellTardia` (D-509).

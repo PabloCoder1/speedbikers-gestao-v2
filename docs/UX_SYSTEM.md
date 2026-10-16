@@ -147,11 +147,25 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    cancelamento — agora só ela espera; faixa e gráfico de ~3,3 s para ~0,45 s
    com a leitura atrasada em 3 s, CLS 0. A receita continua a mesma para a
    próxima tela que a medição apontar: streaming só onde a lentidão medida
-   está, esqueleto do mesmo tamanho e o sim do dono da tela.
+   está, esqueleto do mesmo tamanho e o sim do dono da tela. **Lido em
+   produção (D-514):** a `/vendas` foi a 960–1.460 ms nas três cargas
+   completas depois da D-509; o LCP da Home é a chegada da "Atenção", não a
+   primeira pintura (§5).
 6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 7. ~~**Acessibilidade dos compartilhados**~~ — **feita** (D-508): o "Pular
    para o conteúdo" e o h2 da `/acoes`; e a guarda de e2e, com a tela
    estreita junto (D-510), que corrigiu a Home e a `.sb-pair-grid` no celular.
+8. **A `/central` sem deslocamento** (D-514; o A2 liberou a tela, o A3 faz): o esqueleto dos
+   indicadores tem 142 px e o conteúdo uns 3.000 — CLS próprio de 0,39 em
+   produção. Esqueleto dos indicadores da altura da janela, o da "Atenção"
+   com o cabeçalho real (medida com a lista cheia, o estado comum), e o
+   `CarregandoBloco` com altura reservada opcional — sem ela, fica como está.
+   Os nomes das regiões que o `central.spec` usa não mudam.
+9. **Paleta para a mesma tela com outra `?busca`** (lacuna da D-513, achada
+   pelo A2): o "Pedido Shopee" estando em `/vendas/shopee` não ganha sinal,
+   porque o indicador termina na troca de caminho. Terminar pela URL inteira
+   pede `useSearchParams` no `Shell` (com o custo de `Suspense` dele) — entra
+   se aparecer espera.
 
 ---
 
@@ -260,3 +274,31 @@ conte também o CLS rotulado `/skus/…` sem TTFB lá: o selo tardio da D-505
 desloca depois de uma navegação suave, e o deslocamento cai no documento que
 veio de outra tela. Se aparecer CLS num SKU sem classe ABC (o esqueleto do selo
 some), reabra a reserva de espaço que o A2 sugeriu.
+
+### Leitura de 16/10, depois da D-504, D-505 e D-509 (D-514)
+
+Lida às 16:25 UTC, 45 linhas de 15/10 16:44 a 16/10 16:24 (uma pessoa,
+poucas cargas). Cada linha posta no deploy que a serviu (`list_deployments`);
+as de antes do corte da D-507, pareadas pelo TTFB.
+
+| tela | antes | depois (cargas completas) |
+|---|---|---|
+| `/vendas` | LCP 1,1, 1,6, 4,7, 5,9 s e 3,5 s (antes da D-509) | **960, 1.040 e 1.460 ms**, com a D-509 e a D-469; CLS da tela 0 |
+| Home | LCP 3,5 e 7,6 s | LCP 1,8 e 5,0 s; nenhum CLS próprio |
+| `/skus/[id]` | n = 0 | n = 0 |
+| `/central` (A2) | — | LCP 2,26 e 2,35 s; **CLS próprio de 0,39** |
+
+**O LCP da Home é a chegada da "Atenção necessária"** quando a segunda rodada
+demora: no build local, sem atraso o LCP é um parágrafo do "Faturamento
+diário" (~0,5 s) e, com 150 ms por chamada, um da "Atenção" (~0,9 s). Os
+5,0 s medem a cobertura fria (A1), não a primeira pintura.
+
+**A `/central` desloca na chegada dos indicadores:** o esqueleto deles é um
+`CarregandoBloco` de 142 px e o conteúdo tem uns 3.000 px; com 150 ms por
+chamada, CLS de 0,144 em toda carga local, e o "Por marketplace" sai da
+janela. O conserto (esqueleto dos indicadores da altura da janela e o da
+"Atenção" com o cabeçalho real) foi combinado com o A2 — §3, item 8.
+
+**Próxima leitura:** quando houver carga completa de `/skus/[id]` e depois do
+conserto da `/central`. A navegação suave (D-512) não entra nestes números: o
+reporter mede só a carga completa.

@@ -16692,3 +16692,34 @@ Leituras ao Supabase por troca de tela: de 10 a 11 para 4 a 6. Com 150 ms por ch
 **Verificacao:** sem a mudanca da paleta, o teste dela falha -- o `aria-busy` nunca aparece (esperado 1, recebido 0) -- e os da sidebar e do link no conteudo passam: a regressao era so da navegacao por codigo. Com ela, os tres passam, e a suite e2e inteira passa 246 de 246 contra o build num stack isolado recriado do zero (com o servidor na porta 3000, os tres do convite tambem). `pnpm run check` (typecheck, lint, testes e guardas), `build` e `docs:check`. Em producao, a D-512 nao teve erro de execucao nas 2 h depois do deploy (`get_runtime_errors`).
 
 **Impacto:** `apps/web/components/{indicador-de-navegacao,command-palette}.tsx`, `apps/web/e2e/troca-de-tela.spec.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova.
+
+## D-514 - Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
+
+**Contexto:** a fila da `docs/UX_SYSTEM.md` deixava como ultimo item reler os web vitals de producao 24 h depois da D-504 e da D-505 (15/10, 16:44 e 17:04 UTC) e da D-509 com a D-469 do A1 (a `/vendas`). Lido em 16/10, 16:25 UTC, com `get_runtime_logs` (`query: "web_vital"`, producao) em duas janelas: de 15/10 16:44 a 16/10 04:00 e de 04:00 ate 16:24. Saiu 45 linhas -- uma pessoa, poucas cargas. Cada linha foi posta no deploy que a serviu (`list_deployments`); as anteriores ao corte do reporter da D-507 (15/10, 19:42 UTC, `dpl_HHLJgBuE9XbucQ3AeRXXvEaYx7gr`) foram pareadas pelo TTFB anterior (D-506).
+
+**O que a leitura mostra (cargas completas, `softNav: false`):**
+
+| tela | antes | depois |
+|---|---|---|
+| `/vendas` | LCP 1,1, 1,6, 4,7 e 5,9 s (13-15/10, D-506) e 3,5 s (15/10 18:33, antes do deploy da D-509 as 18:39) | **LCP 960, 1.040 e 1.460 ms** (16/10, 14:28-14:54, com a D-509 e a migration da D-469 em producao); TTFB 22-105 ms; CLS da tela 0 |
+| Home | LCP 3,5 e 7,6 s; TTFB 14-169 ms | LCP 1,8 e 5,0 s (16/10, 11:40 e 13:40); TTFB 119-183 ms; nenhum CLS proprio (as duas linhas de 0,49 tem `softNav: true` e somam as telas seguintes) |
+| `/skus/[id]` | nenhuma carga completa | nenhuma carga completa |
+| `/central` (tela do A2) | -- | LCP 2,26 e 2,35 s; **CLS proprio de 0,39** (16/10 12:44, com a T8a) |
+| `/contas` | -- | LCP 0,8 e 1,3 s |
+
+A `/vendas` foi de tres em cinco cargas acima de 3,5 s para tres em tres abaixo de 1,5 s. Com uma pessoa e tres cargas, e sinal, nao prova; e nao separa a D-509 (so a celula da taxa espera) da D-469 (a funcao do A1 mais barata a frio).
+
+**Medido no build local** (1440x900, carga completa, mediana de 3, cada chamada do servidor ao Supabase atrasada em 0 e 150 ms; o elemento vem do `PerformanceObserver`):
+1. **O LCP da Home muda de elemento com a espera.** Sem atraso, e um paragrafo do "Faturamento diario" (~0,5 s); com 150 ms, um paragrafo da "Atencao necessaria" (~0,9 s), o bloco que chega por ultimo, na segunda rodada (D-504). O LCP de 5,0 s em producao mede a chegada dessa secao -- a cobertura, a leitura fria que a D-504 deixou num `Suspense` --, nao a primeira pintura: indicadores e grafico ja estao na tela. Melhorar esse numero e baratear a `get_stock_coverage_summary` a frio (A1), nao mexer na tela.
+2. **A `/central` desloca na chegada dos indicadores.** Com 150 ms, CLS de 0,144 nas tres cargas (0 sem atraso). A linha do tempo das alturas: aos ~1,6 s aparecem o titulo e cinco esqueletos (`CarregandoBloco`, 142 px cada; "Por marketplace" com 168, em y=589); aos ~1,9 s o `Suspense` dos indicadores vira Resumo do periodo, Meta e projecao (937 px), Vendas, Resultado, Custos, Ads e dois blocos -- uns 3.000 px no lugar de 142 -- e o "Por marketplace" sai da janela. Em producao a "O que precisa da sua atencao" espera mais leituras (frete, Ads, produtos) que os indicadores e tende a chegar depois deles, deslocando o que ja esta visivel: a soma provavel dos 0,39.
+
+**Decisao:**
+1. A leitura entra na `docs/UX_SYSTEM.md` §5, com o metodo (deploy de cada linha, corte da D-507, pareamento pelo TTFB).
+2. **Conserto da `/central`, combinado com o A2 em 16/10** (a tela e dele; o componente de carregamento e do A3; ele liberou a tela e revisa): um esqueleto dos indicadores pelo menos da altura da janela -- o que vem abaixo ja comeca fora dela, e a chegada nao desloca nada visivel -- e um esqueleto da "Atencao" com o cabecalho real e o espaco do estado mais comum, como o `AtencaoCarregando` da Home (D-504, D-510). O `CarregandoBloco` ganha uma altura reservada opcional (regra 1: o que faltar evolui o componente da linha certa). Entra numa fatia propria, com medicao antes e depois. O A2 pediu: a ordem das secoes e os nomes das regioes que o `central.spec` usa ficam; a "Atencao" se mede com a lista cheia, o estado comum em producao (a vazia daria altura menor que a real); e o `CarregandoBloco` sem altura fica como esta, porque tambem serve `/faturamento`, `/vendas` e o SKU.
+3. **A Home nao muda:** o numero alto e da leitura fria, e o caminho e o A1.
+4. **A navegacao suave fica fora destes numeros:** o reporter so mede a carga completa; o ganho da D-512 esta na medicao propria dela (D-511).
+5. **Proxima leitura:** quando houver cargas completas de `/skus/[id]` (zero ate agora) e depois do conserto da `/central`.
+
+**Verificacao:** as 45 linhas, os deploys de cada uma e os dois roteiros locais (`cls-lcp` e alturas da `/central`, no ambiente do A3, fora do Git).
+
+**Impacto:** so docs (`UX_SYSTEM`, `DECISIONS`, `DECISIONS_INDEX`, `PERFORMANCE`, `MULTICHANNEL_HANDOFF`, `HANDOFF`).
