@@ -16480,6 +16480,27 @@ Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral
 - web: a nota em `apps/web/app/(app)/central/meta.tsx`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF,TESTING}.md`.
 
+## D-487 - O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
+
+**Contexto:** o ML tem o lucro apos imposto e Ads (METRICS 5K, D-395); a Shopee parava no resultado apos imposto (C-58), e o Ads CPC da loja so aparecia no C-63, sem chegar ao lucro. Na comparacao ML x Shopee, faltava a linha. Decisao delegada pelo dono (16/10), junto com a D-485.
+
+**Decisao:**
+1. **A regra do 5K, no SQL:** `resultado_contribuicao = resultado_apos_imposto - Ads x (receita coberta / receita bruta)` e `margem_contribuicao = resultado_contribuicao / receita coberta`, no fim do C-58, com `investimento_ads` e `ads_rateado` ao lado (drop + create; o resto e o da D-485). No ML a conta e do navegador (`central-indicadores.ts`, anterior a regra); na Shopee ela vem pronta.
+2. **O Ads e o CPC da loja** (`daily_shopee_ads_metrics`, a fonte do C-63); o GMV Max fica fora, como no C-63, e o catalogo diz isso.
+3. **So com o Ads do periodo inteiro:** a leitura de Ads cobrindo o periodo (a regra de `cobertura_completa` do C-63) e o gasto de todos os dias lidos; senao NULO. Leitura cobrindo e nenhum anuncio: 0, que e fato -- o equivalente ao "nenhuma conta com Product Ads" do ML.
+4. **O rateio:** na loja, o Ads dela pela cobertura dela; no TOTAL, o Ads de todas as lojas pela cobertura do TOTAL (como o 5K, que rateia o Ads da organizacao). Loja sem venda no periodo: o gasto aparece, o rateio dela e NULO; no TOTAL ele entra. Com 100% de cobertura, o rateio some.
+5. **Sem aliquota, sem contribuicao:** o imposto NULO deixa a contribuicao NULA, como no ML. Producao hoje nao tem aliquota (ato do dono).
+
+**Ordem:** a migration `20261016230000` vai a producao junto com a da D-485 (as duas recriam o C-58), depois da tela do A2. As colunas novas sao opcionais em `types.ts`; antes da migration, a tela nao as recebe.
+
+**Verificacao:**
+- **Integracao (D-443):** sem leitura de Ads, tudo NULO; com a leitura cobrindo (26 e 13 de gasto, um dia fora do periodo ignorado), a loja com 26 x 400/520 = 20 e lucro 75 (0,1875), o TOTAL com 39 x 400/520 = 30 e lucro 65 (0,1625), e a loja sem venda com o gasto e sem rateio; dia lido sem o gasto, NULO na loja e no TOTAL; leitura que nao cobre o periodo, NULO; leitura cobrindo sem anuncio, 0 e lucro 95; o catalogo.
+- **Mutacao:** o TOTAL sem o rateio, a loja sem o rateio, sem a cobertura, sem o dia sem gasto, o Ads fora do periodo e o NULO virando 0 -- cada uma derruba o teste.
+- **Suite inteira:** 1023/1023 com o banco recriado do zero.
+- **Estatica:** `pnpm run check`, `pnpm run build` e `pnpm docs:check` verdes.
+
+**Impacto:** `supabase/migrations/20261016230000_contribuicao_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`. A linha na tela e do A2.
+
 ## D-488 - Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
 
 **Contexto:** desde o Go Live de 16/10, as duas lojas Shopee live entram nas telas com o recorte "Todos" ou "Shopee". Mas a Home e a `/vendas` sem `marketplace` ainda abriam no Mercado Livre. Em outubro, a Shopee já é uma parte relevante da receita (conferido só lendo em produção; os valores ficam fora daqui, porque o repositório é público). A primeira tela do sistema mostrava a receita da empresa a menos, sem dizer.
