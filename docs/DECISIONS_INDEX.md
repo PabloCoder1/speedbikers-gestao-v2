@@ -161,7 +161,7 @@ Decisões registradas: **479** (D-001 a D-509).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (60)
+### interface (61)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -220,6 +220,7 @@ Decisões registradas: **479** (D-001 a D-509).
 - **D-468** — Telas multicanais: os avisos de leitura da T-R6 viram o EstadoDaTela, com "Tentar de novo" na mesma URL
 - **D-471** — O alerta de produto no prejuizo da central: o detector pede ao ranking so os 30 dias que usa
 - **D-474** — Telas do A2, etapa E5: os estados do /skus/[skuId] no EstadoDaTela, e as regras CSS que ficaram sem uso saem
+- **D-480** — Telas multicanais, etapa T8a: a Shopee na /central, lado a lado e sem total de resultado; as metas por marketplace ficam para a T8b, sobre o C-66 do A1
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique

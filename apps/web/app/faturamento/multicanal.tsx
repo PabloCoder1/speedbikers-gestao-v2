@@ -981,7 +981,13 @@ function Cobertura({ total }: { total: LinhaFaturamentoShopee | null }): ReactNo
 /* Todos — lado a lado                                                 */
 /* ------------------------------------------------------------------ */
 
-async function CorpoTodos({
+/**
+ * O MERCADO LIVRE E A SHOPEE LADO A LADO (D-442): a receita soma, o resultado
+ * de cada marketplace fica no dele. É o "Todos" de `/faturamento` e, desde a
+ * D-480 (T8a), também a seção "Por marketplace" de `/central` — o mesmo bloco,
+ * os mesmos números.
+ */
+export async function CorpoTodos({
   organizationId,
   recorte,
   range,

@@ -289,3 +289,24 @@ test("/central/produtos: abre da central com o mesmo recorte, e a ordem mora na 
   await expect(page.getByText("Nenhum produto vendeu com prejuízo neste período.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Como o ranking é calculado" })).toBeVisible();
 });
+
+/**
+ * D-480 (T8a, decisão do dono de 15/10): a Shopee na central, LADO A LADO, com
+ * a receita somada e sem total de resultado — o mesmo bloco do "Todos" de
+ * /faturamento (D-442). O seed só tem a loja de TESTE: o bloco diz que a
+ * Shopee ainda não entra. É da empresa inteira, então some com uma conta do ML
+ * escolhida.
+ */
+test("/central: a Shopee entra lado a lado, sem total de resultado, e some com uma conta do ML escolhida", async ({ page }) => {
+  await login(page, "/central");
+
+  const porMarketplace = page.getByRole("region", { name: "Por marketplace" });
+
+  await expect(porMarketplace.getByRole("table", { name: "Faturamento por marketplace, lado a lado" })).toBeVisible();
+  await expect(porMarketplace.getByText(/Sem total de resultado/)).toBeVisible();
+  await expect(porMarketplace.getByText(/nenhuma loja real com pedidos lidos/)).toBeVisible();
+
+  await page.goto("/central?account=e2e-loja");
+  await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Por marketplace" })).toHaveCount(0);
+});

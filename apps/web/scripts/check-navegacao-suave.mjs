@@ -50,8 +50,6 @@ const ISENTOS = new Map([
  * daqui quem migrar; ninguém entra.
  */
 const PENDENTES = new Map([
-  ["app/central/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
-  ["app/central/produtos/page.tsx", "na fila do Agente 2 (T8, central e meta)"],
   ["app/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
 ]);
 

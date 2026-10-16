@@ -87,7 +87,8 @@
 - E3/E4 — os estados de `/produtos`, `/reposicao`, `/compras` e `/central` no `EstadoDaTela` (D-472), com a mesma regra da D-470; "sem organização" vira permissão, a meta da central diz por qual dos quatro motivos não veio, "Cancelado" e "não está mais em rascunho" viram `status`, e a constante `AVISO` sai. **Na `main`, #197.**
 - E5 — os estados do `/skus/[skuId]` no `EstadoDaTela` (D-474): os onze avisos vermelhos viram erro com "Tentar de novo" na mesma aba, os vazios das abas ficam com a ressalva na descrição, a contagem de ações abertas que falha deixa de esconder o "nenhuma decisão", e cinco regras CSS sem uso saem. **Na `main`, #203.**
 - T7 — a Shopee na Busca Universal (D-476, consome o C-57): "Loja Shopee", "Anúncio Shopee" e "Pedido Shopee" na paleta, "Outros" para tipo que a tela não conhece (nunca o código cru), e a `/vendas/shopee` abrindo o pedido que a busca achou (`?pedido=` como filtro, com chip e "Limpar filtros"). **Na `main`, #205** (com o #201), no ar desde 15/10 19:02 UTC (`263edbb7`, `dpl_CF6V1yyC`).
-- D-478 — o teste intermitente da `/vinculacoes` (15/10) não era estado de outro spec, e sim a rodada lenta com outra suíte no mesmo Docker; o teste passa a esperar o resumo ou a falhar com o motivo da queda. **Em código e validado**, no PR próprio.
+- D-478 — o teste intermitente da `/vinculacoes` (15/10) não era estado de outro spec, e sim a rodada lenta com outra suíte no mesmo Docker; o teste passa a esperar o resumo ou a falhar com o motivo da queda. **Na `main`, #209.**
+- T8a — a Shopee na `/central`, lado a lado e sem total de resultado (D-480, decisão do dono de 15/10): a seção "Por marketplace" é o MESMO bloco do "Todos" de `/faturamento`, só sem conta do ML escolhida; sem loja live, ela diz que a Shopee ainda não entra. A `/central` e a `/central/produtos` saem dos pendentes de `check:navegacao-suave`. **Em código e validada** (suíte e2e inteira), no PR próprio.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
 - T3c — os jobs novos da Shopee nas telas de saúde (D-462): o cartão de `/integracoes` julga os sete jobs pelo nome (hoje o Ads do sandbox falha com 503, e o cartão diz isso), e cada loja em `/sincronizacao` mostra até quando as devoluções e os repasses foram lidos e quando os Ads foram lidos. **Na `main`, #183.**
@@ -95,10 +96,10 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada. A `20261015110000` (C-57) espera o disparo em produção (o A1, ou o dono com o `migrations-producao.yml`): até lá, a busca em produção mostra os 7 tipos antigos, sem quebrar, e a `/vendas/shopee` só manda o `p_order_sn` com pedido (D-476 §5).
+- T8b — as metas por marketplace e a geral (decisão do dono de 15/10), sobre o C-66 do A1 (D-473): tabela nova `monthly_goals_marketplace` e a chave `escopos` na `get_meta_do_mes`, sem parâmetro novo. A T8b entra empilhada na branch dele.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- T8 central e meta (Go Live).
+- T8b (acima). Com ela, as telas da frente multicanal ficam completas; os números da Shopee aparecem com a loja live.
 
 **Bloqueios**
 - Tudo o que é Shopee só mostra números com loja **live**: hoje só há a sandbox. O Go Live do app é do dono (o Cloud NAT com IP fixo já está em produção, D-457).
@@ -193,3 +194,4 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
 2. **E6b a E7c — tudo na `main` (391c7165):** `migrations-producao.yml` para `20261015000000` a `20261015050000`; **E7a, E7b e E7c também publicam o worker, DEPOIS da migration** (os jobs leem as colunas novas); a E7d (push) publica a **api** e pede o cadastro do endereço no Console (`docs/DEPLOYMENT.md` §6.2) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)
+3. ~~**T8 (central e meta)**~~ — decidido pelo dono (15/10, perguntado pelo A2): uma meta POR MARKETPLACE e uma GERAL; os indicadores do período lado a lado, com a receita somada e sem total de resultado; construir já, antes do Go Live. A T8a está na D-480; a T8b vem sobre o C-66 do A1 (D-473).
