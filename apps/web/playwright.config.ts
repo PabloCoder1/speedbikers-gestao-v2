@@ -22,7 +22,22 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  /*
+    O ensaio do Go Live das telas (D-486) cria uma loja Shopee LIVE e roda DEPOIS
+    de todos os outros specs: o SKU próprio dele fica no banco (o histórico de
+    custo é só de inserção), e as provas de equivalência dos outros contam com o
+    seed sem loja live. Se algum spec do projeto principal falhar, o ensaio é
+    pulado — rode-o sozinho com `--project loja-live --no-deps`.
+  */
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /ensaio-loja-live.spec.ts$/u },
+    {
+      name: "loja-live",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /ensaio-loja-live.spec.ts$/u,
+      dependencies: ["chromium"],
+    },
+  ],
 
   // `next start` exige build prévio (`pnpm run build`) — a esteira de CI faz
   // isso num passo separado, depois de subir o Supabase local, porque as
