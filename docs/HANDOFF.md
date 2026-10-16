@@ -201,7 +201,7 @@ Nada disto pode ser feito por um agente.
     nenhum código da `web` lê; no Supabase de produção, Site URL e redirects do Auth, SMTP e PITR;
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
-12. **Shopee:** acesso ao segredo dado (13/10); antes do Go Live, Cloud NAT com IP fixo.
+12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8); decidir se o resultado da Shopee desconta os ajustes pós-escrow.
 
 ---
 
