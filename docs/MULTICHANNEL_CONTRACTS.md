@@ -162,7 +162,7 @@ Coluna de marketplace nula = sem venda naquele canal no período (não é zero).
 | `escopos.ML` | sempre | `daily_account_metrics`; meta de `monthly_goals_marketplace` (`ML`; nula sem meta) |
 | `escopos.SHOPEE` | sempre como chave; **NULA** sem loja live com pedidos lidos, ou para quem não alcança a loja | vendas válidas das lojas live (C-53); meta de `monthly_goals_marketplace` (`SHOPEE`) |
 
-Cada escopo traz os mesmos campos do topo (realizado, atingimento, ritmo, projeção, perfil, datas comerciais, ano anterior). **GERAL = ML + SHOPEE sempre**: pedido de loja live ainda não lida não entra em nenhum. Num mês que atravessa o Go Live, o GERAL muda de base a partir da primeira leitura de pedidos da loja live — a tela avisa.
+Cada escopo traz os mesmos campos do topo (realizado, atingimento, ritmo, projeção, perfil, datas comerciais, ano anterior). **GERAL = ML + SHOPEE sempre**: pedido de loja live ainda não lida não entra em nenhum. Num mês que atravessa o Go Live, o GERAL muda de base a partir da primeira leitura de pedidos da loja live — a tela avisa. **A projeção não soma entre escopos:** cada um usa a janela mais longa que o próprio histórico cobre (28 → 14 → 7 dias), e uma loja recém-conectada projeta pelo ritmo curto dela (D-473 item 6).
 
 `monthly_goals_marketplace` (organização, `month` com dia 1, `marketplace` `ML`|`SHOPEE`, `revenue_goal > 0`, `note` ≤ 300): única em (organização, mês, marketplace) — upsert com `onConflict: "organization_id,month,marketplace"`; membro lê, ADMIN/GESTOR grava. A meta GERAL continua em `monthly_goals`. Antes da migration: a chave `escopos` não vem e a tabela não existe (PGRST205/42P01).
 
