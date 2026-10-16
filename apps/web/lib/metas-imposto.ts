@@ -95,6 +95,31 @@ export function lerData(texto: string): Leitura<string> {
   return { ok: true, valor: texto.trim() };
 }
 
+/** O marketplace de uma meta própria (D-473, C-66): só os dois que o banco aceita. */
+export type MarketplaceDaMeta = "ML" | "SHOPEE";
+
+export function lerMarketplaceDaMeta(texto: string): Leitura<MarketplaceDaMeta> {
+  const valor = texto.trim();
+
+  return valor === "ML" || valor === "SHOPEE" ? { ok: true, valor } : { ok: false, erro: "Escolha o marketplace da meta." };
+}
+
+/** O nome do marketplace de uma meta; um código que a tela não conhece nunca aparece cru. */
+export function rotuloDoMarketplaceDaMeta(codigo: string): string {
+  if (codigo === "ML") return "Mercado Livre";
+  if (codigo === "SHOPEE") return "Shopee";
+
+  return "Outro marketplace";
+}
+
+/** "do Mercado Livre", "da Shopee": o nome com a preposição que o português pede. */
+export function doMarketplaceDaMeta(codigo: string): string {
+  if (codigo === "ML") return "do Mercado Livre";
+  if (codigo === "SHOPEE") return "da Shopee";
+
+  return "de outro marketplace";
+}
+
 /** Nota opcional: vazia vira `null`; mais de 300 caracteres é recusada (o CHECK do banco). */
 export function lerNota(texto: string): Leitura<string | null> {
   const nota = texto.trim();

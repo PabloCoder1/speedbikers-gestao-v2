@@ -17139,6 +17139,11 @@ td.sb-pco-num-linha {
   display: inline;
 }
 
+/* A tabela larga de um cadastro rola dentro do painel, nunca a página (D-482). */
+.sb-cadastro-rolagem {
+  overflow-x: auto;
+}
+
 /*
   Cartões de sinal — detector de frete (D-397) e sinais de Ads (D-398). Um
   cartão por anúncio ou campanha, sem moldura nova: fio entre cartões, como

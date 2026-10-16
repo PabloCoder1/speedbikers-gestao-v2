@@ -16246,6 +16246,56 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-482 - Telas multicanais, etapa T8b: a meta de cada marketplace ao lado da geral, na central e em Metas e imposto (consome o C-66)
+
+**Contexto:** em 15/10 o dono decidiu uma meta POR MARKETPLACE e uma GERAL (D-480). O A1 entregou o C-66 (D-473), que não mexe no que já existe:
+- `monthly_goals` continua sendo a meta geral;
+- as metas de ML e Shopee ficam numa tabela nova, `monthly_goals_marketplace`, com a mesma RLS;
+- o topo da `get_meta_do_mes` passa a ser o GERAL (ML + Shopee), e a chave nova `escopos` traz GERAL, ML e SHOPEE com a mesma conta. SHOPEE vem nula sem loja live com pedidos lidos;
+- não há parâmetro novo.
+
+**1. A LEITURA (`lib/central-meta.ts`).** Cada escopo é lido pela mesma rotina do topo, porque o formato é o mesmo.
+- `escopos` ausente (banco anterior à migration, já que a web chega antes): só a geral, e a tela fica como antes.
+- Um escopo fora do contrato recusa a resposta inteira, como qualquer outro campo (D-395).
+- SHOPEE nula continua nula, nunca vira zero.
+
+**2. A CENTRAL.** Dentro de "Meta e projeção", depois dos números da geral, entra o bloco "Meta de cada marketplace": Mercado Livre e Shopee lado a lado.
+- Cada um tem a mesma leitura da geral (o veredito, a barra contra a meta DELE e o ritmo). Sem meta própria, mostra o realizado e o link para definir a meta.
+- A Shopee nula diz "A Shopee ainda não entra na meta": nenhuma loja real com pedidos lidos, e a loja de teste fica fora.
+- Com `escopos`, a geral passa a se chamar "Meta geral de <mês>", e a célula da meta diz "geral: Mercado Livre e Shopee".
+- Cada barra tem nome acessível próprio ("Realizado da meta do mês: Mercado Livre"); a geral mantém o de sempre.
+- O alerta da central e o sinal do resumo continuam lendo a geral.
+- O nome da região é "Meta de cada marketplace", e não "Meta por marketplace". O Playwright compara o nome acessível por trecho, e "Meta por marketplace" contém "Por marketplace", a seção da T8a (D-480) na mesma tela: o teste dela acharia duas.
+
+**3. METAS E IMPOSTO (`/central/metas`).**
+- O painel "Meta por marketplace" vem embaixo da geral e da alíquota, com formulário (marketplace, mês, valor, nota), tabela e "remover".
+- A gravação é um UPSERT pela chave natural (organização, mês, marketplace), como as outras: cadastrar de novo corrige.
+- O marketplace é validado antes do banco (só ML ou SHOPEE), e um código desconhecido nunca aparece cru.
+- Sem a tabela (PGRST205/42P01), só este painel diz "sendo ativado", e a ação responde do mesmo jeito. A geral e a alíquota continuam funcionando (o precedente da D-363).
+- A geral passa a ser "Meta geral de faturamento", "Mercado Livre e Shopee".
+- A nota "A GERAL E A SHOPEE" diz o que a D-473 registrou: sem loja Shopee real lida, a geral é só o Mercado Livre. A Shopee soma a partir da primeira leitura de pedidos da loja real, e num mês que atravessa essa data a geral muda de base no meio.
+
+**Publicação:**
+- Só a web, sobre o C-66 (#212).
+- A ordem combinada com o A1 foi: o #212 → a CI da `main` → a migration `20261015130000` pelo workflow (run 38893049400, 16/10, com os merges segurados até o job "origem") → a T8a (#211) → a D-475 do A1 (#213) → a T8b.
+- A migration já está em produção, então a meta de cada marketplace aparece com o deploy. A tela também aguentaria ir antes: a chave e a tabela ausentes estão cobertas.
+
+**Verificacao:**
+- **Estatica e unitarios:** typecheck e lint, com o `@sb/db` reconstruído a partir dos tipos do C-66; web 1300/1300, com casos novos para `escopos` (ausente, Shopee nula, escopo fora do contrato) e para o marketplace da meta.
+- **e2e, caso novo em `central.spec.ts`:**
+  - valor zero volta com o erro no campo;
+  - a meta do ML aparece na tabela e na central ("meta de R$ 765.432,10");
+  - a Shopee diz que ainda não entra;
+  - a geral se chama "Meta geral de …";
+  - remover limpa.
+- **e2e:** `central` 9/9 contra o build. Com a D-510 do A3 juntada localmente, a guarda de tela estreita e de acessibilidade passou nas 22 rotas, com a `/central` e a `/central/metas` em 0 px (sem a D-510, 8 px: é a `.sb-pair-grid`, corrigida no #214). A tabela nova rola dentro do painel (503 px numa caixa de 258 px), e o "remover" é alcançável.
+- **Suite inteira:** 241/241 com o banco recriado do zero (238 na 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/lib/{central-meta,metas-imposto}.ts` e os testes, `apps/web/lib/central-atencao.test.ts`, `apps/web/app/central/meta.tsx`, `apps/web/app/central/metas/{page,actions,formularios}.tsx` e `apps/web/e2e/central.spec.ts`;
+- docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api (o banco é o C-66 do A1).
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
