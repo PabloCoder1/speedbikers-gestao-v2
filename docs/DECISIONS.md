@@ -16377,6 +16377,63 @@ Esperou o #219 (o Shell num layout, D-512) entrar, como combinado com o A3: as d
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-486 - Telas multicanais, etapa T9: o ensaio do Go Live das telas, com uma loja Shopee LIVE criada e apagada pelo próprio e2e, num projeto do Playwright que roda por último
+
+**Contexto:** o seed do e2e tem só a loja Shopee de TESTE, de propósito. As provas de equivalência das outras telas (o "Todos" igual ao Mercado Livre, D-440 a D-454) dependem de nenhuma loja live existir, e as telas deixam a loja de teste fora de toda soma. Com isso, nenhum spec renderizava o caminho "com Shopee". Ele só tinha sido provado nos unitários das telas (a leitura de cada RPC) e na integração do A1 (o SQL).
+
+O Go Live real foi em 16/10: duas lojas live em produção desde 14:15 e 14:29 UTC, com 90 dias de pedidos lidos. As telas viraram de "Shopee fora" para números de uma vez.
+
+**1. A loja live do e2e (`e2e/loja-shopee-live.ts`).** É criada com a chave de serviço LOCAL (a mesma do seed e do spec de convite), pelas regras do A1 (16/10). O SKU próprio tem prefixo próprio, `E2E-SHOPEE-LIVE-001`, que não colide com o seed nem com a integração.
+- A loja: live, CONNECTED, com as cinco marcas de leitura. Sem `orders_synced_until` e `orders_last_success_at`, a Shopee vem "não lida" e nula.
+- Os pedidos:
+  - 10 cobertos (receita R$ 100, recebido R$ 80, comissão, serviço, transação e frete; financeiro lido; item com SKU de custo R$ 20);
+  - 1 válido aguardando o financeiro;
+  - 1 cancelado.
+- Também: 1 devolução, 5 repasses e 7 dias de Ads CPC dentro da cobertura.
+- Os números fecham de cabeça: 11 pedidos válidos, R$ 1.100 de receita, R$ 800 de recebido, R$ 200 de custo, resultado R$ 600 e cobertura de 90,9%.
+- Os tipos vêm do banco (`createClient<Database>`), então uma coluna errada reprova no typecheck.
+
+**2. O que sai e o que fica.** Apagar a loja leva pedidos, itens, devoluções, repasse e Ads em cascata. O SKU próprio FICA: o custo gera uma linha em `sku_cost_history`, que é só de inserção (nem a chave de serviço apaga) e segura o SKU. Ele é reaproveitado por upsert numa rodada seguinte no mesmo banco.
+
+**3. Um projeto que roda por último.** O `playwright.config.ts` ganha o projeto `loja-live`, só com `ensaio-loja-live.spec.ts`, e com `dependencies: ["chromium"]`; o projeto principal ignora o arquivo.
+- Assim a loja live existe só depois de todos os outros specs, e o SKU que fica não mexe na contagem de ninguém.
+- Na CI, o `pnpm --filter web run e2e` roda os dois, porque a chave de serviço local já está no ambiente do job.
+- Se algum spec do principal falhar, o Playwright pula o ensaio. Sozinho: `--project loja-live --no-deps`.
+
+**4. O que o ensaio confere (5 casos).**
+- `/vendas`: no "Todos", a linha da loja live (R$ 1.100, R$ 800 e "1 aguardando o financeiro"), e a faixa igual ao Mercado Livre da tabela mais a Shopee. No recorte Shopee: a loja e a devolução.
+- `/faturamento`:
+  - no recorte Shopee: o resultado, os 5 repasses e os Ads (R$ 70, ROAS 20x);
+  - no "Todos": a coluna da Shopee (receita, recebido, resultado, cobertura) e nada de "nenhuma loja real".
+- `/central`: o lado a lado (D-480) com a Shopee e a "Meta de cada marketplace" (D-482) com o realizado da Shopee, sem "ainda não entra".
+- `/produtos` ("vendeu só na Shopee" = 1), `/curva-abc` (o SKU com R$ 1.100) e `/reposicao` ("Shopee na demanda", "11 un da Shopee em 30 d").
+- A aba Vendas do SKU, a busca (o pedido da loja live abre a `/vendas/shopee?pedido=`, D-476) e `/sincronizacao` ("pedidos em dia").
+- Em todas as telas: nenhum estado de erro.
+
+**5. As projeções não somam (achado do ensaio, confirmado pelo A1).** Numa loja com menos de 28 dias de histórico, as projeções dos escopos da `get_meta_do_mes` não fecham com a geral: no ensaio, GERAL R$ 2.481, ML R$ 774 e SHOPEE R$ 2.929. Não é defeito. O que soma entre escopos é o REALIZADO (geral = ML + Shopee, sempre). A PROJEÇÃO usa a janela mais longa que o histórico do próprio escopo cobre (28, 14 ou 7 dias), e uma loja nova projeta pelo ritmo curto dela. O A1 registra isso na D-473 e no contrato §3.15.
+
+Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral acima soma os dois", o que vale para o realizado e não para as projeções. Ela passa a dizer "a geral acima soma o realizado dos dois; as projeções não somam". Os painéis continuam lado a lado, cada um contra a meta dele, sem virar parcelas da geral.
+
+**Produção (só leitura, 16/10):**
+- As duas lojas live estão CONNECTED e lidas (cerca de 21 mil pedidos, 17,8 mil válidos).
+- A `get_meta_do_mes` de outubro: GERAL R$ 1.937.544,78 = ML R$ 1.590.838,88 + SHOPEE R$ 346.705,90.
+- A meta geral cadastrada (R$ 3,2 mi) passou a comparar com os dois marketplaces, e as metas por marketplace ainda não estão cadastradas. Fica para o dono.
+- Nenhum erro de execução na Vercel desde o Go Live.
+
+**Publicação:** o teste e o config do e2e, mais a nota da "Meta de cada marketplace". Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica:** typecheck e lint.
+- **Ensaio:** 5 de 5 contra o build.
+- **Mutacao:** com a loja criada como `sandbox`, os 5 casos falham, porque as telas voltam a "Shopee fora".
+- **Limpeza:** depois do ensaio, nenhuma loja `990000777` no banco.
+- **Suite inteira:** 248/248 com o banco recriado do zero (245 na 3300 e os 3 de convite na 3000), e o projeto `loja-live` 5/5 em seguida, no mesmo banco (dentro da suíte ele foi pulado, como deve, porque os 3 de convite falham na 3300).
+
+**Impacto:**
+- e2e: `apps/web/e2e/{loja-shopee-live.ts,ensaio-loja-live.spec.ts}` e `apps/web/playwright.config.ts`;
+- web: a nota em `apps/web/app/(app)/central/meta.tsx`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF,TESTING}.md`.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
