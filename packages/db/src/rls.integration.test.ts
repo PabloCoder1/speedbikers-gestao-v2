@@ -5889,7 +5889,7 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       `select * from public.get_shopee_faturamento_composicao('${ORG}', '${DE}', '${ATE}', ${lojas}) order by nivel desc, account_name`,
     );
 
-  it("a cascata: receita coberta - componentes - outros = recebido, pelos termos da fórmula oficial", async () => {
+  it("a cascata: receita coberta - componentes - proteção de envio - outros = recebido, pelos termos da fórmula oficial", async () => {
     const [total, ...contas] = await composicao(ADMIN);
 
     expect(total).toMatchObject({
@@ -5905,7 +5905,9 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       cupom_loja: "5.00",
       afiliados: "3.00",
       taxa_por_pedido: "1.00",
-      outros: "2.00",
+      // D-483 (fase 2): a proteção de envio é componente; o outros já vem sem ela.
+      protecao_envio: "0.49",
+      outros: "1.51",
       recebido_coberto: "325.00",
       comissao_liquida: "18.00",
       taxa_servico_liquida: null,
@@ -5917,38 +5919,44 @@ describe("composição do faturamento da Shopee (D-443)", () => {
     });
     // A loja de teste aparece só na sua linha; a loja sem pedido, zerada.
     expect(contas.map((c) => [c.account_name, c.pedidos_cobertos, c.receita_coberta, c.outros, c.recebido_coberto])).toEqual([
-      ["Loja Real", "3", "400.00", "2.00", "325.00"],
+      ["Loja Real", "3", "400.00", "1.51", "325.00"],
       ["Sem Pedido", "0", null, null, null],
       ["Teste", "1", "500.00", "100.00", "400.00"],
     ]);
   });
 
-  it("D-483 (fase 1): a proteção de envio vem como componente e o restante fecha a cascata; o outros de sempre não muda", async () => {
+  it("D-483 (fase 2): a proteção de envio é componente e o outros já vem sem ela; a cascata fecha pedido a pedido", async () => {
     const [total, ...contas] = await composicao(ADMIN);
     const porPedido = await asUser<Linha>(
       ADMIN,
-      `select order_sn, protecao_envio::text, round(outros, 2)::text as outros, round(outros_restante, 2)::text as outros_restante,
+      `select order_sn, protecao_envio::text, round(outros, 2)::text as outros,
               (receita - coalesce(comissao, 0) - coalesce(taxa_servico, 0) - coalesce(taxa_transacao, 0) - coalesce(frete_loja, 0)
                 - coalesce(frete_devolucao, 0) - coalesce(cupom_loja, 0) - coalesce(afiliados, 0) - coalesce(taxa_por_pedido, 0)
-                - coalesce(protecao_envio, 0) - outros_restante = recebido)::text as fecha
+                - coalesce(protecao_envio, 0) - outros = recebido)::text as fecha
          from public.get_shopee_faturamento_pedidos('${ORG}', '${DE}', '${ATE}', null)
         where coberto and environment = 'live' order by order_sn`,
     );
 
-    // O outros continua o de hoje (com a taxa), para a tela de antes seguir fechando.
-    expect(total).toMatchObject({ outros: "2.00", protecao_envio: "0.49", outros_restante: "1.51", recebido_coberto: "325.00" });
-    expect(contas.map((c) => [c.account_name, c.protecao_envio, c.outros_restante])).toEqual([
+    expect(total).toMatchObject({ protecao_envio: "0.49", outros: "1.51", recebido_coberto: "325.00" });
+    // A coluna da fase 1 saiu: a tela lê o outros (D-492).
+    expect(Object.keys(total ?? {})).not.toContain("outros_restante");
+    expect(contas.map((c) => [c.account_name, c.protecao_envio, c.outros])).toEqual([
       ["Loja Real", "0.49", "1.51"],
       ["Sem Pedido", null, null],
-      // A loja de teste: sem a taxa no financeiro, a proteção é nula e o restante é o outros.
+      // A loja de teste: sem a taxa no financeiro, a proteção é nula e o outros fica inteiro.
       ["Teste", null, "100.00"],
     ]);
     expect(porPedido).toEqual([
-      { order_sn: "P1", protecao_envio: "0.49", outros: "2.00", outros_restante: "1.51", fecha: "true" },
-      // Sem o campo no financeiro: nulo, não zero -- e o restante é o outros.
-      { order_sn: "P2", protecao_envio: null, outros: "0.00", outros_restante: "0.00", fecha: "true" },
-      { order_sn: "P3", protecao_envio: null, outros: "0.00", outros_restante: "0.00", fecha: "true" },
+      { order_sn: "P1", protecao_envio: "0.49", outros: "1.51", fecha: "true" },
+      // Sem o campo no financeiro: nulo, não zero.
+      { order_sn: "P2", protecao_envio: null, outros: "0.00", fecha: "true" },
+      { order_sn: "P3", protecao_envio: null, outros: "0.00", fecha: "true" },
     ]);
+
+    // O catálogo (espelho de METRICS 5U) diz a fórmula com a proteção de envio.
+    const [definicao] = await asUser<{ formula: string }>(ADMIN, "select formula from public.metric_definitions where id = 'shopee_composicao_recebido'");
+
+    expect(definicao?.formula).toContain("+ protecao de envio) - outros = recebido coberto");
   });
 
   it("C-58 lê a mesma definição: os mesmos cobertos, e o TOTAL de loja lida sem pedido é 0, como a linha", async () => {
