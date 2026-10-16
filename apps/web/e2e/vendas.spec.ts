@@ -20,12 +20,12 @@ import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
  * e agora o `marca`/`semMarca` entrou na mesma conta.
  */
 test("/vendas: conta, marca, período e métrica compõem sem se descartar", async ({ page }) => {
-  await page.goto("/login?next=%2Fvendas");
+  await page.goto("/login?next=%2Fvendas%3Fmarketplace%3Dml");
   await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
   await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
 
-  await expect(page).toHaveURL(/\/vendas$/);
+  await expect(page).toHaveURL(/\/vendas\?marketplace=ml$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
   const menus = page.locator("details.sb-menu");
@@ -84,7 +84,7 @@ test("/vendas: conta, marca, período e métrica compõem sem se descartar", asy
  * MUDANÇA de número seja de dias atrás, que é o caso do fixture.
  */
 test("/vendas: o selo mede a CONFERÊNCIA do cálculo, não a última mudança", async ({ page }) => {
-  await page.goto("/login?next=%2Fvendas");
+  await page.goto("/login?next=%2Fvendas%3Fmarketplace%3Dml");
   await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
   await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
@@ -114,14 +114,14 @@ test("/vendas: o selo mede a CONFERÊNCIA do cálculo, não a última mudança",
  * de volta para dentro do SVG, uma das larguras reprova.
  */
 test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qualquer largura", async ({ page }) => {
-  await page.goto("/login?next=%2Fvendas");
+  await page.goto("/login?next=%2Fvendas%3Fmarketplace%3Dml");
   await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
   await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
   const casos = [
-    { rota: "/vendas", altura: 224 },
+    { rota: "/vendas?marketplace=ml", altura: 224 },
     { rota: "/", altura: 165 },
   ];
 
@@ -210,7 +210,7 @@ test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qual
  *    sem comparação, sem legenda.
  */
 test("/vendas: com período anterior, a legenda mora no cabeçalho do painel e diz a janela real", async ({ page }) => {
-  await page.goto("/login?next=%2Fvendas");
+  await page.goto("/login?next=%2Fvendas%3Fmarketplace%3Dml");
   await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
   await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
@@ -225,7 +225,7 @@ test("/vendas: com período anterior, a legenda mora no cabeçalho do painel e d
   await expect(painel.locator("figure.sb-chart figcaption")).toHaveCount(0);
   await expect(painel.locator(".sb-chart-leitura").first()).toContainText("período anterior");
 
-  await page.goto("/vendas?days=7");
+  await page.goto("/vendas?marketplace=ml&days=7");
   await expect(painel.locator("figure.sb-chart")).toBeVisible();
   await expect(painel.locator(".sb-chart-legenda")).toHaveCount(0);
 });

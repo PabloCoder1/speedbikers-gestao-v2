@@ -121,7 +121,7 @@ test("/faturamento?marketplace=todos: o Mercado Livre lado a lado é o da tela d
 
   // A receita que soma está em Vendas, com o mesmo recorte.
   await page.getByRole("link", { name: "Vendas, todos os marketplaces" }).click();
-  await expect(page).toHaveURL(/\/vendas\?marketplace=todos$/);
+  await expect(page).toHaveURL(/\/vendas$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 });
 

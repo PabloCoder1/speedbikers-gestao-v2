@@ -259,11 +259,6 @@ export default async function VendasShopeePage({
   const de = formatBusinessDate(filters.range.from);
   const ate = formatBusinessDate(filters.range.to);
   const periodoLabel = filters.days === null ? "Período personalizado" : `Últimos ${String(filters.days)} dias`;
-  // O caminho de volta leva o período junto, como o link de lá traz o de lá.
-  const hrefVendas = buildShopeeSalesHref(filters, { loja: null, situacao: null, pedido: null }).replace(
-    /^\/vendas\/shopee/,
-    "/vendas",
-  );
   // O mesmo período, para o resumo da Shopee e o consolidado (D-440); loja e situação ficam aqui.
   const recorteDaVolta: RecorteDeVendas = {
     escopo: "shopee",
@@ -302,7 +297,8 @@ export default async function VendasShopeePage({
               ativo="shopee"
               contas={{ ml: contasMl, shopee: lojas.length }}
               destinos={{
-                ml: hrefVendas,
+                // O caminho de volta leva o período junto; o ML é `marketplace=ml` (D-488).
+                ml: hrefDeVendas(recorteDaVolta, { escopo: "ml" }),
                 // D-440: o resumo da Shopee e o consolidado moram em `/vendas`;
                 // esta tela é o detalhe dos pedidos e das lojas.
                 shopee: hrefDeVendas(recorteDaVolta, { escopo: "shopee" }),

@@ -258,7 +258,7 @@ test("/vendas: o seletor de marketplace leva às vendas da Shopee só com o per�
   await seletor.locator("summary").click();
   await seletor.getByRole("link", { name: "Mercado Livre", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/vendas\?days=7$/);
+  await expect(page).toHaveURL(/\/vendas\?marketplace=ml&days=7$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 });
 

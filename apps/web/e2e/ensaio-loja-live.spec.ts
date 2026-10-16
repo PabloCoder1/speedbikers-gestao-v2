@@ -65,7 +65,16 @@ test("/vendas: no 'Todos', a loja live soma na faixa e tem a sua linha; no recor
   const receitaMl = reais((await linhaMl.getByRole("cell").nth(1).innerText()).trim());
   const faixa = page.locator(".sb-kpi").filter({ has: page.locator(".sb-kpi-label", { hasText: /^Receita bruta$/u }) }).first();
 
-  expect(reais((await faixa.locator(".sb-kpi-value").innerText()).trim())).toBeCloseTo(receitaMl + LOJA_LIVE.receitaValida, 2);
+  const receitaTodos = reais((await faixa.locator(".sb-kpi-value").innerText()).trim());
+
+  expect(receitaTodos).toBeCloseTo(receitaMl + LOJA_LIVE.receitaValida, 2);
+  await semErro(page);
+
+  // A Home (D-488) mostra a MESMA receita do "Todos" — as mesmas células e o mesmo contrato.
+  await page.goto("/");
+  const naHome = page.locator(".sb-kpi").filter({ has: page.getByText("multicanal_receita_bruta", { exact: true }) }).first();
+
+  expect(reais((await naHome.locator(".sb-kpi-value").innerText()).trim())).toBeCloseTo(receitaTodos, 2);
   await semErro(page);
 
   await page.goto("/vendas/shopee");

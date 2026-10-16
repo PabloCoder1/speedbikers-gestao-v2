@@ -46,7 +46,7 @@ function tabela(page: Page) {
 }
 
 test("/vendas: o seletor oferece Todos os marketplaces, e o período vai junto", async ({ page }) => {
-  await login(page, "/vendas?days=7");
+  await login(page, "/vendas?marketplace=ml&days=7");
 
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
@@ -56,13 +56,13 @@ test("/vendas: o seletor oferece Todos os marketplaces, e o período vai junto",
   await expect(seletor.getByRole("link")).toHaveText(["Todos os marketplaces", "Mercado Livre", "Shopee"]);
   await seletor.getByRole("link", { name: "Todos os marketplaces", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/vendas\?marketplace=todos&days=7$/);
+  await expect(page).toHaveURL(/\/vendas\?days=7$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
   await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Todos os marketplaces");
 });
 
 test("/vendas?marketplace=todos: com a única loja Shopee de teste, o total é o do Mercado Livre", async ({ page }) => {
-  await login(page, "/vendas");
+  await login(page, "/vendas?marketplace=ml");
 
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
@@ -122,7 +122,7 @@ test("/vendas?marketplace=todos: as contas ligam e desligam por clique, num valo
   await contas.locator("summary").click();
   await contas.getByRole("link", { name: "Loja E2E · Mercado Livre", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/vendas\?marketplace=todos&contas=[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/vendas\?contas=[0-9a-f-]{36}$/);
   await expect(contas.locator("summary")).toHaveAttribute("aria-label", "Contas: Loja E2E");
   // Só a conta do ML no recorte: a loja Shopee sai da tabela.
   await expect(tabela(page).getByRole("row").filter({ hasText: E2E_SHOPEE_SHOP.name })).toHaveCount(0);
@@ -130,7 +130,7 @@ test("/vendas?marketplace=todos: as contas ligam e desligam por clique, num valo
   await contas.locator("summary").click();
   await contas.getByRole("link", { name: "✓ Loja E2E · Mercado Livre", exact: true }).click();
 
-  await expect(page).toHaveURL(/\/vendas\?marketplace=todos$/);
+  await expect(page).toHaveURL(/\/vendas$/);
   await expect(contas.locator("summary")).toHaveAttribute("aria-label", "Contas: Todas as contas");
 });
 
@@ -145,6 +145,32 @@ test("/vendas?marketplace=todos: o gráfico tem faturamento, unidades e compras 
   await metricas.getByRole("link", { name: "Compras" }).click();
 
   await expect(page).toHaveURL(/metric=compras/);
-  await expect(page).toHaveURL(/marketplace=todos/);
+  // O recorte continua "Todos" — que, desde a D-488, é o padrão da /vendas e fica fora da URL.
+  await expect(page).not.toHaveURL(/marketplace=/);
+  await expect(seletorDeMarketplace(page).locator("summary")).toHaveAttribute("aria-label", "Marketplace: Todos os marketplaces");
   await expect(page).toHaveURL(/days=7/);
+});
+
+/**
+ * D-488 (decisão do dono de 16/10, depois do Go Live): a /vendas sem
+ * `marketplace` abre em "Todos"; o Mercado Livre é `marketplace=ml`. O link de
+ * antes, com conta, marca ou métrica que só o ML tem, continua no ML.
+ */
+test("/vendas sem marketplace abre em Todos; o link antigo com conta do ML continua no ML (D-488)", async ({ page }) => {
+  await login(page, "/vendas");
+
+  const seletor = seletorDeMarketplace(page);
+
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Todos os marketplaces");
+  await expect(tabela(page)).toBeVisible();
+
+  await page.goto("/vendas?account=e2e-loja");
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
+
+  // E o seletor leva ao ML com o recorte explícito, nunca a uma URL que voltaria para "Todos".
+  await page.goto("/vendas");
+  await seletor.locator("summary").click();
+  await seletor.getByRole("link", { name: "Mercado Livre", exact: true }).click();
+  await expect(page).toHaveURL(/\/vendas\?marketplace=ml$/);
+  await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
 });

@@ -21,7 +21,7 @@ import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { contarLojasShopee } from "../../../lib/marketplace";
-import { hrefDeVendas, resolverEscopoVendas } from "../../../lib/vendas-multicanal";
+import { hrefDeVendas, resolverEscopoDaTelaDeVendas } from "../../../lib/vendas-multicanal";
 import { VendasMulticanal } from "./multicanal";
 import { currentMembership } from "../../../lib/request-membership";
 import { sanitizeErrorText } from "../../../lib/sanitize";
@@ -336,7 +336,9 @@ function buildHref(
   const metricKey = override.metricKey ?? current.metricKey;
   const brand = override.brand ?? current.brand;
 
-  const search = new URLSearchParams();
+  // A tela do ML é `marketplace=ml`, explícito: sem `marketplace`, a `/vendas`
+  // abre em "Todos" desde a D-488.
+  const search = new URLSearchParams({ marketplace: "ml" });
 
   if ("from" in period) {
     search.set("from", period.from);
@@ -359,16 +361,15 @@ function buildHref(
     search.set("semMarca", "1");
   }
 
-  // O default fica FORA da URL, como `days` e `account` já fazem: `/vendas`
-  // limpo continua sendo a mesma página de sempre, e um link compartilhado só
-  // carrega o que foi realmente escolhido.
+  // O default fica FORA da URL, como `days` e `account` já fazem: um link
+  // compartilhado só carrega o que foi realmente escolhido.
   if (metricKey !== DEFAULT_SALES_METRIC.key) {
     search.set("metric", metricKey);
   }
 
   const qs = search.toString();
 
-  return qs === "" ? "/vendas" : `/vendas?${qs}`;
+  return `/vendas?${qs}`;
 }
 
 export default function VendasPage(props: {
@@ -386,10 +387,12 @@ async function VendasContent({
 
   /*
     TODOS OS MARKETPLACES, OU SÓ A SHOPEE (D-440): a mesma tela com outro
-    recorte, lida do contrato multicanal (C-53). Sem `marketplace`, tudo abaixo
-    é a tela do Mercado Livre de sempre, com as RPCs dele — nenhum número muda.
+    recorte, lida do contrato multicanal (C-53). Desde a D-488 (decisão do dono
+    de 16/10, depois do Go Live), SEM `marketplace` a tela abre em "Todos"; o
+    Mercado Livre é `marketplace=ml` — e o link antigo com conta, marca ou
+    métrica do ML continua caindo aqui embaixo, na tela de sempre.
   */
-  const escopo = resolverEscopoVendas(query.marketplace);
+  const escopo = resolverEscopoDaTelaDeVendas(query);
 
   if (escopo !== "ml") {
     return <VendasMulticanal query={query} escopo={escopo} />;

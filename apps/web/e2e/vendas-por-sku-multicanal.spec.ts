@@ -62,7 +62,7 @@ test("painel Shopee do SKU: a loja de sandbox leva o selo Teste", async ({ page 
 test("/vendas?marketplace=todos: o ranking de produtos dá ao SKU a receita do ranking do ML", async ({ page }) => {
   const seed = await readSeedOutput();
 
-  await login(page, "/vendas");
+  await login(page, "/vendas?marketplace=ml");
 
   const rankingMl = page.getByRole("region", { name: "Produtos que mais contribuíram" });
   const linhaMl = rankingMl.getByRole("row").filter({ has: page.locator(`a[href="/skus/${seed.skuId}"]`) });

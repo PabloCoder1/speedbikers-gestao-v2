@@ -8,14 +8,20 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SalesChart } from "./vendas/sales-chart";
 import { TOM, type Tom } from "../../components/tone";
-import { DEFAULT_SALES_METRIC } from "../../lib/sales-metric";
 import { eventTypeLabel, severityLabel } from "../../lib/labels";
-import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { formatBusinessDate, formatCount, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
 import { buildFilterHref } from "../../lib/filters";
 import { formatAge } from "../../lib/relative-time";
 import { HOME_SERIE_DEFAULT_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../../lib/period";
+import {
+  agruparLinhas,
+  celulasDaFaixaMulticanal,
+  marketplacesDoEscopo,
+  pontosDoTotal,
+  resolverMetricaMulticanal,
+} from "../../lib/vendas-multicanal";
 
 export const metadata = { title: "Visão Geral — Speed Bikers Gestão" };
 
@@ -179,13 +185,8 @@ interface SalesSummaryRow {
   last_computed_at: string | null;
 }
 
-interface SeriePonto {
-  metric_date: string;
-  gross_revenue: number;
-  units_sold: number;
-  orders_count: number;
-  purchases_count: number | null;
-}
+/** O gráfico da Home é a receita do consolidado (D-488), a métrica padrão do "Todos" de `/vendas`. */
+const METRICA_DA_HOME = resolverMetricaMulticanal(undefined);
 
 interface AtividadeLinha {
   id: string;
@@ -557,7 +558,31 @@ export default async function HomePage({
     // cartão diz que não leu.
     .catch((error: unknown) => ({ data: null, error: error ?? new Error("segunda rodada da Home falhou") }));
 
-  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendas, vendasAntes, serieDiaria, atividade, perfil] =
+  /*
+    A FAIXA E O GRÁFICO SÃO DE TODOS OS MARKETPLACES (D-488, decisão do dono de
+    16/10, depois do Go Live): o mesmo contrato do "Todos" de `/vendas` (C-53),
+    com Mercado Livre e Shopee pedidos EXPLICITAMENTE — `p_marketplaces` nulo é
+    "só ML" no SQL, e as provas de equivalência dependem disso. O contrato pede a
+    organização, então as três leituras partem no instante em que ela chega, em
+    paralelo com o resto da primeira rodada, como a segunda rodada acima.
+  */
+  const vendasPromise = membershipPromise.then((m) => {
+    if (m.error !== null || m.organizationId === null) return null;
+
+    const argumentos = {
+      p_organization_id: m.organizationId,
+      p_marketplaces: marketplacesDoEscopo("todos"),
+      p_account_ids: null,
+    };
+
+    return Promise.all([
+      supabase.rpc("get_marketplace_sales_summary", { ...argumentos, p_date_from: janela.from, p_date_to: janela.to }),
+      supabase.rpc("get_marketplace_sales_summary", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
+      supabase.rpc("get_marketplace_sales_daily", { ...argumentos, p_date_from: serie.from, p_date_to: serie.to }),
+    ]);
+  });
+
+  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendasMulticanal, atividade, perfil] =
     await Promise.all([
       membershipPromise,
       supabase
@@ -598,9 +623,7 @@ export default async function HomePage({
         .select("item_id", { count: "exact", head: true })
         .eq("status", "paused")
         .gt("available_quantity", 0),
-      supabase.rpc("get_sales_summary", { p_date_from: janela.from, p_date_to: janela.to }),
-      supabase.rpc("get_sales_summary", { p_date_from: anterior.from, p_date_to: anterior.to }),
-      supabase.rpc("get_sales_daily_series", { p_date_from: serie.from, p_date_to: serie.to }),
+      vendasPromise,
       // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
       // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de
       // destinatários do próprio usuário (policy
@@ -649,47 +672,19 @@ export default async function HomePage({
   }
 
 
-  const atual = primeira(vendas.data);
-  const antes = primeira(vendasAntes.data);
-  // "Nunca calculado" e "calculado e zero" são estados diferentes — o mesmo
-  // contrato que `/vendas` respeita. `last_computed_at` nulo é o primeiro.
-  const semJanela = vendas.error !== null || atual?.last_computed_at == null;
+  // D-488: as MESMAS células do "Todos" de `/vendas` (`celulasDaFaixaMulticanal`).
+  // Leitura que falha é dita na faixa, nunca vira zero nem "sem venda" (D-067).
+  const [vendasAtual, vendasAntes, serieDiaria] = vendasMulticanal ?? [null, null, null];
+  const kpis: readonly KpiCellData[] =
+    vendasAtual?.error === null && vendasAntes?.error === null
+      ? celulasDaFaixaMulticanal(agruparLinhas(vendasAtual.data).total, agruparLinhas(vendasAntes.data).total)
+      : celulasDaFaixaMulticanal(null, null).map((celula) => ({
+          ...celula,
+          ressalva: "a leitura das vendas falhou — recarregue a página",
+        }));
 
-  const kpis: readonly KpiCellData[] = [
-    {
-      metricId: "receita_bruta",
-      label: "Faturamento bruto",
-      formula: "SUM(gross_revenue) no grão dia/conta",
-      value: semJanela ? "—" : formatCurrency(atual.gross_revenue),
-      previous: semJanela ? null : formatCurrency(antes?.gross_revenue ?? null),
-    },
-    {
-      metricId: "pedidos",
-      label: "Pedidos",
-      formula: "SUM(orders_count) no grão dia/conta",
-      value: semJanela ? "—" : formatCount(atual.orders_count),
-      previous: semJanela ? null : formatCount(antes?.orders_count ?? null),
-    },
-    {
-      metricId: "unidades_vendidas",
-      label: "Unidades vendidas",
-      formula: "SUM(units_sold) no grão dia/conta",
-      value: semJanela ? "—" : formatCount(atual.units_sold),
-      previous: semJanela ? null : formatCount(antes?.units_sold ?? null),
-    },
-    {
-      metricId: "ticket_medio",
-      label: "Ticket médio",
-      formula: "receita_bruta / pedidos_por_pack",
-      value: semJanela ? "—" : formatCurrency(atual.average_ticket),
-      previous: semJanela ? null : formatCurrency(antes?.average_ticket ?? null),
-    },
-  ];
-
-  // O TypeScript já estreita `atual` para não-nulo no ramo falso de
-  // `semJanela` (predicado inferido do booleano), então o `?.` seria morto
-  // ali — e condição morta esconde a leitura real.
-  const pontos: SeriePonto[] = serieDiaria.error === null && Array.isArray(serieDiaria.data) ? serieDiaria.data : [];
+  const serieFalhou = serieDiaria?.error !== null;
+  const pontos = serieDiaria?.error === null ? pontosDoTotal(serieDiaria.data, METRICA_DA_HOME).pontos : [];
 
   const eventos: AtividadeLinha[] =
     atividade.error === null && Array.isArray(atividade.data)
@@ -728,8 +723,8 @@ export default async function HomePage({
         {/* Sem porcentagem de variação: D-023 (a justificativa mora no
             `title` de cada célula, não na tela). */}
         <span className="sb-section-note">
-          últimos {JANELA_DIAS} dias ({formatBusinessDate(janela.from)} a {formatBusinessDate(janela.to)}) ·
-          comparado com os {JANELA_DIAS} dias anteriores
+          Mercado Livre e Shopee · últimos {JANELA_DIAS} dias ({formatBusinessDate(janela.from)} a{" "}
+          {formatBusinessDate(janela.to)}) · comparado com os {JANELA_DIAS} dias anteriores
         </span>
       </div>
 
@@ -748,7 +743,7 @@ export default async function HomePage({
                 direita — descia para baixo do texto. A faixa de indicadores,
                 logo acima, já imprime um intervalo; dois numa tela é ruído.
               */}
-              últimos {serieDias} dias · todas as contas conectadas
+              últimos {serieDias} dias · Mercado Livre e Shopee, todas as contas e lojas
               {/*
                 A RESSALVA DE SÉRIE PARCIAL entra junto com o seletor, e é ele
                 que a torna provável: escolher 90 dias numa base que só
@@ -792,7 +787,7 @@ export default async function HomePage({
           <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
             {/* Lote 1 do pente fino (18/09): a leitura que FALHA dizia "nenhum dia
                 com métrica" — erro lido como ausência de dado (D-067). */}
-            {serieDiaria.error !== null ? (
+            {serieFalhou ? (
               <p role="alert" style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.6875rem" }}>
                 Não foi possível carregar o faturamento diário agora. Os indicadores acima não dependem deste gráfico.
               </p>
@@ -811,7 +806,7 @@ export default async function HomePage({
                 altura="compacta"
                 points={pontos}
                 previousPoints={[]}
-                metric={DEFAULT_SALES_METRIC}
+                metric={METRICA_DA_HOME}
                 rangeFrom={serie.from}
                 rangeTo={serie.to}
                 previousRangeFrom={serie.from}

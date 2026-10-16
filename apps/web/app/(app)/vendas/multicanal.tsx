@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
-import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { KpiStrip } from "../../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -25,11 +25,13 @@ import {
   agruparLinhas,
   alternarConta,
   antesDoHistoricoShopee,
+  celulasDaFaixaMulticanal,
   hrefDeVendas,
   marketplacesDoEscopo,
   pontosDoTotal,
   resolverContas,
   resolverMetricaMulticanal,
+  valorOuTraco,
   type ContaDoSeletor,
   type EscopoMulticanal,
   type LinhaDeVendas,
@@ -66,10 +68,6 @@ function rotuloDaConta(conta: ContaDoSeletor): string {
   const marketplace = conta.marketplace === "ML" ? "Mercado Livre" : "Shopee";
 
   return `${conta.name} · ${marketplace}${conta.environment === "live" ? "" : " (teste)"}`;
-}
-
-function valorOuTraco(valor: number | null, formatar: (n: number) => string): string {
-  return valor === null ? "—" : formatar(valor);
 }
 
 export async function VendasMulticanal({
@@ -172,46 +170,13 @@ export async function VendasMulticanal({
   const temShopee = escopo === "shopee" || todasAsContas.some((conta) => conta.marketplace === "SHOPEE");
   const historicoCurto = temShopee && antesDoHistoricoShopee(anterior.from, hoje);
 
-  const anteriorTem = totalAnterior !== null;
-  const celulas: KpiCellData[] = [
-    {
-      metricId: "multicanal_receita_bruta",
-      label: "Receita bruta",
-      formula:
-        "Produtos com o desconto do vendedor, sem frete, nos dois marketplaces; pedido Shopee de receita desconhecida fica fora",
-      value: valorOuTraco(total?.receita_bruta ?? null, formatCurrency),
-      previous: anteriorTem ? valorOuTraco(totalAnterior.receita_bruta, formatCurrency) : null,
-      ...((total?.pedidos_sem_receita ?? 0) > 0
-        ? { ressalva: `${formatCount(total?.pedidos_sem_receita ?? 0)} pedidos Shopee sem receita conhecida, fora da soma` }
-        : {}),
-    },
-    {
-      metricId: "multicanal_compras",
-      label: "Compras",
-      formula: "O pack do Mercado Livre e o pedido da Shopee — a compra do cliente nos dois",
-      value: valorOuTraco(total?.compras ?? null, formatCount),
-      previous: anteriorTem ? valorOuTraco(totalAnterior.compras, formatCount) : null,
-    },
-    {
-      metricId: "multicanal_unidades",
-      label: "Unidades vendidas",
-      formula: "Unidades do Mercado Livre e da Shopee",
-      value: valorOuTraco(total?.unidades ?? null, formatCount),
-      previous: anteriorTem ? valorOuTraco(totalAnterior.unidades, formatCount) : null,
-    },
-    {
-      metricId: "multicanal_ticket_medio",
-      label: "Ticket médio",
-      formula: "receita bruta ÷ compras de receita conhecida, recalculado sobre a soma — nunca média de médias",
-      value: valorOuTraco(total?.ticket_medio ?? null, formatCurrency),
-      previous: anteriorTem ? valorOuTraco(totalAnterior.ticket_medio, formatCurrency) : null,
-    },
-  ].map((celula) =>
-    // Sem nada somável (só loja de teste, ou nenhuma lida), o "—" diz por quê.
-    total === null ? { ...celula, ressalva: "nenhuma conta com venda somável neste recorte" } : celula,
-  );
+  const celulas = celulasDaFaixaMulticanal(total, totalAnterior);
 
-  const hrefPedidosShopee = hrefDeVendas(recorte, { escopo: "ml" }).replace(/^\/vendas/, "/vendas/shopee");
+  // Os pedidos da Shopee levam o período (a URL do ML tem só ele); o `marketplace=ml` fica para trás (D-488).
+  const doPeriodo = new URL(hrefDeVendas(recorte, { escopo: "ml" }), "http://local");
+
+  doPeriodo.searchParams.delete("marketplace");
+  const hrefPedidosShopee = `/vendas/shopee${doPeriodo.search}`;
 
   return (
     <>
