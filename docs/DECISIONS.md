@@ -16434,6 +16434,53 @@ Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral
 - web: a nota em `apps/web/app/(app)/central/meta.tsx`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF,TESTING}.md`.
 
+## D-488 - Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
+
+**Contexto:** desde o Go Live de 16/10, as duas lojas Shopee live entram nas telas com o recorte "Todos" ou "Shopee". Mas a Home e a `/vendas` sem `marketplace` ainda abriam no Mercado Livre. Em outubro, a Shopee é cerca de 18% da receita (R$ 346 mil de R$ 1,94 milhão, só leitura em produção). A primeira tela do sistema mostrava a receita da empresa a menos, sem dizer.
+
+O dono decidiu em 16/10, perguntado pelo A2:
+1. A faixa de vendas da Home é de **todos os marketplaces**.
+2. A `/vendas` sem marketplace na URL abre em **Todos**.
+
+**1. A Home.** A faixa ("Indicadores gerais") e o gráfico ("Faturamento diário") passam a ler o contrato do "Todos" de `/vendas` (C-53: `get_marketplace_sales_summary` e `get_marketplace_sales_daily`). O pedido é `p_marketplaces = ['ML','SHOPEE']` explícito: nulo é "só ML" no SQL, e as provas de equivalência do A1 dependem disso.
+- As células são as MESMAS do "Todos": a função `celulasDaFaixaMulticanal` saiu do `vendas/multicanal.tsx` para `lib/vendas-multicanal.ts`, e as duas telas a usam. Os mesmos ids de métrica (`multicanal_*`), a mesma fórmula e o mesmo número.
+- "Pedidos" vira "Compras": o pack do ML e o pedido da Shopee. A ressalva dos pedidos Shopee sem receita conhecida vem junto.
+- O gráfico é a receita do consolidado. O subtítulo diz "Mercado Livre e Shopee, todas as contas e lojas", e a nota da faixa também.
+- O contrato pede a organização. As três leituras partem quando ela chega, encadeadas na mesma promessa da segunda rodada (D-504), em paralelo com o resto da primeira rodada. Custo medido pelo A1 com 40 mil pedidos simulados: cerca de 77 ms o resumo e 49 ms a série em 30 dias. O LCP da Home em produção se relê depois do deploy (a sessão dos web vitals do A3).
+- Leitura que falha é dita na faixa ("a leitura das vendas falhou — recarregue a página"), nunca vira zero (D-067).
+
+**2. O padrão da `/vendas`.** `resolverEscopoDaTelaDeVendas`, só da `/vendas`:
+- `marketplace` explícito vale;
+- sem ele, "Todos";
+- o link ou filtro salvo de antes que traz um parâmetro que só o ML entende (`account`, `marca`, `semMarca`, `metric=pedidos` ou `packs`) continua no ML;
+- valor desconhecido também vai para "Todos".
+
+O ML é `marketplace=ml`, explícito, em todo link que leva à tela do ML: o montador da própria tela, o seletor de marketplace (inclusive o da `/vendas/shopee`, que montava `/vendas?days=7` e passaria a abrir "Todos") e o "Dashboard de vendas" do `/faturamento`. O `hrefDoRecorte` ganha o padrão por tela: "Todos" na `/vendas`, ML no `/faturamento`.
+
+`/faturamento` e `/curva-abc` não mudam: sem `marketplace`, seguem no ML. A decisão do dono citou a `/vendas`, e o "Todos" do faturamento não tem total de resultado. Fica para o dono se quiser estender.
+
+Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período), passa a abrir em "Todos". É o que a decisão pede.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica e unitarios:** typecheck e lint. Em `vendas-multicanal`, 24 casos.
+  - Novos: o resolvedor (padrão, links antigos, valor desconhecido) e a ida e volta: toda URL que o `hrefDeVendas` monta volta para o mesmo recorte.
+  - As células (os quatro ids, o traço sem nada somável, a ressalva da receita desconhecida).
+  - `faturamento-multicanal` e `abc-filters` continuam verdes sem mudança, o que prova que o padrão deles ficou.
+- **e2e:** os specs que abriam `/vendas` esperando o ML passam a pedir `marketplace=ml` (`vendas`, `vendas-multicanal`, `vendas-por-sku-multicanal`, `faturamento`, `vendas-shopee`, a guarda de tela estreita), e a Home confere `multicanal_receita_bruta`. Casos novos:
+  - `/vendas` sem marketplace abre em "Todos";
+  - `?account=` continua no ML;
+  - o seletor leva ao ML com `marketplace=ml`;
+  - no ensaio da loja live (D-486), a receita da Home é igual à da faixa "Todos" de `/vendas`, com a Shopee somando.
+- **Suite inteira:** 249/249 com o banco recriado do zero (246 na 3300 e os 3 de convite na 3000), e o projeto `loja-live` 5/5 em seguida, no mesmo banco.
+
+**Impacto:**
+- web: `apps/web/app/(app)/page.tsx` (a Home), `apps/web/app/(app)/vendas/{page,multicanal}.tsx`, `apps/web/app/(app)/vendas/shopee/page.tsx`, `apps/web/app/(app)/faturamento/page.tsx` e `apps/web/lib/vendas-multicanal.ts` com o teste;
+- e2e: os specs citados e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.

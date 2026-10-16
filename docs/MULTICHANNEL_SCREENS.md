@@ -43,8 +43,8 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 
 | Área | Rotas | Classe | Conta hoje (URL) | Fonte | O que falta para o multicanal | Etapa |
 |---|---|---|---|---|---|---|
-| Home | `/` | 2 | — | `get_sales_summary`/`series` (`daily_*`), cobertura, anúncios pausados | faixa de vendas com o marketplace | E4 → T4 |
-| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje", ranking e cancelamento consolidados (esperam o grão de SKU, E6) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas) |
+| Home | `/` | 2 | — | `get_marketplace_sales_summary`/`_daily` (C-53, ML + Shopee), cobertura, anúncios pausados | T10 ✔ (D-488): a faixa e o gráfico de todos os marketplaces, decisão do dono de 16/10 | C-53 |
+| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje", ranking e cancelamento consolidados (esperam o grão de SKU, E6) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas); T10 ✔ (D-488: sem `marketplace` abre em "Todos", o ML é `marketplace=ml`) |
 | Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58), `get_shopee_faturamento_*` (C-61), `get_shopee_ads_*` (C-63), `get_shopee_repasse*` (C-64) | — | T5 ✔ (D-442: "Shopee" e "Todos" lado a lado, sem total); T5b ✔ (D-452: a cascata, a série e os produtos); T5c ✔ (D-456: Ads CPC da loja); T5d ✔ (D-458: repasse) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | T8a ✔ (D-480): a Shopee lado a lado, sem total de resultado (o bloco do "Todos" de `/faturamento`) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
@@ -255,6 +255,7 @@ número.
 | **T7** | Busca universal com a Shopee (C-08) | C-08/C-57 | ✔ D-476 |
 | **T8** | Central e meta do mês com a Shopee | dono (15/10) + C-66 | T8a ✔ D-480; T8b ✔ D-482 |
 | **T9** | Ensaio do Go Live das telas: uma loja live no e2e, no projeto `loja-live` | Go Live (16/10) | ✔ D-486 |
+| **T10** | A Home e a `/vendas` em todos os marketplaces por padrão | dono (16/10) | ✔ D-488 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
