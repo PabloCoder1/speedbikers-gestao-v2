@@ -357,6 +357,7 @@ describe("catálogo de métricas", () => {
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
       "shopee_investimento_ads",
+      "shopee_margem_contribuicao",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
@@ -367,6 +368,7 @@ describe("catálogo de métricas", () => {
       "shopee_repasse_diferenca",
       "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
+      "shopee_resultado_contribuicao",
       "shopee_resultado_venda",
       "shopee_roas",
       "shopee_tacos",
@@ -3470,6 +3472,7 @@ describe("vendas Shopee (D-430)", () => {
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
       "shopee_investimento_ads",
+      "shopee_margem_contribuicao",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
@@ -3479,6 +3482,7 @@ describe("vendas Shopee (D-430)", () => {
       "shopee_repasse_diferenca",
       "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
+      "shopee_resultado_contribuicao",
       "shopee_resultado_venda",
       "shopee_roas",
       "shopee_tacos",
@@ -6054,6 +6058,67 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       { dia: DE, pedidos: "3", receita_bruta: "360.00", pedidos_cobertos: "2", receita_coberta: "300.00", recebido_coberto: "235.00", custo_produtos: "110.00", resultado_venda: "115.00", margem_venda: "0.3833" },
       { dia: ATE, pedidos: "2", receita_bruta: "160.00", pedidos_cobertos: "1", receita_coberta: "100.00", recebido_coberto: "90.00", custo_produtos: "70.00", resultado_venda: "20.00", margem_venda: "0.2000" },
     ]);
+  });
+
+  it("D-487: o lucro após imposto e Ads -- o Ads CPC da loja rateado pela receita coberta, só com a leitura cobrindo o período", async () => {
+    const c58 = async () =>
+      (
+        await asUser<Linha>(
+          ADMIN,
+          `select nivel, account_name, investimento_ads, ads_rateado, resultado_apos_imposto, resultado_contribuicao, margem_contribuicao
+             from public.get_shopee_faturamento('${ORG}', '${DE}', '${ATE}') where environment is distinct from 'sandbox' order by nivel desc, account_name`,
+        )
+      ).map((l) => [l.account_name ?? l.nivel, l.investimento_ads, l.ads_rateado, l.resultado_apos_imposto, l.resultado_contribuicao, l.margem_contribuicao]);
+
+    // Ads nunca lido: NULO, nunca 0.
+    expect(await c58()).toEqual([
+      ["TOTAL", null, null, "95.00", null, null],
+      ["Loja Real", null, null, "95.00", null, null],
+      ["Sem Pedido", null, null, null, null, null],
+    ]);
+
+    await client.query("update public.shopee_shops set ads_read_from = '2026-08-01', ads_read_until = '2026-08-31' where id = any($1::uuid[])", [
+      [LOJA, SEM_PEDIDO],
+    ]);
+    // O dia 12 fica fora do período.
+    await client.query(
+      `insert into public.daily_shopee_ads_metrics (shopee_shop_id, organization_id, metric_date, expense, broad_gmv)
+       values ($1, $3, $4, 26, 100), ($1, $3, $5, 0, 0), ($2, $3, $4, 13, 0), ($1, $3, '2026-08-12', 500, 0)`,
+      [LOJA, SEM_PEDIDO, ORG, DE, ATE],
+    );
+
+    // Loja Real: 26 x 400/520 = 20; 95 - 20 = 75. TOTAL: as duas lojas, 39 x 400/520 = 30; 95 - 30 = 65.
+    // A loja sem venda: o gasto aparece, o rateio não existe (sem receita).
+    expect(await c58()).toEqual([
+      ["TOTAL", "39.00", "30.00", "95.00", "65.00", "0.1625"],
+      ["Loja Real", "26.00", "20.00", "95.00", "75.00", "0.1875"],
+      ["Sem Pedido", "13.00", null, null, null, null],
+    ]);
+
+    // Dia lido sem o gasto: aquela loja fica sem Ads, e o TOTAL também.
+    await client.query("update public.daily_shopee_ads_metrics set expense = null where shopee_shop_id = $1 and metric_date = $2", [SEM_PEDIDO, DE]);
+    expect((await c58()).map((l) => [l[0], l[4]])).toEqual([
+      ["TOTAL", null],
+      ["Loja Real", "75.00"],
+      ["Sem Pedido", null],
+    ]);
+
+    // A leitura que não cobre o período inteiro: NULO.
+    await client.query("update public.shopee_shops set ads_read_until = $2 where id = $1", [LOJA, DE]);
+    expect((await c58())[1]).toEqual(["Loja Real", null, null, "95.00", null, null]);
+
+    // Leitura cobrindo e nenhum anúncio: 0, que é fato.
+    await client.query("update public.shopee_shops set ads_read_until = '2026-08-31' where id = $1", [LOJA]);
+    await client.query("delete from public.daily_shopee_ads_metrics where shopee_shop_id = $1", [LOJA]);
+    expect((await c58())[1]).toEqual(["Loja Real", "0.00", "0.00", "95.00", "95.00", "0.2375"]);
+
+    // O catálogo (espelho de METRICS 5U).
+    const [definicao] = await asUser<{ formula: string }>(ADMIN, "select formula from public.metric_definitions where id = 'shopee_resultado_contribuicao'");
+
+    expect(definicao?.formula).toContain("shopee_investimento_ads x (receita coberta / receita bruta)");
+
+    await client.query("delete from public.daily_shopee_ads_metrics where shopee_shop_id = any($1::uuid[])", [[LOJA, SEM_PEDIDO]]);
+    await client.query("update public.shopee_shops set ads_read_from = null, ads_read_until = null where id = any($1::uuid[])", [[LOJA, SEM_PEDIDO]]);
   });
 
   it("por SKU só com pedidos de um SKU; o de dois SKUs é contado à parte, sem rateio", async () => {
