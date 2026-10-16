@@ -167,14 +167,14 @@ function GrupoFiltro({
 }): ReactNode {
   const item = (o: Opcao): ReactNode => (
     <li key={o.chave}>
-      <Link
+      <LinkDeFiltro
         href={o.href}
         className={o.ativo ? "sb-prod-opcao sb-prod-opcao-ativa" : "sb-prod-opcao"}
         aria-current={o.ativo ? "true" : undefined}
       >
         <span>{o.rotulo}</span>
         {o.n !== null && <em>{formatCount(o.n)}</em>}
-      </Link>
+      </LinkDeFiltro>
     </li>
   );
 
@@ -183,9 +183,9 @@ function GrupoFiltro({
       <div className="sb-prod-grupo-topo">
         <span>{titulo}</span>
         {limpar !== undefined && (
-          <Link href={limpar} className="sb-prod-grupo-limpar" aria-label={`Limpar ${titulo}`}>
+          <LinkDeFiltro href={limpar} className="sb-prod-grupo-limpar" aria-label={`Limpar ${titulo}`}>
             limpar
-          </Link>
+          </LinkDeFiltro>
         )}
       </div>
       <ul>{opcoes.map(item)}</ul>
@@ -558,7 +558,7 @@ export default async function ProdutosPage({
       {cartoes.length > 0 && (
         <nav className="sb-prod-atalhos" aria-label="Atalhos do catálogo">
           {cartoes.map((c) => (
-            <Link
+            <LinkDeFiltro
               key={c.rotulo}
               href={c.href}
               className={c.ativo ? "sb-rep-estado sb-rep-estado-ativo" : "sb-rep-estado"}
@@ -568,7 +568,7 @@ export default async function ProdutosPage({
               <span className="sb-rep-estado-rotulo">{c.rotulo}</span>
               <strong>{c.n === null ? "—" : formatCount(c.n)}</strong>
               <small>{c.nota}</small>
-            </Link>
+            </LinkDeFiltro>
           ))}
         </nav>
       )}
@@ -579,9 +579,9 @@ export default async function ProdutosPage({
             <div className="sb-prod-filtros-topo">
               <b>Filtros</b>
               {filtrosAtivos(atual) > 0 && (
-                <Link href={atalho(atual, {})} className="sb-prod-grupo-limpar">
+                <LinkDeFiltro href={atalho(atual, {})} className="sb-prod-grupo-limpar">
                   limpar tudo
-                </Link>
+                </LinkDeFiltro>
               )}
             </div>
 
@@ -676,10 +676,10 @@ export default async function ProdutosPage({
                 {formatCount(total)} {total === 1 ? "produto" : "produtos"}
               </span>
               {chips.map((c) => (
-                <Link key={c.rotulo} href={c.href} className="sb-prod-chip" aria-label={`Tirar filtro ${c.rotulo}`}>
+                <LinkDeFiltro key={c.rotulo} href={c.href} className="sb-prod-chip" aria-label={`Tirar filtro ${c.rotulo}`}>
                   {c.rotulo}
                   <span aria-hidden="true">×</span>
-                </Link>
+                </LinkDeFiltro>
               ))}
             </div>
             <div className="sb-prod-ordem">

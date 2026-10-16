@@ -50,7 +50,6 @@ const ISENTOS = new Map([
  * daqui quem migrar; ninguém entra.
  */
 const PENDENTES = new Map([
-  ["app/(app)/curva-abc/page.tsx", "tela do Agente 2 (multicanal); combinar antes de tocar"],
 ]);
 
 /** Fim da tag de abertura, respeitando chaves, aspas e template strings. */
