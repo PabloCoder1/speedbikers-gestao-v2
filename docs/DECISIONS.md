@@ -16723,3 +16723,28 @@ A `/vendas` foi de tres em cinco cargas acima de 3,5 s para tres em tres abaixo 
 **Verificacao:** as 45 linhas, os deploys de cada uma e os dois roteiros locais (`cls-lcp` e alturas da `/central`, no ambiente do A3, fora do Git).
 
 **Impacto:** so docs (`UX_SYSTEM`, `DECISIONS`, `DECISIONS_INDEX`, `PERFORMANCE`, `MULTICHANNEL_HANDOFF`, `HANDOFF`).
+
+## D-515 - A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
+
+**Contexto:** a D-514 achou CLS proprio de 0,39 na `/central` em producao e a causa no build local: o `Suspense` dos indicadores tinha um `CarregandoBloco` de 142 px para uns 3.000 px de conteudo, e a chegada empurrava para fora da janela o que ja estava visivel ("Por marketplace" e os esqueletos de baixo). A "O que precisa da sua atencao" espera mais leituras que os indicadores (frete, Ads, produtos) e costuma chegar depois deles; trocando 142 px pela altura real, deslocava os indicadores ja visiveis. A tela e do A2, que a liberou em 16/10 e pediu: a ordem das secoes e os nomes das regioes que o `central.spec` usa ficam; a "Atencao" se mede com a lista cheia, o estado comum em producao; e o `CarregandoBloco` sem altura fica como esta.
+
+**Decisao:**
+1. **`CarregandoBloco` ganha `altura`**, opcional: reserva o lugar com `min-height`. Sem ela, nada muda (o mesmo bloco serve `/faturamento`, `/vendas` e o SKU).
+2. **Os indicadores reservam a janela** (`altura="100vh"`): o que vem abaixo ja comeca fora dela, e a chegada de qualquer tamanho nao desloca nada visivel. Cobre os recortes que mudam a altura (com conta do ML escolhida o "Por marketplace" some; sem meta, a "Meta e projecao" encolhe) sem prometer uma altura exata.
+3. **`AtencaoCarregando`** (em `central/atencao.tsx`): o cabecalho DE VERDADE (titulo, subtitulo e o botao, agora constantes compartilhadas com o painel) e o espaco da contagem e de tres linhas da lista, com as classes da lista real. No celular o texto de cada linha desce e quebra; o traco dele tem a altura de duas linhas (`.sb-atencao-texto-carregando`). Calibrado no build local contra o painel real montado com as mesmas classes: 244 px para 244 em 1440x900, 455 para 451 em 390x844. A lista vazia ("Nada pede atencao", 110 px) fica menor que o esqueleto -- e o caso raro, pelo A2.
+4. A ordem das secoes, os nomes das regioes e o restante da tela nao mudam.
+
+**Medido** (build local, carga completa da `/central`, 5 cargas por cenario, 150 ms em cada chamada ao Supabase; "Atencao depois" = `get_detector_frete` e `get_sinais_ads` com mais 800 ms, a ordem de producao):
+
+| cenario | antes | depois |
+|---|---|---|
+| leituras juntas, 1440x900 | CLS 0,144 (5 de 5) | **0** |
+| leituras juntas, 390x844 | -- | **0** |
+| "Atencao" depois, 1440x900 | CLS 0,278 (4 de 5) | **0,046** |
+| "Atencao" depois, 390x844 | -- | **0,045** |
+
+O que sobra no ultimo cenario e o banco local no estado "nada pede atencao": o esqueleto de tres linhas encolhe para 110 px e puxa os indicadores. Com a lista de tres itens, a diferenca medida e 0 px. O LCP nao mudou (890 a 1.170 ms antes e depois, com 150 ms por chamada).
+
+**Verificacao:** typecheck, lint e as guardas; o `central.spec` e a suite e2e inteira (a suite e2e inteira passa 248 de 248 contra o build num stack isolado recriado do zero, com os nove testes do `central.spec`); a medicao acima; e a calibracao do esqueleto em duas larguras.
+
+**Impacto:** `apps/web/components/carregando.tsx`, `apps/web/app/(app)/central/{page,atencao}.tsx`, `apps/web/app/globals.css` (o traco do texto no celular), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova. A proxima leitura dos web vitals confere o CLS da `/central` em producao.

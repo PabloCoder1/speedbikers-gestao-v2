@@ -20,7 +20,7 @@
 |---|---|---|---|
 | **Trocar de tela** (o caminho muda) | a tela anterior FICA, com o sinal da atualização no lugar: o link clicado esmaece, a barra da moldura aparece aos 100 ms e o conteúdo esmaece aos 400 ms; a moldura nunca sai (é do layout) | `IndicadorDeNavegacao` no `Shell` (todo link interno, e `avisarTrocaDeTela` antes do `router.push` de quem navega por código, como a paleta de busca) e `CarregandoSeODemorar` nos links da sidebar → `AtualizandoTela` | **D-512**, D-513 (até a D-512, `loading.tsx` por pasta, D-382) |
 | **Carga inicial** de uma tela (primeira visita, recarga) | o esqueleto com a moldura, no lugar do que vai chegar | `app/loading.tsx`, acima do layout do grupo `(app)` → `CarregandoTela` | D-382, D-512 |
-| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509 |
+| **Bloco lento** dentro de uma tela montada | esqueleto só daquele painel, com a altura do que vem (o cabeçalho real fica) | `<Suspense fallback={<CarregandoBloco/>}>`, ou um esqueleto próprio quando o bloco tem forma conhecida (`AtencaoCarregando` da Home e o da `/central`); um bloco muito maior que o esqueleto, com outros abaixo, reserva ao menos a janela (`<CarregandoBloco altura="100vh"/>`, os indicadores da `/central`); um **selo** lento do cabeçalho de entidade chega depois no lugar reservado (`ObjectBadgeTardio` + `SeloCarregando`, a curva ABC do SKU); uma **célula** lenta da faixa, idem (`KpiCellTardia` + `KpiCellCarregando`, a taxa de cancelamento da `/vendas`) | D-382, D-504, D-505, D-509, D-515 |
 | **Atualizar a mesma tela** (filtro, busca, paginação, aba, "ver lista") | o dado velho FICA; o controle clicado esmaece na hora, barra em 100 ms, conteúdo esmaecido em 400 ms, `aria-busy` | `LinkDeFiltro` (o `<Link>` com `CarregandoSeODemorar`), `ItemDeMenu`, `FormularioFiltro` → `AtualizandoTela` | **D-500**, D-501 |
 | **Ação que grava** (salvar, assumir, remover) | o botão desabilita, põe `aria-busy` e diz o que está fazendo ("Removendo…") até a resposta | `BotaoEnviar` (ação de servidor, `useFormStatus`); nos formulários de cliente, o rótulo do botão que corre | **D-502** |
 
@@ -155,12 +155,12 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 7. ~~**Acessibilidade dos compartilhados**~~ — **feita** (D-508): o "Pular
    para o conteúdo" e o h2 da `/acoes`; e a guarda de e2e, com a tela
    estreita junto (D-510), que corrigiu a Home e a `.sb-pair-grid` no celular.
-8. **A `/central` sem deslocamento** (D-514; o A2 liberou a tela, o A3 faz): o esqueleto dos
-   indicadores tem 142 px e o conteúdo uns 3.000 — CLS próprio de 0,39 em
-   produção. Esqueleto dos indicadores da altura da janela, o da "Atenção"
-   com o cabeçalho real (medida com a lista cheia, o estado comum), e o
-   `CarregandoBloco` com altura reservada opcional — sem ela, fica como está.
-   Os nomes das regiões que o `central.spec` usa não mudam.
+8. ~~**A `/central` sem deslocamento**~~ — **feita** (D-515; o A2 liberou a
+   tela): os indicadores reservam a janela (`CarregandoBloco altura`) e a
+   "Atenção" tem esqueleto do tamanho da lista de três itens (244 px para 244,
+   calibrado). No build local, CLS de 0,144 para 0 com as leituras juntas e de
+   0,278 para 0,046 com a "Atenção" depois — o resto é o banco local sem
+   itens. Confere-se na próxima leitura de produção.
 9. **Paleta para a mesma tela com outra `?busca`** (lacuna da D-513, achada
    pelo A2): o "Pedido Shopee" estando em `/vendas/shopee` não ganha sinal,
    porque o indicador termina na troca de caminho. Terminar pela URL inteira
@@ -297,7 +297,7 @@ diário" (~0,5 s) e, com 150 ms por chamada, um da "Atenção" (~0,9 s). Os
 `CarregandoBloco` de 142 px e o conteúdo tem uns 3.000 px; com 150 ms por
 chamada, CLS de 0,144 em toda carga local, e o "Por marketplace" sai da
 janela. O conserto (esqueleto dos indicadores da altura da janela e o da
-"Atenção" com o cabeçalho real) foi combinado com o A2 — §3, item 8.
+"Atenção" com o cabeçalho real) foi feito na D-515 — §3, item 8.
 
 **Próxima leitura:** quando houver carga completa de `/skus/[id]` e depois do
 conserto da `/central`. A navegação suave (D-512) não entra nestes números: o
