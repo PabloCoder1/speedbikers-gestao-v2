@@ -16277,6 +16277,23 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-481 - Uma leitura de pedidos por loja Shopee de cada vez: a trava do orders.sync
+
+**Contexto:** na primeira leitura das duas lojas reais (16/10, `shop_id` 427275919 conectada as 14:15 UTC e 303898206 as 14:29), o Cloud Logging mostrou janelas de pedidos lidas em dobro. Enquanto a cadeia de uma loja andava de 15 em 15 dias (cada janela enfileira a seguinte), o aviso de pedido (push, D-453) e o gatilho horario enfileiravam outra `shopee.orders.sync`, com outra chave, que lia a MESMA janela do mesmo marco ao mesmo tempo: pares com o mesmo `de`/`ate` e o mesmo numero de pedidos (1.308, 1.508, 1.362, 2.110, 1.925 e 3.023), e, depois de alcancar o presente, pares de 5 em 5 minutos. A gravacao e idempotente (D-432), entao os dados ficaram certos. O custo era chamada dobrada a Shopee e gravacao dobrada no banco, ~100 s por janela, durante toda a leitura.
+
+**Decisao:**
+1. **A trava do detalhe do catalogo (D-428), agora nos pedidos:** coluna `shopee_shops.orders_sync_locked_until` e `shopee_orders_sync_lock(loja, ttl)` -- um `update ... where livre returning`, atomico, so para o `service_role`. Quem pega le a janela; quem nao pega encerra sem erro (`shopee_orders_sync_skipped`, "outra leitura em andamento"), porque a leitura em andamento cobre a loja. As duas travas sao independentes: catalogo e pedidos andam juntos.
+2. **A trava e solta ANTES de enfileirar a janela seguinte** (e o financeiro, as devolucoes, o Ads e os repasses): a continuacao a acharia presa e a cadeia pararia. A leitura foi para `lerJanela`, sem mudar a logica; o handler trava, le, solta (tambem quando a leitura lanca) e so entao enfileira.
+3. **Validade de 10 minutos:** uma janela de 15 dias leva ~2 min com ~100 pedidos por dia. Execucao que morra no meio solta sozinha ao vencer, e o proximo gatilho (push ou o horario) pega.
+4. **Ordem de publicacao:** a migration antes do worker. O worker novo chama `shopee_orders_sync_lock`, que so a migration cria; o de hoje nao conhece a coluna e segue igual.
+
+**Verificacao:**
+- **Worker:** 12 testes do `orders.sync` (4 novos): outra leitura em andamento encerra sem chamar a Shopee, sem enfileirar e sem soltar a trava alheia; a ordem trava -> solta -> enfileira; falha devolvida e excecao (rede) no meio soltam a trava. **Mutacao:** sem o "pula se travada", com o enfileirar antes de soltar e sem o `finally`, cada uma derruba um teste.
+- **Integracao:** a trava pega uma vez, recusa a segunda, e pega de novo vencida; a do catalogo e independente; `authenticated` e `anon` sao recusados. Suite inteira com o banco recriado do zero.
+- **Fica para depois do deploy:** no Cloud Logging, uma `shopee_orders_sync_done` por janela e por loja, e `shopee_orders_sync_skipped` quando o push chega com a leitura em andamento.
+
+**Impacto:** `supabase/migrations/20261016160000_trava_pedidos_shopee.sql`, `apps/worker/src/handlers/shopee-orders-sync{,.test}.ts`, `packages/db/src/{types,rls.integration.test}.ts` e `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF,MULTICHANNEL_HANDOFF}.md`. Publica o worker depois da migration; api e web nao mudam.
+
 ## D-482 - Telas multicanais, etapa T8b: a meta de cada marketplace ao lado da geral, na central e em Metas e imposto (consome o C-66)
 
 **Contexto:** em 15/10 o dono decidiu uma meta POR MARKETPLACE e uma GERAL (D-480). O A1 entregou o C-66 (D-473), que não mexe no que já existe:

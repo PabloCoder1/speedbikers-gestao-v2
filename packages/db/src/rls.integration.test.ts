@@ -3031,6 +3031,33 @@ describe("catálogo Shopee e vínculo pelo SKU do anúncio (D-428)", () => {
     expect([primeira.rows[0]?.pegou, segunda.rows[0]?.pegou, depois.rows[0]?.pegou]).toEqual([true, false, true]);
     await expect(asUser(ADMIN_SB, `select public.shopee_items_hydrate_lock('${LOJA}', 900)`)).rejects.toThrow(/permission denied/i);
   });
+
+  it("D-481: a trava da leitura de pedidos -- uma por loja, vencida pode ser pega de novo, só o worker pega", async () => {
+    await client.query("update public.shopee_shops set orders_sync_locked_until = null where id = $1", [LOJA]);
+
+    const primeira = await client.query<{ pegou: boolean }>("select public.shopee_orders_sync_lock($1, 600) as pegou", [LOJA]);
+    const segunda = await client.query<{ pegou: boolean }>("select public.shopee_orders_sync_lock($1, 600) as pegou", [LOJA]);
+
+    // Execução que morreu no meio: a trava vence e o próximo gatilho pega.
+    await client.query("update public.shopee_shops set orders_sync_locked_until = now() - interval '1 second' where id = $1", [LOJA]);
+
+    const vencida = await client.query<{ pegou: boolean }>("select public.shopee_orders_sync_lock($1, 600) as pegou", [LOJA]);
+    const ate = await client.query<{ segundos: number }>(
+      "select round(extract(epoch from orders_sync_locked_until - now()))::int as segundos from public.shopee_shops where id = $1",
+      [LOJA],
+    );
+
+    // A trava dos pedidos não é a do catálogo: as duas leituras andam juntas.
+    await client.query("update public.shopee_shops set items_hydrate_locked_until = null where id = $1", [LOJA]);
+    const catalogo = await client.query<{ pegou: boolean }>("select public.shopee_items_hydrate_lock($1, 900) as pegou", [LOJA]);
+
+    await client.query("update public.shopee_shops set orders_sync_locked_until = null, items_hydrate_locked_until = null where id = $1", [LOJA]);
+
+    expect([primeira.rows[0]?.pegou, segunda.rows[0]?.pegou, vencida.rows[0]?.pegou, catalogo.rows[0]?.pegou]).toEqual([true, false, true, true]);
+    expect(ate.rows[0]?.segundos).toBeGreaterThanOrEqual(598);
+    await expect(asUser(ADMIN_SB, `select public.shopee_orders_sync_lock('${LOJA}', 600)`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(`select public.shopee_orders_sync_lock('${LOJA}', 600)`)).rejects.toThrow(/permission denied/i);
+  });
 });
 
 /*

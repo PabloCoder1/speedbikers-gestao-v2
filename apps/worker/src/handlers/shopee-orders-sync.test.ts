@@ -44,10 +44,12 @@ interface PedidoGravado extends Record<string, unknown> {
  * lote (os outros seriam leitura mais velha que a guardada); `erroNaGravacao`
  * faz a RPC do lote falhar.
  */
-function fakeDb(loja: Loja | null, opcoes: { gravaAte?: number; erroNaGravacao?: string } = {}) {
+function fakeDb(loja: Loja | null, opcoes: Opcoes = {}) {
   const gravado = {
     marcos: [] as unknown[],
     lotes: [] as { loja: unknown; pedidos: PedidoGravado[]; syncedAt: unknown }[],
+    // D-481: a ordem entre travar, soltar e enfileirar.
+    eventos: [] as string[],
   };
 
   function leitura(result: unknown) {
@@ -67,6 +69,12 @@ function fakeDb(loja: Loja | null, opcoes: { gravaAte?: number; erroNaGravacao?:
 
   const db = {
     rpc: (nome: string, args: Record<string, unknown>) => {
+      if (nome === "shopee_orders_sync_lock") {
+        gravado.eventos.push("trava");
+
+        return Promise.resolve({ data: opcoes.travada !== true, error: null });
+      }
+
       if (nome === "shopee_upsert_orders") {
         if (opcoes.erroNaGravacao !== undefined) {
           return Promise.resolve({ data: null, error: { message: opcoes.erroNaGravacao } });
@@ -80,6 +88,10 @@ function fakeDb(loja: Loja | null, opcoes: { gravaAte?: number; erroNaGravacao?:
       }
 
       if (nome === "shopee_advance_orders_synced_until") {
+        if (opcoes.lancaNoMarco === true) {
+          return Promise.reject(new Error("rede caiu"));
+        }
+
         gravado.marcos.push(args.p_until);
 
         return Promise.resolve({ data: args.p_until, error: null });
@@ -89,6 +101,15 @@ function fakeDb(loja: Loja | null, opcoes: { gravaAte?: number; erroNaGravacao?:
     },
     from: (table: string) => ({
       select: () => leitura({ data: table === "shopee_shops" ? loja : credencial, error: null }),
+      update: (valores: Record<string, unknown>) => ({
+        eq: () => {
+          if (table === "shopee_shops" && "orders_sync_locked_until" in valores && valores.orders_sync_locked_until === null) {
+            gravado.eventos.push("solta");
+          }
+
+          return Promise.resolve({ error: null });
+        },
+      }),
     }),
   } as unknown as ShopeeOrdersSyncDeps["db"];
 
@@ -163,12 +184,19 @@ function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
   };
 }
 
-function rodar(
-  loja: Loja | null,
-  shopee: ReturnType<typeof fakeShopee>,
-  opcoes: { gravaAte?: number; erroNaGravacao?: string } = {},
-) {
+interface Opcoes {
+  gravaAte?: number;
+  erroNaGravacao?: string;
+  /** D-481: outra execução segura a trava da loja. */
+  travada?: boolean;
+  /** D-481: o avanço do marco LANÇA (rede), em vez de devolver erro. */
+  lancaNoMarco?: boolean;
+}
+
+function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes: Opcoes = {}, eventos?: string[]) {
   const { db, gravado } = fakeDb(loja, opcoes);
+
+  if (eventos !== undefined) gravado.eventos = eventos;
   const enfileirados: EnqueueRequest[] = [];
   const handler = createShopeeOrdersSyncHandler({
     db,
@@ -178,6 +206,7 @@ function rodar(
     enqueuer: {
       enqueue: (request) => {
         enfileirados.push(request);
+        gravado.eventos.push("enfileira");
 
         return Promise.resolve({ deduplicated: false });
       },
@@ -328,6 +357,40 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(gravado.lotes).toEqual([]);
     expect(gravado.marcos).toEqual([]);
+  });
+
+  it("D-481: outra leitura da loja em andamento: encerra sem erro, sem chamar a Shopee e sem enfileirar", async () => {
+    const shopee = fakeShopee({ paginas: [["A1"]] });
+    const { outcome, gravado, enfileirados } = await rodar(LOJA, shopee, { travada: true });
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopee.listas).toEqual([]);
+    expect(enfileirados).toEqual([]);
+    expect(gravado.marcos).toEqual([]);
+    // Quem não pegou a trava não a solta (seria soltar a de outra execução).
+    expect(gravado.eventos).toEqual(["trava"]);
+  });
+
+  it("D-481: solta a trava ANTES de enfileirar a janela seguinte (a continuação a acharia presa)", async () => {
+    const { outcome, gravado } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]] }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(gravado.eventos).toEqual(["trava", "solta", "enfileira"]);
+  });
+
+  it("D-481: falha no meio da janela também solta a trava, e nada é enfileirado", async () => {
+    const { outcome, gravado, enfileirados } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]], erroNaLista: "error_param" }));
+
+    expect(outcome).toMatchObject({ status: "failed" });
+    expect(enfileirados).toEqual([]);
+    expect(gravado.eventos).toEqual(["trava", "solta"]);
+  });
+
+  it("D-481: exceção no meio da janela (rede) solta a trava antes de a tarefa falhar", async () => {
+    const eventos: string[] = [];
+
+    await expect(rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaNoMarco: true }, eventos)).rejects.toThrow("rede caiu");
+    expect(eventos).toEqual(["trava", "solta"]);
   });
 
   it("loja em erro, de outro ambiente ou inexistente: pula, sem chamar a Shopee", async () => {
