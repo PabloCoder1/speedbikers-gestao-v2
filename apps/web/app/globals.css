@@ -7889,6 +7889,17 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
 }
 
 /*
+ * No celular o atalho quebra linha (D-510). Sozinho na linha, com `nowrap`, ele
+ * passava 1,9 px do limite do conteúdo a 390 px no Windows — e, com a métrica de
+ * fonte do Linux da CI, saía do respiro e a `/vendas` rolava 1 px para o lado.
+ */
+@media (max-width: 560px) {
+  .sb-hoje-atalho {
+    white-space: normal;
+  }
+}
+
+/*
  * DASHBOARD DO ANÚNCIO — acabamento visual (`/anuncios/[itemId]`).
  *
  * Tudo aqui usa os tokens da casa: nenhuma cor nova, nenhuma sombra forte. O

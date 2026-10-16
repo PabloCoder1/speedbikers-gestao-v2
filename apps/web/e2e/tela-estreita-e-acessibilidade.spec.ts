@@ -70,12 +70,37 @@ test.describe("tela estreita (390 px, celular)", () => {
     for (const rota of ROTAS) {
       await page.goto(rota, { waitUntil: "networkidle" });
 
-      const { rolagem, visivel } = await page.locator(".sb-content").evaluate((conteudo) => ({
-        rolagem: conteudo.scrollWidth,
-        visivel: conteudo.clientWidth,
-      }));
+      const { rolagem, visivel, foraDoLimite } = await page.locator(".sb-content").evaluate((conteudo) => {
+        // O LIMITE é a borda interna do conteúdo (sem o respiro lateral), não a borda da rolagem: um texto que
+        // invade o respiro em um sistema sai dele em outro — a métrica de fonte do Linux da CI pôs a /vendas 1 px
+        // para fora com o atalho do "hoje", que no Windows só invadia o respiro (D-510).
+        const limite =
+          conteudo.getBoundingClientRect().left + conteudo.clientWidth - parseFloat(getComputedStyle(conteudo).paddingRight);
+        const dentroDeRolavel = (el: Element): boolean => {
+          for (let ancestral = el.parentElement; ancestral !== null && ancestral !== conteudo; ancestral = ancestral.parentElement) {
+            const rolagemX = getComputedStyle(ancestral).overflowX;
+            if (rolagemX !== "visible") return true;
+          }
+
+          return false;
+        };
+        const fora = [...conteudo.querySelectorAll<HTMLElement>("*")]
+          .filter((el) => {
+            const caixa = el.getBoundingClientRect();
+
+            // O painel de um menu FECHADO tem caixa, mas não é desenhado nem faz a tela rolar.
+            const emMenuFechado = el.closest("details:not([open]) > :not(summary)") !== null;
+
+            return caixa.width > 0 && caixa.right > limite + 1 && !dentroDeRolavel(el) && !emMenuFechado;
+          })
+          .slice(0, 3)
+          .map((el) => `${el.tagName.toLowerCase()}.${el.className} passa ${(el.getBoundingClientRect().right - limite).toFixed(1)} px`);
+
+        return { rolagem: conteudo.scrollWidth, visivel: conteudo.clientWidth, foraDoLimite: fora };
+      });
 
       if (rolagem > visivel) transbordos.push(`${rota}: ${String(rolagem - visivel)} px para o lado`);
+      transbordos.push(...foraDoLimite.map((elemento) => `${rota}: ${elemento} do limite do conteúdo`));
 
       // Tabela mais larga que o primeiro ancestral que a corta, sem um rolável no meio.
       const cortadas = await page.evaluate(() => {
