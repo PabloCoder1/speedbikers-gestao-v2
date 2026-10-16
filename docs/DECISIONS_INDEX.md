@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **487** (D-001 a D-512).
+Decisões registradas: **488** (D-001 a D-513).
 
 ## Por domínio
 
@@ -161,7 +161,7 @@ Decisões registradas: **487** (D-001 a D-512).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (64)
+### interface (65)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -227,6 +227,7 @@ Decisões registradas: **487** (D-001 a D-512).
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique
 - **D-510** — Tela estreita: a Home e a sb-pair-grid deixam de rolar para o lado no celular, e as duas auditorias viram guarda de e2e
 - **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
+- **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 
 ### mercado-livre (83)
 

@@ -294,7 +294,7 @@ branco embutido.
 | `ObjectBadgeTardio`, `SeloCarregando` | `components/object-header.tsx` | **o selo que chega depois** (D-505): um `Suspense` na posição do frame dentro da fileira de selos do `ObjectHeader`, com o lugar reservado pelo rótulo transparente e a revelação de 350 ms; hoje, a curva ABC do SKU |
 | `KpiCellTardia`, `KpiCellCarregando`, `KpiCell` | `components/kpi-strip.tsx` | **a célula que chega depois** (D-509): um `Suspense` na posição dela dentro da faixa, com o rótulo, a ressalva e o id de verdade e o valor como traço da mesma classe; hoje, a taxa de cancelamento da `/vendas` |
 | `PularParaConteudo` | `components/pular-para-conteudo.tsx` | **o primeiro ponto de foco** (D-508): leva o foco ao `<main id="conteudo">` sem criar entrada no histórico (o App Router recarrega a página no "voltar" de uma âncora) |
-| `IndicadorDeNavegacao` | `components/indicador-de-navegacao.tsx` | **o sinal de toda troca de tela** (D-512): com o `Shell` no layout e sem `loading.tsx` no grupo, o clique num link interno para outro caminho mostra o `AtualizandoTela` até o caminho mudar |
+| `IndicadorDeNavegacao` | `components/indicador-de-navegacao.tsx` | **o sinal de toda troca de tela** (D-512): com o `Shell` no layout e sem `loading.tsx` no grupo, o clique num link interno para outro caminho mostra o `AtualizandoTela` até o caminho mudar; quem navega por código avisa com `avisarTrocaDeTela(href)` antes do `router.push` (a paleta de busca, D-513) |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
