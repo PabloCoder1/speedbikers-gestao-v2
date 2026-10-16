@@ -44,7 +44,14 @@ jobs:
       # por alguns segundos. O cache explicito nao pede nada em troca.
       - name: Caminho do store do pnpm
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        # D-477: atribuir ANTES do echo. Dentro de "$(...)" num echo a falha do
+        # pnpm some (o echo sai 0) e o passo passava com o caminho vazio --
+        # quem acusava era o actions/cache, com "Input required and not
+        # supplied: path". Com o `bash -e` padrao, a atribuicao falha aqui.
+        run: |
+          caminho="$(pnpm store path --silent)"
+          [ -n "${caminho}" ] || { echo "::error::pnpm store path devolveu vazio"; exit 1; }
+          echo "path=${caminho}" >> "$GITHUB_OUTPUT"
 
       # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Sem
       # `restore-keys` de proposito: partir do store anterior faria cada troca
@@ -164,7 +171,14 @@ jobs:
       # por alguns segundos. O cache explicito nao pede nada em troca.
       - name: Caminho do store do pnpm
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        # D-477: atribuir ANTES do echo. Dentro de "$(...)" num echo a falha do
+        # pnpm some (o echo sai 0) e o passo passava com o caminho vazio --
+        # quem acusava era o actions/cache, com "Input required and not
+        # supplied: path". Com o `bash -e` padrao, a atribuicao falha aqui.
+        run: |
+          caminho="$(pnpm store path --silent)"
+          [ -n "${caminho}" ] || { echo "::error::pnpm store path devolveu vazio"; exit 1; }
+          echo "path=${caminho}" >> "$GITHUB_OUTPUT"
 
       # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Sem
       # `restore-keys` de proposito: partir do store anterior faria cada troca
@@ -238,7 +252,14 @@ jobs:
       # por alguns segundos. O cache explicito nao pede nada em troca.
       - name: Caminho do store do pnpm
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        # D-477: atribuir ANTES do echo. Dentro de "$(...)" num echo a falha do
+        # pnpm some (o echo sai 0) e o passo passava com o caminho vazio --
+        # quem acusava era o actions/cache, com "Input required and not
+        # supplied: path". Com o `bash -e` padrao, a atribuicao falha aqui.
+        run: |
+          caminho="$(pnpm store path --silent)"
+          [ -n "${caminho}" ] || { echo "::error::pnpm store path devolveu vazio"; exit 1; }
+          echo "path=${caminho}" >> "$GITHUB_OUTPUT"
 
       # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Sem
       # `restore-keys` de proposito: partir do store anterior faria cada troca
@@ -369,7 +390,14 @@ jobs:
       # por alguns segundos. O cache explicito nao pede nada em troca.
       - name: Caminho do store do pnpm
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        # D-477: atribuir ANTES do echo. Dentro de "$(...)" num echo a falha do
+        # pnpm some (o echo sai 0) e o passo passava com o caminho vazio --
+        # quem acusava era o actions/cache, com "Input required and not
+        # supplied: path". Com o `bash -e` padrao, a atribuicao falha aqui.
+        run: |
+          caminho="$(pnpm store path --silent)"
+          [ -n "${caminho}" ] || { echo "::error::pnpm store path devolveu vazio"; exit 1; }
+          echo "path=${caminho}" >> "$GITHUB_OUTPUT"
 
       # Mesmo lockfile, mesmo conjunto de tarballs: a chave e o hash dele. Sem
       # `restore-keys` de proposito: partir do store anterior faria cada troca

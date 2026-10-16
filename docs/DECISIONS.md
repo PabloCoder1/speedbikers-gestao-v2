@@ -16176,6 +16176,16 @@ Se a ordem escapar, a paleta mostra "Outros", e nao `pedido_shopee`.
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration nova, RPC, worker ou api (a migration e a do #201).
 
+## D-477 - O passo do store do pnpm na CI falha onde o pnpm falha, e nao no cache
+
+**Contexto:** achado do A2 em 15/10, quando o corepack do runner deu ECONNRESET ao baixar o pnpm: o passo "Caminho do store do pnpm" fazia `echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"`. A falha de dentro do `$(...)` nao muda o codigo de saida do `echo`, e o passo passava com `path=` vazio. Quem acusava era o passo seguinte, o `actions/cache`, com "Input required and not supplied: path" -- um erro que aponta para o cache e esconde a causa. O mesmo passo existe nos quatro jobs do `ci.yml` (check, integracao, e2e e migrations do Dev).
+
+**Decisao:** atribuir antes do `echo` (`caminho="$(pnpm store path --silent)"`): com o `bash -e` padrao dos passos sem `shell`, a atribuicao falha quando o comando falha. E recusar o caminho vazio com `::error::`, para o caso de o pnpm sair 0 sem imprimir nada.
+
+**Verificacao:** o `ci.yml` continua valido (PyYAML) e os quatro passos `pnpm-store` tem o trecho novo. O trecho velho e o novo rodados sob `bash -e` com um pnpm falso: com o pnpm ok, os dois gravam o mesmo caminho; com o pnpm falhando, o velho sai 0 e grava `path=` vazio, e o novo sai 1 sem gravar nada. Na CI deste PR os quatro jobs passam pelo passo novo.
+
+**Impacto:** `.github/workflows/ci.yml` e `docs/{DECISIONS,DECISIONS_INDEX}.md`. Nenhum codigo do app.
+
 ## D-478 - A falha intermitente da /vinculacoes nao era estado deixado por outro spec: o teste passa a esperar o resumo ou a dizer o motivo da queda
 
 **Contexto:** na suite inteira da D-474, o caso "/vinculacoes: o zero de candidatos diz por que e zero" falhou uma vez, com "cartao CANDIDATOS DO ERP nao encontrado". Ele passou sozinho e em tres rodadas inteiras depois. A hipotese anotada era estado deixado por outro spec.
