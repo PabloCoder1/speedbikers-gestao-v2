@@ -171,6 +171,8 @@ export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: str
               escrow_amount: LOJA_LIVE.recebidoPorPedido,
             },
             financials_synced_at: agora,
+            // A devolução do 1º pedido vem no financeiro dele, como o worker grava (`com_devolucao`).
+            ...(p.sn === "E2ELIVE01" ? { return_order_sns: ["E2ELIVE-DEV01"] } : {}),
           }
         : {}),
     })),

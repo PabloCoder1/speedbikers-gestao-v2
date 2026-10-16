@@ -382,3 +382,34 @@ test("/vendas/shopee?pedido=: o número que não está no recorte diz isso, e n�
   await expect(page.getByText("O pedido NAO-EXISTE-123 não está neste recorte.")).toBeVisible();
   await expect(page.getByText("Nenhum pedido da Shopee no período.")).toHaveCount(0);
 });
+
+/**
+ * D-490: o CSV dos pedidos sai com o recorte da lista — o mesmo número de
+ * pedidos da tela (uma linha por pedido), as palavras dela e a loja de teste
+ * marcada. Sem dado do comprador: a RPC não o devolve.
+ */
+test("/vendas/shopee: o CSV dos pedidos sai com o recorte da lista (D-490)", async ({ page }) => {
+  await login(page, "/vendas/shopee");
+  await expect(tabelaPedidos(page)).toBeVisible();
+
+  const naTela = await tabelaPedidos(page).locator("tbody > tr").count();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    painelPedidos(page).getByRole("link", { name: /Exportar CSV/ }).click(),
+  ]);
+
+  expect(download.suggestedFilename()).toMatch(/^pedidos-shopee-\d{4}-\d{2}-\d{2}-a-\d{4}-\d{2}-\d{2}\.csv$/);
+
+  const { readFileSync } = await import("node:fs");
+  const linhas = readFileSync(await download.path(), "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+
+  expect(linhas[0]).toBe(
+    "Pedido;Loja;Ambiente;Criado em;Situação;Status na Shopee;Unidades;Receita bruta;Recebido;Financeiro lido;Devolução;Itens",
+  );
+  expect(linhas).toHaveLength(1 + naTela);
+
+  const comFinanceiro = linhas.find((linha) => linha.startsWith(`${E2E_SHOPEE_PEDIDOS.comFinanceiro.orderSn};`));
+
+  expect(comFinanceiro).toContain(";Teste;");
+  expect(comFinanceiro).toContain(";Sim;");
+});
