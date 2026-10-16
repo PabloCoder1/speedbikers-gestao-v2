@@ -16366,6 +16366,8 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 
 **Em producao (16/10):** a migration `20261016180000` as 19:37 UTC (run `38955922868`, o plano so com ela). Na leitura real dos 30 dias, o `outros_restante` zerou em 100% dos pedidos cobertos, a protecao de envio veio em todos e receita - componentes - protecao_envio - outros_restante = recebido fecha pedido a pedido e no TOTAL; nenhum erro de runtime na Vercel. Fica a **fase 2**: o `outros` passa a ser o restante, o `outros_restante` sai (com aviso ao A2) e a linha de `shopee_composicao_recebido` em `metric_definitions` ganha a taxa (achado do A2).
 
+**Fase 2 (em codigo, 16/10):** migration `20261016200000` -- o `outros` passa a ser o que a lista, com a protecao de envio, nao explica; `outros_restante` sai das duas funcoes; `protecao_envio` fica; a formula de `shopee_composicao_recebido` em `metric_definitions` ganha "+ protecao de envio". Vale **receita - componentes - protecao_envio - outros = recebido**. O tipo `outros_restante?` fica opcional em `types.ts` ate a tela parar de le-lo (o A2 avisa). **Ordem:** so depois da tela do A2 (D-492, #232) em producao -- sem ela, a cascata de hoje mostraria o outros menor sem a linha da protecao. Verificacao: os 6 testes da D-443 com a fase 2 (TOTAL com outros 1,51 e protecao 0,49, a coluna da fase 1 ausente, a identidade por pedido e o catalogo com a taxa); mutacao (o outros ainda com a taxa, o catalogo sem a taxa, a composicao sem a protecao) derruba os testes.
+
 ## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 
 **Contexto:** a D-500 e a D-501 (A3) trocaram a recarga do documento pela navegação suave nas telas e deixaram, no `check:navegacao-suave`, a lista das telas que ainda recarregavam, "só diminui". Depois da T8a (D-480), sobrou uma: a `/curva-abc`, com dois `<form method="get">` (o período personalizado e a busca com a ordem). O "Para o A2" do handoff multicanal também apontava a `/produtos`: as opções e o "limpar" dos grupos de filtro, os cartões de atalho, o "limpar tudo" e os chips eram `<Link>` para a própria tela, sem sinal nenhum durante a espera. Uma navegação para a mesma tela não troca segmento, então o indicador de navegação do layout (D-512, só para outro caminho) também não aparece.
@@ -16549,6 +16551,43 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 **Impacto:**
 - web: `apps/web/lib/shopee-export.ts` com o teste, `apps/web/app/(app)/vendas/shopee/{page.tsx,exportar/route.ts}` e `apps/web/app/(app)/anuncios/shopee/{page.tsx,exportar/route.ts}`;
 - e2e: `vendas-shopee.spec.ts`, `anuncios-shopee.spec.ts`, `ensaio-loja-live.spec.ts` e `loja-shopee-live.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-492 - A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
+
+**Contexto:** a D-483 (A1, fase 1) achou o "outros" do C-61 igual, na leitura real, à taxa de proteção de envio do vendedor (`shipping_seller_protection_fee_amount`), que a fórmula oficial do escrow não lista. `get_shopee_faturamento_composicao` e `_pedidos` ganharam no fim `protecao_envio` (nula sem o campo) e `outros_restante` (o outros sem a taxa, calculado no SQL); o `outros` segue o de antes, ainda com a taxa. Vale `receita − componentes − protecao_envio − outros_restante = recebido`. A cascata "Para onde vai o dinheiro" do `/faturamento?marketplace=shopee` (D-452) mostrava a taxa inteira como "Outros (fecha com o recebido)".
+
+**1. Um degrau próprio, logo antes de "Outros".** "Proteção de envio" entra em `COMPONENTES_DO_RECEBIDO` depois de "Taxa por pedido". Com a leitura real, o "Outros" fica zero e sai das barras para a linha "Sem valor no período", como qualquer componente zerado.
+
+**2. Pela presença da coluna, a tela vale antes e depois da migration (`valorDoComponente`).**
+- **Antes da D-483:** `protecao_envio` não vem (`undefined`). O degrau nem existe, nem como nota, e o `outros` (com a taxa) fecha a conta como sempre.
+- **Fase 1:** `protecao_envio` vem. O "Outros" passa a ser o `outros_restante`: usar o `outros` contaria a taxa duas vezes.
+- **Fase 2 (A1, com aviso):** o `outros_restante` sai e o `outros` já é o restante. A tela usa o `outros` sem mudança.
+- `undefined` é "a coluna não existe"; `null` é "nenhum pedido coberto informou", dito em "A Shopee não informou". Zero vai para "Sem valor no período". Nada é calculado no navegador: os dois valores vêm do SQL.
+
+**3. Só a composição tem consumidor.** A web lê `get_shopee_faturamento_composicao` (o TOTAL). `get_shopee_faturamento_pedidos` não tem consumidor na tela.
+
+**4. O ensaio da loja live (D-486) com a taxa.** O fixture grava `shipping_seller_protection_fee_amount` no `order_income` dos pedidos cobertos e baixa a taxa de serviço no mesmo valor. O recebido, o custo e o resultado não mudam, e o "outros" de antes passa a ser exatamente a taxa, como na leitura real. O ensaio confere o degrau com o valor do período e o "Outros" em "Sem valor no período".
+
+**Publicação:** só a web. Ela lê as colunas da migration `20261016180000` (D-483) quando existem e funciona sem elas. Por isso não precisa esperar a migration de produção, e um parâmetro novo não é mandado (não há nenhum).
+
+**Verificacao:**
+- **Unitários (`faturamento-multicanal.test.ts`, 24):**
+  - antes da migration, sem o degrau nem a nota;
+  - fase 1, com o degrau terminando no recebido e o restante zero dito;
+  - fase 1 com restante, ao lado da proteção;
+  - loja sem o campo, com a proteção dita e o restante fechando;
+  - fase 2, com o `outros` já sendo o restante.
+- **Mutação:**
+  - usar o `outros` na fase 1 derruba dois testes;
+  - tratar a coluna ausente como "não informou" derruba outros dois.
+- **e2e:** o ensaio da loja live, com o degrau e o "Outros" sem valor.
+- **Suite inteira:** **251/251** com o banco recriado do zero (248 na 3300 e os 3 de convite na 3000) e o `loja-live` **6/6**, já com a T11.
+
+**Impacto:**
+- web: `apps/web/lib/faturamento-multicanal.ts` com o teste;
+- e2e: `loja-shopee-live.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
