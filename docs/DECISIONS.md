@@ -16325,6 +16325,39 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 - docs: `docs/{MULTICHANNEL_SCREENS,MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api (o banco é o C-66 do A1).
 
+## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
+
+**Contexto:** a D-500 e a D-501 (A3) trocaram a recarga do documento pela navegação suave nas telas e deixaram, no `check:navegacao-suave`, a lista das telas que ainda recarregavam, "só diminui". Depois da T8a (D-480), sobrou uma: a `/curva-abc`, com dois `<form method="get">` (o período personalizado e a busca com a ordem). O "Para o A2" do handoff multicanal também apontava a `/produtos`: as opções e o "limpar" dos grupos de filtro, os cartões de atalho, o "limpar tudo" e os chips eram `<Link>` para a própria tela, sem sinal nenhum durante a espera. Uma navegação para a mesma tela não troca segmento, então o indicador de navegação do layout (D-512, só para outro caminho) também não aparece.
+
+Esperou o #219 (o Shell num layout, D-512) entrar, como combinado com o A3: as duas telas mudaram de pasta (`app/(app)/`).
+
+**1. `/curva-abc`.**
+- Os dois formulários viram `FormularioFiltro` com `action="/curva-abc"`, com os mesmos campos e os mesmos ocultos que levam o resto do recorte.
+- O "Limpar filtros" vira `LinkDeFiltro`.
+- A tela sai de `PENDENTES`, e a lista fica vazia: tela nova com `<form method="get">` ou `<a href>` interno reprova sem exceção (fora as isenções de arquivo e de destino externo).
+
+**2. `/produtos`.** Os cinco tipos de link de mesma tela viram `LinkDeFiltro`: a opção do grupo, o "limpar" do grupo, o cartão de atalho, o "limpar tudo" e o chip. A busca já era `FormularioFiltro`, e a paginação já era `LinkDeFiltro`. O link do título para o SKU e os da Inspeção Rápida levam para outra tela e ficam `<Link>`.
+
+**3. A prova vai para os specs da tela.** Os três passos de "não recarregou" do spec da D-500 (marcar o `window`, conferir a marca e esperar o pendente acabar) viram `marcarSemRecarga`, `naoRecarregou` e `atualizacaoTerminou` em `e2e/helpers.ts`, para qualquer spec de tela usar. O spec da D-500 fica como está.
+- `/curva-abc`: a busca por Enter, o período personalizado (pelo menu do período) e o "Limpar filtros" trocam a URL sem recarregar. Depois do "Limpar filtros", o campo volta vazio.
+- `/produtos`: o atalho, a opção, o "limpar" do grupo e o chip trocam a URL sem recarregar. Com a resposta da tela segurada por 1 s (`page.route` só nos pedidos `RSC: 1`), a barra "Atualizando a tela…" aparece e depois sai.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Estatica:** typecheck e lint; `check:navegacao-suave` com 188 arquivos e 0 telas pendentes.
+- **Mutacao:** com as duas páginas da `main`, os dois casos novos falham.
+  - Na `/curva-abc`, a marca do `window` some, porque o formulário GET recarregava.
+  - Na `/produtos`, a barra nunca aparece.
+- **Com o codigo novo:** os dois casos passam 3 de 3 cada (`--repeat-each 3`). `curva-abc`, `produtos`, `atualizacao-no-lugar` e a guarda de tela estreita e acessibilidade: 16 de 16 contra o build.
+- **Suite inteira:** 245/245 com o banco recriado do zero (242 na 3300 e os 3 de convite na 3000).
+
+**Impacto:**
+- web: `apps/web/app/(app)/curva-abc/page.tsx`, `apps/web/app/(app)/produtos/page.tsx` e `apps/web/scripts/check-navegacao-suave.mjs`;
+- e2e: `apps/web/e2e/{helpers,curva-abc-multicanal.spec,produtos.spec}.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
 **Contexto:** primeira fatia do Agente 3 (UX/UI, carregamento, design system; faixa D-500 combinada com A1 e A2 em 14/10). A auditoria (`docs/UX_SYSTEM.md` §2) achou tres formas de "esperar" numa navegacao que fica na MESMA tela, nenhuma boa: (1) a opcao do `FilterMenu` era `<a href>` -- 63 usos em 26 arquivos, mais o `SeletorMarketplace` e as visoes salvas -- e cada escolha de marca, conta, status ou periodo recarregava o DOCUMENTO inteiro (HTML, JavaScript, hidratacao, a assinatura de Realtime das notificacoes e as sete leituras do `Shell`), com a tela em branco no meio; (2) as 25 buscas `<form method="get">` faziam o mesmo; (3) os `<Link>` com `CarregandoSeODemorar` (D-382 item 3) cobriam a tela com a `CarregandoTela` depois de 350 ms -- apagando a tabela, os filtros e o botao que a pessoa acabara de apertar, para mostrar o esqueleto de algo que ja estava na tela.
