@@ -5772,6 +5772,8 @@ export type Database = {
           // CORRECAO MANUAL (D-437): TOTAL sem conta; loja nunca lida com tudo nulo.
           account_id: string | null
           account_name: string | null
+          // CORRECAO MANUAL (D-485): opcional -- ausente antes da 20261016220000; a tela le pela presenca.
+          ajustes_cobertos?: number | null
           custo_produtos: number | null
           environment: string | null
           imposto_coberto: number | null
