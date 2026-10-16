@@ -16234,6 +16234,8 @@ A loja real (conectada em 16/10) tem ~95 pedidos por dia. Com ela so, o faturame
 
 **Impacto:** `supabase/migrations/20261016140000_faturamento_shopee_sem_laco.sql` e `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`. Em producao: a migration depois do merge e da CI da `main`; a web e o worker nao mudam.
 
+**Em producao (16/10):** migration `20261016140000` aplicada as 15:10 UTC (run `38921424337`, o plano conferido antes da 2a aprovacao: so ela); o corpo no Dev, que recebeu a mesma migration pela CI, tem o md5 da migration; nenhum erro de runtime na Vercel desde a conexao da loja real.
+
 ## D-480 - Telas multicanais, etapa T8a: a Shopee na /central, lado a lado e sem total de resultado; as metas por marketplace ficam para a T8b, sobre o C-66 do A1
 
 **Contexto:** a D-430 §5 deixou a meta do mes e os indicadores da `/central` com a Shopee para depois do Go Live, com uma decisao do dono sobre o total da empresa. Em 15/10 o dono decidiu, perguntado pelo A2:
