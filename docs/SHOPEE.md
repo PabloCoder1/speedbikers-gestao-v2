@@ -320,7 +320,7 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | 4 | Produtos e vínculo com SKU: 4a catálogo e vínculo pelo SKU do anúncio; 4b vínculo manual, painel no SKU, `/contas`; os ~3.000 do UpSeller vão para a fatia 7 | 4a no ar no sandbox (D-428); 4b código (D-429) |
 | 5 | Estoque (a planilha do UpSeller já desconta a venda Shopee) | adiada para o Go Live (decisão do dono, 14/10) |
 | 6 | Canal como dimensão em Vendas, Faturamento e ranking; painel por loja: 6a definição da venda, SKU gravado e `/vendas/shopee`; 6b canal em Faturamento e ranking | 6a código (D-430) |
-| 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | — |
+| 7 | Go Live (seção 6) e autorização das lojas reais (Speedbikers, Sbmotos) | **no ar desde 16/10** (duas lojas reais; seção 8) |
 | E1 | Ingestão robusta antes do volume real: pedido recusado não trava o financeiro, lote de pedidos numa transação que não regride, marco monotônico, erro da loja interrompe, organização amarrada à loja (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-432) |
 | E2 | Permissão por loja: a mesma regra das contas ML (ADMIN todas; os demais, as concedidas), auditada, com convite e limpeza na saída (`docs/MULTICHANNEL_CONTRACTS.md` §7) | código (D-433) |
 | E3 | `marketplace_accounts` (contas ML e lojas numa fonte, com a permissão) e a loja parada avisando como a conta ML: vigia de 3/12 h pelo avanço do marco e ERROR na hora, só loja `live`, só a quem alcança a loja | código (D-435) |
@@ -334,3 +334,23 @@ Fonte: `open.shopee.com/developer-guide/741` e `/742`.
 | E7b | Ads CPC da loja: o desempenho diário com a cobertura da leitura, ROAS/ACOS/TACoS no SQL; fora do resultado até conferir o GMV Max com loja real | código (D-449); chamada real a conferir no sandbox depois do deploy |
 | E7c | Repasse: cada liberação do escrow por pedido (`get_escrow_list`) contra o previsto, com a cobertura da leitura; o a liberar; extrato da carteira e renda por pedido esperam o sandbox | código (D-451); chamada real e unidade do valor a conferir no sandbox depois do deploy |
 | E7d | Push: `POST /push/shopee` assinado antecipa a leitura de pedidos (3) e devoluções (29) da loja em janelas de 5 minutos; o gatilho horário continua | código (D-453); cadastrar o endereço no Console depois do deploy da api |
+
+## 8. A primeira leitura real — auditoria (16/10/2026)
+
+Duas lojas reais conectadas em 16/10 (`shop_id` 427275919 e 303898206). Consultas só de leitura em produção, agregadas, sem dado de comprador; **o repositório é público, então só proporções** (volume e receita ficam fora daqui).
+
+| O quê | Resultado |
+|---|---|
+| Pedidos | 90 dias lidos por `update_time` na primeira rodada; nenhuma janela com erro |
+| Financeiro (`get_escrow_detail`) | **100%** das vendas válidas lidas; nenhum `financials_error`; nenhuma válida sem receita |
+| Vínculo com SKU | ~0,7% dos itens sem SKU (os não vinculados vão para `/vinculacoes`) |
+| Catálogo | lido inteiro, nenhum `details_error` |
+| Credenciais | autorização até 16/10/2027; o token de 4 h renovado sozinho no modo live (D-426) |
+| Devoluções, repasses, Ads | lidos; **Ads CPC funciona no live** (90 dias; o 503 era só do sandbox, D-475) |
+| Faturamento (30 dias) | **99% dos pedidos válidos cobertos**; custo pelo histórico em todos |
+| Repasse (C-64) | o liberado igual ao `escrow_amount` em todos os pedidos sem devolução; só os com devolução divergem (o reembolso), como o C-64 mostra |
+
+**Três achados:**
+1. **"Outros" = a taxa de proteção de envio.** Em 30 dias, o "outros" do C-61 era 0,46% da receita coberta e aparecia em quase todo pedido. **Em 100% dos pedidos cobertos ele é exatamente `shipping_seller_protection_fee_amount`** (R$ 0,49 fixo por pedido), um campo do `order_income` que a fórmula oficial do `escrow_amount` usada no C-61 não lista. Fora ele, a fórmula fecha centavo a centavo. O resultado (recebido − custo) não muda; muda a decomposição. Proposta: um componente próprio no C-61 (coordenar a tela com o A2 antes, para a cascata continuar fechando).
+2. **Ajustes pós-escrow cobrados fora do repasse.** `total_adjustment_amount` (negativo, ~0,4% da receita coberta em 30 dias) não entra no repasse: a Shopee libera o `escrow_amount` cheio e cobra o ajuste à parte (provavelmente na carteira, que ainda não lemos). O C-58 mostra os ajustes como informativos; o resultado não os desconta. Proposta: descontar (o dinheiro sai) — decisão do dono, porque muda o resultado exibido.
+3. **Nenhuma alíquota de imposto cadastrada** (`tax_rates` vazia em produção): o imposto sai nulo no ML e na Shopee. Ato do dono, em `/central/metas` (Metas e imposto).

@@ -45,7 +45,7 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  */
 
 const SOBREPOSICAO_S = 10 * 60;
-/** D-481: validade da trava -- uma janela de 15 dias leva ~2 min com ~100 pedidos por dia. */
+/** D-481: validade da trava -- uma janela de 15 dias leva ~2 min nas lojas reais. */
 const TRAVA_S = 10 * 60;
 const PRIMEIRA_LEITURA_S = 90 * 24 * 3600;
 /** Teto de páginas de 100 por janela — 20 mil pedidos em 15 dias passaria de qualquer loja da casa. */
