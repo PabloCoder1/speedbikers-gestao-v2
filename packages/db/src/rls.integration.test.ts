@@ -5852,6 +5852,8 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       coins: 2,
       shopee_discount: 0,
       total_adjustment_amount: -10,
+      // D-483: a taxa de proteção de envio (só no json, sem coluna) -- 0,49 dos 2 de "outros".
+      shipping_seller_protection_fee_amount: 0.49,
     });
     await item(LOJA, "P1", 0, skuX, 2, 100);
     await pedido(LOJA, "P2", "SHIPPED", DE, 100, 85, { commission_fee: 10, service_fee: 5 });
@@ -5918,6 +5920,34 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       ["Loja Real", "3", "400.00", "2.00", "325.00"],
       ["Sem Pedido", "0", null, null, null],
       ["Teste", "1", "500.00", "100.00", "400.00"],
+    ]);
+  });
+
+  it("D-483 (fase 1): a proteção de envio vem como componente e o restante fecha a cascata; o outros de sempre não muda", async () => {
+    const [total, ...contas] = await composicao(ADMIN);
+    const porPedido = await asUser<Linha>(
+      ADMIN,
+      `select order_sn, protecao_envio::text, round(outros, 2)::text as outros, round(outros_restante, 2)::text as outros_restante,
+              (receita - coalesce(comissao, 0) - coalesce(taxa_servico, 0) - coalesce(taxa_transacao, 0) - coalesce(frete_loja, 0)
+                - coalesce(frete_devolucao, 0) - coalesce(cupom_loja, 0) - coalesce(afiliados, 0) - coalesce(taxa_por_pedido, 0)
+                - coalesce(protecao_envio, 0) - outros_restante = recebido)::text as fecha
+         from public.get_shopee_faturamento_pedidos('${ORG}', '${DE}', '${ATE}', null)
+        where coberto and environment = 'live' order by order_sn`,
+    );
+
+    // O outros continua o de hoje (com a taxa), para a tela de antes seguir fechando.
+    expect(total).toMatchObject({ outros: "2.00", protecao_envio: "0.49", outros_restante: "1.51", recebido_coberto: "325.00" });
+    expect(contas.map((c) => [c.account_name, c.protecao_envio, c.outros_restante])).toEqual([
+      ["Loja Real", "0.49", "1.51"],
+      ["Sem Pedido", null, null],
+      // A loja de teste: sem a taxa no financeiro, a proteção é nula e o restante é o outros.
+      ["Teste", null, "100.00"],
+    ]);
+    expect(porPedido).toEqual([
+      { order_sn: "P1", protecao_envio: "0.49", outros: "2.00", outros_restante: "1.51", fecha: "true" },
+      // Sem o campo no financeiro: nulo, não zero -- e o restante é o outros.
+      { order_sn: "P2", protecao_envio: null, outros: "0.00", outros_restante: "0.00", fecha: "true" },
+      { order_sn: "P3", protecao_envio: null, outros: "0.00", outros_restante: "0.00", fecha: "true" },
     ]);
   });
 
