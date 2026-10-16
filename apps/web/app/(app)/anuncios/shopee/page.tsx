@@ -17,6 +17,7 @@ import { Icone } from "../../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
+import { SavedFilters, type SavedFilter } from "../../../../components/saved-filters";
 import { SeletorDeMarketplace } from "../../../../components/seletor-marketplace";
 import { StatePill } from "../../../../components/state-pill";
 import { FormularioFiltro } from "../../../../components/formulario-filtro";
@@ -114,9 +115,9 @@ export default async function AnunciosShopeePage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As lojas não dependem da organização (a RLS já as restringe): saem junto
-  // com o membership, como as contas em `/anuncios` (D-195).
-  const [membership, lojasResult, contasMl] = await Promise.all([
+  // As lojas e os filtros salvos não dependem da organização (a RLS já os
+  // restringe): saem junto com o membership, como em `/anuncios` (D-195).
+  const [membership, lojasResult, contasMl, salvosResult] = await Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
@@ -125,6 +126,8 @@ export default async function AnunciosShopeePage({
     // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
     // marketplace oferecer a volta a `/anuncios`.
     contarContasMl(supabase),
+    // D-494: as visões salvas desta tela -- a tabela é por usuário e por tela.
+    supabase.from("saved_filters").select("id, name, params").eq("screen", "/anuncios/shopee").order("name"),
   ]);
 
   const organizationId = membership.organizationId;
@@ -157,6 +160,11 @@ export default async function AnunciosShopeePage({
   }
 
   const lojas = lojasResult.data.filter((loja) => loja.organization_id === organizationId);
+  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
+    id: linha.id,
+    name: linha.name,
+    params: linha.params as Record<string, string>,
+  }));
   // Quem vê os botões do vínculo manual: o mesmo corte das RPCs de escrita.
   const podeVincular = podeVincularShopee(membership.role);
 
@@ -327,6 +335,10 @@ export default async function AnunciosShopeePage({
               destinos={{ ml: hrefDosAnuncios("ml", filters.busca), shopee: buildShopeeListingsHref(filters) }}
             />
 
+            {/* D-494: a visão salva guarda a URL inteira (loja, vínculo, busca
+                e página), como em `/anuncios`. */}
+            <SavedFilters screen="/anuncios/shopee" organizationId={organizationId} filters={salvos} />
+
             {/* Todo o recorte vive na URL, nunca em estado React — link
                 compartilhável e voltar do navegador, como em `/anuncios`. */}
             <FilterMenu
@@ -364,6 +376,17 @@ export default async function AnunciosShopeePage({
           </>
         }
       />
+
+      {/* Leitura que falhou não vira "nenhuma visão salva" (D-494, como em `/vendas`). */}
+      {salvosResult.error !== null && (
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Os filtros salvos não carregaram"
+          descricao="A lista de visões salvas pode estar incompleta; o resto da tela não depende dela."
+          detalhe={salvosResult.error.message}
+          acao={{ href: buildShopeeListingsHref(filters, { pagina: filters.pagina }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      )}
 
       <section aria-label="Contadores dos anúncios da Shopee">
         <KpiStrip ancora cells={celulas} />

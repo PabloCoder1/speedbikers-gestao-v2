@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **496** (D-001 a D-515).
+Decisões registradas: **497** (D-001 a D-515).
 
 ## Por domínio
 
@@ -448,7 +448,7 @@ Decisões registradas: **496** (D-001 a D-515).
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 - **D-514** — Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
 
-### worker/infra (88)
+### worker/infra (89)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -536,6 +536,7 @@ Decisões registradas: **496** (D-001 a D-515).
 - **D-462** — Telas multicanais, etapa T3c: os jobs novos da Shopee (devolucoes, repasses e Ads) entram nas telas de saude, com a falha dita pelo nome
 - **D-475** — O Ads da Shopee nao repete na fila: a retentativa e o proximo ciclo da loja
 - **D-477** — O passo do store do pnpm na CI falha onde o pnpm falha, e nao no cache
+- **D-494** — Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
 - **D-508** — Acessibilidade dos componentes compartilhados: a auditoria sem dependencia nova, o "Pular para o conteudo" e o titulo que faltava na /acoes
 - **D-511** — O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
 

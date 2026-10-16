@@ -250,7 +250,7 @@ describe("as outras seções", () => {
     expect(section(comDado, "operacao").summary).toBe("3 templates; 5 entradas de conhecimento (2 validadas).");
   });
 
-  it("Preferências: filtros salvos são do usuário, e as telas donas são DUAS — sem dizer 'em Vendas'", () => {
+  it("Preferências: filtros salvos são do usuário, e as telas donas são VÁRIAS — sem dizer 'em Vendas'", () => {
     expect(section(base(), "preferencias")).toMatchObject({ state: "nao_configurado", summary: "Nenhum filtro salvo seu." });
 
     const comFiltros = base();
@@ -258,7 +258,7 @@ describe("as outras seções", () => {
 
     /*
       `saved_filters_mine` conta sem filtrar `screen`, e `SavedFilters` está
-      montado em /vendas E em /anúncios: "2 filtros salvos seus em Vendas"
+      montado em cinco telas (D-494): "2 filtros salvos seus em Vendas"
       ficaria falso no primeiro filtro salvo do outro lado. Com zero filtros o
       defeito dorme — este caso é o despertador.
     */
@@ -267,7 +267,10 @@ describe("as outras seções", () => {
       summary: "2 filtros salvos seus.",
       links: [
         { label: "Vendas", href: "/vendas" },
+        { label: "Vendas da Shopee", href: "/vendas/shopee" },
         { label: "Anúncios", href: "/anuncios" },
+        { label: "Anúncios da Shopee", href: "/anuncios/shopee" },
+        { label: "Curva ABC", href: "/curva-abc" },
       ],
     });
     expect(section(comFiltros, "preferencias").summary).not.toContain("em Vendas");

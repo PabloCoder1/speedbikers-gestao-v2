@@ -258,12 +258,16 @@ const LINKS = {
     // REJEITADO/OBSOLETO, e a fila pode estar vazia; ele aponta para a base.
     { label: "Revisão pendente", href: "/atendimento/conhecimento?status=SUGERIDO" },
   ],
-  // DUAS telas, não uma. `saved_filters_mine` conta sem filtrar `screen`, e
-  // `SavedFilters` está montado em `vendas/page.tsx` E em `anuncios/page.tsx`:
-  // dizer "em Vendas" seria falso no primeiro filtro salvo em /anúncios.
+  // Várias telas, não uma. `saved_filters_mine` conta sem filtrar `screen`, e
+  // `SavedFilters` está montado em CINCO telas: `/vendas`, `/anuncios`,
+  // `/curva-abc` (T6b, que a lista esquecia) e, desde a D-494, as duas da
+  // Shopee. Dizer "em Vendas" seria falso no primeiro filtro salvo em outra.
   preferencias: [
     { label: "Vendas", href: "/vendas" },
+    { label: "Vendas da Shopee", href: "/vendas/shopee" },
     { label: "Anúncios", href: "/anuncios" },
+    { label: "Anúncios da Shopee", href: "/anuncios/shopee" },
+    { label: "Curva ABC", href: "/curva-abc" },
   ],
 } as const satisfies Record<SettingsSection["id"], readonly SettingsLink[]>;
 
