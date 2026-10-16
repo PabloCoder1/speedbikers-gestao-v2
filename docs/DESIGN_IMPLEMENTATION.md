@@ -260,7 +260,7 @@ original fica porque a lista é o que tornou a troca uma linha só.
    navegador pinta os campos de branco, e os 31 `background: "transparent"`
    explícitos ficariam cinza — dois tipos de campo, duas cores, às vezes na
    mesma célula.
-8. ❌ **ERRADO, e a correção é a parte boa: NÃO ligou sozinho.** A lista mora dentro de um `.sb-panel` branco, então o `transparent` da linha lida mostrava o PAINEL, não o chão — os dois ramos continuaram brancos. A lida passou a apontar para `--sb-ground` e o realce apareceu na tela pela primeira vez. **Uma dívida que o cinza *paga*:** `app/notificacoes/notification-row.tsx:70`
+8. ❌ **ERRADO, e a correção é a parte boa: NÃO ligou sozinho.** A lista mora dentro de um `.sb-panel` branco, então o `transparent` da linha lida mostrava o PAINEL, não o chão — os dois ramos continuaram brancos. A lida passou a apontar para `--sb-ground` e o realce apareceu na tela pela primeira vez. **Uma dívida que o cinza *paga*:** `app/(app)/notificacoes/notification-row.tsx:70`
    distingue lida de não-lida com `--sb-surface` vs `transparent`. Os dois
    ramos rendem branco hoje — **o realce existe no código e nunca apareceu na
    tela.** Com o chão separado, liga sozinho.
@@ -294,6 +294,7 @@ branco embutido.
 | `ObjectBadgeTardio`, `SeloCarregando` | `components/object-header.tsx` | **o selo que chega depois** (D-505): um `Suspense` na posição do frame dentro da fileira de selos do `ObjectHeader`, com o lugar reservado pelo rótulo transparente e a revelação de 350 ms; hoje, a curva ABC do SKU |
 | `KpiCellTardia`, `KpiCellCarregando`, `KpiCell` | `components/kpi-strip.tsx` | **a célula que chega depois** (D-509): um `Suspense` na posição dela dentro da faixa, com o rótulo, a ressalva e o id de verdade e o valor como traço da mesma classe; hoje, a taxa de cancelamento da `/vendas` |
 | `PularParaConteudo` | `components/pular-para-conteudo.tsx` | **o primeiro ponto de foco** (D-508): leva o foco ao `<main id="conteudo">` sem criar entrada no histórico (o App Router recarrega a página no "voltar" de uma âncora) |
+| `IndicadorDeNavegacao` | `components/indicador-de-navegacao.tsx` | **o sinal de toda troca de tela** (D-512): com o `Shell` no layout e sem `loading.tsx` no grupo, o clique num link interno para outro caminho mostra o `AtualizandoTela` até o caminho mudar |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
@@ -947,7 +948,7 @@ O achado mais caro da auditoria, e ele é sistêmico:
 
 | | |
 |---|---|
-| evidência V3 | `app/atendimento/conhecimento/new-knowledge-form.tsx` declara `const input` (14px, raio 8px) em vez de `.sb-input`; **quatro** arquivos declaram um `const buttonStyle` próprio — `/acoes/action-card.tsx:66`, `/compras/[id]/actions-panel.tsx`, `/notas-fiscais/[id]/document-item-row.tsx`, `/vinculacoes/candidate-row.tsx` — com raio 8px e 12px |
+| evidência V3 | `app/(app)/atendimento/conhecimento/new-knowledge-form.tsx` declara `const input` (14px, raio 8px) em vez de `.sb-input`; **quatro** arquivos declaram um `const buttonStyle` próprio — `/acoes/action-card.tsx:66`, `/compras/[id]/actions-panel.tsx`, `/notas-fiscais/[id]/document-item-row.tsx`, `/vinculacoes/candidate-row.tsx` — com raio 8px e 12px |
 | medido | **59 campos em 29 arquivos** sem `.sb-input`; **59 botões em 35 arquivos** sem classe do design system |
 | evidência Figma | o export tem UMA forma de botão (`.button`: 32px, 11px, raio 6px) e uma de campo |
 | por que passou | `check:table-styles` guarda a TABELA (D-262). **Campo e botão não têm guarda** — e é exatamente onde a migração pela metade reapareceu |

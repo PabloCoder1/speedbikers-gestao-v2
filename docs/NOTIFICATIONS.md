@@ -106,7 +106,7 @@ Esta é a única regra que ainda filtra a CRIAÇÃO do `notification_recipients`
 
 ## 6. Preferências
 
-`notification_preferences` entra no schema **desde a Fase 2**, mesmo que a interface só apareça na Fase 7. É coluna barata agora e migration chata depois. **Schema criado em 2026-08-24 (D-073)**, **UI implementada em 2026-08-24 (D-076)** — `apps/web/app/notificacoes/preferencias`.
+`notification_preferences` entra no schema **desde a Fase 2**, mesmo que a interface só apareça na Fase 7. É coluna barata agora e migration chata depois. **Schema criado em 2026-08-24 (D-073)**, **UI implementada em 2026-08-24 (D-076)** — `apps/web/app/(app)/notificacoes/preferencias`.
 
 Granularidade: por usuário, por `event_type`, por severidade mínima e por conta — as quatro dimensões existem em `notification_preferences` (`event_type`/`ml_account_id` nuláveis como curinga, linha mais específica vence). Identidade da regra (evento + conta) é fixa depois de criada; severidade mínima e estado ativo/desativado são editáveis, o resto é apagar e recriar.
 
@@ -116,7 +116,7 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 
 ## 7. Central de Notificações
 
-**Lista + estado lido/não lido implementados em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`, últimas 100 notificações do usuário, ordenadas por mais recente. "Marcar como lida" (por item) e "marcar todas como lidas" escrevem direto em `notification_recipients` sob RLS (`docs/ARCHITECTURE.md` secao 4 cita este caso nominalmente), sem RPC. Emblema de não lidas no cabeçalho (`Shell`).
+**Lista + estado lido/não lido implementados em 2026-08-24 (D-074)** — `apps/web/app/(app)/notificacoes`, últimas 100 notificações do usuário, ordenadas por mais recente. "Marcar como lida" (por item) e "marcar todas como lidas" escrevem direto em `notification_recipients` sob RLS (`docs/ARCHITECTURE.md` secao 4 cita este caso nominalmente), sem RPC. Emblema de não lidas no cabeçalho (`Shell`).
 
 - Histórico completo, com estado lido / não lido por usuário. **Feito.**
 - Link para a entidade afetada **quando a rota existe** — hoje só `entity_type = "sku"` (`/skus/[skuId]`); `listing`/`order` ainda não têm tela de detalhe própria, aparecem como texto.
