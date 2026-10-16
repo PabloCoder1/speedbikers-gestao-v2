@@ -8,7 +8,7 @@ import { createClient } from "../../../lib/supabase/server";
  * Central de Ações (Fase 6, D-064) — Server Action (D-012): escrita simples
  * no escopo do usuário, sem segredo, só chama `update_action_status`
  * (security definer, refaz a autorização por conta própria). Mesmo padrão de
- * `apps/web/app/vinculacoes/actions.ts`.
+ * `apps/web/app/(app)/vinculacoes/actions.ts`.
  */
 
 export interface ActionResult {

@@ -105,7 +105,7 @@ export default async function NotaFiscalPage({
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
   // igual nos dois casos de propósito — mesmo raciocínio de
-  // apps/web/app/importacoes/[id]/page.tsx.
+  // apps/web/app/(app)/importacoes/[id]/page.tsx.
   if (document.data === null) {
     notFound();
   }
@@ -114,7 +114,7 @@ export default async function NotaFiscalPage({
   const linhas = items.error === null ? items.data : [];
 
   // Estados de trabalho em curso — mesmo raciocínio de AutoRefresh em
-  // apps/web/app/importacoes/[id]/page.tsx.
+  // apps/web/app/(app)/importacoes/[id]/page.tsx.
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
   const lendo = info.status === "UPLOADED" || info.status === "PARSING";
   const editable = info.status === "PARSED";

@@ -40,7 +40,7 @@ import { TriageCell } from "./triage-cell";
 export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 
 // Sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de `apps/web/app/anuncios/page.tsx`.
+// pessoa. Mesmo raciocínio de `apps/web/app/(app)/anuncios/page.tsx`.
 export const dynamic = "force-dynamic";
 
 /**

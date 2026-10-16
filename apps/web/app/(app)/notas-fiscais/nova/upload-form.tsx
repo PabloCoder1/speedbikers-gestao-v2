@@ -12,7 +12,7 @@ import { MAX_BYTES, tamanhoLegivel, triar, type ArquivoTriado } from "./triagem"
 /**
  * Envio de documentos de estoque — XML e PDF, um ou vários (D-375).
  *
- * Mesmo raciocínio de `apps/web/app/importacoes/nova/upload-form.tsx`: o
+ * Mesmo raciocínio de `apps/web/app/(app)/importacoes/nova/upload-form.tsx`: o
  * arquivo vai do navegador DIRETO para a `api` — CORS de `/v1/*` autoriza.
  * O token da sessão vai no header `Authorization`; a `api` reavalia o papel.
  *

@@ -1,7 +1,7 @@
 /**
  * Tradução da resposta da `api` para uma frase que ajuda quem está enviando.
  *
- * Mesmo raciocínio de `apps/web/app/importacoes/nova/describe-response.ts`:
+ * Mesmo raciocínio de `apps/web/app/(app)/importacoes/nova/describe-response.ts`:
  * separado do componente porque é a única parte do upload que tem regra.
  */
 

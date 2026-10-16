@@ -19,7 +19,7 @@ import { currentMembership } from "../../../lib/request-membership";
 export const metadata = { title: "Estoque — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de apps/web/app/compras/page.tsx.
+// pessoa. Mesmo raciocínio de apps/web/app/(app)/compras/page.tsx.
 export const dynamic = "force-dynamic";
 
 

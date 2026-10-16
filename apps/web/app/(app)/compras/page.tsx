@@ -36,7 +36,7 @@ import { createClient } from "../../../lib/supabase/server";
 export const metadata = { title: "Pedidos de Compra — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de apps/web/app/importacoes/page.tsx.
+// pessoa. Mesmo raciocínio de apps/web/app/(app)/importacoes/page.tsx.
 export const dynamic = "force-dynamic";
 
 /**

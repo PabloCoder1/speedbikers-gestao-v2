@@ -8,7 +8,7 @@ import { linkDocumentItem } from "../actions";
 
 /**
  * Vínculo de um item da NF-e a um SKU — mesmo padrão de
- * `apps/web/app/vinculacoes/candidate-row.tsx`: busca lê `skus` direto do
+ * `apps/web/app/(app)/vinculacoes/candidate-row.tsx`: busca lê `skus` direto do
  * navegador sob RLS (Modelo A), a escrita passa pela Server Action + RPC.
  *
  * Diferente da Central de Vinculações: aqui o vínculo pode ser TROCADO

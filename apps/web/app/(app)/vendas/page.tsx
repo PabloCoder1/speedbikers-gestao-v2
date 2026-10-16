@@ -29,7 +29,7 @@ import { sanitizeErrorText } from "../../../lib/sanitize";
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
 
 // A sessão vem de cookie e o RLS depende de quem está logado: pré-renderizar
-// no build mostraria dado de outra pessoa. Ver apps/web/app/importacoes/page.tsx.
+// no build mostraria dado de outra pessoa. Ver apps/web/app/(app)/importacoes/page.tsx.
 export const dynamic = "force-dynamic";
 
 /**
@@ -44,7 +44,7 @@ export const dynamic = "force-dynamic";
  * telas seriam a mesma UI duplicada.
  *
  * Filtro por link/formulário GET, sem componente cliente — mesmo padrão de
- * `apps/web/app/importacoes/[id]/page.tsx`. Toda soma acontece em SQL
+ * `apps/web/app/(app)/importacoes/[id]/page.tsx`. Toda soma acontece em SQL
  * (`get_sales_summary`), nunca em JavaScript (docs/ARCHITECTURE.md secao 21).
  *
  * "Comparação" aqui é o MESMO conjunto de seis métricas já aprovadas em
@@ -320,7 +320,7 @@ interface AccountOption {
 /**
  * Monta a URL preservando a outra dimensão do filtro — trocar de conta não
  * pode resetar o período, e vice-versa. Mesma ideia do `href()` de
- * `apps/web/app/importacoes/[id]/page.tsx`, com duas dimensões em vez de uma.
+ * `apps/web/app/(app)/importacoes/[id]/page.tsx`, com duas dimensões em vez de uma.
  */
 function buildHref(
   current: { period: Period; accountSlug: string | null; metricKey: string; brand: BrandFilter },
@@ -427,7 +427,7 @@ async function VendasContent({
   const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
   // Slug desconhecido (conta removida, digitado à mão) cai em "todas as
   // contas" em silêncio — mesmo tratamento de status desconhecido em
-  // apps/web/app/importacoes/[id]/page.tsx, não é erro de rede nem de dado.
+  // apps/web/app/(app)/importacoes/[id]/page.tsx, não é erro de rede nem de dado.
   const accountSlug = selectedAccount?.slug ?? null;
 
   // `exactOptionalPropertyTypes` distingue "propriedade ausente" de

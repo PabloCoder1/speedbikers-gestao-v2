@@ -22,7 +22,7 @@ import { ShopeeConnectButton } from "./shopee-connect-button";
 export const metadata = { title: "Contas e lojas — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Ver apps/web/app/importacoes/page.tsx para o mesmo raciocínio.
+// pessoa. Ver apps/web/app/(app)/importacoes/page.tsx para o mesmo raciocínio.
 export const dynamic = "force-dynamic";
 
 /**

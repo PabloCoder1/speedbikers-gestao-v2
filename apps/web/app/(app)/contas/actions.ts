@@ -11,7 +11,7 @@ import { currentMembership } from "../../../lib/membership";
  * Server Action (D-012): escrita simples no escopo do usuário, sob RLS
  * (`ml_accounts_admin_writes`, só ADMIN). Diferente da conexão em si — que
  * precisa do `client_secret` e por isso passa pela `api`
- * (`apps/web/app/contas/connect-button.tsx`) — criar a linha da conta não
+ * (`apps/web/app/(app)/contas/connect-button.tsx`) — criar a linha da conta não
  * envolve segredo nenhum.
  */
 

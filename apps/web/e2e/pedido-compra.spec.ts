@@ -6,7 +6,7 @@ import { factValue, login } from "./helpers.js";
 /**
  * "Pedido de compra" (docs/TESTING.md) — cria um rascunho do zero pela UI.
  * Não precisa de seed: o item aceita SKU em texto livre sem cadastro prévio
- * (`apps/web/app/compras/novo/item-row.tsx`), então o próprio teste já cobre
+ * (`apps/web/app/(app)/compras/novo/item-row.tsx`), então o próprio teste já cobre
  * o caminho mais comum na prática (fornecedor manda um código que ainda não
  * está catalogado).
  *

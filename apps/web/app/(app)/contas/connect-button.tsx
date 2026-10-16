@@ -9,7 +9,7 @@ import { createClient } from "../../../lib/supabase/browser";
  * `docs/API.md` secao 2).
  *
  * Chama a `api` direto do navegador — não uma Server Action — pelo mesmo
- * motivo do upload da planilha (`apps/web/app/importacoes/nova/upload-form.tsx`):
+ * motivo do upload da planilha (`apps/web/app/(app)/importacoes/nova/upload-form.tsx`):
  * o `web` nunca fala com o Mercado Livre, e é a `api` quem monta a
  * `authorizationUrl` usando o `client_id` (segredo que o navegador nunca vê).
  * O token da sessão vai no header `Authorization`; a `api` reavalia o papel

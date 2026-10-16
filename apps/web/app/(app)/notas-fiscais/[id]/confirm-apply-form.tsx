@@ -8,7 +8,7 @@ import { createClient } from "../../../../lib/supabase/browser";
 /**
  * Confirmação humana da aplicação da NF-e.
  *
- * Mesmo padrão de `apps/web/app/importacoes/[id]/confirm-apply-form.tsx`,
+ * Mesmo padrão de `apps/web/app/(app)/importacoes/[id]/confirm-apply-form.tsx`,
  * com uma diferença: só fica habilitado quando TODOS os itens estão
  * vinculados (`confirmNfeApply` recusaria de qualquer forma — o botão
  * desabilitado evita a viagem ao servidor só para ouvir "não").

@@ -282,7 +282,7 @@ export default async function SkuDashboardPage({
     .maybeSingle();
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu" — mesmo
-  // raciocínio já usado em apps/web/app/compras/[id]/page.tsx.
+  // raciocínio já usado em apps/web/app/(app)/compras/[id]/page.tsx.
   if (sku.error !== null || sku.data === null) {
     notFound();
   }

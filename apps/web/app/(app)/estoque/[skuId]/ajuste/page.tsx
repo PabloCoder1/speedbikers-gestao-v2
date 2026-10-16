@@ -63,7 +63,7 @@ export default async function AjusteEstoquePage({
   ]);
 
   // `null` pode ser "não existe" ou "a policy escondeu" — mesmo raciocínio de
-  // apps/web/app/compras/[id]/page.tsx.
+  // apps/web/app/(app)/compras/[id]/page.tsx.
   if (sku.error !== null || sku.data === null) {
     notFound();
   }

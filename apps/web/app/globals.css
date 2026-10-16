@@ -201,7 +201,7 @@
   --sb-neutral-ink: #6a6675;
 
   /* Linha de apoio dentro de tabela (explicação da IA, decisões registradas).
-     `app/acoes/action-row.tsx` já escrevia `var(--sb-bg-soft, #f7f7f8)` — o
+     `app/(app)/acoes/action-row.tsx` já escrevia `var(--sb-bg-soft, #f7f7f8)` — o
      token nunca existiu, então o fallback era o valor real. Agora existe. */
   --sb-bg-soft: #f8f9fc;
 

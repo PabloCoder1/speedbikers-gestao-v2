@@ -7,7 +7,7 @@
  * As exportações de `/anuncios` e `/full` faziam exatamente isso: com ~4,5 mil
  * anúncios, o CSV saía com mil e o nome do arquivo não dizia nada, porque o
  * total ficava abaixo do teto de 5 mil (auditoria de 2026-09-28). A de
- * `/precos` já paginava (`app/precos/export/load.ts`).
+ * `/precos` já paginava (`app/(app)/precos/export/load.ts`).
  *
  * `lerPagina(offset, limite)` precisa chamar a RPC com ORDEM ESTÁVEL (as duas
  * têm desempate por chave) e devolver só as linhas de dado — a linha-sentinela

@@ -1,7 +1,7 @@
 /**
  * O que aparece em cada linha da planilha de `/precos` (D-292).
  *
- * Função PURA, como `app/compras/[id]/export/rows.ts`: decidir o conteúdo sem
+ * Função PURA, como `app/(app)/compras/[id]/export/rows.ts`: decidir o conteúdo sem
  * `exceljs` por perto é o que torna a decisão testável — e aqui há decisões de
  * verdade, não formatação. As três que importam:
  *

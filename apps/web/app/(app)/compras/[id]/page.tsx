@@ -80,7 +80,7 @@ export default async function PedidoDeCompraPage({
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu" — a tela
   // responde igual nos dois casos, mesmo raciocínio já usado em
-  // apps/web/app/importacoes/[id]/page.tsx.
+  // apps/web/app/(app)/importacoes/[id]/page.tsx.
   // FALHA DE LEITURA não é "não existe" (D-067; /notas-fiscais/[id] corrigiu o
   // mesmo defeito depois de um incidente real): um erro transitório virava 404
   // e a pessoa concluía que o pedido tinha sumido (lote 4 do pente fino, 18/09).

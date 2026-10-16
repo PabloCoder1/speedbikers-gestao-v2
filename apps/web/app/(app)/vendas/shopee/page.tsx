@@ -50,7 +50,7 @@ import { DEVOLUCOES_A_VISTA, DevolucoesShopee } from "./devolucoes";
 export const metadata = { title: "Vendas da Shopee — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de apps/web/app/vendas/page.tsx.
+// pessoa. Mesmo raciocínio de apps/web/app/(app)/vendas/page.tsx.
 export const dynamic = "force-dynamic";
 
 /**

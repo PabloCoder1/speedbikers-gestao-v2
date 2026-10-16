@@ -10,7 +10,7 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
 /**
  * Ação contextual "O que aconteceu?" (Fase 7, item 8, D-078) — botão +
  * card de resultado no Dashboard de SKU. Mesmo padrão de componente
- * cliente por ação de `apps/web/app/acoes/action-card.tsx`: estado local,
+ * cliente por ação de `apps/web/app/(app)/acoes/action-card.tsx`: estado local,
  * Server Action por clique, sem RPC direto do cliente.
  *
  * **Narração por IA (D-082)**: opcional, só aparece quando há anomalia.
@@ -18,7 +18,7 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
  * narração precisa da chave da Anthropic — que só existe em `apps/api`
  * (Secret Manager, nunca na Vercel). Por isso é um fetch client-side
  * direto para a `api`, mesmo padrão já usado por
- * `apps/web/app/notas-fiscais/[id]/confirm-apply-form.tsx`: sessão do
+ * `apps/web/app/(app)/notas-fiscais/[id]/confirm-apply-form.tsx`: sessão do
  * navegador, `access_token` da sessão Supabase repassado no header
  * `Authorization`. O diagnóstico já calculado (D-078) é o que vai no
  * corpo do pedido — a `api` revalida que o usuário alcança o SKU antes

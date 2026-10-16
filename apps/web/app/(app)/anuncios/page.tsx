@@ -55,7 +55,7 @@ import { InspecaoAnuncio } from "./inspecao-anuncio";
 export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de apps/web/app/estoque/page.tsx.
+// pessoa. Mesmo raciocínio de apps/web/app/(app)/estoque/page.tsx.
 export const dynamic = "force-dynamic";
 
 /**

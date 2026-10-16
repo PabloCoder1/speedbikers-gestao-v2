@@ -9,7 +9,7 @@ import { buildPriceExportRows, describePriceExportFilters, toSpreadsheetInstant 
 /**
  * A planilha do Histórico de Preços (D-292).
  *
- * Mesma forma da exportação de pedido de compra (`app/compras/[id]/export`):
+ * Mesma forma da exportação de pedido de compra (`app/(app)/compras/[id]/export`):
  * cabeçalho com o contexto, tabela, rodapé com a hora da geração. O que muda é
  * o que o cabeçalho PRECISA carregar aqui — lá o documento se identifica pelo
  * número do pedido; aqui o arquivo é um RECORTE, e recorte sem descrição é uma

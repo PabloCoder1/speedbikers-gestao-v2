@@ -51,7 +51,7 @@ import { AcoesDoVinculoShopee } from "./acoes-vinculo-shopee";
 export const metadata = { title: "Anúncios da Shopee — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
-// pessoa. Mesmo raciocínio de apps/web/app/anuncios/page.tsx.
+// pessoa. Mesmo raciocínio de apps/web/app/(app)/anuncios/page.tsx.
 export const dynamic = "force-dynamic";
 
 /**
