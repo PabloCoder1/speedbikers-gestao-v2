@@ -16362,7 +16362,9 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 - **Mutacao:** campo errado, restante sem tirar a taxa, composicao sem somar a taxa e protecao zero quando ausente -- cada uma derruba o teste novo.
 - **Estatica:** `pnpm run check` verde; o `tsc` da web passa com os campos opcionais.
 
-**Impacto:** `supabase/migrations/20261016180000_protecao_envio_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,METRICS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF}.md`. Em producao: a migration depois do merge e da CI da `main`; a web de hoje segue igual; a tela nova e do A2, empilhada nesta branch.
+**Impacto:** `supabase/migrations/20261016180000_protecao_envio_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,METRICS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF}.md`. Em producao: a migration depois do merge e da CI da `main`; a web de hoje segue igual; a tela nova e do A2 (D-492).
+
+**Em producao (16/10):** a migration `20261016180000` as 19:37 UTC (run `38955922868`, o plano so com ela). Na leitura real dos 30 dias, o `outros_restante` zerou em 100% dos pedidos cobertos, a protecao de envio veio em todos e receita - componentes - protecao_envio - outros_restante = recebido fecha pedido a pedido e no TOTAL; nenhum erro de runtime na Vercel. Fica a **fase 2**: o `outros` passa a ser o restante, o `outros_restante` sai (com aviso ao A2) e a linha de `shopee_composicao_recebido` em `metric_definitions` ganha a taxa (achado do A2).
 
 ## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 
