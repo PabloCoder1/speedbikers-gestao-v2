@@ -152,7 +152,7 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
-### 3.15 Metas por marketplace (C-66, D-473) — em código
+### 3.15 Metas por marketplace (C-66, D-473) — em produção
 
 `get_meta_do_mes(p_organization_id, p_mes, p_hoje)` — a mesma da central (D-395), sem parâmetro novo. As chaves de sempre continuam no topo e são as do GERAL; a resposta ganha `escopos`.
 

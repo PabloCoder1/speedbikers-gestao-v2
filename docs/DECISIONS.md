@@ -15995,7 +15995,7 @@ A causa: o detector chama `get_ranking_produtos` (D-402) com o periodo anterior 
 
 **Impacto:** `supabase/migrations/20261015120000_alerta_prejuizo_so_o_periodo.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. O ranking e a tela `/central/produtos` nao mudam.
 
-**Correcao (15/10, mesmo dia):** o detector nao estava parado. Nos logs de 09 a 15/10, a 1ª tentativa (11:00 UTC, banco frio) estourava os 8 s em `produto_prejuizo`, e a 2ª do Cloud Tasks, um minuto depois, rodava as tres fontes inteiras e gerava os alertas e as notificacoes. O custo real era o job registrado como falho todo dia, o trabalho repetido e o risco de a 2ª tambem estourar num dia mais pesado. **Depois da migration** (disparo manual em 15/10, 20:18 UTC, autorizado pelo dono), as tres fontes passaram de primeira, com `produto_prejuizo` em ~2,1 s. A prova a frio continua sendo o job de 16/10, 11:00 UTC.
+**Correcao (15/10, mesmo dia):** o detector nao estava parado. Nos logs de 09 a 15/10, a 1ª tentativa (11:00 UTC, banco frio) estourava os 8 s em `produto_prejuizo`, e a 2ª do Cloud Tasks, um minuto depois, rodava as tres fontes inteiras e gerava os alertas e as notificacoes. O custo real era o job registrado como falho todo dia, o trabalho repetido e o risco de a 2ª tambem estourar num dia mais pesado. **Depois da migration** (disparo manual em 15/10, 20:18 UTC, autorizado pelo dono), as tres fontes passaram de primeira, com `produto_prejuizo` em ~2,1 s. **A frio (16/10, 11:00 UTC, o job diario):** as tres fontes de primeira (attempt 1, sem `job_failed`), `produto_prejuizo` em ~2,9 s (17 detectados, 2 criados, 15 atualizados, 1 encerrado) e o job inteiro em 6,0 s -- antes, a 1a tentativa passava dos 8 s todo dia.
 
 ## D-472 - Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 
@@ -16104,6 +16104,22 @@ A auditoria do A3 (`docs/UX_SYSTEM.md` §2, item 7) contou 13 `.sb-skud-danger`.
 - web: `apps/web/app/skus/[skuId]/{page,vendas-entre-marketplaces}.tsx` e `apps/web/app/globals.css` (cinco regras a menos);
 - docs: `docs/{MULTICHANNEL_HANDOFF,ROADMAP,DECISIONS,DECISIONS_INDEX}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-475 - O Ads da Shopee nao repete na fila: a retentativa e o proximo ciclo da loja
+
+**Contexto:** na checagem de producao de 15/10, o `shopee.ads.sync` registrava cerca de **10 falhas por hora** desde o deploy da E7b (D-449): o endpoint `get_all_cpc_ads_daily_performance` responde 503 de corpo vazio para a loja sandbox. Cada rodada horaria enfileirava uma leitura nova, e cada uma era repetida pelo Cloud Tasks ate esgotar as tentativas (backoff de 10 s a 600 s). O dado de Ads nao chegava de nenhum jeito, e o custo era execucao de worker, linhas de `job_runs` e ruido no log e na taxa de falha de `/integracoes` (D-462). Nenhum outro job da Shopee falha.
+
+**Decisao:**
+1. **Falha da Shopee no Ads (5xx, `error_server`, rede, limite de requisicoes `ads.rate_limit.*`) e registrada como falha sem retentativa** (`retryable: false`; o worker responde 200 para o Cloud Tasks, D-201). O motivo continua o da Shopee, com "O proximo ciclo da loja le de novo." no fim.
+2. **A retentativa e o proximo ciclo.** O `shopee.orders.sync` de cada loja roda de hora em hora (`v3-shopee-orders`, minuto 20) e, ao alcancar o presente, enfileira outra leitura de Ads; a leitura bem-sucedida so se repete depois de 3 h. Repetir dentro da hora nao adianta o dado.
+3. **O resto nao muda:** `error_not_found` segue periodo vazio; falha ao ler ou gravar no banco e falha do token seguem repetindo; nada e gravado sem leitura (a cobertura nao avanca sobre periodo nao lido).
+
+**Verificacao:**
+- Teste novo no worker: 503 e `ads.rate_limit.exceed_shop_api` saem `retryable: false`, com o motivo da Shopee e nada gravado; a falha ao gravar continua repetindo. 5/5.
+- Mutacao: sem a regra, o teste novo cai.
+- Fica para depois do deploy do worker: no Cloud Logging, ~1 falha do `shopee.ads.sync` por hora no sandbox, em vez de ~10.
+
+**Impacto:** `apps/worker/src/handlers/shopee-ads-sync{,.test}.ts` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`. Publica o worker; sem migration, api ou web. Com loja real, um 503 passageiro atrasa o Ads em no maximo uma hora.
 
 ## D-476 - Telas multicanais, etapa T7: a Shopee na Busca Universal, e a /vendas/shopee abre o pedido que a busca achou
 
