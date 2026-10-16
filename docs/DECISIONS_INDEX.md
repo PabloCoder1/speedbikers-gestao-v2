@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **481** (D-001 a D-509).
+Decisões registradas: **482** (D-001 a D-510).
 
 ## Por domínio
 
@@ -161,7 +161,7 @@ Decisões registradas: **481** (D-001 a D-509).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (62)
+### interface (63)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -225,6 +225,7 @@ Decisões registradas: **481** (D-001 a D-509).
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique
+- **D-510** — Tela estreita: a Home e a sb-pair-grid deixam de rolar para o lado no celular, e as duas auditorias viram guarda de e2e
 
 ### mercado-livre (83)
 
