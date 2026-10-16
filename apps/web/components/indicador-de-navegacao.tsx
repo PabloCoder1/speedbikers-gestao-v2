@@ -8,6 +8,28 @@ import { AtualizandoTela } from "./carregando-link";
 /** Rede de segurança: uma navegação que falhou ou foi cancelada não deixa a barra presa. */
 const DESISTE_EM_MS = 15_000;
 
+/** O aviso de quem navega por código (`router.push`), sem `<a>` para o clique ser visto (D-513). */
+const TROCA_POR_CODIGO = "sb:troca-de-tela";
+
+/** O destino é OUTRA tela deste site: mesma origem, outro caminho. Só `?filtro=` é atualização no lugar (D-500). */
+function outraTela(href: string): boolean {
+  const destino = new URL(href, window.location.href);
+
+  return destino.origin === window.location.origin && destino.pathname !== window.location.pathname;
+}
+
+/**
+ * Avisa o `IndicadorDeNavegacao` de uma troca de tela feita por código (D-513).
+ *
+ * Chame logo antes do `router.push(href)` quando nada na tela mostra a espera
+ * — a paleta de busca, que fecha ao escolher. Um botão que continua pendente
+ * até a tela nova abrir (os formulários de cadastro, a NF-e) já tem retorno e
+ * não precisa disto.
+ */
+export function avisarTrocaDeTela(href: string): void {
+  window.dispatchEvent(new CustomEvent<string>(TROCA_POR_CODIGO, { detail: href }));
+}
+
 /**
  * O SINAL DE TODA TROCA DE TELA (D-512).
  *
@@ -21,8 +43,9 @@ const DESISTE_EM_MS = 15_000;
  * Este componente mora no `Shell` — que agora persiste entre as telas — e dá a
  * toda troca de tela por link o MESMO retorno da atualização no lugar (D-500):
  * a barra da moldura aos 100 ms, o conteúdo esmaecido aos 400 ms e o
- * `aria-busy`. Ele escuta o clique em qualquer `<a>` interno, e o sinal some
- * quando o caminho muda — o fim da própria navegação, sem temporizador.
+ * `aria-busy`. Ele escuta o clique em qualquer `<a>` interno e o aviso de quem
+ * navega por código (`avisarTrocaDeTela`, D-513), e o sinal some quando o
+ * caminho muda — o fim da própria navegação, sem temporizador.
  *
  * Fica de fora o que já tem retorno próprio: troca só de `?filtro=` na mesma
  * tela (os componentes da D-500), links que se marcam com
@@ -48,17 +71,21 @@ export function IndicadorDeNavegacao(): ReactNode {
       if (alvo.hasAttribute("data-pendente-proprio") || alvo.hasAttribute("download")) return;
       if (alvo.target !== "" && alvo.target !== "_self") return;
 
-      const destino = new URL(alvo.href, window.location.href);
+      if (outraTela(alvo.href)) setNavegando(true);
+    }
 
-      if (destino.origin !== window.location.origin || destino.pathname === window.location.pathname) return;
-
-      setNavegando(true);
+    function aoAvisar(evento: Event): void {
+      if (evento instanceof CustomEvent && typeof evento.detail === "string" && outraTela(evento.detail)) {
+        setNavegando(true);
+      }
     }
 
     document.addEventListener("click", aoClicar, { capture: true });
+    window.addEventListener(TROCA_POR_CODIGO, aoAvisar);
 
     return () => {
       document.removeEventListener("click", aoClicar, { capture: true });
+      window.removeEventListener(TROCA_POR_CODIGO, aoAvisar);
     };
   }, []);
 

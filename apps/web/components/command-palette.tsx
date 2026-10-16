@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { filtrarPaginas } from "../lib/command-pages";
 import { searchEntityLabel, textoDasEntidadesBuscaveis } from "../lib/labels";
 import { createClient } from "../lib/supabase/browser";
+import { avisarTrocaDeTela } from "./indicador-de-navegacao";
 import { paginasDoMenu } from "./nav";
 
 /**
@@ -171,8 +172,11 @@ export function CommandPalette({
     }, 250);
   }
 
+  // A caixa fecha na hora e nada mais na tela mostra a espera: sem o aviso, a
+  // escolha de um SKU (a tela mais pesada) ficava parada até ele abrir (D-513).
   function go(href: string): void {
     fechar();
+    avisarTrocaDeTela(href);
     router.push(href);
   }
 
