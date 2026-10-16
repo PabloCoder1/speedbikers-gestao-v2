@@ -12,6 +12,13 @@ import { asJson } from "./domain-events.js";
 import { falhaDaShopee, lerLojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
 import { ensureShopeeAccessToken } from "./shopee-token.js";
 
+/** D-475: a falha da Shopee fica registrada, mas a retentativa é o próximo ciclo da loja. */
+function proximoCiclo(outcome: JobOutcome): JobOutcome {
+  return outcome.status === "failed"
+    ? { status: "failed", retryable: false, reason: `${outcome.reason} O próximo ciclo da loja lê de novo.` }
+    : outcome;
+}
+
 /**
  * `shopee.ads.sync` (D-449) — o desempenho diário dos anúncios CPC de UMA loja
  * Shopee (`get_all_cpc_ads_daily_performance`).
@@ -24,8 +31,12 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  *   é dia sem anúncio.
  * - No máximo uma leitura a cada 3 horas: é enfileirada por
  *   `shopee.orders.sync` toda hora, e Ads não muda nesse ritmo.
- * - `error_not_found` (loja sem dado de Ads) é período vazio; o limite de
- *   requisições de Ads (`ads.rate_limit.*`) é passageiro.
+ * - `error_not_found` (loja sem dado de Ads) é período vazio.
+ * - D-475: falha da Shopee (5xx, limite de requisições, rede) NÃO repete na
+ *   fila. O próximo ciclo de pedidos da loja (em até 1 h) enfileira outra
+ *   leitura, e Ads lê no máximo a cada 3 h: a retentativa da fila só somava
+ *   execuções. No sandbox, o 503 permanente do endpoint de Ads virava ~10
+ *   falhas por hora.
  */
 
 const PRIMEIRA_LEITURA_DIAS = 90;
@@ -104,11 +115,7 @@ export function createShopeeAdsSyncHandler(deps: ShopeeAdsSyncDeps): JobHandler 
           continue;
         }
 
-        if (error instanceof ShopeeApiError && error.code?.startsWith("ads.rate_limit") === true) {
-          return { status: "failed", retryable: true, reason: error.message };
-        }
-
-        return falhaDaShopee(error, "erro desconhecido ao ler o desempenho de Ads da Shopee");
+        return proximoCiclo(falhaDaShopee(error, "erro desconhecido ao ler o desempenho de Ads da Shopee"));
       }
     }
 
