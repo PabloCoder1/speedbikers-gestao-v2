@@ -46,7 +46,7 @@ const ROTAS = [
   "/produtos",
   "/reposicao",
   "/sincronizacao",
-  "/vendas",
+  "/vendas?marketplace=ml",
   "/vendas?marketplace=todos",
   "/vinculacoes",
 ];

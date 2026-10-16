@@ -65,7 +65,7 @@ test("/faturamento: conta e período viajam entre Faturamento e Vendas", async (
  * inteiro.
  */
 test("/vendas: a faixa é de volume, e comissão e margem moram no Faturamento", async ({ page }) => {
-  await login(page, "/vendas");
+  await login(page, "/vendas?marketplace=ml");
 
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 

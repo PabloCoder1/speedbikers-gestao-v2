@@ -3,9 +3,9 @@
  * sobre o contrato C-53 (`get_marketplace_sales_summary` e
  * `get_marketplace_sales_daily`, D-436).
  *
- * `/vendas` sem `marketplace` continua sendo a tela do Mercado Livre de sempre,
- * com as RPCs dele. `marketplace=todos` e `marketplace=shopee` são a MESMA tela
- * com outro recorte, lida do contrato multicanal — cujo TOTAL já vem somado no
+ * `marketplace=ml` é a tela do Mercado Livre de sempre, com as RPCs dele.
+ * `marketplace=todos` e `marketplace=shopee` são a MESMA tela com outro
+ * recorte, lida do contrato multicanal — cujo TOTAL já vem somado no
  * SQL, só com o que tem a mesma semântica (`docs/METRICS.md` 5T). Aqui mora só
  * o que a tela precisa decidir: o recorte da URL, as contas que valem nele, o
  * endereço de cada troca e a forma das linhas. **Nada aqui soma.**
@@ -15,6 +15,8 @@ import { shiftBusinessDate } from "@sb/domain";
 
 import { buildFilterHref } from "./filters";
 import { DEFAULT_PERIOD_DAYS } from "./period";
+import type { KpiCellData } from "../components/kpi-strip";
+import { formatCount, formatCurrency } from "./format";
 import type { SalesMetric } from "./sales-metric";
 
 /** O recorte de marketplace de `/vendas`. `ml` é a tela de sempre. */
@@ -28,6 +30,34 @@ export type CodigoMarketplace = "ML" | "SHOPEE";
 export function resolverEscopoVendas(raw: unknown): EscopoVendas {
   return raw === "todos" || raw === "shopee" ? raw : "ml";
 }
+
+/**
+ * O recorte da `/vendas` (D-488, decisão do dono de 16/10, depois do Go Live):
+ * SEM `marketplace` na URL, a tela abre em "Todos os marketplaces". O Mercado
+ * Livre sozinho é `marketplace=ml`, explícito.
+ *
+ * Compatibilidade: um link ou filtro salvo de antes, sem `marketplace` mas com
+ * um parâmetro que só a tela do ML entende (a conta por slug, a marca, a métrica
+ * de pedidos ou de packs), continua abrindo no ML — é o que ele queria dizer.
+ * `/faturamento` e `/curva-abc` não mudam: lá, sem `marketplace`, segue o ML.
+ */
+export function resolverEscopoDaTelaDeVendas(query: Readonly<Record<string, unknown>>): EscopoVendas {
+  const pedido = query.marketplace;
+
+  if (pedido === "ml" || pedido === "todos" || pedido === "shopee") return pedido;
+
+  const soDoMl =
+    query.account !== undefined ||
+    query.marca !== undefined ||
+    query.semMarca !== undefined ||
+    query.metric === "pedidos" ||
+    query.metric === "packs";
+
+  return soDoMl ? "ml" : "todos";
+}
+
+/** O recorte que fica FORA da URL em cada tela: o padrão dela. */
+const ESCOPO_PADRAO: Readonly<Record<TelaDoRecorte, EscopoVendas>> = { "/vendas": "todos", "/faturamento": "ml" };
 
 /** O `p_marketplaces` do contrato: nulo seria "só ML", que é a outra tela. */
 export function marketplacesDoEscopo(escopo: EscopoMulticanal): CodigoMarketplace[] {
@@ -133,7 +163,7 @@ export function hrefDoRecorte(
   return buildFilterHref(
     tela,
     {
-      marketplace: escopo === "ml" ? null : escopo,
+      marketplace: escopo === ESCOPO_PADRAO[tela] ? null : escopo,
       ...("from" in periodo
         ? { from: periodo.from, to: periodo.to }
         : { days: periodo.days === DEFAULT_PERIOD_DAYS ? null : String(periodo.days) }),
@@ -286,4 +316,58 @@ export const HISTORICO_SHOPEE_DIAS = 90;
  */
 export function antesDoHistoricoShopee(dataInicial: string, hoje: string): boolean {
   return dataInicial < shiftBusinessDate(hoje, -HISTORICO_SHOPEE_DIAS);
+}
+
+/** O número formatado, ou "—" quando ele não existe (nunca zero no lugar de ausência). */
+export function valorOuTraco(valor: number | null, formatar: (n: number) => string): string {
+  return valor === null ? "—" : formatar(valor);
+}
+
+/**
+ * As quatro células da faixa consolidada (`docs/METRICS.md` 5T): receita bruta,
+ * compras, unidades e ticket médio, com o anterior ao lado. É a faixa do "Todos"
+ * de `/vendas` e, desde a D-488, a da Home — a mesma função, para as duas telas
+ * dizerem o mesmo número com a mesma fórmula. Sem nada somável (só loja de teste,
+ * ou nenhuma lida), o "—" diz por quê.
+ */
+export function celulasDaFaixaMulticanal(
+  total: LinhaDeVendas | null,
+  totalAnterior: LinhaDeVendas | null,
+): KpiCellData[] {
+  const anteriorTem = totalAnterior !== null;
+
+  return [
+    {
+      metricId: "multicanal_receita_bruta",
+      label: "Receita bruta",
+      formula:
+        "Produtos com o desconto do vendedor, sem frete, nos dois marketplaces; pedido Shopee de receita desconhecida fica fora",
+      value: valorOuTraco(total?.receita_bruta ?? null, formatCurrency),
+      previous: anteriorTem ? valorOuTraco(totalAnterior.receita_bruta, formatCurrency) : null,
+      ...((total?.pedidos_sem_receita ?? 0) > 0
+        ? { ressalva: `${formatCount(total?.pedidos_sem_receita ?? 0)} pedidos Shopee sem receita conhecida, fora da soma` }
+        : {}),
+    },
+    {
+      metricId: "multicanal_compras",
+      label: "Compras",
+      formula: "O pack do Mercado Livre e o pedido da Shopee — a compra do cliente nos dois",
+      value: valorOuTraco(total?.compras ?? null, formatCount),
+      previous: anteriorTem ? valorOuTraco(totalAnterior.compras, formatCount) : null,
+    },
+    {
+      metricId: "multicanal_unidades",
+      label: "Unidades vendidas",
+      formula: "Unidades do Mercado Livre e da Shopee",
+      value: valorOuTraco(total?.unidades ?? null, formatCount),
+      previous: anteriorTem ? valorOuTraco(totalAnterior.unidades, formatCount) : null,
+    },
+    {
+      metricId: "multicanal_ticket_medio",
+      label: "Ticket médio",
+      formula: "receita bruta ÷ compras de receita conhecida, recalculado sobre a soma — nunca média de médias",
+      value: valorOuTraco(total?.ticket_medio ?? null, formatCurrency),
+      previous: anteriorTem ? valorOuTraco(totalAnterior.ticket_medio, formatCurrency) : null,
+    },
+  ].map((celula) => (total === null ? { ...celula, ressalva: "nenhuma conta com venda somável neste recorte" } : celula));
 }
