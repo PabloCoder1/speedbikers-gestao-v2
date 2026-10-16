@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
 
@@ -38,4 +38,27 @@ export async function loginAs(page: Page, email: string, password: string, redir
  */
 export function factValue(page: Page, label: string): Locator {
   return page.locator(`xpath=//dl[@class="sb-fact-grid"]/div[dt[normalize-space(text())="${label}"]]/dd`);
+}
+
+/**
+ * A prova de que uma troca na MESMA tela foi navegação suave (D-500, D-484):
+ * marque o `window` antes do clique; uma recarga cria outro `window`, e a marca
+ * some. `atualizacaoTerminou` espera o pendente acabar (nenhum `aria-busy` e a
+ * barra fora), para não medir no meio da troca.
+ */
+export async function marcarSemRecarga(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { __semRecarga?: boolean }).__semRecarga = true;
+  });
+}
+
+export async function naoRecarregou(page: Page): Promise<void> {
+  expect(await page.evaluate(() => (window as unknown as { __semRecarga?: boolean }).__semRecarga === true)).toBe(
+    true,
+  );
+}
+
+export async function atualizacaoTerminou(page: Page): Promise<void> {
+  await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
+  await expect(page.locator(".sb-atualizando-barra")).toHaveCount(0);
 }
