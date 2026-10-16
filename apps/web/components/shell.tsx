@@ -10,6 +10,7 @@ import { CopilotContextProvider } from "./copilot-context";
 import { CopilotLauncher } from "./copilot-launcher";
 import { MeuPerfil } from "./meu-perfil";
 import { NotificationToasts } from "./notification-toasts";
+import { IndicadorDeNavegacao } from "./indicador-de-navegacao";
 import { Marca } from "./marca";
 import { PularParaConteudo } from "./pular-para-conteudo";
 import { SidebarNav, SidebarRodapeLink } from "./nav";
@@ -192,7 +193,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
               className="sb-icon-button"
               title="Notificações"
               aria-label={
-                unreadCount > 0 ? `Notificações — ${String(unreadCount)} não lidas` : "Notificações"
+                unreadCount > 0 ? `Notificações — ${String(unreadCount)} ${unreadCount === 1 ? "não lida" : "não lidas"}` : "Notificações"
               }
             >
               <span aria-hidden="true">♧</span>
@@ -251,6 +252,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
       <CopilotLauncher />
 
       <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
+      {/* O sinal de toda troca de tela: as pastas do grupo `(app)` não têm `loading.tsx` (D-512). */}
+      <IndicadorDeNavegacao />
     </div>
     </CopilotContextProvider>
   );
