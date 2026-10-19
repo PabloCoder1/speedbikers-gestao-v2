@@ -237,4 +237,17 @@ test("/sincronizacao: a loja Shopee aparece com a marca de teste, a conexão e a
 
   // A contagem do rodapé lê a mesma fonte (C-52): a conta ML e a loja Shopee do seed.
   await expect(page.getByText("2 contas conectadas", { exact: true })).toBeVisible();
+
+  /*
+    D-608: o catálogo. O seed marca a lista de itens lida há meia hora
+    (`items_synced_until`) — uma data, nunca "nunca lido" —, e o link leva aos
+    anúncios DESTA loja, com o filtro dela.
+  */
+  const catalogo = fato("Catálogo lido até");
+
+  await expect(catalogo).toContainText(/\d{2}\/\d{2}\/\d{4}/u);
+  await expect(catalogo).not.toContainText("nunca lido");
+  await catalogo.getByRole("link", { name: "ver os anúncios" }).click();
+  await expect(page).toHaveURL(/\/anuncios\/shopee\?loja=[0-9a-f-]{36}$/u);
+  await expect(page.getByRole("link", { name: `Tirar o filtro ${E2E_SHOPEE_SHOP.name}` })).toBeVisible();
 });

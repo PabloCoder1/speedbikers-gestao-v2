@@ -171,13 +171,14 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       .order("name", { ascending: true }),
     /*
       D-462: até quando cada dado da loja foi lido, além dos pedidos — as
-      devoluções (D-447), os repasses (D-451) e os Ads (D-449). As colunas são
-      da própria loja (`shopee_shops`, a mesma RLS por loja de D-433); a view
-      C-52 só traz os pedidos.
+      devoluções (D-447), os repasses (D-451) e os Ads (D-449); desde a D-608,
+      também o catálogo (D-428). As colunas são da própria loja
+      (`shopee_shops`, a mesma RLS por loja de D-433); a view C-52 só traz os
+      pedidos.
     */
     supabase
       .from("shopee_shops")
-      .select("id, returns_synced_until, escrow_releases_synced_until, ads_synced_at, ads_read_until"),
+      .select("id, items_synced_until, returns_synced_until, escrow_releases_synced_until, ads_synced_at, ads_read_until"),
   ]);
 
   const accounts = accountsResult.data ?? [];
@@ -565,6 +566,21 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                         <div>
                           <dt>Última leitura de pedidos que terminou</dt>
                           <dd>{loja.orders_synced_at === null ? "—" : formatDateTime(loja.orders_synced_at)}</dd>
+                        </div>
+                        {/* D-608: o marco da lista de itens, o mesmo da "Última
+                            leitura do catálogo" de `/anuncios/shopee`, com o
+                            caminho para os anúncios da loja. */}
+                        <div>
+                          <dt title="Até onde a lista de itens da loja já foi lida na Shopee; a leitura roda de hora em hora">
+                            Catálogo lido até
+                          </dt>
+                          <dd>
+                            {fatoDeLeitura(leitura?.items_synced_until, "nunca lido")}
+                            <small>
+                              {" · "}
+                              <Link href={`/anuncios/shopee?loja=${loja.account_id}`}>ver os anúncios</Link>
+                            </small>
+                          </dd>
                         </div>
                         <div>
                           <dt>Devoluções lidas até</dt>
