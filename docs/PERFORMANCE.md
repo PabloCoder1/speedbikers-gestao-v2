@@ -1434,6 +1434,8 @@ As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e
 
 O "antes" das quatro linhas de baixo foi medido antes da migration; o C-58 foi refeito lado a lado na mesma transação (as versões antigas recriadas e desfeitas), com as estatísticas em dia. **A Curva ABC com a Shopee** foi de 5–6 s a ~0,35 s, mas por estatística: depois da reescrita do ALTER, só o `analyze` a trouxe de volta (6,4 s → 0,38 s), por isso a migration termina com ele. Mesmos valores: as sete leituras comparadas linha a linha, zero diferenças.
 
+**Produção, depois da migration (19/10, como `authenticated`, ADMIN da organização):** `get_shopee_faturamento` em 90 dias de ~3,7 s para **0,57 s**; o C-58 em 90 e em 30 dias e o C-61 em 90, na mesma consulta, de **8,8 s para 1,4 s** — as páginas lidas de 2,62 milhões para 0,82 (C-58 90 dias: 1,13 milhão → 346 mil; 30 dias: 372 mil → 126 mil; C-61 90 dias: 1,12 milhão → 343 mil).
+
 ### O C-58 da Shopee em produção, depois da D-485 e da D-487 (19/10/2026)
 
 **Produção, como `authenticated`** (ADMIN da organização, transação só de leitura): `get_shopee_faturamento` em **~1,05 s em 30 dias** (374 mil páginas do cache) e **~3,3 s em 90** (1,14 milhão). Como `postgres`, o mesmo tempo: não é a RLS. `get_shopee_faturamento_pedidos` sozinha leva o mesmo, então a D-485 e a D-487 não pesam; o custo está na definição por pedido, que as quatro leituras da `/faturamento` Shopee chamam.
