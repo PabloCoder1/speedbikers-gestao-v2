@@ -7,7 +7,8 @@
 -- 1. shopee_sales_items (D-439) ganha item_id e model_id NO FIM: a venda
 --    casa com a linha do anuncio por (loja, item, variacao). Na leitura real
 --    (19/10), o item sem variacao tem model_id NULO no pedido e no anuncio --
---    nenhum 0 --, entao o casamento e `is not distinct from`.
+--    nenhum 0 --, entao o casamento compara a variacao com NULO = 0, por
+--    igualdade (para o planejador poder usar hash).
 -- 2. get_shopee_listings ganha, no FIM, p_date_from/p_date_to (o dia do
 --    pedido em Sao Paulo), p_vendeu ('com' | 'sem') e p_ordem ('vendas' |
 --    'receita'), todos com default nulo -- nulo e o comportamento de hoje --,
@@ -101,6 +102,11 @@ stable
 security invoker
 set search_path = ''
 set plan_cache_mode = 'force_custom_plan'
+-- Sem laco aninhado SO nesta funcao: com a RLS, o planejador estima 30 anuncios e
+-- 6 grupos de venda (eram 6 mil e 4,5 mil no ensaio) e casava os dois num laco --
+-- 1,4 s em 30 dias; com hash, 53 ms (docs/PERFORMANCE.md). Vale so na execucao dela,
+-- como o work_mem da auditoria de 28/09.
+set enable_nestloop = off
 as $$
 #variable_conflict use_column
 begin
@@ -140,7 +146,7 @@ begin
   -- (shopee_sales_items, D-439) -- situacao do C-53 e receita = preco com o
   -- desconto da loja x quantidade, preco 0 = desconhecida.
   vendas as (
-    select it.shopee_shop_id, it.item_id, it.model_id,
+    select it.shopee_shop_id, it.item_id, coalesce(it.model_id, 0) as variacao,
            sum(it.quantity)::bigint as unidades,
            sum(it.receita_item) as receita,
            count(distinct it.order_sn)::bigint as pedidos,
@@ -152,7 +158,7 @@ begin
       and it.situacao = 'VALIDA'
       and it.shopee_created_at >= (p_date_from::timestamp at time zone 'America/Sao_Paulo')
       and it.shopee_created_at < ((p_date_to + 1)::timestamp at time zone 'America/Sao_Paulo')
-    group by it.shopee_shop_id, it.item_id, it.model_id
+    group by it.shopee_shop_id, it.item_id, coalesce(it.model_id, 0)
   ),
   linhas as (
     select
@@ -169,9 +175,12 @@ begin
            then coalesce(v.sem_receita, 0) end as v_sem_receita
     from filtrado f
     join public.shopee_shops sh on sh.id = f.shopee_shop_id
+    -- O casamento por igualdade (a variacao NULA vira 0; em producao ela e NULA
+    -- ou > 0): `is not distinct from` nao admite hash, e com a estimativa da RLS
+    -- o planejador caia num laco de 6 mil anuncios x 4,5 mil vendas no ensaio.
     left join vendas v
       on v.shopee_shop_id = f.shopee_shop_id and v.item_id = f.item_id
-     and v.model_id is not distinct from f.model_id
+     and v.variacao = coalesce(f.model_id, 0)
   ),
   recortado as (
     select l.* from linhas l

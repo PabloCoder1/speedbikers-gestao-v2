@@ -16663,6 +16663,26 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 
 **Colunas obrigatórias (19/10):** com a fase 2 em produção, a `protecao_envio` do C-61 virou obrigatória no tipo (A1), e a cascata deixou a tolerância à coluna ausente; os testes do "banco antes da D-483" saíram. Sem decisão nova.
 
+## D-493 - As vendas por anuncio da Shopee: o periodo, o filtro vendeu e a ordem em get_shopee_listings (C-67)
+
+**Contexto:** decisao do dono (19/10): a `/anuncios/shopee` mostra quanto cada anuncio vendeu, no desenho do `get_listings_dashboard` do ML (D-385). O pedido Shopee tem itens com (`item_id`, `model_id`); a linha da lista e a unidade do anuncio (item ou variacao) da view `shopee_listing_units`. Na leitura real (19/10), o item sem variacao tem `model_id` NULO no pedido e no anuncio -- nenhum 0.
+
+**Decisao:**
+1. **A regra de venda e a do C-59, sem repetir:** `shopee_sales_items` (D-439) ganha `item_id` e `model_id` NO FIM, e a venda do anuncio e a soma dos seus itens em pedido VALIDA (a situacao do C-53), com a receita do item = preco com o desconto da loja x quantidade; item de preco 0 (bundle) tem receita desconhecida, fora da soma e contada (`unidades_sem_receita`).
+2. **O contrato (drop + create):** `get_shopee_listings` ganha no FIM `p_date_from`/`p_date_to` (o dia do pedido em Sao Paulo), `p_vendeu` ('com' | 'sem') e `p_ordem` ('vendas' | 'receita'), todos com default nulo -- nulo e a lista de hoje, com a mesma ordem --, e as colunas `unidades_vendidas`, `receita_bruta`, `pedidos`, `unidades_sem_receita` e o recorte inteiro antes do limite (`recorte_unidades`, `recorte_receita`, `recorte_unidades_sem_receita`, como a D-385).
+3. **Ausencia nao e zero:** sem periodo, as colunas novas vem NULAS; com periodo e loja lida, o anuncio que nao vendeu vem 0 (fato); loja nunca lida, NULO. Receita so de itens de preco 0: NULA, e vai para o fim na ordem por receita. Vendeu ou ordem sem periodo, periodo pela metade ou valor fora da lista: recusado com mensagem.
+4. **O casamento e por igualdade:** (loja, item, variacao com NULO = 0). `is not distinct from` nao admite hash.
+5. **Sem laco aninhado so nesta funcao (`set enable_nestloop = off`, como o `work_mem` da auditoria de 28/09):** com a RLS, o planejador estimava 30 anuncios e 6 grupos de venda -- eram 6 mil e 4,5 mil no ensaio -- e casava os dois num laco: 1,4 s em 30 dias e 1,8 s em 90; com hash, 53 ms e 80 ms.
+
+**Verificacao:**
+- **Integracao:** 4 testes (o anuncio com e sem variacao; cancelado, nao pago e fora do periodo fora; o preco 0 contado a parte e a receita NULA; o recorte inteiro e o de antes do limite na pagina 2; a ordem por vendas e por receita com desempate; com e sem venda; sem periodo e loja nunca lida NULOS; as recusas); os vizinhos (D-428, D-429, D-439) seguem verdes.
+- **Mutacao:** sem a situacao, o preco 0 como zero, o recorte da pagina, a loja nunca lida como zero, o casamento sem a variacao e sem a recusa -- cada uma derruba um teste.
+- **Desempenho (volume realista, 6 mil anuncios e 40 mil pedidos, como `authenticated`, mediana de 5):** sem periodo 22 ms (a funcao antiga, 28 ms); 30 dias 53-60 ms; 90 dias 70-84 ms em todas as combinacoes de filtro e ordem (`docs/PERFORMANCE.md`).
+
+**Publicacao:** a migration `20261019160000` vai a producao depois do merge; a tela (D-606, A2) manda os parametros so com valor e so entra depois dela (PGRST202). Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261019160000_vendas_por_anuncio_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP,PERFORMANCE}.md`.
+
 ## D-494 - Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
 
 **Contexto:** os filtros salvos (`saved_filters`, "Salvar visão" e "Visões salvas") existiam em `/vendas`, `/anuncios` e `/curva-abc`. As duas telas próprias da Shopee, `/anuncios/shopee` e `/vendas/shopee`, não os tinham. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "na Shopee faltam vendas e filtros salvos". Nenhum e2e cobria os filtros salvos, em tela nenhuma.
