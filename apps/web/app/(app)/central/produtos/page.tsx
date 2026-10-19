@@ -7,9 +7,11 @@ import { FormularioFiltro } from "../../../../components/formulario-filtro";
 import { FilterMenu } from "../../../../components/filter-menu";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
+import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
+import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../../../lib/central-periodo";
 import { tomDaMargem } from "../../../../lib/faturamento";
 import { carregarLimites } from "../../../../lib/limites-central";
@@ -179,12 +181,15 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
               </button>
             </FormularioFiltro>
           </FilterMenu>
-
-          <Link className="sb-button" href="/central">
-            Voltar à central
-          </Link>
         </>
       }
+    />
+  );
+  // As abas da Central levam o recorte aplicado; o período recusado não viaja (UX_SYSTEM §6, bloco 1).
+  const abas = (
+    <AbasDaSecao
+      rotulo="Telas da central"
+      abas={abasDaCentral("produtos", { ...(periodo.invalido ? {} : query), account: conta ?? undefined })}
     />
   );
 
@@ -194,6 +199,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         {titulo}
+        {abas}
         {resposta.error.code === "PGRST202" ? (
           <div className="sb-note">
             <span>SENDO ATIVADO</span>
@@ -220,6 +226,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         {titulo}
+        {abas}
         <EstadoDaTela
           tipo="erro"
           titulo="O ranking respondeu num formato que esta tela não reconhece"
@@ -233,6 +240,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   return (
     <>
       {titulo}
+      {abas}
 
       {accountsResult.error !== null && (
         <EstadoDaTela

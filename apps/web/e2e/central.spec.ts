@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { login } from "./helpers.js";
 
@@ -12,6 +12,12 @@ import { login } from "./helpers.js";
  * que nenhuma leitura falhou, e que conta e período viajam pela URL e até o
  * `/faturamento`.
  */
+
+/** As abas da Central (UX_SYSTEM §6, bloco 1): substituíram os atalhos do cabeçalho e o "Voltar à central". */
+function abasDaCentral(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Telas da central" });
+}
+
 test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({ page }) => {
   await login(page, "/central");
 
@@ -35,10 +41,25 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
     "Resultado e lucro",
     "Custos da venda",
     "Mercado Ads",
-    "Comparação completa",
   ]) {
     await expect(page.getByRole("region", { name: regiao })).toBeVisible();
   }
+
+  // A tabela que repete os cartões fica recolhida, a um toque (UX_SYSTEM §6, bloco 1).
+  await expect(page.getByRole("region", { name: "Comparação completa" })).toBeHidden();
+  await page.locator("summary", { hasText: "Comparação completa" }).click();
+  await expect(page.getByRole("region", { name: "Comparação completa" })).toBeVisible();
+
+  // As seis telas da Central, nas abas (UX_SYSTEM §6, bloco 1).
+  await expect(abasDaCentral(page).getByRole("link")).toHaveText([
+    "Central",
+    "Metas e imposto",
+    "Limites",
+    "Detector de frete",
+    "Sinais de Ads",
+    "Ranking de produtos",
+  ]);
+  await expect(abasDaCentral(page).getByRole("link", { name: "Central", exact: true })).toHaveAttribute("aria-current", "page");
 
   await expect(page.getByText("Não foi possível carregar o período")).toHaveCount(0);
   await expect(page.getByText("Não foi possível carregar a meta")).toHaveCount(0);
@@ -120,7 +141,7 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
   await aliquota.getByRole("button", { name: "Salvar alíquota" }).click();
   await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica entre 0% e 100%.");
 
-  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
 
   const secaoMeta = page.getByRole("region", { name: "Meta e projeção" });
@@ -170,7 +191,7 @@ test("/central/metas: a meta do Mercado Livre aparece na central ao lado da gera
 
   await expect(tabela.getByRole("row", { name: /Mercado Livre.*765\.432,10/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
 
   const cadaMarketplace = page.getByRole("region", { name: "Meta de cada marketplace" });
@@ -217,8 +238,10 @@ test("/central/limites: salvar muda o que a central diz, e voltar aos padrões d
   await form.getByRole("button", { name: "Salvar limites" }).click();
   await expect(form.getByRole("status")).toHaveText("Limites salvos. A central já julga com eles.");
 
-  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
+  // O "como ler" fica recolhido (UX_SYSTEM §6, bloco 1).
+  await page.locator("summary", { hasText: "Como ler estes números" }).click();
   await expect(page.getByText(/com 30 pedidos ou mais nos dois períodos\. Limites da empresa/)).toBeVisible();
 
   await page.goto("/central/limites");
@@ -258,7 +281,7 @@ test("/central/frete: resumo, filtro de nível e o caminho a partir da central",
   await expect(page).toHaveURL(/nivel=forte/);
   await expect(page.getByRole("region", { name: "Anúncios para revisar" }).getByText("Só forte indício.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Voltar à central" }).click();
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
 
   const frete = page.getByRole("region", { name: "Frete", exact: true });

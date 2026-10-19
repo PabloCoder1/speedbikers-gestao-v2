@@ -308,6 +308,13 @@ export async function Indicadores({
         />
       )}
 
+      {/*
+        A ORDEM DA LEITURA (UX_SYSTEM §6, bloco 1): as vendas do período logo
+        abaixo dos alertas, depois o resumo que as interpreta e a meta; resultado,
+        custos e Ads em seguida. O faturamento estava no fim da segunda tela.
+      */}
+      {secaoDoGrupo(GRUPOS[0], true, indicadores)}
+
       <Panel
         id="resumo-do-periodo"
         title="Resumo do período"
@@ -339,27 +346,29 @@ export async function Indicadores({
         tentarDeNovo={tentarDeNovo}
       />
 
-      {GRUPOS.map((grupo, indice) => (
-        <section key={grupo.id} aria-label={grupo.titulo}>
-          <div className="sb-section-label">
-            <span>{grupo.titulo}</span>
-            <span className="sb-section-note">{grupo.nota}</span>
-          </div>
+      {GRUPOS.slice(1).map((grupo) => secaoDoGrupo(grupo, false, indicadores))}
 
-          <KpiStrip ancora={indice === 0} cells={indicadores.filter((i) => i.grupo === grupo.id).map(celula)} />
-        </section>
-      ))}
-
-      <div className="sb-central-bloco">
+      {/*
+        RECOLHIDOS, A UM TOQUE (UX_SYSTEM §6, bloco 1): a tabela repete o que os
+        cartões já dizem (atual, anterior e variação), e o "como ler" é método.
+        Continuam na página, abertos quando se pede.
+      */}
+      <details className="sb-recolhivel sb-central-bloco">
+        <summary>
+          Comparação completa <small>atual, anterior, diferença e variação de cada indicador</small>
+        </summary>
         <Panel
           title="Comparação completa"
           subtitle="Atual, anterior, diferença e variação de cada indicador. Comissão e custo são comparados pela participação na receita."
         >
           <TabelaDeComparacao indicadores={indicadores} />
         </Panel>
-      </div>
+      </details>
 
-      <div className="sb-central-bloco">
+      <details className="sb-recolhivel sb-central-bloco">
+        <summary>
+          Como ler estes números <small>cor, zona neutra, amostra mínima e cobertura</small>
+        </summary>
         <div className="sb-note">
           <span>COMO LER</span>
           <p>
@@ -381,7 +390,27 @@ export async function Indicadores({
             compararia a captura do frete, não o negócio.
           </p>
         </div>
-      </div>
+      </details>
     </>
+  );
+}
+
+/** Uma faixa de indicadores com o rótulo da seção; a de vendas é a âncora (a primeira célula em navy). */
+function secaoDoGrupo(
+  grupo: (typeof GRUPOS)[number] | undefined,
+  ancora: boolean,
+  indicadores: readonly Indicador[],
+): ReactNode {
+  if (grupo === undefined) return null;
+
+  return (
+    <section key={grupo.id} aria-label={grupo.titulo}>
+      <div className="sb-section-label">
+        <span>{grupo.titulo}</span>
+        <span className="sb-section-note">{grupo.nota}</span>
+      </div>
+
+      <KpiStrip ancora={ancora} cells={indicadores.filter((i) => i.grupo === grupo.id).map(celula)} />
+    </section>
   );
 }

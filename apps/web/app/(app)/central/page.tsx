@@ -2,11 +2,13 @@ import { toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { AbasDaSecao } from "../../../components/abas-da-secao";
 import { CarregandoBloco, CarregandoConteudo } from "../../../components/carregando";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { CorpoTodos } from "../faturamento/multicanal";
 import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
+import { abasDaCentral } from "../../../lib/central-navegacao";
 import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../../lib/central-periodo";
 import { formatBusinessDate } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
@@ -91,16 +93,26 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   const hoje = toSalesMetricDate(new Date());
   const periodo = resolverPeriodoCentral(query, hoje);
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
-  const accounts = accountsResult.data ?? [];
   const requestedSlug = typeof query.account === "string" ? query.account : null;
-  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
-  const contaSlug = selectedAccount?.slug ?? null;
-  const contaFiltro = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
+
+  /*
+    SEM FILA ATÉ AS LEITURAS DO PERÍODO (UX_SYSTEM §6, bloco 1). Elas esperavam a
+    lista de contas, e as da organização esperavam as do período começarem. Agora
+    contas e organização saem juntas, e as leituras do período só esperam as
+    contas quando a URL escolhe uma (é delas que sai o id); sem conta, saem na
+    hora. As mesmas leituras, com os mesmos argumentos.
+  */
+  const accountsPromise = Promise.resolve(supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }));
+  const membershipPromise = currentMembership();
+  const contaPromise =
+    requestedSlug === null
+      ? Promise.resolve(null)
+      : accountsPromise.then((resultado) => (resultado.data ?? []).find((account) => account.slug === requestedSlug) ?? null);
+  const filtroPromise = contaPromise.then((conta) => (conta === null ? {} : { p_ml_account_id: conta.id }));
 
   // As quatro em paralelo, e a página não espera por elas: cabeçalho e filtros
   // saem antes, e os números chegam por streaming.
-  const leituras = Promise.all([
+  const leituras = filtroPromise.then((contaFiltro) => Promise.all([
     supabase.rpc("get_faturamento", {
       p_date_from: periodo.atual.from,
       p_date_to: periodo.atual.to,
@@ -115,10 +127,25 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     }),
     supabase.rpc("get_ads_overview", { p_date_from: periodo.atual.from, p_date_to: periodo.atual.to, ...contaFiltro }),
     supabase.rpc("get_ads_overview", { p_date_from: periodo.anterior.from, p_date_to: periodo.anterior.to, ...contaFiltro }),
-  ]);
+  ]));
+
+  // D-400: o faturamento do período COM detalhe só conta produtos com margem
+  // negativa para a central de alertas. Leitura separada e em paralelo: os
+  // indicadores não esperam pelo detalhe (~0,9 s contra ~0,4 s sem ele).
+  const leituraProdutos = filtroPromise.then((contaFiltro) =>
+    supabase.rpc("get_faturamento", {
+      p_date_from: periodo.atual.from,
+      p_date_to: periodo.atual.to,
+      ...contaFiltro,
+      p_detalhe: true,
+    }),
+  );
+
+  const [accountsResult, membership, selectedAccount] = await Promise.all([accountsPromise, membershipPromise, contaPromise]);
+  const accounts = accountsResult.data ?? [];
+  const contaSlug = selectedAccount?.slug ?? null;
 
   // A meta é da organização e do mês corrente: não depende do período nem da conta.
-  const membership = await currentMembership();
   const leituraMeta =
     membership.organizationId === null
       ? null
@@ -134,18 +161,6 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     membership.organizationId === null
       ? null
       : Promise.resolve(supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId }));
-  // D-400: o faturamento do período COM detalhe só conta produtos com margem
-  // negativa para a central de alertas. Leitura separada e em paralelo: os
-  // indicadores não esperam pelo detalhe (~0,9 s contra ~0,4 s sem ele).
-  const leituraProdutos = Promise.resolve(
-    supabase.rpc("get_faturamento", {
-      p_date_from: periodo.atual.from,
-      p_date_to: periodo.atual.to,
-      ...contaFiltro,
-      p_detalhe: true,
-    }),
-  );
-
   // Os sinais de Ads usam a semana que o Mercado Livre já consolidou, não o período da central.
   const leituraAds =
     membership.organizationId === null
@@ -214,31 +229,18 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
               </FormularioFiltro>
             </FilterMenu>
 
-            <Link className="sb-button" href="/central/metas">
-              Metas e imposto
-            </Link>
-
-            <Link className="sb-button" href="/central/limites">
-              Limites
-            </Link>
-
-            <Link className="sb-button" href="/central/frete">
-              Detector de frete
-            </Link>
-
-            <Link className="sb-button" href="/central/ads">
-              Sinais de Ads
-            </Link>
-
-            <Link className="sb-button" href={hrefDoRanking(periodoAtual, contaSlug)}>
-              Ranking de produtos
-            </Link>
-
             <Link className="sb-button" href={contaSlug === null ? "/faturamento" : `/faturamento?account=${encodeURIComponent(contaSlug)}`}>
               Faturamento detalhado
             </Link>
           </>
         }
+      />
+
+      {/* As seis telas da Central e o recorte que viaja entre elas (UX_SYSTEM §6, bloco 1). */}
+      {/* O período recusado (inválido) não viaja: as abas levam o recorte que a página aplicou. */}
+      <AbasDaSecao
+        rotulo="Telas da central"
+        abas={abasDaCentral("central", { ...(periodo.invalido ? {} : query), account: contaSlug ?? undefined })}
       />
 
       {/* D-472: a forma única do erro de leitura (D-502); o período inválido não é falha (item 13, D-503). */}
