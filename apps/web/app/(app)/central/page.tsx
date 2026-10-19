@@ -2,20 +2,24 @@ import { toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { AbasDaSecao } from "../../../components/abas-da-secao";
 import { CarregandoBloco, CarregandoConteudo } from "../../../components/carregando";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { CorpoTodos } from "../faturamento/multicanal";
 import { FilterMenu } from "../../../components/filter-menu";
-import { PageTitle } from "../../../components/page-title";
-import { abasDaCentral } from "../../../lib/central-navegacao";
-import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../../lib/central-periodo";
-import { formatBusinessDate } from "../../../lib/format";
+import {
+  escreverPeriodoNaUrl,
+  periodoDaUrl,
+  PRESETS_CENTRAL,
+  resolverPeriodoCentral,
+  rotuloDoIntervalo,
+  type PeriodoNaUrl,
+} from "../../../lib/central-periodo";
 import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { Atencao, AtencaoCarregando } from "./atencao";
+import { AvisoDePeriodoInvalido, CabecalhoDaCentral } from "./comum";
 import { Indicadores } from "./indicadores";
 import { SinalDeAds } from "./sinal-ads";
 import { SinalDoFrete } from "./sinal-frete";
@@ -47,14 +51,10 @@ export const dynamic = "force-dynamic";
 
 type Consulta = Record<string, string | string[] | undefined>;
 
-function montarHref(periodo: { preset: string } | { from: string; to: string } | null, contaSlug: string | null): string {
+function montarHref(periodo: PeriodoNaUrl | null, contaSlug: string | null): string {
   const search = new URLSearchParams();
 
-  if (periodo !== null && "preset" in periodo) search.set("p", periodo.preset);
-  if (periodo !== null && "from" in periodo) {
-    search.set("from", periodo.from);
-    search.set("to", periodo.to);
-  }
+  if (periodo !== null) escreverPeriodoNaUrl(search, periodo);
   if (contaSlug !== null) search.set("account", contaSlug);
 
   const qs = search.toString();
@@ -63,18 +63,8 @@ function montarHref(periodo: { preset: string } | { from: string; to: string } |
 }
 
 /** O mesmo período e a mesma conta no ranking de produtos (D-402). */
-function hrefDoRanking(periodo: { preset: string } | { from: string; to: string }, contaSlug: string | null): string {
+function hrefDoRanking(periodo: PeriodoNaUrl, contaSlug: string | null): string {
   return montarHref(periodo, contaSlug).replace("/central", "/central/produtos");
-}
-
-function periodoDaUrl(periodo: PeriodoCentral): { preset: string } | { from: string; to: string } {
-  return periodo.preset === null ? periodo.atual : { preset: periodo.preset };
-}
-
-function intervalo(range: { from: string; to: string }): string {
-  return range.from === range.to
-    ? formatBusinessDate(range.from)
-    : `${formatBusinessDate(range.from)} a ${formatBusinessDate(range.to)}`;
 }
 
 export default function CentralPage(props: { searchParams: Promise<Consulta> }): ReactNode {
@@ -180,12 +170,15 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
 
   return (
     <>
-      <PageTitle
-        eyebrow="COMERCIAL / CENTRAL"
-        title="Central do negócio"
-        subtitle={
+      {/* As seis telas da Central e o recorte que viaja entre elas (UX_SYSTEM §6, bloco 1). */}
+      {/* O período recusado (inválido) não viaja: as abas levam o recorte que a página aplicou. */}
+      <CabecalhoDaCentral
+        tela="central"
+        consulta={{ ...(periodo.invalido ? {} : query), account: contaSlug ?? undefined }}
+        titulo="Central do negócio"
+        subtitulo={
           <>
-            {contaLabel} · {periodo.rotulo}: {intervalo(periodo.atual)}, comparado com {intervalo(periodo.anterior)}.
+            {contaLabel} · {periodo.rotulo}: {rotuloDoIntervalo(periodo.atual)}, comparado com {rotuloDoIntervalo(periodo.anterior)}.
             {diasCompletos && " Dias completos, até ontem."}
             {periodo.emAndamento && " Hoje ainda está em andamento."}
           </>
@@ -243,13 +236,6 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
         }
       />
 
-      {/* As seis telas da Central e o recorte que viaja entre elas (UX_SYSTEM §6, bloco 1). */}
-      {/* O período recusado (inválido) não viaja: as abas levam o recorte que a página aplicou. */}
-      <AbasDaSecao
-        rotulo="Telas da central"
-        abas={abasDaCentral("central", { ...(periodo.invalido ? {} : query), account: contaSlug ?? undefined })}
-      />
-
       {/* D-472: a forma única do erro de leitura (D-502); o período inválido não é falha (item 13, D-503). */}
       {accountsResult.error !== null && (
         <EstadoDaTela
@@ -261,11 +247,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
         />
       )}
 
-      {periodo.invalido && (
-        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Período personalizado inválido — mostrando {periodo.rotulo.toLowerCase()}.
-        </p>
-      )}
+      {periodo.invalido && <AvisoDePeriodoInvalido rotulo={periodo.rotulo} />}
 
       {/*
         D-515: os dois esqueletos reservam o lugar do que vem. A "Atenção" tem o
@@ -329,11 +311,11 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
       )}
 
       <Suspense fallback={<CarregandoBloco rotulo="detector de frete" />}>
-        <SinalDoFrete leitura={leituraFrete} />
+        <SinalDoFrete leitura={leituraFrete} tentarDeNovo={montarHref(periodoAtual, contaSlug)} />
       </Suspense>
 
       <Suspense fallback={<CarregandoBloco rotulo="sinais de Ads" />}>
-        <SinalDeAds leitura={leituraAds} />
+        <SinalDeAds leitura={leituraAds} tentarDeNovo={montarHref(periodoAtual, contaSlug)} />
       </Suspense>
     </>
   );

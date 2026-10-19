@@ -1,15 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { Panel } from "../../../components/panel";
 import { StatePill } from "../../../components/state-pill";
 import { lerDetectorFrete, motivosDoAlerta, NIVEL, paraRevisar } from "../../../lib/detector-frete";
 import { formatCount, formatCurrency } from "../../../lib/format";
-
-interface RespostaComCodigo {
-  data: unknown;
-  error: { message: string; code?: string } | null;
-}
+import { funcaoAusente, SendoAtivado, type RespostaComCodigo } from "./comum";
 
 /**
  * O detector de frete na central (D-397): quantos anúncios pedem revisão e os
@@ -19,21 +16,42 @@ interface RespostaComCodigo {
  * Chega por streaming, depois dos indicadores: a RPC olha 90 dias de pedidos e
  * não pode segurar o resto da tela. É da organização inteira, sem o filtro de
  * conta da central — o painel diz isso.
+ *
+ * Falha e formato desconhecido falam pelo `EstadoDaTela` (D-502), com o
+ * "Tentar de novo" no recorte da central; a função ausente, pelo aviso de
+ * "sendo ativado" das outras telas (UX_SYSTEM §6, bloco 4).
  */
-export async function SinalDoFrete({ leitura }: { leitura: PromiseLike<RespostaComCodigo> | null }): Promise<ReactNode> {
+export async function SinalDoFrete({
+  leitura,
+  tentarDeNovo,
+}: {
+  leitura: PromiseLike<RespostaComCodigo> | null;
+  /** A central no recorte atual: o "Tentar de novo" lê tudo outra vez, no lugar. */
+  tentarDeNovo: string;
+}): Promise<ReactNode> {
   if (leitura === null) return null;
 
   const resposta = await leitura;
+  const tentar = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   if (resposta.error !== null) {
-    // Função ausente (PGRST202): a migration ainda não chegou a este banco.
     return (
       <Panel title="Frete" subtitle="Detector de frete possivelmente errado">
-        <p className="sb-panel-body sb-central-motivo">
-          {resposta.error.code === "PGRST202"
-            ? "O detector de frete está sendo ativado neste ambiente."
-            : `Não foi possível carregar o detector de frete: ${resposta.error.message}`}
-        </p>
+        <div className="sb-panel-body">
+          {funcaoAusente(resposta.error) ? (
+            <SendoAtivado>
+              O detector de frete está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-397. Assim que
+              a migração for aplicada, este painel passa a mostrar os anúncios que pedem revisão.
+            </SendoAtivado>
+          ) : (
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível carregar o detector de frete"
+              detalhe={resposta.error.message}
+              acao={tentar}
+            />
+          )}
+        </div>
       </Panel>
     );
   }
@@ -43,7 +61,14 @@ export async function SinalDoFrete({ leitura }: { leitura: PromiseLike<RespostaC
   if (detector === null) {
     return (
       <Panel title="Frete" subtitle="Detector de frete possivelmente errado">
-        <p className="sb-panel-body sb-central-motivo">O detector respondeu num formato que esta tela não reconhece — nada foi mostrado.</p>
+        <div className="sb-panel-body">
+          <EstadoDaTela
+            tipo="erro"
+            titulo="O detector respondeu num formato que esta tela não reconhece"
+            descricao="Nada foi mostrado."
+            acao={tentar}
+          />
+        </div>
       </Panel>
     );
   }
