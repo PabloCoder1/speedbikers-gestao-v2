@@ -21,14 +21,14 @@
 
 | | |
 |---|---|
-| Atualizado em | 2026-10-16 |
-| `origin/main` | `a0202e1f` (16/10: #212, #213, #216 e #217 do A1 — C-66, D-475, o estado e o `ci.yml` (D-477); #211, #215 e #218 do A2 — T8a, T8b e o estado; #214 e #219 do A3 — D-510 e o Shell num layout de grupo, D-511/D-512) |
-| Branches abertas | A1: `perf/faturamento-shopee-sem-laco` (#220, D-479, com a migration `20261016140000`) · A2: a D-484 (navegação suave na `/curva-abc` e na `/produtos`, só web) · A3: nenhuma (o #219 entrou; as telas autenticadas agora ficam em `apps/web/app/(app)/`) |
-| Web em produção | `5d25ebdc` (#215, `dpl_9Am1ouYBvf75hETwocjxqE9TaKXx`, READY; merge na `main` publica) |
-| Worker / api em produção | worker `worker-00050-cv4` (`d4fd86f5`, 16/10, com a D-481) e api `api-00035-58x` (`bacdf782`, 16/10), **Shopee LIVE** (partner `2048641`, segredos `SHOPEE_LIVE_*`), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Go Live aprovado pela Shopee e publicado em 16/10; o push live cadastrado no Console pelo dono (a conferir no primeiro `shopee_push_enqueued`) |
+| Atualizado em | 2026-10-19 |
+| `origin/main` | `df709520` (19/10: #237 do A2, a cascata sem o `outros_restante`; 16/10: #238 e #239 do A1, D-485 e D-487) |
+| Branches abertas | A1: `chore/sem-outros-restante` (o tipo da fase 1 fora e o estado de 19/10) · A2: #236 (D-496) e, a seguir, a D-498 (a tela da D-485 e da D-487) · A3: ver a seção do A3 |
+| Web em produção | `df709520` (#237, publicado em 19/10, READY; merge na `main` publica) |
+| Worker / api em produção | worker `worker-00050-cv4` (`d4fd86f5`, 16/10, com a D-481) e api `api-00035-58x` (`bacdf782`, 16/10), **Shopee LIVE** (partner `2048641`, segredos `SHOPEE_LIVE_*`), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Go Live aprovado pela Shopee e publicado em 16/10; o push live cadastrado no Console pelo dono e conferido em 19/10 (as duas lojas, nenhum recusado) |
 | Migrations em produção | até `20261016200000` (D-441 a D-483 fase 2, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548`, `38799663780` (15/10), `38893049400` e `38921424337`, `38939071592`, `38955922868` e `38963886431` (16/10)) |
-| Dev | todas as migrations da `main` (até `20261015130000`, pela CI da `main`); serviços pausados (D-350) |
-| Dado Shopee | **1 loja real** (`shop_id` 427275919, conectada em 16/10 14:15 UTC pelo `/contas`): 90 dias de pedidos lidos na primeira rodada, o catálogo inteiro, devoluções, repasses e financeiro chegando sem falha. A loja sandbox fica parada (outro ambiente) e fora dos totais |
+| Dev | todas as migrations da `main` (até `20261016230000`, pela CI da `main`); serviços pausados (D-350) |
+| Dado Shopee | **2 lojas reais** (conectadas em 16/10): em dia em 19/10 — pedidos, repasses e devoluções a minutos de agora, financeiro sem fila nem erro, Ads lido até hoje e o push live chegando das duas (`docs/SHOPEE.md` §9). A loja sandbox fica parada (outro ambiente) e fora dos totais |
 
 ---
 
@@ -59,6 +59,7 @@
 - E7d, push da Shopee (D-453): **em produção e conferido (15/10)** — `POST /push/shopee` antecipa `shopee.orders.sync` (3) e `shopee.returns.sync` (29) da loja em janelas de 5 minutos; a Shopee assina com a **Test Push Partner Key** da tela Set Push (segredo `SHOPEE_TEST_PUSH_PARTNER_KEY`, achado pelas amostras offline), não com a Partner Key; `code` em texto (`"29"`) aceito; autoteste assinado: aceito. No Go Live: a chave de push de produção.
 
 - D-485, os ajustes da Shopee depois do repasse no resultado: **em código e validada** (integração 1022/1022 do zero, 4 mutações, a fila relida medida com volume). **Para o A2:** o degrau "Ajustes depois do repasse" entre "Recebido da Shopee" e "Custo dos produtos", lido pela PRESENÇA de `ajustes_cobertos` no TOTAL do C-58 (antes da migration, a cascata de hoje); a barra do custo passa a começar em recebido + ajustes; a definição do resultado na comparação vira "recebido + ajustes − custo" (metricId `shopee_ajustes_pos_repasse`). A migration vai a produção depois dele no ar.
+- Saúde da produção nos três primeiros dias da Shopee live (19/10, `docs/SHOPEE.md` §9): as duas lojas em dia, o financeiro sem fila, o push live chegando das duas, as 5 falhas da Shopee resolvidas na retentativa e o ML igual a antes do Go Live. O `outros_restante?` saiu de `types.ts` (#237 do A2 no ar); a `protecao_envio?` fica opcional até as fixtures de `lib/faturamento-multicanal.test.ts` a trazerem (o A2 decide na D-498).
 - D-487, o Ads CPC da loja na margem de contribuição da Shopee (a regra do 5K do ML, no SQL): **em código e validada** (6 mutações). `investimento_ads`, `ads_rateado`, `resultado_contribuicao` e `margem_contribuicao` no fim do C-58; NULOS sem a leitura de Ads cobrindo o período ou sem alíquota. **Para o A2:** a linha "Lucro após imposto e Ads" (metricId `shopee_resultado_contribuicao`) na comparação, com a premissa do rateio e "Ads CPC da loja" no rótulo da Shopee, pela presença da coluna. A migration `20261016230000` vai a produção junto com a da D-485.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)
