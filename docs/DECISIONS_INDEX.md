@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **514** (D-001 a D-610).
+Decisões registradas: **515** (D-001 a D-610).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **514** (D-001 a D-610).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 
-### estoque (36)
+### estoque (37)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -160,6 +160,7 @@ Decisões registradas: **514** (D-001 a D-610).
 - **D-464** — Telas multicanais, etapa T-R3: a demanda da Shopee na reposicao e no pedido de compra, com o sinal vindo da propria RPC; a busca e a ponte ao pedido viram navegacao suave
 - **D-466** — Telas multicanais, etapa T-R3b: a parte da Shopee na cobertura do SKU e na Inspecao Rapida, e os dias fora do ROAS dos Ads da Shopee
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
+- **D-497** — A nota de venda de marketplace nao baixa o estoque pela importacao: o CFOP oficial e o intermediador da NF-e decidem, e a recusa tem codigo
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
 ### interface (68)

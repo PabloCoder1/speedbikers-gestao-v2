@@ -274,6 +274,7 @@ export function lerDanfe(linhas: readonly LinhaPdf[], cnpjProprio: string): Leit
     emitidoEm: acharData(texto),
     emitenteCnpj: emitente,
     emitenteNome: acharEmitenteNome(linhas),
+    intermediadorCnpj: null,
     referencia: null,
     itens,
   };

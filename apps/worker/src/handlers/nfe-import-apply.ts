@@ -1,5 +1,5 @@
 import type { AdminClient } from "@sb/db";
-import { computeNfeApplicationMovements } from "@sb/domain";
+import { computeNfeApplicationMovements, recusaDoDocumentoGravado } from "@sb/domain";
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
@@ -46,7 +46,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
     const document = await deps.db
       .from("documents")
       .select(
-        "id, status, organization_id, operation_type, document_type, issue_date, created_at, total_items, resolved_items",
+        "id, status, organization_id, operation_type, document_type, issue_date, created_at, total_items, resolved_items, intermediary_cnpj",
       )
       .eq("id", documentId)
       .maybeSingle();
@@ -118,12 +118,33 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
 
     const items = await deps.db
       .from("document_items")
-      .select("position, sku_id, quantity")
+      .select("position, sku_id, quantity, cfop")
       .eq("document_id", documentId)
       .order("position");
 
     if (items.error !== null) {
       return { status: "failed", retryable: true, reason: items.error.message };
+    }
+
+    /*
+      D-497: a nota de venda (ou de devolução de venda) feita pelo marketplace
+      não mexe no estoque -- a baixa do pedido já cobre. A leitura já recusa e a
+      api também; a aplicação repete, como no envio ao Full.
+    */
+    const recusa = recusaDoDocumentoGravado({
+      documentType: data.document_type,
+      operationType: data.operation_type,
+      intermediaryCnpj: data.intermediary_cnpj,
+      cfops: items.data.map((item) => item.cfop),
+    });
+
+    if (recusa !== null) {
+      await deps.db
+        .from("documents")
+        .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
+        .eq("id", documentId);
+
+      return { status: "failed", retryable: false, reason: recusa.motivo };
     }
 
     const movements = computeNfeApplicationMovements({

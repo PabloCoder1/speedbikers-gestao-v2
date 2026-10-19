@@ -162,6 +162,7 @@ export function lerEnvioFullMl(linhas: readonly LinhaPdf[], pedacos: readonly Pe
     emitidoEm: null,
     emitenteCnpj: null,
     emitenteNome: null,
+    intermediadorCnpj: null,
     referencia: numero === null ? "Envio ao Full" : `Envio ao Full #${numero}`,
     itens,
   };

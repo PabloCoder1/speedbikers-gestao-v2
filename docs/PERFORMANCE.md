@@ -1441,7 +1441,17 @@ As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e
 
 **A correção (D-499, escolha do dono): `ml_sales_lines`, no banco local.** Volume sintético de 40 mil pedidos em 120 dias, 2 contas, 3,2 mil SKUs (kits e histórico de custo), cache quente, como `authenticated`. O corpo novo contra o de hoje, 90 dias com detalhe: **1.837 páginas contra 86.945** (47 vezes menos) e a mesma saída, texto a texto, em 36 combinações. O tempo local, todo em memória e só CPU, cai pouco e oscila (261–336 ms contra 360–376 ms): o que pesa em produção são as páginas tocadas e lidas do disco, e o tempo de lá só se mede depois da 1ª migration. **A leitura da tabela:** com o índice `(ml_account_id, date_created)` o plano varria a tabela inteira até em 7 dias (a RLS filtra a conta por subplano em hash, que não vira condição de índice); com `(date_created)`, 7 e 30 dias vão pelo índice e 90 de 120 dias varrem, o plano certo para a fração. **A carga da migration:** ~0,3 s para 40 mil linhas com a chave, os índices e a FK construídos depois, contra ~0,6 s numa tabela já indexada; reaplicada sobre o volume, a migration inteira leva 1,7 s. Em produção, a leitura da carga levou 4,1 s (quase toda do disco), e por isso a migration a lê uma vez antes de travar as gravações. **Gatilhos na gravação:** 2 mil pedidos com itens e financeiro, com e sem os gatilhos da D-499: +0,07 ms por item e +0,09 ms por financeiro, perto do custo dos da D-409.
 
-**Em produção (19/10, depois da 1ª migration), como `authenticated`, 90 dias com detalhe:** a função de hoje toca ~395 mil páginas, 2,5 s com cache quente (5,1 s na primeira chamada da tarde, com 2,3 mil páginas do disco e o agrupamento transbordando); o corpo novo toca ~65 mil páginas, 1,3 s. A migration levou 13 s no `db push`, com a conexão. A leitura da tabela é pelo índice da data, e a carga não gravou as linhas em ordem de data, então ela visita a mesma página várias vezes (~62 mil acessos para uma tabela de 69 MB com os índices): todos da memória quando quente, e no frio cada página sai do disco uma vez só -- os 69 MB contra os ~360 MB de pedidos e itens de antes. O resto do tempo é CPU no custo e nos agrupamentos, igual nas duas versões.
+**Em produção (19/10, depois da 1ª migration), como `authenticated`, 90 dias com detalhe:** a função de hoje toca ~395 mil páginas, 2,5 s com cache quente (5,1 s na primeira chamada da tarde, com 2,3 mil páginas do disco e o agrupamento transbordando); uma versão ENCURTADA do corpo novo (o resumo com 6 chaves, montada só para contar páginas) tocou ~65 mil páginas e 1,3 s -- não é o tempo da função. A migration levou 13 s no `db push`, com a conexão.
+
+**Em produção (19/10, depois da 2ª migration), a função inteira, como `authenticated`:**
+
+| Chamada | Antes | Depois |
+|---|---|---|
+| 90 dias, com detalhe | ~395 mil páginas, 2,5 s quente, 5,1 s na 1ª | **8,5 mil páginas**, 2,1 s quente, 3,2 s na 1ª |
+| 90 dias, sem detalhe | 1,4 s | 1,2 s |
+| 30 dias, com detalhe | ~125 mil páginas, 0,62 s | 5,8 mil páginas, 0,48 s |
+
+As páginas caem 47 vezes, e o caso frio deixa de ler os ~360 MB de pedidos e itens (a tabela tem 69 MB). O tempo quente cai pouco porque **o que sobra é CPU**: o custo por item, o agrupamento por pedido (que ainda transborda os 32 MB de `work_mem`) e as 36 somas do resumo, iguais nas duas versões. Se a Central voltar a passar de 8 s, o próximo passo é somar por dia (um resumo diário), não ler menos páginas.
 
 ### A `/central` sem a leitura do faturamento em dobro (D-610, 19/10/2026)
 

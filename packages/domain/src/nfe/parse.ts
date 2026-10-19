@@ -60,6 +60,12 @@ export interface ParsedNfe {
   readonly issuerName: string;
   readonly recipientCnpj: string | null;
   readonly recipientName: string | null;
+  /**
+   * CNPJ do intermediador da transação (`infIntermed/CNPJ`, YB02), só quando
+   * `ide/indIntermed` = 1 ("operação em site ou plataforma de terceiros", B25c,
+   * NT 2020.006). Nulo sem intermediador -- a venda de balcão (D-497).
+   */
+  readonly intermediaryCnpj: string | null;
   readonly items: readonly ParsedNfeItem[];
 }
 
@@ -111,6 +117,7 @@ function resolveOperationType(
   emitCnpj: string,
   destCnpj: string | null,
   ownCnpj: string,
+  tpNF: "0" | "1",
 ): { ok: true; value: "ENTRADA" | "SAIDA" } | { ok: false; reason: string } {
   // Pela RAIZ do CNPJ, não pelo CNPJ inteiro: matriz e filial são o mesmo
   // estoque (`mesmaEmpresa`). O destinatário vem primeiro de propósito — na
@@ -120,8 +127,11 @@ function resolveOperationType(
     return { ok: true, value: "ENTRADA" };
   }
 
+  // Emitente da casa: aqui `tpNF` É o nosso ponto de vista. A nota de entrada
+  // própria (`tpNF` = 0) -- a devolução de cliente que a empresa registra -- é
+  // ENTRADA; tratá-la como saída baixaria o estoque em vez de repor (D-497).
   if (mesmaEmpresa(emitCnpj, ownCnpj)) {
-    return { ok: true, value: "SAIDA" };
+    return { ok: true, value: tpNF === "0" ? "ENTRADA" : "SAIDA" };
   }
 
   return {
@@ -243,7 +253,13 @@ export function parseNfeXmlObject(root: unknown, ownCnpj: string): ParseNfeResul
   const recipientCnpj = dest === null ? null : str(dest.CNPJ);
   const recipientName = dest === null ? null : str(dest.xNome);
 
-  const direction = resolveOperationType(issuerCnpj, recipientCnpj, ownCnpj);
+  const direction = resolveOperationType(issuerCnpj, recipientCnpj, ownCnpj, tpNF);
+
+  // O intermediador só vale com `indIntermed` = 1: o grupo preenchido sem ele
+  // é rejeitado pela SEFAZ (regra YB01-20), e o CNPJ sem o indicador não diz
+  // que a venda foi pela plataforma.
+  const infIntermed = isRecord(infNFe.infIntermed) ? infNFe.infIntermed : null;
+  const intermediaryCnpj = str(ide.indIntermed) === "1" && infIntermed !== null ? str(infIntermed.CNPJ) : null;
 
   if (!direction.ok) {
     return { ok: false, reason: direction.reason };
@@ -279,6 +295,7 @@ export function parseNfeXmlObject(root: unknown, ownCnpj: string): ParseNfeResul
       issuerName,
       recipientCnpj,
       recipientName,
+      intermediaryCnpj,
       items,
     },
   };

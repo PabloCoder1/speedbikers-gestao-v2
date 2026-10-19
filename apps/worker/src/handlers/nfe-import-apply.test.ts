@@ -29,8 +29,9 @@ function fakeDeps(options: {
   totalItems?: number | null;
   resolvedItems?: number | null;
   documentMissing?: boolean;
-  items?: { position: number; sku_id: string | null; quantity: number }[];
+  items?: { position: number; sku_id: string | null; quantity: number; cfop?: string | null }[];
   movementInsertFails?: boolean;
+  intermediaryCnpj?: string | null;
 }): { deps: NfeApplyDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { documentUpdates: [], movements: [] };
   const lines: string[] = [];
@@ -61,6 +62,7 @@ function fakeDeps(options: {
                           created_at: "2026-09-17T09:00:00.000Z",
                           total_items: "totalItems" in options ? options.totalItems : items.length,
                           resolved_items: "resolvedItems" in options ? options.resolvedItems : items.length,
+                          intermediary_cnpj: options.intermediaryCnpj ?? null,
                         },
                   error: null,
                 }),
@@ -290,6 +292,31 @@ describe("saída por documento não fiscal (D-375)", () => {
     expect(captured.movements).toHaveLength(0);
     expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "PARSED" });
     expect(String(captured.documentUpdates.at(-1)?.last_error)).toContain("transferência");
+  });
+
+  it("nota de venda feita pelo marketplace NÃO gera movimento: FAILED com o código (D-497)", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      intermediaryCnpj: "35635824000112",
+      items: [{ position: 0, sku_id: "sku-capacete", quantity: 1, cfop: "6108" }],
+    });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.movements).toHaveLength(0);
+    expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "FAILED", last_error_code: "SAIDA_VENDA_MARKETPLACE" });
+  });
+
+  it("nota de venda de balcão (sem intermediador) continua baixando como SAIDA_NFE (D-497)", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      items: [{ position: 0, sku_id: "sku-capacete", quantity: 1, cfop: "5102" }],
+    });
+
+    await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(captured.movements[0]).toMatchObject({ movement_type: "SAIDA_NFE" });
   });
 
   it("documento sem data de emissão usa a data de chegada, não inventa uma", async () => {

@@ -22879,3 +22879,58 @@ describe("ml_sales_lines: as linhas de venda do faturamento do ML, mantidas por 
     }
   });
 });
+
+/**
+ * D-497 (b): a recusa da nota de venda de marketplace tem código, e o CNPJ do
+ * intermediador fica no documento -- a tela de notas os recebe no fim de cada
+ * linha do `get_documents_overview`.
+ */
+describe("documents: o código da recusa e o intermediador (D-497)", () => {
+  const RUN = String(Date.now());
+  const ARQUIVO = `D497-${RUN}`;
+  const criados: string[] = [];
+
+  afterAll(async () => {
+    await client.query("delete from public.documents where id = any($1)", [criados]);
+  });
+
+  async function documento(codigo: string | null, intermediario: string | null, sufixo: string): Promise<string> {
+    const { rows } = await client.query<{ id: string }>(
+      `insert into public.documents
+         (organization_id, status, storage_path, file_name, content_hash, document_type, source_format,
+          operation_type, last_error, last_error_code, intermediary_cnpj)
+       values ($1, 'FAILED', 'nfe/d497.xml', $2, $3, 'NFE', 'XML', 'SAIDA', 'recusada', $4, $5)
+       returning id`,
+      [ORG_SB, `${ARQUIVO}-${sufixo}`, `${RUN}${sufixo}`.padEnd(64, "0").slice(0, 64), codigo, intermediario],
+    );
+    const id = rows[0]?.id ?? "";
+
+    criados.push(id);
+
+    return id;
+  }
+
+  it("a tela recebe o código e o intermediador na linha do documento", async () => {
+    const id = await documento("SAIDA_VENDA_MARKETPLACE", "03007331000141", "a");
+    const [linha] = await asUser<{ v: { linhas: Record<string, unknown>[] } }>(
+      ADMIN_SB,
+      `select public.get_documents_overview('${ORG_SB}', p_search => '${ARQUIVO}') as v`,
+    );
+
+    expect(linha?.v.linhas.find((l) => l.id === id)).toMatchObject({
+      status: "FAILED",
+      last_error: "recusada",
+      last_error_code: "SAIDA_VENDA_MARKETPLACE",
+      intermediary_cnpj: "03007331000141",
+    });
+  });
+
+  it("aceita os quatro códigos e nulo; recusa código desconhecido e CNPJ que não tem 14 dígitos", async () => {
+    for (const [i, codigo] of ["DEVOLUCAO_VENDA_MARKETPLACE", "VENDA_PEDE_XML", "LEITURA_NAO_GRAVADA", null].entries()) {
+      await expect(documento(codigo, null, `b${String(i)}`)).resolves.toBeTruthy();
+    }
+
+    await expect(documento("OUTRO_MOTIVO", null, "c")).rejects.toThrow(/documents_last_error_code_check/);
+    await expect(documento(null, "03.007.331/0001-41", "d")).rejects.toThrow(/documents_intermediary_cnpj_check/);
+  });
+});
