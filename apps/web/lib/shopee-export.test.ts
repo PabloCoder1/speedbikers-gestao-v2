@@ -92,7 +92,7 @@ describe("anunciosShopeeParaCsv", () => {
   it("o estado do vínculo e o status no singular da linha, a origem do SKU e os números", () => {
     const [cabecalho, linha] = linhas(anunciosShopeeParaCsv([ANUNCIO]));
 
-    expect(cabecalho?.split(";")).toHaveLength(15);
+    expect(cabecalho?.split(";")).toHaveLength(19);
     expect(linha).toContain(";Vinculado;Ativo;PAST-01;PAST-01;pelo SKU do anúncio;100;120;BRL;7;");
   });
 
@@ -114,6 +114,21 @@ describe("anunciosShopeeParaCsv", () => {
 
     expect(linha).toContain(";Aguardando leitura;");
     expect(linha?.endsWith(";;;;;")).toBe(true);
+  });
+
+  it("as vendas do período no fim (D-606): número quando lidas, vazio quando a loja nunca foi lida ou a receita é desconhecida", () => {
+    const [cabecalho, vendeu, semReceita, nuncaLida] = linhas(
+      anunciosShopeeParaCsv([
+        { ...ANUNCIO, unidades_vendidas: 11, receita_bruta: 1100.5, pedidos: 11, unidades_sem_receita: 0 },
+        { ...ANUNCIO, unidades_vendidas: 2, receita_bruta: null, pedidos: 2, unidades_sem_receita: 2 },
+        { ...ANUNCIO, unidades_vendidas: null, receita_bruta: null, pedidos: null, unidades_sem_receita: null },
+      ]),
+    );
+
+    expect(cabecalho?.endsWith(";Unidades vendidas;Faturamento;Pedidos;Unidades sem receita conhecida")).toBe(true);
+    expect(vendeu?.endsWith(";11;1100,5;11;0")).toBe(true);
+    expect(semReceita?.endsWith(";2;;2;2")).toBe(true);
+    expect(nuncaLida?.endsWith(";;;;")).toBe(true);
   });
 
   it("estado desconhecido não sai cru", () => {

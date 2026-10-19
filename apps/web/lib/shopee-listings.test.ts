@@ -8,6 +8,9 @@ import {
   explicacaoDoAguardando,
   formatShopeeMoney,
   isShopeeSchemaMissing,
+  argumentosDeVendasShopee,
+  proximaOrdemShopee,
+  recorteDeVendasShopee,
   resolveShopeeListingsFilters,
   resumoDoCatalogoShopee,
   shopeeImageUrl,
@@ -18,30 +21,40 @@ import {
 } from "./shopee-listings";
 
 const LOJA = "5b1d0000-0000-4000-8000-000000000001";
+const HOJE = "2026-10-19";
+
+/** O período padrão (30 dias até hoje), sem venda nem ordem: o que a URL vazia resolve. */
+const PADRAO = {
+  range: { from: "2026-09-20", to: HOJE },
+  days: 30,
+  periodoInvalido: false,
+  vendeu: null,
+  ordem: null,
+} as const;
 
 describe("resolveShopeeListingsFilters", () => {
   it("URL vazia é 'sem filtro', página 1", () => {
-    expect(resolveShopeeListingsFilters({}, [LOJA])).toEqual({ loja: null, estado: null, busca: null, pagina: 1 });
+    expect(resolveShopeeListingsFilters({}, [LOJA], HOJE)).toEqual({ loja: null, estado: null, busca: null, pagina: 1, ...PADRAO });
   });
 
   it("aceita só loja da organização e estado do conjunto fechado", () => {
-    expect(resolveShopeeListingsFilters({ loja: LOJA, estado: "sem-sku" }, [LOJA])).toMatchObject({
+    expect(resolveShopeeListingsFilters({ loja: LOJA, estado: "sem-sku" }, [LOJA], HOJE)).toMatchObject({
       loja: LOJA,
       estado: "sem-sku",
     });
     expect(
-      resolveShopeeListingsFilters({ loja: "5b1d0000-0000-4000-8000-000000000999", estado: "VINCULADO" }, [LOJA]),
+      resolveShopeeListingsFilters({ loja: "5b1d0000-0000-4000-8000-000000000999", estado: "VINCULADO" }, [LOJA], HOJE),
     ).toMatchObject({ loja: null, estado: null });
   });
 
   it("busca aparada; vazia é sem busca; página inválida cai em 1", () => {
-    expect(resolveShopeeListingsFilters({ q: "  luva  ", pagina: "3" }, [])).toMatchObject({ busca: "luva", pagina: 3 });
-    expect(resolveShopeeListingsFilters({ q: "   ", pagina: "-2" }, [])).toMatchObject({ busca: null, pagina: 1 });
-    expect(resolveShopeeListingsFilters({ q: ["a", "b"] }, [])).toMatchObject({ busca: "a" });
+    expect(resolveShopeeListingsFilters({ q: "  luva  ", pagina: "3" }, [], HOJE)).toMatchObject({ busca: "luva", pagina: 3 });
+    expect(resolveShopeeListingsFilters({ q: "   ", pagina: "-2" }, [], HOJE)).toMatchObject({ busca: null, pagina: 1 });
+    expect(resolveShopeeListingsFilters({ q: ["a", "b"] }, [], HOJE)).toMatchObject({ busca: "a" });
   });
 
   it("página absurda na URL é presa: o offset nunca estoura o integer do banco", () => {
-    const { pagina } = resolveShopeeListingsFilters({ pagina: "99999999999" }, []);
+    const { pagina } = resolveShopeeListingsFilters({ pagina: "99999999999" }, [], HOJE);
 
     expect((pagina - 1) * SHOPEE_PAGE_SIZE).toBeLessThanOrEqual(2_147_483_647);
     expect(pagina).toBeGreaterThan(1);
@@ -49,7 +62,7 @@ describe("resolveShopeeListingsFilters", () => {
 });
 
 describe("buildShopeeListingsHref", () => {
-  const filtros = { loja: LOJA, estado: "vinculado", busca: "luva", pagina: 3 } as const;
+  const filtros = { loja: LOJA, estado: "vinculado", busca: "luva", pagina: 3, ...PADRAO } as const;
 
   it("a paginação preserva os filtros", () => {
     expect(buildShopeeListingsHref(filtros, { pagina: 4 })).toBe(
@@ -61,7 +74,7 @@ describe("buildShopeeListingsHref", () => {
     expect(buildShopeeListingsHref(filtros, { estado: "sem-sku" })).toBe(
       `/anuncios/shopee?loja=${LOJA}&estado=sem-sku&q=luva`,
     );
-    expect(buildShopeeListingsHref({ loja: null, estado: null, busca: null, pagina: 1 })).toBe("/anuncios/shopee");
+    expect(buildShopeeListingsHref({ loja: null, estado: null, busca: null, pagina: 1, ...PADRAO })).toBe("/anuncios/shopee");
   });
 
   it("o 'ver lista' da faixa fica no escopo dela: mantém a loja, larga a busca e a página", () => {
@@ -165,5 +178,68 @@ describe("resumoDoCatalogoShopee (D-429)", () => {
     expect(resumoDoCatalogoShopee(1, 1)).toBe("1 anúncio · 1 vinculado");
     expect(resumoDoCatalogoShopee(0, 0)).toBe("0 anúncios · 0 vinculados");
     expect(resumoDoCatalogoShopee(null, null)).toBeNull();
+  });
+});
+
+describe("as vendas por anúncio: período, vendeu e ordem (D-606)", () => {
+  it("o período é o de `/anuncios`: preset, personalizado e o inválido que cai no padrão e avisa", () => {
+    expect(resolveShopeeListingsFilters({ days: "7" }, [], HOJE)).toMatchObject({ days: 7, range: { from: "2026-10-13", to: HOJE } });
+    expect(resolveShopeeListingsFilters({ from: "2026-10-01", to: "2026-10-10" }, [], HOJE)).toMatchObject({
+      days: null,
+      range: { from: "2026-10-01", to: "2026-10-10" },
+      periodoInvalido: false,
+    });
+    expect(resolveShopeeListingsFilters({ from: "2026-10-10", to: "2026-10-01" }, [], HOJE)).toMatchObject({ days: 30, periodoInvalido: true });
+  });
+
+  it("vendeu e ordem só do conjunto fechado; fora dele, nada", () => {
+    expect(resolveShopeeListingsFilters({ vendeu: "sem", ordem: "receita" }, [], HOJE)).toMatchObject({ vendeu: "sem", ordem: "receita" });
+    expect(resolveShopeeListingsFilters({ vendeu: "talvez", ordem: "preco" }, [], HOJE)).toMatchObject({ vendeu: null, ordem: null });
+  });
+
+  it("o endereço leva o período fora do padrão, o vendeu e a ordem; trocar volta à página 1", () => {
+    const filtros = resolveShopeeListingsFilters({ loja: LOJA, days: "7", vendeu: "com", ordem: "vendas", pagina: "2" }, [LOJA], HOJE);
+
+    expect(buildShopeeListingsHref(filtros, { pagina: 3 })).toBe(`/anuncios/shopee?loja=${LOJA}&days=7&vendeu=com&ordem=vendas&pagina=3`);
+    expect(buildShopeeListingsHref(filtros, { vendeu: null })).toBe(`/anuncios/shopee?loja=${LOJA}&days=7&ordem=vendas`);
+    expect(buildShopeeListingsHref({ ...filtros, days: null, range: { from: "2026-10-01", to: "2026-10-10" } }, {})).toBe(
+      `/anuncios/shopee?loja=${LOJA}&from=2026-10-01&to=2026-10-10&vendeu=com&ordem=vendas`,
+    );
+  });
+
+  it("os argumentos do C-67: o período sempre, o filtro e a ordem só com valor (PGRST202)", () => {
+    const padrao = resolveShopeeListingsFilters({}, [], HOJE);
+
+    expect(argumentosDeVendasShopee(padrao)).toEqual({ p_date_from: "2026-09-20", p_date_to: HOJE });
+    expect(argumentosDeVendasShopee({ ...padrao, vendeu: "sem", ordem: "receita" })).toEqual({
+      p_date_from: "2026-09-20",
+      p_date_to: HOJE,
+      p_vendeu: "sem",
+      p_ordem: "receita",
+    });
+  });
+});
+
+describe("o cabeçalho que ordena e o resumo do recorte (D-606)", () => {
+  it("a coluna ordena do maior para o menor; clicar de novo volta à ordem de sempre", () => {
+    expect(proximaOrdemShopee(null, "vendas")).toBe("vendas");
+    expect(proximaOrdemShopee("receita", "vendas")).toBe("vendas");
+    expect(proximaOrdemShopee("vendas", "vendas")).toBeNull();
+  });
+
+  it("o recorte vem do SQL; sem a coluna ou sem loja lida, não há resumo -- nunca zero", () => {
+    expect(recorteDeVendasShopee({ recorte_unidades: 11, recorte_receita: 1100, recorte_unidades_sem_receita: 0 })).toEqual({
+      unidades: 11,
+      receita: 1100,
+      semReceita: 0,
+    });
+    expect(recorteDeVendasShopee({ recorte_unidades: 3, recorte_receita: null, recorte_unidades_sem_receita: 3 })).toEqual({
+      unidades: 3,
+      receita: null,
+      semReceita: 3,
+    });
+    expect(recorteDeVendasShopee({ recorte_unidades: null, recorte_receita: null })).toBeNull();
+    expect(recorteDeVendasShopee({})).toBeNull();
+    expect(recorteDeVendasShopee(undefined)).toBeNull();
   });
 });

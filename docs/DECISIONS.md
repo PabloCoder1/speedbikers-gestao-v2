@@ -17320,3 +17320,52 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-606 - As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
+
+**Contexto:** decisão do dono de 19/10: a `/anuncios/shopee` mostra quanto cada anúncio vendeu, como o Dashboard de anúncios do ML (D-385). O A1 fez o contrato, o C-67 (D-493): `get_shopee_listings` com o período, `p_vendeu`, `p_ordem`, as vendas do anúncio e o recorte inteiro, pela regra do C-59. Esta é a tela.
+
+**1. O período e os dois filtros novos, todos na URL.**
+- **O período** é o de `/anuncios` e `/vendas` (`lib/period.ts`): presets de 7 a 90 dias, padrão 30 e fora da URL, e o personalizado com as duas datas. O inválido cai no padrão, e a tela avisa como a `/vendas/shopee`.
+- **O vendeu** ("Com ou sem venda", "Vendeu no período", "Sem venda no período") fica no painel, ao lado do vínculo. Vira chip, entra no "Limpar filtros" e no estado "nenhum anúncio corresponde".
+- **A ordem** (`vendas` | `receita`) é dada pelo cabeçalho, sem menu. O C-67 só ordena do maior para o menor, então o cabeçalho ativo mostra ↓ e `aria-sort="descending"`, e clicar de novo volta à ordem de sempre.
+- **A busca** é um GET nativo e leva os cinco campos em hidden (D-136). A visão salva guarda tudo (D-494).
+- **O resolvedor** ganha o dia de hoje (`toSalesMetricDate`), e `argumentosDeVendasShopee` monta os parâmetros: o período vai sempre, porque a tela sempre tem um; o vendeu e a ordem só com valor. Parâmetro mandado antes da migration de produção derruba a tela (PGRST202), por isso o merge espera a `20261019160000`.
+
+**2. As colunas e o resumo, sem somar nada na web.**
+- **"Unidades"** mostra as unidades vendidas e, embaixo, "em N pedidos". A coluna "Pedidos" separada não coube: a tabela passava da largura em 1440.
+- **"Faturamento"** tem a régua da participação no faturamento do recorte (a de `/anuncios`, `revenueShare`). As unidades de preço 0 aparecem como "+ N un. sem receita conhecida". Receita só de preço 0 é "—", com "sem receita conhecida".
+- **O resumo do recorte** vem da primeira linha (somado no SQL antes do limite): faturamento, unidades vendidas, unidades sem receita conhecida e o período.
+- **Ausência não é zero (D-067):**
+  - Com a loja lida, não vender é 0, que é fato.
+  - Com a loja de pedidos nunca lidos (`orders_last_success_at` nulo, lido junto das lojas), as colunas são "—". Uma nota diz qual loja e que ela fica fora do resumo.
+  - Sem a coluna, ou com nenhuma loja lida, não há resumo.
+- **As dicas dos cabeçalhos** dizem a regra: pedidos válidos (pagos e não cancelados), pelo dia do pedido em São Paulo, com o preço com o desconto da loja × quantidade, sem o frete e antes dos cupons.
+
+**3. O CSV leva as vendas.**
+- `/anuncios/shopee/exportar` lê o mesmo resolvedor e manda os mesmos argumentos.
+- No fim, "Unidades vendidas", "Faturamento", "Pedidos" e "Unidades sem receita conhecida". A ausência é célula vazia.
+- O nome do arquivo passa a usar o fim do período (`anuncios-shopee-<to>`), como o `anuncios-<dateTo>` do ML.
+
+**4. A largura, no desktop e no celular.**
+- **Desktop:** com as duas colunas novas, a tabela passava da largura do painel em 1440 (1249 px em 1110, medido com o seed). Agora a loja, o SKU do anúncio, o vínculo e o status quebram linha, as notas deles também. A loja e o SKU, sem espaço, quebram onde precisar, sem descer de 7rem. O anúncio, só nesta tabela, desce de 17rem para 15rem. Resultado: 1110 em 1110, com a loja live e com o seed.
+- **Celular:** o cartão tinha o defeito da T-R5. O vínculo invadia o preço, o SKU saía cortado, e "em 11 pedidos" também sairia. Ganhou o mesmo trato: a célula quebra e a nota desce. O vínculo (SKU, explicação e botão) ocupa a largura do cartão.
+
+**Publicação:** só a web, e depois da migration `20261019160000` em produção (o A1 dispara e avisa). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **Unitários:** `shopee-listings.test.ts`, com o período, o vendeu e a ordem do conjunto fechado, o endereço, os argumentos só com valor, o próximo estado do cabeçalho e o recorte nunca zero. `shopee-export.test.ts`, com as quatro colunas, a receita desconhecida e a loja nunca lida vazias.
+- **e2e:** no ensaio da loja live, sobre a migration do A1:
+  - 11 unidades em 11 pedidos e R$ 1.100 na linha e no resumo;
+  - o cabeçalho que ordena e volta;
+  - o vendeu=sem tirando o anúncio e o vendeu=com mantendo;
+  - um período sem pedido dando 0 com a loja lida;
+  - o CSV com `;11;1100;11;0` no fim.
+- **Largura:** `.sb-an-rolagem` medida em 1440 nas duas visões, e as fotos do cartão a 375 px.
+- **Suite inteira:** **256/256** com o banco recriado do zero (253 na 3300 e os 3 de convite na 3000), e o `loja-live` **10/10**.
+
+**Impacto:**
+- web: `apps/web/lib/shopee-listings.ts` e `shopee-export.ts` com os testes; `apps/web/app/(app)/anuncios/shopee/page.tsx` e `exportar/route.ts`; o bloco `.sb-an-*` de `apps/web/app/globals.css`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.

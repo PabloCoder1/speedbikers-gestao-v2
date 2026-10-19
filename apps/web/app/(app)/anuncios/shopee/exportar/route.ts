@@ -5,13 +5,18 @@ import { EXPORT_LIMIT } from "../../../../../lib/listings-export";
 import { currentMembership } from "../../../../../lib/membership";
 import { lerPaginasDaRpc } from "../../../../../lib/rpc-pages";
 import { anunciosShopeeParaCsv } from "../../../../../lib/shopee-export";
-import { SHOPEE_LINK_STATES, resolveShopeeListingsFilters } from "../../../../../lib/shopee-listings";
+import {
+  SHOPEE_LINK_STATES,
+  argumentosDeVendasShopee,
+  resolveShopeeListingsFilters,
+} from "../../../../../lib/shopee-listings";
 import { createClient } from "../../../../../lib/supabase/server";
 
 /**
  * CSV dos anúncios de `/anuncios/shopee` (D-490): a MESMA URL da tela, lida pelo
- * mesmo `resolveShopeeListingsFilters` (loja, estado do vínculo e busca), e a
- * MESMA RPC — só sem página, como o CSV de `/anuncios` (D-385).
+ * mesmo `resolveShopeeListingsFilters` (loja, estado do vínculo, busca e, desde
+ * a D-606, o período, o vendeu e a ordem das vendas), e a MESMA RPC — só sem
+ * página, como o CSV de `/anuncios` (D-385).
  *
  * Sessão do usuário e RPC `security invoker`: a planilha vê só as lojas que a
  * pessoa alcança (D-433). Teto de 5.000 linhas, dito no nome do arquivo quando o
@@ -38,6 +43,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const filters = resolveShopeeListingsFilters(
     query,
     lojas.data.filter((loja) => loja.organization_id === organizationId).map((loja) => loja.id),
+    toSalesMetricDate(new Date()),
   );
   const estado = SHOPEE_LINK_STATES.find((e) => e.slug === filters.estado) ?? null;
 
@@ -51,6 +57,8 @@ export async function GET(request: NextRequest): Promise<Response> {
         p_busca: filters.busca,
         p_limit: limite,
         p_offset: offset,
+        // D-606 (C-67): as vendas do anúncio no período da tela.
+        ...argumentosDeVendasShopee(filters),
       }),
     EXPORT_LIMIT,
   );
@@ -61,7 +69,8 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const total = linhas[0]?.total_count ?? 0;
   const sufixo = total > EXPORT_LIMIT ? `-primeiros-${String(EXPORT_LIMIT)}-de-${String(total)}` : "";
-  const nome = `anuncios-shopee-${toSalesMetricDate(new Date())}${sufixo}.csv`;
+  // O fim do período, como o CSV de `/anuncios` (`anuncios-<dateTo>`).
+  const nome = `anuncios-shopee-${filters.range.to}${sufixo}.csv`;
 
   return new Response(anunciosShopeeParaCsv(linhas), {
     headers: {

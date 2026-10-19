@@ -125,7 +125,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada.
+- D-606 — as vendas por anúncio na `/anuncios/shopee` (consome o C-67 da D-493): o período, o vendeu, a ordem pelo cabeçalho de unidades e faturamento, as vendas em cada linha ("em N pedidos" embaixo das unidades) e o resumo do recorte, a loja de pedidos nunca lidos dita ("—" e fora do resumo), e o CSV com as quatro colunas de venda; a tabela cabe em 1440 e o cartão do celular deixa de se sobrepor. **Em código e validada** na branch `feat/vendas-por-anuncio-shopee`, empilhada na do A1; o PR e o merge vêm **depois** da migration `20261019160000` em produção (PGRST202).
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - Nada nas telas da frente (T0 a T8). Os números da Shopee aparecem sozinhos com a loja live (Go Live, do dono).
@@ -213,7 +213,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 | C-65 | Demanda da Shopee na cobertura e na reposição: `get_stock_coverage` (`units_sold_ml`, `units_sold_shopee`, `units_30d_shopee`, `units_90d_shopee`), `get_purchase_suggestions` (`units_30d_shopee`, `units_90d_shopee`), visão, pedido de compra e alcance; `docs/MULTICHANNEL_CONTRACTS.md` §3.13 | A1 | `/reposicao`, `/cobertura`, a gaveta da Inspeção Rápida (T-R3, #186; T-R3b) | em produção (D-459, 15/10) | parte da Shopee NULA sem loja live lida |
 | C-63 | Ads da Shopee: `get_shopee_ads_overview` (TOTAL e por loja, com a cobertura) e `get_shopee_ads_daily`; colunas em `docs/MULTICHANNEL_CONTRACTS.md` §3.11 | A1 | `/faturamento` e a central (a tela é do A2) | em código (D-449) | rotular "Ads CPC da loja"; NÃO descontar do resultado até conferir o GMV Max com loja real |
 | C-57 | `search_entities` acha loja, anúncio e pedido Shopee (atende C-08) | A1 | busca universal (T7) | em produção (D-467, 15/10) | resultado Shopee só para quem alcança a loja |
-| C-67 | Vendas por anúncio da Shopee: `get_shopee_listings` com período, `p_vendeu` e `p_ordem`, as vendas do anúncio (unidades, receita do item, pedidos, preço 0 à parte) e o recorte inteiro (`docs/MULTICHANNEL_CONTRACTS.md` §3.16) | A1 | `/anuncios/shopee` (D-606) | em código (D-493) | a regra do C-59; ausência não é zero; a tela só manda com valor depois da migration |
+| C-67 | Vendas por anúncio da Shopee: `get_shopee_listings` com período, `p_vendeu` e `p_ordem`, as vendas do anúncio (unidades, receita do item, pedidos, preço 0 à parte) e o recorte inteiro (`docs/MULTICHANNEL_CONTRACTS.md` §3.16) | A1 | `/anuncios/shopee` (D-606, em código e validada) | em código (D-493) | a regra do C-59; ausência não é zero; a tela só manda com valor depois da migration |
 | C-66 | Metas por marketplace: `monthly_goals_marketplace` (ML e Shopee; a geral segue em `monthly_goals`) e `get_meta_do_mes` com `escopos` GERAL/ML/SHOPEE (`docs/MULTICHANNEL_CONTRACTS.md` §3.15) | A1 | central e `/central/metas` (T8b) | em produção (D-473, 16/10) | SHOPEE nula sem loja live lida; GERAL = ML + SHOPEE |
 
 ---

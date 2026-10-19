@@ -98,6 +98,11 @@ export interface AnuncioShopeeExport {
   readonly currency: string | null;
   readonly available_stock: number | null;
   readonly details_synced_at: string | null;
+  /** D-606 (C-67): ausentes antes da migration; nulas com a loja nunca lida. */
+  readonly unidades_vendidas?: number | null;
+  readonly receita_bruta?: number | null;
+  readonly pedidos?: number | null;
+  readonly unidades_sem_receita?: number | null;
 }
 
 const CABECALHO_ANUNCIOS = [
@@ -116,6 +121,11 @@ const CABECALHO_ANUNCIOS = [
   "Moeda",
   "Estoque",
   "Detalhes lidos em",
+  // D-606: as vendas válidas do anúncio no período da tela (C-67).
+  "Unidades vendidas",
+  "Faturamento",
+  "Pedidos",
+  "Unidades sem receita conhecida",
 ];
 
 /** O estado do vínculo, no singular (a tela usa o plural nos filtros). */
@@ -146,6 +156,11 @@ export function anunciosShopeeParaCsv(linhas: readonly AnuncioShopeeExport[]): s
       csvCell(linha.currency ?? ""),
       csvNumber(linha.available_stock),
       linha.details_synced_at === null ? "" : csvCell(formatDateTime(linha.details_synced_at)),
+      // Loja nunca lida: vazias, nunca 0. Receita só de itens de preço 0: vazia, e as unidades ao lado.
+      csvNumber(linha.unidades_vendidas ?? null),
+      csvNumber(linha.receita_bruta ?? null),
+      csvNumber(linha.pedidos ?? null),
+      csvNumber(linha.unidades_sem_receita ?? null),
     ]),
   );
 }
