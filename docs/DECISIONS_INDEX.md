@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **504** (D-001 a D-604).
+Decisões registradas: **505** (D-001 a D-604).
 
 ## Por domínio
 
@@ -321,7 +321,7 @@ Decisões registradas: **504** (D-001 a D-604).
 - **D-600** — A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 
-### outros (72)
+### outros (73)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -392,6 +392,7 @@ Decisões registradas: **504** (D-001 a D-604).
 - **D-479** — O faturamento da Shopee sem o laco aninhado entre CTEs, e o ensaio de volume do Go Live (R7)
 - **D-483** — A taxa de protecao de envio da Shopee como componente do recebido (C-61), em duas fases
 - **D-485** — Os ajustes da Shopee depois do repasse descontados do resultado, e o financeiro relido depois da liberacao
+- **D-489** — Os campos do financeiro Shopee que as leituras usam viram colunas geradas: o faturamento da Shopee 4 a 5 vezes mais rapido
 - **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
 - **D-604** — As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja

@@ -16552,6 +16552,28 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-489 - Os campos do financeiro Shopee que as leituras usam viram colunas geradas: o faturamento da Shopee 4 a 5 vezes mais rapido
+
+**Contexto:** em producao (19/10, como `authenticated`), o C-58 da Shopee levava ~1 s em 30 dias e ~3,3 s em 90 -- o mesmo como `postgres`, entao nao era a RLS. O tempo estava em `get_shopee_faturamento_pedidos`, que as quatro leituras da `/faturamento` Shopee chamam. O `order_income` e o `get_escrow_detail` inteiro (~4 KB de texto, 94 chaves), guardado comprimido e fora da linha; cada `order_income ->> 'x'` o descompacta de novo. No `_pedidos` eram nove por pedido (cinco campos, alguns citados duas vezes depois que o planejador desfaz o lateral), e na view `shopee_sales_orders`, um (a receita bruta). O ensaio de volume da D-479 nao pegou isso porque o `order_income` do fixture tinha 7 chaves e ficava dentro da linha.
+
+**Decisao:**
+1. **Seis colunas GERADAS (stored) em `shopee_orders`:** `order_discounted_price`, `shipping_fee_discount_from_3pl`, `final_return_to_seller_shipping_fee`, `seller_coin_cash_back`, `coins` e `shipping_seller_protection_fee_amount`. O Postgres as calcula a cada gravacao do `order_income`: o worker nao muda, nao ha preenchimento a mao e elas nunca saem de sincronia.
+2. **So numero vira numero:** `case when jsonb_typeof(order_income -> 'x') = 'number' then (order_income ->> 'x')::numeric end`. Sem a guarda, um texto ou uma lista no lugar do numero quebraria a GRAVACAO do financeiro, e nao so a leitura. Na leitura real, os seis vieram numero em 100% dos pedidos -- o mesmo valor do `->> ::numeric` de antes.
+3. **A view de vendas e o `_pedidos` leem as colunas;** mesma assinatura e mesmas colunas de retorno (`create or replace`). O `analyze public.shopee_orders` fecha a migration: a reescrita do ALTER deixa as estatisticas para tras, e no ensaio o planejador errou a Curva ABC com a Shopee ate o analyze (6,4 s -> 0,38 s).
+4. **Alternativas descartadas:** um `jsonb_to_record` por pedido (uma descompactacao em vez de nove: o custo cai, mas continua por linha e na view); o worker gravar as colunas (deploy, preenchimento e o risco de as duas fontes divergirem).
+5. **O ensaio de volume passa a ser realista:** o `order_income` do fixture com as 94 chaves de producao (so os nomes) e o tamanho real (~3,7 KB de texto, ~1,9 KB guardados), o que reproduz o custo de producao.
+
+**Verificacao:**
+- **Equivalencia em producao (leitura so, 19/10):** em todos os pedidos, as seis expressoes das colunas dao o mesmo que o `->> ::numeric` de hoje -- zero diferencas.
+- **Equivalencia local (volume realista, 90 dias):** sete leituras antes e depois, comparadas linha a linha nos dois sentidos -- `_pedidos` (25.370 pedidos), a view (40 mil), C-58, C-61, o diario, o por SKU e o C-53: zero diferencas.
+- **Desempenho (local, mediana de 5, como `authenticated`):** o C-58 lado a lado no mesmo estado, 3,6 s -> 0,75 s em 90 dias e 1,15 s -> 0,29 s em 30; a composicao, o diario e o por SKU no mesmo patamar; o consolidado 0,8 s -> 0,4 s em 90 dias (`docs/PERFORMANCE.md`).
+- **Integracao:** 3 testes novos (as colunas seguem o json na gravacao e na releitura, so numero vira numero, nao se gravam a mao, a view cai nos itens quando o preco nao e numero, o `_pedidos` le as colunas); suite inteira 1026/1026 com o banco recriado do zero.
+- **Mutacao:** a view lendo o json de novo, o `_pedidos` com a coluna trocada, a coluna sem a guarda (a gravacao quebra com uma lista) e a coluna da chave errada -- cada uma derruba um teste.
+
+**Publicacao:** so a migration `20261019130000`. A web e o worker nao mudam, e o contrato tambem nao. O ALTER reescreve `shopee_orders` uma vez (cerca de 8 s no ensaio, com mais pedidos que producao), com a tabela travada nesse intervalo; uma gravacao do worker nesse meio espera ou e repetida pelo Cloud Tasks.
+
+**Impacto:** `supabase/migrations/20261019130000_campos_do_financeiro_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,PERFORMANCE,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
+
 ## D-490 - Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 
 **Contexto:** as telas do Mercado Livre exportam: anúncios e Full em CSV (D-385, D-380), e curva ABC, preços e compras em Excel. As da Shopee não exportavam nada (o inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "nenhuma exportação Shopee"). Desde o Go Live de 16/10 há pedidos reais da Shopee para conferir fora da tela.

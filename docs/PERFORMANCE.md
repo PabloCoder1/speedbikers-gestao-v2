@@ -1419,6 +1419,21 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### Os campos do financeiro Shopee como colunas geradas (D-489, 19/10/2026)
+
+**Banco local, volume realista:** 40 mil pedidos em 120 dias, 2 lojas live, o `order_income` com as 94 chaves de produção (só os nomes) e ~3,7 KB de texto / ~1,9 KB guardados, como produção (~4,1 KB / ~2,0 KB). O fixture antigo da D-479 tinha 7 chaves dentro da linha e escondia o custo. Mediana de 5, como `authenticated`.
+
+| Leitura | 30 dias, antes → depois | 90 dias, antes → depois |
+|---|---|---|
+| C-58 lado a lado, no mesmo estado | 1,15 s → 0,29 s | 3,6 s → 0,75 s |
+| `get_shopee_faturamento_composicao` | 1,33 s → 0,24 s | 2,50 s → 0,74 s |
+| `get_shopee_faturamento_diario` | 0,76 s → 0,31 s | 2,86 s → 0,76 s |
+| `get_shopee_faturamento_por_sku` | 0,81 s → 0,22 s | 2,67 s → 0,63 s |
+| Consolidado (`get_marketplace_sales_summary`) | 0,38 s → 0,10 s | 0,81 s → 0,42 s |
+| `get_shopee_sales_by_shop` | 0,17 s → 0,07 s | 0,42 s → 0,16 s |
+
+O "antes" das quatro linhas de baixo foi medido antes da migration; o C-58 foi refeito lado a lado na mesma transação (as versões antigas recriadas e desfeitas), com as estatísticas em dia. **A Curva ABC com a Shopee** foi de 5–6 s a ~0,35 s, mas por estatística: depois da reescrita do ALTER, só o `analyze` a trouxe de volta (6,4 s → 0,38 s), por isso a migration termina com ele. Mesmos valores: as sete leituras comparadas linha a linha, zero diferenças.
+
 ### O C-58 da Shopee em produção, depois da D-485 e da D-487 (19/10/2026)
 
 **Produção, como `authenticated`** (ADMIN da organização, transação só de leitura): `get_shopee_faturamento` em **~1,05 s em 30 dias** (374 mil páginas do cache) e **~3,3 s em 90** (1,14 milhão). Como `postgres`, o mesmo tempo: não é a RLS. `get_shopee_faturamento_pedidos` sozinha leva o mesmo, então a D-485 e a D-487 não pesam; o custo está na definição por pedido, que as quatro leituras da `/faturamento` Shopee chamam.
