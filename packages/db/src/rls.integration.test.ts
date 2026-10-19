@@ -3622,6 +3622,37 @@ describe("ingestão Shopee robusta (D-432)", () => {
     expect((await estado("R2")).rows[0]).toMatchObject({ order_status: "SHIPPED", itens: 2 });
   });
 
+  it("D-495: guarda quem expede o pedido; leitura sem o campo ou com vazio não apaga, valor novo troca", async () => {
+    const sn = "D495-FLAG-1";
+    const flag = async (): Promise<string | null | undefined> =>
+      (
+        await client.query<{ f: string | null }>(
+          "select fulfillment_flag as f from public.shopee_orders where shopee_shop_id = $1 and order_sn = $2",
+          [LOJA, sn],
+        )
+      ).rows[0]?.f;
+    const leitura = (minuto: string, extra: Record<string, unknown>) => ({
+      ...pedidoJson(sn, `2026-10-11T10:${minuto}:00Z`, "READY_TO_SHIP", [itemJson(0, 2001, null, 1)]),
+      ...extra,
+    });
+
+    expect(await gravar([leitura("00", { fulfillment_flag: "fulfilled_by_shopee" })])).toBe(1);
+    expect(await flag()).toBe("fulfilled_by_shopee");
+
+    // O worker de antes da D-495 não manda o campo; e o vazio vira nulo.
+    expect(await gravar([leitura("05", {})])).toBe(1);
+    expect(await flag()).toBe("fulfilled_by_shopee");
+    expect(await gravar([leitura("10", { fulfillment_flag: " " })])).toBe(1);
+    expect(await flag()).toBe("fulfilled_by_shopee");
+
+    expect(await gravar([leitura("15", { fulfillment_flag: "fulfilled_by_local_seller" })])).toBe(1);
+    expect(await flag()).toBe("fulfilled_by_local_seller");
+
+    await expect(
+      client.query("update public.shopee_orders set fulfillment_flag = '' where shopee_shop_id = $1 and order_sn = $2", [LOJA, sn]),
+    ).rejects.toThrow(/fulfillment_flag_check/);
+  });
+
   it("lote vazio grava zero; loja inexistente e lote que não é array são recusados", async () => {
     expect(await gravar([])).toBe(0);
     await expect(
