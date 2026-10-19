@@ -86,6 +86,13 @@ export const shopeeOrderSchema = z.object({
   payment_method: z.string().nullable().optional(),
   cancel_by: z.string().nullable().optional(),
   cancel_reason: z.string().nullable().optional(),
+  /**
+   * Quem expede o pedido (D-495): `fulfilled_by_shopee` (o armazém da Shopee),
+   * `fulfilled_by_cb_seller` ou `fulfilled_by_local_seller` -- os valores da
+   * documentação de `v2.order.get_order_detail`, lida em 19/10/2026. Texto como
+   * veio: valor novo da Shopee não derruba a leitura.
+   */
+  fulfillment_flag: z.string().nullable().optional(),
   item_list: z.array(orderItemSchema).nullable().optional(),
 });
 
@@ -104,6 +111,7 @@ const CAMPOS_DO_DETALHE = [
   "payment_method",
   "cancel_by",
   "cancel_reason",
+  "fulfillment_flag",
 ].join(",");
 
 /** O detalhe de até 50 pedidos. */

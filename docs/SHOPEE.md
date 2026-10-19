@@ -120,7 +120,14 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
 - **Detalhe** (`GET /api/v2/order/get_order_detail`): até **50**
   `order_sn` por chamada; itens e valores só com `response_optional_fields`.
   A V3 pede `item_list,total_amount,pay_time,shipping_carrier,
-  payment_method,cancel_by,cancel_reason` — nada do comprador.
+  payment_method,cancel_by,cancel_reason,fulfillment_flag` — nada do comprador.
+  **`fulfillment_flag` — CONFIRMADO na documentação em 19/10/2026 (D-495):**
+  "Use this field to indicate the order is fulfilled by shopee or seller.
+  Applicable values: fulfilled_by_shopee, fulfilled_by_cb_seller,
+  fulfilled_by_local_seller." `fulfilled_by_shopee` é o pedido do armazém da
+  Shopee (o equivalente ao Full); guardado em `shopee_orders.fulfillment_flag`.
+  A página da documentação monta no navegador: não abre para busca, só no
+  navegador embutido.
   `total_amount` não vem antes do pagamento (fica NULO).
 - **Na V3:** job `shopee.orders.sync` por loja, janela por `update_time` a
   partir de `shopee_shops.orders_synced_until` menos 10 minutos; a primeira

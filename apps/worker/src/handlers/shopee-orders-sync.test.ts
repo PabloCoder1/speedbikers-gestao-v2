@@ -125,6 +125,7 @@ function pedido(sn: string) {
     create_time: AGORA_S - 86400,
     update_time: AGORA_S - 3600,
     pay_time: AGORA_S - 86000,
+    fulfillment_flag: sn === "A1" ? "fulfilled_by_shopee" : "",
     item_list: [
       { item_id: 1, item_name: "Bau", item_sku: "BAU05", model_id: 0, model_sku: "", model_quantity_purchased: 1, model_original_price: 130, model_discounted_price: 120.5 },
       { item_id: 2, item_sku: "", model_id: 77, model_sku: "BAU05-P", model_quantity_purchased: 2 },
@@ -302,7 +303,10 @@ describe("shopee.orders.sync (D-426)", () => {
       order_status: "COMPLETED",
       total_amount: 120.5,
       shopee_updated_at: new Date((AGORA_S - 3600) * 1000).toISOString(),
+      fulfillment_flag: "fulfilled_by_shopee",
     });
+    // D-495: o vazio vira nulo, como os outros textos do pedido.
+    expect(gravado.lotes[0]?.pedidos[1]).toMatchObject({ order_sn: "A2", fulfillment_flag: null });
     expect(gravado.lotes[0]?.pedidos[0]).not.toHaveProperty("organization_id");
     expect(gravado.lotes[0]?.pedidos[0]?.itens).toEqual([
       expect.objectContaining({ position: 0, item_sku: "BAU05", model_id: null, model_sku: null, quantity: 1, discounted_price: 120.5 }),

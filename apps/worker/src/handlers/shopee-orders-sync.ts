@@ -284,6 +284,8 @@ async function gravarPedidos(
     payment_method: pedido.payment_method ?? null,
     cancel_by: pedido.cancel_by ?? null,
     cancel_reason: pedido.cancel_reason ?? null,
+    // D-495: quem expede (o armazém da Shopee ou o vendedor), como veio.
+    fulfillment_flag: pedido.fulfillment_flag === "" ? null : (pedido.fulfillment_flag ?? null),
     itens: (pedido.item_list ?? []).map((item, position) => ({
       position,
       item_id: item.item_id,

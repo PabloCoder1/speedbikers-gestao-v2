@@ -3662,6 +3662,7 @@ export type Database = {
           financials_error: string | null
           financials_error_at: string | null
           financials_synced_at: string | null
+          fulfillment_flag: string | null
           net_commission_fee: number | null
           net_service_fee: number | null
           order_ams_commission_fee: number | null
@@ -3710,6 +3711,7 @@ export type Database = {
           financials_error?: string | null
           financials_error_at?: string | null
           financials_synced_at?: string | null
+          fulfillment_flag?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
           order_ams_commission_fee?: number | null
@@ -3758,6 +3760,7 @@ export type Database = {
           financials_error?: string | null
           financials_error_at?: string | null
           financials_synced_at?: string | null
+          fulfillment_flag?: string | null
           net_commission_fee?: number | null
           net_service_fee?: number | null
           order_ams_commission_fee?: number | null
