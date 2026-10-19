@@ -16,7 +16,7 @@
 > A1 × A2 de 19/10): Agente 1 nas ímpares até D-499 e depois nas ímpares a
 > partir de D-601; Agente 2 nas pares até D-498 e depois nas pares a partir de
 > D-600; Agente 3 sequencial de D-500 a D-599 e, se chegar ao fim, D-700+
-> (**A3: confirmar ao ler**). A ordem no `DECISIONS.md` é a numérica.
+> (confirmado pelo A3 em 19/10). A ordem no `DECISIONS.md` é a numérica.
 
 ---
 
@@ -169,18 +169,22 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-512: o `Shell` em `app/(app)/layout.tsx` (as URLs não mudam) e a troca de tela sem `loading.tsx`, com o sinal da D-500 em todo link interno (`IndicadorDeNavegacao`) e nos da sidebar; a troca de tela foi de 336 para 102 ms sem atraso no banco, com 6 leituras a menos. **D-511 e D-512 em produção** desde 16/10 (#219, `a0202e1f`, `dpl_G7FBTKScphC4AwPVyathde1Kstig`), sem erro de execução nas 2 h seguintes.
 - D-513: a troca de tela por código também tem sinal — a paleta de busca, que fecha e chama `router.push`, ficava sem retorno nenhum desde a D-512; agora avisa o `IndicadorDeNavegacao` (`avisarTrocaDeTela`). Com ela, o `e2e/troca-de-tela.spec.ts`: sidebar, link no conteúdo e paleta, com a tela de destino segurada por 1,5 s. **Em produção** desde 16/10 (#221, `2e10ab43`, `dpl_9nT575eH7ECPS1kPD8hTjoCCdeeb`), sem erro de execução na hora seguinte.
 - D-514: web vitals de produção depois da D-504/D-505/D-509 — a `/vendas` foi a 960–1.460 ms nas três cargas completas (antes, três de cinco acima de 3,5 s); o LCP da Home é a chegada da "Atenção necessária" (a cobertura fria, A1), não a primeira pintura; e a `/central` tem CLS próprio de 0,39 porque o esqueleto dos indicadores tem 142 px e o conteúdo uns 3.000 (medido local; o A2 liberou a tela para o A3 consertar).
-- D-515: a `/central` sem deslocamento — os indicadores reservam a janela (`CarregandoBloco` com `altura`, opcional; sem ela nada muda) e a "Atenção" tem esqueleto do tamanho da lista de três itens, calibrado; no build local, CLS de 0,144 para 0 com as leituras juntas e de 0,278 para 0,046 com a "Atenção" depois. Ordem das seções e nomes das regiões do `central.spec` mantidos.
+- D-515: a `/central` sem deslocamento — os indicadores reservam a janela (`CarregandoBloco` com `altura`, opcional; sem ela nada muda) e a "Atenção" tem esqueleto do tamanho da lista de três itens, calibrado; no build local, CLS de 0,144 para 0 com as leituras juntas e de 0,278 para 0,046 com a "Atenção" depois. Ordem das seções e nomes das regiões do `central.spec` mantidos. **D-514 e D-515 em produção** desde 16/10 (#225, `d4fd86f5`; o merge não gerou deploy, foi no do #226, `dpl_Eyr3G9QiXnNYzsY9YWKM3qTwjhma`, 17:54 UTC); em 19/10 a `/central` teve CLS 0 numa carga completa.
+- D-516: o reporter de produção diz o elemento do LCP e do maior deslocamento, pela forma (tag, classes `sb-*` e a posição da seção; nunca texto ou rótulo), para a próxima carga lenta da Home dizer qual bloco a segura.
+- D-517: a reformulação da Central de Negócio (pedido do dono de 19/10; a tela é do A2, que a liberou e revisa), bloco 1 — abas comuns às seis telas, cabeçalho só com os filtros, vendas logo abaixo dos alertas, a comparação e o método recolhidos, e 2 `get_faturamento` por carga em vez de 4 (com a D-610 do A2). Auditoria e blocos em `docs/UX_SYSTEM.md` §6.
 
 **Em andamento**
-- D-514 e D-515 na `feat/ux-central-sem-deslocamento` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa (a `/central` é dele).
+- D-516 e D-517 (com a auditoria da Central) na `feat/ux-central-reformulacao` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa a Central.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
-- Reler os web vitals quando houver carga completa de `/skus/[id]` (zero até 16/10) e depois do conserto da `/central`.
+- O LCP da Home de 6 a 10 s em 19/10 (D-516): ler o `el` da próxima carga lenta; a medida a frio das leituras da Home está com o A1, e o que for de tela, com o A2.
+- Reler os web vitals quando houver carga completa de `/skus/[id]` (zero até 19/10).
 
 **Para o A2**
 - Tela nova: os estados vão no `EstadoDaTela` (D-502); um pedaço que espera uma leitura cara vai num `Suspense` com o lugar reservado — bloco: esqueleto do tamanho dele (Home, D-504), e o bloco muito maior que o esqueleto, com outros abaixo, reserva ao menos a janela (`<CarregandoBloco altura="100vh"/>`, a `/central`, D-515); selo do cabeçalho: `ObjectBadgeTardio` (D-505); célula da faixa: `KpiCellTardia` (D-509).
 - A guarda `check:navegacao-suave` não tem mais tela pendente: a última, a `/curva-abc`, saiu na D-484. Tela nova com `<form method="get">` ou `<a href>` interno reprova; use `FormularioFiltro` e `<Link>`/`LinkDeFiltro`. Para provar no e2e que não recarrega: `marcarSemRecarga`, `naoRecarregou` e `atualizacaoTerminou` em `e2e/helpers.ts`.
 - Tela nova de filtro: `ItemDeMenu`/`FilterMenu`, `FilterPill`, `LinkDeFiltro` e `FormularioFiltro`.
+- Central (D-517): as seis telas têm as abas `AbasDaSecao` (`lib/central-navegacao.ts`); o "Voltar à central" saiu, e o `central.spec` clica na aba "Central". Tela nova da Central entra na lista de `lib/central-navegacao.ts`.
 - Tela nova autenticada (D-512): `app/(app)/<rota>/page.tsx`, SEM `<Shell>` (a moldura vem do layout) e SEM `loading.tsx` (a `check:loading` reprova os dois). Bloco lento vai num `Suspense`; o link para outra tela já tem sinal pelo `IndicadorDeNavegacao`. Navegação por código (`router.push`) para outra tela, sem outro retorno na própria tela, chama `avisarTrocaDeTela(href)` antes (D-513); botão que continua pendente até a tela nova abrir não precisa.
 - Tela nova com forma nova (ou a seção "Por marketplace" da `/central`, T8a): entra na lista de `e2e/tela-estreita-e-acessibilidade.spec.ts`. A rolagem se mede no `.sb-content`, nunca no `<html>`; grade de dois painéis com `.sb-pair-grid` já não transborda; tabela larga vai num contêiner com `overflow-x: auto` (o `.sb-panel` corta, e a guarda acusa a tabela cortada).
 - Tela nova que mostra a Shopee: o caminho "com loja live" entra em `e2e/ensaio-loja-live.spec.ts` (D-486) — o seed não tem loja live de propósito, e nenhum outro spec o renderiza.

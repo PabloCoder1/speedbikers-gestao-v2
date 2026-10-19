@@ -4,6 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoBloco, CarregandoConteudo } from "../../../../components/carregando";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
+import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
@@ -18,6 +19,7 @@ import {
   type DetectorDeFrete,
   type NivelFrete,
 } from "../../../../lib/detector-frete";
+import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
@@ -66,18 +68,17 @@ export default function DetectorDeFretePage(props: { searchParams: Promise<Consu
   );
 }
 
-function Titulo({ subtitle }: { subtitle: ReactNode }): ReactNode {
+/** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
+function Titulo({ subtitle, consulta }: { subtitle: ReactNode; consulta: Consulta }): ReactNode {
   return (
+    <>
     <PageTitle
       eyebrow="COMERCIAL / CENTRAL"
       title="Detector de frete"
       subtitle={subtitle}
-      aside={
-        <Link className="sb-button" href="/central">
-          Voltar à central
-        </Link>
-      }
     />
+    <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("frete", consulta)} />
+    </>
   );
 }
 
@@ -89,7 +90,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   if (membership.organizationId === null) {
     return (
       <>
-        <Titulo subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
+        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
         <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </>
     );
@@ -103,7 +104,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   if (resposta.error !== null) {
     return (
       <>
-        <Titulo subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
+        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
         {resposta.error.code === "PGRST202" ? (
           <div className="sb-note">
             <span>SENDO ATIVADO</span>
@@ -129,7 +130,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   if (detector === null) {
     return (
       <>
-        <Titulo subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
+        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
         <EstadoDaTela
           tipo="erro"
           titulo="O detector respondeu num formato que esta tela não reconhece"
@@ -146,6 +147,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   return (
     <>
       <Titulo
+        consulta={query}
         subtitle={
           <>
             Últimos 14 dias ({formatBusinessDate(janela.corte)} a {formatBusinessDate(janela.fim)}) contra os{" "}

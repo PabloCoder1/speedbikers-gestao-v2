@@ -17213,6 +17213,75 @@ O que sobra no ultimo cenario e o banco local no estado "nada pede atencao": o e
 
 **Impacto:** `apps/web/components/carregando.tsx`, `apps/web/app/(app)/central/{page,atencao}.tsx`, `apps/web/app/globals.css` (o traco do texto no celular), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova. A proxima leitura dos web vitals confere o CLS da `/central` em producao.
 
+## D-516 - O reporter de producao diz o elemento do LCP e do maior deslocamento, pela forma: tag, classes `sb-*` e a posicao da secao, nunca texto ou rotulo
+
+**Contexto:** a leitura de 19/10 dos web vitals de producao (23 linhas, de 18/10 00:00 a 19/10 14:23 UTC; nenhuma de 16/10 17:54 ao fim de 17/10) confirmou a D-515 -- a `/central` teve CLS 0 e LCP de 472 ms numa carga completa -- e achou a Home pior: LCP de 6,3 s (TTFB 314 ms) e 10,3 s (TTFB 29 ms), contra 1,8 e 5,0 s em 16/10, com a `/central` e a `/vendas` a ~0,45 s na mesma sessao. Desde a D-488 a primeira rodada da Home tem tres leituras multicanal (`get_marketplace_sales_summary` atual e anterior, `get_marketplace_sales_daily`), e a segunda tem a cobertura, dentro do `Suspense` da "Atencao" (D-504). O log nao dizia qual das duas segurava o LCP: o reporter mandava so nome, valor, rota e `softNav`, e a D-514 so soube o elemento porque mediu no build local.
+
+**Decisao:**
+1. **O LCP e o CLS levam `el`**, o elemento: no LCP, o do ultimo candidato antes da primeira entrada; no CLS, a primeira fonte do MAIOR deslocamento contado (o que mais pesou).
+2. **Pela forma, nunca pelo conteudo** (`lib/vitals-elemento.ts`): a tag, ate duas classes do design system (`sb-*`, que vem do codigo) e a secao em que o elemento mora, pela posicao entre as secoes do conteudo -- `p.sb-meta-frase < section.sb-panel#2`. Nada de texto, `id` ou `aria-label`: o rotulo de uma regiao leva nome de loja (`/contas`), de produto (o cabecalho do SKU) ou data (`/notificacoes`).
+3. **A rota so grava a forma** (`descricaoValida`): qualquer outra coisa sai do log e a metrica fica -- perder a amostra pela descricao seria pior. As linhas sem `el` continuam validas (aba aberta antes do deploy, metrica sem elemento).
+4. **Medida a frio pedida ao A1:** as quatro leituras da Home (as tres multicanal da primeira rodada e a cobertura), no Dev, como `authenticated`. O `el` diz qual bloco e o LCP; o A1 diz quanto custa a leitura dele.
+
+**Verificacao:** os testes da rota e do modulo (35); o `e2e/web-vitals.spec.ts` (o LCP de uma carga completa da `/central` chega com `el` valido, e o CLS 0 sem `el`); a suite e2e inteira, 257 de 257 no projeto principal e o ensaio `loja-live` 9 de 9 rodado a parte (na rodada inteira, o servidor de teste caiu depois de 13 minutos, no meio do ensaio, e os 7 seguintes deram `ERR_CONNECTION_REFUSED`); `pnpm run check`, `build` e `docs:check`.
+
+**Impacto:** `apps/web/app/web-vitals.tsx`, `apps/web/app/api/vitals/route{,.test}.ts`, `apps/web/lib/vitals-elemento{,.test}.ts`, `apps/web/e2e/web-vitals.spec.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova; o payload do `/api/vitals` ganha um campo opcional.
+
+## D-517 - A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
+
+**Contexto:** o dono passou ao A3, em 19/10, a reformulacao da Central de Negocio inteira (a tela e do A2, que a liberou e revisa; os dados sao do A1). A auditoria (`docs/UX_SYSTEM.md` §6) achou:
+- a `/central` com 4.705 px a 1440 px e 8.532 px a 390 px, e o faturamento so no fim da segunda tela;
+- o cabecalho com os dois filtros e os seis atalhos numa fileira so de oito botoes iguais, que no celular ocupa a primeira tela inteira;
+- a "Comparacao completa" repetindo os cartoes;
+- o metodo aberto no meio da pagina;
+- a Central sem navegacao propria: metas, limites, frete e Ads perdiam o periodo e a conta;
+- as leituras do periodo esperando a lista de contas.
+
+**Decisao:**
+1. **Abas comuns as seis telas** (`AbasDaSecao`, `lib/central-navegacao.ts`): Central, Metas e imposto, Limites, Detector de frete, Sinais de Ads, Ranking de produtos.
+   - A forma e a das abas do cabecalho de entidade (`.sb-object-tabs`): caixa-alta, a atual sublinhada e rolagem lateral no celular.
+   - Cada aba leva o periodo e a conta da URL (`p`, `from`, `to`, `account`), so na forma que as telas aceitam. O periodo recusado nao viaja.
+   - As abas substituem os atalhos do cabecalho da `/central` e o "Voltar a central" das subpaginas.
+   - O componente e generico, para outra area com varias telas.
+2. **Cabecalho da `/central` so com os filtros** (conta e periodo, nesta ordem) e "Faturamento detalhado".
+3. **Vendas logo abaixo dos alertas**, depois o resumo que as interpreta e a meta; resultado, custos e Ads em seguida.
+4. **Recolhidos, a um toque** (`.sb-recolhivel`, `<details>` com resumo de 44 px e o anel de foco do sistema): a "Comparacao completa", o "Como ler" e o "Como a projecao e feita". Continuam na pagina.
+5. **Sem fila ate as leituras do periodo:**
+   - contas e organizacao saem juntas;
+   - as quatro leituras do periodo so esperam as contas quando a URL escolhe uma.
+   - Sao as mesmas leituras, com os mesmos argumentos.
+6. **O chip "ver lista" das faixas** passa a ter 24 px de alvo (eram 19 px).
+7. **O que nao muda:** o id da metrica e a ressalva visiveis (D-023, METRICS 5C.2), as decisoes do dono de 15/10 sobre a Central, o bloco "Por marketplace" e as regras de negocio.
+8. **Menos `get_faturamento` por carga.** O "Por marketplace" reusa as leituras da pagina (D-610, do A2, por cima do `CorpoTodos`). E o periodo atual passa a ser lido uma vez so, com detalhe: a central de alertas precisa do detalhe (os produtos com margem negativa, D-400), e o `resumo` e a `margem_minima` sao os mesmos com e sem ele (conferido no banco local, como `authenticated`, em 60 dias). Os indicadores, os alertas e o "Por marketplace" leem a mesma resposta. Em producao, o A1 mediu ~0,5 s sem detalhe e ~0,6 s com detalhe, em 30 dias: uma leitura a menos vale os ~0,1 s, e os cancelamentos por tempo de 19/10 vinham das rajadas de quatro. O comentario da D-400 (~0,4 contra ~0,9 s) passa a dizer essa medida.
+
+**Medido** (build local, carga completa, banco isolado):
+
+| | antes (`main`) | depois |
+|---|---|---|
+| altura da `/central`, 1440 px | 4.705 px | **3.541 px** (-25%) |
+| altura da `/central`, 390 px | 8.532 px | **6.921 px** (-19%) |
+| altura da `/central`, 360 px | 8.954 px | **7.261 px** |
+| `get_faturamento` / `get_ads_overview` por carga | 4 / 3 | **2 / 2** (contadas no log do servidor, 5 cargas) |
+| inicio das 4 leituras do periodo (150 ms por chamada) | 456 ms | **238 ms** |
+| inicio das leituras da organizacao | 457 ms | 427 ms |
+| vendas na tela (dentro da pagina, mediana de 5) | 743 ms (637 a 993) | 610 ms (589 a 638) |
+| alvos de toque < 24 px em frete / produtos | 3 / 8 | **0 / 4** |
+| CLS / LCP das seis rotas | 0 / 0,44-0,64 s | 0 / 0,44-0,64 s |
+
+As subpaginas ganharam de 20 a 73 px, a linha das abas.
+
+O tempo ate as vendas quase nao muda: os numeros esperam tambem a meta e os limites, que dependem da organizacao, e essas leituras continuam uma ida depois. Com 10 a 30 ms por ida em producao, o ganho da fila e dessa ordem. O que pesa la e o numero de `get_faturamento` por carga, que a D-610 e este bloco reduzem.
+
+**Verificacao:** typecheck, lint e os testes do modulo de navegacao (7); o `central.spec` (as abas, a comparacao recolhida e aberta, o "como ler" aberto antes de conferir, e a aba "Central" no lugar do "Voltar a central"), a guarda de tela estreita e acessibilidade, o `web-vitals.spec` (CLS 0 na `/central`) e o `troca-de-tela.spec`: 15 de 15; o ensaio `loja-live` (a `/central` com a Shopee e a meta): 10 de 10; build local contra o banco isolado recriado do zero; a medicao acima; e as fotos a 360, 390, 768, 1024 e 1440 px.
+
+**Impacto:**
+- telas: `apps/web/app/(app)/central/{page,indicadores,meta}.tsx` e as cinco subpaginas;
+- componentes e lib: `apps/web/components/abas-da-secao.tsx`, `apps/web/lib/central-navegacao{,.test}.ts`;
+- estilo e testes: `apps/web/app/globals.css` (as abas, o recolhivel e o chip), `apps/web/e2e/central.spec.ts` (as abas no lugar do "Voltar a central", e os blocos recolhidos abertos antes de conferir);
+- docs.
+
+So web: sem migration, sem RPC e sem leitura nova.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.

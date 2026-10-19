@@ -685,6 +685,7 @@ Pedido do dono em 23/09: uma central que diga o que aconteceu, onde há problema
 - [x] **Notificação dos alertas da central** — o episódio NOVO de severidade alta grava um `domain_event` `central.alert.opened` (importante) na mesma transação; o fan-out entrega a quem alcança a conta (o de produto, sem conta, à organização inteira), com toast e a família "central" na triagem; o link leva a `/acoes?tipo=` — ✔ código 2026-09-25 · D-411. Migration `20260925140000`
 - [x] **Limites do tom e amostras mínimas nas configurações** — `central_thresholds` e `/central/limites`: variação estável e forte (valor e pontos), atraso da meta, margem depois do Ads e amostra mínima, por organização; sem linha, os padrões de antes — ✔ código 2026-09-24 · D-408. Migration `20260923195957`
 - [x] **Limites que moram no SQL** — a margem mínima dos produtos (`get_faturamento`) e o piso do ROAS contra a meta (`get_sinais_ads`, e o alerta gravado dele) lidos de `central_thresholds`, com a resposta dizendo o corte que usou; as pontuações do detector de frete ficam como calibragem — ✔ código 2026-09-25 · D-410. Migration `20260923195959`
+- [ ] **Reformulação da Central (Agente 3, pedido do dono de 19/10)** — `docs/UX_SYSTEM.md` §6: auditoria das seis rotas e quatro blocos. Bloco 1 ✔ código 2026-10-19 (D-517: abas comuns, cabeçalho só com filtros, vendas no topo, o que repete recolhido, 2 `get_faturamento` por carga em vez de 4); blocos 2 (metas), 3 (frete, Ads, produtos e limites) e 4 (o resto da `/central`) pendentes.
 
 ---
 

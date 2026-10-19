@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **509** (D-001 a D-610).
+Decisões registradas: **511** (D-001 a D-610).
 
 ## Por domínio
 
@@ -324,7 +324,7 @@ Decisões registradas: **509** (D-001 a D-610).
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 
-### outros (74)
+### outros (75)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -398,6 +398,7 @@ Decisões registradas: **509** (D-001 a D-610).
 - **D-489** — Os campos do financeiro Shopee que as leituras usam viram colunas geradas: o faturamento da Shopee 4 a 5 vezes mais rapido
 - **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
+- **D-516** — O reporter de producao diz o elemento do LCP e do maior deslocamento, pela forma: tag, classes `sb-*` e a posicao da secao, nunca texto ou rotulo
 - **D-604** — As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
 - **D-610** — A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 
@@ -405,7 +406,7 @@ Decisões registradas: **509** (D-001 a D-610).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (52)
+### vendas/métricas (53)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -459,6 +460,7 @@ Decisões registradas: **509** (D-001 a D-610).
 - **D-507** — A metrica de producao sai com a rota carregada e diz se houve navegacao suave antes do envio; o LCP sai no primeiro clique ou tecla, uma vez so
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 - **D-514** — Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
+- **D-517** — A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
 
 ### worker/infra (89)
 

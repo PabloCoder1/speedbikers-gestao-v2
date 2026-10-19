@@ -1,12 +1,13 @@
 import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
-import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import { BotaoEnviar } from "../../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../../components/carregando";
+import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
+import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatBusinessDate, formatCurrency } from "../../../../lib/format";
 import {
   doMarketplaceDaMeta,
@@ -34,11 +35,11 @@ export const dynamic = "force-dynamic";
  * e a regra de verdade mora nas policies, não aqui: esconder o formulário é
  * conforto, a RLS é a autorização.
  */
-export default function MetasPage(): ReactNode {
+export default function MetasPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }): ReactNode {
   return (
     <>
       <Suspense fallback={<CarregandoConteudo rotulo="Carregando metas e imposto" />}>
-        <MetasContent />
+        <MetasContent {...props} />
       </Suspense>
     </>
   );
@@ -64,7 +65,12 @@ function BotaoRemover({
   );
 }
 
-async function MetasContent(): Promise<ReactNode> {
+async function MetasContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const consulta = await searchParams;
   const supabase = await createClient();
   const membership = await currentMembership();
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
@@ -103,12 +109,8 @@ async function MetasContent(): Promise<ReactNode> {
           eyebrow="COMERCIAL / CENTRAL"
           title="Metas e imposto"
           subtitle="A meta de faturamento de cada mês e a alíquota de imposto que a Central do negócio usa."
-          aside={
-            <Link className="sb-button" href="/central">
-              Voltar à central
-            </Link>
-          }
         />
+        <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("metas", consulta)} />
         <div className="sb-note">
           <span>SENDO ATIVADO</span>
           <p>
@@ -126,12 +128,8 @@ async function MetasContent(): Promise<ReactNode> {
         eyebrow="COMERCIAL / CENTRAL"
         title="Metas e imposto"
         subtitle="A meta de faturamento de cada mês e a alíquota de imposto que a Central do negócio usa."
-        aside={
-          <Link className="sb-button" href="/central">
-            Voltar à central
-          </Link>
-        }
       />
+      <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("metas", consulta)} />
 
       {!podeEditar && (
         <div className="sb-note">

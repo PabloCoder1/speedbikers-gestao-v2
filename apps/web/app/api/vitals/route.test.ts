@@ -36,6 +36,29 @@ describe("POST /api/vitals", () => {
     expect(info.mock.calls[0]).toStrictEqual(["web_vital", { name: "LCP", value: 3500, path: "/vendas" }]);
   });
 
+  it("logs the element of the metric when it has the described form (D-516)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await post({ name: "LCP", value: 6272, path: "/", softNav: false, el: "p < section.sb-attention#1" });
+
+    expect(info.mock.calls[0]).toStrictEqual([
+      "web_vital",
+      { name: "LCP", value: 6272, path: "/", softNav: false, el: "p < section.sb-attention#1" },
+    ]);
+  });
+
+  it.each([
+    { el: "Bom dia, João" },
+    { el: 'p @"Loja Centro"' },
+    { el: 42 },
+    { el: null },
+  ])("keeps the metric and drops an element outside the form %#", async ({ el }) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const response = await post({ name: "CLS", value: 0.1, path: "/central", softNav: false, el });
+
+    expect(response.status).toBe(202);
+    expect(info.mock.calls[0]).toStrictEqual(["web_vital", { name: "CLS", value: 0.1, path: "/central", softNav: false }]);
+  });
+
   it("cuts the route at 120 characters", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await post({ name: "TTFB", value: 80, path: `/${"a".repeat(200)}`, softNav: false });
