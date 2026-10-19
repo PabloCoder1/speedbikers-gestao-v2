@@ -17197,3 +17197,42 @@ O que sobra no ultimo cenario e o banco local no estado "nada pede atencao": o e
 - e2e: `contas.spec.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-602 - O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
+
+**Contexto:** a D-496 deu CSV à `/vendas` no "Todos" e na Shopee, pelo consolidado (C-53), e deixou o recorte do Mercado Livre de fora. A tela do ML tem filtros que o C-53 não conhece (conta única, marca e "sem marca", D-237), e um CSV pelo consolidado divergiria do que se vê. Era a última lacuna de exportação do inventário de `docs/MULTICHANNEL_SCREENS.md` §2.
+
+**1. O recorte do ML exporta pela leitura da PRÓPRIA tela.**
+- "Exportar CSV por dia" no painel "Desempenho no período" da `/vendas?marketplace=ml`, só quando há dias na série.
+- A rota `/vendas/exportar` (a mesma da D-496) lê, no recorte ML, a `get_sales_daily_series` com a conta e a marca da URL, os mesmos argumentos do gráfico. Não usa o C-53.
+- O arquivo tem um dia por linha: dia, faturamento (receita bruta), pedidos, compras (packs) e unidades, com as palavras das métricas da tela.
+  - Só os dias com métrica calculada, como a tela diz.
+  - Compras sob o recorte de marca é célula vazia, nunca zero: o pack não tem marca única (D-237).
+- O recorte do ML não tem a tabela por conta. Ela é a do "Todos" e da Shopee, e a rota recusa com o motivo.
+- No nome do arquivo vão a conta e a marca, reduzidas a letras, números e hífen: a marca vem da URL e iria para o cabeçalho da resposta.
+
+**2. Uma regra só para a conta e a marca (`lib/vendas-ml-filtros.ts`).** A resolução morava dentro de `app/(app)/vendas/page.tsx`. Ela saiu para a lib, sem mudar o comportamento:
+- o slug desconhecido cai em "todas" em silêncio;
+- `semMarca=1` vence `marca=`.
+A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajuste.
+
+**3. A série do ML em páginas (`lerSerieDoMl`, em `lib/serie-de-vendas.ts`).**
+- O gráfico lia a série numa ida só. Com um dia por linha, um período personalizado de ~2,7 anos passaria das 1.000 linhas e seria cortado em silêncio.
+- A leitura agora é paginada por dia, com ordem estável, até 5.000 linhas, como a do "Todos" (D-496).
+- Ela devolve o mesmo `{ data, error }` que a página já lia. O CSV usa a mesma leitura e recusa acima do teto.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Unitários:** `vendas-ml-filtros.test.ts` (a marca, o "sem marca" vencendo, os argumentos e a conta pelo slug) e o `diasDoMlParaCsv` (a ordem, as palavras e compras vazia sob marca): 11 com os da D-496.
+- **e2e:**
+  - `vendas.spec`: o CSV por dia do ML com o cabeçalho, o nome e as datas, e sem o botão por conta. Com `semMarca=1`, a coluna de compras sai vazia em todas as linhas e o nome diz "sem-marca"; confirmado que o seed tem série sem marca, então a asserção roda.
+  - `vendas-multicanal`: o recorte ML tem o "por dia" e não o "por conta".
+  - Os specs de vendas, 25/25; o `loja-live`, 7/7.
+- **Suite inteira:** **256/256** com o banco recriado do zero (253 na 3300 e os 3 de convite na 3000) e o `loja-live` **8/8**.
+
+**Impacto:**
+- web: `apps/web/lib/vendas-ml-filtros.ts` com o teste, `apps/web/lib/serie-de-vendas.ts`, `apps/web/lib/vendas-export.ts` com o teste, `apps/web/app/(app)/vendas/page.tsx` e `apps/web/app/(app)/vendas/exportar/route.ts`;
+- e2e: `vendas.spec.ts` e `vendas-multicanal.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
