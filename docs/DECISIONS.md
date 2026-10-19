@@ -16574,6 +16574,8 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 
 **Impacto:** `supabase/migrations/20261019130000_campos_do_financeiro_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,PERFORMANCE,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
 
+**Em producao (19/10):** migration `20261019130000` aplicada as 13:38 UTC (run `39261520429`, o plano conferido antes da 2a aprovacao: so ela). Conferido com os dados reais: as seis colunas batem com o `->> ::numeric` em todos os pedidos (zero diferencas); a estatistica das colunas novas existe (o `analyze`); o C-58 e o C-61 fecham, os dias somam o TOTAL e os dois veem os mesmos cobertos. **Como `authenticated`:** o C-58 de ~3,7 s para **0,57 s** em 90 dias; C-58 em 90 e em 30 dias e o C-61 em 90, juntos, de 8,8 s para 1,4 s (as paginas lidas, de 2,6 milhoes para 0,8). Nenhum erro de runtime na Vercel e nenhum `job_failed` no worker desde a migration. As gravacoes de financeiro feitas pelo worker depois da migration ja trazem as seis colunas preenchidas, iguais ao json: o caminho de escrita esta provado em producao.
+
 ## D-490 - Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 
 **Contexto:** as telas do Mercado Livre exportam: anúncios e Full em CSV (D-385, D-380), e curva ABC, preços e compras em Excel. As da Shopee não exportavam nada (o inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "nenhuma exportação Shopee"). Desde o Go Live de 16/10 há pedidos reais da Shopee para conferir fora da tela.
