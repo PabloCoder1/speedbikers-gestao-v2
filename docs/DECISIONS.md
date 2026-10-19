@@ -16422,6 +16422,8 @@ Esperou o #219 (o Shell num layout, D-512) entrar, como combinado com o A3: as d
 
 **Impacto:** `supabase/migrations/20261016220000_ajustes_shopee_no_resultado.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP,PERFORMANCE}.md`. Worker e api nao mudam (a fila e SQL). O degrau na tela e do A2.
 
+**Em producao (19/10):** migration `20261016220000` aplicada as 12:20 UTC (run `39250383332`, o plano conferido antes da 2a aprovacao: so ela e a da D-487), depois da tela do A2 no ar (D-498, #241). Antes, as quatro funcoes que ela recria foram conferidas por md5 contra as de producao: identicas. Na leitura real dos 30 dias: o resultado novo e exatamente o antigo mais os ajustes; recebido + ajustes - custo = resultado no TOTAL e nas duas lojas; definitivo + provisorio = TOTAL; os dias somam o TOTAL; os ajustes sao -0,50% da receita coberta. O `total_adjustment_amount` vem em 100% das leituras, e nenhuma liberacao era posterior a ultima leitura do pedido: a releitura e rede de seguranca, e a fila do financeiro seguiu vazia. Nenhum erro de runtime na Vercel desde o deploy da D-498 (12:00 UTC).
+
 ## D-486 - Telas multicanais, etapa T9: o ensaio do Go Live das telas, com uma loja Shopee LIVE criada e apagada pelo próprio e2e, num projeto do Playwright que roda por último
 
 **Contexto:** o seed do e2e tem só a loja Shopee de TESTE, de propósito. As provas de equivalência das outras telas (o "Todos" igual ao Mercado Livre, D-440 a D-454) dependem de nenhuma loja live existir, e as telas deixam a loja de teste fora de toda soma. Com isso, nenhum spec renderizava o caminho "com Shopee". Ele só tinha sido provado nos unitários das telas (a leitura de cada RPC) e na integração do A1 (o SQL).
@@ -16500,6 +16502,8 @@ Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral
 - **Estatica:** `pnpm run check`, `pnpm run build` e `pnpm docs:check` verdes.
 
 **Impacto:** `supabase/migrations/20261016230000_contribuicao_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`. A linha na tela e do A2.
+
+**Em producao (19/10):** migration `20261016230000` no mesmo run `39250383332`. Na leitura real dos 30 dias, o Ads das duas lojas foi lido e a fracao rateada e igual a cobertura do TOTAL; o resultado apos imposto e a contribuicao vem NULOS, como previsto, porque producao nao tem aliquota cadastrada (ato do dono). As tres definicoes novas estao no catalogo.
 
 ## D-488 - Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
 
