@@ -18,6 +18,11 @@ function abasDaCentral(page: Page): Locator {
   return page.getByRole("navigation", { name: "Telas da central" });
 }
 
+/** A remoção com confirmação (`RemoverComConfirmacao`): o grupo diz o que sai, e "Remover" confirma. */
+async function confirmarRemocao(page: Page, grupo: RegExp): Promise<void> {
+  await page.getByRole("group", { name: grupo }).getByRole("button", { name: "Remover", exact: true }).click();
+}
+
 test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({ page }) => {
   await login(page, "/central");
 
@@ -152,9 +157,12 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
 
   // Limpa o que o teste gravou, pela própria tela.
   await page.goto("/central/metas");
+  // Remover pede confirmação, no lugar (UX_SYSTEM §6, bloco 2).
   await page.getByRole("button", { name: /^Remover a meta de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a meta de /);
   await expect(page.getByRole("cell", { name: /1\.234\.567,89/ })).toHaveCount(0);
   await page.getByRole("button", { name: /^Remover a alíquota de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a alíquota de /);
   await expect(page.getByText("Nenhuma alíquota cadastrada.")).toBeVisible();
 });
 
@@ -207,6 +215,7 @@ test("/central/metas: a meta do Mercado Livre aparece na central ao lado da gera
   // Limpa o que o teste gravou, pela própria tela.
   await page.goto("/central/metas");
   await page.getByRole("button", { name: /^Remover a meta do Mercado Livre de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a meta do Mercado Livre de /);
   await expect(page.getByText("Nenhuma meta por marketplace cadastrada.")).toBeVisible();
 });
 
@@ -245,7 +254,9 @@ test("/central/limites: salvar muda o que a central diz, e voltar aos padrões d
   await expect(page.getByText(/com 30 pedidos ou mais nos dois períodos\. Limites da empresa/)).toBeVisible();
 
   await page.goto("/central/limites");
+  // Voltar aos padrões pede confirmação, no lugar (UX_SYSTEM §6, bloco 2).
   await page.getByRole("button", { name: "Voltar aos padrões" }).click();
+  await page.getByRole("group", { name: "Confirmar: Voltar aos padrões" }).getByRole("button", { name: "Voltar aos padrões" }).click();
   await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
 });
 
