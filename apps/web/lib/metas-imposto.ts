@@ -61,7 +61,7 @@ export function lerPercentual(texto: string): Leitura<number> {
   const n = numeroDigitado(texto);
 
   if (n === null) return { ok: false, erro: "Escreva a alíquota em porcentagem, por exemplo 6,5." };
-  if (n < 0 || n >= 100) return { ok: false, erro: "A alíquota fica entre 0% e 100%." };
+  if (n < 0 || n >= 100) return { ok: false, erro: "A alíquota fica de 0% a 99,999%." };
 
   const fracao = Math.round(n * 1000) / 100000;
 

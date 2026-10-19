@@ -17332,6 +17332,71 @@ O tempo ate as vendas quase nao muda: os numeros esperam tambem a meta e os limi
 
 So web: sem migration, sem RPC e sem leitura nova.
 
+## D-518 - A Central de Negocio, blocos 2 e 3: cada termo explicado a um toque, remover com confirmacao, limites agrupados e o nome fixo nas tabelas do celular
+
+**Contexto:** o dono pediu, em 19/10, a refatoracao das telas internas da Central (metas, limites, frete, Ads e produtos), para quem nao conhece os termos. A tela e do A2, que a liberou; os dados sao do A1. O que estava assim:
+- termos sem explicacao: aliquota efetiva, ROAS, ACOS, CPC, CTR, CPA, "cobertos", mediana, "95% ficam ate", "Nota (opcional)";
+- os nove limites numa lista so, com a dica dizendo a regra e nao o efeito de subir ou baixar;
+- remover meta, aliquota ou meta do marketplace e "Voltar aos padroes" apagavam com um clique;
+- as colunas do ranking explicadas so no `title`, que o toque nao abre;
+- no celular, a tabela rolava e o nome da linha sumia;
+- as filas da auditoria (`docs/UX_SYSTEM.md` §6.3, item 9).
+
+**Decisao:**
+1. **Ajuda a um toque** (`components/ajuda.tsx`):
+   - `Ajuda` e um `<details>` com a pergunta escrita ("O que conta para a meta?"), nao um icone sozinho. Abre com toque, teclado e leitor de tela, sem JavaScript.
+   - O `Campo` dos formularios ganha `ajuda`, fora do rotulo.
+   - `Glossario` e um `.sb-recolhivel` com a lista de definicoes, recolhido, logo abaixo da faixa de numeros de frete, Ads e produtos.
+   - Tooltip de passar o mouse nao entra: o toque nao abre.
+2. **Toda definicao sai do codigo que calcula** (o SQL ou a lib), nenhuma inventada. Na conferencia, estes textos estavam errados ou em jargao, e foram corrigidos:
+   - frete: "cada comparacao de 0 a 3 pontos" (a margem da ate 2);
+   - Ads: o critico por ROAS abaixo de 1 e o "abaixo da meta" pedem R$ 50 de gasto, e a atencao por gasto pede R$ 100 na semana anterior;
+   - produtos: o "% da receita" do frete e da receita coberta, e a comissao dizia `sale_fee`;
+   - quem paga o frete: as formulas diziam `gross_amount`, `senders[].cost` e `receiver.cost`;
+   - limites: as variacoes fortes diziam "ate isto e atencao" (o limite exato ja e perigo); a margem minima citava uma lista que se chama "Margem abaixo de"; e a validacao em pontos dizia "%" no lugar de "p.p.";
+   - aliquota: a mensagem de valor fora do intervalo dizia "entre 0% e 100%", mas 100 ja era recusado e o banco guarda ate 99,999%.
+3. **Metas e imposto:**
+   - a legenda de obrigatorios em cada formulario;
+   - "Nota (opcional)" vira "Observacao (opcional)", com o que ela e, o limite de 300 caracteres e um exemplo;
+   - a aliquota ganha o intervalo aceito e um exemplo;
+   - ajudas para: o que conta para a meta, a meta do marketplace contra a geral, a vigencia da aliquota e o que e aliquota efetiva.
+4. **A situacao do mes no topo de metas** (`ResumoDaMeta`): veredito, barra, numeros e o link para a central. Usa `get_meta_do_mes` e os limites, as mesmas leituras da central. O realizado de meses passados continua dependendo de contrato do A1.
+5. **Remover pede confirmacao, no lugar** (`components/remover-com-confirmacao.tsx`):
+   - o primeiro clique mostra o que vai acontecer, "Remover" e "Cancelar";
+   - vale para meta, aliquota, meta do marketplace e "Voltar aos padroes";
+   - o nome acessivel diz o que sai;
+   - a caixa e a `.sb-confirmacao` de `/usuarios`, na variante de perigo, para as duas confirmacoes serem iguais;
+   - dentro da tabela (que nao quebra linha), a confirmacao quebra numa largura de leitura, de 14 a 20 rem, e a coluna Observacao (ate 300 caracteres) quebra ate 20 rem;
+   - ao abrir, o grupo recebe o foco e entra na vista (numa tabela que rola para o lado, a coluna de acoes pode estar fora); ao cancelar, o foco volta ao botao. Antes, o foco caia no corpo da pagina quando o botao sumia.
+6. **Limites em quatro grupos** (comparacao, meta, produtos e Ads, em `GRUPOS_DOS_LIMITES`):
+   - cada limite tem "O que muda se eu aumentar ou diminuir?";
+   - a nota do fim passa a dizer o que nao se ajusta ali: a tolerancia de cobertura e as pontuacoes do detector;
+   - os nomes dos campos e a acao nao mudam.
+7. **Tabelas no celular:**
+   - ate 900 px, a coluna que identifica a linha (campanha, produto, faixa de preco, logistica) fica fixa a esquerda (`.sb-col-fixa`), com 8 a 10 rem e o nome quebrando linha: sem o limite, o nome de um produto ocupava quase a tela toda a 390 px;
+   - a dica "deslize a tabela" aparece so ali (`.sb-tabela-dica`, `aria-hidden`);
+   - as tabelas de meta e de aliquota rolam no painel (`.sb-cadastro-rolagem`, como a de marketplace). Com uma linha so, cortavam 178 a 185 px a 390 px; a guarda de tela estreita nao via, porque roda com as tabelas vazias.
+8. **Sem fila:**
+   - o "quem paga" do frete comeca junto com o detector (esperava por ele, apesar do comentario);
+   - o ranking de produtos sem conta na URL nao espera as contas nem a organizacao.
+9. **O que nao muda:** D-023 e METRICS 5C.2 (id da metrica e ressalva visiveis), as regras de negocio, as RPCs, os nomes dos campos e as acoes de servidor.
+
+**Verificacao:** `pnpm run check` (typecheck, lint e os 1.384 testes da web); o `central.spec` (a confirmacao, o foco e a mensagem nova da aliquota), a guarda de tela estreita e acessibilidade, o `web-vitals.spec` e o `troca-de-tela.spec`: 15 de 15; o ensaio `loja-live`: 10 de 10. Tudo com build local contra o banco isolado recriado do zero, ja com a `main` da D-499 por baixo. E as fotos a 390 e 1440 px, com a medida:
+- a 390 px, com uma meta cadastrada, a pagina nao rola para o lado, e a tabela de metas rola no painel;
+- a 1440 px, a tabela de metas cabe no painel;
+- a confirmacao fica com 224 px de largura, com o texto e os dois botoes na vista;
+- com a tabela do ranking deslizada 320 px a 390 px, a coluna do produto fica no lugar.
+
+O glossario de Ads e a tabela de faixas do frete nao aparecem com o seed (nao ha semana consolidada de Ads nem faixa com anuncios suficientes): foram conferidos so no codigo.
+
+**Impacto:**
+- telas: `apps/web/app/(app)/central/{meta.tsx,metas/*,limites/*,frete/*,ads/page.tsx,produtos/page.tsx}`;
+- componentes e lib: `apps/web/components/{ajuda,remover-com-confirmacao}.tsx`, `apps/web/lib/limites-central{,.test}.ts`;
+- estilo e testes: `apps/web/app/globals.css`, `apps/web/e2e/central.spec.ts` (a confirmacao depois de cada remover e do "Voltar aos padroes", o foco no grupo ao abrir e de volta no botao ao cancelar, e a mensagem nova da aliquota);
+- docs.
+
+So web: sem migration e sem RPC nova.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.

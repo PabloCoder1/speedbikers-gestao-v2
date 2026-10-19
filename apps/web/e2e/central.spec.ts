@@ -18,6 +18,11 @@ function abasDaCentral(page: Page): Locator {
   return page.getByRole("navigation", { name: "Telas da central" });
 }
 
+/** A remoção com confirmação (`RemoverComConfirmacao`): o grupo diz o que sai, e "Remover" confirma. */
+async function confirmarRemocao(page: Page, grupo: RegExp): Promise<void> {
+  await page.getByRole("group", { name: grupo }).getByRole("button", { name: "Remover", exact: true }).click();
+}
+
 test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({ page }) => {
   await login(page, "/central");
 
@@ -139,7 +144,7 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
   // Valor inválido volta com o erro no campo, sem gravar.
   await aliquota.getByLabel("Alíquota efetiva (%)").fill("150");
   await aliquota.getByRole("button", { name: "Salvar alíquota" }).click();
-  await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica entre 0% e 100%.");
+  await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica de 0% a 99,999%.");
 
   await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
@@ -152,9 +157,12 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
 
   // Limpa o que o teste gravou, pela própria tela.
   await page.goto("/central/metas");
+  // Remover pede confirmação, no lugar (UX_SYSTEM §6, bloco 2).
   await page.getByRole("button", { name: /^Remover a meta de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a meta de /);
   await expect(page.getByRole("cell", { name: /1\.234\.567,89/ })).toHaveCount(0);
   await page.getByRole("button", { name: /^Remover a alíquota de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a alíquota de /);
   await expect(page.getByText("Nenhuma alíquota cadastrada.")).toBeVisible();
 });
 
@@ -207,6 +215,7 @@ test("/central/metas: a meta do Mercado Livre aparece na central ao lado da gera
   // Limpa o que o teste gravou, pela própria tela.
   await page.goto("/central/metas");
   await page.getByRole("button", { name: /^Remover a meta do Mercado Livre de / }).first().click();
+  await confirmarRemocao(page, /^Confirmar: Remover a meta do Mercado Livre de /);
   await expect(page.getByText("Nenhuma meta por marketplace cadastrada.")).toBeVisible();
 });
 
@@ -245,7 +254,17 @@ test("/central/limites: salvar muda o que a central diz, e voltar aos padrões d
   await expect(page.getByText(/com 30 pedidos ou mais nos dois períodos\. Limites da empresa/)).toBeVisible();
 
   await page.goto("/central/limites");
-  await page.getByRole("button", { name: "Voltar aos padrões" }).click();
+  // Voltar aos padrões pede confirmação, no lugar (UX_SYSTEM §6, bloco 2). O
+  // foco vai para o grupo ao abrir e volta para o botão ao cancelar (D-518).
+  const voltar = page.getByRole("button", { name: "Voltar aos padrões" });
+  const confirmacao = page.getByRole("group", { name: "Confirmar: Voltar aos padrões" });
+
+  await voltar.click();
+  await expect(confirmacao).toBeFocused();
+  await confirmacao.getByRole("button", { name: "Cancelar" }).click();
+  await expect(voltar).toBeFocused();
+  await voltar.click();
+  await confirmacao.getByRole("button", { name: "Voltar aos padrões" }).click();
   await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
 });
 

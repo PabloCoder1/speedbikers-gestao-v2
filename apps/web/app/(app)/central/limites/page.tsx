@@ -1,13 +1,14 @@
 import { Suspense, type ReactNode } from "react";
 
-import { BotaoEnviar } from "../../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../../components/carregando";
 import { AbasDaSecao } from "../../../../components/abas-da-secao";
+import { Ajuda } from "../../../../components/ajuda";
 import { PageTitle } from "../../../../components/page-title";
+import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
 import { abasDaCentral } from "../../../../lib/central-navegacao";
-import { descreverLimites, LIMITES_PADRAO, lerLimites } from "../../../../lib/limites-central";
+import { descreverLimites, GRUPOS_DOS_LIMITES, LIMITES_PADRAO, lerLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
@@ -90,6 +91,11 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
 
   const limites = resposta?.error == null ? lerLimites(resposta?.data ?? null) : LIMITES_PADRAO;
   const descricoes = descreverLimites(limites);
+  // Os nove limites agrupados pelo que controlam (UX_SYSTEM §6, bloco 2).
+  const grupos = GRUPOS_DOS_LIMITES.map((grupo) => ({
+    ...grupo,
+    limites: descricoes.filter((d) => grupo.campos.includes(d.campo)),
+  }));
   const alteradoEm = resposta?.data?.updated_at ?? null;
 
   return (
@@ -128,37 +134,47 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
       >
         <div className="sb-panel-body">
           {podeEditar ? (
-            <FormularioLimites limites={descricoes} />
+            <FormularioLimites grupos={grupos} />
           ) : (
-            <dl className="sb-limites-lista">
-              {descricoes.map((d) => (
-                <div key={d.campo}>
-                  <dt>{d.rotulo}</dt>
-                  <dd>
-                    <strong>{d.atual}</strong> <span className="sb-texto-suave">{d.dica}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            grupos.map((grupo) => (
+              <section key={grupo.id} className="sb-limites-grupo" aria-label={grupo.titulo}>
+                <h3>{grupo.titulo}</h3>
+                <p className="sb-limites-grupo-descricao">{grupo.descricao}</p>
+                <dl className="sb-limites-lista">
+                  {grupo.limites.map((d) => (
+                    <div key={d.campo}>
+                      <dt>{d.rotulo}</dt>
+                      <dd>
+                        <strong>{d.atual}</strong> <span className="sb-texto-suave">{d.dica}</span>
+                        <Ajuda pergunta="O que muda se este valor aumentar ou diminuir?">
+                          <p>{d.ajuda}</p>
+                        </Ajuda>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))
           )}
 
           {podeEditar && limites.personalizados && (
-            <form action={voltarAosPadroes} className="sb-central-bloco">
-              <BotaoEnviar className="sb-text-button" pendente="Voltando aos padrões…">
-                Voltar aos padrões
-              </BotaoEnviar>
-            </form>
+            <div className="sb-central-bloco">
+              <RemoverComConfirmacao
+                acao={voltarAosPadroes}
+                rotulo="Voltar aos padrões"
+                consequencia="Os nove limites voltam ao padrão do sistema, e a central passa a julgar com eles."
+                textoDoBotao="Voltar aos padrões"
+                textoDaConfirmacao="Voltar aos padrões"
+                pendente="Voltando aos padrões…"
+              />
+            </div>
           )}
 
           <div className="sb-note sb-central-bloco">
-            <span>ONDE CADA UM VALE</span>
+            <span>O QUE NÃO SE AJUSTA AQUI</span>
             <p>
-              As variações colorem os indicadores e o resumo da central; o atraso da meta, o ritmo do mês e o item de
-              meta em "O que precisa da sua atenção"; a margem mínima, a lista de menor margem e o tom da margem no
-              faturamento, no ranking de produtos e na calculadora; a margem depois do Ads, a sugestão de escala em
-              Sinais de Ads; o piso do ROAS, o nível "ROAS abaixo da meta" e o alerta gravado dele; a amostra mínima, a
-              comparação de margem, frete e médias. As pontuações do detector de frete são a calibragem dele, não um
-              limite de negócio.
+              A tolerância de cobertura entre os períodos (5 p.p.) e as pontuações do detector de frete são a calibragem do
+              sistema, não limites de negócio. O ranking de produtos e o detector têm amostras mínimas próprias.
             </p>
           </div>
         </div>

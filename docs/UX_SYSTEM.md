@@ -450,10 +450,20 @@ repetida). Em produção, o `get_faturamento` do ML tem média de 2,6 s (A1,
   - [x] Chip "ver lista" com alvo de 24 px.
   - [x] Medido antes e depois: `/central` de 4.705 para 3.541 px a 1440 px e de
         8.532 para 6.921 px a 390 px; CLS 0; LCP igual.
-- [ ] **Bloco 2 — `/central/metas`.** A situação do mês no topo, com
-      `get_meta_do_mes`, que já existe. O realizado de meses passados depende de
-      contrato do A1, e não se inventa.
-- [ ] **Bloco 3 — frete, Ads, produtos e limites.** Estados, tabelas no celular
-      (colunas prioritárias) e as filas.
+- [x] **Bloco 2 — `/central/metas` (D-518).**
+  - [x] A situação do mês no topo (`ResumoDaMeta`, com `get_meta_do_mes`).
+  - [x] Legenda de obrigatórios, "Observação (opcional)" com exemplo e limite,
+        e a ajuda a um toque em meta, meta do marketplace, vigência e alíquota.
+  - [x] Remover meta, alíquota e meta do marketplace pede confirmação.
+  - [ ] O realizado de meses passados: depende de contrato do A1.
+- [x] **Bloco 3 — frete, Ads, produtos e limites (D-518).**
+  - [x] Glossário recolhido abaixo da faixa de números de frete, Ads e
+        produtos, com as definições do SQL, e os textos errados corrigidos.
+  - [x] Limites em quatro grupos, com o efeito de subir ou baixar cada um, e
+        "Voltar aos padrões" com confirmação.
+  - [x] Tabelas no celular: a coluna que identifica fica fixa (`.sb-col-fixa`),
+        com a dica de deslizar; as de meta e alíquota rolam no painel.
+  - [x] Sem fila: o "quem paga" começa com o detector, e o ranking sem conta
+        na URL não espera contas nem organização.
 - [ ] **Bloco 4 — o resto da `/central`.** Frete e Ads no `EstadoDaTela`, e o
       código duplicado.

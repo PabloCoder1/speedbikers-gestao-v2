@@ -147,7 +147,7 @@ describe("lerFormularioDosLimites (D-408)", () => {
     expect(lido.ok ? {} : lido.erros).toEqual({
       change_neutral: "Escreva a variação estável em porcentagem, por exemplo 2 ou 0,5.",
       change_strong: "Use no máximo duas casas decimais.",
-      points_strong: "A variação forte em pontos fica acima de 0% e até 20%.",
+      points_strong: "A variação forte em pontos fica acima de 0 p.p. e até 20 p.p.",
       min_orders_sample: "A amostra mínima é um número inteiro de pedidos, de 1 a 1.000.",
     });
     expect(lerFormularioDosLimites(formulario({ min_orders_sample: "1.001" })).ok).toBe(false);

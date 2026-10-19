@@ -5,6 +5,7 @@ import { CarregandoConteudo } from "../../../../components/carregando";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { AbasDaSecao } from "../../../../components/abas-da-secao";
+import { Glossario } from "../../../../components/ajuda";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
@@ -193,6 +194,11 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
 
       <KpiStrip cells={celulasDoResumo(sinais, margem)} />
 
+      {/* As siglas do Mercado Ads, perto dos números (UX_SYSTEM §6, bloco 3). Os níveis ficam em "Como os sinais são decididos". */}
+      <div className="sb-central-bloco">
+        <Glossario titulo="O que significam as siglas e os números" termos={TERMOS_DE_ADS} />
+      </div>
+
       <Panel
         title="Campanhas com sinal"
         subtitle={
@@ -283,6 +289,51 @@ function contagem(s: SinaisAds, n: NivelAds): number {
   }
 }
 
+/** As definições são as do `get_sinais_ads`: sete dias consolidados, por campanha. */
+const TERMOS_DE_ADS = [
+  {
+    termo: "ROAS",
+    definicao:
+      "Retorno sobre o investimento em Ads: vendas atribuídas ao Ads ÷ investimento. ROAS 4 quer dizer R$ 4 vendidos para cada R$ 1 investido; abaixo de 1, o Ads custou mais do que vendeu.",
+  },
+  {
+    termo: "Meta de ROAS",
+    definicao: "O alvo que a própria campanha tem configurado no Mercado Ads. A central compara o ROAS com ele.",
+  },
+  {
+    termo: "ROAS de equilíbrio",
+    definicao:
+      "1 ÷ a margem média da empresa: o ROAS em que a margem das vendas paga exatamente o investimento. Abaixo dele, a campanha tira dinheiro da margem.",
+  },
+  {
+    termo: "ACOS",
+    definicao: "Investimento ÷ vendas com Ads, em porcentagem: o inverso do ROAS. ROAS 4 é ACOS de 25%.",
+  },
+  { termo: "CPC", definicao: "Custo por clique: investimento ÷ cliques." },
+  {
+    termo: "CTR",
+    definicao: "Taxa de cliques: cliques ÷ impressões, ou quantos de quem viu o anúncio clicaram nele.",
+  },
+  { termo: "Conversão", definicao: "Unidades vendidas com Ads ÷ cliques." },
+  { termo: "CPA", definicao: "Custo por unidade vendida: investimento ÷ unidades vendidas com Ads." },
+  { termo: "Ticket", definicao: "Vendas com Ads ÷ unidades: o valor médio de cada unidade vendida pelo Ads." },
+  {
+    termo: "Orçamento",
+    definicao:
+      "Quanto do orçamento diário a campanha usou em média na semana (investimento ÷ 7 ÷ orçamento). Um dia no teto é um dia em que gastou 90% do orçamento ou mais.",
+  },
+  {
+    termo: "Lucro estimado",
+    definicao:
+      "Vendas com Ads × margem média da empresa − investimento. É uma estimativa: a API do Mercado Ads não diz que produtos cada campanha vendeu.",
+  },
+  {
+    termo: "Normal e Pausada",
+    definicao:
+      "Normal é a campanha ativa sem nenhum sinal; pausada não recebe sinal, porque quem pausou já agiu.",
+  },
+] as const;
+
 function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
   const r = s.resumo;
   const equilibrio = roasDeEquilibrio(margem.valor);
@@ -292,7 +343,7 @@ function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
     {
       metricId: "nivel_sinal_ads",
       label: NIVEL_ADS.critico.rotulo,
-      formula: "gasto sem venda (≥ R$ 50 e ≥ o orçamento diário) ou ROAS abaixo de 1",
+      formula: "gasto sem venda (≥ R$ 50 e ≥ o orçamento diário) ou ROAS abaixo de 1 com gasto ≥ R$ 50",
       value: formatCount(r.critico),
       previous: null,
       href: hrefDoNivel("critico"),
@@ -302,7 +353,7 @@ function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
     {
       metricId: "nivel_sinal_ads",
       label: NIVEL_ADS.abaixo_meta.rotulo,
-      formula: `ROAS abaixo de ${rotuloDaMargemMinima(s.referencias.roas_piso)} da meta configurada na campanha`,
+      formula: `ROAS abaixo de ${rotuloDaMargemMinima(s.referencias.roas_piso)} da meta configurada na campanha, com gasto ≥ R$ 50`,
       value: formatCount(r.abaixo_meta),
       previous: null,
       href: hrefDoNivel("abaixo_meta"),
@@ -312,7 +363,7 @@ function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
     {
       metricId: "nivel_sinal_ads",
       label: NIVEL_ADS.atencao.rotulo,
-      formula: "CPC +20% com conversão −15%, ou gasto +20% com ROAS −15%, contra a semana anterior",
+      formula: "CPC +20% com conversão −15% (100 cliques ou mais nas duas semanas), ou gasto +20% com ROAS −15% (R$ 100 ou mais na anterior), contra a semana anterior",
       value: formatCount(r.atencao),
       previous: null,
       href: hrefDoNivel("atencao"),
@@ -450,10 +501,11 @@ function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: Marg
       subtitle="Com gasto nesta semana ou na anterior. Lucro estimado pela margem média da empresa — premissa, não medida por campanha."
     >
       <div className="sb-panel-body sb-central-tabela">
+        <p className="sb-tabela-dica" aria-hidden="true">Deslize a tabela para o lado para ver todas as colunas.</p>
         <table className="sb-table sb-ads-tabela">
           <thead>
             <tr>
-              <th>Campanha</th>
+              <th className="sb-col-fixa">Campanha</th>
               <th>Sinal</th>
               <th className="sb-num">Investimento</th>
               <th className="sb-num">Vendas</th>
@@ -475,7 +527,7 @@ function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: Marg
 
               return (
                 <tr key={`${c.ml_account_id}:${String(c.campaign_id)}`}>
-                  <td>
+                  <td className="sb-col-fixa">
                     <strong>{c.nome}</strong>
                     <span className="sb-central-motivo">{c.conta}</span>
                   </td>
@@ -525,17 +577,18 @@ function ComoDecide({
       <div className="sb-panel-body sb-sinal-metodo">
         <ul>
           <li>
-            <strong>Crítico</strong> — gastou pelo menos R$ 50 e um dia de orçamento sem nenhuma venda atribuída, ou teve
-            ROAS abaixo de 1 (o Ads custou mais do que vendeu).
+            <strong>Crítico</strong> — gastou pelo menos R$ 50 e um dia de orçamento sem nenhuma venda atribuída, ou gastou
+            R$ 50 ou mais com ROAS abaixo de 1 (o Ads custou mais do que vendeu).
           </li>
           <li>
             <strong>ROAS abaixo da meta</strong> — ROAS abaixo de {rotuloDaMargemMinima(sinais.referencias.roas_piso)} da
-            meta que a própria campanha tem no Mercado Ads (<Link href="/central/limites">limite ajustável</Link>).
+            meta que a própria campanha tem no Mercado Ads, com R$ 50 ou mais de gasto (
+            <Link href="/central/limites">limite ajustável</Link>).
             Abaixo da meta por pouco é a oscilação normal de uma estratégia que mira o alvo, e não vira sinal.
           </li>
           <li>
             <strong>Atenção</strong> — o CPC subiu 20% e a conversão caiu 15% (100 cliques ou mais nas duas semanas), ou o
-            gasto subiu 20% e o ROAS caiu 15%.
+            gasto subiu 20% e o ROAS caiu 15% (com R$ 100 ou mais de gasto na semana anterior).
           </li>
           <li>
             <strong>Oportunidade de escala</strong> — campanha ativa, ROAS na meta ou acima, usando 90% do orçamento diário

@@ -5,6 +5,7 @@ import { CarregandoBloco, CarregandoConteudo } from "../../../../components/carr
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { AbasDaSecao } from "../../../../components/abas-da-secao";
+import { Glossario } from "../../../../components/ajuda";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
@@ -25,7 +26,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
-import { QuemPagaOFrete } from "./quem-paga";
+import { lerQuemPagaOFrete, QuemPagaOFrete } from "./quem-paga";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
 
@@ -97,6 +98,8 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   }
 
   const supabase = await createClient();
+  // As duas leituras saem juntas: o "quem paga" não espera o detector (UX_SYSTEM §6, bloco 3).
+  const leituraQuemPaga = lerQuemPagaOFrete(supabase);
   const resposta = await supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId });
 
   // Função ausente (PGRST202) não é erro: a web da `main` chega à produção
@@ -159,6 +162,42 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
       <KpiStrip cells={celulasDoResumo(detector)} />
 
+      {/* Os níveis e os números do detector, perto da faixa (UX_SYSTEM §6, bloco 3). */}
+      <div className="sb-central-bloco">
+        <Glossario
+          titulo="O que significam os níveis e os números"
+          termos={[
+            {
+              termo: "Pontos",
+              definicao:
+                "O frete de cada anúncio nos últimos 14 dias é comparado em cinco frentes: o histórico do próprio anúncio, outros anúncios do mesmo produto, anúncios parecidos da mesma categoria e faixa de preço (os pares), o peso do frete no preço e a margem. Cada comparação dá de 0 a 3 pontos (a margem, até 2), e o nível é a soma.",
+            },
+            { termo: "Forte indício", definicao: "5 pontos ou mais: o frete mais provavelmente errado. Revise primeiro." },
+            { termo: "Provável problema", definicao: "3 ou 4 pontos." },
+            { termo: "Atenção", definicao: "1 ou 2 pontos: um sinal fraco, para olhar sem pressa." },
+            {
+              termo: "Analisados",
+              definicao:
+                "Anúncios, em cada faixa de preço, com pelo menos 3 pedidos nos 14 dias. Só entram pedidos de uma unidade, com o frete conhecido e fora do Flex.",
+            },
+            {
+              termo: "Referência",
+              definicao:
+                "O frete que se esperaria para o anúncio, nesta ordem: o histórico dele corrigido pela mudança geral do frete na faixa, o histórico puro, o mesmo produto em outro anúncio ou os pares.",
+            },
+            {
+              termo: "Frete a mais",
+              definicao:
+                "Quanto os alertas fortes e prováveis pagaram acima da referência nos 14 dias: (frete pago − referência) × pedidos. Fica em branco quando nenhum alerta tem referência.",
+            },
+            {
+              termo: "Faixa de preço",
+              definicao: "Pelo preço do pedido: até R$ 40, de R$ 40 a 79, de 79 a 120, de 120 a 200, de 200 a 400 e acima de R$ 400.",
+            },
+          ]}
+        />
+      </div>
+
       <Panel
         title="Anúncios para revisar"
         subtitle={
@@ -206,7 +245,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
       {/* D-412: quem paga o frete, com leitura própria -- não espera o detector nem o segura. */}
       <Suspense fallback={<CarregandoBloco rotulo="quem paga o frete" />}>
-        <QuemPagaOFrete tentarDeNovo={mesmaUrl("/central/frete", query)} />
+        <QuemPagaOFrete leitura={leituraQuemPaga} tentarDeNovo={mesmaUrl("/central/frete", query)} />
       </Suspense>
 
       <ComoDecide detector={detector} />
@@ -352,7 +391,7 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
   return (
     <Panel
       title="Como o detector decide"
-      subtitle="Cinco comparações, cada uma de 0 a 3 pontos; o nível é a soma. Os números de cada motivo são os da própria comparação."
+      subtitle="Cinco comparações, cada uma de 0 a 3 pontos (a margem, até 2); o nível é a soma. Os números de cada motivo são os da própria comparação."
     >
       <div className="sb-panel-body sb-sinal-metodo">
         <ul>
@@ -390,10 +429,15 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
 
         {d.faixas.length > 0 && (
           <div className="sb-central-tabela">
+            <p className="sb-texto-suave">
+              Por faixa: quanto o frete pesa no preço no anúncio típico (a mediana, o do meio da fila) e o teto em que ficam
+              95% deles. A mudança geral é a variação típica do frete de cada anúncio entre as duas janelas, com quantos
+              anúncios entraram na conta entre parênteses; com menos de 10, fica em branco.
+            </p>
             <table className="sb-table">
               <thead>
                 <tr>
-                  <th>Faixa de preço</th>
+                  <th className="sb-col-fixa">Faixa de preço</th>
                   <th className="sb-num">Anúncios</th>
                   <th className="sb-num">Frete ÷ preço, mediana</th>
                   <th className="sb-num">95% ficam até</th>
@@ -403,7 +447,7 @@ function ComoDecide({ detector: d }: { detector: DetectorDeFrete }): ReactNode {
               <tbody>
                 {d.faixas.map((f) => (
                   <tr key={f.faixa}>
-                    <td>{ROTULO_DA_FAIXA[f.faixa]}</td>
+                    <td className="sb-col-fixa">{ROTULO_DA_FAIXA[f.faixa]}</td>
                     <td className="sb-num">{formatCount(f.anuncios)}</td>
                     <td className="sb-num">{formatPercent(f.razao_mediana)}</td>
                     <td className="sb-num">{formatPercent(f.razao_p95)}</td>
