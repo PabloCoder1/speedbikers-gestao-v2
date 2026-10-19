@@ -112,12 +112,20 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
 
   // As quatro em paralelo, e a página não espera por elas: cabeçalho e filtros
   // saem antes, e os números chegam por streaming.
+  //
+  // O PERÍODO ATUAL É LIDO UMA VEZ SÓ, COM DETALHE (UX_SYSTEM §6, bloco 1). A
+  // central de alertas precisa do detalhe (os produtos com margem negativa,
+  // D-400), e o `resumo` e a `margem_minima` são os mesmos com e sem ele
+  // (conferido no banco, 19/10): os indicadores, os alertas e o "Por
+  // marketplace" leem a mesma resposta. Medido em produção pelo A1, em 30 dias:
+  // ~0,5 s sem detalhe e ~0,6 s com — uma `get_faturamento` a menos por carga
+  // vale os ~0,1 s (os cancelamentos por tempo de 19/10 vinham das rajadas).
   const leituras = filtroPromise.then((contaFiltro) => Promise.all([
     supabase.rpc("get_faturamento", {
       p_date_from: periodo.atual.from,
       p_date_to: periodo.atual.to,
       ...contaFiltro,
-      p_detalhe: false,
+      p_detalhe: true,
     }),
     supabase.rpc("get_faturamento", {
       p_date_from: periodo.anterior.from,
@@ -129,17 +137,9 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     supabase.rpc("get_ads_overview", { p_date_from: periodo.anterior.from, p_date_to: periodo.anterior.to, ...contaFiltro }),
   ]));
 
-  // D-400: o faturamento do período COM detalhe só conta produtos com margem
-  // negativa para a central de alertas. Leitura separada e em paralelo: os
-  // indicadores não esperam pelo detalhe (~0,9 s contra ~0,4 s sem ele).
-  const leituraProdutos = filtroPromise.then((contaFiltro) =>
-    supabase.rpc("get_faturamento", {
-      p_date_from: periodo.atual.from,
-      p_date_to: periodo.atual.to,
-      ...contaFiltro,
-      p_detalhe: true,
-    }),
-  );
+  // D-400: os produtos com margem negativa da central de alertas saem da mesma
+  // leitura do período atual, que já vem com detalhe.
+  const leituraProdutos = leituras.then(([atual]) => atual);
 
   const [accountsResult, membership, selectedAccount] = await Promise.all([accountsPromise, membershipPromise, contaPromise]);
   const accounts = accountsResult.data ?? [];
