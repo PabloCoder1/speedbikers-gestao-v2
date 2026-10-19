@@ -22475,3 +22475,142 @@ describe("campos do financeiro Shopee como colunas geradas (D-489)", () => {
     ]);
   });
 });
+
+/*
+  D-493 (C-67): as vendas por anuncio da Shopee em get_shopee_listings. A
+  venda casa com a linha do anuncio por (loja, item, variacao), com a regra
+  do item do C-59 (shopee_sales_items): pedido VALIDA e receita = preco com o
+  desconto da loja x quantidade; preco 0 = desconhecida.
+*/
+describe("vendas por anúncio da Shopee (D-493, C-67)", () => {
+  const ORG = "66666666-0000-4000-8000-00000000d493";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d493";
+  const LOJA = "dddd4930-0000-4000-8000-0000000a0493";
+  const NUNCA = "dddd4930-0000-4000-8000-0000000b0493";
+  const DE = "2026-08-10";
+  const ATE = "2026-08-11";
+
+  async function item(loja: string, id: number, nome: string, temVariacao: boolean) {
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, has_model, details_synced_at, details_update_time)
+       values ($1, $2, $3, 'NORMAL', now() - interval '2 days', $4, $5, now(), now() - interval '2 days')`,
+      [loja, ORG, id, nome, temVariacao],
+    );
+  }
+
+  async function pedido(sn: string, status: string, dia: string, pago: boolean, itens: [number, number | null, number, number][]) {
+    const quando = `${dia}T15:00:00Z`;
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, $4, $5, $5, case when $6 then $5::timestamptz end)`,
+      [LOJA, ORG, sn, status, quando, pago],
+    );
+    let posicao = 0;
+    for (const [itemId, modelId, qtd, preco] of itens) {
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, model_id, quantity, discounted_price)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [LOJA, sn, posicao, ORG, itemId, modelId, qtd, preco],
+      );
+      posicao += 1;
+    }
+  }
+
+  type Linha = Record<string, string | null>;
+
+  const anuncios = (args: string, usuario = ADMIN) =>
+    asUser<Linha>(
+      usuario,
+      `select item_id, model_id, unidades_vendidas, receita_bruta, pedidos, unidades_sem_receita,
+              recorte_unidades, recorte_receita, recorte_unidades_sem_receita, total_count
+         from public.get_shopee_listings('${ORG}', ${args})`,
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-d493@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-493', 'org-d493') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $3, 'live', 990493001, 'Loja Lida', 'CONNECTED', now(), now(), now()),
+              ($2, $3, 'live', 990493002, 'Nunca Lida', 'CONNECTED', now(), null, null)`,
+      [LOJA, NUNCA, ORG],
+    );
+    await item(LOJA, 5001, "Painel", false);
+    await item(LOJA, 5002, "Bau", true);
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name)
+       values ($1, 5002, 1, $2, 'Azul'), ($1, 5002, 2, $2, 'Preto')`,
+      [LOJA, ORG],
+    );
+    await item(LOJA, 5003, "Capa", false);
+    await item(NUNCA, 5004, "Kit", false);
+
+    // [item, variacao, quantidade, preco]
+    await pedido("O1", "COMPLETED", DE, true, [[5001, null, 2, 50], [5002, 1, 1, 30]]);
+    await pedido("O2", "SHIPPED", ATE, true, [[5001, null, 1, 50]]);
+    await pedido("O3", "CANCELLED", DE, true, [[5001, null, 5, 50]]);
+    // Bundle: o Preto saiu com preco 0 -- receita desconhecida.
+    await pedido("O4", "COMPLETED", ATE, true, [[5002, 2, 1, 0], [5002, 1, 1, 30]]);
+    await pedido("O5", "COMPLETED", "2026-08-15", true, [[5003, null, 1, 10]]);
+    await pedido("O6", "UNPAID", DE, false, [[5003, null, 1, 10]]);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, NUNCA]]);
+  });
+
+  const periodo = `'${LOJA}', null, null, 200, 0, '${DE}', '${ATE}'`;
+
+  it("as vendas validas do periodo por anuncio e variacao; a de preco 0 conta a parte", async () => {
+    const linhas = await anuncios(`${periodo}, null, null`);
+
+    // O3 cancelado, O5 fora do periodo e O6 nao pago ficam fora. O recorte e o filtro inteiro.
+    expect(linhas.map((l) => [l.item_id, l.model_id, l.unidades_vendidas, l.receita_bruta, l.pedidos, l.unidades_sem_receita])).toEqual([
+      ["5002", "1", "2", "60.00", "2", "0"],
+      ["5002", "2", "1", null, "1", "1"],
+      ["5003", null, "0", "0.00", "0", "0"],
+      ["5001", null, "3", "150.00", "2", "0"],
+    ]);
+    expect(linhas[0]).toMatchObject({ recorte_unidades: "6", recorte_receita: "210.00", recorte_unidades_sem_receita: "1", total_count: "4" });
+  });
+
+  it("ordem por vendas ou por receita, com desempate pela chave; o filtro vendeu e o recorte acompanham", async () => {
+    const vendas = await anuncios(`${periodo}, null, 'vendas'`);
+    const receita = await anuncios(`${periodo}, null, 'receita'`);
+    const com = await anuncios(`${periodo}, 'com', null`);
+    const sem = await anuncios(`${periodo}, 'sem', null`);
+    const pagina = await anuncios(`'${LOJA}', null, null, 1, 1, '${DE}', '${ATE}', null, 'vendas'`);
+
+    expect(vendas.map((l) => [l.item_id, l.model_id])).toEqual([["5001", null], ["5002", "1"], ["5002", "2"], ["5003", null]]);
+    // Receita desconhecida vai para o fim, nunca como zero.
+    expect(receita.map((l) => [l.item_id, l.model_id])).toEqual([["5001", null], ["5002", "1"], ["5003", null], ["5002", "2"]]);
+    expect(com.map((l) => l.item_id)).toEqual(["5002", "5002", "5001"]);
+    expect(com[0]).toMatchObject({ total_count: "3", recorte_unidades: "6", recorte_receita: "210.00" });
+    expect(sem).toEqual([expect.objectContaining({ item_id: "5003", total_count: "1", recorte_unidades: "0", recorte_receita: "0.00" })]);
+    // O recorte e de antes do limite: a pagina 2 de 1 linha ainda soma tudo.
+    expect(pagina).toEqual([expect.objectContaining({ item_id: "5002", model_id: "1", total_count: "4", recorte_unidades: "6" })]);
+  });
+
+  it("sem periodo, as colunas novas vem NULAS e a lista de sempre; loja nunca lida, NULO", async () => {
+    const semPeriodo = await anuncios(`'${LOJA}', null, null, 200, 0`);
+    const nunca = await anuncios(`'${NUNCA}', null, null, 200, 0, '${DE}', '${ATE}'`);
+
+    expect(semPeriodo.map((l) => l.item_id)).toEqual(["5002", "5002", "5003", "5001"]);
+    expect(semPeriodo.every((l) => l.unidades_vendidas === null && l.receita_bruta === null && l.recorte_unidades === null)).toBe(true);
+    expect(nunca).toEqual([expect.objectContaining({ item_id: "5004", unidades_vendidas: null, receita_bruta: null, recorte_unidades: null })]);
+  });
+
+  it("recusa vendeu ou ordem sem periodo, periodo pela metade e valor fora da lista", async () => {
+    await expect(anuncios(`'${LOJA}', null, null, 50, 0, null, null, 'com', null`)).rejects.toThrow(/pedem o periodo/);
+    await expect(anuncios(`'${LOJA}', null, null, 50, 0, null, null, null, 'vendas'`)).rejects.toThrow(/pedem o periodo/);
+    await expect(anuncios(`'${LOJA}', null, null, 50, 0, '${DE}', null, null, null`)).rejects.toThrow(/periodo invalido/);
+    await expect(anuncios(`${periodo}, 'talvez', null`)).rejects.toThrow(/vendeu invalido/);
+    await expect(anuncios(`${periodo}, null, 'lucro'`)).rejects.toThrow(/ordem invalida/);
+  });
+});

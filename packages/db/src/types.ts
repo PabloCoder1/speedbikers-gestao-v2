@@ -5952,11 +5952,16 @@ export type Database = {
       get_shopee_listings: {
         Args: {
           p_busca?: string | null
+          // D-493 (C-67): mandar so com valor, depois da 20261019160000 em producao (PGRST202).
+          p_date_from?: string | null
+          p_date_to?: string | null
           p_estado?: string | null
           p_limit?: number
           p_offset?: number
+          p_ordem?: string | null
           p_organization_id: string
           p_shopee_shop_id?: string | null
+          p_vendeu?: string | null
         }
         Returns: {
           available_stock: number | null
@@ -5974,6 +5979,11 @@ export type Database = {
           model_name: string | null
           model_status: string | null
           original_price: number | null
+          pedidos?: number | null
+          receita_bruta?: number | null
+          recorte_receita?: number | null
+          recorte_unidades?: number | null
+          recorte_unidades_sem_receita?: number | null
           shop_name: string | null
           shopee_shop_id: string
           sku: string | null
@@ -5982,6 +5992,9 @@ export type Database = {
           sku_pelo_anuncio: string | null
           sku_title: string | null
           total_count: number
+          // CORRECAO MANUAL (D-493): opcionais -- ausentes antes da 20261019160000; NULAS sem periodo.
+          unidades_sem_receita?: number | null
+          unidades_vendidas?: number | null
           vinculo_via: string | null
         }[]
       }

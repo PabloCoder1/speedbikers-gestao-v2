@@ -1419,6 +1419,21 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### As vendas por anúncio da Shopee (D-493, 19/10/2026)
+
+**Banco local, volume realista com anúncios:** 2 lojas live, 6 mil anúncios sem variação e 40 mil pedidos em 120 dias, com as vendas espalhadas pelos anúncios (o gerador sorteava o item uma vez só: tudo caía num anúncio por loja e escondia o custo). Mediana de 5, como `authenticated`, `get_shopee_listings` com limite 50.
+
+| Caso | Antes do ajuste | Com `enable_nestloop = off` |
+|---|---|---|
+| Sem período (a lista de hoje) | 22 ms (a função antiga: 28 ms) | 21–30 ms |
+| 30 dias | 1,39 s | 53–60 ms |
+| 90 dias, ordem por vendas | 1,81 s | 79–81 ms |
+| 90 dias, com venda, ordem por receita | 1,80 s | 82–84 ms |
+| 90 dias, sem venda | 1,78 s | 67–72 ms |
+| 90 dias, uma loja e busca | 209 ms | 60–63 ms |
+
+**O porquê:** com a RLS, o planejador estimava 30 anúncios e 6 grupos de venda (eram 6 mil e 4,5 mil) e casava os dois num laço aninhado — 27 milhões de comparações com o `is not distinct from` (que não admite hash), 17 milhões com a igualdade. Como `postgres`, a mesma consulta já fazia hash (87 ms). A igualdade (variação NULA = 0) e o `enable_nestloop = off` NA FUNÇÃO, que vale só durante a execução dela, resolvem.
+
 ### Os campos do financeiro Shopee como colunas geradas (D-489, 19/10/2026)
 
 **Banco local, volume realista:** 40 mil pedidos em 120 dias, 2 lojas live, o `order_income` com as 94 chaves de produção (só os nomes) e ~3,7 KB de texto / ~1,9 KB guardados, como produção (~4,1 KB / ~2,0 KB). O fixture antigo da D-479 tinha 7 chaves dentro da linha e escondia o custo. Mediana de 5, como `authenticated`.

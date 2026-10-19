@@ -211,7 +211,7 @@ Migration `20261015000000`. `get_sku_abc_analysis`, `get_sku_abc_breakdown` e `g
 
 ### Vendas por SKU entre marketplaces (D-439)
 
-Migration `20261014230000`. A view `shopee_sales_items` (`security_invoker`) é o grão de SKU da Shopee: uma linha por item com a situação e o dia do pedido (de `shopee_sales_orders`) e `receita_item` (preço com desconto × quantidade; preço 0 = NULO). `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total, balde sem SKU, paginado) e `get_sku_sales_by_marketplace_account` (um SKU por conta ML e loja Shopee, com o TOTAL) leem `daily_sku_metrics` e a view. Métrica `shopee_receita_item`; `multicanal_*` ganham o grão de SKU.
+**D-493 (migration `20261019160000`):** `shopee_sales_items` ganha `item_id` e `model_id` no fim (o anúncio vendido; NULO no item sem variação), lidos por `get_shopee_listings` (C-67) para as vendas por anúncio. Migration `20261014230000`. A view `shopee_sales_items` (`security_invoker`) é o grão de SKU da Shopee: uma linha por item com a situação e o dia do pedido (de `shopee_sales_orders`) e `receita_item` (preço com desconto × quantidade; preço 0 = NULO). `get_marketplace_sku_sales` (ranking por SKU com colunas por marketplace e o total, balde sem SKU, paginado) e `get_sku_sales_by_marketplace_account` (um SKU por conta ML e loja Shopee, com o TOTAL) leem `daily_sku_metrics` e a view. Métrica `shopee_receita_item`; `multicanal_*` ganham o grão de SKU.
 
 ### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
 
