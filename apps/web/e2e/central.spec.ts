@@ -254,9 +254,17 @@ test("/central/limites: salvar muda o que a central diz, e voltar aos padrões d
   await expect(page.getByText(/com 30 pedidos ou mais nos dois períodos\. Limites da empresa/)).toBeVisible();
 
   await page.goto("/central/limites");
-  // Voltar aos padrões pede confirmação, no lugar (UX_SYSTEM §6, bloco 2).
-  await page.getByRole("button", { name: "Voltar aos padrões" }).click();
-  await page.getByRole("group", { name: "Confirmar: Voltar aos padrões" }).getByRole("button", { name: "Voltar aos padrões" }).click();
+  // Voltar aos padrões pede confirmação, no lugar (UX_SYSTEM §6, bloco 2). O
+  // foco vai para o grupo ao abrir e volta para o botão ao cancelar (D-518).
+  const voltar = page.getByRole("button", { name: "Voltar aos padrões" });
+  const confirmacao = page.getByRole("group", { name: "Confirmar: Voltar aos padrões" });
+
+  await voltar.click();
+  await expect(confirmacao).toBeFocused();
+  await confirmacao.getByRole("button", { name: "Cancelar" }).click();
+  await expect(voltar).toBeFocused();
+  await voltar.click();
+  await confirmacao.getByRole("button", { name: "Voltar aos padrões" }).click();
   await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
 });
 

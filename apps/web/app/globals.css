@@ -3136,10 +3136,31 @@ summary[aria-disabled="true"] {
   gap: var(--sb-space-2);
 }
 
+/*
+  Na tabela, que não quebra linha, a confirmação quebra numa largura de leitura.
+  O display repete o flex: `.sb-cadastro-tabela td form` deixa o form inline.
+*/
+.sb-table .sb-remover-confirmacao {
+  display: flex;
+  min-width: 14rem;
+  max-width: 20rem;
+  white-space: normal;
+}
+
 .sb-remover-confirmacao-texto {
   flex: 1 1 12rem;
   color: var(--sb-text);
   font-size: 0.75rem;
+}
+
+/* O grupo recebe o foco ao abrir; o anel só aparece pelo teclado. */
+.sb-remover-confirmacao:focus {
+  outline: none;
+}
+
+.sb-remover-confirmacao:focus-visible {
+  outline: 2px solid var(--sb-accent);
+  outline-offset: 2px;
 }
 
 /* A legenda de um formulário: o que é obrigatório e o que é opcional. */
@@ -17332,10 +17353,15 @@ td.sb-pco-num-linha {
     display: block;
   }
 
+  /* Fixa e estreita: o nome quebra linha, para sobrar lugar para os números. */
   .sb-central-tabela .sb-col-fixa {
     position: sticky;
     left: 0;
     z-index: 1;
+    min-width: 8rem;
+    max-width: 10rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
     background: var(--sb-surface);
     box-shadow: 1px 0 0 var(--sb-border);
   }
@@ -17434,6 +17460,12 @@ td.sb-pco-num-linha {
 
 .sb-cadastro-tabela td form {
   display: inline;
+}
+
+/* A observação (até 300 caracteres) quebra linha, sem esticar a tabela (D-518). */
+.sb-cadastro-tabela .sb-cadastro-observacao {
+  max-width: 20rem;
+  white-space: normal;
 }
 
 /* A tabela larga de um cadastro rola dentro do painel, nunca a página (D-482). */

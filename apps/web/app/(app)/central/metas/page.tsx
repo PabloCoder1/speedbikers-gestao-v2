@@ -190,7 +190,7 @@ async function MetasContent({
                           {rotuloDoMes(m.month)} {m.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
                         </td>
                         <td className="sb-num">{formatCurrency(m.revenue_goal)}</td>
-                        <td className="sb-texto-suave">{m.note ?? "—"}</td>
+                        <td className="sb-texto-suave sb-cadastro-observacao">{m.note ?? "—"}</td>
                         {podeEditar && (
                           <td>
                             <BotaoRemover
@@ -255,7 +255,7 @@ async function MetasContent({
                             {vigente?.id === a.id && <StatePill tone={{ tom: "ok", label: "vale hoje" }} />}
                           </td>
                           <td className="sb-num">{formatarAliquota(a.rate)}</td>
-                          <td className="sb-texto-suave">{a.note ?? "—"}</td>
+                          <td className="sb-texto-suave sb-cadastro-observacao">{a.note ?? "—"}</td>
                           {podeEditar && (
                             <td>
                               <BotaoRemover
@@ -338,7 +338,7 @@ async function MetasContent({
                             </td>
                             <td>{rotuloDoMarketplaceDaMeta(m.marketplace)}</td>
                             <td className="sb-num">{formatCurrency(m.revenue_goal)}</td>
-                            <td className="sb-texto-suave">{m.note ?? "—"}</td>
+                            <td className="sb-texto-suave sb-cadastro-observacao">{m.note ?? "—"}</td>
                             {podeEditar && (
                               <td>
                                 <BotaoRemover
