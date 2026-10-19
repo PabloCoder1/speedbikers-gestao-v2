@@ -1,10 +1,10 @@
 import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { Suspense, type ReactNode } from "react";
 
-import { BotaoEnviar } from "../../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../../components/carregando";
 import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
+import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
 import { abasDaCentral } from "../../../../lib/central-navegacao";
@@ -15,9 +15,12 @@ import {
   rotuloDoMarketplaceDaMeta,
   rotuloDoMes,
 } from "../../../../lib/metas-imposto";
+import { lerMetaDoMes } from "../../../../lib/central-meta";
+import { carregarLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
+import { ResumoDaMeta } from "../meta";
 import { remover } from "./actions";
 import { FormularioAliquota, FormularioMeta, FormularioMetaDoMarketplace } from "./formularios";
 
@@ -45,24 +48,19 @@ export default function MetasPage(props: { searchParams: Promise<Record<string, 
   );
 }
 
+/** Remover pede confirmação, no lugar, e diz o que acontece (UX_SYSTEM §6, bloco 2). */
 function BotaoRemover({
   tabela,
   id,
   rotulo,
+  consequencia,
 }: {
   tabela: "monthly_goals" | "monthly_goals_marketplace" | "tax_rates";
   id: string;
   rotulo: string;
+  consequencia: string;
 }): ReactNode {
-  return (
-    <form action={remover}>
-      <input type="hidden" name="tabela" value={tabela} />
-      <input type="hidden" name="id" value={id} />
-      <BotaoEnviar className="sb-text-button" aria-label={rotulo} pendente="removendo…">
-        remover
-      </BotaoEnviar>
-    </form>
-  );
+  return <RemoverComConfirmacao acao={remover} campos={{ tabela, id }} rotulo={rotulo} consequencia={consequencia} />;
 }
 
 async function MetasContent({
@@ -77,7 +75,8 @@ async function MetasContent({
   const hoje = toSalesMetricDate(new Date());
   const mesAtual = `${hoje.slice(0, 8)}01`;
 
-  const [metas, aliquotas, metasDoMarketplace] = await Promise.all([
+  // A situação do mês (UX_SYSTEM §6, bloco 2): a mesma leitura da central, em paralelo com as tabelas.
+  const [metas, aliquotas, metasDoMarketplace, respostaMeta, limites] = await Promise.all([
     supabase.from("monthly_goals").select("id, month, revenue_goal, note").order("month", { ascending: false }).limit(24),
     supabase.from("tax_rates").select("id, valid_from, rate, note").order("valid_from", { ascending: false }).limit(50),
     // D-473 (C-66): 24 meses dos dois marketplaces.
@@ -87,7 +86,14 @@ async function MetasContent({
       .order("month", { ascending: false })
       .order("marketplace", { ascending: true })
       .limit(48),
+    membership.organizationId === null
+      ? Promise.resolve(null)
+      : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId })),
+    carregarLimites(supabase, membership.organizationId),
   ]);
+
+  // Falha ou função ausente só tiram o resumo: o cadastro continua de pé.
+  const metaDoMes = respostaMeta?.error === null ? lerMetaDoMes(respostaMeta.data) : null;
 
   // A tabela de D-473 ausente só desliga o painel dela (a web chega antes da migration).
   const marketplaceAusente =
@@ -138,6 +144,13 @@ async function MetasContent({
         </div>
       )}
 
+      {/* Antes de cadastrar, onde a meta do mês está (UX_SYSTEM §6, bloco 2). */}
+      {metaDoMes !== null && (
+        <div className="sb-central-bloco">
+          <ResumoDaMeta meta={metaDoMes} atrasoDaMeta={limites.atrasoDaMeta} />
+        </div>
+      )}
+
       <div className="sb-pair-grid">
         <Panel
           title="Meta geral de faturamento"
@@ -165,7 +178,7 @@ async function MetasContent({
                   <tr>
                     <th>Mês</th>
                     <th className="sb-num">Meta</th>
-                    <th>Nota</th>
+                    <th>Observação</th>
                     {podeEditar && <th aria-label="Ações" />}
                   </tr>
                 </thead>
@@ -179,7 +192,12 @@ async function MetasContent({
                       <td className="sb-texto-suave">{m.note ?? "—"}</td>
                       {podeEditar && (
                         <td>
-                          <BotaoRemover tabela="monthly_goals" id={m.id} rotulo={`Remover a meta de ${rotuloDoMes(m.month)}`} />
+                          <BotaoRemover
+                            tabela="monthly_goals"
+                            id={m.id}
+                            rotulo={`Remover a meta de ${rotuloDoMes(m.month)}`}
+                            consequencia="A meta sai, e a central mostra só a projeção desse mês."
+                          />
                         </td>
                       )}
                     </tr>
@@ -216,7 +234,7 @@ async function MetasContent({
                   <tr>
                     <th>Vigência</th>
                     <th className="sb-num">Alíquota</th>
-                    <th>Nota</th>
+                    <th>Observação</th>
                     {podeEditar && <th aria-label="Ações" />}
                   </tr>
                 </thead>
@@ -241,6 +259,7 @@ async function MetasContent({
                               tabela="tax_rates"
                               id={a.id}
                               rotulo={`Remover a alíquota de ${formatBusinessDate(a.valid_from)}`}
+                              consequencia="Os dias dela passam a usar a alíquota anterior; sem anterior, o imposto desses dias fica em branco na central."
                             />
                           </td>
                         )}
@@ -302,7 +321,7 @@ async function MetasContent({
                           <th>Mês</th>
                           <th>Marketplace</th>
                           <th className="sb-num">Meta</th>
-                          <th>Nota</th>
+                          <th>Observação</th>
                           {podeEditar && <th aria-label="Ações" />}
                         </tr>
                       </thead>
@@ -322,6 +341,7 @@ async function MetasContent({
                                   tabela="monthly_goals_marketplace"
                                   id={m.id}
                                   rotulo={`Remover a meta ${doMarketplaceDaMeta(m.marketplace)} de ${rotuloDoMes(m.month)}`}
+                                  consequencia="A meta sai, e a central mostra o realizado desse marketplace sem meta para comparar."
                                 />
                               </td>
                             )}
