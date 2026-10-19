@@ -22,9 +22,9 @@
 | | |
 |---|---|
 | Atualizado em | 2026-10-19 |
-| `origin/main` | `df709520` (19/10: #237 do A2, a cascata sem o `outros_restante`; 16/10: #238 e #239 do A1, D-485 e D-487) |
-| Branches abertas | A1: `chore/sem-outros-restante` (o tipo da fase 1 fora e o estado de 19/10) · A2: #236 (D-496) e, a seguir, a D-498 (a tela da D-485 e da D-487) · A3: ver a seção do A3 |
-| Web em produção | `df709520` (#237, publicado em 19/10, READY; merge na `main` publica) |
+| `origin/main` | `b7541a4a` (19/10: #236 e #237 do A2, a D-496 e a cascata sem o `outros_restante`; 16/10: #238 e #239 do A1, D-485 e D-487) |
+| Branches abertas | A1: `chore/sem-outros-restante` (#240: o tipo da fase 1 fora e o estado de 19/10) · A2: a D-498 (a tela da D-485 e da D-487, PR depois do #240) · A3: ver a seção do A3 |
+| Web em produção | `df709520` (#237, READY em 19/10); o merge do #236 (`b7541a4a`) publica em seguida; merge na `main` publica |
 | Worker / api em produção | worker `worker-00050-cv4` (`d4fd86f5`, 16/10, com a D-481) e api `api-00035-58x` (`bacdf782`, 16/10), **Shopee LIVE** (partner `2048641`, segredos `SHOPEE_LIVE_*`), 100% do tráfego, saindo pelo IP fixo `34.95.145.35` (Cloud NAT, D-457; lista de IPs ligada na Shopee e conferida às 12:20); Go Live aprovado pela Shopee e publicado em 16/10; o push live cadastrado no Console pelo dono e conferido em 19/10 (as duas lojas, nenhum recusado) |
 | Migrations em produção | até `20261016200000` (D-441 a D-483 fase 2, runs `38726738817`, `38755993771`, `38760462816`, `38773241495`, `38784180221`, `38792203548`, `38799663780` (15/10), `38893049400` e `38921424337`, `38939071592`, `38955922868` e `38963886431` (16/10)) |
 | Dev | todas as migrations da `main` (até `20261016230000`, pela CI da `main`); serviços pausados (D-350) |
