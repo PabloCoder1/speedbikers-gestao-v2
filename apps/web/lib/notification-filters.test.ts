@@ -32,10 +32,12 @@ const LIMPOS: NotificationFilters = {
   severity: null,
   family: null,
   account: null,
+  loja: null,
   page: 1,
 };
 
 const CONTA = "3e04a628-37eb-400f-bd75-881b1b554e9c";
+const LOJA = "9b1c2d3e-4f50-4a6b-8c7d-0e1f2a3b4c5d";
 
 describe("resolveNotificationFilters", () => {
   it("só `nao-lidas` liga o recorte; o resto cai em `todas`", () => {
@@ -65,6 +67,12 @@ describe("resolveNotificationFilters", () => {
     for (const conta of ["1", "", "não-é-uuid", "3e04a628-37eb-400f-bd75"]) {
       expect(resolveNotificationFilters({ conta }).account).toBeNull();
     }
+  });
+
+  it("D-604: a loja Shopee é validada por formato, como a conta", () => {
+    expect(resolveNotificationFilters({ loja: LOJA }).loja).toBe(LOJA);
+    expect(resolveNotificationFilters({ loja: "loja-1" }).loja).toBeNull();
+    expect(resolveNotificationFilters({}).loja).toBeNull();
   });
 
   it("página inválida cai em 1 — `offset` negativo seria erro do Postgres", () => {
@@ -141,5 +149,15 @@ describe("countNotificationFilters e describeNotificationRecorte", () => {
 
     expect(countNotificationFilters(recortado)).toBe(4);
     expect(describeNotificationRecorte(recortado, "SbMotos")).toBe("crítico · estoque · SbMotos");
+  });
+
+  it("D-604: a loja conta como um recorte e vai na URL como `loja`", () => {
+    const daLoja: NotificationFilters = { ...LIMPOS, loja: LOJA };
+
+    expect(countNotificationFilters(daLoja)).toBe(1);
+    expect(describeNotificationRecorte(daLoja, "Loja Real")).toBe("Loja Real");
+    expect(buildNotificationHref(LIMPOS, { loja: LOJA })).toBe(`/notificacoes?loja=${LOJA}`);
+    // Escolher uma conta tira a loja (o menu é um só): quem chama passa as duas.
+    expect(buildNotificationHref(daLoja, { account: CONTA, loja: null })).toBe(`/notificacoes?conta=${CONTA}`);
   });
 });

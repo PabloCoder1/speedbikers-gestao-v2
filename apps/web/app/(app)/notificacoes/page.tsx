@@ -137,7 +137,7 @@ export default async function NotificacoesPage({
 
   const desde = (filters.page - 1) * PAGE_SIZE;
   const soNaoLidas = filters.state === "nao-lidas";
-  const temRecorte = filters.severity !== null || filters.family !== null || filters.account !== null;
+  const temRecorte = filters.severity !== null || filters.family !== null || filters.account !== null || filters.loja !== null;
   const filtrosAtivos = countNotificationFilters(filters);
 
   /*
@@ -166,6 +166,10 @@ export default async function NotificacoesPage({
     ...(filters.account === null
       ? []
       : [{ operador: "eq" as const, coluna: "notifications.domain_events.ml_account_id", valor: filters.account }]),
+    // D-604: o evento da loja Shopee guarda a loja na própria coluna (nunca junto da conta do ML).
+    ...(filters.loja === null
+      ? []
+      : [{ operador: "eq" as const, coluna: "notifications.domain_events.shopee_shop_id", valor: filters.loja }]),
   ];
 
   let listQuery = supabase
@@ -235,6 +239,8 @@ export default async function NotificacoesPage({
     .eq("notifications.domain_events.severity", "importante");
 
   const contasQuery = supabase.from("ml_accounts").select("id, label").order("label");
+  // D-604: as lojas que a pessoa alcança (a RLS de D-433), para o menu de conta ou loja.
+  const lojasQuery = supabase.from("shopee_shops").select("id, shop_name, environment").order("connected_at");
 
   const [
     { data, error: listError },
@@ -244,6 +250,7 @@ export default async function NotificacoesPage({
     criticasResult,
     importantesResult,
     contasResult,
+    lojasResult,
   ] = await Promise.all([
     listQuery,
     contagemDoRecorte,
@@ -252,12 +259,18 @@ export default async function NotificacoesPage({
     naoLidasCriticas,
     naoLidasImportantes,
     contasQuery,
+    lojasQuery,
   ]);
 
   const error = listError;
   const contas = contasResult.data ?? [];
   const contaAtiva = filters.account === null ? null : (contas.find((c) => c.id === filters.account) ?? null);
-  const recorte = describeNotificationRecorte(filters, contaAtiva?.label ?? null);
+  // Sem a tabela das lojas (banco anterior) ou com a leitura falhando, o menu fica só com as contas.
+  const lojas = lojasResult.data ?? [];
+  const nomeDaLoja = (loja: { shop_name: string | null; environment: string }): string =>
+    `${loja.shop_name ?? "Loja sem nome lido"}${loja.environment === "live" ? "" : " (teste)"}`;
+  const lojaAtiva = filters.loja === null ? null : (lojas.find((l) => l.id === filters.loja) ?? null);
+  const recorte = describeNotificationRecorte(filters, contaAtiva?.label ?? (lojaAtiva === null ? null : nomeDaLoja(lojaAtiva)));
 
   const agora = new Date();
 
@@ -418,7 +431,14 @@ export default async function NotificacoesPage({
     },
   ];
 
-  const podeMarcar = unreadRecorte !== null && unreadRecorte > 0;
+  /*
+    D-604: a escrita em lote (`mark_notifications_read`) não conhece a loja.
+    Com a loja no recorte, "marcar todas" marcaria além do que se vê -- o
+    defeito que o rótulo do botão existe para impedir (D-183). Sem o
+    parâmetro do A1, o botão não aparece, e a tela diz por quê.
+  */
+  const loteSemLoja = filters.loja !== null && unreadRecorte !== null && unreadRecorte > 0;
+  const podeMarcar = unreadRecorte !== null && unreadRecorte > 0 && filters.loja === null;
 
   return (
     <>
@@ -446,6 +466,12 @@ export default async function NotificacoesPage({
           </>
         }
       />
+
+      {loteSemLoja && (
+        <p role="note" className="sb-an-nota">
+          Marcar em lote por loja ainda não existe: marque uma a uma, ou tire o recorte da loja para marcar todas.
+        </p>
+      )}
 
       {error !== null && (
         <EstadoDaTela
@@ -521,18 +547,24 @@ export default async function NotificacoesPage({
                   })),
                 ]}
               />
+              {/* D-604: conta do ML OU loja Shopee -- um recorte só, e escolher uma tira a outra. */}
               <FilterMenu
-                rotulo={contaAtiva?.label ?? "Conta"}
+                rotulo={contaAtiva?.label ?? (lojaAtiva === null ? (lojas.length > 0 ? "Conta ou loja" : "Conta") : nomeDaLoja(lojaAtiva))}
                 opcoes={[
                   {
-                    href: buildNotificationHref(filters, { account: null }),
-                    label: "Todas as contas",
-                    ativo: filters.account === null,
+                    href: buildNotificationHref(filters, { account: null, loja: null }),
+                    label: lojas.length > 0 ? "Todas as contas e lojas" : "Todas as contas",
+                    ativo: filters.account === null && filters.loja === null,
                   },
                   ...contas.map((conta) => ({
-                    href: buildNotificationHref(filters, { account: conta.id }),
+                    href: buildNotificationHref(filters, { account: conta.id, loja: null }),
                     label: conta.label,
                     ativo: filters.account === conta.id,
+                  })),
+                  ...lojas.map((loja) => ({
+                    href: buildNotificationHref(filters, { account: null, loja: loja.id }),
+                    label: `${nomeDaLoja(loja)} · Shopee`,
+                    ativo: filters.loja === loja.id,
                   })),
                 ]}
               />
