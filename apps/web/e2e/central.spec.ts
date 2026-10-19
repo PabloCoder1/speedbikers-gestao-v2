@@ -144,7 +144,7 @@ test("/central/metas: cadastrar meta e alíquota aparece na central, e remover l
   // Valor inválido volta com o erro no campo, sem gravar.
   await aliquota.getByLabel("Alíquota efetiva (%)").fill("150");
   await aliquota.getByRole("button", { name: "Salvar alíquota" }).click();
-  await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica entre 0% e 100%.");
+  await expect(aliquota.getByRole("alert")).toHaveText("A alíquota fica de 0% a 99,999%.");
 
   await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
