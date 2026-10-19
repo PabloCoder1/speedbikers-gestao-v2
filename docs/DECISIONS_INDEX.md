@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **513** (D-001 a D-610).
+Decisões registradas: **514** (D-001 a D-610).
 
 ## Por domínio
 
@@ -463,7 +463,7 @@ Decisões registradas: **513** (D-001 a D-610).
 - **D-514** — Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
 - **D-517** — A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
 
-### worker/infra (90)
+### worker/infra (91)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -555,4 +555,5 @@ Decisões registradas: **513** (D-001 a D-610).
 - **D-508** — Acessibilidade dos componentes compartilhados: a auditoria sem dependencia nova, o "Pular para o conteudo" e o titulo que faltava na /acoes
 - **D-511** — O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
 - **D-518** — A Central de Negocio, blocos 2 e 3: cada termo explicado a um toque, remover com confirmacao, limites agrupados e o nome fixo nas tabelas do celular
+- **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
 

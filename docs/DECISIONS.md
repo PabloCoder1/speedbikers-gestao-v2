@@ -17375,6 +17375,46 @@ O glossario de Ads e a tabela de faixas do frete nao aparecem com o seed (nao ha
 
 So web: sem migration e sem RPC nova.
 
+## D-519 - A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
+
+**Contexto:** ultimo bloco da reformulacao da Central (pedido do dono de 19/10; `docs/UX_SYSTEM.md` §6.3, itens 6 e 10). A tela e do A2, que liberou o bloco. O que estava assim:
+- os paineis Frete e Ads da `/central` diziam falha, formato desconhecido, funcao ausente e semana vazia em texto solto, sem o "Tentar de novo" e sem o `role="alert"` que o resto do app usa (D-502);
+- a resposta da RPC estava declarada 4 vezes, o "SENDO ATIVADO" escrito 7 vezes e o teste do PGRST202 repetido em 7 lugares;
+- o titulo com as abas era montado a mao em cada uma das seis telas;
+- `montarHref`, `periodoDaUrl` e `intervalo` estavam copiados entre a `/central` e a `/central/produtos`.
+
+**Decisao:**
+1. **Paineis Frete e Ads da `/central`:**
+   - falha: `EstadoDaTela` de erro, com o detalhe sanitizado e o "Tentar de novo" no recorte da central (conta e periodo);
+   - formato desconhecido: erro com "Nada foi mostrado.";
+   - funcao ausente: o aviso "SENDO ATIVADO", com o mesmo texto das subtelas;
+   - Ads sem semana consolidada: vazio, com as palavras de `/central/ads`.
+2. **`app/(app)/central/comum.tsx`**, so da Central (o resto do app nao muda):
+   - `RespostaComCodigo` e `funcaoAusente` (o PGRST202, a web chegando antes da migration, D-363);
+   - `SendoAtivado`, o aviso;
+   - `CabecalhoDaCentral`, o titulo com as abas (D-517);
+   - `AvisoDePeriodoInvalido`.
+3. **`lib/central-periodo.ts`:** `periodoDaUrl`, `escreverPeriodoNaUrl` (a mesma forma que `resolverPeriodoCentral` le) e `rotuloDoIntervalo`, com teste de ida e volta.
+4. **O que nao muda:** os textos, as regras, as RPCs, as leituras, os nomes das regioes e os locators do e2e.
+5. **Fora daqui:** a frase do `docs/METRICS.md` §5S que diz que a `/central` e so do ML (item 11) e do A1, que foi avisado; as chamadas ao Auth por pre-carga (item 12) continuam com o A1.
+
+**Verificacao:** `pnpm run check` (typecheck, lint e os testes da web, com 3 testes novos do periodo na URL, entre eles o de ida e volta). No banco isolado recriado do zero, com build local:
+- o `central.spec`, a guarda de tela estreita e acessibilidade, o `web-vitals.spec` e o `troca-de-tela.spec`: 15 de 15;
+- o ensaio `loja-live`: 10 de 10.
+
+Os paineis foram vistos nos tres estados, com fotos a 390 e 1440 px. A falha e a funcao ausente foram simuladas no servidor local, devolvendo o erro do PostgREST para as duas RPCs:
+- normal: o Frete com a frase e o Ads no vazio;
+- falha: os dois com `role="alert"` e o "Tentar de novo" para `/central?p=7d`, o recorte aberto;
+- funcao ausente: os dois com "SENDO ATIVADO".
+
+**Impacto:**
+- telas: `apps/web/app/(app)/central/{page,sinal-frete,sinal-ads,atencao,indicadores}.tsx` e as cinco subtelas;
+- novo: `apps/web/app/(app)/central/comum.tsx`;
+- lib: `apps/web/lib/central-periodo{,.test}.ts`;
+- docs.
+
+So web: sem migration, sem RPC e sem leitura nova.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.
