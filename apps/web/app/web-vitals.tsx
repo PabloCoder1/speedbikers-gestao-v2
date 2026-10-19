@@ -4,18 +4,33 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
+import { descreverElemento, formaDoElemento } from "../lib/vitals-elemento";
+
 type MetricName = "TTFB" | "LCP" | "CLS" | "INP";
 
 const INPUTS = ["keydown", "click"] as const;
 
-function report(name: MetricName, value: number, path: string, softNav: boolean): void {
-  const payload = JSON.stringify({ name, value: Math.round(value * 100) / 100, path, softNav });
+function report(name: MetricName, value: number, path: string, softNav: boolean, el?: string): void {
+  const payload = JSON.stringify({ name, value: Math.round(value * 100) / 100, path, softNav, ...(el === undefined ? {} : { el }) });
   try {
     if (navigator.sendBeacon("/api/vitals", new Blob([payload], { type: "application/json" }))) return;
   } catch {
     // Fallback below handles browsers that reject Beacon requests.
   }
   void fetch("/api/vitals", { method: "POST", body: payload, headers: { "content-type": "application/json" }, keepalive: true });
+}
+
+/**
+ * O elemento de uma métrica pela forma (D-516): a tag e as classes `sb-*` dele, e a seção em que mora pela
+ * posição entre as seções do conteúdo. Nunca o texto, o `id` ou o `aria-label` (`lib/vitals-elemento.ts`).
+ */
+function descrever(no: Node | null | undefined): string | undefined {
+  if (!(no instanceof Element)) return undefined;
+  const forma = (el: Element): string => formaDoElemento(el.tagName, el.classList);
+  const secao = no.parentElement?.closest("section") ?? null;
+  if (secao === null) return descreverElemento(forma(no), null);
+  const posicao = [...document.querySelectorAll(".sb-content section")].indexOf(secao) + 1;
+  return descreverElemento(forma(no), { forma: forma(secao), posicao });
 }
 
 /**
@@ -39,7 +54,7 @@ function Coleta(): null {
 
   useEffect(() => {
     const path = window.location.pathname;
-    const send = (name: MetricName, value: number): void => { report(name, value, path, softNav.current); };
+    const send = (name: MetricName, value: number, el?: string): void => { report(name, value, path, softNav.current, el); };
 
     const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     if (navigation !== undefined) send("TTFB", navigation.responseStart);
@@ -47,7 +62,11 @@ function Coleta(): null {
     // Aba aberta em segundo plano só pinta quando alguém olha: o LCP dela mediria a pessoa, não a carga.
     let hiddenAt = document.visibilityState === "hidden" ? 0 : Number.POSITIVE_INFINITY;
     let lcp = 0;
+    let lcpEl: string | undefined;
     let cls = 0;
+    // O maior deslocamento sozinho diz quem mais pesou no CLS (D-516).
+    let maiorShift = 0;
+    let clsEl: string | undefined;
     let inp = 0;
     const observe = (type: string, callback: (entry: PerformanceEntry) => void): (() => void) => {
       try {
@@ -62,8 +81,18 @@ function Coleta(): null {
         return () => undefined;
       }
     };
-    const stopLcp = observe("largest-contentful-paint", (entry) => { if (entry.startTime < hiddenAt) lcp = entry.startTime; });
-    const stopCls = observe("layout-shift", (entry) => { const shift = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number }; if (!shift.hadRecentInput) { cls += shift.value ?? 0; } });
+    const stopLcp = observe("largest-contentful-paint", (entry) => {
+      if (entry.startTime >= hiddenAt) return;
+      lcp = entry.startTime;
+      lcpEl = descrever((entry as PerformanceEntry & { element?: Element | null }).element);
+    });
+    const stopCls = observe("layout-shift", (entry) => {
+      const shift = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number; sources?: { node?: Node | null }[] };
+      if (shift.hadRecentInput) return;
+      const valor = shift.value ?? 0;
+      cls += valor;
+      if (valor > maiorShift) { maiorShift = valor; clsEl = descrever(shift.sources?.[0]?.node); }
+    });
     const stopInp = observe("event", (entry) => { inp = Math.max(inp, (entry as PerformanceEntry & { duration: number }).duration); });
 
     // O navegador para de emitir LCP no primeiro clique ou tecla; como na biblioteca web-vitals, ele
@@ -73,7 +102,7 @@ function Coleta(): null {
       if (lcpSent) return;
       lcpSent = true;
       stopLcp();
-      if (lcp > 0) send("LCP", lcp);
+      if (lcp > 0) send("LCP", lcp, lcpEl);
     };
     let inputTimer: number | undefined;
     const onInput = (): void => {
@@ -90,7 +119,7 @@ function Coleta(): null {
       sendLcp();
       stopCls();
       stopInp();
-      send("CLS", cls);
+      send("CLS", cls, clsEl);
       if (inp > 0) send("INP", inp);
       removeListeners();
     };
@@ -110,7 +139,7 @@ function Coleta(): null {
   return null;
 }
 
-/** Métricas de experiência sem conteúdo pessoal: uma amostra por carga, só nome, valor, rota e `softNav`. */
+/** Métricas de experiência sem conteúdo pessoal: uma amostra por carga, com nome, valor, rota, `softNav` e, no LCP e no CLS, o elemento pela forma (D-516). */
 export function WebVitals(): ReactNode {
   // `useSearchParams` só existe na requisição: sem o limite, o build não pré-renderiza.
   return <Suspense fallback={null}><Coleta /></Suspense>;
