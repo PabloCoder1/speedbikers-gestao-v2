@@ -314,6 +314,36 @@ function MetaPorMarketplace({
  * Por que a meta não veio (D-472): sem organização (permissão), função ainda
  * não ativada (vazio), erro de leitura ou resposta fora do contrato (erro).
  */
+/**
+ * A SITUAÇÃO DO MÊS NA TELA DE METAS (UX_SYSTEM §6, bloco 2).
+ *
+ * A tela de metas só cadastrava: para saber se a meta sai, era preciso voltar à
+ * central. Aqui, a mesma leitura (`get_meta_do_mes`) e os mesmos números da
+ * central — o veredito ESCRITO (não só a cor), a barra do realizado e os cartões
+ * da meta —, em forma curta, e o caminho para a projeção completa.
+ */
+export function ResumoDaMeta({ meta, atrasoDaMeta }: { meta: MetaDoMes; atrasoDaMeta: number }): ReactNode {
+  const leitura = situacaoDaMeta(meta, atrasoDaMeta);
+  const nomeDoMes = rotuloDoMes(meta.mes);
+
+  return (
+    <Panel
+      title={`Situação de ${nomeDoMes}`}
+      subtitle="A mesma leitura da central: meta, realizado e ritmo do mês corrente, da empresa inteira."
+      aside={<StatePill tone={{ tom: leitura.tom, label: leitura.rotulo }} />}
+    >
+      <div className="sb-panel-body sb-meta">
+        <p className="sb-meta-frase">{leitura.frase}</p>
+        <BarraDaMeta m={meta} />
+        <KpiStrip cells={celulasDaMeta(meta, atrasoDaMeta)} />
+        <p className="sb-texto-suave">
+          <Link href="/central#meta-e-projecao">Ver a meta de cada marketplace e a projeção na central</Link>
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 export interface MetaIndisponivel {
   readonly tipo: "erro" | "vazio" | "permissao";
   readonly titulo: string;

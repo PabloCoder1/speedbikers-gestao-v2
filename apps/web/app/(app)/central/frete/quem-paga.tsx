@@ -12,8 +12,35 @@ import {
   rotuloDaLogistica,
   type QuemPagaFrete,
 } from "../../../../lib/quem-paga-frete";
-import { createClient } from "../../../../lib/supabase/server";
+import type { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
+
+type Cliente = Awaited<ReturnType<typeof createClient>>;
+
+export interface LeituraDoQuemPaga {
+  readonly de: string;
+  readonly ate: string;
+  readonly resposta: Promise<Awaited<ReturnType<Cliente["rpc"]>>>;
+}
+
+/**
+ * A leitura do "quem paga", disparada pela página no mesmo instante do detector
+ * (UX_SYSTEM §6, bloco 3). O bloco era desenhado só depois de o detector
+ * responder, e por isso a leitura dele esperava a do detector, apesar de o
+ * comentário abaixo dizer que um não espera o outro. Os mesmos 30 dias até
+ * ontem, a mesma função.
+ */
+export function lerQuemPagaOFrete(supabase: Cliente): LeituraDoQuemPaga {
+  const hoje = toSalesMetricDate(new Date());
+  const de = shiftBusinessDate(hoje, -30);
+  const ate = shiftBusinessDate(hoje, -1);
+  const resposta = Promise.resolve(supabase.rpc("get_quem_paga_frete", { p_date_from: de, p_date_to: ate }));
+
+  // Se o detector falhar, o bloco não é desenhado e ninguém espera esta leitura.
+  void resposta.catch(() => undefined);
+
+  return { de, ate, resposta };
+}
 
 /**
  * Quem paga o frete (D-412): o frete dos últimos 30 dias até ontem dividido
@@ -21,13 +48,17 @@ import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-t
  * envio. Bloco à parte do detector, com a sua própria leitura: um não espera
  * o outro.
  */
-export async function QuemPagaOFrete({ tentarDeNovo }: { tentarDeNovo: string }): Promise<ReactNode> {
+export async function QuemPagaOFrete({
+  leitura,
+  tentarDeNovo,
+}: {
+  /** A leitura já disparada pela página, junto com o detector (`lerQuemPagaOFrete`). */
+  leitura: LeituraDoQuemPaga;
+  tentarDeNovo: string;
+}): Promise<ReactNode> {
   const acao = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
-  const hoje = toSalesMetricDate(new Date());
-  const de = shiftBusinessDate(hoje, -30);
-  const ate = shiftBusinessDate(hoje, -1);
-  const supabase = await createClient();
-  const resposta = await supabase.rpc("get_quem_paga_frete", { p_date_from: de, p_date_to: ate });
+  const { de, ate } = leitura;
+  const resposta = await leitura.resposta;
   const subtitulo = `${formatBusinessDate(de)} a ${formatBusinessDate(ate)} · todas as contas · somado por envio`;
 
   // Função ausente (PGRST202): a web chega à produção antes da migration.
@@ -90,7 +121,7 @@ export async function QuemPagaOFrete({ tentarDeNovo }: { tentarDeNovo: string })
                 <caption className="sb-sr-only">Quem paga o frete por logística</caption>
                 <thead>
                   <tr>
-                    <th>Logística</th>
+                    <th className="sb-col-fixa">Logística</th>
                     <th className="sb-num">Envios</th>
                     <th className="sb-num">Vendedor pagou</th>
                     <th className="sb-num">ML bancou do vendedor</th>
@@ -105,7 +136,7 @@ export async function QuemPagaOFrete({ tentarDeNovo }: { tentarDeNovo: string })
 
                     return (
                       <tr key={l.logistica}>
-                        <td>{rotuloDaLogistica(l.logistica)}</td>
+                        <td className="sb-col-fixa">{rotuloDaLogistica(l.logistica)}</td>
                         <td className="sb-num">{formatCount(l.envios)}</td>
                         <td className="sb-num">{formatCurrency(l.vendedor_pagou)}</td>
                         <td className="sb-num">
@@ -139,13 +170,13 @@ function celulas(q: QuemPagaFrete): KpiCellData[] {
   return [
     {
       label: "Frete cheio",
-      formula: "gross_amount somado por envio: a tabela do Mercado Livre antes de quem paga o quê",
+      formula: "o valor de tabela do frete no Mercado Livre, antes de dividir quem paga o quê, somado por envio",
       value: formatCurrency(q.frete_cheio),
       previous: null,
     },
     {
       label: "Vendedor pagou",
-      formula: "senders[].cost somado por envio -- o que sai da venda",
+      formula: "o que o Mercado Livre cobrou do vendedor pelo frete, somado por envio: sai da venda",
       value: formatCurrency(q.vendedor_pagou),
       previous: null,
       ressalva: `de ${formatCurrency(q.frete_do_vendedor)} que cabiam ao vendedor`,
@@ -161,7 +192,7 @@ function celulas(q: QuemPagaFrete): KpiCellData[] {
     {
       metricId: "frete_pago_comprador",
       label: "Comprador pagou",
-      formula: "receiver.cost somado por envio",
+      formula: "o que o comprador pagou de frete, somado por envio",
       value: formatCurrency(q.comprador_pagou),
       previous: null,
     },

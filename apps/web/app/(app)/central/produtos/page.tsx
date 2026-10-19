@@ -8,6 +8,7 @@ import { FilterMenu } from "../../../../components/filter-menu";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { AbasDaSecao } from "../../../../components/abas-da-secao";
+import { Glossario } from "../../../../components/ajuda";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
@@ -104,17 +105,8 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   const ordem = ordemDaUrl(query.ordem);
   const pagina = paginaDaUrl(query.pagina);
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
-  const accounts = accountsResult.data ?? [];
   const requestedSlug = typeof query.account === "string" ? query.account : null;
-  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
-  const conta = selectedAccount?.slug ?? null;
-  const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
-  const estado: Estado = { periodo: periodoDaUrl(periodo), conta, ordem, pagina };
-
-  const membership = await currentMembership();
-  const leituraLimites = carregarLimites(supabase, membership.organizationId);
-  const resposta = await supabase.rpc("get_ranking_produtos", {
+  const argumentos = {
     p_date_from: periodo.atual.from,
     p_date_to: periodo.atual.to,
     p_anterior_from: periodo.anterior.from,
@@ -122,8 +114,29 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     p_ordem: ordem,
     p_limite: POR_PAGINA,
     p_offset: (pagina - 1) * POR_PAGINA,
-    ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
-  });
+  };
+
+  // Sem fila (UX_SYSTEM §6, bloco 3): contas e organização saem juntas, e sem
+  // conta na URL o ranking não espera nenhuma das duas. O `Promise.resolve`
+  // dispara a consulta agora; o construtor do PostgREST só sai quando é lido.
+  const leituraContas = supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
+  const rankingSemConta = requestedSlug === null ? Promise.resolve(supabase.rpc("get_ranking_produtos", argumentos)) : null;
+  // Como na central: se contas ou organização lançarem antes, a leitura não fica
+  // sem dono; quem a lê abaixo ainda recebe a falha.
+  void rankingSemConta?.catch(() => undefined);
+  const [accountsResult, membership] = await Promise.all([leituraContas, currentMembership()]);
+  const accounts = accountsResult.data ?? [];
+  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
+  const conta = selectedAccount?.slug ?? null;
+  const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
+  const estado: Estado = { periodo: periodoDaUrl(periodo), conta, ordem, pagina };
+
+  const leituraLimites = carregarLimites(supabase, membership.organizationId);
+  const resposta = await (rankingSemConta ??
+    supabase.rpc("get_ranking_produtos", {
+      ...argumentos,
+      ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
+    }));
 
   const titulo = (
     <PageTitle
@@ -260,6 +273,11 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       <KpiStrip cells={celulasDoResumo(ranking, estado)} />
 
+      {/* As colunas só se explicavam no title, que o toque não abre (UX_SYSTEM §6, bloco 4). */}
+      <div className="sb-central-bloco">
+        <Glossario titulo="O que significa cada coluna" termos={TERMOS_DO_RANKING} />
+      </div>
+
       <Resumo ranking={ranking} estado={estado} />
 
       <Lista ranking={ranking} estado={estado} margemMinima={(await leituraLimites).margemMinima} />
@@ -268,6 +286,51 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     </>
   );
 }
+
+/** As mesmas regras do `get_ranking_produtos` e de /faturamento. */
+const TERMOS_DO_RANKING = [
+  {
+    termo: "Pedidos cobertos",
+    definicao:
+      "Os pedidos com resultado conhecido: frete observado, custo do produto conhecido e um só produto no pedido. Pedido com vários produtos não entra no resultado de nenhum deles, porque o frete é do pacote.",
+  },
+  { termo: "Unid.", definicao: "Unidades vendidas no período, em todos os pedidos válidos." },
+  {
+    termo: "Receita",
+    definicao:
+      "Receita bruta do período, em todos os pedidos válidos. Embaixo, a variação contra o período anterior, só com 5 pedidos ou mais nos dois.",
+  },
+  { termo: "Comissão", definicao: "A comissão do Mercado Livre por unidade × as unidades, em todos os pedidos." },
+  {
+    termo: "Frete",
+    definicao: "O frete pago pelo vendedor nos pedidos cobertos. Embaixo, quanto ele pesa na receita desses mesmos pedidos.",
+  },
+  {
+    termo: "Custo",
+    definicao:
+      "O custo do produto na data da venda, nos pedidos cobertos. Com *, algum pedido usou o custo atual, por não haver custo cadastrado antes da venda.",
+  },
+  {
+    termo: "Resultado",
+    definicao:
+      "Receita − comissão − frete − custo, nos pedidos cobertos. Não é lucro líquido: custos fixos, devoluções e Ads ficam fora.",
+  },
+  {
+    termo: "Margem",
+    definicao:
+      "Resultado ÷ receita dos pedidos cobertos. O selo marca perigo abaixo de zero e atenção abaixo da margem mínima dos limites. Embaixo, a variação em pontos percentuais (p.p.) contra o anterior, só com 5 pedidos cobertos nos dois.",
+  },
+  {
+    termo: "Após imposto",
+    definicao:
+      "Aparece quando há alíquota cadastrada em Metas e imposto: o resultado menos o imposto pela alíquota vigente no dia de cada pedido.",
+  },
+  {
+    termo: "Metade do resultado",
+    definicao:
+      "Quantos produtos, começando pelos de maior resultado, somam metade do resultado de todos. Quanto menor o número, mais o resultado depende de poucos produtos.",
+  },
+] as const;
 
 function celulasDoResumo(r: RankingDeProdutos, estado: Estado): KpiCellData[] {
   const s = r.resumo;
@@ -371,7 +434,7 @@ function colunaDaOrdem(ordem: OrdemRanking): { coluna: string; direcao: "descend
 const COLUNAS: readonly { readonly id: string; readonly rotulo: string; readonly titulo: string }[] = [
   { id: "unidades", rotulo: "Unid.", titulo: "unidades vendidas no período" },
   { id: "receita", rotulo: "Receita", titulo: "receita bruta do período e, embaixo, contra o anterior (5 pedidos ou mais nos dois)" },
-  { id: "taxas", rotulo: "Comissão", titulo: "comissão do Mercado Livre (sale_fee × unidades), todos os pedidos" },
+  { id: "taxas", rotulo: "Comissão", titulo: "comissão do Mercado Livre por unidade × unidades, todos os pedidos" },
   { id: "frete", rotulo: "Frete", titulo: "frete pago pelo vendedor, pedidos cobertos" },
   { id: "custo", rotulo: "Custo", titulo: "custo do produto na data da venda, pedidos cobertos" },
   { id: "resultado", rotulo: "Resultado", titulo: "receita − comissão − frete − custo, pedidos cobertos" },
@@ -411,12 +474,14 @@ function Lista({
         {ranking.itens.length === 0 ? (
           <EstadoDaTela tipo="vazio" titulo={vazio(ranking.ordem, estado.pagina)} />
         ) : (
+          <>
+          <p className="sb-tabela-dica" aria-hidden="true">Deslize a tabela para o lado para ver todas as colunas.</p>
           <div className="sb-central-tabela">
             <table className="sb-table sb-rank-tabela">
               <thead>
                 <tr>
                   <th className="sb-num">#</th>
-                  <th>Produto</th>
+                  <th className="sb-col-fixa">Produto</th>
                   {COLUNAS.map((c) => (
                     <th
                       key={c.id}
@@ -448,6 +513,7 @@ function Lista({
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {paginas > 1 && (
@@ -507,7 +573,7 @@ function Linha({
   return (
     <tr>
       <td className="sb-num">{posicao}</td>
-      <td>
+      <td className="sb-col-fixa">
         <Link className="sb-entity" href={`/skus/${p.sku_id}`} title={p.title ?? p.sku}>
           {p.title ?? p.sku}
         </Link>
@@ -526,7 +592,7 @@ function Linha({
       <td className={classe("taxas")}>{formatCurrency(p.taxas_ml)}</td>
       <td className={classe("frete")}>
         {formatCurrency(p.frete_vendedor)}
-        {p.frete_sobre_receita !== null && <span className="sb-central-motivo">{formatPercent(p.frete_sobre_receita)} da receita</span>}
+        {p.frete_sobre_receita !== null && <span className="sb-central-motivo">{formatPercent(p.frete_sobre_receita)} da receita coberta</span>}
       </td>
       <td className={classe("custo")} title={p.custo_atual ? "inclui pedido com o custo atual, sem histórico anterior à venda" : undefined}>
         {formatCurrency(p.custo_produtos)}
