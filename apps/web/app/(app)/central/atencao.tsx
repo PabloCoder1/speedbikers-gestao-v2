@@ -21,11 +21,7 @@ import { lerFaturamento, type ProdutosDoFaturamento } from "../../../lib/faturam
 import { formatBusinessDate } from "../../../lib/format";
 import { lerSinaisAds } from "../../../lib/sinais-ads";
 import type { RespostaRpc } from "../faturamento/numeros";
-
-interface RespostaComCodigo {
-  data: unknown;
-  error: { message: string; code?: string } | null;
-}
+import type { RespostaComCodigo } from "./comum";
 
 type Leitura = PromiseLike<RespostaComCodigo> | null;
 

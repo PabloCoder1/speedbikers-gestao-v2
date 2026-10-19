@@ -24,6 +24,7 @@ import type { LimitesDaCentral } from "../../../lib/limites-central";
 import { textoDaVariacao } from "../../../lib/variacao";
 import type { RespostaRpc } from "../faturamento/numeros";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { funcaoAusente, type RespostaComCodigo } from "./comum";
 import { SecaoMeta, type MetaIndisponivel } from "./meta";
 
 function formatar(valor: number | null, formato: Formato): string {
@@ -183,12 +184,6 @@ function TabelaDeComparacao({ indicadores }: { indicadores: readonly Indicador[]
   );
 }
 
-/** A resposta da RPC com o código do PostgREST, para distinguir "função ausente" de erro. */
-export interface RespostaComCodigo {
-  data: unknown;
-  error: { message: string; code?: string } | null;
-}
-
 /**
  * A meta lida, ou o motivo de não ter meta. PGRST202 (função ausente) não é
  * erro: a web da `main` chega à produção antes de a migration passar pelo
@@ -203,7 +198,7 @@ function lerMeta(resposta: RespostaComCodigo | null): { meta: MetaDoMes | null; 
     return {
       meta: null,
       indisponivel:
-        resposta.error.code === "PGRST202"
+        funcaoAusente(resposta.error)
           ? { tipo: "vazio", titulo: "A meta e a projeção estão sendo ativadas neste ambiente." }
           : { tipo: "erro", titulo: "Não foi possível carregar a meta", detalhe: resposta.error.message },
     };

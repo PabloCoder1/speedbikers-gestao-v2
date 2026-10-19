@@ -1,5 +1,6 @@
 import { previousBusinessDateRange, shiftBusinessDate } from "@sb/domain";
 
+import { formatBusinessDate } from "./format";
 import type { PeriodRange } from "./period";
 
 /**
@@ -155,4 +156,31 @@ export function resolverPeriodoCentral(
   }
 
   return doPreset(ehPreset(query.p) ? query.p : PRESET_CENTRAL_PADRAO, hoje);
+}
+
+/** O período como a URL o guarda: o preset, ou as duas datas do personalizado. */
+export type PeriodoNaUrl = { preset: string } | { from: string; to: string };
+
+/** O período aplicado, para os links da tela: o preset quando há, senão as datas. */
+export function periodoDaUrl(periodo: PeriodoCentral): PeriodoNaUrl {
+  return periodo.preset === null ? periodo.atual : { preset: periodo.preset };
+}
+
+/** Escreve o período na busca: `p`, ou `from` e `to`. A mesma forma que `resolverPeriodoCentral` lê. */
+export function escreverPeriodoNaUrl(busca: URLSearchParams, periodo: PeriodoNaUrl): void {
+  if ("preset" in periodo) {
+    busca.set("p", periodo.preset);
+
+    return;
+  }
+
+  busca.set("from", periodo.from);
+  busca.set("to", periodo.to);
+}
+
+/** "1 de out." para um dia só, "1 de out. a 30 de out." para um intervalo. */
+export function rotuloDoIntervalo(range: PeriodRange): string {
+  return range.from === range.to
+    ? formatBusinessDate(range.from)
+    : `${formatBusinessDate(range.from)} a ${formatBusinessDate(range.to)}`;
 }

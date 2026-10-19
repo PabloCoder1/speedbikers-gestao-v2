@@ -2,12 +2,10 @@ import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoConteudo } from "../../../../components/carregando";
-import { AbasDaSecao } from "../../../../components/abas-da-secao";
-import { PageTitle } from "../../../../components/page-title";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
+import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
-import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatBusinessDate, formatCurrency } from "../../../../lib/format";
 import {
   doMarketplaceDaMeta,
@@ -49,6 +47,18 @@ export default function MetasPage(props: { searchParams: Promise<Record<string, 
 }
 
 /** Remover pede confirmação, no lugar, e diz o que acontece (UX_SYSTEM §6, bloco 2). */
+/** O cabeçalho de metas, igual na tela e no "sendo ativado". */
+function CabecalhoDeMetas({ consulta }: { consulta: Record<string, string | string[] | undefined> }): ReactNode {
+  return (
+    <CabecalhoDaCentral
+      tela="metas"
+      consulta={consulta}
+      titulo="Metas e imposto"
+      subtitulo="A meta de faturamento de cada mês e a alíquota de imposto que a Central do negócio usa."
+    />
+  );
+}
+
 function BotaoRemover({
   tabela,
   id,
@@ -111,31 +121,18 @@ async function MetasContent({
   if (ausente) {
     return (
       <>
-        <PageTitle
-          eyebrow="COMERCIAL / CENTRAL"
-          title="Metas e imposto"
-          subtitle="A meta de faturamento de cada mês e a alíquota de imposto que a Central do negócio usa."
-        />
-        <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("metas", consulta)} />
-        <div className="sb-note">
-          <span>SENDO ATIVADO</span>
-          <p>
-            Metas e imposto estão sendo ativados neste ambiente: o banco ainda não recebeu as tabelas de D-395. Assim
-            que a migração for aplicada, esta tela passa a aceitar a meta do mês e a alíquota.
-          </p>
-        </div>
+        <CabecalhoDeMetas consulta={consulta} />
+        <SendoAtivado>
+          Metas e imposto estão sendo ativados neste ambiente: o banco ainda não recebeu as tabelas de D-395. Assim
+          que a migração for aplicada, esta tela passa a aceitar a meta do mês e a alíquota.
+        </SendoAtivado>
       </>
     );
   }
 
   return (
     <>
-      <PageTitle
-        eyebrow="COMERCIAL / CENTRAL"
-        title="Metas e imposto"
-        subtitle="A meta de faturamento de cada mês e a alíquota de imposto que a Central do negócio usa."
-      />
-      <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("metas", consulta)} />
+      <CabecalhoDeMetas consulta={consulta} />
 
       {!podeEditar && (
         <div className="sb-note">
@@ -293,13 +290,10 @@ async function MetasContent({
         >
           <div className="sb-panel-body">
             {marketplaceAusente ? (
-              <div className="sb-note">
-                <span>SENDO ATIVADO</span>
-                <p>
-                  As metas por marketplace estão sendo ativadas neste ambiente: o banco ainda não recebeu a tabela de
-                  D-473. A meta geral e a alíquota acima já funcionam.
-                </p>
-              </div>
+              <SendoAtivado>
+                As metas por marketplace estão sendo ativadas neste ambiente: o banco ainda não recebeu a tabela de
+                D-473. A meta geral e a alíquota acima já funcionam.
+              </SendoAtivado>
             ) : (
               <>
                 {podeEditar && <FormularioMetaDoMarketplace mesPadrao={mesAtual.slice(0, 7)} />}

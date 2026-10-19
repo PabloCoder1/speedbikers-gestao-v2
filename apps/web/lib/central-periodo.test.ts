@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { resolverPeriodoCentral } from "./central-periodo";
+import { escreverPeriodoNaUrl, periodoDaUrl, resolverPeriodoCentral, rotuloDoIntervalo } from "./central-periodo";
+import { formatBusinessDate } from "./format";
 
 const HOJE = "2026-09-23";
 
@@ -94,5 +95,36 @@ describe("resolverPeriodoCentral", () => {
 
     expect(p.preset).toBe("30d");
     expect(p.invalido).toBe(false);
+  });
+});
+
+describe("o período na URL (UX_SYSTEM §6, bloco 4)", () => {
+  const hoje = "2026-10-19";
+
+  it("o preset viaja como p, e o personalizado como from e to", () => {
+    const preset = new URLSearchParams();
+    escreverPeriodoNaUrl(preset, periodoDaUrl(resolverPeriodoCentral({ p: "7d" }, hoje)));
+    expect(preset.toString()).toBe("p=7d");
+
+    const personalizado = new URLSearchParams();
+    escreverPeriodoNaUrl(personalizado, periodoDaUrl(resolverPeriodoCentral({ from: "2026-10-01", to: "2026-10-10" }, hoje)));
+    expect(personalizado.toString()).toBe("from=2026-10-01&to=2026-10-10");
+  });
+
+  it("o que se escreve, se lê de volta igual", () => {
+    for (const consulta of [{ p: "mes-anterior" }, { from: "2026-09-03", to: "2026-09-20" }]) {
+      const periodo = resolverPeriodoCentral(consulta, hoje);
+      const busca = new URLSearchParams();
+      escreverPeriodoNaUrl(busca, periodoDaUrl(periodo));
+
+      expect(resolverPeriodoCentral(Object.fromEntries(busca), hoje)).toEqual(periodo);
+    }
+  });
+
+  it("o rótulo diz um dia só ou o intervalo", () => {
+    expect(rotuloDoIntervalo({ from: "2026-10-05", to: "2026-10-05" })).toBe(formatBusinessDate("2026-10-05"));
+    expect(rotuloDoIntervalo({ from: "2026-10-01", to: "2026-10-05" })).toBe(
+      `${formatBusinessDate("2026-10-01")} a ${formatBusinessDate("2026-10-05")}`,
+    );
   });
 });

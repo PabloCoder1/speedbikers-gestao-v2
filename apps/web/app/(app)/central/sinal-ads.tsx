@@ -1,15 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { Panel } from "../../../components/panel";
 import { StatePill } from "../../../components/state-pill";
 import { formatBusinessDate, formatCount } from "../../../lib/format";
 import { lerCampanhaSinal, lerSinaisAds, NIVEL_ADS, paraRevisarAds } from "../../../lib/sinais-ads";
-
-interface RespostaComCodigo {
-  data: unknown;
-  error: { message: string; code?: string } | null;
-}
+import { funcaoAusente, SendoAtivado, type RespostaComCodigo } from "./comum";
 
 /**
  * Os sinais de Ads na central (D-398): quantas campanhas pedem revisão, quantas
@@ -19,20 +16,37 @@ interface RespostaComCodigo {
  * Chega por streaming, como o painel de frete. A semana é a dos dias que o
  * Mercado Livre já consolidou, não o período escolhido na central — o painel
  * diz qual é.
+ *
+ * Falha, formato desconhecido e semana vazia falam pelo `EstadoDaTela` (D-502),
+ * com as mesmas palavras de `/central/ads`; a função ausente, pelo aviso de
+ * "sendo ativado" (UX_SYSTEM §6, bloco 4).
  */
-export async function SinalDeAds({ leitura }: { leitura: PromiseLike<RespostaComCodigo> | null }): Promise<ReactNode> {
+export async function SinalDeAds({
+  leitura,
+  tentarDeNovo,
+}: {
+  leitura: PromiseLike<RespostaComCodigo> | null;
+  /** A central no recorte atual: o "Tentar de novo" lê tudo outra vez, no lugar. */
+  tentarDeNovo: string;
+}): Promise<ReactNode> {
   if (leitura === null) return null;
 
   const resposta = await leitura;
+  const tentar = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
 
   if (resposta.error !== null) {
     return (
       <Panel title="Ads" subtitle="Sinais das campanhas do Mercado Ads">
-        <p className="sb-panel-body sb-central-motivo">
-          {resposta.error.code === "PGRST202"
-            ? "Os sinais de Ads estão sendo ativados neste ambiente."
-            : `Não foi possível carregar os sinais de Ads: ${resposta.error.message}`}
-        </p>
+        <div className="sb-panel-body">
+          {funcaoAusente(resposta.error) ? (
+            <SendoAtivado>
+              Os sinais de Ads estão sendo ativados neste ambiente: o banco ainda não recebeu a função de D-398. Assim que
+              a migração for aplicada, este painel passa a mostrar as campanhas que pedem revisão.
+            </SendoAtivado>
+          ) : (
+            <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os sinais de Ads" detalhe={resposta.error.message} acao={tentar} />
+          )}
+        </div>
       </Panel>
     );
   }
@@ -42,9 +56,14 @@ export async function SinalDeAds({ leitura }: { leitura: PromiseLike<RespostaCom
   if (sinais === null) {
     return (
       <Panel title="Ads" subtitle="Sinais das campanhas do Mercado Ads">
-        <p className="sb-panel-body sb-central-motivo">
-          Os sinais de Ads responderam num formato que esta tela não reconhece — nada foi mostrado.
-        </p>
+        <div className="sb-panel-body">
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Os sinais de Ads responderam num formato que esta tela não reconhece"
+            descricao="Nada foi mostrado."
+            acao={tentar}
+          />
+        </div>
       </Panel>
     );
   }
@@ -54,7 +73,13 @@ export async function SinalDeAds({ leitura }: { leitura: PromiseLike<RespostaCom
   if (janela.inicio === null || janela.fim === null) {
     return (
       <Panel title="Ads" subtitle="Sinais das campanhas do Mercado Ads">
-        <p className="sb-panel-body sb-central-motivo">Nenhuma semana de Ads consolidada nos últimos 21 dias.</p>
+        <div className="sb-panel-body">
+          <EstadoDaTela
+            tipo="vazio"
+            titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
+            descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
+          />
+        </div>
       </Panel>
     );
   }

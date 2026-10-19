@@ -465,5 +465,11 @@ repetida). Em produção, o `get_faturamento` do ML tem média de 2,6 s (A1,
         com a dica de deslizar; as de meta e alíquota rolam no painel.
   - [x] Sem fila: o "quem paga" começa com o detector, e o ranking sem conta
         na URL não espera contas nem organização.
-- [ ] **Bloco 4 — o resto da `/central`.** Frete e Ads no `EstadoDaTela`, e o
-      código duplicado.
+- [x] **Bloco 4 — o resto da `/central` (D-519).**
+  - [x] Frete e Ads da `/central` no `EstadoDaTela`: falha com o "Tentar de
+        novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO".
+  - [x] O que as seis telas repetiam em `app/(app)/central/comum.tsx`
+        (resposta, função ausente, aviso, cabeçalho com as abas, período
+        inválido) e em `lib/central-periodo.ts` (o período na URL e o rótulo).
+  - [ ] Item 11, a frase do `docs/METRICS.md` §5S: com o A1.
+  - [ ] Item 12, o Auth por pré-carga: com o A1.
