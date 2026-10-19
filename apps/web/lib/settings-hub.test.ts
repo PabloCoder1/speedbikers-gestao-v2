@@ -515,8 +515,8 @@ describe("incluiPara — 'Inclui:' só ensina o que quem olha vai achar na tela 
     // `isAdmin` em /usuarios esconde a célula "Convites pendentes" e o painel
     // "Histórico de acesso"; `ehAdmin` em /contas esconde "Conectar conta".
     expect(termos(organizacao, "ANALISTA")).toEqual(["Gerenciar acessos"]);
-    expect(termos(mercadoLivre, "GESTOR")).toEqual(["Contas cadastradas"]);
-    expect(termos(mercadoLivre, "ADMIN")).toEqual(["Contas cadastradas", "Conectar conta"]);
+    expect(termos(mercadoLivre, "GESTOR")).toEqual(["Contas e lojas cadastradas"]);
+    expect(termos(mercadoLivre, "ADMIN")).toEqual(["Contas e lojas cadastradas", "Conectar conta"]);
   });
 
   it("para nenhum papel a linha 'Inclui:' sai vazia", () => {

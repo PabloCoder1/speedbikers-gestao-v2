@@ -206,8 +206,9 @@ export const INCLUI = {
   ],
   mercado_livre: [
     // A célula da faixa de /contas, que todo papel vê: sem ela quem não é
-    // ADMIN ficaria com a linha "Inclui:" vazia.
-    { termo: "Contas cadastradas", arquivo: "app/(app)/contas/page.tsx" },
+    // ADMIN ficaria com a linha "Inclui:" vazia. Desde a D-600 ela conta as
+    // contas e as lojas, e o rótulo mora na lib da faixa.
+    { termo: "Contas e lojas cadastradas", arquivo: "lib/contas-e-lojas.ts" },
     // `{ehAdmin && (<Panel title="Conectar conta" …`.
     { termo: "Conectar conta", arquivo: "app/(app)/contas/page.tsx", somenteAdmin: true },
   ],

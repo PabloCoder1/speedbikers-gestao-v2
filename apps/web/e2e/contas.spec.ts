@@ -47,3 +47,27 @@ test("/contas: a loja Shopee do seed mostra quantos anúncios tem e quantos est�
   await expect(linha).toContainText("lido há");
   await expect(linha).not.toContainText("catálogo ainda não lido");
 });
+
+/**
+ * D-600: a faixa de `/contas` conta as contas do Mercado Livre E as lojas
+ * Shopee -- o número é a soma das duas listas da própria tela (os cartões das
+ * contas e as linhas da tabela das lojas), com a divisão dita ao lado. A loja do
+ * seed é de teste e conectada, com a autorização a um ano: não requer atenção.
+ */
+test("/contas: a faixa conta as contas do ML e as lojas Shopee, com a divisão ao lado (D-600)", async ({ page }) => {
+  await login(page, "/contas");
+
+  const cadastradas = page.locator(".sb-kpi").filter({ hasText: "Contas e lojas cadastradas" });
+  const linhasDasLojas = page.getByRole("table", { name: "Lojas Shopee" }).locator("tbody > tr");
+
+  // Espera as duas listas chegarem antes de contar: count() não espera.
+  await expect(linhasDasLojas).toHaveCount(1);
+  await expect(page.locator(".sb-account-card").first()).toBeVisible();
+
+  const cartoes = await page.locator(".sb-account-card").count();
+  const lojas = await linhasDasLojas.count();
+  await expect(cadastradas.locator(".sb-kpi-value")).toHaveText(String(cartoes + lojas));
+  await expect(cadastradas).toContainText(`${String(cartoes)} do Mercado Livre · 1 da Shopee (1 de teste)`);
+  await expect(page.locator(".sb-kpi").filter({ hasText: "Requerem atenção" })).toContainText("· 0 da Shopee");
+  await expect(page.getByText("reautorize na Shopee")).toHaveCount(0);
+});

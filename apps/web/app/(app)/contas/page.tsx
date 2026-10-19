@@ -5,9 +5,10 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { StatePill } from "../../../components/state-pill";
 import { Icone } from "../../../components/icons";
-import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { KpiStrip } from "../../../components/kpi-strip";
 import { TOM, tomDeStatus } from "../../../components/tone";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { autorizacaoVencendo, celulasDeContasELojas } from "../../../lib/contas-e-lojas";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../../lib/labels";
 import { currentMembership } from "../../../lib/request-membership";
@@ -96,39 +97,9 @@ export default async function ContasPage(): Promise<ReactNode> {
   const catalogoAusente = isShopeeSchemaMissing(catalogoShopee.error);
 
   const agora = new Date();
-  const connectedCount = accounts.filter((account) => account.status === "CONNECTED").length;
-  const attentionCount = accounts.filter((account) => account.status === "PENDING").length;
-  const errorCount = accounts.filter((account) => account.status === "ERROR" || account.status === "REVOKED").length;
-  const accountKpis: KpiCellData[] = [
-    {
-      label: "Contas cadastradas",
-      formula: "Contas Mercado Livre visíveis para esta organização.",
-      value: formatCount(accounts.length),
-      previous: null,
-      tom: "neutro",
-    },
-    {
-      label: "Conectadas",
-      formula: "Contas com autorização CONNECTED registrada.",
-      value: formatCount(connectedCount),
-      previous: null,
-      tom: "neutro",
-    },
-    {
-      label: "Aguardando conexão",
-      formula: "Contas cadastradas que ainda precisam concluir o OAuth.",
-      value: formatCount(attentionCount),
-      previous: null,
-      tom: "neutro",
-    },
-    {
-      label: "Requerem atenção",
-      formula: "Contas em ERROR ou REVOKED que precisam de nova verificação humana.",
-      value: formatCount(errorCount),
-      previous: null,
-      tom: "neutro",
-    },
-  ];
+  // D-600: a faixa conta as contas do ML E as lojas Shopee, com a divisão ao lado do
+  // número; as lojas que não carregaram não viram zero.
+  const faixa = celulasDeContasELojas(accounts, lojasShopee.error === null ? lojasShopee.data : null, agora);
 
   return (
     <>
@@ -164,7 +135,7 @@ export default async function ContasPage(): Promise<ReactNode> {
         </div>
       </section>
 
-      <KpiStrip cells={accountKpis} />
+      <KpiStrip cells={faixa} />
 
       {error !== null && (
         <EstadoDaTela
@@ -402,7 +373,13 @@ export default async function ContasPage(): Promise<ReactNode> {
                                   : `lido ${formatAge(ultimaLeitura, agora) ?? `em ${formatDateTime(ultimaLeitura)}`}`}
                             </span>
                           </td>
-                          <td>{loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}</td>
+                          <td>
+                            {loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}
+                            {/* D-600: a leitura para quando a autorização vence; a faixa conta esta loja em "Requerem atenção". */}
+                            {autorizacaoVencendo(loja, agora) && (
+                              <span style={{ display: "block", color: "var(--sb-accent-ink)" }}>reautorize na Shopee: vence em até 7 dias</span>
+                            )}
+                          </td>
                           <td>{formatDateTime(loja.connected_at)}</td>
                         </tr>
                       );
