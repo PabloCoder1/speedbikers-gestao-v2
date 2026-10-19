@@ -2294,30 +2294,43 @@ describe("get_faturamento (D-356)", () => {
     ).rejects.toThrow(/permission denied/i);
   });
 
-  it("é plpgsql, SECURITY INVOKER, com search_path vazio, plano custom e o offset 0 que prende order_items ao pedido", async () => {
-    // As guardas de plano de 20260918160000. Sem `force_custom_plan` o corpo
-    // volta ao plano genérico da sexta execução (D-305); sem o `offset 0`, o
-    // plano custom troca a busca por pedido por varredura inteira de
-    // order_items em hash join (medido: 2,1 s frio). Nenhuma das duas muda o
-    // resultado, então só o catálogo as pega. O `offset 0` é procurado numa
-    // linha só dele: o comentário que o explica, no corpo, não conta.
+  it("é plpgsql, SECURITY INVOKER, com search_path vazio, plano custom, work_mem de 32 MB e as linhas de ml_sales_lines (D-499)", async () => {
+    // As guardas de plano de 20260918160000 e 20260928160000. Sem
+    // `force_custom_plan` o corpo volta ao plano genérico da sexta execução
+    // (D-305). O `work_mem` vai na própria definição desde D-499: `create or
+    // replace` troca a lista de `set` inteira, e sem ele o agrupamento por
+    // pedido transborda para o disco. E as linhas vêm de `ml_sales_lines`: a
+    // função não busca mais pedido, item e financeiro. Nenhuma das três muda
+    // o resultado, então só o catálogo as pega.
     const result = await client.query<{
       linguagem: string;
       definer: boolean;
       search_path_vazio: boolean;
       plano_custom: boolean;
-      offset_zero: boolean;
+      work_mem: boolean;
+      le_linhas: boolean;
+      le_origem: boolean;
     }>(
       `select l.lanname as linguagem, p.prosecdef as definer,
               coalesce('search_path=""' = any(p.proconfig), false) as search_path_vazio,
               coalesce('plan_cache_mode=force_custom_plan' = any(p.proconfig), false) as plano_custom,
-              p.prosrc ~ '\\n\\s*offset 0\\s*\\n' as offset_zero
+              coalesce('work_mem=32MB' = any(p.proconfig), false) as work_mem,
+              p.prosrc ~ 'from public\\.ml_sales_lines' as le_linhas,
+              p.prosrc ~ 'public\\.(orders|order_items|order_financials)\\M' as le_origem
        from pg_proc p join pg_language l on l.oid = p.prolang
        where p.oid = 'public.get_faturamento(date, date, uuid, boolean)'::regprocedure`,
     );
 
     expect(result.rows).toEqual([
-      { linguagem: "plpgsql", definer: false, search_path_vazio: true, plano_custom: true, offset_zero: true },
+      {
+        linguagem: "plpgsql",
+        definer: false,
+        search_path_vazio: true,
+        plano_custom: true,
+        work_mem: true,
+        le_linhas: true,
+        le_origem: false,
+      },
     ]);
   });
 
