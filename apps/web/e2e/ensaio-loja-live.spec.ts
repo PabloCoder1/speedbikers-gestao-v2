@@ -174,6 +174,61 @@ test("/anuncios/shopee, /produtos, /curva-abc e /reposicao: o anúncio e o SKU d
   await semErro(page);
 });
 
+test("/anuncios/shopee: as vendas do anúncio no período, o vendeu, a ordem e o CSV (D-606, C-67)", async ({ page }) => {
+  await entrar(page, `/anuncios/shopee?loja=${lojaId}`);
+  const anuncio = page.getByRole("row", { name: new RegExp(LOJA_LIVE.skuTitulo) });
+
+  // 11 pedidos válidos de 1 unidade e R$ 100 cada (o cancelado fica fora; o sem financeiro entra: VALIDA não pede financeiro).
+  const n = String(LOJA_LIVE.pedidosValidos);
+
+  await expect(anuncio.locator('td[data-label="Unidades"]')).toHaveText(new RegExp(`^${n}\\s*em ${n} pedidos$`, "u"));
+  await expect(anuncio.locator('td[data-label="Faturamento"]')).toContainText(dinheiro("1.100,00"));
+
+  // O resumo do recorte, somado no SQL: aqui o recorte é este anúncio só.
+  const resumo = page.getByLabel("Resumo das vendas do recorte");
+
+  await expect(resumo).toContainText(dinheiro("1.100,00"));
+  await expect(resumo.getByText(n, { exact: true })).toBeVisible();
+  await semErro(page);
+
+  // O cabeçalho ordena do maior para o menor, e clicar de novo volta à ordem de sempre.
+  const unidades = page.getByRole("columnheader", { name: "Unidades" });
+
+  await unidades.getByRole("link").click();
+  await expect(page).toHaveURL(/[?&]ordem=vendas/u);
+  await expect(unidades).toHaveAttribute("aria-sort", "descending");
+  await expect(anuncio).toBeVisible();
+  await unidades.getByRole("link").click();
+  await expect(page).not.toHaveURL(/ordem=/u);
+  await expect(unidades).toHaveAttribute("aria-sort", "none");
+
+  // O vendeu filtra no banco: o anúncio que vendeu some do "sem venda" e fica no "vendeu".
+  await page.goto(`/anuncios/shopee?loja=${lojaId}&vendeu=sem`);
+  await expect(page.getByText("Nenhum anúncio corresponde a estes filtros.")).toBeVisible();
+  await expect(anuncio).toHaveCount(0);
+  await page.goto(`/anuncios/shopee?loja=${lojaId}&vendeu=com`);
+  await expect(anuncio).toBeVisible();
+  await semErro(page);
+
+  // Um período sem pedido: com a loja lida, não vender é 0, que é fato -- não "—".
+  await page.goto(`/anuncios/shopee?loja=${lojaId}&from=2020-01-01&to=2020-01-31`);
+  await expect(anuncio.locator('td[data-label="Unidades"]')).toHaveText("0");
+  await expect(anuncio.locator('td[data-label="Faturamento"]')).toContainText(dinheiro("0,00"));
+  await semErro(page);
+
+  // O CSV leva o mesmo período: as quatro colunas de venda no fim da linha do anúncio.
+  await page.goto(`/anuncios/shopee?loja=${lojaId}`);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("region", { name: "Anúncios e vínculos" }).getByRole("link", { name: /Exportar CSV/u }).click(),
+  ]);
+  const { readFileSync } = await import("node:fs");
+  const linhas = readFileSync(await download.path(), "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+
+  expect(linhas[0]?.endsWith(";Unidades vendidas;Faturamento;Pedidos;Unidades sem receita conhecida")).toBe(true);
+  expect(linhas.find((linha) => linha.startsWith("990777001;"))?.endsWith(`;${n};1100;${n};0`)).toBe(true);
+});
+
 test("o SKU, a busca e a sincronização enxergam a loja live", async ({ page }) => {
   await entrar(page, `/skus/${skuId}?aba=vendas`);
   await expect(page.getByRole("row", { name: new RegExp(LOJA_LIVE.nome) })).toContainText(dinheiro("1.100,00"));
