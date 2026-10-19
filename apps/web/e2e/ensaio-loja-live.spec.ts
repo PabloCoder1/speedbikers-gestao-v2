@@ -239,3 +239,13 @@ test("o CSV de /vendas tem a loja live com os números da tabela, e um dia por d
   expect(dias.slice(1).every((linha) => linha.split(";")[1] === "Shopee")).toBe(true);
   await semErro(page);
 });
+
+test("/contas: a faixa conta a loja live ao lado da de teste e das contas do ML (D-600)", async ({ page }) => {
+  await entrar(page, "/contas");
+
+  const cadastradas = page.locator(".sb-kpi").filter({ hasText: "Contas e lojas cadastradas" });
+
+  await expect(cadastradas).toContainText("· 2 da Shopee (1 de teste)");
+  await expect(page.locator(".sb-kpi").filter({ hasText: "Conectadas" })).toContainText("· 2 da Shopee");
+  await semErro(page);
+});

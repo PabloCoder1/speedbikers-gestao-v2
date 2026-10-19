@@ -17158,3 +17158,42 @@ O que sobra no ultimo cenario e o banco local no estado "nada pede atencao": o e
 **Verificacao:** typecheck, lint e as guardas; o `central.spec` e a suite e2e inteira (a suite e2e inteira passa 248 de 248 contra o build num stack isolado recriado do zero, com os nove testes do `central.spec`); a medicao acima; e a calibracao do esqueleto em duas larguras.
 
 **Impacto:** `apps/web/components/carregando.tsx`, `apps/web/app/(app)/central/{page,atencao}.tsx`, `apps/web/app/globals.css` (o traco do texto no celular), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova. A proxima leitura dos web vitals confere o CLS da `/central` em producao.
+
+## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
+
+**Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.
+
+**1. As quatro células contam os dois canais (`lib/contas-e-lojas.ts`).**
+- O número é a soma das duas listas da própria tela: os cartões das contas e as linhas da tabela das lojas. A divisão vai ao lado: "N do Mercado Livre · M da Shopee (K de teste)".
+- "Contas cadastradas" vira **"Contas e lojas cadastradas"**, porque o rótulo velho deixaria de ser verdade. O termo do `settings-hub` acompanha, e a guarda `check:settings-vocabulary` o confere no arquivo novo.
+- Contar as linhas que a tela já lista não é agregar métrica. A lista das lojas que não carregou não vira zero: o número fica só o do ML, e a ressalva diz "as lojas Shopee não carregaram" (D-067).
+
+**2. Os estados de cada canal (C-52).**
+- O ML tem PENDING, CONNECTED, REVOKED e ERROR. A loja Shopee só existe depois de autorizada, e é CONNECTED ou ERROR.
+- **Aguardando conexão** é só do ML.
+- **Requerem atenção:** ML em ERROR ou REVOKED; lojas com erro; e lojas com a autorização vencendo em até **7 dias** (`auth_expires_at`). A Shopee pede a reautorização num prazo de até 365 dias, e a leitura para quando ele passa.
+- A loja conectada com a autorização vencendo conta em "Conectadas" e em "Requerem atenção", porque está conectada E precisa de alguém. A fórmula da célula diz isso.
+- A coluna "Autorização vence" da tabela ganha "reautorize na Shopee: vence em até 7 dias" nessas lojas.
+
+**3. A numeração das decisões depois de D-499** (acordo A1 × A2 de 19/10; regra no cabeçalho de `docs/MULTICHANNEL_HANDOFF.md`):
+- **A1:** as ímpares até D-499 e depois as ímpares a partir de D-601;
+- **A2:** as pares a partir de D-600;
+- **A3:** sequencial de D-516 a D-599 e, se chegar ao fim, D-700+ (a confirmar ao ler);
+- a ordem no `DECISIONS.md` continua a numérica, e o índice regenera como hoje.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Unitários:**
+  - `contas-e-lojas.test.ts`: o aviso a 7 dias e depois do vencimento, sem data não avisa, a atenção da loja, as quatro células com a divisão e a sobreposição dita, a Shopee vazia como zero de fato, e as lojas que não carregaram;
+  - `settings-hub.test.ts` 43/43 e `check:settings-vocabulary` ok.
+- **e2e:**
+  - `contas.spec`: o número da faixa é a soma dos cartões e das linhas da tabela, com "1 da Shopee (1 de teste)" e nenhuma loja vencendo;
+  - no ensaio da loja live: "2 da Shopee (1 de teste)" e "Conectadas" com as duas lojas.
+- **Suite inteira:** **255/255** com o banco recriado do zero (252 na 3300 e os 3 de convite na 3000) e o `loja-live` **8/8**.
+
+**Impacto:**
+- web: `apps/web/lib/contas-e-lojas.ts` com o teste, `apps/web/app/(app)/contas/page.tsx` e `apps/web/lib/settings-hub.ts` com o teste;
+- e2e: `contas.spec.ts` e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
