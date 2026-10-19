@@ -134,3 +134,36 @@ export function hrefDaExportacao(hrefDaTela: string, tabela: "dia" | "conta"): s
 
   return `/vendas/exportar?${url.searchParams.toString()}`;
 }
+
+/** Um dia de `get_sales_daily_series`, a série da `/vendas` do Mercado Livre. */
+export interface DiaDoMl {
+  readonly metric_date: string;
+  readonly gross_revenue: number;
+  readonly orders_count: number;
+  /** Nulo sob o recorte de marca (D-237): o pack não tem marca única. */
+  readonly purchases_count: number | null;
+  readonly units_sold: number;
+}
+
+/** As palavras das métricas da tela do ML (`lib/sales-metric.ts`). */
+const CABECALHO_DO_ML = ["Dia", "Faturamento (receita bruta)", "Pedidos", "Compras (packs)", "Unidades"];
+
+/**
+ * O CSV do recorte do Mercado Livre (D-602): a série do gráfico, um dia por
+ * linha, no recorte da tela -- conta, marca e período. Só os dias com métrica
+ * calculada, como a tela diz ("só N dias têm métrica calculada"); compras sob o
+ * recorte de marca é célula vazia, nunca zero.
+ */
+export function diasDoMlParaCsv(dias: readonly DiaDoMl[]): string {
+  const linhas = [...dias]
+    .sort((a, b) => a.metric_date.localeCompare(b.metric_date))
+    .map((dia) => [
+      csvCell(formatBusinessDate(dia.metric_date)),
+      csvNumber(dia.gross_revenue),
+      csvNumber(dia.orders_count),
+      csvNumber(dia.purchases_count),
+      csvNumber(dia.units_sold),
+    ]);
+
+  return csvDocument(CABECALHO_DO_ML, linhas);
+}
