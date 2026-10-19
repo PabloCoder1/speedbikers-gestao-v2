@@ -437,15 +437,19 @@ repetida). Em produção, o `get_faturamento` do ML tem média de 2,6 s (A1,
 
 ### 6.5 Blocos
 
-- [ ] **Bloco 1 — `/central` e a navegação da Central.**
-  - [ ] Navegação própria nas seis rotas, que guarda período e conta onde valem.
-  - [ ] Cabeçalho só com os filtros e "Faturamento detalhado".
-  - [ ] Vendas logo depois da Atenção.
-  - [ ] Comparação completa e notas de método recolhidas.
-  - [ ] Sem leitura repetida no "Por marketplace" e sem a fila contas →
-        leituras.
-  - [ ] Chip "ver lista" com alvo de 24 px.
-  - [ ] Medido antes e depois.
+- [x] **Bloco 1 — `/central` e a navegação da Central (D-517).**
+  - [x] Abas comuns às seis rotas (`AbasDaSecao`), que levam período e conta.
+  - [x] Cabeçalho só com os filtros e "Faturamento detalhado".
+  - [x] Vendas logo depois da Atenção.
+  - [x] Comparação completa, "Como ler" e método da projeção recolhidos
+        (`.sb-recolhivel`).
+  - [x] Sem leitura repetida: o "Por marketplace" reusa as leituras da página
+        (D-610, A2), e o período atual é lido uma vez só, com detalhe. São 2
+        `get_faturamento` por carga, eram 4.
+  - [x] Sem a fila contas → leituras: as do período começam ~220 ms antes.
+  - [x] Chip "ver lista" com alvo de 24 px.
+  - [x] Medido antes e depois: `/central` de 4.705 para 3.541 px a 1440 px e de
+        8.532 para 6.921 px a 390 px; CLS 0; LCP igual.
 - [ ] **Bloco 2 — `/central/metas`.** A situação do mês no topo, com
       `get_meta_do_mes`, que já existe. O realizado de meses passados depende de
       contrato do A1, e não se inventa.
