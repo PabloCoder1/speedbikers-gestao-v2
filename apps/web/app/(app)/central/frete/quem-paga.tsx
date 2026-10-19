@@ -13,6 +13,7 @@ import {
   type QuemPagaFrete,
 } from "../../../../lib/quem-paga-frete";
 import type { createClient } from "../../../../lib/supabase/server";
+import { funcaoAusente, SendoAtivado } from "../comum";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 
 type Cliente = Awaited<ReturnType<typeof createClient>>;
@@ -66,11 +67,8 @@ export async function QuemPagaOFrete({
     return (
       <Panel title="Quem paga o frete" subtitle={subtitulo}>
         <div className="sb-panel-body">
-          {resposta.error.code === "PGRST202" ? (
-            <div className="sb-note">
-              <span>SENDO ATIVADO</span>
-              <p>Este bloco está sendo ativado: o banco ainda não recebeu a função de D-412.</p>
-            </div>
+          {funcaoAusente(resposta.error) ? (
+            <SendoAtivado>Este bloco está sendo ativado: o banco ainda não recebeu a função de D-412.</SendoAtivado>
           ) : (
             <EstadoDaTela
               tipo="erro"

@@ -7,13 +7,17 @@ import { FormularioFiltro } from "../../../../components/formulario-filtro";
 import { FilterMenu } from "../../../../components/filter-menu";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
-import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { Glossario } from "../../../../components/ajuda";
-import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
-import { abasDaCentral } from "../../../../lib/central-navegacao";
-import { PRESETS_CENTRAL, resolverPeriodoCentral, type PeriodoCentral } from "../../../../lib/central-periodo";
+import {
+  escreverPeriodoNaUrl,
+  periodoDaUrl,
+  PRESETS_CENTRAL,
+  resolverPeriodoCentral,
+  rotuloDoIntervalo,
+  type PeriodoNaUrl,
+} from "../../../../lib/central-periodo";
 import { tomDaMargem } from "../../../../lib/faturamento";
 import { carregarLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
@@ -35,6 +39,7 @@ import {
 } from "../../../../lib/ranking-produtos";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
+import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
 
@@ -56,7 +61,7 @@ export const dynamic = "force-dynamic";
 type Consulta = Record<string, string | string[] | undefined>;
 
 interface Estado {
-  readonly periodo: { preset: string } | { from: string; to: string };
+  readonly periodo: PeriodoNaUrl;
   readonly conta: string | null;
   readonly ordem: OrdemRanking;
   readonly pagina: number;
@@ -65,26 +70,12 @@ interface Estado {
 function montarHref(estado: Estado): string {
   const search = new URLSearchParams();
 
-  if ("preset" in estado.periodo) search.set("p", estado.periodo.preset);
-  else {
-    search.set("from", estado.periodo.from);
-    search.set("to", estado.periodo.to);
-  }
+  escreverPeriodoNaUrl(search, estado.periodo);
   if (estado.conta !== null) search.set("account", estado.conta);
   if (estado.ordem !== ORDEM_PADRAO) search.set("ordem", estado.ordem);
   if (estado.pagina > 1) search.set("pagina", String(estado.pagina));
 
   return `/central/produtos?${search.toString()}`;
-}
-
-function periodoDaUrl(periodo: PeriodoCentral): { preset: string } | { from: string; to: string } {
-  return periodo.preset === null ? periodo.atual : { preset: periodo.preset };
-}
-
-function intervalo(range: { from: string; to: string }): string {
-  return range.from === range.to
-    ? formatBusinessDate(range.from)
-    : `${formatBusinessDate(range.from)} a ${formatBusinessDate(range.to)}`;
 }
 
 export default function RankingDeProdutosPage(props: { searchParams: Promise<Consulta> }): ReactNode {
@@ -138,13 +129,15 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
       ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
     }));
 
+  // As abas da Central levam o recorte aplicado; o período recusado não viaja (UX_SYSTEM §6, bloco 1).
   const titulo = (
-    <PageTitle
-      eyebrow="COMERCIAL / CENTRAL"
-      title="Ranking de produtos"
-      subtitle={
+    <CabecalhoDaCentral
+      tela="produtos"
+      consulta={{ ...(periodo.invalido ? {} : query), account: conta ?? undefined }}
+      titulo="Ranking de produtos"
+      subtitulo={
         <>
-          {contaLabel} · {periodo.rotulo}: {intervalo(periodo.atual)}, comparado com {intervalo(periodo.anterior)}.
+          {contaLabel} · {periodo.rotulo}: {rotuloDoIntervalo(periodo.atual)}, comparado com {rotuloDoIntervalo(periodo.anterior)}.
           {periodo.emAndamento && " Hoje ainda está em andamento: o crescimento compara um dia incompleto."}
         </>
       }
@@ -198,13 +191,6 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
       }
     />
   );
-  // As abas da Central levam o recorte aplicado; o período recusado não viaja (UX_SYSTEM §6, bloco 1).
-  const abas = (
-    <AbasDaSecao
-      rotulo="Telas da central"
-      abas={abasDaCentral("produtos", { ...(periodo.invalido ? {} : query), account: conta ?? undefined })}
-    />
-  );
 
   // Função ausente (PGRST202): a web da `main` chega à produção antes de a
   // migration passar pelo workflow — o precedente de D-363.
@@ -212,15 +198,11 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         {titulo}
-        {abas}
-        {resposta.error.code === "PGRST202" ? (
-          <div className="sb-note">
-            <span>SENDO ATIVADO</span>
-            <p>
-              O ranking de produtos está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-402. Assim
-              que a migração for aplicada, esta tela passa a listar os produtos.
-            </p>
-          </div>
+        {funcaoAusente(resposta.error) ? (
+          <SendoAtivado>
+            O ranking de produtos está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-402. Assim
+            que a migração for aplicada, esta tela passa a listar os produtos.
+          </SendoAtivado>
         ) : (
           <EstadoDaTela
             tipo="erro"
@@ -239,7 +221,6 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         {titulo}
-        {abas}
         <EstadoDaTela
           tipo="erro"
           titulo="O ranking respondeu num formato que esta tela não reconhece"
@@ -253,7 +234,6 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   return (
     <>
       {titulo}
-      {abas}
 
       {accountsResult.error !== null && (
         <EstadoDaTela
@@ -265,11 +245,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
         />
       )}
 
-      {periodo.invalido && (
-        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
-          Período personalizado inválido — mostrando {periodo.rotulo.toLowerCase()}.
-        </p>
-      )}
+      {periodo.invalido && <AvisoDePeriodoInvalido rotulo={periodo.rotulo} />}
 
       <KpiStrip cells={celulasDoResumo(ranking, estado)} />
 

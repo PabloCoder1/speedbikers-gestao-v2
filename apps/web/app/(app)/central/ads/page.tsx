@@ -4,12 +4,9 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoConteudo } from "../../../../components/carregando";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
-import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { Glossario } from "../../../../components/ajuda";
-import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
-import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatRoas, listarDatas } from "../../../../lib/central-indicadores";
 import { lerFaturamento, rotuloDaMargemMinima } from "../../../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
@@ -29,6 +26,7 @@ import {
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
+import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
 
 export const metadata = { title: "Sinais de Ads — Speed Bikers Gestão" };
 
@@ -71,19 +69,17 @@ export default function SinaisDeAdsPage(props: { searchParams: Promise<Consulta>
 /** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
 function Titulo({ subtitle, consulta }: { subtitle: ReactNode; consulta: Consulta }): ReactNode {
   return (
-    <>
-    <PageTitle
-      eyebrow="COMERCIAL / CENTRAL"
-      title="Sinais de Ads"
-      subtitle={subtitle}
+    <CabecalhoDaCentral
+      tela="ads"
+      consulta={consulta}
+      titulo="Sinais de Ads"
+      subtitulo={subtitle}
       aside={
         <Link className="sb-button" href="/faturamento#ads">
           Campanhas no faturamento
         </Link>
       }
     />
-    <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("ads", consulta)} />
-    </>
   );
 }
 
@@ -118,14 +114,11 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
     return (
       <>
         <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
-        {resposta.error.code === "PGRST202" ? (
-          <div className="sb-note">
-            <span>SENDO ATIVADO</span>
-            <p>
-              Os sinais de Ads estão sendo ativados neste ambiente: o banco ainda não recebeu a função de D-398. Assim
-              que a migração for aplicada, esta tela passa a listar as campanhas.
-            </p>
-          </div>
+        {funcaoAusente(resposta.error) ? (
+          <SendoAtivado>
+            Os sinais de Ads estão sendo ativados neste ambiente: o banco ainda não recebeu a função de D-398. Assim
+            que a migração for aplicada, esta tela passa a listar as campanhas.
+          </SendoAtivado>
         ) : (
           <EstadoDaTela
             tipo="erro"

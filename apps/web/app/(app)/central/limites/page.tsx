@@ -1,13 +1,11 @@
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoConteudo } from "../../../../components/carregando";
-import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { Ajuda } from "../../../../components/ajuda";
-import { PageTitle } from "../../../../components/page-title";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
+import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
-import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { descreverLimites, GRUPOS_DOS_LIMITES, LIMITES_PADRAO, lerLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
@@ -43,14 +41,12 @@ type Consulta = Record<string, string | string[] | undefined>;
 /** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
 function Titulo({ consulta }: { consulta: Consulta }): ReactNode {
   return (
-    <>
-      <PageTitle
-        eyebrow="COMERCIAL / CENTRAL"
-        title="Limites da central"
-        subtitle="Quando um número da central é estável, pede atenção ou é perigo — e a partir de quantos pedidos uma comparação vale."
-      />
-      <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("limites", consulta)} />
-    </>
+    <CabecalhoDaCentral
+      tela="limites"
+      consulta={consulta}
+      titulo="Limites da central"
+      subtitulo="Quando um número da central é estável, pede atenção ou é perigo — e a partir de quantos pedidos uma comparação vale."
+    />
   );
 }
 
@@ -78,13 +74,10 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
     return (
       <>
         <Titulo consulta={consulta} />
-        <div className="sb-note">
-          <span>SENDO ATIVADO</span>
-          <p>
-            Os limites estão sendo ativados neste ambiente: o banco ainda não recebeu a tabela de D-408. Enquanto isso, a
-            central julga com os padrões.
-          </p>
-        </div>
+        <SendoAtivado>
+          Os limites estão sendo ativados neste ambiente: o banco ainda não recebeu a tabela de D-408. Enquanto isso, a
+          central julga com os padrões.
+        </SendoAtivado>
       </>
     );
   }

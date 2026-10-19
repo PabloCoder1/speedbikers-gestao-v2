@@ -4,9 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoBloco, CarregandoConteudo } from "../../../../components/carregando";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
-import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { Glossario } from "../../../../components/ajuda";
-import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
 import {
@@ -20,12 +18,12 @@ import {
   type DetectorDeFrete,
   type NivelFrete,
 } from "../../../../lib/detector-frete";
-import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
+import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
 import { lerQuemPagaOFrete, QuemPagaOFrete } from "./quem-paga";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
@@ -71,16 +69,7 @@ export default function DetectorDeFretePage(props: { searchParams: Promise<Consu
 
 /** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
 function Titulo({ subtitle, consulta }: { subtitle: ReactNode; consulta: Consulta }): ReactNode {
-  return (
-    <>
-    <PageTitle
-      eyebrow="COMERCIAL / CENTRAL"
-      title="Detector de frete"
-      subtitle={subtitle}
-    />
-    <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("frete", consulta)} />
-    </>
-  );
+  return <CabecalhoDaCentral tela="frete" consulta={consulta} titulo="Detector de frete" subtitulo={subtitle} />;
 }
 
 async function DetectorContent({ searchParams }: { searchParams: Promise<Consulta> }): Promise<ReactNode> {
@@ -108,14 +97,11 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
     return (
       <>
         <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
-        {resposta.error.code === "PGRST202" ? (
-          <div className="sb-note">
-            <span>SENDO ATIVADO</span>
-            <p>
-              O detector de frete está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-397. Assim
-              que a migração for aplicada, esta tela passa a listar os anúncios.
-            </p>
-          </div>
+        {funcaoAusente(resposta.error) ? (
+          <SendoAtivado>
+            O detector de frete está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-397. Assim
+            que a migração for aplicada, esta tela passa a listar os anúncios.
+          </SendoAtivado>
         ) : (
           <EstadoDaTela
             tipo="erro"
