@@ -1419,6 +1419,25 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### O faturamento do ML perto do `statement_timeout` (D-499, diagnóstico de 19/10/2026)
+
+**O incidente:** o log do Postgres de produção tem 19 cancelamentos por `statement timeout` (8 s) entre 14:20:21 e 14:20:48 UTC de 19/10, e nenhum de 16 a 18/10: 16 `get_faturamento` em rajadas de quatro paralelas (a `/central` sem conta pede o período atual, o anterior, o atual com detalhe e, de novo, o atual, pelo bloco "Por marketplace"), 2 `get_detector_frete` e 1 `get_stock_coverage_summary` (a Atenção da Home, no meio da carga de 10,3 s medida pelo A3).
+
+**Medido em produção, como `authenticated`:**
+
+| Chamada | Cache quente | Observação |
+|---|---|---|
+| 30 dias, sem detalhe | 0,48–0,55 s | ~121 mil páginas do cache |
+| 30 dias, com detalhe | 0,62 s | — |
+| 90 dias, sem detalhe | 1,44 s | o agrupamento por pedido transborda para o disco |
+| 90 dias, com detalhe | 1,81–1,96 s | ~390 mil páginas; **frio, 7,4 s** (7 mil do disco) |
+
+**Cuidado ao medir:** `explain (analyze, timing on)` sobre o corpo inline infla esta consulta cerca de 5 vezes (o laço de uma busca por pedido, instrumentado): 2,6 s com `timing on` contra 0,47 s com `timing off`, na mesma consulta. Medir a função (o corpo de uma função não é instrumentado) ou usar `timing off`.
+
+**O que pesa:** em 90 dias, os pedidos são todos de um item; o pedido e o item são buscados um a um (~390 mil páginas tocadas, quase todas nas buscas em `order_items`). O agrupamento por pedido usa 67 MB e transborda (`work_mem` 32 MB × `hash_mem_multiplier` 2), mas sem o hash (agrupando por ordenação) o tempo fica igual (~2,0 s): o gargalo é CPU e páginas, não a memória. A junção por hash nos itens toca 4 vezes menos páginas, mas lê `order_items` inteira (16,8 mil páginas, parte do disco): 2,0 s contra 2,3 s. Índices cobrindo as colunas renderiam pouco: 74–82% das páginas estão marcadas como todas visíveis, e a janela recente é a mais regravada pelo worker.
+
+**A instância:** `shared_buffers` 256 MB e `effective_cache_size` 768 MB (~1 GB de RAM), `work_mem` 3,5 MB (32 MB nesta função), para `orders` 182 MB e `order_items` 177 MB. Várias chamadas pesadas juntas e com cache frio passam de 8 s. **Saídas:** (1) menos chamadas na `/central` (o A2 tira a repetida; a do período atual sem detalhe também é coberta pela com detalhe); (2) instância com mais memória, decisão de custo do dono; (3) um resumo por pedido mantido incrementalmente, que o `get_faturamento` agrega sem buscar pedido e item (a correção de fundo, D-499, com equivalência provada contra a função de hoje).
+
 ### A `/central` sem a leitura do faturamento em dobro (D-610, 19/10/2026)
 
 **Produção, 19/10, 14:20 UTC (achado do A1):** 19 consultas canceladas por `statement timeout` (8 s) em 27 s — 16 `get_faturamento` em rajadas de quatro paralelas, 2 `get_detector_frete` e 1 `get_stock_coverage_summary` (a da Home) — na sequência /central → /vendas → Home. 

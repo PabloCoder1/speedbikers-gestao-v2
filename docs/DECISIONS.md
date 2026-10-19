@@ -16681,6 +16681,8 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - **Mutacao:** sem a situacao, o preco 0 como zero, o recorte da pagina, a loja nunca lida como zero, o casamento sem a variacao e sem a recusa -- cada uma derruba um teste.
 - **Desempenho (volume realista, 6 mil anuncios e 40 mil pedidos, como `authenticated`, mediana de 5):** sem periodo 22 ms (a funcao antiga, 28 ms); 30 dias 53-60 ms; 90 dias 70-84 ms em todas as combinacoes de filtro e ordem (`docs/PERFORMANCE.md`).
 
+**Em producao (19/10):** migration `20261019160000` aplicada as 14:51 UTC (run `39272445073`, o plano conferido antes da 2a aprovacao: so ela). Conferido com os dados reais: sem periodo, a lista inteira (todas as linhas) com a mesma assinatura md5 antes e depois, e as colunas novas NULAS; com 30 dias, a funcao contra a conta direta nos pedidos e itens (VALIDA, preco com desconto x quantidade) da zero diferencas em unidades, pedidos e receita, linha a linha; o recorte e a soma; toda unidade vendida cai num anuncio existente. Como `authenticated`, sem periodo, 30 dias por vendas e 90 dias com venda por receita somam 192 ms. Nenhum erro de runtime na Vercel.
+
 **Publicacao:** a migration `20261019160000` vai a producao depois do merge; a tela (D-606, A2) manda os parametros so com valor e so entra depois dela (PGRST202). Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261019160000_vendas_por_anuncio_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP,PERFORMANCE}.md`.
