@@ -16366,7 +16366,7 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 
 **Em producao (16/10):** a migration `20261016180000` as 19:37 UTC (run `38955922868`, o plano so com ela). Na leitura real dos 30 dias, o `outros_restante` zerou em 100% dos pedidos cobertos, a protecao de envio veio em todos e receita - componentes - protecao_envio - outros_restante = recebido fecha pedido a pedido e no TOTAL; nenhum erro de runtime na Vercel. Fica a **fase 2**: o `outros` passa a ser o restante, o `outros_restante` sai (com aviso ao A2) e a linha de `shopee_composicao_recebido` em `metric_definitions` ganha a taxa (achado do A2).
 
-**Fase 2 (em producao desde 16/10, 20:42 UTC, run `38963886431`; depois da D-492 no ar):** migration `20261016200000` -- o `outros` passa a ser o que a lista, com a protecao de envio, nao explica; `outros_restante` sai das duas funcoes; `protecao_envio` fica; a formula de `shopee_composicao_recebido` em `metric_definitions` ganha "+ protecao de envio". Vale **receita - componentes - protecao_envio - outros = recebido**. O tipo `outros_restante?` fica opcional em `types.ts` ate a tela parar de le-lo (o A2 avisa). **Ordem:** so depois da tela do A2 (D-492, #232) em producao -- sem ela, a cascata de hoje mostraria o outros menor sem a linha da protecao. Verificacao: os 6 testes da D-443 com a fase 2 (TOTAL com outros 1,51 e protecao 0,49, a coluna da fase 1 ausente, a identidade por pedido e o catalogo com a taxa); mutacao (o outros ainda com a taxa, o catalogo sem a taxa, a composicao sem a protecao) derruba os testes. **Conferido nas lojas reais:** o `outros` zerou em 100% dos cobertos de 30 dias, a identidade fecha pedido a pedido, a coluna `outros_restante` saiu e o `metric_definitions` tem a formula com a taxa; nenhum erro de runtime na Vercel. Fica so o tipo opcional `outros_restante?` em `types.ts`, que sai quando a tela parar de le-lo (o A2 avisa).
+**Fase 2 (em producao desde 16/10, 20:42 UTC, run `38963886431`; depois da D-492 no ar):** migration `20261016200000` -- o `outros` passa a ser o que a lista, com a protecao de envio, nao explica; `outros_restante` sai das duas funcoes; `protecao_envio` fica; a formula de `shopee_composicao_recebido` em `metric_definitions` ganha "+ protecao de envio". Vale **receita - componentes - protecao_envio - outros = recebido**. O tipo `outros_restante?` fica opcional em `types.ts` ate a tela parar de le-lo (o A2 avisa). **Ordem:** so depois da tela do A2 (D-492, #232) em producao -- sem ela, a cascata de hoje mostraria o outros menor sem a linha da protecao. Verificacao: os 6 testes da D-443 com a fase 2 (TOTAL com outros 1,51 e protecao 0,49, a coluna da fase 1 ausente, a identidade por pedido e o catalogo com a taxa); mutacao (o outros ainda com a taxa, o catalogo sem a taxa, a composicao sem a protecao) derruba os testes. **Conferido nas lojas reais:** o `outros` zerou em 100% dos cobertos de 30 dias, a identidade fecha pedido a pedido, a coluna `outros_restante` saiu e o `metric_definitions` tem a formula com a taxa; nenhum erro de runtime na Vercel. O tipo opcional `outros_restante?` saiu de `types.ts` em 19/10, depois que a tela parou de le-lo (#237 do A2).
 
 ## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 
@@ -16718,6 +16718,55 @@ O spec apaga o que cria. Com nome fixo, uma rodada interrompida é sobrescrita n
 **Impacto:**
 - web: `apps/web/lib/vendas-export.ts` com o teste, `apps/web/lib/serie-de-vendas.ts`, `apps/web/app/(app)/vendas/exportar/route.ts` e `apps/web/app/(app)/vendas/multicanal.tsx`;
 - e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-498 - Os ajustes depois do repasse e o lucro após imposto e Ads da Shopee, na tela
+
+**Contexto:** a D-485 (A1) pôs no resultado da Shopee o ajuste que ela cobra DEPOIS do repasse: ela libera o escrow cheio e cobra o `total_adjustment_amount` à parte. Com isso, resultado = recebido + ajustes − custo. A D-487 (A1) trouxe ao C-58 o lucro após imposto e Ads (a regra do 5K do ML, no SQL). As migrations `20261016220000` e `20261016230000` só vão a produção depois desta tela: sem o degrau, a cascata "Recebido − Custo = Resultado" deixaria de fechar, porque a barra do custo engoliria o ajuste.
+
+**1. O degrau "Ajustes depois do repasse"** (`montarCascataShopee`, metricId `shopee_ajustes_pos_repasse`):
+- Fica entre "Recebido da Shopee" e "Custo dos produtos", com o valor de `ajustes_cobertos` do TOTAL do C-58. A barra do custo começa onde o ajuste termina.
+- Cobrado desce, e um ajuste a favor da loja sobe.
+- Zero vai para "Sem valor no período". Nulo (nenhum coberto trouxe o campo) vai para "A Shopee não informou", e aí o SQL conta o ajuste como 0 (confirmado pelo A1).
+- Pela PRESENÇA da coluna, como na D-492: ausente, a cascata é a de antes. Nada é somado no navegador; a posição da barra é desenho, não número.
+- O informativo do C-61 "Ajustes depois do repasse" sai da lista quando a coluna vem. Ele repetiria o degrau.
+
+**2. A definição do resultado.**
+- Com a coluna, a nota da tela passa a dizer "o escrow + os ajustes que ela cobra depois do repasse − o custo dos produtos".
+- Na comparação lado a lado, a definição da Shopee vira "recebido + ajustes depois do repasse − custo".
+
+**3. O lucro após imposto e Ads.**
+- **Na lista da Shopee**, abaixo do resultado após imposto, com a margem de contribuição, o Ads CPC da loja e o rateado pela receita coberta. O GMV Max fica fora.
+  - Nulo diz o motivo pela coluna que veio nula: sem alíquota (o `resultado_apos_imposto` nulo) ou a leitura de Ads que não cobre o período (o `investimento_ads` nulo).
+  - Pela presença da coluna.
+- **Na comparação lado a lado** (e na seção "Por marketplace" da `/central`, o mesmo bloco), a linha "Lucro após imposto e Ads", com a premissa do rateio de cada lado.
+  - **O lado do ML** vem de `lucroDoMercadoLivre`, exportada de `lib/central-indicadores.ts`. É a MESMA cadeia do indicador "Lucro após imposto e Ads" da central (a cobertura do Ads, o zero legítimo de quem não tem Product Ads e o rateio), para os dois números baterem na `/central`.
+  - A comparação passa a ler o `get_ads_overview` do período.
+  - É a conta do 5K do ML como sempre foi, no navegador, e não uma regra nova. Levá-la ao SQL (`get_faturamento`) seria do A1; a tela trocaria a fonte sem mudar a linha.
+
+**4. O ensaio da loja live (D-486) com o ajuste.** O 1º pedido coberto ganha −10 de `total_adjustment_amount`, e o resultado vai de R$ 600 para R$ 590. O ensaio confere:
+- o degrau com R$ 10;
+- a nota nova;
+- o "Todos" com R$ 590 e a definição nova;
+- a linha da contribuição nos dois lugares.
+O valor da contribuição depende da alíquota que o `central.spec` cadastra no caminho, e fica com os unitários.
+
+**Publicação:** só a web. Ela lê as colunas da D-485 e da D-487 quando existem e funciona sem elas. Depois do deploy, o A1 dispara as duas migrations.
+
+**Verificacao:**
+- **Unitários:**
+  - a cascata: sem a coluna, cobrado, a favor, zero e nulo, com o custo começando onde o ajuste termina;
+  - a comparação: a definição pela presença, e a linha nova com os dois lados;
+  - `lucroDoMercadoLivre`: o MESMO número do indicador da central, nulo sem o Ads do período inteiro, sem alíquota ou sem a leitura, e o zero legítimo.
+- **e2e:**
+  - com as duas migrations no banco recriado: os specs de faturamento e da central 18/18 e o `loja-live` 6/6;
+  - fotos da cascata (800 − 10 − 200 = 590) e da comparação.
+- **Suite inteira:** **254/254** com o banco recriado do zero (251 na 3300 e os 3 de convite na 3000), já com as migrations da D-485 e da D-487, e o `loja-live` **7/7**.
+
+**Impacto:**
+- web: `apps/web/lib/faturamento-multicanal.ts` e `apps/web/lib/central-indicadores.ts` com os testes, e `apps/web/app/(app)/faturamento/multicanal.tsx`;
+- e2e: `loja-shopee-live.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 

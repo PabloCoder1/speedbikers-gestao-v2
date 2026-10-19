@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import type { ResumoAds } from "./ads";
+import type { ResumoAds, VisaoAds } from "./ads";
 import {
   coberturaDoAds,
   decomporMargem,
+  entradaDaCentral,
+  lucroDoMercadoLivre,
   montarIndicadores,
   montarResumo,
   type EntradaCentral,
   type Indicador,
   type ResumoCentral,
 } from "./central-indicadores";
-import type { ImpostoDoPeriodo, ResumoFaturamento } from "./faturamento";
+import type { PeriodoCentral } from "./central-periodo";
+import type { Faturamento, ImpostoDoPeriodo, ResumoFaturamento } from "./faturamento";
 import { LIMITES_PADRAO } from "./limites-central";
 
 /**
@@ -424,5 +427,60 @@ describe("montarResumo", () => {
     expect(r.frases).toContain(
       "No Mercado Ads, o investimento teve alta de 60,0% e o ROAS foi de 5,00x para 4,00x. O Ads passou de 5,0% para 8,0% do faturamento.",
     );
+  });
+});
+
+describe("lucroDoMercadoLivre (D-498): o lado do ML na comparação com a Shopee", () => {
+  const periodo = { from: "2026-09-16", to: "2026-09-22" };
+  const dias = ["16", "17", "18", "19", "20", "21", "22"].map((d) => ({ dia: `2026-09-${d}`, investimento: 500 / 7, receita_ads: 2_500 / 7 }));
+  const visao = (parcial: Partial<VisaoAds> = {}): VisaoAds => ({
+    resumo: ads(),
+    campanhas: [],
+    diario: dias,
+    contas: [{ ml_account_id: "c-1", conta: "Conta", ads: "habilitado", verificado_em: null }],
+    sincronizadoEm: null,
+    diasPendentes: [],
+    ...parcial,
+  });
+  const faturamento = (imp: ImpostoDoPeriodo | null): Faturamento => ({
+    resumo: resumo(),
+    imposto: imp,
+    diario: null,
+    porConta: null,
+    produtos: null,
+    margemMinima: 0.15,
+  });
+  const periodoCentral: PeriodoCentral = {
+    preset: null,
+    atual: periodo,
+    anterior: { from: "2026-09-09", to: "2026-09-15" },
+    rotulo: "",
+    emAndamento: false,
+    invalido: false,
+  };
+  const daCentral = (f: Faturamento, v: VisaoAds | null): number | null =>
+    indicador(montarIndicadores(entradaDaCentral(f, null, v, null, periodoCentral)), "lucro").valor;
+
+  it("é o MESMO número do indicador 'Lucro após imposto e Ads' da central", () => {
+    const f = faturamento(imposto());
+
+    expect(lucroDoMercadoLivre(f, visao(), periodo)).not.toBeNull();
+    expect(lucroDoMercadoLivre(f, visao(), periodo)).toBe(daCentral(f, visao()));
+  });
+
+  it("sem o Ads do período inteiro, sem alíquota ou sem a leitura do Ads: nulo, como na central", () => {
+    const comImposto = faturamento(imposto());
+
+    expect(lucroDoMercadoLivre(comImposto, visao({ diario: dias.slice(0, 6) }), periodo)).toBeNull();
+    expect(lucroDoMercadoLivre(faturamento(SEM_ALIQUOTA), visao(), periodo)).toBeNull();
+    expect(lucroDoMercadoLivre(comImposto, null, periodo)).toBeNull();
+  });
+
+  it("nenhuma conta com Product Ads: o Ads é zero de fato, e o lucro é o após imposto", () => {
+    const semProductAds = visao({ diario: [], contas: [{ ml_account_id: "c-1", conta: "Conta", ads: "nao_habilitado", verificado_em: null }] });
+    const f = faturamento(imposto());
+
+    expect(lucroDoMercadoLivre(f, semProductAds, periodo)).toBe(1_900);
+    expect(lucroDoMercadoLivre(f, semProductAds, periodo)).toBe(daCentral(f, semProductAds));
   });
 });

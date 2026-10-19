@@ -186,6 +186,23 @@ export function contribuicao(
   return { resultado, margem: resultado / coberta };
 }
 
+/** Nenhuma conta com Product Ads habilitado: o Ads do período é zero, e isso é fato (5K). */
+function adsZeroLegitimo(ads: VisaoAds | null): boolean {
+  return ads !== null && ads.contas.length > 0 && ads.contas.every((c) => c.ads === "nao_habilitado");
+}
+
+/**
+ * O lucro após imposto e Ads do Mercado Livre no período, pela MESMA regra
+ * dos indicadores da central (5K: a cobertura do Ads, o zero legítimo e o
+ * rateio pela receita coberta). É o lado do ML na comparação com a Shopee
+ * (D-498), para os dois números baterem na `/central`, onde ficam juntos.
+ */
+export function lucroDoMercadoLivre(f: Faturamento, ads: VisaoAds | null, periodo: { from: string; to: string }): number | null {
+  const cobertura = coberturaDoAds(ads?.diario ?? [], periodo.from, periodo.to, ads?.diasPendentes ?? []);
+
+  return contribuicao(f.resumo, f.imposto, adsDoPeriodo(ads?.resumo ?? null, cobertura, adsZeroLegitimo(ads))).resultado;
+}
+
 /** Por que não há imposto, quando não há. */
 function motivoDoImposto(imposto: ImpostoDoPeriodo | null): string | null {
   if (imposto === null) return "o imposto ainda não é calculado neste ambiente";
@@ -223,7 +240,7 @@ export function entradaDaCentral(
     emAndamento: periodo.emAndamento,
     impostoAtual: atual.imposto,
     impostoAnterior: anterior?.imposto ?? null,
-    adsZeroLegitimo: ads !== null && ads.contas.length > 0 && ads.contas.every((c) => c.ads === "nao_habilitado"),
+    adsZeroLegitimo: adsZeroLegitimo(ads),
   };
 }
 

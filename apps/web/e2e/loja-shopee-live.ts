@@ -27,7 +27,9 @@ export type ClienteDeServico = ReturnType<typeof createClient<Database>>;
  * - 1 pedido válido AGUARDANDO O FINANCEIRO (sem `order_income` nem recebido);
  * - 1 pedido CANCELADO, que não entra em nada;
  * - 1 anúncio lido, com o SKU próprio; 1 devolução, do 1º pedido; o repasse de 5
- *   pedidos; 7 dias de Ads CPC.
+ *   pedidos; 7 dias de Ads CPC;
+ * - o 1º pedido com R$ 10 de ajuste cobrado DEPOIS do repasse (D-485): o
+ *   resultado é R$ 800 − 10 − 200 = R$ 590.
  * Válidos no período: 11 pedidos e R$ 1.100 de receita.
  */
 
@@ -175,8 +177,9 @@ export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: str
               shipping_seller_protection_fee_amount: 1,
             },
             financials_synced_at: agora,
-            // A devolução do 1º pedido vem no financeiro dele, como o worker grava (`com_devolucao`).
-            ...(p.sn === "E2ELIVE01" ? { return_order_sns: ["E2ELIVE-DEV01"] } : {}),
+            // A devolução do 1º pedido vem no financeiro dele, como o worker grava (`com_devolucao`);
+            // e o ajuste que a Shopee cobra depois do repasse também (D-485).
+            ...(p.sn === "E2ELIVE01" ? { return_order_sns: ["E2ELIVE-DEV01"], total_adjustment_amount: -10 } : {}),
           }
         : {}),
     })),
