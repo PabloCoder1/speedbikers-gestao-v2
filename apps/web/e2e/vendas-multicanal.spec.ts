@@ -174,3 +174,55 @@ test("/vendas sem marketplace abre em Todos; o link antigo com conta do ML conti
   await expect(page).toHaveURL(/\/vendas\?marketplace=ml$/);
   await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Mercado Livre");
 });
+
+/** As linhas de um CSV baixado, sem o BOM. */
+async function linhasDoCsv(caminho: string): Promise<string[]> {
+  const { readFileSync } = await import("node:fs");
+
+  return readFileSync(caminho, "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+}
+
+/**
+ * D-496: os dois CSVs de /vendas no "Todos" saem com o recorte da tela -- a
+ * tabela "Por marketplace e conta" linha por linha (mais o total, que na tela é
+ * a faixa) e a série do gráfico por dia e marketplace. O recorte do ML não
+ * exporta: a tela dele tem filtros que o consolidado não conhece.
+ */
+test("/vendas: o CSV por conta é a tabela da tela, e o por dia a série do gráfico (D-496)", async ({ page }) => {
+  await login(page, "/vendas?days=7");
+  await expect(tabela(page)).toBeVisible();
+
+  const naTabela = await tabela(page).locator("tbody > tr").count();
+  const [porConta] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Exportar CSV por conta", exact: true }).click(),
+  ]);
+
+  expect(porConta.suggestedFilename()).toMatch(/^vendas-todos-\d{4}-\d{2}-\d{2}-a-\d{4}-\d{2}-\d{2}-por-conta\.csv$/u);
+
+  const contas = await linhasDoCsv(await porConta.path());
+
+  expect(contas[0]).toBe(
+    "Linha;Marketplace;Conta ou loja;Ambiente;Receita bruta;Pedidos sem receita conhecida;Compras;Unidades;Ticket médio;Pedidos do ML;Recebido (Shopee);Aguardando o financeiro;Atualizado até;Observação",
+  );
+  // O cabeçalho, o total e cada linha da tabela.
+  expect(contas).toHaveLength(2 + naTabela);
+  expect(contas[1]).toMatch(/^Total;Todos os marketplaces;/u);
+  // A loja Shopee do seed é de teste: fica, marcada, como na tela.
+  expect(contas.find((linha) => linha.includes(E2E_SHOPEE_SHOP.name))).toMatch(/;Teste;.*;Teste — fora das somas$/u);
+
+  const [porDia] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Exportar CSV por dia", exact: true }).click(),
+  ]);
+  const dias = await linhasDoCsv(await porDia.path());
+
+  expect(porDia.suggestedFilename()).toMatch(/-por-dia\.csv$/u);
+  expect(dias[0]).toBe("Dia;Marketplace;Receita bruta;Pedidos sem receita conhecida;Compras;Unidades");
+  expect(dias.slice(1).every((linha) => /^\d{2}\/\d{2}\/\d{4};(Mercado Livre|Shopee|Todos os marketplaces);/u.test(linha))).toBe(true);
+  expect(dias.some((linha) => linha.includes(";Todos os marketplaces;"))).toBe(true);
+
+  // No recorte do Mercado Livre não há botão: o CSV divergiria da tela.
+  await page.goto("/vendas?marketplace=ml");
+  await expect(page.getByRole("link", { name: /^Exportar CSV por/u })).toHaveCount(0);
+});

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
+import { Icone } from "../../../components/icons";
 import { KpiStrip } from "../../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
@@ -18,6 +19,8 @@ import { MARKETPLACE_ROTULO } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
+import { TETO_DA_SERIE, lerSerieDiaria } from "../../../lib/serie-de-vendas";
+import { hrefDaExportacao } from "../../../lib/vendas-export";
 import {
   HISTORICO_SHOPEE_DIAS,
   METRICAS_MULTICANAL,
@@ -132,8 +135,9 @@ export async function VendasMulticanal({
       p_date_from: anterior.from,
       p_date_to: anterior.to,
     }),
-    supabase.rpc("get_marketplace_sales_daily", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
-    supabase.rpc("get_marketplace_sales_daily", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
+    // D-496: em páginas -- o período personalizado não tem teto, e o `max_rows` cortaria a série calado.
+    lerSerieDiaria(supabase, { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
+    lerSerieDiaria(supabase, { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
     supabase.rpc("get_marketplace_sku_sales", {
       ...argumentos,
       p_date_from: range.from,
@@ -150,8 +154,10 @@ export async function VendasMulticanal({
 
   const { total, grupos } = agruparLinhas(atualResult.data ?? []);
   const totalAnterior = agruparLinhas(anteriorResult.data ?? []).total;
-  const serie = pontosDoTotal(diasResult.data ?? [], metrica);
-  const serieAnterior = pontosDoTotal(diasAnterioresResult.data ?? [], metrica);
+  const serie = pontosDoTotal(diasResult.linhas, metrica);
+  const serieAnterior = pontosDoTotal(diasAnterioresResult.linhas, metrica);
+  // Passou do teto (~4,5 anos no "Todos"), a série está incompleta: a tela diz, em vez de desenhar só o começo.
+  const serieNoTeto = diasResult.linhas.length >= TETO_DA_SERIE || diasAnterioresResult.linhas.length >= TETO_DA_SERIE;
 
   const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
     id: linha.id,
@@ -177,6 +183,10 @@ export async function VendasMulticanal({
 
   doPeriodo.searchParams.delete("marketplace");
   const hrefPedidosShopee = `/vendas/shopee${doPeriodo.search}`;
+  const comparacao = mostraComparacao(serie.pontos, serieAnterior.pontos, metrica);
+  // D-496: o CSV de cada painel, no recorte da tela -- só quando o painel tem linhas.
+  const exportarDias = diasResult.linhas.length > 0 ? hrefDaExportacao(hrefDeVendas(recorte), "dia") : null;
+  const exportarContas = grupos.length > 0 ? hrefDaExportacao(hrefDeVendas(recorte), "conta") : null;
 
   return (
     <>
@@ -306,6 +316,13 @@ export async function VendasMulticanal({
         </p>
       )}
 
+      {serieNoTeto && (
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          Período longo demais para o gráfico: a série passa de {formatCount(TETO_DA_SERIE)} linhas e foi cortada. Escolha um
+          período menor.
+        </p>
+      )}
+
       {invalidCustom && (
         <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
@@ -338,8 +355,18 @@ export async function VendasMulticanal({
             <Panel
               title="Desempenho no período"
               aside={
-                mostraComparacao(serie.pontos, serieAnterior.pontos, metrica) ? (
-                  <LegendaDoGrafico previousRangeFrom={anterior.from} previousRangeTo={anterior.to} />
+                comparacao || exportarDias !== null ? (
+                  <>
+                    {comparacao && (
+                      <LegendaDoGrafico previousRangeFrom={anterior.from} previousRangeTo={anterior.to} />
+                    )}
+                    {/* D-496: a série por dia e por marketplace, no recorte da tela. */}
+                    {exportarDias !== null && (
+                      <a className="sb-button" href={exportarDias} download aria-label="Exportar CSV por dia">
+                        <Icone nome="baixar" tamanho={14} /> Exportar CSV
+                      </a>
+                    )}
+                  </>
                 ) : undefined
               }
               subtitle={
@@ -391,10 +418,20 @@ export async function VendasMulticanal({
               title="Por marketplace e conta"
               subtitle="A soma de cada marketplace vem do banco; pedidos do Mercado Livre e recebido da Shopee não somam entre canais e ficam na linha de cada um."
               aside={
-                temShopee ? (
-                  <Link href={hrefPedidosShopee} style={{ color: "var(--sb-secondary)", fontSize: "0.6875rem" }}>
-                    Pedidos e lojas da Shopee →
-                  </Link>
+                temShopee || exportarContas !== null ? (
+                  <>
+                    {temShopee && (
+                      <Link href={hrefPedidosShopee} style={{ color: "var(--sb-secondary)", fontSize: "0.6875rem" }}>
+                        Pedidos e lojas da Shopee →
+                      </Link>
+                    )}
+                    {/* D-496: esta tabela, linha por linha, no recorte da tela. */}
+                    {exportarContas !== null && (
+                      <a className="sb-button" href={exportarContas} download aria-label="Exportar CSV por conta">
+                        <Icone nome="baixar" tamanho={14} /> Exportar CSV
+                      </a>
+                    )}
+                  </>
                 ) : undefined
               }
             >
