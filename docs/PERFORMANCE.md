@@ -1419,6 +1419,12 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### O C-58 da Shopee em produção, depois da D-485 e da D-487 (19/10/2026)
+
+**Produção, como `authenticated`** (ADMIN da organização, transação só de leitura): `get_shopee_faturamento` em **~1,05 s em 30 dias** (374 mil páginas do cache) e **~3,3 s em 90** (1,14 milhão). Como `postgres`, o mesmo tempo: não é a RLS. `get_shopee_faturamento_pedidos` sozinha leva o mesmo, então a D-485 e a D-487 não pesam; o custo está na definição por pedido, que as quatro leituras da `/faturamento` Shopee chamam.
+
+**Um custo isolado:** as cinco leituras do `order_income` por pedido (`->>` no lateral `j`) descompactam o json cinco vezes. Nos pedidos de 90 dias, as cinco extrações levam 965 ms e 253 mil páginas; o mesmo com um `jsonb_to_record` só, 315 ms e 51 mil. A consulta da função sem esse lateral leva ~1,2 s em 90 dias. **Próxima fatia (D-489):** ler o json uma vez, ou guardar os campos como colunas na escrita do financeiro, e medir de novo lado a lado.
+
 ### A fila do financeiro da Shopee relida depois do repasse (D-485, 16/10/2026)
 
 **Banco local, uma loja com 30 mil pedidos e 25 mil liberações** (`shopee_orders_financials_pending`, limite 100, 3 execuções). A fila de antes: **5–6 ms**. Com a liberação por `exists` (uma busca no índice por pedido, 27 mil buscas): **48–75 ms**. Com as liberações da loja agregadas numa junção (a versão da migration): **18–23 ms**. Continua linear nos pedidos da loja, como antes; a chamada é do worker, uma por execução da leitura do financeiro.
