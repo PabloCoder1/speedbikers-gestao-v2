@@ -152,7 +152,7 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
-### 3.16 Vendas por anúncio da Shopee (C-67, D-493) — em código
+### 3.16 Vendas por anúncio da Shopee (C-67, D-493) — em produção desde 19/10
 
 `get_shopee_listings(p_organization_id, p_shopee_shop_id, p_estado, p_busca, p_limit, p_offset, p_date_from, p_date_to, p_vendeu, p_ordem)` — os quatro últimos com default nulo (nulo = a lista de sempre). Com período (o dia do pedido em São Paulo), cada linha (o anúncio: item ou variação) traz no fim `unidades_vendidas`, `receita_bruta`, `pedidos` e `unidades_sem_receita`, e todas as linhas trazem o recorte inteiro antes do limite: `recorte_unidades`, `recorte_receita`, `recorte_unidades_sem_receita`. A venda é a do C-59 (`shopee_sales_items`): pedido VALIDA e receita do item = preço com o desconto da loja × quantidade; preço 0 = receita desconhecida, fora da soma e contada. `p_vendeu` 'com' | 'sem' (venda válida no período) e `p_ordem` 'vendas' | 'receita' (maior primeiro; receita NULA no fim; desempate pela chave). **NULO:** sem período, e com loja nunca lida; o anúncio de loja lida que não vendeu vem 0. Recusa com mensagem: vendeu ou ordem sem período, período pela metade e valor fora da lista. **A tela manda os parâmetros só com valor, depois da migration `20261019160000` em produção (PGRST202).**
 
