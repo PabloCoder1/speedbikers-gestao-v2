@@ -3124,15 +3124,19 @@ summary[aria-disabled="true"] {
   }
 }
 
-/* A confirmação de uma remoção, no lugar do botão (`RemoverComConfirmacao`). */
-.sb-confirmacao {
+/*
+  A confirmação de uma remoção, no lugar do botão (`RemoverComConfirmacao`).
+  A caixa é a `.sb-confirmacao` de /usuarios, na variante de perigo; aqui só a
+  linha: o texto e os dois botões, que descem juntos quando falta largura.
+*/
+.sb-remover-confirmacao {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sb-space-2);
 }
 
-.sb-confirmacao-texto {
+.sb-remover-confirmacao-texto {
   flex: 1 1 12rem;
   color: var(--sb-text);
   font-size: 0.75rem;

@@ -59,11 +59,11 @@ export function RemoverComConfirmacao({
   }
 
   return (
-    <form action={acao} className="sb-confirmacao" role="group" aria-label={`Confirmar: ${rotulo}`}>
+    <form action={acao} className="sb-confirmacao sb-confirmacao-perigo sb-remover-confirmacao" role="group" aria-label={`Confirmar: ${rotulo}`}>
       {Object.entries(campos).map(([nome, valor]) => (
         <input key={nome} type="hidden" name={nome} value={valor} />
       ))}
-      <span className="sb-confirmacao-texto">{consequencia}</span>
+      <span className="sb-remover-confirmacao-texto">{consequencia}</span>
       <BotaoEnviar className="sb-button sb-button-danger" pendente={pendente}>
         {textoDaConfirmacao}
       </BotaoEnviar>

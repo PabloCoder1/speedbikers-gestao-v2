@@ -173,37 +173,39 @@ async function MetasContent({
                 descricao="Sem meta, a central mostra a projeção do mês sozinha."
               />
             ) : (
-              <table className="sb-table sb-cadastro-tabela">
-                <thead>
-                  <tr>
-                    <th>Mês</th>
-                    <th className="sb-num">Meta</th>
-                    <th>Observação</th>
-                    {podeEditar && <th aria-label="Ações" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {metas.data.map((m) => (
-                    <tr key={m.id}>
-                      <td>
-                        {rotuloDoMes(m.month)} {m.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
-                      </td>
-                      <td className="sb-num">{formatCurrency(m.revenue_goal)}</td>
-                      <td className="sb-texto-suave">{m.note ?? "—"}</td>
-                      {podeEditar && (
-                        <td>
-                          <BotaoRemover
-                            tabela="monthly_goals"
-                            id={m.id}
-                            rotulo={`Remover a meta de ${rotuloDoMes(m.month)}`}
-                            consequencia="A meta sai, e a central mostra só a projeção desse mês."
-                          />
-                        </td>
-                      )}
+              <div className="sb-cadastro-rolagem">
+                <table className="sb-table sb-cadastro-tabela">
+                  <thead>
+                    <tr>
+                      <th>Mês</th>
+                      <th className="sb-num">Meta</th>
+                      <th>Observação</th>
+                      {podeEditar && <th aria-label="Ações" />}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {metas.data.map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          {rotuloDoMes(m.month)} {m.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
+                        </td>
+                        <td className="sb-num">{formatCurrency(m.revenue_goal)}</td>
+                        <td className="sb-texto-suave">{m.note ?? "—"}</td>
+                        {podeEditar && (
+                          <td>
+                            <BotaoRemover
+                              tabela="monthly_goals"
+                              id={m.id}
+                              rotulo={`Remover a meta de ${rotuloDoMes(m.month)}`}
+                              consequencia="A meta sai, e a central mostra só a projeção desse mês."
+                            />
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </Panel>
@@ -229,45 +231,47 @@ async function MetasContent({
             ) : aliquotas.data.length === 0 ? (
               <EstadoDaTela tipo="vazio" titulo="Nenhuma alíquota cadastrada." />
             ) : (
-              <table className="sb-table sb-cadastro-tabela">
-                <thead>
-                  <tr>
-                    <th>Vigência</th>
-                    <th className="sb-num">Alíquota</th>
-                    <th>Observação</th>
-                    {podeEditar && <th aria-label="Ações" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {aliquotas.data.map((a, indice) => {
-                    // A lista vem da mais nova para a mais antiga: a vigência
-                    // termina na véspera da linha ACIMA desta.
-                    const proxima = indice === 0 ? null : (aliquotas.data[indice - 1]?.valid_from ?? null);
+              <div className="sb-cadastro-rolagem">
+                <table className="sb-table sb-cadastro-tabela">
+                  <thead>
+                    <tr>
+                      <th>Vigência</th>
+                      <th className="sb-num">Alíquota</th>
+                      <th>Observação</th>
+                      {podeEditar && <th aria-label="Ações" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aliquotas.data.map((a, indice) => {
+                      // A lista vem da mais nova para a mais antiga: a vigência
+                      // termina na véspera da linha ACIMA desta.
+                      const proxima = indice === 0 ? null : (aliquotas.data[indice - 1]?.valid_from ?? null);
 
-                    return (
-                      <tr key={a.id}>
-                        <td>
-                          {formatBusinessDate(a.valid_from)}
-                          {proxima === null ? " em diante" : ` a ${formatBusinessDate(shiftBusinessDate(proxima, -1))}`}{" "}
-                          {vigente?.id === a.id && <StatePill tone={{ tom: "ok", label: "vale hoje" }} />}
-                        </td>
-                        <td className="sb-num">{formatarAliquota(a.rate)}</td>
-                        <td className="sb-texto-suave">{a.note ?? "—"}</td>
-                        {podeEditar && (
+                      return (
+                        <tr key={a.id}>
                           <td>
-                            <BotaoRemover
-                              tabela="tax_rates"
-                              id={a.id}
-                              rotulo={`Remover a alíquota de ${formatBusinessDate(a.valid_from)}`}
-                              consequencia="Os dias dela passam a usar a alíquota anterior; sem anterior, o imposto desses dias fica em branco na central."
-                            />
+                            {formatBusinessDate(a.valid_from)}
+                            {proxima === null ? " em diante" : ` a ${formatBusinessDate(shiftBusinessDate(proxima, -1))}`}{" "}
+                            {vigente?.id === a.id && <StatePill tone={{ tom: "ok", label: "vale hoje" }} />}
                           </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <td className="sb-num">{formatarAliquota(a.rate)}</td>
+                          <td className="sb-texto-suave">{a.note ?? "—"}</td>
+                          {podeEditar && (
+                            <td>
+                              <BotaoRemover
+                                tabela="tax_rates"
+                                id={a.id}
+                                rotulo={`Remover a alíquota de ${formatBusinessDate(a.valid_from)}`}
+                                consequencia="Os dias dela passam a usar a alíquota anterior; sem anterior, o imposto desses dias fica em branco na central."
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             <div className="sb-note sb-central-bloco">
