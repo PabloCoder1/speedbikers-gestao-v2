@@ -1419,6 +1419,11 @@ As medições de D-461, D-463 e D-465 acima contam `Buffers: shared hit`, que so
 
 As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e os tempos da primeira chamada fria (2,7 s, 4,8 s, 3,8 s) seguem sendo a evidência do frio; os volumes em MB estavam superestimados. Daqui em diante, o número de frio é a página distinta, e o de acessos vai rotulado como tal.
 
+### A `/central` sem a leitura do faturamento em dobro (D-610, 19/10/2026)
+
+**Produção, 19/10, 14:20 UTC (achado do A1):** 19 consultas canceladas por `statement timeout` (8 s) em 27 s — 16 `get_faturamento` em rajadas de quatro paralelas, 2 `get_detector_frete` e 1 `get_stock_coverage_summary` (a da Home) — na sequência /central → /vendas → Home. 
+**Contagem, build local, uma carga da `/central` sem conta (log do Kong):** `get_faturamento` 4 → 3 e `get_ads_overview` 3 → 2. O "Por marketplace" lia de novo o período atual com os mesmos argumentos dos indicadores; agora reusa a leitura. Os números são os mesmos, e as outras leituras não mudaram. A segunda redução (só o período atual com detalhe, ~0,5 s contra ~0,6 s em 30 dias em produção, medida do A1) fica com o A3 e leva a 2.
+
 ### As vendas por anúncio da Shopee (D-493, 19/10/2026)
 
 **Banco local, volume realista com anúncios:** 2 lojas live, 6 mil anúncios sem variação e 40 mil pedidos em 120 dias, com as vendas espalhadas pelos anúncios (o gerador sorteava o item uma vez só: tudo caía num anúncio por loja e escondia o custo). Mediana de 5, como `authenticated`, `get_shopee_listings` com limite 50.

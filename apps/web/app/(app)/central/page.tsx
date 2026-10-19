@@ -303,10 +303,17 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
             <span className="sb-section-note">a receita soma; o resultado de cada marketplace fica no dele</span>
           </div>
           <Suspense fallback={<CarregandoBloco rotulo="o lado a lado dos marketplaces" />}>
+            {/* D-610: sem conta escolhida, o faturamento e o Ads do período atual
+                são as MESMAS leituras dos indicadores (`leituras`): o bloco as
+                reusa, em vez de chamar as duas RPCs de novo. */}
             <CorpoTodos
               organizationId={membership.organizationId}
               recorte={{ escopo: "todos", periodo: { from: periodo.atual.from, to: periodo.atual.to }, contas: null }}
               range={periodo.atual}
+              leiturasDoMl={{
+                faturamento: leituras.then(([atual]) => atual),
+                ads: leituras.then(([, , adsAtual]) => adsAtual),
+              }}
             />
           </Suspense>
         </section>

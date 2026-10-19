@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **507** (D-001 a D-606).
+Decisões registradas: **508** (D-001 a D-610).
 
 ## Por domínio
 
@@ -323,7 +323,7 @@ Decisões registradas: **507** (D-001 a D-606).
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 
-### outros (73)
+### outros (74)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -398,6 +398,7 @@ Decisões registradas: **507** (D-001 a D-606).
 - **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
 - **D-604** — As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
+- **D-610** — A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 
 ### processo/docs (1)
 
