@@ -129,6 +129,11 @@
 - Nenhum. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
 
 **Achados para o dono e o A1**
+- **As duas frentes que o dono escolheu (19/10):** as vendas por anúncio da Shopee (C-67, D-493 do A1, depois a tela D-606) e o estoque baixando a venda da Shopee (D-495 do A1). Respostas do dono sobre o estoque, perguntadas pelo A2:
+  - **em tempo real, como o ML** — cada venda paga baixa ao ser lida, com o corte da D-351 (o que a planilha do UpSeller já descontou vira estorno), e a reconciliação diária segue;
+  - **o UpSeller devolve sozinho** a unidade do pedido cancelado ou devolvido: a V3 só repõe o que acontece depois do corte, no máximo uma vez;
+  - **algumas vendas saem de um estoque que não é o dele** (o equivalente ao Full): precisa do sinal por pedido, e a venda com ele grava venda + estorno, como a D-352;
+  - **notas de SAÍDA de venda são importadas às vezes em /notas-fiscais** — e hoje isso já baixa duas vezes no ML: o import de NF-e não tem guarda por CFOP, a VENDA_ML já baixou, e a reconciliação não corrige (o alvo da D-132 soma a SAIDA_NFE posterior à planilha). Do A1: medir em produção (só leitura), a guarda e a correção com o dono, antes da D-495.
 - O parâmetro `canal` já é o tipo de caso em `/atendimento`: o filtro novo usa `marketplace`.
 - O filtro de conta tem cinco convenções na URL (`account`/`conta` por slug, `conta`/`escopo` por uuid, `loja`); os filtros salvos guardam esses valores, então o slug antigo continua aceito na leitura.
 - **T-R3 confirmado pelo dono (15/10):** a planilha do UpSeller já vem com a venda da Shopee descontada do estoque, e a reposição só conta a demanda do ML — cobertura alta demais e sugestão baixa demais para SKU que vende na Shopee. O dono liberou somar a demanda da Shopee (15/10): o A1 faz o C-65 (D-459) e a tela já o lê (D-464). O `history_days_90` continua sendo o do ML: SKU que só vende na Shopee pode aparecer com histórico curto.
