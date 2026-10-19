@@ -66,7 +66,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
 | Sincronização | `/sincronizacao` | 2 | — | `sync_runs`, `daily_account_metrics` (ML) · `marketplace_accounts` (C-52) e `shopee_shops` | frescor do catálogo da loja | T3a ✔ (D-438); T3c ✔ (D-462: devoluções, repasses e Ads lidos até quando) |
 | Saúde | `/saude` | 1 | — | `job_runs` (já inclui os jobs Shopee) | cadência dos jobs Shopee em `lib/sync-health.ts` | T1 (C-09) |
-| Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | indicadores só do ML; lojas num painel solto | T1 ✔ (D-431: "Contas e lojas" no título e no menu); E3 → T3 |
+| Contas | `/contas` | 2 | — | `get_ml_account_cards` + `shopee_shops` | — (a faixa conta contas e lojas desde a D-600; as lojas seguem na tabela própria, com o catálogo e a autorização) | T1 ✔ (D-431: "Contas e lojas" no título e no menu); D-600 ✔ (a faixa com os dois canais) |
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
@@ -261,6 +261,7 @@ número.
 | **D-494** | Filtros salvos em `/anuncios/shopee` e `/vendas/shopee` | — | ✔ D-494 |
 | **D-496** | O CSV de `/vendas` no "Todos" e na Shopee, e a série diária em páginas | — | ✔ D-496 |
 | **D-498** | Os ajustes depois do repasse e o lucro após imposto e Ads da Shopee | A1 (D-485, D-487) | ✔ D-498 |
+| **D-600** | A faixa de `/contas` com as contas do ML e as lojas Shopee | — | ✔ D-600 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
