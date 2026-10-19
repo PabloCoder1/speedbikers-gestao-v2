@@ -3591,10 +3591,12 @@ export type Database = {
           cancel_by: string | null
           cancel_reason: string | null
           cod: boolean | null
+          coins: number | null
           commission_fee: number | null
           currency: string | null
           escrow_amount: number | null
           escrow_amount_after_adjustment: number | null
+          final_return_to_seller_shipping_fee: number | null
           final_shipping_fee: number | null
           financials_error: string | null
           financials_error_at: string | null
@@ -3602,6 +3604,7 @@ export type Database = {
           net_commission_fee: number | null
           net_service_fee: number | null
           order_ams_commission_fee: number | null
+          order_discounted_price: number | null
           order_income: Json | null
           order_sn: string
           order_status: string
@@ -3610,11 +3613,14 @@ export type Database = {
           payment_method: string | null
           return_order_sns: string[] | null
           reverse_shipping_fee: number | null
+          seller_coin_cash_back: number | null
           seller_discount: number | null
           seller_order_processing_fee: number | null
           seller_transaction_fee: number | null
           service_fee: number | null
           shipping_carrier: string | null
+          shipping_fee_discount_from_3pl: number | null
+          shipping_seller_protection_fee_amount: number | null
           shopee_created_at: string
           shopee_discount: number | null
           shopee_shipping_rebate: number | null
@@ -3633,10 +3639,12 @@ export type Database = {
           cancel_by?: string | null
           cancel_reason?: string | null
           cod?: boolean | null
+          coins?: number | null
           commission_fee?: number | null
           currency?: string | null
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
+          final_return_to_seller_shipping_fee?: number | null
           final_shipping_fee?: number | null
           financials_error?: string | null
           financials_error_at?: string | null
@@ -3644,6 +3652,7 @@ export type Database = {
           net_commission_fee?: number | null
           net_service_fee?: number | null
           order_ams_commission_fee?: number | null
+          order_discounted_price?: number | null
           order_income?: Json | null
           order_sn: string
           order_status: string
@@ -3652,11 +3661,14 @@ export type Database = {
           payment_method?: string | null
           return_order_sns?: string[] | null
           reverse_shipping_fee?: number | null
+          seller_coin_cash_back?: number | null
           seller_discount?: number | null
           seller_order_processing_fee?: number | null
           seller_transaction_fee?: number | null
           service_fee?: number | null
           shipping_carrier?: string | null
+          shipping_fee_discount_from_3pl?: number | null
+          shipping_seller_protection_fee_amount?: number | null
           shopee_created_at: string
           shopee_discount?: number | null
           shopee_shipping_rebate?: number | null
@@ -3675,10 +3687,12 @@ export type Database = {
           cancel_by?: string | null
           cancel_reason?: string | null
           cod?: boolean | null
+          coins?: number | null
           commission_fee?: number | null
           currency?: string | null
           escrow_amount?: number | null
           escrow_amount_after_adjustment?: number | null
+          final_return_to_seller_shipping_fee?: number | null
           final_shipping_fee?: number | null
           financials_error?: string | null
           financials_error_at?: string | null
@@ -3686,6 +3700,7 @@ export type Database = {
           net_commission_fee?: number | null
           net_service_fee?: number | null
           order_ams_commission_fee?: number | null
+          order_discounted_price?: number | null
           order_income?: Json | null
           order_sn?: string
           order_status?: string
@@ -3694,11 +3709,14 @@ export type Database = {
           payment_method?: string | null
           return_order_sns?: string[] | null
           reverse_shipping_fee?: number | null
+          seller_coin_cash_back?: number | null
           seller_discount?: number | null
           seller_order_processing_fee?: number | null
           seller_transaction_fee?: number | null
           service_fee?: number | null
           shipping_carrier?: string | null
+          shipping_fee_discount_from_3pl?: number | null
+          shipping_seller_protection_fee_amount?: number | null
           shopee_created_at?: string
           shopee_discount?: number | null
           shopee_shipping_rebate?: number | null
