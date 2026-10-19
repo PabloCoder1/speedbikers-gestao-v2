@@ -5772,17 +5772,14 @@ export type Database = {
           // CORRECAO MANUAL (D-437): TOTAL sem conta; loja nunca lida com tudo nulo.
           account_id: string | null
           account_name: string | null
-          // CORRECAO MANUAL (D-485): opcional -- ausente antes da 20261016220000; a tela le pela presenca.
-          ajustes_cobertos?: number | null
-          // CORRECAO MANUAL (D-487): opcional -- ausente antes da 20261016230000.
-          ads_rateado?: number | null
+          ajustes_cobertos: number | null
+          ads_rateado: number | null
           custo_produtos: number | null
           environment: string | null
           imposto_coberto: number | null
-          // CORRECAO MANUAL (D-487): opcionais -- ausentes antes da 20261016230000.
-          investimento_ads?: number | null
+          investimento_ads: number | null
           margem_apos_imposto: number | null
-          margem_contribuicao?: number | null
+          margem_contribuicao: number | null
           margem_venda: number | null
           nivel: "TOTAL" | "CONTA"
           pedidos: number | null
@@ -5799,7 +5796,7 @@ export type Database = {
           receita_coberta: number | null
           recebido_coberto: number | null
           resultado_apos_imposto: number | null
-          resultado_contribuicao?: number | null
+          resultado_contribuicao: number | null
           resultado_definitivo: number | null
           resultado_provisorio: number | null
           resultado_venda: number | null
@@ -5832,8 +5829,7 @@ export type Database = {
           outros: number | null
           pedidos_cobertos: number | null
           pedidos_com_ajuste: number | null
-          // CORRECAO MANUAL (D-483): opcional -- em producao desde a 20261016180000; fica opcional ate as fixtures da web o trazerem.
-          protecao_envio?: number | null
+          protecao_envio: number | null
           recebido_coberto: number | null
           receita_coberta: number | null
           taxa_por_pedido: number | null
@@ -5894,8 +5890,7 @@ export type Database = {
           order_sn: string
           order_status: string
           outros: number | null
-          // CORRECAO MANUAL (D-483): opcional -- em producao desde a 20261016180000; fica opcional ate as fixtures da web o trazerem.
-          protecao_envio?: number | null
+          protecao_envio: number | null
           recebido: number | null
           receita: number | null
           sem_sku: boolean
