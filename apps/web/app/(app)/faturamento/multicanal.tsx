@@ -12,6 +12,8 @@ import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { StatePill } from "../../../components/state-pill";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { lerVisaoAds } from "../../../lib/ads";
+import { lucroDoMercadoLivre } from "../../../lib/central-indicadores";
 import { lerFaturamento, participacao, tomDaMargem, type SkuFaturamento } from "../../../lib/faturamento";
 import {
   hrefDeFaturamento,
@@ -429,7 +431,10 @@ async function CorpoShopee({
   const margemMinima = limites.margemMinima;
   const composicao =
     composicaoResult.error === null ? (composicaoResult.data.find((linha) => linha.nivel === "TOTAL") ?? null) : null;
-  const cascata = total === null ? null : montarCascataShopee(composicao, total.custo_produtos, total.resultado_venda);
+  const cascata =
+    total === null ? null : montarCascataShopee(composicao, total.custo_produtos, total.resultado_venda, total.ajustes_cobertos);
+  // D-485 pela PRESENÇA da coluna: antes da 20261016220000 o resultado ainda é recebido − custo.
+  const comAjustes = total?.ajustes_cobertos !== undefined;
 
   return (
     <>
@@ -446,8 +451,10 @@ async function CorpoShopee({
       <KpiStrip ancora cells={celulasShopee(total, totalAnterior, margemMinima)} />
 
       <p role="note" className="sb-an-nota">
-        Resultado = o que a Shopee diz que a loja recebe (escrow) − o custo dos produtos. Não soma com o resultado do
-        Mercado Livre, que desconta menos coisas —{" "}
+        {comAjustes
+          ? "Resultado = o que a Shopee diz que a loja recebe (escrow) + os ajustes que ela cobra depois do repasse − o custo dos produtos."
+          : "Resultado = o que a Shopee diz que a loja recebe (escrow) − o custo dos produtos."}{" "}
+        Não soma com o resultado do Mercado Livre, que desconta menos coisas —{" "}
         <LinkDeFiltro href={hrefDeFaturamento(recorte, { escopo: "todos" })}>veja os dois lado a lado</LinkDeFiltro>. A loja Shopee de
         teste nunca entra nas somas.
       </p>
@@ -516,9 +523,28 @@ async function CorpoShopee({
                   <span className="sb-valores-rotulo">Resultado após imposto</span>
                   <strong className="sb-valores-valor">{formatCurrency(total.resultado_apos_imposto)}</strong>
                   <span className="sb-valores-nota">
-                    margem após imposto {formatPercent(total.margem_apos_imposto)} · Ads e despesas fixas ficam fora
+                    margem após imposto {formatPercent(total.margem_apos_imposto)} ·{" "}
+                    {total.resultado_contribuicao === undefined ? "Ads e despesas fixas ficam fora" : "o Ads entra na linha abaixo"}
                   </span>
                 </li>
+                {/*
+                  D-487: o lucro após imposto e Ads, pronto no SQL (a regra do 5K do ML).
+                  Pela PRESENÇA da coluna; nulo diz por quê -- a coluna que veio nula é o
+                  motivo (sem alíquota, ou o Ads que não cobre o período).
+                */}
+                {total.resultado_contribuicao !== undefined && (
+                  <li title="resultado após imposto − Ads CPC da loja × (receita coberta ÷ receita bruta)">
+                    <span className="sb-valores-rotulo">Lucro após imposto e Ads</span>
+                    <strong className="sb-valores-valor">{formatCurrency(total.resultado_contribuicao)}</strong>
+                    <span className="sb-valores-nota">
+                      {total.resultado_apos_imposto === null
+                        ? "sem o imposto, sem a contribuição: cadastre a alíquota"
+                        : total.investimento_ads === null || total.investimento_ads === undefined
+                          ? "a leitura de Ads da loja não cobre o período inteiro"
+                          : `margem de contribuição ${formatPercent(total.margem_contribuicao ?? null)} · Ads CPC da loja de ${formatCurrency(total.investimento_ads)}, ${formatCurrency(total.ads_rateado ?? null)} rateado pela receita coberta · sem custos fixos; o GMV Max fica fora`}
+                    </span>
+                  </li>
+                )}
                 {/*
                   Os informativos do C-61, fora da cascata: cada um com o valor
                   que veio do banco, sem total -- somar aqui seria agregar fora
@@ -550,7 +576,8 @@ async function CorpoShopee({
                         <span className="sb-valores-nota">{nota}</span>
                       </li>
                     ))}
-                {composicao !== null && (composicao.pedidos_com_ajuste ?? 0) > 0 && (
+                {/* Com a D-485 o ajuste é degrau da cascata, e o informativo repetiria o número. */}
+                {!comAjustes && composicao !== null && (composicao.pedidos_com_ajuste ?? 0) > 0 && (
                   <li title="ajustes da Shopee depois do escrow">
                     <span className="sb-valores-rotulo">Ajustes depois do repasse</span>
                     <strong className="sb-valores-valor">{formatCurrency(composicao.ajustes)}</strong>
@@ -998,7 +1025,7 @@ export async function CorpoTodos({
 }): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const [mlResult, shopeeResult] = await Promise.all([
+  const [mlResult, shopeeResult, adsMlResult] = await Promise.all([
     supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, p_detalhe: false }),
     supabase.rpc("get_shopee_faturamento", {
       p_organization_id: organizationId,
@@ -1006,12 +1033,16 @@ export async function CorpoTodos({
       p_date_to: range.to,
       p_account_ids: null,
     }),
+    // D-498: o Product Ads do ML, só para a linha do lucro após imposto e Ads -- a mesma leitura da central.
+    supabase.rpc("get_ads_overview", { p_date_from: range.from, p_date_to: range.to }),
   ]);
 
   // Cada lado falha sozinho: o outro continua de pé, e o que falhou diz por quê.
   const ml = mlResult.error === null ? lerFaturamento(mlResult.data) : null;
   const shopee = shopeeResult.error === null ? separarLinhasShopee(shopeeResult.data).total : null;
-  const linhas = linhasDaComparacao(ml, shopee);
+  // O Ads que falhou não vira zero: o lucro do ML fica "—" (adsDoPeriodo sem leitura é nulo).
+  const adsMl = adsMlResult.error === null ? lerVisaoAds(adsMlResult.data) : null;
+  const linhas = linhasDaComparacao(ml, shopee, ml === null ? null : lucroDoMercadoLivre(ml, adsMl, range));
   const margemMinima = ml?.margemMinima;
 
   /*

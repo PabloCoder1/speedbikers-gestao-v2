@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **500** (D-001 a D-515).
+Decisões registradas: **501** (D-001 a D-515).
 
 ## Por domínio
 
@@ -162,7 +162,7 @@ Decisões registradas: **500** (D-001 a D-515).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (66)
+### interface (67)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -224,6 +224,7 @@ Decisões registradas: **500** (D-001 a D-515).
 - **D-480** — Telas multicanais, etapa T8a: a Shopee na /central, lado a lado e sem total de resultado; as metas por marketplace ficam para a T8b, sobre o C-66 do A1
 - **D-482** — Telas multicanais, etapa T8b: a meta de cada marketplace ao lado da geral, na central e em Metas e imposto (consome o C-66)
 - **D-486** — Telas multicanais, etapa T9: o ensaio do Go Live das telas, com uma loja Shopee LIVE criada e apagada pelo próprio e2e, num projeto do Playwright que roda por último
+- **D-498** — Os ajustes depois do repasse e o lucro após imposto e Ads da Shopee, na tela
 - **D-500** — Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 - **D-501** — A atualizacao no lugar chega ao resto do app: as buscas GET viram FormularioFiltro, os links de mesma tela viram LinkDeFiltro, e uma guarda impede a recarga de voltar
 - **D-502** — Um estado da tela so (erro, vazio, filtro, permissao) e acoes que gravam dizem o que estao fazendo e nao aceitam duplo clique

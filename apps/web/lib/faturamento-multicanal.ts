@@ -72,6 +72,18 @@ export interface LinhaFaturamentoShopee {
   readonly resultado_apos_imposto: number | null;
   readonly margem_apos_imposto: number | null;
   readonly ultima_atualizacao: string | null;
+  /**
+   * D-485: os ajustes que a Shopee cobra DEPOIS do repasse (negativo = cobrado),
+   * já dentro do resultado. Ausente (`undefined`) antes da 20261016220000; nulo
+   * quando nenhum coberto trouxe o campo.
+   */
+  readonly ajustes_cobertos?: number | null;
+  /** D-487: o Ads CPC da loja no período e o rateado pela receita coberta. Ausentes antes da 20261016230000. */
+  readonly investimento_ads?: number | null;
+  readonly ads_rateado?: number | null;
+  /** D-487: lucro após imposto e Ads (5K, no SQL) e a margem dele. Nulos sem alíquota ou sem o Ads do período inteiro. */
+  readonly resultado_contribuicao?: number | null;
+  readonly margem_contribuicao?: number | null;
 }
 
 /**
@@ -170,8 +182,12 @@ export interface LinhaDaComparacao {
 export function linhasDaComparacao(
   ml: { readonly resumo: ResumoFaturamento; readonly imposto: ImpostoDoPeriodo | null } | null,
   shopee: LinhaFaturamentoShopee | null,
+  /** O lucro após imposto e Ads do ML pela regra dos indicadores da central (`lucroDoMercadoLivre`). */
+  lucroMl: number | null = null,
 ): LinhaDaComparacao[] {
   const r = ml?.resumo ?? null;
+  // D-485 pela PRESENÇA da coluna: antes da 20261016220000 o resultado da Shopee ainda é recebido − custo.
+  const comAjustes = shopee?.ajustes_cobertos !== undefined;
 
   return [
     { rotulo: "Receita bruta", formato: "moeda", ml: r?.receita_bruta ?? null, shopee: shopee?.receita_bruta ?? null, definicao: null },
@@ -214,7 +230,12 @@ export function linhasDaComparacao(
       formato: "moeda",
       ml: r?.resultado_venda ?? null,
       shopee: shopee?.resultado_venda ?? null,
-      definicao: { ml: "recebido − custo, pela conta do ML", shopee: "recebido − custo, pela conta da Shopee" },
+      definicao: {
+        ml: "recebido − custo, pela conta do ML",
+        shopee: comAjustes
+          ? "recebido + ajustes depois do repasse − custo, pela conta da Shopee"
+          : "recebido − custo, pela conta da Shopee",
+      },
     },
     {
       rotulo: "Margem sobre a venda",
@@ -229,6 +250,17 @@ export function linhasDaComparacao(
       ml: ml?.imposto?.resultado_apos_imposto ?? null,
       shopee: shopee?.resultado_apos_imposto ?? null,
       definicao: null,
+    },
+    {
+      // D-487/D-498: a regra do 5K nos dois -- o Ads rateado pela receita coberta, sem custos fixos.
+      rotulo: "Lucro após imposto e Ads",
+      formato: "moeda",
+      ml: lucroMl,
+      shopee: shopee?.resultado_contribuicao ?? null,
+      definicao: {
+        ml: "Product Ads rateado pela receita coberta; sem custos fixos",
+        shopee: "Ads CPC da loja rateado pela receita coberta (o GMV Max fica fora); sem custos fixos",
+      },
     },
   ];
 }
@@ -291,6 +323,9 @@ function faixa(a: number, b: number): { inicio: number; largura: number } {
   return { inicio, largura: limitar(Math.max(a, b)) - inicio };
 }
 
+/** O degrau da D-485: o mesmo nome da linha informativa que ele substitui. */
+export const AJUSTES_DEPOIS_DO_REPASSE = "Ajustes depois do repasse";
+
 export interface CascataShopee {
   readonly degraus: DegrauDaCascata[];
   /** Componentes que nenhum pedido coberto informou: NULO no contrato, fora da cascata -- e ditos. */
@@ -314,6 +349,8 @@ export function montarCascataShopee(
   composicao: ComposicaoShopee | null,
   custo: number | null,
   resultado: number | null,
+  /** `ajustes_cobertos` do C-58 (D-485); `undefined` = o banco antes da 20261016220000. */
+  ajustes?: number | null,
 ): CascataShopee | null {
   if (composicao === null) return null;
 
@@ -381,6 +418,39 @@ export function montarCascataShopee(
       fracao: f(recebido),
       ...faixa(0, Math.abs(f(recebido))),
     },
+  );
+
+  /*
+    D-485: o ajuste que a Shopee cobra DEPOIS do repasse (ela libera o escrow
+    cheio e cobra à parte) entra no resultado -- e aqui, entre o recebido e o
+    custo, para a cascata fechar: resultado = recebido + ajustes − custo, no SQL.
+    Pela PRESENÇA da coluna: ausente, a cascata de antes. Nulo (nenhum coberto
+    trouxe o campo) e zero são ditos como os componentes; o custo começa onde
+    o ajuste terminou.
+  */
+  let antesDoCusto = f(recebido);
+
+  if (ajustes === null) {
+    naoInformados.push(AJUSTES_DEPOIS_DO_REPASSE);
+  } else if (ajustes === 0) {
+    zerados.push(AJUSTES_DEPOIS_DO_REPASSE);
+  } else if (ajustes !== undefined) {
+    const depois = antesDoCusto + f(ajustes);
+
+    degraus.push({
+      chave: "ajustes",
+      rotulo: AJUSTES_DEPOIS_DO_REPASSE,
+      metricId: "shopee_ajustes_pos_repasse",
+      tipo: "deducao",
+      // Cobrado é negativo, como as deduções; um crédito sobe.
+      valor: ajustes,
+      fracao: f(ajustes),
+      ...faixa(depois, antesDoCusto),
+    });
+    antesDoCusto = depois;
+  }
+
+  degraus.push(
     {
       chave: "custo",
       rotulo: "Custo dos produtos",
@@ -388,7 +458,7 @@ export function montarCascataShopee(
       tipo: "deducao",
       valor: -custo,
       fracao: -f(custo),
-      ...faixa(f(resultado), f(recebido)),
+      ...faixa(f(resultado), antesDoCusto),
     },
     {
       chave: "resultado",
