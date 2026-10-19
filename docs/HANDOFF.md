@@ -42,7 +42,7 @@ e `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **O faturamento do ML perto do `statement_timeout` (19/10, `docs/PERFORMANCE.md`, D-499 em diagnóstico):** às 14:20 UTC, 16 `get_faturamento` (em rajadas de 4, da `/central`), 2 `get_detector_frete` e 1 `get_stock_coverage_summary` da Home foram cancelados em 8 s. Com cache quente, 30 dias levam ~0,5 s e 90 dias com detalhe ~1,9 s; frio, 7,4 s. A instância tem ~1 GB de RAM (256 MB de `shared_buffers`) para ~360 MB de pedidos e itens. Em curso: o A2 tira a leitura repetida da `/central`; a correção de fundo depende de decisão do dono (instância maior ou um resumo por pedido mantido incrementalmente).
+- **O faturamento do ML perto do `statement_timeout`** (19/10, D-499 em diagnóstico, `docs/PERFORMANCE.md`): 16 `get_faturamento` da `/central` cancelados em 8 s às 14:20; 90 dias com detalhe ~1,9 s quente e 7,4 s frio numa instância de ~1 GB. A correção de fundo espera decisão do dono.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
