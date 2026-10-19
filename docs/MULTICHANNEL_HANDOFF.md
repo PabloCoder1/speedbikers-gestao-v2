@@ -131,11 +131,19 @@
 **Em andamento**
 - Nada.
 
-**Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
-- Nada nas telas da frente (T0 a T8). Os números da Shopee aparecem sozinhos com a loja live (Go Live, do dono).
+**Falta** (`docs/MULTICHANNEL_SCREENS.md` §2 e §8). As etapas T0 a T11 estão na `main`; o que resta nas telas espera um contrato do A1 ou uma escolha do dono:
+- **Esperam o A1, na ordem dele (D-499 → D-497 (b) → D-495 → D-491):**
+  - **D-495**, o estoque baixando a venda da Shopee (decisão do dono de 19/10): os rótulos dos tipos novos (`lib/movement-labels.ts` e `lib/movement-filters.ts`), a origem "Pedido Shopee" (`source_type` = `SHOPEE_ORDER`, `source_id` = `order_sn`, combinado com o A1) com o link para `/vendas/shopee?pedido=`, e a nota da `/estoque`. A tela entra junto da migration ou do worker, para ninguém ver o código cru. Os nomes dos tipos ainda não estão firmes.
+  - **D-497 (b)**: o rótulo do código de recusa da nota de saída em `/notas-fiscais/nova`.
+  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read`; a tela manda a loja só com valor e o botão de lote volta (D-604).
+- **Pedem contrato novo do A1 e a escolha do dono** (ver "Decisões pendentes do dono", item 4):
+  - `/vendas` no "Todos": marca, vendas de hoje e taxa de cancelamento. O C-53 não traz cancelamento nem marca, e a tela diz que são só do ML.
+  - SKU: os pedidos da Shopee que contêm o SKU e o dia a dia por canal. O `get_shopee_orders` não filtra por SKU.
+  - Central de Ações: nenhum detector gera ação da Shopee (worker do A1).
+- **Sem fonte hoje:** o histórico de preço da Shopee (`/precos`), o chat da Shopee (`/atendimento`) e a Shopee nas ferramentas do Copiloto.
 
 **Bloqueios**
-- Nenhum. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
+- Nenhum na tela. O que falta, acima, espera o A1 ou o dono. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
 
 **Achados para o dono e o A1**
 - **As duas frentes que o dono escolheu (19/10):** as vendas por anúncio da Shopee (C-67, D-493 do A1, depois a tela D-606) e o estoque baixando a venda da Shopee (D-495 do A1). Respostas do dono sobre o estoque, perguntadas pelo A2:
@@ -245,3 +253,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
 2. **E6b a E7c — tudo na `main` (391c7165):** `migrations-producao.yml` para `20261015000000` a `20261015050000`; **E7a, E7b e E7c também publicam o worker, DEPOIS da migration** (os jobs leem as colunas novas); a E7d (push) publica a **api** e pede o cadastro do endereço no Console (`docs/DEPLOYMENT.md` §6.2) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)
 3. ~~**T8 (central e meta)**~~ — decidido pelo dono (15/10, perguntado pelo A2): uma meta POR MARKETPLACE e uma GERAL; os indicadores do período lado a lado, com a receita somada e sem total de resultado; construir já, antes do Go Live. A T8a está na D-480 e a T8b na D-482, sobre o C-66 do A1 (D-473).
+4. **A próxima frente das telas, depois da D-495** (levantado pelo A2 em 19/10). Cada opção pede um contrato do A1 antes da tela:
+   (a) marca, vendas de hoje e taxa de cancelamento no "Todos" de `/vendas`;
+   (b) os pedidos da Shopee e o dia a dia por canal no SKU;
+   (c) um detector da Shopee na Central de Ações.
