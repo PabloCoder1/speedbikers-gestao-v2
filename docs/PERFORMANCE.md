@@ -1438,6 +1438,11 @@ As melhoras continuam valendo (os acessos são CPU e o distinto também caiu), e
 
 **A instância:** `shared_buffers` 256 MB e `effective_cache_size` 768 MB (~1 GB de RAM), `work_mem` 3,5 MB (32 MB nesta função), para `orders` 182 MB e `order_items` 177 MB. Várias chamadas pesadas juntas e com cache frio passam de 8 s. **Saídas:** (1) menos chamadas na `/central` (o A2 tira a repetida; a do período atual sem detalhe também é coberta pela com detalhe); (2) instância com mais memória, decisão de custo do dono; (3) um resumo por pedido mantido incrementalmente, que o `get_faturamento` agrega sem buscar pedido e item (a correção de fundo, D-499, com equivalência provada contra a função de hoje).
 
+### A `/central` sem a leitura do faturamento em dobro (D-610, 19/10/2026)
+
+**Produção, 19/10, 14:20 UTC (achado do A1):** 19 consultas canceladas por `statement timeout` (8 s) em 27 s — 16 `get_faturamento` em rajadas de quatro paralelas, 2 `get_detector_frete` e 1 `get_stock_coverage_summary` (a da Home) — na sequência /central → /vendas → Home. 
+**Contagem, build local, uma carga da `/central` sem conta (log do Kong):** `get_faturamento` 4 → 3 e `get_ads_overview` 3 → 2. O "Por marketplace" lia de novo o período atual com os mesmos argumentos dos indicadores; agora reusa a leitura. Os números são os mesmos, e as outras leituras não mudaram. A segunda redução (só o período atual com detalhe, ~0,5 s contra ~0,6 s em 30 dias em produção, medida do A1) fica com o A3 e leva a 2.
+
 ### As vendas por anúncio da Shopee (D-493, 19/10/2026)
 
 **Banco local, volume realista com anúncios:** 2 lojas live, 6 mil anúncios sem variação e 40 mil pedidos em 120 dias, com as vendas espalhadas pelos anúncios (o gerador sorteava o item uma vez só: tudo caía num anúncio por loja e escondia o custo). Mediana de 5, como `authenticated`, `get_shopee_listings` com limite 50.
