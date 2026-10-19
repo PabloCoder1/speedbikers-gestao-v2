@@ -141,6 +141,13 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   // leitura do período atual, que já vem com detalhe.
   const leituraProdutos = leituras.then(([atual]) => atual);
 
+  // Se as contas LANÇAREM (falha de rede, não `{ error }`), a página cai no
+  // `await` abaixo antes de alguém esperar estas leituras: sem um dono, a
+  // rejeição viraria `unhandledRejection` no log. Quem as consome ainda recebe a
+  // falha (revisão do A2, D-517).
+  void leituras.catch(() => undefined);
+  void leituraProdutos.catch(() => undefined);
+
   const [accountsResult, membership, selectedAccount] = await Promise.all([accountsPromise, membershipPromise, contaPromise]);
   const accounts = accountsResult.data ?? [];
   const contaSlug = selectedAccount?.slug ?? null;

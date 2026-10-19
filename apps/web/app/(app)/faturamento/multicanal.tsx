@@ -1008,11 +1008,12 @@ export async function CorpoTodos({
   range: { from: string; to: string };
   /**
    * D-610: as leituras do Mercado Livre que quem chama JÁ fez com os MESMOS
-   * argumentos (o período `range`, sem conta; com ou sem detalhe, que o `resumo` e a `margem_minima` são os mesmos — a `/central` lê com detalhe, UX_SYSTEM §6). A `/central` as
-   * passa: lidas de novo aqui, eram uma `get_faturamento` e uma
-   * `get_ads_overview` a mais por carga, em paralelo com as outras (os
-   * timeouts de produção de 19/10). Sem elas, o bloco lê sozinho, como no
-   * "Todos" de `/faturamento`.
+   * argumentos (o período `range`, sem conta; com ou sem detalhe, que o
+   * `resumo` e a `margem_minima` são os mesmos — a `/central` lê com detalhe,
+   * UX_SYSTEM §6). A `/central` as passa: lidas de novo aqui, eram uma
+   * `get_faturamento` e uma `get_ads_overview` a mais por carga, em paralelo
+   * com as outras (os timeouts de produção de 19/10). Sem elas, o bloco lê
+   * sozinho, como no "Todos" de `/faturamento`.
    */
   leiturasDoMl?: { readonly faturamento: Promise<RespostaRpc>; readonly ads: Promise<RespostaRpc> };
 }): Promise<ReactNode> {
