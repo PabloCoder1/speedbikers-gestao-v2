@@ -21,6 +21,10 @@ import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { contarLojasShopee } from "../../../lib/marketplace";
+import { Icone } from "../../../components/icons";
+import { lerSerieDoMl } from "../../../lib/serie-de-vendas";
+import { hrefDaExportacao } from "../../../lib/vendas-export";
+import { argumentosDaMarca, resolverContaDaVenda, resolverMarcaDaVenda, type FiltroDeMarca } from "../../../lib/vendas-ml-filtros";
 import { hrefDeVendas, resolverEscopoDaTelaDeVendas } from "../../../lib/vendas-multicanal";
 import { VendasMulticanal } from "./multicanal";
 import { currentMembership } from "../../../lib/request-membership";
@@ -146,7 +150,7 @@ interface TodaySummary {
  * `sku_id` vinculado (D-237). Sem esse estado, somar as 19 marcas não
  * chegaria ao total e um quarto do faturamento sumiria sem explicação.
  */
-type BrandFilter = { kind: "todas" } | { kind: "marca"; value: string } | { kind: "sem_marca" };
+type BrandFilter = FiltroDeMarca;
 
 interface MetricCardSpec {
   metricId: string;
@@ -426,11 +430,9 @@ async function VendasContent({
 
   const metric = resolveSalesMetric(query.metric);
 
-  const requestedSlug = typeof query.account === "string" ? query.account : null;
-  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
-  // Slug desconhecido (conta removida, digitado à mão) cai em "todas as
-  // contas" em silêncio — mesmo tratamento de status desconhecido em
-  // apps/web/app/(app)/importacoes/[id]/page.tsx, não é erro de rede nem de dado.
+  // Slug desconhecido cai em "todas as contas" em silêncio (`lib/vendas-ml-filtros.ts`,
+  // a mesma regra do CSV do recorte, D-602).
+  const selectedAccount = resolverContaDaVenda(query, accounts);
   const accountSlug = selectedAccount?.slug ?? null;
 
   // `exactOptionalPropertyTypes` distingue "propriedade ausente" de
@@ -438,21 +440,9 @@ async function VendasContent({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
-  // `semMarca=1` vence sobre `marca=` quando os dois vêm na URL: um recorte
-  // só, e o mais específico é o que isola a venda que nenhuma marca alcança.
-  const brand: BrandFilter =
-    query.semMarca === "1"
-      ? { kind: "sem_marca" }
-      : typeof query.marca === "string" && query.marca.trim() !== ""
-        ? { kind: "marca", value: query.marca.trim() }
-        : { kind: "todas" };
-
-  const brandFilter =
-    brand.kind === "marca"
-      ? { p_supplier_brand: brand.value }
-      : brand.kind === "sem_marca"
-        ? { p_sem_marca: true }
-        : {};
+  // `semMarca=1` vence sobre `marca=`: o recorte mais específico (`lib/vendas-ml-filtros.ts`).
+  const brand: BrandFilter = resolverMarcaDaVenda(query);
+  const brandFilter = argumentosDaMarca(brand);
 
   const topPromise = Promise.resolve(supabase.rpc("get_sales_top_skus", {
       p_date_from: range.from,
@@ -512,7 +502,8 @@ async function VendasContent({
         ...accountFilter, ...brandFilter,
       })
       .single(),
-    supabase.rpc("get_sales_daily_series", {
+    // D-602: em páginas, como a do "Todos" (D-496) -- o período personalizado não tem teto.
+    lerSerieDoMl(supabase, {
       p_date_from: range.from,
       p_date_to: range.to,
       ...accountFilter, ...brandFilter,
@@ -521,7 +512,7 @@ async function VendasContent({
     // Mesma RPC, outra janela: a comparação de período já existia nos cards
     // desde a Fase 5A e o `docs/PRODUCT_REQUIREMENTS.md` pede que ela alcance
     // o gráfico. Nenhuma RPC nova.
-    supabase.rpc("get_sales_daily_series", {
+    lerSerieDoMl(supabase, {
       p_date_from: previousRange.from,
       p_date_to: previousRange.to,
       ...accountFilter, ...brandFilter,
@@ -548,8 +539,8 @@ async function VendasContent({
 
   const summary: SalesSummary | null = currentResult.data ?? null;
   const previousSummary: SalesSummary | null = previousResult.data ?? null;
-  const dailySeries = seriesResult.data ?? [];
-  const previousDailySeries = previousSeriesResult.data ?? [];
+  const dailySeries = seriesResult.data;
+  const previousDailySeries = previousSeriesResult.data;
   // Falha em QUALQUER uma das QUATRO: mostrar erro, nunca "sem dado" — uma
   // falha em previousResult/seriesResult isolada ficava invisível antes
   // (só currentResult.error era checado), e a comparação de período/gráfico
@@ -604,6 +595,9 @@ async function VendasContent({
   */
   const recorteAtual = { period, accountSlug, metricKey: metric.key, brand };
   const tentarDeNovo = { href: buildHref(recorteAtual, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
+  // D-602: a série por dia no recorte da tela (conta, marca, período) -- só quando há dias.
+  const exportarDias = dailySeries.length > 0 ? hrefDaExportacao(buildHref(recorteAtual, {}), "dia") : null;
+  const comparacao = mostraComparacao(dailySeries, previousDailySeries, metric);
   const recorteAtivo = accountSlug !== null || brand.kind !== "todas";
   const limparFiltros = {
     href: buildHref(recorteAtual, { accountSlug: null, brand: { kind: "todas" } }),
@@ -899,8 +893,15 @@ async function VendasContent({
               sob a recusa de marca, onde não há gráfico nenhum.
             */
             aside={
-              mostraComparacao(dailySeries, previousDailySeries, metric) ? (
-                <LegendaDoGrafico previousRangeFrom={previousRange.from} previousRangeTo={previousRange.to} />
+              comparacao || exportarDias !== null ? (
+                <>
+                  {comparacao && <LegendaDoGrafico previousRangeFrom={previousRange.from} previousRangeTo={previousRange.to} />}
+                  {exportarDias !== null && (
+                    <a className="sb-button" href={exportarDias} download aria-label="Exportar CSV por dia">
+                      <Icone nome="baixar" tamanho={14} /> Exportar CSV
+                    </a>
+                  )}
+                </>
               ) : undefined
             }
             subtitle={

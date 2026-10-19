@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import { login } from "./helpers.js";
 
 /**
  * `/vendas` — a migração da composição para o Figma (D6).
@@ -228,4 +229,46 @@ test("/vendas: com período anterior, a legenda mora no cabeçalho do painel e d
   await page.goto("/vendas?marketplace=ml&days=7");
   await expect(painel.locator("figure.sb-chart")).toBeVisible();
   await expect(painel.locator(".sb-chart-legenda")).toHaveCount(0);
+});
+
+/** As linhas de um CSV baixado, sem o BOM. */
+async function linhasDoCsv(caminho: string): Promise<string[]> {
+  const { readFileSync } = await import("node:fs");
+
+  return readFileSync(caminho, "utf-8").replace(/^\uFEFF/u, "").trim().split("\r\n");
+}
+
+/**
+ * D-602: o recorte do Mercado Livre exporta a série do gráfico por dia, pela
+ * leitura da PRÓPRIA tela (conta e marca) -- e não pelo consolidado, que não
+ * conhece esses filtros. Sob o recorte de marca, compras é vazia (D-237).
+ */
+test("/vendas do ML: o CSV por dia sai com o recorte da tela, e a marca chega até ele (D-602)", async ({ page }) => {
+  await login(page, "/vendas?marketplace=ml&days=7");
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
+
+  const [porDia] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Exportar CSV por dia", exact: true }).click(),
+  ]);
+  const dias = await linhasDoCsv(await porDia.path());
+
+  expect(porDia.suggestedFilename()).toMatch(/^vendas-ml-\d{4}-\d{2}-\d{2}-a-\d{4}-\d{2}-\d{2}-por-dia\.csv$/u);
+  expect(dias[0]).toBe("Dia;Faturamento (receita bruta);Pedidos;Compras (packs);Unidades");
+  expect(dias.length).toBeGreaterThan(1);
+  expect(dias.slice(1).every((linha) => /^\d{2}\/\d{2}\/\d{4};/u.test(linha))).toBe(true);
+  // O recorte do ML não tem a tabela por conta: essa é a do "Todos" e da Shopee.
+  await expect(page.getByRole("link", { name: "Exportar CSV por conta", exact: true })).toHaveCount(0);
+
+  // Sob o recorte de marca, a compra (pack) não tem marca única: a coluna sai vazia, nunca zero.
+  await page.goto("/vendas?marketplace=ml&days=7&semMarca=1");
+  const exportar = page.getByRole("link", { name: "Exportar CSV por dia", exact: true });
+
+  if ((await exportar.count()) > 0) {
+    const [semMarca] = await Promise.all([page.waitForEvent("download"), exportar.click()]);
+    const linhas = await linhasDoCsv(await semMarca.path());
+
+    expect(semMarca.suggestedFilename()).toMatch(/-sem-marca-por-dia\.csv$/u);
+    expect(linhas.slice(1).every((linha) => linha.split(";")[3] === "")).toBe(true);
+  }
 });

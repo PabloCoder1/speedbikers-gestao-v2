@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { contasParaCsv, diasParaCsv, hrefDaExportacao } from "./vendas-export";
+import { contasParaCsv, diasDoMlParaCsv, diasParaCsv, hrefDaExportacao } from "./vendas-export";
 import type { DiaDeVendas, LinhaDeVendas } from "./vendas-multicanal";
 
 /** As linhas do documento, sem o BOM e sem a quebra final. */
@@ -125,6 +125,21 @@ describe("contasParaCsv", () => {
     expect(corpo[0]).toBe("Soma do marketplace;Shopee;;;;;;;;;;;;nada somável: só loja de teste ou ainda não lida");
     expect(corpo[0]?.split(";")).toHaveLength(14);
     expect(corpo.some((l) => l.startsWith("Total;"))).toBe(false);
+  });
+});
+
+describe("diasDoMlParaCsv (D-602)", () => {
+  it("um dia por linha, em ordem, com as palavras da tela do ML; compras sob marca é vazia, nunca zero", () => {
+    const csv = diasDoMlParaCsv([
+      { metric_date: "2026-10-15", gross_revenue: 1234.5, orders_count: 12, purchases_count: null, units_sold: 15 },
+      { metric_date: "2026-10-14", gross_revenue: 900, orders_count: 9, purchases_count: 8, units_sold: 10 },
+    ]);
+
+    expect(linhas(csv)).toEqual([
+      "Dia;Faturamento (receita bruta);Pedidos;Compras (packs);Unidades",
+      "14/10/2026;900;9;8;10",
+      "15/10/2026;1234,5;12;;15",
+    ]);
   });
 });
 

@@ -37,3 +37,29 @@ export function lerSerieDiaria(
     TETO_DA_SERIE,
   );
 }
+
+type ArgumentosDoMl = Database["public"]["Functions"]["get_sales_daily_series"]["Args"];
+type LinhaDoMl = Database["public"]["Functions"]["get_sales_daily_series"]["Returns"][number];
+
+/**
+ * A série diária da `/vendas` do Mercado Livre (`get_sales_daily_series`, com a
+ * conta e a marca) INTEIRA, em páginas e por dia (D-602) -- a mesma defesa da
+ * série do "Todos": um dia por linha passa das 1.000 com ~2,7 anos de período
+ * personalizado. Devolve `{ data, error }`, o formato que a página já lia da RPC;
+ * o CSV do recorte usa a MESMA leitura.
+ */
+export async function lerSerieDoMl(
+  supabase: Supabase,
+  argumentos: ArgumentosDoMl,
+): Promise<{ data: LinhaDoMl[]; error: { message: string } | null }> {
+  const { linhas, error } = await lerPaginasDaRpc(
+    (offset, limite) =>
+      supabase
+        .rpc("get_sales_daily_series", argumentos)
+        .order("metric_date")
+        .range(offset, offset + limite - 1),
+    TETO_DA_SERIE,
+  );
+
+  return { data: linhas, error };
+}

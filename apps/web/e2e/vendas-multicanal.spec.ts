@@ -222,7 +222,8 @@ test("/vendas: o CSV por conta é a tabela da tela, e o por dia a série do grá
   expect(dias.slice(1).every((linha) => /^\d{2}\/\d{2}\/\d{4};(Mercado Livre|Shopee|Todos os marketplaces);/u.test(linha))).toBe(true);
   expect(dias.some((linha) => linha.includes(";Todos os marketplaces;"))).toBe(true);
 
-  // No recorte do Mercado Livre não há botão: o CSV divergiria da tela.
+  // No recorte do Mercado Livre a tabela por conta não existe; a série por dia sai pela leitura da tela dele (D-602).
   await page.goto("/vendas?marketplace=ml");
-  await expect(page.getByRole("link", { name: /^Exportar CSV por/u })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Exportar CSV por conta", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Exportar CSV por dia", exact: true })).toBeVisible();
 });
