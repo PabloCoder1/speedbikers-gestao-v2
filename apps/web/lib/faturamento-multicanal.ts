@@ -72,18 +72,14 @@ export interface LinhaFaturamentoShopee {
   readonly resultado_apos_imposto: number | null;
   readonly margem_apos_imposto: number | null;
   readonly ultima_atualizacao: string | null;
-  /**
-   * D-485: os ajustes que a Shopee cobra DEPOIS do repasse (negativo = cobrado),
-   * já dentro do resultado. Ausente (`undefined`) antes da 20261016220000; nulo
-   * quando nenhum coberto trouxe o campo.
-   */
-  readonly ajustes_cobertos?: number | null;
-  /** D-487: o Ads CPC da loja no período e o rateado pela receita coberta. Ausentes antes da 20261016230000. */
-  readonly investimento_ads?: number | null;
-  readonly ads_rateado?: number | null;
+  /** D-485: os ajustes que a Shopee cobra DEPOIS do repasse (negativo = cobrado), já dentro do resultado; nulo sem coberto que traga o campo. */
+  readonly ajustes_cobertos: number | null;
+  /** D-487: o Ads CPC da loja no período e o rateado pela receita coberta. */
+  readonly investimento_ads: number | null;
+  readonly ads_rateado: number | null;
   /** D-487: lucro após imposto e Ads (5K, no SQL) e a margem dele. Nulos sem alíquota ou sem o Ads do período inteiro. */
-  readonly resultado_contribuicao?: number | null;
-  readonly margem_contribuicao?: number | null;
+  readonly resultado_contribuicao: number | null;
+  readonly margem_contribuicao: number | null;
 }
 
 /**
@@ -186,8 +182,6 @@ export function linhasDaComparacao(
   lucroMl: number | null = null,
 ): LinhaDaComparacao[] {
   const r = ml?.resumo ?? null;
-  // D-485 pela PRESENÇA da coluna: antes da 20261016220000 o resultado da Shopee ainda é recebido − custo.
-  const comAjustes = shopee?.ajustes_cobertos !== undefined;
 
   return [
     { rotulo: "Receita bruta", formato: "moeda", ml: r?.receita_bruta ?? null, shopee: shopee?.receita_bruta ?? null, definicao: null },
@@ -232,9 +226,8 @@ export function linhasDaComparacao(
       shopee: shopee?.resultado_venda ?? null,
       definicao: {
         ml: "recebido − custo, pela conta do ML",
-        shopee: comAjustes
-          ? "recebido + ajustes depois do repasse − custo, pela conta da Shopee"
-          : "recebido − custo, pela conta da Shopee",
+        // D-485: a Shopee cobra o ajuste à parte do repasse, e ele entra no resultado.
+        shopee: "recebido + ajustes depois do repasse − custo, pela conta da Shopee",
       },
     },
     {
@@ -349,8 +342,8 @@ export function montarCascataShopee(
   composicao: ComposicaoShopee | null,
   custo: number | null,
   resultado: number | null,
-  /** `ajustes_cobertos` do C-58 (D-485); `undefined` = o banco antes da 20261016220000. */
-  ajustes?: number | null,
+  /** `ajustes_cobertos` do C-58 (D-485). */
+  ajustes: number | null,
 ): CascataShopee | null {
   if (composicao === null) return null;
 
@@ -378,10 +371,6 @@ export function montarCascataShopee(
 
   for (const componente of COMPONENTES_DO_RECEBIDO) {
     const valor = composicao[componente.chave];
-
-    // Coluna ausente (o banco antes da D-483, ainda no tipo): fora da cascata e sem
-    // nota. Desde a fase 2 (16/10) o `outros` já é o restante, sem a taxa.
-    if (valor === undefined) continue;
 
     if (valor === null) {
       naoInformados.push(componente.rotulo);
@@ -424,9 +413,8 @@ export function montarCascataShopee(
     D-485: o ajuste que a Shopee cobra DEPOIS do repasse (ela libera o escrow
     cheio e cobra à parte) entra no resultado -- e aqui, entre o recebido e o
     custo, para a cascata fechar: resultado = recebido + ajustes − custo, no SQL.
-    Pela PRESENÇA da coluna: ausente, a cascata de antes. Nulo (nenhum coberto
-    trouxe o campo) e zero são ditos como os componentes; o custo começa onde
-    o ajuste terminou.
+    Nulo (nenhum coberto trouxe o campo) e zero são ditos como os componentes;
+    o custo começa onde o ajuste terminou.
   */
   let antesDoCusto = f(recebido);
 
@@ -434,7 +422,7 @@ export function montarCascataShopee(
     naoInformados.push(AJUSTES_DEPOIS_DO_REPASSE);
   } else if (ajustes === 0) {
     zerados.push(AJUSTES_DEPOIS_DO_REPASSE);
-  } else if (ajustes !== undefined) {
+  } else {
     const depois = antesDoCusto + f(ajustes);
 
     degraus.push({

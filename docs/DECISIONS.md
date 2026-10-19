@@ -16639,6 +16639,8 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 
 **Fase 2 (16/10):** a `20261016200000` foi aplicada em produção (A1, conferida nas lojas reais: `outros` zero em todos os cobertos e a identidade fechando pedido a pedido). A tela deixou de ler o `outros_restante`: o `outros` já é o restante. Fica só a tolerância à coluna `protecao_envio` ausente, porque ela segue opcional no tipo. O A1 tira o `outros_restante?` do `types.ts`.
 
+**Colunas obrigatórias (19/10):** com a fase 2 em produção, a `protecao_envio` do C-61 virou obrigatória no tipo (A1), e a cascata deixou a tolerância à coluna ausente; os testes do "banco antes da D-483" saíram. Sem decisão nova.
+
 ## D-494 - Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
 
 **Contexto:** os filtros salvos (`saved_filters`, "Salvar visão" e "Visões salvas") existiam em `/vendas`, `/anuncios` e `/curva-abc`. As duas telas próprias da Shopee, `/anuncios/shopee` e `/vendas/shopee`, não os tinham. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "na Shopee faltam vendas e filtros salvos". Nenhum e2e cobria os filtros salvos, em tela nenhuma.
@@ -16773,6 +16775,8 @@ O valor da contribuição depende da alíquota que o `central.spec` cadastra no 
 - e2e: `loja-shopee-live.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+**Colunas obrigatórias (19/10):** com as migrations da D-485 e da D-487 em produção (run `39250383332`), as cinco colunas do C-58 viraram obrigatórias no tipo (A1) e na `LinhaFaturamentoShopee`. A tela deixou a leitura pela presença: a definição do resultado é sempre recebido + ajustes − custo, a linha do lucro sempre aparece, o degrau dos ajustes recebe `ajustes_cobertos` sempre, e o informativo do C-61 "Ajustes depois do repasse" saiu da lista, porque o ajuste é degrau. Sem decisão nova.
 
 ## D-500 - Atualizar nao e carregar: filtro, busca e paginacao ficam na tela com o dado velho visivel, por navegacao suave, e o menu de filtro e a busca deixam de recarregar o documento
 
