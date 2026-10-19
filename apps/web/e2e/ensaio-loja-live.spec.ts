@@ -12,7 +12,8 @@ import { apagarLojaLive, clienteDeServico, criarLojaLive, LOJA_LIVE, type Client
  * de verdade no banco do e2e (`loja-shopee-live.ts`), e cada tela da frente
  * multicanal é conferida contra números feitos para fechar de cabeça: 11
  * pedidos válidos, R$ 1.100 de receita, 10 cobertos com R$ 800 de recebido e
- * R$ 200 de custo (resultado R$ 600), 1 devolução, 5 repasses e 7 dias de Ads.
+ * R$ 200 de custo e R$ 10 de ajuste depois do repasse (resultado R$ 590), 1
+ * devolução, 5 repasses e 7 dias de Ads.
  *
  * Roda no projeto `loja-live`, DEPOIS de todos os outros specs: o SKU próprio
  * da loja fica no banco (o histórico de custo é só de inserção), e assim não
@@ -106,6 +107,12 @@ test("/faturamento: o recorte Shopee fecha o resultado, o repasse e os Ads; o 'T
 
   await expect(dinheiroVai.getByRole("listitem").filter({ hasText: "Proteção de envio" })).toContainText(dinheiro("10,00"));
   await expect(dinheiroVai.getByText(/Sem valor no período: Outros \(fecha com o recebido\)\./u)).toBeVisible();
+
+  // D-485/D-498: o ajuste cobrado depois do repasse é degrau entre o recebido e o custo, e o resultado o inclui.
+  await expect(dinheiroVai.getByRole("listitem").filter({ hasText: "Ajustes depois do repasse" })).toContainText(dinheiro("10,00"));
+  await expect(page.getByText(/os ajustes que ela cobra depois do repasse − o custo/u)).toBeVisible();
+  // D-487/D-498: a linha do lucro após imposto e Ads existe; o valor depende da alíquota que outro spec cadastra.
+  await expect(dinheiroVai.getByText("Lucro após imposto e Ads", { exact: true })).toBeVisible();
   await semErro(page);
 
   await page.goto("/faturamento?marketplace=todos");
@@ -113,7 +120,9 @@ test("/faturamento: o recorte Shopee fecha o resultado, o repasse e os Ads; o 'T
 
   await expect(lado.getByRole("row", { name: /^Receita bruta/u })).toContainText(dinheiro("1.100,00"));
   await expect(lado.getByRole("row", { name: /^Recebido/u })).toContainText(dinheiro("800,00"));
-  await expect(lado.getByRole("row", { name: /^Resultado da venda/u })).toContainText(dinheiro("600,00"));
+  await expect(lado.getByRole("row", { name: /^Resultado da venda/u })).toContainText(dinheiro("590,00"));
+  await expect(lado.getByRole("row", { name: /^Resultado da venda/u })).toContainText("recebido + ajustes depois do repasse − custo");
+  await expect(lado.getByRole("row", { name: /^Lucro após imposto e Ads/u })).toContainText("Ads CPC da loja");
   await expect(lado.getByRole("row", { name: /^Cobertura/u })).toContainText("90,9%");
   await expect(page.getByText(/nenhuma loja real com pedidos lidos/u)).toHaveCount(0);
   await semErro(page);
