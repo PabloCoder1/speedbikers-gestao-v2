@@ -4,9 +4,11 @@ import { Suspense, type ReactNode } from "react";
 import { CarregandoConteudo } from "../../../../components/carregando";
 import { FilterPill } from "../../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
+import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
+import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { formatRoas, listarDatas } from "../../../../lib/central-indicadores";
 import { lerFaturamento, rotuloDaMargemMinima } from "../../../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
@@ -65,23 +67,22 @@ export default function SinaisDeAdsPage(props: { searchParams: Promise<Consulta>
   );
 }
 
-function Titulo({ subtitle }: { subtitle: ReactNode }): ReactNode {
+/** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
+function Titulo({ subtitle, consulta }: { subtitle: ReactNode; consulta: Consulta }): ReactNode {
   return (
+    <>
     <PageTitle
       eyebrow="COMERCIAL / CENTRAL"
       title="Sinais de Ads"
       subtitle={subtitle}
       aside={
-        <>
-          <Link className="sb-button" href="/faturamento#ads">
-            Campanhas no faturamento
-          </Link>
-          <Link className="sb-button" href="/central">
-            Voltar à central
-          </Link>
-        </>
+        <Link className="sb-button" href="/faturamento#ads">
+          Campanhas no faturamento
+        </Link>
       }
     />
+    <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("ads", consulta)} />
+    </>
   );
 }
 
@@ -101,7 +102,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   if (membership.organizationId === null) {
     return (
       <>
-        <Titulo subtitle={SUBTITULO_PADRAO} />
+        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
         <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </>
     );
@@ -115,7 +116,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   if (resposta.error !== null) {
     return (
       <>
-        <Titulo subtitle={SUBTITULO_PADRAO} />
+        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
         {resposta.error.code === "PGRST202" ? (
           <div className="sb-note">
             <span>SENDO ATIVADO</span>
@@ -141,7 +142,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   if (sinais === null) {
     return (
       <>
-        <Titulo subtitle={SUBTITULO_PADRAO} />
+        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
         <EstadoDaTela
           tipo="erro"
           titulo="Os sinais de Ads responderam num formato que esta tela não reconhece"
@@ -157,7 +158,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   if (janela.inicio === null || janela.fim === null) {
     return (
       <>
-        <Titulo subtitle={SUBTITULO_PADRAO} />
+        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
         <EstadoDaTela
           tipo="vazio"
           titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
@@ -178,6 +179,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   return (
     <>
       <Titulo
+        consulta={query}
         subtitle={
           <>
             Semana de {formatBusinessDate(janela.inicio)} a {formatBusinessDate(janela.fim)} contra{" "}

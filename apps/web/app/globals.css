@@ -1172,6 +1172,10 @@ body {
   margin-top: auto;
   padding-top: 0.125rem;
   padding: 0.125rem 0.25rem;
+  /* Alvo de toque de 24 px (WCAG 2.5.8): eram 19 px (UX_SYSTEM §6). */
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
   border-radius: var(--sb-radius-sm);
   font-size: 0.625rem;
   text-decoration: none;
@@ -2949,6 +2953,82 @@ summary[aria-disabled="true"] {
 .sb-object-tabs a[aria-current="page"] {
   border-bottom-color: var(--sb-primary);
   color: var(--sb-primary);
+}
+
+/*
+ * AS ABAS DE UMA ÁREA COM VÁRIAS TELAS (`AbasDaSecao`, a Central — UX_SYSTEM §6):
+ * a forma das abas do cabeçalho de entidade, logo abaixo do título da página e
+ * sem o cartão em volta. Rolam no celular, como as do SKU.
+ */
+.sb-abas-secao {
+  margin: 0 0 var(--sb-space-4);
+  padding: 0;
+  border-top: 0;
+}
+
+/*
+ * BLOCO RECOLHÍVEL (UX_SYSTEM §6): o que repete ou explica os números (a tabela
+ * de comparação, o método) fica fechado, a um toque. O resumo tem a altura de um
+ * alvo de toque e o anel de foco do sistema; a seta gira sem animação quando o
+ * sistema pede menos movimento.
+ */
+.sb-recolhivel > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  color: var(--sb-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.sb-recolhivel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sb-recolhivel > summary::before {
+  content: "";
+  flex: none;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease-out;
+}
+
+.sb-recolhivel[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.sb-recolhivel > summary:hover {
+  background: var(--sb-surface-hover);
+}
+
+.sb-recolhivel > summary:focus-visible {
+  outline: 2px solid var(--sb-accent);
+  outline-offset: 2px;
+}
+
+.sb-recolhivel > summary small {
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-recolhivel[open] > summary {
+  margin-bottom: var(--sb-space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-recolhivel > summary::before {
+    transition: none;
+  }
 }
 
 .sb-object-body {

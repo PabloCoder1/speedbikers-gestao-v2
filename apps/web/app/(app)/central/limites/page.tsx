@@ -1,11 +1,12 @@
-import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import { BotaoEnviar } from "../../../../components/botao-enviar";
 import { CarregandoConteudo } from "../../../../components/carregando";
+import { AbasDaSecao } from "../../../../components/abas-da-secao";
 import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
+import { abasDaCentral } from "../../../../lib/central-navegacao";
 import { descreverLimites, LIMITES_PADRAO, lerLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
@@ -26,32 +27,34 @@ export const dynamic = "force-dynamic";
  * Leitura para todo membro; o formulário e "voltar aos padrões" só para ADMIN
  * e GESTOR — a regra de verdade mora nas policies de `central_thresholds`.
  */
-export default function LimitesPage(): ReactNode {
+export default function LimitesPage(props: { searchParams: Promise<Consulta> }): ReactNode {
   return (
     <>
       <Suspense fallback={<CarregandoConteudo rotulo="Carregando os limites da central" />}>
-        <LimitesContent />
+        <LimitesContent {...props} />
       </Suspense>
     </>
   );
 }
 
-function Titulo(): ReactNode {
+type Consulta = Record<string, string | string[] | undefined>;
+
+/** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
+function Titulo({ consulta }: { consulta: Consulta }): ReactNode {
   return (
-    <PageTitle
-      eyebrow="COMERCIAL / CENTRAL"
-      title="Limites da central"
-      subtitle="Quando um número da central é estável, pede atenção ou é perigo — e a partir de quantos pedidos uma comparação vale."
-      aside={
-        <Link className="sb-button" href="/central">
-          Voltar à central
-        </Link>
-      }
-    />
+    <>
+      <PageTitle
+        eyebrow="COMERCIAL / CENTRAL"
+        title="Limites da central"
+        subtitle="Quando um número da central é estável, pede atenção ou é perigo — e a partir de quantos pedidos uma comparação vale."
+      />
+      <AbasDaSecao rotulo="Telas da central" abas={abasDaCentral("limites", consulta)} />
+    </>
   );
 }
 
-async function LimitesContent(): Promise<ReactNode> {
+async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta> }): Promise<ReactNode> {
+  const consulta = await searchParams;
   const supabase = await createClient();
   const membership = await currentMembership();
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
@@ -73,7 +76,7 @@ async function LimitesContent(): Promise<ReactNode> {
   if (resposta?.error != null && (resposta.error.code === "PGRST205" || resposta.error.code === "42P01")) {
     return (
       <>
-        <Titulo />
+        <Titulo consulta={consulta} />
         <div className="sb-note">
           <span>SENDO ATIVADO</span>
           <p>
@@ -91,7 +94,7 @@ async function LimitesContent(): Promise<ReactNode> {
 
   return (
     <>
-      <Titulo />
+      <Titulo consulta={consulta} />
 
       {resposta?.error != null && (
         <EstadoDaTela

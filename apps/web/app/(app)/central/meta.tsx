@@ -430,34 +430,40 @@ export function SecaoMeta({
             </>
           )}
 
-          <div className="sb-note sb-central-bloco">
-            <span>COMO A PROJEÇÃO É FEITA</span>
-            <p>
-              Cada dia da semana tem um peso, medido nas últimas 8 semanas completas
-              {meta.perfil_semanal ? ":" : " — ainda sem histórico para isso, todos os dias pesam igual."}{" "}
-              {meta.perfil_semanal &&
-                meta.fatores.map((f) => `${rotuloDoDiaDaSemana(f.dia_semana)} ${FATOR.format(f.fator)}`).join(" · ")}
-              {meta.perfil_semanal && "."} Os dias de uma data comercial têm o peso multiplicado pelo efeito medido no
-              ano anterior, dia a dia. O ritmo atual é a venda das últimas 4 semanas ajustada por esses pesos;
-              conservador e otimista são o menor e o maior ritmo entre 1, 2 e 4 semanas. O realizado até ontem mais o
-              ritmo aplicado aos dias que faltam dá o fechamento.
-            </p>
-            {meta.datas_comerciais.length > 0 ? (
-              <ul className="sb-meta-datas" aria-label="Datas comerciais do mês">
-                {meta.datas_comerciais.map((d) => (
-                  <li key={`${d.nome}:${d.data}`}>{fraseDaDataComercial(d)}</li>
-                ))}
-              </ul>
-            ) : (
+          {/* O método da projeção fica recolhido, a um toque (UX_SYSTEM §6, bloco 1). */}
+          <details className="sb-recolhivel sb-central-bloco">
+            <summary>
+              Como a projeção é feita <small>pesos por dia da semana e datas comerciais</small>
+            </summary>
+            <div className="sb-note">
+              <span>COMO A PROJEÇÃO É FEITA</span>
               <p>
-                <strong>Datas comerciais:</strong> nenhuma neste mês. O calendário cobre Carnaval, Dia do Consumidor, Dia
-                das Mães, Dia dos Pais, Black Friday e Natal e Ano Novo.
+                Cada dia da semana tem um peso, medido nas últimas 8 semanas completas
+                {meta.perfil_semanal ? ":" : " — ainda sem histórico para isso, todos os dias pesam igual."}{" "}
+                {meta.perfil_semanal &&
+                  meta.fatores.map((f) => `${rotuloDoDiaDaSemana(f.dia_semana)} ${FATOR.format(f.fator)}`).join(" · ")}
+                {meta.perfil_semanal && "."} Os dias de uma data comercial têm o peso multiplicado pelo efeito medido no
+                ano anterior, dia a dia. O ritmo atual é a venda das últimas 4 semanas ajustada por esses pesos;
+                conservador e otimista são o menor e o maior ritmo entre 1, 2 e 4 semanas. O realizado até ontem mais o
+                ritmo aplicado aos dias que faltam dá o fechamento.
               </p>
-            )}
-            <p>
-              <strong>Não entra:</strong> o parcial de hoje, que entra pela média do dia da semana.
-            </p>
-          </div>
+              {meta.datas_comerciais.length > 0 ? (
+                <ul className="sb-meta-datas" aria-label="Datas comerciais do mês">
+                  {meta.datas_comerciais.map((d) => (
+                    <li key={`${d.nome}:${d.data}`}>{fraseDaDataComercial(d)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>
+                  <strong>Datas comerciais:</strong> nenhuma neste mês. O calendário cobre Carnaval, Dia do Consumidor, Dia
+                  das Mães, Dia dos Pais, Black Friday e Natal e Ano Novo.
+                </p>
+              )}
+              <p>
+                <strong>Não entra:</strong> o parcial de hoje, que entra pela média do dia da semana.
+              </p>
+            </div>
+          </details>
         </div>
       )}
     </section>
