@@ -121,6 +121,9 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   // dispara a consulta agora; o construtor do PostgREST só sai quando é lido.
   const leituraContas = supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
   const rankingSemConta = requestedSlug === null ? Promise.resolve(supabase.rpc("get_ranking_produtos", argumentos)) : null;
+  // Como na central: se contas ou organização lançarem antes, a leitura não fica
+  // sem dono; quem a lê abaixo ainda recebe a falha.
+  void rankingSemConta?.catch(() => undefined);
   const [accountsResult, membership] = await Promise.all([leituraContas, currentMembership()]);
   const accounts = accountsResult.data ?? [];
   const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
