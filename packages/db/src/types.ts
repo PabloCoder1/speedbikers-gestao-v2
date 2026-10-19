@@ -5830,10 +5830,9 @@ export type Database = {
           moedas_shopee: number | null
           nivel: string
           outros: number | null
-          // CORRECAO MANUAL (D-483): opcionais -- protecao_envio ausente antes da 20261016180000; outros_restante so existiu na fase 1 e saiu na 20261016200000 (o tipo fica ate a tela parar de le-lo).
-          outros_restante?: number | null
           pedidos_cobertos: number | null
           pedidos_com_ajuste: number | null
+          // CORRECAO MANUAL (D-483): opcional -- em producao desde a 20261016180000; fica opcional ate as fixtures da web o trazerem.
           protecao_envio?: number | null
           recebido_coberto: number | null
           receita_coberta: number | null
@@ -5895,8 +5894,7 @@ export type Database = {
           order_sn: string
           order_status: string
           outros: number | null
-          // CORRECAO MANUAL (D-483): opcionais -- protecao_envio ausente antes da 20261016180000; outros_restante so existiu na fase 1 e saiu na 20261016200000 (o tipo fica ate a tela parar de le-lo).
-          outros_restante?: number | null
+          // CORRECAO MANUAL (D-483): opcional -- em producao desde a 20261016180000; fica opcional ate as fixtures da web o trazerem.
           protecao_envio?: number | null
           recebido: number | null
           receita: number | null
