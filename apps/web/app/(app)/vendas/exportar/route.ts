@@ -3,9 +3,10 @@ import type { NextRequest } from "next/server";
 
 import { currentMembership } from "../../../../lib/membership";
 import { resolvePeriodRange } from "../../../../lib/period";
-import { TETO_DA_SERIE, lerSerieDiaria } from "../../../../lib/serie-de-vendas";
+import { TETO_DA_SERIE, lerSerieDiaria, lerSerieDoMl } from "../../../../lib/serie-de-vendas";
 import { createClient } from "../../../../lib/supabase/server";
-import { contasParaCsv, diasParaCsv } from "../../../../lib/vendas-export";
+import { contasParaCsv, diasDoMlParaCsv, diasParaCsv } from "../../../../lib/vendas-export";
+import { argumentosDaMarca, resolverContaDaVenda, resolverMarcaDaVenda } from "../../../../lib/vendas-ml-filtros";
 import { marketplacesDoEscopo, resolverContas, resolverEscopoDaTelaDeVendas } from "../../../../lib/vendas-multicanal";
 
 /**
@@ -14,8 +15,10 @@ import { marketplacesDoEscopo, resolverContas, resolverEscopoDaTelaDeVendas } fr
  * C-53 — `tabela=dia` é a série do gráfico; `tabela=conta`, a tabela "Por
  * marketplace e conta".
  *
- * O recorte do Mercado Livre fica de fora: a tela dele tem filtros que o C-53
- * não conhece (marca, conta única, pacotes), e o CSV divergiria do que se vê.
+ * O recorte do Mercado Livre (D-602) exporta pela leitura da PRÓPRIA tela dele
+ * (`get_sales_daily_series`, com a conta e a marca), e não pelo C-53, que não
+ * conhece esses filtros: o CSV nunca diverge do que se vê. Ele tem a série por
+ * dia; a tabela por conta é do "Todos" e da Shopee.
  *
  * Sessão do usuário e RPCs `security invoker`: a planilha vê só as contas e
  * lojas que a pessoa alcança. A série é lida em páginas com ordem estável (o
@@ -33,9 +36,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   const escopo = resolverEscopoDaTelaDeVendas(query);
 
   if (escopo === "ml") {
-    return new Response('O CSV de vendas cobre o recorte "Todos" e o da Shopee; o do Mercado Livre ainda não exporta.', {
-      status: 400,
-    });
+    return tabela === "dia"
+      ? exportarDiasDoMl(query)
+      : new Response('O recorte do Mercado Livre exporta a série por dia; a tabela por conta é a do "Todos" e a da Shopee.', {
+          status: 400,
+        });
   }
 
   const supabase = await createClient();
@@ -89,6 +94,57 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   return csv(diasParaCsv(linhas, escopo), `${base}-por-dia.csv`);
+}
+
+/** Só letras, números e hífen no nome do arquivo: a marca vem da URL e iria para o cabeçalho da resposta. */
+function trechoDoNome(valor: string): string {
+  return valor
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+}
+
+/** D-602: a série por dia do recorte do ML, pelos MESMOS resolvedores e a MESMA leitura da tela dele. */
+async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promise<Response> {
+  const supabase = await createClient();
+  const [membership, contas] = await Promise.all([currentMembership(supabase), supabase.from("ml_accounts").select("id, slug")]);
+
+  if (membership.organizationId === null) {
+    return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
+  }
+
+  // Sem as contas, um recorte de conta viraria "todas" em silêncio.
+  if (contas.error !== null) {
+    return new Response(`Não foi possível ler as contas: ${contas.error.message}`, { status: 502 });
+  }
+
+  const { range } = resolvePeriodRange(query, toSalesMetricDate(new Date()));
+  const conta = resolverContaDaVenda(query, contas.data);
+  const marca = resolverMarcaDaVenda(query);
+  const { data, error } = await lerSerieDoMl(supabase, {
+    p_date_from: range.from,
+    p_date_to: range.to,
+    ...(conta === null ? {} : { p_ml_account_id: conta.id }),
+    ...argumentosDaMarca(marca),
+  });
+
+  if (error !== null) {
+    return new Response(`Não foi possível exportar as vendas por dia: ${error.message}`, { status: 502 });
+  }
+
+  if (data.length >= TETO_DA_SERIE) {
+    return new Response(`O período passa de ${String(TETO_DA_SERIE)} dias; exporte um período menor.`, { status: 422 });
+  }
+
+  const recorte = [
+    conta === null ? null : trechoDoNome(conta.slug),
+    marca.kind === "marca" ? `marca-${trechoDoNome(marca.value)}` : marca.kind === "sem_marca" ? "sem-marca" : null,
+  ].filter((trecho): trecho is string => trecho !== null && trecho !== "");
+  const nome = [`vendas-ml-${range.from}-a-${range.to}`, ...recorte, "por-dia"].join("-");
+
+  return csv(diasDoMlParaCsv(data), `${nome}.csv`);
 }
 
 function csv(corpo: string, nome: string): Response {

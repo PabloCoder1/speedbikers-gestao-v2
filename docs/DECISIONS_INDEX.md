@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **502** (D-001 a D-600).
+Decisões registradas: **503** (D-001 a D-602).
 
 ## Por domínio
 
@@ -232,7 +232,7 @@ Decisões registradas: **502** (D-001 a D-600).
 - **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 
-### mercado-livre (85)
+### mercado-livre (86)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -319,6 +319,7 @@ Decisões registradas: **502** (D-001 a D-600).
 - **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 - **D-490** — Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 - **D-600** — A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
+- **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 
 ### outros (71)
 

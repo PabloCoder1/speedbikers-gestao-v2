@@ -48,6 +48,11 @@ const NULA: LinhaFaturamentoShopee = {
   resultado_apos_imposto: null,
   margem_apos_imposto: null,
   ultima_atualizacao: null,
+  ajustes_cobertos: null,
+  investimento_ads: null,
+  ads_rateado: null,
+  resultado_contribuicao: null,
+  margem_contribuicao: null,
 };
 
 const TOTAL: LinhaFaturamentoShopee = {
@@ -69,6 +74,7 @@ const TOTAL: LinhaFaturamentoShopee = {
   pedidos_sem_sku: 2,
   pedidos_sem_custo: 0,
   resultado_apos_imposto: 120,
+  ajustes_cobertos: 0,
 };
 
 const LIVE: LinhaFaturamentoShopee = { ...TOTAL, nivel: "CONTA", account_id: "sp-1", account_name: "Speedbikers", environment: "live" };
@@ -165,14 +171,10 @@ describe("linhasDaComparacao", () => {
     expect(linhas.every((l) => !("total" in l))).toBe(true);
   });
 
-  it("D-485: com a coluna dos ajustes, o resultado da Shopee diz que os inclui; sem ela, a definição de antes", () => {
-    const resultado = (shopee: typeof TOTAL) =>
-      linhasDaComparacao({ resumo, imposto }, shopee).find((l) => l.rotulo === "Resultado da venda")?.definicao?.shopee;
+  it("D-485: o resultado da Shopee inclui os ajustes depois do repasse", () => {
+    const resultado = linhasDaComparacao({ resumo, imposto }, TOTAL).find((l) => l.rotulo === "Resultado da venda");
 
-    expect(resultado(TOTAL)).toBe("recebido − custo, pela conta da Shopee");
-    expect(resultado({ ...TOTAL, ajustes_cobertos: -10 })).toBe("recebido + ajustes depois do repasse − custo, pela conta da Shopee");
-    // Nulo (nenhum coberto trouxe o campo) ainda é a coluna presente: a regra é a nova.
-    expect(resultado({ ...TOTAL, ajustes_cobertos: null })).toMatch(/^recebido \+ ajustes/u);
+    expect(resultado?.definicao?.shopee).toBe("recebido + ajustes depois do repasse − custo, pela conta da Shopee");
   });
 
   it("D-487: o lucro após imposto e Ads de cada lado, com a premissa do rateio e o Ads CPC da loja na Shopee", () => {
@@ -218,6 +220,7 @@ describe("montarCascataShopee (D-452, sobre o C-61)", () => {
     cupom_loja: 0,
     afiliados: 10,
     taxa_por_pedido: null,
+    protecao_envio: null,
     // Crédito: a Shopee repassou mais do que os componentes explicam.
     outros: -20,
     recebido_coberto: 800,
@@ -231,7 +234,7 @@ describe("montarCascataShopee (D-452, sobre o C-61)", () => {
   };
 
   it("da receita ao resultado, componente a componente: o último degrau antes do recebido termina nele", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
+    const cascata = montarCascataShopee(composicao, 500, 300, 0);
 
     expect(cascata?.degraus.map((d) => d.chave)).toEqual([
       "receita",
@@ -255,33 +258,27 @@ describe("montarCascataShopee (D-452, sobre o C-61)", () => {
   });
 
   it("o crédito sobe: 'outros' negativo vira valor positivo, e o desconto fica negativo", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
+    const cascata = montarCascataShopee(composicao, 500, 300, 0);
 
     expect(cascata?.degraus.find((d) => d.chave === "outros")?.valor).toBe(20);
     expect(cascata?.degraus.find((d) => d.chave === "comissao")?.valor).toBe(-120);
   });
 
   it("componente nulo fica fora e é dito; o zerado também sai das barras e é dito à parte", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
+    const cascata = montarCascataShopee(composicao, 500, 300, 0);
 
-    expect(cascata?.naoInformados).toEqual(["Frete de devolução", "Taxa por pedido"]);
-    expect(cascata?.zerados).toEqual(["Cupons da loja"]);
+    expect(cascata?.naoInformados).toEqual(["Frete de devolução", "Taxa por pedido", "Proteção de envio"]);
+    expect(cascata?.zerados).toEqual(["Cupons da loja", "Ajustes depois do repasse"]);
   });
 
   it("sem cobertura, sem recebido, sem custo ou sem resultado não há cascata -- nunca uma de zeros", () => {
-    expect(montarCascataShopee(null, 500, 300)).toBeNull();
-    expect(montarCascataShopee({ ...composicao, pedidos_cobertos: 0 }, 500, 300)).toBeNull();
-    expect(montarCascataShopee({ ...composicao, recebido_coberto: null }, 500, 300)).toBeNull();
-    expect(montarCascataShopee(composicao, null, 300)).toBeNull();
-    expect(montarCascataShopee(composicao, 500, null)).toBeNull();
+    expect(montarCascataShopee(null, 500, 300, 0)).toBeNull();
+    expect(montarCascataShopee({ ...composicao, pedidos_cobertos: 0 }, 500, 300, 0)).toBeNull();
+    expect(montarCascataShopee({ ...composicao, recebido_coberto: null }, 500, 300, 0)).toBeNull();
+    expect(montarCascataShopee(composicao, null, 300, 0)).toBeNull();
+    expect(montarCascataShopee(composicao, 500, null, 0)).toBeNull();
   });
 
-  it("antes da migration da D-483 não existe o degrau da proteção de envio -- nem como nota", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
-    const rotulos = [...(cascata?.degraus.map((d) => d.rotulo) ?? []), ...(cascata?.naoInformados ?? []), ...(cascata?.zerados ?? [])];
-
-    expect(rotulos).not.toContain("Proteção de envio");
-  });
 });
 
 describe("montarCascataShopee com a proteção de envio (D-483, D-492)", () => {
@@ -289,9 +286,8 @@ describe("montarCascataShopee com a proteção de envio (D-483, D-492)", () => {
    * O contrato de hoje (fase 2 da D-483, em produção desde 16/10): 1.000 de
    * receita coberta, 800 recebidos, 195 dos componentes de sempre e 5 da
    * proteção de envio -- o `outros` já é o restante, zero como na leitura real.
-   * `semColuna` é o banco antes da D-483: sem a proteção, o `outros` a trazia.
    */
-  const semColuna: ComposicaoShopee = {
+  const composicao: ComposicaoShopee = {
     nivel: "TOTAL",
     account_id: null,
     account_name: null,
@@ -306,7 +302,8 @@ describe("montarCascataShopee com a proteção de envio (D-483, D-492)", () => {
     cupom_loja: null,
     afiliados: null,
     taxa_por_pedido: null,
-    outros: 5,
+    protecao_envio: 5,
+    outros: 0,
     recebido_coberto: 800,
     comissao_liquida: null,
     taxa_servico_liquida: null,
@@ -316,10 +313,9 @@ describe("montarCascataShopee com a proteção de envio (D-483, D-492)", () => {
     pedidos_com_ajuste: 0,
     ajustes: null,
   };
-  const composicao: ComposicaoShopee = { ...semColuna, protecao_envio: 5, outros: 0 };
 
   it("a proteção de envio tem degrau próprio, antes de 'Outros', e termina no recebido", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
+    const cascata = montarCascataShopee(composicao, 500, 300, 0);
 
     expect(cascata?.degraus.map((d) => d.chave)).toEqual([
       "receita",
@@ -341,30 +337,23 @@ describe("montarCascataShopee com a proteção de envio (D-483, D-492)", () => {
     expect(protecao?.inicio).toBeCloseTo(0.8);
     expect((protecao?.inicio ?? 0) + (protecao?.largura ?? 0)).toBeCloseTo(0.805);
     // O restante zero sai das barras e é dito.
-    expect(cascata?.zerados).toEqual(["Outros (fecha com o recebido)"]);
+    expect(cascata?.zerados).toEqual(["Outros (fecha com o recebido)", "Ajustes depois do repasse"]);
   });
 
   it("o outros que sobra é o do banco, ao lado da proteção -- e um crédito sobe", () => {
-    const cascata = montarCascataShopee({ ...composicao, outros: -20 }, 500, 300);
+    const cascata = montarCascataShopee({ ...composicao, outros: -20 }, 500, 300, 0);
 
     expect(cascata?.degraus.find((d) => d.chave === "protecao_envio")?.valor).toBe(-5);
     expect(cascata?.degraus.find((d) => d.chave === "outros")?.valor).toBe(20);
   });
 
   it("loja sem o campo: a proteção é nula e dita, e o outros fecha a conta", () => {
-    const cascata = montarCascataShopee({ ...composicao, protecao_envio: null, outros: 5 }, 500, 300);
+    const cascata = montarCascataShopee({ ...composicao, protecao_envio: null, outros: 5 }, 500, 300, 0);
 
     expect(cascata?.naoInformados).toContain("Proteção de envio");
     expect(cascata?.degraus.find((d) => d.chave === "outros")?.valor).toBe(-5);
   });
 
-  it("sem a coluna (o banco antes da D-483), a cascata não tem o degrau nem a nota", () => {
-    const cascata = montarCascataShopee(semColuna, 500, 300);
-    const rotulos = [...(cascata?.degraus.map((d) => d.rotulo) ?? []), ...(cascata?.naoInformados ?? []), ...(cascata?.zerados ?? [])];
-
-    expect(rotulos).not.toContain("Proteção de envio");
-    expect(cascata?.degraus.find((d) => d.chave === "outros")?.valor).toBe(-5);
-  });
 });
 
 describe("montarCascataShopee com os ajustes depois do repasse (D-485, D-498)", () => {
@@ -397,14 +386,6 @@ describe("montarCascataShopee com os ajustes depois do repasse (D-485, D-498)", 
   };
   const degrau = (cascata: ReturnType<typeof montarCascataShopee>, chave: string) => cascata?.degraus.find((d) => d.chave === chave);
   const fim = (d: ReturnType<typeof degrau>): number => (d?.inicio ?? 0) + (d?.largura ?? 0);
-
-  it("antes da migration (sem a coluna), a cascata de antes: o custo começa no recebido", () => {
-    const cascata = montarCascataShopee(composicao, 500, 300);
-
-    expect(cascata?.degraus.map((d) => d.chave)).toEqual(["receita", "comissao", "recebido", "custo", "resultado"]);
-    expect(fim(degrau(cascata, "custo"))).toBeCloseTo(0.8);
-    expect(cascata?.zerados).not.toContain("Ajustes depois do repasse");
-  });
 
   it("o ajuste cobrado é degrau entre o recebido e o custo, e o custo começa onde ele termina", () => {
     // O SQL já fecha: 800 − 10 − 500 = 290.
