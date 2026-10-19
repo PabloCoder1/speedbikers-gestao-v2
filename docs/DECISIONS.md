@@ -17351,7 +17351,7 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - **Desktop:** com as duas colunas novas, a tabela passava da largura do painel em 1440 (1249 px em 1110, medido com o seed). Agora a loja, o SKU do anúncio, o vínculo e o status quebram linha, as notas deles também. A loja e o SKU, sem espaço, quebram onde precisar, sem descer de 7rem. O anúncio, só nesta tabela, desce de 17rem para 15rem. Resultado: 1110 em 1110, com a loja live e com o seed.
 - **Celular:** o cartão tinha o defeito da T-R5. O vínculo invadia o preço, o SKU saía cortado, e "em 11 pedidos" também sairia. Ganhou o mesmo trato: a célula quebra e a nota desce. O vínculo (SKU, explicação e botão) ocupa a largura do cartão.
 
-**Publicação:** só a web, e depois da migration `20261019160000` em produção (o A1 dispara e avisa). Nenhuma migration, RPC, worker ou api nesta decisão.
+**Publicação:** só a web, depois da migration `20261019160000`, em produção desde 19/10 (run `39272445073`, conferida pelo A1 com os dados reais). Nenhuma migration, RPC, worker ou api nesta decisão.
 
 **Verificacao:**
 - **Unitários:** `shopee-listings.test.ts`, com o período, o vendeu e a ordem do conjunto fechado, o endereço, os argumentos só com valor, o próximo estado do cabeçalho e o recorte nunca zero. `shopee-export.test.ts`, com as quatro colunas, a receita desconhecida e a loja nunca lida vazias.

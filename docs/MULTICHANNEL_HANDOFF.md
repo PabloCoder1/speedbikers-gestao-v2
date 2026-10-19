@@ -125,7 +125,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- D-606 — as vendas por anúncio na `/anuncios/shopee` (consome o C-67 da D-493): o período, o vendeu, a ordem pelo cabeçalho de unidades e faturamento, as vendas em cada linha ("em N pedidos" embaixo das unidades) e o resumo do recorte, a loja de pedidos nunca lidos dita ("—" e fora do resumo), e o CSV com as quatro colunas de venda; a tabela cabe em 1440 e o cartão do celular deixa de se sobrepor. **Em código e validada** na branch `feat/vendas-por-anuncio-shopee`, empilhada na do A1; o PR e o merge vêm **depois** da migration `20261019160000` em produção (PGRST202).
+- D-606 — as vendas por anúncio na `/anuncios/shopee` (consome o C-67 da D-493): o período, o vendeu, a ordem pelo cabeçalho de unidades e faturamento, as vendas em cada linha ("em N pedidos" embaixo das unidades) e o resumo do recorte, a loja de pedidos nunca lidos dita ("—" e fora do resumo), e o CSV com as quatro colunas de venda; a tabela cabe em 1440 e o cartão do celular deixa de se sobrepor. **Em código e validada** (#251); a migration `20261019160000` está **em produção desde 19/10** (run `39272445073`, conferida pelo A1), e a tela entra pelo #251.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §8)
 - Nada nas telas da frente (T0 a T8). Os números da Shopee aparecem sozinhos com a loja live (Go Live, do dono).

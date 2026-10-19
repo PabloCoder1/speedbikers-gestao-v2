@@ -264,7 +264,7 @@ número.
 | **D-600** | A faixa de `/contas` com as contas do ML e as lojas Shopee | — | ✔ D-600 |
 | **D-602** | O CSV de `/vendas` no recorte do Mercado Livre, e a série do ML em páginas | — | ✔ D-602 |
 | **D-604** | As notificações recortadas por loja Shopee | — (o lote por loja espera o A1) | ✔ D-604 |
-| **D-606** | As vendas por anúncio na `/anuncios/shopee`: período, vendeu, ordem e recorte | A1 (D-493, C-67) | em código; entra depois da migration `20261019160000` |
+| **D-606** | As vendas por anúncio na `/anuncios/shopee`: período, vendeu, ordem e recorte | A1 (D-493, C-67) | em código (#251); a migration `20261019160000` em produção desde 19/10 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
