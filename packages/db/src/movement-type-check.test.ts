@@ -31,6 +31,11 @@ const NAO_SAO_MOVIMENTO: Readonly<Record<string, string>> = {
   // `documents.document_type` (D-375): o tipo do DOCUMENTO de onde a saida veio,
   // e nao o do movimento, que e `SAIDA_DOCUMENTO`.
   SAIDA_UPSELLER_PDF: "tipo de documento (D-375)",
+  // `documents.last_error_code` (D-497): por que o documento NAO mexe no
+  // estoque -- e justamente o que nunca vira movimento.
+  SAIDA_VENDA_MARKETPLACE: "codigo de recusa de documento (D-497)",
+  DEVOLUCAO_VENDA_MARKETPLACE: "codigo de recusa de documento (D-497)",
+  VENDA_PEDE_XML: "codigo de recusa de documento (D-497)",
 };
 
 /**

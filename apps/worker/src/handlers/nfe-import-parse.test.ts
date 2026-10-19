@@ -63,6 +63,8 @@ function fakeDeps(options: {
   orgCnpj?: string | null;
   /** Bytes de um PDF; quando presente, o documento aponta para um `.pdf`. */
   pdf?: Uint8Array;
+  /** O erro que o banco devolve a um `update`, decidido pelos valores gravados. */
+  updateError?: (values: Record<string, unknown>) => { code: string; message: string } | null;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
@@ -95,7 +97,7 @@ function fakeDeps(options: {
       update: (values: Record<string, unknown>) => {
         captured.updates.push(values);
 
-        return { eq: () => Promise.resolve({ error: null }) };
+        return { eq: () => Promise.resolve({ error: options.updateError?.(values) ?? null }) };
       },
       insert: (rows: Record<string, unknown>[]) => {
         captured.inserted.push(rows);
@@ -397,5 +399,109 @@ describe("parse de PDF (D-375)", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(String(captured.updates.at(-1)?.last_error)).toContain("não foi possível ler texto neste PDF");
+  });
+});
+
+/**
+ * D-497: a nota de venda feita pelo marketplace não mexe no estoque, e a leitura
+ * que o banco não aceita vira FAILED com o erro dito, em vez de PARSING para
+ * sempre.
+ */
+describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => {
+  const CONSUMIDOR = { CPF: "12345678909", xNome: "Comprador" };
+
+  function notaDeVenda(intermediador: string | null, cfop = "5102"): unknown {
+    const base = fixtureXmlObject({
+      dest: CONSUMIDOR,
+      det: [
+        {
+          "@_nItem": "1",
+          prod: { cProd: "CAPACETE-1", cEAN: "SEM GTIN", xProd: "Capacete", CFOP: cfop, uCom: "UN", qCom: "1.0000", vUnCom: "200.00", vProd: "200.00" },
+        },
+      ],
+    }) as { nfeProc: { NFe: { infNFe: Record<string, unknown> } } };
+    const infNFe = base.nfeProc.NFe.infNFe;
+
+    infNFe.emit = { CNPJ: OWN_CNPJ, xNome: "Speed Bikers Comercio LTDA" };
+
+    if (intermediador !== null) {
+      infNFe.ide = { ...(infNFe.ide as Record<string, unknown>), indIntermed: "1" };
+      infNFe.infIntermed = { CNPJ: intermediador, idCadIntTran: "LOJA" };
+    }
+
+    return base;
+  }
+
+  it("recusa a nota de venda feita pelo Mercado Livre: FAILED com o código, sem itens, e não repete", async () => {
+    const { deps, captured, lines } = fakeDeps({ xmlObject: notaDeVenda("03007331000141") });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(captured.inserted).toEqual([]);
+    expect(captured.updates.at(-1)).toMatchObject({
+      status: "FAILED",
+      last_error_code: "SAIDA_VENDA_MARKETPLACE",
+      operation_type: "SAIDA",
+      intermediary_cnpj: "03007331000141",
+      access_key: ACCESS_KEY,
+    });
+    expect(String(captured.updates.at(-1)?.last_error)).toContain("Mercado Livre");
+    expect(lines.some((l) => l.includes("documento_recusado"))).toBe(true);
+  });
+
+  it("a nota de venda de balcão (sem intermediador) segue lida, e o código antigo é limpo", async () => {
+    const { deps, captured, lines } = fakeDeps({ xmlObject: notaDeVenda(null) });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(captured.updates.at(-1)).toMatchObject({
+      status: "PARSED",
+      operation_type: "SAIDA",
+      intermediary_cnpj: null,
+      last_error: null,
+      last_error_code: null,
+    });
+  });
+
+  it("a recusa vale mesmo se o banco não aceitar o cabeçalho", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      xmlObject: notaDeVenda("35635824000112"),
+      updateError: (values) => ("access_key" in values ? { code: "23514", message: "violates check constraint" } : null),
+    });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(captured.updates.at(-1)).toEqual({
+      status: "FAILED",
+      last_error: expect.stringContaining("Shopee") as string,
+      last_error_code: "SAIDA_VENDA_MARKETPLACE",
+    });
+  });
+
+  it("a gravação final recusada por dado vira FAILED com LEITURA_NAO_GRAVADA e não repete", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      updateError: (values) =>
+        values.status === "PARSED" ? { code: "23514", message: 'new row violates check constraint "documents_access_key_check"' } : null,
+    });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.updates.at(-1)).toEqual({
+      status: "FAILED",
+      last_error: expect.stringContaining("documents_access_key_check") as string,
+      last_error_code: "LEITURA_NAO_GRAVADA",
+    });
+    // Os itens gravados antes saem: o documento recusado não fica com itens soltos.
+    expect(captured.deletedTables.filter((t) => t === "document_items")).toHaveLength(2);
+  });
+
+  it("erro passageiro na gravação final repete, sem marcar o documento", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      updateError: (values) => (values.status === "PARSED" ? { code: "57014", message: "canceling statement due to statement timeout" } : null),
+    });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.updates.some((u) => u.last_error_code === "LEITURA_NAO_GRAVADA")).toBe(false);
   });
 });

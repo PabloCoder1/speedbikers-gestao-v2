@@ -477,6 +477,8 @@ RLS por `has_account_access(ml_account_id)`, mesmo padrão de `fulfillment_stock
 
 ### `documents` / `document_items` — NF-e
 
+**D-497 (migration `20261019220000`, em código em 2026-10-19):** `documents.intermediary_cnpj` (o CNPJ do intermediador lido do XML, 14 dígitos, só com `ide/indIntermed` = 1) e `documents.last_error_code` (o motivo da falha em código: `SAIDA_VENDA_MARKETPLACE`, `DEVOLUCAO_VENDA_MARKETPLACE`, `VENDA_PEDE_XML`, `LEITURA_NAO_GRAVADA`; nulo nas demais falhas). `get_documents_overview` devolve os dois no fim de cada linha. A regra mora em `packages/domain/src/documentos/venda-de-marketplace.ts`.
+
 **Fluxo completo implementado em 2026-08-22** (migration `20260822145800_create_documents.sql` + `20260822161237_create_link_document_item_rpc.sql`): `upload -> PARSE -> conferência -> confirmação -> aplicação`, mesmo fluxo do importador do UpSeller de ponta a ponta. `content_hash` UNIQUE impede que o mesmo arquivo entre duas vezes; `access_key` UNIQUE (44 dígitos, quando presente) cobre o caso de dois ARQUIVOS diferentes carregando a mesma nota.
 
 Estados: `UPLOADED -> PARSING -> PARSED -> APPLYING -> APPLIED` (mais `FAILED`/`CANCELLED`, mesma forma de `erp_import_batches`). **Parse e movimentação são atos distintos em momentos distintos** — o parse (`nfe.import.parse`, `apps/worker/src/handlers/nfe-import-parse.ts`) só grava `document_items`, nunca `stock_movements`. Só a confirmação humana gera linhas do ledger, via `nfe.import.apply` (`computeNfeApplicationMovements`, `@sb/domain/inventory`) — `ENTRADA_NFE` soma, `SAIDA_NFE` subtrai, `source_type = 'DOCUMENT'`.

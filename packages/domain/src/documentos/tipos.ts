@@ -78,6 +78,12 @@ export interface DocumentoLido {
   readonly emitenteCnpj: string | null;
   readonly emitenteNome: string | null;
   /**
+   * CNPJ do intermediador da transação (NF-e: `infIntermed/CNPJ`, só quando
+   * `ide/indIntermed` = 1, NT 2020.006). Só o XML traz: o DANFE não imprime o
+   * campo num lugar fixo, e os documentos de separação não são fiscais (D-497).
+   */
+  readonly intermediadorCnpj: string | null;
+  /**
    * A linha que explica o documento a quem confere: o armazém e a observação do
    * pedido de saída, o número do envio no Full. Vai para a tela, não para o
    * ledger.
