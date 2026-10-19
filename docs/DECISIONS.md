@@ -17211,6 +17211,20 @@ O que sobra no ultimo cenario e o banco local no estado "nada pede atencao": o e
 
 **Impacto:** `apps/web/components/carregando.tsx`, `apps/web/app/(app)/central/{page,atencao}.tsx`, `apps/web/app/globals.css` (o traco do texto no celular), `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,PERFORMANCE,DESIGN_IMPLEMENTATION,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova. A proxima leitura dos web vitals confere o CLS da `/central` em producao.
 
+## D-516 - O reporter de producao diz o elemento do LCP e do maior deslocamento, pela forma: tag, classes `sb-*` e a posicao da secao, nunca texto ou rotulo
+
+**Contexto:** a leitura de 19/10 dos web vitals de producao (23 linhas, de 18/10 00:00 a 19/10 14:23 UTC; nenhuma de 16/10 17:54 ao fim de 17/10) confirmou a D-515 -- a `/central` teve CLS 0 e LCP de 472 ms numa carga completa -- e achou a Home pior: LCP de 6,3 s (TTFB 314 ms) e 10,3 s (TTFB 29 ms), contra 1,8 e 5,0 s em 16/10, com a `/central` e a `/vendas` a ~0,45 s na mesma sessao. Desde a D-488 a primeira rodada da Home tem tres leituras multicanal (`get_marketplace_sales_summary` atual e anterior, `get_marketplace_sales_daily`), e a segunda tem a cobertura, dentro do `Suspense` da "Atencao" (D-504). O log nao dizia qual das duas segurava o LCP: o reporter mandava so nome, valor, rota e `softNav`, e a D-514 so soube o elemento porque mediu no build local.
+
+**Decisao:**
+1. **O LCP e o CLS levam `el`**, o elemento: no LCP, o do ultimo candidato antes da primeira entrada; no CLS, a primeira fonte do MAIOR deslocamento contado (o que mais pesou).
+2. **Pela forma, nunca pelo conteudo** (`lib/vitals-elemento.ts`): a tag, ate duas classes do design system (`sb-*`, que vem do codigo) e a secao em que o elemento mora, pela posicao entre as secoes do conteudo -- `p.sb-meta-frase < section.sb-panel#2`. Nada de texto, `id` ou `aria-label`: o rotulo de uma regiao leva nome de loja (`/contas`), de produto (o cabecalho do SKU) ou data (`/notificacoes`).
+3. **A rota so grava a forma** (`descricaoValida`): qualquer outra coisa sai do log e a metrica fica -- perder a amostra pela descricao seria pior. As linhas sem `el` continuam validas (aba aberta antes do deploy, metrica sem elemento).
+4. **Medida a frio pedida ao A1:** as quatro leituras da Home (as tres multicanal da primeira rodada e a cobertura), no Dev, como `authenticated`. O `el` diz qual bloco e o LCP; o A1 diz quanto custa a leitura dele.
+
+**Verificacao:** os testes da rota e do modulo (35); o `e2e/web-vitals.spec.ts` (o LCP de uma carga completa da `/central` chega com `el` valido, e o CLS 0 sem `el`); a suite e2e inteira, 257 de 257 no projeto principal e o ensaio `loja-live` 9 de 9 rodado a parte (na rodada inteira, o servidor de teste caiu depois de 13 minutos, no meio do ensaio, e os 7 seguintes deram `ERR_CONNECTION_REFUSED`); `pnpm run check`, `build` e `docs:check`.
+
+**Impacto:** `apps/web/app/web-vitals.tsx`, `apps/web/app/api/vitals/route{,.test}.ts`, `apps/web/lib/vitals-elemento{,.test}.ts`, `apps/web/e2e/web-vitals.spec.ts`, `docs/{UX_SYSTEM,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`. So web: sem migration, sem RPC, sem leitura nova; o payload do `/api/vitals` ganha um campo opcional.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.

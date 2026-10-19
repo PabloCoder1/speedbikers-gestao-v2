@@ -166,6 +166,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    porque o indicador termina na troca de caminho. Terminar pela URL inteira
    pede `useSearchParams` no `Shell` (com o custo de `Suspense` dele) — entra
    se aparecer espera.
+10. **O LCP da Home de 6 a 10 s** (D-516, leitura de 19/10): o `el` do
+    reporter diz se é a faixa e o gráfico (primeira rodada, com as leituras
+    multicanal da D-488) ou a "Atenção" (a cobertura); a medida a frio das
+    leituras está com o A1, e o que for de tela, com o A2.
 
 ---
 
@@ -216,6 +220,13 @@ mudou no mesmo documento antes do envio, e o CLS/INP soma as telas que vieram
 depois; o CLS da tela é o das linhas com `softNav: false`. Aba aberta em
 segundo plano não manda LCP. Sem sessão, o `proxy` desvia o envio para o login:
 de `/login` só chega o que sai depois de entrar (o CLS).
+
+**O elemento (D-516).** Desde a D-516, o LCP e o CLS levam `el`: o elemento
+do último candidato do LCP e a primeira fonte do MAIOR deslocamento, pela
+forma — tag, classes `sb-*` e a seção em que mora pela posição entre as
+seções do conteúdo (`p.sb-meta-frase < section.sb-panel#2`). Nunca texto,
+`id` ou rótulo (`lib/vitals-elemento.ts`). Para saber qual seção é a `#n`,
+abra a tela no build local e conte as `section` dentro do `.sb-content`.
 
 **Corte do reporter (D-507).** Linha **com** `softNav` é do reporter novo;
 **sem** ele, do antigo, que dava ao LCP e ao CLS a rota em que a aba se
@@ -302,3 +313,21 @@ janela. O conserto (esqueleto dos indicadores da altura da janela e o da
 **Próxima leitura:** quando houver carga completa de `/skus/[id]` e depois do
 conserto da `/central`. A navegação suave (D-512) não entra nestes números: o
 reporter mede só a carga completa.
+
+### Leitura de 19/10, depois da D-515 (D-516)
+
+23 linhas de 18/10 00:00 a 19/10 14:23 UTC (nenhuma de 16/10 17:54 ao fim de
+17/10), quase todas de 19/10.
+
+| tela | cargas completas |
+|---|---|
+| `/central` | **CLS 0**, LCP 472 ms — a D-515 confirmada, com uma carga |
+| `/vendas` | LCP 432 ms, CLS 0 |
+| `/sincronizacao` | LCP 1,6, 2,0 e 2,7 s, CLS 0 |
+| Home | **LCP 6,3 e 10,3 s** (16/10: 1,8 e 5,0), CLS 0 |
+
+A Home piorou depois da D-488, que pôs três leituras multicanal na primeira
+rodada; a de 10,3 s foi depois da D-489 do A1 (13:38 UTC). O log não dizia
+qual bloco era o LCP — daí a D-516. A medida a frio das leituras da Home
+está com o A1; o que for de tela (ordem das leituras, o que fica fora do
+`Suspense`) fica com o A2. §3, item 10.
