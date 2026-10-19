@@ -866,10 +866,12 @@ export type Database = {
           document_type: string | null
           file_name: string | null
           id: string
+          intermediary_cnpj: string | null
           issue_date: string | null
           issuer_cnpj: string | null
           issuer_name: string | null
           last_error: string | null
+          last_error_code: string | null
           operation_type: string | null
           organization_id: string
           parsed_at: string | null
@@ -895,10 +897,12 @@ export type Database = {
           document_type?: string | null
           file_name?: string | null
           id?: string
+          intermediary_cnpj?: string | null
           issue_date?: string | null
           issuer_cnpj?: string | null
           issuer_name?: string | null
           last_error?: string | null
+          last_error_code?: string | null
           operation_type?: string | null
           organization_id: string
           parsed_at?: string | null
@@ -924,10 +928,12 @@ export type Database = {
           document_type?: string | null
           file_name?: string | null
           id?: string
+          intermediary_cnpj?: string | null
           issue_date?: string | null
           issuer_cnpj?: string | null
           issuer_name?: string | null
           last_error?: string | null
+          last_error_code?: string | null
           operation_type?: string | null
           organization_id?: string
           parsed_at?: string | null

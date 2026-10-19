@@ -77,6 +77,7 @@ export function documentoDaNfe(nfe: ParsedNfe): DocumentoLido {
     emitidoEm: nfe.issueDate.toISOString(),
     emitenteCnpj: nfe.issuerCnpj,
     emitenteNome: nfe.issuerName,
+    intermediadorCnpj: nfe.intermediaryCnpj,
     referencia: null,
     itens: nfe.items.map((item) => ({
       posicao: item.position,

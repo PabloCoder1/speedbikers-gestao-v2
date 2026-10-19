@@ -75,6 +75,7 @@ describe("parseNfeXmlObject", () => {
         issuerName: "Fornecedor Exemplo LTDA",
         recipientCnpj: OWN_CNPJ,
         recipientName: "Speed Bikers Comercio LTDA",
+        intermediaryCnpj: null,
         items: [
           {
             position: 0,
@@ -299,5 +300,64 @@ describe("parseNfeXmlObject", () => {
     const result = parseNfeXmlObject({ nfeProc: nfe }, OWN_CNPJ);
 
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * D-497: o intermediador da transação (NT 2020.006, `ide/indIntermed` B25c e
+ * `infIntermed` YB01/YB02) e a direção da nota que a própria empresa emite.
+ */
+describe("parseNfeXmlObject: intermediador e nota emitida pela casa (D-497)", () => {
+  const CONSUMIDOR = { CPF: "12345678909", xNome: "Comprador" };
+
+  function notaDaCasa(tpNF: "0" | "1", extra: Record<string, unknown> = {}) {
+    const base = baseNfe();
+    const infNFe = base.NFe.infNFe as Record<string, unknown>;
+
+    return {
+      NFe: {
+        infNFe: {
+          ...infNFe,
+          ide: { ...(infNFe.ide as Record<string, unknown>), tpNF, ...((extra.ide as Record<string, unknown> | undefined) ?? {}) },
+          emit: { CNPJ: OWN_CNPJ, xNome: "Speed Bikers Comercio LTDA" },
+          dest: CONSUMIDOR,
+          ...(extra.infIntermed === undefined ? {} : { infIntermed: extra.infIntermed }),
+        },
+      },
+    };
+  }
+
+  it("lê o CNPJ do intermediador quando indIntermed = 1", () => {
+    const result = parseNfeXmlObject(notaDaCasa("1", { ide: { indIntermed: "1" }, infIntermed: { CNPJ: "03007331000141", idCadIntTran: "LOJA" } }), OWN_CNPJ);
+
+    expect(result.ok && result.value.intermediaryCnpj).toBe("03007331000141");
+    expect(result.ok && result.value.operationType).toBe("SAIDA");
+  });
+
+  it("sem indIntermed = 1 não há intermediador, mesmo com o grupo preenchido", () => {
+    const semIndicador = parseNfeXmlObject(notaDaCasa("1", { infIntermed: { CNPJ: "03007331000141" } }), OWN_CNPJ);
+    const indicadorZero = parseNfeXmlObject(notaDaCasa("1", { ide: { indIntermed: "0" }, infIntermed: { CNPJ: "03007331000141" } }), OWN_CNPJ);
+    const semGrupo = parseNfeXmlObject(notaDaCasa("1", { ide: { indIntermed: "1" } }), OWN_CNPJ);
+
+    expect(semIndicador.ok && semIndicador.value.intermediaryCnpj).toBeNull();
+    expect(indicadorZero.ok && indicadorZero.value.intermediaryCnpj).toBeNull();
+    expect(semGrupo.ok && semGrupo.value.intermediaryCnpj).toBeNull();
+  });
+
+  it("a nota de entrada que a casa emite (tpNF = 0) é ENTRADA, não saída", () => {
+    const entrada = parseNfeXmlObject(notaDaCasa("0"), OWN_CNPJ);
+    const saida = parseNfeXmlObject(notaDaCasa("1"), OWN_CNPJ);
+
+    expect(entrada.ok && entrada.value.operationType).toBe("ENTRADA");
+    expect(saida.ok && saida.value.operationType).toBe("SAIDA");
+  });
+
+  it("a nota do fornecedor continua pelo destinatário, qualquer que seja o tpNF", () => {
+    const base = baseNfe();
+    const infNFe = base.NFe.infNFe as Record<string, unknown>;
+    const comTpZero = { NFe: { infNFe: { ...infNFe, ide: { ...(infNFe.ide as Record<string, unknown>), tpNF: "0" } } } };
+    const result = parseNfeXmlObject(comTpZero, OWN_CNPJ);
+
+    expect(result.ok && result.value.operationType).toBe("ENTRADA");
   });
 });

@@ -156,6 +156,7 @@ export function lerSaidaUpseller(linhas: readonly LinhaPdf[]): LeituraDocumento 
     emitidoEm,
     emitenteCnpj: null,
     emitenteNome: null,
+    intermediadorCnpj: null,
     referencia: [armazem === null ? null : `Armazém ${armazem}`, observacao === undefined || observacao === "" ? null : observacao]
       .filter((parte): parte is string => parte !== null)
       .join(" · "),

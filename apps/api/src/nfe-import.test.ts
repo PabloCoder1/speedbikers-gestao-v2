@@ -296,6 +296,9 @@ function applyDb(options: {
   totalItems?: number | null;
   resolvedItems?: number | null;
   documentType?: string;
+  operationType?: string;
+  intermediaryCnpj?: string | null;
+  cfops?: (string | null)[];
 }): {
   db: NfeImportDeps["db"];
   updates: Record<string, unknown>[];
@@ -303,9 +306,17 @@ function applyDb(options: {
   const updates: Record<string, unknown>[] = [];
 
   const db = {
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
         eq: () => ({
+          // `document_items`: a lista dos CFOPs, que a guarda da D-497 confere.
+          then: (resolve: (value: unknown) => void) => {
+            resolve(
+              table === "document_items"
+                ? { data: (options.cfops ?? ["1102"]).map((cfop) => ({ cfop })), error: null }
+                : { data: null, error: { message: "consulta inesperada" } },
+            );
+          },
           eq: () => ({
             maybeSingle: () =>
               Promise.resolve({
@@ -318,6 +329,8 @@ function applyDb(options: {
                         total_items: "totalItems" in options ? options.totalItems : 19,
                         resolved_items: "resolvedItems" in options ? options.resolvedItems : 19,
                         document_type: options.documentType ?? "NFE",
+                        operation_type: options.operationType ?? "ENTRADA",
+                        intermediary_cnpj: options.intermediaryCnpj ?? null,
                       },
                 error: null,
               }),
@@ -350,6 +363,9 @@ function applyDeps(
     totalItems?: number | null;
     resolvedItems?: number | null;
     documentType?: string;
+    operationType?: string;
+    intermediaryCnpj?: string | null;
+    cfops?: (string | null)[];
   } = {},
 ): { deps: NfeImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
   const { db, updates } = applyDb(options);
@@ -439,6 +455,34 @@ describe("confirmNfeApply", () => {
 
     expect(outcome).toMatchObject({ status: "rejected" });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("nota de venda feita pelo marketplace não é confirmada (D-497)", async () => {
+    const ctx = applyDeps({ operationType: "SAIDA", intermediaryCnpj: "03007331000141", cfops: ["5102"] });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect("reason" in outcome ? outcome.reason : "").toContain("Mercado Livre");
+    expect(ctx.updates).toHaveLength(0);
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("nota de venda de balcão (sem intermediador) é confirmada como antes (D-497)", async () => {
+    const ctx = applyDeps({ operationType: "SAIDA", intermediaryCnpj: null, cfops: ["5102"] });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toEqual({ status: "queued", documentId: "doc-1" });
+  });
+
+  it("DANFE de venda lido antes da guarda pede o XML na confirmação (D-497)", async () => {
+    const ctx = applyDeps({ documentType: "DANFE_PDF", operationType: "SAIDA", cfops: ["5.102"] });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect("reason" in outcome ? outcome.reason : "").toContain("XML");
   });
 
   it("falha ao gravar a confirmação não enfileira a aplicação", async () => {

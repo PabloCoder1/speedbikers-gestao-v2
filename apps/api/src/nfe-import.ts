@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { AdminClient } from "@sb/db";
+import { recusaDoDocumentoGravado } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import type { Caller } from "./auth.js";
@@ -266,7 +267,7 @@ export async function confirmNfeApply(
 ): Promise<ConfirmNfeApplyOutcome> {
   const document = await deps.db
     .from("documents")
-    .select("id, status, total_items, resolved_items, document_type")
+    .select("id, status, total_items, resolved_items, document_type, operation_type, intermediary_cnpj")
     .eq("id", documentId)
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
@@ -291,6 +292,28 @@ export async function confirmNfeApply(
       reason:
         "envio ao Full é transferência, não saída — o documento fica conferido, mas a baixa espera o desenho do Full (D-352)",
     };
+  }
+
+  /*
+    D-497: a nota de venda (ou de devolução de venda) feita pelo Mercado Livre
+    ou pela Shopee não mexe no estoque -- a baixa do pedido já cobre. A leitura
+    já recusa; aqui a recusa se repete para o documento lido antes da guarda.
+  */
+  const itens = await deps.db.from("document_items").select("cfop").eq("document_id", documentId);
+
+  if (itens.error !== null) {
+    return { status: "rejected", reason: "não foi possível conferir os itens do documento" };
+  }
+
+  const recusa = recusaDoDocumentoGravado({
+    documentType: document.data.document_type,
+    operationType: document.data.operation_type,
+    intermediaryCnpj: document.data.intermediary_cnpj,
+    cfops: itens.data.map((item) => item.cfop),
+  });
+
+  if (recusa !== null) {
+    return { status: "rejected", reason: recusa.motivo };
   }
 
   const total = document.data.total_items ?? 0;

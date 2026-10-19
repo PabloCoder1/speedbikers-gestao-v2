@@ -1,6 +1,6 @@
 import type { AdminClient } from "@sb/db";
 import type { DocumentoLido, TipoDocumento } from "@sb/domain";
-import { documentoDaNfe, lerDocumentoPdf, parseNfeXmlObject } from "@sb/domain";
+import { digitos, documentoDaNfe, lerDocumentoPdf, parseNfeXmlObject, recusaDeVendaDeMarketplace } from "@sb/domain";
 import { z } from "zod";
 
 import { lerLinhasDoPdf, lerPedacosDoPdf } from "../documentos/pdf-texto.js";
@@ -62,6 +62,16 @@ const TIPO_NA_COLUNA: Record<TipoDocumento, string> = {
   SAIDA_UPSELLER_PDF: "SAIDA_UPSELLER_PDF",
   ENVIO_FULL_ML_PDF: "ENVIO_FULL_ML_PDF",
 };
+
+/**
+ * Erro de DADO do Postgres (classes 22, dado inválido, e 23, restrição
+ * violada): repetir dá o mesmo erro. O documento vira FAILED com o erro dito, em
+ * vez de ficar em PARSING para sempre quando as tentativas acabam (D-497 -- um
+ * DANFE de 18/09 ficou assim, com a gravação final recusada e o erro engolido).
+ */
+function erroDeDado(error: { code?: string } | null): boolean {
+  return error?.code !== undefined && /^2[23]/.test(error.code);
+}
 
 export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
@@ -154,6 +164,63 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
     }
 
     const documento = leitura.valor;
+    const intermediario = digitos(documento.intermediadorCnpj);
+
+    // O cabeçalho que a leitura conhece -- gravado também na recusa, para a tela
+    // dizer QUAL nota foi recusada.
+    const cabecalho = {
+      document_type: TIPO_NA_COLUNA[documento.tipo],
+      access_key: documento.chave,
+      operation_type: documento.direcao,
+      document_number: documento.numero,
+      series: documento.serie,
+      issue_date: documento.emitidoEm,
+      issuer_cnpj: documento.emitenteCnpj,
+      issuer_name: documento.emitenteNome,
+      recipient_cnpj: leitura.destinatarioCnpj,
+      recipient_name: leitura.destinatarioNome,
+      reference: documento.referencia,
+      intermediary_cnpj: intermediario.length === 14 ? intermediario : null,
+    };
+
+    /*
+      D-497: a nota de venda (ou de devolução de venda) feita pelo Mercado Livre
+      ou pela Shopee não mexe no estoque -- a baixa do pedido já cobre. Recusada
+      na leitura, sem itens para conferir; a api e a aplicação repetem a guarda.
+    */
+    const recusa = recusaDeVendaDeMarketplace({
+      tipo: documento.tipo,
+      direcao: documento.direcao,
+      intermediadorCnpj: documento.intermediadorCnpj,
+      cfops: documento.itens.map((item) => item.cfop),
+    });
+
+    if (recusa !== null) {
+      await deps.db.from("document_items").delete().eq("document_id", documentId);
+
+      const recusado = await deps.db
+        .from("documents")
+        .update({ ...cabecalho, status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
+        .eq("id", documentId);
+
+      if (recusado.error !== null) {
+        // O cabeçalho pode ser o que o banco recusa (a chave lida do PDF): a
+        // recusa vale do mesmo jeito.
+        await deps.db
+          .from("documents")
+          .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
+          .eq("id", documentId);
+      }
+
+      context.logger.warn("documento_recusado", {
+        document_id: documentId,
+        tipo: documento.tipo,
+        codigo: recusa.codigo,
+        intermediary_cnpj: cabecalho.intermediary_cnpj,
+      });
+
+      return { status: "done", processed: 0 };
+    }
 
     // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
     // reexecução começar do zero em vez de colidir com a chave única.
@@ -189,31 +256,36 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       const inserted = await deps.db.from("document_items").insert(chunk);
 
       if (inserted.error !== null) {
+        if (erroDeDado(inserted.error)) {
+          return falhaDeGravacao(deps.db, documentId, `os itens lidos não puderam ser gravados: ${inserted.error.message}`);
+        }
+
         return { status: "failed", retryable: true, reason: inserted.error.message };
       }
     }
 
-    await deps.db
+    const gravado = await deps.db
       .from("documents")
       .update({
+        ...cabecalho,
         status: "PARSED",
-        document_type: TIPO_NA_COLUNA[documento.tipo],
-        access_key: documento.chave,
-        operation_type: documento.direcao,
-        document_number: documento.numero,
-        series: documento.serie,
-        issue_date: documento.emitidoEm,
-        issuer_cnpj: documento.emitenteCnpj,
-        issuer_name: documento.emitenteNome,
-        recipient_cnpj: leitura.destinatarioCnpj,
-        recipient_name: leitura.destinatarioNome,
-        reference: documento.referencia,
         total_items: rows.length,
         resolved_items: 0,
         parsed_at: (deps.now?.() ?? new Date()).toISOString(),
         last_error: null,
+        last_error_code: null,
       })
       .eq("id", documentId);
+
+    if (gravado.error !== null) {
+      if (erroDeDado(gravado.error)) {
+        await deps.db.from("document_items").delete().eq("document_id", documentId);
+
+        return falhaDeGravacao(deps.db, documentId, `a leitura não pôde ser gravada: ${gravado.error.message}`);
+      }
+
+      return { status: "failed", retryable: true, reason: gravado.error.message };
+    }
 
     context.logger.info("documento_parse_finished", {
       document_id: documentId,
@@ -225,6 +297,16 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     return { status: "done", processed: rows.length };
   };
+}
+
+/** O documento que o banco não aceitou vira FAILED com o erro dito, sem repetir. */
+async function falhaDeGravacao(db: AdminClient, documentId: string, reason: string): Promise<JobOutcome> {
+  await db
+    .from("documents")
+    .update({ status: "FAILED", last_error: reason, last_error_code: "LEITURA_NAO_GRAVADA" })
+    .eq("id", documentId);
+
+  return { status: "failed", retryable: false, reason };
 }
 
 /**
