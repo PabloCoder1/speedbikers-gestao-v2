@@ -17369,3 +17369,32 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-610 - A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
+
+**Contexto:** em 19/10, das 14:20:21 às 14:20:48 UTC, o Postgres de produção cancelou 19 consultas por `statement timeout` (8 s), achadas pelo A1:
+- 16 `get_faturamento`, em rajadas de quatro paralelas;
+- 2 `get_detector_frete`;
+- 1 `get_stock_coverage_summary`.
+Era a sequência /central → /vendas → Home que o A3 mediu (LCP da Home de 6,3 s e 10,3 s).
+
+Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_ads_overview`. Uma de cada era REPETIDA: o bloco "Por marketplace" (`CorpoTodos`, T8a, D-480) lia de novo o período atual com os MESMOS argumentos dos indicadores (sem conta e sem detalhe).
+
+**Decisão:**
+1. **`CorpoTodos` aceita as leituras já feitas.** O parâmetro opcional `leiturasDoMl` (faturamento e Ads) serve a quem já fez as leituras com os mesmos argumentos. Sem ele, o bloco lê sozinho, como no "Todos" de `/faturamento`, que não muda.
+2. **A `/central` passa as dela.** São os dois primeiros resultados do `Promise.all` dos indicadores, o atual do faturamento e o do Ads. O bloco só aparece sem conta escolhida, que é exatamente quando os argumentos coincidem. São os mesmos números: a mesma resposta, lida uma vez.
+3. **Combinado com o A3**, que assumiu a reformulação da Central (19/10): ele pediu esta mudança antes do bloco 1 dele e não toca no `CorpoTodos`. O conserto de fundo é do A1 (D-499: o `get_faturamento` mais rápido, mesmo contrato). Esta decisão só tira a leitura que sobrava. A segunda redução, que o A1 propôs, fica com o A3 no bloco 1, por cima desta: ler só o período atual COM detalhe, que tem o mesmo `resumo` e a mesma `margem_minima` (conferido pelo A3 como `authenticated`). A /central passa a 2 `get_faturamento` por carga.
+
+**Publicação:** só a web. Nenhuma migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Contagem:** uma carga da `/central` no build local, contada pelo log do gateway (Kong), passou de 4 para 3 `get_faturamento` e de 3 para 2 `get_ads_overview`. As outras leituras ficaram iguais.
+- **e2e:**
+  - `central` e `faturamento` seguem iguais;
+  - no ensaio da loja live, o caso da `/central` confere o "Por marketplace" e a meta com os mesmos números.
+- **Suite inteira:** **256/256** com o banco recriado do zero (253 na 3300 e os 3 de convite na 3000), e o `loja-live` **9/9**.
+
+**Impacto:**
+- web: `apps/web/app/(app)/faturamento/multicanal.tsx` e `apps/web/app/(app)/central/page.tsx`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,PERFORMANCE,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.

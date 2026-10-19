@@ -51,7 +51,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | T8b ✔ (D-482): a meta de cada marketplace ao lado da geral, decisão do dono de 15/10 | C-66 (D-473) |
 | Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | SKU anunciado ou vendido só na Shopee aparece "sem anúncio"/"sem venda" | C-56 (D-445) → **T6c ✔ (D-454)** |
 | SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
-| Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | as vendas por anúncio da Shopee: tela em código (D-606), sobre o C-67 (D-493), entra depois da migration de produção | T1 ✔ (D-431: seletor levando a busca); T11 ✔ (D-490: o CSV dos anúncios da Shopee); D-494 ✔ (filtros salvos); E6 |
+| Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | — (as vendas por anúncio da Shopee desde a D-606, sobre o C-67 da D-493) | T1 ✔ (D-431: seletor levando a busca); T11 ✔ (D-490: o CSV dos anúncios da Shopee); D-494 ✔ (filtros salvos); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque (fatia 5, adiada) | E8 |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
@@ -264,7 +264,8 @@ número.
 | **D-600** | A faixa de `/contas` com as contas do ML e as lojas Shopee | — | ✔ D-600 |
 | **D-602** | O CSV de `/vendas` no recorte do Mercado Livre, e a série do ML em páginas | — | ✔ D-602 |
 | **D-604** | As notificações recortadas por loja Shopee | — (o lote por loja espera o A1) | ✔ D-604 |
-| **D-606** | As vendas por anúncio na `/anuncios/shopee`: período, vendeu, ordem e recorte | A1 (D-493, C-67) | em código (#251); a migration `20261019160000` em produção desde 19/10 |
+| **D-606** | As vendas por anúncio na `/anuncios/shopee`: período, vendeu, ordem e recorte | A1 (D-493, C-67) | ✔ D-606 (#251) |
+| **D-610** | A `/central` sem a leitura do faturamento em dobro | A1 (o achado), A3 (a Central) | ✔ D-610 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

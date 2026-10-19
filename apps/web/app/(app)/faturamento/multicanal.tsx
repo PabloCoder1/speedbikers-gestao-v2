@@ -47,7 +47,7 @@ import {
 import { AdsShopee } from "./ads-shopee";
 import { BarrasDiarias } from "./barras-diarias";
 import { Cascata } from "./cascata";
-import { ListaProdutos } from "./numeros";
+import { ListaProdutos, type RespostaRpc } from "./numeros";
 import { LIBERACOES_A_VISTA, RepasseShopee } from "./repasse-shopee";
 
 /**
@@ -1001,15 +1001,26 @@ export async function CorpoTodos({
   organizationId,
   recorte,
   range,
+  leiturasDoMl,
 }: {
   organizationId: string;
   recorte: RecorteDeFaturamento;
   range: { from: string; to: string };
+  /**
+   * D-610: as leituras do Mercado Livre que quem chama JÁ fez com os MESMOS
+   * argumentos (o período `range`, sem conta e sem detalhe). A `/central` as
+   * passa: lidas de novo aqui, eram uma `get_faturamento` e uma
+   * `get_ads_overview` a mais por carga, em paralelo com as outras (os
+   * timeouts de produção de 19/10). Sem elas, o bloco lê sozinho, como no
+   * "Todos" de `/faturamento`.
+   */
+  leiturasDoMl?: { readonly faturamento: Promise<RespostaRpc>; readonly ads: Promise<RespostaRpc> };
 }): Promise<ReactNode> {
   const supabase = await createClient();
 
   const [mlResult, shopeeResult, adsMlResult] = await Promise.all([
-    supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, p_detalhe: false }),
+    leiturasDoMl?.faturamento ??
+      supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, p_detalhe: false }),
     supabase.rpc("get_shopee_faturamento", {
       p_organization_id: organizationId,
       p_date_from: range.from,
@@ -1017,7 +1028,7 @@ export async function CorpoTodos({
       p_account_ids: null,
     }),
     // D-498: o Product Ads do ML, só para a linha do lucro após imposto e Ads -- a mesma leitura da central.
-    supabase.rpc("get_ads_overview", { p_date_from: range.from, p_date_to: range.to }),
+    leiturasDoMl?.ads ?? supabase.rpc("get_ads_overview", { p_date_from: range.from, p_date_to: range.to }),
   ]);
 
   // Cada lado falha sozinho: o outro continua de pé, e o que falhou diz por quê.
