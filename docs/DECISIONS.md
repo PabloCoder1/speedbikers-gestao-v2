@@ -17268,3 +17268,35 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - e2e: `vendas.spec.ts` e `vendas-multicanal.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-604 - As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
+
+**Contexto:** desde a D-438, o evento da loja Shopee guarda a loja em `domain_events.shopee_shop_id` (nunca junto da conta do ML, pela check `domain_events_uma_origem`). Ele chega a quem alcança a loja, pela RLS de D-433. A `/notificacoes` recortava por conta do Mercado Livre (`ml_account_id`), mas não por loja. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "filtro e preferências por loja".
+
+**1. Conta ou loja, um recorte só.**
+- O menu de conta vira "Conta ou loja" quando a organização tem lojas, com as contas do ML e as lojas Shopee. A de teste vem marcada.
+- Escolher uma tira a outra. A loja vai na URL como `loja` (o nome das telas da Shopee) e é validada pelo formato, como a conta: a policy recorta o resto.
+- A condição entra na lista ÚNICA de condições da tela, então a lista e as contagens recortam igual (D-236), por `notifications.domain_events.shopee_shop_id`.
+- O rótulo do recorte e do menu vem da lista de lojas lida no mesmo `Promise.all`.
+
+**2. A escrita em lote ainda não conhece a loja.**
+- `mark_notifications_read` aceita severidade, tipo e conta do ML, mas não a loja. Com a loja no recorte, "Marcar todas como lidas" marcaria além do que se vê, o defeito que o rótulo do botão existe para impedir (D-183).
+- Por isso, com a loja no recorte, o botão não aparece, e a tela diz "Marcar em lote por loja ainda não existe". A linha a linha continua.
+- **Pedido ao A1:** `p_shopee_shop_id` na `mark_notifications_read`. Quando existir, a tela manda o parâmetro só com valor (o PGRST202 de antes da migration) e o botão volta.
+- **Preferências por loja:** `notification_preferences` tem escopo de conta do ML (`ml_account_id`) e nenhum de loja. Ficam para um contrato do A1, se o dono pedir.
+
+**Publicação:** só a web. Sem migration, RPC, worker ou api.
+
+**Verificacao:**
+- **Unitários:** `notification-filters.test.ts` 13/13, com a loja por formato, a contagem, o rótulo, o `loja` na URL e a conta que tira a loja.
+- **e2e:**
+  - `notificacoes` 8/8, com o menu, que casa por "Conta", seguindo igual;
+  - no ensaio da loja live, um aviso da loja como o vigia grava (`sync.failed`, a loja na própria coluna). O recorte da loja mostra só ele, sem o botão do lote e com o aviso; sem o recorte, o lote volta.
+- **Mutação:** sem a condição da loja, o recorte mostra 3 notificações em vez de 1, e o caso cai.
+- **Suite inteira:** **255/255** com o banco recriado do zero (252 na 3300 e os 3 de convite na 3000) e o `loja-live` **9/9**.
+
+**Impacto:**
+- web: `apps/web/lib/notification-filters.ts` com o teste e `apps/web/app/(app)/notificacoes/page.tsx`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
+- nenhuma migration, RPC, worker ou api.

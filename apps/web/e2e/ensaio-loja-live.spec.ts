@@ -249,3 +249,40 @@ test("/contas: a faixa conta a loja live ao lado da de teste e das contas do ML 
   await expect(page.locator(".sb-kpi").filter({ hasText: "Conectadas" })).toContainText("· 2 da Shopee");
   await semErro(page);
 });
+
+test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote por loja diz que ainda não existe (D-604)", async ({ page }) => {
+  const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+
+  if (loja.data === null) throw new Error(`loja live sem organização: ${loja.error.message}`);
+
+  // Um aviso da loja, como o vigia grava (D-438): a loja na própria coluna, o nome no `after`.
+  // O gatilho de D-073 faz a notificação; o evento é só de inserção e fica (o banco do e2e é recriado).
+  const evento = await db.from("domain_events").insert({
+    organization_id: loja.data.organization_id,
+    event_type: "sync.failed",
+    entity_type: "shopee_shop",
+    entity_id: lojaId,
+    shopee_shop_id: lojaId,
+    severity: "importante",
+    source: "system",
+    occurred_at: new Date().toISOString(),
+    dedup_key: `e2e-d604-${lojaId}`,
+    after: { tipo: "reconciliacao", marketplace: "SHOPEE", label: LOJA_LIVE.nome },
+  });
+
+  expect(evento.error).toBeNull();
+
+  await entrar(page, `/notificacoes?loja=${lojaId}`);
+
+  await expect(page.locator(".sb-content").getByText(LOJA_LIVE.nome).first()).toBeVisible();
+  // O recorte filtra de verdade: só o aviso desta loja, nenhuma das notificações do Mercado Livre do seed.
+  await expect(page.locator("main .sb-notification-row")).toHaveCount(1);
+  // A escrita em lote não conhece a loja: o botão some e a tela diz por quê, em vez de marcar além do recorte.
+  await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toHaveCount(0);
+  await expect(page.getByText(/Marcar em lote por loja ainda não existe/u)).toBeVisible();
+
+  // Sem o recorte da loja, o lote volta.
+  await page.goto("/notificacoes");
+  await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toBeVisible();
+  await semErro(page);
+});

@@ -114,6 +114,12 @@ export interface NotificationFilters {
   family: NotificationFamily | null;
   /** `ml_accounts.id`. Validado contra as contas visíveis, não contra formato. */
   account: string | null;
+  /**
+   * `shopee_shops.id` (D-604): o evento da loja guarda a loja em
+   * `domain_events.shopee_shop_id`, nunca junto da conta do ML (a check
+   * `domain_events_uma_origem`). Conta e loja são o MESMO menu, um recorte só.
+   */
+  loja: string | null;
   page: number;
 }
 
@@ -164,12 +170,15 @@ export function resolveNotificationFilters(
   query: Record<string, string | string[] | undefined>,
 ): NotificationFilters {
   const conta = readParam(query.conta);
+  const loja = readParam(query.loja);
 
   return {
     state: readParam(query.estado) === "nao-lidas" ? "nao-lidas" : "todas",
     severity: resolveNotificationSeverity(readParam(query.severidade)),
     family: resolveNotificationFamily(readParam(query.tipo)),
     account: conta !== null && UUID.test(conta) ? conta : null,
+    // A mesma regra de formato da conta; a policy da loja (D-433) recorta o resto.
+    loja: loja !== null && UUID.test(loja) ? loja : null,
     page: resolvePageParam(query.pagina),
   };
 }
@@ -195,6 +204,7 @@ export function buildNotificationHref(
       severidade: next.severity,
       tipo: next.family,
       conta: next.account,
+      loja: next.loja,
     },
     override.page === undefined ? 1 : next.page,
   );
@@ -207,6 +217,7 @@ export function countNotificationFilters(filters: NotificationFilters): number {
     filters.severity,
     filters.family,
     filters.account,
+    filters.loja,
   ].filter((valor) => valor !== null).length;
 }
 
