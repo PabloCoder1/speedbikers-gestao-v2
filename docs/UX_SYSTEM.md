@@ -331,3 +331,125 @@ rodada; a de 10,3 s foi depois da D-489 do A1 (13:38 UTC). O log não dizia
 qual bloco era o LCP — daí a D-516. A medida a frio das leituras da Home
 está com o A1; o que for de tela (ordem das leituras, o que fica fora do
 `Suspense`) fica com o A2. §3, item 10.
+
+---
+
+## 6. Central de Negócio — reformulação (pedido do dono de 19/10)
+
+O dono passou ao A3 a reformulação visual e funcional da Central inteira. A
+Central é tela do A2, que a liberou e revisa cada PR. Os dados são do A1, e
+nenhum contrato muda sem ele. Auditada em 19/10 no código da `main`
+(`156c8676`) e num build local com banco isolado, em 360, 390, 768, 1024 e
+1440 px.
+
+### 6.1 Rotas
+
+| rota | h1 | o que faz | leituras | estados |
+|---|---|---|---|---|
+| `/central` | Central do negócio | indicadores do período contra o anterior, alertas, meta, marketplaces lado a lado, frete e Ads | contas → 4 RPCs do período → organização → meta, limites, frete, faturamento detalhado, sinais de Ads; e o "Por marketplace" pede mais 3 | `EstadoDaTela` nos indicadores; texto solto no Frete e no Ads |
+| `/central/metas` | Metas e imposto | cadastra e remove a meta do mês (geral e por marketplace) e a alíquota | organização → 3 tabelas | "SENDO ATIVADO", erro, vazio, só leitura |
+| `/central/limites` | Limites da central | os limites que dão o tom aos números | organização → `central_thresholds` | "SENDO ATIVADO", erro com padrão, só leitura |
+| `/central/frete` | Detector de frete | anúncios com frete destoante e quem paga o frete | organização → detector → quem paga (em fila) | permissão, erro, vazio, filtro |
+| `/central/ads` | Sinais de Ads | sinais por campanha da semana | sinais → faturamento da semana (fila de propósito) | permissão, erro, vazio, filtro |
+| `/central/produtos` | Ranking de produtos | ranking de lucratividade, paginado | contas → organização → ranking (em fila) | erro, vazio por ordem |
+
+Não há `layout.tsx` na Central nem navegação própria. Saindo da `/central`, os
+links de metas, limites, frete e Ads perdem o período e a conta. As
+subpáginas não se ligam entre si, só têm "Voltar à central".
+
+### 6.2 Medido antes (build local)
+
+| rota | altura a 1440 px | altura a 390 px | LCP (sem atraso) | CLS |
+|---|---|---|---|---|
+| `/central` | 4.705 px (5,2 telas) | 8.532 px (10 telas) | ~0,55 s | 0 |
+| `/central/metas` | 1.313 | 2.661 | ~0,5 s | 0 |
+| `/central/limites` | 822 | 1.795 | ~0,5 s | 0 |
+| `/central/frete` | 1.123 | 2.176 | ~0,5 s | 0 |
+| `/central/ads` | 822 | 766 | ~0,5 s | 0 |
+| `/central/produtos` | 835 | 1.770 | ~0,5 s | 0 |
+
+**Carga da `/central`** (150 ms em cada chamada ao Supabase, 5 cargas): o
+painel de vendas chega em **1,19 s** (mediana). São 11 leituras de dados por
+carga: `get_faturamento` 4 vezes (atual, anterior, com detalhe e, de novo
+igual à atual, no "Por marketplace") e `get_ads_overview` 3 vezes (a atual
+repetida). Em produção, o `get_faturamento` do ML tem média de 2,6 s (A1,
+19/10).
+
+### 6.3 Problemas, por prioridade
+
+**P1 — estrutura**
+
+1. **A `/central` é longa demais.** O faturamento só aparece no fim da segunda
+   tela (1440 px), depois de Atenção, Resumo, Meta e projeção e um texto de
+   método.
+2. **O cabeçalho mistura filtro e navegação.** Os dois filtros (conta e
+   período) e os seis atalhos das subpáginas formam uma fileira só, de oito
+   botões com o mesmo peso. A 390 px, eles ocupam a primeira tela inteira.
+3. **Informação repetida.** A "Comparação completa", uma tabela de 16 linhas,
+   repete o que os cartões já mostram (atual, anterior e variação). "Como a
+   projeção é feita" e "Como ler" ficam abertos no meio da página.
+4. **Leituras repetidas.** O "Por marketplace" pede de novo o faturamento e o
+   Ads do período, com os mesmos argumentos que a página já pediu.
+5. **Leituras em fila.** As leituras do período esperam a lista de contas, e as
+   da organização esperam as do período começarem.
+
+**P2 — consistência e uso**
+
+6. Os painéis Frete e Ads da `/central` dizem falha e vazio em texto solto, não
+   no `EstadoDaTela`.
+7. **Tabelas largas no celular.** A comparação tem largura mínima de 640 px, o
+   ranking 920 px e as campanhas de Ads 1.100 px. Elas rolam dentro do
+   contêiner, sem estratégia de coluna prioritária.
+8. **Alvos de toque.** O chip "ver lista" das faixas tem 45×19 px (frete e
+   produtos). Os links em texto, de 14 px, ficam dentro da exceção de link em
+   texto.
+9. **Filas nas subpáginas.** Em `/central/frete`, o quem paga só começa depois
+   do detector, apesar do comentário dizer o contrário. Em
+   `/central/produtos`, a fila é contas → organização → ranking.
+10. **Código duplicado.** `montarHref`, `periodoDaUrl` e `intervalo` se repetem
+    entre `/central` e `/produtos`. `RespostaComCodigo` aparece 4 vezes, o
+    "SENDO ATIVADO" 6 vezes e um `Titulo` local 3 vezes.
+
+**P3**
+
+11. A linha 540 do `docs/METRICS.md` ainda diz que a `/central` é só do ML. Isso
+    está desatualizado desde a D-480.
+12. **Fora da Central, para o A1:** depois de cada carga, cada link pré-carregado
+    pela sidebar passa pelo `proxy` e consulta o Auth (`/auth/v1/user`). São ~50
+    chamadas por carga no build local.
+
+### 6.4 O que não muda
+
+- **D-023:** todo número leva o id da definição. **METRICS 5C.2:** a ressalva
+  fica visível ao lado do número. Rever isso é decisão do dono, não da
+  reformulação.
+- **Decisões do dono de 15/10:**
+  - uma meta por marketplace e uma geral;
+  - lado a lado, com a receita somada e nunca total de resultado;
+  - Shopee sem meta ou sem loja live "ainda não entra", nunca zero;
+  - o "Por marketplace" só aparece sem conta do ML escolhida.
+- **Acoplamentos com `/faturamento`:** o "Por marketplace" é o `CorpoTodos` do
+  "Todos" de lá; `lucroDoMercadoLivre` e `adsZeroLegitimo` de
+  `lib/central-indicadores.ts` alimentam a linha de lucro de lá. Variante por
+  cima, nunca troca.
+- **Locators das e2e** (`central.spec`, `ensaio-loja-live`, tela estreita,
+  web vitals): mudam no mesmo PR, com aviso ao A2.
+
+### 6.5 Blocos
+
+- [ ] **Bloco 1 — `/central` e a navegação da Central.**
+  - [ ] Navegação própria nas seis rotas, que guarda período e conta onde valem.
+  - [ ] Cabeçalho só com os filtros e "Faturamento detalhado".
+  - [ ] Vendas logo depois da Atenção.
+  - [ ] Comparação completa e notas de método recolhidas.
+  - [ ] Sem leitura repetida no "Por marketplace" e sem a fila contas →
+        leituras.
+  - [ ] Chip "ver lista" com alvo de 24 px.
+  - [ ] Medido antes e depois.
+- [ ] **Bloco 2 — `/central/metas`.** A situação do mês no topo, com
+      `get_meta_do_mes`, que já existe. O realizado de meses passados depende de
+      contrato do A1, e não se inventa.
+- [ ] **Bloco 3 — frete, Ads, produtos e limites.** Estados, tabelas no celular
+      (colunas prioritárias) e as filas.
+- [ ] **Bloco 4 — o resto da `/central`.** Frete e Ads no `EstadoDaTela`, e o
+      código duplicado.
