@@ -15977,6 +15977,31 @@ td.sb-pco-num-linha {
   vertical-align: middle;
 }
 
+/*
+  D-606: com as colunas de venda, a tabela de `/anuncios/shopee` passava da
+  largura (1249 px em 1110, medido com o seed em 1440). A loja, o SKU do
+  anúncio, o vínculo e o status quebram linha -- as notas deles também --, em
+  vez de empurrar a tabela para o lado.
+*/
+.sb-an-tabela td.sb-an-quebra {
+  white-space: normal;
+}
+
+.sb-an-tabela td.sb-an-quebra .sb-an-sub {
+  white-space: normal;
+}
+
+/* O nome da loja e o SKU, sem espaço, quebram onde precisar, sem descer de 7rem. */
+.sb-an-tabela td.sb-an-quebra-livre {
+  min-width: 7rem;
+  overflow-wrap: anywhere;
+}
+
+/* E o anúncio, que já quebra o título em duas linhas, desce de 17rem para 15rem. */
+.sb-an-shopee td.sb-an-produto {
+  min-width: 15rem;
+}
+
 .sb-an-ordem {
   display: inline-flex;
   align-items: center;
@@ -16450,18 +16475,27 @@ td.sb-pco-num-linha {
     .sb-table é nowrap), invadiam a célula vizinha do cartão -- medido em 390
     px: 134 a 222 px além da própria célula. Só nesta tabela, a célula quebra
     e a nota desce para a linha de baixo; /anuncios, de notas curtas, não muda.
+    D-606: o cartão de /anuncios/shopee tinha o mesmo defeito (o vínculo
+    invadia o preço, e "em 11 pedidos" saía cortado) e ganha o mesmo trato; o
+    vínculo -- SKU, explicação e botão -- ocupa a largura do cartão.
   */
-  .sb-vendas-lojas tbody td {
+  .sb-vendas-lojas tbody td,
+  .sb-an-shopee tbody td {
     flex-wrap: wrap;
     white-space: normal;
   }
 
-  .sb-vendas-lojas tbody td .sb-an-sub {
+  .sb-vendas-lojas tbody td .sb-an-sub,
+  .sb-an-shopee tbody td .sb-an-sub {
     display: block;
     flex-basis: 100%;
     margin-left: 0;
     white-space: normal;
     text-align: right;
+  }
+
+  .sb-an-tabela tbody td.sb-an-vinculo {
+    grid-column: 1 / -1;
   }
 
   .sb-an-recorte {

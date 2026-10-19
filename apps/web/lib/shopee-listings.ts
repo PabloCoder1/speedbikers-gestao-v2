@@ -12,6 +12,7 @@
 import { SHOPEE_IMAGE_HOSTS } from "./csp";
 import { buildFilterHref, resolvePageParam, summarizePagedWindow, type PagedWindow } from "./filters";
 import { formatCount } from "./format";
+import { DEFAULT_PERIOD_DAYS, resolvePeriodRange, type PeriodRange } from "./period";
 import type { Tom } from "../components/tone";
 
 export const SHOPEE_LISTINGS_PATH = "/anuncios/shopee";
@@ -92,12 +93,35 @@ export function shopeeLinkState(codigo: string): ShopeeLinkState | null {
   return SHOPEE_LINK_STATES.find((estado) => estado.codigo === codigo) ?? null;
 }
 
+/** D-606: com ou sem venda VÁLIDA no período (o `p_vendeu` do C-67), nas palavras de `/anuncios`. */
+export const SHOPEE_SOLD_FILTERS = [
+  { slug: null, rotulo: "Com ou sem venda" },
+  { slug: "com", rotulo: "Vendeu no período" },
+  { slug: "sem", rotulo: "Sem venda no período" },
+] as const;
+
+export type ShopeeVendeu = "com" | "sem";
+
+/** D-606: a ordem por venda (o `p_ordem` do C-67); nula = a ordem de sempre da lista. */
+export type ShopeeOrdem = "vendas" | "receita";
+
 export interface ShopeeListingsFilters {
   /** `shopee_shops.id` — só um id de loja da organização sobrevive. */
   readonly loja: string | null;
   readonly estado: ShopeeLinkStateSlug | null;
   readonly busca: string | null;
   readonly pagina: number;
+  /**
+   * D-606: o período das vendas por anúncio, o MESMO de `/anuncios` e
+   * `/vendas` (`lib/period.ts`): `days` nulo = personalizado. Só as colunas de
+   * venda dependem dele; o catálogo e o vínculo não.
+   */
+  readonly range: PeriodRange;
+  readonly days: number | null;
+  /** O personalizado pedido era inválido e caiu no padrão: a tela avisa. */
+  readonly periodoInvalido: boolean;
+  readonly vendeu: ShopeeVendeu | null;
+  readonly ordem: ShopeeOrdem | null;
 }
 
 function primeiro(valor: string | string[] | undefined): string | undefined {
@@ -117,16 +141,26 @@ const PAGINA_MAX = Math.floor(2_147_483_647 / SHOPEE_PAGE_SIZE);
 export function resolveShopeeListingsFilters(
   query: Record<string, string | string[] | undefined>,
   lojasDaOrganizacao: readonly string[],
+  /** O dia de negócio de hoje (`toSalesMetricDate`), para o período. */
+  hoje: string,
 ): ShopeeListingsFilters {
   const loja = primeiro(query.loja);
   const estado = primeiro(query.estado);
   const busca = primeiro(query.q)?.trim().slice(0, BUSCA_MAX) ?? "";
+  const vendeu = primeiro(query.vendeu);
+  const ordem = primeiro(query.ordem);
+  const { range, days, invalidCustom } = resolvePeriodRange(query, hoje);
 
   return {
     loja: loja !== undefined && lojasDaOrganizacao.includes(loja) ? loja : null,
     estado: SHOPEE_LINK_STATES.find((e) => e.slug === estado)?.slug ?? null,
     busca: busca === "" ? null : busca,
     pagina: Math.min(resolvePageParam(primeiro(query.pagina)), PAGINA_MAX),
+    range,
+    days,
+    periodoInvalido: invalidCustom,
+    vendeu: vendeu === "com" || vendeu === "sem" ? vendeu : null,
+    ordem: ordem === "vendas" || ordem === "receita" ? ordem : null,
   };
 }
 
@@ -140,12 +174,80 @@ export function buildShopeeListingsHref(
   override: Partial<ShopeeListingsFilters> = {},
 ): string {
   const next = { ...filters, ...override };
+  // O período padrão fica fora da URL, como em `/anuncios`; o personalizado leva as duas datas.
+  const periodo =
+    next.days === null
+      ? { from: next.range.from, to: next.range.to }
+      : { days: next.days === DEFAULT_PERIOD_DAYS ? null : String(next.days) };
 
   return buildFilterHref(
     SHOPEE_LISTINGS_PATH,
-    { loja: next.loja, estado: next.estado, q: next.busca },
+    { loja: next.loja, estado: next.estado, q: next.busca, ...periodo, vendeu: next.vendeu, ordem: next.ordem },
     override.pagina === undefined ? 1 : next.pagina,
   );
+}
+
+/**
+ * D-606: os argumentos das vendas por anúncio no `get_shopee_listings` (C-67,
+ * D-493). O período vai sempre -- sem ele as colunas de venda vêm nulas --, e o
+ * filtro e a ordem só com valor: parâmetro nulo mandado antes da migration de
+ * produção derruba a tela (PGRST202).
+ */
+export function argumentosDeVendasShopee(filters: ShopeeListingsFilters): {
+  p_date_from: string;
+  p_date_to: string;
+  p_vendeu?: ShopeeVendeu;
+  p_ordem?: ShopeeOrdem;
+} {
+  return {
+    p_date_from: filters.range.from,
+    p_date_to: filters.range.to,
+    ...(filters.vendeu === null ? {} : { p_vendeu: filters.vendeu }),
+    ...(filters.ordem === null ? {} : { p_ordem: filters.ordem }),
+  };
+}
+
+/**
+ * D-606: o próximo estado do cabeçalho de venda que ordena. O C-67 só ordena
+ * do maior para o menor; clicar na coluna já ativa volta à ordem de sempre
+ * (pelo nome do anúncio).
+ */
+export function proximaOrdemShopee(atual: ShopeeOrdem | null, coluna: ShopeeOrdem): ShopeeOrdem | null {
+  return atual === coluna ? null : coluna;
+}
+
+/**
+ * D-606: o recorte inteiro das vendas (todas as linhas do filtro, antes do
+ * limite), que o C-67 repete em toda linha. Somado no SQL, nunca aqui.
+ */
+export interface RecorteDeVendasShopee {
+  readonly unidades: number;
+  /** Nula quando nenhuma linha do recorte tem receita conhecida. */
+  readonly receita: number | null;
+  /** Unidades de preço 0 (bundle): receita desconhecida, fora da soma. */
+  readonly semReceita: number;
+}
+
+export function recorteDeVendasShopee(
+  primeira:
+    | {
+        readonly recorte_unidades?: number | null;
+        readonly recorte_receita?: number | null;
+        readonly recorte_unidades_sem_receita?: number | null;
+      }
+    | undefined,
+): RecorteDeVendasShopee | null {
+  // Sem a coluna (banco anterior ao C-67) ou com toda loja do recorte nunca
+  // lida, não há o que resumir -- e o resumo não vira zero (D-067).
+  const unidades = primeira?.recorte_unidades;
+
+  if (unidades === undefined || unidades === null) return null;
+
+  return {
+    unidades,
+    receita: primeira?.recorte_receita ?? null,
+    semReceita: primeira?.recorte_unidades_sem_receita ?? 0,
+  };
 }
 
 /**

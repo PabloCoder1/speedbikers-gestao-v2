@@ -9,6 +9,7 @@
  * `/vinculacoes` (`.sb-vnc-modal`, `BuscaSku`), sem forma nova · **Motivo:**
  * escopo enxuto — o Figma não desenhou o segundo canal.
  */
+import { toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -23,27 +24,35 @@ import { StatePill } from "../../../../components/state-pill";
 import { FormularioFiltro } from "../../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
-import { formatCount, formatDateTime } from "../../../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
 import { pageNumbers } from "../../../../lib/listings-dashboard";
+import { revenueShare } from "../../../../lib/listings-view";
 import { contarContasMl, hrefDosAnuncios } from "../../../../lib/marketplace";
+import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../../lib/period";
 import { formatAge } from "../../../../lib/relative-time";
 import { currentMembership } from "../../../../lib/request-membership";
 import { acaoDoVinculoShopee, podeVincularShopee, skuQueOAnuncioIndica } from "../../../../lib/shopee-link";
 import {
   SHOPEE_LINK_STATES,
   SHOPEE_PAGE_SIZE,
+  SHOPEE_SOLD_FILTERS,
+  argumentosDeVendasShopee,
   buildShopeeKpiHref,
   buildShopeeListingsHref,
   explicacaoDoAguardando,
   formatShopeeMoney,
   isShopeeSchemaMissing,
+  proximaOrdemShopee,
+  recorteDeVendasShopee,
   resolveShopeeListingsFilters,
   shopeeImageUrl,
   shopeeItemStatus,
   shopeeLinkState,
   shopeeModelUnavailable,
   summarizeShopeeWindow,
+  type ShopeeListingsFilters,
+  type ShopeeOrdem,
 } from "../../../../lib/shopee-listings";
 import { createClient } from "../../../../lib/supabase/server";
 
@@ -95,6 +104,39 @@ const SUBTITULO = (
 );
 
 
+/**
+ * D-606: o cabeçalho de venda que ordena, como o de `/anuncios`. O C-67 só
+ * ordena do maior para o menor: o link é o próximo estado (clicar de novo
+ * volta à ordem de sempre), e `aria-sort` diz o atual.
+ */
+function CabecalhoDeVenda({
+  coluna,
+  rotulo,
+  dica,
+  filters,
+}: {
+  coluna: ShopeeOrdem;
+  rotulo: string;
+  dica: string;
+  filters: ShopeeListingsFilters;
+}): ReactNode {
+  const ativa = filters.ordem === coluna;
+
+  return (
+    <th className="sb-num" aria-sort={ativa ? "descending" : "none"} title={dica}>
+      <LinkDeFiltro
+        className={ativa ? "sb-an-ordem sb-an-ordem-ativa" : "sb-an-ordem"}
+        href={buildShopeeListingsHref(filters, { ordem: proximaOrdemShopee(filters.ordem, coluna) })}
+      >
+        {rotulo}
+        <span className="sb-an-ordem-seta" aria-hidden="true">
+          {ativa ? "↓" : "↕"}
+        </span>
+      </LinkDeFiltro>
+    </th>
+  );
+}
+
 /** A tela sem catálogo para listar: o cabeçalho e um painel com o motivo. */
 function SemCatalogo({ children }: { children: ReactNode }): ReactNode {
   return (
@@ -121,7 +163,7 @@ export default async function AnunciosShopeePage({
     currentMembership(),
     supabase
       .from("shopee_shops")
-      .select("id, organization_id, shop_name, shop_id, environment, status")
+      .select("id, organization_id, shop_name, shop_id, environment, status, orders_last_success_at")
       .order("connected_at", { ascending: true }),
     // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
     // marketplace oferecer a volta a `/anuncios`.
@@ -184,8 +226,12 @@ export default async function AnunciosShopeePage({
   const filters = resolveShopeeListingsFilters(
     query,
     lojas.map((loja) => loja.id),
+    toSalesMetricDate(new Date()),
   );
   const estadoAtivo = SHOPEE_LINK_STATES.find((estado) => estado.slug === filters.estado) ?? null;
+  // D-606: o período das vendas por anúncio, com as palavras de `/vendas/shopee`.
+  const periodoLabel = filters.days === null ? "Período personalizado" : `Últimos ${String(filters.days)} dias`;
+  const vendeuAtivo = SHOPEE_SOLD_FILTERS.find((opcao) => opcao.slug === filters.vendeu) ?? SHOPEE_SOLD_FILTERS[0];
   const lojaAtiva = lojas.find((loja) => loja.id === filters.loja) ?? null;
   const nomeDaLoja = (loja: { shop_name: string | null; shop_id: number }): string =>
     loja.shop_name ?? `Loja ${String(loja.shop_id)}`;
@@ -200,6 +246,14 @@ export default async function AnunciosShopeePage({
   const lojasNoEscopo = lojaAtiva === null ? lojas : [lojaAtiva];
   const lojasSemConexao = lojasNoEscopo.filter((loja) => loja.status !== "CONNECTED");
   const leituraParada = lojasSemConexao.length === lojasNoEscopo.length;
+  // D-606: loja cujos pedidos nunca foram lidos não tem venda a mostrar -- o
+  // C-67 devolve NULO, e a tela diz "—" e o porquê, nunca "não vendeu".
+  const lojasSemPedidosLidos = lojasNoEscopo.filter((loja) => loja.orders_last_success_at === null);
+  const periodoDoRecorte = `${formatBusinessDate(filters.range.from)} a ${formatBusinessDate(filters.range.to)}`;
+  const criterioDaVenda =
+    "pedidos válidos (pagos e não cancelados) feitos de " +
+    periodoDoRecorte +
+    ", pelo dia do pedido em São Paulo";
 
   /*
     Duas leituras em paralelo: a página e a faixa. O ESCOPO da faixa é a loja,
@@ -214,6 +268,8 @@ export default async function AnunciosShopeePage({
       p_busca: filters.busca,
       p_limit: SHOPEE_PAGE_SIZE,
       p_offset: (filters.pagina - 1) * SHOPEE_PAGE_SIZE,
+      // D-606 (C-67): as vendas do anúncio no período da tela.
+      ...argumentosDeVendasShopee(filters),
     }),
     supabase.rpc("get_shopee_listings_summary", {
       p_organization_id: organizationId,
@@ -239,6 +295,8 @@ export default async function AnunciosShopeePage({
   // zero no conjunto filtrado.
   const totalCount = rows[0]?.total_count ?? 0;
   const janela = summarizeShopeeWindow(filters.pagina, totalCount, rows.length);
+  // D-606: o recorte inteiro das vendas, somado no SQL antes do limite.
+  const recorte = recorteDeVendasShopee(rows[0]);
 
   // Contagem em erro é `undefined` e a célula diz "—", nunca zero (D-067).
   const contagens = resumo.error === null ? (resumo.data[0] ?? null) : null;
@@ -309,9 +367,12 @@ export default async function AnunciosShopeePage({
     ...(filters.busca === null
       ? []
       : [{ rotulo: `Busca “${filters.busca}”`, href: buildShopeeListingsHref(filters, { busca: null }) }]),
+    ...(filters.vendeu === null
+      ? []
+      : [{ rotulo: vendeuAtivo.rotulo, href: buildShopeeListingsHref(filters, { vendeu: null }) }]),
   ];
-  const limpar = buildShopeeListingsHref(filters, { loja: null, estado: null, busca: null });
-  const temFiltro = estadoAtivo !== null || filters.busca !== null;
+  const limpar = buildShopeeListingsHref(filters, { loja: null, estado: null, busca: null, vendeu: null });
+  const temFiltro = estadoAtivo !== null || filters.busca !== null || filters.vendeu !== null;
   // Página além do fim: zero linhas não diz o total do filtro — a janela
   // diria "nenhum anúncio no filtro atual", e o filtro pode ter centenas.
   const alemDoFim = lista.error === null && rows.length === 0 && filters.pagina > 1;
@@ -353,11 +414,52 @@ export default async function AnunciosShopeePage({
               ]}
             />
 
+            {/* D-606: o período das vendas por anúncio, o mesmo de `/vendas/shopee` (presets e personalizado). */}
+            <FilterMenu
+              rotulo={periodoLabel}
+              opcoes={PERIOD_PRESETS.map((preset) => ({
+                href: buildShopeeListingsHref(filters, { days: preset }),
+                ativo: filters.days === preset,
+                label: `Últimos ${String(preset)} dias`,
+              }))}
+            >
+              <FormularioFiltro action="/anuncios/shopee" className="sb-periodo-form">
+                {hidden("loja", filters.loja)}
+                {hidden("estado", filters.estado)}
+                {hidden("q", filters.busca)}
+                {hidden("vendeu", filters.vendeu)}
+                {hidden("ordem", filters.ordem)}
+                <input
+                  type="date"
+                  name="from"
+                  defaultValue={filters.days === null ? filters.range.from : undefined}
+                  aria-label="Data inicial"
+                  className="sb-input"
+                />
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={filters.days === null ? filters.range.to : undefined}
+                  aria-label="Data final"
+                  className="sb-input"
+                />
+                <button type="submit" className="sb-button sb-button-primary">
+                  Aplicar período
+                </button>
+              </FormularioFiltro>
+            </FilterMenu>
+
             <FormularioFiltro action="/anuncios/shopee" className="sb-an-busca" role="search">
               {/* Um GET nativo envia SÓ os campos do formulário: sem os
-                  hidden, buscar descartaria a loja e o estado (D-136). */}
+                  hidden, buscar descartaria a loja, o estado, o período, o
+                  vendeu e a ordem (D-136, D-606). */}
               {hidden("loja", filters.loja)}
               {hidden("estado", filters.estado)}
+              {hidden("days", filters.days === null || filters.days === 30 ? null : String(filters.days))}
+              {hidden("from", filters.days === null ? filters.range.from : null)}
+              {hidden("to", filters.days === null ? filters.range.to : null)}
+              {hidden("vendeu", filters.vendeu)}
+              {hidden("ordem", filters.ordem)}
               <span className="sb-an-busca-icone" aria-hidden="true">
                 <Icone nome="lupa" tamanho={14} />
               </span>
@@ -388,6 +490,12 @@ export default async function AnunciosShopeePage({
         />
       )}
 
+      {filters.periodoInvalido && (
+        <p role="status" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          Período personalizado inválido — mostrando os últimos {DEFAULT_PERIOD_DAYS} dias.
+        </p>
+      )}
+
       <section aria-label="Contadores dos anúncios da Shopee">
         <KpiStrip ancora cells={celulas} />
       </section>
@@ -403,6 +511,15 @@ export default async function AnunciosShopeePage({
                 <Icone nome="baixar" tamanho={14} /> Exportar CSV
               </a>
             )}
+            {/* D-606: com ou sem venda VÁLIDA no período, como o "Vendeu no período" de `/anuncios`. */}
+            <FilterMenu
+              rotulo={vendeuAtivo.rotulo}
+              opcoes={SHOPEE_SOLD_FILTERS.map((opcao) => ({
+                href: buildShopeeListingsHref(filters, { vendeu: opcao.slug }),
+                ativo: opcao.slug === filters.vendeu,
+                label: opcao.rotulo,
+              }))}
+            />
             <FilterMenu
               rotulo={estadoAtivo?.rotulo ?? "Todos os vínculos"}
               opcoes={[
@@ -462,6 +579,42 @@ export default async function AnunciosShopeePage({
             <p role="note" className="sb-an-nota">
               Vincular um anúncio à mão é para administrador, gestor ou operador da organização.
             </p>
+          )}
+
+          {lista.error === null && rows.length > 0 && lojasSemPedidosLidos.length > 0 && (
+            // D-606: sem a primeira leitura dos pedidos, as colunas de venda da
+            // loja são "—" e ficam fora do resumo -- não é "não vendeu".
+            <p role="note" className="sb-an-nota">
+              {lojasSemPedidosLidos.length === 1
+                ? "Os pedidos desta loja ainda não foram lidos: as vendas dela ficam “—” e fora do resumo"
+                : "Os pedidos destas lojas ainda não foram lidos: as vendas delas ficam “—” e fora do resumo"}{" "}
+              ({lojasSemPedidosLidos.map(nomeDaLoja).join(", ")}).
+            </p>
+          )}
+
+          {lista.error === null && recorte !== null && (
+            <dl className="sb-an-recorte" aria-label="Resumo das vendas do recorte">
+              <div>
+                <dt title={`Receita dos itens vendidos: preço com o desconto da loja × quantidade, em ${criterioDaVenda}`}>
+                  Faturamento do recorte
+                </dt>
+                <dd>{formatCurrency(recorte.receita)}</dd>
+              </div>
+              <div>
+                <dt>Unidades vendidas</dt>
+                <dd>{formatCount(recorte.unidades)}</dd>
+              </div>
+              <div>
+                <dt title="Itens de preço 0 (bundle): a receita deles é desconhecida e fica fora do faturamento, nunca zero">
+                  Sem receita conhecida
+                </dt>
+                <dd>{recorte.semReceita === 0 ? "—" : `${formatCount(recorte.semReceita)} un.`}</dd>
+              </div>
+              <div>
+                <dt>Período</dt>
+                <dd>{periodoDoRecorte}</dd>
+              </div>
+            </dl>
           )}
 
           {lista.error !== null && (
@@ -525,7 +678,7 @@ export default async function AnunciosShopeePage({
 
           {lista.error === null && rows.length > 0 && (
             <div className="sb-an-rolagem">
-              <table className="sb-table sb-an-tabela" aria-label="Anúncios da Shopee">
+              <table className="sb-table sb-an-tabela sb-an-shopee" aria-label="Anúncios da Shopee">
                 <thead>
                   <tr>
                     <th>Anúncio</th>
@@ -538,6 +691,18 @@ export default async function AnunciosShopeePage({
                     <th className="sb-num" title="Estoque disponível DO ANÚNCIO na Shopee — não o do ERP">
                       Estoque
                     </th>
+                    <CabecalhoDeVenda
+                      coluna="vendas"
+                      rotulo="Unidades"
+                      dica={`Unidades vendidas e, embaixo, os pedidos distintos com o anúncio, em ${criterioDaVenda}`}
+                      filters={filters}
+                    />
+                    <CabecalhoDeVenda
+                      coluna="receita"
+                      rotulo="Faturamento"
+                      dica={`Preço com o desconto da loja × quantidade, sem o frete e antes dos cupons da Shopee, em ${criterioDaVenda}`}
+                      filters={filters}
+                    />
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -554,6 +719,10 @@ export default async function AnunciosShopeePage({
                       .join(" ");
                     const acao = acaoDoVinculoShopee(row);
                     const indica = skuQueOAnuncioIndica(row);
+                    const participacao =
+                      row.receita_bruta === undefined || row.receita_bruta === null
+                        ? null
+                        : revenueShare(row.receita_bruta, recorte?.receita);
 
                     return (
                       <tr
@@ -601,11 +770,11 @@ export default async function AnunciosShopeePage({
                             </span>
                           </span>
                         </td>
-                        <td data-label="Loja">{nomePorId.get(row.shopee_shop_id) ?? row.shop_name ?? "—"}</td>
-                        <td data-label="SKU do anúncio">
+                        <td className="sb-an-quebra sb-an-quebra-livre" data-label="Loja">{nomePorId.get(row.shopee_shop_id) ?? row.shop_name ?? "—"}</td>
+                        <td className="sb-an-quebra sb-an-quebra-livre" data-label="SKU do anúncio">
                           {row.sku_anuncio === null ? "—" : <span className="sb-mono">{row.sku_anuncio}</span>}
                         </td>
-                        <td data-label="Vínculo">
+                        <td className="sb-an-quebra sb-an-vinculo" data-label="Vínculo">
                           {row.estado === "VINCULADO" && row.sku_id !== null && row.sku !== null ? (
                             <>
                               <Link className="sb-entity sb-mono" href={`/skus/${row.sku_id}`} title={row.sku_title ?? undefined}>
@@ -686,7 +855,54 @@ export default async function AnunciosShopeePage({
                             formatCount(row.available_stock)
                           )}
                         </td>
-                        <td data-label="Status">
+                        {/* D-606: nulas com a loja nunca lida -- "—", nunca
+                            zero (D-067). Com a loja lida, não vender é 0, que é fato.
+                            Os pedidos descem para baixo das unidades: uma coluna a
+                            menos, e a tabela cabe na largura como a de `/anuncios`. */}
+                        <td className="sb-num" data-label="Unidades">
+                          {row.unidades_vendidas === undefined || row.unidades_vendidas === null ? (
+                            "—"
+                          ) : (
+                            <>
+                              {formatCount(row.unidades_vendidas)}
+                              {row.pedidos !== undefined && row.pedidos !== null && row.pedidos > 0 && (
+                                <small className="sb-an-sub">
+                                  em {formatCount(row.pedidos)} {row.pedidos === 1 ? "pedido" : "pedidos"}
+                                </small>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        {/* A régua é a PARTICIPAÇÃO da linha no faturamento do
+                            recorte, como em `/anuncios`. Receita só de itens de
+                            preço 0 é desconhecida: "—" e o porquê. */}
+                        <td className="sb-num sb-an-faturamento" data-label="Faturamento">
+                          {row.unidades_vendidas === undefined || row.unidades_vendidas === null ? (
+                            "—"
+                          ) : row.receita_bruta === undefined || row.receita_bruta === null ? (
+                            <>
+                              —<small className="sb-an-sub">sem receita conhecida</small>
+                            </>
+                          ) : (
+                            <>
+                              {formatCurrency(row.receita_bruta)}
+                              {(row.unidades_sem_receita ?? 0) > 0 && (
+                                <small className="sb-an-sub">
+                                  + {formatCount(row.unidades_sem_receita ?? 0)} un. sem receita conhecida
+                                </small>
+                              )}
+                              {participacao !== null && participacao > 0 && (
+                                <span
+                                  className="sb-an-participacao"
+                                  title={`${formatPercent(participacao)} do faturamento do recorte`}
+                                >
+                                  <span style={{ width: `${String(Math.max(participacao * 100, 2))}%` }} />
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td className="sb-an-quebra" data-label="Status">
                           <StatePill tone={{ tom: status.tom, label: status.rotulo }} />
                           {shopeeModelUnavailable(row.model_status) && (
                             <small className="sb-an-sub">variação indisponível</small>
