@@ -2180,6 +2180,61 @@ export type Database = {
           },
         ]
       }
+      // D-499, migration 20261019200000: CORRECAO MANUAL -- a CLI so regenera
+      // depois de aplicada em todo ambiente (mesmo raciocinio de D-389).
+      ml_sales_lines: {
+        Row: {
+          date_created: string
+          line_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          pack_id: number | null
+          quantity: number
+          sale_fee: number | null
+          seller_discount: number | null
+          shipping_share: number | null
+          sku_id: string | null
+          unit_price: number
+        }
+        Insert: {
+          date_created: string
+          line_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          pack_id?: number | null
+          quantity: number
+          sale_fee?: number | null
+          seller_discount?: number | null
+          shipping_share?: number | null
+          sku_id?: string | null
+          unit_price: number
+        }
+        Update: {
+          date_created?: string
+          line_id?: string
+          ml_account_id?: string
+          order_id?: number
+          organization_id?: string
+          pack_id?: number | null
+          quantity?: number
+          sale_fee?: number | null
+          seller_discount?: number | null
+          shipping_share?: number | null
+          sku_id?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_sales_lines_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_goals: {
         Row: {
           created_at: string
