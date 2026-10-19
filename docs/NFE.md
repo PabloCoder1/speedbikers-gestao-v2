@@ -147,6 +147,7 @@ Envio ao Full é **transferência**, não saída — a mercadoria continua sendo
 
 ### 4.4 O que continua pendente
 
+- **a nota de SAÍDA de venda (D-497, achado do A2 em 19/10):** `nfe-import-apply` não olha o CFOP. Uma nota de venda que a organização emitiu vira `SAIDA_NFE`, e um "Pedido de Saída" do UpSeller de uma venda vira `SAIDA_DOCUMENTO`; os dois baixariam DE NOVO o que a `VENDA_ML` do pedido já baixou, e a reconciliação (D-132) não desfaz, porque o movimento entra no alvo e no saldo. **Leitura de produção em 19/10:** nenhum `SAIDA_NFE`, `SAIDA_DOCUMENTO` ou `ENTRADA_NFE` no ledger; os únicos documentos são os quatro do ensaio da D-375 (18/09), nenhum aplicado. Nada a corrigir: o risco é latente. A guarda — recusar a saída de venda, com o motivo dito na tela — é a D-497 (b), com a lista de CFOP tirada da tabela oficial antes de virar código. De passagem: um desses documentos ficou em `PARSING` desde 18/09, com o CFOP lido como "1/00 6152" (resto de layout no campo).
 - **um segundo emissor de DANFE**: a tabela de itens é achada pelos rótulos do cabeçalho, e a ordem de "VALOR UNIT"/"TOTAL" já variou dentro do mesmo layout. Um segundo arquivo real separa "layout regulado" de "peculiaridade deste emissor";
 - **DANFE de mais de uma página de itens** com continuação de descrição atravessando a página: o leitor trata continuação dentro da página;
 - **ISO-8859-1 no XML** segue não testado (seção 3).
