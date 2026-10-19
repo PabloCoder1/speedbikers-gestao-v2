@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **508** (D-001 a D-610).
+Decisões registradas: **509** (D-001 a D-610).
 
 ## Por domínio
 
@@ -232,7 +232,7 @@ Decisões registradas: **508** (D-001 a D-610).
 - **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 
-### mercado-livre (88)
+### mercado-livre (89)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -319,6 +319,7 @@ Decisões registradas: **508** (D-001 a D-610).
 - **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 - **D-490** — Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 - **D-493** — As vendas por anuncio da Shopee: o periodo, o filtro vendeu e a ordem em get_shopee_listings (C-67)
+- **D-499** — As linhas de venda do ML numa tabela mantida por gatilhos, para o get_faturamento somar sem buscar pedido e item um a um
 - **D-600** — A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)

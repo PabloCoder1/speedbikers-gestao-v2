@@ -67,6 +67,7 @@
 
 - D-497 (a), a nota de saída de venda no `nfe-import-apply` (achado do A2): **lida em produção em 19/10** — nenhum movimento de nota ou de documento no ledger, nenhum documento aplicado (só os quatro do ensaio da D-375). Não há baixa em dobro a corrigir; a guarda (b) entra como prevenção, depois da D-493 (`docs/NFE.md` §4.4).
 - D-493, as vendas por anúncio da Shopee (C-67): **em produção desde 19/10** (run `39272445073`; a lista sem período idêntica à de antes, as vendas iguais à conta direta nos pedidos, 192 ms em três chamadas); validada antes (4 testes, 6 mutações; 30 dias em ~55 ms e 90 em ~80 ms no volume realista, como `authenticated`). A tela é a D-606 do A2, empilhada na branch `feat/vendas-por-anuncio-shopee-dados`; ela entra depois da migration `20261019160000` em produção.
+- D-499, as linhas de venda do ML numa tabela mantida por gatilhos (`ml_sales_lines`), a correção de fundo do `get_faturamento` escolhida pelo dono: **1ª migration em código e validada** (9 testes, 7 mutações; no volume local a tabela igual à regra e o corpo novo com 36 de 36 saídas idênticas, em 47 vezes menos páginas). Nenhum contrato muda; a troca do corpo é a 2ª migration, depois da equivalência em produção.
 - **A loja sandbox removida de produção (19/10, a pedido do dono, confirmado na sessão do A1):** `delete` só dela em `shopee_shops`; levou o token de teste, 1 pedido, 1 anúncio e 5 permissões. Nenhum evento ou notificação apontava para ela, e as lojas live ficaram idênticas.
 
 **Falta** (ordem proposta, `docs/MULTICHANNEL_CONTRACTS.md` §7)

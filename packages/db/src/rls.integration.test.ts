@@ -22614,3 +22614,255 @@ describe("vendas por anúncio da Shopee (D-493, C-67)", () => {
     await expect(anuncios(`${periodo}, null, 'lucro'`)).rejects.toThrow(/ordem invalida/);
   });
 });
+
+/**
+ * ml_sales_lines (D-499): as linhas de venda do Mercado Livre que o
+ * faturamento soma, numa tabela estreita mantida por gatilhos. Cada mudança
+ * que muda a soma (status, data, pacote, item, SKU, preço, comissão, frete
+ * rateado, desconto) recalcula as linhas do pedido; a regravação sem mudança,
+ * que o webhook faz o tempo todo, não toca a tabela.
+ */
+describe("ml_sales_lines: as linhas de venda do faturamento do ML, mantidas por gatilhos (D-499)", () => {
+  const CONTA_PERMITIDA = "aaaa4999-0000-4000-8000-00000000a499"; // ANALISTA_SB tem permissão aqui.
+  const CONTA_SEM = "bbbb4999-0000-4000-8000-00000000b499"; // mesma organização, sem permissão.
+  const PEDIDO = 9904990001;
+  const OUTRO = 9904990002;
+  const ENVIO = 9904990900;
+  let skuId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$3,'Linhas A','rlstest-linhas-a','PENDING'), ($2,$3,'Linhas B','rlstest-linhas-b','PENDING')
+       on conflict do nothing`,
+      [CONTA_PERMITIDA, CONTA_SEM, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_account_permissions (user_id, ml_account_id) values ($1,$2) on conflict do nothing",
+      [ANALISTA_SB, CONTA_PERMITIDA],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1, 'RLSTEST-LINHAS-D499', 'PRODUTO', 20)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id`,
+      [ORG_SB],
+    );
+
+    skuId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created, date_last_updated, total_amount, currency_id, shipping_id)
+       values ($1, $3, $4, null, 'paid', timestamptz '2026-10-10 15:00+00', timestamptz '2026-10-10 15:00+00', 80, 'BRL', null),
+              ($2, $3, $5, null, 'paid', timestamptz '2026-10-10 16:00+00', timestamptz '2026-10-10 16:00+00', 80, 'BRL', null)
+       on conflict (id) do nothing`,
+      [PEDIDO, OUTRO, ORG_SB, CONTA_PERMITIDA, CONTA_SEM],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.order_items where order_id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.orders where id = any($1)", [[PEDIDO, OUTRO]]);
+    await client.query("delete from public.ml_accounts where id = any($1)", [[CONTA_PERMITIDA, CONTA_SEM]]);
+  });
+
+  async function linhas(pedido = PEDIDO): Promise<Record<string, string | null>[]> {
+    const { rows } = await client.query<Record<string, string | null>>(
+      `select l.line_id::text, l.sku_id::text, l.quantity::text, l.unit_price::text, l.sale_fee::text,
+              l.shipping_share::text, l.seller_discount::text, l.pack_id::text, l.date_created::text, l.xmin::text as versao
+       from public.ml_sales_lines l
+       join public.order_items i on i.id = l.line_id
+       where l.order_id = $1
+       order by i.position`,
+      [pedido],
+    );
+
+    return rows;
+  }
+
+  it("o item do pedido pago cria a linha; o financeiro preenche o frete e o desconto", async () => {
+    expect(await linhas()).toEqual([]);
+
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       values ($1, $3, $4, 0, 'MLB9499001', null, 'Linha A', 1, 80, 'BRL', null, 9.6),
+              ($2, $3, $5, 0, 'MLB9499002', null, 'Linha B', 1, 80, 'BRL', null, 9.6)`,
+      [PEDIDO, OUTRO, ORG_SB, CONTA_PERMITIDA, CONTA_SEM],
+    );
+
+    expect(await linhas()).toEqual([
+      expect.objectContaining({ sku_id: null, quantity: "1", unit_price: "80", sale_fee: "9.6", shipping_share: null, seller_discount: null }),
+    ]);
+
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1, $2, $3, 12.5, 4), ($4, $2, $5, 14, 0)`,
+      [PEDIDO, ORG_SB, CONTA_PERMITIDA, OUTRO, CONTA_SEM],
+    );
+
+    expect(await linhas()).toEqual([expect.objectContaining({ shipping_share: "12.5", seller_discount: "4" })]);
+  });
+
+  it("cancelar tira e voltar a pago devolve; parcialmente reembolsado continua", async () => {
+    await client.query("update public.orders set status = 'cancelled' where id = $1", [PEDIDO]);
+    expect(await linhas()).toEqual([]);
+
+    await client.query("update public.orders set status = 'paid' where id = $1", [PEDIDO]);
+    expect(await linhas()).toHaveLength(1);
+
+    await client.query("update public.orders set status = 'partially_refunded' where id = $1", [PEDIDO]);
+    expect(await linhas()).toHaveLength(1);
+  });
+
+  it("a segunda linha entra e sai; quantidade, SKU, preço, comissão, pacote, data e desconto acompanham", async () => {
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sale_fee)
+       values ($1, $2, $3, 1, 'MLB9499003', null, 'Segunda linha', 1, 30, 'BRL', 3)`,
+      [PEDIDO, ORG_SB, CONTA_PERMITIDA],
+    );
+    expect((await linhas()).map((l) => l.unit_price)).toEqual(["80", "30"]);
+    // As duas linhas levam o frete e o desconto do pedido.
+    expect((await linhas()).map((l) => l.shipping_share)).toEqual(["12.5", "12.5"]);
+
+    await client.query("delete from public.order_items where order_id = $1 and position = 1", [PEDIDO]);
+    expect((await linhas()).map((l) => l.unit_price)).toEqual(["80"]);
+
+    // Uma coluna por vez, conferida logo depois: a próxima mudança recalcula o
+    // pedido inteiro e esconderia um termo faltando no `when` do gatilho.
+    const mudancas: [string, Record<string, string>][] = [
+      ["update public.order_items set quantity = 2 where order_id = $1", { quantity: "2" }],
+      [`update public.order_items set sku_id = '${skuId}' where order_id = $1`, { sku_id: skuId }],
+      ["update public.order_items set unit_price = 85 where order_id = $1", { unit_price: "85" }],
+      ["update public.order_items set sale_fee = 10 where order_id = $1", { sale_fee: "10" }],
+      ["update public.orders set pack_id = 2000099049901 where id = $1", { pack_id: "2000099049901" }],
+      ["update public.orders set date_created = timestamptz '2026-10-11 15:00+00' where id = $1", { date_created: "2026-10-11 15:00:00+00" }],
+      ["update public.order_financials set seller_discount = 5 where order_id = $1", { seller_discount: "5" }],
+    ];
+
+    for (const [sql, esperado] of mudancas) {
+      await client.query(sql, [PEDIDO]);
+      expect(await linhas(), sql).toEqual([expect.objectContaining(esperado)]);
+    }
+  });
+
+  it("item de outra conta não entra, como no faturamento", async () => {
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id, title, quantity, unit_price, currency_id, sale_fee)
+       values ($1, $2, $3, 1, 'MLB9499004', null, 'Conta errada', 1, 30, 'BRL', 3)`,
+      [PEDIDO, ORG_SB, CONTA_SEM],
+    );
+
+    expect(await linhas()).toHaveLength(1);
+
+    await client.query("delete from public.order_items where order_id = $1 and position = 1", [PEDIDO]);
+  });
+
+  it("o rateio do envio compartilhado chega às linhas com a parte final", async () => {
+    await client.query("update public.orders set shipping_id = $2, ml_account_id = $3 where id = any($1)", [
+      [PEDIDO, OUTRO],
+      ENVIO,
+      CONTA_PERMITIDA,
+    ]);
+    await client.query("update public.order_items set ml_account_id = $2 where order_id = $1", [OUTRO, CONTA_PERMITIDA]);
+    await client.query("update public.order_financials set ml_account_id = $2 where order_id = $1", [OUTRO, CONTA_PERMITIDA]);
+    // Os dois com o MESMO custo: o envio é dividido pelo valor de cada pedido.
+    await client.query("update public.orders set total_amount = 60 where id = $1", [OUTRO]);
+    await client.query("update public.order_financials set seller_shipping_cost = 14 where order_id = any($1)", [[PEDIDO, OUTRO]]);
+
+    const { rows } = await client.query<{ order_id: string; parte: string; linha: string }>(
+      `select f.order_id::text, f.seller_shipping_share::text as parte, l.shipping_share::text as linha
+       from public.order_financials f
+       join public.ml_sales_lines l on l.order_id = f.order_id
+       where f.order_id = any($1)
+       order by f.order_id`,
+      [[PEDIDO, OUTRO]],
+    );
+
+    expect(rows).toEqual([
+      { order_id: String(PEDIDO), parte: "8.000000", linha: "8.000000" },
+      { order_id: String(OUTRO), parte: "6.000000", linha: "6.000000" },
+    ]);
+  });
+
+  it("a regravação sem mudança, como a do webhook, não toca a linha", async () => {
+    const antes = await linhas();
+
+    await client.query("update public.orders set status = status, pack_id = pack_id, date_last_updated = now() where id = $1", [PEDIDO]);
+    await client.query("update public.order_items set quantity = quantity, unit_price = unit_price, title = 'Regravado' where order_id = $1", [
+      PEDIDO,
+    ]);
+    await client.query("update public.order_financials set seller_discount = seller_discount where order_id = $1", [PEDIDO]);
+
+    expect((await linhas()).map((l) => l.versao)).toEqual(antes.map((l) => l.versao));
+  });
+
+  it("a tabela inteira é exatamente a regra do faturamento aplicada às três tabelas", async () => {
+    const { rows } = await client.query<{ diferencas: string }>(
+      `with regra as (
+         select i.id as line_id, o.id as order_id, o.organization_id, o.ml_account_id, o.date_created, o.pack_id, i.sku_id,
+                i.quantity, i.unit_price, i.sale_fee, f.seller_shipping_share as shipping_share, f.seller_discount
+         from public.orders o
+         join public.order_items i
+           on i.order_id = o.id and i.organization_id = o.organization_id and i.ml_account_id = o.ml_account_id
+         left join public.order_financials f on f.order_id = o.id
+         where o.status in ('paid', 'partially_refunded')
+       ),
+       tabela as (
+         select line_id, order_id, organization_id, ml_account_id, date_created, pack_id, sku_id,
+                quantity, unit_price, sale_fee, shipping_share, seller_discount
+         from public.ml_sales_lines
+       )
+       select count(*)::text as diferencas
+       from ((select * from regra except select * from tabela) union all (select * from tabela except select * from regra)) d`,
+    );
+
+    expect(rows[0]?.diferencas).toBe("0");
+  });
+
+  it("quem alcança a conta lê; ninguém grava direto, nem o worker", async () => {
+    await client.query("update public.orders set ml_account_id = $2 where id = $1", [OUTRO, CONTA_SEM]);
+    await client.query("update public.order_items set ml_account_id = $2 where order_id = $1", [OUTRO, CONTA_SEM]);
+
+    const consulta = `select order_id::text from public.ml_sales_lines where order_id in (${String(PEDIDO)}, ${String(OUTRO)}) order by order_id`;
+    const analista = await asUser<{ order_id: string }>(ANALISTA_SB, consulta);
+    const admin = await asUser<{ order_id: string }>(ADMIN_SB, consulta);
+    const outra = await asUser(DE_OUTRA_ORG, consulta);
+
+    expect(analista.map((r) => r.order_id)).toEqual([String(PEDIDO)]);
+    expect(admin.map((r) => r.order_id)).toEqual([String(PEDIDO), String(OUTRO)]);
+    expect(outra).toEqual([]);
+    await expect(asUser(ADMIN_SB, `delete from public.ml_sales_lines where order_id = ${String(PEDIDO)}`)).rejects.toThrow(
+      /permission denied/i,
+    );
+
+    await client.query("begin");
+
+    try {
+      await client.query("set local role service_role");
+      await expect(
+        client.query(`update public.ml_sales_lines set unit_price = 0 where order_id = ${String(PEDIDO)}`),
+      ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("apagar o pedido apaga as linhas", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("delete from public.orders where id = $1", [PEDIDO]);
+      const { rows } = await client.query("select 1 from public.ml_sales_lines where order_id = $1", [PEDIDO]);
+
+      expect(rows).toEqual([]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
