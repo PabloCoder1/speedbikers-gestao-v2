@@ -72,6 +72,7 @@ describe("get_order_detail (D-426)", () => {
             currency: "BRL",
             create_time: 1760000000,
             update_time: 1760000100,
+            fulfillment_flag: "fulfilled_by_local_seller",
             item_list: [{ item_id: 9, item_sku: "SKU-9", model_id: 0, model_quantity_purchased: 2 }],
           },
         ],
@@ -80,6 +81,10 @@ describe("get_order_detail (D-426)", () => {
 
     const pedidos = await getOrderDetail(client, SHOP, ["A1"]);
     const campos = urls[0]?.searchParams.get("response_optional_fields") ?? "";
+
+    // D-495: quem expede o pedido -- o armazém da Shopee ou o vendedor.
+    expect(campos.split(",")).toContain("fulfillment_flag");
+    expect(pedidos[0]?.fulfillment_flag).toBe("fulfilled_by_local_seller");
 
     expect(pedidos[0]).toMatchObject({ order_sn: "A1", order_status: "UNPAID" });
     // Antes do pagamento a Shopee não manda o total: fica ausente, nunca zero.

@@ -536,9 +536,12 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 A Shopee é um canal com definições PRÓPRIAS (ids `shopee_*`), lidas por RPCs
 próprias (`get_shopee_sales_by_shop`, `get_shopee_orders`, sobre a view
-`shopee_sales_orders`). Nada das seções acima muda: as tabelas `daily_*_metrics`,
-`/vendas`, `/faturamento`, `/central` e o ranking seguem só Mercado Livre até a
-fatia 6b oferecer o canal à escolha.
+`shopee_sales_orders`). Nada das seções acima muda: as tabelas `daily_*_metrics` e a RPC
+`get_ranking_produtos` seguem só Mercado Livre. As telas somam os canais lado a
+lado, cada um pela SUA definição, sem misturar: `/faturamento` no "Todos"
+(D-442), `/central` no "Por marketplace" e a meta geral contra ML + Shopee
+(D-480, D-482), `/vendas` no "Todos" pelo C-53 (sem cancelamento nem marca da
+Shopee) e o ranking de `/vendas` no "Todos" e na Shopee (D-444).
 
 | Id | Definição |
 |---|---|
