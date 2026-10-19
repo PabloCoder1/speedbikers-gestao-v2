@@ -349,12 +349,15 @@ describe("catálogo de métricas", () => {
       "shopee_a_liberar",
       // D-449: Ads CPC da loja Shopee (ACOS, investimento, vendas com Ads, ROAS, TACoS).
       "shopee_acos",
+      // D-485: os ajustes da Shopee depois do repasse.
+      "shopee_ajustes_pos_repasse",
       // D-443: a composicao do recebido da Shopee.
       "shopee_composicao_recebido",
       // D-437 (METRICS 5U): o faturamento da Shopee, entre as de vendas (5S).
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
       "shopee_investimento_ads",
+      "shopee_margem_contribuicao",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
@@ -365,6 +368,7 @@ describe("catálogo de métricas", () => {
       "shopee_repasse_diferenca",
       "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
+      "shopee_resultado_contribuicao",
       "shopee_resultado_venda",
       "shopee_roas",
       "shopee_tacos",
@@ -2788,13 +2792,48 @@ describe("financeiro dos pedidos Shopee (D-427)", () => {
     );
     // Outra loja, nunca lido: não entra na lista desta.
     await pedido(OUTRA_LOJA, "OUTRA", "SHIPPED", "shopee_updated_at, paid_at", "now() - interval '2 days', now() - interval '9 days'");
+    // D-485: completo, lido ANTES da liberação do repasse -- reler uma vez, para o ajuste lançado até lá.
+    await pedido(
+      LOJA,
+      "LIBERADO",
+      "COMPLETED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '5 days', now() - interval '9 days', now() - interval '4 days'",
+    );
+    // D-485: completo, liberado e lido DEPOIS da liberação: pronto.
+    await pedido(
+      LOJA,
+      "LIBERADO_LIDO",
+      "COMPLETED",
+      "shopee_updated_at, paid_at, financials_synced_at",
+      "now() - interval '5 days', now() - interval '9 days', now() - interval '1 hour'",
+    );
+    await client.query(
+      `insert into public.shopee_escrow_releases (shopee_shop_id, organization_id, order_sn, released_at, payout_amount)
+       values ($1, $2, 'LIBERADO', now() - interval '1 day', 90), ($1, $2, 'LIBERADO_LIDO', now() - interval '1 day', 90)`,
+      [LOJA, ORG_SB],
+    );
   });
 
   afterAll(async () => {
     await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, OUTRA_LOJA]]);
   });
 
-  it("pago e nunca lido, alterado depois da leitura, ou aberto lido há mais de 24 h — nunca lidos primeiro", async () => {
+  it("pago e nunca lido, alterado depois da leitura, aberto lido há mais de 24 h ou liberado depois da leitura — nunca lidos primeiro", async () => {
+    const pendentes = await client.query<{ order_sn: string }>(
+      "select order_sn from public.shopee_orders_financials_pending($1, 100)",
+      [LOJA],
+    );
+
+    // A ordem é a da leitura mais antiga: LIBERADO foi lido há 4 dias.
+    expect(pendentes.rows.map((r) => r.order_sn)).toEqual(["NUNCA", "LIBERADO", "MUDOU", "ABERTO_VELHO"]);
+  });
+
+  it("D-485: relido depois da liberação, o pedido sai da fila (uma releitura só)", async () => {
+    await client.query("update public.shopee_orders set financials_synced_at = now() where shopee_shop_id = $1 and order_sn = 'LIBERADO'", [
+      LOJA,
+    ]);
+
     const pendentes = await client.query<{ order_sn: string }>(
       "select order_sn from public.shopee_orders_financials_pending($1, 100)",
       [LOJA],
@@ -3428,10 +3467,12 @@ describe("vendas Shopee (D-430)", () => {
     expect(definicoes.rows.map((r) => r.id)).toEqual([
       "shopee_a_liberar",
       "shopee_acos",
+      "shopee_ajustes_pos_repasse",
       "shopee_composicao_recebido",
       "shopee_custo_produtos",
       "shopee_imposto_estimado",
       "shopee_investimento_ads",
+      "shopee_margem_contribuicao",
       "shopee_margem_venda",
       "shopee_pedidos",
       "shopee_recebido",
@@ -3441,6 +3482,7 @@ describe("vendas Shopee (D-430)", () => {
       "shopee_repasse_diferenca",
       "shopee_repasse_liberado",
       "shopee_resultado_apos_imposto",
+      "shopee_resultado_contribuicao",
       "shopee_resultado_venda",
       "shopee_roas",
       "shopee_tacos",
@@ -5962,7 +6004,8 @@ describe("composição do faturamento da Shopee (D-443)", () => {
   it("C-58 lê a mesma definição: os mesmos cobertos, e o TOTAL de loja lida sem pedido é 0, como a linha", async () => {
     const [total] = await asUser<Linha>(
       ADMIN,
-      `select pedidos, receita_bruta, pedidos_cobertos, receita_coberta, recebido_coberto, custo_produtos, resultado_venda, margem_venda
+      `select pedidos, receita_bruta, pedidos_cobertos, receita_coberta, recebido_coberto, custo_produtos, resultado_venda, margem_venda,
+              resultado_definitivo, resultado_provisorio, ajustes_cobertos, resultado_apos_imposto
          from public.get_shopee_faturamento('${ORG}', '${DE}', '${ATE}') where nivel = 'TOTAL'`,
     );
     const semPedido = await asUser<Linha>(
@@ -5977,13 +6020,30 @@ describe("composição do faturamento da Shopee (D-443)", () => {
       receita_coberta: "400.00",
       recebido_coberto: "325.00",
       custo_produtos: "180.00",
-      resultado_venda: "145.00",
-      margem_venda: "0.3625",
+      // D-485: recebido 325 + ajustes -10 (P1, cobrado fora do repasse) - custo 180.
+      resultado_venda: "135.00",
+      margem_venda: "0.3375",
+      // P1 e P3 concluídos: 150 - 10 - 80 + 90 - 70; P2 aberto: 85 - 30.
+      resultado_definitivo: "80.00",
+      resultado_provisorio: "55.00",
+      ajustes_cobertos: "-10.00",
+      // Imposto de 10% sobre a receita coberta (40): o ajuste já está no resultado.
+      resultado_apos_imposto: "95.00",
     });
     expect(semPedido).toEqual([
       { nivel: "TOTAL", pedidos: "0", receita_bruta: "0.00", receita_coberta: null },
       { nivel: "CONTA", pedidos: "0", receita_bruta: "0.00", receita_coberta: null },
     ]);
+
+    // D-485: o catalogo (espelho de METRICS 5U) diz o resultado com os ajustes.
+    const definicoes = await asUser<{ id: string; formula: string }>(
+      ADMIN,
+      "select id, formula from public.metric_definitions where id in ('shopee_resultado_venda', 'shopee_ajustes_pos_repasse') order by id",
+    );
+
+    expect(definicoes.map((d) => d.id)).toEqual(["shopee_ajustes_pos_repasse", "shopee_resultado_venda"]);
+    expect(definicoes[0]?.formula).toContain("SUM(total_adjustment_amount)");
+    expect(definicoes[1]?.formula).toContain("escrow_amount + total_adjustment_amount - custo");
   });
 
   it("a série diária (dia de São Paulo) soma o TOTAL; a loja de teste fica fora", async () => {
@@ -5994,9 +6054,71 @@ describe("composição do faturamento da Shopee (D-443)", () => {
     );
 
     expect(dias).toEqual([
-      { dia: DE, pedidos: "3", receita_bruta: "360.00", pedidos_cobertos: "2", receita_coberta: "300.00", recebido_coberto: "235.00", custo_produtos: "110.00", resultado_venda: "125.00", margem_venda: "0.4167" },
+      // D-485: o ajuste de P1 (-10) no resultado do dia, para os dias somarem o TOTAL.
+      { dia: DE, pedidos: "3", receita_bruta: "360.00", pedidos_cobertos: "2", receita_coberta: "300.00", recebido_coberto: "235.00", custo_produtos: "110.00", resultado_venda: "115.00", margem_venda: "0.3833" },
       { dia: ATE, pedidos: "2", receita_bruta: "160.00", pedidos_cobertos: "1", receita_coberta: "100.00", recebido_coberto: "90.00", custo_produtos: "70.00", resultado_venda: "20.00", margem_venda: "0.2000" },
     ]);
+  });
+
+  it("D-487: o lucro após imposto e Ads -- o Ads CPC da loja rateado pela receita coberta, só com a leitura cobrindo o período", async () => {
+    const c58 = async () =>
+      (
+        await asUser<Linha>(
+          ADMIN,
+          `select nivel, account_name, investimento_ads, ads_rateado, resultado_apos_imposto, resultado_contribuicao, margem_contribuicao
+             from public.get_shopee_faturamento('${ORG}', '${DE}', '${ATE}') where environment is distinct from 'sandbox' order by nivel desc, account_name`,
+        )
+      ).map((l) => [l.account_name ?? l.nivel, l.investimento_ads, l.ads_rateado, l.resultado_apos_imposto, l.resultado_contribuicao, l.margem_contribuicao]);
+
+    // Ads nunca lido: NULO, nunca 0.
+    expect(await c58()).toEqual([
+      ["TOTAL", null, null, "95.00", null, null],
+      ["Loja Real", null, null, "95.00", null, null],
+      ["Sem Pedido", null, null, null, null, null],
+    ]);
+
+    await client.query("update public.shopee_shops set ads_read_from = '2026-08-01', ads_read_until = '2026-08-31' where id = any($1::uuid[])", [
+      [LOJA, SEM_PEDIDO],
+    ]);
+    // O dia 12 fica fora do período.
+    await client.query(
+      `insert into public.daily_shopee_ads_metrics (shopee_shop_id, organization_id, metric_date, expense, broad_gmv)
+       values ($1, $3, $4, 26, 100), ($1, $3, $5, 0, 0), ($2, $3, $4, 13, 0), ($1, $3, '2026-08-12', 500, 0)`,
+      [LOJA, SEM_PEDIDO, ORG, DE, ATE],
+    );
+
+    // Loja Real: 26 x 400/520 = 20; 95 - 20 = 75. TOTAL: as duas lojas, 39 x 400/520 = 30; 95 - 30 = 65.
+    // A loja sem venda: o gasto aparece, o rateio não existe (sem receita).
+    expect(await c58()).toEqual([
+      ["TOTAL", "39.00", "30.00", "95.00", "65.00", "0.1625"],
+      ["Loja Real", "26.00", "20.00", "95.00", "75.00", "0.1875"],
+      ["Sem Pedido", "13.00", null, null, null, null],
+    ]);
+
+    // Dia lido sem o gasto: aquela loja fica sem Ads, e o TOTAL também.
+    await client.query("update public.daily_shopee_ads_metrics set expense = null where shopee_shop_id = $1 and metric_date = $2", [SEM_PEDIDO, DE]);
+    expect((await c58()).map((l) => [l[0], l[4]])).toEqual([
+      ["TOTAL", null],
+      ["Loja Real", "75.00"],
+      ["Sem Pedido", null],
+    ]);
+
+    // A leitura que não cobre o período inteiro: NULO.
+    await client.query("update public.shopee_shops set ads_read_until = $2 where id = $1", [LOJA, DE]);
+    expect((await c58())[1]).toEqual(["Loja Real", null, null, "95.00", null, null]);
+
+    // Leitura cobrindo e nenhum anúncio: 0, que é fato.
+    await client.query("update public.shopee_shops set ads_read_until = '2026-08-31' where id = $1", [LOJA]);
+    await client.query("delete from public.daily_shopee_ads_metrics where shopee_shop_id = $1", [LOJA]);
+    expect((await c58())[1]).toEqual(["Loja Real", "0.00", "0.00", "95.00", "95.00", "0.2375"]);
+
+    // O catálogo (espelho de METRICS 5U).
+    const [definicao] = await asUser<{ formula: string }>(ADMIN, "select formula from public.metric_definitions where id = 'shopee_resultado_contribuicao'");
+
+    expect(definicao?.formula).toContain("shopee_investimento_ads x (receita coberta / receita bruta)");
+
+    await client.query("delete from public.daily_shopee_ads_metrics where shopee_shop_id = any($1::uuid[])", [[LOJA, SEM_PEDIDO]]);
+    await client.query("update public.shopee_shops set ads_read_from = null, ads_read_until = null where id = any($1::uuid[])", [[LOJA, SEM_PEDIDO]]);
   });
 
   it("por SKU só com pedidos de um SKU; o de dois SKUs é contado à parte, sem rateio", async () => {
@@ -6010,7 +6132,8 @@ describe("composição do faturamento da Shopee (D-443)", () => {
     const receita = await porSku("receita");
 
     expect(receita).toEqual([
-      { sku_id: skuX, unidades: "3", pedidos: "2", receita_bruta: "260.00", pedidos_cobertos: "1", receita_coberta: "200.00", recebido_coberto: "150.00", custo_produtos: "80.00", resultado_venda: "70.00", margem_venda: "0.3500", total_count: "3", pedidos_varios_skus: "1", receita_varios_skus: "100.00" },
+      // D-485: o ajuste de P1 (-10) no resultado do SKU.
+      { sku_id: skuX, unidades: "3", pedidos: "2", receita_bruta: "260.00", pedidos_cobertos: "1", receita_coberta: "200.00", recebido_coberto: "150.00", custo_produtos: "80.00", resultado_venda: "60.00", margem_venda: "0.3000", total_count: "3", pedidos_varios_skus: "1", receita_varios_skus: "100.00" },
       { sku_id: skuY, unidades: "1", pedidos: "1", receita_bruta: "100.00", pedidos_cobertos: "1", receita_coberta: "100.00", recebido_coberto: "85.00", custo_produtos: "30.00", resultado_venda: "55.00", margem_venda: "0.5500", total_count: "3", pedidos_varios_skus: "1", receita_varios_skus: "100.00" },
       // W vendeu sem custo: aparece por receita, sem nada do que depende da cobertura.
       { sku_id: skuW, unidades: "1", pedidos: "1", receita_bruta: "60.00", pedidos_cobertos: "0", receita_coberta: null, recebido_coberto: null, custo_produtos: null, resultado_venda: null, margem_venda: null, total_count: "3", pedidos_varios_skus: "1", receita_varios_skus: "100.00" },

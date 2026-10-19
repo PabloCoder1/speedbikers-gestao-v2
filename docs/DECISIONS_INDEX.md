@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **498** (D-001 a D-515).
+Decisões registradas: **500** (D-001 a D-515).
 
 ## Por domínio
 
@@ -75,7 +75,7 @@ Decisões registradas: **498** (D-001 a D-515).
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 
-### banco/rls (44)
+### banco/rls (45)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -121,6 +121,7 @@ Decisões registradas: **498** (D-001 a D-515).
 - **D-461** — get_sku_timeline: os eventos de pedido pelo indice (entity_id = any(pedidos do SKU como texto)), sem converter o entity_id em numero
 - **D-465** — O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
+- **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 
 ### estoque (36)
 
@@ -317,7 +318,7 @@ Decisões registradas: **498** (D-001 a D-515).
 - **D-467** — C-57: a Busca Universal acha a loja, o anuncio e o pedido da Shopee, estendendo search_entities (sem segunda busca)
 - **D-490** — Telas multicanais, etapa T11: os pedidos e os anúncios da Shopee em CSV, com o recorte da tela
 
-### outros (70)
+### outros (71)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -387,6 +388,7 @@ Decisões registradas: **498** (D-001 a D-515).
 - **D-478** — A falha intermitente da /vinculacoes nao era estado deixado por outro spec: o teste passa a esperar o resumo ou a dizer o motivo da queda
 - **D-479** — O faturamento da Shopee sem o laco aninhado entre CTEs, e o ensaio de volume do Go Live (R7)
 - **D-483** — A taxa de protecao de envio da Shopee como componente do recebido (C-61), em duas fases
+- **D-485** — Os ajustes da Shopee depois do repasse descontados do resultado, e o financeiro relido depois da liberacao
 - **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
 

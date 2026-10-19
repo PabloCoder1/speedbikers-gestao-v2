@@ -16366,7 +16366,7 @@ A T8b entra empilhada no C-66, e a central so mostra os escopos quando a respost
 
 **Em producao (16/10):** a migration `20261016180000` as 19:37 UTC (run `38955922868`, o plano so com ela). Na leitura real dos 30 dias, o `outros_restante` zerou em 100% dos pedidos cobertos, a protecao de envio veio em todos e receita - componentes - protecao_envio - outros_restante = recebido fecha pedido a pedido e no TOTAL; nenhum erro de runtime na Vercel. Fica a **fase 2**: o `outros` passa a ser o restante, o `outros_restante` sai (com aviso ao A2) e a linha de `shopee_composicao_recebido` em `metric_definitions` ganha a taxa (achado do A2).
 
-**Fase 2 (em codigo, 16/10):** migration `20261016200000` -- o `outros` passa a ser o que a lista, com a protecao de envio, nao explica; `outros_restante` sai das duas funcoes; `protecao_envio` fica; a formula de `shopee_composicao_recebido` em `metric_definitions` ganha "+ protecao de envio". Vale **receita - componentes - protecao_envio - outros = recebido**. O tipo `outros_restante?` fica opcional em `types.ts` ate a tela parar de le-lo (o A2 avisa). **Ordem:** so depois da tela do A2 (D-492, #232) em producao -- sem ela, a cascata de hoje mostraria o outros menor sem a linha da protecao. Verificacao: os 6 testes da D-443 com a fase 2 (TOTAL com outros 1,51 e protecao 0,49, a coluna da fase 1 ausente, a identidade por pedido e o catalogo com a taxa); mutacao (o outros ainda com a taxa, o catalogo sem a taxa, a composicao sem a protecao) derruba os testes.
+**Fase 2 (em producao desde 16/10, 20:42 UTC, run `38963886431`; depois da D-492 no ar):** migration `20261016200000` -- o `outros` passa a ser o que a lista, com a protecao de envio, nao explica; `outros_restante` sai das duas funcoes; `protecao_envio` fica; a formula de `shopee_composicao_recebido` em `metric_definitions` ganha "+ protecao de envio". Vale **receita - componentes - protecao_envio - outros = recebido**. O tipo `outros_restante?` fica opcional em `types.ts` ate a tela parar de le-lo (o A2 avisa). **Ordem:** so depois da tela do A2 (D-492, #232) em producao -- sem ela, a cascata de hoje mostraria o outros menor sem a linha da protecao. Verificacao: os 6 testes da D-443 com a fase 2 (TOTAL com outros 1,51 e protecao 0,49, a coluna da fase 1 ausente, a identidade por pedido e o catalogo com a taxa); mutacao (o outros ainda com a taxa, o catalogo sem a taxa, a composicao sem a protecao) derruba os testes. **Conferido nas lojas reais:** o `outros` zerou em 100% dos cobertos de 30 dias, a identidade fecha pedido a pedido, a coluna `outros_restante` saiu e o `metric_definitions` tem a formula com a taxa; nenhum erro de runtime na Vercel. Fica so o tipo opcional `outros_restante?` em `types.ts`, que sai quando a tela parar de le-lo (o A2 avisa).
 
 ## D-484 - Telas do A2: a /curva-abc sem recarga e os links de mesma tela da /produtos com o sinal de pendente; a lista de pendentes do check:navegacao-suave fica vazia
 
@@ -16400,6 +16400,27 @@ Esperou o #219 (o Shell num layout, D-512) entrar, como combinado com o A3: as d
 - e2e: `apps/web/e2e/{helpers,curva-abc-multicanal.spec,produtos.spec}.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-485 - Os ajustes da Shopee depois do repasse descontados do resultado, e o financeiro relido depois da liberacao
+
+**Contexto:** a auditoria da primeira leitura real (16/10, `docs/SHOPEE.md` secao 8, achado 2) mostrou que o `total_adjustment_amount` (negativo) e cobrado FORA do repasse: a Shopee libera o `escrow_amount` cheio e cobra o ajuste a parte. O C-58 so mostrava os ajustes como informativos (no C-61); o resultado (recebido - custo) nao os descontava e dizia que sobrava mais do que sobra -- cerca de 0,4% da receita coberta em 30 dias. E o pedido concluido so era relido se mudasse na Shopee: um ajuste lancado depois da leitura nao chegava. O dono delegou a decisao (16/10: os ajustes e as formulas "do jeito que voce achar mais recomendado").
+
+**Decisao:**
+1. **Resultado = recebido (escrow) + ajustes - custo**, nos pedidos cobertos: no C-58 (TOTAL e CONTA; definitivo e provisorio tambem), na serie diaria e no por SKU (os dias seguem somando o TOTAL). A margem, o resultado apos imposto e a margem apos imposto vem dele. O `recebido_coberto` continua o escrow (e o que o repasse paga, e o C-64 compara com ele), e a cascata do C-61 nao muda: o ajuste nao faz parte do escrow, fica la como informativo.
+2. **Coluna nova `ajustes_cobertos`, no FIM do C-58** (drop + create, permissoes e comentario reaplicados), para a tela mostrar o degrau "Ajustes depois do repasse" entre o recebido e o custo. Loja nunca lida: nula, como o resto.
+3. **Catalogo (espelho de METRICS 5U):** a formula de `shopee_resultado_venda` ganha o ajuste, e `shopee_ajustes_pos_repasse` entra com definicao propria.
+4. **Uma releitura depois da liberacao:** `shopee_orders_financials_pending` rele o pedido quando a ultima liberacao dele (`shopee_escrow_releases`) e posterior a ultima leitura. As liberacoes da loja entram agregadas numa juncao, nao numa busca por pedido: no ensaio de volume (uma loja com 30 mil pedidos e 25 mil liberacoes), a fila de antes leva 5-6 ms, a busca por pedido 48-75 ms e a juncao 18-23 ms (`docs/PERFORMANCE.md`). O historico liberado antes da leitura nao volta para a fila: nenhuma rajada no deploy. Limite: ajuste lancado depois dessa releitura so entra se o pedido mudar na Shopee (dito no catalogo).
+5. **Fora desta decisao:** os Ads na margem de contribuicao da Shopee (D-487, a seguir) e o imposto (depende da aliquota, ato do dono).
+
+**Ordem (duas fases, como a D-483):** a migration so vai a producao depois da tela do A2 com o degrau "Ajustes" no ar, lendo `ajustes_cobertos` pela presenca. Sem ela, a cascata "Recebido - Custo = Resultado" deixaria de fechar: a barra do custo engoliria o ajuste. O merge deste PR nao toca a producao (a migration so entra pelo workflow), e o tipo novo e opcional.
+
+**Verificacao:**
+- **Integracao (D-443):** o TOTAL do C-58 com resultado 135 (325 - 10 - 180), margem 0,3375, definitivo 80, provisorio 55, `ajustes_cobertos` -10 e apos imposto 95; o dia do P1 com 115 e 0,3833; o SKU X com 60 e 0,30; o catalogo com as duas formulas.
+- **Integracao (D-427):** o pedido lido antes da liberacao volta para a fila (na ordem da leitura mais antiga) e sai depois de relido; o lido depois da liberacao nao volta.
+- **Mutacao:** o C-58, o diario e o por SKU sem o ajuste, e a fila sem a liberacao -- cada uma derruba um teste.
+- **Suite inteira:** 1022/1022 com o banco recriado do zero.
+
+**Impacto:** `supabase/migrations/20261016220000_ajustes_shopee_no_resultado.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,SHOPEE,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP,PERFORMANCE}.md`. Worker e api nao mudam (a fila e SQL). O degrau na tela e do A2.
 
 ## D-486 - Telas multicanais, etapa T9: o ensaio do Go Live das telas, com uma loja Shopee LIVE criada e apagada pelo próprio e2e, num projeto do Playwright que roda por último
 
@@ -16458,6 +16479,27 @@ Do lado da tela, a nota da "Meta de cada marketplace" (D-482) dizia que "a geral
 - e2e: `apps/web/e2e/{loja-shopee-live.ts,ensaio-loja-live.spec.ts}` e `apps/web/playwright.config.ts`;
 - web: a nota em `apps/web/app/(app)/central/meta.tsx`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF,TESTING}.md`.
+
+## D-487 - O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
+
+**Contexto:** o ML tem o lucro apos imposto e Ads (METRICS 5K, D-395); a Shopee parava no resultado apos imposto (C-58), e o Ads CPC da loja so aparecia no C-63, sem chegar ao lucro. Na comparacao ML x Shopee, faltava a linha. Decisao delegada pelo dono (16/10), junto com a D-485.
+
+**Decisao:**
+1. **A regra do 5K, no SQL:** `resultado_contribuicao = resultado_apos_imposto - Ads x (receita coberta / receita bruta)` e `margem_contribuicao = resultado_contribuicao / receita coberta`, no fim do C-58, com `investimento_ads` e `ads_rateado` ao lado (drop + create; o resto e o da D-485). No ML a conta e do navegador (`central-indicadores.ts`, anterior a regra); na Shopee ela vem pronta.
+2. **O Ads e o CPC da loja** (`daily_shopee_ads_metrics`, a fonte do C-63); o GMV Max fica fora, como no C-63, e o catalogo diz isso.
+3. **So com o Ads do periodo inteiro:** a leitura de Ads cobrindo o periodo (a regra de `cobertura_completa` do C-63) e o gasto de todos os dias lidos; senao NULO. Leitura cobrindo e nenhum anuncio: 0, que e fato -- o equivalente ao "nenhuma conta com Product Ads" do ML.
+4. **O rateio:** na loja, o Ads dela pela cobertura dela; no TOTAL, o Ads de todas as lojas pela cobertura do TOTAL (como o 5K, que rateia o Ads da organizacao). Loja sem venda no periodo: o gasto aparece, o rateio dela e NULO; no TOTAL ele entra. Com 100% de cobertura, o rateio some.
+5. **Sem aliquota, sem contribuicao:** o imposto NULO deixa a contribuicao NULA, como no ML. Producao hoje nao tem aliquota (ato do dono).
+
+**Ordem:** a migration `20261016230000` vai a producao junto com a da D-485 (as duas recriam o C-58), depois da tela do A2. As colunas novas sao opcionais em `types.ts`; antes da migration, a tela nao as recebe.
+
+**Verificacao:**
+- **Integracao (D-443):** sem leitura de Ads, tudo NULO; com a leitura cobrindo (26 e 13 de gasto, um dia fora do periodo ignorado), a loja com 26 x 400/520 = 20 e lucro 75 (0,1875), o TOTAL com 39 x 400/520 = 30 e lucro 65 (0,1625), e a loja sem venda com o gasto e sem rateio; dia lido sem o gasto, NULO na loja e no TOTAL; leitura que nao cobre o periodo, NULO; leitura cobrindo sem anuncio, 0 e lucro 95; o catalogo.
+- **Mutacao:** o TOTAL sem o rateio, a loja sem o rateio, sem a cobertura, sem o dia sem gasto, o Ads fora do periodo e o NULO virando 0 -- cada uma derruba o teste.
+- **Suite inteira:** 1023/1023 com o banco recriado do zero.
+- **Estatica:** `pnpm run check`, `pnpm run build` e `pnpm docs:check` verdes.
+
+**Impacto:** `supabase/migrations/20261016230000_contribuicao_shopee.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,METRICS,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`. A linha na tela e do A2.
 
 ## D-488 - Telas multicanais, etapa T10: a Home e a /vendas abrem em todos os marketplaces (decisão do dono depois do Go Live)
 
@@ -16590,6 +16632,8 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - e2e: `loja-shopee-live.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+**Fase 2 (16/10):** a `20261016200000` foi aplicada em produção (A1, conferida nas lojas reais: `outros` zero em todos os cobertos e a identidade fechando pedido a pedido). A tela deixou de ler o `outros_restante`: o `outros` já é o restante. Fica só a tolerância à coluna `protecao_envio` ausente, porque ela segue opcional no tipo. O A1 tira o `outros_restante?` do `types.ts`.
 
 ## D-494 - Filtros salvos nas telas da Shopee, e as cinco telas no atalho da configuração
 
