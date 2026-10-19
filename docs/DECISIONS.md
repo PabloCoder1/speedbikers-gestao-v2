@@ -17441,6 +17441,36 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-608 - O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
+
+**Contexto:** o cartão de cada loja Shopee na `/sincronizacao` diz até quando os pedidos, as devoluções, os repasses e os Ads foram lidos (D-438, D-462), mas não o catálogo. A leitura do catálogo (D-428) existe e tem marco próprio, `shopee_shops.items_synced_until`: é dele que a `/anuncios/shopee` tira a "Última leitura do catálogo" (`get_shopee_listings_summary.ultima_leitura`). Era a lacuna "frescor do catálogo da loja" do inventário de `docs/MULTICHANNEL_SCREENS.md` §2.
+
+**1. "Catálogo lido até" no cartão da loja.**
+- O fato entra logo depois dos pedidos, lido na MESMA ida das outras colunas da loja (`shopee_shops`, a RLS por loja de D-433), com as mesmas palavras:
+  - "nunca lido" quando o marco é nulo;
+  - "não foi possível ler" quando a leitura falha, nunca "nunca lido" (D-067).
+- Ao lado, "ver os anúncios" leva à `/anuncios/shopee` com o filtro da loja (`loja` = `shopee_shops.id`, o `account_id` do C-52).
+- O fato não entra no veredito da loja: o vigia (D-435) julga pelos pedidos, e um limiar para o catálogo seria regra nova do A1.
+
+**2. O inventário sem as lacunas já resolvidas.** Três linhas de `MULTICHANNEL_SCREENS.md` §2 diziam faltar o que já está em produção:
+- **Produtos:** "sem anúncio/sem venda" para o SKU só da Shopee foi resolvido na T6c (D-454).
+- **Saúde:** a cadência dos jobs Shopee foi feita na T1 (C-09, D-431) e no #170.
+- **Sincronização:** o catálogo, que esta decisão resolve.
+
+**Publicação:** só a web. Nenhuma migration, RPC, worker ou api.
+
+**Verificacao:**
+- **e2e:** `sincronizacao`:
+  - a loja do seed, lida há meia hora, mostra uma data, e não "nunca lido";
+  - o link abre a `/anuncios/shopee` com o chip da loja.
+- **Suite inteira:** **256/256** com o banco recriado do zero (253 na 3300 e os 3 de convite na 3000), e o `loja-live` **9/9**.
+
+**Impacto:**
+- web: `apps/web/app/(app)/sincronizacao/page.tsx`;
+- e2e: `sincronizacao.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-610 - A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 
 **Contexto:** em 19/10, das 14:20:21 às 14:20:48 UTC, o Postgres de produção cancelou 19 consultas por `statement timeout` (8 s), achadas pelo A1:
