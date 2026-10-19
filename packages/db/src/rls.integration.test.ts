@@ -22353,3 +22353,125 @@ describe("vigiar_sincronizacao: a reconciliação que para de rodar também avis
     }
   });
 });
+
+/*
+  D-489: os campos do order_income que as leituras usam viram colunas geradas
+  de shopee_orders. O Postgres as calcula na gravacao; a view de vendas e o
+  pedido do faturamento leem as colunas, sem descompactar o json.
+*/
+describe("campos do financeiro Shopee como colunas geradas (D-489)", () => {
+  const ORG = "66666666-0000-4000-8000-00000000d489";
+  const LOJA = "dddd4890-0000-4000-8000-0000000a0489";
+  const DIA = "2026-08-20";
+
+  async function pedido(sn: string, renda: Record<string, unknown> | null) {
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+          escrow_amount, order_income, financials_synced_at)
+       values ($1, $2, $3, 'COMPLETED', $4, $4, $4, 80, $5::jsonb, case when $5::jsonb is null then null else now() end)`,
+      [LOJA, ORG, sn, `${DIA}T15:00:00Z`, renda === null ? null : JSON.stringify(renda)],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price)
+       values ($1, $2, 0, $3, 1, 2, 30)`,
+      [LOJA, sn, ORG],
+    );
+  }
+
+  const colunas = async (sn: string) =>
+    (
+      await client.query<Record<string, string | null>>(
+        `select order_discounted_price::text, shipping_fee_discount_from_3pl::text, final_return_to_seller_shipping_fee::text,
+                seller_coin_cash_back::text, coins::text, shipping_seller_protection_fee_amount::text
+           from public.shopee_orders where shopee_shop_id = $1 and order_sn = $2`,
+        [LOJA, sn],
+      )
+    ).rows[0];
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-489', 'org-d489') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $2, 'live', 990489001, 'Loja D-489', 'CONNECTED', now(), now(), now()) on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    // N1: os seis como numero. N2: texto, objeto e nulo -- nenhum vira numero.
+    await pedido("N1", {
+      order_discounted_price: 100,
+      shipping_fee_discount_from_3pl: 1.5,
+      final_return_to_seller_shipping_fee: 4,
+      seller_coin_cash_back: 0.25,
+      coins: 2,
+      shipping_seller_protection_fee_amount: 0.49,
+      escrow_amount: 80,
+    });
+    await pedido("N2", {
+      order_discounted_price: "100",
+      shipping_fee_discount_from_3pl: { valor: 1 },
+      final_return_to_seller_shipping_fee: null,
+      coins: [1],
+      escrow_amount: 80,
+    });
+    await pedido("N3", null);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  it("as colunas vem do order_income na gravacao, e so numero vira numero", async () => {
+    expect(await colunas("N1")).toEqual({
+      order_discounted_price: "100",
+      shipping_fee_discount_from_3pl: "1.5",
+      final_return_to_seller_shipping_fee: "4",
+      seller_coin_cash_back: "0.25",
+      coins: "2",
+      shipping_seller_protection_fee_amount: "0.49",
+    });
+    // Texto, objeto, lista, nulo e chave ausente: NULO, e a gravacao do financeiro nao trava.
+    expect(Object.values((await colunas("N2")) ?? {})).toEqual([null, null, null, null, null, null]);
+    expect(Object.values((await colunas("N3")) ?? {})).toEqual([null, null, null, null, null, null]);
+  });
+
+  it("acompanham a releitura do financeiro, e nao se gravam a mao", async () => {
+    await client.query(
+      `update public.shopee_orders set order_income = order_income || '{"coins": 3, "order_discounted_price": 90}'::jsonb
+        where shopee_shop_id = $1 and order_sn = 'N1'`,
+      [LOJA],
+    );
+    expect(await colunas("N1")).toMatchObject({ coins: "3", order_discounted_price: "90" });
+    await expect(client.query("update public.shopee_orders set coins = 1 where shopee_shop_id = $1", [LOJA])).rejects.toThrow(/can only be updated to DEFAULT/i);
+    await client.query(
+      `update public.shopee_orders set order_income = order_income || '{"coins": 2, "order_discounted_price": 100}'::jsonb
+        where shopee_shop_id = $1 and order_sn = 'N1'`,
+      [LOJA],
+    );
+  });
+
+  it("a view de vendas e o pedido do faturamento leem as colunas", async () => {
+    const vendas = await client.query<{ order_sn: string; receita_bruta: string | null }>(
+      "select order_sn, receita_bruta::text from public.shopee_sales_orders where shopee_shop_id = $1 order by order_sn",
+      [LOJA],
+    );
+
+    // N2 traz o preco como texto: a receita vem dos itens (2 x 30), como quando o campo falta.
+    expect(vendas.rows).toEqual([
+      { order_sn: "N1", receita_bruta: "100" },
+      { order_sn: "N2", receita_bruta: "60" },
+      { order_sn: "N3", receita_bruta: "60" },
+    ]);
+
+    const pedidos = await client.query<Record<string, string | null>>(
+      `select order_sn, frete_devolucao::text, cupom_loja::text, moedas_shopee::text, protecao_envio::text
+         from public.get_shopee_faturamento_pedidos($1, $2, $2, null) order by order_sn`,
+      [ORG, DIA],
+    );
+
+    expect(pedidos.rows).toEqual([
+      { order_sn: "N1", frete_devolucao: "4", cupom_loja: "0.25", moedas_shopee: "2", protecao_envio: "0.49" },
+      { order_sn: "N2", frete_devolucao: null, cupom_loja: null, moedas_shopee: null, protecao_envio: null },
+      { order_sn: "N3", frete_devolucao: null, cupom_loja: null, moedas_shopee: null, protecao_envio: null },
+    ]);
+  });
+});
