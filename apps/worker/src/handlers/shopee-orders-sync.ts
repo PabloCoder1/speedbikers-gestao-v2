@@ -12,6 +12,7 @@ import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { asJson } from "./domain-events.js";
 import { falhaDaShopee, lerLojaConectada, type LojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
+import { baixarVendasDaShopee } from "./shopee-stock.js";
 import { ensureShopeeAccessToken } from "./shopee-token.js";
 
 /**
@@ -139,6 +140,7 @@ async function lerJanela(
 
   let gravados = 0;
   let ignorados = 0;
+  let movimentos = 0;
 
   for (let i = 0; i < ordens.length; i += ORDER_DETAIL_BATCH) {
     let pedidos: ShopeeOrder[];
@@ -153,6 +155,19 @@ async function lerJanela(
 
     if ("erro" in lote) {
       return { status: "failed", retryable: true, reason: lote.erro };
+    }
+
+    // D-495: a venda da Shopee no estoque, pelos pedidos do lote como ficaram
+    // no banco. Falha repete a janela (o marco não anda), e a chave de cada
+    // movimento absorve o que já entrou.
+    try {
+      movimentos += await baixarVendasDaShopee(deps.db, loja, pedidos.map((p) => p.order_sn));
+    } catch (error) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: `falha na baixa da venda da Shopee no estoque: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
 
     gravados += lote.gravados;
@@ -220,6 +235,8 @@ async function lerJanela(
     pedidos_gravados: gravados,
     // Leitura mais velha que a guardada (outra execução chegou antes).
     pedidos_ignorados: ignorados,
+    // D-495: movimentos de estoque enviados (o banco descarta os já gravados).
+    movimentos_de_estoque: movimentos,
     tem_mais: temMais,
   });
 
