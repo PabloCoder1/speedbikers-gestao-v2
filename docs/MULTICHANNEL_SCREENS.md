@@ -50,7 +50,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
 | Metas e limites | `/central/metas`, `/central/limites` | 1 | — | configuração da organização | T8b ✔ (D-482): a meta de cada marketplace ao lado da geral, decisão do dono de 15/10 | C-66 (D-473) |
 | Produtos | `/produtos` | 2 | — | `get_products_overview` (`daily_sku_metrics`, anúncios ML) | — (o SKU só da Shopee deixou de aparecer "sem anúncio"/"sem venda" na T6c, D-454) | C-56 (D-445) → **T6c ✔ (D-454)** |
-| SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal (só ML): o dono escolheu esta frente em 20/10, e o contrato C-10 foi pedido ao A1 (§7) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
+| SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal: a D-618, sobre o C-71 do A1 (o C-10, §7), em código (#284) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
 | Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | — (as vendas por anúncio da Shopee desde a D-606, sobre o C-67 da D-493) | T1 ✔ (D-431: seletor levando a busca); T11 ✔ (D-490: o CSV dos anúncios da Shopee); D-494 ✔ (filtros salvos); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
 | Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque: a D-495 do A1 está em desenho (decisão do dono de 19/10), e a tela (rótulos, origem "Pedido Shopee" e nota da `/estoque`) é do A2 | E8 |
@@ -330,7 +330,8 @@ número.
 | **D-612** | A nota de venda do marketplace como "Não aplicada" em `/notas-fiscais` | A1 (D-497 b) | ✔ D-612 (#262) |
 | **D-614** | A venda da Shopee nas movimentações de estoque | A1 (D-495 b, C-68) | ✔ D-614 (#268) |
 | **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | ✔ D-616 (#272) |
-| **D-618** | O dia a dia por canal e os pedidos da Shopee na aba Vendas do SKU | A1 (C-71, D-607) | espera o contrato |
+| **D-618** | O dia a dia por canal e os pedidos da Shopee na aba Vendas do SKU | A1 (C-71, D-607) | em código (#284); a migration está em produção desde 20/10 |
+| **D-620** | O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de `/vendas` | A1 (C-70, D-603) | em código (#284); a migration está em produção desde 20/10 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
