@@ -163,6 +163,17 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.21 A marca no "Todos" de /vendas (C-72, D-605) — em código
+
+`get_marketplace_sales_summary`, `get_marketplace_sales_daily`, `get_marketplace_sales_today` e `get_marketplace_sales_cancellations` ganham no fim `p_supplier_brand text` e `p_sem_marca boolean`, os nomes e a regra do recorte do ML (D-237). Sem recorte, tudo igual.
+
+**Com recorte:**
+- unidades e receita pelo grão de SKU (ML `daily_sku_metrics`; Shopee `shopee_sales_items`; o hoje do ML pelos itens);
+- `pedidos_sem_receita` = os pedidos Shopee com item da marca de preço 0;
+- **NULOS:** `compras`, `ticket_medio`, `recebido`, `pedidos_sem_recebido` e todo o cancelamento (D-237).
+
+**Para a tela:** manda o recorte só com valor e só depois da migration `20261020170000` em produção.
+
 ### 3.20 O SKU com a Shopee (C-71, D-607) — em código
 
 O grão é o do C-59: o `sku_id` gravado no item (o kit conta como o kit; a página de um componente não vê a venda do kit que o contém).

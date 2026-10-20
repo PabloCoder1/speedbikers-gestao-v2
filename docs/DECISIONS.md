@@ -17684,6 +17684,48 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-605 - A marca no "Todos" de /vendas: o recorte do ML nas quatro funcoes, pelo grao de SKU dos dois canais (C-72)
+
+**Contexto:** escolha do dono de 20/10 no item 4, opcao (a), parte (a2). O C-53 (D-436) ficou sem marca porque a receita da Shopee era do pedido; o grao de SKU da Shopee (`shopee_sales_items`, D-439) agora existe. O cancelamento e o hoje sao a D-603.
+
+**Decisao:**
+1. **O recorte e o do ML (D-237), com os mesmos nomes:** `p_supplier_brand text` e `p_sem_marca boolean`, no fim das quatro funcoes do "Todos": `get_marketplace_sales_summary`, `get_marketplace_sales_daily`, `get_marketplace_sales_today` e `get_marketplace_sales_cancellations`.
+   - "Marca X" e o SKU do item com `supplier_brand = X`.
+   - "Sem marca" e o item sem SKU, ou o SKU sem marca cadastrada.
+   - Os dois juntos: vale o "sem marca", como em `get_sales_summary`.
+2. **Sem recorte, nada muda:** a mesma fonte e o mesmo resultado de antes, e os testes do C-53 e do C-70 seguem iguais. As funcoes passam a ter plano custom (`force_custom_plan`), porque o ramo e escolhido pelo recorte.
+3. **Com recorte, o grao fino dos dois canais:**
+   - ML: `daily_sku_metrics`, o ramo de recorte de `get_sales_summary`. No hoje, os itens dos pedidos validos do dia, como `get_sales_today_summary`: receita = quantidade x preco do item.
+   - Shopee: `shopee_sales_items` VALIDA (C-59). O item de preco 0 fica fora da soma, e o PEDIDO com algum item assim conta em `pedidos_sem_receita`.
+4. **NULO o que nao tem resposta por marca, como no ML:**
+   - as compras e o ticket: o pack e o pedido atravessam SKU, e somar o grao fino conta o mesmo carrinho duas vezes;
+   - o recebido da Shopee, que e do pedido inteiro;
+   - o cancelamento, porque o pedido cancelado inteiro nao tem cota de marca. A funcao nem le `orders` sob recorte.
+   - Os pedidos do ML seguem `get_sales_summary`: a soma de `orders_count` do grao de SKU.
+
+**Verificacao:**
+- **Integracao:** 7 testes. Os testes do C-53 (D-436) e do C-70 (D-603) seguem verdes sem recorte. Os novos cobrem:
+  - a marca A pelos itens, com o item de preco 0 contando o pedido a parte;
+  - o "sem marca" com o item sem SKU e o SKU sem marca;
+  - a linha do ML igual a `get_sales_summary` com o mesmo recorte (marca e sem marca);
+  - sem recorte, as compras e o recebido de volta;
+  - a serie diaria;
+  - o hoje igual a `get_sales_today_summary` com a marca;
+  - o cancelamento NULO sob marca.
+- **Mutacao:** cada uma derruba um teste.
+  - as compras da loja sob marca;
+  - o "sem marca" so com o SKU cadastrado sem marca;
+  - o cancelamento sob marca.
+  - (Tirar o `sku_id is null` explicito do "sem marca" e equivalente: o `not exists` ja pega o item sem SKU, como no ML.)
+- **Desempenho** (producao, como `authenticated`, 90 dias, a marca que mais vende):
+  - o ramo da Shopee: 130-176 ms;
+  - o do ML: 27 ms quente;
+  - para comparar, o C-53 sem marca: 153-290 ms.
+
+**Publicacao:** a migration `20261020170000` vai a producao depois do merge. A tela manda `p_supplier_brand` e `p_sem_marca` so com valor e so depois da migration em producao (PGRST202 antes). Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020170000_marca_entre_marketplaces.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
+
 ## D-606 - As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 
 **Contexto:** decisão do dono de 19/10: a `/anuncios/shopee` mostra quanto cada anúncio vendeu, como o Dashboard de anúncios do ML (D-385). O A1 fez o contrato, o C-67 (D-493): `get_shopee_listings` com o período, `p_vendeu`, `p_ordem`, as vendas do anúncio e o recorte inteiro, pela regra do C-59. Esta é a tela.
