@@ -21,6 +21,7 @@ e a maior parte é irrelevante para qualquer tarefa específica.
 |---|---|
 | Banco, RLS, migration, índice | `docs/DATABASE.md` |
 | Mercado Livre, webhook, sync | `docs/MERCADO_LIVRE.md`, `docs/API.md` |
+| TikTok Shop | `docs/TIKTOK_SHOP.md` (contrato conferido e estado), `docs/MULTICHANNEL_HANDOFF.md` |
 | Shopee, multicanal (ML + Shopee) | `docs/SHOPEE.md`, `docs/MULTICHANNEL_HANDOFF.md` (estado e coordenação entre agentes), `docs/MULTICHANNEL_CONTRACTS.md` (contratos de dados), `docs/MULTICHANNEL_SCREENS.md` (telas e filtro Marketplace/Conta) |
 | Tela, componente, UX | `docs/PRODUCT_REQUIREMENTS.md` + a seção relevante do `docs/ROADMAP.md` |
 | **Aparência** de tela ou componente | `docs/DESIGN_IMPLEMENTATION.md` — Design Contract e fila visual |
