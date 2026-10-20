@@ -163,6 +163,12 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.24 A marca no ranking do "Todos" (C-75, D-613) — em código
+
+- **O contrato:** `get_marketplace_sku_sales` (C-59) ganha no fim `p_supplier_brand text` e `p_sem_marca boolean`, os do C-72.
+- **O efeito:** o recorte só escolhe quais linhas (SKUs) entram. A linha não muda, e o `total_count` é o do recorte. O "sem marca" leva o balde sem SKU.
+- **Para a tela:** manda o recorte só com valor e só depois da migration `20261020200000` em produção.
+
 ### 3.23 A ruptura no anúncio da Shopee na Central (C-74, D-611) — em código
 
 - **A ação:** `actions.kind = 'shopee_ruptura'`, com a loja em `shopee_shop_id` e o `sku_id` quando o anúncio está vinculado. O `subject_key` é `<loja>:<item>:<variação ou ->`, a severidade `media`, a confiança `alta` e o impacto é a receita conhecida dos 30 dias.
