@@ -23,7 +23,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
-import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { CabecalhoDaCentral, funcaoAusente, SendoAtivado, type RespostaComCodigo } from "../comum";
 import { lerQuemPagaOFrete, QuemPagaOFrete } from "./quem-paga";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
@@ -67,6 +67,9 @@ export default function DetectorDeFretePage(props: { searchParams: Promise<Consu
   );
 }
 
+/** O subtítulo fixo: a janela de datas vem do detector e mora na primeira linha do conteúdo (D-520). */
+const SUBTITULO_DO_DETECTOR = "Frete que destoa do histórico, do mesmo produto, da categoria ou do preço.";
+
 /** O cabeçalho e as abas da Central (UX_SYSTEM §6, bloco 1): as abas substituem o "Voltar à central". */
 function Titulo({ subtitle, consulta }: { subtitle: ReactNode; consulta: Consulta }): ReactNode {
   return <CabecalhoDaCentral tela="frete" consulta={consulta} titulo="Detector de frete" subtitulo={subtitle} />;
@@ -80,7 +83,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
   if (membership.organizationId === null) {
     return (
       <>
-        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
+        <Titulo consulta={query} subtitle={SUBTITULO_DO_DETECTOR} />
         <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
       </>
     );
@@ -88,29 +91,54 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
   const supabase = await createClient();
   // As duas leituras saem juntas: o "quem paga" não espera o detector (UX_SYSTEM §6, bloco 3).
+  // E só os números esperam o detector (D-520): o título e as abas pintam antes.
   const leituraQuemPaga = lerQuemPagaOFrete(supabase);
-  const resposta = await supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId });
+  const leituraDetector = Promise.resolve(
+    supabase.rpc("get_detector_frete", { p_organization_id: membership.organizationId }),
+  );
 
-  // Função ausente (PGRST202) não é erro: a web da `main` chega à produção
-  // antes de a migration passar pelo workflow — o precedente de D-363.
+  return (
+    <>
+      <Titulo consulta={query} subtitle={SUBTITULO_DO_DETECTOR} />
+      <Suspense fallback={<CarregandoConteudo rotulo="Carregando o detector de frete" comTitulo={false} />}>
+        <CorpoDoDetector leitura={leituraDetector} leituraQuemPaga={leituraQuemPaga} query={query} nivel={nivel} />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * O detector abaixo do título já pintado (D-520): a janela de datas, a faixa,
+ * os anúncios, o "quem paga" e o método. Função ausente (PGRST202) não é erro:
+ * a web da `main` chega à produção antes de a migration passar pelo workflow —
+ * o precedente de D-363.
+ */
+async function CorpoDoDetector({
+  leitura,
+  leituraQuemPaga,
+  query,
+  nivel,
+}: {
+  leitura: PromiseLike<RespostaComCodigo>;
+  leituraQuemPaga: ReturnType<typeof lerQuemPagaOFrete>;
+  query: Consulta;
+  nivel: NivelFrete | null;
+}): Promise<ReactNode> {
+  const resposta = await leitura;
+
   if (resposta.error !== null) {
-    return (
-      <>
-        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
-        {funcaoAusente(resposta.error) ? (
-          <SendoAtivado>
-            O detector de frete está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-397. Assim
-            que a migração for aplicada, esta tela passa a listar os anúncios.
-          </SendoAtivado>
-        ) : (
-          <EstadoDaTela
-            tipo="erro"
-            titulo="Não foi possível carregar o detector"
-            detalhe={resposta.error.message}
-            acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-          />
-        )}
-      </>
+    return funcaoAusente(resposta.error) ? (
+      <SendoAtivado>
+        O detector de frete está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-397. Assim que a
+        migração for aplicada, esta tela passa a listar os anúncios.
+      </SendoAtivado>
+    ) : (
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Não foi possível carregar o detector"
+        detalhe={resposta.error.message}
+        acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     );
   }
 
@@ -118,15 +146,12 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
   if (detector === null) {
     return (
-      <>
-        <Titulo consulta={query} subtitle="Frete que destoa do histórico, do mesmo produto, da categoria ou do preço." />
-        <EstadoDaTela
-          tipo="erro"
-          titulo="O detector respondeu num formato que esta tela não reconhece"
-          descricao="Nada foi mostrado."
-          acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-        />
-      </>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="O detector respondeu num formato que esta tela não reconhece"
+        descricao="Nada foi mostrado."
+        acao={{ href: mesmaUrl("/central/frete", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     );
   }
 
@@ -135,16 +160,11 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
 
   return (
     <>
-      <Titulo
-        consulta={query}
-        subtitle={
-          <>
-            Últimos 14 dias ({formatBusinessDate(janela.corte)} a {formatBusinessDate(janela.fim)}) contra os{" "}
-            {diasEntre(janela.inicio, janela.corte)} dias anteriores. Todas as contas do Mercado Livre; pedidos de uma
-            unidade com frete observado, fora do Flex.
-          </>
-        }
-      />
+      <p className="sb-central-recorte">
+        Últimos 14 dias ({formatBusinessDate(janela.corte)} a {formatBusinessDate(janela.fim)}) contra os{" "}
+        {diasEntre(janela.inicio, janela.corte)} dias anteriores. Todas as contas do Mercado Livre; pedidos de uma
+        unidade com frete observado, fora do Flex.
+      </p>
 
       <KpiStrip cells={celulasDoResumo(detector)} />
 

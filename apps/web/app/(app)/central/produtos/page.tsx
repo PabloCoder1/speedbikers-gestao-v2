@@ -39,7 +39,7 @@ import {
 } from "../../../../lib/ranking-produtos";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
-import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado, type RespostaComCodigo } from "../comum";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
 
@@ -123,11 +123,17 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   const estado: Estado = { periodo: periodoDaUrl(periodo), conta, ordem, pagina };
 
   const leituraLimites = carregarLimites(supabase, membership.organizationId);
-  const resposta = await (rankingSemConta ??
-    supabase.rpc("get_ranking_produtos", {
-      ...argumentos,
-      ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
-    }));
+  // Só os números esperam o ranking (D-520): o título, as abas e os filtros
+  // pintam com as contas. Com conta na URL, a leitura sai agora, com o slug
+  // resolvido; sem conta, ela já saiu lá em cima.
+  const leituraRanking =
+    rankingSemConta ??
+    Promise.resolve(
+      supabase.rpc("get_ranking_produtos", {
+        ...argumentos,
+        ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
+      }),
+    );
 
   // As abas da Central levam o recorte aplicado; o período recusado não viaja (UX_SYSTEM §6, bloco 1).
   const titulo = (
@@ -192,45 +198,6 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     />
   );
 
-  // Função ausente (PGRST202): a web da `main` chega à produção antes de a
-  // migration passar pelo workflow — o precedente de D-363.
-  if (resposta.error !== null) {
-    return (
-      <>
-        {titulo}
-        {funcaoAusente(resposta.error) ? (
-          <SendoAtivado>
-            O ranking de produtos está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-402. Assim
-            que a migração for aplicada, esta tela passa a listar os produtos.
-          </SendoAtivado>
-        ) : (
-          <EstadoDaTela
-            tipo="erro"
-            titulo="Não foi possível carregar o ranking de produtos"
-            detalhe={resposta.error.message}
-            acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-          />
-        )}
-      </>
-    );
-  }
-
-  const ranking = lerRankingProdutos(resposta.data);
-
-  if (ranking === null) {
-    return (
-      <>
-        {titulo}
-        <EstadoDaTela
-          tipo="erro"
-          titulo="O ranking respondeu num formato que esta tela não reconhece"
-          descricao="Nada foi mostrado."
-          acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-        />
-      </>
-    );
-  }
-
   return (
     <>
       {titulo}
@@ -247,6 +214,60 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       {periodo.invalido && <AvisoDePeriodoInvalido rotulo={periodo.rotulo} />}
 
+      <Suspense fallback={<CarregandoConteudo rotulo="Carregando o ranking de produtos" comTitulo={false} />}>
+        <CorpoDoRanking leitura={leituraRanking} estado={estado} leituraLimites={leituraLimites} />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * Os números do ranking, que esperam o `get_ranking_produtos` (D-520). A
+ * falha, a função ausente e o formato desconhecido ficam aqui, abaixo do
+ * título já pintado; o "Tentar de novo" é a mesma URL, com o recorte inteiro.
+ */
+async function CorpoDoRanking({
+  leitura,
+  estado,
+  leituraLimites,
+}: {
+  leitura: PromiseLike<RespostaComCodigo>;
+  estado: Estado;
+  leituraLimites: ReturnType<typeof carregarLimites>;
+}): Promise<ReactNode> {
+  const resposta = await leitura;
+
+  if (resposta.error !== null) {
+    return funcaoAusente(resposta.error) ? (
+      <SendoAtivado>
+        O ranking de produtos está sendo ativado neste ambiente: o banco ainda não recebeu a função de D-402. Assim que
+        a migração for aplicada, esta tela passa a listar os produtos.
+      </SendoAtivado>
+    ) : (
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Não foi possível carregar o ranking de produtos"
+        detalhe={resposta.error.message}
+        acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
+    );
+  }
+
+  const ranking = lerRankingProdutos(resposta.data);
+
+  if (ranking === null) {
+    return (
+      <EstadoDaTela
+        tipo="erro"
+        titulo="O ranking respondeu num formato que esta tela não reconhece"
+        descricao="Nada foi mostrado."
+        acao={{ href: montarHref(estado), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
+    );
+  }
+
+  return (
+    <>
       <KpiStrip cells={celulasDoResumo(ranking, estado)} />
 
       {/* As colunas só se explicavam no title, que o toque não abre (UX_SYSTEM §6, bloco 4). */}
