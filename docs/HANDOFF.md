@@ -55,7 +55,7 @@ e `docs/PERFORMANCE.md`.
 - **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13), provada em 18/09; D-352 publicada em 18/09 (§8) e
   `v3-reconcile-balances` despausado pelo dono. Entrada manual das
   devoluções pela lista do ledger, não pelas notificações: 26 já voltaram sozinhas.
-  Não importar planilha do UpSeller antes de ler a 1ª rodada da reconciliação.
+  A última planilha do UpSeller é de 24/09: a venda da Shopee paga desde então só baixa quando o pedido é relido (D-495 b). O dono importa uma nova (20/10); o ajuste sai na conciliação das 06:00.
 - **O padrão do `gcloud` nesta máquina é `speedbikers-prod`.** Todo comando manual com
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
