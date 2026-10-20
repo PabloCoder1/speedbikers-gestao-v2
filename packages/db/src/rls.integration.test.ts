@@ -328,6 +328,8 @@ describe("catálogo de métricas", () => {
       // D-436 (METRICS 5T): o consolidado entre marketplaces.
       "multicanal_compras",
       "multicanal_receita_bruta",
+      // D-603: a taxa de cancelamento por compra.
+      "multicanal_taxa_cancelamento",
       "multicanal_ticket_medio",
       "multicanal_unidades",
       "nivel_anomalia_frete",
@@ -4472,7 +4474,7 @@ describe("vendas por marketplace e o consolidado (D-436)", () => {
     ]);
   });
 
-  it("as quatro métricas do consolidado estão no espelho de METRICS (5T)", async () => {
+  it("as métricas do consolidado estão no espelho de METRICS (5T), com a taxa por compra da D-603", async () => {
     const { rows } = await client.query<{ id: string }>(
       "select id from public.metric_definitions where id like 'multicanal_%' order by id",
     );
@@ -4480,6 +4482,7 @@ describe("vendas por marketplace e o consolidado (D-436)", () => {
     expect(rows.map((r) => r.id)).toEqual([
       "multicanal_compras",
       "multicanal_receita_bruta",
+      "multicanal_taxa_cancelamento",
       "multicanal_ticket_medio",
       "multicanal_unidades",
     ]);

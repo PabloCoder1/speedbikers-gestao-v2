@@ -17631,6 +17631,7 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
    - 90 dias levam 171 ms quentes. A primeira leitura fria levou 4,2 s, com cerca de 2 mil paginas lidas do disco: o mesmo custo que a `/vendas` do ML ja paga em `get_sales_expanded_summary` (D-469).
    - A agregacao das compras passava do `work_mem` padrao em 90 dias e ia ao disco: a funcao leva `set work_mem = '32MB'`, como a D-499.
    - Indice de cobertura em `orders`: candidato, nao feito. O `orders` e muito atualizado, e a leitura so do indice nao e garantida.
+6. **O catalogo:** `multicanal_taxa_cancelamento` entra em `metric_definitions` na mesma migration (achado do A2 antes do merge: a celula da faixa so aponta para id catalogado). O "hoje" usa os ids do C-53 (`multicanal_receita_bruta`, `_compras`, `_unidades`): a semantica e a mesma, so o dia ao vivo.
 
 **Verificacao:**
 - **Integracao:** 7 testes.

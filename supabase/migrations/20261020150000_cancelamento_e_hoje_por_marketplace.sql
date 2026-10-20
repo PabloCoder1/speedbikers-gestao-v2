@@ -392,3 +392,19 @@ comment on function public.get_marketplace_sales_today(uuid, date, text[], uuid[
 
 revoke all on function public.get_marketplace_sales_today(uuid, date, text[], uuid[]) from public, anon;
 grant execute on function public.get_marketplace_sales_today(uuid, date, text[], uuid[]) to authenticated;
+
+-- ------------------------------------------------------------
+-- O espelho de docs/METRICS.md (secao 5T): a taxa por compra. O "hoje" usa
+-- os ids que ja existem (multicanal_receita_bruta, _compras, _unidades): a
+-- semantica e a do C-53, so o dia ao vivo.
+-- ------------------------------------------------------------
+insert into public.metric_definitions
+  (id, name, formula, source, granularities, inclusions, exclusions, cancellation_treatment, timezone, definition_updated_on)
+values
+  ('multicanal_taxa_cancelamento', 'Taxa de cancelamento por compra (todos os marketplaces)',
+   'compras canceladas / NULLIF(compras validas + compras canceladas, 0)',
+   'get_marketplace_sales_cancellations (orders do ML agrupados pela compra; situacao de shopee_orders, a de shopee_sales_orders)',
+   array['account', 'organization'],
+   'Por compra: o pack do ML (ou o pedido sem pack), valido se algum pedido vale (paid, partially_refunded) e cancelado se todos foram cancelados (cancelled, pending_cancel); o pedido da Shopee, pela situacao (CANCELADA inclui IN_CANCEL). Contas ML e lojas live ja lidas.',
+   'Loja de sandbox e loja nunca lida. Pedido nao pago ou em status intermediario nao entra em nenhum lado. Devolucao, reembolso e mediacao nao sao cancelamento (5C.3). Pode diferir de taxa_cancelamento (5C), que e por pedido do ML.',
+   'included', 'America/Sao_Paulo', date '2026-10-20');
