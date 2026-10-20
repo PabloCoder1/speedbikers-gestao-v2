@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **516** (D-001 a D-610).
+Decisões registradas: **517** (D-001 a D-610).
 
 ## Por domínio
 
@@ -163,7 +163,7 @@ Decisões registradas: **516** (D-001 a D-610).
 - **D-497** — A nota de venda de marketplace nao baixa o estoque pela importacao: o CFOP oficial e o intermediador da NF-e decidem, e a recusa tem codigo
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 
-### interface (68)
+### interface (69)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -232,6 +232,7 @@ Decisões registradas: **516** (D-001 a D-610).
 - **D-510** — Tela estreita: a Home e a sb-pair-grid deixam de rolar para o lado no celular, e as duas auditorias viram guarda de e2e
 - **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
+- **D-520** — As subtelas da Central pintam o titulo, as abas e os filtros antes da leitura lenta; so os numeros esperam
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 
 ### mercado-livre (90)

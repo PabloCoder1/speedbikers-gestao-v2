@@ -150,7 +150,10 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
    está, esqueleto do mesmo tamanho e o sim do dono da tela. **Lido em
    produção (D-514):** a `/vendas` foi a 960–1.460 ms nas três cargas
    completas depois da D-509; o LCP da Home é a chegada da "Atenção", não a
-   primeira pintura (§5).
+   primeira pintura (§5). **Subtelas da Central feitas (D-520):** em produtos,
+   frete e Ads, o título, as abas e os filtros pintam com as contas e a
+   organização, e só os números esperam a RPC; o título de ~2,1–3,6 s para
+   ~0,45 s com a RPC atrasada como em produção, os números no mesmo tempo, CLS 0.
 6. ~~Um giro só e a limpeza do CSS duplicado~~ — **feitos** (D-502, D-503).
 7. ~~**Acessibilidade dos compartilhados**~~ — **feita** (D-508): o "Pular
    para o conteúdo" e o h2 da `/acoes`; e a guarda de e2e, com a tela

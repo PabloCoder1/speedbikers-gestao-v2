@@ -17452,6 +17452,53 @@ Os paineis foram vistos nos tres estados, com fotos a 390 e 1440 px. A falha e a
 
 So web: sem migration, sem RPC e sem leitura nova.
 
+## D-520 - As subtelas da Central pintam o titulo, as abas e os filtros antes da leitura lenta; so os numeros esperam
+
+**Contexto:** a leitura de producao de 19/10 e 20/10 (`docs/UX_SYSTEM.md` §5) mostrou o mesmo padrao nas subtelas da Central:
+- em `/central/produtos`, LCP de 2,76 s com TTFB de 19 ms, e o elemento foi o resumo do ranking;
+- em `/central/frete`, o usuario interagiu antes de o conteudo chegar.
+
+Nas tres telas pesadas (produtos, frete e Ads), o titulo, as abas e os filtros ficavam dentro de um `Suspense` so, esperando a RPC mais lenta (`get_ranking_produtos`, `get_detector_frete`, `get_sinais_ads`). E o item 5 da fila da UX: streaming so onde a lentidao medida esta, com o esqueleto do mesmo tamanho e o sim do dono da tela. O A2 deu o sim em 20/10.
+
+**Decisao:**
+1. **O cabecalho pinta antes da leitura lenta:**
+   - o titulo, as abas e os filtros de conta e periodo dependem so das contas e da organizacao, que sao rapidas;
+   - os numeros esperam a RPC num `Suspense` com `CarregandoConteudo` sem o titulo (`comTitulo={false}`).
+2. **As mesmas leituras, com os mesmos argumentos:**
+   - no ranking, a leitura antecipada sem conta (D-518) continua igual, e com conta ela espera as contas para resolver o slug;
+   - no Ads, os limites saem junto com os sinais, porque dependem so da organizacao; antes esperavam a semana;
+   - o "quem paga" do frete continua com leitura propria.
+3. **O que vem da resposta fica dentro do `Suspense`** (o cuidado do A2):
+   - os filtros de nivel e de ordem, que mostram contagens da resposta;
+   - a janela do detector e a semana do Ads, que descem do subtitulo para a primeira linha do conteudo (`.sb-central-recorte`, mesma letra do subtitulo);
+   - o subtitulo do cabecalho fica com a frase fixa que as telas ja usavam nos estados de erro.
+4. **Falha, funcao ausente e formato desconhecido** ficam abaixo do cabecalho ja pintado, com o "Tentar de novo" na mesma URL do recorte.
+
+**Medido** (build local, 150 ms por chamada e a RPC atrasada como em producao: ranking 2,5 s, detector 3 s, sinais 1,5 s; mediana de 5 cargas completas antes e de 6 depois, 12 no ranking, a 1440 px):
+
+| tela | titulo e abas antes | depois | numeros antes | depois | CLS |
+|---|---|---|---|---|---|
+| `/central/produtos` | 2.929 ms | **442 ms** | 2.929 ms | 2.913 ms | 0 / 0 |
+| `/central/frete` | 3.593 ms | **447 ms** | 3.593 ms | 3.583 ms | 0-0,002 / 0-0,0007 |
+| `/central/ads` | 2.062 ms | **443 ms** | 2.062 ms | 2.053 ms | 0 / 0 |
+
+Os numeros chegam no mesmo tempo: o ganho e ver a tela, trocar de aba e mudar a conta ou o periodo ~2,5 s antes. O LCP so muda quando o conteudo e menor que o titulo: no Ads do seed (vazio), de 2.324 para 580 ms. Com dados de verdade, o LCP continua sendo o tempo da leitura, que e do A1.
+
+A primeira rodada deu o titulo do ranking entre 0,6 e 3 s. Era a primeira tela depois do login, junto com a pre-busca da sidebar no mesmo processo local; com outra ordem, ficou em 0,44 s em todas as cargas.
+
+**Verificacao:** `pnpm run check` (typecheck, lint e os testes da web). No banco isolado recriado do zero, com as migrations da `main` ate a D-495 (a):
+- o `central.spec`, a guarda de tela estreita e acessibilidade, o `web-vitals.spec` e o `troca-de-tela.spec`: 15 de 15;
+- o ensaio `loja-live`: 10 de 10.
+
+A medicao acima e as fotos a 1440 e 390 px das tres telas esperando a leitura (o cabecalho e as abas pintados, o esqueleto embaixo, nenhum numero) e prontas.
+
+**Impacto:**
+- telas: `apps/web/app/(app)/central/{produtos,frete,ads}/page.tsx`;
+- componentes e estilo: `apps/web/components/carregando.tsx` (`comTitulo`) e `apps/web/app/globals.css` (`.sb-central-recorte`);
+- docs.
+
+So web: sem migration, sem RPC e sem leitura nova.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.
