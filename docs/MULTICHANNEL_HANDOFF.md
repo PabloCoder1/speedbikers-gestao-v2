@@ -136,7 +136,7 @@
 - **Esperam o A1, na ordem dele (D-499 → D-497 (b) → D-495 → D-491):**
   - **D-495**, o estoque baixando a venda da Shopee (decisão do dono de 19/10): os rótulos dos tipos novos (`lib/movement-labels.ts` e `lib/movement-filters.ts`), a origem "Pedido Shopee" (`source_type` = `SHOPEE_ORDER`, `source_id` = `order_sn`, combinado com o A1) com o link para `/vendas/shopee?pedido=`, e a nota da `/estoque`. A tela entra junto da migration ou do worker, para ninguém ver o código cru. Os nomes dos tipos ainda não estão firmes.
   - **D-497 (b)**: a tela é a D-612 (em andamento, acima); a recusa aparece em `/notas-fiscais` e no detalhe, onde o worker a grava, e não em `/notas-fiscais/nova`.
-  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read`; a tela manda a loja só com valor e o botão de lote volta (D-604).
+  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read` (contrato C-69) — **em código e validada** (7 testes de integração, mutação), migration `20261020130000`; a tela manda a loja só com valor, e só depois da migration em produção, e o botão de lote volta (D-604).
 - **Pedem contrato novo do A1 e a escolha do dono** (ver "Decisões pendentes do dono", item 4):
   - `/vendas` no "Todos": marca, vendas de hoje e taxa de cancelamento. O C-53 não traz cancelamento nem marca, e a tela diz que são só do ML.
   - SKU: os pedidos da Shopee que contêm o SKU e o dia a dia por canal. O `get_shopee_orders` não filtra por SKU.
