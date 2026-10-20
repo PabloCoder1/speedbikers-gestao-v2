@@ -16,7 +16,9 @@ import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import {
   CANCELAMENTO_MULTICANAL,
+  NADA_SOMAVEL,
   POR_COMPRA,
+  RESERVA_POR_MARKETPLACE,
   celulaDeCancelamentoMulticanal,
   hojeDoRecorte,
   type Leitura,
@@ -209,6 +211,15 @@ export async function VendasMulticanal({
   const historicoCurto = temShopee && antesDoHistoricoShopee(anterior.from, hoje);
 
   const celulas = celulasDaFaixaMulticanal(total, totalAnterior);
+  /*
+    A FORMA DO QUE AINDA VAI CHEGAR (D-620, medido pelo A3). O C-70 tem as
+    regras de linha do C-53, já lido: sem TOTAL aqui, não haverá lá; com a
+    soma dos dois marketplaces aqui, a célula vai trazer a taxa de cada um; com
+    a da Shopee, o hoje vai dizer até quando a leu. O esqueleto reserva essa
+    forma, e a chegada não desloca a faixa nem o gráfico.
+  */
+  const somaveis = grupos.filter((grupo) => grupo.soma !== null).map((grupo) => grupo.marketplace);
+  const formaDoHoje: FormaDoHoje = total === null ? "vazio" : somaveis.includes("SHOPEE") ? "com-shopee" : "ml";
 
   // Os pedidos da Shopee levam o período (a URL do ML tem só ele); o `marketplace=ml` fica para trás (D-488).
   const doPeriodo = new URL(hrefDeVendas(recorte, { escopo: "ml" }), "http://local");
@@ -380,8 +391,9 @@ export async function VendasMulticanal({
                       <KpiCellCarregando
                         label={CANCELAMENTO_MULTICANAL.label}
                         metricId={CANCELAMENTO_MULTICANAL.metricId}
-                        ressalva={POR_COMPRA}
-                        comparacao={totalAnterior !== null}
+                        ressalva={total === null ? NADA_SOMAVEL : POR_COMPRA}
+                        {...(escopo === "todos" && somaveis.length > 1 ? { reserva: RESERVA_POR_MARKETPLACE } : {})}
+                        comparacao={total !== null && totalAnterior !== null}
                       />
                     }
                   >
@@ -392,7 +404,7 @@ export async function VendasMulticanal({
             ]}
           />
 
-          <Suspense fallback={<HojeCarregando />}>
+          <Suspense fallback={<HojeCarregando forma={formaDoHoje} escopo={escopo} />}>
             <LinhaDoHoje leitura={leituraDeHoje} escopo={escopo} />
           </Suspense>
 
@@ -575,8 +587,24 @@ async function CelulaDeCancelamento({
 const TITULO_DO_HOJE =
   "Números parciais: o dia só fecha à meia-noite (São Paulo) e não é comparável com períodos encerrados. O Mercado Livre é lido ao vivo dos pedidos; a Shopee, até a última leitura da loja.";
 
-/** O esqueleto da linha do hoje: a mesma linha, com o lugar dos números reservado (CLS 0). */
-function HojeCarregando(): ReactNode {
+/** A forma que a linha do hoje vai ter, prevista pelo C-53 já lido (as mesmas regras de linha do C-70). */
+type FormaDoHoje = "vazio" | "ml" | "com-shopee";
+
+/** Um pedaço do esqueleto: o texto com a forma do que vem, transparente e sem dado. */
+function Lugar({ children }: { children: string }): ReactNode {
+  return (
+    <span aria-hidden="true" className="sb-kpi-carregando">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * O esqueleto da linha do hoje, em pedaços como a pronta (medido pelo A3: a
+ * 390 px a linha quebra, e um bloco só não ocupava o mesmo que os pedaços).
+ * Com a Shopee lida, reserva também o "lida até".
+ */
+function HojeCarregando({ forma, escopo }: { forma: FormaDoHoje; escopo: EscopoMulticanal }): ReactNode {
   return (
     <div className="sb-hoje" aria-busy="true">
       <div className="sb-hoje-numeros">
@@ -586,9 +614,17 @@ function HojeCarregando(): ReactNode {
         <span className="sb-sr-only" role="status">
           Carregando as vendas de hoje…
         </span>
-        <strong aria-hidden="true" className="sb-kpi-carregando">
-          R$ 0.000,00 receita · 00 compras · 00 unidades
-        </strong>
+        {forma === "vazio" ? (
+          <Lugar>{NADA_SOMAVEL}</Lugar>
+        ) : (
+          <>
+            <Lugar>R$ 0.000,00 receita</Lugar>
+            <Lugar>00 compras</Lugar>
+            <Lugar>00 unidades</Lugar>
+            <Lugar>última venda 00/00/0000, 00:00</Lugar>
+            {forma === "com-shopee" && <Lugar>{`${escopo === "todos" ? "Shopee lida" : "lida"} até 00/00/0000, 00:00`}</Lugar>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -618,7 +654,7 @@ async function LinhaDoHoje({
 
         {dia.estado === "ausente" && <span>ainda não disponível neste ambiente</span>}
         {dia.estado === "falha" && <span>não foi possível ler agora ({dia.motivo})</span>}
-        {dia.estado === "nada-somavel" && <span>nenhuma conta com venda somável neste recorte</span>}
+        {dia.estado === "nada-somavel" && <span>{NADA_SOMAVEL}</span>}
 
         {dia.estado === "pronto" && (
           <>

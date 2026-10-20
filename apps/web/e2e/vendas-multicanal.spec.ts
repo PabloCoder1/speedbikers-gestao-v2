@@ -147,6 +147,8 @@ test("/vendas?marketplace=shopee: sem loja real lida, a faixa diz '—' e por qu
   // D-620: o cancelamento e o hoje dizem o mesmo porquê, sem 0%.
   await expect(page.locator(".sb-kpi[aria-busy='true']")).toHaveCount(0);
   expect(await valorDaFaixa(page, "multicanal_taxa_cancelamento")).toBe("—");
+  // O esqueleto reserva a mesma frase, transparente: espera a linha pronta antes de ler.
+  await expect(page.locator(".sb-hoje[aria-busy='true']")).toHaveCount(0);
   await expect(page.locator(".sb-hoje-numeros")).toContainText("nenhuma conta com venda somável neste recorte");
   await expect(page.getByText("nenhuma conta com venda somável neste recorte").first()).toBeVisible();
   await expect(page.getByText(/Nenhum dia com venda somável neste recorte/)).toBeVisible();

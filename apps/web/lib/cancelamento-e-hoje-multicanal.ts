@@ -77,6 +77,16 @@ export const CANCELAMENTO_MULTICANAL = {
  */
 export const POR_COMPRA = "Por compra: no Mercado Livre pode diferir da taxa por pedido do recorte Mercado Livre.";
 
+/**
+ * O lugar da taxa de cada marketplace no esqueleto da célula (D-620): a mesma
+ * forma do trecho que a célula pronta ganha no "Todos" com os dois. Medido
+ * pelo A3: sem a reserva, a célula crescia de 15 a 30 px ao chegar.
+ */
+export const RESERVA_POR_MARKETPLACE = " Mercado Livre 00,0% · Shopee 00,0%.";
+
+/** A frase de quando nada do recorte soma — a mesma das outras células da faixa. */
+export const NADA_SOMAVEL = "nenhuma conta com venda somável neste recorte";
+
 const ROTULO_CURTO: Readonly<Record<CodigoMarketplace, string>> = { ML: "Mercado Livre", SHOPEE: "Shopee" };
 
 /** A linha TOTAL e as de cada marketplace (ML primeiro). Só arrumação. */
@@ -118,7 +128,7 @@ export function celulaDeCancelamentoMulticanal(
   const { total, marketplaces } = linhasDoRecorte(atual.data);
 
   if (total === null) {
-    return { ...CANCELAMENTO_MULTICANAL, value: "—", previous: null, ressalva: "nenhuma conta com venda somável neste recorte" };
+    return { ...CANCELAMENTO_MULTICANAL, value: "—", previous: null, ressalva: NADA_SOMAVEL };
   }
 
   const porMarketplace =
