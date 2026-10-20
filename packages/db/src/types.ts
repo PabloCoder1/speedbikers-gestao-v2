@@ -8091,6 +8091,10 @@ export type Database = {
           occurred_at: string
           qty_delta: number
           reason: string
+          // D-495, migration 20261020120000: NULOS fora de SHOPEE_ORDER e sem o
+          // pedido (CORRECAO MANUAL: o gerador nao sabe que o left join anula).
+          shopee_order_day: string | null
+          shopee_shop_id: string | null
           sku: string
           sku_id: string
           sku_title: string
