@@ -18089,3 +18089,96 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-618 - O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
+
+**Contexto:** o dono escolheu em 20/10 o item 4 (b): a aba Vendas de `/skus/[id]` com a Shopee. Com loja Shopee, a aba já mostrava o total e uma linha por conta e loja (C-59, D-444), mas o dia a dia e os detalhes eram só do ML. O A2 pediu o C-10. O A1 o fez como o C-71 (D-607, #281, migration `20261020160000`):
+- `get_sku_sales_daily_by_marketplace`: uma linha por dia com venda em algum canal. Canal sem venda no dia é NULO, e a loja de teste fica fora;
+- `get_shopee_orders` com `p_sku_id`, que traz no fim `dia`, `unidades_do_sku` e `receita_do_sku`.
+
+O grão é o do C-59: o `sku_id` do item. O kit conta como o kit, e a página de um componente não vê a venda do kit que o contém. O A1 mediu em produção, como `authenticated`: 180 ms e 26 ms em 30 dias, no SKU que mais vende na Shopee.
+
+**Decisão:**
+1. **Dois painéis abaixo da seção entre marketplaces**, só com loja Shopee (a regra da D-444):
+   - **"Por dia, por canal"**:
+     - Mercado Livre, Shopee e o total do dia, cada um com a receita e as unidades;
+     - canal sem venda é "—", nunca zero;
+     - os itens da Shopee sem receita conhecida são ditos;
+     - a ordem é a do "Por dia" do ML, do mais antigo ao mais novo.
+   - **"Pedidos da Shopee com este produto"**:
+     - pedido, loja (com "Teste" e "fora das somas" na de sandbox), dia, situação, e as unidades e a receita só deste produto;
+     - a receita desconhecida (item de preço 0) é "—, sem receita conhecida";
+     - 20 por página (`?aba=vendas&pedidos=N`, por `LinkDeFiltro`);
+     - "Abrir pedido" leva à `/vendas/shopee` na loja e no dia dele.
+2. **O "Por dia" do ML continua em "No Mercado Livre"**, porque pedidos e compras são do ML.
+3. **O link do pedido Shopee num lugar só:** `hrefDoPedidoShopee` (`lib/shopee-sales.ts`) serve a D-614 (movimentações) e esta. A regra é a mesma: sem a loja ou com dia fora do formato, a referência fica texto.
+4. **As leituras não seguram a aba.** Cada uma começa junto com as outras, com `.catch`, e é aguardada no seu `Suspense` com o `CarregandoBloco`. A falha e a função ausente ficam no painel, com o "Tentar de novo" na mesma URL. `p_sku_id` vai sempre com valor.
+5. **Os painéis ficam logo abaixo da seção entre marketplaces**, onde a Shopee do produto é procurada, e não depois do detalhe do ML. O A3 mediu que, com as duas leituras 3 s mais lentas, o "No Mercado Livre" desce quando elas chegam, abaixo da dobra (CLS 0). Em produção elas levam 180 e 26 ms (A1), e chegam antes de alguém rolar. Se um dia pesarem, a saída é reservar a altura da página cheia de pedidos.
+
+**Publicação:** só a web, **depois da migration `20261020160000` em produção** (o mesmo run das do C-70 e do C-72, o A1 avisa). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/sku-shopee.test.ts` (6), com a página da URL, o endereço da página e o link do pedido sem loja ou com dia inválido. Os da D-614 (`movement-labels.test.ts`) passam com o helper novo.
+- **e2e:**
+  - no seed, só com a loja de teste:
+    - o dia a dia por canal tem os dois dias do ML, com as unidades do seed, e a Shopee "—";
+    - os pedidos da loja de teste aparecem marcados, o cancelado como "Cancelada" e o bundle de preço 0 como "sem receita conhecida";
+    - o pedido sem o produto não entra, e o "Abrir pedido" leva à `/vendas/shopee` no dia dele;
+  - no ensaio da loja live:
+    - 10 dias, um com 2 un e R$ 200;
+    - os 12 pedidos com o produto, 1 un e R$ 100 cada, o cancelado marcado, e o link do pedido;
+  - os localizadores antigos que casavam por trecho com os painéis novos ficaram exatos: o "Por dia" do `sku-dashboard` e a linha da loja no ensaio.
+- **Medida do A3** (build local, 150 ms por leitura, as duas do C-71 3 s mais lentas): o cabeçalho, as abas e as seções de sempre em ~0,62–0,64 s, como no normal; os painéis em ~3,6 s e ~3,9 s, cada um no seu lugar; CLS 0 a 1440 e a 390, sem rolagem lateral da página.
+- **Suíte inteira:** **273/273** com o banco recriado do zero, junto com a D-620 (257 na 3300, os 13 do ensaio da loja live e os 3 de convite na 3000)..
+
+**Impacto:**
+- web:
+  - `apps/web/app/(app)/skus/[skuId]/{page.tsx,shopee-do-sku.tsx}`;
+  - `apps/web/lib/{sku-shopee.ts,sku-shopee.test.ts,shopee-sales.ts,movement-labels.ts}`;
+- e2e: `vendas-por-sku-multicanal.spec.ts`, `ensaio-loja-live.spec.ts` e `sku-dashboard.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-620 - O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
+
+**Contexto:** o "Todos" e a Shopee de `/vendas` diziam que "marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre". O dono escolheu em 20/10 as opções do item 4. A tela do SKU (b) ficou primeiro nas telas, mas o C-70 do A1 (D-603, #280, migration `20261020150000`) chegou antes:
+- `get_marketplace_sales_cancellations`: a taxa **por compra** (o pack do ML, cancelado só se todos os pedidos foram; o pedido da Shopee pela situação);
+- `get_marketplace_sales_today`: o dia ao vivo, com o `lido_ate` da loja Shopee mais atrasada.
+As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamento em 4,2 s a frio em 90 dias (171 ms quente); o hoje não foi medido a frio.
+
+**Decisão:**
+1. **A 5ª célula da faixa é a taxa de cancelamento** (`multicanal_taxa_cancelamento`, catalogada pelo A1 a pedido do A2):
+   - o valor é a taxa do TOTAL e o anterior é a do período anterior;
+   - a ressalva diz "por compra", porque no ML pode diferir da taxa por pedido do recorte Mercado Livre;
+   - no "Todos" com os dois marketplaces, a ressalva traz a taxa de cada um, já calculada no SQL.
+2. **Nenhuma das leituras segura a tela** (o desenho da D-509, combinado com o A3):
+   - o cancelamento atual, o anterior e o hoje começam junto com as outras leituras, com `.catch`;
+   - cada um é aguardado só no seu `Suspense`.
+3. **Os esqueletos têm a forma da chegada**, prevista pelo C-53 já lido, que tem as mesmas regras de linha do C-70. Medido pelo A3:
+   - a célula usa o `KpiCellCarregando` com a ressalva fixa e, no "Todos" com os dois marketplaces somáveis, a `reserva` (prop nova, com o sim do A3) da taxa de cada um. Sem ela, a célula crescia de 15 a 30 px ao chegar;
+   - o hoje usa um esqueleto em pedaços, como a linha pronta: o número em `strong`, a legenda como texto e, com a Shopee lida, o "lida até";
+   - sem nada somável, os dois esqueletos já dizem a frase do vazio.
+4. **O hoje em uma linha**, como a do ML (D-356): receita, compras, unidades e a última venda. A Shopee diz "lida até", porque o ML é ao vivo e ela não. O "lido até" aparece só na linha da Shopee, nunca como frescor do total.
+5. **Ausência e falha são ditas, nunca zero:**
+   - sem nada somável: "nenhuma conta com venda somável neste recorte";
+   - taxa nula: "Nenhuma compra no período";
+   - falha do período atual: "não foi possível ler agora (motivo)";
+   - falha só do anterior: a comparação omitida e dita;
+   - função ausente (PGRST202): "ainda não disponível neste ambiente".
+6. **A nota do que falta** diz só a marca: a D-605 do A1 vem depois do C-71.
+
+**Publicação:** só a web, no mesmo PR da D-618, **depois da migration `20261020150000` em produção**. Ela vai no mesmo run da `20261020160000` (C-71) e da `20261020170000` (C-72), e o A1 avisa. Antes dela, a célula e a linha diriam "ainda não disponível neste ambiente", mas a tela não vai à produção antes. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/cancelamento-e-hoje-multicanal.test.ts` (14), com a taxa por marketplace, a nula, a falha atual e a anterior, a função ausente e os estados do hoje;
+- **e2e:**
+  - em `vendas-multicanal`, o hoje do "Todos" igual ao do ML com só a loja de teste; a 5ª célula por compra; a Shopee sem loja lida com "—" e o porquê;
+  - no ensaio da loja live, a Shopee com 8,3% (1 cancelado em 12) na ressalva, o "Shopee lida até", e uma venda paga agora somando exatamente R$ 100 e 1 compra ao hoje;
+- **Medida do A3** (build local, as leituras 3 s mais lentas, como a fria): a faixa e o gráfico em ~0,9–1,1 s e o cancelamento em ~3,6 s, no lugar dele. Com dois marketplaces de verdade no banco isolado, o esqueleto e a pronta têm a mesma altura: 176 = 176 (1440) e 236 = 236 (390). CLS 0.
+- **Suíte inteira:** **273/273** com o banco recriado do zero, junto com a D-618 (257 na 3300, os 13 do ensaio da loja live e os 3 de convite na 3000). Antes, sozinha, 270/271: a falha foi o logo do fornecedor (D-370), intermitente, que passou 3/3 sozinho num banco limpo..
+
+**Impacto:**
+- web: `apps/web/app/(app)/vendas/multicanal.tsx`, `apps/web/lib/cancelamento-e-hoje-multicanal.ts` (novo, com o teste) e a `reserva` de `apps/web/components/kpi-strip.tsx` (território do A3, com o sim dele);
+- e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
