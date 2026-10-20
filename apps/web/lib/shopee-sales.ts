@@ -21,6 +21,23 @@ import { DEFAULT_PERIOD_DAYS, resolvePeriodRange, type PeriodRange } from "./per
 
 export const SHOPEE_SALES_PATH = "/vendas/shopee";
 
+const DIA = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * O endereço de UM pedido em `/vendas/shopee`, como a Busca Universal o abre
+ * (D-467): a loja e o DIA DA CRIAÇÃO em São Paulo, porque a tela acha o pedido
+ * dentro do período. É o link das movimentações (D-614) e da aba Vendas do SKU
+ * (D-618). Sem a loja, ou com o dia fora do formato, `null`: a referência fica
+ * texto, nunca um link para lista vazia.
+ */
+export function hrefDoPedidoShopee(loja: string | null, dia: string | null, orderSn: string): string | null {
+  if (loja === null || dia === null || !DIA.test(dia) || orderSn.trim() === "") return null;
+
+  const busca = new URLSearchParams({ loja, from: dia, to: dia, pedido: orderSn });
+
+  return `${SHOPEE_SALES_PATH}?${busca.toString()}`;
+}
+
 /** 50 pedidos por página, fixo — a RPC aceita até 200. */
 export const SHOPEE_ORDERS_PAGE_SIZE = 50;
 

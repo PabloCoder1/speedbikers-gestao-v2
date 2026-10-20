@@ -1,3 +1,5 @@
+import { hrefDoPedidoShopee } from "./shopee-sales";
+
 /**
  * Vocabulário das Movimentações de estoque (D-167, trilha 5E) — o risco
  * nomeado do item é "IDs sem contexto": esta é a camada que traduz o ledger
@@ -115,13 +117,7 @@ export function movementSourceHref(
   if (sourceType === "PURCHASE_ORDER") return `/compras/${encodeURIComponent(sourceId)}`;
   if (sourceType === "DOCUMENT") return `/notas-fiscais/${encodeURIComponent(sourceId)}`;
 
-  if (sourceType === "SHOPEE_ORDER" && shopee.loja !== null && shopee.dia !== null && DIA.test(shopee.dia)) {
-    const busca = new URLSearchParams({ loja: shopee.loja, from: shopee.dia, to: shopee.dia, pedido: sourceId });
-
-    return `/vendas/shopee?${busca.toString()}`;
-  }
+  if (sourceType === "SHOPEE_ORDER") return hrefDoPedidoShopee(shopee.loja, shopee.dia, sourceId);
 
   return null;
 }
-
-const DIA = /^\d{4}-\d{2}-\d{2}$/u;

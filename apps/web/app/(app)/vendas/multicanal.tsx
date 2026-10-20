@@ -1,11 +1,11 @@
 import { previousBusinessDateRange, toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
 import { Icone } from "../../../components/icons";
-import { KpiStrip } from "../../../components/kpi-strip";
+import { KpiCell, KpiCellCarregando, KpiStrip } from "../../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO, type AcaoDoEstado } from "../../../components/estado-da-tela";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -14,6 +14,17 @@ import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import { StatePill } from "../../../components/state-pill";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import {
+  CANCELAMENTO_MULTICANAL,
+  NADA_SOMAVEL,
+  POR_COMPRA,
+  RESERVA_POR_MARKETPLACE,
+  celulaDeCancelamentoMulticanal,
+  hojeDoRecorte,
+  type Leitura,
+  type LinhaDeCancelamento,
+  type LinhaDeHoje,
+} from "../../../lib/cancelamento-e-hoje-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { MARKETPLACE_ROTULO } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
@@ -59,9 +70,10 @@ import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
  * aparecem só na linha do marketplace deles. A loja de teste e a loja nunca
  * lida aparecem só por conta, fora das somas. **A tela não soma nada.**
  *
- * O que ainda é só do Mercado Livre — marca, "hoje", ranking de produtos,
- * cancelamento — fica na tela do ML, e esta diz isso em vez de mostrar um
- * número que mistura canais ou de calar a ausência.
+ * O cancelamento e o "hoje" entre marketplaces vêm do C-70 (D-603, a tela é a
+ * D-620): a taxa POR COMPRA e o dia ao vivo, em leituras próprias que não
+ * seguram a tela. O que ainda é só do Mercado Livre — a marca — fica na tela
+ * do ML, e esta diz isso em vez de calar a ausência.
  */
 
 type Consulta = Record<string, string | string[] | undefined>;
@@ -125,6 +137,28 @@ export async function VendasMulticanal({
     p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
   };
 
+  /*
+    O CANCELAMENTO E O HOJE NÃO SEGURAM A TELA (D-620, o desenho da D-509).
+
+    A taxa por compra lê `orders` do período inteiro: o A1 mediu 4,2 s a frio
+    em 90 dias (171 ms quente). E alimenta UMA célula, a 5ª da faixa. O hoje
+    ao vivo não foi medido a frio. As três leituras começam agora, junto com
+    as outras, e são aguardadas só no `<Suspense>` de cada pedaço. O `.catch`
+    transforma em falha de leitura o que LANÇAR: a página pode falhar antes de
+    chegar ao `<Suspense>`, e a leitura não fica sem dono.
+  */
+  const cancelamentos: Promise<readonly [Leitura<LinhaDeCancelamento>, Leitura<LinhaDeCancelamento>]> = Promise.all([
+    supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
+    supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
+  ]).catch((erro: unknown) => {
+    const leitura: Leitura<LinhaDeCancelamento> = { data: null, error: { message: mensagemDe(erro) } };
+
+    return [leitura, leitura] as const;
+  });
+  const leituraDeHoje: Promise<Leitura<LinhaDeHoje>> = Promise.resolve(
+    supabase.rpc("get_marketplace_sales_today", { ...argumentos, p_date: hoje }),
+  ).catch((erro: unknown) => ({ data: null, error: { message: mensagemDe(erro) } }));
+
   // As cinco leituras em paralelo: o período e o anterior, resumo e série, e
   // o ranking de produtos (C-59, D-444) na ordem da métrica do gráfico.
   const ordem = ordemDoRanking(metrica);
@@ -177,6 +211,15 @@ export async function VendasMulticanal({
   const historicoCurto = temShopee && antesDoHistoricoShopee(anterior.from, hoje);
 
   const celulas = celulasDaFaixaMulticanal(total, totalAnterior);
+  /*
+    A FORMA DO QUE AINDA VAI CHEGAR (D-620, medido pelo A3). O C-70 tem as
+    regras de linha do C-53, já lido: sem TOTAL aqui, não haverá lá; com a
+    soma dos dois marketplaces aqui, a célula vai trazer a taxa de cada um; com
+    a da Shopee, o hoje vai dizer até quando a leu. O esqueleto reserva essa
+    forma, e a chegada não desloca a faixa nem o gráfico.
+  */
+  const somaveis = grupos.filter((grupo) => grupo.soma !== null).map((grupo) => grupo.marketplace);
+  const formaDoHoje: FormaDoHoje = total === null ? "vazio" : somaveis.includes("SHOPEE") ? "com-shopee" : "ml";
 
   // Os pedidos da Shopee levam o período (a URL do ML tem só ele); o `marketplace=ml` fica para trás (D-488).
   const doPeriodo = new URL(hrefDeVendas(recorte, { escopo: "ml" }), "http://local");
@@ -335,16 +378,44 @@ export async function VendasMulticanal({
 
       {erro === null && (
         <>
-          <KpiStrip ancora cells={celulas} />
+          <KpiStrip
+            ancora
+            cells={[
+              ...celulas,
+              // A 5ª célula chega depois, na posição dela (D-620, como a D-509 no ML).
+              {
+                chave: CANCELAMENTO_MULTICANAL.metricId,
+                tardia: (
+                  <Suspense
+                    fallback={
+                      <KpiCellCarregando
+                        label={CANCELAMENTO_MULTICANAL.label}
+                        metricId={CANCELAMENTO_MULTICANAL.metricId}
+                        ressalva={total === null ? NADA_SOMAVEL : POR_COMPRA}
+                        {...(escopo === "todos" && somaveis.length > 1 ? { reserva: RESERVA_POR_MARKETPLACE } : {})}
+                        comparacao={total !== null && totalAnterior !== null}
+                      />
+                    }
+                  >
+                    <CelulaDeCancelamento leitura={cancelamentos} escopo={escopo} />
+                  </Suspense>
+                ),
+              },
+            ]}
+          />
+
+          <Suspense fallback={<HojeCarregando forma={formaDoHoje} escopo={escopo} />}>
+            <LinhaDoHoje leitura={leituraDeHoje} escopo={escopo} />
+          </Suspense>
 
           {/*
-            O QUE ESTE RECORTE AINDA NÃO TEM, dito em vez de calado: marca,
-            "hoje" e cancelamento são do Mercado Livre até o cancelamento entrar
-            no consolidado. O ranking de produtos chegou com o grão de SKU da
-            Shopee (C-59, D-444).
+            O QUE ESTE RECORTE AINDA NÃO TEM, dito em vez de calado: a marca é do
+            Mercado Livre até entrar no consolidado (D-605 do A1). O cancelamento
+            e o hoje chegaram com o C-70 (D-620); o ranking de produtos, com o grão
+            de SKU da Shopee (C-59, D-444).
           */}
           <p role="note" className="sb-an-nota">
-            Marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre —{" "}
+            O filtro de marca ainda é só do Mercado Livre —{" "}
             <LinkDeFiltro href={hrefDeVendas(recorte, { escopo: "ml" })}>veja no recorte Mercado Livre</LinkDeFiltro>. A loja Shopee de
             teste nunca entra nas somas.
             {historicoCurto &&
@@ -492,6 +563,144 @@ export async function VendasMulticanal({
         </>
       )}
     </>
+  );
+}
+
+/** A mensagem do que lançou, para a falha de leitura dita na célula ou na linha. */
+function mensagemDe(erro: unknown): string {
+  return erro instanceof Error ? erro.message : String(erro);
+}
+
+/** A 5ª célula da faixa, quando o cancelamento chega (D-620): a forma toda em `celulaDeCancelamentoMulticanal`. */
+async function CelulaDeCancelamento({
+  leitura,
+  escopo,
+}: {
+  leitura: Promise<readonly [Leitura<LinhaDeCancelamento>, Leitura<LinhaDeCancelamento>]>;
+  escopo: EscopoMulticanal;
+}): Promise<ReactNode> {
+  const [atual, anterior] = await leitura;
+
+  return <KpiCell cell={celulaDeCancelamentoMulticanal(atual, anterior, escopo)} />;
+}
+
+const TITULO_DO_HOJE =
+  "Números parciais: o dia só fecha à meia-noite (São Paulo) e não é comparável com períodos encerrados. O Mercado Livre é lido ao vivo dos pedidos; a Shopee, até a última leitura da loja.";
+
+/** A forma que a linha do hoje vai ter, prevista pelo C-53 já lido (as mesmas regras de linha do C-70). */
+type FormaDoHoje = "vazio" | "ml" | "com-shopee";
+
+/** Um pedaço do esqueleto: o texto com a forma do que vem, transparente e sem dado. */
+function Lugar({ children }: { children: string }): ReactNode {
+  return (
+    <span aria-hidden="true" className="sb-kpi-carregando">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * O esqueleto da linha do hoje, em pedaços como a pronta (medido pelo A3: a
+ * 390 px a linha quebra, e um bloco só não ocupava o mesmo que os pedaços).
+ * Com a Shopee lida, reserva também o "lida até".
+ */
+function HojeCarregando({ forma, escopo }: { forma: FormaDoHoje; escopo: EscopoMulticanal }): ReactNode {
+  return (
+    <div className="sb-hoje" aria-busy="true">
+      <div className="sb-hoje-numeros">
+        <span className="sb-hoje-rotulo">
+          Hoje <span className="sb-hoje-parcial">parcial</span>
+        </span>
+        <span className="sb-sr-only" role="status">
+          Carregando as vendas de hoje…
+        </span>
+        {forma === "vazio" ? (
+          <Lugar>{NADA_SOMAVEL}</Lugar>
+        ) : (
+          <>
+            {/* Só o número no lugar, em `strong` como na pronta: é ele que define a altura da linha (A3). */}
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                R$ 0.000,00
+              </strong>{" "}
+              receita
+            </span>
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                00
+              </strong>{" "}
+              compras
+            </span>
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                00
+              </strong>{" "}
+              unidades
+            </span>
+            <Lugar>última venda 00/00/0000, 00:00</Lugar>
+            {forma === "com-shopee" && <Lugar>{`${escopo === "todos" ? "Shopee lida" : "lida"} até 00/00/0000, 00:00`}</Lugar>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * HOJE, EM UMA LINHA (D-620), como a do recorte do ML (D-356): receita,
+ * compras, unidades e a hora da última venda, do C-70 já somado no SQL. A
+ * Shopee diz até quando foi lida — o ML é ao vivo, ela não. Falha e função
+ * ausente ficam na linha, sem derrubar a tela; ausência nunca vira zero.
+ */
+async function LinhaDoHoje({
+  leitura,
+  escopo,
+}: {
+  leitura: Promise<Leitura<LinhaDeHoje>>;
+  escopo: EscopoMulticanal;
+}): Promise<ReactNode> {
+  const dia = hojeDoRecorte(await leitura);
+
+  return (
+    <div className="sb-hoje">
+      <div className="sb-hoje-numeros" title={TITULO_DO_HOJE}>
+        <span className="sb-hoje-rotulo">
+          Hoje <span className="sb-hoje-parcial">parcial</span>
+        </span>
+
+        {dia.estado === "ausente" && <span>ainda não disponível neste ambiente</span>}
+        {dia.estado === "falha" && <span>não foi possível ler agora ({dia.motivo})</span>}
+        {dia.estado === "nada-somavel" && <span>{NADA_SOMAVEL}</span>}
+
+        {dia.estado === "pronto" && (
+          <>
+            <span>
+              <strong>{valorOuTraco(dia.total.receita_bruta, formatCurrency)}</strong> receita
+              {(dia.total.pedidos_sem_receita ?? 0) > 0 &&
+                ` (${formatCount(dia.total.pedidos_sem_receita ?? 0)} pedidos Shopee sem receita conhecida, fora da soma)`}
+            </span>
+            <span>
+              <strong>{valorOuTraco(dia.total.compras, formatCount)}</strong> compras
+            </span>
+            <span>
+              <strong>{valorOuTraco(dia.total.unidades, formatCount)}</strong> unidades
+            </span>
+            <span>
+              {dia.total.ultimo_pedido_em === null
+                ? "nenhuma venda até agora"
+                : `última venda ${formatDateTime(dia.total.ultimo_pedido_em)}`}
+            </span>
+            {dia.shopee !== null && (
+              <span>
+                {dia.shopee.lido_ate === null
+                  ? "alguma loja Shopee ainda não foi lida"
+                  : `${escopo === "todos" ? "Shopee lida" : "lida"} até ${formatDateTime(dia.shopee.lido_ate)}`}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
