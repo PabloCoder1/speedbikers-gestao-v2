@@ -133,7 +133,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- **D-618 e D-620, num PR só** (as duas esperam o mesmo run de produção): **em código e validadas**; o PR entra **depois** das migrations `20261020150000` (C-70) e `20261020160000` (C-71) em produção, que vão no run da `20261020170000` (C-72), o A1 avisa.
+- **D-618 e D-620, num PR só (#284): em código e validadas.** As migrations `20261020150000` (C-70), `20261020160000` (C-71) e `20261020170000` (C-72) estão em produção desde 20/10, 19:09 UTC (run `39478711110`, conferidas pelo A1 como `authenticated`). O merge espera só o `origem` do run da `20261020180000` (D-609, A1), para não pôr commit na ponta antes da trava.
   - D-618, o SKU com a Shopee (a escolha do dono em 20/10, item 4 (b), o C-10 que o A1 fez como o C-71, D-607): na aba Vendas de `/skus/[id]`, os painéis "Por dia, por canal" e "Pedidos da Shopee com este produto" (20 por página, o "Abrir pedido" pelo `hrefDoPedidoShopee`, o mesmo da D-614). O kit: o grão é o `sku_id` do item, como no C-59.
   - D-620, o cancelamento e o hoje no "Todos" e na Shopee de `/vendas` (o C-70, D-603): a 5ª célula da faixa, por compra, com a taxa de cada marketplace na ressalva, e a linha do hoje com o "Shopee lida até", cada uma no seu `Suspense`. Os esqueletos têm a forma da chegada (a `reserva` do `KpiCellCarregando`, com o sim do A3), e o A3 mediu CLS 0 com os dois marketplaces.
 - A conferência da D-614 em produção: os dados estão conferidos pelo A1 em 20/10, como `authenticated` e só com agregados: todo movimento `SHOPEE_ORDER` traz `shopee_shop_id` e `shopee_order_day` (logo, o link do pedido); só há `VENDA_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE`; nenhum estorno sem a sua venda. Falta a olhada do dono na tela de produção (`/estoque/movimentacoes` com a origem "Pedido Shopee"): o A2 não entra com conta real.
@@ -144,7 +144,7 @@
   - **D-495 (b)** (C-68, no ar desde 14:22 UTC): o banco foi conferido. Todo movimento da Shopee tem a loja e o dia do link, e todo estorno do armazém tem a sua venda. Falta a conferência visual da `/estoque/movimentacoes` pelo dono.
 - **As outras opções do item 4** (o dono escolheu o SKU primeiro nas telas, em 20/10; o A1 tem as três):
   - `/vendas` no "Todos", a marca: o C-72 do A1 (D-605, #282), com `p_supplier_brand` e `p_sem_marca` nas quatro funções do "Todos". A tela é a próxima fatia do A2, depois da D-618 e da D-620 no ar, mandando o recorte só com valor (sob marca, compras, ticket e cancelamento são NULOS, como no ML, D-237).
-  - Central de Ações: nenhum detector gera ação da Shopee; o A1 faz depois da marca.
+  - Central de Ações: os quatro detectores da Shopee, na ordem do dono (vendendo sem vínculo, ruptura no anúncio, prejuízo por produto e divergência de estoque). O primeiro é a D-609 do A1 (C-73, na `main` pelo #283; a migration `20261020180000` sobe com o worker). A tela é do A2: o rótulo do tipo, o atalho para `/anuncios/shopee` e o nome da loja na fila, depois do contrato e da migration em produção.
 - **Sem fonte hoje:** o histórico de preço da Shopee (`/precos`), o chat da Shopee (`/atendimento`) e a Shopee nas ferramentas do Copiloto.
 
 **Bloqueios**
