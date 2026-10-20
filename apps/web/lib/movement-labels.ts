@@ -6,7 +6,7 @@
  * `describeActionEvidence`).
  */
 
-/** Os 16 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12; o 13º e o 14º em D-351, o 15º em D-375, o 16º em D-352). */
+/** Os 19 tipos aprovados do CHECK de `stock_movements` (ARCHITECTURE §12; o 13º e o 14º em D-351, o 15º em D-375, o 16º em D-352, do 17º ao 19º na D-495 b). */
 const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   ENTRADA_NFE: "Entrada por NF-e",
   SAIDA_NFE: "Saída por NF-e",
@@ -35,6 +35,13 @@ const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   // D-352: a venda que o Mercado Livre despachou do galpão dele — a unidade
   // nunca foi da loja, e o par anula a baixa.
   ESTORNO_FULL: "Estorno de venda entregue pelo Full (Mercado Livre)",
+  // D-495 (b), C-68: a venda paga de loja Shopee live baixa no pagamento, e o
+  // cancelamento final depois do corte da planilha repõe uma vez. A venda que
+  // saiu do armazém da Shopee ganha o par, como o Full. O estorno do corte é o
+  // mesmo `ESTORNO_PRE_CAPTURA` do ML.
+  VENDA_SHOPEE: "Venda Shopee",
+  CANCELAMENTO_SHOPEE: "Cancelamento Shopee",
+  ESTORNO_ARMAZEM_SHOPEE: "Estorno de venda entregue pelo armazém da Shopee",
 };
 
 const LOCATION_LABELS: Readonly<Record<string, string>> = {
@@ -50,6 +57,9 @@ const SOURCE_TYPE_LABELS: Readonly<Record<string, string>> = {
   CLAIM: "Reclamação/Devolução",
   DOCUMENT: "NF-e",
   PURCHASE_ORDER: "Pedido de compra",
+  // D-495 (b), C-68: o pedido da Shopee (`source_id` = `order_sn`). Nunca
+  // `ORDER`, que é "Pedido ML".
+  SHOPEE_ORDER: "Pedido Shopee",
 };
 
 export function movementTypeLabel(type: string): string {
@@ -88,12 +98,30 @@ export function formatQtyDelta(delta: number): string {
  * `PURCHASE_ORDER` grava `po.id` (20260823160629) e `DOCUMENT` grava
  * `documents.id` (`nfe-import-apply.ts`). Pedido do ML e reconciliação não têm
  * tela própria — ficam texto.
+ *
+ * D-614: o pedido da Shopee abre em `/vendas/shopee`, filtrado como a Busca
+ * Universal o abre (D-467): a loja e o DIA DA CRIAÇÃO em São Paulo, porque a
+ * tela acha o pedido dentro do período. As duas vêm do `get_stock_movements`
+ * (C-68); sem elas — pedido apagado, ou banco anterior à migration —, a
+ * referência fica texto, nunca um link para lista vazia.
  */
-export function movementSourceHref(sourceType: string | null, sourceId: string | null): string | null {
+export function movementSourceHref(
+  sourceType: string | null,
+  sourceId: string | null,
+  shopee: { readonly loja: string | null; readonly dia: string | null } = { loja: null, dia: null },
+): string | null {
   if (sourceId === null || sourceId.trim() === "") return null;
 
   if (sourceType === "PURCHASE_ORDER") return `/compras/${encodeURIComponent(sourceId)}`;
   if (sourceType === "DOCUMENT") return `/notas-fiscais/${encodeURIComponent(sourceId)}`;
 
+  if (sourceType === "SHOPEE_ORDER" && shopee.loja !== null && shopee.dia !== null && DIA.test(shopee.dia)) {
+    const busca = new URLSearchParams({ loja: shopee.loja, from: shopee.dia, to: shopee.dia, pedido: sourceId });
+
+    return `/vendas/shopee?${busca.toString()}`;
+  }
+
   return null;
 }
+
+const DIA = /^\d{4}-\d{2}-\d{2}$/u;

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **518** (D-001 a D-612).
+Decisões registradas: **519** (D-001 a D-614).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **518** (D-001 a D-612).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 
-### estoque (37)
+### estoque (38)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -162,6 +162,7 @@ Decisões registradas: **518** (D-001 a D-612).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-497** — A nota de venda de marketplace nao baixa o estoque pela importacao: o CFOP oficial e o intermediador da NF-e decidem, e a recusa tem codigo
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
+- **D-614** — A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 
 ### interface (68)
 
