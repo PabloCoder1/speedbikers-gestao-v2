@@ -17606,6 +17606,52 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-603 - O cancelamento por compra e o "hoje" ao vivo no "Todos" de /vendas: duas funcoes novas ao lado do C-53 (C-70)
+
+**Contexto:** escolha do dono de 20/10 no item 4 das decisoes pendentes (as tres opcoes). Esta e a parte (a1) da opcao (a): no "Todos" de `/vendas`, a taxa de cancelamento e as vendas de hoje eram so do Mercado Livre, e a tela dizia isso. A marca (a2) e a D-605.
+
+**Decisao:**
+1. **Duas funcoes novas, e o C-53 nao muda.** A Home, o export e a `/vendas` continuam lendo `get_marketplace_sales_summary` como antes. O cancelamento le `orders` inteiro na janela, e a Home, que nao o mostra, nao paga essa leitura.
+2. **`get_marketplace_sales_cancellations`: a taxa POR COMPRA**, a unidade que soma entre os canais (5T).
+   - No ML, a compra e o pack (ou o pedido sem pack), com os pedidos da janela de `orders.date_created`, a mesma de `get_sales_expanded_summary`.
+   - A compra e VALIDA se algum pedido dela vale (`paid`, `partially_refunded`) e CANCELADA se todos foram cancelados (`cancelled`, `pending_cancel`, como a 5C). O pack com um item cancelado e outro valido e compra valida: o cliente comprou.
+   - Na Shopee, o pedido, pela situacao de `shopee_sales_orders` (CANCELADA ja inclui `IN_CANCEL`), lida em `shopee_orders` com a mesma expressao: a view montaria os itens de cada pedido sem precisar. O teste prova a igualdade.
+   - **Taxa** = canceladas / (validas + canceladas). A do ML aqui e por compra e pode diferir da tela do ML, que e por pedido (5C).
+3. **`get_marketplace_sales_today`: o dia AO VIVO**, e nao o agregado diario recalculado do C-53.
+   - O ML vem dos pedidos validos do dia em `orders`, com as definicoes de `get_sales_today_summary`, provadas iguais no teste.
+   - A Shopee vem das vendas validas do dia, com `lido_ate` = `orders_synced_until`, porque a Shopee e lida a cada 5 minutos e nao por webhook.
+   - `ultimo_pedido_em` e a venda mais recente. No MARKETPLACE e no TOTAL, o `lido_ate` e o elo mais fraco.
+4. **As regras do C-53 valem nas duas:**
+   - TOTAL, MARKETPLACE e CONTA;
+   - a loja de teste so em CONTA, e a nunca lida NULA;
+   - sem loja live lida, sem linha da Shopee;
+   - `p_marketplaces` nulo = so ML;
+   - `security invoker`.
+5. **Desempenho (producao, como `authenticated`, a leitura de `orders` do cancelamento):**
+   - 90 dias levam 171 ms quentes. A primeira leitura fria levou 4,2 s, com cerca de 2 mil paginas lidas do disco: o mesmo custo que a `/vendas` do ML ja paga em `get_sales_expanded_summary` (D-469).
+   - A agregacao das compras passava do `work_mem` padrao em 90 dias e ia ao disco: a funcao leva `set work_mem = '32MB'`, como a D-499.
+   - Indice de cobertura em `orders`: candidato, nao feito. O `orders` e muito atualizado, e a leitura so do indice nao e garantida.
+6. **O catalogo:** `multicanal_taxa_cancelamento` entra em `metric_definitions` na mesma migration (achado do A2 antes do merge: a celula da faixa so aponta para id catalogado). O "hoje" usa os ids do C-53 (`multicanal_receita_bruta`, `_compras`, `_unidades`): a semantica e a mesma, so o dia ao vivo.
+
+**Verificacao:**
+- **Integracao:** 7 testes.
+  - O pack meio cancelado e compra valida, e o pack todo cancelado e cancelada (com `pending_cancel`). O aguardando pagamento fica de fora.
+  - A Shopee com `CANCELLED` e `IN_CANCEL`, e o nao pago de fora.
+  - O TOTAL, o MARKETPLACE e a CONTA; a loja de teste so em CONTA; a nunca lida NULA.
+  - A situacao igual a da view.
+  - Sem marketplace so o ML, e o periodo e o marketplace invalidos recusados.
+  - A permissao por conta e por loja.
+  - O hoje do ML igual a `get_sales_today_summary`, a Shopee com receita desconhecida a parte e o `lido_ate`, o TOTAL somado e o dia sem venda zero.
+  - O anon nao executa.
+- **Mutacao:** cada uma derruba testes.
+  - a compra cancelada quando QUALQUER pedido foi cancelado: 3;
+  - o hoje do ML contando cancelado: 1;
+  - a loja de teste nas somas: 1.
+
+**Publicacao:** a migration `20261020150000` vai a producao depois do merge. A tela (A2) chama as funcoes novas so depois da migration em producao, porque antes delas a chamada da PGRST202. Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020150000_cancelamento_e_hoje_por_marketplace.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
+
 ## D-604 - As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
 
 **Contexto:** desde a D-438, o evento da loja Shopee guarda a loja em `domain_events.shopee_shop_id` (nunca junto da conta do ML, pela check `domain_events_uma_origem`). Ele chega a quem alcança a loja, pela RLS de D-433. A `/notificacoes` recortava por conta do Mercado Livre (`ml_account_id`), mas não por loja. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "filtro e preferências por loja".
@@ -17686,6 +17732,45 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-607 - O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee com o SKU (C-71)
+
+**Contexto:** escolha do dono de 20/10 no item 4 (opcao b), com o desenho pedido pelo A2 para a aba Vendas de `/skus/[id]` (D-618). A aba ja tinha o total e uma linha por conta e loja (C-59, D-439), mas o dia a dia e os detalhes eram so do ML, e o `get_shopee_orders` nao filtrava por SKU.
+
+**Decisao:**
+1. **O grao e o do C-59:** o `sku_id` gravado no item. No ML, `daily_sku_metrics`; na Shopee, `shopee_sales_items` com a situacao VALIDA. **O kit conta como o kit:** a pagina de um componente nao ve a venda do kit que o contem, nos dois canais. E o que o C-59 ja mostra, e o A2 aceitou sem pedir contrato de componentes.
+2. **`get_sku_sales_daily_by_marketplace` (nova):** uma linha por dia com venda em algum canal, com o ML e a Shopee lado a lado e o total do dia somado no SQL.
+   - O canal sem venda no dia e NULO, nunca zero, e o dia sem venda nenhuma nao aparece.
+   - A loja de teste fica fora, como no TOTAL do C-59.
+   - A receita do dia e NULA quando nenhum lado tem receita conhecida (so itens Shopee de preco 0, contados em `itens_shopee_sem_receita`).
+3. **`get_shopee_orders` ganha `p_sku_id` NO FIM (nulo = a lista de hoje):**
+   - com valor, so os pedidos com algum item do SKU;
+   - tres colunas no fim: `dia` (a data do pedido em Sao Paulo, sempre preenchida, para o link da D-614), `unidades_do_sku` e `receita_do_sku` (somadas so nos itens do SKU; a receita NULA se algum item do SKU no pedido tem preco 0);
+   - o resto igual: todas as situacoes, a permissao por loja, paginas de ate 200 com `total_count`.
+   - Ela vira `plpgsql` com plano custom, porque o "nulo ou valor" de cada filtro degrada no plano generico (D-305, D-469). A faixa em `timestamptz`, equivalente ao `dia`, entra para o indice `(organization_id, shopee_created_at)` valer; o filtro pelo `dia` fica, como a regra.
+4. **Sem indice novo:** o `shopee_order_items_sku_idx` `(organization_id, sku_id)` ja serve as duas.
+
+**Verificacao:**
+- **Integracao:** 7 testes.
+  - O canal sem venda NULO; o dia so do ML; o dia so com item de preco 0 (receita NULA); o cancelado e a loja de teste fora; o SKU vizinho que nao conta.
+  - Os dois aceites do A2: a soma dos dias de cada canal igual as linhas CONTA do C-59; o ML de cada dia igual ao dia de `get_sku_sales_breakdown`; as unidades do SKU nos pedidos VALIDA da loja iguais as do C-59.
+  - Os pedidos com o SKU em todas as situacoes, com a receita NULA quando ha item de preco 0.
+  - Sem `p_sku_id`, a lista de sempre, com o `dia` preenchido e as colunas do SKU NULAS.
+  - A permissao por conta e por loja; a pagina com o `total_count` do recorte inteiro; o periodo invalido recusado; o anon sem acesso.
+  - Os testes vizinhos (D-430, D-467, D-439) seguem verdes.
+- **Mutacao:** cada uma derruba testes.
+  - a loja de teste no dia a dia: 2;
+  - a receita do SKU sem o preco 0: 1;
+  - sem o filtro do SKU: 2;
+  - o canal sem venda como zero: 2.
+- **Desempenho** (producao, como `authenticated`, 30 dias, o SKU que mais vende na Shopee):
+  - o dia a dia: 180 ms, com parte da leitura fria;
+  - os pedidos com o SKU: 26 ms;
+  - a lista de sempre, sem SKU: de 135-165 ms para 115-122 ms, com a faixa em `timestamptz`.
+
+**Publicacao:** a migration `20261020160000` vai a producao depois do merge. A tela (D-618, A2) manda `p_sku_id` so com valor e chama a funcao nova so depois da migration em producao, porque antes a chamada da PGRST202. Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020160000_sku_por_canal.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
 
 ## D-608 - O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 
