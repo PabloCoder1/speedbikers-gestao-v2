@@ -174,7 +174,8 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   await expect(linhaConta).toContainText(String(unidades));
 
   // Dois dias gravados, duas linhas por dia — e nenhum dia inventado com zero.
-  await expect(page.getByRole("heading", { name: "Por dia" })).toBeVisible();
+  // `exact`: o painel "Por dia, por canal" (D-618) também casa com "Por dia" por trecho.
+  await expect(page.getByRole("heading", { name: "Por dia", exact: true })).toBeVisible();
   const tabelaDias = page.getByRole("table").last();
   await expect(tabelaDias.getByRole("row")).toHaveCount(E2E_SKU_SALES.length + 1);
 });

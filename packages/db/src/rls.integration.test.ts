@@ -9767,6 +9767,26 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
     expect(Number(comFiltro[0]?.total)).toBeGreaterThan(0);
   });
 
+  it("D-615: o resumo, com o corpo próprio, é a contagem sobre get_stock_coverage — com e sem marca", async () => {
+    for (const marca of [null, "COVMARCA"]) {
+      const arg = marca === null ? "" : `,'${marca}'`;
+      const resumo = await asUser(
+        ADMIN_SB,
+        `select total, em_ruptura, virtuais, sem_cobertura from public.get_stock_coverage_summary('${ORG_SB}','${WINDOW_START}','${TODAY}'${arg})`,
+      );
+      const conta = await asUser(
+        ADMIN_SB,
+        `select count(*)::bigint as total,
+                count(*) filter (where is_ruptura)::bigint as em_ruptura,
+                count(*) filter (where stock_is_virtual)::bigint as virtuais,
+                count(*) filter (where days_of_coverage is null and not stock_is_virtual)::bigint as sem_cobertura
+           from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}',null${arg})`,
+      );
+
+      expect(resumo).toEqual(conta);
+    }
+  });
+
   it("a chamada POSICIONAL de 3 argumentos continua válida — o summary depende disso", async () => {
     // `get_stock_coverage_summary` chama `get_stock_coverage` com 3 argumentos.
     // Foi por quebrar exatamente isso que D-235 derrubou 6 testes; aqui o
@@ -22502,6 +22522,26 @@ describe("a marca no Todos de /vendas (D-605)", () => {
     );
 
     expect(sem.find((l) => l.nivel === "TOTAL")?.compras_canceladas).toBe("1");
+  });
+
+  it("D-613: o ranking com a marca escolhe só as linhas dos SKUs dela, e a linha não muda", async () => {
+    const ranking = (recorte: string) =>
+      asUser<{ sku_id: string | null; unidades: string; receita_bruta: string | null; compras: string; total_count: string }>(
+        ADMIN,
+        `select sku_id, unidades, receita_bruta, compras, total_count
+           from public.get_marketplace_sku_sales('${ORG}', '${DIA}', '${DIA}', array['ML','SHOPEE'], null${recorte === "" ? "" : `, ${recorte}`})
+          order by sku_id nulls last`,
+      );
+    const todos = await ranking("");
+    const daMarca = await ranking(recorteA);
+    const semMarcaLinhas = await ranking(semMarca);
+
+    expect(todos.map((l) => l.sku_id)).toEqual([skuA, skuB, skuSemMarca, null].sort((x, y) => (x === null ? 1 : y === null ? -1 : x.localeCompare(y))));
+    expect(daMarca).toEqual([{ ...todos.find((l) => l.sku_id === skuA), total_count: "1" }]);
+    expect(semMarcaLinhas.map((l) => l.sku_id).sort((x, y) => (x === null ? 1 : y === null ? -1 : x.localeCompare(y)))).toEqual(
+      [skuSemMarca, null],
+    );
+    expect(semMarcaLinhas.every((l) => l.total_count === "2")).toBe(true);
   });
 });
 

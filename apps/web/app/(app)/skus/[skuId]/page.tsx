@@ -54,6 +54,15 @@ import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
 import { VendasEntreMarketplaces } from "./vendas-entre-marketplaces";
+import { DiaADiaPorCanal, PedidosShopeeDoSku, type LeituraDoSku } from "./shopee-do-sku";
+import { CarregandoBloco } from "../../../../components/carregando";
+import {
+  PARAMETRO_DA_PAGINA,
+  PEDIDOS_DO_SKU_POR_PAGINA,
+  paginaDosPedidos,
+  type DiaDoSkuPorCanal,
+  type PedidoShopeeDoSku,
+} from "../../../../lib/sku-shopee";
 import { SeloCurvaAbc, type LeituraCurvaAbc } from "./selo-curva-abc";
 import { contarLojasShopee } from "../../../../lib/marketplace";
 import { lastBusinessDays } from "../../../../lib/business-window";
@@ -346,6 +355,42 @@ export default async function SkuDashboardPage({
       })
       .maybeSingle(),
   ).catch((error: unknown) => ({ data: null, error: error ?? new Error("a leitura da curva ABC falhou") }));
+
+  /*
+    O SKU COM A SHOPEE (D-618, C-71): o dia a dia por canal e os pedidos da
+    Shopee com o SKU, só na aba Vendas. Começam com as outras e são aguardadas
+    cada uma no seu `<Suspense>`, para a aba pintar sem elas; o `.catch`, como
+    na curva acima, faz do que lançar uma falha de leitura dita no painel. Sem
+    loja Shopee os painéis não aparecem e ninguém espera por elas — por isso
+    também o `.catch`. `p_sku_id` vai sempre com valor (o C-71).
+  */
+  const paginaPedidosShopee = paginaDosPedidos(query[PARAMETRO_DA_PAGINA]);
+  const falhaDoSku = (erro: unknown): { data: null; error: { message: string } } => ({
+    data: null,
+    error: { message: erro instanceof Error ? erro.message : String(erro) },
+  });
+  const diaADiaPorCanal: Promise<LeituraDoSku<DiaDoSkuPorCanal>> = needsSales
+    ? Promise.resolve(
+        supabase.rpc("get_sku_sales_daily_by_marketplace", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+        }),
+      ).catch(falhaDoSku)
+    : Promise.resolve({ data: null, error: null });
+  const pedidosShopeeDoSku: Promise<LeituraDoSku<PedidoShopeeDoSku>> = needsSales
+    ? Promise.resolve(
+        supabase.rpc("get_shopee_orders", {
+          p_organization_id: sku.data.organization_id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+          p_sku_id: sku.data.id,
+          p_limit: PEDIDOS_DO_SKU_POR_PAGINA,
+          p_offset: (paginaPedidosShopee - 1) * PEDIDOS_DO_SKU_POR_PAGINA,
+        }),
+      ).catch(falhaDoSku)
+    : Promise.resolve({ data: null, error: null });
 
   const [
     dashboardResult,
@@ -1035,12 +1080,33 @@ export default async function SkuDashboardPage({
       {tab === "vendas" && (
         <>
           {lojasShopee !== null && lojasShopee > 0 && (
-            <VendasEntreMarketplaces
-              linhas={vendasPorContaResult.data ?? []}
-              erro={vendasPorContaResult.error}
-              dias={LOOKBACK_DAYS}
-              tentarDeNovo={tentarDeNovo.href}
-            />
+            <>
+              <VendasEntreMarketplaces
+                linhas={vendasPorContaResult.data ?? []}
+                erro={vendasPorContaResult.error}
+                dias={LOOKBACK_DAYS}
+                tentarDeNovo={tentarDeNovo.href}
+              />
+
+              {/* D-618: o dia a dia por canal e os pedidos da Shopee com o SKU, cada um no seu Suspense. */}
+              <div className="sb-skud-mt3">
+                <Suspense fallback={<CarregandoBloco rotulo="o dia a dia por canal" />}>
+                  <DiaADiaPorCanal leitura={diaADiaPorCanal} dias={LOOKBACK_DAYS} tentarDeNovo={tentarDeNovo.href} />
+                </Suspense>
+              </div>
+
+              <div className="sb-skud-mt3 sb-skud-mb3">
+                <Suspense fallback={<CarregandoBloco rotulo="os pedidos da Shopee com este produto" />}>
+                  <PedidosShopeeDoSku
+                    leitura={pedidosShopeeDoSku}
+                    skuId={skuId}
+                    pagina={paginaPedidosShopee}
+                    dias={LOOKBACK_DAYS}
+                    tentarDeNovo={tentarDeNovo.href}
+                  />
+                </Suspense>
+              </div>
+            </>
           )}
 
           <div className="sb-section-label sb-skud-mt0">

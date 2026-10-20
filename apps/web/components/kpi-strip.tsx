@@ -180,6 +180,7 @@ export function KpiCellCarregando({
   label,
   metricId,
   ressalva,
+  reserva,
   comparacao = true,
   modelo = "00,0%",
 }: {
@@ -187,6 +188,13 @@ export function KpiCellCarregando({
   metricId?: string;
   /** A ressalva da célula pronta, quando ela tem uma: é texto fixo, não dado. */
   ressalva?: string;
+  /**
+   * O lugar do trecho da ressalva que DEPENDE do dado, com a forma dele e
+   * transparente (D-620, a pedido do A3): a taxa de cada marketplace no "Todos"
+   * de `/vendas`. Sem ele, a célula pronta fica mais alta que o esqueleto e a
+   * faixa desloca o que vem abaixo.
+   */
+  reserva?: string;
   /** Sem comparação, a célula de verdade não tem a linha do período anterior. */
   comparacao?: boolean;
   /** Um valor com a forma do que vem ("00,0%", "R$ 00.000,00"), só para dar a largura do traço. */
@@ -206,7 +214,16 @@ export function KpiCellCarregando({
           período anterior: {modelo}
         </span>
       )}
-      {ressalva !== undefined && <span className="sb-kpi-note">{ressalva}</span>}
+      {ressalva !== undefined && (
+        <span className="sb-kpi-note">
+          {ressalva}
+          {reserva !== undefined && (
+            <span aria-hidden="true" className="sb-kpi-carregando">
+              {reserva}
+            </span>
+          )}
+        </span>
+      )}
       {metricId !== undefined && <span className="sb-kpi-id">{metricId}</span>}
     </div>
   );
