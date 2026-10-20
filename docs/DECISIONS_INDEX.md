@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **520** (D-001 a D-616).
+Decisões registradas: **521** (D-001 a D-616).
 
 ## Por domínio
 
@@ -469,7 +469,7 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-517** — A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
 - **D-612** — A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
 
-### worker/infra (91)
+### worker/infra (92)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -562,4 +562,5 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-511** — O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
 - **D-518** — A Central de Negocio, blocos 2 e 3: cada termo explicado a um toque, remover com confirmacao, limites agrupados e o nome fixo nas tabelas do celular
 - **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
+- **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 

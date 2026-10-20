@@ -17534,6 +17534,39 @@ So web: sem migration, sem RPC e sem leitura nova.
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-601 - O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
+
+**Contexto:** escolha do dono de 19/10: terminar a fila do A1 (D-499, D-497 b, D-495, D-491) e depois focar no TikTok Shop. A fila fechou em 20/10. O dono criou o app no Partner Center em 16/10, com a Redirect URL `/oauth/tiktok-shop/callback` e a Webhook URL `/push/tiktok-shop` da api de producao e o IP fixo de saida (D-457). As rotas nao existem.
+
+**Decisao:**
+1. **O desenho e o da Shopee (D-425), sem generalizar:** so leitura, tabelas proprias de loja, credencial cifrada e `state`, cliente proprio (`@sb/tiktok-shop`), interruptor por variavel (503 sem ela), e a leitura por janela de atualizacao com marco por loja (D-426). O ML e a Shopee nao mudam.
+2. **O contrato e o conferido, nao o lembrado:** a primeira fatia e `docs/TIKTOK_SHOP.md`. O Partner Center e renderizado por JavaScript; o texto vem da API de documentos que a propria pagina consome. Dois graus:
+   - CONFERIDO, lido na pagina oficial nesta sessao: a assinatura, a autorizacao, os pedidos, os webhooks, a loja de teste do Brasil e os campos do Brasil;
+   - DA DOC, levantado com a pagina citada e relido antes da fatia que o usa.
+   O que a doc nao confirma (§14) nao se implementa por suposicao.
+3. **Os achados que mudam o desenho:**
+   - o pedido tem UMA LINHA POR UNIDADE, sem campo de quantidade (o exemplo oficial de 5 produtos tem 5 linhas): a quantidade e a contagem de linhas por SKU;
+   - toda chamada de loja leva o `shop_cipher` de `GET /authorization/202309/shops`, e o webhook traz o `shop_id`: guardam-se os dois;
+   - o `grant_type` do token e `authorized_code` (nao o `authorization_code` do OAuth), e o `app_secret` vai na URL do token: essa URL nunca entra em log;
+   - o access token vale 7 dias; o refresh, a duracao que o vendedor escolheu;
+   - `FULFILLMENT_BY_TIKTOK` e o equivalente do Full; se existe no Brasil, confere-se na primeira leitura real, como na D-495;
+   - o webhook responde em ate 3 s, e retenta 4 vezes (2 min, 30 min, 3 h, 12 h), com entrega "pelo menos uma vez" e assinatura `HMAC-SHA256(app_secret, app_key + corpo bruto)` no cabecalho `Authorization`;
+   - existe loja de desenvolvimento local do Brasil, e antes do Publish so ela autoriza o app.
+4. **Nada do comprador:** o pedido do Brasil traz CPF e nome para a nota; a V3 nao os pede nem guarda (D-426).
+5. **A guarda da D-497:** quando a venda do TikTok baixar pelo pedido, a raiz do CNPJ do TikTok como intermediador entra em `INTERMEDIADORES_COM_BAIXA_PELO_PEDIDO`, lida numa NF-e real. Ate la, a nota do TikTok continua entrando.
+
+**Atos do dono antes da fatia 1:**
+- confirmar que o app e um custom app de seller developer, se ja foi publicado, e o `service_id`;
+- criar o App Key e o App Secret no Secret Manager;
+- pedir os escopos de leitura;
+- para o ensaio, criar uma loja de desenvolvimento local do Brasil.
+
+**Fatias:** 1 conexao; 2 renovacao e pedidos; 3 webhook; 4 financeiro; 5 catalogo e vinculo; 6 estoque (pede decisao do dono, como a D-495); 7 devolucoes; 8 canal nos relatorios e telas (A2, A3). O estado fica em `docs/TIKTOK_SHOP.md` §15.
+
+**Verificacao:** a documentacao oficial lida em 20/10. Os pontos CONFERIDOS foram relidos na pagina oficial nesta sessao: a assinatura (com o codigo oficial), o link e o token da autorizacao, a busca e os campos do pedido, os status, a linha por unidade, o webhook (assinatura, 3 s e retentativas), a loja de teste do Brasil e os campos do Brasil. Os dois exemplos oficiais de assinatura (chamada e webhook) foram recalculados e batem. Nenhum codigo, migration ou deploy.
+
+**Impacto:** `docs/{TIKTOK_SHOP,DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`, `AGENTS.md`.
+
 ## D-602 - O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 
 **Contexto:** a D-496 deu CSV à `/vendas` no "Todos" e na Shopee, pelo consolidado (C-53), e deixou o recorte do Mercado Livre de fora. A tela do ML tem filtros que o C-53 não conhece (conta única, marca e "sem marca", D-237), e um CSV pelo consolidado divergiria do que se vê. Era a última lacuna de exportação do inventário de `docs/MULTICHANNEL_SCREENS.md` §2.
