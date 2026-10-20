@@ -47,6 +47,13 @@ interface MovementRow {
   reason: string | null;
   created_by_name: string | null;
   total_count: number;
+  /**
+   * D-614 (C-68): a loja e o dia da criação do pedido em São Paulo, só em
+   * `SHOPEE_ORDER`. Ausentes antes da migration `20261020120000`: nulos, e a
+   * referência fica texto.
+   */
+  shopee_shop_id?: string | null;
+  shopee_order_day?: string | null;
 }
 
 function recorteLabel(filters: ReturnType<typeof resolveMovementFilters>): string {
@@ -352,6 +359,10 @@ export default async function MovimentacoesPage({
                   const entrada = row.qty_delta > 0;
                   const responsavel = row.created_by_name ?? "Sistema";
                   const motivo = row.reason ?? (row.created_by_name === null ? "Rotina automática" : "Sem motivo informado");
+                  const referencia = movementSourceHref(row.source_type, row.source_id, {
+                    loja: row.shopee_shop_id ?? null,
+                    dia: row.shopee_order_day ?? null,
+                  });
 
                   return (
                     <tr key={row.id}>
@@ -380,15 +391,20 @@ export default async function MovimentacoesPage({
                         <strong className="sb-mov-primary-text">{movementSourceLabel(row.source_type, null)}</strong>
                       </td>
                       <td data-label="Referência">
-                        {/* Pedido de compra e nota fiscal abrem a tela deles (lote 3 do pente fino). */}
-                        {movementSourceHref(row.source_type, row.source_id) === null ? (
+                        {/* Pedido de compra e nota fiscal abrem a tela deles (lote 3 do pente fino);
+                            o pedido da Shopee, a `/vendas/shopee` filtrada nele (D-614). */}
+                        {referencia === null ? (
                           <span className="sb-mov-secondary-text sb-mono sb-mov-reference">{row.source_id ?? "Sem referência externa"}</span>
                         ) : (
                           <Link
                             className="sb-mov-secondary-text sb-mono sb-mov-reference"
-                            href={movementSourceHref(row.source_type, row.source_id) ?? ""}
+                            href={referencia}
                           >
-                            {row.source_type === "PURCHASE_ORDER" ? "Abrir pedido de compra" : "Abrir nota fiscal"}
+                            {row.source_type === "PURCHASE_ORDER"
+                              ? "Abrir pedido de compra"
+                              : row.source_type === "SHOPEE_ORDER"
+                                ? `Abrir pedido ${row.source_id ?? ""}`
+                                : "Abrir nota fiscal"}
                           </Link>
                         )}
                       </td>

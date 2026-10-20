@@ -16624,6 +16624,26 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-491 - A marcacao em lote das notificacoes por loja Shopee: `p_shopee_shop_id` em `mark_notifications_read` (C-69)
+
+**Contexto:** desde a D-604 (A2) a `/notificacoes` recorta por loja Shopee (`domain_events.shopee_shop_id`, D-438), mas a escrita em lote (`mark_notifications_read`, D-393) so conhecia severidade, familia e conta do ML. Com a loja no recorte, "Marcar todas como lidas" marcaria alem do que se ve (o defeito de D-183), e a tela esconde o botao e diz "Marcar em lote por loja ainda nao existe". O pedido do A2 na D-604 era este parametro.
+
+**Decisao:**
+1. **O quarto recorte, com o significado dos outros:** `p_shopee_shop_id uuid default null` NO FIM; nulo = sem recorte nesta dimensao, e os quatro nulos continuam "marcar todas". A condicao e a da lista da tela (`domain_events.shopee_shop_id = loja`), entao a lista e o lote recortam igual (D-236).
+2. **Drop + create, uma funcao so:** acrescentar o parametro com `create or replace` criaria uma sobrecarga ao lado da de tres argumentos, e a chamada com os tres nomes de sempre ficaria ambigua no PostgREST (PGRST203). Com uma funcao so, a chamada de hoje (`actions.ts`) segue igual: o quarto vale nulo.
+3. **Conta e loja juntas nao marcam nada:** o evento tem uma origem so (`domain_events_uma_origem`), os recortes se somam. A tela tira uma ao escolher a outra (D-604).
+4. **Continua `security invoker`:** a RLS de `notification_recipients` e a de `domain_events` (que alcanca a loja por `accessible_shopee_shops`, D-433) valem dentro da funcao; o `user_id = auth.uid()` explicito segue como defesa em profundidade.
+5. **Fora desta fatia:** as preferencias por loja (`notification_preferences` tem escopo de conta do ML) -- um contrato proprio, se o dono pedir.
+
+**Verificacao:**
+- **Integracao:** 7 testes novos (uma funcao so, com a loja no fim; o fan-out chega a quem alcanca a loja; loja e familia marcam so o aviso daquela familia na loja; a loja inteira marca o resto e a segunda vez devolve 0, sem tocar a outra loja, a conta nem o ADMIN; a loja que o usuario nao alcanca nao marca nada; conta e loja juntas devolvem 0; a chamada de tres argumentos continua recortando pela conta); os 5 da D-393 seguem verdes.
+- **Mutacao:** sem a condicao da loja, 3 testes caem; a sobrecarga (a funcao de tres argumentos de volta ao lado da nova) derruba 6, entre eles o da assinatura e o da chamada de sempre, que fica ambigua (`function ... is not unique`).
+- **Tipos:** o bloco escrito a mao em `types.ts` (classe D-213) bate com o gerador local, com os argumentos anulaveis (D-133).
+
+**Publicacao:** a migration `20261020130000` vai a producao depois do merge. A tela (o botao do lote de volta com a loja, A2) manda o parametro so com valor e so depois da migration em producao (PGRST202). Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020130000_notificacoes_em_lote_por_loja.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,NOTIFICATIONS,HANDOFF,ROADMAP}.md`.
+
 ## D-492 - A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 
 **Contexto:** a D-483 (A1, fase 1) achou o "outros" do C-61 igual, na leitura real, à taxa de proteção de envio do vendedor (`shipping_seller_protection_fee_amount`), que a fórmula oficial do escrow não lista. `get_shopee_faturamento_composicao` e `_pedidos` ganharam no fim `protecao_envio` (nula sem o campo) e `outros_restante` (o outros sem a taxa, calculado no SQL); o `outros` segue o de antes, ainda com a taxa. Vale `receita − componentes − protecao_envio − outros_restante = recebido`. A cascata "Para onde vai o dinheiro" do `/faturamento?marketplace=shopee` (D-452) mostrava a taxa inteira como "Outros (fecha com o recebido)".
@@ -17712,5 +17732,39 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 **Impacto:**
 - web: `apps/web/lib/{document-error,documents-overview,nfe-steps}.ts` com os testes; `apps/web/app/(app)/notas-fiscais/page.tsx` e `[id]/page.tsx`; o bloco `.sb-nf-estado-doc-*` de `globals.css`;
 - e2e: `nota-fiscal.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-614 - A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
+
+**Contexto:** a D-495 (b) do A1 (#265, contrato C-68) faz a venda paga de loja Shopee live baixar o estoque, pelas regras do dono de 19/10 (o corte igual ao do ML, o armazém da Shopee como o Full, a devolução numa fatia própria). Ela grava três tipos novos — `VENDA_SHOPEE`, `CANCELAMENTO_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE` (o estorno do corte é o `ESTORNO_PRE_CAPTURA` de sempre) —, a origem `SHOPEE_ORDER` com o `order_sn`, e o `get_stock_movements` passa a devolver `shopee_shop_id` e `shopee_order_day` (o dia da criação em São Paulo), nulos fora da Shopee. A tela traduzia só os tipos e as origens que conhecia: o resto aparecia cru, e `ORDER` é "Pedido ML".
+
+**Decisão:**
+1. **Os rótulos** (`lib/movement-labels.ts`):
+   - "Venda Shopee";
+   - "Cancelamento Shopee";
+   - "Estorno de venda entregue pelo armazém da Shopee", no padrão do `ESTORNO_FULL`;
+   - "Pedido Shopee <order_sn>" na origem, nunca "Pedido ML".
+2. **Os filtros** (`lib/movement-filters.ts`): os três tipos e a origem `SHOPEE_ORDER` entram nos menus de `/estoque/movimentacoes`.
+3. **O link do pedido** (`movementSourceHref`): abre `/vendas/shopee?loja=&from=&to=&pedido=`, o mesmo destino da Busca Universal (D-467), porque a tela acha o pedido dentro do período do dia da criação.
+   - Só vira link com a loja e o dia preenchidos e o dia no formato de data.
+   - Sem eles (pedido apagado, ou banco anterior à migration), a referência fica texto, nunca um link para lista vazia.
+4. **A ordem com o A1:** a tela entra ANTES do #265, sem empilhar nele. Os tipos novos só existem depois da migration `20261020120000` e do worker da baixa. Com a tela no ar antes, ninguém vê o código cru.
+   - O teste do CHECK (`movement-type-check.test.ts`) olha só o worker e o domínio, então os rótulos antecipados não o afetam.
+   - As duas colunas novas são opcionais na linha da tela: ausentes antes da migration, a referência fica texto.
+
+**Publicação:** só a web, antes do deploy do worker da baixa (combinado com o A1; o #265 entrou na `main` antes dela, mas sem o worker nenhum movimento novo existe). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **Unitários:** `movement-labels.test.ts`:
+  - os 19 tipos com rótulo;
+  - os três novos e a origem, que nunca é "Pedido ML";
+  - o link com loja e dia, e os casos em que ele vira texto (sem a loja, sem o dia, sem o terceiro argumento, dia fora do formato).
+- **e2e (ensaio da loja live, sobre a `main` com o #265 e a migration `20261020120000`):** um `VENDA_SHOPEE` gravado como o worker grava (origem `SHOPEE_ORDER`, `order_sn` da loja live) aparece como "Venda Shopee" e "Pedido Shopee", nunca cru nem "Pedido ML", e o link leva à `/vendas/shopee` na loja e no dia da criação, onde o pedido está.
+- **Suite inteira:** **258/258** com o banco recriado do zero (255 na 3300 e os 3 de convite na 3000), e o `loja-live` **11/11**.
+
+**Impacto:**
+- web: `apps/web/lib/movement-labels.ts` e `movement-filters.ts` com o teste; `apps/web/app/(app)/estoque/movimentacoes/page.tsx`;
+- e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.

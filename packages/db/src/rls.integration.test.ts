@@ -21795,6 +21795,134 @@ describe("mark_notifications_read marca em lote só o recorte do próprio usuár
 });
 
 /**
+ * mark_notifications_read por loja Shopee (D-491): o quarto recorte, com o
+ * mesmo significado dos outros (nulo = sem recorte). O evento da loja guarda a
+ * loja em `domain_events.shopee_shop_id` (D-438) e chega a quem alcança a loja
+ * pelo fan-out; a função marca só as do usuário corrente e só daquela loja.
+ */
+describe("mark_notifications_read recorta pela loja Shopee (D-491)", () => {
+  const LOJA_1 = "dddd4910-0000-4000-8000-0000000a0491"; // ANALISTA_SB tem permissão.
+  const LOJA_2 = "dddd4910-0000-4000-8000-0000000b0491"; // ANALISTA_SB NÃO tem.
+  const CONTA = "eeee5555-0000-4000-8000-00000000e491";
+  const eventos: Record<string, string> = {};
+
+  async function evento(chave: string, origem: { loja?: string; conta?: string }, tipo: string, severidade: string): Promise<void> {
+    const r = await client.query<{ id: string }>(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, shopee_shop_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values ($1, $2, $3, now(), $4, 'shopee_shop', $5, $6, 'sync', $7)
+       returning id`,
+      [
+        ORG_SB,
+        origem.conta ?? null,
+        origem.loja ?? null,
+        tipo,
+        `loja-lote-${chave}`,
+        severidade,
+        `rlstest-lote-loja:${chave}:${String(Date.now())}`,
+      ],
+    );
+
+    eventos[chave] = r.rows[0]?.id ?? "";
+  }
+
+  async function naoLidas(chave: string): Promise<string[]> {
+    const { rows } = await client.query<{ user_id: string }>(
+      `select nr.user_id
+       from public.notification_recipients nr
+       join public.notifications n on n.id = nr.notification_id
+       where n.domain_event_id = $1 and nr.read_at is null and nr.user_id = any($2)
+       order by nr.user_id`,
+      [eventos[chave], [ADMIN_SB, ANALISTA_SB]],
+    );
+
+    return rows.map((r) => r.user_id);
+  }
+
+  const marcar = async (usuario: string, args: string): Promise<number | undefined> =>
+    (await asUserPersist<{ n: number }>(usuario, `select public.mark_notifications_read(${args}) as n`))[0]?.n;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, orders_synced_until)
+       values ($1, $3, 'sandbox', 990491001, 'Loja 1 (lote)', 'CONNECTED', now()),
+              ($2, $3, 'sandbox', 990491002, 'Loja 2 (lote)', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA_1, LOJA_2, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2) on conflict do nothing",
+      [ANALISTA_SB, LOJA_1],
+    );
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1, $2, 'Conta (lote por loja)', 'notify-lote-loja', 491001, 'CONNECTED', now())
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+    await client.query(
+      "insert into public.user_account_permissions (user_id, ml_account_id) values ($1, $2) on conflict do nothing",
+      [ANALISTA_SB, CONTA],
+    );
+
+    await evento("parada", { loja: LOJA_1 }, "sync.failed", "critico");
+    await evento("estoque", { loja: LOJA_1 }, "listing.stock.changed", "informativo");
+    await evento("outra-loja", { loja: LOJA_2 }, "sync.failed", "critico");
+    await evento("conta", { conta: CONTA }, "sync.failed", "critico");
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA_1, LOJA_2]]);
+  });
+
+  it("uma função só, com a loja no fim: a chamada de três nomes não fica ambígua", async () => {
+    const { rows } = await client.query<{ args: string }>(
+      `select pg_get_function_identity_arguments(p.oid) as args
+       from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+       where s.nspname = 'public' and p.proname = 'mark_notifications_read'`,
+    );
+
+    expect(rows.map((r) => r.args)).toEqual([
+      "p_severity text, p_event_type_prefix text, p_ml_account_id uuid, p_shopee_shop_id uuid",
+    ]);
+  });
+
+  it("o fan-out chegou a quem alcança cada loja", async () => {
+    expect(await naoLidas("parada")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+    expect(await naoLidas("outra-loja")).toEqual([ADMIN_SB]);
+  });
+
+  it("loja e família: só o aviso de estoque da loja 1, e a crítica dela fica", async () => {
+    expect(await marcar(ANALISTA_SB, `p_event_type_prefix => 'listing.', p_shopee_shop_id => '${LOJA_1}'`)).toBe(1);
+    expect(await naoLidas("estoque")).toEqual([ADMIN_SB]);
+    expect(await naoLidas("parada")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+  });
+
+  it("a loja 1 inteira: marca a que sobrou, e não toca a outra loja, a conta nem o ADMIN", async () => {
+    expect(await marcar(ANALISTA_SB, `p_shopee_shop_id => '${LOJA_1}'`)).toBe(1);
+    expect(await marcar(ANALISTA_SB, `p_shopee_shop_id => '${LOJA_1}'`)).toBe(0);
+    expect(await naoLidas("parada")).toEqual([ADMIN_SB]);
+    expect(await naoLidas("conta")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+  });
+
+  it("a loja que o usuário não alcança não marca nada; a do ADMIN fica por ler", async () => {
+    expect(await marcar(ANALISTA_SB, `p_shopee_shop_id => '${LOJA_2}'`)).toBe(0);
+    expect(await naoLidas("outra-loja")).toEqual([ADMIN_SB]);
+  });
+
+  it("conta e loja juntas não marcam nada: o evento tem uma origem só", async () => {
+    expect(await marcar(ADMIN_SB, `p_ml_account_id => '${CONTA}', p_shopee_shop_id => '${LOJA_2}'`)).toBe(0);
+    expect(await naoLidas("outra-loja")).toEqual([ADMIN_SB]);
+    expect(await naoLidas("conta")).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+  });
+
+  it("a chamada de sempre, sem a loja, continua recortando pela conta", async () => {
+    expect(await marcar(ANALISTA_SB, `null, null, '${CONTA}'`)).toBe(1);
+    expect(await naoLidas("conta")).toEqual([ADMIN_SB]);
+  });
+});
+
+/**
  * get_quem_paga_frete (D-412): as quatro partes do frete somadas POR ENVIO,
  * com a conta feita à mão.
  *

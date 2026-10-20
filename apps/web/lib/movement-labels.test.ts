@@ -10,8 +10,8 @@ import {
 import { MOVEMENT_TYPES } from "./movement-filters.js";
 
 describe("vocabulário das movimentações (D-167)", () => {
-  it("os 16 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
-    expect(MOVEMENT_TYPES).toHaveLength(16);
+  it("os 19 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
+    expect(MOVEMENT_TYPES).toHaveLength(19);
 
     for (const type of MOVEMENT_TYPES) {
       expect(movementTypeLabel(type)).not.toBe(type);
@@ -56,5 +56,28 @@ describe("movementSourceHref (lote 3 do pente fino)", () => {
     expect(movementSourceHref("DOCUMENT", "doc-1")).toBe("/notas-fiscais/doc-1");
     expect(movementSourceHref("ORDER", "2000012345")).toBeNull();
     expect(movementSourceHref("PURCHASE_ORDER", null)).toBeNull();
+  });
+});
+
+describe("a venda da Shopee no estoque (D-614, D-495 b)", () => {
+  it("os tipos novos e a origem dizem que é da Shopee — o pedido da Shopee nunca é \"Pedido ML\"", () => {
+    expect(movementTypeLabel("VENDA_SHOPEE")).toBe("Venda Shopee");
+    expect(movementTypeLabel("CANCELAMENTO_SHOPEE")).toBe("Cancelamento Shopee");
+    expect(movementTypeLabel("ESTORNO_ARMAZEM_SHOPEE")).toBe("Estorno de venda entregue pelo armazém da Shopee");
+    expect(movementSourceLabel("SHOPEE_ORDER", "2410AB")).toBe("Pedido Shopee 2410AB");
+    expect(movementSourceLabel("ORDER", "2000012345")).toBe("Pedido ML 2000012345");
+  });
+
+  it("o pedido da Shopee abre a /vendas/shopee na loja e no dia dele; sem os dois, fica texto", () => {
+    const loja = "5b1d0000-0000-4000-8000-000000000001";
+
+    expect(movementSourceHref("SHOPEE_ORDER", "2410AB", { loja, dia: "2026-10-19" })).toBe(
+      `/vendas/shopee?loja=${loja}&from=2026-10-19&to=2026-10-19&pedido=2410AB`,
+    );
+    expect(movementSourceHref("SHOPEE_ORDER", "2410AB", { loja, dia: null })).toBeNull();
+    expect(movementSourceHref("SHOPEE_ORDER", "2410AB", { loja: null, dia: "2026-10-19" })).toBeNull();
+    // Antes da migration, a leitura não traz as colunas: o terceiro argumento falta.
+    expect(movementSourceHref("SHOPEE_ORDER", "2410AB")).toBeNull();
+    expect(movementSourceHref("SHOPEE_ORDER", "2410AB", { loja, dia: "ontem" })).toBeNull();
   });
 });

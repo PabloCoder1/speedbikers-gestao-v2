@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **517** (D-001 a D-612).
+Decisões registradas: **519** (D-001 a D-614).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **517** (D-001 a D-612).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 
-### estoque (37)
+### estoque (38)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -162,6 +162,7 @@ Decisões registradas: **517** (D-001 a D-612).
 - **D-472** — Telas do A2, etapa E3/E4: os estados de /produtos, /reposicao, /compras e /central no EstadoDaTela, e a constante AVISO sai
 - **D-497** — A nota de venda de marketplace nao baixa o estoque pela importacao: o CFOP oficial e o intermediador da NF-e decidem, e a recusa tem codigo
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
+- **D-614** — A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 
 ### interface (68)
 
@@ -327,7 +328,7 @@ Decisões registradas: **517** (D-001 a D-612).
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 
-### outros (75)
+### outros (76)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -399,6 +400,7 @@ Decisões registradas: **517** (D-001 a D-612).
 - **D-483** — A taxa de protecao de envio da Shopee como componente do recebido (C-61), em duas fases
 - **D-485** — Os ajustes da Shopee depois do repasse descontados do resultado, e o financeiro relido depois da liberacao
 - **D-489** — Os campos do financeiro Shopee que as leituras usam viram colunas geradas: o faturamento da Shopee 4 a 5 vezes mais rapido
+- **D-491** — A marcacao em lote das notificacoes por loja Shopee: `p_shopee_shop_id` em `mark_notifications_read` (C-69)
 - **D-492** — A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 - **D-515** — A /central sem deslocamento: os indicadores reservam a janela e a "Atencao" tem esqueleto do tamanho da lista
 - **D-516** — O reporter de producao diz o elemento do LCP e do maior deslocamento, pela forma: tag, classes `sb-*` e a posicao da secao, nunca texto ou rotulo
