@@ -232,7 +232,13 @@ jobs:
   e2e:
     name: e2e — fluxos criticos (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, nao 15 (20/10/2026): nos 40 runs anteriores o job com sucesso levou
+    # de 11,8 a 14,7 min (uns 3 de preparo e 9,4 a 11,6 de testes), e quatro
+    # foram cortados entre 15,0 e 15,6 min sem caso vermelho -- tres deles
+    # com os testes ja verdes e todos os passos concluidos. O limite existe
+    # para pegar a suite travada, nao a suite lenta. Dividir em shards fica
+    # para quando os testes passarem de ~18 min (docs/TESTING.md secao 4).
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
