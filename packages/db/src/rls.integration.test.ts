@@ -22694,6 +22694,152 @@ describe("o anúncio da Shopee vendendo sem vínculo na Central de Ações (D-60
   });
 });
 
+/*
+  D-611: a ruptura no anúncio da Shopee vira ação na Central (C-74).
+  Organização própria. A unidade de anúncio ATIVA de loja LIVE com o estoque
+  da Shopee ZERO (NULO fica de fora) que vendeu (VALIDA) nos 30 dias até
+  ontem. Vinculada, leva o SKU e o saldo local do V3.
+*/
+describe("a ruptura no anúncio da Shopee na Central de Ações (D-611)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d611";
+  const LOJA = "dddd6110-0000-4000-8000-0000000a0611";
+  const SANDBOX = "dddd6110-0000-4000-8000-0000000c0611";
+  let sku = "";
+
+  interface Acao {
+    subject_key: string;
+    status: string;
+    severity: string;
+    impacto: string | null;
+    shopee_shop_id: string | null;
+    sku_id: string | null;
+    recommendation: string;
+    detector: Record<string, unknown>;
+    motivo: string | null;
+  }
+
+  const sincronizar = async (dia: string) =>
+    (
+      await client.query<{ r: { fontes: string[]; criadas: number; encerradas: number } }>(
+        "select public.sincronizar_alertas_central($1, $2::date, array['shopee_ruptura']) as r",
+        [ORG, dia],
+      )
+    ).rows[0]?.r;
+
+  const acoes = async () =>
+    (
+      await client.query<Acao>(
+        `select subject_key, status, severity, estimated_impact_brl::text as impacto, shopee_shop_id, sku_id, recommendation,
+                evidence -> 'detector' as detector, evidence -> 'encerramento' ->> 'motivo' as motivo
+           from public.actions where organization_id = $1 and kind = 'shopee_ruptura' order by subject_key`,
+        [ORG],
+      )
+    ).rows;
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-611', 'org-d611') on conflict (id) do nothing", [ORG]);
+    sku =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'D611-S', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+    // 5 em estoque local no V3, pelo ledger (o saldo nasce do gatilho).
+    await client.query(
+      `insert into public.stock_movements (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1, $2, 'LOCAL', 5, 'AJUSTE_RECONCILIACAO', 'd611-saldo', now()) on conflict do nothing`,
+      [ORG, sku],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at, items_synced_until)
+       values ($1, $3, 'live', 990611001, 'Loja Real', 'CONNECTED', now() - interval '60 days', now(), now(), now()),
+              ($2, $3, 'sandbox', 990611002, 'Teste', 'CONNECTED', now() - interval '60 days', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    // 1: zerado, vinculado ao SKU com saldo no V3. 2: zerado, sem SKU. 3: com
+    // estoque. 4: estoque NULO (não se sabe). 5: fora do ar (UNLIST). 6: zerado
+    // sem venda. 7: variações, a 71 zerada e a 72 com estoque. 8: o sandbox.
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time, available_stock)
+       values ($1, $3, 1, 'NORMAL', now(), 'Zerado vinculado', 'D611-S', false, now(), now(), 0),
+              ($1, $3, 2, 'NORMAL', now(), 'Zerado sem SKU', null, false, now(), now(), 0),
+              ($1, $3, 3, 'NORMAL', now(), 'Com estoque', null, false, now(), now(), 4),
+              ($1, $3, 4, 'NORMAL', now(), 'Estoque desconhecido', null, false, now(), now(), null),
+              ($1, $3, 5, 'UNLIST', now(), 'Fora do ar', null, false, now(), now(), 0),
+              ($1, $3, 6, 'NORMAL', now(), 'Zerado sem venda', null, false, now(), now(), 0),
+              ($1, $3, 7, 'NORMAL', now(), 'Com variações', null, true, now(), now(), null),
+              ($2, $3, 8, 'NORMAL', now(), 'Do sandbox', null, false, now(), now(), 0)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku, model_status, available_stock)
+       values ($1, 7, 71, $2, 'Azul', null, 'MODEL_NORMAL', 0), ($1, 7, 72, $2, 'Verde', null, 'MODEL_NORMAL', 3)
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $3, 'D611-O1', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z'),
+              ($1, $3, 'D611-O2', 'COMPLETED', '2026-10-08T15:00:00Z', now(), '2026-10-08T15:01:00Z'),
+              ($2, $3, 'D611-O3', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z')
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, model_id, quantity, discounted_price)
+       values ($1, 'D611-O1', 0, $3, 1, null, 2, 40), ($1, 'D611-O1', 1, $3, 3, null, 1, 10), ($1, 'D611-O1', 2, $3, 4, null, 1, 10),
+              ($1, 'D611-O1', 3, $3, 5, null, 1, 10), ($1, 'D611-O1', 4, $3, 7, 71, 1, 25), ($1, 'D611-O1', 5, $3, 7, 72, 1, 25),
+              ($1, 'D611-O2', 0, $3, 2, null, 1, 30),
+              ($2, 'D611-O3', 0, $3, 8, null, 1, 99)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = $1", [ORG]);
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX]]);
+  });
+
+  it("uma ação por anúncio ativo zerado que vendia, com o impacto, o SKU e o saldo do V3", async () => {
+    const r = await sincronizar("2026-10-12");
+
+    expect(r?.fontes).toEqual(["shopee_ruptura"]);
+    expect(r?.criadas).toBe(3);
+
+    const lista = await acoes();
+
+    expect(lista.map((a) => [a.subject_key, a.impacto, a.sku_id])).toEqual([
+      [`${LOJA}:1:-`, "80.00", sku],
+      [`${LOJA}:2:-`, "30.00", null],
+      [`${LOJA}:7:71`, "25.00", null],
+    ]);
+    expect(lista.every((a) => a.status === "novo" && a.severity === "media" && a.shopee_shop_id === LOJA)).toBe(true);
+    expect(lista[0]?.detector).toMatchObject({ estoque_shopee: 0, saldo_v3: 5, sku: "D611-S", ultima_venda: "2026-10-10" });
+    // Com o SKU em estoque no V3, a recomendação é atualizar a Shopee; sem SKU, repor.
+    expect(lista[0]?.recommendation).toMatch(/atualize a quantidade/);
+    expect(lista[1]?.recommendation).toMatch(/Reponha o estoque/);
+    expect(lista[1]?.detector).toMatchObject({ saldo_v3: null });
+  });
+
+  it("o estoque de volta encerra a ação no 3o dia, com o motivo", async () => {
+    await client.query("update public.shopee_items set available_stock = 10 where shopee_shop_id = $1 and item_id = 1", [LOJA]);
+
+    for (const dia of ["2026-10-13", "2026-10-14"]) await sincronizar(dia);
+
+    const r = await sincronizar("2026-10-15");
+    const lista = await acoes();
+
+    expect(r?.encerradas).toBe(1);
+    expect(lista.find((a) => a.subject_key === `${LOJA}:1:-`)).toMatchObject({ status: "resolvido" });
+    expect(lista.find((a) => a.subject_key === `${LOJA}:1:-`)?.motivo).toMatch(/estoque do anúncio da Shopee voltou/);
+    expect(lista.filter((a) => a.status === "novo")).toHaveLength(2);
+  });
+});
+
 /**
  * mark_notifications_read por loja Shopee (D-491): o quarto recorte, com o
  * mesmo significado dos outros (nulo = sem recorte). O evento da loja guarda a
