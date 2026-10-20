@@ -618,9 +618,25 @@ function HojeCarregando({ forma, escopo }: { forma: FormaDoHoje; escopo: EscopoM
           <Lugar>{NADA_SOMAVEL}</Lugar>
         ) : (
           <>
-            <Lugar>R$ 0.000,00 receita</Lugar>
-            <Lugar>00 compras</Lugar>
-            <Lugar>00 unidades</Lugar>
+            {/* Só o número no lugar, em `strong` como na pronta: é ele que define a altura da linha (A3). */}
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                R$ 0.000,00
+              </strong>{" "}
+              receita
+            </span>
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                00
+              </strong>{" "}
+              compras
+            </span>
+            <span>
+              <strong aria-hidden="true" className="sb-kpi-carregando">
+                00
+              </strong>{" "}
+              unidades
+            </span>
             <Lugar>última venda 00/00/0000, 00:00</Lugar>
             {forma === "com-shopee" && <Lugar>{`${escopo === "todos" ? "Shopee lida" : "lida"} até 00/00/0000, 00:00`}</Lugar>}
           </>
