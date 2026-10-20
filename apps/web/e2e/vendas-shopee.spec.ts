@@ -241,8 +241,9 @@ test("/vendas: o seletor de marketplace leva às vendas da Shopee só com o per�
   await seletor.getByRole("link", { name: "Shopee", exact: true }).click();
 
   // D-440: "Shopee" é o resumo em `/vendas`, com o mesmo período; os pedidos
-  // e as lojas da Shopee estão a um clique, no detalhe.
-  await expect(page).toHaveURL(/\/vendas\?marketplace=shopee&days=7$/);
+  // e as lojas da Shopee estão a um clique, no detalhe. Desde a D-622 (C-72),
+  // a marca atravessa também; a conta e a métrica do ML, não.
+  await expect(page).toHaveURL(/\/vendas\?marketplace=shopee&days=7&semMarca=1$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
   await expect(seletor.locator("summary")).toHaveAttribute("aria-label", "Marketplace: Shopee");
 
