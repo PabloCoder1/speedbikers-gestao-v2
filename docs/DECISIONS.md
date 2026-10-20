@@ -17733,6 +17733,45 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-607 - O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee com o SKU (C-71)
+
+**Contexto:** escolha do dono de 20/10 no item 4 (opcao b), com o desenho pedido pelo A2 para a aba Vendas de `/skus/[id]` (D-618). A aba ja tinha o total e uma linha por conta e loja (C-59, D-439), mas o dia a dia e os detalhes eram so do ML, e o `get_shopee_orders` nao filtrava por SKU.
+
+**Decisao:**
+1. **O grao e o do C-59:** o `sku_id` gravado no item. No ML, `daily_sku_metrics`; na Shopee, `shopee_sales_items` com a situacao VALIDA. **O kit conta como o kit:** a pagina de um componente nao ve a venda do kit que o contem, nos dois canais. E o que o C-59 ja mostra, e o A2 aceitou sem pedir contrato de componentes.
+2. **`get_sku_sales_daily_by_marketplace` (nova):** uma linha por dia com venda em algum canal, com o ML e a Shopee lado a lado e o total do dia somado no SQL.
+   - O canal sem venda no dia e NULO, nunca zero, e o dia sem venda nenhuma nao aparece.
+   - A loja de teste fica fora, como no TOTAL do C-59.
+   - A receita do dia e NULA quando nenhum lado tem receita conhecida (so itens Shopee de preco 0, contados em `itens_shopee_sem_receita`).
+3. **`get_shopee_orders` ganha `p_sku_id` NO FIM (nulo = a lista de hoje):**
+   - com valor, so os pedidos com algum item do SKU;
+   - tres colunas no fim: `dia` (a data do pedido em Sao Paulo, sempre preenchida, para o link da D-614), `unidades_do_sku` e `receita_do_sku` (somadas so nos itens do SKU; a receita NULA se algum item do SKU no pedido tem preco 0);
+   - o resto igual: todas as situacoes, a permissao por loja, paginas de ate 200 com `total_count`.
+   - Ela vira `plpgsql` com plano custom, porque o "nulo ou valor" de cada filtro degrada no plano generico (D-305, D-469). A faixa em `timestamptz`, equivalente ao `dia`, entra para o indice `(organization_id, shopee_created_at)` valer; o filtro pelo `dia` fica, como a regra.
+4. **Sem indice novo:** o `shopee_order_items_sku_idx` `(organization_id, sku_id)` ja serve as duas.
+
+**Verificacao:**
+- **Integracao:** 7 testes.
+  - O canal sem venda NULO; o dia so do ML; o dia so com item de preco 0 (receita NULA); o cancelado e a loja de teste fora; o SKU vizinho que nao conta.
+  - Os dois aceites do A2: a soma dos dias de cada canal igual as linhas CONTA do C-59; o ML de cada dia igual ao dia de `get_sku_sales_breakdown`; as unidades do SKU nos pedidos VALIDA da loja iguais as do C-59.
+  - Os pedidos com o SKU em todas as situacoes, com a receita NULA quando ha item de preco 0.
+  - Sem `p_sku_id`, a lista de sempre, com o `dia` preenchido e as colunas do SKU NULAS.
+  - A permissao por conta e por loja; a pagina com o `total_count` do recorte inteiro; o periodo invalido recusado; o anon sem acesso.
+  - Os testes vizinhos (D-430, D-467, D-439) seguem verdes.
+- **Mutacao:** cada uma derruba testes.
+  - a loja de teste no dia a dia: 2;
+  - a receita do SKU sem o preco 0: 1;
+  - sem o filtro do SKU: 2;
+  - o canal sem venda como zero: 2.
+- **Desempenho** (producao, como `authenticated`, 30 dias, o SKU que mais vende na Shopee):
+  - o dia a dia: 180 ms, com parte da leitura fria;
+  - os pedidos com o SKU: 26 ms;
+  - a lista de sempre, sem SKU: de 135-165 ms para 115-122 ms, com a faixa em `timestamptz`.
+
+**Publicacao:** a migration `20261020160000` vai a producao depois do merge. A tela (D-618, A2) manda `p_sku_id` so com valor e chama a funcao nova so depois da migration em producao, porque antes a chamada da PGRST202. Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020160000_sku_por_canal.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
+
 ## D-608 - O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 
 **Contexto:** o cartão de cada loja Shopee na `/sincronizacao` diz até quando os pedidos, as devoluções, os repasses e os Ads foram lidos (D-438, D-462), mas não o catálogo. A leitura do catálogo (D-428) existe e tem marco próprio, `shopee_shops.items_synced_until`: é dele que a `/anuncios/shopee` tira a "Última leitura do catálogo" (`get_shopee_listings_summary.ultima_leitura`). Era a lacuna "frescor do catálogo da loja" do inventário de `docs/MULTICHANNEL_SCREENS.md` §2.

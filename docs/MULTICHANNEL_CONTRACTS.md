@@ -163,6 +163,17 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.20 O SKU com a Shopee (C-71, D-607) — em código
+
+O grão é o do C-59: o `sku_id` gravado no item (o kit conta como o kit; a página de um componente não vê a venda do kit que o contém).
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_sku_sales_daily_by_marketplace` (nova) | `p_organization_id`, `p_sku_id`, `p_date_from`, `p_date_to` | uma linha por dia com venda em algum canal: `dia`, `unidades_ml`, `receita_ml`, `unidades_shopee`, `receita_shopee`, `itens_shopee_sem_receita` (canal sem venda no dia = NULO) e o total do dia `unidades`, `receita_bruta` (NULA sem receita conhecida). A loja de teste fica fora |
+| `get_shopee_orders` | os de antes e, no fim, `p_sku_id uuid` (nulo = a lista de hoje) | as colunas de antes e, no fim, `dia` (São Paulo, sempre preenchido), `unidades_do_sku` e `receita_do_sku` (NULAS sem `p_sku_id`; a receita NULA com item do SKU de preço 0) |
+
+**Para a tela:** manda `p_sku_id` só com valor e chama a função nova só depois da migration `20261020160000` em produção (PGRST202 antes). A soma dos dias de cada canal é igual às linhas CONTA live do C-59, e o ML de cada dia é igual ao `get_sku_sales_breakdown`.
+
 ### 3.18 A marcação em lote por loja Shopee (C-69, D-491) — em produção desde 20/10
 
 **`mark_notifications_read`** ganha no fim `p_shopee_shop_id uuid default null` (assinatura `(p_severity text, p_event_type_prefix text, p_ml_account_id uuid, p_shopee_shop_id uuid)`, uma função só). Nulo = sem recorte por loja; com valor, marca só as não lidas do usuário cujo evento é daquela loja (`domain_events.shopee_shop_id`, a mesma condição da lista). Conta e loja juntas devolvem 0 (o evento tem uma origem só). Devolve quantas marcou, como antes. **A tela manda o parâmetro só com valor.** A migration `20261020130000` está em produção desde 20/10.
