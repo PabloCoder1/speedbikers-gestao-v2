@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **520** (D-001 a D-616).
+Decisões registradas: **524** (D-001 a D-616).
 
 ## Por domínio
 
@@ -235,7 +235,7 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 
-### mercado-livre (90)
+### mercado-livre (91)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -326,6 +326,7 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-499** — As linhas de venda do ML numa tabela mantida por gatilhos, para o get_faturamento somar sem buscar pedido e item um a um
 - **D-600** — A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 - **D-602** — O CSV de /vendas no recorte do Mercado Livre, pela leitura da própria tela, e a série do ML em páginas
+- **D-605** — A marca no "Todos" de /vendas: o recorte do ML nas quatro funcoes, pelo grao de SKU dos dois canais (C-72)
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 
 ### outros (77)
@@ -412,7 +413,7 @@ Decisões registradas: **520** (D-001 a D-616).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (54)
+### vendas/métricas (56)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -467,9 +468,11 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 - **D-514** — Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
 - **D-517** — A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
+- **D-603** — O cancelamento por compra e o "hoje" ao vivo no "Todos" de /vendas: duas funcoes novas ao lado do C-53 (C-70)
+- **D-607** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee com o SKU (C-71)
 - **D-612** — A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
 
-### worker/infra (91)
+### worker/infra (92)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -562,4 +565,5 @@ Decisões registradas: **520** (D-001 a D-616).
 - **D-511** — O Shell num layout, medido antes de decidir: o ganho maior nao e o Shell, e a trava de 300 ms do esqueleto em toda troca de tela
 - **D-518** — A Central de Negocio, blocos 2 e 3: cada termo explicado a um toque, remover com confirmacao, limites agrupados e o nome fixo nas tabelas do celular
 - **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
+- **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 
