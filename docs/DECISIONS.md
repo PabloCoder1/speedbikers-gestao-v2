@@ -18029,6 +18029,23 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-613 - A marca no ranking do "Todos" de /vendas (C-75): o recorte do C-72 em get_marketplace_sku_sales
+
+**Contexto:** pedido do A2 para a tela da marca no "Todos" (a fatia que consome o C-72, D-605). O ranking entre marketplaces (`get_marketplace_sku_sales`, C-59, D-439) nao tinha recorte de marca, e sob marca a tela teria de dizer "o ranking nao recorta" ou mostrar o ranking inteiro.
+
+**Decisao:**
+1. **`p_supplier_brand` e `p_sem_marca` no fim,** os nomes e a regra do C-72 e do ML (D-237). O "sem marca" leva o SKU sem marca e o balde sem SKU.
+2. **O recorte so escolhe quais linhas entram:** cada linha ja e um SKU, entao nenhum numero de uma linha muda. As compras do SKU continuam somaveis na linha, e o `total_count` e o do recorte.
+3. **Sem recorte, nada muda.** E drop + create, porque os parametros novos mudam a assinatura; a funcao passa a ter plano custom.
+4. **O tipo de `get_marketplace_sales_daily.compras`** deveria aceitar nulo, porque a D-605 o faz NULO sob marca (achado do A2). Mudar o tipo quebra quatro chamadas da web (`DiaDeVendas`), entao ele muda junto da tela da marca, na fatia do A2.
+
+**Verificacao:**
+- **Integracao:** 1 teste na suite da D-605. A marca A devolve so a linha do SKU A, igual a linha do ranking sem recorte e com `total_count` 1. O "sem marca" devolve o SKU sem marca e o balde sem SKU. Os testes do C-59 (D-439) seguem verdes.
+
+**Publicacao:** a migration `20261020200000` vai a producao depois do merge. A tela manda o recorte so com valor e so depois dela.
+
+**Impacto:** `supabase/migrations/20261020200000_marca_no_ranking_multicanal.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
+
 ## D-614 - A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 
 **Contexto:** a D-495 (b) do A1 (#265, contrato C-68) faz a venda paga de loja Shopee live baixar o estoque, pelas regras do dono de 19/10 (o corte igual ao do ML, o armazém da Shopee como o Full, a devolução numa fatia própria). Ela grava três tipos novos — `VENDA_SHOPEE`, `CANCELAMENTO_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE` (o estorno do corte é o `ESTORNO_PRE_CAPTURA` de sempre) —, a origem `SHOPEE_ORDER` com o `order_sn`, e o `get_stock_movements` passa a devolver `shopee_shop_id` e `shopee_order_day` (o dia da criação em São Paulo), nulos fora da Shopee. A tela traduzia só os tipos e as origens que conhecia: o resto aparecia cru, e `ORDER` é "Pedido ML".
@@ -18062,6 +18079,36 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-615 - O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
+
+**Contexto:** pedido do A3, depois da D-499. Na primeira carga completa da Home em 20/10, o LCP foi 2,75 s, e o elemento e a "Atencao necessaria". Ela espera uma leitura so, `get_stock_coverage_summary`, que levou ~2,5 s depois do primeiro byte.
+
+**O diagnostico (producao, como `authenticated`, a janela de 30 dias da Home):**
+- O resumo conta quatro numeros por cima da `get_stock_coverage` INTEIRA: 200-270 ms quente, tocando ~109 mil paginas em toda chamada. Fria, sao os ~2,5 s da Home.
+- A `get_stock_coverage` calcula tambem as janelas de 15, 30, 60 e 90 dias e a contagem de historico de 90 dias. O resumo nao usa nada disso.
+- Dentro da funcao, o plano toca ~4 vezes o mesmo corpo escrito direto: ~109 mil paginas contra ~23 mil, mesmo como consulta preparada com parametros. A causa interna nao foi isolada: o resumo deixa de depender dela.
+- O corpo so com o que o resumo usa (a venda da janela, o saldo LOCAL e o SKU) toca ~6,6 mil paginas em ~25 ms.
+
+**Decisao:**
+1. **O resumo ganha um corpo proprio,** com as expressoes de `get_stock_coverage` para os quatro numeros:
+   - total = os SKUs que vendem na janela ou tem saldo LOCAL;
+   - em ruptura = nao virtual, saldo <= 0 e vendeu;
+   - virtuais;
+   - sem cobertura = nao virtual e nao vendeu, ou a janela de zero dias.
+2. **A assinatura e as colunas nao mudam:** a Home continua igual, e o A2 desistiu de reordenar os cartoes da "Atencao". Passa a `plpgsql` com plano custom, a licao de D-307.
+3. **A `get_stock_coverage` nao muda.** Ela serve a `/reposicao` e o SKU, que usam as janelas.
+
+**Verificacao:**
+- **Integracao:** o resumo e igual a contagem sobre `get_stock_coverage`, com e sem marca, na organizacao compartilhada da suite (SKUs de varias suites). Os testes de sempre do resumo seguem verdes.
+- **Mutacao,** por comparacao direta no banco local: cada uma deixa de bater.
+  - a ruptura com saldo < 0 em vez de <= 0;
+  - os virtuais trocados pelos nao virtuais;
+  - o "sem cobertura" sem a condicao da venda.
+
+**Publicacao:** a migration `20261020210000` vai a producao depois do merge. A medida em producao vem depois dela, e o A3 rele o LCP da Home nas cargas seguintes.
+
+**Impacto:** `supabase/migrations/20261020210000_resumo_da_cobertura_sem_a_tendencia.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF,ROADMAP}.md`.
 
 ## D-616 - Marcar em lote por loja Shopee: o botão volta com a loja no recorte (C-69)
 
