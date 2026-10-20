@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **525** (D-001 a D-616).
+Decisões registradas: **526** (D-001 a D-616).
 
 ## Por domínio
 
@@ -235,7 +235,7 @@ Decisões registradas: **525** (D-001 a D-616).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 
-### mercado-livre (92)
+### mercado-livre (93)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -329,6 +329,7 @@ Decisões registradas: **525** (D-001 a D-616).
 - **D-605** — A marca no "Todos" de /vendas: o recorte do ML nas quatro funcoes, pelo grao de SKU dos dois canais (C-72)
 - **D-606** — As vendas por anúncio na `/anuncios/shopee`: o período, o vendeu, a ordem pelo cabeçalho e o recorte (C-67)
 - **D-609** — O anuncio da Shopee vendendo sem vinculo vira acao na Central (C-73): o 1o dos quatro detectores da Shopee
+- **D-611** — A ruptura no anuncio da Shopee vira acao na Central (C-74): o 2o dos quatro detectores da Shopee
 
 ### outros (77)
 

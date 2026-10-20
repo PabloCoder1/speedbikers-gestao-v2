@@ -152,7 +152,7 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
-### 3.19 O cancelamento e o hoje no "Todos" de /vendas (C-70, D-603) — em código
+### 3.19 O cancelamento e o hoje no "Todos" de /vendas (C-70, D-603) — em produção desde 20/10
 
 Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CONTA; loja de teste só em CONTA; loja nunca lida NULA; `p_marketplaces` nulo = só ML). O C-53 não muda.
 
@@ -162,6 +162,16 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 | `get_marketplace_sales_today` | `p_organization_id`, `p_date` (o dia de São Paulo), `p_marketplaces`, `p_account_ids` | `compras`, `unidades`, `receita_bruta`, `pedidos_sem_receita`, `ticket_medio`, `ultimo_pedido_em`, `lido_ate` (só da Shopee; o ML é ao vivo). **Ao vivo:** o ML de `orders`, como `get_sales_today_summary` |
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
+
+### 3.23 A ruptura no anúncio da Shopee na Central (C-74, D-611) — em código
+
+- **A ação:** `actions.kind = 'shopee_ruptura'`, com a loja em `shopee_shop_id` e o `sku_id` quando o anúncio está vinculado. O `subject_key` é `<loja>:<item>:<variação ou ->`, a severidade `media`, a confiança `alta` e o impacto é a receita conhecida dos 30 dias.
+- **O `evidence.detector`:** os campos da D-609, mais `sku`, `estoque_shopee` (0), `saldo_v3` (o saldo local do SKU vinculado; NULO sem vínculo) e `ultima_venda`.
+- **Para a tela:**
+  - o rótulo do kind;
+  - o atalho da D-609 para `/anuncios/shopee`;
+  - com o `sku_id`, o atalho do SKU.
+  - A tela lê depois da migration `20261020190000` em produção.
 
 ### 3.22 O anúncio da Shopee vendendo sem vínculo na Central (C-73, D-609) — em código
 
@@ -174,7 +184,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
   - nada de `/anuncios/{mlbId}`: o `mlb_id` é NULO.
   - A tela lê a coluna nova só depois da migration `20261020180000` em produção.
 
-### 3.21 A marca no "Todos" de /vendas (C-72, D-605) — em código
+### 3.21 A marca no "Todos" de /vendas (C-72, D-605) — em produção desde 20/10
 
 `get_marketplace_sales_summary`, `get_marketplace_sales_daily`, `get_marketplace_sales_today` e `get_marketplace_sales_cancellations` ganham no fim `p_supplier_brand text` e `p_sem_marca boolean`, os nomes e a regra do recorte do ML (D-237). Sem recorte, tudo igual.
 
@@ -185,7 +195,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** manda o recorte só com valor e só depois da migration `20261020170000` em produção.
 
-### 3.20 O SKU com a Shopee (C-71, D-607) — em código
+### 3.20 O SKU com a Shopee (C-71, D-607) — em produção desde 20/10
 
 O grão é o do C-59: o `sku_id` gravado no item (o kit conta como o kit; a página de um componente não vê a venda do kit que o contém).
 
