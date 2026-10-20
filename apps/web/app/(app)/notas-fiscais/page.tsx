@@ -1,3 +1,4 @@
+import { marketplaceDoIntermediador } from "@sb/domain";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -5,6 +6,7 @@ import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { StatePill } from "../../../components/state-pill";
 import { StatusPill } from "../../../components/status-pill";
 import { TOM } from "../../../components/tone";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
@@ -27,6 +29,7 @@ import {
   type LinhaDocumentoLegado,
   type VisaoDocumentos,
 } from "../../../lib/documents-overview";
+import { recusaLegivel } from "../../../lib/document-error";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { batchStatusLabel, operationTypeLabel } from "../../../lib/labels";
 import { currentMembership } from "../../../lib/request-membership";
@@ -81,7 +84,7 @@ const DESCRICAO_ESTADO: Record<string, string> = {
   PARSED: "esperando conferência",
   APPLYING: "baixando no estoque",
   APPLIED: "já no estoque",
-  FAILED: "não foi possível ler",
+  FAILED: "falha ou recusa na leitura",
   CANCELLED: "interrompidos",
 };
 
@@ -324,10 +327,12 @@ export default async function NotasFiscaisPage({
             }
             aria-current={filters.status === "FAILED" ? "true" : undefined}
           >
-            <span className="sb-rep-destaque-rotulo">Falhas de leitura</span>
+            {/* D-612: o SQL conta pelo estado FAILED, que inclui a nota recusada
+                por regra (a venda do marketplace); o rótulo diz as duas. */}
+            <span className="sb-rep-destaque-rotulo">Falhas e recusas</span>
             <strong>{plural(visao.resumo.falhas, "documento", "documentos")}</strong>
             <span className="sb-rep-destaque-nota">
-              {visao.resumo.falhas === 0 ? "nenhum arquivo recusado" : "ver o motivo e reenviar · ver"}
+              {visao.resumo.falhas === 0 ? "nenhuma falha nem recusa" : "ver o motivo de cada uma · ver"}
             </span>
             <CarregandoSeODemorar />
           </Link>
@@ -510,12 +515,19 @@ export default async function NotasFiscaisPage({
                 <tbody>
                   {linhas.map((linha) => {
                     const passo = proximoPassoDoDocumento(linha);
+                    // D-612: a recusa da nota de venda do marketplace (D-497 b) não
+                    // é falha; só a leitura que não gravou continua vermelha.
+                    const recusa =
+                      linha.status === "FAILED"
+                        ? recusaLegivel(linha.last_error_code, marketplaceDoIntermediador(linha.intermediary_cnpj))
+                        : null;
+                    const falha = linha.status === "FAILED" && (recusa === null || recusa.tom === "perigo");
                     const href = `/notas-fiscais/${linha.id}`;
                     const total_itens = linha.total_items;
                     const resolvidos = linha.resolved_items ?? 0;
 
                     return (
-                      <tr key={linha.id} className={linha.status === "FAILED" ? "sb-nf-linha-falha" : undefined}>
+                      <tr key={linha.id} className={falha ? "sb-nf-linha-falha" : undefined}>
                         <td>
                           <Link className="sb-cmp-numero" href={href}>
                             {identificacao(linha)}
@@ -528,10 +540,16 @@ export default async function NotasFiscaisPage({
                               {linha.reference}
                             </span>
                           )}
-                          {linha.last_error !== null && (
-                            <span className="sb-nf-erro" title={linha.last_error}>
-                              {linha.last_error}
+                          {recusa !== null ? (
+                            <span className={recusa.tom === "perigo" ? "sb-nf-erro" : "sb-cmp-sub"} title={recusa.resumo}>
+                              {recusa.titulo}
                             </span>
+                          ) : (
+                            linha.last_error !== null && (
+                              <span className="sb-nf-erro" title={linha.last_error}>
+                                {linha.last_error}
+                              </span>
+                            )
                           )}
                         </td>
 
@@ -618,7 +636,11 @@ export default async function NotasFiscaisPage({
                         </td>
 
                         <td>
-                          <StatusPill code={linha.status} label={ESTADO_CURTO[linha.status] ?? batchStatusLabel(linha.status)} />
+                          {recusa === null ? (
+                            <StatusPill code={linha.status} label={ESTADO_CURTO[linha.status] ?? batchStatusLabel(linha.status)} />
+                          ) : (
+                            <StatePill tone={{ tom: recusa.tom, label: recusa.estado }} />
+                          )}
                           <span className="sb-cmp-sub">
                             {linha.applied_at === null
                               ? formatDateTime(linha.created_at)

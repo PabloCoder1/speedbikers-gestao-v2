@@ -141,3 +141,29 @@ describe("etapas do processo de NF-e (D-277)", () => {
     expect(etapas[2]?.nota).toBe("0 de 0 vinculados");
   });
 });
+
+describe("a nota recusada por regra (D-612, D-497 b)", () => {
+  it("foi lida e não falhou: a última etapa diz que não há baixa, sem conferência", () => {
+    const etapas = nfeEtapas({
+      status: "FAILED",
+      parsedAt: null,
+      totalItems: 0,
+      resolvedItems: 0,
+      direcao: "SAIDA",
+      tipo: "NFE",
+      semBaixaPorRegra: "Sem baixa: venda do marketplace",
+    });
+
+    expect(etapas.map((e) => [e.label, e.estado])).toEqual([
+      ["Envio do arquivo", "concluida"],
+      ["Leitura do arquivo", "concluida"],
+      ["Sem baixa: venda do marketplace", "pendente"],
+    ]);
+  });
+
+  it("sem a recusa por regra, a falha de leitura continua falha", () => {
+    const etapas = nfeEtapas({ status: "FAILED", parsedAt: null, totalItems: 0, resolvedItems: 0, semBaixaPorRegra: null });
+
+    expect(etapas[1]).toEqual({ label: "Leitura do arquivo", estado: "falhou" });
+  });
+});

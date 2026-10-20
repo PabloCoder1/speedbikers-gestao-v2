@@ -17716,3 +17716,36 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - web: `apps/web/app/(app)/faturamento/multicanal.tsx` e `apps/web/app/(app)/central/page.tsx`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,PERFORMANCE,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-612 - A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
+
+**Contexto:** a D-497 (b) do A1 faz o worker recusar, na leitura, a nota de venda e a de devolução de venda cujo intermediador é o Mercado Livre ou a Shopee. O estoque dessas vendas já se move sem a nota, e a nota mexeria de novo. O DANFE de venda pede o XML, porque não diz o intermediador. A recusa grava `documents.last_error_code` (`SAIDA_VENDA_MARKETPLACE`, `DEVOLUCAO_VENDA_MARKETPLACE`, `VENDA_PEDE_XML`, `LEITURA_NAO_GRAVADA`), o `intermediary_cnpj` lido do XML e o texto em `last_error`, com o documento em `FAILED`. A tela mostrava toda nota `FAILED` como "não conseguimos ler este arquivo": uma nota de venda certa aparecia como erro vermelho, com o botão "Enviar de novo".
+
+**1. Cada código diz o que a nota é** (`recusaLegivel` em `apps/web/lib/document-error.ts`):
+- **Venda ou devolução do marketplace:** "Não aplicada", em tom de informação, sem ação. O título leva o canal pelo intermediador (`marketplaceDoIntermediador` do `@sb/domain`; sem ele, "do marketplace"). O texto não afirma COMO o estoque já se moveu: no Mercado Livre é o pedido lido, e na Shopee é a planilha do UpSeller até a D-495.
+- **DANFE de venda:** "Pede o XML", em atenção, com o link "Enviar o XML".
+- **Leitura que não pôde ser gravada:** continua "Falhou", com "Enviar de novo" e o texto técnico, que o resumo curto do `erroLegivel` não mostraria.
+- **Código que a tela não conhece:** cai no texto de antes, nunca no código cru.
+
+**2. Onde muda:**
+- **Na fila (`/notas-fiscais`):** o selo de estado, o motivo embaixo do número e o próximo passo ("Venda do marketplace · sem baixa", "Enviar o XML"). A linha vermelha fica só para a falha de verdade.
+- **No cartão "Falhas e recusas":** antes "Falhas de leitura". A contagem é do SQL pelo estado `FAILED`, que inclui as recusas, então o rótulo diz as duas, sem a web separar nada.
+- **No detalhe:** o selo do cabeçalho, o bloco do motivo (com o detalhe técnico recolhido) e o fato "Intermediador" (só quando o XML o trouxe).
+- **Nas etapas (`nfeEtapas`, `semBaixaPorRegra`):** a nota recusada por regra foi LIDA. A leitura fica concluída, e a última etapa, "Sem baixa: venda do marketplace", toma o lugar da conferência e da baixa, como o envio ao Full.
+- **A recusa na CONFIRMAÇÃO** (a `confirmNfeApply` repete a guarda para documento lido antes dela) já aparecia: o formulário mostra o `reason` da api.
+
+**3. Antes da migration:** a lista lê pela `get_documents_overview`, e as duas colunas ausentes valem nulo. O detalhe lê `documents` direto, e pedir coluna que não existe derruba a página (a lição de 18/09 com `documents.reference`). Por isso a tela entra **depois** da `20261019220000` em produção.
+
+**Publicação:** só a web, depois da migration `20261019220000` em produção (o A1 dispara e avisa). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **Unitários:** `document-error.test.ts` (os quatro códigos, o canal, sem código e código novo), `documents-overview.test.ts` (as colunas ausentes e presentes, o tipo errado recusando a resposta, o próximo passo de cada código) e `nfe-steps.test.ts` (a etapa sem baixa; sem ela, a falha de leitura continua falha).
+- **e2e (`nota-fiscal.spec.ts`):** duas notas gravadas como o worker as grava (`FAILED`, cabeçalho, sem itens). A venda do Mercado Livre mostra "Não aplicada", sem a linha de falha, com o motivo, o intermediador, as etapas sem baixa e nenhum link para reenviar. O DANFE mostra "Pede o XML", com o link. As duas saem no fim.
+- **Fotos** da fila e do detalhe a 1440 e a 375 px.
+- **Suite inteira:** **258/258** com o banco recriado do zero (255 na 3300 e os 3 de convite na 3000), e o `loja-live` **10/10**.
+
+**Impacto:**
+- web: `apps/web/lib/{document-error,documents-overview,nfe-steps}.ts` com os testes; `apps/web/app/(app)/notas-fiscais/page.tsx` e `[id]/page.tsx`; o bloco `.sb-nf-estado-doc-*` de `globals.css`;
+- e2e: `nota-fiscal.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
