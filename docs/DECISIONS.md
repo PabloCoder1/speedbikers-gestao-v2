@@ -17714,3 +17714,37 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - e2e: `nota-fiscal.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-614 - A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
+
+**Contexto:** a D-495 (b) do A1 (#265, contrato C-68) faz a venda paga de loja Shopee live baixar o estoque, pelas regras do dono de 19/10 (o corte igual ao do ML, o armazém da Shopee como o Full, a devolução numa fatia própria). Ela grava três tipos novos — `VENDA_SHOPEE`, `CANCELAMENTO_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE` (o estorno do corte é o `ESTORNO_PRE_CAPTURA` de sempre) —, a origem `SHOPEE_ORDER` com o `order_sn`, e o `get_stock_movements` passa a devolver `shopee_shop_id` e `shopee_order_day` (o dia da criação em São Paulo), nulos fora da Shopee. A tela traduzia só os tipos e as origens que conhecia: o resto aparecia cru, e `ORDER` é "Pedido ML".
+
+**Decisão:**
+1. **Os rótulos** (`lib/movement-labels.ts`):
+   - "Venda Shopee";
+   - "Cancelamento Shopee";
+   - "Estorno de venda entregue pelo armazém da Shopee", no padrão do `ESTORNO_FULL`;
+   - "Pedido Shopee <order_sn>" na origem, nunca "Pedido ML".
+2. **Os filtros** (`lib/movement-filters.ts`): os três tipos e a origem `SHOPEE_ORDER` entram nos menus de `/estoque/movimentacoes`.
+3. **O link do pedido** (`movementSourceHref`): abre `/vendas/shopee?loja=&from=&to=&pedido=`, o mesmo destino da Busca Universal (D-467), porque a tela acha o pedido dentro do período do dia da criação.
+   - Só vira link com a loja e o dia preenchidos e o dia no formato de data.
+   - Sem eles (pedido apagado, ou banco anterior à migration), a referência fica texto, nunca um link para lista vazia.
+4. **A ordem com o A1:** a tela entra ANTES do #265, sem empilhar nele. Os tipos novos só existem depois da migration `20261020120000` e do worker da baixa. Com a tela no ar antes, ninguém vê o código cru.
+   - O teste do CHECK (`movement-type-check.test.ts`) olha só o worker e o domínio, então os rótulos antecipados não o afetam.
+   - As duas colunas novas são opcionais na linha da tela: ausentes antes da migration, a referência fica texto.
+
+**Publicação:** só a web, antes do deploy do worker da baixa (combinado com o A1; o #265 entrou na `main` antes dela, mas sem o worker nenhum movimento novo existe). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **Unitários:** `movement-labels.test.ts`:
+  - os 19 tipos com rótulo;
+  - os três novos e a origem, que nunca é "Pedido ML";
+  - o link com loja e dia, e os casos em que ele vira texto (sem a loja, sem o dia, sem o terceiro argumento, dia fora do formato).
+- **e2e (ensaio da loja live, sobre a `main` com o #265 e a migration `20261020120000`):** um `VENDA_SHOPEE` gravado como o worker grava (origem `SHOPEE_ORDER`, `order_sn` da loja live) aparece como "Venda Shopee" e "Pedido Shopee", nunca cru nem "Pedido ML", e o link leva à `/vendas/shopee` na loja e no dia da criação, onde o pedido está.
+- **Suite inteira:** **258/258** com o banco recriado do zero (255 na 3300 e os 3 de convite na 3000), e o `loja-live` **11/11**.
+
+**Impacto:**
+- web: `apps/web/lib/movement-labels.ts` e `movement-filters.ts` com o teste; `apps/web/app/(app)/estoque/movimentacoes/page.tsx`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
