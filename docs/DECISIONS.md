@@ -16640,7 +16640,7 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - **Mutacao:** sem a condicao da loja, 3 testes caem; a sobrecarga (a funcao de tres argumentos de volta ao lado da nova) derruba 6, entre eles o da assinatura e o da chamada de sempre, que fica ambigua (`function ... is not unique`).
 - **Tipos:** o bloco escrito a mao em `types.ts` (classe D-213) bate com o gerador local, com os argumentos anulaveis (D-133).
 
-**Publicacao:** a migration `20261020130000` vai a producao depois do merge. A tela (o botao do lote de volta com a loja, A2) manda o parametro so com valor e so depois da migration em producao (PGRST202). Worker e api nao mudam.
+**Em producao (20/10):** migration `20261020130000` aplicada as 16:22 UTC (run `39439068303`; o plano, conferido antes da 2a aprovacao, era so ela; o primeiro disparo foi recusado no `origem`, que nao achou a CI do commit, e o segundo passou). Conferido no banco, sem chamar a funcao (chamar marcaria notificacoes reais): uma versao so, com os quatro argumentos e o recorte da loja; `security invoker` com `search_path` vazio; `authenticated` executa, `anon` nao. A tela (D-616, A2, #272) pode entrar: manda o parametro so com valor. Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261020130000_notificacoes_em_lote_por_loja.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,NOTIFICATIONS,HANDOFF,ROADMAP}.md`.
 
