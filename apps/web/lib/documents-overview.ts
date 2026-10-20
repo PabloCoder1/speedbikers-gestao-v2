@@ -10,6 +10,8 @@
  * Nada aqui soma: contagens, unidades e valores vêm do SQL.
  */
 
+import { recusaLegivel } from "./document-error";
+
 /** Os quatro layouts, mais o estado "ainda não lido". */
 export const TIPOS_DOCUMENTO = ["NFE", "DANFE_PDF", "SAIDA_UPSELLER_PDF", "ENVIO_FULL_ML_PDF"] as const;
 
@@ -40,6 +42,13 @@ export interface LinhaDocumento {
   readonly created_at: string;
   readonly applied_at: string | null;
   readonly last_error: string | null;
+  /**
+   * D-612 (D-497 b): o motivo da recusa em código e o CNPJ do intermediador lido
+   * do XML. Ausentes da resposta antes da migration `20261019220000`: lidos como
+   * `null`, e a tela fica como antes.
+   */
+  readonly last_error_code: string | null;
+  readonly intermediary_cnpj: string | null;
 }
 
 export interface ContagensDocumentos {
@@ -131,6 +140,13 @@ function lerLinha(v: unknown): LinhaDocumento | null {
     if (!textoOuNulo(v[campo])) return null;
   }
 
+  // D-612: as duas do fim só existem depois da migration -- ausente é `null`;
+  // presente, tem de ser texto ou nulo, como as outras.
+  const codigo = "last_error_code" in v ? v.last_error_code : null;
+  const intermediario = "intermediary_cnpj" in v ? v.intermediary_cnpj : null;
+
+  if (!textoOuNulo(codigo) || !textoOuNulo(intermediario)) return null;
+
   return {
     id: v.id,
     file_name: v.file_name,
@@ -152,6 +168,8 @@ function lerLinha(v: unknown): LinhaDocumento | null {
     created_at: v.created_at,
     applied_at: v.applied_at as string | null,
     last_error: v.last_error as string | null,
+    last_error_code: codigo,
+    intermediary_cnpj: intermediario,
   };
 }
 
@@ -223,6 +241,8 @@ export function linhaDoLegado(row: LinhaDocumentoLegado): LinhaDocumento {
     reference: null,
     unidades: 0,
     valor: 0,
+    last_error_code: null,
+    intermediary_cnpj: null,
   };
 }
 
@@ -237,7 +257,15 @@ export function proximoPassoDoDocumento(linha: LinhaDocumento): { texto: string;
   const resolvidos = linha.resolved_items ?? 0;
   const faltam = Math.max(total - resolvidos, 0);
 
-  if (linha.status === "FAILED") return { texto: "Ver o que falhou", tom: "perigo" };
+  if (linha.status === "FAILED") {
+    // D-612: a nota de venda do marketplace não é falha -- está certa e só não
+    // baixa; o DANFE de venda pede o XML. Sem código conhecido, a falha de antes.
+    const recusa = recusaLegivel(linha.last_error_code, null);
+
+    if (recusa === null) return { texto: "Ver o que falhou", tom: "perigo" };
+
+    return { texto: recusa.proximoPasso, tom: recusa.tom === "info" ? "neutro" : recusa.tom };
+  }
   if (linha.status === "APPLIED") return { texto: "Ver movimentos", tom: "ok" };
   if (linha.status === "CANCELLED") return { texto: "Cancelado", tom: "neutro" };
   if (linha.status === "UPLOADED" || linha.status === "PARSING") return { texto: "Lendo o arquivo…", tom: "info" };

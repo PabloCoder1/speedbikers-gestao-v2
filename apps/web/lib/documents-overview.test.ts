@@ -202,3 +202,51 @@ describe("próximo passo", () => {
     expect(proximoPassoDoDocumento({ ...base, status: "APPLIED" }).tom).toBe("ok");
   });
 });
+
+describe("a recusa da nota (D-612, D-497 b)", () => {
+  it("antes da migration as duas colunas não vêm, e a linha as lê como nulas", () => {
+    expect(lerVisaoDocumentos(respostaValida())?.linhas[0]).toMatchObject({ last_error_code: null, intermediary_cnpj: null });
+  });
+
+  it("depois dela, vêm no fim da linha; com tipo errado, a resposta inteira é recusada", () => {
+    const resposta = respostaValida() as { linhas: Record<string, unknown>[] };
+    const linha = resposta.linhas[0] ?? {};
+
+    linha.last_error_code = "SAIDA_VENDA_MARKETPLACE";
+    linha.intermediary_cnpj = "03007331000141";
+    expect(lerVisaoDocumentos(resposta)?.linhas[0]).toMatchObject({
+      last_error_code: "SAIDA_VENDA_MARKETPLACE",
+      intermediary_cnpj: "03007331000141",
+    });
+
+    linha.last_error_code = 7;
+    expect(lerVisaoDocumentos(resposta)).toBeNull();
+  });
+
+  it("o próximo passo da nota recusada diz o que ela é, e só a leitura que não gravou é perigo", () => {
+    const base = linhaDoLegado({
+      id: "d1",
+      file_name: "nota.xml",
+      status: "FAILED",
+      operation_type: "SAIDA",
+      document_number: "9",
+      series: null,
+      access_key: null,
+      issuer_name: null,
+      issue_date: null,
+      total_items: 0,
+      resolved_items: 0,
+      created_at: "2026-10-19T10:00:00.000Z",
+      applied_at: null,
+      last_error: "nota de venda feita pelo Mercado Livre",
+    });
+
+    expect(proximoPassoDoDocumento({ ...base, last_error_code: "SAIDA_VENDA_MARKETPLACE" })).toEqual({
+      texto: "Venda do marketplace · sem baixa",
+      tom: "neutro",
+    });
+    expect(proximoPassoDoDocumento({ ...base, last_error_code: "VENDA_PEDE_XML" })).toEqual({ texto: "Enviar o XML", tom: "atencao" });
+    expect(proximoPassoDoDocumento({ ...base, last_error_code: "LEITURA_NAO_GRAVADA" })).toEqual({ texto: "Ver o que falhou", tom: "perigo" });
+    expect(proximoPassoDoDocumento(base)).toEqual({ texto: "Ver o que falhou", tom: "perigo" });
+  });
+});

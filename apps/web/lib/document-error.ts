@@ -64,3 +64,90 @@ export function erroLegivel(bruto: string, input: { leu: boolean }): ErroLegivel
     detalhe,
   };
 }
+
+/**
+ * D-612: O MOTIVO DA RECUSA EM CÓDIGO (`documents.last_error_code`, D-497 b).
+ *
+ * A venda do Mercado Livre e a da Shopee já mexem no estoque pelo pedido; a nota
+ * da MESMA venda, importada aqui, mexeria de novo. O worker a recusa na leitura
+ * e grava o código, e a tela diz o que ele significa — a nota de venda do
+ * marketplace não é falha: está certa, só não deve baixar. Código que a tela
+ * não conhece é `null`, e quem chama cai no `erroLegivel` do texto (D-476:
+ * nunca o código cru).
+ */
+export type TomDaRecusa = "info" | "atencao" | "perigo";
+
+/** O que a pessoa faz depois: nada, enviar o XML, ou enviar o arquivo de novo. */
+export type AcaoDaRecusa = "nenhuma" | "enviar-xml" | "enviar-de-novo";
+
+export interface RecusaLegivel {
+  /** O estado curto da tabela ("Não aplicada", "Pede o XML", "Falhou"). */
+  readonly estado: string;
+  readonly titulo: string;
+  readonly resumo: string;
+  readonly tom: TomDaRecusa;
+  readonly acao: AcaoDaRecusa;
+  /** O próximo passo da fila, curto. */
+  readonly proximoPasso: string;
+  /** A etapa que toma o lugar da conferência e da baixa; só na recusa por regra. */
+  readonly etapaFinal: string | null;
+}
+
+/** O nome do marketplace pelo intermediador lido do XML; sem ele, "do marketplace". */
+function doCanal(marketplace: "ML" | "SHOPEE" | null): string {
+  return marketplace === "ML" ? "do Mercado Livre" : marketplace === "SHOPEE" ? "da Shopee" : "do marketplace";
+}
+
+export function recusaLegivel(codigo: string | null, marketplace: "ML" | "SHOPEE" | null): RecusaLegivel | null {
+  const canal = doCanal(marketplace);
+
+  switch (codigo) {
+    case "SAIDA_VENDA_MARKETPLACE":
+      return {
+        estado: "Não aplicada",
+        titulo: `Nota de venda ${canal}: não baixa o estoque`,
+        // Genérico de propósito: no ML a baixa vem do pedido lido; na Shopee, da
+        // planilha do UpSeller até a D-495 baixar pelo pedido.
+        resumo:
+          "O estoque desta venda já é baixado sem a nota — pelo pedido do marketplace ou pela planilha do UpSeller. Aplicar a nota baixaria as mesmas unidades de novo, por isso ela fica registrada aqui e não é aplicada.",
+        tom: "info",
+        acao: "nenhuma",
+        proximoPasso: "Venda do marketplace · sem baixa",
+        etapaFinal: "Sem baixa: venda do marketplace",
+      };
+    case "DEVOLUCAO_VENDA_MARKETPLACE":
+      return {
+        estado: "Não aplicada",
+        titulo: `Nota de devolução de uma venda ${canal}: não repõe o estoque`,
+        resumo:
+          "A devolução desta venda já volta ao estoque sem a nota — pela devolução do pedido ou pela planilha do UpSeller. Aplicar a nota reporia as mesmas unidades de novo, por isso ela fica registrada aqui e não é aplicada.",
+        tom: "info",
+        acao: "nenhuma",
+        proximoPasso: "Devolução do marketplace · sem reposição",
+        etapaFinal: "Sem reposição: devolução do marketplace",
+      };
+    case "VENDA_PEDE_XML":
+      return {
+        estado: "Pede o XML",
+        titulo: "Nota de venda em PDF: envie o XML",
+        resumo:
+          "O DANFE não diz se a venda foi pelo Mercado Livre ou pela Shopee, que já baixam o estoque pelo pedido. Envie o XML desta nota: com ele, a leitura sabe se a venda baixa o estoque (venda direta) ou não (venda do marketplace).",
+        tom: "atencao",
+        acao: "enviar-xml",
+        proximoPasso: "Enviar o XML",
+        etapaFinal: null,
+      };
+    case "LEITURA_NAO_GRAVADA":
+      return {
+        estado: "Falhou",
+        titulo: "A leitura não pôde ser gravada",
+        resumo: "O arquivo foi lido, mas o resultado não pôde ser gravado. Envie de novo; se repetir, o detalhe técnico diz o motivo.",
+        tom: "perigo",
+        acao: "enviar-de-novo",
+        proximoPasso: "Ver o que falhou",
+        etapaFinal: null,
+      };
+    default:
+      return null;
+  }
+}

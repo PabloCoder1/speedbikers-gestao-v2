@@ -52,8 +52,22 @@ export function nfeEtapas(input: {
   direcao?: string | null;
   /** O layout lido (D-375): o envio ao Full não tem quarta etapa. */
   tipo?: string | null;
+  /**
+   * D-612: a nota recusada POR REGRA na leitura (a venda ou a devolução do
+   * marketplace, D-497 b) foi lida e não falhou — só não mexe no estoque. O
+   * texto é a etapa final que toma o lugar da conferência e da baixa.
+   */
+  semBaixaPorRegra?: string | null;
 }): readonly EtapaProcesso[] {
   const { status, parsedAt } = input;
+
+  if (status === "FAILED" && input.semBaixaPorRegra !== undefined && input.semBaixaPorRegra !== null) {
+    return [
+      { label: "Envio do arquivo", estado: "concluida" },
+      { label: "Leitura do arquivo", estado: "concluida" },
+      { label: input.semBaixaPorRegra, estado: "pendente" },
+    ];
+  }
   const total = input.totalItems ?? 0;
   const vinculados = input.resolvedItems ?? 0;
 

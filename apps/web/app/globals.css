@@ -15054,6 +15054,28 @@ td.sb-pco-num-linha {
   color: var(--sb-danger-ink);
 }
 
+/* D-612: a nota recusada por regra -- a venda do marketplace (informação) e o
+   DANFE de venda que pede o XML (atenção); as cores do `TOM` de cada uma. */
+.sb-nf-estado-doc-info {
+  border-color: color-mix(in srgb, var(--sb-secondary) 30%, var(--sb-border));
+  box-shadow: inset 3px 0 0 var(--sb-secondary);
+}
+
+.sb-nf-estado-doc-info .sb-nf-estado-doc-icone {
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+}
+
+.sb-nf-estado-doc-atencao {
+  border-color: color-mix(in srgb, var(--sb-accent) 35%, var(--sb-border));
+  box-shadow: inset 3px 0 0 var(--sb-accent);
+}
+
+.sb-nf-estado-doc-atencao .sb-nf-estado-doc-icone {
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
 .sb-nf-estado-doc-acao {
   align-self: center;
   height: 2.25rem;

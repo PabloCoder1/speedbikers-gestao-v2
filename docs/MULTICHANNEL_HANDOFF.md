@@ -130,12 +130,12 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada.
+- D-612 — a tela da D-497 (b): a nota de venda e a de devolução do marketplace aparecem como "Não aplicada" (informação, sem o vermelho de falha nem "Enviar de novo"), o DANFE de venda como "Pede o XML" (com o link), a leitura não gravada continua "Falhou"; o detalhe mostra o intermediador, e as etapas dizem "Sem baixa: venda do marketplace". **Em código e validada**; o PR entra **depois** da migration `20261019220000` em produção (o detalhe lê as colunas novas de `documents`).
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §2 e §8). As etapas T0 a T11 estão na `main`; o que resta nas telas espera um contrato do A1 ou uma escolha do dono:
 - **Esperam o A1, na ordem dele (D-499 → D-497 (b) → D-495 → D-491):**
   - **D-495**, o estoque baixando a venda da Shopee (decisão do dono de 19/10): os rótulos dos tipos novos (`lib/movement-labels.ts` e `lib/movement-filters.ts`), a origem "Pedido Shopee" (`source_type` = `SHOPEE_ORDER`, `source_id` = `order_sn`, combinado com o A1) com o link para `/vendas/shopee?pedido=`, e a nota da `/estoque`. A tela entra junto da migration ou do worker, para ninguém ver o código cru. Os nomes dos tipos ainda não estão firmes.
-  - **D-497 (b)**: o rótulo do código de recusa da nota de saída em `/notas-fiscais/nova`.
+  - **D-497 (b)**: a tela é a D-612 (em andamento, acima); a recusa aparece em `/notas-fiscais` e no detalhe, onde o worker a grava, e não em `/notas-fiscais/nova`.
   - **D-491**: `p_shopee_shop_id` em `mark_notifications_read`; a tela manda a loja só com valor e o botão de lote volta (D-604).
 - **Pedem contrato novo do A1 e a escolha do dono** (ver "Decisões pendentes do dono", item 4):
   - `/vendas` no "Todos": marca, vendas de hoje e taxa de cancelamento. O C-53 não traz cancelamento nem marca, e a tela diz que são só do ML.

@@ -1,3 +1,4 @@
+import { marketplaceDoIntermediador } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
@@ -10,7 +11,7 @@ import { ProcessSteps } from "../../../../components/process-steps";
 import { TOM, tomDeStatus } from "../../../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { documentTypeLabel } from "../../../../lib/document-filters";
-import { erroLegivel } from "../../../../lib/document-error";
+import { erroLegivel, recusaLegivel } from "../../../../lib/document-error";
 import { batchStatusLabel, operationTypeLabel, statusTone } from "../../../../lib/labels";
 import { nfeEtapas } from "../../../../lib/nfe-steps";
 import { createClient } from "../../../../lib/supabase/server";
@@ -57,7 +58,7 @@ export default async function NotaFiscalPage({
     supabase
       .from("documents")
       .select(
-        "id, file_name, status, access_key, operation_type, document_type, source_format, reference, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error",
+        "id, file_name, status, access_key, operation_type, document_type, source_format, reference, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error, last_error_code, intermediary_cnpj",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -119,6 +120,9 @@ export default async function NotaFiscalPage({
   const lendo = info.status === "UPLOADED" || info.status === "PARSING";
   const editable = info.status === "PARSED";
   const falhou = info.status === "FAILED";
+  // D-612 (D-497 b): o intermediador lido do XML e o motivo da recusa em código.
+  const marketplace = marketplaceDoIntermediador(info.intermediary_cnpj);
+  const recusa = falhou ? recusaLegivel(info.last_error_code, marketplace) : null;
 
   /*
     Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa, no
@@ -148,6 +152,8 @@ export default async function NotaFiscalPage({
     resolvedItems: info.resolved_items,
     direcao: info.operation_type,
     tipo: info.document_type,
+    // D-612: só a recusa por regra (venda ou devolução do marketplace) não é falha.
+    semBaixaPorRegra: recusa?.etapaFinal ?? null,
   });
 
   // Os fatos do documento. Campo ausente vira "—" e continua na grade: sumir
@@ -175,6 +181,16 @@ export default async function NotaFiscalPage({
         ? "—"
         : `${info.recipient_name}${info.recipient_cnpj === null ? "" : ` (${info.recipient_cnpj})`}`,
     ],
+    // D-612: só o XML diz o intermediador (NT 2020.006); o DANFE não, e o fato
+    // não aparece em vez de dizer "—" como se o XML não o tivesse.
+    ...(info.intermediary_cnpj === null
+      ? []
+      : ([
+          [
+            "Intermediador",
+            `${marketplace === "ML" ? "Mercado Livre" : marketplace === "SHOPEE" ? "Shopee" : "Outro intermediador"} (${info.intermediary_cnpj})`,
+          ],
+        ] as const)),
     [
       "Chave de acesso",
       info.access_key === null ? "—" : <span className="sb-mono sb-nf-chave">{info.access_key}</span>,
@@ -214,8 +230,8 @@ export default async function NotaFiscalPage({
               {info.file_name ?? info.id}
             </h2>
             <div className="sb-nf-doc-selos">
-              <span className="sb-status" style={TOM[tomDeStatus(statusTone(info.status))]}>
-                {batchStatusLabel(info.status)}
+              <span className="sb-status" style={recusa === null ? TOM[tomDeStatus(statusTone(info.status))] : TOM[recusa.tom]}>
+                {recusa === null ? batchStatusLabel(info.status) : recusa.estado}
               </span>
               {info.operation_type !== null && (
                 <span className="sb-status" style={TOM.info}>
@@ -283,7 +299,37 @@ export default async function NotaFiscalPage({
         </section>
       )}
 
-      {falhou && erro !== null && (
+      {/* D-612: a nota recusada por regra (venda do marketplace, DANFE de
+          venda) não é "não conseguimos ler": a tela diz o motivo e o que fazer. */}
+      {recusa !== null && (
+        <section
+          className={`sb-panel sb-nf-estado-doc sb-nf-estado-doc-${recusa.tom === "perigo" ? "falha" : recusa.tom}`}
+          role={recusa.tom === "perigo" ? "alert" : "status"}
+          aria-label="Motivo da recusa"
+        >
+          <span className="sb-nf-estado-doc-icone" aria-hidden="true">
+            {recusa.tom === "info" ? "i" : "!"}
+          </span>
+          <div>
+            <h2>{recusa.titulo}</h2>
+            <p>{recusa.resumo}</p>
+            {/* O texto do worker, limpo: curto, o `erroLegivel` o põe no resumo. */}
+            {erro !== null && (
+              <details className="sb-nf-detalhe">
+                <summary>Detalhe técnico</summary>
+                <code>{erro.detalhe ?? erro.resumo}</code>
+              </details>
+            )}
+          </div>
+          {recusa.acao !== "nenhuma" && (
+            <Link className="sb-button sb-button-primary sb-nf-estado-doc-acao" href="/notas-fiscais/nova">
+              <Icone nome="envio" tamanho={14} /> {recusa.acao === "enviar-xml" ? "Enviar o XML" : "Enviar de novo"}
+            </Link>
+          )}
+        </section>
+      )}
+
+      {falhou && recusa === null && erro !== null && (
         <section className="sb-panel sb-nf-estado-doc sb-nf-estado-doc-falha" role="alert">
           <span className="sb-nf-estado-doc-icone" aria-hidden="true">
             !

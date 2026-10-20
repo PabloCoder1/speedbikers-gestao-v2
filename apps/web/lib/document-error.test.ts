@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { erroLegivel, limparTexto } from "./document-error";
+import { erroLegivel, limparTexto, recusaLegivel } from "./document-error";
 
 // Os bytes vêm de `String.fromCharCode` e não de escape no texto: o arquivo de
 // teste não pode ele mesmo carregar caractere de controle.
@@ -58,5 +58,28 @@ describe("limparTexto", () => {
     const sujo = `a${String.fromCharCode(0, 0x14)}b${R}${R}c${QUEBRA}${QUEBRA} d`;
 
     expect(limparTexto(sujo)).toBe("a b c d");
+  });
+});
+
+describe("a recusa da nota em código (D-612, D-497 b)", () => {
+  it("a nota de venda do marketplace não é falha: está certa e só não baixa", () => {
+    const ml = recusaLegivel("SAIDA_VENDA_MARKETPLACE", "ML");
+
+    expect(ml).toMatchObject({ estado: "Não aplicada", tom: "info", acao: "nenhuma" });
+    expect(ml?.titulo).toBe("Nota de venda do Mercado Livre: não baixa o estoque");
+    expect(recusaLegivel("SAIDA_VENDA_MARKETPLACE", "SHOPEE")?.titulo).toBe("Nota de venda da Shopee: não baixa o estoque");
+    // Sem o intermediador (não deveria acontecer, mas o banco aceita), a frase não inventa o canal.
+    expect(recusaLegivel("SAIDA_VENDA_MARKETPLACE", null)?.titulo).toBe("Nota de venda do marketplace: não baixa o estoque");
+  });
+
+  it("a devolução do marketplace também não repõe; o DANFE de venda pede o XML; a leitura que não gravou é falha", () => {
+    expect(recusaLegivel("DEVOLUCAO_VENDA_MARKETPLACE", "ML")).toMatchObject({ estado: "Não aplicada", tom: "info", acao: "nenhuma" });
+    expect(recusaLegivel("VENDA_PEDE_XML", null)).toMatchObject({ estado: "Pede o XML", tom: "atencao", acao: "enviar-xml" });
+    expect(recusaLegivel("LEITURA_NAO_GRAVADA", null)).toMatchObject({ estado: "Falhou", tom: "perigo", acao: "enviar-de-novo" });
+  });
+
+  it("sem código, ou com um que a tela não conhece, não há recusa: vale o texto de antes, nunca o código cru", () => {
+    expect(recusaLegivel(null, null)).toBeNull();
+    expect(recusaLegivel("CODIGO_NOVO", "ML")).toBeNull();
   });
 });
