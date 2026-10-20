@@ -133,7 +133,7 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- A conferência da D-614 em produção: os `VENDA_SHOPEE` reais existem desde o ciclo das 14:25 UTC de 20/10 (worker `worker-00052-gz9`). O A2 pediu ao A1 a contagem, por `get_stock_movements` como `authenticated`, das linhas `SHOPEE_ORDER` sem `shopee_shop_id` ou `shopee_order_day` (cada uma seria referência sem link), e o par do armazém por `order_sn`. A olhada na tela de produção fica com o dono (o A2 não entra com conta real).
+- A conferência da D-614 em produção: os dados estão conferidos pelo A1 em 20/10, como `authenticated` e só com agregados: todo movimento `SHOPEE_ORDER` traz `shopee_shop_id` e `shopee_order_day` (logo, o link do pedido); só há `VENDA_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE`; nenhum estorno sem a sua venda. Falta a olhada do dono na tela de produção (`/estoque/movimentacoes` com a origem "Pedido Shopee"): o A2 não entra com conta real.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §2 e §8). As etapas T0 a T11 estão na `main`; o que resta nas telas espera um contrato do A1 ou uma escolha do dono:
 - **A fila do A1 (D-499 → D-497 (b) → D-495 → D-491) está em produção desde 20/10.** O que ainda toca as telas:
