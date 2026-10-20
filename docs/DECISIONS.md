@@ -17768,3 +17768,30 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-616 - Marcar em lote por loja Shopee: o botão volta com a loja no recorte (C-69)
+
+**Contexto:** desde a D-604, a `/notificacoes` recorta por loja Shopee. A escrita em lote (`mark_notifications_read`) não conhecia a loja, então, com a loja no recorte, a tela escondia o botão e dizia "Marcar em lote por loja ainda não existe". A D-491 do A1 (#269, contrato C-69, migration `20261020130000`) dá à função `p_shopee_shop_id`, com o mesmo sentido dos outros recortes: nulo é "sem recorte". Conta e loja juntas não marcam nada, porque o evento tem uma origem só.
+
+**Decisão:**
+1. **A ação de servidor** (`markAllNotificationsRead`):
+   - recebe a loja do recorte;
+   - recusa a loja fora do formato de UUID, como a conta;
+   - recusa conta e loja juntas, que não alcançariam evento nenhum: recusar diz isso, em vez de "0 marcadas";
+   - manda `p_shopee_shop_id` à RPC **só com valor**. O parâmetro não existe antes da migration (PGRST202), e a chamada sem loja continua igual à de hoje.
+2. **A tela:** o botão "Marcar este recorte como lido" volta com a loja no recorte, a confirmação diz o recorte com o nome da loja, e o aviso da D-604 sai.
+
+**Publicação:** só a web, depois da migration `20261020130000` em produção (o A1 avisa). Antes dela, o botão com a loja receberia o PGRST202 e diria "Não foi possível marcar as notificações deste recorte". Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **e2e:**
+  - `notificacoes` 8/8;
+  - no ensaio da loja live, o aviso da loja (`sync.failed`, a loja na própria coluna) é marcado pelo lote do recorte e o botão do recorte some, enquanto as notificações do Mercado Livre do seed continuam por ler.
+- **Mutação:** sem o parâmetro da loja, a chamada marcaria a Central inteira, e o último passo do caso cai.
+- **Suite inteira:** **258/258** com o banco recriado do zero (255 na 3300 e os 3 de convite na 3000), e o `loja-live` **11/11**.
+
+**Impacto:**
+- web: `apps/web/app/(app)/notificacoes/{actions.ts,mark-all-button.tsx,page.tsx}`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
