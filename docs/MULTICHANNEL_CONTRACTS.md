@@ -163,6 +163,17 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.22 O anúncio da Shopee vendendo sem vínculo na Central (C-73, D-609) — em código
+
+- **A ação:** `actions.kind = 'shopee_sem_vinculo'`, com `shopee_shop_id` (a loja; nunca junto de `ml_account_id`), `subject_key = <loja>:<item>:<variação ou ->`, severidade `media`, confiança `alta` e o impacto pela receita conhecida.
+- **O `evidence.detector`:** `shopee_shop_id`, `loja`, `item_id`, `model_id`, `anuncio`, `variacao`, `sku_anuncio`, `estado` (`SEM_SKU_NO_ANUNCIO` ou `SKU_FORA_DO_CATALOGO`), `unidades`, `pedidos`, `receita` e `itens_sem_receita`.
+- **A fila:** `get_actions_queue` devolve `shopee_shop_id` no fim, e `account_label` = o nome da loja.
+- **Para a tela:**
+  - o rótulo do kind;
+  - o atalho para `/anuncios/shopee?loja=<shopee_shop_id>&busca=<sku_anuncio ou item_id>`, depois de conferir que a busca da tela aceita o valor;
+  - nada de `/anuncios/{mlbId}`: o `mlb_id` é NULO.
+  - A tela lê a coluna nova só depois da migration `20261020180000` em produção.
+
 ### 3.21 A marca no "Todos" de /vendas (C-72, D-605) — em código
 
 `get_marketplace_sales_summary`, `get_marketplace_sales_daily`, `get_marketplace_sales_today` e `get_marketplace_sales_cancellations` ganham no fim `p_supplier_brand text` e `p_sem_marca boolean`, os nomes e a regra do recorte do ML (D-237). Sem recorte, tudo igual.
