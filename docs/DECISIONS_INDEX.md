@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **516** (D-001 a D-610).
+Decisões registradas: **517** (D-001 a D-612).
 
 ## Por domínio
 
@@ -409,7 +409,7 @@ Decisões registradas: **516** (D-001 a D-610).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (53)
+### vendas/métricas (54)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -464,6 +464,7 @@ Decisões registradas: **516** (D-001 a D-610).
 - **D-509** — A /vendas pinta sem esperar a taxa de cancelamento: as duas leituras mais caras da tela so seguram a 5a celula da faixa
 - **D-514** — Web vitals de producao depois da D-504, D-505 e D-509: a /vendas melhorou na amostra, o LCP da Home e a chegada da "Atencao necessaria", e a /central desloca porque o esqueleto dos indicadores tem 142 px para 3.000
 - **D-517** — A Central de Negocio, bloco 1: abas comuns as seis telas, cabecalho so com filtros, vendas no topo e o que repete recolhido
+- **D-612** — A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
 
 ### worker/infra (91)
 

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { factValue, login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
 
 /**
  * "Conferência de NF-e" (docs/TESTING.md) — terceira etapa do fluxo
@@ -79,4 +80,93 @@ test("a fila de documentos declara a janela, e o filtro recorta a base", async (
   await page.goto("/notas-fiscais?estado=APPLIED");
 
   await expect(painel).toContainText("Nenhuma nota fiscal com estes filtros.");
+});
+
+/**
+ * A NOTA RECUSADA POR REGRA (D-612, sobre a D-497 b do A1). A venda do
+ * marketplace já mexe no estoque pelo pedido, e o worker recusa a nota dela na
+ * leitura, com o motivo em `last_error_code`. A tela não pode dizer "não
+ * conseguimos ler" nem pintar de vermelho uma nota que está certa: diz que ela
+ * não é aplicada e por quê; e o DANFE de venda pede o XML. As duas notas são
+ * gravadas como o worker as grava (FAILED, com o cabeçalho e sem itens) e saem
+ * no fim, para não mexer na contagem do caso de cima.
+ */
+test("/notas-fiscais: a nota de venda do marketplace não é falha, e o DANFE de venda pede o XML (D-612)", async ({ page }) => {
+  const db = clienteDeServico();
+  const org = await db.from("organizations").select("id").eq("slug", "e2e-speed-bikers").single();
+
+  expect(org.error).toBeNull();
+
+  const base = {
+    organization_id: org.data?.id ?? "",
+    status: "FAILED",
+    operation_type: "SAIDA",
+    issuer_name: "Speed Bikers E2E",
+  };
+  const notas = await db.from("documents").insert([
+    {
+      ...base,
+      file_name: "e2e-d612-venda-ml.xml",
+      storage_path: "e2e/d612-venda-ml.xml",
+      // O banco pede o hash de 64 caracteres do arquivo.
+      content_hash: "e2e-d612-venda-ml".padEnd(64, "0"),
+      source_format: "XML",
+      document_type: "NFE",
+      document_number: "61201",
+      intermediary_cnpj: "03007331000141",
+      last_error_code: "SAIDA_VENDA_MARKETPLACE",
+      last_error: "nota de venda feita pelo Mercado Livre: o estoque já baixa pelo pedido, e a nota baixaria de novo",
+    },
+    {
+      ...base,
+      file_name: "e2e-d612-danfe.pdf",
+      storage_path: "e2e/d612-danfe.pdf",
+      // O banco pede o hash de 64 caracteres do arquivo.
+      content_hash: "e2e-d612-danfe".padEnd(64, "0"),
+      source_format: "PDF",
+      document_type: "DANFE_PDF",
+      document_number: "61202",
+      last_error_code: "VENDA_PEDE_XML",
+      last_error: "nota de venda ou de devolução de venda em PDF: o DANFE não diz se a venda foi pelo marketplace — envie o XML da nota",
+    },
+  ]).select("id, document_number");
+
+  expect(notas.error).toBeNull();
+
+  const venda = notas.data?.find((n) => n.document_number === "61201")?.id ?? "";
+  const danfe = notas.data?.find((n) => n.document_number === "61202")?.id ?? "";
+
+  try {
+    await login(page, "/notas-fiscais?estado=FAILED");
+    const painel = page.getByRole("region", { name: "Documentos", exact: true });
+    const linhaVenda = painel.getByRole("row", { name: /61201/u });
+
+    // Na fila: "Não aplicada" e o motivo, sem a linha vermelha de falha.
+    await expect(linhaVenda).toContainText("Não aplicada");
+    await expect(linhaVenda).toContainText("Nota de venda do Mercado Livre: não baixa o estoque");
+    await expect(linhaVenda).toContainText("Venda do marketplace · sem baixa");
+    await expect(linhaVenda).not.toHaveClass(/sb-nf-linha-falha/u);
+    await expect(painel.getByRole("row", { name: /61202/u })).toContainText("Pede o XML");
+
+    // No detalhe: o motivo e o intermediador; nada a reenviar, porque a nota está certa.
+    await page.goto(`/notas-fiscais/${venda}`);
+    const motivo = page.getByRole("status", { name: "Motivo da recusa" });
+
+    await expect(motivo).toContainText("Nota de venda do Mercado Livre: não baixa o estoque");
+    await expect(motivo.getByRole("link")).toHaveCount(0);
+    await expect(factValue(page, "Intermediador")).toHaveText("Mercado Livre (03007331000141)");
+    await expect(page.getByText("Não conseguimos ler este arquivo")).toHaveCount(0);
+    // O cabeçalho e as etapas também: lida, sem baixa, e nada de "falhou".
+    await expect(page.getByText("Não aplicada", { exact: true })).toBeVisible();
+    await expect(page.getByRole("listitem").filter({ hasText: "Sem baixa: venda do marketplace" })).toBeVisible();
+
+    // O DANFE de venda pede o XML, com o caminho para enviá-lo.
+    await page.goto(`/notas-fiscais/${danfe}`);
+    const pedeXml = page.getByRole("status", { name: "Motivo da recusa" });
+
+    await expect(pedeXml).toContainText("Nota de venda em PDF: envie o XML");
+    await expect(pedeXml.getByRole("link", { name: /Enviar o XML/u })).toHaveAttribute("href", "/notas-fiscais/nova");
+  } finally {
+    await db.from("documents").delete().in("id", [venda, danfe]);
+  }
 });

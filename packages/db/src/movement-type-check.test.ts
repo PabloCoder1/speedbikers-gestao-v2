@@ -54,6 +54,10 @@ const TIPOS_GRAVADOS: Readonly<Record<string, string>> = {
   SAIDA_NFE: "apps/worker/src/handlers/nfe-import-apply.ts",
   SAIDA_DOCUMENTO: "apps/worker/src/handlers/nfe-import-apply.ts",
   AJUSTE_RECONCILIACAO: "apps/worker/src/handlers/reconcile-balances.ts",
+  // D-495: a venda da Shopee.
+  VENDA_SHOPEE: "apps/worker/src/handlers/shopee-stock.ts",
+  CANCELAMENTO_SHOPEE: "apps/worker/src/handlers/shopee-stock.ts",
+  ESTORNO_ARMAZEM_SHOPEE: "apps/worker/src/handlers/shopee-stock.ts",
 };
 
 /** Os prefixos do vocabulario de `movement_type` — o filtro da varredura dos fontes. */
