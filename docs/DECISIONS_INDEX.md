@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **526** (D-001 a D-616).
+Decisões registradas: **528** (D-001 a D-620).
 
 ## Por domínio
 
@@ -415,7 +415,7 @@ Decisões registradas: **526** (D-001 a D-616).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (56)
+### vendas/métricas (58)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -473,6 +473,8 @@ Decisões registradas: **526** (D-001 a D-616).
 - **D-603** — O cancelamento por compra e o "hoje" ao vivo no "Todos" de /vendas: duas funcoes novas ao lado do C-53 (C-70)
 - **D-607** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee com o SKU (C-71)
 - **D-612** — A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
+- **D-618** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
+- **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 
 ### worker/infra (92)
 
