@@ -6577,7 +6577,9 @@ export type Database = {
           p_offset?: number
           p_ordem?: "receita" | "unidades"
           p_organization_id: string
+          p_sem_marca?: boolean
           p_sku_ids?: string[] | null
+          p_supplier_brand?: string | null
         }
         Returns: {
           compras: number
