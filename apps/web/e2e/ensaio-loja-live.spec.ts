@@ -45,6 +45,11 @@ async function semErro(page: Page): Promise<void> {
   await expect(page.locator(".sb-content").getByText(SEM_ERRO)).toHaveCount(0);
 }
 
+/** "1.234" → 1234 (a contagem com o separador de milhar). */
+function inteiro(texto: string): number {
+  return Number(texto.replace(/\D/gu, ""));
+}
+
 /** "R$ 1.600,00" → 1600. */
 function reais(texto: string): number {
   return Number(texto.replace(/[^\d,]/gu, "").replace(",", "."));
@@ -86,6 +91,76 @@ test("/vendas: no 'Todos', a loja live soma na faixa e tem a sua linha; no recor
   await expect(porLoja).toContainText(dinheiro("1.100,00"));
   await expect(page.getByText(new RegExp(`${LOJA_LIVE.nome} · .* motivo NOT_RECEIPT`, "u"))).toBeVisible();
   await semErro(page);
+});
+
+test("/vendas: no 'Todos', o cancelamento por compra tem a Shopee, e o hoje soma a venda dela do dia e diz até quando a leu (D-620, C-70)", async ({
+  page,
+}) => {
+  await entrar(page, "/vendas?marketplace=todos");
+
+  // 1 cancelado em 12 compras da loja live: 8,3%, ao lado da taxa do Mercado Livre.
+  await expect(page.locator(".sb-kpi[aria-busy='true']")).toHaveCount(0);
+  const celula = page.locator(".sb-kpi").filter({ has: page.locator(".sb-kpi-id", { hasText: /^multicanal_taxa_cancelamento$/u }) });
+
+  await expect(celula).toContainText(/Mercado Livre \d{1,3},\d% · Shopee 8,3%\./u);
+
+  const hoje = page.locator(".sb-hoje-numeros");
+  const doHoje = async (rotulo: string): Promise<string> =>
+    (await hoje.locator("> span").filter({ hasText: new RegExp(`\\s${rotulo}`, "u") }).locator("strong").innerText()).trim();
+
+  await expect(page.locator(".sb-hoje[aria-busy='true']")).toHaveCount(0);
+  // Os 11 válidos são de 1 a 10 dias atrás: nenhum deles é de hoje. A loja é lida, e a linha diz até quando.
+  await expect(hoje).toContainText(/Shopee lida até \d{2}\/\d{2}/u);
+  const antes = { receita: reais(await doHoje("receita")), compras: inteiro(await doHoje("compras")) };
+
+  // Uma venda paga AGORA, ainda sem financeiro: a receita é a dos itens (R$ 100).
+  const { data: org } = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+  const organizationId = org?.organization_id ?? "";
+  const agora = new Date().toISOString();
+
+  try {
+    const pedido = await db.from("shopee_orders").insert({
+      shopee_shop_id: lojaId,
+      organization_id: organizationId,
+      order_sn: "E2ELIVE-HOJE",
+      order_status: "READY_TO_SHIP",
+      currency: "BRL",
+      total_amount: LOJA_LIVE.receitaPorPedido,
+      shopee_created_at: agora,
+      shopee_updated_at: agora,
+      paid_at: agora,
+    });
+
+    expect(pedido.error).toBeNull();
+
+    const item = await db.from("shopee_order_items").insert({
+      shopee_shop_id: lojaId,
+      order_sn: "E2ELIVE-HOJE",
+      position: 0,
+      organization_id: organizationId,
+      item_id: 990777001,
+      item_name: LOJA_LIVE.skuTitulo,
+      item_sku: LOJA_LIVE.sku,
+      quantity: 1,
+      original_price: 120,
+      discounted_price: LOJA_LIVE.receitaPorPedido,
+      sku_id: skuId,
+      vinculo_via: "SKU_DO_PEDIDO",
+    });
+
+    expect(item.error).toBeNull();
+
+    await page.reload();
+    await expect(page.locator(".sb-hoje[aria-busy='true']")).toHaveCount(0);
+
+    // O hoje do "Todos" ganha exatamente a venda da Shopee: somada no SQL, não aqui.
+    expect(reais(await doHoje("receita"))).toBeCloseTo(antes.receita + LOJA_LIVE.receitaPorPedido, 2);
+    expect(inteiro(await doHoje("compras"))).toBe(antes.compras + 1);
+    await semErro(page);
+  } finally {
+    await db.from("shopee_order_items").delete().eq("shopee_shop_id", lojaId).eq("order_sn", "E2ELIVE-HOJE");
+    await db.from("shopee_orders").delete().eq("shopee_shop_id", lojaId).eq("order_sn", "E2ELIVE-HOJE");
+  }
 });
 
 test("/faturamento: o recorte Shopee fecha o resultado, o repasse e os Ads; o 'Todos' tem a coluna da Shopee e nenhum total de resultado", async ({

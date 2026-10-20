@@ -94,6 +94,48 @@ test("/vendas?marketplace=todos: com a única loja Shopee de teste, o total é o
   await expect(tabela(page).getByRole("row").filter({ hasText: "nada somável" })).toHaveCount(1);
 });
 
+/** O número de um pedaço da linha do hoje ("R$ 10,00 receita", "3 unidades"), depois de o esqueleto sair. */
+async function doHoje(page: Page, rotulo: "receita" | "unidades"): Promise<string> {
+  await expect(page.locator(".sb-hoje[aria-busy='true']")).toHaveCount(0);
+
+  return (
+    await page
+      .locator(".sb-hoje-numeros > span")
+      .filter({ hasText: new RegExp(`\\s${rotulo}`, "u") })
+      .locator("strong")
+      .innerText()
+  ).trim();
+}
+
+test("/vendas?marketplace=todos: o cancelamento por compra e o hoje ao vivo, com a loja de teste fora (D-620, C-70)", async ({
+  page,
+}) => {
+  await login(page, "/vendas?marketplace=ml");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  const ml = { receita: await doHoje(page, "receita"), unidades: await doHoje(page, "unidades") };
+
+  await page.goto("/vendas?marketplace=todos");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  // O hoje do "Todos", com só a loja de teste, é o do Mercado Livre: as mesmas definições, lidas ao vivo.
+  expect(await doHoje(page, "receita")).toBe(ml.receita);
+  expect(await doHoje(page, "unidades")).toBe(ml.unidades);
+  // A loja de teste não tem linha de marketplace: nada de "lida até".
+  await expect(page.locator(".sb-hoje-numeros")).not.toContainText("lida até");
+
+  // A 5ª célula chega no lugar dela, por compra, e nunca vazia de explicação.
+  await expect(page.locator(".sb-kpi[aria-busy='true']")).toHaveCount(0);
+  expect(await valorDaFaixa(page, "multicanal_taxa_cancelamento")).toMatch(/^\d{1,3},\d%$/u);
+  const celula = page.locator(".sb-kpi").filter({ has: page.locator(".sb-kpi-id", { hasText: /^multicanal_taxa_cancelamento$/u }) });
+
+  await expect(celula).toContainText("Por compra");
+  await expect(page.locator(".sb-kpi-strip-ancora .sb-kpi")).toHaveCount(5);
+
+  // O que ainda falta neste recorte é só a marca.
+  await expect(page.getByRole("note").filter({ hasText: "O filtro de marca ainda é só do Mercado Livre" })).toBeVisible();
+});
+
 test("/vendas?marketplace=shopee: sem loja real lida, a faixa diz '—' e por quê, e os pedidos estão a um clique", async ({
   page,
 }) => {
@@ -102,6 +144,10 @@ test("/vendas?marketplace=shopee: sem loja real lida, a faixa diz '—' e por qu
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
 
   expect(await valorDaFaixa(page, "multicanal_receita_bruta")).toBe("—");
+  // D-620: o cancelamento e o hoje dizem o mesmo porquê, sem 0%.
+  await expect(page.locator(".sb-kpi[aria-busy='true']")).toHaveCount(0);
+  expect(await valorDaFaixa(page, "multicanal_taxa_cancelamento")).toBe("—");
+  await expect(page.locator(".sb-hoje-numeros")).toContainText("nenhuma conta com venda somável neste recorte");
   await expect(page.getByText("nenhuma conta com venda somável neste recorte").first()).toBeVisible();
   await expect(page.getByText(/Nenhum dia com venda somável neste recorte/)).toBeVisible();
 
