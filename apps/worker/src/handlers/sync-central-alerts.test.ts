@@ -45,6 +45,7 @@ const TUDO_CERTO: Record<string, Resposta> = {
   ads_campanha: { data: resultado("ads_campanha", 1), error: null },
   produto_prejuizo: { data: resultado("produto_prejuizo", 0), error: null },
   shopee_sem_vinculo: { data: resultado("shopee_sem_vinculo", 3), error: null },
+  shopee_ruptura: { data: resultado("shopee_ruptura", 1), error: null },
 };
 
 async function run(porFonte: Record<string, Resposta>, payload: unknown = { organizationId: ORG }) {
@@ -66,10 +67,12 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["produto_prejuizo"] } },
       // D-609: a fonte da Shopee por último.
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_sem_vinculo"] } },
+      // D-611: a ruptura da Shopee, a última.
+      { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_ruptura"] } },
     ]);
-    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1): criadas e atualizadas de cada fonte.
-    expect(outcome).toEqual({ status: "done", processed: 10 });
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(4);
+    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1) + (1 + 1): criadas e atualizadas de cada fonte.
+    expect(outcome).toEqual({ status: "done", processed: 12 });
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(5);
     expect(linhas.join("")).toContain('"detectados":{"frete_anomalo":3}');
   });
 
@@ -79,8 +82,8 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       frete_anomalo: { data: null, error: { message: "canceling statement due to statement timeout" } },
     });
 
-    expect(chamadas).toHaveLength(4);
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(3);
+    expect(chamadas).toHaveLength(5);
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(4);
     expect(outcome).toEqual({
       status: "failed",
       retryable: true,

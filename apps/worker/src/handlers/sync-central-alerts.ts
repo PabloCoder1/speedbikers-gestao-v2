@@ -9,8 +9,8 @@ import type { HandlerContext, JobHandler } from "../router.js";
  * itens da Central de Ações, uma vez por dia e por organização.
  *
  * **Toda a regra mora no banco.** `sincronizar_alertas_central` lê os
- * detectores que a central já mostra (frete, Ads, produto no prejuízo) e o
- * anúncio da Shopee vendendo sem vínculo (D-609), e faz
+ * detectores que a central já mostra (frete, Ads, produto no prejuízo) e os da
+ * Shopee (o anúncio vendendo sem vínculo, D-609; a ruptura, D-611), e faz
  * numa transação o ciclo de vida de cada episódio: atualiza o aberto, respeita
  * o que uma pessoa fechou, abre o novo e encerra o que sumiu. Este handler só
  * chama e registra o que aconteceu: agregação em SQL, nunca em JavaScript.
@@ -29,11 +29,18 @@ const payloadSchema = z.object({ organizationId: z.uuid() });
 
 /**
  * Na ordem das chamadas: a mais pesada (o detector de frete, 4,4 s frio)
- * primeiro. D-609: o anúncio da Shopee vendendo sem vínculo por último -- a
- * função recusa a fonte antes da migration `20261020180000`, então este worker
- * só sobe depois dela em produção.
+ * primeiro. Os detectores da Shopee por último: o anúncio vendendo sem vínculo
+ * (D-609) e a ruptura no anúncio (D-611). A função recusa a fonte antes da
+ * migration de cada uma (`20261020180000`, `20261020190000`), então este
+ * worker só sobe depois delas em produção.
  */
-export const FONTES_ALERTAS = ["frete_anomalo", "ads_campanha", "produto_prejuizo", "shopee_sem_vinculo"] as const;
+export const FONTES_ALERTAS = [
+  "frete_anomalo",
+  "ads_campanha",
+  "produto_prejuizo",
+  "shopee_sem_vinculo",
+  "shopee_ruptura",
+] as const;
 
 const resultadoSchema = z.object({
   hoje: z.string(),
