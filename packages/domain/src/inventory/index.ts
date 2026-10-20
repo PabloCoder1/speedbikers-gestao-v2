@@ -39,6 +39,15 @@ export {
 export type { ExcessReversalShare, RecordedReversal, TimedRecordedReversal } from "./reversal-limit.js";
 
 export {
+  computeShopeeStockMovements,
+  isArmazemDaShopee,
+  SHOPEE_ARMAZEM_FLAG,
+  SHOPEE_CANCELADO,
+  shopeeSaleKeyOf,
+} from "./shopee-sale-deduction.js";
+export type { ShopeeSaleItem, ShopeeSaleOrder, ShopeeStockInputs, ShopeeStockMovements } from "./shopee-sale-deduction.js";
+
+export {
   cancelledInSheetKeys,
   computeCancellationMovements,
   computeCancellationReversals,

@@ -22965,3 +22965,72 @@ describe("documents: o código da recusa e o intermediador (D-497)", () => {
     await expect(documento(null, "03.007.331/0001-41", "d")).rejects.toThrow(/documents_intermediary_cnpj_check/);
   });
 });
+
+/**
+ * D-495 (b): a venda da Shopee no ledger -- os três tipos novos no CHECK e o
+ * extrato das movimentações com a loja e o dia do pedido (para o link "Pedido
+ * Shopee" da tela). A regra da baixa é testada no domínio e no worker.
+ */
+describe("o ledger com a venda da Shopee (D-495)", () => {
+  const LOJA = "dddd4950-0000-4000-8000-00000000d495";
+  const SN = "D495-LEDGER-1";
+  const RUN = String(Date.now());
+  let skuId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status)
+       values ($1, $2, 'live', 990495001, 'Loja Ledger', 'CONNECTED') on conflict (id) do nothing`,
+      [LOJA, ORG_SB],
+    );
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, $3, 'READY_TO_SHIP', timestamptz '2026-10-20 02:30+00', timestamptz '2026-10-20 03:00+00', timestamptz '2026-10-20 02:31+00')
+       on conflict do nothing`,
+      [LOJA, ORG_SB, SN],
+    );
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1, 'RLSTEST-D495', 'PRODUTO', 20)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id`,
+      [ORG_SB],
+    );
+
+    skuId = sku.rows[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  const movimento = (tipo: string, chave: string, qtd: number, origem = "SHOPEE_ORDER", id = SN) =>
+    client.query(
+      `insert into public.stock_movements (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values ($1, $2, 'LOCAL', $3, $4, $5, $6, $7, timestamptz '2026-10-20 02:31+00')`,
+      [ORG_SB, skuId, qtd, tipo, origem, id, `${chave}:${RUN}`],
+    );
+
+  it("o CHECK aceita os três tipos da Shopee e recusa um tipo que não existe", async () => {
+    await movimento("VENDA_SHOPEE", "d495-venda", -1);
+    await movimento("ESTORNO_ARMAZEM_SHOPEE", "d495-armazem", 1);
+    await movimento("CANCELAMENTO_SHOPEE", "d495-cancel", 1);
+    await expect(movimento("VENDA_TIKTOK", "d495-x", -1)).rejects.toThrow(/stock_movements_movement_type_check/);
+  });
+
+  it("o extrato traz a loja e o dia do pedido (São Paulo) para SHOPEE_ORDER, e nulos para o resto", async () => {
+    await movimento("VENDA_SHOPEE", "d495-sem-pedido", -1, "SHOPEE_ORDER", "NAO-EXISTE");
+
+    const linhas = await asUser<{ source_type: string; source_id: string; shopee_shop_id: string | null; shopee_order_day: string | null }>(
+      ADMIN_SB,
+      `select source_type, source_id, shopee_shop_id::text, shopee_order_day::text
+         from public.get_stock_movements('${ORG_SB}', p_limit => 200, p_search => 'RLSTEST-D495')`,
+    );
+    const daShopee = linhas.find((l) => l.source_id === SN);
+    const semPedido = linhas.find((l) => l.source_id === "NAO-EXISTE");
+
+    // 02:30 UTC de 20/10 é 23:30 de 19/10 em São Paulo: o dia é o de lá.
+    expect(daShopee).toMatchObject({ source_type: "SHOPEE_ORDER", shopee_shop_id: LOJA, shopee_order_day: "2026-10-19" });
+    expect(semPedido).toMatchObject({ shopee_shop_id: null, shopee_order_day: null });
+  });
+});
