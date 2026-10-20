@@ -22505,6 +22505,195 @@ describe("a marca no Todos de /vendas (D-605)", () => {
   });
 });
 
+/*
+  D-609: o anúncio da Shopee vendendo sem vínculo vira ação na Central (C-73).
+  Organização própria. A unidade de anúncio de loja LIVE com estado
+  SEM_SKU_NO_ANUNCIO ou SKU_FORA_DO_CATALOGO que vendeu (VALIDA) nos 30 dias até
+  ontem: uma ação por unidade, com a loja em `actions.shopee_shop_id`, o
+  impacto pela receita conhecida e o ciclo de vida de sempre (D-403).
+*/
+describe("o anúncio da Shopee vendendo sem vínculo na Central de Ações (D-609)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d609";
+  const ORG_SEM_CATALOGO = "99999999-0000-4000-8000-00000001d609";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d609";
+  const LOJA = "dddd6090-0000-4000-8000-0000000a0609";
+  const SANDBOX = "dddd6090-0000-4000-8000-0000000c0609";
+  const LOJA_SEM_CATALOGO = "dddd6090-0000-4000-8000-0000000d0609";
+  let skuExiste = "";
+
+  interface Acao {
+    subject_key: string;
+    status: string;
+    severity: string;
+    confidence: string;
+    impacto: string | null;
+    shopee_shop_id: string | null;
+    ml_account_id: string | null;
+    sku_id: string | null;
+    detector: Record<string, unknown>;
+    motivo: string | null;
+  }
+
+  const sincronizar = async (org: string, dia: string) =>
+    (
+      await client.query<{ r: { fontes: string[]; criadas: number; encerradas: number } }>(
+        "select public.sincronizar_alertas_central($1, $2::date, array['shopee_sem_vinculo']) as r",
+        [org, dia],
+      )
+    ).rows[0]?.r;
+
+  const acoes = async () =>
+    (
+      await client.query<Acao>(
+        `select subject_key, status, severity, confidence, estimated_impact_brl::text as impacto, shopee_shop_id, ml_account_id, sku_id,
+                evidence -> 'detector' as detector, evidence -> 'encerramento' ->> 'motivo' as motivo
+           from public.actions where organization_id = $1 and kind = 'shopee_sem_vinculo' order by subject_key`,
+        [ORG],
+      )
+    ).rows;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-d609@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org D-609', 'org-d609'), ($2, 'Org D-609 b', 'org-d609-b') on conflict (id) do nothing",
+      [ORG, ORG_SEM_CATALOGO],
+    );
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    skuExiste =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'D609-EXISTE', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at, items_synced_until)
+       values ($1, $4, 'live', 990609001, 'Loja Real', 'CONNECTED', now() - interval '60 days', now(), now(), now()),
+              ($2, $4, 'sandbox', 990609002, 'Teste', 'CONNECTED', now() - interval '60 days', now(), now(), now()),
+              ($3, $5, 'live', 990609003, 'Sem Catálogo', 'CONNECTED', now() - interval '60 days', now(), now(), null)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, LOJA_SEM_CATALOGO, ORG, ORG_SEM_CATALOGO],
+    );
+    // 1: SKU fora do catálogo, vende. 2: sem SKU, vende. 3: vinculado pelo SKU
+    // do anúncio. 4: fora, sem venda. 5: fora, só venda cancelada. 7: com
+    // variação, a 71 fora do catálogo e vendida a preço 0. 6: o sandbox.
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+       values ($1, $3, 1, 'NORMAL', now(), 'Anúncio fora', 'D609-NAO-EXISTE', false, now(), now()),
+              ($1, $3, 2, 'NORMAL', now(), 'Anúncio sem SKU', null, false, now(), now()),
+              ($1, $3, 3, 'NORMAL', now(), 'Anúncio vinculado', 'D609-EXISTE', false, now(), now()),
+              ($1, $3, 4, 'NORMAL', now(), 'Fora sem venda', 'D609-NAO-EXISTE-4', false, now(), now()),
+              ($1, $3, 5, 'NORMAL', now(), 'Fora cancelado', 'D609-NAO-EXISTE-5', false, now(), now()),
+              ($1, $3, 7, 'NORMAL', now(), 'Com variação', null, true, now(), now()),
+              ($2, $3, 6, 'NORMAL', now(), 'Do sandbox', 'D609-NAO-EXISTE-6', false, now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku, model_status)
+       values ($1, 7, 71, $2, 'Azul', 'D609-NAO-EXISTE-7', 'NORMAL') on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $3, 'D609-O1', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z'),
+              ($1, $3, 'D609-O2', 'COMPLETED', '2026-10-10T16:00:00Z', now(), '2026-10-10T16:01:00Z'),
+              ($1, $3, 'D609-O3', 'COMPLETED', '2026-10-10T17:00:00Z', now(), '2026-10-10T17:01:00Z'),
+              ($1, $3, 'D609-O5', 'CANCELLED', '2026-10-10T18:00:00Z', now(), '2026-10-10T18:01:00Z'),
+              ($2, $3, 'D609-O6', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z')
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, model_id, quantity, discounted_price)
+       values ($1, 'D609-O1', 0, $3, 1, null, 2, 50), ($1, 'D609-O1', 1, $3, 3, null, 1, 10),
+              ($1, 'D609-O2', 0, $3, 2, null, 1, 30),
+              ($1, 'D609-O3', 0, $3, 7, 71, 1, 0), ($1, 'D609-O3', 1, $3, 1, null, 1, 50),
+              ($1, 'D609-O5', 0, $3, 5, null, 1, 20),
+              ($2, 'D609-O6', 0, $3, 6, null, 1, 99)
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = any($1::uuid[])", [[ORG, ORG_SEM_CATALOGO]]);
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX, LOJA_SEM_CATALOGO]]);
+  });
+
+  it("uma ação por unidade de anúncio vendendo sem vínculo, com a loja, o impacto e a evidência", async () => {
+    const r = await sincronizar(ORG, "2026-10-12");
+
+    expect(r?.fontes).toEqual(["shopee_sem_vinculo"]);
+    expect(r?.criadas).toBe(3);
+
+    const lista = await acoes();
+
+    expect(lista.map((a) => [a.subject_key, a.impacto])).toEqual([
+      [`${LOJA}:1:-`, "150.00"],
+      [`${LOJA}:2:-`, "30.00"],
+      // A variação vendida só a preço 0: impacto desconhecido, e o item contado.
+      [`${LOJA}:7:71`, null],
+    ]);
+    expect(lista.every((a) => a.status === "novo" && a.severity === "media" && a.confidence === "alta")).toBe(true);
+    expect(lista.every((a) => a.shopee_shop_id === LOJA && a.ml_account_id === null && a.sku_id === null)).toBe(true);
+    expect(lista[0]?.detector).toMatchObject({ loja: "Loja Real", item_id: 1, estado: "SKU_FORA_DO_CATALOGO", sku_anuncio: "D609-NAO-EXISTE", unidades: 3, pedidos: 2 });
+    expect(lista[1]?.detector).toMatchObject({ estado: "SEM_SKU_NO_ANUNCIO", unidades: 1 });
+    expect(lista[2]?.detector).toMatchObject({ model_id: 71, variacao: "Azul", itens_sem_receita: 1 });
+  });
+
+  it("a fila leva a loja: account_label é o nome dela e shopee_shop_id vem no fim", async () => {
+    const fila = await asUser<{ kind: string; account_label: string | null; shopee_shop_id: string | null }>(
+      ADMIN,
+      `select kind, account_label, shopee_shop_id from public.get_actions_queue('${ORG}') where id is not null`,
+    );
+
+    expect(fila.filter((f) => f.kind === "shopee_sem_vinculo")).toHaveLength(3);
+    expect(fila.every((f) => f.account_label === "Loja Real" && f.shopee_shop_id === LOJA)).toBe(true);
+  });
+
+  it("o anúncio vinculado deixa de ser detectado e a ação se encerra em 3 dias, com o motivo", async () => {
+    await client.query(
+      "insert into public.shopee_sku_links (organization_id, shopee_shop_id, item_id, model_id, sku_id) values ($1, $2, 1, null, $3)",
+      [ORG, LOJA, skuExiste],
+    );
+
+    for (const dia of ["2026-10-13", "2026-10-14"]) await sincronizar(ORG, dia);
+    expect((await acoes()).find((a) => a.subject_key === `${LOJA}:1:-`)?.status).toBe("novo");
+
+    const r = await sincronizar(ORG, "2026-10-15");
+    const lista = await acoes();
+    const vinculada = lista.find((a) => a.subject_key === `${LOJA}:1:-`);
+
+    expect(r?.encerradas).toBe(1);
+    expect(vinculada?.status).toBe("resolvido");
+    expect(vinculada?.motivo).toMatch(/vinculado a um SKU/);
+    expect(lista.filter((a) => a.status === "novo")).toHaveLength(2);
+  });
+
+  it("sem loja live de catálogo lido a fonte não roda: nada é criado nem encerrado", async () => {
+    const r = await sincronizar(ORG_SEM_CATALOGO, "2026-10-12");
+
+    expect(r?.fontes).toEqual([]);
+    expect(r?.criadas).toBe(0);
+  });
+
+  it("a ação tem uma origem só: conta do ML ou loja Shopee", async () => {
+    await expect(
+      client.query(
+        `insert into public.actions (organization_id, kind, severity, confidence, ml_account_id, shopee_shop_id, evidence, recommendation, created_by, dedup_key)
+         values ($1, 'teste', 'baixa', 'media', 'aaaa6090-0000-4000-8000-0000000e0609', $2, '{}', 'x', 'system', 'd609-duas-origens')`,
+        [ORG, LOJA],
+      ),
+    ).rejects.toThrow(/actions_uma_origem/);
+  });
+});
+
 /**
  * mark_notifications_read por loja Shopee (D-491): o quarto recorte, com o
  * mesmo significado dos outros (nulo = sem recorte). O evento da loja guarda a
