@@ -432,13 +432,11 @@ export default async function NotificacoesPage({
   ];
 
   /*
-    D-604: a escrita em lote (`mark_notifications_read`) não conhece a loja.
-    Com a loja no recorte, "marcar todas" marcaria além do que se vê -- o
-    defeito que o rótulo do botão existe para impedir (D-183). Sem o
-    parâmetro do A1, o botão não aparece, e a tela diz por quê.
+    D-616 (C-69, D-491): a escrita em lote conhece a loja. Com ela no recorte,
+    "marcar este recorte" marca só o que se vê -- a garantia que o rótulo do
+    botão existe para dar (D-183); antes, a D-604 escondia o botão.
   */
-  const loteSemLoja = filters.loja !== null && unreadRecorte !== null && unreadRecorte > 0;
-  const podeMarcar = unreadRecorte !== null && unreadRecorte > 0 && filters.loja === null;
+  const podeMarcar = unreadRecorte !== null && unreadRecorte > 0;
 
   return (
     <>
@@ -460,18 +458,13 @@ export default async function NotificacoesPage({
                   severity: filters.severity,
                   family: filters.family,
                   account: filters.account,
+                  loja: filters.loja,
                 }}
               />
             )}
           </>
         }
       />
-
-      {loteSemLoja && (
-        <p role="note" className="sb-an-nota">
-          Marcar em lote por loja ainda não existe: marque uma a uma, ou tire o recorte da loja para marcar todas.
-        </p>
-      )}
 
       {error !== null && (
         <EstadoDaTela

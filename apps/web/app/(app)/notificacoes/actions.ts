@@ -79,29 +79,40 @@ export interface NotificationBulkScope {
   severity: string | null;
   family: string | null;
   account: string | null;
+  /**
+   * D-616 (C-69, D-491): a loja Shopee do recorte (`shopee_shops.id`). Vai à
+   * RPC só com valor — o parâmetro não existe antes da migration
+   * `20261020130000` (PGRST202) —, e nunca junto da conta: o evento tem uma
+   * origem só, e a tela tira uma ao escolher a outra (D-604).
+   */
+  loja: string | null;
 }
 
 /** `ml_accounts.id` é UUID; qualquer outra coisa nem chega ao banco. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function markAllNotificationsRead(
-  scope: NotificationBulkScope = { severity: null, family: null, account: null },
+  scope: NotificationBulkScope = { severity: null, family: null, account: null, loja: null },
 ): Promise<NotificationActionResult> {
   const severity = scope.severity === null ? null : resolveNotificationSeverity(scope.severity);
   const family = scope.family === null ? null : resolveNotificationFamily(scope.family);
   const account = scope.account;
+  const loja = scope.loja;
 
   const recusa =
     (scope.severity !== null && severity === null) ||
     (scope.family !== null && family === null) ||
-    (account !== null && !UUID.test(account));
+    (account !== null && !UUID.test(account)) ||
+    (loja !== null && !UUID.test(loja)) ||
+    // Conta e loja juntas não alcançam evento nenhum: recusar diz isso, em vez de "0 marcadas".
+    (account !== null && loja !== null);
 
   if (recusa) {
     return { ok: false, message: "Recorte não reconhecido — nada foi marcado.", marked: null };
   }
 
   const supabase = await createClient();
-  const semRecorte = severity === null && family === null && account === null;
+  const semRecorte = severity === null && family === null && account === null && loja === null;
 
   if (semRecorte) {
     const { error } = await supabase
@@ -126,6 +137,7 @@ export async function markAllNotificationsRead(
     p_severity: severity,
     p_event_type_prefix: family === null ? null : notificationFamilyPrefix(family),
     p_ml_account_id: account,
+    ...(loja === null ? {} : { p_shopee_shop_id: loja }),
   });
 
   if (error !== null) {

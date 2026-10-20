@@ -41,7 +41,7 @@ export function MarkAllButton({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const temRecorte = scope.severity !== null || scope.family !== null || scope.account !== null;
+  const temRecorte = scope.severity !== null || scope.family !== null || scope.account !== null || scope.loja !== null;
   const plural = unreadCount !== 1;
 
   async function handleClick(): Promise<void> {

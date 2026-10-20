@@ -60,7 +60,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
-| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | a escrita em lote por loja (C-69, D-491: `p_shopee_shop_id` em `mark_notifications_read`, em produção desde 20/10) e as preferências por loja (`notification_preferences` só conhece a conta do ML) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja) |
+| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | a escrita em lote por loja (C-69, D-491: `p_shopee_shop_id` em `mark_notifications_read`, em produção desde 20/10; a tela é a D-616) e as preferências por loja (`notification_preferences` só conhece a conta do ML) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja) |
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
@@ -267,6 +267,9 @@ número.
 | **D-606** | As vendas por anúncio na `/anuncios/shopee`: período, vendeu, ordem e recorte | A1 (D-493, C-67) | ✔ D-606 (#251) |
 | **D-608** | O catálogo da loja Shopee na `/sincronizacao` | — | ✔ D-608 |
 | **D-610** | A `/central` sem a leitura do faturamento em dobro | A1 (o achado), A3 (a Central) | ✔ D-610 |
+| **D-612** | A nota de venda do marketplace como "Não aplicada" em `/notas-fiscais` | A1 (D-497 b) | ✔ D-612 (#262) |
+| **D-614** | A venda da Shopee nas movimentações de estoque | A1 (D-495 b, C-68) | ✔ D-614 (#268) |
+| **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | em código; entra depois da migration `20261020130000` |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

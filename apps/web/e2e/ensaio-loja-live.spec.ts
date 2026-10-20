@@ -351,7 +351,7 @@ test("/contas: a faixa conta a loja live ao lado da de teste e das contas do ML 
   await semErro(page);
 });
 
-test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote por loja diz que ainda não existe (D-604)", async ({ page }) => {
+test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote marca só o que é dela (D-604, D-616)", async ({ page }) => {
   const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
 
   if (loja.data === null) throw new Error(`loja live sem organização: ${loja.error.message}`);
@@ -378,11 +378,16 @@ test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote por lo
   await expect(page.locator(".sb-content").getByText(LOJA_LIVE.nome).first()).toBeVisible();
   // O recorte filtra de verdade: só o aviso desta loja, nenhuma das notificações do Mercado Livre do seed.
   await expect(page.locator("main .sb-notification-row")).toHaveCount(1);
-  // A escrita em lote não conhece a loja: o botão some e a tela diz por quê, em vez de marcar além do recorte.
-  await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toHaveCount(0);
-  await expect(page.getByText(/Marcar em lote por loja ainda não existe/u)).toBeVisible();
+  // D-616: a escrita em lote conhece a loja (C-69). O botão é o do recorte, e a confirmação diz qual.
+  await page.getByRole("button", { name: "Marcar este recorte como lido" }).click();
+  const confirmacao = page.getByRole("group", { name: "Confirmar leitura de todas as notificações" });
 
-  // Sem o recorte da loja, o lote volta.
+  await expect(confirmacao).toContainText(LOJA_LIVE.nome);
+  await confirmacao.getByRole("button", { name: "Confirmar" }).click();
+  // Nada mais por ler na loja: o botão do recorte some.
+  await expect(page.getByRole("button", { name: "Marcar este recorte como lido" })).toHaveCount(0);
+
+  // As notificações do Mercado Livre do seed continuam por ler: o lote marcou só o que era da loja.
   await page.goto("/notificacoes");
   await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toBeVisible();
   await semErro(page);
