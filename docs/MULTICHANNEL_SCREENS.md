@@ -233,7 +233,7 @@ linhas.
 | C-07 | `/produtos` sem chamar de "sem anúncio"/"sem venda" o SKU que só a Shopee tem | `get_products_overview` contando anúncio e venda Shopee — **pedido novo** | C-56 (D-445) → T6c ✔ (D-454) |
 | C-08 | Busca universal (Ctrl+K) achando loja, anúncio e pedido Shopee | `search_entities` com a Shopee — **pedido novo** | depois de E3 |
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | nada novo: `job_runs` já os tem; falta a cadência em `apps/web/lib/sync-health.ts` (horários: pedidos e financeiro às :20, catálogo às :25) | T1 |
-| C-10 | Aba Vendas do SKU: o dia a dia por canal e os pedidos da Shopee com o SKU (escolha do dono em 20/10) | o dia a dia do SKU por marketplace e `get_shopee_orders` com `p_sku_id` (abaixo) — **pedido novo** | D-618 depois do contrato |
+| C-10 | Aba Vendas do SKU: o dia a dia por canal e os pedidos da Shopee com o SKU (escolha do dono em 20/10) | o dia a dia do SKU por marketplace e `get_shopee_orders` com `p_sku_id` (abaixo); o contrato de dados é o C-71 do A1 (D-607) | D-618 depois do contrato |
 
 ### C-10 — o SKU com a Shopee: os pedidos e o dia a dia por canal (pedido ao A1 em 20/10)
 
@@ -288,6 +288,12 @@ unidades da Shopee do C-59 para o SKU (sem a loja de teste).
 **Para o A1 medir:** o custo como `authenticated`, em 30 dias e no SKU que
 mais vende, e se `shopee_order_items` pede índice por `sku_id`.
 
+**O kit (resposta do A1, 20/10):** o grão é o `sku_id` gravado no item, como
+no C-59 e no `daily_sku_metrics` do ML. A página do kit mostra as vendas do
+kit; a de um componente não mostra as vendas dos kits que o contêm, em
+canal nenhum. É o que a aba já mostra hoje; os componentes seriam outro
+contrato.
+
 ---
 
 ## 8. Sequência da web
@@ -324,7 +330,7 @@ número.
 | **D-612** | A nota de venda do marketplace como "Não aplicada" em `/notas-fiscais` | A1 (D-497 b) | ✔ D-612 (#262) |
 | **D-614** | A venda da Shopee nas movimentações de estoque | A1 (D-495 b, C-68) | ✔ D-614 (#268) |
 | **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | ✔ D-616 (#272) |
-| **D-618** | O dia a dia por canal e os pedidos da Shopee na aba Vendas do SKU | A1 (C-10) | espera o contrato |
+| **D-618** | O dia a dia por canal e os pedidos da Shopee na aba Vendas do SKU | A1 (C-71, D-607) | espera o contrato |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
