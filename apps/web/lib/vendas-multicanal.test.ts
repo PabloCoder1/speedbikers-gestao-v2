@@ -5,13 +5,17 @@ import {
   alternarConta,
   antesDoHistoricoShopee,
   celulasDaFaixaMulticanal,
+  NAO_SE_APLICA_SOB_MARCA,
   hrefDeVendas,
+  hrefDoRecorte,
   marketplacesDoEscopo,
+  metricasDoRecorte,
   pontosDoTotal,
   resolverContas,
   resolverEscopoDaTelaDeVendas,
   resolverEscopoVendas,
   resolverMetricaMulticanal,
+  sobMarca,
   type ContaDoSeletor,
   type DiaDeVendas,
   type LinhaDeVendas,
@@ -233,5 +237,52 @@ describe("antesDoHistoricoShopee", () => {
   it("o período que começa antes dos 90 dias da Shopee é avisado", () => {
     expect(antesDoHistoricoShopee("2026-07-01", "2026-10-14")).toBe(true);
     expect(antesDoHistoricoShopee("2026-09-15", "2026-10-14")).toBe(false);
+  });
+});
+
+describe("a marca no recorte (D-622, C-72)", () => {
+  const COM_MARCA: RecorteDeVendas = {
+    escopo: "todos",
+    periodo: { days: 7 },
+    contas: null,
+    metrica: "faturamento",
+    marca: { kind: "marca", value: "Pro Tork" },
+  };
+
+  it("vai na URL com os nomes da tela do ML, e atravessa para o ML e para a Shopee", () => {
+    expect(hrefDeVendas(COM_MARCA)).toBe("/vendas?days=7&marca=Pro+Tork");
+    expect(hrefDeVendas(COM_MARCA, { escopo: "ml" })).toBe("/vendas?marketplace=ml&days=7&marca=Pro+Tork");
+    expect(hrefDeVendas(COM_MARCA, { escopo: "shopee" })).toBe("/vendas?marketplace=shopee&days=7&marca=Pro+Tork");
+  });
+
+  it("o \"sem marca\" é o semMarca=1, e tirar a marca a tira da URL", () => {
+    expect(hrefDeVendas(COM_MARCA, { marca: { kind: "sem_marca" } })).toBe("/vendas?days=7&semMarca=1");
+    expect(hrefDeVendas(COM_MARCA, { marca: { kind: "todas" } })).toBe("/vendas?days=7");
+  });
+
+  it("o /faturamento não tem marca: o link para ele não a leva", () => {
+    expect(hrefDoRecorte("/faturamento", COM_MARCA)).not.toContain("marca");
+  });
+
+  it("sob marca, a compra sai do gráfico e a URL com metric=compras cai no faturamento", () => {
+    expect(sobMarca(COM_MARCA)).toBe(true);
+    expect(sobMarca({ marca: { kind: "todas" } })).toBe(false);
+    expect(metricasDoRecorte(true).map((metrica) => metrica.key)).toEqual(["faturamento", "unidades"]);
+    expect(resolverMetricaMulticanal("compras", true).key).toBe("faturamento");
+    expect(resolverMetricaMulticanal("compras", false).key).toBe("compras");
+  });
+
+  it("sob marca, a faixa diz por que compras e ticket são \"—\"", () => {
+    const celulas = celulasDaFaixaMulticanal(
+      linha({ nivel: "TOTAL", receita_bruta: 100, unidades: 2, compras: null, ticket_medio: null }),
+      null,
+      true,
+    );
+    const [, compras, , ticket] = celulas;
+
+    expect(compras?.value).toBe("—");
+    expect(compras?.ressalva).toBe(NAO_SE_APLICA_SOB_MARCA);
+    expect(ticket?.ressalva).toBe(NAO_SE_APLICA_SOB_MARCA);
+    expect(celulas[0]?.ressalva).toBeUndefined();
   });
 });
