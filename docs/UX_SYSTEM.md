@@ -169,7 +169,13 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
 10. **O LCP da Home de 6 a 10 s** (D-516, leitura de 19/10): o `el` do
     reporter diz se é a faixa e o gráfico (primeira rodada, com as leituras
     multicanal da D-488) ou a "Atenção" (a cobertura); a medida a frio das
-    leituras está com o A1, e o que for de tela, com o A2.
+    leituras está com o A1, e o que for de tela, com o A2. Na `/central`, o
+    LCP de 7,1 s de 19/10 foi a "Atenção" (§5); a próxima leitura diz o efeito
+    da D-499 (19:14 UTC) nas duas telas.
+11. **O CSS que bloqueia a primeira pintura** (leitura de 19/10 à noite): um
+    arquivo só, com 267 KB (41 KB comprimido), em toda carga completa. Antes de
+    mexer, medir a cobertura por tela e a primeira pintura em rede lenta. Entra
+    se a leitura de produção mostrar a moldura, e não a leitura, como o LCP.
 
 ---
 
@@ -332,6 +338,38 @@ qual bloco era o LCP — daí a D-516. A medida a frio das leituras da Home
 está com o A1; o que for de tela (ordem das leituras, o que fica fora do
 `Suspense`) fica com o A2. §3, item 10.
 
+### Leitura de 19/10 à noite, depois da Central reformulada e da D-499
+
+10 linhas de 14:23 a 20:34 UTC. A D-499 do A1 entrou às 19:14 UTC, e a Central
+reformulada às 19:14 (#258) e às 20:15 (#261). **Ainda não houve carga da Home
+nem da `/central` depois da D-499:** o efeito dela no LCP fica para a próxima
+leitura.
+
+| hora (UTC) | tela | medida | elemento |
+|---|---|---|---|
+| 16:53 | `/central`, carga completa | **LCP 7,1 s**, TTFB 22 ms | a lista "O que precisa da sua atenção" |
+| 16:54 | `/central`, com navegação depois | CLS 0,07 | uma `section` sem classe do sistema |
+| 19:22 | `/central/produtos` | CLS 0 | — |
+| 19:45 | `/central/frete`, carga completa | CLS 0 | — |
+| 20:32 | `/central/frete`, carga completa | LCP 1,8 s, TTFB 120 ms | o logo da marca |
+| 20:32 | `/central/frete`, com navegação depois | CLS 0,07 | uma linha de tabela da 2ª seção |
+
+- **O LCP de 7,1 s da `/central` foi a chegada da "Atenção"**, que espera o
+  `get_faturamento` com detalhe (D-400). A tela pintou na hora; é o custo da
+  leitura, que a D-499 ataca. Passado ao A1 com o horário.
+- **O LCP de 1,8 s no logo** quer dizer que nada maior pintou antes da primeira
+  interação: o conteúdo do detector chegou depois. O logo é um WebP de poucos
+  KB com as dimensões declaradas. O que bloqueia a primeira pintura é o CSS,
+  com 267 KB (41 KB comprimido) em toda carga completa. Uma amostra só, dentro
+  dos 2,5 s: vira o item 11 da §3, para medir antes de mexer.
+- **O CLS de 0,07 em `/central/frete` não se reproduz no local.** Com o build
+  local a 150 ms por chamada, a carga, as sete trocas de aba da Central e os
+  filtros do frete deram CLS 0 (0,0002 no filtro, a 1440 e a 390 px). Hipótese:
+  em produção a lista do detector tem até 200 anúncios e a resposta passa de
+  500 ms. Um filtro encolhe a lista e a tabela de "Quem paga o frete" abaixo
+  dela sobe fora da janela de entrada, e o CLS conta. É abaixo de 0,1 e é o
+  efeito esperado de um filtro: sem mudança.
+
 ---
 
 ## 6. Central de Negócio — reformulação (pedido do dono de 19/10)
@@ -465,6 +503,9 @@ repetida). Em produção, o `get_faturamento` do ML tem média de 2,6 s (A1,
         com a dica de deslizar; as de meta e alíquota rolam no painel.
   - [x] Sem fila: o "quem paga" começa com o detector, e o ranking sem conta
         na URL não espera contas nem organização.
+Os quatro blocos estão no ar desde 19/10: #255, #258 e #261, com o deploy das
+20:15 UTC.
+
 - [x] **Bloco 4 — o resto da `/central` (D-519).**
   - [x] Frete e Ads da `/central` no `EstadoDaTela`: falha com o "Tentar de
         novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO".
