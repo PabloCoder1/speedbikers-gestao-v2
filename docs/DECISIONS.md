@@ -16624,6 +16624,26 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-491 - A marcacao em lote das notificacoes por loja Shopee: `p_shopee_shop_id` em `mark_notifications_read` (C-69)
+
+**Contexto:** desde a D-604 (A2) a `/notificacoes` recorta por loja Shopee (`domain_events.shopee_shop_id`, D-438), mas a escrita em lote (`mark_notifications_read`, D-393) so conhecia severidade, familia e conta do ML. Com a loja no recorte, "Marcar todas como lidas" marcaria alem do que se ve (o defeito de D-183), e a tela esconde o botao e diz "Marcar em lote por loja ainda nao existe". O pedido do A2 na D-604 era este parametro.
+
+**Decisao:**
+1. **O quarto recorte, com o significado dos outros:** `p_shopee_shop_id uuid default null` NO FIM; nulo = sem recorte nesta dimensao, e os quatro nulos continuam "marcar todas". A condicao e a da lista da tela (`domain_events.shopee_shop_id = loja`), entao a lista e o lote recortam igual (D-236).
+2. **Drop + create, uma funcao so:** acrescentar o parametro com `create or replace` criaria uma sobrecarga ao lado da de tres argumentos, e a chamada com os tres nomes de sempre ficaria ambigua no PostgREST (PGRST203). Com uma funcao so, a chamada de hoje (`actions.ts`) segue igual: o quarto vale nulo.
+3. **Conta e loja juntas nao marcam nada:** o evento tem uma origem so (`domain_events_uma_origem`), os recortes se somam. A tela tira uma ao escolher a outra (D-604).
+4. **Continua `security invoker`:** a RLS de `notification_recipients` e a de `domain_events` (que alcanca a loja por `accessible_shopee_shops`, D-433) valem dentro da funcao; o `user_id = auth.uid()` explicito segue como defesa em profundidade.
+5. **Fora desta fatia:** as preferencias por loja (`notification_preferences` tem escopo de conta do ML) -- um contrato proprio, se o dono pedir.
+
+**Verificacao:**
+- **Integracao:** 7 testes novos (uma funcao so, com a loja no fim; o fan-out chega a quem alcanca a loja; loja e familia marcam so o aviso daquela familia na loja; a loja inteira marca o resto e a segunda vez devolve 0, sem tocar a outra loja, a conta nem o ADMIN; a loja que o usuario nao alcanca nao marca nada; conta e loja juntas devolvem 0; a chamada de tres argumentos continua recortando pela conta); os 5 da D-393 seguem verdes.
+- **Mutacao:** sem a condicao da loja, 3 testes caem; a sobrecarga (a funcao de tres argumentos de volta ao lado da nova) derruba 6, entre eles o da assinatura e o da chamada de sempre, que fica ambigua (`function ... is not unique`).
+- **Tipos:** o bloco escrito a mao em `types.ts` (classe D-213) bate com o gerador local, com os argumentos anulaveis (D-133).
+
+**Publicacao:** a migration `20261020130000` vai a producao depois do merge. A tela (o botao do lote de volta com a loja, A2) manda o parametro so com valor e so depois da migration em producao (PGRST202). Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020130000_notificacoes_em_lote_por_loja.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,NOTIFICATIONS,HANDOFF,ROADMAP}.md`.
+
 ## D-492 - A proteção de envio da Shopee como degrau da cascata, lida pela presença da coluna
 
 **Contexto:** a D-483 (A1, fase 1) achou o "outros" do C-61 igual, na leitura real, à taxa de proteção de envio do vendedor (`shipping_seller_protection_fee_amount`), que a fórmula oficial do escrow não lista. `get_shopee_faturamento_composicao` e `_pedidos` ganharam no fim `protecao_envio` (nula sem o campo) e `outros_restante` (o outros sem a taxa, calculado no SQL); o `outros` segue o de antes, ainda com a taxa. Vale `receita − componentes − protecao_envio − outros_restante = recebido`. A cascata "Para onde vai o dinheiro" do `/faturamento?marketplace=shopee` (D-452) mostrava a taxa inteira como "Outros (fecha com o recebido)".

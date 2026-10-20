@@ -8166,13 +8166,15 @@ export type Database = {
       // CORRECAO MANUAL (classe D-213): bloco escrito a mao no formato do
       // gerador -- a migration `20260923200000_notificacoes_triagem` (D-393) so
       // existe no repositorio ate a CI aplica-la no Dev, e a CLI nao regenera
-      // este arquivo antes disso. Os tres argumentos sao anulaveis COM
-      // significado ("sem recorte nesta dimensao"), a classe de D-133.
+      // este arquivo antes disso. Os quatro argumentos sao anulaveis COM
+      // significado ("sem recorte nesta dimensao"), a classe de D-133; a loja
+      // (`p_shopee_shop_id`) veio na `20261020130000` (D-491).
       mark_notifications_read: {
         Args: {
           p_event_type_prefix?: string | null
           p_ml_account_id?: string | null
           p_severity?: string | null
+          p_shopee_shop_id?: string | null
         }
         Returns: number
       }
