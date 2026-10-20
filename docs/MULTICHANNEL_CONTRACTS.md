@@ -152,6 +152,10 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.18 A marcação em lote por loja Shopee (C-69, D-491) — em código
+
+**`mark_notifications_read`** ganha no fim `p_shopee_shop_id uuid default null` (assinatura `(p_severity text, p_event_type_prefix text, p_ml_account_id uuid, p_shopee_shop_id uuid)`, uma função só). Nulo = sem recorte por loja; com valor, marca só as não lidas do usuário cujo evento é daquela loja (`domain_events.shopee_shop_id`, a mesma condição da lista). Conta e loja juntas devolvem 0 (o evento tem uma origem só). Devolve quantas marcou, como antes. **A tela manda o parâmetro só com valor e só depois da migration `20261020130000` em produção** (antes dela, o parâmetro mandado dá PGRST202).
+
 ### 3.17 A venda da Shopee no estoque (C-68, D-495 b) — em código
 
 **Tipos novos em `stock_movements.movement_type`:** `VENDA_SHOPEE` (a baixa da venda paga de loja live, no instante do pagamento; o kit baixa os componentes), `CANCELAMENTO_SHOPEE` (o cancelamento final depois do corte da planilha, que repõe uma vez) e `ESTORNO_ARMAZEM_SHOPEE` (o par da venda que saiu do armazém da Shopee, o equivalente ao `ESTORNO_FULL`). O estorno do corte reaproveita `ESTORNO_PRE_CAPTURA`. **Origem:** `source_type = SHOPEE_ORDER`, `source_id = order_sn`.

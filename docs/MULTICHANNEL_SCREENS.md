@@ -60,7 +60,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
 | Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
-| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | a escrita em lote por loja e as preferências por loja (esperam o A1: `mark_notifications_read` e `notification_preferences` só conhecem a conta do ML) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja) |
+| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | a escrita em lote por loja (C-69, D-491: `p_shopee_shop_id` em `mark_notifications_read`, em código) e as preferências por loja (`notification_preferences` só conhece a conta do ML) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja) |
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |

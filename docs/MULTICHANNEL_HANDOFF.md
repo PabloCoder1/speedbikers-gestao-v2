@@ -137,7 +137,7 @@
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §2 e §8). As etapas T0 a T11 estão na `main`; o que resta nas telas espera um contrato do A1 ou uma escolha do dono:
 - **Esperam o A1, na ordem dele (D-499 e D-497 (b) já em produção; D-495 → D-491):**
   - **D-495**, o estoque baixando a venda da Shopee (decisão do dono de 19/10): a tela é a D-614 (em andamento, acima), sobre os nomes firmes do C-68, com o e2e do link no ensaio da loja live. O worker da baixa sobe depois dela no ar e da reconferência dos `fulfillment_flag` reais (A1).
-  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read`; a tela manda a loja só com valor e o botão de lote volta (D-604).
+  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read` (contrato C-69) — **em código e validada** (7 testes de integração, mutação), migration `20261020130000`; a tela manda a loja só com valor, e só depois da migration em produção, e o botão de lote volta (D-604).
 - **Pedem contrato novo do A1 e a escolha do dono** (ver "Decisões pendentes do dono", item 4):
   - `/vendas` no "Todos": marca, vendas de hoje e taxa de cancelamento. O C-53 não traz cancelamento nem marca, e a tela diz que são só do ML.
   - SKU: os pedidos da Shopee que contêm o SKU e o dia a dia por canal. O `get_shopee_orders` não filtra por SKU.
