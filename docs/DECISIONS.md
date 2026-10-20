@@ -17695,7 +17695,7 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
   - o hoje do ML contando cancelado: 1;
   - a loja de teste nas somas: 1.
 
-**Publicacao:** a migration `20261020150000` vai a producao depois do merge. A tela (A2) chama as funcoes novas so depois da migration em producao, porque antes delas a chamada da PGRST202. Worker e api nao mudam.
+**Em producao (20/10):** migration `20261020150000` aplicada as 19:09 UTC (run `39478711110`, junto da D-607 e da D-605; o plano era so as tres). No banco, conferido no catalogo: as assinaturas novas, `authenticated` executa e `anon` nao, e `multicanal_taxa_cancelamento` esta catalogada. Chamadas como `authenticated`, em 30 dias: o cancelamento em 101 ms e o hoje em 26 ms. A tela e a D-620 (A2, #284). Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261020150000_cancelamento_e_hoje_por_marketplace.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
 
@@ -17769,7 +17769,7 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
   - o do ML: 27 ms quente;
   - para comparar, o C-53 sem marca: 153-290 ms.
 
-**Publicacao:** a migration `20261020170000` vai a producao depois do merge. A tela manda `p_supplier_brand` e `p_sem_marca` so com valor e so depois da migration em producao (PGRST202 antes). Worker e api nao mudam.
+**Em producao (20/10):** migration `20261020170000` aplicada as 19:09 UTC (run `39478711110`). No banco, conferido no catalogo: as assinaturas novas, `authenticated` executa e `anon` nao. O resumo de 30 dias leva 127 ms sem recorte; com `p_sem_marca`, 834 ms na primeira chamada fria. A tela da marca e a fatia seguinte do A2. Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261020170000_marca_entre_marketplaces.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
 
@@ -17857,7 +17857,7 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
   - os pedidos com o SKU: 26 ms;
   - a lista de sempre, sem SKU: de 135-165 ms para 115-122 ms, com a faixa em `timestamptz`.
 
-**Publicacao:** a migration `20261020160000` vai a producao depois do merge. A tela (D-618, A2) manda `p_sku_id` so com valor e chama a funcao nova so depois da migration em producao, porque antes a chamada da PGRST202. Worker e api nao mudam.
+**Em producao (20/10):** migration `20261020160000` aplicada as 19:09 UTC (run `39478711110`). No banco, conferido no catalogo: as assinaturas novas, `authenticated` executa e `anon` nao. `get_shopee_orders` em 30 dias, como `authenticated`: 136 ms. A tela e a D-618 (A2, #284). Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261020160000_sku_por_canal.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
 
@@ -17961,6 +17961,40 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - web: `apps/web/app/(app)/faturamento/multicanal.tsx` e `apps/web/app/(app)/central/page.tsx`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,PERFORMANCE,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-611 - A ruptura no anuncio da Shopee vira acao na Central (C-74): o 2o dos quatro detectores da Shopee
+
+**Contexto:** o segundo dos quatro detectores da Shopee que o dono escolheu em 20/10 (D-609 e o primeiro). Um anuncio ativo com estoque zero na Shopee deixa de vender. Na leitura de producao de 20/10 (so contagem), eram 49 unidades de anuncio ativas de loja live com estoque zero e venda nos 30 dias.
+
+**Decisao:**
+1. **O sinal:** a unidade de anuncio ATIVA (`item_status` NORMAL e, na variacao, `model_status` MODEL_NORMAL) de loja LIVE, com o estoque da Shopee ZERO, que vendeu (VALIDA) nos 30 dias completos ate ontem.
+   - O estoque NULO e "nao sei" e fica de fora: nunca vira zero.
+   - O anuncio fora do ar tambem fica de fora: nao esta vendendo por escolha.
+2. **A acao:**
+   - `kind = shopee_ruptura`, com `subject_key = loja:item:variacao`, a loja em `actions.shopee_shop_id` (D-609), confianca alta e severidade media.
+   - O impacto e a receita conhecida dos 30 dias, o que o anuncio fazia com estoque.
+   - **Vinculado,** leva o `sku_id` e o saldo local do V3. Ele separa os dois casos: falta produto, ou so falta atualizar a Shopee. A recomendacao muda com isso: "atualize a quantidade do anuncio na Shopee" quando o V3 tem o SKU, e "reponha o estoque" quando nao tem.
+   - A evidencia leva a ultima venda.
+3. **O ciclo de vida e o de sempre (D-403):** o estoque de volta, o anuncio fora do ar ou o fim das vendas na janela encerram a acao em 3 dias, com o motivo.
+4. **A fonte so roda com loja live de catalogo lido**, como na D-609. O worker pede a fonte por ultimo e so sobe depois da migration.
+
+**Verificacao:**
+- **Integracao:** 2 testes, e os da D-609 seguem verdes.
+  - O zerado vinculado vira acao com o SKU, o saldo de 5 e "atualize"; o zerado sem SKU, com "reponha"; a variacao zerada tambem.
+  - Ficam de fora o com estoque, o de estoque NULO, o fora do ar, o sem venda, a outra variacao com estoque e o da loja de teste.
+  - O estoque de volta encerra a acao no 3o dia, com o motivo.
+- **Worker:** 4 de 4, com a quinta fonte.
+- **Mutacao:** cada uma derruba testes.
+  - o estoque NULO como zero: 2;
+  - o anuncio fora do ar detectado: 2;
+  - a recomendacao sem o saldo: 1.
+
+**Publicacao:**
+1. a migration `20261020190000`;
+2. o worker, com a D-609;
+3. a tela (A2): o rotulo do kind e o mesmo atalho da D-609; com o `sku_id`, o atalho do SKU tambem.
+
+**Impacto:** `supabase/migrations/20261020190000_shopee_ruptura_na_central.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
 
 ## D-612 - A nota de venda do marketplace na tela: "Não aplicada", e não falha (D-497 b)
 
