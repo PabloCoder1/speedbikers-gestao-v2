@@ -568,7 +568,9 @@ Lidas por `get_marketplace_sales_summary` (linhas TOTAL, MARKETPLACE e CONTA) e 
 | `multicanal_receita_bruta` | `receita_bruta` (ML) + `shopee_receita_bruta` de receita conhecida: produtos com o desconto do vendedor, sem frete, nos dois. Pedido Shopee de receita desconhecida fica fora e é contado à parte (`pedidos_sem_receita`). |
 | `multicanal_ticket_medio` | `multicanal_receita_bruta / (multicanal_compras − pedidos_sem_receita)`, recalculado sobre a soma — nunca média de médias. |
 
-- **Não soma:** o recebido (5F no ML × `shopee_recebido`, componentes diferentes) — só na linha da Shopee; pedidos do ML; cancelados (ainda não no consolidado).
+- **Não soma:** o recebido (5F no ML × `shopee_recebido`, componentes diferentes) — só na linha da Shopee; pedidos do ML.
+- **`multicanal_taxa_cancelamento` (D-603, `get_marketplace_sales_cancellations`):** `compras canceladas / (válidas + canceladas)`, **por compra**. No ML, a compra (pack, ou o pedido sem pack) é válida se algum pedido vale (`paid`, `partially_refunded`) e cancelada se todos foram cancelados (`cancelled`, `pending_cancel`). Na Shopee, o pedido, pela situação (CANCELADA inclui `IN_CANCEL`). O pedido aguardando pagamento fica de fora dos dois lados. Pode diferir da `taxa_cancelamento` do ML (5C), que é por pedido.
+- **O hoje (D-603, `get_marketplace_sales_today`):** ao vivo, o ML de `orders` como `get_sales_today_summary` (5C/D-165) e a Shopee das vendas válidas do dia, com o `lido_ate` da loja.
 - **Fora das somas:** loja de sandbox (aparece só em CONTA, com o ambiente) e loja live nunca lida (CONTA com tudo NULO, nunca zero). Sem loja live lida, a Shopee não tem linha de MARKETPLACE.
 - **Dia:** criação do pedido em São Paulo nos dois. **Frescor:** o elo mais fraco do grupo (`ultima_atualizacao`).
 - **Sem marca:** a receita da Shopee é do pedido, não do item; o recorte por marca espera o grão de SKU Shopee (E6).

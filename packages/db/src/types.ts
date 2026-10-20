@@ -6436,6 +6436,28 @@ export type Database = {
         // apps/web/lib/quem-paga-frete.ts.
         Returns: Json
       }
+      // CORRECAO MANUAL (D-603): o que a definicao garante por nivel, como o
+      // C-53 -- TOTAL sem marketplace/conta; MARKETPLACE sem conta; CONTA com
+      // tudo. A loja nunca lida tem os numeros NULOS; a taxa e NULA sem compra.
+      get_marketplace_sales_cancellations: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date_from: string
+          p_date_to: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          account_id: string | null
+          account_name: string | null
+          compras_canceladas: number | null
+          compras_validas: number | null
+          environment: string | null
+          marketplace: "ML" | "SHOPEE" | null
+          nivel: "TOTAL" | "MARKETPLACE" | "CONTA"
+          taxa_cancelamento: number | null
+        }[]
+      }
       get_marketplace_sales_daily: {
         Args: {
           p_account_ids?: string[] | null
@@ -6478,6 +6500,31 @@ export type Database = {
           recebido: number | null
           ticket_medio: number | null
           ultima_atualizacao: string | null
+          unidades: number | null
+        }[]
+      }
+      // CORRECAO MANUAL (D-603): como o C-53 -- TOTAL sem marketplace/conta;
+      // MARKETPLACE sem conta; a loja nunca lida com os numeros NULOS;
+      // `lido_ate` so da Shopee (o ML e ao vivo); `ultimo_pedido_em` NULO sem venda.
+      get_marketplace_sales_today: {
+        Args: {
+          p_account_ids?: string[] | null
+          p_date: string
+          p_marketplaces?: string[] | null
+          p_organization_id: string
+        }
+        Returns: {
+          account_id: string | null
+          account_name: string | null
+          compras: number | null
+          environment: string | null
+          lido_ate: string | null
+          marketplace: "ML" | "SHOPEE" | null
+          nivel: "TOTAL" | "MARKETPLACE" | "CONTA"
+          pedidos_sem_receita: number | null
+          receita_bruta: number | null
+          ticket_medio: number | null
+          ultimo_pedido_em: string | null
           unidades: number | null
         }[]
       }

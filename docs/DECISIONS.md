@@ -17606,6 +17606,51 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP,HANDOFF}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-603 - O cancelamento por compra e o "hoje" ao vivo no "Todos" de /vendas: duas funcoes novas ao lado do C-53 (C-70)
+
+**Contexto:** escolha do dono de 20/10 no item 4 das decisoes pendentes (as tres opcoes). Esta e a parte (a1) da opcao (a): no "Todos" de `/vendas`, a taxa de cancelamento e as vendas de hoje eram so do Mercado Livre, e a tela dizia isso. A marca (a2) e a D-605.
+
+**Decisao:**
+1. **Duas funcoes novas, e o C-53 nao muda.** A Home, o export e a `/vendas` continuam lendo `get_marketplace_sales_summary` como antes. O cancelamento le `orders` inteiro na janela, e a Home, que nao o mostra, nao paga essa leitura.
+2. **`get_marketplace_sales_cancellations`: a taxa POR COMPRA**, a unidade que soma entre os canais (5T).
+   - No ML, a compra e o pack (ou o pedido sem pack), com os pedidos da janela de `orders.date_created`, a mesma de `get_sales_expanded_summary`.
+   - A compra e VALIDA se algum pedido dela vale (`paid`, `partially_refunded`) e CANCELADA se todos foram cancelados (`cancelled`, `pending_cancel`, como a 5C). O pack com um item cancelado e outro valido e compra valida: o cliente comprou.
+   - Na Shopee, o pedido, pela situacao de `shopee_sales_orders` (CANCELADA ja inclui `IN_CANCEL`), lida em `shopee_orders` com a mesma expressao: a view montaria os itens de cada pedido sem precisar. O teste prova a igualdade.
+   - **Taxa** = canceladas / (validas + canceladas). A do ML aqui e por compra e pode diferir da tela do ML, que e por pedido (5C).
+3. **`get_marketplace_sales_today`: o dia AO VIVO**, e nao o agregado diario recalculado do C-53.
+   - O ML vem dos pedidos validos do dia em `orders`, com as definicoes de `get_sales_today_summary`, provadas iguais no teste.
+   - A Shopee vem das vendas validas do dia, com `lido_ate` = `orders_synced_until`, porque a Shopee e lida a cada 5 minutos e nao por webhook.
+   - `ultimo_pedido_em` e a venda mais recente. No MARKETPLACE e no TOTAL, o `lido_ate` e o elo mais fraco.
+4. **As regras do C-53 valem nas duas:**
+   - TOTAL, MARKETPLACE e CONTA;
+   - a loja de teste so em CONTA, e a nunca lida NULA;
+   - sem loja live lida, sem linha da Shopee;
+   - `p_marketplaces` nulo = so ML;
+   - `security invoker`.
+5. **Desempenho (producao, como `authenticated`, a leitura de `orders` do cancelamento):**
+   - 90 dias levam 171 ms quentes. A primeira leitura fria levou 4,2 s, com cerca de 2 mil paginas lidas do disco: o mesmo custo que a `/vendas` do ML ja paga em `get_sales_expanded_summary` (D-469).
+   - A agregacao das compras passava do `work_mem` padrao em 90 dias e ia ao disco: a funcao leva `set work_mem = '32MB'`, como a D-499.
+   - Indice de cobertura em `orders`: candidato, nao feito. O `orders` e muito atualizado, e a leitura so do indice nao e garantida.
+
+**Verificacao:**
+- **Integracao:** 7 testes.
+  - O pack meio cancelado e compra valida, e o pack todo cancelado e cancelada (com `pending_cancel`). O aguardando pagamento fica de fora.
+  - A Shopee com `CANCELLED` e `IN_CANCEL`, e o nao pago de fora.
+  - O TOTAL, o MARKETPLACE e a CONTA; a loja de teste so em CONTA; a nunca lida NULA.
+  - A situacao igual a da view.
+  - Sem marketplace so o ML, e o periodo e o marketplace invalidos recusados.
+  - A permissao por conta e por loja.
+  - O hoje do ML igual a `get_sales_today_summary`, a Shopee com receita desconhecida a parte e o `lido_ate`, o TOTAL somado e o dia sem venda zero.
+  - O anon nao executa.
+- **Mutacao:** cada uma derruba testes.
+  - a compra cancelada quando QUALQUER pedido foi cancelado: 3;
+  - o hoje do ML contando cancelado: 1;
+  - a loja de teste nas somas: 1.
+
+**Publicacao:** a migration `20261020150000` vai a producao depois do merge. A tela (A2) chama as funcoes novas so depois da migration em producao, porque antes delas a chamada da PGRST202. Worker e api nao mudam.
+
+**Impacto:** `supabase/migrations/20261020150000_cancelamento_e_hoje_por_marketplace.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,METRICS,HANDOFF,ROADMAP}.md`.
+
 ## D-604 - As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
 
 **Contexto:** desde a D-438, o evento da loja Shopee guarda a loja em `domain_events.shopee_shop_id` (nunca junto da conta do ML, pela check `domain_events_uma_origem`). Ele chega a quem alcança a loja, pela RLS de D-433. A `/notificacoes` recortava por conta do Mercado Livre (`ml_account_id`), mas não por loja. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "filtro e preferências por loja".

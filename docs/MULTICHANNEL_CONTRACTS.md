@@ -152,6 +152,17 @@ As três funções da Curva ABC de D-424 recebem, **no fim**, `p_marketplaces te
 
 Coluna de marketplace nula = sem venda naquele canal no período (não é zero). Sandbox fica fora das somas; aparece só na linha da loja.
 
+### 3.19 O cancelamento e o hoje no "Todos" de /vendas (C-70, D-603) — em código
+
+Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CONTA; loja de teste só em CONTA; loja nunca lida NULA; `p_marketplaces` nulo = só ML). O C-53 não muda.
+
+| Contrato | Parâmetros | Devolve |
+|---|---|---|
+| `get_marketplace_sales_cancellations` | os do C-53: `p_organization_id`, `p_date_from`, `p_date_to`, `p_marketplaces`, `p_account_ids` | `compras_validas`, `compras_canceladas`, `taxa_cancelamento` (canceladas ÷ válidas + canceladas, 4 casas). **Por compra:** o pack do ML (cancelada só se todos os pedidos foram cancelados) e o pedido da Shopee |
+| `get_marketplace_sales_today` | `p_organization_id`, `p_date` (o dia de São Paulo), `p_marketplaces`, `p_account_ids` | `compras`, `unidades`, `receita_bruta`, `pedidos_sem_receita`, `ticket_medio`, `ultimo_pedido_em`, `lido_ate` (só da Shopee; o ML é ao vivo). **Ao vivo:** o ML de `orders`, como `get_sales_today_summary` |
+
+**Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
+
 ### 3.18 A marcação em lote por loja Shopee (C-69, D-491) — em produção desde 20/10
 
 **`mark_notifications_read`** ganha no fim `p_shopee_shop_id uuid default null` (assinatura `(p_severity text, p_event_type_prefix text, p_ml_account_id uuid, p_shopee_shop_id uuid)`, uma função só). Nulo = sem recorte por loja; com valor, marca só as não lidas do usuário cujo evento é daquela loja (`domain_events.shopee_shop_id`, a mesma condição da lista). Conta e loja juntas devolvem 0 (o evento tem uma origem só). Devolve quantas marcou, como antes. **A tela manda o parâmetro só com valor.** A migration `20261020130000` está em produção desde 20/10.

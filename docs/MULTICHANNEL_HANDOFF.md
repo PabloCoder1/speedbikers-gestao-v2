@@ -260,7 +260,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 1. ~~**E5 (exibição)**~~ — decidido pelo dono (14/10, relatado pelo A2): "pode usar todos os dados"; a T5 mostra o resultado total com a divisão definitivo/provisório.
 2. **E6b a E7c — tudo na `main` (391c7165):** `migrations-producao.yml` para `20261015000000` a `20261015050000`; **E7a, E7b e E7c também publicam o worker, DEPOIS da migration** (os jobs leem as colunas novas); a E7d (push) publica a **api** e pede o cadastro do endereço no Console (`docs/DEPLOYMENT.md` §6.2) — esperar a CI da `main` terminar (a trava recusa antes) e fazer as duas aprovações. (E4, E5 e E6a: em produção desde 14/10.)
 3. ~~**T8 (central e meta)**~~ — decidido pelo dono (15/10, perguntado pelo A2): uma meta POR MARKETPLACE e uma GERAL; os indicadores do período lado a lado, com a receita somada e sem total de resultado; construir já, antes do Go Live. A T8a está na D-480 e a T8b na D-482, sobre o C-66 do A1 (D-473).
-4. **A próxima frente das telas, depois da D-495** (levantado pelo A2 em 19/10). Cada opção pede um contrato do A1 antes da tela:
+4. **A próxima frente das telas, depois da D-495** (levantado pelo A2 em 19/10) — **decidido pelo dono em 20/10: as três.** O A1 abre os contratos na ordem (a1) cancelamento e hoje (C-70, D-603, em código), (a2) a marca (D-605), (b) e (c). Cada opção pede um contrato do A1 antes da tela:
    (a) marca, vendas de hoje e taxa de cancelamento no "Todos" de `/vendas`;
    (b) os pedidos da Shopee e o dia a dia por canal no SKU;
    (c) um detector da Shopee na Central de Ações.
