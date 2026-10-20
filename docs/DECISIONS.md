@@ -16776,6 +16776,7 @@ O spec apaga o que cria. Com nome fixo, uma rodada interrompida é sobrescrita n
   - nenhum `ESTORNO_PRE_CAPTURA` ainda, e esta certo: todo SKU vendido tem corte da planilha, e todas as vendas foram pagas depois da ultima exportacao;
   - nenhum erro do worker; os `slow_operation` sao os de sempre.
 - **Ainda nao exercidos por um pedido real:** o cancelamento depois do corte e o kit.
+- **A planilha velha (achado de 20/10, so agregados):** a ultima importacao do UpSeller e de 24/09, entao o corte de todo SKU e 24/09. Toda venda paga desde entao deveria baixar, mas o worker so baixa o pedido que le, e a leitura e incremental. A maioria dos pedidos pagos desde 24/09 ainda nao foi relida e esta sem baixa: o saldo dos SKUs da Shopee segue alto, como estava antes da (b), so que menos. A conciliacao diaria nao briga com isso: a meta e o snapshot mais os movimentos posteriores, e a venda nova entra dos dois lados. **Decisao do dono (20/10):** importar uma planilha nova (em `/importacoes/nova`) e manter a baixa como esta, sem backfill. O ajuste da conciliacao sai na rodada diaria seguinte (06:00 de Sao Paulo): a importacao nao a dispara.
 
 **Impacto (b):** `supabase/migrations/20261020120000_baixa_da_venda_shopee.sql`, `packages/domain/src/inventory/{shopee-sale-deduction{,.test},index}.ts`, `apps/worker/src/handlers/{shopee-stock{,.test},shopee-orders-sync}.ts`, `packages/db/src/{types,rls.integration.test,movement-type-check.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
 
