@@ -22275,6 +22275,236 @@ describe("o SKU com a Shopee: o dia a dia por canal e os pedidos com o SKU (D-60
   });
 });
 
+/*
+  D-605: a marca no "Todos" de /vendas (C-72). As quatro funções ganham
+  p_supplier_brand e p_sem_marca, com a regra do ML (D-237). Sem recorte,
+  nada muda (os testes do C-53 e do C-70 seguem). Com recorte: o grão de SKU
+  nos dois canais; compras, ticket, recebido e cancelamento NULOS. A linha do
+  ML é a de get_sales_summary e a do hoje, a de get_sales_today_summary, com
+  o mesmo recorte.
+*/
+describe("a marca no Todos de /vendas (D-605)", () => {
+  const ORG = "88888888-0000-4000-8000-00000000d605";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d605";
+  const CONTA = "aaaa6050-0000-4000-8000-0000000a0605";
+  const LOJA = "dddd6050-0000-4000-8000-0000000a0605";
+  const DIA = "2026-10-10";
+  const MARCA_A = "args.marcaA";
+  const recorteA = `p_supplier_brand => '${MARCA_A}'`;
+  const semMarca = "p_sem_marca => true";
+  let skuA = "";
+  let skuB = "";
+  let skuSemMarca = "";
+
+  interface Resumo {
+    nivel: string;
+    marketplace: string | null;
+    compras: string | null;
+    unidades: string | null;
+    receita_bruta: string | null;
+    pedidos_sem_receita: string | null;
+    ticket_medio: string | null;
+    pedidos_ml: string | null;
+    recebido: string | null;
+  }
+
+  const resumo = (recorte: string) =>
+    asUser<Resumo>(
+      ADMIN,
+      `select nivel, marketplace, compras, unidades, receita_bruta, pedidos_sem_receita, ticket_medio, pedidos_ml, recebido
+         from public.get_marketplace_sales_summary('${ORG}', '${DIA}', '${DIA}', array['ML','SHOPEE'], null${recorte === "" ? "" : `, ${recorte}`})
+        where nivel <> 'CONTA' order by nivel desc, marketplace nulls first`,
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-d605@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-605', 'org-d605') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta', 'rlstest-d605', 'CONNECTED', 9990605, now() - interval '30 days') on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    const sku = async (codigo: string, marca: string | null) =>
+      (
+        await client.query<{ id: string }>(
+          // A origem anda junto da marca (`skus_supplier_brand_source_coherent`).
+          `insert into public.skus (organization_id, sku, kind, supplier_brand, supplier_brand_source)
+           values ($1, $2, 'PRODUTO', $3, case when $3::text is null then null else 'DERIVED' end)
+           on conflict (organization_id, sku_key) do update set supplier_brand = excluded.supplier_brand returning id`,
+          [ORG, codigo, marca],
+        )
+      ).rows[0]?.id ?? "";
+    skuA = await sku("D605-A", MARCA_A);
+    skuB = await sku("D605-B", "args.marcaB");
+    skuSemMarca = await sku("D605-S", null);
+
+    // ML do dia 10: o agregado da conta e o grão de SKU (A, B, sem marca e o balde sem SKU).
+    await client.query(
+      `insert into public.daily_account_metrics (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $3, 5, 500, 4, 3)`,
+      [ORG, CONTA, DIA],
+    );
+    await client.query(
+      `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $4, $3, 2, 200, 2, 2), ($1, $2, $5, $3, 1, 100, 1, 1), ($1, $2, $6, $3, 1, 100, 1, 1), ($1, $2, null, $3, 1, 100, 1, 1)`,
+      [ORG, CONTA, DIA, skuA, skuB, skuSemMarca],
+    );
+    await client.query(
+      "insert into public.metric_refresh_state (ml_account_id, organization_id, last_refresh_at) values ($1, $2, now()) on conflict do nothing",
+      [CONTA, ORG],
+    );
+    // ML ao vivo do dia 10: um pedido com A (1×50) e B (1×20); um pack com o sem marca (2×10).
+    await client.query(
+      `insert into public.orders (id, organization_id, ml_account_id, status, date_created, date_last_updated, total_amount, currency_id, pack_id)
+       values (96051001, $1, $2, 'paid', '2026-10-10T15:00:00Z', now(), 70, 'BRL', null),
+              (96051002, $1, $2, 'paid', '2026-10-10T16:00:00Z', now(), 20, 'BRL', 960599)
+       on conflict (id) do nothing`,
+      [ORG, CONTA],
+    );
+    await client.query(
+      `insert into public.order_items (order_id, organization_id, ml_account_id, position, item_id, title, quantity, unit_price, currency_id, sku_id)
+       values (96051001, $1, $2, 0, 'MLB605001', 'A', 1, 50, 'BRL', $3), (96051001, $1, $2, 1, 'MLB605002', 'B', 1, 20, 'BRL', $4),
+              (96051002, $1, $2, 0, 'MLB605003', 'S', 2, 10, 'BRL', $5)
+       on conflict do nothing`,
+      [ORG, CONTA, skuA, skuB, skuSemMarca],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $2, 'live', 990605001, 'Loja', 'CONNECTED', now() - interval '30 days', now(), now()) on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    // P1: A 2×40 e B 1×30. P2: A a preço 0 e um item sem SKU 1×20. P3 cancelado.
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, 'D605-P1', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z'),
+              ($1, $2, 'D605-P2', 'SHIPPED',   '2026-10-10T16:00:00Z', now(), '2026-10-10T16:01:00Z'),
+              ($1, $2, 'D605-P3', 'CANCELLED', '2026-10-10T17:00:00Z', now(), '2026-10-10T17:01:00Z')
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, 'D605-P1', 0, $2, 1, 2, 40, $3, 'SKU_DO_PEDIDO'), ($1, 'D605-P1', 1, $2, 2, 1, 30, $4, 'SKU_DO_PEDIDO'),
+              ($1, 'D605-P2', 0, $2, 1, 1, 0, $3, 'SKU_DO_PEDIDO'), ($1, 'D605-P2', 1, $2, 3, 1, 20, null, null),
+              ($1, 'D605-P3', 0, $2, 1, 5, 40, $3, 'SKU_DO_PEDIDO')
+       on conflict do nothing`,
+      [LOJA, ORG, skuA, skuB],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+    await client.query("delete from public.orders where ml_account_id = $1", [CONTA]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = $1", [CONTA]);
+    await client.query("delete from public.daily_account_metrics where ml_account_id = $1", [CONTA]);
+  });
+
+  it("marca A: unidades e receita pelo grão de SKU; compras, ticket e recebido NULOS; o item de preço 0 conta o pedido à parte", async () => {
+    const [total, ml, shopee] = await resumo(recorteA);
+
+    expect(ml).toMatchObject({ marketplace: "ML", compras: null, unidades: "2", receita_bruta: "200.00", ticket_medio: null, pedidos_ml: "2" });
+    expect(shopee).toMatchObject({ marketplace: "SHOPEE", compras: null, unidades: "3", receita_bruta: "80.00", pedidos_sem_receita: "1", recebido: null });
+    expect(total).toMatchObject({ nivel: "TOTAL", compras: null, unidades: "5", receita_bruta: "280.00", pedidos_sem_receita: "1", ticket_medio: null });
+  });
+
+  it("sem marca: o item sem SKU e o SKU sem marca, nos dois canais", async () => {
+    const [total, ml, shopee] = await resumo(semMarca);
+
+    expect(ml).toMatchObject({ unidades: "2", receita_bruta: "200.00" });
+    expect(shopee).toMatchObject({ unidades: "1", receita_bruta: "20.00", pedidos_sem_receita: "0" });
+    expect(total).toMatchObject({ unidades: "3", receita_bruta: "220.00" });
+  });
+
+  it("a linha do ML é a de get_sales_summary com o mesmo recorte", async () => {
+    for (const [recorte, args] of [
+      [recorteA, [MARCA_A, false]],
+      [semMarca, [null, true]],
+    ] as const) {
+      const ml = (await resumo(recorte)).find((l) => l.marketplace === "ML");
+      const { rows } = await client.query<{ units_sold: string; gross_revenue: string; orders_count: string; purchases_count: string | null }>(
+        "select units_sold, gross_revenue, orders_count, purchases_count from public.get_sales_summary($1, $1, $2, $3, $4)",
+        [DIA, CONTA, args[0], args[1]],
+      );
+
+      expect({ unidades: ml?.unidades, receita: ml?.receita_bruta, pedidos: ml?.pedidos_ml, compras: ml?.compras }).toEqual({
+        unidades: rows[0]?.units_sold,
+        receita: rows[0]?.gross_revenue,
+        pedidos: rows[0]?.orders_count,
+        compras: rows[0]?.purchases_count,
+      });
+    }
+  });
+
+  it("sem recorte nada muda: as compras e o recebido voltam, do agregado da conta e do pedido", async () => {
+    const [total, ml, shopee] = await resumo("");
+
+    expect(ml).toMatchObject({ compras: "3", unidades: "5", receita_bruta: "500.00", pedidos_ml: "4" });
+    // P1 tem receita conhecida (110); P2 tem um item de preço 0, então a receita do pedido é desconhecida.
+    expect(shopee).toMatchObject({ compras: "2", unidades: "5", receita_bruta: "110.00", pedidos_sem_receita: "1" });
+    expect(total).toMatchObject({ compras: "5", unidades: "10", receita_bruta: "610.00" });
+  });
+
+  it("a série diária com a marca: o mesmo recorte por dia, compras NULAS", async () => {
+    const dias = await asUser<{ marketplace: string | null; compras: string | null; unidades: string; receita_bruta: string; pedidos_sem_receita: string }>(
+      ADMIN,
+      `select marketplace, compras, unidades, receita_bruta, pedidos_sem_receita
+         from public.get_marketplace_sales_daily('${ORG}', '${DIA}', '${DIA}', array['ML','SHOPEE'], null, ${recorteA})`,
+    );
+
+    expect(dias).toEqual([
+      { marketplace: "ML", compras: null, unidades: "2", receita_bruta: "200.00", pedidos_sem_receita: "0" },
+      { marketplace: "SHOPEE", compras: null, unidades: "3", receita_bruta: "80.00", pedidos_sem_receita: "1" },
+      { marketplace: null, compras: null, unidades: "5", receita_bruta: "280.00", pedidos_sem_receita: "1" },
+    ]);
+  });
+
+  it("o hoje com a marca: o ML pelos itens, igual a get_sales_today_summary; compras NULAS", async () => {
+    const linhas = await asUser<{ nivel: string; marketplace: string | null; compras: string | null; unidades: string; receita_bruta: string; ultimo_pedido_em: Date | null }>(
+      ADMIN,
+      `select nivel, marketplace, compras, unidades, receita_bruta, ultimo_pedido_em
+         from public.get_marketplace_sales_today('${ORG}', '${DIA}', array['ML','SHOPEE'], null, ${recorteA})
+        where nivel <> 'CONTA' order by nivel desc, marketplace nulls first`,
+    );
+    const { rows } = await client.query<{ units_sold: string; gross_revenue: string; purchases_count: string | null; last_order_at: Date }>(
+      "select units_sold, gross_revenue, purchases_count, last_order_at from public.get_sales_today_summary($1, $2, $3, false)",
+      [DIA, CONTA, MARCA_A],
+    );
+
+    expect(linhas.find((l) => l.marketplace === "ML")).toMatchObject({
+      compras: rows[0]?.purchases_count,
+      unidades: rows[0]?.units_sold,
+      receita_bruta: rows[0]?.gross_revenue,
+      ultimo_pedido_em: rows[0]?.last_order_at,
+    });
+    expect(linhas.find((l) => l.marketplace === "SHOPEE")).toMatchObject({ compras: null, unidades: "3", receita_bruta: "80.00" });
+    expect(linhas.find((l) => l.nivel === "TOTAL")).toMatchObject({ compras: null, unidades: "4", receita_bruta: "130.00" });
+  });
+
+  it("o cancelamento sob marca é NULO em todas as linhas (D-237), e sem recorte volta", async () => {
+    const sob = await asUser<{ compras_validas: string | null; compras_canceladas: string | null; taxa_cancelamento: string | null }>(
+      ADMIN,
+      `select compras_validas, compras_canceladas, taxa_cancelamento
+         from public.get_marketplace_sales_cancellations('${ORG}', '${DIA}', '${DIA}', array['ML','SHOPEE'], null, ${recorteA})`,
+    );
+
+    expect(sob.length).toBeGreaterThan(0);
+    expect(sob.every((l) => l.compras_validas === null && l.compras_canceladas === null && l.taxa_cancelamento === null)).toBe(true);
+
+    const sem = await asUser<{ nivel: string; compras_canceladas: string | null }>(
+      ADMIN,
+      `select nivel, compras_canceladas from public.get_marketplace_sales_cancellations('${ORG}', '${DIA}', '${DIA}', array['ML','SHOPEE'], null)`,
+    );
+
+    expect(sem.find((l) => l.nivel === "TOTAL")?.compras_canceladas).toBe("1");
+  });
+});
+
 /**
  * mark_notifications_read por loja Shopee (D-491): o quarto recorte, com o
  * mesmo significado dos outros (nulo = sem recorte). O evento da loja guarda a
