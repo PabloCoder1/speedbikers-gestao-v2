@@ -6474,6 +6474,8 @@ export type Database = {
           p_date_to: string
           p_marketplaces?: string[] | null
           p_organization_id: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           account_id: string | null
@@ -6493,6 +6495,8 @@ export type Database = {
           p_date_to: string
           p_marketplaces?: string[] | null
           p_organization_id: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           compras: number
@@ -6511,6 +6515,8 @@ export type Database = {
           p_date_to: string
           p_marketplaces?: string[] | null
           p_organization_id: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           // CORRECAO MANUAL (D-436): o que a definicao garante por nivel --
@@ -6540,6 +6546,8 @@ export type Database = {
           p_date: string
           p_marketplaces?: string[] | null
           p_organization_id: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           account_id: string | null
