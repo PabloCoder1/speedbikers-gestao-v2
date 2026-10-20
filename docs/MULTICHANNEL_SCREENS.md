@@ -269,7 +269,7 @@ número.
 | **D-610** | A `/central` sem a leitura do faturamento em dobro | A1 (o achado), A3 (a Central) | ✔ D-610 |
 | **D-612** | A nota de venda do marketplace como "Não aplicada" em `/notas-fiscais` | A1 (D-497 b) | ✔ D-612 (#262) |
 | **D-614** | A venda da Shopee nas movimentações de estoque | A1 (D-495 b, C-68) | ✔ D-614 (#268) |
-| **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | em código; entra depois da migration `20261020130000` |
+| **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | ✔ D-616 (#272) |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
