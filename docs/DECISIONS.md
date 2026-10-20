@@ -17844,6 +17844,48 @@ A página e a rota usam a mesma regra; duas cópias divergiriam no primeiro ajus
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-609 - O anuncio da Shopee vendendo sem vinculo vira acao na Central (C-73): o 1o dos quatro detectores da Shopee
+
+**Contexto:** escolha do dono de 20/10 no item 4, opcao (c): os quatro detectores da Shopee na Central de Acoes, um de cada vez, na ordem: vendendo sem vinculo, ruptura no anuncio, prejuizo por produto e divergencia de estoque. Este e o primeiro. Desde a D-495 (b), a venda da Shopee baixa o estoque so quando o item tem SKU vinculado, entao o anuncio que vende sem vinculo deixa o saldo errado em silencio. Na leitura de producao de 20/10 (so contagem), havia 23 unidades de anuncio de loja live com SKU fora do catalogo e venda nos 30 dias.
+
+**Decisao:**
+1. **O sinal:** a unidade de anuncio (item ou variacao, `shopee_listing_units`) de loja LIVE cujo estado e `SEM_SKU_NO_ANUNCIO` ou `SKU_FORA_DO_CATALOGO`, e que vendeu (pedido VALIDA) nos 30 dias completos ate ontem.
+   - O estado e o de hoje: vinculado o anuncio, ele some do detector, e a acao se encerra em 3 dias pelo ciclo de vida de sempre (D-403).
+   - `AGUARDANDO_LEITURA` fica de fora: nao se sabe ainda.
+2. **A acao:**
+   - `kind = shopee_sem_vinculo`, com `subject_key = loja:item:variacao` (`-` sem variacao).
+   - Confianca alta, porque o fato e certo. Severidade media: e cadastro a fazer, e nao notifica (so o episodio alto vira notificacao, D-411).
+   - Impacto = a receita conhecida do anuncio na janela. Com so itens de preco 0 ele e NULO, e a fila poe por ultimo.
+   - A evidencia leva as vendas, o motivo do vinculo e, no `detector`, a loja, o item, a variacao, o SKU do anuncio e o estado.
+   - A recomendacao muda com o estado: cadastrar o SKU que o anuncio traz, ou vincular.
+3. **A loja na acao:** `actions.shopee_shop_id`, sem FK, com o CHECK `actions_uma_origem` (conta do ML ou loja, nunca as duas), como em `domain_events` (D-438). O `domain_event` do episodio alto leva a loja tambem.
+4. **A fila:** `get_actions_queue` devolve `shopee_shop_id` no fim, e o `account_label` cai no nome da loja quando a acao e da Shopee. O chip de conta da tela mostra a loja sem mudanca.
+5. **A fonte so roda com loja live de catalogo lido** (`items_synced_until`). Sem catalogo, nada e criado nem encerrado por ausencia.
+6. **O worker** (`sync-central-alerts`) pede a fonte nova por ultimo, numa chamada propria (D-404). Ele so sobe DEPOIS da migration em producao, porque antes a funcao recusa a fonte desconhecida.
+
+**Verificacao:**
+- **Integracao:** 5 testes, e os do ciclo de vida da Central (D-403, D-404, D-411, D-471) seguem verdes.
+  - Um anuncio fora do catalogo e um sem SKU, ambos vendendo, viram acoes com impacto pela receita. A variacao so a preco 0 vira acao de impacto NULO.
+  - O vinculado, o sem venda, o so cancelado e o da loja de teste ficam de fora.
+  - A fila com o nome e o id da loja.
+  - O vinculo manual encerra a acao no 3o dia, com o motivo.
+  - Sem catalogo lido, a fonte nao roda.
+  - O CHECK de uma origem so.
+- **Worker:** o teste da ordem e da contagem com a quarta fonte.
+- **Mutacao:** cada uma derruba testes.
+  - o vinculado detectado: 3;
+  - a loja de teste detectada: 3;
+  - a fonte rodando sem catalogo: 1.
+
+**Publicacao:**
+1. a migration `20261020180000`;
+2. o worker do mesmo commit;
+3. a tela (A2): o rotulo do kind, o atalho para `/anuncios/shopee?loja=&busca=` e o nome da loja no chip.
+
+A primeira rodada e a das 8h do dia seguinte.
+
+**Impacto:** `supabase/migrations/20261020180000_shopee_sem_vinculo_na_central.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`, `docs/archive/handoffs/2026-10-20_trechos-do-handoff.md`.
+
 ## D-610 - A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 
 **Contexto:** em 19/10, das 14:20:21 às 14:20:48 UTC, o Postgres de produção cancelou 19 consultas por `statement timeout` (8 s), achadas pelo A1:

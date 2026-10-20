@@ -241,6 +241,7 @@ export type Database = {
           organization_id: string
           recommendation: string
           severity: string
+          shopee_shop_id: string | null
           sku_id: string | null
           status: string
           subject_key: string | null
@@ -262,6 +263,7 @@ export type Database = {
           organization_id: string
           recommendation: string
           severity: string
+          shopee_shop_id?: string | null
           sku_id?: string | null
           status?: string
           subject_key?: string | null
@@ -283,6 +285,7 @@ export type Database = {
           organization_id?: string
           recommendation?: string
           severity?: string
+          shopee_shop_id?: string | null
           sku_id?: string | null
           status?: string
           subject_key?: string | null
@@ -6866,6 +6869,7 @@ export type Database = {
           open_total: number
           recommendation: string
           severity: string
+          shopee_shop_id: string | null
           sku: string | null
           sku_id: string | null
           sku_title: string | null
