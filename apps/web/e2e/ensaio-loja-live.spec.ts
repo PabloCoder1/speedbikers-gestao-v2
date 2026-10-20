@@ -297,6 +297,40 @@ test("o SKU, a busca e a sincronização enxergam a loja live", async ({ page })
   await semErro(page);
 });
 
+test("/skus/[id]?aba=vendas: o dia a dia por canal e os pedidos da Shopee com o produto da loja live (D-618, C-71)", async ({
+  page,
+}) => {
+  await entrar(page, `/skus/${skuId}?aba=vendas`);
+  await expect(page.locator(".sb-carregando-bloco")).toHaveCount(0);
+
+  // 11 vendas válidas em 10 dias (o 2º dia tem duas): 10 linhas, a Shopee em
+  // cada uma e nenhum Mercado Livre — o produto só vende na loja live.
+  const porCanal = page.getByRole("table", { name: "Vendas do produto por dia e por canal" }).locator("tbody tr");
+
+  await expect(porCanal).toHaveCount(10);
+  const doisNoDia = porCanal.filter({ hasText: dinheiro("200,00") });
+
+  await expect(doisNoDia).toHaveCount(1);
+  await expect(doisNoDia.getByRole("cell").nth(1)).toHaveText("—");
+  await expect(doisNoDia.getByRole("cell").nth(2)).toContainText("2 un");
+
+  // Os 12 pedidos com o produto (o cancelado inclusive), 1 unidade e R$ 100 cada.
+  const pedidos = page.getByRole("table", { name: "Pedidos da Shopee com este produto" });
+
+  await expect(pedidos.locator("tbody tr")).toHaveCount(12);
+  await expect(pedidos.getByRole("row").filter({ hasText: "E2ELIVE-CANCEL" })).toContainText("Cancelada");
+  const primeiro = pedidos.getByRole("row").filter({ hasText: /E2ELIVE01\b/u });
+
+  await expect(primeiro.getByRole("cell").nth(4)).toHaveText("1");
+  await expect(primeiro.getByRole("cell").nth(5)).toHaveText(dinheiro("100,00"));
+  await expect(primeiro).not.toContainText("Teste");
+  await semErro(page);
+
+  await primeiro.getByRole("link", { name: "Abrir pedido" }).click();
+  await expect(page).toHaveURL(new RegExp(`/vendas/shopee\\?loja=${lojaId}&from=(\\d{4}-\\d{2}-\\d{2})&to=\\1&pedido=E2ELIVE01$`, "u"));
+  await expect(page.getByRole("row").filter({ hasText: "E2ELIVE01" }).first()).toBeVisible();
+});
+
 test("o CSV dos pedidos da loja live tem os 12 pedidos do período, com a situação de cada um (D-490)", async ({ page }) => {
   await entrar(page, `/vendas/shopee?loja=${lojaId}`);
 
