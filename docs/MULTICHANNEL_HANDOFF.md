@@ -132,12 +132,13 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- Nada. O worker da baixa (A1) sobe depois da reconferência dos `fulfillment_flag` reais; no primeiro `VENDA_SHOPEE` real, o A1 lê o banco e o A2 confere a /estoque/movimentacoes.
+- D-616 — marcar em lote por loja Shopee (C-69 da D-491): o botão "Marcar este recorte como lido" volta com a loja no recorte, a ação manda `p_shopee_shop_id` só com valor e recusa loja com conta; o aviso da D-604 sai. **Em código e validada**; o PR entra **depois** da migration `20261020130000` em produção (PGRST202 antes).
+- A conferência da D-614 em produção: no primeiro `VENDA_SHOPEE` real (o worker da baixa sobe depois da `20261020120000` e da reconferência dos `fulfillment_flag`), o A1 lê o banco e o A2 confere a /estoque/movimentacoes.
 
 **Falta** (`docs/MULTICHANNEL_SCREENS.md` §2 e §8). As etapas T0 a T11 estão na `main`; o que resta nas telas espera um contrato do A1 ou uma escolha do dono:
-- **Esperam o A1, na ordem dele (D-499 e D-497 (b) já em produção; D-495 → D-491):**
-  - **D-495**, o estoque baixando a venda da Shopee (decisão do dono de 19/10): a tela é a D-614 (em andamento, acima), sobre os nomes firmes do C-68, com o e2e do link no ensaio da loja live. O worker da baixa sobe depois dela no ar e da reconferência dos `fulfillment_flag` reais (A1).
-  - **D-491**: `p_shopee_shop_id` em `mark_notifications_read` (contrato C-69) — **em código e validada** (7 testes de integração, mutação), migration `20261020130000`; a tela manda a loja só com valor, e só depois da migration em produção, e o botão de lote volta (D-604).
+- **A fila do A1 (D-499 → D-497 (b) → D-495 → D-491) está em produção desde 20/10.** O que ainda toca as telas:
+  - **D-491** (C-69, migration `20261020130000` em produção desde 16:22 UTC): a tela D-616 (#272) está no ar, e o botão de lote voltou com a loja no recorte (D-604).
+  - **D-495 (b)** (C-68, no ar desde 14:22 UTC): o banco foi conferido. Todo movimento da Shopee tem a loja e o dia do link, e todo estorno do armazém tem a sua venda. Falta a conferência visual da `/estoque/movimentacoes` pelo dono.
 - **Pedem contrato novo do A1 e a escolha do dono** (ver "Decisões pendentes do dono", item 4):
   - `/vendas` no "Todos": marca, vendas de hoje e taxa de cancelamento. O C-53 não traz cancelamento nem marca, e a tela diz que são só do ML.
   - SKU: os pedidos da Shopee que contêm o SKU e o dia a dia por canal. O `get_shopee_orders` não filtra por SKU.

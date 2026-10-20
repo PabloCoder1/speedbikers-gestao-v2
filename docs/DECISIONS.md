@@ -16640,7 +16640,7 @@ Filtro salvo de antes, sem `marketplace` e sem parâmetro do ML (só o período)
 - **Mutacao:** sem a condicao da loja, 3 testes caem; a sobrecarga (a funcao de tres argumentos de volta ao lado da nova) derruba 6, entre eles o da assinatura e o da chamada de sempre, que fica ambigua (`function ... is not unique`).
 - **Tipos:** o bloco escrito a mao em `types.ts` (classe D-213) bate com o gerador local, com os argumentos anulaveis (D-133).
 
-**Publicacao:** a migration `20261020130000` vai a producao depois do merge. A tela (o botao do lote de volta com a loja, A2) manda o parametro so com valor e so depois da migration em producao (PGRST202). Worker e api nao mudam.
+**Em producao (20/10):** migration `20261020130000` aplicada as 16:22 UTC (run `39439068303`; o plano, conferido antes da 2a aprovacao, era so ela; o primeiro disparo foi recusado no `origem`, que nao achou a CI do commit, e o segundo passou). Conferido no banco, sem chamar a funcao (chamar marcaria notificacoes reais): uma versao so, com os quatro argumentos e o recorte da loja; `security invoker` com `search_path` vazio; `authenticated` executa, `anon` nao. A tela (D-616, A2, #272) pode entrar: manda o parametro so com valor. Worker e api nao mudam.
 
 **Impacto:** `supabase/migrations/20261020130000_notificacoes_em_lote_por_loja.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,NOTIFICATIONS,HANDOFF,ROADMAP}.md`.
 
@@ -17777,4 +17777,31 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - web: `apps/web/lib/movement-labels.ts` e `movement-filters.ts` com o teste; `apps/web/app/(app)/estoque/movimentacoes/page.tsx`;
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-616 - Marcar em lote por loja Shopee: o botão volta com a loja no recorte (C-69)
+
+**Contexto:** desde a D-604, a `/notificacoes` recorta por loja Shopee. A escrita em lote (`mark_notifications_read`) não conhecia a loja, então, com a loja no recorte, a tela escondia o botão e dizia "Marcar em lote por loja ainda não existe". A D-491 do A1 (#269, contrato C-69, migration `20261020130000`) dá à função `p_shopee_shop_id`, com o mesmo sentido dos outros recortes: nulo é "sem recorte". Conta e loja juntas não marcam nada, porque o evento tem uma origem só.
+
+**Decisão:**
+1. **A ação de servidor** (`markAllNotificationsRead`):
+   - recebe a loja do recorte;
+   - recusa a loja fora do formato de UUID, como a conta;
+   - recusa conta e loja juntas, que não alcançariam evento nenhum: recusar diz isso, em vez de "0 marcadas";
+   - manda `p_shopee_shop_id` à RPC **só com valor**. O parâmetro não existe antes da migration (PGRST202), e a chamada sem loja continua igual à de hoje.
+2. **A tela:** o botão "Marcar este recorte como lido" volta com a loja no recorte, a confirmação diz o recorte com o nome da loja, e o aviso da D-604 sai.
+
+**Publicação:** só a web, depois da migration `20261020130000` em produção (o A1 avisa). Antes dela, o botão com a loja receberia o PGRST202 e diria "Não foi possível marcar as notificações deste recorte". Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **e2e:**
+  - `notificacoes` 8/8;
+  - no ensaio da loja live, o aviso da loja (`sync.failed`, a loja na própria coluna) é marcado pelo lote do recorte e o botão do recorte some, enquanto as notificações do Mercado Livre do seed continuam por ler.
+- **Mutação:** sem o parâmetro da loja, a chamada marcaria a Central inteira, e o último passo do caso cai.
+- **Suite inteira:** **258/258** com o banco recriado do zero (255 na 3300 e os 3 de convite na 3000), e o `loja-live` **11/11**.
+
+**Impacto:**
+- web: `apps/web/app/(app)/notificacoes/{actions.ts,mark-all-button.tsx,page.tsx}`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
