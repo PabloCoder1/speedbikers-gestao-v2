@@ -16765,7 +16765,17 @@ O spec apaga o que cria. Com nome fixo, uma rodada interrompida é sobrescrita n
 
 **Verificacao (b):** dominio, 13 testes da tabela de casos (corte, sem planilha, nao pago, sem vinculo, kit, armazem e precedencia do corte, valor desconhecido, cancelado depois e ate o corte, o trio, `IN_CANCEL`, cancelamento do armazem, a venda gravada ja absorvida); worker, 5 (loja de teste nao le nem grava, a linha gravada inteira, kit/armazem/cancelamento e a ordem por SKU, SKU nao lido lanca, falha de gravacao lanca e o 23505 e idempotencia); integracao, 2 (o CHECK e o extrato com a loja e o dia, inclusive o dia de Sao Paulo na virada e os nulos). **Ensaio contra o banco local real** (organizacao sintetica, nao commitado): venda comum baixa 2, a do armazem soma zero, o kit baixa 3 do componente e nada do kit, a segunda passada nao duplica, o cancelamento repoe as 2 -- o saldo do gatilho bate. **Mutacao:** 6 (o cancelamento do armazem repondo, o `IN_CANCEL` repondo, o cancelamento sem o corte, o armazem sem a precedencia, o nao pago baixando, o armazem por trecho) -- cada uma derruba um teste.
 
-**Publicacao (b):** so DEPOIS de a fatia (a) estar em producao e os valores reais do `fulfillment_flag` serem conferidos nas lojas live (a ordem do dono). Entao: o merge, a migration `20261020120000` e o deploy do worker. A tela (os rotulos dos tipos e o link "Pedido Shopee", A2) le as colunas novas so depois da migration em producao.
+**Em producao (20/10, b):**
+- **Migration** `20261020120000` aplicada as 14:16 UTC (run `39420778882`; o plano, conferido antes da 2a aprovacao, era so ela). Conferido no banco: o CHECK com os tres tipos, validado, e o `get_stock_movements` com `shopee_shop_id` e `shopee_order_day`, numa versao so e executavel por `authenticated`.
+- **Antes do worker**, a reconferencia que o dono pediu (so contagem por valor, nas lojas live): todo pedido lido depois do deploy da (a) veio com `fulfilled_by_local_seller` ou `fulfilled_by_shopee`, nenhum nulo nem valor fora da documentacao. A tela (D-614, A2) ja estava no ar.
+- **Worker** `worker-00052-gz9` (`b48f150f`; o codigo do worker e o da `main` atual) com o trafego desde 14:22 UTC, depois de conferir imagem, `APP_COMMIT` e variaveis contra a revisao anterior. A api nao mudou.
+- **Os primeiros ciclos (14:25 e 14:30, so agregados):**
+  - a venda de loja tem so o `VENDA_SHOPEE`; a do armazem tem o par `ESTORNO_ARMAZEM_SHOPEE` e soma zero;
+  - toda venda esta no instante do pagamento, so de loja live, e nenhuma chave se repete;
+  - o saldo de cada SKU tocado e igual a soma do ledger, no estoque local;
+  - nenhum `ESTORNO_PRE_CAPTURA` ainda, e esta certo: todo SKU vendido tem corte da planilha, e todas as vendas foram pagas depois da ultima exportacao;
+  - nenhum erro do worker; os `slow_operation` sao os de sempre.
+- **Ainda nao exercidos por um pedido real:** o cancelamento depois do corte e o kit.
 
 **Impacto (b):** `supabase/migrations/20261020120000_baixa_da_venda_shopee.sql`, `packages/domain/src/inventory/{shopee-sale-deduction{,.test},index}.ts`, `apps/worker/src/handlers/{shopee-stock{,.test},shopee-orders-sync}.ts`, `packages/db/src/{types,rls.integration.test,movement-type-check.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
 
