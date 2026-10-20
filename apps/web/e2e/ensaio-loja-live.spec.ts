@@ -277,7 +277,12 @@ test("/estoque/movimentacoes: a venda da Shopee tem rótulo e origem próprios, 
 
 test("o SKU, a busca e a sincronização enxergam a loja live", async ({ page }) => {
   await entrar(page, `/skus/${skuId}?aba=vendas`);
-  await expect(page.getByRole("row", { name: new RegExp(LOJA_LIVE.nome) })).toContainText(dinheiro("1.100,00"));
+  // Na tabela entre marketplaces: desde a D-618, a lista de pedidos da Shopee também tem o nome da loja.
+  await expect(
+    page
+      .getByRole("table", { name: "Vendas do produto por marketplace, conta e loja" })
+      .getByRole("row", { name: new RegExp(LOJA_LIVE.nome) }),
+  ).toContainText(dinheiro("1.100,00"));
   await semErro(page);
 
   // O pedido de loja live é achado pela busca e abre na /vendas/shopee (D-476).
@@ -319,7 +324,8 @@ test("/skus/[id]?aba=vendas: o dia a dia por canal e os pedidos da Shopee com o 
 
   await expect(pedidos.locator("tbody tr")).toHaveCount(12);
   await expect(pedidos.getByRole("row").filter({ hasText: "E2ELIVE-CANCEL" })).toContainText("Cancelada");
-  const primeiro = pedidos.getByRole("row").filter({ hasText: /E2ELIVE01\b/u });
+  // Pelo número exato: o texto da linha emenda o número com o "Abrir pedido".
+  const primeiro = pedidos.getByRole("row").filter({ has: page.getByText("E2ELIVE01", { exact: true }) });
 
   await expect(primeiro.getByRole("cell").nth(4)).toHaveText("1");
   await expect(primeiro.getByRole("cell").nth(5)).toHaveText(dinheiro("100,00"));
