@@ -229,6 +229,52 @@ test("/anuncios/shopee: as vendas do anúncio no período, o vendeu, a ordem e o
   expect(linhas.find((linha) => linha.startsWith("990777001;"))?.endsWith(`;${n};1100;${n};0`)).toBe(true);
 });
 
+test("/estoque/movimentacoes: a venda da Shopee tem rótulo e origem próprios, e o pedido abre a /vendas/shopee no dia dele (D-614, C-68)", async ({
+  page,
+}) => {
+  const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+
+  expect(loja.error).toBeNull();
+
+  // Como o worker grava a baixa da D-495 (b): `VENDA_SHOPEE`, origem `SHOPEE_ORDER` com o
+  // `order_sn`. O ledger é só de inserção: o movimento fica, como o SKU da loja (ver o topo).
+  const movimento = await db.from("stock_movements").insert({
+    organization_id: loja.data?.organization_id ?? "",
+    sku_id: skuId,
+    movement_type: "VENDA_SHOPEE",
+    location_kind: "LOCAL",
+    qty_delta: -1,
+    occurred_at: new Date().toISOString(),
+    source_type: "SHOPEE_ORDER",
+    source_id: "E2ELIVE01",
+    idempotency_key: `e2e-d614-${lojaId}`,
+  });
+
+  expect(movimento.error).toBeNull();
+
+  await entrar(page, "/estoque/movimentacoes?origem=SHOPEE_ORDER");
+  const linha = page.getByRole("row", { name: /E2ELIVE01/u });
+
+  // O tipo e a origem nas palavras da tela, nunca o código cru nem "Pedido ML".
+  await expect(linha).toContainText("Venda Shopee");
+  await expect(linha).toContainText("Pedido Shopee");
+  await expect(linha).not.toContainText("Pedido ML");
+  await expect(linha).not.toContainText("VENDA_SHOPEE");
+
+  // O link leva à loja e ao DIA da criação do pedido (o `shopee_order_day` do C-68): a
+  // /vendas/shopee só acha o pedido dentro do período — e acha.
+  const pedido = linha.getByRole("link", { name: "Abrir pedido E2ELIVE01" });
+
+  await expect(pedido).toHaveAttribute(
+    "href",
+    new RegExp(`^/vendas/shopee\\?loja=${lojaId}&from=(\\d{4}-\\d{2}-\\d{2})&to=\\1&pedido=E2ELIVE01$`, "u"),
+  );
+  await pedido.click();
+  await expect(page).toHaveURL(/\/vendas\/shopee\?.*pedido=E2ELIVE01/u);
+  await expect(page.getByRole("row", { name: /E2ELIVE01/u }).first()).toBeVisible();
+  await semErro(page);
+});
+
 test("o SKU, a busca e a sincronização enxergam a loja live", async ({ page }) => {
   await entrar(page, `/skus/${skuId}?aba=vendas`);
   await expect(page.getByRole("row", { name: new RegExp(LOJA_LIVE.nome) })).toContainText(dinheiro("1.100,00"));

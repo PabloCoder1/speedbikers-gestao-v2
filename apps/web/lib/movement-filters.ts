@@ -34,11 +34,15 @@ export const MOVEMENT_TYPES = [
   "SAIDA_DOCUMENTO",
   // D-352: o par da venda entregue pelo Full — a unidade nunca saiu da loja.
   "ESTORNO_FULL",
+  // D-495 (b): a venda da Shopee, o cancelamento dela e o par do armazém da Shopee.
+  "VENDA_SHOPEE",
+  "CANCELAMENTO_SHOPEE",
+  "ESTORNO_ARMAZEM_SHOPEE",
 ] as const;
 
 export const LOCATION_KINDS = ["LOCAL", "RESERVADO", "TRANSITO"] as const;
 
-export const SOURCE_TYPES = ["ORDER", "RECONCILIATION", "CLAIM", "DOCUMENT", "PURCHASE_ORDER"] as const;
+export const SOURCE_TYPES = ["ORDER", "SHOPEE_ORDER", "RECONCILIATION", "CLAIM", "DOCUMENT", "PURCHASE_ORDER"] as const;
 
 export interface MovementFilters {
   search: string | null;
