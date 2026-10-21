@@ -148,7 +148,7 @@
   - **D-495 (b)** (C-68, no ar desde 14:22 UTC): o banco foi conferido. Todo movimento da Shopee tem a loja e o dia do link, e todo estorno do armazém tem a sua venda. Falta a conferência visual da `/estoque/movimentacoes` pelo dono.
 - **As outras opções do item 4** (o dono escolheu o SKU primeiro nas telas, em 20/10; o A1 tem as três):
   - `/vendas` no "Todos", a marca: a D-622 (em andamento, acima).
-  - Central de Ações: os quatro detectores da Shopee, na ordem do dono (vendendo sem vínculo, ruptura no anúncio, prejuízo por produto e divergência de estoque). Os três primeiros são do A1 (D-609/C-73, D-611/C-74 e D-617/C-76, na `main`); a tela é a D-626, no ar (#293). O quarto espera o A1.
+  - Central de Ações: os quatro detectores da Shopee, na ordem do dono, todos do A1 e com as migrations em produção (D-609/C-73, D-611/C-74, D-617/C-76 e D-627/C-78). As telas: a D-626 (os três primeiros, no ar, #293) e a **D-632** (a divergência de estoque: o rótulo e os atalhos da D-626, PR #300, em código e validada). As ações nascem com o worker novo do A1, a partir da rodada das 08:00 de 22/10.
 - **Sem fonte hoje:** o histórico de preço da Shopee (`/precos`), o chat da Shopee (`/atendimento`) e a Shopee nas ferramentas do Copiloto.
 
 **Bloqueios**
