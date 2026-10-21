@@ -18597,6 +18597,74 @@ Comparar com o saldo de AGORA misturaria as vendas entre a leitura e a conta.
 
 **Impacto:** `apps/web/app/(app)/anuncios/shopee/page.tsx`, `apps/web/e2e/anuncios-shopee.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
 
+## D-629 - A queda nas vendas por anuncio (C-79): a regua da venda anomala em janelas, pre-calculada uma vez por dia
+
+**Contexto:** pedido do dono via A3 (21/10), na reformulacao da `/anuncios`: o atalho "Queda nas vendas" sobre o catalogo inteiro, com a contagem. O A2 pediu para nao inventar uma terceira regua.
+
+A forma fechada com o A2 e o A3 e a da venda anomala (D-064) em janelas:
+- as unidades do periodo contra as N janelas anteriores de mesmo tamanho;
+- z <= -2, com 4 amostras ou mais, media > 0 e desvio > 0;
+- so dias fechados;
+- "sem historico" quando nao ha regua, nunca "sem queda".
+
+**O custo, medido em producao (21/10):**
+- A base le a maior parte da `daily_listing_metrics` da organizacao (~188 mil linhas).
+- "Quando o anuncio comecou" pela primeira venda custou 0,9 s com cache frio.
+- Na lista quente, isso pesaria toda carga. Por isso o A3 escolheu o pre-calculo (a opcao 2): a `/anuncios` so tem os periodos 7, 15, 30, 60 e 90 dias, entao nao ha periodo livre para perder.
+
+**Decisao:**
+1. **`listing_sales_drop`:** uma linha por (conta, anuncio, periodo), com:
+   - `unidades_periodo`, `amostras`, `media_anterior`, `desvio`, `z` e `estado` ('queda' | 'normal' | 'sem_historico');
+   - `periodo_de`/`periodo_ate` e `calculado_em`.
+
+   A leitura e por RLS da conta, na forma por conjunto da D-181 (`accessible_accounts()`); a escrita, so pelo worker. Um CHECK prende `estado = 'sem_historico'` a `z` NULO.
+2. **`recalcular_queda_anuncios(org)`:**
+   - o periodo termina ONTEM;
+   - N = 8 janelas anteriores de mesmo tamanho (constante na funcao);
+   - `stddev_samp`, como a D-064;
+   - a metrica so tem linha em dia com venda, entao janela sem linha e venda zero;
+   - a janela so conta se o anuncio ja existia nela inteira;
+   - a funcao apaga e regrava a organizacao numa transacao: idempotente.
+3. **O comeco do anuncio e a primeira venda:** a V3 ainda nao guarda a data de inicio do Mercado Livre. E conservador: o anuncio antigo que nunca vendeu fica "sem historico". A data do Mercado Livre entra depois, com o campo conferido na documentacao.
+4. **Uma leitura so, em sequencia:** a metrica e lida uma vez (`materialized`) sem limite inferior de data.
+   - Com o limite, o plano ia pelo indice e visitava ~150 mil paginas.
+   - Em sequencia, le a tabela inteira (~3,9 mil paginas, ~200 ms).
+   - `work_mem` de 64 MB, porque com o padrao a agregacao das janelas ia para o disco.
+5. **Quando:** o job `diagnostics.listing-sales-drop`, o quarto do gatilho diario das 08:00 (D-116), sem agendamento novo. Ele so chama a funcao e registra.
+6. **A leitura (C-79):**
+   - `get_listings_dashboard` ganha `queda_estado`, `queda_z` (duas casas) e `queda_calculada_em`, pelo numero de dias do periodo da tela, so quando ele termina hoje (a `/anuncios` usa os ultimos N dias). Fora disso, NULO;
+   - `p_queda` 'queda' mostra so o estado 'queda';
+   - a faixa ganha `p_queda_dias` e `em_queda`, NULA sem periodo.
+
+**Verificacao:**
+- **Integracao:** 3 testes.
+  - O calculo: queda (z -9,35), normal, e os tres jeitos de nao ter regua (2 amostras, nunca vendeu, desvio zero), com as janelas desde a primeira venda e a janela sem linha valendo zero.
+  - A lista e a faixa leem a queda do periodo que termina hoje. Um periodo de 8 dias, ou de 7 que termina ontem, fica nulo.
+  - Recalcular e idempotente, so o worker calcula, e anon nao le.
+- **Worker:** 3 testes do handler. **Api:** o gatilho enfileira os quatro diagnosticos.
+- **Mutacao:** 7, e cada uma derruba testes:
+  - sem o comeco do anuncio;
+  - o limiar em -10;
+  - 2 amostras bastam;
+  - o desvio populacional;
+  - o hoje parcial no periodo;
+  - a leitura sem o "termina hoje";
+  - a faixa contando o normal.
+- **Producao (consulta direta, sem gravar, cache quente):** o calculo dos cinco periodos levou ~1,3 s mesmo pelo plano do indice; a leitura em sequencia sozinha leva ~200 ms. Fica longe do teto de 8 s. A funcao leva `plan_cache_mode = 'force_custom_plan'` (D-305) para o plano ver o fim da janela e ler em sequencia.
+
+**Publicacao:**
+1. a migration `20261021160000`;
+2. o worker e a api, com o job novo;
+3. o primeiro calculo, na rodada das 08:00 seguinte;
+4. a tela (A3).
+
+**Impacto:**
+- `supabase/migrations/20261021160000_queda_nas_vendas_por_anuncio.sql`;
+- `apps/worker/src/handlers/listing-sales-drop{,.test}.ts` e `apps/worker/src/index.ts`;
+- `apps/api/src/sales-anomaly-actions-schedule{,.test}.ts` e `apps/web/lib/sync-health.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,PERFORMANCE,HANDOFF}.md`.
+
 ## D-630 - O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 
 **Contexto:** na reformulação da `/anuncios` (A3, a pedido do dono), o filtro "diferença de preço do mesmo SKU" virou o C-77 do A1 (D-625, #297). Para as duas telas não divergirem, o A1 usou a régua do diagnóstico do SKU (D-317/D-318/D-389): o preço efetivo, (maior − menor) ÷ menor e o teto de 10%. Duas decisões do A2 e do A3 de 21/10 mudaram essa régua:
