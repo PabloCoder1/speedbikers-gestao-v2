@@ -5,7 +5,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { PersistSupportQuestionContext } from "./persist-support-question.js";
-import { persistSupportQuestion } from "./persist-support-question.js";
+import { markSupportQuestionDeleted, persistSupportQuestion } from "./persist-support-question.js";
 
 const CONTEXT: PersistSupportQuestionContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
@@ -102,6 +102,20 @@ function updateSingleChain(rows: () => Row[], updates: Row) {
 
         Object.assign(row, updates);
         return Promise.resolve({ data: { id: row.id as string }, error: null });
+      },
+      maybeSingle: () => {
+        const found = rows().filter((row) => matches(row, filters));
+        const row = found[0];
+        if (found.length > 1) {
+          return Promise.resolve({ data: null, error: { message: "mais de um case" } });
+        }
+
+        if (row === undefined) {
+          return Promise.resolve({ data: null, error: null });
+        }
+
+        Object.assign(row, updates);
+        return Promise.resolve({ data: { id: row.id as string, last_activity_at: row.last_activity_at as string }, error: null });
       },
     }),
   };
@@ -378,5 +392,55 @@ describe("persistSupportQuestion", () => {
       ]),
     );
     expect(state.links.some((row) => row.external_entity_kind === "LISTING")).toBe(false);
+  });
+});
+
+/*
+  D-621: a pergunta apagada no Mercado Livre (404) vira `DELETED`, o status
+  oficial, e o case não triado resolve pela transição guardada da D-102.
+*/
+describe("markSupportQuestionDeleted", () => {
+  it("a pergunta apagada vira DELETED com a resposta bloqueada, e pede a resolução guardada", async () => {
+    const state = statefulFakeDb();
+
+    await persistSupportQuestion(state.db, CONTEXT, project(UNANSWERED));
+    const result = await markSupportQuestionDeleted(state.db, CONTEXT, {
+      questionId: UNANSWERED.id,
+      observedAt: OBSERVED_AT.toISOString(),
+    });
+
+    expect(result).toEqual({ supportCaseId: "case-1", transitionApplied: true });
+    expect([...state.cases.values()][0]).toMatchObject({
+      external_status: "DELETED",
+      remote_reply_state: "BLOCKED",
+      remote_reply_block_reason: "STATUS_DELETED",
+    });
+    expect(state.rpcCalls).toEqual([
+      {
+        fn: "apply_support_remote_transition",
+        args: {
+          p_case_id: "case-1",
+          p_expected_statuses: ["NOVO"],
+          p_new_status: "RESOLVIDO",
+          p_source: "RECONCILIATION",
+          p_event_type: "support.case.auto_resolved",
+          p_dedup_key: "auto-resolve:case-1",
+          p_occurred_at: OBSERVED_AT.toISOString(),
+        },
+      },
+    ]);
+  });
+
+  it("a pergunta que a V3 nunca gravou não grava nada", async () => {
+    const state = statefulFakeDb();
+
+    const result = await markSupportQuestionDeleted(state.db, CONTEXT, {
+      questionId: UNANSWERED.id,
+      observedAt: OBSERVED_AT.toISOString(),
+    });
+
+    expect(result).toEqual({ supportCaseId: null, transitionApplied: false });
+    expect(state.cases.size).toBe(0);
+    expect(state.rpcCalls).toEqual([]);
   });
 });
