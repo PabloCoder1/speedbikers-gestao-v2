@@ -34,7 +34,7 @@ import { TETO_DA_SERIE, lerSerieDiaria } from "../../../lib/serie-de-vendas";
 import { hrefDaExportacao } from "../../../lib/vendas-export";
 import {
   HISTORICO_SHOPEE_DIAS,
-  METRICAS_MULTICANAL,
+  NAO_SE_APLICA_SOB_MARCA,
   ROTULO_DO_ESCOPO,
   agruparLinhas,
   alternarConta,
@@ -42,6 +42,7 @@ import {
   celulasDaFaixaMulticanal,
   hrefDeVendas,
   marketplacesDoEscopo,
+  metricasDoRecorte,
   pontosDoTotal,
   resolverContas,
   resolverMetricaMulticanal,
@@ -52,6 +53,7 @@ import {
   type Periodo,
   type RecorteDeVendas,
 } from "../../../lib/vendas-multicanal";
+import { argumentosDaMarca, resolverMarcaDaVenda } from "../../../lib/vendas-ml-filtros";
 import {
   TAMANHO_DO_RANKING,
   ordemDoRanking,
@@ -124,18 +126,25 @@ export async function VendasMulticanal({
 
   const todasAsContas: ContaDoSeletor[] = contasResult.data ?? [];
   const { selecionadas, descartadas } = resolverContas(query.contas, todasAsContas, escopo);
-  const metrica = resolverMetricaMulticanal(query.metric);
-  const recorte: RecorteDeVendas = { escopo, periodo, contas: selecionadas, metrica: metrica.key };
-  // D-470: "Tentar de novo" é a MESMA URL; "Limpar filtros" tira a escolha de contas (marketplace e período ficam).
+  // D-622: a marca da URL, com os nomes da tela do ML (D-237); "sem marca" vence sobre `marca=`.
+  const marca = resolverMarcaDaVenda(query);
+  const comMarca = marca.kind !== "todas";
+  const metrica = resolverMetricaMulticanal(query.metric, comMarca);
+  const recorte: RecorteDeVendas = { escopo, periodo, contas: selecionadas, metrica: metrica.key, marca };
+  // D-470: "Tentar de novo" é a MESMA URL; "Limpar filtros" tira contas e marca (marketplace e período ficam).
   const tentarDeNovo: AcaoDoEstado = { href: hrefDeVendas(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const limparFiltros: AcaoDoEstado | null =
-    selecionadas === null ? null : { href: hrefDeVendas(recorte, { contas: null }), rotulo: "Limpar filtros", mesmaTela: true };
+    selecionadas === null && !comMarca
+      ? null
+      : { href: hrefDeVendas(recorte, { contas: null, marca: { kind: "todas" } }), rotulo: "Limpar filtros", mesmaTela: true };
 
   const argumentos = {
     p_organization_id: organizationId,
     p_marketplaces: marketplacesDoEscopo(escopo),
     p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
   };
+  // O recorte de marca vai às funções do C-72 só com valor (o C-59 do ranking não o conhece).
+  const argumentosComMarca = { ...argumentos, ...argumentosDaMarca(marca) };
 
   /*
     O CANCELAMENTO E O HOJE NÃO SEGURAM A TELA (D-620, o desenho da D-509).
@@ -147,40 +156,50 @@ export async function VendasMulticanal({
     transforma em falha de leitura o que LANÇAR: a página pode falhar antes de
     chegar ao `<Suspense>`, e a leitura não fica sem dono.
   */
-  const cancelamentos: Promise<readonly [Leitura<LinhaDeCancelamento>, Leitura<LinhaDeCancelamento>]> = Promise.all([
-    supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
-    supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
-  ]).catch((erro: unknown) => {
-    const leitura: Leitura<LinhaDeCancelamento> = { data: null, error: { message: mensagemDe(erro) } };
+  // Sob marca, o cancelamento não tem resposta (C-72: o pedido cancelado inteiro não tem cota de
+  // marca) — a leitura nem sai, e a célula diz por quê (D-622).
+  const cancelamentos: Promise<readonly [Leitura<LinhaDeCancelamento>, Leitura<LinhaDeCancelamento>]> | null = comMarca
+    ? null
+    : Promise.all([
+        supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
+        supabase.rpc("get_marketplace_sales_cancellations", { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
+      ]).catch((erro: unknown) => {
+        const leitura: Leitura<LinhaDeCancelamento> = { data: null, error: { message: mensagemDe(erro) } };
 
-    return [leitura, leitura] as const;
-  });
+        return [leitura, leitura] as const;
+      });
   const leituraDeHoje: Promise<Leitura<LinhaDeHoje>> = Promise.resolve(
-    supabase.rpc("get_marketplace_sales_today", { ...argumentos, p_date: hoje }),
+    supabase.rpc("get_marketplace_sales_today", { ...argumentosComMarca, p_date: hoje }),
   ).catch((erro: unknown) => ({ data: null, error: { message: mensagemDe(erro) } }));
 
   // As cinco leituras em paralelo: o período e o anterior, resumo e série, e
   // o ranking de produtos (C-59, D-444) na ordem da métrica do gráfico.
   const ordem = ordemDoRanking(metrica);
-  const [atualResult, anteriorResult, diasResult, diasAnterioresResult, rankingResult] = await Promise.all([
-    supabase.rpc("get_marketplace_sales_summary", { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
+  const [atualResult, anteriorResult, diasResult, diasAnterioresResult, rankingResult, marcasResult] = await Promise.all([
+    supabase.rpc("get_marketplace_sales_summary", { ...argumentosComMarca, p_date_from: range.from, p_date_to: range.to }),
     supabase.rpc("get_marketplace_sales_summary", {
-      ...argumentos,
+      ...argumentosComMarca,
       p_date_from: anterior.from,
       p_date_to: anterior.to,
     }),
     // D-496: em páginas -- o período personalizado não tem teto, e o `max_rows` cortaria a série calado.
-    lerSerieDiaria(supabase, { ...argumentos, p_date_from: range.from, p_date_to: range.to }),
-    lerSerieDiaria(supabase, { ...argumentos, p_date_from: anterior.from, p_date_to: anterior.to }),
-    supabase.rpc("get_marketplace_sku_sales", {
-      ...argumentos,
-      p_date_from: range.from,
-      p_date_to: range.to,
-      p_ordem: ordem,
-      p_limit: TAMANHO_DO_RANKING,
-      p_offset: 0,
-    }),
+    lerSerieDiaria(supabase, { ...argumentosComMarca, p_date_from: range.from, p_date_to: range.to }),
+    lerSerieDiaria(supabase, { ...argumentosComMarca, p_date_from: anterior.from, p_date_to: anterior.to }),
+    // O ranking (C-59) não recorta por marca: sob marca ele não é lido, e o painel diz isso (D-622).
+    comMarca
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.rpc("get_marketplace_sku_sales", {
+          ...argumentos,
+          p_date_from: range.from,
+          p_date_to: range.to,
+          p_ordem: ordem,
+          p_limit: TAMANHO_DO_RANKING,
+          p_offset: 0,
+        }),
+    // A lista de marcas vem do BANCO (D-194), a mesma da tela do ML, e não depende do recorte.
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
+  const marcas = (marcasResult.data ?? []).map((linha) => linha.supplier_brand);
 
   // Falha em qualquer uma é erro dito, nunca "sem venda" (D-067). O ranking
   // falha sozinho, no painel dele: o resto da tela não depende dele.
@@ -210,7 +229,7 @@ export async function VendasMulticanal({
   const temShopee = escopo === "shopee" || todasAsContas.some((conta) => conta.marketplace === "SHOPEE");
   const historicoCurto = temShopee && antesDoHistoricoShopee(anterior.from, hoje);
 
-  const celulas = celulasDaFaixaMulticanal(total, totalAnterior);
+  const celulas = celulasDaFaixaMulticanal(total, totalAnterior, comMarca);
   /*
     A FORMA DO QUE AINDA VAI CHEGAR (D-620, medido pelo A3). O C-70 tem as
     regras de linha do C-53, já lido: sem TOTAL aqui, não haverá lá; com a
@@ -225,6 +244,9 @@ export async function VendasMulticanal({
   const doPeriodo = new URL(hrefDeVendas(recorte, { escopo: "ml" }), "http://local");
 
   doPeriodo.searchParams.delete("marketplace");
+  // A /vendas/shopee não tem marca: o link leva só o período.
+  doPeriodo.searchParams.delete("marca");
+  doPeriodo.searchParams.delete("semMarca");
   const hrefPedidosShopee = `/vendas/shopee${doPeriodo.search}`;
   const comparacao = mostraComparacao(serie.pontos, serieAnterior.pontos, metrica);
   // D-496: o CSV de cada painel, no recorte da tela -- só quando o painel tem linhas.
@@ -281,6 +303,29 @@ export async function VendasMulticanal({
               />
             )}
 
+            {/*
+              A MARCA (D-622, sobre o C-72): o mesmo menu da tela do ML (D-237),
+              com o "Sem marca" — a venda que nenhuma marca alcança: o item sem
+              produto vinculado e o produto sem marca, nos dois canais.
+            */}
+            <FilterMenu
+              nome="Marca"
+              rotulo={marca.kind === "todas" ? "Todas as marcas" : marca.kind === "sem_marca" ? "Sem marca" : marca.value}
+              opcoes={[
+                { href: hrefDeVendas(recorte, { marca: { kind: "todas" } }), ativo: marca.kind === "todas", label: "Todas as marcas" },
+                {
+                  href: hrefDeVendas(recorte, { marca: { kind: "sem_marca" } }),
+                  ativo: marca.kind === "sem_marca",
+                  label: "Sem marca",
+                },
+                ...marcas.map((nome) => ({
+                  href: hrefDeVendas(recorte, { marca: { kind: "marca", value: nome } }),
+                  ativo: marca.kind === "marca" && marca.value === nome,
+                  label: nome,
+                })),
+              ]}
+            />
+
             <FilterMenu
               nome="Período"
               rotulo={rotuloPeriodo}
@@ -297,6 +342,8 @@ export async function VendasMulticanal({
                   <input type="hidden" name="contas" value={selecionadas.map((conta) => conta.account_id).join(",")} />
                 )}
                 {metrica.key !== "faturamento" && <input type="hidden" name="metric" value={metrica.key} />}
+                {marca.kind === "marca" && <input type="hidden" name="marca" value={marca.value} />}
+                {marca.kind === "sem_marca" && <input type="hidden" name="semMarca" value="1" />}
                 <input
                   type="date"
                   name="from"
@@ -383,7 +430,10 @@ export async function VendasMulticanal({
             cells={[
               ...celulas,
               // A 5ª célula chega depois, na posição dela (D-620, como a D-509 no ML).
-              {
+              // Sob marca, ela não se aplica (C-72) e é dita de cara, sem leitura (D-622).
+              cancelamentos === null
+                ? { ...CANCELAMENTO_MULTICANAL, value: "—", previous: null, ressalva: NAO_SE_APLICA_SOB_MARCA }
+                : {
                 chave: CANCELAMENTO_MULTICANAL.metricId,
                 tardia: (
                   <Suspense
@@ -409,15 +459,14 @@ export async function VendasMulticanal({
           </Suspense>
 
           {/*
-            O QUE ESTE RECORTE AINDA NÃO TEM, dito em vez de calado: a marca é do
-            Mercado Livre até entrar no consolidado (D-605 do A1). O cancelamento
-            e o hoje chegaram com o C-70 (D-620); o ranking de produtos, com o grão
-            de SKU da Shopee (C-59, D-444).
+            O QUE ESTE RECORTE NÃO TEM, dito em vez de calado. Sob marca (D-622,
+            C-72), a compra, o ticket, o recebido e o cancelamento não têm cota
+            de marca, e o ranking de produtos (C-59) ainda não recorta por ela.
           */}
           <p role="note" className="sb-an-nota">
-            O filtro de marca ainda é só do Mercado Livre —{" "}
-            <LinkDeFiltro href={hrefDeVendas(recorte, { escopo: "ml" })}>veja no recorte Mercado Livre</LinkDeFiltro>. A loja Shopee de
-            teste nunca entra nas somas.
+            {comMarca &&
+              "Sob o recorte de marca, unidades e receita vêm dos produtos de cada pedido; compras, ticket médio, recebido e cancelamento não se aplicam, porque o pack e o pedido atravessam produtos. "}
+            A loja Shopee de teste nunca entra nas somas.
             {historicoCurto &&
               ` A Shopee guarda ${String(HISTORICO_SHOPEE_DIAS)} dias de histórico: a comparação com um período mais antigo subestima a Shopee.`}
           </p>
@@ -450,7 +499,7 @@ export async function VendasMulticanal({
               }
             >
               <div className="sb-segmented" role="group" aria-label="Métrica do gráfico">
-                {METRICAS_MULTICANAL.map((opcao) => (
+                {metricasDoRecorte(comMarca).map((opcao) => (
                   <LinkDeFiltro
                     key={opcao.key}
                     href={hrefDeVendas(recorte, { metrica: opcao.key })}
@@ -558,6 +607,7 @@ export async function VendasMulticanal({
               ordem={ordem}
               tentarDeNovo={tentarDeNovo}
               limparFiltros={limparFiltros}
+              semAMarca={comMarca ? hrefDeVendas(recorte, { marca: { kind: "todas" } }) : null}
             />
           </div>
         </>
@@ -781,6 +831,7 @@ function RankingDeProdutos({
   ordem,
   tentarDeNovo,
   limparFiltros,
+  semAMarca,
 }: {
   erro: { message: string } | null;
   linhas: readonly LinhaDoRanking[];
@@ -788,6 +839,8 @@ function RankingDeProdutos({
   ordem: "receita" | "unidades";
   tentarDeNovo: AcaoDoEstado;
   limparFiltros: AcaoDoEstado | null;
+  /** D-622: sob marca, o endereço do mesmo recorte sem ela; o ranking (C-59) ainda não recorta por marca. */
+  semAMarca: string | null;
 }): ReactNode {
   const todos = escopo === "todos";
   const total = linhas[0]?.total_count ?? 0;
@@ -803,7 +856,14 @@ function RankingDeProdutos({
         </Link>
       }
     >
-      {erro !== null ? (
+      {semAMarca !== null ? (
+        <EstadoDaTela
+          tipo="filtro"
+          titulo="O ranking de produtos ainda não recorta por marca"
+          descricao="Mostrar o ranking inteiro aqui faria parecer que ele é da marca escolhida."
+          acao={{ href: semAMarca, rotulo: "Ver sem o filtro de marca", mesmaTela: true }}
+        />
+      ) : erro !== null ? (
         <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o ranking" detalhe={erro.message} acao={tentarDeNovo} />
       ) : linhas.length === 0 ? (
         <EstadoDaTela

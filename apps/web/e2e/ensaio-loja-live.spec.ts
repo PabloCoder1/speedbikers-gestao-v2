@@ -163,6 +163,44 @@ test("/vendas: no 'Todos', o cancelamento por compra tem a Shopee, e o hoje soma
   }
 });
 
+test("/vendas: no 'Todos', a marca do produto da loja live recorta a Shopee pelo item, e a compra não se aplica (D-622, C-72)", async ({
+  page,
+}) => {
+  // Uma marca só deste produto, durante o teste: nenhuma venda do ML a tem, então
+  // o "Todos" com ela é exatamente a Shopee da loja live — 11 unidades e R$ 1.100.
+  const MARCA = "E2E Marca Loja Live";
+  const marcou = await db
+    .from("skus")
+    .update({ supplier_brand: MARCA, supplier_brand_source: "DERIVED" })
+    .eq("id", skuId);
+
+  expect(marcou.error).toBeNull();
+
+  try {
+    await entrar(page, "/vendas?marketplace=todos");
+    await page.locator('summary[aria-label^="Marca:"]').click();
+    await page.getByRole("link", { name: MARCA, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`marca=${encodeURIComponent(MARCA).replaceAll("%20", "\\+")}`, "u"));
+
+    const faixa = (metricId: string) =>
+      page.locator(".sb-kpi").filter({ has: page.locator(".sb-kpi-id", { hasText: new RegExp(`^${metricId}$`, "u") }) });
+
+    await expect(faixa("multicanal_receita_bruta").locator(".sb-kpi-value")).toHaveText(dinheiro("1.100,00"));
+    await expect(faixa("multicanal_unidades").locator(".sb-kpi-value")).toHaveText(String(LOJA_LIVE.pedidosValidos));
+    await expect(faixa("multicanal_compras").locator(".sb-kpi-value")).toHaveText("—");
+    await expect(faixa("multicanal_taxa_cancelamento")).toContainText("não se aplica sob recorte de marca");
+
+    // A linha da loja na tabela tem a receita da marca; compras e recebido não se aplicam.
+    const loja = page.getByRole("table", { name: "Vendas por marketplace e conta" }).getByRole("row", { name: new RegExp(LOJA_LIVE.nome) });
+
+    await expect(loja.getByRole("cell").nth(1)).toContainText(dinheiro("1.100,00"));
+    await expect(loja.getByRole("cell").nth(2)).toHaveText("—");
+    await semErro(page);
+  } finally {
+    await db.from("skus").update({ supplier_brand: null, supplier_brand_source: null }).eq("id", skuId);
+  }
+});
+
 test("/faturamento: o recorte Shopee fecha o resultado, o repasse e os Ads; o 'Todos' tem a coluna da Shopee e nenhum total de resultado", async ({
   page,
 }) => {
