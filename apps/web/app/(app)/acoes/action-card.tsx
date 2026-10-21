@@ -48,6 +48,8 @@ export interface ActionCardData {
   sku: string | null;
   title: string | null;
   mlbId: string | null;
+  /** D-626: a referência do anúncio da Shopee (o SKU do anúncio ou o item), quando a ação é de lá. */
+  shopeeRef: string | null;
   accountLabel: string | null;
   severity: string;
   confidence: string;
@@ -179,7 +181,8 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
   // O identificador do frame é um chip só. A ação tem SKU **ou** MLB (no Dev,
   // 100% das abertas têm SKU e nenhuma tem MLB), então o chip mostra o que
   // existe e "—" quando nenhum dos dois existe — nunca um dos dois inventado.
-  const referencia = action.sku ?? action.mlbId;
+  // D-626: a ação da Shopee sem vínculo não tem SKU nem MLB — o chip mostra o anúncio da Shopee.
+  const referencia = action.sku ?? action.mlbId ?? action.shopeeRef;
 
   const aberta = status === "novo" || status === "em_andamento";
 

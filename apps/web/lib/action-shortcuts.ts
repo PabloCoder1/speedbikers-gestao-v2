@@ -22,6 +22,8 @@ export function actionShortcuts(input: {
   skuId: string | null;
   sku: string | null;
   mlbId?: string | null;
+  /** O anúncio da Shopee dos detectores da Shopee (D-626), lido da evidência (`readShopeeListingRef`). */
+  shopee?: { readonly lojaId: string; readonly busca: string } | null;
 }): ActionShortcut[] {
   const shortcuts: ActionShortcut[] = [];
 
@@ -69,6 +71,20 @@ export function actionShortcuts(input: {
 
   if (input.kind === "ads_campanha") {
     shortcuts.push({ label: "Sinais de Ads", href: "/central/ads" });
+  }
+
+  // Os detectores da Shopee (D-609, D-611) apontam para o anúncio da loja:
+  // `/anuncios/shopee` recorta pela loja e acha o anúncio pela busca (`q`: o SKU
+  // do anúncio, ou o número do item quando ele não traz SKU). O vínculo se faz
+  // lá (D-428). Na ruptura com SKU vinculado, o estoque do SKU diz o saldo local.
+  if (input.kind.startsWith("shopee_") && input.shopee != null) {
+    const busca = new URLSearchParams({ loja: input.shopee.lojaId, q: input.shopee.busca });
+
+    shortcuts.push({ label: "Anúncio na Shopee", href: `/anuncios/shopee?${busca.toString()}` });
+  }
+
+  if (input.kind === "shopee_ruptura" && input.skuId !== null) {
+    shortcuts.push({ label: "Estoque do SKU", href: `/skus/${input.skuId}?aba=estoque` });
   }
 
   // O ranking abre nos últimos 30 dias até ontem: a mesma janela do alerta.
