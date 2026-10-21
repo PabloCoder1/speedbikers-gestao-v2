@@ -163,6 +163,14 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.26 A dispersão de preço do mesmo SKU na lista de /anuncios (C-77, D-625) — em código
+
+- **`get_listings_dashboard`:** `p_preco text default 'all'` ('all' | 'divergente') e `p_preco_teto numeric default null` no fim. 'divergente' exige o teto, que a web manda da `TETO_DISPERSAO_PCT`.
+- **As colunas no fim:** `preco_efetivo`, `sku_preco_min`, `sku_preco_max`, `sku_anuncios_com_preco`, `sku_dispersao_pct` (uma casa) e `sku_dispersao_sku_id`. As do SKU são NULAS sem SKU ou com um preço só.
+- **A régua:** o preço efetivo (promocional, senão o cadastrado), sobre os anúncios ATIVOS e PAUSADOS do conjunto de `get_sku_listings`. O filtro e a ordem (`dispersao_desc`/`asc`) usam a dispersão CHEIA, com `>` estrito. O vinculado por variação leva o SKU de maior dispersão.
+- **`get_listings_dashboard_counts`:** `p_preco_teto` e `preco_divergente`, NULA sem teto.
+- **Para a tela:** manda os parâmetros novos só com valor e só depois da migration `20261021140000` em produção. O diagnóstico do SKU (D-630, A2) muda junto.
+
 ### 3.25 O produto no prejuízo na Shopee na Central (C-76, D-617) — em código
 
 - **A ação:** `actions.kind = 'shopee_prejuizo'`, com `shopee_shop_id` e `sku_id`, `subject_key = <loja>:<sku>` e o impacto = o prejuízo dos 30 dias. A severidade é `alta` com margem de −10% ou pior (essa notifica); a confiança é `alta` com 5 pedidos ou mais e sem custo atual.
