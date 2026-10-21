@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **535** (D-001 a D-628).
+Decisões registradas: **538** (D-001 a D-628).
 
 ## Por domínio
 
@@ -237,7 +237,7 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (97)
+### mercado-livre (99)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -335,9 +335,11 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-619** — O estoque do anuncio da Shopee fresco: a releitura a cada 6 horas, e a ruptura so com a leitura boa e recente
 - **D-621** — A pergunta apagada no Mercado Livre sai da fila "Pendente", e a reconciliacao rele a pergunta aberta que a varredura nao viu
 - **D-622** — A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
+- **D-623** — O resumo de cobertura da Home volta a contar a venda da Shopee: a D-615 tinha so o ML
+- **D-626** — As ações dos detectores da Shopee na Central de Ações: o rótulo, o anúncio e o atalho (C-73, C-74, C-76)
 - **D-628** — O estoque do anúncio da Shopee diz de quando é a leitura
 
-### outros (77)
+### outros (78)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -416,6 +418,7 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-604** — As notificações recortadas por loja Shopee, e a escrita em lote que ainda não conhece a loja
 - **D-610** — A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 - **D-616** — Marcar em lote por loja Shopee: o botão volta com a loja no recorte (C-69)
+- **D-624** — O ranking de produtos do "Todos" recorta pela marca (C-75)
 
 ### processo/docs (1)
 

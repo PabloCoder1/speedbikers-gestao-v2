@@ -18360,6 +18360,101 @@ A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-623 - O resumo de cobertura da Home volta a contar a venda da Shopee: a D-615 tinha so o ML
+
+**Contexto:** a D-615 deu a `get_stock_coverage_summary` um corpo proprio, com as expressoes de `get_stock_coverage`. Mas as vendas dela eram so do ML (`daily_sku_metrics`), e desde a D-459 (C-65, 15/10) a `get_stock_coverage` soma o ML e a Shopee.
+
+A conferencia em producao depois da aplicacao (21/10, como `authenticated`, 30 dias) mostrou o resumo diferente da contagem sobre `get_stock_coverage`:
+- mais SKUs "sem cobertura";
+- menos "em ruptura";
+- um total menor.
+
+O SKU que vende so na Shopee caia em "sem cobertura", saia da ruptura e, sem saldo, saia do total. A "Atencao necessaria" da Home mostrou esses numeros desde a migration `20261020210000`.
+
+A suite da D-615 comparava numa organizacao sem venda da Shopee, e o erro passou.
+
+**Decisao:**
+1. **As vendas do resumo sao as de `get_stock_coverage`:** o ML mais a Shopee.
+   - A Shopee entra pela mesma leitura da D-459: itens de vendas VALIDAS das lojas LIVE, por SKU, no dia de Sao Paulo da janela.
+   - O SKU so da Shopee entra no total.
+2. **A assinatura, as colunas e o resto do corpo nao mudam.**
+3. **A comparacao com venda da Shopee vira teste**, na suite da D-459, que tem SKU so da Shopee.
+
+**Verificacao:**
+- **Integracao:** o resumo e igual a contagem sobre `get_stock_coverage` na organizacao da D-459.
+  - Contra o corpo da D-615, o teste falha com "sem cobertura" 3 em vez de 2, o mesmo erro de producao.
+  - Com o corpo novo, os 12 testes de cobertura e resumo passam.
+- **Producao (como `authenticated`, 30 dias):** o corpo novo, rodado como consulta direta, e igual a contagem sobre `get_stock_coverage`.
+  - Leva ~89 ms quente, com ~49 mil acessos a paginas; a leitura da Shopee e ~42 mil deles, a mesma que `get_stock_coverage` faz.
+  - Antes da D-615 eram 200-270 ms e ~109 mil.
+  - Os ~25 ms e ~6,6 mil da D-615 eram do corpo sem a Shopee: o numero nao vale.
+
+**Publicacao:** a migration `20261021130000` vai a producao assim que entrar na main, porque corrige um numero que a Home mostra hoje. O A3 rele o LCP depois dela.
+
+**Impacto:** `supabase/migrations/20261021130000_resumo_da_cobertura_com_a_shopee.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF,ROADMAP}.md`.
+
+## D-624 - O ranking de produtos do "Todos" recorta pela marca (C-75)
+
+**Contexto:** na D-622, a marca entrou no "Todos" e na Shopee de `/vendas`, mas o ranking "Produtos que mais venderam" (`get_marketplace_sku_sales`, C-59) não a conhecia. Sob marca, o painel dizia que ainda não recortava, para não parecer da marca escolhida. O C-75 do A1 (D-613, #286, migration `20261020200000`) deu ao ranking os mesmos `p_supplier_brand` e `p_sem_marca`. O recorte só escolhe os SKUs que entram: a linha não muda, o `total_count` é o do recorte, e o "sem marca" leva o balde sem SKU.
+
+**Decisão:**
+- O ranking recebe a marca com os outros argumentos do recorte, só com valor, como as funções do C-72.
+- O aviso provisório da D-622 sai; o comentário da nota diz que o ranking recorta.
+- Nada mais muda no painel: as colunas por marketplace, o balde sem produto vinculado e o link da curva ABC.
+
+**Publicação:** só a web, **depois da migration `20261020200000` em produção**. Antes dela, o ranking sob marca receberia PGRST202. Ela vai no run `39598041230` do A1, com a 2ª aprovação do dono. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **e2e:**
+  - no seed, tudo é "sem marca": o ranking aparece sob o recorte, e o aviso da D-622 não;
+  - no ensaio da loja live, a marca só do produto dela deixa no ranking uma linha só, a dele, com os R$ 1.100;
+  - `vendas-multicanal`, `vendas` e `vendas-shopee` 24/24, e o ensaio 14/14, no stack isolado com a migration.
+
+**Impacto:** `apps/web/app/(app)/vendas/multicanal.tsx`, `apps/web/e2e/{vendas-multicanal,ensaio-loja-live}.spec.ts` e os docs; nenhuma migration, RPC, worker ou api.
+
+## D-626 - As ações dos detectores da Shopee na Central de Ações: o rótulo, o anúncio e o atalho (C-73, C-74, C-76)
+
+**Contexto:** o dono escolheu quatro detectores da Shopee na Central de Ações, um de cada vez. Os três primeiros são do A1; as migrations dos dois primeiros (`20261020180000` e `20261020190000`) vão no run das quatro do A1:
+- D-609, C-73: `shopee_sem_vinculo`, o anúncio de loja live que vendeu sem SKU vinculado;
+- D-611, C-74: `shopee_ruptura`, o anúncio sem estoque na Shopee;
+- D-617, C-76 (#288, migration `20261020220000`): `shopee_prejuizo`, o produto no prejuízo numa loja Shopee, com o `sku_id`.
+
+As três gravam em `actions` com a loja em `shopee_shop_id`, o texto pronto em `evidence.evidencias` e o retrato em `evidence.detector`. O `get_actions_queue` devolve o nome da loja em `account_label`. Sem a tela, a ação apareceria com o `kind` cru, sem referência e sem caminho para o anúncio.
+
+**Decisão:**
+1. **O rótulo e o tom** moram no leitor único da evidência (`packages/domain`, D-064, que a narração da api também usa): "Shopee vendendo sem vínculo", "Ruptura no anúncio da Shopee" e "Produto no prejuízo na Shopee", os três como problema. No prejuízo, o atalho é o do SKU, que já existe para toda ação com produto.
+2. **A referência do anúncio** (`readShopeeListingRef`) é lida de `evidence.detector`, de forma defensiva:
+   - a loja e o que a busca de `/anuncios/shopee` acha: o SKU do anúncio ou, sem ele, o número do item;
+   - o nome do anúncio, com a variação;
+   - forma estranha vira `null`, e a tela não oferece o atalho.
+3. **No cartão:**
+   - o chip de referência mostra "Shopee <SKU do anúncio ou item>" quando não há SKU nem MLB;
+   - o título mostra o nome do anúncio;
+   - a loja aparece no lugar da conta, vinda do banco.
+4. **Os atalhos** apontam só para telas que existem, com o filtro que elas têm (D-154):
+   - "Anúncio na Shopee": `/anuncios/shopee?loja=<loja>&q=<busca>`. O parâmetro é `q`; o contrato dizia `busca=`, e o A2 avisou o A1;
+   - na ruptura com SKU vinculado, também "Estoque do SKU";
+   - nunca `/anuncios/{mlbId}`, porque o MLB é nulo.
+
+**Publicação:** só a web e o `packages/domain`, **depois das migrations `20261020180000` e `20261020190000` em produção** (a do prejuízo, `20261020220000`, só acrescenta um rótulo: antes dela a ação não existe). Antes delas a ação não existe, e nenhuma tela quebra. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:**
+  - `action-evidence.test.ts`: o rótulo e o tom, a referência pelo SKU, pelo item e com a variação, e as formas estranhas;
+  - `action-shortcuts.test.ts`: o atalho com `q`, o estoque na ruptura e nenhum link sem a referência.
+- **e2e:** no ensaio da loja live, uma ação `shopee_sem_vinculo` no formato que o detector grava:
+  - o cartão com o rótulo, a loja, o chip "Shopee <SKU>", o nome do anúncio e a evidência;
+  - o atalho abre a `/anuncios/shopee` na loja, acha o anúncio, e a ação é apagada no fim;
+  - `acoes.spec` 3/3 e o ensaio 14/14.
+- **Suíte inteira:** **274/274** com o banco recriado do zero (257 na 3300, os 14 do ensaio da loja live e os 3 de convite na 3000), antes do rótulo do prejuízo, que tem só teste unitário. A D-624 empilhada: `vendas-multicanal`, `vendas` e `vendas-shopee` 24/24 e o ensaio 14/14..
+
+**Impacto:**
+- domain: `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts,index.ts}`;
+- web: `apps/web/app/(app)/acoes/{page.tsx,action-card.tsx}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`;
+- e2e: `ensaio-loja-live.spec.ts`;
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
 ## D-628 - O estoque do anúncio da Shopee diz de quando é a leitura
 
 **Contexto:** o A1 achou na D-619 que a venda baixa o estoque na Shopee sem mudar o `update_time` do item. Com isso, o estoque de `/anuncios/shopee` ficava com dias de atraso (mediana de ~5 dias). A fila dele passa a reler o item ativo a cada 6 h, mas a leitura continua tendo uma hora, e o número não dizia qual. A lista (`get_shopee_listings`) já devolve `details_synced_at`.

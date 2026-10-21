@@ -332,7 +332,10 @@ número.
 | **D-616** | Marcar em lote por loja Shopee | A1 (D-491, C-69) | ✔ D-616 (#272) |
 | **D-618** | O dia a dia por canal e os pedidos da Shopee na aba Vendas do SKU | A1 (C-71, D-607) | ✔ D-618 (#284) |
 | **D-620** | O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de `/vendas` | A1 (C-70, D-603) | ✔ D-620 (#284) |
-| **D-622** | A marca no "Todos" e na Shopee de `/vendas` | A1 (C-72, D-605) | em código |
+| **D-622** | A marca no "Todos" e na Shopee de `/vendas` | A1 (C-72, D-605) | ✔ D-622 (#287) |
+| **D-624** | O ranking do "Todos" recortando pela marca | A1 (C-75, D-613) | em código (#293); a migration está em produção desde 21/10 |
+| **D-626** | As ações dos detectores da Shopee na Central de Ações: rótulo, anúncio e atalho | A1 (C-73, C-74, C-76) | em código (#293); as migrations estão em produção desde 21/10 |
+| **D-628** | O estoque do anúncio da Shopee com a hora da leitura | A1 (D-619) | ✔ D-628 (#292) |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

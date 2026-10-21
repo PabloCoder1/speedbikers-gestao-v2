@@ -185,17 +185,16 @@ export async function VendasMulticanal({
     // D-496: em páginas -- o período personalizado não tem teto, e o `max_rows` cortaria a série calado.
     lerSerieDiaria(supabase, { ...argumentosComMarca, p_date_from: range.from, p_date_to: range.to }),
     lerSerieDiaria(supabase, { ...argumentosComMarca, p_date_from: anterior.from, p_date_to: anterior.to }),
-    // O ranking (C-59) não recorta por marca: sob marca ele não é lido, e o painel diz isso (D-622).
-    comMarca
-      ? Promise.resolve({ data: null, error: null })
-      : supabase.rpc("get_marketplace_sku_sales", {
-          ...argumentos,
-          p_date_from: range.from,
-          p_date_to: range.to,
-          p_ordem: ordem,
-          p_limit: TAMANHO_DO_RANKING,
-          p_offset: 0,
-        }),
+    // O ranking recorta pela marca desde o C-75 (D-613; a tela é a D-624): o recorte só escolhe os
+    // SKUs que entram, e o "sem marca" leva o balde sem SKU. Vai só com valor, como nas outras.
+    supabase.rpc("get_marketplace_sku_sales", {
+      ...argumentosComMarca,
+      p_date_from: range.from,
+      p_date_to: range.to,
+      p_ordem: ordem,
+      p_limit: TAMANHO_DO_RANKING,
+      p_offset: 0,
+    }),
     // A lista de marcas vem do BANCO (D-194), a mesma da tela do ML, e não depende do recorte.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
@@ -461,7 +460,7 @@ export async function VendasMulticanal({
           {/*
             O QUE ESTE RECORTE NÃO TEM, dito em vez de calado. Sob marca (D-622,
             C-72), a compra, o ticket, o recebido e o cancelamento não têm cota
-            de marca, e o ranking de produtos (C-59) ainda não recorta por ela.
+            de marca. O ranking de produtos recorta por ela (C-75, D-624).
           */}
           <p role="note" className="sb-an-nota">
             {comMarca &&
@@ -607,7 +606,6 @@ export async function VendasMulticanal({
               ordem={ordem}
               tentarDeNovo={tentarDeNovo}
               limparFiltros={limparFiltros}
-              semAMarca={comMarca ? hrefDeVendas(recorte, { marca: { kind: "todas" } }) : null}
             />
           </div>
         </>
@@ -831,7 +829,6 @@ function RankingDeProdutos({
   ordem,
   tentarDeNovo,
   limparFiltros,
-  semAMarca,
 }: {
   erro: { message: string } | null;
   linhas: readonly LinhaDoRanking[];
@@ -839,8 +836,6 @@ function RankingDeProdutos({
   ordem: "receita" | "unidades";
   tentarDeNovo: AcaoDoEstado;
   limparFiltros: AcaoDoEstado | null;
-  /** D-622: sob marca, o endereço do mesmo recorte sem ela; o ranking (C-59) ainda não recorta por marca. */
-  semAMarca: string | null;
 }): ReactNode {
   const todos = escopo === "todos";
   const total = linhas[0]?.total_count ?? 0;
@@ -856,14 +851,7 @@ function RankingDeProdutos({
         </Link>
       }
     >
-      {semAMarca !== null ? (
-        <EstadoDaTela
-          tipo="filtro"
-          titulo="O ranking de produtos ainda não recorta por marca"
-          descricao="Mostrar o ranking inteiro aqui faria parecer que ele é da marca escolhida."
-          acao={{ href: semAMarca, rotulo: "Ver sem o filtro de marca", mesmaTela: true }}
-        />
-      ) : erro !== null ? (
+      {erro !== null ? (
         <EstadoDaTela tipo="erro" titulo="Não foi possível carregar o ranking" detalhe={erro.message} acao={tentarDeNovo} />
       ) : linhas.length === 0 ? (
         <EstadoDaTela

@@ -168,9 +168,11 @@ test("/vendas?marketplace=todos: a marca recorta os dois canais, e compras, tick
     ).toContainText(naoSeAplica);
   }
 
-  // O gráfico não oferece a compra, e o ranking (C-59) diz que ainda não recorta por marca.
+  // O gráfico não oferece a compra. O ranking recorta pela marca (C-75, D-624): no seed tudo é "sem
+  // marca", então o produto do seed está nele, e o aviso provisório da D-622 saiu.
   await expect(page.locator(".sb-segmented").getByRole("link", { name: "Compras" })).toHaveCount(0);
-  await expect(page.getByText("O ranking de produtos ainda não recorta por marca")).toBeVisible();
+  await expect(page.getByText("O ranking de produtos ainda não recorta por marca")).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "Produtos que mais venderam" }).getByRole("row")).not.toHaveCount(0);
 
   // O CSV leva a mesma marca da tela, e o caminho de volta ao ML também.
   await expect(page.getByRole("link", { name: "Exportar CSV por dia" })).toHaveAttribute("href", /semMarca=1/u);
