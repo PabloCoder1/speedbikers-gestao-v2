@@ -29,6 +29,7 @@ import { createShopeeReturnsSyncHandler } from "./handlers/shopee-returns-sync.j
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
+import { createListingSalesDropHandler } from "./handlers/listing-sales-drop.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-visits-snapshot.js";
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
@@ -239,6 +240,8 @@ const app = createWorkerApp({
     "diagnostics.detect-sales-anomalies": createDetectSalesAnomalyActionsHandler({ db }),
     "diagnostics.detect-support-patterns": createDetectSupportPatternActionsHandler({ db }),
     "diagnostics.sync-central-alerts": createSyncCentralAlertsHandler({ db }),
+    // D-629 (C-79): a queda nas vendas por anúncio, do mesmo gatilho diário.
+    "diagnostics.listing-sales-drop": createListingSalesDropHandler({ db }),
     "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
     ...nfeHandlers,
     ...shopeeHandlers,

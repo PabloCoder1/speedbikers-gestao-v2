@@ -1831,6 +1831,70 @@ export type Database = {
           },
         ]
       }
+      // D-629 (C-79): a queda nas vendas por anuncio, gravada so pelo worker.
+      listing_sales_drop: {
+        Row: {
+          amostras: number
+          calculado_em: string
+          desvio: number | null
+          estado: string
+          item_id: string
+          media_anterior: number | null
+          ml_account_id: string
+          organization_id: string
+          periodo_ate: string
+          periodo_de: string
+          periodo_dias: number
+          unidades_periodo: number
+          z: number | null
+        }
+        Insert: {
+          amostras: number
+          calculado_em: string
+          desvio?: number | null
+          estado: string
+          item_id: string
+          media_anterior?: number | null
+          ml_account_id: string
+          organization_id: string
+          periodo_ate: string
+          periodo_de: string
+          periodo_dias: number
+          unidades_periodo: number
+          z?: number | null
+        }
+        Update: {
+          amostras?: number
+          calculado_em?: string
+          desvio?: number | null
+          estado?: string
+          item_id?: string
+          media_anterior?: number | null
+          ml_account_id?: string
+          organization_id?: string
+          periodo_ate?: string
+          periodo_de?: string
+          periodo_dias?: number
+          unidades_periodo?: number
+          z?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_sales_drop_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_sales_drop_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listings: {
         Row: {
           available_quantity: number
@@ -7053,6 +7117,8 @@ export type Database = {
           // 'divergente' exige p_preco_teto (a web manda TETO_DISPERSAO_PCT).
           p_preco?: string
           p_preco_teto?: number | null
+          // C-79 (D-629), migration 20261021160000: 'all' | 'queda'.
+          p_queda?: string
         }
         Returns: {
           account_label: string
@@ -7084,6 +7150,11 @@ export type Database = {
           sku_anuncios_com_preco: number | null
           sku_dispersao_pct: number | null
           sku_dispersao_sku_id: string | null
+          // C-79 (D-629): a queda do periodo da tela, quando ele termina hoje
+          // ('queda' | 'normal' | 'sem_historico'); NULAS em outro periodo.
+          queda_estado: string | null
+          queda_z: number | null
+          queda_calculada_em: string | null
           // D-385: somas do recorte filtrado inteiro (antes do limit). A
           // de visitas e NULA quando nenhum anuncio do recorte tem visita.
           recorte_faturamento: number
@@ -7109,6 +7180,8 @@ export type Database = {
           p_search?: string | null
           // C-77 (D-625): o teto da dispersao; sem ele preco_divergente e NULA.
           p_preco_teto?: number | null
+          // C-79 (D-629): os dias do periodo da tela; sem ele em_queda e NULA.
+          p_queda_dias?: number | null
         }
         Returns: {
           active: number
@@ -7119,6 +7192,8 @@ export type Database = {
           paused: number
           // C-77 (D-625): = p_preco 'divergente' com o mesmo teto; NULA sem teto.
           preco_divergente: number | null
+          // C-79 (D-629): = p_queda 'queda' no mesmo periodo; NULA sem periodo.
+          em_queda: number | null
           promotion_unknown: number
           total: number
           unlinked: number
@@ -8326,6 +8401,14 @@ export type Database = {
           p_organization_id: string
         }
         Returns: number
+      }
+      // D-629 (C-79): so o worker chama (service_role).
+      recalcular_queda_anuncios: {
+        Args: {
+          p_organization_id: string
+          p_hoje?: string | null
+        }
+        Returns: Json
       }
       receive_purchase_order: {
         Args: { p_id: string }

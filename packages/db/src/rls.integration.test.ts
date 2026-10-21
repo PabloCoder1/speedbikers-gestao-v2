@@ -24663,3 +24663,166 @@ describe("a dispersão de preço do mesmo SKU na lista de /anuncios (D-625, C-77
     ]);
   });
 });
+
+/*
+  D-629 (C-79): a queda nas vendas por anúncio, pré-calculada uma vez por dia.
+  As unidades do período (dias fechados até ontem) contra as 8 janelas
+  anteriores de mesmo tamanho, desde a primeira venda; z <= -2 com 4 amostras
+  ou mais, média > 0 e desvio > 0. A lista lê pelo número de dias do período,
+  só quando ele termina hoje.
+*/
+describe("a queda nas vendas por anúncio (D-629, C-79)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d629";
+  const CONTA = "cccccccc-0000-4000-8000-0000000a0629";
+  let hoje = "";
+
+  interface Queda {
+    item_id: string;
+    unidades_periodo: string;
+    amostras: number;
+    media_anterior: string | null;
+    z: string | null;
+    estado: string;
+  }
+
+  const recalcular = async () =>
+    (await client.query<{ r: { linhas: number; em_queda: number } }>("select public.recalcular_queda_anuncios($1) as r", [ORG])).rows[0]?.r;
+
+  const quedas = async (dias: number) =>
+    (
+      await client.query<Queda>(
+        `select item_id, unidades_periodo::text, amostras, media_anterior::text, z::text, estado
+           from public.listing_sales_drop where organization_id = $1 and periodo_dias = $2 order by item_id`,
+        [ORG, dias],
+      )
+    ).rows;
+
+  // Uma venda no PRIMEIRO dia da janela k do período de 7 dias (k = 0 é o
+  // próprio período; a janela k começa em hoje - 7(k + 1)).
+  async function venda(item: string, k: number, unidades: number) {
+    await client.query(
+      `insert into public.daily_listing_metrics (organization_id, ml_account_id, mlb_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, $3, $4::date - 7 * ($5::int + 1), $6::int, $6::int * 10, $6::int, $6::int)`,
+      [ORG, CONTA, item, hoje, k, unidades],
+    );
+  }
+
+  beforeAll(async () => {
+    hoje = (await client.query<{ d: string }>("select ((now() at time zone 'America/Sao_Paulo')::date)::text as d")).rows[0]?.d ?? "";
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-629', 'org-d629') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta D-629', 'rlstest-d629', 'CONNECTED', 9990629, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity)
+       select $1, $2, i, i, 'active', 10, 'BRL', 1
+       from unnest(array['MLB6290001', 'MLB6290002', 'MLB6290003', 'MLB6290004', 'MLB6290005', 'MLB6290006']) as i
+       on conflict do nothing`,
+      [ORG, CONTA],
+    );
+
+    // 1: 9 e 11 alternados nas 8 janelas (média 10) e nada no período: queda.
+    // 2: a mesma história e 10 no período: normal.
+    for (const [k, u] of [[1, 9], [2, 11], [3, 9], [4, 11], [5, 9], [6, 11], [7, 9], [8, 11]] as const) {
+      await venda("MLB6290001", k, u);
+      await venda("MLB6290002", k, u);
+    }
+    await venda("MLB6290002", 0, 10);
+    // 3: a primeira venda começa a janela 2: só 2 amostras, sem histórico.
+    await venda("MLB6290003", 2, 5);
+    await venda("MLB6290003", 1, 7);
+    // 4: nunca vendeu. 5: sempre 10, desvio zero: sem régua.
+    for (const k of [1, 2, 3, 4, 5, 6, 7, 8]) await venda("MLB6290005", k, 10);
+    await venda("MLB6290005", 0, 3);
+    // 6: a primeira venda começa a janela 5 (20); 10 na 4 e na 1, e as janelas
+    // 2 e 3 sem linha valem zero: 5 amostras, média 8; 8 no período: normal.
+    await venda("MLB6290006", 5, 20);
+    await venda("MLB6290006", 4, 10);
+    await venda("MLB6290006", 1, 10);
+    await venda("MLB6290006", 0, 8);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.listing_sales_drop where organization_id = $1", [ORG]);
+    await client.query("delete from public.daily_listing_metrics where organization_id = $1", [ORG]);
+    await client.query("delete from public.listings where organization_id = $1", [ORG]);
+  });
+
+  it("o cálculo: queda, normal e os três jeitos de não ter régua, com as janelas desde a primeira venda", async () => {
+    const r = await recalcular();
+
+    // Seis anúncios x cinco períodos.
+    expect(r?.linhas).toBe(30);
+
+    const sete = await quedas(7);
+
+    expect(sete).toEqual([
+      { item_id: "MLB6290001", unidades_periodo: "0", amostras: 8, media_anterior: "10.0000", z: "-9.3541", estado: "queda" },
+      { item_id: "MLB6290002", unidades_periodo: "10", amostras: 8, media_anterior: "10.0000", z: "0.0000", estado: "normal" },
+      { item_id: "MLB6290003", unidades_periodo: "0", amostras: 2, media_anterior: "6.0000", z: null, estado: "sem_historico" },
+      { item_id: "MLB6290004", unidades_periodo: "0", amostras: 0, media_anterior: null, z: null, estado: "sem_historico" },
+      { item_id: "MLB6290005", unidades_periodo: "3", amostras: 8, media_anterior: "10.0000", z: null, estado: "sem_historico" },
+      { item_id: "MLB6290006", unidades_periodo: "8", amostras: 5, media_anterior: "8.0000", z: "0.0000", estado: "normal" },
+    ]);
+    expect(r?.em_queda).toBe((await client.query("select 1 from public.listing_sales_drop where organization_id = $1 and estado = 'queda'", [ORG])).rowCount);
+  });
+
+  it("a lista e a faixa leem a queda do período que termina hoje; outro período fica nulo", async () => {
+    await recalcular();
+
+    const lista = async (de: string, extra = "", ate = "$2::date") =>
+      (
+        await client.query<{ item_id: string; queda_estado: string | null; queda_z: string | null; queda_calculada_em: string | null; total_count: string }>(
+          `select item_id, queda_estado, queda_z::text, queda_calculada_em::text, total_count::text
+             from public.get_listings_dashboard($1, ${de}, ${ate}, p_limit => 50${extra}) order by item_id`,
+          [ORG, hoje],
+        )
+      ).rows;
+
+    const seteDias = await lista("$2::date - 6");
+
+    expect(seteDias.map((l) => [l.item_id, l.queda_estado, l.queda_z])).toEqual([
+      ["MLB6290001", "queda", "-9.35"],
+      ["MLB6290002", "normal", "0.00"],
+      ["MLB6290003", "sem_historico", null],
+      ["MLB6290004", "sem_historico", null],
+      ["MLB6290005", "sem_historico", null],
+      ["MLB6290006", "normal", "0.00"],
+    ]);
+    expect(seteDias.every((l) => l.queda_calculada_em !== null)).toBe(true);
+
+    const soQueda = await lista("$2::date - 6", ", p_queda => 'queda'");
+
+    expect(soQueda.map((l) => l.item_id)).toEqual(["MLB6290001"]);
+    expect(soQueda[0]?.total_count).toBe("1");
+
+    // Um período que não é da tela (8 dias), ou de 7 dias que não termina hoje:
+    // sem leitura, nunca "sem queda".
+    expect((await lista("$2::date - 7")).every((l) => l.queda_estado === null)).toBe(true);
+    expect((await lista("$2::date - 7", "", "$2::date - 1")).every((l) => l.queda_estado === null)).toBe(true);
+
+    const faixa = async (dias: number | null) =>
+      (
+        await client.query<{ em_queda: string | null }>(
+          "select em_queda::text from public.get_listings_dashboard_counts($1, p_queda_dias => $2::int)",
+          [ORG, dias],
+        )
+      ).rows[0]?.em_queda;
+
+    expect(await faixa(7)).toBe("1");
+    expect(await faixa(null)).toBeNull();
+  });
+
+  it("recalcular é idempotente, e só o worker calcula", async () => {
+    await recalcular();
+    await recalcular();
+
+    const linhas = await client.query("select 1 from public.listing_sales_drop where organization_id = $1", [ORG]);
+
+    expect(linhas.rowCount).toBe(30);
+    await expect(asUser(ADMIN_SB, `select public.recalcular_queda_anuncios('${ORG}')`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.listing_sales_drop")).rejects.toThrow(/permission denied/i);
+  });
+});

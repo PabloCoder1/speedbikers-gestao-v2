@@ -59,10 +59,12 @@ export async function triggerSalesAnomalyActionsDetection(
   // organização", e um 14º job do Scheduler só duplicaria cron e rota para
   // o mesmo momento do dia. D-403 acrescenta o terceiro pelo mesmo critério:
   // os alertas da central persistidos em `actions`, também por organização.
+  // D-629 (C-79), o quarto: a queda nas vendas por anúncio da `/anuncios`.
   const jobs = [
     "diagnostics.detect-sales-anomalies",
     "diagnostics.detect-support-patterns",
     "diagnostics.sync-central-alerts",
+    "diagnostics.listing-sales-drop",
   ] as const;
 
   for (const organization of organizations.data) {

@@ -163,6 +163,14 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.28 A queda nas vendas por anúncio na lista de /anuncios (C-79, D-629) — em código
+
+- **`get_listings_dashboard`:** `p_queda text default 'all'` ('all' | 'queda') no fim, e três colunas no fim: `queda_estado` ('queda' | 'normal' | 'sem_historico'), `queda_z` (duas casas) e `queda_calculada_em`. São NULAS quando o período da tela não termina hoje ou não é 7, 15, 30, 60 ou 90 dias.
+- **A régua:** as unidades dos N dias fechados até ONTEM contra as 8 janelas anteriores de mesmo tamanho, desde a primeira venda do anúncio, com z ≤ −2, ≥ 4 amostras, média > 0 e desvio > 0. Sem régua, 'sem_historico', nunca "sem queda".
+- **`get_listings_dashboard_counts`:** `p_queda_dias integer` e `em_queda`, NULA sem período.
+- **O cálculo:** uma vez por dia, no gatilho das 08:00 (`diagnostics.listing-sales-drop`). A tela diz de quando é (`queda_calculada_em`) e que é sobre dias fechados.
+- **Para a tela:** manda `p_queda`/`p_queda_dias` só com valor e só depois da migration `20261021160000` em produção.
+
 ### 3.26 A dispersão de preço do mesmo SKU na lista de /anuncios (C-77, D-625) — em código
 
 - **`get_listings_dashboard`:** `p_preco text default 'all'` ('all' | 'divergente') e `p_preco_teto numeric default null` no fim. 'divergente' exige o teto, que a web manda da `TETO_DISPERSAO_PCT`.
