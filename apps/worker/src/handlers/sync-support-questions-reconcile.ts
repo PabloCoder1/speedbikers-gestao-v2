@@ -53,7 +53,7 @@ export interface SyncSupportQuestionsReconcileDeps {
  */
 async function enqueueStaleQuestionRechecks(
   deps: SyncSupportQuestionsReconcileDeps,
-  params: { organizationId: string; mlAccountId: string; slug: string; seenQuestionIds: readonly number[]; now: Date },
+  params: { organizationId: string; mlAccountId: string; seenQuestionIds: readonly number[]; now: Date },
 ): Promise<{ stale: number; enqueued: number }> {
   const open: string[] = [];
 
@@ -97,7 +97,11 @@ async function enqueueStaleQuestionRechecks(
       jobType: "sync.support.questions",
       organizationId: params.organizationId,
       dedupeKey: `support-question-recheck:${params.mlAccountId}:${id}:${day}`,
-      queue: `ml-sync-${params.slug}`,
+      // A fila `backfill`, a de prioridade baixa: o worker só enfileira nela e
+      // em `analytics-recompute` (menor privilégio, `infra/cloud-tasks-queues.sh`).
+      // As `ml-sync-<conta>` são da api — em produção, 21/10, o Cloud Tasks
+      // recusou a releitura nelas com PERMISSION_DENIED.
+      queue: "backfill",
       payload: { mlAccountId: params.mlAccountId, questionId, source: "RECONCILIATION" },
     });
     enqueued += 1;
@@ -121,7 +125,7 @@ export function createSyncSupportQuestionsReconcileHandler(
 
     const account = await deps.db
       .from("ml_accounts")
-      .select("id, organization_id, seller_id, status, slug")
+      .select("id, organization_id, seller_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
@@ -244,7 +248,6 @@ export function createSyncSupportQuestionsReconcileHandler(
         rechecks = await enqueueStaleQuestionRechecks(deps, {
           organizationId,
           mlAccountId,
-          slug: account.data.slug,
           seenQuestionIds: result.seenQuestionIds,
           now: finishedAt,
         });

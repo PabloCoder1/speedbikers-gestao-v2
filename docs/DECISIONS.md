@@ -18314,6 +18314,12 @@ A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre
 - Vai no proximo deploy do worker, o das fontes novas da Central, que espera as migrations de producao.
 - Na primeira hora depois dele, as rodadas de 10 minutos releem as perguntas abertas que o Mercado Livre nao lista mais, e a fila "Pendente" fica so com o que existe.
 
+**Em producao (21/10, worker `worker-00053-bwq`, `36550ada`):** a regra do 404 ficou no ar. Mas a releitura falhou nas quatro contas, com `PERMISSION_DENIED` do Cloud Tasks nas filas `ml-sync-<conta>`.
+- Essas filas sao da api: o worker so enfileira em `analytics-recompute` e `backfill`, por menor privilegio (`infra/cloud-tasks-queues.sh`).
+- A falha saiu como aviso (`sync_support_questions_recheck_failed`) e a reconciliacao seguiu gravada, como desenhado.
+- **Correcao (D-621 b):** a releitura vai para a fila `backfill`, a de prioridade baixa (1/s, 2 simultaneas), que nunca disputa com o trafego vivo e fica dentro do limite do Mercado Livre. Nenhuma permissao de producao muda.
+- O teste do enfileiramento passa a exigir `backfill`.
+
 **Impacto:** `apps/worker/src/handlers/{sync-support-question,sync-support-questions-reconcile,ml-support-questions-fetch,persist-support-question}{,.test}.ts`, `apps/worker/src/index.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
 
 ## D-622 - A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
