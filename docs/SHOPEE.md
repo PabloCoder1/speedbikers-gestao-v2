@@ -248,7 +248,9 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   status, sem fim de janela, conferindo o `total_count`) e
   `shopee.items.hydrate` (detalhe e variações, uma cadeia por loja,
   escolhidos por `shopee_items_details_pending`; erro definitivo de um
-  item o marca e a fila segue). Pegam carona no gatilho horário dos
+  item o marca e a fila segue). A venda muda o estoque sem mudar o
+  `update_time` do item, então a fila relê também o item ativo lido há
+  mais de 6 horas, o mais antigo primeiro (D-619). Pegam carona no gatilho horário dos
   pedidos, 5 minutos depois. Erros `error_inner`, `error_system_busy` e
   `error_rate_limit` são passageiros; o código vem às vezes com prefixo de
   módulo (`product.error_item_not_found`). O vínculo é o SKU do anúncio igual a `skus.sku_key`, derivado na

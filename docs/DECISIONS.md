@@ -18221,6 +18221,54 @@ O grão é o do C-59: o `sku_id` do item. O kit conta como o kit, e a página de
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-619 - O estoque do anuncio da Shopee fresco: a releitura a cada 6 horas, e a ruptura so com a leitura boa e recente
+
+**Contexto:** achado de 21/10, ao medir o 4o detector da Shopee (a divergencia de estoque). Na leitura de producao (so contagem e proporcao):
+- todo o detalhe do catalogo da Shopee tinha sido lido havia mais de 3 dias, com mediana de ~5 dias;
+- ~11% dos itens venderam depois da ultima leitura, e nenhum foi marcado para reler.
+
+A venda baixa o estoque na Shopee sem mudar o `update_time` do item, e a fila do detalhe (D-428) so relia o item que mudou. O estoque guardado envelhecia calado.
+
+Isso afeta tres coisas:
+- a ruptura (D-611), que leria um zero de dias atras;
+- o detector de divergencia;
+- a coluna de estoque de `/anuncios/shopee`.
+
+A prova de que o problema e o tempo: o saldo do V3 levado ao instante da leitura (o saldo de hoje menos os movimentos depois dela, com o ajuste da reconciliacao de 21/10 contado) bate com o estoque da Shopee em ~81% das unidades vinculadas fora do armazem da Shopee. Contra o saldo de agora, sao ~69%.
+
+**Decisao:**
+1. **A fila do detalhe ganha a renovacao:** o item ATIVO (`NORMAL`), sem erro, lido ha mais de 6 horas, volta para a fila, o mais antigo primeiro.
+   - E a prioridade 5 de `shopee_items_details_pending`, depois de todas as de antes.
+   - A assinatura e o retorno nao mudam, e o worker nao muda: o gatilho horario ja encadeia a leitura enquanto ha pendentes.
+   - O custo por ciclo e o da primeira leitura do catalogo ativo: um lote de detalhe a cada 50 itens e uma leitura por item com variacao, a cada 6 horas.
+2. **A ruptura so com a ultima leitura boa:** a unidade cuja ultima leitura falhou (`details_error`) fica de fora, porque o estoque guardado e o de antes, e estoque desconhecido nunca vira zero.
+3. **A hora da leitura na evidencia:** "estava zerado na leitura de DD/MM/AAAA HH:MI", e `evidence.detector.estoque_lido_em`.
+4. **O catalogo atrasado nao roda a fonte:** com um item ativo de loja live sem leitura boa ha 30 horas, a `shopee_ruptura` nao roda.
+   - Nada nasce de estoque velho, e nada se encerra como se o estoque tivesse voltado.
+   - As 30 horas cobrem o ciclo de 6 horas com folga e o recuo de 1 dia do item com erro, que nao trava a fonte.
+   - O item nunca lido tambem nao trava: ele nao tem estoque e entra na fila na hora seguinte.
+5. **O armazem da Shopee nao muda a ruptura.** O item marcado `is_fulfillment_by_shopee` e hibrido: na leitura de 21/10, metade dos pedidos dele saiu do armazem da Shopee e metade da loja.
+   - O `total_available_stock` soma os dois, e o zero continua sendo zero.
+   - Para a divergencia isso importa: a comparacao com o saldo LOCAL do V3 so vale fora desses anuncios, ou com os estoques separados.
+
+**Verificacao:**
+- **Integracao:** 3 testes, e os da fila (D-428), da ruptura (D-611) e do prejuizo (D-617) seguem verdes.
+  - A ruptura so com a leitura boa: o zerado de leitura falha fica de fora, e a evidencia leva a hora.
+  - Com um item lido ha 31 horas, a fonte nao roda por 3 dias, e a acao aberta continua aberta.
+  - A fila rele o ativo lido ha 31 horas antes do de 7 horas, e deixa de fora o lido agora, o que falhou agora e o fora do ar.
+- **Mutacao:** cada uma derruba testes.
+  - a trava do catalogo atrasado desligada;
+  - a leitura que falhou detectando;
+  - a renovacao relendo o fora do ar;
+  - a renovacao sem a ordem da leitura;
+  - a renovacao com 1 dia.
+
+**Publicacao:** a migration `20261021120000` vai a producao junto com a da D-617 e antes do worker que pede as fontes novas.
+- A primeira hora depois dela rele o catalogo ativo inteiro.
+- A tela de `/anuncios/shopee` ja tem `details_synced_at` na view, e pode mostrar quando o estoque foi lido (A2).
+
+**Impacto:** `supabase/migrations/20261021120000_estoque_da_shopee_fresco.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,SHOPEE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
+
 ## D-620 - O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 
 **Contexto:** o "Todos" e a Shopee de `/vendas` diziam que "marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre". O dono escolheu em 20/10 as opções do item 4. A tela do SKU (b) ficou primeiro nas telas, mas o C-70 do A1 (D-603, #280, migration `20261020150000`) chegou antes:

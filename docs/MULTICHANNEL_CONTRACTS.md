@@ -178,7 +178,8 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 ### 3.23 A ruptura no anúncio da Shopee na Central (C-74, D-611) — em código
 
 - **A ação:** `actions.kind = 'shopee_ruptura'`, com a loja em `shopee_shop_id` e o `sku_id` quando o anúncio está vinculado. O `subject_key` é `<loja>:<item>:<variação ou ->`, a severidade `media`, a confiança `alta` e o impacto é a receita conhecida dos 30 dias.
-- **O `evidence.detector`:** os campos da D-609, mais `sku`, `estoque_shopee` (0), `saldo_v3` (o saldo local do SKU vinculado; NULO sem vínculo) e `ultima_venda`.
+- **O `evidence.detector`:** os campos da D-609, mais `sku`, `estoque_shopee` (0), `estoque_lido_em` (a hora da última leitura boa do estoque, D-619), `saldo_v3` (o saldo local do SKU vinculado; NULO sem vínculo) e `ultima_venda`.
+- **O estoque é o da última leitura boa (D-619):** a releitura vem a cada 6 horas; com o catálogo de uma loja atrasado (30 horas), a fonte não roda.
 - **Para a tela:**
   - o rótulo do kind;
   - o atalho da D-609 para `/anuncios/shopee`;
