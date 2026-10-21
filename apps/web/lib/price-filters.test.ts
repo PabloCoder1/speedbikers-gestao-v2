@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  argumentosDoMarketplace,
   buildPriceExportHref,
   buildPriceHref,
   priceDirectionLabel,
@@ -11,9 +12,11 @@ import {
 
 /** O recorte limpo, base dos casos de janela e de href de exportação. */
 const VAZIO: PriceFilters = {
+  marketplace: "ml",
   search: null,
   direction: null,
   account: null,
+  loja: null,
   dateFrom: null,
   dateTo: null,
   page: 1,
@@ -22,9 +25,11 @@ const VAZIO: PriceFilters = {
 describe("resolvePriceFilters", () => {
   it("URL vazia é 'sem filtro', página 1", () => {
     expect(resolvePriceFilters({})).toEqual({
+      marketplace: "ml",
       search: null,
       direction: null,
       account: null,
+      loja: null,
       dateFrom: null,
       dateTo: null,
       page: 1,
@@ -123,6 +128,7 @@ describe("resolvePriceWindow", () => {
 describe("buildPriceExportHref", () => {
   it("leva o recorte e NÃO leva a página — a planilha é o recorte inteiro", () => {
     const href = buildPriceExportHref({
+      ...VAZIO,
       search: "guidao",
       direction: "down",
       account: null,
@@ -133,5 +139,40 @@ describe("buildPriceExportHref", () => {
 
     expect(href).toBe("/precos/export/xlsx?busca=guidao&direcao=down&de=2026-09-01");
     expect(href).not.toContain("pagina");
+  });
+});
+
+/** D-640 (C-81): o recorte de marketplace e a loja da Shopee. */
+describe("o marketplace e a loja na /precos (D-640)", () => {
+  it("sem marketplace, ou com valor desconhecido, é o Mercado Livre de sempre", () => {
+    expect(resolvePriceFilters({}).marketplace).toBe("ml");
+    expect(resolvePriceFilters({ marketplace: "tiktok" }).marketplace).toBe("ml");
+    expect(resolvePriceFilters({ marketplace: "shopee" }).marketplace).toBe("shopee");
+    expect(resolvePriceFilters({ marketplace: "todos" }).marketplace).toBe("todos");
+  });
+
+  it("a conta só vale no ML e a loja só na Shopee — a RPC recusa a mistura", () => {
+    expect(resolvePriceFilters({ conta: "c1", loja: "l1" })).toMatchObject({ account: "c1", loja: null });
+    expect(resolvePriceFilters({ marketplace: "shopee", conta: "c1", loja: "l1" })).toMatchObject({ account: null, loja: "l1" });
+    expect(resolvePriceFilters({ marketplace: "todos", conta: "c1", loja: "l1" })).toMatchObject({ account: null, loja: null });
+  });
+
+  it("a URL leva o marketplace e a loja, e o ML continua sem o parâmetro", () => {
+    const shopee = resolvePriceFilters({ marketplace: "shopee", loja: "l1", busca: "capacete" });
+
+    expect(buildPriceHref(shopee, { page: 2 })).toBe("/precos?marketplace=shopee&busca=capacete&loja=l1&pagina=2");
+    expect(buildPriceHref(shopee, { marketplace: "ml", loja: null })).toBe("/precos?busca=capacete");
+    expect(buildPriceExportHref(shopee)).toBe("/precos/export/xlsx?marketplace=shopee&busca=capacete&loja=l1");
+  });
+
+  it("os argumentos da RPC só com valor: o ML manda só o de sempre, sem parâmetro novo", () => {
+    expect(argumentosDoMarketplace(VAZIO, "c1", null)).toEqual({ p_ml_account_id: "c1" });
+    expect(argumentosDoMarketplace(VAZIO, null, null)).toEqual({ p_ml_account_id: null });
+    expect(argumentosDoMarketplace({ ...VAZIO, marketplace: "shopee" }, null, null)).toEqual({ p_marketplace: "shopee" });
+    expect(argumentosDoMarketplace({ ...VAZIO, marketplace: "shopee" }, null, "l1")).toEqual({
+      p_marketplace: "shopee",
+      p_shopee_shop_id: "l1",
+    });
+    expect(argumentosDoMarketplace({ ...VAZIO, marketplace: "todos" }, null, null)).toEqual({ p_marketplace: "todos" });
   });
 });

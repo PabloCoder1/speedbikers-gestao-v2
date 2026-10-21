@@ -10,6 +10,7 @@
  */
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
+import type { Escopo } from "./marketplace";
 
 export const PAGE_SIZE = 50;
 
@@ -26,9 +27,17 @@ export function priceDirectionLabel(value: string): string {
 }
 
 export interface PriceFilters {
+  /**
+   * D-640 (C-81): o recorte de marketplace. Sem `marketplace` na URL é o
+   * Mercado Livre, a tela de sempre; `shopee` e `todos` pedem a Shopee.
+   */
+  marketplace: Escopo;
   search: string | null;
   direction: string | null;
+  /** A conta do ML: só no recorte do Mercado Livre. */
   account: string | null;
+  /** A loja da Shopee (`shopee_shops.id`): só no recorte da Shopee. */
+  loja: string | null;
   dateFrom: string | null;
   dateTo: string | null;
   page: number;
@@ -50,13 +59,22 @@ function readDate(raw: unknown): string | null {
   return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
+export const PRICE_MARKETPLACES = ["shopee", "todos"] as const;
+
 export function resolvePriceFilters(query: Record<string, string | string[] | undefined>): PriceFilters {
+  // D-640: valor desconhecido é o Mercado Livre, como uma URL de antes.
+  const marketplace = (readMember(query.marketplace, PRICE_MARKETPLACES) ?? "ml") as Escopo;
+
   return {
+    marketplace,
     search: readParam(query.busca),
     direction: readMember(query.direcao, PRICE_DIRECTIONS),
-    // A conta NÃO é conjunto fechado aqui: os ids vêm do banco, e a página
-    // descarta um id que não pertença à organização ao montar a chamada.
-    account: readParam(query.conta),
+    // A conta e a loja NÃO são conjunto fechado aqui: os ids vêm do banco, e a
+    // página descarta um id que não pertença à organização ao montar a chamada.
+    // Cada uma vale só no próprio recorte — a RPC recusa conta com a Shopee e
+    // loja com o Mercado Livre (C-81).
+    account: marketplace === "ml" ? readParam(query.conta) : null,
+    loja: marketplace === "shopee" ? readParam(query.loja) : null,
     dateFrom: readDate(query.de),
     dateTo: readDate(query.ate),
     page: resolvePageParam(query.pagina),
@@ -69,15 +87,40 @@ export function buildPriceHref(current: PriceFilters, override: Partial<PriceFil
 
   return buildFilterHref(
     "/precos",
-    {
-      busca: next.search,
-      direcao: next.direction,
-      conta: next.account,
-      de: next.dateFrom,
-      ate: next.dateTo,
-    },
+    paramsDoRecorte(next),
     override.page === undefined ? 1 : next.page,
   );
+}
+
+/** A URL do recorte, com um dono só para a tela e a planilha. */
+function paramsDoRecorte(filters: PriceFilters): Record<string, string | null> {
+  return {
+    marketplace: filters.marketplace === "ml" ? null : filters.marketplace,
+    busca: filters.search,
+    direcao: filters.direction,
+    conta: filters.marketplace === "ml" ? filters.account : null,
+    loja: filters.marketplace === "shopee" ? filters.loja : null,
+    de: filters.dateFrom,
+    ate: filters.dateTo,
+  };
+}
+
+/**
+ * Os argumentos de marketplace da `get_price_changes` (C-81, D-640), só com
+ * valor: o recorte do Mercado Livre manda o de sempre (`p_ml_account_id`, e
+ * nada novo), para a tela do ML não depender da migration; a Shopee e o
+ * "Todos" mandam `p_marketplace`, e a loja só quando escolhida. `conta` e
+ * `loja` já vêm conferidos contra a organização pela página.
+ */
+export function argumentosDoMarketplace(
+  filters: PriceFilters,
+  conta: string | null,
+  loja: string | null,
+): { p_ml_account_id: string | null } | { p_marketplace: "shopee" | "todos"; p_shopee_shop_id?: string } {
+  if (filters.marketplace === "ml") return { p_ml_account_id: conta };
+  if (filters.marketplace === "todos") return { p_marketplace: "todos" };
+
+  return loja === null ? { p_marketplace: "shopee" } : { p_marketplace: "shopee", p_shopee_shop_id: loja };
 }
 
 export { summarizePagedWindow };
@@ -131,15 +174,5 @@ export function resolvePriceWindow(filters: PriceFilters, now: Date): PriceWindo
  * outro, em vez de ser montado à mão na página.
  */
 export function buildPriceExportHref(current: PriceFilters): string {
-  return buildFilterHref(
-    "/precos/export/xlsx",
-    {
-      busca: current.search,
-      direcao: current.direction,
-      conta: current.account,
-      de: current.dateFrom,
-      ate: current.dateTo,
-    },
-    1,
-  );
+  return buildFilterHref("/precos/export/xlsx", paramsDoRecorte(current), 1);
 }

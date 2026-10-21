@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@sb/db";
 
-import { resolvePriceWindow, type PriceFilters } from "../../../../lib/price-filters";
+import { argumentosDoMarketplace, resolvePriceWindow, type PriceFilters } from "../../../../lib/price-filters";
 import type { PriceChangeExportInput } from "./rows";
 
 /**
@@ -53,6 +53,7 @@ export async function loadPriceExportData(
   organizationId: string,
   filters: PriceFilters,
   account: string | null,
+  loja: string | null,
   now: Date,
 ): Promise<{ data: PriceExportData | null; error: { message: string } | null }> {
   const janela = resolvePriceWindow(filters, now);
@@ -66,7 +67,8 @@ export async function loadPriceExportData(
       p_organization_id: organizationId,
       p_date_from: janela.from,
       p_date_to: janela.to,
-      p_ml_account_id: account,
+      // D-640 (C-81): o mesmo recorte de marketplace da tela, só com valor.
+      ...argumentosDoMarketplace(filters, account, loja),
       p_direction: filters.direction,
       p_search: filters.search,
       p_limit: PAGE,

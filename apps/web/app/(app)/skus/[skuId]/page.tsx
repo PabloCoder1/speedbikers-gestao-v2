@@ -65,6 +65,7 @@ import {
 } from "../../../../lib/sku-shopee";
 import { SeloCurvaAbc, type LeituraCurvaAbc } from "./selo-curva-abc";
 import { contarLojasShopee } from "../../../../lib/marketplace";
+import { anuncioDaMudanca, ehDaShopee } from "../../../../lib/mudanca-de-preco";
 import { lastBusinessDays } from "../../../../lib/business-window";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
@@ -523,6 +524,9 @@ export default async function SkuDashboardPage({
           p_sku_id: sku.data.id,
           p_limit: 50,
           p_offset: 0,
+          // D-640 (C-81): os anúncios do SKU nos dois marketplaces. Sem loja
+          // Shopee, a resposta é a do Mercado Livre de sempre.
+          p_marketplace: "todos",
         })
       : Promise.resolve({ data: null, error: null }),
     // Vendas (D-227). A única aba com RPC própria: `get_sku_sales_breakdown`
@@ -702,6 +706,8 @@ export default async function SkuDashboardPage({
   // sem saldo no Full renderizaria uma linha fantasma em vez do estado vazio.
   const full = (fullResult.data ?? []).filter(isFullRow);
   const prices = pricesResult.data ?? [];
+  // D-640: a Shopee só muda o texto e os rótulos quando aparece no período.
+  const temPrecoShopee = prices.some(ehDaShopee);
   const sales = salesResult.data ?? [];
   // Particionar as (no máximo) 1 + contas + 30 linhas por `grain` não é
   // agregar: as somas e razões vieram prontas do banco.
@@ -1618,7 +1624,8 @@ export default async function SkuDashboardPage({
           */}
           <p className="sb-skud-lead">
             Preço de cada anúncio deste SKU, comparado a cada leitura (a da notificação do Mercado Livre e a
-            varredura de 6 em 6 horas), nos últimos{" "}
+            varredura de 6 em 6 horas{temPrecoShopee && "; na Shopee, a releitura do item quando ela avisa e a cada 6 horas"}),
+            nos últimos{" "}
             {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas leituras não deixa registro.{" "}
             {/* A data cravada ("24/08/2026") era a da primeira organização — a mesma
                 classe que D-234 tirou de /precos. A série de cada uma começa na
@@ -1650,7 +1657,7 @@ export default async function SkuDashboardPage({
                   <tr>
                     <th>Quando</th>
                     <th>Anúncio</th>
-                    <th>Conta</th>
+                    <th>{temPrecoShopee ? "Conta ou loja" : "Conta"}</th>
                     <th className="sb-num">De</th>
                     <th className="sb-num">Para</th>
                     <th className="sb-num">Δ</th>
@@ -1662,6 +1669,8 @@ export default async function SkuDashboardPage({
                   {prices.map((linha) => {
                     const subiu = linha.delta > 0;
                     const cor = subiu ? "var(--sb-secondary)" : "var(--sb-danger)";
+                    // D-640: o item da Shopee vai para a lista da loja, nunca para /anuncios/<id>.
+                    const anuncio = anuncioDaMudanca(linha);
 
                     return (
                       <tr key={linha.event_id}>
@@ -1669,16 +1678,19 @@ export default async function SkuDashboardPage({
                           {formatDateTime(linha.occurred_at)}
                         </td>
                         <td>
-                          <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
+                          {anuncio.href === null ? <span>{linha.item_id}</span> : <Link href={anuncio.href}>{linha.item_id}</Link>}
                           {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
                               catálogo depois do evento, e o evento continua sendo
                               verdade. Mostrar o MLB sem título é mais honesto do que
                               esconder a linha (contrato de D-172). */}
                           {linha.title !== null && (
-                            <div className="sb-skud-text-soft">{linha.title}</div>
+                            <div className="sb-skud-text-soft">
+                              {linha.title}
+                              {anuncio.variacao !== null && ` · ${anuncio.variacao}`}
+                            </div>
                           )}
                         </td>
-                        <td>{linha.account_label}</td>
+                        <td>{anuncio.origem}</td>
                         <td className="sb-num">{formatCurrency(linha.price_before)}</td>
                         <td className="sb-num">{formatCurrency(linha.price_after)}</td>
                         <td className="sb-num" style={{ color: cor }}>
