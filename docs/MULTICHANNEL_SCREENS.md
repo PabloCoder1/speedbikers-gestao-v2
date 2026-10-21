@@ -57,10 +57,10 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
 | Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) + Shopee (C-65) | T-R3 ✔ (D-464): a demanda da Shopee dita pela própria RPC, o selo em "Dados usados" e a parte da Shopee na venda; T-R3b ✔ (D-466): a parte da Shopee na gaveta e na cobertura do SKU | E8 + dono |
 | Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug, ML) · `marketplace` + `contas` (uuid) + filtros salvos | `get_sku_abc_*` com `p_marketplaces`/`p_account_ids` (C-60) | — | T6b ✔ (D-448: "Todos" e "Shopee", compras como critério); T6b2 ✔ (D-450: o Excel com o recorte) |
-| Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee (só o preço atual): o C-13, pedido ao A1 em 21/10 (liberado pelo dono; o histórico conta da captura) | C-13 |
-| Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | a Shopee: a linha de base, os eventos e os preços médios (`get_sku_sales_baseline`, `get_sku_average_prices`) leem só o ML: o C-11, pedido ao A1 em 21/10 (liberado pelo dono) | — |
+| Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee (só o preço atual): o C-13 (C-81 do A1), aceito em 21/10 (liberado pelo dono; o histórico conta da captura) | C-13 |
+| Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | a Shopee: a linha de base, os eventos e os preços médios (`get_sku_sales_baseline`, `get_sku_average_prices`) leem só o ML: o C-11 (C-83 do A1), aceito em 21/10 (liberado pelo dono) | — |
 | Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`; a Shopee pelo `evidence.detector`) | — (os quatro detectores da Shopee desde a D-626 e a D-632; as primeiras ações nascem na rodada das 08:00 de 22/10) | D-626 ✔; D-632 ✔ |
-| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | as preferências por loja (`notification_preferences` só conhece a conta do ML, `ml_account_id`): o C-12, pedido ao A1 em 21/10 (liberado pelo dono) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja); D-616 ✔ (o lote por loja, C-69) |
+| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | as preferências por loja (`notification_preferences` só conhece a conta do ML, `ml_account_id`): o C-12 (C-82 do A1), aceito em 21/10 (liberado pelo dono) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja); D-616 ✔ (o lote por loja, C-69) |
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
@@ -70,7 +70,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
-| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas: o C-14, pedido ao A1 em 21/10 (liberado pelo dono) | C-14 |
+| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas: o C-14 (C-84 do A1), aceito em 21/10 (liberado pelo dono) | C-14 |
 | Shell e menu | todas | 2 | — | `marketplace_accounts` conectadas (contas do ML e lojas Shopee) | — (o "N contas conectadas" conta as lojas desde a D-438; a lacuna antiga estava desatualizada, D-490 §5) | ✔ D-438 |
 | Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | — (o recorte do Mercado Livre exporta a série por dia pela leitura da própria tela desde a D-602) | T11 ✔ (D-490): pedidos e anúncios da Shopee em CSV, com o recorte da tela; D-496 ✔: `/vendas` no "Todos" e na Shopee, por dia e por conta |
 | Sugestões, fornecedores, NF-e, importações, login | — | 1 / 5 | — | organização / ERP | — | — |
@@ -234,10 +234,10 @@ linhas.
 | C-08 | Busca universal (Ctrl+K) achando loja, anúncio e pedido Shopee | `search_entities` com a Shopee — **pedido novo** | depois de E3 |
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | nada novo: `job_runs` já os tem; falta a cadência em `apps/web/lib/sync-health.ts` (horários: pedidos e financeiro às :20, catálogo às :25) | T1 |
 | C-10 | Aba Vendas do SKU: o dia a dia por canal e os pedidos da Shopee com o SKU (escolha do dono em 20/10) | o dia a dia do SKU por marketplace e `get_shopee_orders` com `p_sku_id` (abaixo); o contrato de dados é o C-71 do A1 (D-607) | D-618 depois do contrato |
-| C-11 | `/diagnostico` e o diagnóstico do SKU com a Shopee (liberado pelo dono em 21/10) | a linha de base, o preço médio e os eventos correlacionados com a Shopee (abaixo) | pedido ao A1 em 21/10 |
-| C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | pedido ao A1 em 21/10 |
-| C-13 | Histórico de preço da Shopee em `/precos` e na aba Preços do SKU (liberado pelo dono em 21/10) | o evento de mudança de preço do modelo da Shopee e `get_price_changes` com a Shopee (abaixo) | pedido ao A1 em 21/10 |
-| C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | pedido ao A1 em 21/10 |
+| C-11 | `/diagnostico` e o diagnóstico do SKU com a Shopee (liberado pelo dono em 21/10) | a linha de base, o preço médio e os eventos correlacionados com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-83 |
+| C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | aceito pelo A1 em 21/10 como o C-82 |
+| C-13 | Histórico de preço da Shopee em `/precos` e na aba Preços do SKU (liberado pelo dono em 21/10) | o evento de mudança de preço do modelo da Shopee e `get_price_changes` com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-81 |
+| C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | aceito pelo A1 em 21/10 como o C-84 |
 
 ### C-10 — o SKU com a Shopee: os pedidos e o dia a dia por canal (pedido ao A1 em 20/10)
 
@@ -298,12 +298,13 @@ kit; a de um componente não mostra as vendas dos kits que o contêm, em
 canal nenhum. É o que a aba já mostra hoje; os componentes seriam outro
 contrato.
 
-### C-11 a C-14 — as quatro frentes depois do item 4 (pedido ao A1 em 21/10)
+### C-11 a C-14 — as quatro frentes depois do item 4 (C-81 a C-84 do A1)
 
 O dono liberou as quatro em 21/10 ("todas essas opções pode adicionar"),
-perguntado pelo A2 com o item 4 no ar. Ordem proposta ao A1, que decide a
-sequência na fila dele: C-13 (a captura, porque o histórico só conta do dia em
-que ela entra no ar) → C-12 → C-11 → C-14. O que cada tela lê hoje, conferido
+perguntado pelo A2 com o item 4 no ar. O A1 aceitou em 21/10 com os números
+C-81 (o C-13) → C-82 (o C-12) → C-83 (o C-11) → C-84 (o C-14), nessa ordem, com o
+C-80 do A3 entre o C-82 e o C-83; a captura vem primeiro porque o histórico só
+conta do dia em que ela entra no ar. O que cada tela lê hoje, conferido
 no código da `main` (`c6f572d3`):
 
 **C-13, o histórico de preço.**
