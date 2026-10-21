@@ -618,11 +618,15 @@ export default async function HomePage({
       // lista inteira só para devolver o total — 7,6 mil páginas frias, medido
       // pelo A1 (D-504). Quem restringe às contas visíveis é a RLS de `listings`,
       // a mesma que a função (security invoker) usava. Mesmo número no Dev.
+      // D-634: sem o excluído no Mercado Livre, como a `/anuncios` desde a
+      // D-631. A regra é `deleted_at`: no 404 o status fica o último visto, e
+      // um pausado excluído contaria aqui e não lá.
       supabase
         .from("listings")
         .select("item_id", { count: "exact", head: true })
         .eq("status", "paused")
-        .gt("available_quantity", 0),
+        .gt("available_quantity", 0)
+        .is("deleted_at", null),
       vendasPromise,
       // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
       // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de

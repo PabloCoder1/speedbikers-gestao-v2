@@ -74,8 +74,9 @@ test("/precos: o aviso diz por que NÃO afirma impacto, e não promete prazo", a
 
   /*
     A ressalva de D-226, que impede a leitura errada: o evento é diff entre
-    snapshots de 6 em 6 horas, então uma mudança feita e desfeita entre duas
-    varreduras não deixa registro.
+    leituras do anúncio (a notificação do Mercado Livre e a varredura de 6 em 6
+    horas, D-631), então uma mudança feita e desfeita entre duas leituras não
+    deixa registro.
   */
   await expect(aviso).toContainText("ausência de linha não é preço estável");
 
