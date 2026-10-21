@@ -18787,6 +18787,62 @@ A varredura seguinte de cada conta marca os excluidos que ja existem, e da em di
 
 **Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
 
+## D-634 - O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
+
+**Contexto:** a D-631 do A1 (#303, pedido do dono de 21/10) guarda o anúncio excluído no Mercado Livre com `listings.deleted_at` e o esconde das quatro RPCs do catálogo (`get_listings_dashboard`, a faixa, `get_sku_listings` e `get_listings_link_overview`). A linha fica, porque é história de venda e de vínculo. Cinco pontos da web leem `listings` direto e passariam a mostrá-lo como vivo:
+- a contagem "Anúncios pausados" da Home (D-504), que promete o mesmo número da `/anuncios`;
+- o detalhe `/anuncios/[itemId]`, aberto por link antigo ou pela busca;
+- o painel de republicação do detalhe;
+- o diálogo de vínculo do SKU;
+- o diálogo de vínculo da `/vinculacoes`.
+
+O ponto que pesa: no 404 o worker grava só `deleted_at`, e o `status` fica o último visto, que pode ser `active` ou `paused` (confirmado pelo A1: é de propósito, o 404 não diz o status).
+
+**Decisão:**
+1. **A regra é `deleted_at`, nunca o status.** Ela mora em `lib/anuncio-excluido.ts`, com o texto comum. `deleted_at` é QUANDO A V3 VIU a exclusão, não quando ela aconteceu: um anúncio apagado antes da D-631 é marcado na primeira varredura depois dela. Por isso a tela diz "a V3 viu a exclusão em DD/MM/AAAA", e nunca "excluído em".
+2. **Home:** a contagem dos pausados com estoque ganha `deleted_at is null`, o mesmo predicado da `/anuncios` desde a D-631.
+3. **Detalhe do anúncio:**
+   - o selo "Excluído no Mercado Livre" no lugar do status, que pode estar velho;
+   - a linha "excluído no Mercado Livre · a V3 viu a exclusão em…" no lugar da idade da sincronização (a varredura não o devolve mais, e o "há N dias" em vermelho pediria uma sincronização que não vem);
+   - a checagem vira uma linha só, porque as outras perguntas (estoque, vínculo, venda e leitura) são sobre um anúncio que vende;
+   - saem o "Ver no Mercado Livre", o "Vincular a um SKU" do menu e o selo "Sem vínculo de SKU";
+   - o preço e o estoque continuam, ditos como os da última leitura.
+4. **Republicação:** nenhum ato no anúncio excluído (`atosDaRepublicacao` com `excluido`). O painel diz por quê e aponta o caminho: criar um anúncio novo e vinculá-lo ao SKU. A explicação de uma falha anterior continua. A conferência prévia da api ainda não conhece o excluído; o bloqueio `EXCLUIDO_NO_MERCADO_LIVRE` é da D-631 b do A1.
+5. **Os dois diálogos de vínculo** acham a linha e a recusam, com o MLB, a data da leitura e o porquê. É a regra que eles já seguiam: "sem confirmar que ele existe, não vinculamos".
+6. **Os textos que a D-631 envelheceu:**
+   - o diff de preço do anúncio e do SKU passa a ser "entre duas leituras do anúncio: a da notificação do Mercado Livre e a varredura de 6 em 6 horas" (o `sync.listing.item` grava o `listing.price.changed` a cada notificação, confirmado pelo A1);
+   - o "não encontramos" dos diálogos diz que o anúncio novo chega pela notificação.
+
+**Publicação:** só a web, e só DEPOIS da migration `20261021170000` em produção e do worker com o `sync.listing.item`. O select com `deleted_at` antes da coluna dá 42703 e derrubaria a busca dos diálogos e o cartão da Home; os textos novos descrevem o worker novo. O A1 avisa nos dois momentos. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**O que fica para a D-631 b do A1** (achado na leitura para esta decisão): as funções que leem `listings` sem `deleted_at` e mostrariam o excluído como vivo. São a queda nas vendas por anúncio (C-79), `get_products_overview`, `get_ml_account_cards`, `get_unlinked_listings`, `get_link_integrity`, `get_sku_curation` e, a conferir, os detectores da central. A história (`get_price_changes`, a linha do tempo, a correlação e a busca) fica como está.
+
+**Verificacao:**
+- **unitários:** `lib/anuncio-excluido.test.ts` (3), a checagem com o excluído numa linha só e o status velho `active` (`checagem.test.ts`), e os atos da republicação sem ato nenhum no excluído e com a explicação da falha mantida (`republicacao.test.ts`).
+- **e2e:** `e2e/anuncio-excluido.spec.ts` marca o pausado do seed como o worker marca o 404 (só `deleted_at`, com o status `paused` e o estoque) e confere:
+  - a Home com "0 Anúncios pausados";
+  - o detalhe com a data da leitura, uma checagem só e sem "Ver no Mercado Livre" nem o selo de vínculo;
+  - a republicação sem o pedido;
+  - os dois diálogos recusando o anúncio.
+
+  A marca volta a nulo no fim, porque a chave de serviço não tem `delete` em `listings`.
+- **mutação:** sem o `deleted_at is null` da Home, o e2e reprova no cartão dos pausados.
+- **suíte inteira**, com o banco recriado do zero (a migration da D-631 inclusa):
+  - chromium 260/260;
+  - `loja-live` 16/16;
+  - convite 3/3.
+
+  Uma primeira rodada reprovou só o `sku-dashboard`, que afirmava o texto antigo do diff de preço, ajustado aqui.
+
+**Impacto:**
+- `apps/web/lib/{anuncio-excluido.ts,anuncio-excluido.test.ts}`;
+- `apps/web/app/(app)/page.tsx`;
+- `apps/web/app/(app)/anuncios/[itemId]/{page.tsx,checagem.ts,checagem.test.ts,republicacao.ts,republicacao.test.ts,relist-panel.tsx}`;
+- `apps/web/app/(app)/skus/[skuId]/{vincular-anuncio.tsx,page.tsx}`;
+- `apps/web/app/(app)/vinculacoes/vincular-dialog.tsx`;
+- `apps/web/e2e/anuncio-excluido.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
 ## D-636 - O cabeçalho da /faturamento tem a mesma forma nos três recortes
 
 **Contexto:** o A3 achou, em 21/10, que trocar o recorte da `/faturamento` pelo seletor desloca o conteúdo (CLS de 0,019 a 0,119). A medida no stack isolado com o seed confirmou a causa:
