@@ -22,6 +22,7 @@ export function PageTitle({
   subtitle,
   aside,
   compacto = false,
+  barra = "ao-lado",
 }: {
   eyebrow: string;
   title: string;
@@ -30,9 +31,24 @@ export function PageTitle({
   /** `.page-title.compact` do Figma — margem inferior menor, para a tela que
    *  abre com um painel logo abaixo do cabeçalho em vez de filtros. */
   compacto?: boolean;
+  /**
+   * `"abaixo"` põe a barra numa linha própria em qualquer largura (D-636). É
+   * para a tela cujos recortes têm barras de tamanhos diferentes (a
+   * `/faturamento`: seis controles no ML, três ou quatro na Shopee e no
+   * "Todos"): ao lado do título, uma cabe e a outra desce, e o conteúdo abaixo
+   * pula na troca de recorte. A regra de forma do A3: a mesma tela, em qualquer
+   * recorte, tem a mesma forma.
+   */
+  barra?: "ao-lado" | "abaixo";
 }): ReactNode {
+  const classes = [
+    "sb-page-title",
+    ...(compacto ? ["sb-page-title-compacto"] : []),
+    ...(barra === "abaixo" ? ["sb-page-title-barra-abaixo"] : []),
+  ].join(" ");
+
   return (
-    <div className={compacto ? "sb-page-title sb-page-title-compacto" : "sb-page-title"}>
+    <div className={classes}>
       <div style={{ minWidth: 0 }}>
         <span className="sb-eyebrow">{eyebrow}</span>
         <h1>{title}</h1>

@@ -65,6 +65,33 @@ test("/faturamento: o seletor oferece Todos, Mercado Livre e Shopee, e o períod
   await expect(page.getByRole("region", { name: "Para onde vai o dinheiro" })).toBeVisible();
 });
 
+/**
+ * D-636: o cabeçalho tem a MESMA ALTURA nos três recortes, no desktop. A barra
+ * do ML tem seis controles e a da Shopee e do "Todos", três ou quatro: ao lado
+ * do título, uma descia e a outra não (132 × 84 px a 1440), e o conteúdo abaixo
+ * pulava na troca de recorte. Agora a barra fica numa linha própria nos três.
+ */
+test("/faturamento: o cabeçalho tem a mesma altura no ML, na Shopee e no Todos (D-636)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // `login` só clica em "Entrar": o primeiro título prova a sessão antes do laço.
+  await login(page, "/faturamento?days=7");
+  await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+
+  const alturas: number[] = [];
+
+  for (const url of ["/faturamento?days=7", "/faturamento?marketplace=shopee&days=7", "/faturamento?marketplace=todos&days=7"]) {
+    await page.goto(url);
+    await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
+
+    const caixa = await page.locator(".sb-page-title").first().boundingBox();
+
+    alturas.push(Math.round(caixa?.height ?? 0));
+  }
+
+  expect(alturas[0]).toBeGreaterThan(0);
+  expect(alturas).toEqual([alturas[0], alturas[0], alturas[0]]);
+});
+
 test("/faturamento?marketplace=shopee: sem loja real lida, a faixa diz '—' e por quê; a de teste fica fora", async ({
   page,
 }) => {
