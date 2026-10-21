@@ -18786,3 +18786,32 @@ A varredura seguinte de cada conta marca os excluidos que ja existem, e da em di
 - **e2e:** no ensaio da loja live, uma `shopee_divergencia` no formato do C-78 mostra o rótulo, a loja, o atalho para o anúncio e o estoque do SKU, e a ação é apagada no fim. `acoes` 3/3 e o ensaio 16/16, com o banco recriado.
 
 **Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-636 - O cabeçalho da /faturamento tem a mesma forma nos três recortes
+
+**Contexto:** o A3 achou, em 21/10, que trocar o recorte da `/faturamento` pelo seletor desloca o conteúdo (CLS de 0,019 a 0,119). A medida no stack isolado com o seed confirmou a causa:
+- A barra do ML tem seis controles: seletor, Conta, Período, Campanhas (Ads), Calculadora de preço e Dashboard de vendas. Ela nunca cabe ao lado do título e desce para uma linha própria.
+- A barra da Shopee tem quatro controles e a do "Todos", três. As duas cabem ao lado do título no desktop.
+- O título mede 132 px no ML contra 84 na Shopee e no "Todos" a 1440 px, e 132 contra 102 e 84 a 1280.
+
+Com a navegação atrasada em 600 ms (a resposta RSC segura no Playwright), o CLS da troca foi de 0,017 a 0,019 no desktop. Sem atraso, ele é 0: a troca acaba antes de 500 ms e conta como resposta ao clique (`hadRecentInput`).
+
+**Decisão** (a opção 1 das três levadas ao A3, que a escolheu):
+1. O `PageTitle` ganha `barra="abaixo"`, que põe a barra numa linha própria em qualquer largura (classe `sb-page-title-barra-abaixo`, o bloco do título com `flex-basis: 100%`). O padrão continua `"ao-lado"`, e nenhuma outra tela muda.
+2. As duas telas da `/faturamento` (`page.tsx`, do ML, e `multicanal.tsx`, da Shopee e do "Todos") usam o modificador. A tela do ML não muda de aparência, porque a barra dela já descia; a Shopee e o "Todos" passam a ter a mesma forma. É a regra de forma do A3: a mesma tela, em qualquer estado ou recorte, tem a mesma forma, e o que vem abaixo não anda.
+3. Recusadas:
+   - tirar do cabeçalho do ML os atalhos "Campanhas (Ads)" e "Calculadora de preço", porque mudaria a tela que o dono mais usa e tiraria o botão primário do lugar;
+   - esperar o painel Filtros da fatia A do A3, que não vai chegar à `/faturamento` (a tela só tem recorte de escopo).
+4. **Resíduo conhecido:** a 1024, 768 e 390 px a barra do ML quebra em duas linhas e as outras não, e sobram 40 px. Com a leitura lenta, o CLS ali ficou entre 0,002 e 0,010, abaixo de 0,1. A regra combinada com o A3 é reservar a altura de duas linhas nessas larguras, por CSS e nos três recortes, só se passar de 0,1. Não passou.
+
+**Publicação:** só a web. Nenhuma migration, RPC, worker ou api.
+
+**Verificacao:**
+- **medida antes e depois**, nas cinco larguras, com a navegação atrasada em 600 ms:
+  - o título fica com 132 px nos três recortes a 1440 e a 1280;
+  - o CLS da troca cai de 0,017–0,019 para 0,001–0,003 no desktop;
+  - nas larguras estreitas não muda (0,002 a 0,010).
+- **e2e:** em `faturamento-multicanal.spec.ts`, um caso confere a mesma altura do cabeçalho nos três recortes a 1440 px. **Mutação:** sem o modificador no recorte multicanal, ele reprova (132 contra 84).
+- **fotos** a 1440 e a 390 px nos três recortes: a barra sob o título, e a faixa de números começando na mesma altura.
+
+**Impacto:** `apps/web/components/page-title.tsx`, `apps/web/app/globals.css`, `apps/web/app/(app)/faturamento/{page.tsx,multicanal.tsx}`, `apps/web/e2e/faturamento-multicanal.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.

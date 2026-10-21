@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **544** (D-001 a D-632).
+Decisões registradas: **545** (D-001 a D-636).
 
 ## Por domínio
 
@@ -345,7 +345,7 @@ Decisões registradas: **544** (D-001 a D-632).
 - **D-629** — A queda nas vendas por anuncio (C-79): a regua da venda anomala em janelas, pre-calculada uma vez por dia
 - **D-631** — O anuncio criado ou excluido no Mercado Livre chega a V3 na hora, e o excluido sai das telas
 
-### outros (78)
+### outros (79)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -425,6 +425,7 @@ Decisões registradas: **544** (D-001 a D-632).
 - **D-610** — A `/central` sem a leitura do faturamento em dobro: o "Por marketplace" reusa a dos indicadores
 - **D-616** — Marcar em lote por loja Shopee: o botão volta com a loja no recorte (C-69)
 - **D-624** — O ranking de produtos do "Todos" recorta pela marca (C-75)
+- **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
 
 ### processo/docs (1)
 
