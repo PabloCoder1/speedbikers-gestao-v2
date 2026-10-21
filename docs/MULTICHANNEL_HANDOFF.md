@@ -129,6 +129,7 @@
 - D-622 — a marca no "Todos" e na Shopee de `/vendas` (C-72): **na `main`, #287** (`8bca078f`), no ar desde 21/10 (deploy READY). O mesmo menu e a mesma URL da tela do ML, com o "Todos" explícito sob marca; compras, ticket e cancelamento ditos como não aplicáveis.
 - O esqueleto da `/faturamento` reserva a janela (achado e medida do A3, D-526): **na `main`, #290** (`8eb3053e`), CLS de 0,23–0,27 para 0.
 - D-628 — o estoque da `/anuncios/shopee` diz de quando é a leitura ("lido há N min/h/dias", a pedido do A1 na D-619): **na `main`, #292** (`4089b805`).
+- D-624 e D-626 — o ranking do "Todos" recortando pela marca (C-75) e as ações dos detectores da Shopee na Central de Ações (C-73, C-74 e o rótulo do C-76): **na `main`, #293** (`9d1eb905`), no ar desde 21/10, 13:31 UTC (deploy READY, sem erro de execução). As ações da Shopee nascem com o worker `worker-00053-bwq` do A1, a partir da rodada das 08:00 de 22/10; depois dela, o A1 confere em agregado se a evidência traz o que o atalho lê.
 - A guarda de tela estreita (`e2e/tela-estreita-e-acessibilidade.spec.ts`, D-510) passa a cobrir `/contas` (a faixa da D-600), `/anuncios/shopee`, `/vendas/shopee` e `/faturamento?marketplace=shopee` (a cascata com os degraus da D-492 e da D-498): nenhuma rola para o lado nem corta tabela a 390 px.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
@@ -137,7 +138,6 @@
 - T-R3b — a parte da Shopee na cobertura do SKU e na Inspeção Rápida (D-466, consome o C-65): o módulo único da cobertura (D-314) diz no título quantas unidades dos 30 dias vieram da Shopee, e a gaveta mostra "K da Shopee" embaixo das vendas; e os Ads da Shopee dizem os dias fora do ROAS e do ACOS (D-455), na ressalva do TOTAL e em cada loja. Chave ausente vale nulo em tudo, porque a web pode chegar antes da migration de produção. **Na `main`, #190.**
 
 **Em andamento**
-- D-624 e D-626, num PR só (#293): o ranking do "Todos" recortando pela marca (C-75) e as ações dos detectores da Shopee na Central de Ações (C-73, C-74 e o rótulo do C-76). **Em código e validadas.** As migrations `20261020180000` a `20261021120000` estão em produção desde 21/10 (run `39598041230`, conferidas pelo A1 no catálogo). As ações da Shopee só nascem com o worker novo do A1, a partir da rodada das 08:00 de 22/10.
 - Pendência de layout (achado do A3, 21/10): trocar o recorte de `/faturamento` pelo seletor desloca um pouco (CLS 0,019 a 0,119), porque o cabeçalho tem forma diferente na tela do ML e na multicanal. Igualar a barra de filtros das três é decisão de tela, sem data.
 - Pendência condicional (auditoria do A3, 21/10): na `/vendas/shopee`, o esqueleto das devoluções é menor que o bloco pronto, e com a leitura lenta os pedidos descem (CLS 0,019 a 1440, 0 a 390). A altura pronta varia com o número de devoluções; só se a leitura for lenta em produção.
 - A conferência da D-614 em produção: os dados estão conferidos pelo A1 em 20/10, como `authenticated` e só com agregados: todo movimento `SHOPEE_ORDER` traz `shopee_shop_id` e `shopee_order_day` (logo, o link do pedido); só há `VENDA_SHOPEE` e `ESTORNO_ARMAZEM_SHOPEE`; nenhum estorno sem a sua venda. Falta a olhada do dono na tela de produção (`/estoque/movimentacoes` com a origem "Pedido Shopee"): o A2 não entra com conta real.
@@ -148,7 +148,7 @@
   - **D-495 (b)** (C-68, no ar desde 14:22 UTC): o banco foi conferido. Todo movimento da Shopee tem a loja e o dia do link, e todo estorno do armazém tem a sua venda. Falta a conferência visual da `/estoque/movimentacoes` pelo dono.
 - **As outras opções do item 4** (o dono escolheu o SKU primeiro nas telas, em 20/10; o A1 tem as três):
   - `/vendas` no "Todos", a marca: a D-622 (em andamento, acima).
-  - Central de Ações: os quatro detectores da Shopee, na ordem do dono (vendendo sem vínculo, ruptura no anúncio, prejuízo por produto e divergência de estoque). Os três primeiros são do A1 (D-609/C-73, D-611/C-74 e D-617/C-76, na `main`); a tela é a D-626, no #293 (acima). O quarto espera o A1.
+  - Central de Ações: os quatro detectores da Shopee, na ordem do dono (vendendo sem vínculo, ruptura no anúncio, prejuízo por produto e divergência de estoque). Os três primeiros são do A1 (D-609/C-73, D-611/C-74 e D-617/C-76, na `main`); a tela é a D-626, no ar (#293). O quarto espera o A1.
 - **Sem fonte hoje:** o histórico de preço da Shopee (`/precos`), o chat da Shopee (`/atendimento`) e a Shopee nas ferramentas do Copiloto.
 
 **Bloqueios**
