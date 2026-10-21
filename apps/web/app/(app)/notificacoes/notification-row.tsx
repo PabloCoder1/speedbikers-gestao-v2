@@ -50,6 +50,8 @@ export interface NotificationRowData {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   accountLabel: string | null;
+  /** `domain_events.shopee_shop_id`: o destino do anúncio da Shopee (D-638). */
+  shopeeShopId: string | null;
   /**
    * "há 3 h" do FATO, já calculado NO SERVIDOR.
    *
@@ -105,7 +107,7 @@ export function NotificationRow({ notification }: { notification: NotificationRo
 
   const isUnread = readAt === null;
   const diff = formatEventDiff(notification.eventType, notification.before, notification.after);
-  const href = entityHref(notification.entityType, notification.entityId, notification.after);
+  const href = entityHref(notification.entityType, notification.entityId, notification.after, notification.shopeeShopId);
   const rotulo = eventTypeLabel(notification.eventType);
   const alvo = entityText(notification.entityType, notification.entityId, notification.after);
 
