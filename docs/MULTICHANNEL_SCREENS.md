@@ -44,7 +44,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Área | Rotas | Classe | Conta hoje (URL) | Fonte | O que falta para o multicanal | Etapa |
 |---|---|---|---|---|---|---|
 | Home | `/` | 2 | — | `get_marketplace_sales_summary`/`_daily` (C-53, ML + Shopee), cobertura, anúncios pausados | T10 ✔ (D-488): a faixa e o gráfico de todos os marketplaces, decisão do dono de 16/10 | C-53 |
-| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | marca, "hoje" e cancelamento no "Todos" (pedem contrato do A1: o C-53 não traz cancelamento nem marca; o ranking entre marketplaces está na T6a, D-444) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas); T10 ✔ (D-488: sem `marketplace` abre em "Todos", o ML é `marketplace=ml`) |
+| Vendas | `/vendas`, `/vendas/shopee` | 2 | `account` (slug, 1 conta ML) · `loja` (uuid) | `daily_*` (ML) · `get_shopee_sales_by_shop`/`get_shopee_orders` | — (o cancelamento e o hoje no "Todos" desde a D-620, sobre o C-70; a marca desde a D-622 e a D-624, sobre o C-72 e o C-75) | T1 ✔ (D-431); T4 ✔ (D-440: "Todos" e "Shopee" na mesma tela, várias contas); T10 ✔ (D-488: sem `marketplace` abre em "Todos", o ML é `marketplace=ml`); D-620 ✔; D-622 ✔; D-624 ✔ |
 | Faturamento | `/faturamento` | 2 | `account` (slug) · `contas` (uuid, Shopee) | `get_faturamento`, `get_ads_overview` (ML) · `get_shopee_faturamento` (C-58), `get_shopee_faturamento_*` (C-61), `get_shopee_ads_*` (C-63), `get_shopee_repasse*` (C-64) | — | T5 ✔ (D-442: "Shopee" e "Todos" lado a lado, sem total); T5b ✔ (D-452: a cascata, a série e os produtos); T5c ✔ (D-456: Ads CPC da loja); T5d ✔ (D-458: repasse); D-492 ✔ (a proteção de envio como degrau da cascata, sobre a D-483); D-498 ✔ (os ajustes depois do repasse e o lucro após imposto e Ads, sobre a D-485 e a D-487) |
 | Central | `/central`, `/central/produtos` | 2 | `account` (slug) | `get_faturamento`, `get_ranking_produtos`, `get_meta_do_mes` | T8a ✔ (D-480): a Shopee lado a lado, sem total de resultado (o bloco do "Todos" de `/faturamento`) | E6/E8 + dono |
 | Central Ads e Frete | `/central/ads`, `/central/frete` | 3 | — | Mercado Ads, envios do ML | — | — |
@@ -53,14 +53,14 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | SKU | `/skus/[id]` | 2 | `escopo` (uuid, aba diagnóstico) | `get_sku_dashboard`, `get_sku_sales_breakdown` (ML), `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account` (C-59) | o dia a dia e os pedidos por canal: a D-618, sobre o C-71 do A1 (o C-10, §7), no ar desde 20/10 (#284) | T6a ✔ (D-444, rascunho #159: entre marketplaces por conta e loja; selo "Teste", C-06) |
 | Anúncios | `/anuncios`, `/anuncios/[itemId]`, `/anuncios/shopee` | 3 + tela Shopee própria | `conta` (slug) · `loja` (uuid) | `get_listings_dashboard` · `get_shopee_listings` | — (as vendas por anúncio da Shopee desde a D-606, sobre o C-67 da D-493) | T1 ✔ (D-431: seletor levando a busca); T11 ✔ (D-490: o CSV dos anúncios da Shopee); D-494 ✔ (filtros salvos); E6 |
 | Vinculações | `/vinculacoes` | 3 | `conta` (slug, chips) | vínculo do ML | o vínculo Shopee mora em `/anuncios/shopee` (tabelas próprias, D-429) | — |
-| Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger | venda Shopee não baixa estoque: a D-495 do A1 está em desenho (decisão do dono de 19/10), e a tela (rótulos, origem "Pedido Shopee" e nota da `/estoque`) é do A2 | E8 |
+| Estoque | `/estoque`, `/estoque/movimentacoes`, ajuste | 1 | — | ledger (com a venda da Shopee desde a D-495 b, C-68) | a devolução da Shopee no estoque, a fatia (c) da D-495 do A1 (os rótulos dos movimentos novos são do A2) | D-614 ✔ (os rótulos, a origem "Pedido Shopee" e o link do pedido) |
 | Full | `/full` | 3 | `conta` (uuid) | snapshot do Full | — | — |
 | Reposição, compras | `/reposicao`, `/compras/*` (`/cobertura` redireciona) | 2, bloqueada | — | demanda de `daily_sku_metrics` (ML) + Shopee (C-65) | T-R3 ✔ (D-464): a demanda da Shopee dita pela própria RPC, o selo em "Dados usados" e a parte da Shopee na venda; T-R3b ✔ (D-466): a parte da Shopee na gaveta e na cobertura do SKU | E8 + dono |
 | Curva ABC | `/curva-abc` (+ Excel) | 2 | `conta` (slug, ML) · `marketplace` + `contas` (uuid) + filtros salvos | `get_sku_abc_*` com `p_marketplaces`/`p_account_ids` (C-60) | — | T6b ✔ (D-448: "Todos" e "Shopee", compras como critério); T6b2 ✔ (D-450: o Excel com o recorte) |
-| Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee | E7 |
-| Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | — | depois de E6 |
-| Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`) | nenhum detector gera ação Shopee | futuro |
-| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | a escrita em lote por loja (C-69, D-491: `p_shopee_shop_id` em `mark_notifications_read`, em produção desde 20/10; a tela é a D-616) e as preferências por loja (`notification_preferences` só conhece a conta do ML) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja) |
+| Preços | `/precos` (+ Excel) | 4 | `conta` (uuid) | eventos de preço do anúncio ML | não há fonte de histórico de preço Shopee (só o preço atual): o C-13 (C-81 do A1), aceito em 21/10 (liberado pelo dono; o histórico conta da captura) | C-13 |
+| Diagnóstico | `/diagnostico` | 2 (hoje só ML) | — | `daily_sku_metrics`, reclamações ML | a Shopee: a linha de base, os eventos e os preços médios (`get_sku_sales_baseline`, `get_sku_average_prices`) leem só o ML: o C-11 (C-83 do A1), aceito em 21/10 (liberado pelo dono) | — |
+| Central de Ações | `/acoes` | 2 | — | `actions` (`mlb_id`, `account_label`; a Shopee pelo `evidence.detector`) | — (os quatro detectores da Shopee desde a D-626 e a D-632; as primeiras ações nascem na rodada das 08:00 de 22/10) | D-626 ✔; D-632 ✔ |
+| Notificações | `/notificacoes`, preferências | 2 | `conta` (uuid) | `domain_events` (ML e, desde D-435, a loja Shopee) | as preferências por loja (`notification_preferences` só conhece a conta do ML, `ml_account_id`): o C-12 (C-82 do A1), aceito em 21/10 (liberado pelo dono) | T3a ✔ (rótulo e destino, D-438); D-604 ✔ (o recorte por loja); D-616 ✔ (o lote por loja, C-69) |
 | Atendimento | `/atendimento`, `[caseId]`, `metricas` | 4 | `account` (slug) | `support_*` (`ml_account_id NOT NULL`) | sem chat Shopee integrado; as devoluções da Shopee ficam em `/vendas/shopee` (D-460) | fora do plano |
 | Perguntas | `/atendimento/perguntas` | 3 | `conta` (slug) | perguntas do anúncio ML | — | — |
 | Conhecimento, templates | `/atendimento/conhecimento`, `templates` | 1 | — | organização | — | — |
@@ -70,7 +70,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
-| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas | futuro |
+| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas: o C-14 (C-84 do A1), aceito em 21/10 (liberado pelo dono) | C-14 |
 | Shell e menu | todas | 2 | — | `marketplace_accounts` conectadas (contas do ML e lojas Shopee) | — (o "N contas conectadas" conta as lojas desde a D-438; a lacuna antiga estava desatualizada, D-490 §5) | ✔ D-438 |
 | Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | — (o recorte do Mercado Livre exporta a série por dia pela leitura da própria tela desde a D-602) | T11 ✔ (D-490): pedidos e anúncios da Shopee em CSV, com o recorte da tela; D-496 ✔: `/vendas` no "Todos" e na Shopee, por dia e por conta |
 | Sugestões, fornecedores, NF-e, importações, login | — | 1 / 5 | — | organização / ERP | — | — |
@@ -234,6 +234,10 @@ linhas.
 | C-08 | Busca universal (Ctrl+K) achando loja, anúncio e pedido Shopee | `search_entities` com a Shopee — **pedido novo** | depois de E3 |
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | nada novo: `job_runs` já os tem; falta a cadência em `apps/web/lib/sync-health.ts` (horários: pedidos e financeiro às :20, catálogo às :25) | T1 |
 | C-10 | Aba Vendas do SKU: o dia a dia por canal e os pedidos da Shopee com o SKU (escolha do dono em 20/10) | o dia a dia do SKU por marketplace e `get_shopee_orders` com `p_sku_id` (abaixo); o contrato de dados é o C-71 do A1 (D-607) | D-618 depois do contrato |
+| C-11 | `/diagnostico` e o diagnóstico do SKU com a Shopee (liberado pelo dono em 21/10) | a linha de base, o preço médio e os eventos correlacionados com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-83 |
+| C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | aceito pelo A1 em 21/10 como o C-82 |
+| C-13 | Histórico de preço da Shopee em `/precos` e na aba Preços do SKU (liberado pelo dono em 21/10) | o evento de mudança de preço do modelo da Shopee e `get_price_changes` com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-81 |
+| C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | aceito pelo A1 em 21/10 como o C-84 |
 
 ### C-10 — o SKU com a Shopee: os pedidos e o dia a dia por canal (pedido ao A1 em 20/10)
 
@@ -294,6 +298,65 @@ kit; a de um componente não mostra as vendas dos kits que o contêm, em
 canal nenhum. É o que a aba já mostra hoje; os componentes seriam outro
 contrato.
 
+### C-11 a C-14 — as quatro frentes depois do item 4 (C-81 a C-84 do A1)
+
+O dono liberou as quatro em 21/10 ("todas essas opções pode adicionar"),
+perguntado pelo A2 com o item 4 no ar. O A1 aceitou em 21/10 com os números
+C-81 (o C-13) → C-82 (o C-12) → C-83 (o C-11) → C-84 (o C-14), nessa ordem, com o
+C-80 do A3 entre o C-82 e o C-83; a captura vem primeiro porque o histórico só
+conta do dia em que ela entra no ar. O que cada tela lê hoje, conferido
+no código da `main` (`c6f572d3`):
+
+**C-13, o histórico de preço.**
+- Hoje: a `/precos` (e o Excel) e a aba Preços do SKU leem
+  `get_price_changes`, que só conhece o `domain_events` `listing.price.changed`
+  com `before`/`after ->> 'price'`, a conta do ML e `listings`. Da Shopee, o
+  banco guarda só o preço atual (`current_price` e `original_price` em
+  `shopee_items` e `shopee_item_models`).
+- Pedido: um evento quando o preço de um modelo muda entre duas leituras do
+  catálogo (loja, item, modelo, antes e depois), e `get_price_changes` com a
+  Shopee: o marketplace e a loja na linha e o filtro por loja.
+- Na tela: o seletor de marketplace, a origem por canal, o link do anúncio
+  e o Excel com o recorte. Sem passado: a tela diz desde quando a Shopee é
+  registrada, e nunca "sem mudança" antes disso.
+
+**C-12, as preferências por loja.**
+- Hoje: `notification_preferences` só tem `ml_account_id`. A tela grava
+  direto sob RLS (`notification_preferences_all_own`), e a preferência só vale
+  no aviso em tempo real (`lib/notification-preferences.ts`). Esse aviso já
+  lê o `domain_events` por embed, então a `shopee_shop_id` do evento chega sem
+  mudança.
+- Pedido: a coluna `shopee_shop_id` (sem conta e loja na mesma linha), a
+  unicidade ajustada e a RLS que só grava loja que o usuário alcança.
+- Na tela: o seletor "Conta ou loja" (o da D-604) e a especificidade de
+  `shouldNotify` com a loja.
+
+**C-11, o diagnóstico.**
+- Hoje há três consumidores das mesmas RPCs: o `/diagnostico`, o diagnóstico
+  do SKU (`skus/[skuId]/actions.ts`) e o worker da venda anômala
+  (`detect-sales-anomaly-actions`, do A1). As RPCs são
+  `get_sku_sales_baseline`, `get_sku_correlated_events` e
+  `get_sku_average_prices`. A linha de base e o preço médio vêm de
+  `daily_sku_metrics` (só o ML), e os eventos só mapeiam o anúncio e o
+  pedido do ML.
+- Pedido:
+  - a linha de base com a Shopee, no padrão do C-60 (marketplaces no fim; nulo
+    é o ML de hoje), com as unidades por marketplace na linha;
+  - o preço médio com a Shopee;
+  - os eventos da Shopee na correlação (a mudança de preço do C-13 e, se fizer
+    sentido, o cancelamento e a devolução do pedido).
+- Decisão do A1, com o dono se precisar: o worker usa a mesma regra, para a
+  Central de Ações e o `/diagnostico` não divergirem.
+- Na tela: em qual canal está a queda ou a alta, e a causa da Shopee nas
+  evidências.
+
+**C-14, o Copiloto.**
+- Hoje: as sete ferramentas da api (`apps/api/src/copilot-chat.ts`) só
+  conhecem a conta do ML.
+- Pedido: as ferramentas com o marketplace e a loja (trabalho do A1, na
+  api).
+- Na tela: o rótulo das ferramentas novas no chat e o que ele mostra.
+
 ---
 
 ## 8. Sequência da web
@@ -336,7 +399,8 @@ número.
 | **D-624** | O ranking do "Todos" recortando pela marca | A1 (C-75, D-613) | ✔ D-624 (#293) |
 | **D-626** | As ações dos detectores da Shopee na Central de Ações: rótulo, anúncio e atalho | A1 (C-73, C-74, C-76) | ✔ D-626 (#293) |
 | **D-628** | O estoque do anúncio da Shopee com a hora da leitura | A1 (D-619) | ✔ D-628 (#292) |
-| **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | em código (#300); a migration está em produção desde 21/10 |
+| **D-630** | O diagnóstico do SKU mede a dispersão de preço com a régua do C-77 | A1 (C-77, D-625) e A3 | ✔ D-630 (#298) |
+| **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | ✔ D-632 (#300) |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
