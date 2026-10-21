@@ -380,6 +380,19 @@ export function evaluateRelistPreflight(
     });
   }
 
+  // D-631 b: o anúncio excluído no Mercado Livre — status `closed` com
+  // `deleted` no subestado ("deleted: é adicionado quando o item está fechado
+  // e o seller decide removê-lo", documentação oficial) — não tem o que
+  // republicar. A tela já não oferece o pedido; esta é a trava do backend.
+  const subStatus = Array.isArray(item.sub_status) ? item.sub_status : [];
+
+  if (item.status === "closed" && subStatus.includes("deleted")) {
+    blocks.push({
+      code: "EXCLUIDO_NO_MERCADO_LIVRE",
+      descricao: "O anúncio foi excluído no Mercado Livre (encerrado com o subestado deleted): não há o que republicar.",
+    });
+  }
+
   // Full (D-360). O risco que o bloqueio de D-160 existe para evitar é
   // prender unidade física no CD, e `inventory_id` sozinho não diz isso: ele
   // fica no item depois que o Full zera. Medido em 2026-09-16 no

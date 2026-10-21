@@ -51,6 +51,15 @@ describe("evaluateRelistPreflight (D-160)", () => {
     expect(result.blocks.map((issue) => issue.code)).toEqual(["JA_REPUBLICADO"]);
   });
 
+  it("D-631 b: o anúncio excluído no ML (closed + deleted) bloqueia; só encerrado, não", () => {
+    const excluido = evaluateRelistPreflight({ ...healthyItem(), status: "closed", sub_status: ["deleted"] });
+    const soEncerrado = evaluateRelistPreflight({ ...healthyItem(), status: "closed", sub_status: ["expired"] });
+
+    expect(excluido.approved).toBe(false);
+    expect(excluido.blocks.map((issue) => issue.code)).toEqual(["EXCLUIDO_NO_MERCADO_LIVRE"]);
+    expect(soEncerrado.blocks.map((issue) => issue.code)).not.toContain("EXCLUIDO_NO_MERCADO_LIVRE");
+  });
+
   it("Full pela RAIZ com unidades bloqueia — a doc de relist é silenciosa sobre o CD", () => {
     const result = evaluateRelistPreflight(
       { ...healthyItem(), inventory_id: "LCQI05831" },
