@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **540** (D-001 a D-630).
+Decisões registradas: **541** (D-001 a D-630).
 
 ## Por domínio
 
@@ -76,7 +76,7 @@ Decisões registradas: **540** (D-001 a D-630).
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 
-### banco/rls (45)
+### banco/rls (46)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -123,6 +123,7 @@ Decisões registradas: **540** (D-001 a D-630).
 - **D-465** — O "Full atual" (captura dos ultimos 3 dias) ganha o indice (organization_id, captured_at desc)
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
+- **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
 ### estoque (40)
 
