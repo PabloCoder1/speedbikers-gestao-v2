@@ -18530,3 +18530,25 @@ As três gravam em `actions` com a loja em `shopee_shop_id`, o texto pronto em `
 **Verificacao:** e2e `anuncios-shopee` 10/10. O anúncio lido do seed diz "lido há N min", com N de pelo menos 30, e a hora no `title`; o item que espera os detalhes não ganha hora.
 
 **Impacto:** `apps/web/app/(app)/anuncios/shopee/page.tsx`, `apps/web/e2e/anuncios-shopee.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-630 - O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
+
+**Contexto:** na reformulação da `/anuncios` (A3, a pedido do dono), o filtro "diferença de preço do mesmo SKU" virou o C-77 do A1 (D-625, #297). Para as duas telas não divergirem, o A1 usou a régua do diagnóstico do SKU (D-317/D-318/D-389): o preço efetivo, (maior − menor) ÷ menor e o teto de 10%. Duas decisões do A2 e do A3 de 21/10 mudaram essa régua:
+- **o conjunto do SKU é só de anúncios ativos e pausados.** O diagnóstico contava todos, e o preço velho de um anúncio encerrado acendia "divergente" num SKU alinhado;
+- **o teto compara a dispersão cheia, com `>` estrito.** O diagnóstico arredondava a uma casa antes de comparar, então 10,04% virava 10,0 e não acendia, enquanto o SQL do C-77 o acende.
+
+**Decisão:**
+1. O preço do SKU no diagnóstico (`lib/sku-diagnostico.ts`) entra só com os anúncios `active` e `paused`. A contagem dos que já têm a promoção no valor usa o mesmo conjunto.
+2. `acimaDoTeto(menor, maior)` compara em centavos inteiros, `(maior − menor) × 100 > teto × menor`. Assim não há o resíduo do ponto flutuante (89,90 e 98,89 dão exatos 10%), e a conta bate com o `numeric` do SQL. O número exibido continua com uma casa.
+3. A régua mostrada na tela diz também "só anúncios ativos e pausados".
+
+**Publicação:** só a web. Ela não depende da migration do C-77, porque o diagnóstico calcula a partir da `get_sku_listings`, que já existe, e corrige o falso alarme do encerrado desde já. Quando a lista ganhar o filtro (A3, fatia B, depois da migration `20261021140000`), as duas telas acendem nos mesmos casos.
+
+**Verificacao:**
+- **unitários:** `lib/sku-diagnostico.test.ts`, 21 testes, 3 novos:
+  - o encerrado com preço velho não acende;
+  - 10,04% acende;
+  - os limites de `acimaDoTeto` em ponto flutuante e com o menor preço zero.
+- **e2e:** `diagnostico`, `sku-dashboard` e `anuncio-detalhe` 20/20, no stack isolado com o banco recriado.
+
+**Impacto:** `apps/web/lib/{sku-diagnostico.ts,sku-diagnostico.test.ts}` e `docs/{DECISIONS,DECISIONS_INDEX}.md`; nenhuma migration, RPC, worker ou api.
