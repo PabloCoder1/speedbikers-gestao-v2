@@ -195,6 +195,13 @@ test("/vendas: no 'Todos', a marca do produto da loja live recorta a Shopee pelo
 
     await expect(loja.getByRole("cell").nth(1)).toContainText(dinheiro("1.100,00"));
     await expect(loja.getByRole("cell").nth(2)).toHaveText("—");
+
+    // D-624 (C-75): o ranking recorta pela marca — só o produto da loja live, com os R$ 1.100.
+    const ranking = page.getByRole("table", { name: "Produtos que mais venderam" });
+
+    await expect(ranking.locator("tbody tr")).toHaveCount(1);
+    await expect(ranking.locator("tbody tr")).toContainText(LOJA_LIVE.skuTitulo);
+    await expect(ranking.locator("tbody tr")).toContainText(dinheiro("1.100,00"));
     await semErro(page);
   } finally {
     await db.from("skus").update({ supplier_brand: null, supplier_brand_source: null }).eq("id", skuId);
