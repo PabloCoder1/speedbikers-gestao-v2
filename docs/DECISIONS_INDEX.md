@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **535** (D-001 a D-628).
+Decisões registradas: **536** (D-001 a D-628).
 
 ## Por domínio
 
@@ -237,7 +237,7 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (97)
+### mercado-livre (98)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -335,6 +335,7 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-619** — O estoque do anuncio da Shopee fresco: a releitura a cada 6 horas, e a ruptura so com a leitura boa e recente
 - **D-621** — A pergunta apagada no Mercado Livre sai da fila "Pendente", e a reconciliacao rele a pergunta aberta que a varredura nao viu
 - **D-622** — A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
+- **D-623** — O resumo de cobertura da Home volta a contar a venda da Shopee: a D-615 tinha so o ML
 - **D-628** — O estoque do anúncio da Shopee diz de quando é a leitura
 
 ### outros (77)
