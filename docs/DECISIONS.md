@@ -18761,6 +18761,12 @@ Lido no codigo e em producao (so contagem):
 
 A varredura seguinte de cada conta marca os excluidos que ja existem, e da em diante a notificacao marca na hora.
 
+**Resultado em producao (21/10):** as migrations no run `39665807654`, o worker `worker-00056-wjk` e a api `api-00038-qsf` (`dc69d1fb`).
+- A notificacao `items` passou a virar `sync.listing.item` na hora, sem falha.
+- A varredura das 21:00 UTC releu, nas quatro contas, o que o ML nao listava mais e marcou o acumulo como excluido, todo pelo subestado `deleted` (nenhum por 404). A SbMotos, onde o dono apagou anuncios, tinha a maior parte.
+- Depois dela, nenhum anuncio vivo ficou sem leitura ha mais de um dia em conta nenhuma.
+- O anuncio CRIADO ainda nao foi visto em producao: ninguem criou anuncio na janela. O caminho e o mesmo `sync.listing.item`, coberto pelos testes.
+
 **Impacto:**
 - `supabase/migrations/20261021170000_anuncio_excluido_sai_das_telas.sql` e `20261021180000_anuncio_excluido_fora_das_contagens.sql` (D-631 b);
 - `packages/domain/src/listings/relist-preflight{,.test}.ts` (D-631 b);
