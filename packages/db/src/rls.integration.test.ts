@@ -24389,3 +24389,108 @@ describe("o ledger com a venda da Shopee (D-495)", () => {
     expect(semPedido).toMatchObject({ shopee_shop_id: null, shopee_order_day: null });
   });
 });
+
+/*
+  D-619: o estoque do anúncio da Shopee fresco. A venda baixa o estoque na
+  Shopee sem mudar o update_time do item: a fila do detalhe relê o item ativo
+  lido há mais de 6 horas, e a ruptura (D-611) só lê o estoque da última
+  leitura boa e não roda com o catálogo atrasado (30 horas).
+*/
+describe("o estoque do anúncio da Shopee fresco (D-619)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d619";
+  const LOJA = "dddd6190-0000-4000-8000-0000000a0619";
+
+  const sincronizar = async (dia: string) =>
+    (
+      await client.query<{ r: { fontes: string[]; criadas: number; encerradas: number } }>(
+        "select public.sincronizar_alertas_central($1, $2::date, array['shopee_ruptura']) as r",
+        [ORG, dia],
+      )
+    ).rows[0]?.r;
+
+  const acoes = async () =>
+    (
+      await client.query<{ subject_key: string; status: string; detector: Record<string, unknown>; evidencias: { tipo: string; descricao: string }[] }>(
+        `select subject_key, status, evidence -> 'detector' as detector, evidence -> 'evidencias' as evidencias
+           from public.actions where organization_id = $1 and kind = 'shopee_ruptura' order by subject_key`,
+        [ORG],
+      )
+    ).rows;
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-619', 'org-d619') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at, items_synced_until)
+       values ($1, $2, 'live', 990619001, 'Loja Real', 'CONNECTED', now() - interval '60 days', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    // 1: zerado, lido agora. 2: zerado, mas a última leitura falhou (o estoque
+    // é o de antes). 3: com estoque, lido agora. 4: fora do ar, lido há 2 dias.
+    // 5: com estoque, lido há 7 horas (e mudado antes do 3, para a ordem ser a
+    // da leitura, não a da mudança).
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, has_model, details_synced_at, details_update_time, details_error, available_stock)
+       values ($1, $2, 1, 'NORMAL', now() - interval '3 days', 'Zerado', false, now(), now() - interval '3 days', null, 0),
+              ($1, $2, 2, 'NORMAL', now() - interval '3 days', 'Zerado, leitura falhou', false, now(), now() - interval '3 days', 'nao_devolvido', 0),
+              ($1, $2, 3, 'NORMAL', now() - interval '3 days', 'Com estoque', false, now(), now() - interval '3 days', null, 4),
+              ($1, $2, 4, 'UNLIST', now() - interval '3 days', 'Fora do ar', false, now() - interval '2 days', now() - interval '3 days', null, 0),
+              ($1, $2, 5, 'NORMAL', now() - interval '4 days', 'Lido há 7 horas', false, now() - interval '7 hours', now() - interval '4 days', null, 2)
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $2, 'D619-O1', 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z')
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, model_id, quantity, discounted_price)
+       values ($1, 'D619-O1', 0, $2, 1, null, 1, 40), ($1, 'D619-O1', 1, $2, 2, null, 1, 30), ($1, 'D619-O1', 2, $2, 3, null, 1, 20)
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = $1", [ORG]);
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  it("a ruptura só com o estoque da última leitura boa, e com a hora dela", async () => {
+    const r = await sincronizar("2026-10-12");
+    const [acao, ...resto] = await acoes();
+
+    expect(r?.fontes).toEqual(["shopee_ruptura"]);
+    // O 2 está zerado, mas a última leitura falhou: o estoque é o de antes.
+    expect(r?.criadas).toBe(1);
+    expect(resto).toHaveLength(0);
+    expect(acao?.subject_key).toBe(`${LOJA}:1:-`);
+    expect(typeof acao?.detector.estoque_lido_em).toBe("string");
+    expect(acao?.evidencias.find((e) => e.tipo === "estoque")?.descricao).toMatch(
+      /^O estoque do anúncio na Shopee estava zerado na leitura de \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}, e o anúncio segue ativo\.$/,
+    );
+  });
+
+  it("com um item ativo sem leitura boa há 30 horas, a fonte não roda e nada se encerra", async () => {
+    await client.query("update public.shopee_items set details_synced_at = now() - interval '31 hours' where shopee_shop_id = $1 and item_id = 3", [LOJA]);
+    // O 1 voltou a ter estoque, mas a leitura do 3 está atrasada: nada se conclui.
+    await client.query("update public.shopee_items set available_stock = 6 where shopee_shop_id = $1 and item_id = 1", [LOJA]);
+
+    const dias = [];
+
+    for (const dia of ["2026-10-13", "2026-10-14", "2026-10-15"]) dias.push(await sincronizar(dia));
+
+    expect(dias.map((r) => r?.fontes)).toEqual([[], [], []]);
+    expect((await acoes()).map((a) => a.status)).toEqual(["novo"]);
+  });
+
+  it("a fila relê o item ativo lido há mais de 6 horas, o mais antigo primeiro", async () => {
+    const pendentes = await client.query<{ item_id: string }>("select item_id from public.shopee_items_details_pending($1, 50)", [LOJA]);
+
+    // 3 (31 horas) antes de 5 (7 horas). Fora: 1 (agora), 2 (falhou agora:
+    // o recuo de 1 dia), 4 (fora do ar).
+    expect(pendentes.rows.map((r) => r.item_id)).toEqual(["3", "5"]);
+  });
+});
