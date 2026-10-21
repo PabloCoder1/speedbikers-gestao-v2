@@ -20179,6 +20179,30 @@ describe("get_detector_frete (D-397)", () => {
     await expect(asAnon(`select public.get_detector_frete('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
   });
 
+  it("D-631 b: o anúncio excluído no Mercado Livre não vira alerta de frete", async () => {
+    const antes = await detector(ADMIN_SB);
+
+    expect(antes.alertas.some((x) => x.anuncio === "MLB9700001")).toBe(true);
+
+    await client.query(
+      "update public.listings set deleted_at = now() where ml_account_id = $1 and item_id = 'MLB9700001'",
+      [CONTA],
+    );
+
+    try {
+      const depois = await detector(ADMIN_SB);
+
+      expect(depois.alertas.some((x) => x.anuncio === "MLB9700001")).toBe(false);
+      // Ele segue na análise (o resumo conta o que foi analisado).
+      expect(depois.resumo.analisados).toBe(antes.resumo.analisados);
+    } finally {
+      await client.query(
+        "update public.listings set deleted_at = null where ml_account_id = $1 and item_id = 'MLB9700001'",
+        [CONTA],
+      );
+    }
+  });
+
   it("D-403: a sincronização grava provável e forte como ações, uma por anúncio e faixa", async () => {
     // Numa transação desfeita (D-411): os alertas altos viram `domain_event`,
     // que é append-only e prenderia a conta `rlstest` desta suíte na limpeza
@@ -25029,6 +25053,58 @@ describe("o anúncio excluído no Mercado Livre sai das telas (D-631)", () => {
     expect(faixa.rows[0]).toEqual({ total: "1", active: "1" });
     expect(doSku.rows.map((l) => l.item_id)).toEqual(["MLB6310001"]);
     expect((vinculos.rows[0]?.r.linhas ?? []).map((l) => l.item_id)).toEqual(["MLB6310001"]);
+  });
+
+  it("D-631 b: /produtos, a curadoria, /contas, a integridade de vínculo e a queda ignoram o excluído", async () => {
+    // Um vínculo ITEM para o anúncio excluído: ele não conta pelo vínculo.
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id)
+       values ($1, $2, $3, 'ITEM', 'MLB6310002') on conflict do nothing`,
+      [ORG, CONTA, sku],
+    );
+
+    // As telas conferem o papel de quem chama: o ADMIN de teste vira membro
+    // (e fica: a guarda do ultimo ADMIN nao deixa remove-lo).
+    await client.query(
+      "insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing",
+      [ORG, ADMIN_SB],
+    );
+
+    // A /produtos devolve jsonb: a linha do SKU em `linhas`.
+    const produtos = await asUser<{ listing_count: string }>(
+      ADMIN_SB,
+      `select (l ->> 'listing_count') as listing_count
+       from jsonb_array_elements(public.get_products_overview('${ORG}') -> 'linhas') as l
+       where l ->> 'sku_id' = '${sku}'`,
+    );
+    const curadoria = await asUser<{ listing_count: string }>(
+      ADMIN_SB,
+      `select listing_count::text from public.get_sku_curation('${ORG}') where sku_id = '${sku}'`,
+    );
+    const cartoes = await asUser<{ listings_count: string }>(
+      ADMIN_SB,
+      `select listings_count::text from public.get_ml_account_cards('${ORG}') where id = '${CONTA}'`,
+    );
+    const integridade = await asUser<{ listings_total: string }>(
+      ADMIN_SB,
+      `select listings_total::text from public.get_link_integrity('${ORG}') where ml_account_id = '${CONTA}'`,
+    );
+
+    await client.query("select public.recalcular_queda_anuncios($1)", [ORG]);
+
+    const queda = await client.query<{ item_id: string }>(
+      "select distinct item_id from public.listing_sales_drop where organization_id = $1",
+      [ORG],
+    );
+
+    expect(produtos).toEqual([{ listing_count: "1" }]);
+    expect(curadoria).toEqual([{ listing_count: "1" }]);
+    expect(cartoes).toEqual([{ listings_count: "1" }]);
+    expect(integridade).toEqual([{ listings_total: "1" }]);
+    expect(queda.rows.map((r) => r.item_id)).toEqual(["MLB6310001"]);
+
+    await client.query("delete from public.listing_sales_drop where organization_id = $1", [ORG]);
+    await client.query("delete from public.sku_listing_links where organization_id = $1", [ORG]);
   });
 
   it("a linha excluída continua no banco, com o subestado", async () => {
