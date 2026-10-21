@@ -18265,3 +18265,112 @@ As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamen
 - e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-621 - A pergunta apagada no Mercado Livre sai da fila "Pendente", e a reconciliacao rele a pergunta aberta que a varredura nao viu
+
+**Contexto:** achado de 21/10, ao conferir os erros do worker depois da reconciliacao do UpSeller. O `sync.support.questions` falha todo dia com 404 em `GET /questions/{id}`, a pergunta apagada no Mercado Livre (D-201). A D-201 parou a repeticao do job, mas o caso ficava `UNANSWERED` e `NOVO` na V3 para sempre.
+
+Na leitura de producao (so contagem e proporcao):
+- todas as perguntas que deram 404 desde 14/09 estao na V3 como `UNANSWERED`/`NOVO`;
+- elas sao ~87% das perguntas abertas: a fila "Pendente" de `/atendimento/perguntas` era quase toda de perguntas que nao existem mais.
+
+A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre. Ela nunca fecharia uma pergunta que saiu desse conjunto. A lacuna que `docs/MERCADO_LIVRE.md` registrava (a pergunta respondida fora da V3 com o webhook perdido) e a mesma, e agora tem evidencia.
+
+**Decisao:**
+1. **O 404 e a pergunta apagada:** o job marca o caso `external_status = DELETED`, o status oficial, com a resposta bloqueada (`STATUS_DELETED`, o formato que o mapper ja usa).
+   - O case que ninguem triou resolve pela MESMA transicao guardada da pergunta encerrada no Mercado Livre (D-102): esperado `NOVO`, a mesma chave `auto-resolve:<case>`, e quem ja esta triando nao e atropelado.
+   - O instante e o da observacao: o Mercado Livre nao diz quando apagou.
+   - O job conclui com um aviso (`sync_support_question_deleted_remotely`), e nao mais com `job_failed`. A pergunta que a V3 nunca gravou conclui sem trabalho.
+   - Na tela, a pergunta passa da aba "Pendente" para a aba "Deletado", que ja existe.
+2. **A reconciliacao rele o que nao viu:** depois de uma varredura completa (nao truncada), toda pergunta `UNANSWERED` da conta na V3 que a varredura nao listou e relida por ID, pelo mesmo `sync.support.questions` do webhook.
+   - O job leva `source = RECONCILIATION`, para a auditoria do evento.
+   - Respondida fora, ela resolve pela D-102; apagada, pela regra 1; ainda aberta, nada muda.
+   - Reler uma pergunta aberta custa so uma leitura, entao a varredura nao precisa ser perfeita.
+   - Sao no maximo 200 por rodada, as mais antigas primeiro, e cada pergunta no maximo uma vez por dia (o dedupe leva o dia).
+   - As abertas sao lidas em paginas de 1.000.
+   - A falha dessa leitura nao derruba a reconciliacao ja gravada: volta na rodada seguinte.
+
+**Verificacao:**
+- **Testes do worker:** 54 nos quatro arquivos de perguntas, 11 deles novos.
+  - O 404 marca e conclui, sem persistir.
+  - O 404 de pergunta nunca gravada conclui sem trabalho.
+  - A falha ao marcar e retryable.
+  - A origem `RECONCILIATION` chega a persistencia.
+  - A marcacao grava `DELETED` e pede a transicao guardada com a chave e o instante.
+  - A releitura so das nao vistas, da conta, com a fila e o dedupe do dia.
+  - Nada com a varredura truncada, as paginas de 1.000 e o teto de 200.
+  - A falha da leitura das abertas nao derruba.
+  - Os IDs vistos incluem a falha de persistencia e excluem o seller divergente.
+- **Mutacao:** 7, e cada uma derruba testes:
+  - o 404 sem a regra;
+  - a releitura sem o filtro do visto;
+  - a releitura com a varredura truncada;
+  - a releitura sem teto;
+  - a apagada sem a resolucao;
+  - a apagada sem o status oficial;
+  - a varredura sem os vistos.
+
+**Publicacao:** so o worker, sem migration.
+- Vai no proximo deploy do worker, o das fontes novas da Central, que espera as migrations de producao.
+- Na primeira hora depois dele, as rodadas de 10 minutos releem as perguntas abertas que o Mercado Livre nao lista mais, e a fila "Pendente" fica so com o que existe.
+
+**Impacto:** `apps/worker/src/handlers/{sync-support-question,sync-support-questions-reconcile,ml-support-questions-fetch,persist-support-question}{,.test}.ts`, `apps/worker/src/index.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
+
+## D-622 - A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
+
+**Contexto:** a parte (a2) do item 4 do dono, de 20/10. O "Todos" de `/vendas` dizia que o filtro de marca era só do ML. O C-72 do A1 (D-605) pôs `p_supplier_brand` e `p_sem_marca` no fim das quatro funções do "Todos" (resumo, série, hoje e cancelamento), com a regra do ML (D-237) e o grão de SKU dos dois canais. Sob marca, compras, ticket, recebido e cancelamento vêm NULOS, porque o pack e o pedido atravessam produtos. A migration `20261020170000` está em produção desde 20/10, 19:09 UTC.
+
+**Decisão:**
+1. **O mesmo menu e a mesma URL da tela do ML:**
+   - `marca=` e `semMarca=1`, com o "Sem marca", que é a venda sem produto vinculado e o produto sem marca, nos dois canais;
+   - a lista vem do banco (`get_supplier_brands`, D-194);
+   - a troca de marketplace leva a marca nos dois sentidos, porque a tela do ML lê os mesmos nomes; o `/faturamento` e a `/vendas/shopee` não a recebem;
+   - "Limpar filtros" tira contas e marca.
+2. **A marca vai às funções do C-72 só com valor**, na leitura da tela e no CSV (o arquivo ganha `-marca-…` ou `-sem-marca` no nome, como o do ML).
+3. **O que não se aplica sob marca é dito, nunca zero:**
+   - compras e ticket médio: "—" com a ressalva na célula;
+   - o cancelamento: a célula diz que não se aplica, de cara. A leitura nem sai, e o C-72 a devolveria NULA;
+   - a compra sai das métricas do gráfico, e `metric=compras` cai no faturamento;
+   - a nota abaixo do hoje explica de onde vêm unidades e receita e o que não se aplica.
+4. **O ranking de produtos (C-59) não recorta por marca.** Sob marca, o painel diz isso, com o link para o mesmo recorte sem marca, em vez de mostrar o ranking inteiro como se fosse da marca. O C-75 do A1 (D-613, #286) põe o mesmo recorte no `get_marketplace_sku_sales`. Quando a migration `20261020200000` estiver em produção, a D-624 passa a mandá-lo, só com valor, e o aviso sai..
+
+**Publicação:** só a web. A migration está em produção. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:**
+  - o endereço com a marca e o "sem marca";
+  - a marca atravessando para o ML e para a Shopee, e fora do `/faturamento`;
+  - as métricas do gráfico sob marca;
+  - a ressalva da faixa.
+- **e2e:**
+  - no seed, que não cadastra marca:
+    - o "Todos" sem marca é igual ao ML sem marca;
+    - compras, ticket e cancelamento são "—" com o porquê;
+    - a compra sai do gráfico, e o ranking diz que não recorta;
+    - o CSV e o caminho de volta ao ML levam a marca;
+  - no ensaio da loja live, uma marca só do produto dela, durante o teste: a faixa com exatamente R$ 1.100 e 11 unidades, e a linha da loja com a receita e a compra "—".
+- **Suíte inteira:** com o banco recriado do zero, 257 de 258 na 3300, os 14 do ensaio da loja live e os 3 de convite na 3000. A falha foi um teste antigo que afirmava que só o período atravessa do ML para a Shopee; a regra mudou de propósito, o teste foi atualizado e o spec passou 10/10..
+
+**Impacto:**
+- web:
+  - `apps/web/app/(app)/vendas/{multicanal.tsx,page.tsx,exportar/route.ts}`;
+  - `apps/web/lib/vendas-multicanal.ts` e o teste;
+- db: `packages/db/src/types.ts`, só a CORRECAO MANUAL de `get_marketplace_sales_daily.compras` (NULA sob marca), a pedido do A1;
+- e2e: `vendas-multicanal.spec.ts`, `ensaio-loja-live.spec.ts` e `vendas-shopee.spec.ts` (a marca agora atravessa do ML para a Shopee);
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
+
+## D-628 - O estoque do anúncio da Shopee diz de quando é a leitura
+
+**Contexto:** o A1 achou na D-619 que a venda baixa o estoque na Shopee sem mudar o `update_time` do item. Com isso, o estoque de `/anuncios/shopee` ficava com dias de atraso (mediana de ~5 dias). A fila dele passa a reler o item ativo a cada 6 h, mas a leitura continua tendo uma hora, e o número não dizia qual. A lista (`get_shopee_listings`) já devolve `details_synced_at`.
+
+**Decisão:**
+- Embaixo do estoque, quando ele existe e a hora da leitura também: "lido há N min" (ou "há N h", "há N dias"), pelo `formatAge` das outras telas, com a data e a hora completas no `title`.
+- Depois de 7 dias, "lido em <dia>", no fuso de negócio (`formatDay`).
+- O item ainda não lido continua "—", sem hora inventada.
+
+**Publicação:** só a web. A coluna já está em produção, sem migration nem parâmetro novo.
+
+**Verificacao:** e2e `anuncios-shopee` 10/10. O anúncio lido do seed diz "lido há N min", com N de pelo menos 30, e a hora no `title`; o item que espera os detalhes não ganha hora.
+
+**Impacto:** `apps/web/app/(app)/anuncios/shopee/page.tsx`, `apps/web/e2e/anuncios-shopee.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.

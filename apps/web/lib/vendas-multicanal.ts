@@ -18,6 +18,7 @@ import { DEFAULT_PERIOD_DAYS } from "./period";
 import type { KpiCellData } from "../components/kpi-strip";
 import { formatCount, formatCurrency } from "./format";
 import type { SalesMetric } from "./sales-metric";
+import type { FiltroDeMarca } from "./vendas-ml-filtros";
 
 /** O recorte de marketplace de `/vendas`. `ml` é a tela de sempre. */
 export type EscopoVendas = "ml" | "todos" | "shopee";
@@ -126,6 +127,19 @@ export interface RecorteDeVendas {
   /** Só existe fora do ML: na tela de sempre a conta é `account=<slug>`. */
   readonly contas: readonly ContaDoSeletor[] | null;
   readonly metrica: string;
+  /**
+   * A marca do recorte (D-622, sobre o C-72): os MESMOS parâmetros da tela do
+   * ML (`marca=` e `semMarca=1`, D-237), para a troca de marketplace levar a
+   * marca junto. Só `/vendas` a conhece; ausente é "todas as marcas".
+   */
+  readonly marca?: FiltroDeMarca;
+}
+
+const TODAS_AS_MARCAS: FiltroDeMarca = { kind: "todas" };
+
+/** Há recorte de marca: compras, ticket, recebido e cancelamento não se aplicam (C-72, D-237). */
+export function sobMarca(recorte: Pick<RecorteDeVendas, "marca">): boolean {
+  return recorte.marca !== undefined && recorte.marca.kind !== "todas";
 }
 
 const METRICA_PADRAO = "faturamento";
@@ -159,15 +173,20 @@ export function hrefDoRecorte(
   const contasBase = troca.contas === undefined ? atual.contas : troca.contas;
   const contas =
     escopo === "ml" || contasBase === null ? null : contasBase.filter((conta) => cabeNoEscopo(conta, escopo));
+  // A marca vale nos três recortes de `/vendas` (a tela do ML lê os mesmos nomes); o `/faturamento` não a tem.
+  const marca = tela === "/vendas" ? (troca.marca ?? atual.marca ?? TODAS_AS_MARCAS) : TODAS_AS_MARCAS;
 
   return buildFilterHref(
     tela,
     {
-      marketplace: escopo === ESCOPO_PADRAO[tela] ? null : escopo,
+      // Com marca, o "Todos" é explícito: sem `marketplace`, a marca na URL abre o ML (o link antigo, D-488).
+      marketplace: escopo === ESCOPO_PADRAO[tela] && marca.kind === "todas" ? null : escopo,
       ...("from" in periodo
         ? { from: periodo.from, to: periodo.to }
         : { days: periodo.days === DEFAULT_PERIOD_DAYS ? null : String(periodo.days) }),
       contas: contas === null || contas.length === 0 ? null : contas.map((conta) => conta.account_id).join(","),
+      marca: marca.kind === "marca" ? marca.value : null,
+      semMarca: marca.kind === "sem_marca" ? "1" : null,
       // A métrica do ML (`pedidos`, `packs`) não existe no consolidado, e a
       // daqui (`compras`) não existe no ML: a troca de tela volta ao padrão.
       metric: escopo === atual.escopo && metrica !== METRICA_PADRAO ? metrica : null,
@@ -210,8 +229,17 @@ export const METRICAS_MULTICANAL: readonly SalesMetric[] = [
   },
 ];
 
-export function resolverMetricaMulticanal(raw: unknown): SalesMetric {
-  return METRICAS_MULTICANAL.find((metrica) => metrica.key === raw) ?? FATURAMENTO;
+export function resolverMetricaMulticanal(raw: unknown, comMarca = false): SalesMetric {
+  return metricasDoRecorte(comMarca).find((metrica) => metrica.key === raw) ?? FATURAMENTO;
+}
+
+/**
+ * As métricas que o gráfico oferece. Sob marca, a compra sai (D-622): o pack e
+ * o pedido atravessam produtos, e a série dela vem NULA do C-72 — oferecer a
+ * opção desenharia um gráfico vazio.
+ */
+export function metricasDoRecorte(comMarca: boolean): readonly SalesMetric[] {
+  return comMarca ? METRICAS_MULTICANAL.filter((metrica) => metrica.field !== "purchases_count") : METRICAS_MULTICANAL;
 }
 
 /** Uma linha de `get_marketplace_sales_summary`. */
@@ -264,7 +292,8 @@ export function agruparLinhas(linhas: readonly LinhaDeVendas[]): {
 export interface DiaDeVendas {
   readonly dia: string;
   readonly marketplace: CodigoMarketplace | null;
-  readonly compras: number;
+  /** NULA sob recorte de marca (C-72): o pack e o pedido atravessam produtos. */
+  readonly compras: number | null;
   readonly unidades: number;
   readonly receita_bruta: number | null;
   readonly pedidos_sem_receita: number;
@@ -318,6 +347,9 @@ export function antesDoHistoricoShopee(dataInicial: string, hoje: string): boole
   return dataInicial < shiftBusinessDate(hoje, -HISTORICO_SHOPEE_DIAS);
 }
 
+/** Por que a compra, o ticket, o recebido e o cancelamento são "—" sob marca (C-72, D-237). */
+export const NAO_SE_APLICA_SOB_MARCA = "não se aplica sob recorte de marca: o pack e o pedido atravessam produtos";
+
 /** O número formatado, ou "—" quando ele não existe (nunca zero no lugar de ausência). */
 export function valorOuTraco(valor: number | null, formatar: (n: number) => string): string {
   return valor === null ? "—" : formatar(valor);
@@ -333,8 +365,11 @@ export function valorOuTraco(valor: number | null, formatar: (n: number) => stri
 export function celulasDaFaixaMulticanal(
   total: LinhaDeVendas | null,
   totalAnterior: LinhaDeVendas | null,
+  comMarca = false,
 ): KpiCellData[] {
   const anteriorTem = totalAnterior !== null;
+  // D-622: sob marca, a compra e o ticket vêm NULOS do C-72, e a célula diz por quê.
+  const naoSeAplica = comMarca ? { ressalva: NAO_SE_APLICA_SOB_MARCA } : {};
 
   return [
     {
@@ -354,6 +389,7 @@ export function celulasDaFaixaMulticanal(
       formula: "O pack do Mercado Livre e o pedido da Shopee — a compra do cliente nos dois",
       value: valorOuTraco(total?.compras ?? null, formatCount),
       previous: anteriorTem ? valorOuTraco(totalAnterior.compras, formatCount) : null,
+      ...naoSeAplica,
     },
     {
       metricId: "multicanal_unidades",
@@ -368,6 +404,7 @@ export function celulasDaFaixaMulticanal(
       formula: "receita bruta ÷ compras de receita conhecida, recalculado sobre a soma — nunca média de médias",
       value: valorOuTraco(total?.ticket_medio ?? null, formatCurrency),
       previous: anteriorTem ? valorOuTraco(totalAnterior.ticket_medio, formatCurrency) : null,
+      ...naoSeAplica,
     },
   ].map((celula) => (total === null ? { ...celula, ressalva: "nenhuma conta com venda somável neste recorte" } : celula));
 }

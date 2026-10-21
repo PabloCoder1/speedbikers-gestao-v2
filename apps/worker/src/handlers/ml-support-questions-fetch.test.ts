@@ -153,6 +153,16 @@ describe("fetchSupportQuestions", () => {
     expect(lines.join()).toContain("support_questions_seller_mismatch");
   });
 
+  it("devolve os IDs vistos da conta, com o que falhou ao persistir e sem o de outro seller (D-621)", async () => {
+    persistSupportQuestionMock.mockRejectedValueOnce(new Error("database unavailable"));
+    const { client } = pagingClient([[question(1), question(2, { seller_id: 999_999 }), question(3)]]);
+
+    const result = await fetchSupportQuestions(params(client));
+
+    // A falha ao persistir é da V3: a pergunta segue aberta no Mercado Livre.
+    expect(result.seenQuestionIds).toEqual([1, 3]);
+  });
+
   it("uma pergunta que falha ao persistir não derruba a varredura das outras", async () => {
     const { client } = pagingClient([[question(1), question(2), question(3)]]);
     const lines: string[] = [];

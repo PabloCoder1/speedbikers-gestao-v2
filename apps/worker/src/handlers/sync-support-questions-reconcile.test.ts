@@ -6,6 +6,7 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EnqueueRequest, Enqueuer } from "../enqueue.js";
 import type { fetchSupportQuestions } from "./ml-support-questions-fetch.js";
 import type { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -24,7 +25,7 @@ vi.mock("./sync-runs.js", () => ({
   recordSyncRunFailure: recordSyncRunFailureMock,
 }));
 
-const { createSyncSupportQuestionsReconcileHandler } = await import(
+const { createSyncSupportQuestionsReconcileHandler, MAX_QUESTION_RECHECKS } = await import(
   "./sync-support-questions-reconcile.js"
 );
 
@@ -50,6 +51,7 @@ const DEFAULT_ACCOUNT = {
   organization_id: ORGANIZATION_ID,
   seller_id: SELLER_ID,
   status: "CONNECTED",
+  slug: "loja",
 };
 
 const OK_RESULT = {
@@ -58,6 +60,7 @@ const OK_RESULT = {
   itemsRejected: 0,
   remoteTotal: 3,
   truncated: false,
+  seenQuestionIds: [101, 102, 103],
 };
 
 function chain<T>(result: T) {
@@ -70,14 +73,43 @@ interface FakeDbOptions {
   accountError?: { message: string } | null;
   /** Sem linha de credencial: `ensureAccessToken` falha definitivo, sem tocar a rede. */
   credentialsMissing?: boolean;
+  /** D-621: os `external_case_id` das perguntas `UNANSWERED` da conta na V3, na ordem da leitura. */
+  openCases?: string[];
+  openCasesError?: { message: string };
 }
 
-function fakeDb(options: FakeDbOptions = {}) {
+interface OpenCasesQuery {
+  filters: [string, unknown][];
+  ranges: [number, number][];
+}
+
+function fakeDb(options: FakeDbOptions = {}, query: OpenCasesQuery = { filters: [], ranges: [] }) {
   const account = "account" in options ? options.account : DEFAULT_ACCOUNT;
 
   return {
     from: (table: string) => ({
       select: () => {
+        if (table === "support_cases") {
+          const self = {
+            eq: (column: string, value: unknown) => {
+              query.filters.push([column, value]);
+              return self;
+            },
+            order: () => self,
+            range: (from: number, to: number) => {
+              query.ranges.push([from, to]);
+
+              return Promise.resolve(
+                options.openCasesError === undefined
+                  ? { data: (options.openCases ?? []).slice(from, to + 1).map((id) => ({ external_case_id: id })), error: null }
+                  : { data: null, error: options.openCasesError },
+              );
+            },
+          };
+
+          return self;
+        }
+
         if (table === "ml_accounts") {
           return chain({ data: account ?? null, error: options.accountError ?? null });
         }
@@ -105,18 +137,30 @@ function fakeDb(options: FakeDbOptions = {}) {
 
 function run(options: FakeDbOptions = {}, payload: unknown = { mlAccountId: ML_ACCOUNT_ID }) {
   const lines: string[] = [];
+  const enqueued: EnqueueRequest[] = [];
+  const query: OpenCasesQuery = { filters: [], ranges: [] };
   const client: MercadoLivreClient = { request: () => Promise.reject(new Error("não usado")) };
+  const enqueuer: Enqueuer = {
+    enqueue: (request) => {
+      enqueued.push(request);
+
+      return Promise.resolve({ taskName: request.dedupeKey, envelope: {} as never, deduplicated: false });
+    },
+  };
 
   const handler = createSyncSupportQuestionsReconcileHandler({
-    db: fakeDb(options) as never,
+    db: fakeDb(options, query) as never,
     mercadoLivre: client,
     oauth: OAUTH_CONFIG,
     encryptionKey: ENCRYPTION_KEY,
+    enqueuer,
     now: () => NOW,
   });
 
   return {
     lines,
+    enqueued,
+    query,
     outcome: handler(ENVELOPE, {
       payload,
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
@@ -270,5 +314,67 @@ describe("createSyncSupportQuestionsReconcileHandler", () => {
     expect(await outcome).toMatchObject({ status: "failed" });
     expect(fetchSupportQuestionsMock).not.toHaveBeenCalled();
     expect(recordSyncRunFailureMock).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+    D-621: a pergunta aberta na V3 que a varredura completa não viu foi
+    respondida fora, apagada ou retida: a reconciliação a relê por ID.
+  */
+  it("relê uma a uma as perguntas abertas na V3 que a varredura completa não viu, com a origem", async () => {
+    const { outcome, enqueued, query, lines } = run({ openCases: ["100", "101", "104"] });
+
+    expect(await outcome).toEqual({ status: "done", processed: 3 });
+    // Só as perguntas abertas DESTA conta.
+    expect(query.filters).toEqual(
+      expect.arrayContaining([
+        ["organization_id", ORGANIZATION_ID],
+        ["ml_account_id", ML_ACCOUNT_ID],
+        ["channel", "QUESTION"],
+        ["external_status", "UNANSWERED"],
+      ]),
+    );
+    expect(enqueued).toEqual([
+      {
+        jobType: "sync.support.questions",
+        organizationId: ORGANIZATION_ID,
+        dedupeKey: `support-question-recheck:${ML_ACCOUNT_ID}:100:2026-08-25`,
+        queue: "ml-sync-loja",
+        payload: { mlAccountId: ML_ACCOUNT_ID, questionId: 100, source: "RECONCILIATION" },
+      },
+      expect.objectContaining({ dedupeKey: `support-question-recheck:${ML_ACCOUNT_ID}:104:2026-08-25` }),
+    ]);
+    expect(lines.join()).toContain('"stale_open":2');
+  });
+
+  it("a varredura truncada não relê nada: ela não diz o que está aberto", async () => {
+    fetchSupportQuestionsMock.mockResolvedValue({ ...OK_RESULT, truncated: true, seenQuestionIds: [] });
+
+    const { outcome, enqueued, query } = run({ openCases: ["100"] });
+
+    await outcome;
+    expect(query.ranges).toEqual([]);
+    expect(enqueued).toEqual([]);
+  });
+
+  it("lê as abertas em páginas e relê no máximo o teto por rodada, as mais antigas primeiro", async () => {
+    const abertas = Array.from({ length: 1005 }, (_, i) => String(1_000 + i));
+    const { outcome, enqueued, query } = run({ openCases: abertas });
+
+    await outcome;
+    expect(query.ranges).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+    expect(enqueued).toHaveLength(MAX_QUESTION_RECHECKS);
+    expect(enqueued[0]?.payload).toMatchObject({ questionId: 1_000 });
+  });
+
+  it("a leitura das abertas falhando não derruba a reconciliação já gravada", async () => {
+    const { outcome, enqueued, lines } = run({ openCasesError: { message: "database unavailable" } });
+
+    expect(await outcome).toEqual({ status: "done", processed: 3 });
+    expect(recordSyncRunSuccessMock).toHaveBeenCalledTimes(1);
+    expect(enqueued).toEqual([]);
+    expect(lines.join()).toContain("sync_support_questions_recheck_failed");
   });
 });

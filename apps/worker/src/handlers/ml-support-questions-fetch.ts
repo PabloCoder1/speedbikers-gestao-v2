@@ -73,6 +73,12 @@ export interface FetchSupportQuestionsResult {
   remoteTotal: number;
   /** `true` quando o teto de páginas foi atingido antes de esgotar o `total`. */
   truncated: boolean;
+  /**
+   * D-621: os IDs `UNANSWERED` da conta que a varredura viu. A pergunta que a
+   * V3 tem aberta e não está aqui foi respondida fora, apagada ou retida, e a
+   * reconciliação a relê uma a uma.
+   */
+  seenQuestionIds: number[];
 }
 
 export async function fetchSupportQuestions(
@@ -86,6 +92,7 @@ export async function fetchSupportQuestions(
   let remoteTotal = 0;
   let offset = 0;
   let truncated = false;
+  const seenQuestionIds: number[] = [];
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     // Erro de rede/HTTP aqui NÃO é engolido: sobe para o job, que classifica
@@ -104,7 +111,7 @@ export async function fetchSupportQuestions(
     }
 
     if (result.questions.length === 0) {
-      return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated: false };
+      return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated: false, seenQuestionIds };
     }
 
     for (const question of result.questions) {
@@ -119,6 +126,8 @@ export async function fetchSupportQuestions(
         });
         continue;
       }
+
+      seenQuestionIds.push(question.id);
 
       try {
         await persistSupportQuestion(
@@ -145,7 +154,7 @@ export async function fetchSupportQuestions(
     // A página veio menor que o limite: acabou. Não depende de `total`, que
     // pode se mover entre páginas enquanto perguntas novas chegam.
     if (result.questions.length < PAGE_LIMIT) {
-      return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated: false };
+      return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated: false, seenQuestionIds };
     }
 
     truncated = page === MAX_PAGES - 1;
@@ -160,5 +169,5 @@ export async function fetchSupportQuestions(
     });
   }
 
-  return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated };
+  return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated, seenQuestionIds };
 }
