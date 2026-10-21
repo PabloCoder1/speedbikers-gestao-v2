@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **538** (D-001 a D-628).
+Decisões registradas: **539** (D-001 a D-630).
 
 ## Por domínio
 
-### atendimento (56)
+### atendimento (57)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -74,6 +74,7 @@ Decisões registradas: **538** (D-001 a D-628).
 - **D-425** — A Shopee entra como segundo canal, so leitura, com tabelas proprias; a primeira fatia conecta a loja
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
+- **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 
 ### banco/rls (45)
 
