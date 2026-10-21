@@ -6,16 +6,18 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { persistSupportQuestion } from "./persist-support-question.js";
+import type { markSupportQuestionDeleted, persistSupportQuestion } from "./persist-support-question.js";
 import type { SyncSupportQuestionDeps } from "./sync-support-question.js";
 import { createSyncSupportQuestionHandler } from "./sync-support-question.js";
 
 type PersistSupportQuestion = typeof persistSupportQuestion;
 
 const persistSupportQuestionMock = vi.hoisted(() => vi.fn<PersistSupportQuestion>());
+const markSupportQuestionDeletedMock = vi.hoisted(() => vi.fn<typeof markSupportQuestionDeleted>());
 
 vi.mock("./persist-support-question.js", () => ({
   persistSupportQuestion: persistSupportQuestionMock,
+  markSupportQuestionDeleted: markSupportQuestionDeletedMock,
 }));
 
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -195,6 +197,8 @@ describe("sync.support.questions", () => {
       linkMode: "EXTERNAL",
         transitionApplied: false,
     });
+    markSupportQuestionDeletedMock.mockReset();
+    markSupportQuestionDeletedMock.mockResolvedValue({ supportCaseId: "case-1", transitionApplied: true });
   });
 
   it("busca uma pergunta v4, mapeia e persiste no escopo da conta", async () => {
@@ -290,7 +294,7 @@ describe("sync.support.questions", () => {
     ["not_retryable", false],
   ] as const)("propaga erro remoto %s com retryable=%s", async (errorClass, retryable) => {
     const remoteError = new MercadoLivreApiError("falha remota", {
-      status: retryable ? 503 : 404,
+      status: retryable ? 503 : 403,
       errorClass,
       url: "https://api.mercadolibre.com/questions/id",
     });
@@ -340,6 +344,56 @@ describe("sync.support.questions", () => {
       status: "failed",
       retryable: true,
       reason: "database unavailable",
+    });
+  });
+
+  /*
+    D-621: o 404 é a pergunta apagada no Mercado Livre (D-201). Ela vira
+    `DELETED` na V3 em vez de falhar o job e ficar "Pendente" para sempre.
+  */
+  const apagada = () =>
+    new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /questions/id.", {
+      status: 404,
+      errorClass: "not_retryable",
+      url: "https://api.mercadolibre.com/questions/id",
+    });
+
+  it("404: marca a pergunta apagada, conclui o job e não persiste nada", async () => {
+    const { deps, lines } = setup({}, { error: apagada(), kind: "failure" });
+
+    expect(await run(deps, lines)).toEqual({ status: "done", processed: 1 });
+    expect(markSupportQuestionDeletedMock).toHaveBeenCalledWith(
+      deps.db,
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID, source: "WEBHOOK" },
+      { questionId: QUESTION_ID, observedAt: NOW.toISOString() },
+    );
+    expect(persistSupportQuestionMock).not.toHaveBeenCalled();
+    expect(lines.join("\n")).toContain("sync_support_question_deleted_remotely");
+  });
+
+  it("404 de uma pergunta que a V3 nunca gravou conclui sem trabalho", async () => {
+    markSupportQuestionDeletedMock.mockResolvedValue({ supportCaseId: null, transitionApplied: false });
+    const { deps, lines } = setup({}, { error: apagada(), kind: "failure" });
+
+    expect(await run(deps, lines)).toEqual({ status: "done", processed: 0 });
+  });
+
+  it("404 com falha ao marcar é retryable, para convergir na reentrega", async () => {
+    markSupportQuestionDeletedMock.mockRejectedValue(new Error("database unavailable"));
+    const { deps, lines } = setup({}, { error: apagada(), kind: "failure" });
+
+    expect(await run(deps, lines)).toEqual({ status: "failed", retryable: true, reason: "database unavailable" });
+  });
+
+  it("a releitura pedida pela reconciliação grava com a origem RECONCILIATION", async () => {
+    const { deps, lines } = setup();
+
+    await run(deps, lines, { mlAccountId: ML_ACCOUNT_ID, questionId: QUESTION_ID, source: "RECONCILIATION" });
+
+    expect(persistSupportQuestionMock.mock.calls[0]?.[1]).toEqual({
+      organizationId: ORGANIZATION_ID,
+      mlAccountId: ML_ACCOUNT_ID,
+      source: "RECONCILIATION",
     });
   });
 });

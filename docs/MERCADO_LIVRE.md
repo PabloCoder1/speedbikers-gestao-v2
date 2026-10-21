@@ -520,6 +520,13 @@ não está mais `UNANSWERED`. É buraco de histórico, não de operação; fech�
 exigiria varrer os sete status a cada rodada, custo que só se justifica com
 evidência real de que acontece.
 
+**Fechada em D-621 (21/10/2026), com a evidência:** a pergunta apagada (404 em
+`GET /questions/{id}`) ficava aberta na V3 para sempre, e era a maior parte da
+fila "Pendente". O 404 agora marca o caso `DELETED` e o resolve pela transição
+guardada da D-102. Depois de cada varredura completa, a pergunta que a V3 tem
+aberta e a varredura não viu é relida por ID (no máximo 200 por rodada, uma vez
+por dia cada): respondida fora, apagada ou ainda aberta, ela converge.
+
 Nenhum envio de resposta foi implementado.
 
 **Fontes oficiais consultadas:** `developers.mercadolivre.com.br/pt_br/perguntas-e-respostas`; `.../itens-e-buscas`; `.../pt_br/mensagens-post-venda`; `.../pt_br/mensagens-pendentes`; `.../pt_br/motivos-para-se-comunicar`; `.../pt_br/mensagens-post-venda/produto-receba-notificacoes`; `.../pt_br/permissoes-funcionais/`; `.../pt_br/gerenciar-reclamacoes`; `.../pt_br/gerenciar-mensagem-de-uma-eclamacao`.
