@@ -112,10 +112,20 @@ export function formatEventDiff(
  */
 const MLB = /^MLB[0-9]+$/;
 
+/** D-638: o `entity_id` do anúncio da Shopee é o `item_id` numérico, em texto (C-81). */
+const ITEM_SHOPEE = /^[0-9]{1,20}$/;
+
+/**
+ * `shopeeShopId` é a coluna `domain_events.shopee_shop_id` (D-435). O evento do
+ * anúncio da Shopee (C-81, D-638) só tem destino com ela: a lista da Shopee
+ * abre por loja, e `domain_events` não tem relação com `shopee_shops` para o
+ * embed trazer a loja.
+ */
 export function entityHref(
   entityType: string,
   entityId: string,
   after: Record<string, unknown> | null = null,
+  shopeeShopId: string | null = null,
 ): string | null {
   if (entityType === "sku") return `/skus/${entityId}`;
   // D-411: a ação não tem página própria; a fila de /acoes filtrada pelo tipo
@@ -135,6 +145,11 @@ export function entityHref(
   // D-438: a loja Shopee parada ou em erro (D-435) -- é em Contas e lojas que
   // ela mostra a conexão e se reautoriza.
   if (entityType === "shopee_shop") return "/contas";
+  // D-638 (C-81): o anúncio da Shopee abre na lista da loja, buscado pelo item —
+  // o mesmo atalho das ações da Shopee (D-626).
+  if (entityType === "shopee_item" && shopeeShopId !== null && ITEM_SHOPEE.test(entityId)) {
+    return `/anuncios/shopee?${new URLSearchParams({ loja: shopeeShopId, q: entityId }).toString()}`;
+  }
 
   return null;
 }
@@ -147,8 +162,33 @@ export function entityLabel(entityType: string): string {
   if (entityType === "action") return "Alerta";
   if (entityType === "ml_account") return "Conta";
   if (entityType === "shopee_shop") return "Loja Shopee";
+  if (entityType === "shopee_item") return "Anúncio Shopee";
 
   return entityType;
+}
+
+function textoDoAfter(after: Record<string, unknown> | null, chave: string): string | null {
+  const valor = after?.[chave];
+
+  return typeof valor === "string" && valor.trim() !== "" ? valor.trim() : null;
+}
+
+/**
+ * De onde veio o evento, como a linha e o toast o dizem: a conta do ML pelo
+ * embed de `ml_accounts`; a loja da Shopee pelo `shop_name` que o worker grava
+ * no `after` (C-81, D-638), porque `domain_events` não tem relação com
+ * `shopee_shops`. O `shop_name` é o cru, nulo na loja sem nome lido: com a
+ * loja na coluna, a origem é então "Loja Shopee". Sem conta nem loja, `null` —
+ * a linha não inventa origem.
+ */
+export function eventOriginLabel(
+  mlAccountLabel: string | null | undefined,
+  after: Record<string, unknown> | null,
+  shopeeShopId: string | null = null,
+): string | null {
+  if (typeof mlAccountLabel === "string" && mlAccountLabel !== "") return mlAccountLabel;
+
+  return textoDoAfter(after, "shop_name") ?? (shopeeShopId === null ? null : "Loja Shopee");
 }
 
 /**
@@ -174,6 +214,14 @@ export function entityText(entityType: string, entityId: string, after: Record<s
   */
   if (entityType === "shopee_shop" && after !== null && typeof after.label === "string") {
     return /^loja shopee\b/iu.test(after.label) ? after.label : `Loja Shopee ${after.label}`;
+  }
+
+  // D-638 (C-81): o anúncio da Shopee pelo nome e pela variação, quando o worker os gravou.
+  if (entityType === "shopee_item") {
+    const nome = textoDoAfter(after, "item_name");
+    const variacao = textoDoAfter(after, "model_name");
+
+    return `Anúncio Shopee ${nome ?? entityId}${variacao === null ? "" : ` · ${variacao}`}`;
   }
 
   return `${entityLabel(entityType)} ${entityId}`;

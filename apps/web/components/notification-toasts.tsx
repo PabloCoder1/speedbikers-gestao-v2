@@ -5,7 +5,7 @@ import type { RealtimePostgresInsertPayload } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { entityHref, entityText, formatEventDiff } from "../lib/event-format";
+import { entityHref, entityText, eventOriginLabel, formatEventDiff } from "../lib/event-format";
 import { eventTypeLabel, severityLabel } from "../lib/labels";
 import { shouldNotify, type NotificationPreferenceRule } from "../lib/notification-preferences";
 import { createClient } from "../lib/supabase/browser";
@@ -56,6 +56,7 @@ interface ToastNotificationRow {
     entity_id: string;
     severity: string;
     ml_account_id: string | null;
+    shopee_shop_id: string | null;
     before: unknown;
     after: unknown;
     ml_accounts: { label: string } | null;
@@ -137,7 +138,7 @@ export function NotificationToasts({
       const { data } = await supabase
         .from("notifications")
         .select(
-          "domain_events(event_type, entity_type, entity_id, severity, ml_account_id, before, after, ml_accounts(label))",
+          "domain_events(event_type, entity_type, entity_id, severity, ml_account_id, shopee_shop_id, before, after, ml_accounts(label))",
         )
         .eq("id", payload.new.notification_id)
         .maybeSingle();
@@ -153,7 +154,9 @@ export function NotificationToasts({
         return;
       }
 
-      const key = `${event.event_type}:${event.ml_account_id ?? "org"}`;
+      // D-638: a loja da Shopee agrupa à parte, como a conta do ML.
+      const key = `${event.event_type}:${event.ml_account_id ?? event.shopee_shop_id ?? "org"}`;
+      const after = event.after as Record<string, unknown> | null;
       const now = Date.now();
       const previous = groups.current.get(key);
       const withinWindow = previous !== undefined && now - previous.firstEventAt < WINDOW_MS;
@@ -165,15 +168,15 @@ export function NotificationToasts({
         entityType: event.entity_type,
         entityId: event.entity_id,
         severity: event.severity,
-        accountLabel: event.ml_accounts?.label ?? null,
+        accountLabel: eventOriginLabel(event.ml_accounts?.label, after, event.shopee_shop_id),
         count: (carriedOver?.count ?? 0) + 1,
         diff: formatEventDiff(
           event.event_type,
           event.before as Record<string, unknown> | null,
-          event.after as Record<string, unknown> | null,
+          after,
         ),
-        href: entityHref(event.entity_type, event.entity_id, event.after as Record<string, unknown> | null),
-        alvo: entityText(event.entity_type, event.entity_id, event.after as Record<string, unknown> | null),
+        href: entityHref(event.entity_type, event.entity_id, after, event.shopee_shop_id),
+        alvo: entityText(event.entity_type, event.entity_id, after),
         firstEventAt: carriedOver?.firstEventAt ?? now,
       };
 
