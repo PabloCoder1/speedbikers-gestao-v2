@@ -13,6 +13,7 @@ import { Panel } from "../../../../components/panel";
 import { StatusPill } from "../../../../components/status-pill";
 import { TOM, tomDeRelist, tomDeStatus } from "../../../../components/tone";
 import { LinkDeFiltro } from "../../../../components/link-de-filtro";
+import { anuncioExcluido, EXCLUIDO_NO_MERCADO_LIVRE, quandoAV3ViuAExclusao } from "../../../../lib/anuncio-excluido";
 import { formatEventDiff } from "../../../../lib/event-format";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, relistStatusLabel, statusTone } from "../../../../lib/labels";
@@ -223,7 +224,7 @@ export default async function AnuncioPage({
   const listing = await supabase
     .from("listings")
     .select(
-      "id, organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, category_id, synced_at, ml_accounts(label), skus(sku, title)",
+      "id, organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, category_id, synced_at, deleted_at, ml_accounts(label), skus(sku, title)",
     )
     .eq("item_id", itemId)
     .maybeSingle();
@@ -233,6 +234,9 @@ export default async function AnuncioPage({
   }
 
   const row = listing.data;
+  // D-634: o anúncio excluído no Mercado Livre (D-631) abre pelo link antigo. A
+  // regra é `deleted_at`, nunca o status: no 404 o status fica o último visto.
+  const excluidoEm = anuncioExcluido(row.deleted_at) ? row.deleted_at : null;
 
   const now = new Date();
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
@@ -515,9 +519,12 @@ export default async function AnuncioPage({
    * último, porque ela é trabalho a fazer e não característica do anúncio.
    */
   const badges: ObjectBadge[] = [
-    { label: listingStatusLabel(row.status), tom: tomDeStatus(statusTone(row.status)) },
+    excluidoEm !== null
+      ? { label: EXCLUIDO_NO_MERCADO_LIVRE, tom: "perigo" }
+      : { label: listingStatusLabel(row.status), tom: tomDeStatus(statusTone(row.status)) },
     { label: row.ml_accounts.label, tom: "info" },
-    ...(row.sku_id === null ? [{ label: "Sem vínculo de SKU", tom: "atencao" as const }] : []),
+    // A pendência de vínculo não é trabalho a fazer num anúncio excluído (D-634).
+    ...(row.sku_id === null && excluidoEm === null ? [{ label: "Sem vínculo de SKU", tom: "atencao" as const }] : []),
   ];
 
   const href = (key: TabKey): string =>
@@ -546,6 +553,7 @@ export default async function AnuncioPage({
       ? checarAnuncio({
           itemId: row.item_id,
           status: row.status,
+          excluidoEm,
           disponivel: row.available_quantity,
           skuId: row.sku_id,
           sku: row.skus?.sku ?? null,
@@ -586,13 +594,25 @@ export default async function AnuncioPage({
         titulo={row.title}
         badges={badges}
         meta={
-          <span
-            className={syncVelho ? "sb-anuncio-sync sb-anuncio-sync-velho" : "sb-anuncio-sync"}
-            title={`sincronizado em ${formatDateTime(row.synced_at)}`}
-          >
-            <i aria-hidden="true" />
-            sincronizado em {formatDateTime(row.synced_at)} · {idadeRelativa(row.synced_at, now)}
-          </span>
+          excluidoEm !== null ? (
+            /*
+              D-634: no excluído, a idade da leitura não é atraso: a varredura
+              não o devolve mais, e o "sincronizado há N dias" em vermelho
+              pediria uma sincronização que não vem.
+            */
+            <span className="sb-anuncio-sync sb-anuncio-sync-velho" title={`exclusão vista em ${formatDateTime(excluidoEm)}`}>
+              <i aria-hidden="true" />
+              excluído no Mercado Livre · {quandoAV3ViuAExclusao(excluidoEm)}
+            </span>
+          ) : (
+            <span
+              className={syncVelho ? "sb-anuncio-sync sb-anuncio-sync-velho" : "sb-anuncio-sync"}
+              title={`sincronizado em ${formatDateTime(row.synced_at)}`}
+            >
+              <i aria-hidden="true" />
+              sincronizado em {formatDateTime(row.synced_at)} · {idadeRelativa(row.synced_at, now)}
+            </span>
+          )
         }
         /*
           OS DOIS FATOS QUE O CABEÇALHO DEVE, e devia desde D-168 (D-310).
@@ -617,12 +637,18 @@ export default async function AnuncioPage({
           {
             rotulo: "Preço atual",
             valor: formatCurrency(row.price),
-            nota: "preço deste anúncio no Mercado Livre, como veio na última sincronização",
+            nota:
+              excluidoEm !== null
+                ? "o último lido antes da exclusão no Mercado Livre"
+                : "preço deste anúncio no Mercado Livre, como veio na última sincronização",
           },
           {
             rotulo: "Disponível (este anúncio)",
             valor: formatCount(row.available_quantity),
-            nota: "estoque DESTE anúncio no Mercado Livre — não é o saldo do ERP nem o do Full",
+            nota:
+              excluidoEm !== null
+                ? "o último lido antes da exclusão — não é o saldo do ERP nem o do Full"
+                : "estoque DESTE anúncio no Mercado Livre — não é o saldo do ERP nem o do Full",
           },
           {
             rotulo: "SKU vinculado",
@@ -671,15 +697,18 @@ export default async function AnuncioPage({
 
             <CopiarMlb itemId={row.item_id} />
 
-            <a
-              className="sb-button"
-              href={linkNoMercadoLivre(row.item_id)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Ver no Mercado Livre
-              <span aria-hidden="true">↗</span>
-            </a>
+            {/* D-634: o anúncio excluído não tem página no Mercado Livre para abrir. */}
+            {excluidoEm === null && (
+              <a
+                className="sb-button"
+                href={linkNoMercadoLivre(row.item_id)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Ver no Mercado Livre
+                <span aria-hidden="true">↗</span>
+              </a>
+            )}
 
             <details className="sb-menu">
             <summary className="sb-button sb-button-primary">
@@ -690,9 +719,12 @@ export default async function AnuncioPage({
             </summary>
             <div className="sb-menu-panel" style={{ right: 0, left: "auto" }}>
               {row.sku_id === null ? (
-                <Link className="sb-menu-item" href="/vinculacoes">
-                  Vincular a um SKU
-                </Link>
+                // D-634: o excluído não se vincula (os diálogos recusam).
+                excluidoEm === null && (
+                  <Link className="sb-menu-item" href="/vinculacoes">
+                    Vincular a um SKU
+                  </Link>
+                )
               ) : (
                 <Link className="sb-menu-item" href={`/skus/${row.sku_id}`}>
                   Abrir o SKU {row.skus?.sku ?? ""}
@@ -1191,7 +1223,7 @@ export default async function AnuncioPage({
         {tab === "preco" && (
           <Panel
             title="Mudanças de preço observadas"
-            subtitle="As mudanças são o DIFF entre duas sincronizações de 6 em 6 horas — uma alteração feita e desfeita entre elas não deixa registro."
+            subtitle="As mudanças são o DIFF entre duas leituras do anúncio: a da notificação do Mercado Livre, quando ele avisa, e a varredura de 6 em 6 horas (D-631) — uma alteração feita e desfeita entre duas leituras não deixa registro."
           >
             {prices.length === 0 ? (
               <p className="sb-empty">
@@ -1387,6 +1419,7 @@ export default async function AnuncioPage({
                   <RelistPanel
                     itemId={row.item_id}
                     mlAccountId={row.ml_account_id}
+                    excluidoEm={excluidoEm}
                     podeRepublicar={papel === "ADMIN" || papel === "GESTOR"}
                     variacoes={variacoesDoPedido}
                     operacao={

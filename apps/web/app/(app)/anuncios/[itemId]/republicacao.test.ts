@@ -93,6 +93,38 @@ describe("atosDaRepublicacao (D-295, D-364)", () => {
     ).toEqual({ pedir: false, executar: false, retomar: false, falha: "recusada", semRepublicacao: false });
   });
 
+  it("D-634: o anúncio excluído no ML não oferece ato nenhum, mas a explicação da falha continua", () => {
+    expect(
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: null,
+        variacoesDoRetrato: 0,
+        aguardandoWorker: false,
+        excluido: true,
+      }),
+    ).toEqual({ pedir: false, executar: false, retomar: false, falha: null, semRepublicacao: false });
+
+    expect(
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: { status: "REQUESTED", retomavel: false, failureReason: null },
+        variacoesDoRetrato: 0,
+        aguardandoWorker: false,
+        excluido: true,
+      }).executar,
+    ).toBe(false);
+
+    expect(
+      atosDaRepublicacao({
+        podeRepublicar: true,
+        operacao: { status: "RELIST_FAILED", retomavel: true, failureReason: null },
+        variacoesDoRetrato: 0,
+        aguardandoWorker: false,
+        excluido: true,
+      }),
+    ).toEqual({ pedir: false, executar: false, retomar: false, falha: "recusada", semRepublicacao: false });
+  });
+
   it("depois de enviar a retomada, nada é oferecido até o worker mudar a operação (D-360)", () => {
     expect(
       atosDaRepublicacao({

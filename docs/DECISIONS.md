@@ -18834,6 +18834,62 @@ A varredura seguinte de cada conta marca os excluidos que ja existem, e da em di
 
 **Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
 
+## D-634 - O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
+
+**Contexto:** a D-631 do A1 (#303, pedido do dono de 21/10) guarda o anúncio excluído no Mercado Livre com `listings.deleted_at` e o esconde das quatro RPCs do catálogo (`get_listings_dashboard`, a faixa, `get_sku_listings` e `get_listings_link_overview`). A linha fica, porque é história de venda e de vínculo. Cinco pontos da web leem `listings` direto e passariam a mostrá-lo como vivo:
+- a contagem "Anúncios pausados" da Home (D-504), que promete o mesmo número da `/anuncios`;
+- o detalhe `/anuncios/[itemId]`, aberto por link antigo ou pela busca;
+- o painel de republicação do detalhe;
+- o diálogo de vínculo do SKU;
+- o diálogo de vínculo da `/vinculacoes`.
+
+O ponto que pesa: no 404 o worker grava só `deleted_at`, e o `status` fica o último visto, que pode ser `active` ou `paused` (confirmado pelo A1: é de propósito, o 404 não diz o status).
+
+**Decisão:**
+1. **A regra é `deleted_at`, nunca o status.** Ela mora em `lib/anuncio-excluido.ts`, com o texto comum. `deleted_at` é QUANDO A V3 VIU a exclusão, não quando ela aconteceu: um anúncio apagado antes da D-631 é marcado na primeira varredura depois dela. Por isso a tela diz "a V3 viu a exclusão em DD/MM/AAAA", e nunca "excluído em".
+2. **Home:** a contagem dos pausados com estoque ganha `deleted_at is null`, o mesmo predicado da `/anuncios` desde a D-631.
+3. **Detalhe do anúncio:**
+   - o selo "Excluído no Mercado Livre" no lugar do status, que pode estar velho;
+   - a linha "excluído no Mercado Livre · a V3 viu a exclusão em…" no lugar da idade da sincronização (a varredura não o devolve mais, e o "há N dias" em vermelho pediria uma sincronização que não vem);
+   - a checagem vira uma linha só, porque as outras perguntas (estoque, vínculo, venda e leitura) são sobre um anúncio que vende;
+   - saem o "Ver no Mercado Livre", o "Vincular a um SKU" do menu e o selo "Sem vínculo de SKU";
+   - o preço e o estoque continuam, ditos como os da última leitura.
+4. **Republicação:** nenhum ato no anúncio excluído (`atosDaRepublicacao` com `excluido`). O painel diz por quê e aponta o caminho: criar um anúncio novo e vinculá-lo ao SKU. A explicação de uma falha anterior continua. A conferência prévia da api ainda não conhece o excluído; o bloqueio `EXCLUIDO_NO_MERCADO_LIVRE` é da D-631 b do A1.
+5. **Os dois diálogos de vínculo** acham a linha e a recusam, com o MLB, a data da leitura e o porquê. É a regra que eles já seguiam: "sem confirmar que ele existe, não vinculamos".
+6. **Os textos que a D-631 envelheceu:**
+   - o diff de preço do anúncio e do SKU passa a ser "entre duas leituras do anúncio: a da notificação do Mercado Livre e a varredura de 6 em 6 horas" (o `sync.listing.item` grava o `listing.price.changed` a cada notificação, confirmado pelo A1);
+   - o "não encontramos" dos diálogos diz que o anúncio novo chega pela notificação.
+
+**Publicação:** só a web, e só DEPOIS da migration `20261021170000` em produção e do worker com o `sync.listing.item`. O select com `deleted_at` antes da coluna dá 42703 e derrubaria a busca dos diálogos e o cartão da Home; os textos novos descrevem o worker novo. O A1 avisa nos dois momentos. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**O que fica para a D-631 b do A1** (achado na leitura para esta decisão): as funções que leem `listings` sem `deleted_at` e mostrariam o excluído como vivo. São a queda nas vendas por anúncio (C-79), `get_products_overview`, `get_ml_account_cards`, `get_unlinked_listings`, `get_link_integrity`, `get_sku_curation` e, a conferir, os detectores da central. A história (`get_price_changes`, a linha do tempo, a correlação e a busca) fica como está.
+
+**Verificacao:**
+- **unitários:** `lib/anuncio-excluido.test.ts` (3), a checagem com o excluído numa linha só e o status velho `active` (`checagem.test.ts`), e os atos da republicação sem ato nenhum no excluído e com a explicação da falha mantida (`republicacao.test.ts`).
+- **e2e:** `e2e/anuncio-excluido.spec.ts` marca o pausado do seed como o worker marca o 404 (só `deleted_at`, com o status `paused` e o estoque) e confere:
+  - a Home com "0 Anúncios pausados";
+  - o detalhe com a data da leitura, uma checagem só e sem "Ver no Mercado Livre" nem o selo de vínculo;
+  - a republicação sem o pedido;
+  - os dois diálogos recusando o anúncio.
+
+  A marca volta a nulo no fim, porque a chave de serviço não tem `delete` em `listings`.
+- **mutação:** sem o `deleted_at is null` da Home, o e2e reprova no cartão dos pausados.
+- **suíte inteira**, com o banco recriado do zero (a migration da D-631 inclusa):
+  - chromium 260/260;
+  - `loja-live` 16/16;
+  - convite 3/3.
+
+  Uma primeira rodada reprovou só o `sku-dashboard`, que afirmava o texto antigo do diff de preço, ajustado aqui.
+
+**Impacto:**
+- `apps/web/lib/{anuncio-excluido.ts,anuncio-excluido.test.ts}`;
+- `apps/web/app/(app)/page.tsx`;
+- `apps/web/app/(app)/anuncios/[itemId]/{page.tsx,checagem.ts,checagem.test.ts,republicacao.ts,republicacao.test.ts,relist-panel.tsx}`;
+- `apps/web/app/(app)/skus/[skuId]/{vincular-anuncio.tsx,page.tsx}`;
+- `apps/web/app/(app)/vinculacoes/vincular-dialog.tsx`;
+- `apps/web/e2e/anuncio-excluido.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
 ## D-636 - O cabeçalho da /faturamento tem a mesma forma nos três recortes
 
 **Contexto:** o A3 achou, em 21/10, que trocar o recorte da `/faturamento` pelo seletor desloca o conteúdo (CLS de 0,019 a 0,119). A medida no stack isolado com o seed confirmou a causa:
@@ -18862,3 +18918,60 @@ Com a navegação atrasada em 600 ms (a resposta RSC segura no Playwright), o CL
 - **fotos** a 1440 e a 390 px nos três recortes: a barra sob o título, e a faixa de números começando na mesma altura.
 
 **Impacto:** `apps/web/components/page-title.tsx`, `apps/web/app/globals.css`, `apps/web/app/(app)/faturamento/{page.tsx,multicanal.tsx}`, `apps/web/e2e/faturamento-multicanal.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.
+
+## D-638 - A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
+
+**Contexto:** o C-81 do A1, o histórico de preço da Shopee (o C-13 do A2, liberado pelo dono em 21/10), faz o worker gravar um `domain_events` quando o preço de um modelo da Shopee muda entre duas leituras do catálogo. A forma, combinada em 21/10:
+- `event_type` `listing.price.changed`, o mesmo do ML;
+- `entity_type` `shopee_item`, `entity_id` = o `item_id` em texto;
+- a loja em `shopee_shop_id`, e `ml_account_id` nulo;
+- `before` = `{price, current_price, model_id}`; `after` = o mesmo, mais `model_name`, `item_name` e `shop_name`;
+- `price` é o `original_price`, porque o `current_price` é o da promoção.
+
+O gatilho de D-073 faz a notificação de todo evento. Sem esta decisão, a mudança de preço da Shopee chegaria à Central, ao aviso em tempo real e à atividade da Home:
+- sem destino, porque `entityHref` não conhecia `shopee_item`;
+- sem origem, porque `domain_events` só tem relação com `ml_accounts` e o embed traz só a conta do ML;
+- com o `entity_type` cru no texto.
+
+Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
+
+**Decisão:**
+1. **`lib/event-format.ts`, o leitor único da Central e do aviso:**
+   - `shopee_item` tem o rótulo "Anúncio Shopee";
+   - o texto é "Anúncio Shopee <item_name> · <model_name>", com o item quando o nome não vem;
+   - o destino é `/anuncios/shopee?loja=<shopee_shop_id>&q=<item_id>`, o mesmo atalho das ações da Shopee (D-626), e só com a loja e o item numérico. Sem a loja, nenhum destino, nunca a tela do ML;
+   - `entityHref` recebe a loja como quarto argumento.
+2. **A origem do evento** (`eventOriginLabel`): a conta do ML pelo embed, ou a loja pelo `shop_name` do `after`. Sem nenhum dos dois, nada: a linha não inventa origem. Vale para a Central, o aviso e a atividade da Home.
+3. **A Central e o aviso leem a coluna `shopee_shop_id`** do evento (existe desde a D-435), e o aviso agrupa por loja como agrupa por conta.
+4. **`shouldNotify` não muda:** a regra "todas as contas" vale para o evento da loja, e a de uma conta do ML específica não casa com ele. A preferência por loja é o C-82.
+5. **Não muda:** o diff (o `price`, como no ML) e o rótulo do tipo ("Preço do anúncio alterado").
+
+**O contrato da tela que vem depois** (C-81, combinado com o A1 em 21/10), para a `/precos` e a aba Preços do SKU:
+- `get_price_changes` ganha no fim `p_marketplace` e `p_shopee_shop_id`, e cinco colunas novas: `marketplace`, `shopee_shop_id`, `model_id`, `model_name` e `series_start_shopee`;
+- `p_marketplace` nulo ou `mercado_livre` é só o ML, como hoje, e a tela atual não muda com a migration; `shopee` e `todos` pedem a Shopee;
+- conta com loja, ou marketplace contraditório, é recusado com erro;
+- `series_start_shopee` nulo quer dizer "a loja ainda não é registrada", nunca "sem mudança";
+- a tela manda os params novos só depois da migration em produção.
+
+**Publicação:** só a web, ANTES do worker do C-81. O evento antigo, sem `shop_name`, continua com o texto de antes. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/event-format.test.ts`, 25 testes, 4 novos. Cobrem:
+  - o diff pelo `price` e nunca pelo `current_price`;
+  - o destino só com a loja e o item numérico;
+  - o texto com e sem nome e variação;
+  - a origem pela conta ou pela loja, nunca inventada.
+- **e2e:** no ensaio da loja live, um evento no formato do C-81 confere:
+  - na Central do recorte da loja: o título, a loja, o diff "R$ 100,00 → R$ 120,00" e o link "Anúncio Shopee <nome> · Preta" para a lista da loja buscada pelo item;
+  - na atividade da Home, a loja como origem.
+- **mutação:** sem a loja passada a `entityHref` na linha da Central, o e2e reprova (o link some).
+- **specs:** `notificacoes` e `home` 11/11, e o ensaio 17/17, com o banco recriado.
+- **suíte inteira:** chromium 261/261, `loja-live` 17/17 e convite 3/3, com o banco recriado do zero. Numa primeira rodada, um caso de `sugestoes` reprovou por tempo: o título não apareceu em 5 s, num banco já mexido pela suíte. Com o banco recriado, ele passou três vezes seguidas, e a tela não é tocada aqui.
+
+**Impacto:**
+- `apps/web/lib/{event-format.ts,event-format.test.ts}`;
+- `apps/web/app/(app)/notificacoes/{page.tsx,notification-row.tsx}`;
+- `apps/web/components/notification-toasts.tsx`;
+- `apps/web/app/(app)/page.tsx`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.

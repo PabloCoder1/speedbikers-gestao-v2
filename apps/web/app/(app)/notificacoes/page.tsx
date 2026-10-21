@@ -9,6 +9,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { businessDayOf, formatBusinessDate, formatCount, formatWeekday } from "../../../lib/format";
+import { eventOriginLabel } from "../../../lib/event-format";
 import { severityLabel } from "../../../lib/labels";
 import {
   NOTIFICATION_FAMILIES,
@@ -99,6 +100,7 @@ interface NotificationQueryRow {
       occurred_at: string;
       before: unknown;
       after: unknown;
+      shopee_shop_id: string | null;
       ml_accounts: { label: string } | null;
     } | null;
   } | null;
@@ -122,7 +124,7 @@ interface GrupoDoDia {
  * e `notifications.domain_event_id`.
  */
 const SELECT_LISTA =
-  "notification_id, read_at, created_at, notifications!inner(domain_events!inner(event_type, entity_type, entity_id, severity, occurred_at, before, after, ml_accounts(label)))";
+  "notification_id, read_at, created_at, notifications!inner(domain_events!inner(event_type, entity_type, entity_id, severity, occurred_at, before, after, shopee_shop_id, ml_accounts(label)))";
 
 /** O mesmo caminho, sem coluna nenhuma além do necessário para contar. */
 const SELECT_CONTAGEM = "notification_id, notifications!inner(domain_event_id, domain_events!inner(id))";
@@ -273,6 +275,14 @@ export default async function NotificacoesPage({
   const recorte = describeNotificationRecorte(filters, contaAtiva?.label ?? (lojaAtiva === null ? null : nomeDaLoja(lojaAtiva)));
 
   const agora = new Date();
+  // D-638: a loja do evento sem `shop_name` (sem nome lido na hora) pelo nome da lista, ou "Loja Shopee".
+  const nomeDaLojaDoEvento = (lojaId: string | null): string | null => {
+    if (lojaId === null) return null;
+
+    const loja = lojas.find((l) => l.id === lojaId);
+
+    return loja === undefined ? "Loja Shopee" : nomeDaLoja(loja);
+  };
 
   const rows: NotificationRowData[] = ((data ?? []) as unknown as NotificationQueryRow[]).map((row) => {
     const event = row.notifications?.domain_events ?? null;
@@ -289,7 +299,11 @@ export default async function NotificacoesPage({
       occurredAt,
       before: (event?.before ?? null) as Record<string, unknown> | null,
       after: (event?.after ?? null) as Record<string, unknown> | null,
-      accountLabel: event?.ml_accounts?.label ?? null,
+      // D-638: a loja da Shopee pelo `shop_name` do evento (C-81); a conta do ML pelo embed.
+      accountLabel:
+        eventOriginLabel(event?.ml_accounts?.label, (event?.after ?? null) as Record<string, unknown> | null) ??
+        nomeDaLojaDoEvento(event?.shopee_shop_id ?? null),
+      shopeeShopId: event?.shopee_shop_id ?? null,
       idade: formatAge(occurredAt, agora),
     };
   });

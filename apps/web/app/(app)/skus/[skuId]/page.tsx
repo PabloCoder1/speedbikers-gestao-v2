@@ -1604,8 +1604,9 @@ export default async function SkuDashboardPage({
 
           {/*
             D-226. A palavra "observadas" não é enfeite: `listing.price.changed`
-            é um DIFF entre dois snapshots de 6 em 6 horas, então uma mudança que
-            sobe e volta dentro da mesma janela não existe aqui, e a primeira
+            é um DIFF entre duas leituras do anúncio (a da notificação do Mercado
+            Livre, desde a D-631, e a varredura de 6 em 6 horas), então uma mudança
+            que sobe e volta entre duas leituras não existe aqui, e a primeira
             aparição de um anúncio não gera evento (não há "antes").
           */}
           {/*
@@ -1616,8 +1617,9 @@ export default async function SkuDashboardPage({
             completa. Ela morava só no ramo `prices.length === 0`.
           */}
           <p className="sb-skud-lead">
-            Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
-            {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas sincronizações não deixa registro.{" "}
+            Preço de cada anúncio deste SKU, comparado a cada leitura (a da notificação do Mercado Livre e a
+            varredura de 6 em 6 horas), nos últimos{" "}
+            {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas leituras não deixa registro.{" "}
             {/* A data cravada ("24/08/2026") era a da primeira organização — a mesma
                 classe que D-234 tirou de /precos. A série de cada uma começa na
                 primeira sincronização dela. */}
