@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeActionEvidence } from "./action-evidence.js";
+import { describeActionEvidence, readShopeeListingRef } from "./action-evidence.js";
 
 /** Forma real gravada por `detect-sales-anomaly-actions.ts` (D-064). */
 const VENDA_ANOMALA = {
@@ -125,5 +125,56 @@ describe("describeActionEvidence", () => {
 
     expect(view.direcaoLabel).toBeNull();
     expect(view.tone).toBe("neutro");
+  });
+});
+
+/** A forma que a `sincronizar_alertas_central` grava nos detectores da Shopee (D-609, D-611). */
+const SHOPEE_SEM_VINCULO = {
+  evidencias: [
+    { tipo: "venda", descricao: "De 20/09/2026 a 19/10/2026: 3 unidades em 3 pedidos, R$ 300,00 de receita, na loja X, sem SKU vinculado." },
+    { tipo: "vinculo", descricao: "O anúncio não traz SKU e não tem vínculo manual." },
+  ],
+  detector: { shopee_shop_id: "loja-1", item_id: 990777001, model_id: null, sku_anuncio: null, estado: "SEM_SKU_NO_ANUNCIO" },
+};
+
+describe("os detectores da Shopee (D-626)", () => {
+  it("têm rótulo próprio, são problema e mostram a evidência escrita no banco", () => {
+    for (const [kind, rotulo] of [
+      ["shopee_sem_vinculo", "Shopee vendendo sem vínculo"],
+      ["shopee_ruptura", "Ruptura no anúncio da Shopee"],
+      ["shopee_prejuizo", "Produto no prejuízo na Shopee"],
+    ] as const) {
+      const view = describeActionEvidence(kind, SHOPEE_SEM_VINCULO);
+
+      expect(view.kindLabel).toBe(rotulo);
+      expect(view.tone).toBe("problema");
+      expect(view.evidencias).toHaveLength(2);
+    }
+  });
+});
+
+describe("readShopeeListingRef (D-626)", () => {
+  it("o SKU do anúncio é a busca; sem ele, o número do item", () => {
+    expect(readShopeeListingRef({ detector: { shopee_shop_id: "loja-1", sku_anuncio: " CAP-01 ", item_id: 7 } })).toEqual({
+      lojaId: "loja-1",
+      busca: "CAP-01",
+      anuncio: null,
+    });
+    expect(readShopeeListingRef(SHOPEE_SEM_VINCULO)).toEqual({ lojaId: "loja-1", busca: "990777001", anuncio: null });
+    expect(readShopeeListingRef({ detector: { shopee_shop_id: "l", item_id: 1, anuncio: "Capacete", variacao: "Preto" } })?.anuncio).toBe("Capacete · Preto");
+    expect(readShopeeListingRef({ detector: { shopee_shop_id: "loja-1", sku_anuncio: "", item_id: "42" } })).toEqual({
+      lojaId: "loja-1",
+      busca: "42",
+      anuncio: null,
+    });
+  });
+
+  it("sem a loja, sem busca possível ou com forma estranha, não há atalho", () => {
+    expect(readShopeeListingRef({ detector: { sku_anuncio: "CAP-01" } })).toBeNull();
+    expect(readShopeeListingRef({ detector: { shopee_shop_id: "loja-1", item_id: -1 } })).toBeNull();
+    expect(readShopeeListingRef({ detector: { shopee_shop_id: "loja-1", item_id: "12a" } })).toBeNull();
+    expect(readShopeeListingRef({ detector: "texto" })).toBeNull();
+    expect(readShopeeListingRef(null)).toBeNull();
+    expect(readShopeeListingRef({ evidencias: [] })).toBeNull();
   });
 });
