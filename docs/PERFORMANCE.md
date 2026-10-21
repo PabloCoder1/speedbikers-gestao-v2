@@ -1504,6 +1504,14 @@ O "antes" das quatro linhas de baixo foi medido antes da migration; o C-58 foi r
 
 **Banco local, 40 mil pedidos simulados em 120 dias** (2 lojas live, 80 mil itens, 3.000 SKUs), cada leitura 5 vezes como `authenticated`, mediana. Em 90 dias: view de vendas 45 ms, vendas por loja 0,2 s, consolidado 0,27 s, ranking 0,27 s, pedidos 0,69 s, cobertura 0,21 s, sugestão de compra 0,33 s, produtos 0,14 s, busca 6 ms. **Faturamento da Shopee** (as quatro funções sobre `get_shopee_faturamento_pedidos`): **3,5 s → 0,22 s** em 30 dias e **34 s → 0,65 s** em 90 — o laço aninhado entre duas CTEs no fim (59 milhões de comparações em 30 dias) virou a leitura do pedido pela chave primária. **Curva ABC com a Shopee:** ~10 s com estatísticas velhas de `shopee_shops`/`organization_members` (RLS), ~145 ms depois do `autoanalyze` delas — tabela pequena só se reanalisa sozinha depois de ~50 linhas mudadas. Migration `20261016140000`.
 
+### A queda nas vendas por anúncio (D-629, 21/10/2026)
+
+O cálculo diário lê a `daily_listing_metrics` da organização.
+
+- **Pelo índice** `daily_listing_metrics_account_date_idx`, com limite inferior de data: ~150 mil acessos a páginas, duas vezes (primeira venda e janelas), e a agregação das janelas transbordando para o disco.
+- **Uma leitura `materialized`, sem limite inferior:** a tabela inteira em sequência, ~3,9 mil páginas e ~200 ms, com `work_mem` de 64 MB.
+- **Por isso o pré-cálculo:** a primeira venda pelo índice custava 0,9 s com cache frio, e na lista quente pesaria toda carga.
+
 ### O resumo de cobertura da Home (D-615, 20/10/2026)
 
 **Antes** (produção, como `authenticated`, 30 dias): `get_stock_coverage_summary` levava 200-270 ms quente e tocava ~109 mil páginas em toda chamada; fria, ~2,5 s na Home (LCP de 2,75 s, a "Atenção necessária"). O resumo contava quatro números por cima da `get_stock_coverage` inteira, com as janelas de tendência e o histórico que não usa. Dentro da função, o plano tocava ~4 vezes o mesmo corpo escrito direto (~109 mil contra ~23 mil páginas).
