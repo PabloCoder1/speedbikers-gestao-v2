@@ -1,4 +1,5 @@
 import type { Tom } from "../../../../components/tone";
+import { anuncioExcluido, EXCLUIDO_NO_MERCADO_LIVRE, quandoAV3ViuAExclusao } from "../../../../lib/anuncio-excluido";
 import { formatCount } from "../../../../lib/format";
 
 /**
@@ -26,6 +27,8 @@ export const SYNC_VELHO_HORAS = 12;
 export interface FatosDoAnuncio {
   readonly itemId: string;
   readonly status: string;
+  /** `listings.deleted_at` (D-631): preenchido, o anúncio foi excluído no Mercado Livre. */
+  readonly excluidoEm: string | null;
   readonly disponivel: number;
   readonly skuId: string | null;
   readonly sku: string | null;
@@ -60,6 +63,20 @@ export function idadeRelativa(instante: string, agora: Date): string {
 }
 
 export function checarAnuncio(fatos: FatosDoAnuncio): ItemDeChecagem[] {
+  // D-634: o anúncio excluído é uma linha só. As outras perguntas (estoque,
+  // vínculo, venda, frescor da leitura) são sobre um anúncio que vende, e o
+  // status pode ser o último visto antes do 404 — "ativo" aqui seria mentira.
+  if (anuncioExcluido(fatos.excluidoEm)) {
+    return [
+      {
+        chave: "estado",
+        titulo: EXCLUIDO_NO_MERCADO_LIVRE,
+        detalhe: `Não volta a vender: ${quandoAV3ViuAExclusao(fatos.excluidoEm)}. O preço e o estoque são os da última leitura; a história de venda continua aqui.`,
+        tom: "perigo",
+      },
+    ];
+  }
+
   const itens: ItemDeChecagem[] = [];
 
   itens.push(

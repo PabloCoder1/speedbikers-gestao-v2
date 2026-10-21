@@ -109,8 +109,8 @@ test("aba Full mostra o snapshot do seed por conta", async ({ page }) => {
  * preço, então 97% das páginas mostram exatamente esta mensagem.
  *
  * O que ela precisa dizer é o oposto do óbvio. `listing.price.changed` é um
- * DIFF entre snapshots de 6 em 6 horas — logo "sem linha" não é "preço
- * parado", e a tela que dissesse "preço estável" estaria inventando.
+ * DIFF entre duas leituras do anúncio (a da notificação do Mercado Livre e a
+ * varredura de 6 em 6 horas, D-631) — logo "sem linha" não é "preço parado", e a tela que dissesse "preço estável" estaria inventando.
  */
 test("aba Preços existe e não confunde ausência de evento com preço parado", async ({ page }) => {
   const seed = await readSeedOutput();
@@ -129,7 +129,7 @@ test("aba Preços existe e não confunde ausência de evento com preço parado",
 
   // A ressalva que impede a leitura errada continua, com ou sem linha: "sem
   // evento" nunca quer dizer "preço parado".
-  await expect(page.getByText("uma alteração feita e desfeita entre duas sincronizações não deixa registro")).toBeVisible();
+  await expect(page.getByText("uma alteração feita e desfeita entre duas leituras não deixa registro")).toBeVisible();
 });
 
 /**

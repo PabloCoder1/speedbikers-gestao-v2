@@ -8,6 +8,7 @@ import { useDialogo } from "../../../../components/use-dialogo";
 
 import { createManualLink } from "../../vinculacoes/actions";
 import { createClient } from "../../../../lib/supabase/browser";
+import { anuncioExcluido, avisoDeVinculoDoExcluido, EXCLUIDO_NO_MERCADO_LIVRE } from "../../../../lib/anuncio-excluido";
 import { formatCount, formatCurrency } from "../../../../lib/format";
 import { listingStatusLabel } from "../../../../lib/labels";
 
@@ -66,6 +67,7 @@ type Estado =
   | { kind: "buscando" }
   | { kind: "encontrado"; anuncio: Encontrado }
   | { kind: "nao_encontrado" }
+  | { kind: "excluido"; itemId: string; deletedAt: string }
   | { kind: "gravando"; anuncio: Encontrado }
   | { kind: "erro"; mensagem: string };
 
@@ -116,7 +118,7 @@ export function VincularAnuncio({
     */
     const { data, error } = await supabase
       .from("listings")
-      .select("item_id, title, status, price, available_quantity, synced_at, skus(sku)")
+      .select("item_id, title, status, price, available_quantity, synced_at, deleted_at, skus(sku)")
       .eq("ml_account_id", conta)
       .eq("item_id", itemId)
       .maybeSingle();
@@ -129,6 +131,14 @@ export function VincularAnuncio({
 
     if (data === null) {
       setEstado({ kind: "nao_encontrado" });
+
+      return;
+    }
+
+    // D-634: a linha do anúncio excluído no Mercado Livre fica na V3 (D-631),
+    // mas ele não existe mais lá — a mesma regra do "não encontramos".
+    if (anuncioExcluido(data.deleted_at)) {
+      setEstado({ kind: "excluido", itemId: data.item_id, deletedAt: data.deleted_at });
 
       return;
     }
@@ -265,10 +275,18 @@ export function VincularAnuncio({
                 <b style={{ display: "block", color: "var(--sb-accent-ink)" }}>Não encontramos este anúncio</b>
                 <p style={{ margin: "0.25rem 0 0" }}>
                   Ele não está no catálogo sincronizado desta conta. Pode ser MLB digitado errado, conta não
-                  conectada, anúncio que você não alcança, ou anúncio novo — o catálogo sincroniza de 6 em 6 horas.
+                  conectada, anúncio que você não alcança, ou anúncio criado há poucos minutos — o novo chega pela
+                  notificação do Mercado Livre, e a varredura do catálogo inteiro é de 6 em 6 horas.
                   <strong> Não conseguimos confirmar que ele existe</strong>, então não vinculamos: era exatamente
                   isto que a confirmação veio impedir.
                 </p>
+              </div>
+            )}
+
+            {estado.kind === "excluido" && (
+              <div className="sb-drawer-card" style={{ marginTop: "var(--sb-space-3)", fontSize: "0.75rem" }}>
+                <b style={{ display: "block", color: "var(--sb-accent-ink)" }}>{EXCLUIDO_NO_MERCADO_LIVRE}</b>
+                <p style={{ margin: "0.25rem 0 0" }}>{avisoDeVinculoDoExcluido(estado.itemId, estado.deletedAt)}</p>
               </div>
             )}
 

@@ -7,6 +7,7 @@ const agora = new Date("2026-09-16T12:00:00Z");
 const saudavel: FatosDoAnuncio = {
   itemId: "MLB1",
   status: "active",
+  excluidoEm: null,
   disponivel: 12,
   skuId: "sku-1",
   sku: "SKU-1",
@@ -25,6 +26,15 @@ describe("checarAnuncio", () => {
 
     expect(itens).toHaveLength(7);
     expect(itens.every((item) => item.tom === "ok")).toBe(true);
+  });
+
+  it("D-634: o excluído é uma linha só, em perigo, mesmo com o status velho 'active' do 404", () => {
+    const itens = checarAnuncio({ ...saudavel, excluidoEm: "2026-10-21T18:00:00Z" });
+
+    expect(itens).toHaveLength(1);
+    expect(itens[0]).toMatchObject({ chave: "estado", titulo: "Excluído no Mercado Livre", tom: "perigo" });
+    expect(itens[0]?.detalhe).toContain("a V3 viu a exclusão em 21/10/2026");
+    expect(itens[0]?.acao).toBeUndefined();
   });
 
   it("disponível zero é PERIGO medido, não ausência", () => {
