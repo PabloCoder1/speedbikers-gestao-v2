@@ -47,6 +47,7 @@ const TUDO_CERTO: Record<string, Resposta> = {
   shopee_sem_vinculo: { data: resultado("shopee_sem_vinculo", 3), error: null },
   shopee_ruptura: { data: resultado("shopee_ruptura", 1), error: null },
   shopee_prejuizo: { data: resultado("shopee_prejuizo", 0), error: null },
+  shopee_divergencia: { data: resultado("shopee_divergencia", 2), error: null },
 };
 
 async function run(porFonte: Record<string, Resposta>, payload: unknown = { organizationId: ORG }) {
@@ -70,12 +71,14 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_sem_vinculo"] } },
       // D-611: a ruptura da Shopee, a última.
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_ruptura"] } },
-      // D-617: o prejuízo da Shopee, a última.
+      // D-617: o prejuízo da Shopee.
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_prejuizo"] } },
+      // D-627: a divergência de estoque da Shopee, a última.
+      { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_divergencia"] } },
     ]);
-    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1) + (1 + 1) + (0 + 1): criadas e atualizadas de cada fonte.
-    expect(outcome).toEqual({ status: "done", processed: 13 });
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(6);
+    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1) + (1 + 1) + (0 + 1) + (2 + 1): criadas e atualizadas de cada fonte.
+    expect(outcome).toEqual({ status: "done", processed: 16 });
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(7);
     expect(linhas.join("")).toContain('"detectados":{"frete_anomalo":3}');
   });
 
@@ -85,8 +88,8 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       frete_anomalo: { data: null, error: { message: "canceling statement due to statement timeout" } },
     });
 
-    expect(chamadas).toHaveLength(6);
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(5);
+    expect(chamadas).toHaveLength(7);
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(6);
     expect(outcome).toEqual({
       status: "failed",
       retryable: true,
