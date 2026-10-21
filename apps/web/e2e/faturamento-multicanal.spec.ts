@@ -83,7 +83,11 @@ test("/faturamento: o cabeçalho tem a mesma altura no ML, na Shopee e no Todos 
     await page.goto(url);
     await expect(page.getByRole("heading", { level: 1, name: "Faturamento" })).toBeVisible();
 
-    const caixa = await page.locator(".sb-page-title").first().boundingBox();
+    // Pelo título, e não pela classe: o esqueleto de carregamento repete `.sb-page-title`.
+    const cabecalho = page
+      .locator(".sb-page-title")
+      .filter({ has: page.getByRole("heading", { level: 1, name: "Faturamento" }) });
+    const caixa = await cabecalho.boundingBox();
 
     alturas.push(Math.round(caixa?.height ?? 0));
   }
