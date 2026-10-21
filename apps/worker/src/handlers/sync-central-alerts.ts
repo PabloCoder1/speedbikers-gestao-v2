@@ -30,9 +30,10 @@ const payloadSchema = z.object({ organizationId: z.uuid() });
 /**
  * Na ordem das chamadas: a mais pesada (o detector de frete, 4,4 s frio)
  * primeiro. Os detectores da Shopee por último: o anúncio vendendo sem vínculo
- * (D-609) e a ruptura no anúncio (D-611). A função recusa a fonte antes da
- * migration de cada uma (`20261020180000`, `20261020190000`), então este
- * worker só sobe depois delas em produção.
+ * (D-609), a ruptura no anúncio (D-611) e o produto no prejuízo (D-617). A
+ * função recusa a fonte antes da migration de cada uma (`20261020180000`,
+ * `20261020190000`, `20261020220000`), então este worker só sobe depois delas
+ * em produção.
  */
 export const FONTES_ALERTAS = [
   "frete_anomalo",
@@ -40,6 +41,7 @@ export const FONTES_ALERTAS = [
   "produto_prejuizo",
   "shopee_sem_vinculo",
   "shopee_ruptura",
+  "shopee_prejuizo",
 ] as const;
 
 const resultadoSchema = z.object({

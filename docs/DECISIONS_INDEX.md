@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **531** (D-001 a D-620).
+Decisões registradas: **532** (D-001 a D-620).
 
 ## Por domínio
 
@@ -165,7 +165,7 @@ Decisões registradas: **531** (D-001 a D-620).
 - **D-614** — A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 - **D-615** — O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
 
-### interface (69)
+### interface (70)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -236,6 +236,7 @@ Decisões registradas: **531** (D-001 a D-620).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-520** — As subtelas da Central pintam o titulo, as abas e os filtros antes da leitura lenta; so os numeros esperam
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
+- **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
 ### mercado-livre (93)
 

@@ -18137,6 +18137,41 @@ Cada carga da `/central` sem conta escolhida fazia 4 `get_faturamento` e 3 `get_
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-617 - O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
+
+**Contexto:** o terceiro detector da Shopee que o dono escolheu em 20/10. O financeiro da Shopee vem por PEDIDO, e nao por item: a comissao e as taxas sao do pedido, e as listas `net_*_fee_info_list` vem por regra. Na leitura de producao de 20/10 (so proporcoes): 99,6% dos pedidos validos em 30 dias tem um SKU so, e todos tem o financeiro lido.
+
+**Decisao:**
+1. **Sem rateio:** o pedido coberto de UM SKU (`sku_unico` de `get_shopee_faturamento_pedidos`, a mesma classificacao do faturamento, C-58) leva o resultado inteiro a esse SKU: recebido + ajustes - custo.
+   - O pedido de varios SKUs fica de fora, e a evidencia conta quantos. A conta e exata, e nao nasce regra nova de divisao.
+   - O "coberto" e o do faturamento: receita conhecida, financeiro lido, nenhum item sem SKU e custo de todos os itens.
+2. **A regra e a do alerta do ML (D-402, D-471):**
+   - 30 dias completos ate ontem, 3 pedidos cobertos ou mais, e resultado negativo;
+   - severidade alta com margem de -10% ou pior, que gera notificacao (D-411);
+   - confianca alta com 5 pedidos ou mais e sem custo atual.
+3. **Por loja e SKU:** o preco e as taxas sao da loja. A acao leva `shopee_shop_id` e `sku_id`, e `subject_key = loja:sku`.
+4. **A evidencia:** o resultado e a margem, o que a Shopee repassou (comissao e taxas, frete da loja), os ajustes, o custo, o aviso de custo atual e os pedidos de varios SKUs que ficaram de fora.
+5. **A fonte so roda com loja live de pedidos lidos.** O worker pede a fonte por ultimo.
+
+**Verificacao:**
+- **Integracao:** 2 testes.
+  - O SKU com 3 pedidos no prejuizo vira acao alta, de confianca media (custo atual), com a conta: receita 180, repasse 120, custo 150, resultado -30, e 1 pedido de varios SKUs de fora.
+  - Ficam de fora o SKU com lucro, o de 2 pedidos, o da loja de teste, o pedido de dois SKUs e o pedido sem financeiro.
+  - O resultado de volta ao positivo encerra a acao no 3o dia, com o motivo.
+- **Worker:** 4 de 4, com a sexta fonte.
+- **Mutacao:** cada uma derruba testes.
+  - o limiar de 2 pedidos;
+  - a loja de teste incluida;
+  - o resultado sem o custo.
+- **Producao (so contagem e tempo):** `get_shopee_faturamento_pedidos` em 30 dias leva 312 ms na primeira chamada e ~170 ms depois, abaixo do teto de 8 s por fonte (D-404). Hoje cairiam 5 SKUs, 3 de severidade alta.
+
+**Publicacao:**
+1. a migration `20261020220000`;
+2. o worker, com a D-609 e a D-611;
+3. a tela (A2): o rotulo do kind, o atalho do SKU e `/vendas/shopee` (o faturamento da Shopee).
+
+**Impacto:** `supabase/migrations/20261020220000_shopee_prejuizo_na_central.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
+
 ## D-618 - O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
 
 **Contexto:** o dono escolheu em 20/10 o item 4 (b): a aba Vendas de `/skus/[id]` com a Shopee. Com loja Shopee, a aba já mostrava o total e uma linha por conta e loja (C-59, D-444), mas o dia a dia e os detalhes eram só do ML. O A2 pediu o C-10. O A1 o fez como o C-71 (D-607, #281, migration `20261020160000`):
