@@ -18787,6 +18787,48 @@ A varredura seguinte de cada conta marca os excluidos que ja existem, e da em di
 
 **Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
 
+## D-633 - O historico de preco da Shopee (C-81)
+
+**Contexto:** a frente C-13 do A2, liberada pelo dono em 21/10 ("todas essas opções pode adicionar") e aceita pelo A1 como C-81. A `/precos`, o Excel e a aba Preços do SKU leem `get_price_changes`, que so conhecia o `listing.price.changed` do Mercado Livre. Da Shopee, o banco guardava so o preco atual (`shopee_items` e `shopee_item_models`), sobrescrito a cada leitura.
+
+Lido antes de decidir:
+1. **A documentacao oficial** (`get_item_base_info`, lida em 21/10 no navegador embutido): `original_price` e "The original price of the item in the listing currency", e `current_price` "will be the promotion price" quando ha promocao.
+2. **A releitura:** `shopee.items.hydrate` rele o item quando a Shopee marca mudanca (`update_time`) e o item ativo a cada 6 h (D-619). As variacoes sao apagadas e regravadas a cada leitura.
+3. **Os eventos da Shopee que ja existem** (`sync.failed` da loja) usam o MESMO tipo do ML, com a origem na coluna `shopee_shop_id`. A RLS do `domain_events` ja cobre a loja.
+4. **Quem le o tipo hoje** liga o evento a conta do ML (`get_price_changes`, a correlacao do diagnostico, a analise de conteudo), entao o evento da loja fica de fora ate ser ensinado.
+
+**Decisao:**
+1. **O evento:** `listing.price.changed` com `shopee_shop_id` e `ml_account_id` nulo, `entity_type = 'shopee_item'` e `entity_id` = o item.
+   - `before` = `{price, current_price, model_id}`; o `after` leva tambem `model_name`, `item_name` e `shop_name`, para o aviso dizer a origem sem outra ida (pedido do A2).
+   - `price` = `original_price`, o criterio do ML: a promocao nao e mudanca de preco. O `current_price` vai junto, informativo.
+   - So nasce quando `price` muda entre duas leituras com os dois lados lidos. A primeira leitura, a promocao sozinha e a variacao criada ou removida nao geram evento.
+   - `occurred_at` = a hora da leitura: a mudanca aconteceu entre a leitura anterior e ela.
+2. **No worker:** o preco que o banco tinha e lido ANTES de gravar (o lote, com as variacoes paginadas), e o evento e gravado logo depois de o item ser gravado. Sem os precos anteriores a tarefa falha antes de gravar: gravar por cima apagaria a mudanca para sempre.
+3. **Desde quando:** `shopee_shops.price_history_since`, gravado na primeira leitura da loja com a comparacao. A tela nunca diz "sem mudanca" antes disso.
+4. **`get_price_changes`** (`docs/MULTICHANNEL_CONTRACTS.md` §3.29): `p_marketplace` e `p_shopee_shop_id` no fim.
+   - Nulo continua sendo so o ML (pedido do A2, o padrao do C-60): a tela de hoje nao recebe a Shopee antes de saber mostra-la.
+   - Conta e loja juntas, ou marketplace que as contradiz, e recusado.
+   - `series_start` continua sendo o do ML; `series_start_shopee` e a data mais recente entre as lojas conectadas, NULA se alguma ainda nao foi registrada.
+
+**Verificacao:**
+- dominio: 5 testes (`detectShopeePriceEvents`);
+- worker: 2 testes no catalogo, 16 de 16 (o evento da loja depois da gravacao, a promocao sem evento e o `price_history_since`; a primeira leitura sem evento e a falha antes de gravar);
+- integracao: 7 testes (nulo = so o ML, com a serie do ML sem a Shopee; 'shopee' com a variacao, o SKU resolvido e a loja; 'todos' com os contadores e o mesmo numero em duas lojas; a loja e o "desde quando"; SKU, busca e direcao; as recusas; a RLS);
+- mutacao: 9 no SQL e 4 no worker, todas pegas;
+- `db reset` e a suite inteira, 1106 de 1106.
+
+**Publicacao:**
+1. a migration `20261021190000` pode entrar antes: nulo e o ML de hoje;
+2. o worker espera a fatia do A2 nas notificacoes (o `shopee_item` no `event-format`, a origem pelo `shop_name`);
+3. a tela manda os params novos so depois da migration em producao.
+
+**Impacto:**
+- `supabase/migrations/20261021190000_historico_de_preco_da_shopee.sql`;
+- `packages/domain/src/events/{shopee-price-events,shopee-price-events.test,index}.ts`;
+- `apps/worker/src/handlers/{shopee-items-hydrate,domain-events,shopee-catalogo.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,SHOPEE,HANDOFF}.md`.
+
 ## D-634 - O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
 
 **Contexto:** a D-631 do A1 (#303, pedido do dono de 21/10) guarda o anúncio excluído no Mercado Livre com `listings.deleted_at` e o esconde das quatro RPCs do catálogo (`get_listings_dashboard`, a faixa, `get_sku_listings` e `get_listings_link_overview`). A linha fica, porque é história de venda e de vínculo. Cinco pontos da web leem `listings` direto e passariam a mostrá-lo como vivo:
