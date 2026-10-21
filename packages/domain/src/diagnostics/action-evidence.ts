@@ -55,6 +55,9 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   frete_anomalo: "Frete anômalo",
   ads_campanha: "Campanha de Ads",
   produto_prejuizo: "Produto no prejuízo",
+  // Os detectores da Shopee (D-609, D-611; a tela é a D-626): o anúncio da loja live.
+  shopee_sem_vinculo: "Shopee vendendo sem vínculo",
+  shopee_ruptura: "Ruptura no anúncio da Shopee",
 };
 
 /** Os `kind` que são problema por definição, sem direção a ler. */
@@ -63,6 +66,8 @@ const PROBLEMAS: ReadonlySet<string> = new Set([
   "frete_anomalo",
   "ads_campanha",
   "produto_prejuizo",
+  "shopee_sem_vinculo",
+  "shopee_ruptura",
 ]);
 
 /**
@@ -155,6 +160,43 @@ function toneFor(kind: string, direcao: "queda" | "alta" | null): ActionTone {
   // central (D-403) são problema por definição; um `kind` desconhecido não
   // recebe cor que afirme nada.
   return PROBLEMAS.has(kind) ? "problema" : "neutro";
+}
+
+/**
+ * O anúncio da Shopee de uma ação dos detectores da Shopee (D-609, D-611): a
+ * loja e o que a busca de `/anuncios/shopee` acha — o SKU do anúncio, ou o
+ * número do item quando o anúncio não traz SKU. Lido de `evidence.detector`,
+ * que o banco grava com a loja; qualquer forma estranha vira `null`, e a tela
+ * não oferece o atalho (D-626).
+ */
+export interface ShopeeListingRef {
+  readonly lojaId: string;
+  readonly busca: string;
+  /** O nome do anúncio (e a variação), para o cartão dizer de que anúncio se trata. */
+  readonly anuncio: string | null;
+}
+
+export function readShopeeListingRef(raw: unknown): ShopeeListingRef | null {
+  if (!isRecord(raw) || !isRecord(raw.detector)) return null;
+
+  const detector = raw.detector;
+  const lojaId = readString(detector, "shopee_shop_id");
+
+  if (lojaId === null) return null;
+
+  const nome = readString(detector, "anuncio");
+  const variacao = readString(detector, "variacao");
+  const anuncio = nome === null ? null : variacao === null ? nome : `${nome} · ${variacao}`;
+  const sku = readString(detector, "sku_anuncio")?.trim() ?? "";
+
+  if (sku !== "") return { lojaId, busca: sku, anuncio };
+
+  const item = detector.item_id;
+
+  if (typeof item === "number" && Number.isSafeInteger(item) && item > 0) return { lojaId, busca: String(item), anuncio };
+  if (typeof item === "string" && /^\d{1,20}$/u.test(item)) return { lojaId, busca: item, anuncio };
+
+  return null;
 }
 
 export function describeActionEvidence(kind: string, raw: unknown): ActionEvidenceView {

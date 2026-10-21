@@ -71,3 +71,25 @@ describe("actionShortcuts", () => {
     ]);
   });
 });
+
+describe("os detectores da Shopee (D-626)", () => {
+  const SHOPEE = { lojaId: "loja-1", busca: "CAP 01" } as const;
+
+  it("sem vínculo: o anúncio na /anuncios/shopee, pela loja e pela busca que a tela entende (q)", () => {
+    expect(actionShortcuts({ kind: "shopee_sem_vinculo", skuId: null, sku: null, shopee: SHOPEE })).toEqual([
+      { label: "Anúncio na Shopee", href: "/anuncios/shopee?loja=loja-1&q=CAP+01" },
+    ]);
+  });
+
+  it("ruptura com SKU: o dashboard, o anúncio e o estoque do SKU", () => {
+    expect(actionShortcuts({ kind: "shopee_ruptura", skuId: "sku-1", sku: "CAP-01", shopee: SHOPEE }).map((s) => s.label)).toEqual([
+      "Dashboard do SKU",
+      "Anúncio na Shopee",
+      "Estoque do SKU",
+    ]);
+  });
+
+  it("sem a referência do anúncio, nenhum link inventado para a Shopee", () => {
+    expect(actionShortcuts({ kind: "shopee_sem_vinculo", skuId: null, sku: null, shopee: null })).toEqual([]);
+  });
+});

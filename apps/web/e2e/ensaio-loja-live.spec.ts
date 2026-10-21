@@ -545,3 +545,66 @@ test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote marca 
   await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toBeVisible();
   await semErro(page);
 });
+
+test("/acoes: a ação da Shopee vendendo sem vínculo tem rótulo, a loja e o atalho para o anúncio (D-626, C-73)", async ({ page }) => {
+  // A ação como a `sincronizar_alertas_central` a grava (D-609), para o anúncio
+  // da loja live: a loja em `shopee_shop_id` e o retrato em `evidence.detector`.
+  const { data: org } = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+  const organizationId = org?.organization_id ?? "";
+  const subject = `${lojaId}:990777001:-`;
+  const acao = await db
+    .from("actions")
+    .insert({
+      organization_id: organizationId,
+      kind: "shopee_sem_vinculo",
+      severity: "media",
+      confidence: "alta",
+      estimated_impact_brl: 300,
+      shopee_shop_id: lojaId,
+      evidence: {
+        evidencias: [
+          { tipo: "venda", descricao: `3 unidades em 3 pedidos, R$ 300,00 de receita, na loja ${LOJA_LIVE.nome}, sem SKU vinculado.` },
+          { tipo: "vinculo", descricao: `O anúncio traz o SKU "${LOJA_LIVE.sku}", que não existe no catálogo.` },
+        ],
+        detector: {
+          shopee_shop_id: lojaId,
+          loja: LOJA_LIVE.nome,
+          item_id: 990777001,
+          model_id: null,
+          anuncio: LOJA_LIVE.skuTitulo,
+          variacao: null,
+          sku_anuncio: LOJA_LIVE.sku,
+          estado: "SKU_FORA_DO_CATALOGO",
+        },
+      },
+      recommendation: "Vincule o anúncio a um SKU em Anúncios da Shopee: sem o vínculo, a venda não baixa o estoque.",
+      created_by: "system",
+      dedup_key: `shopee_sem_vinculo:${subject}:e2e`,
+      subject_key: subject,
+    })
+    .select("id")
+    .single();
+
+  expect(acao.error).toBeNull();
+
+  try {
+    await entrar(page, "/acoes?tipo=shopee_sem_vinculo");
+
+    const cartao = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Shopee vendendo sem vínculo", level: 3 }) });
+
+    await expect(cartao).toHaveCount(1);
+    // A loja no lugar da conta, o anúncio no lugar do SKU que ele não tem.
+    await expect(cartao).toContainText(LOJA_LIVE.nome);
+    await expect(cartao).toContainText(`Shopee ${LOJA_LIVE.sku}`);
+    await expect(cartao).toContainText(LOJA_LIVE.skuTitulo);
+    await expect(cartao).toContainText("que não existe no catálogo");
+    await semErro(page);
+
+    // O atalho abre a /anuncios/shopee na loja, pela busca que ela entende (`q`), e acha o anúncio.
+    await cartao.getByRole("link", { name: "Anúncio na Shopee" }).click();
+    await expect(page).toHaveURL(new RegExp(`/anuncios/shopee\\?loja=${lojaId}&q=${LOJA_LIVE.sku}$`, "u"));
+    await expect(page.getByText(LOJA_LIVE.skuTitulo).first()).toBeVisible();
+  } finally {
+    await db.from("actions").delete().eq("id", acao.data?.id ?? "");
+  }
+});

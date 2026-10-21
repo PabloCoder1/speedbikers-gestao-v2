@@ -1,4 +1,4 @@
-import { actionKindLabel, describeActionEvidence } from "@sb/domain";
+import { actionKindLabel, describeActionEvidence, readShopeeListingRef } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -176,12 +176,16 @@ export default async function AcoesPage({
 
   const agora = new Date();
 
-  const cartoes = acoes.map(
-    (row): ActionCardData => ({
+  const cartoes = acoes.map((row): ActionCardData => {
+    // D-626: o anúncio da Shopee dos detectores da Shopee, lido da evidência (nulo nas outras).
+    const shopee = readShopeeListingRef(row.evidence);
+
+    return {
       id: row.id,
       sku: row.sku,
-      title: row.sku_title,
+      title: row.sku_title ?? shopee?.anuncio ?? null,
       mlbId: row.mlb_id,
+      shopeeRef: shopee === null ? null : `Shopee ${shopee.busca}`,
       accountLabel: row.account_label,
       severity: row.severity ?? "media",
       confidence: row.confidence ?? "media",
@@ -197,9 +201,15 @@ export default async function AcoesPage({
         formatAge(row.created_at, agora) ??
         (row.created_at === null ? "—" : formatBusinessDate(row.created_at)),
       decisions: decisionsByAction.get(row.id) ?? [],
-      shortcuts: actionShortcuts({ kind: row.kind ?? "", skuId: row.sku_id, sku: row.sku, mlbId: row.mlb_id }),
-    }),
-  );
+      shortcuts: actionShortcuts({
+        kind: row.kind ?? "",
+        skuId: row.sku_id,
+        sku: row.sku,
+        mlbId: row.mlb_id,
+        shopee,
+      }),
+    };
+  });
 
   const janela = summarizePagedWindow({
     page: filters.page,
