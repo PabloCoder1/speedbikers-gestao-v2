@@ -249,14 +249,16 @@ describe("a marca no recorte (D-622, C-72)", () => {
     marca: { kind: "marca", value: "Pro Tork" },
   };
 
-  it("vai na URL com os nomes da tela do ML, e atravessa para o ML e para a Shopee", () => {
-    expect(hrefDeVendas(COM_MARCA)).toBe("/vendas?days=7&marca=Pro+Tork");
+  it("vai na URL com os nomes da tela do ML, com o Todos explícito, e atravessa para o ML e para a Shopee", () => {
+    // Sem `marketplace`, a marca na URL abriria o ML (o link antigo, D-488): o Todos tem de dizer que é ele.
+    expect(resolverEscopoDaTelaDeVendas(Object.fromEntries(new URL(hrefDeVendas(COM_MARCA), "http://local").searchParams))).toBe("todos");
+    expect(hrefDeVendas(COM_MARCA)).toBe("/vendas?marketplace=todos&days=7&marca=Pro+Tork");
     expect(hrefDeVendas(COM_MARCA, { escopo: "ml" })).toBe("/vendas?marketplace=ml&days=7&marca=Pro+Tork");
     expect(hrefDeVendas(COM_MARCA, { escopo: "shopee" })).toBe("/vendas?marketplace=shopee&days=7&marca=Pro+Tork");
   });
 
   it("o \"sem marca\" é o semMarca=1, e tirar a marca a tira da URL", () => {
-    expect(hrefDeVendas(COM_MARCA, { marca: { kind: "sem_marca" } })).toBe("/vendas?days=7&semMarca=1");
+    expect(hrefDeVendas(COM_MARCA, { marca: { kind: "sem_marca" } })).toBe("/vendas?marketplace=todos&days=7&semMarca=1");
     expect(hrefDeVendas(COM_MARCA, { marca: { kind: "todas" } })).toBe("/vendas?days=7");
   });
 

@@ -179,7 +179,8 @@ export function hrefDoRecorte(
   return buildFilterHref(
     tela,
     {
-      marketplace: escopo === ESCOPO_PADRAO[tela] ? null : escopo,
+      // Com marca, o "Todos" é explícito: sem `marketplace`, a marca na URL abre o ML (o link antigo, D-488).
+      marketplace: escopo === ESCOPO_PADRAO[tela] && marca.kind === "todas" ? null : escopo,
       ...("from" in periodo
         ? { from: periodo.from, to: periodo.to }
         : { days: periodo.days === DEFAULT_PERIOD_DAYS ? null : String(periodo.days) }),

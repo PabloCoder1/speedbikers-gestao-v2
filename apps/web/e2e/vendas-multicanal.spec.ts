@@ -132,8 +132,8 @@ test("/vendas?marketplace=todos: o cancelamento por compra e o hoje ao vivo, com
   await expect(celula).toContainText("Por compra");
   await expect(page.locator(".sb-kpi-strip-ancora .sb-kpi")).toHaveCount(5);
 
-  // O que ainda falta neste recorte é só a marca.
-  await expect(page.getByRole("note").filter({ hasText: "O filtro de marca ainda é só do Mercado Livre" })).toBeVisible();
+  // A marca chegou ao "Todos" (D-622): o menu está lá, em "Todas as marcas".
+  await expect(page.locator('summary[aria-label="Marca: Todas as marcas"]')).toBeVisible();
 });
 
 test("/vendas?marketplace=todos: a marca recorta os dois canais, e compras, ticket e cancelamento não se aplicam (D-622, C-72)", async ({
@@ -151,7 +151,8 @@ test("/vendas?marketplace=todos: a marca recorta os dois canais, e compras, tick
   // A troca de marketplace leva a marca junto, nos dois sentidos.
   await seletorDeMarketplace(page).locator("summary").click();
   await seletorDeMarketplace(page).getByRole("link", { name: "Todos os marketplaces", exact: true }).click();
-  await expect(page).toHaveURL(/\/vendas\?semMarca=1$/u);
+  // Com marca, o "Todos" é explícito: sem `marketplace`, a marca na URL abriria o ML (D-488).
+  await expect(page).toHaveURL(/\/vendas\?marketplace=todos&semMarca=1$/u);
   await expect(page.locator('summary[aria-label="Marca: Sem marca"]')).toBeVisible();
 
   expect(await valorDaFaixa(page, "multicanal_receita_bruta")).toBe(ml.receita);
