@@ -126,6 +126,16 @@ const TOLERANCIA_JANELAS = 2;
  */
 export const TETO_DISPERSAO_PCT = 10;
 
+/** (maior − menor) ÷ menor > teto, em centavos inteiros: sem o resíduo do ponto flutuante (D-630). */
+export function acimaDoTeto(menor: number, maior: number): boolean {
+  const menorCentavos = Math.round(menor * 100);
+  const maiorCentavos = Math.round(maior * 100);
+
+  if (menorCentavos <= 0) return false;
+
+  return (maiorCentavos - menorCentavos) * 100 > TETO_DISPERSAO_PCT * menorCentavos;
+}
+
 function pior(a: NivelDiagnostico | null, b: NivelDiagnostico): NivelDiagnostico {
   if (a === null) return b;
 
@@ -287,12 +297,18 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
     configurado em lugar nenhum do esquema, e D-148 é explícita sobre não
     inventar a constante. O número aparece; o selo espera a régua.
   */
-  const precosLidos = anuncios.map((a) => precoEfetivo(a)).filter((p): p is number => p !== null);
+  /*
+    O CONJUNTO DO PREÇO (D-630, a régua do C-77 na lista de anúncios): só o
+    anúncio ativo ou pausado. O encerrado não chega ao comprador, e o preço
+    velho dele acendia "divergente" num SKU que estava alinhado.
+  */
+  const comPreco = anuncios.filter((a) => a.status === "active" || a.status === "paused");
+  const precosLidos = comPreco.map((a) => precoEfetivo(a)).filter((p): p is number => p !== null);
 
   // Quantos anúncios entraram com o promocional em vez do cadastrado — só
   // para a frase do problema poder dizer que a promoção JÁ foi descontada,
   // em vez de deixar quem lê achar que a tela esqueceu dela.
-  const comPromocaoAtiva = anuncios.filter((a) => a.promotional_price !== null).length;
+  const comPromocaoAtiva = comPreco.filter((a) => a.promotional_price !== null).length;
 
   let precos: RetratoDePrecos | null = null;
 
@@ -318,7 +334,9 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
       não foi desfeita" deixou de ser causa candidata porque promoção ativa
       já está descontada antes de chegar nesta conta.
     */
-    if (precosLidos.length > 1 && precos.dispersaoPct > TETO_DISPERSAO_PCT) {
+    // D-630: o teto compara a dispersão CHEIA, em centavos inteiros (como o `numeric` do C-77), e não o
+    // número arredondado da tela: 10,04% acende nas duas telas, 10% exatos em nenhuma.
+    if (precosLidos.length > 1 && acimaDoTeto(menor, maior)) {
       problemas.push({
         chave: "dispersao-de-preco",
         titulo: "Preços muito diferentes entre os anúncios",
@@ -328,7 +346,7 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
         causa: "Reajuste aplicado em parte dos anúncios, ou preço de conta nova que nunca foi alinhado.",
         recomendacao:
           "Conferir em Preços qual anúncio está fora da faixa e alinhar — ou registrar que a diferença é proposital.",
-        regua: `(maior − menor) ÷ menor > ${String(TETO_DISPERSAO_PCT)}% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado)`,
+        regua: `(maior − menor) ÷ menor > ${String(TETO_DISPERSAO_PCT)}% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado), só anúncios ativos e pausados`,
       });
     }
   }
