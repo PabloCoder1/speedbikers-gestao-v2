@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { E2E_ANOMALIA, E2E_SHOPEE_ESPERADO, E2E_SHOPEE_ITEMS, E2E_SKU_CODE } from "./constants.js";
+import { E2E_ANOMALIA, E2E_SHOPEE_ESPERADO, E2E_SHOPEE_ITEMS, E2E_SHOPEE_LEITURA_MINUTOS, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -380,4 +380,23 @@ test("/anuncios/shopee: o CSV sai com o recorte da lista e as palavras da tela (
 
   expect(doItem).toContain(";Vinculado;Ativo;");
   expect(doItem).toContain(";pelo SKU do anúncio;");
+});
+
+test("/anuncios/shopee: o estoque diz de quando é a leitura, e o item não lido não ganha hora (D-628)", async ({ page }) => {
+  await login(page, "/anuncios/shopee");
+
+  // O seed lê o catálogo há E2E_SHOPEE_LEITURA_MINUTOS: o estoque do anúncio lido diz isso, com a hora no title.
+  const linhaItem = tabela(page).getByRole("row", { name: new RegExp(String(skuNoItem.itemId)) });
+  const estoque = linhaItem.getByRole("cell").filter({ hasText: String(skuNoItem.estoque) }).filter({ hasText: "lido" });
+
+  // Os minutos crescem do seed ao teste (o build fica no meio): vale "lido há N min", com N de pelo menos 30.
+  const minutos = Number(/lido há (\d+) min/u.exec(await estoque.innerText())?.[1] ?? "-1");
+
+  expect(minutos).toBeGreaterThanOrEqual(E2E_SHOPEE_LEITURA_MINUTOS);
+  await expect(estoque.locator("small")).toHaveAttribute("title", /^Estoque lido da Shopee em \d{2}\/\d{2}\/\d{4}/u);
+
+  // O item que espera os detalhes não tem estoque: "—", sem hora de leitura inventada.
+  const linhaAguardando = tabela(page).getByRole("row", { name: new RegExp(String(aguardando.itemId)) });
+
+  await expect(linhaAguardando).not.toContainText("lido há");
 });
