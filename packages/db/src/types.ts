@@ -1925,6 +1925,9 @@ export type Database = {
           description_source_updated_at: string | null
           sku_id: string | null
           status: string
+          // D-631: o subestado do ML e quando a V3 viu o anuncio excluido.
+          sub_status: string[] | null
+          deleted_at: string | null
           synced_at: string
           permalink: string | null
           thumbnail_url: string | null
@@ -1950,6 +1953,8 @@ export type Database = {
           description_source_updated_at?: string | null
           sku_id?: string | null
           status: string
+          sub_status?: string[] | null
+          deleted_at?: string | null
           synced_at?: string
           permalink?: string | null
           thumbnail_url?: string | null
@@ -1975,6 +1980,8 @@ export type Database = {
           description_source_updated_at?: string | null
           sku_id?: string | null
           status?: string
+          sub_status?: string[] | null
+          deleted_at?: string | null
           synced_at?: string
           permalink?: string | null
           thumbnail_url?: string | null

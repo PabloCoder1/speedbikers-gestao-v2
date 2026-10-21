@@ -25,9 +25,10 @@ import { gravarPacoteDoEnvio } from "./shipment-package.js";
  *
  * `orders_v2` e `post_purchase` estão implementados — os únicos dois
  * tópicos com consumidor pronto (`persistOrder`, `processClaimReturn`).
- * Outros tópicos (`items`, `shipments`, `questions`, `stock-location`,
- * etc.) fazem ACK sem trabalho — mesmo raciocínio de "conta desconhecida"
- * em `webhook.ts`: não é erro, só não há consumidor ainda.
+ * Outros tópicos (`shipments`, `stock-location`, etc.) fazem ACK sem
+ * trabalho — mesmo raciocínio de "conta desconhecida" em `webhook.ts`: não é
+ * erro, só não há consumidor ainda. `questions`, `messages` e, desde D-631,
+ * `items` têm job próprio e nem chegam aqui.
  *
  * Reconciliação por janela continua como rede de segurança (papel que já
  * tem hoje) — este handler não a substitui, só reduz o frescor do caminho

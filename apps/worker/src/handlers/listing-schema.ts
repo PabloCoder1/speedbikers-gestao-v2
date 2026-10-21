@@ -16,6 +16,13 @@ export const listingItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.string(),
+  // D-631: a exclusao e `closed` com `deleted` no subestado (documentacao
+  // oficial, "Sincronizacao e modificacao de publicacoes"). Opcional: um
+  // payload sem o campo nao pode reprovar o anuncio inteiro.
+  sub_status: z.array(z.string()).nullable().optional(),
+  // D-631: o dono do item. Na leitura por notificacao, o item que nao e do
+  // vendedor da conta nunca vira linha dela.
+  seller_id: z.number().nullable().optional(),
   price: z.number(),
   currency_id: z.string(),
   available_quantity: z.number(),

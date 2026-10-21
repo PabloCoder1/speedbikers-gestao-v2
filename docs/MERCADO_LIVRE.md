@@ -646,6 +646,16 @@ Nenhum escopo é nomeado por endpoint; `read` + `offline_access` bastam, e a per
 
 A tabela oficial de migração **deprecia o outro endpoint em favor deste**: `/sites/{site}/search?seller_id=` → *"Substitua por `/users/{User_id}/items/search`"*. Para `items/search`, `?search_type=scan` e `/items?ids=`, a coluna diz **"Se mantém"**. Busca por `deprec`/`descontinu`/`obsolet` nas versões PT e ES: zero ocorrências.
 
+### O anúncio excluído (D-631, 21/10/2026)
+
+A varredura **não devolve o anúncio excluído**. A documentação oficial ("Sincronização e modificação de publicações") diz que a exclusão é status `closed` com `deleted` no subestado, e que "depois de um tempo, os itens finalizados não serão mais mostrados para sua consulta". O campo é `sub_status`, uma lista.
+
+A V3 guarda `listings.sub_status` e `listings.deleted_at` e esconde o excluído das telas do catálogo. Ela fica sabendo por dois caminhos:
+- a notificação `items`, que agora tem job próprio (`sync.listing.item`) e relê aquele anúncio na hora;
+- depois de cada varredura inteira, a releitura do que a V3 tem vivo e a varredura não listou.
+
+No multiget, o item que não volta com 200 é relido sozinho, e só o 404 dessa leitura vale como "não existe mais".
+
 ### A MEDIR antes de confiar (a doc não responde)
 
 1. `items/search` sem `status` devolve `closed`/`paused` ou só ativos? A frase "os resultados sempre serão de itens ativos" pertence a **outro endpoint** na mesma página.

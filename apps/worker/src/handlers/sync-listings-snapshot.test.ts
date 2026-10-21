@@ -276,7 +276,7 @@ describe("sync.listings.snapshot (D-058)", () => {
     expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "retryable" });
   });
 
-  it("404 num item específico: NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
+  it("falha num item específico: NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
     // Desde a Fase 4B o 404 de um item chega como `code` DENTRO do envelope
     // verbose do multiget, não como exceção da chamada inteira — é o que
     // permite o lote continuar. A varredura descobre o id; a hidratação
@@ -287,7 +287,9 @@ describe("sync.listings.snapshot (D-058)", () => {
         return Promise.resolve(options.schema.parse({ results: ["MLB-removido"], scroll_id: null }));
       }
 
-      return Promise.resolve(options.schema.parse([{ code: 404, body: { message: "not found" } }]));
+      // D-631: o 404 virou "o anúncio não existe mais" (marca a exclusão);
+      // a falha de item que vira `partial` é outro código.
+      return Promise.resolve(options.schema.parse([{ code: 500, body: { message: "erro" } }]));
     }) as typeof d.mercadoLivre.request;
 
     const outcome = await run(d, lines);

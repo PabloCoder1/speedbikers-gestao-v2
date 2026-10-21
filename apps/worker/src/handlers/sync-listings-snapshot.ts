@@ -133,7 +133,7 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
       finishedAt,
       status: partial ? "partial" : "done",
       ...(partial
-        ? { reason: `${String(result.itemsFailed)} item(ns) falharam ao consultar o Mercado Livre (404/403)` }
+        ? { reason: `${String(result.itemsFailed)} item(ns) falharam ao consultar o Mercado Livre (403/5xx, ou fora do contrato)` }
         : {}),
     }, context.logger);
 
