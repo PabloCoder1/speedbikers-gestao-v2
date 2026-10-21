@@ -18733,3 +18733,21 @@ A forma fechada com o A2 e o A3 e a da venda anomala (D-064) em janelas:
 - **e2e:** `diagnostico`, `sku-dashboard` e `anuncio-detalhe` 20/20, no stack isolado com o banco recriado.
 
 **Impacto:** `apps/web/lib/{sku-diagnostico.ts,sku-diagnostico.test.ts}` e `docs/{DECISIONS,DECISIONS_INDEX}.md`; nenhuma migration, RPC, worker ou api.
+
+## D-632 - A divergência de estoque da Shopee na Central de Ações (C-78)
+
+**Contexto:** o 4º detector da Shopee que o dono escolheu é a D-627 do A1 (C-78, #299, migration `20261021150000`): `shopee_divergencia`, o anúncio cujo estoque na Shopee não bate com o saldo da V3. A ação grava a loja em `shopee_shop_id` e o `sku_id` vinculado. O `evidence.detector` traz a loja, o item, a variação, o SKU do anúncio e os estoques, como os detectores da D-626.
+
+**Decisão:**
+- O rótulo "Divergência de estoque na Shopee", como problema, no leitor único da evidência (`packages/domain`).
+- Os atalhos da D-626, sem leitor novo:
+  - "Anúncio na Shopee" (`/anuncios/shopee?loja=&q=`), pela mesma `readShopeeListingRef`;
+  - "Estoque do SKU", como na ruptura, porque a divergência compara o estoque da Shopee com o saldo da V3.
+
+**Publicação:** só a web e o `packages/domain`. Antes da migration em produção a ação não existe, e o rótulo não aparece em lugar nenhum; nenhuma tela quebra. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** o rótulo e o tom em `action-evidence.test.ts`, e os atalhos com o estoque do SKU em `action-shortcuts.test.ts`.
+- **e2e:** no ensaio da loja live, uma `shopee_divergencia` no formato do C-78 mostra o rótulo, a loja, o atalho para o anúncio e o estoque do SKU, e a ação é apagada no fim. `acoes` 3/3 e o ensaio 16/16, com o banco recriado.
+
+**Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.

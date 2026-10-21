@@ -615,3 +615,61 @@ test("/acoes: a ação da Shopee vendendo sem vínculo tem rótulo, a loja e o a
     await db.from("actions").delete().eq("id", acao.data?.id ?? "");
   }
 });
+
+test("/acoes: a divergência de estoque da Shopee tem rótulo, o anúncio e o estoque do SKU (D-632, C-78)", async ({ page }) => {
+  // A ação como a D-627 a grava: a loja na coluna e no retrato, e o SKU vinculado.
+  const { data: org } = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+  const subject = `${lojaId}:990777001:-`;
+  const acao = await db
+    .from("actions")
+    .insert({
+      organization_id: org?.organization_id ?? "",
+      kind: "shopee_divergencia",
+      severity: "media",
+      confidence: "media",
+      shopee_shop_id: lojaId,
+      sku_id: skuId,
+      evidence: {
+        evidencias: [{ tipo: "estoque", descricao: "A Shopee mostra 7 unidades, e a V3 tem 3 em estoque local." }],
+        detector: {
+          shopee_shop_id: lojaId,
+          loja: LOJA_LIVE.nome,
+          item_id: 990777001,
+          model_id: null,
+          anuncio: LOJA_LIVE.skuTitulo,
+          variacao: null,
+          sku_anuncio: LOJA_LIVE.sku,
+          sku: LOJA_LIVE.sku,
+          estoque_shopee: 7,
+          saldo_v3_na_leitura: 3,
+          saldo_v3_agora: 3,
+          diferenca: 4,
+        },
+      },
+      recommendation: "Confira o estoque do anúncio na Shopee: ele não bate com o saldo da V3.",
+      created_by: "system",
+      dedup_key: `shopee_divergencia:${subject}:e2e`,
+      subject_key: subject,
+    })
+    .select("id")
+    .single();
+
+  expect(acao.error).toBeNull();
+
+  try {
+    await entrar(page, "/acoes?tipo=shopee_divergencia");
+
+    const cartao = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Divergência de estoque na Shopee", level: 3 }) });
+
+    await expect(cartao).toHaveCount(1);
+    await expect(cartao).toContainText(LOJA_LIVE.nome);
+    await expect(cartao.getByRole("link", { name: "Anúncio na Shopee" })).toHaveAttribute(
+      "href",
+      `/anuncios/shopee?loja=${lojaId}&q=${LOJA_LIVE.sku}`,
+    );
+    await expect(cartao.getByRole("link", { name: "Estoque do SKU" })).toHaveAttribute("href", `/skus/${skuId}?aba=estoque`);
+    await semErro(page);
+  } finally {
+    await db.from("actions").delete().eq("id", acao.data?.id ?? "");
+  }
+});

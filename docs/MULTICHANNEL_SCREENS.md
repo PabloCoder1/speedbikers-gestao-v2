@@ -336,6 +336,7 @@ número.
 | **D-624** | O ranking do "Todos" recortando pela marca | A1 (C-75, D-613) | ✔ D-624 (#293) |
 | **D-626** | As ações dos detectores da Shopee na Central de Ações: rótulo, anúncio e atalho | A1 (C-73, C-74, C-76) | ✔ D-626 (#293) |
 | **D-628** | O estoque do anúncio da Shopee com a hora da leitura | A1 (D-619) | ✔ D-628 (#292) |
+| **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | em código (#300); a migration está em produção desde 21/10 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
