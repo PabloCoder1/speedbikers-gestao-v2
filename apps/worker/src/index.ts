@@ -224,6 +224,7 @@ const app = createWorkerApp({
       mercadoLivre,
       oauth,
       encryptionKey,
+      enqueuer,
     }),
     "sync.support.claims.reconcile": createSyncSupportClaimsReconcileHandler({
       db,

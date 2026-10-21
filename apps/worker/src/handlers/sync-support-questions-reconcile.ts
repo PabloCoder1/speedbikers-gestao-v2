@@ -3,6 +3,7 @@ import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-li
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { z } from "zod";
 
+import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { fetchSupportQuestions } from "./ml-support-questions-fetch.js";
@@ -25,12 +26,84 @@ import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
 const payloadSchema = z.object({ mlAccountId: z.uuid() });
 
+/**
+ * D-621: no máximo tantas releituras por rodada, as mais antigas primeiro; o
+ * resto entra na rodada seguinte (a cada 10 minutos). Cada pergunta é relida
+ * no máximo uma vez por dia (o dedupe leva o dia).
+ */
+export const MAX_QUESTION_RECHECKS = 200;
+const OPEN_CASES_PAGE = 1000;
+
 export interface SyncSupportQuestionsReconcileDeps {
   db: AdminClient;
   mercadoLivre: MercadoLivreClient;
   oauth: MercadoLivreOAuthConfig;
   encryptionKey: Buffer;
+  enqueuer: Enqueuer;
   now?: () => Date;
+}
+
+/**
+ * D-621: a pergunta que a V3 tem `UNANSWERED` e a varredura completa não viu
+ * foi respondida fora da V3 (webhook perdido), apagada (404) ou retida. A
+ * varredura só enxerga `UNANSWERED`, então ela nunca a fecharia: a mesma
+ * leitura por ID do webhook (`sync.support.questions`) a relê e converge.
+ * Reler uma pergunta ainda aberta não muda nada, então o custo do engano é
+ * só uma leitura.
+ */
+async function enqueueStaleQuestionRechecks(
+  deps: SyncSupportQuestionsReconcileDeps,
+  params: { organizationId: string; mlAccountId: string; slug: string; seenQuestionIds: readonly number[]; now: Date },
+): Promise<{ stale: number; enqueued: number }> {
+  const open: string[] = [];
+
+  // Paginado: a fila aberta de uma conta não tem teto (AGENTS.md, 1.000 linhas).
+  for (let from = 0; ; from += OPEN_CASES_PAGE) {
+    const page = await deps.db
+      .from("support_cases")
+      .select("external_case_id")
+      .eq("organization_id", params.organizationId)
+      .eq("ml_account_id", params.mlAccountId)
+      .eq("channel", "QUESTION")
+      .eq("external_status", "UNANSWERED")
+      .order("last_activity_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + OPEN_CASES_PAGE - 1);
+
+    if (page.error !== null) {
+      throw new Error(`falha ao ler as perguntas abertas da conta: ${page.error.message}`);
+    }
+
+    open.push(...page.data.map((row) => row.external_case_id));
+
+    if (page.data.length < OPEN_CASES_PAGE) {
+      break;
+    }
+  }
+
+  const seen = new Set(params.seenQuestionIds.map(String));
+  const stale = open.filter((id) => !seen.has(id));
+  const day = params.now.toISOString().slice(0, 10);
+  let enqueued = 0;
+
+  for (const id of stale.slice(0, MAX_QUESTION_RECHECKS)) {
+    const questionId = Number(id);
+
+    if (!Number.isSafeInteger(questionId) || questionId <= 0) {
+      continue;
+    }
+
+    await deps.enqueuer.enqueue({
+      jobType: "sync.support.questions",
+      organizationId: params.organizationId,
+      dedupeKey: `support-question-recheck:${params.mlAccountId}:${id}:${day}`,
+      queue: `ml-sync-${params.slug}`,
+      payload: { mlAccountId: params.mlAccountId, questionId, source: "RECONCILIATION" },
+    });
+    enqueued += 1;
+  }
+
+  return { stale: stale.length, enqueued };
 }
 
 export function createSyncSupportQuestionsReconcileHandler(
@@ -48,7 +121,7 @@ export function createSyncSupportQuestionsReconcileHandler(
 
     const account = await deps.db
       .from("ml_accounts")
-      .select("id, organization_id, seller_id, status")
+      .select("id, organization_id, seller_id, status, slug")
       .eq("id", mlAccountId)
       .maybeSingle();
 
@@ -162,6 +235,28 @@ export function createSyncSupportQuestionsReconcileHandler(
       ...(partial ? { reason: reasons.join("; ") } : {}),
     }, context.logger);
 
+    // A varredura truncada não diz o que está aberto no Mercado Livre: sem
+    // ela inteira, nenhuma releitura (o aviso de truncamento já saiu).
+    let rechecks: { stale: number; enqueued: number } | null = null;
+
+    if (!result.truncated) {
+      try {
+        rechecks = await enqueueStaleQuestionRechecks(deps, {
+          organizationId,
+          mlAccountId,
+          slug: account.data.slug,
+          seenQuestionIds: result.seenQuestionIds,
+          now: finishedAt,
+        });
+      } catch (error) {
+        // A varredura já foi gravada; a releitura volta na próxima rodada.
+        context.logger.warn("sync_support_questions_recheck_failed", {
+          ml_account_id: mlAccountId,
+          reason: error instanceof Error ? error.message : "erro desconhecido",
+        });
+      }
+    }
+
     context.logger.info("sync_support_questions_reconcile_done", {
       ml_account_id: mlAccountId,
       items_processed: result.itemsProcessed,
@@ -169,6 +264,8 @@ export function createSyncSupportQuestionsReconcileHandler(
       items_rejected: result.itemsRejected,
       remote_total: result.remoteTotal,
       truncated: result.truncated,
+      stale_open: rechecks?.stale ?? null,
+      rechecks_enqueued: rechecks?.enqueued ?? null,
     });
 
     return { status: "done", processed: result.itemsProcessed };

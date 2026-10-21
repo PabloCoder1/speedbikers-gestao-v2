@@ -333,6 +333,7 @@ Decisões registradas: **535** (D-001 a D-628).
 - **D-609** — O anuncio da Shopee vendendo sem vinculo vira acao na Central (C-73): o 1o dos quatro detectores da Shopee
 - **D-611** — A ruptura no anuncio da Shopee vira acao na Central (C-74): o 2o dos quatro detectores da Shopee
 - **D-619** — O estoque do anuncio da Shopee fresco: a releitura a cada 6 horas, e a ruptura so com a leitura boa e recente
+- **D-621** — A pergunta apagada no Mercado Livre sai da fila "Pendente", e a reconciliacao rele a pergunta aberta que a varredura nao viu
 - **D-622** — A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
 - **D-623** — O resumo de cobertura da Home volta a contar a venda da Shopee: a D-615 tinha so o ML
 - **D-628** — O estoque do anúncio da Shopee diz de quando é a leitura

@@ -255,3 +255,62 @@ export async function persistSupportQuestion(
 
   return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "TYPED", transitionApplied };
 }
+
+export interface MarkSupportQuestionDeletedResult {
+  /** NULO = a V3 nunca gravou a pergunta: nada a marcar. */
+  supportCaseId: string | null;
+  transitionApplied: boolean;
+}
+
+/**
+ * D-621: a pergunta que o Mercado Livre não devolve mais (404 em
+ * `GET /questions/{id}`, a pergunta apagada — D-201) vira `DELETED`, o
+ * status oficial, com a resposta bloqueada. Antes ela ficava `UNANSWERED`
+ * para sempre na fila "Pendente", porque o 404 só falhava o job.
+ *
+ * O case que ninguém triou resolve pela MESMA transição guardada da
+ * pergunta encerrada no Mercado Livre (D-102): quem já está triando não é
+ * atropelado, e a chave do evento é a mesma da resolução automática.
+ */
+export async function markSupportQuestionDeleted(
+  db: AdminClient,
+  context: PersistSupportQuestionContext,
+  question: { questionId: number; observedAt: string },
+): Promise<MarkSupportQuestionDeletedResult> {
+  const marked = await db
+    .from("support_cases")
+    .update({
+      external_status: "DELETED",
+      remote_reply_state: "BLOCKED",
+      remote_reply_block_reason: "STATUS_DELETED",
+    })
+    .eq("organization_id", context.organizationId)
+    .eq("ml_account_id", context.mlAccountId)
+    .eq("channel", "QUESTION")
+    .eq("external_case_key", `question:${String(question.questionId)}`)
+    .select("id, last_activity_at")
+    .maybeSingle();
+
+  if (marked.error !== null) {
+    throw persistenceError(`marcar a pergunta ${String(question.questionId)} como apagada`, marked.error);
+  }
+
+  if (marked.data === null) {
+    return { supportCaseId: null, transitionApplied: false };
+  }
+
+  const transitionApplied = await applyRemoteTransition(
+    db,
+    context.source,
+    marked.data.id,
+    evaluateQuestionRemoteTransition({
+      caseId: marked.data.id,
+      remotelyResolved: true,
+      // O Mercado Livre não diz quando apagou: o instante conhecido é o da observação.
+      resolvedAt: question.observedAt,
+      lastActivityAt: marked.data.last_activity_at,
+    }),
+  );
+
+  return { supportCaseId: marked.data.id, transitionApplied };
+}
