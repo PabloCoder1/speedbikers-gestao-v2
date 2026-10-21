@@ -244,7 +244,9 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
         </p>
       )}
 
-      <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>
+      {/* A janela reservada (a receita da D-515, medida pelo A3 na D-526): sem ela, a seção de Ads aparece
+          antes dos números e é empurrada quando eles chegam (CLS de 0,23 a 0,27). */}
+      <Suspense fallback={<CarregandoBloco rotulo="faturamento" altura="100vh" />}>
         <Numeros
           leituras={leituras}
           range={range}
