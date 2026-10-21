@@ -163,6 +163,12 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.25 O produto no prejuízo na Shopee na Central (C-76, D-617) — em código
+
+- **A ação:** `actions.kind = 'shopee_prejuizo'`, com `shopee_shop_id` e `sku_id`, `subject_key = <loja>:<sku>` e o impacto = o prejuízo dos 30 dias. A severidade é `alta` com margem de −10% ou pior (essa notifica); a confiança é `alta` com 5 pedidos ou mais e sem custo atual.
+- **O `evidence.detector`:** `loja`, `sku_id`, `sku`, `pedidos_cobertos`, `receita`, `recebido`, `ajustes`, `custo`, `resultado`, `margem`, `custo_atual` e `pedidos_de_varios_skus` (os pedidos de vários SKUs que ficaram fora da conta).
+- **Para a tela:** o rótulo do kind e o atalho do SKU. A tela lê depois da migration `20261020220000` em produção.
+
 ### 3.24 A marca no ranking do "Todos" (C-75, D-613) — em código
 
 - **O contrato:** `get_marketplace_sku_sales` (C-59) ganha no fim `p_supplier_brand text` e `p_sem_marca boolean`, os do C-72.
@@ -186,7 +192,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 - **A fila:** `get_actions_queue` devolve `shopee_shop_id` no fim, e `account_label` = o nome da loja.
 - **Para a tela:**
   - o rótulo do kind;
-  - o atalho para `/anuncios/shopee?loja=<shopee_shop_id>&busca=<sku_anuncio ou item_id>`, depois de conferir que a busca da tela aceita o valor;
+  - o atalho para `/anuncios/shopee?loja=<shopee_shop_id>&q=<sku_anuncio>` (sem SKU no anúncio, `q=<item_id>`). O parâmetro é `q`, conferido pelo A2: `p_busca` casa o SKU por trecho e o `item_id` exato;
   - nada de `/anuncios/{mlbId}`: o `mlb_id` é NULO.
   - A tela lê a coluna nova só depois da migration `20261020180000` em produção.
 

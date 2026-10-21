@@ -22880,6 +22880,147 @@ describe("a ruptura no anúncio da Shopee na Central de Ações (D-611)", () => 
   });
 });
 
+/*
+  D-617: o produto no prejuízo na Shopee vira ação na Central (C-76). A regra
+  do alerta do ML (D-402/D-471) na Shopee: o pedido coberto de UM SKU leva o
+  resultado inteiro a ele (recebido + ajustes - custo); o de vários SKUs fica
+  de fora e é contado. Por loja e SKU, 30 dias até ontem, 3 pedidos cobertos.
+*/
+describe("o produto no prejuízo na Shopee na Central de Ações (D-617)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d617";
+  const LOJA = "dddd6170-0000-4000-8000-0000000a0617";
+  const SANDBOX = "dddd6170-0000-4000-8000-0000000c0617";
+  const sku: Record<"p" | "q" | "r", string> = { p: "", q: "", r: "" };
+
+  const sincronizar = async (dia: string) =>
+    (
+      await client.query<{ r: { fontes: string[]; criadas: number; encerradas: number } }>(
+        "select public.sincronizar_alertas_central($1, $2::date, array['shopee_prejuizo']) as r",
+        [ORG, dia],
+      )
+    ).rows[0]?.r;
+
+  const acoes = async () =>
+    (
+      await client.query<{
+        subject_key: string;
+        status: string;
+        severity: string;
+        confidence: string;
+        impacto: string;
+        sku_id: string;
+        shopee_shop_id: string;
+        detector: Record<string, unknown>;
+        motivo: string | null;
+      }>(
+        `select subject_key, status, severity, confidence, estimated_impact_brl::text as impacto, sku_id, shopee_shop_id,
+                evidence -> 'detector' as detector, evidence -> 'encerramento' ->> 'motivo' as motivo
+           from public.actions where organization_id = $1 and kind = 'shopee_prejuizo' order by subject_key`,
+        [ORG],
+      )
+    ).rows;
+
+  async function pedido(loja: string, sn: string, itens: { sku: string; qtd: number; preco: number }[], receita: number, escrow: number | null) {
+    await client.query(
+      `insert into public.shopee_orders
+         (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at,
+          escrow_amount, order_income, financials_synced_at)
+       values ($1, $2, $3, 'COMPLETED', '2026-10-10T15:00:00Z', now(), '2026-10-10T15:01:00Z', $4,
+               case when $4::numeric is null then null else jsonb_build_object('order_discounted_price', $5::numeric, 'escrow_amount', $4::numeric) end,
+               case when $4::numeric is null then null else now() end)
+       on conflict do nothing`,
+      [loja, ORG, sn, escrow, receita],
+    );
+    for (const [posicao, it] of itens.entries()) {
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, 'SKU_DO_PEDIDO') on conflict do nothing`,
+        [loja, sn, posicao, ORG, posicao + 1, it.qtd, it.preco, it.sku],
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-617', 'org-d617') on conflict (id) do nothing", [ORG]);
+    // P custa 50 (só o custo atual), Q custa 10, R custa 50.
+    const skus = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1, 'D617-P', 'PRODUTO', 50), ($1, 'D617-Q', 'PRODUTO', 10), ($1, 'D617-R', 'PRODUTO', 50)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku`,
+      [ORG],
+    );
+    for (const s of skus.rows) sku[s.sku.slice(-1).toLowerCase() as "p" | "q" | "r"] = s.id;
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at)
+       values ($1, $3, 'live', 990617001, 'Loja Real', 'CONNECTED', now() - interval '60 days', now(), now()),
+              ($2, $3, 'sandbox', 990617002, 'Teste', 'CONNECTED', now() - interval '60 days', now(), now())
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    // P: 3 pedidos de receita 60 e repasse 40 (resultado -10 cada). Q: 3 com lucro.
+    // R: só 2 no prejuízo. P no sandbox: 3 no prejuízo. Um pedido P + Q no
+    // prejuízo (vários SKUs) e um P sem financeiro lido.
+    for (const n of [1, 2, 3]) {
+      await pedido(LOJA, `D617-P${String(n)}`, [{ sku: sku.p, qtd: 1, preco: 60 }], 60, 40);
+      await pedido(LOJA, `D617-Q${String(n)}`, [{ sku: sku.q, qtd: 1, preco: 60 }], 60, 45);
+      await pedido(SANDBOX, `D617-SB${String(n)}`, [{ sku: sku.p, qtd: 1, preco: 60 }], 60, 40);
+    }
+    for (const n of [1, 2]) await pedido(LOJA, `D617-R${String(n)}`, [{ sku: sku.r, qtd: 1, preco: 60 }], 60, 40);
+    await pedido(LOJA, "D617-PQ", [{ sku: sku.p, qtd: 1, preco: 60 }, { sku: sku.q, qtd: 1, preco: 20 }], 80, 30);
+    await pedido(LOJA, "D617-P-SEM-FIN", [{ sku: sku.p, qtd: 1, preco: 60 }], 60, null);
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = $1", [ORG]);
+    await client.query("delete from public.shopee_shops where id = any($1::uuid[])", [[LOJA, SANDBOX]]);
+  });
+
+  it("o SKU no prejuízo com 3 pedidos cobertos de um SKU só vira ação, com a conta da Shopee", async () => {
+    const r = await sincronizar("2026-10-12");
+
+    expect(r?.fontes).toEqual(["shopee_prejuizo"]);
+    expect(r?.criadas).toBe(1);
+
+    const [acao] = await acoes();
+
+    expect(acao).toMatchObject({
+      subject_key: `${LOJA}:${sku.p}`,
+      status: "novo",
+      // margem -30 / 180 = -16,7%: alta; só custo atual: confiança média (a regra do ML).
+      severity: "alta",
+      confidence: "media",
+      impacto: "30.00",
+      sku_id: sku.p,
+      shopee_shop_id: LOJA,
+    });
+    expect(acao?.detector).toMatchObject({
+      sku: "D617-P",
+      pedidos_cobertos: 3,
+      receita: 180,
+      recebido: 120,
+      custo: 150,
+      resultado: -30,
+      margem: -0.1667,
+      custo_atual: true,
+      pedidos_de_varios_skus: 1,
+    });
+  });
+
+  it("o resultado de volta ao positivo encerra a ação no 3o dia, com o motivo", async () => {
+    await client.query("update public.shopee_orders set escrow_amount = 70 where organization_id = $1 and order_sn like 'D617-P_'", [ORG]);
+
+    for (const dia of ["2026-10-13", "2026-10-14"]) await sincronizar(dia);
+
+    const r = await sincronizar("2026-10-15");
+    const [acao] = await acoes();
+
+    expect(r?.encerradas).toBe(1);
+    expect(acao?.status).toBe("resolvido");
+    expect(acao?.motivo).toMatch(/não fecha mais no prejuízo na Shopee/);
+  });
+});
+
 /**
  * mark_notifications_read por loja Shopee (D-491): o quarto recorte, com o
  * mesmo significado dos outros (nulo = sem recorte). O evento da loja guarda a
