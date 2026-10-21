@@ -83,7 +83,8 @@ export function actionShortcuts(input: {
     shortcuts.push({ label: "Anúncio na Shopee", href: `/anuncios/shopee?${busca.toString()}` });
   }
 
-  if (input.kind === "shopee_ruptura" && input.skuId !== null) {
+  // A divergência (D-627) compara o estoque da Shopee com o saldo da V3: o estoque do SKU também ajuda (D-632).
+  if ((input.kind === "shopee_ruptura" || input.kind === "shopee_divergencia") && input.skuId !== null) {
     shortcuts.push({ label: "Estoque do SKU", href: `/skus/${input.skuId}?aba=estoque` });
   }
 

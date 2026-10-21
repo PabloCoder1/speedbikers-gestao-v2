@@ -89,6 +89,14 @@ describe("os detectores da Shopee (D-626)", () => {
     ]);
   });
 
+  it("divergência de estoque com SKU: o anúncio e o estoque do SKU, como na ruptura (D-632)", () => {
+    expect(actionShortcuts({ kind: "shopee_divergencia", skuId: "sku-1", sku: "CAP-01", shopee: SHOPEE }).map((s) => s.label)).toEqual([
+      "Dashboard do SKU",
+      "Anúncio na Shopee",
+      "Estoque do SKU",
+    ]);
+  });
+
   it("sem a referência do anúncio, nenhum link inventado para a Shopee", () => {
     expect(actionShortcuts({ kind: "shopee_sem_vinculo", skuId: null, sku: null, shopee: null })).toEqual([]);
   });
