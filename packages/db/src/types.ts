@@ -7049,6 +7049,10 @@ export type Database = {
           p_order?: string
           // D-419, migration 20260929120000: 'all' | 'with' | 'without'.
           p_promo?: string
+          // C-77 (D-625), migration 20261021140000: 'all' | 'divergente'; o
+          // 'divergente' exige p_preco_teto (a web manda TETO_DISPERSAO_PCT).
+          p_preco?: string
+          p_preco_teto?: number | null
         }
         Returns: {
           account_label: string
@@ -7070,6 +7074,16 @@ export type Database = {
           price: number
           promotion_checked_at: string | null
           promotional_price: number | null
+          // C-77 (D-625): o preco ao comprador (promocional, senao o cadastrado)
+          // e a dispersao do SKU entre os anuncios ativos e pausados dele; as
+          // do SKU sao NULAS sem SKU ou com um preco so. A dispersao vem com
+          // uma casa; o filtro e a ordem usam a cheia.
+          preco_efetivo: number | null
+          sku_preco_min: number | null
+          sku_preco_max: number | null
+          sku_anuncios_com_preco: number | null
+          sku_dispersao_pct: number | null
+          sku_dispersao_sku_id: string | null
           // D-385: somas do recorte filtrado inteiro (antes do limit). A
           // de visitas e NULA quando nenhum anuncio do recorte tem visita.
           recorte_faturamento: number
@@ -7093,6 +7107,8 @@ export type Database = {
           p_organization_id: string
           p_ml_account_id?: string | null
           p_search?: string | null
+          // C-77 (D-625): o teto da dispersao; sem ele preco_divergente e NULA.
+          p_preco_teto?: number | null
         }
         Returns: {
           active: number
@@ -7101,6 +7117,8 @@ export type Database = {
           in_promotion: number
           out_of_stock: number
           paused: number
+          // C-77 (D-625): = p_preco 'divergente' com o mesmo teto; NULA sem teto.
+          preco_divergente: number | null
           promotion_unknown: number
           total: number
           unlinked: number
