@@ -656,6 +656,8 @@ A V3 guarda `listings.sub_status` e `listings.deleted_at` e esconde o excluído 
 
 No multiget, o item que não volta com 200 é relido sozinho, e só o 404 dessa leitura vale como "não existe mais".
 
+Desde a D-631 b o excluído também sai das contagens (/produtos, curadoria, /contas, integridade de vínculo), da queda por anúncio e do alerta de frete, e a conferência da republicação o bloqueia (`EXCLUIDO_NO_MERCADO_LIVRE`).
+
 ### A MEDIR antes de confiar (a doc não responde)
 
 1. `items/search` sem `status` devolve `closed`/`paused` ou só ativos? A frase "os resultados sempre serão de itens ativos" pertence a **outro endpoint** na mesma página.
