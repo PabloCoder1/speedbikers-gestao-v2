@@ -18740,14 +18740,30 @@ Lido no codigo e em producao (so contagem):
     - a exclusao sem a primeira data;
     - sem o subestado.
 
+**D-631 b (21/10): as outras leituras de `listings`.** O A2 levantou as leituras diretas que ainda mostrariam o excluido como vivo. No 404 o status fica o ultimo visto (de proposito), entao so `deleted_at` diz a verdade.
+1. **As contagens e os detectores ignoram o excluido** (migration `20261021180000`, mesmas assinaturas, retornos e clausulas SET; os corpos sao as definicoes atuais do banco):
+   - `get_products_overview` (/produtos) e `get_sku_curation`: a contagem de anuncios do SKU (a uniao da D-122) sem o excluido e sem o vinculo ITEM cujo anuncio foi excluido;
+   - `get_ml_account_cards` (/contas): a contagem por conta;
+   - `get_link_integrity`: o excluido sem vinculo nao e trabalho a fazer;
+   - `recalcular_queda_anuncios` (C-79): sem linha de queda para o excluido;
+   - `get_detector_frete`: o excluido nao vira alerta de frete (e, por ele, nem acao na Central), mas segue na comparacao com os irmaos e no resumo.
+2. **A trava da republicacao:** a conferencia ganha o bloqueio `EXCLUIDO_NO_MERCADO_LIVRE` (status `closed` com `deleted` no `sub_status` do item lido na hora). A tela ja nao oferece o pedido; esta e a trava do backend. So encerrado (sem `deleted`) continua republicavel.
+
+- **Verificacao:**
+  - integracao, 2 testes (as quatro telas e a queda com um vinculo ITEM para o excluido; o frete com o anuncio marcado);
+  - mutacao, 8, e cada uma derruba o teste: o filtro do anuncio e o do vinculo em /produtos e na curadoria, /contas, a integridade, a queda e o frete;
+  - a conferencia da republicacao, 38 de 38 (o teste novo cobre o excluido e o so encerrado);
+  - `db reset` e a suite inteira, 1099 de 1099.
+
 **Publicacao:**
-1. a migration `20261021170000`;
+1. as migrations `20261021170000` e `20261021180000`, no mesmo run;
 2. o worker e a api.
 
 A varredura seguinte de cada conta marca os excluidos que ja existem, e da em diante a notificacao marca na hora.
 
 **Impacto:**
-- `supabase/migrations/20261021170000_anuncio_excluido_sai_das_telas.sql`;
+- `supabase/migrations/20261021170000_anuncio_excluido_sai_das_telas.sql` e `20261021180000_anuncio_excluido_fora_das_contagens.sql` (D-631 b);
+- `packages/domain/src/listings/relist-preflight{,.test}.ts` (D-631 b);
 - `apps/worker/src/handlers/{ml-listings-fetch,listing-schema,sync-listing-item,sync-listings-snapshot,webhook-received}*.ts` e `apps/worker/src/index.ts`;
 - `apps/api/src/webhook{,.test}.ts`;
 - `packages/db/src/{types,rls.integration.test}.ts`;
