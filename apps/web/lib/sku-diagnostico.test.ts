@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compararPrecoDaConta, diagnosticarSku, type EntradaDoDiagnostico } from "./sku-diagnostico";
+import { compararPrecoDaConta, acimaDoTeto, diagnosticarSku, type EntradaDoDiagnostico } from "./sku-diagnostico";
 import type { AnuncioDoSku } from "./sku-listings";
 
 /**
@@ -146,7 +146,7 @@ describe("diagnosticarSku", () => {
     const problema = d.problemas.find((p) => p.chave === "dispersao-de-preco");
 
     expect(problema?.regua).toBe(
-      "(maior − menor) ÷ menor > 10% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado)",
+      "(maior − menor) ÷ menor > 10% (teto da organização), preço efetivo (promocional quando em campanha ativa, senão o cadastrado), só anúncios ativos e pausados",
     );
     expect(problema?.problema).toContain("sobre o menor preço");
     expect(problema?.problema).not.toContain("campanha ativa");
@@ -204,6 +204,43 @@ describe("diagnosticarSku", () => {
     expect(d.precos?.dispersaoPct).toBe(10);
     expect(d.problemas.map((p) => p.chave)).not.toContain("dispersao-de-preco");
     expect(d.nivel).toBe("ok");
+  });
+
+  /*
+    D-630 — A MESMA RÉGUA DO C-77 NA LISTA DE ANÚNCIOS: o conjunto é o anúncio
+    ativo ou pausado, e o teto compara a dispersão cheia, em centavos.
+  */
+  it("o anúncio encerrado não entra no preço do SKU: o preço velho dele não acende divergência", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [
+          anuncio({ price: 100 }),
+          anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 101, status: "paused" }),
+          anuncio({ item_id: "MLB3", ml_account_id: "c2", price: 150, status: "closed" }),
+        ],
+      }),
+    );
+
+    expect(d.precos?.maior).toBe(101);
+    expect(d.problemas.map((p) => p.chave)).not.toContain("dispersao-de-preco");
+  });
+
+  it("10,04% acende: o teto compara o valor cheio, não o número arredondado da tela", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [anuncio({ price: 100 }), anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 110.04 })],
+      }),
+    );
+
+    expect(d.precos?.dispersaoPct).toBe(10);
+    expect(d.problemas.map((p) => p.chave)).toContain("dispersao-de-preco");
+  });
+
+  it("acimaDoTeto não sofre com o ponto flutuante: 89,90 e 98,89 ficam abaixo de 10%, 98,90 acima", () => {
+    expect(acimaDoTeto(89.9, 98.89)).toBe(false);
+    expect(acimaDoTeto(89.9, 98.9)).toBe(true);
+    expect(acimaDoTeto(100, 110)).toBe(false);
+    expect(acimaDoTeto(0, 10)).toBe(false);
   });
 
   it("o número da dispersão sai mesmo quando não acende — fato antes de veredito", () => {

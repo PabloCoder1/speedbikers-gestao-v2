@@ -51,7 +51,6 @@ const DEFAULT_ACCOUNT = {
   organization_id: ORGANIZATION_ID,
   seller_id: SELLER_ID,
   status: "CONNECTED",
-  slug: "loja",
 };
 
 const OK_RESULT = {
@@ -338,7 +337,7 @@ describe("createSyncSupportQuestionsReconcileHandler", () => {
         jobType: "sync.support.questions",
         organizationId: ORGANIZATION_ID,
         dedupeKey: `support-question-recheck:${ML_ACCOUNT_ID}:100:2026-08-25`,
-        queue: "ml-sync-loja",
+        queue: "backfill",
         payload: { mlAccountId: ML_ACCOUNT_ID, questionId: 100, source: "RECONCILIATION" },
       },
       expect.objectContaining({ dedupeKey: `support-question-recheck:${ML_ACCOUNT_ID}:104:2026-08-25` }),
