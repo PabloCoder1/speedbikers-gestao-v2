@@ -942,6 +942,13 @@ body {
   justify-content: flex-end;
 }
 
+/* D-636: a barra numa linha própria em qualquer largura, para os recortes da
+   mesma tela terem a mesma forma (`PageTitle` com `barra="abaixo"`). O bloco
+   do título ocupa a linha inteira, como acontece sozinho quando a barra não cabe. */
+.sb-page-title-barra-abaixo > :first-child {
+  flex-basis: 100%;
+}
+
 .sb-eyebrow {
   display: block;
   margin-bottom: 0.4375rem;

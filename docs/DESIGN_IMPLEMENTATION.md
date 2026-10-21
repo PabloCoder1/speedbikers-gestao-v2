@@ -277,7 +277,7 @@ branco embutido.
 | Componente | Caminho | Situação (auditoria de 2026-09-04) |
 |---|---|---|
 | Shell (sidebar + grupos + topbar) | `components/shell.tsx`, `nav.tsx` | **camada nova**, refeita pelo frame; trilho de 58px em ≤850 desde A1 |
-| `PageTitle`, `Panel`, `KpiStrip`, `ObjectHeader` | `components/*.tsx` | **camada nova** — `.page-title`, `.panel`, `.kpi-strip`/`.ops-metrics`, Object Header do Figma |
+| `PageTitle`, `Panel`, `KpiStrip`, `ObjectHeader` | `components/*.tsx` | **camada nova** — `.page-title`, `.panel`, `.kpi-strip`/`.ops-metrics`, Object Header do Figma. Desde D-636, `PageTitle` com `barra="abaixo"` põe a barra numa linha própria em qualquer largura: é para quando os recortes da mesma tela têm barras de tamanhos diferentes (a `/faturamento` no ML, na Shopee e no "Todos"), para a forma não mudar na troca |
 | `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">`. Desde D-431: `nome` (nome acessível, "Marketplace: Shopee") e `alinhamento="inicio"` para o PRIMEIRO menu da barra — alinhado pela direita, o painel mais largo que o botão vazava para baixo da lateral. **Várias escolhas** (contas no consolidado de `/vendas`, D-440): cada opção é um link que liga ou desliga, com "✓" na marcada, e a URL guarda tudo num valor só — sem formulário, compatível com filtro salvo |
 | `tone.ts` (`TOM`, `tomDeStatus`) | `components/tone.ts` | **dono único** dos cinco tons do `.status`; `StatusPill`, `StatePill`, `KpiStrip`, `ObjectHeader` e a Home leem daqui (eram cinco mapas) |
 | `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |

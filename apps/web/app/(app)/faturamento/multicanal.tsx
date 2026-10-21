@@ -189,6 +189,9 @@ export async function FaturamentoMulticanal({
       <PageTitle
         eyebrow="COMERCIAL / RESULTADOS"
         title="Faturamento"
+        // D-636: a barra numa linha própria nos três recortes. A do ML tem seis controles e esta, três ou quatro:
+        // ao lado do título, uma descia e a outra não, e o conteúdo abaixo pulava na troca de recorte.
+        barra="abaixo"
         subtitle={
           escopo === "shopee" ? (
             <>

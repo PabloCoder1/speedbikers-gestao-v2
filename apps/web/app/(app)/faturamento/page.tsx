@@ -143,6 +143,8 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
       <PageTitle
         eyebrow="COMERCIAL / RESULTADOS"
         title="Faturamento"
+        // D-636: a barra numa linha própria, a mesma forma dos recortes Shopee e "Todos" (multicanal.tsx).
+        barra="abaixo"
         subtitle={
           <>
             {contaLabel}, {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
