@@ -310,7 +310,9 @@ export async function FaturamentoMulticanal({
       )}
 
       {/* O cabeçalho e os filtros saem antes; os números chegam por streaming, como na tela do ML. */}
-      <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>{corpo}</Suspense>
+      {/* A janela reservada, como na tela do ML (D-515; medida do A3 na D-526): o repasse e os Ads da
+          Shopee vêm abaixo e não podem ser empurrados quando os números chegam. */}
+      <Suspense fallback={<CarregandoBloco rotulo="faturamento" altura="100vh" />}>{corpo}</Suspense>
 
       {/* O realizado ao lado do previsto: logo depois do resultado, antes dos Ads. */}
       {leiturasRepasse !== null && (

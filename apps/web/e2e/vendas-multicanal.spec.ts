@@ -132,8 +132,53 @@ test("/vendas?marketplace=todos: o cancelamento por compra e o hoje ao vivo, com
   await expect(celula).toContainText("Por compra");
   await expect(page.locator(".sb-kpi-strip-ancora .sb-kpi")).toHaveCount(5);
 
-  // O que ainda falta neste recorte é só a marca.
-  await expect(page.getByRole("note").filter({ hasText: "O filtro de marca ainda é só do Mercado Livre" })).toBeVisible();
+  // A marca chegou ao "Todos" (D-622): o menu está lá, em "Todas as marcas".
+  await expect(page.locator('summary[aria-label="Marca: Todas as marcas"]')).toBeVisible();
+});
+
+test("/vendas?marketplace=todos: a marca recorta os dois canais, e compras, ticket e cancelamento não se aplicam (D-622, C-72)", async ({
+  page,
+}) => {
+  // O seed não cadastra marca: toda a venda dele é "sem marca". Com só a loja de
+  // teste, o "Todos" sem marca é o Mercado Livre sem marca, lido de outra RPC.
+  await login(page, "/vendas?marketplace=ml&semMarca=1");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  const ml = { receita: await valorDaFaixa(page, "receita_bruta"), unidades: await valorDaFaixa(page, "unidades_vendidas") };
+
+  expect(ml.receita).not.toBe("—");
+
+  // A troca de marketplace leva a marca junto, nos dois sentidos.
+  await seletorDeMarketplace(page).locator("summary").click();
+  await seletorDeMarketplace(page).getByRole("link", { name: "Todos os marketplaces", exact: true }).click();
+  // Com marca, o "Todos" é explícito: sem `marketplace`, a marca na URL abriria o ML (D-488).
+  await expect(page).toHaveURL(/\/vendas\?marketplace=todos&semMarca=1$/u);
+  await expect(page.locator('summary[aria-label="Marca: Sem marca"]')).toBeVisible();
+
+  expect(await valorDaFaixa(page, "multicanal_receita_bruta")).toBe(ml.receita);
+  expect(await valorDaFaixa(page, "multicanal_unidades")).toBe(ml.unidades);
+
+  // Compras, ticket e cancelamento não têm cota de marca: "—" com o porquê, nunca zero.
+  const naoSeAplica = "não se aplica sob recorte de marca";
+
+  for (const metricId of ["multicanal_compras", "multicanal_ticket_medio", "multicanal_taxa_cancelamento"]) {
+    expect(await valorDaFaixa(page, metricId)).toBe("—");
+    await expect(
+      page.locator(".sb-kpi").filter({ has: page.locator(".sb-kpi-id", { hasText: new RegExp(`^${metricId}$`, "u") }) }),
+    ).toContainText(naoSeAplica);
+  }
+
+  // O gráfico não oferece a compra, e o ranking (C-59) diz que ainda não recorta por marca.
+  await expect(page.locator(".sb-segmented").getByRole("link", { name: "Compras" })).toHaveCount(0);
+  await expect(page.getByText("O ranking de produtos ainda não recorta por marca")).toBeVisible();
+
+  // O CSV leva a mesma marca da tela, e o caminho de volta ao ML também.
+  await expect(page.getByRole("link", { name: "Exportar CSV por dia" })).toHaveAttribute("href", /semMarca=1/u);
+  await seletorDeMarketplace(page).locator("summary").click();
+  await expect(seletorDeMarketplace(page).getByRole("link", { name: "Mercado Livre", exact: true })).toHaveAttribute(
+    "href",
+    /marketplace=ml.*semMarca=1/u,
+  );
 });
 
 test("/vendas?marketplace=shopee: sem loja real lida, a faixa diz '—' e por quê, e os pedidos estão a um clique", async ({

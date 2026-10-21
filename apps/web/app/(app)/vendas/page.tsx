@@ -629,10 +629,11 @@ async function VendasContent({
               contas={{ ml: accountsResult.error === null ? accounts.length : null, shopee: lojasShopee }}
               destinos={{
                 ml: buildHref({ period, accountSlug, metricKey: metric.key, brand }, {}),
-                // D-440: "Todos" e "Shopee" são esta tela com outro recorte; só o
-                // período atravessa (conta, marca e métrica são do ML).
-                todos: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key }, { escopo: "todos" }),
-                shopee: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key }, { escopo: "shopee" }),
+                // D-440: "Todos" e "Shopee" são esta tela com outro recorte; o
+                // período atravessa e, desde a D-622 (C-72), a marca também. A
+                // conta e a métrica são do ML.
+                todos: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key, marca: brand }, { escopo: "todos" }),
+                shopee: hrefDeVendas({ escopo: "ml", periodo: period, contas: null, metrica: metric.key, marca: brand }, { escopo: "shopee" }),
               }}
             />
 

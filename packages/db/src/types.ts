@@ -6502,7 +6502,8 @@ export type Database = {
           p_supplier_brand?: string | null
         }
         Returns: {
-          compras: number
+          // CORRECAO MANUAL (D-605): NULO sob recorte de marca (o pack e o pedido atravessam produtos).
+          compras: number | null
           dia: string
           // CORRECAO MANUAL (D-436): NULO = a linha do TOTAL do dia.
           marketplace: "ML" | "SHOPEE" | null

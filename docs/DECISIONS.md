@@ -18174,6 +18174,54 @@ O grão é o do C-59: o `sku_id` do item. O kit conta como o kit, e a página de
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-619 - O estoque do anuncio da Shopee fresco: a releitura a cada 6 horas, e a ruptura so com a leitura boa e recente
+
+**Contexto:** achado de 21/10, ao medir o 4o detector da Shopee (a divergencia de estoque). Na leitura de producao (so contagem e proporcao):
+- todo o detalhe do catalogo da Shopee tinha sido lido havia mais de 3 dias, com mediana de ~5 dias;
+- ~11% dos itens venderam depois da ultima leitura, e nenhum foi marcado para reler.
+
+A venda baixa o estoque na Shopee sem mudar o `update_time` do item, e a fila do detalhe (D-428) so relia o item que mudou. O estoque guardado envelhecia calado.
+
+Isso afeta tres coisas:
+- a ruptura (D-611), que leria um zero de dias atras;
+- o detector de divergencia;
+- a coluna de estoque de `/anuncios/shopee`.
+
+A prova de que o problema e o tempo: o saldo do V3 levado ao instante da leitura (o saldo de hoje menos os movimentos depois dela, com o ajuste da reconciliacao de 21/10 contado) bate com o estoque da Shopee em ~81% das unidades vinculadas fora do armazem da Shopee. Contra o saldo de agora, sao ~69%.
+
+**Decisao:**
+1. **A fila do detalhe ganha a renovacao:** o item ATIVO (`NORMAL`), sem erro, lido ha mais de 6 horas, volta para a fila, o mais antigo primeiro.
+   - E a prioridade 5 de `shopee_items_details_pending`, depois de todas as de antes.
+   - A assinatura e o retorno nao mudam, e o worker nao muda: o gatilho horario ja encadeia a leitura enquanto ha pendentes.
+   - O custo por ciclo e o da primeira leitura do catalogo ativo: um lote de detalhe a cada 50 itens e uma leitura por item com variacao, a cada 6 horas.
+2. **A ruptura so com a ultima leitura boa:** a unidade cuja ultima leitura falhou (`details_error`) fica de fora, porque o estoque guardado e o de antes, e estoque desconhecido nunca vira zero.
+3. **A hora da leitura na evidencia:** "estava zerado na leitura de DD/MM/AAAA HH:MI", e `evidence.detector.estoque_lido_em`.
+4. **O catalogo atrasado nao roda a fonte:** com um item ativo de loja live sem leitura boa ha 30 horas, a `shopee_ruptura` nao roda.
+   - Nada nasce de estoque velho, e nada se encerra como se o estoque tivesse voltado.
+   - As 30 horas cobrem o ciclo de 6 horas com folga e o recuo de 1 dia do item com erro, que nao trava a fonte.
+   - O item nunca lido tambem nao trava: ele nao tem estoque e entra na fila na hora seguinte.
+5. **O armazem da Shopee nao muda a ruptura.** O item marcado `is_fulfillment_by_shopee` e hibrido: na leitura de 21/10, metade dos pedidos dele saiu do armazem da Shopee e metade da loja.
+   - O `total_available_stock` soma os dois, e o zero continua sendo zero.
+   - Para a divergencia isso importa: a comparacao com o saldo LOCAL do V3 so vale fora desses anuncios, ou com os estoques separados.
+
+**Verificacao:**
+- **Integracao:** 3 testes, e os da fila (D-428), da ruptura (D-611) e do prejuizo (D-617) seguem verdes.
+  - A ruptura so com a leitura boa: o zerado de leitura falha fica de fora, e a evidencia leva a hora.
+  - Com um item lido ha 31 horas, a fonte nao roda por 3 dias, e a acao aberta continua aberta.
+  - A fila rele o ativo lido ha 31 horas antes do de 7 horas, e deixa de fora o lido agora, o que falhou agora e o fora do ar.
+- **Mutacao:** cada uma derruba testes.
+  - a trava do catalogo atrasado desligada;
+  - a leitura que falhou detectando;
+  - a renovacao relendo o fora do ar;
+  - a renovacao sem a ordem da leitura;
+  - a renovacao com 1 dia.
+
+**Publicacao:** a migration `20261021120000` vai a producao junto com a da D-617 e antes do worker que pede as fontes novas.
+- A primeira hora depois dela rele o catalogo ativo inteiro.
+- A tela de `/anuncios/shopee` ja tem `details_synced_at` na view, e pode mostrar quando o estoque foi lido (A2).
+
+**Impacto:** `supabase/migrations/20261021120000_estoque_da_shopee_fresco.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,SHOPEE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
+
 ## D-620 - O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 
 **Contexto:** o "Todos" e a Shopee de `/vendas` diziam que "marca, vendas de hoje e taxa de cancelamento ainda são só do Mercado Livre". O dono escolheu em 20/10 as opções do item 4. A tela do SKU (b) ficou primeiro nas telas, mas o C-70 do A1 (D-603, #280, migration `20261020150000`) chegou antes:
@@ -18267,3 +18315,47 @@ A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre
 - Na primeira hora depois dele, as rodadas de 10 minutos releem as perguntas abertas que o Mercado Livre nao lista mais, e a fila "Pendente" fica so com o que existe.
 
 **Impacto:** `apps/worker/src/handlers/{sync-support-question,sync-support-questions-reconcile,ml-support-questions-fetch,persist-support-question}{,.test}.ts`, `apps/worker/src/index.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
+
+## D-622 - A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
+
+**Contexto:** a parte (a2) do item 4 do dono, de 20/10. O "Todos" de `/vendas` dizia que o filtro de marca era só do ML. O C-72 do A1 (D-605) pôs `p_supplier_brand` e `p_sem_marca` no fim das quatro funções do "Todos" (resumo, série, hoje e cancelamento), com a regra do ML (D-237) e o grão de SKU dos dois canais. Sob marca, compras, ticket, recebido e cancelamento vêm NULOS, porque o pack e o pedido atravessam produtos. A migration `20261020170000` está em produção desde 20/10, 19:09 UTC.
+
+**Decisão:**
+1. **O mesmo menu e a mesma URL da tela do ML:**
+   - `marca=` e `semMarca=1`, com o "Sem marca", que é a venda sem produto vinculado e o produto sem marca, nos dois canais;
+   - a lista vem do banco (`get_supplier_brands`, D-194);
+   - a troca de marketplace leva a marca nos dois sentidos, porque a tela do ML lê os mesmos nomes; o `/faturamento` e a `/vendas/shopee` não a recebem;
+   - "Limpar filtros" tira contas e marca.
+2. **A marca vai às funções do C-72 só com valor**, na leitura da tela e no CSV (o arquivo ganha `-marca-…` ou `-sem-marca` no nome, como o do ML).
+3. **O que não se aplica sob marca é dito, nunca zero:**
+   - compras e ticket médio: "—" com a ressalva na célula;
+   - o cancelamento: a célula diz que não se aplica, de cara. A leitura nem sai, e o C-72 a devolveria NULA;
+   - a compra sai das métricas do gráfico, e `metric=compras` cai no faturamento;
+   - a nota abaixo do hoje explica de onde vêm unidades e receita e o que não se aplica.
+4. **O ranking de produtos (C-59) não recorta por marca.** Sob marca, o painel diz isso, com o link para o mesmo recorte sem marca, em vez de mostrar o ranking inteiro como se fosse da marca. O C-75 do A1 (D-613, #286) põe o mesmo recorte no `get_marketplace_sku_sales`. Quando a migration `20261020200000` estiver em produção, a D-624 passa a mandá-lo, só com valor, e o aviso sai..
+
+**Publicação:** só a web. A migration está em produção. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:**
+  - o endereço com a marca e o "sem marca";
+  - a marca atravessando para o ML e para a Shopee, e fora do `/faturamento`;
+  - as métricas do gráfico sob marca;
+  - a ressalva da faixa.
+- **e2e:**
+  - no seed, que não cadastra marca:
+    - o "Todos" sem marca é igual ao ML sem marca;
+    - compras, ticket e cancelamento são "—" com o porquê;
+    - a compra sai do gráfico, e o ranking diz que não recorta;
+    - o CSV e o caminho de volta ao ML levam a marca;
+  - no ensaio da loja live, uma marca só do produto dela, durante o teste: a faixa com exatamente R$ 1.100 e 11 unidades, e a linha da loja com a receita e a compra "—".
+- **Suíte inteira:** com o banco recriado do zero, 257 de 258 na 3300, os 14 do ensaio da loja live e os 3 de convite na 3000. A falha foi um teste antigo que afirmava que só o período atravessa do ML para a Shopee; a regra mudou de propósito, o teste foi atualizado e o spec passou 10/10..
+
+**Impacto:**
+- web:
+  - `apps/web/app/(app)/vendas/{multicanal.tsx,page.tsx,exportar/route.ts}`;
+  - `apps/web/lib/vendas-multicanal.ts` e o teste;
+- db: `packages/db/src/types.ts`, só a CORRECAO MANUAL de `get_marketplace_sales_daily.compras` (NULA sob marca), a pedido do A1;
+- e2e: `vendas-multicanal.spec.ts`, `ensaio-loja-live.spec.ts` e `vendas-shopee.spec.ts` (a marca agora atravessa do ML para a Shopee);
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.

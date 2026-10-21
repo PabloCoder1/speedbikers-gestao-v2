@@ -6,7 +6,7 @@ import { resolvePeriodRange } from "../../../../lib/period";
 import { TETO_DA_SERIE, lerSerieDiaria, lerSerieDoMl } from "../../../../lib/serie-de-vendas";
 import { createClient } from "../../../../lib/supabase/server";
 import { contasParaCsv, diasDoMlParaCsv, diasParaCsv } from "../../../../lib/vendas-export";
-import { argumentosDaMarca, resolverContaDaVenda, resolverMarcaDaVenda } from "../../../../lib/vendas-ml-filtros";
+import { argumentosDaMarca, resolverContaDaVenda, resolverMarcaDaVenda, type FiltroDeMarca } from "../../../../lib/vendas-ml-filtros";
 import { marketplacesDoEscopo, resolverContas, resolverEscopoDaTelaDeVendas } from "../../../../lib/vendas-multicanal";
 
 /**
@@ -60,14 +60,17 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const { range } = resolvePeriodRange(query, toSalesMetricDate(new Date()));
   const { selecionadas } = resolverContas(query.contas, contasResult.data, escopo);
+  // D-622: a marca da tela, pelo mesmo resolvedor, e só com valor (C-72). Sem ela o arquivo contradiria a tela.
+  const marca = resolverMarcaDaVenda(query);
   const argumentos = {
     p_organization_id: membership.organizationId,
     p_marketplaces: marketplacesDoEscopo(escopo),
     p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
     p_date_from: range.from,
     p_date_to: range.to,
+    ...argumentosDaMarca(marca),
   };
-  const base = `vendas-${escopo}-${range.from}-a-${range.to}`;
+  const base = [`vendas-${escopo}-${range.from}-a-${range.to}`, trechoDaMarca(marca)].filter((trecho) => trecho !== null).join("-");
 
   if (tabela === "conta") {
     // Uma linha por conta e loja, mais as somas: poucas linhas, sem página.
@@ -106,6 +109,13 @@ function trechoDoNome(valor: string): string {
     .replace(/^-+|-+$/gu, "");
 }
 
+/** O trecho da marca no nome do arquivo, o mesmo nos três recortes (D-602, D-622). */
+function trechoDaMarca(marca: FiltroDeMarca): string | null {
+  if (marca.kind === "marca") return `marca-${trechoDoNome(marca.value)}`;
+
+  return marca.kind === "sem_marca" ? "sem-marca" : null;
+}
+
 /** D-602: a série por dia do recorte do ML, pelos MESMOS resolvedores e a MESMA leitura da tela dele. */
 async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promise<Response> {
   const supabase = await createClient();
@@ -138,10 +148,7 @@ async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promis
     return new Response(`O período passa de ${String(TETO_DA_SERIE)} dias; exporte um período menor.`, { status: 422 });
   }
 
-  const recorte = [
-    conta === null ? null : trechoDoNome(conta.slug),
-    marca.kind === "marca" ? `marca-${trechoDoNome(marca.value)}` : marca.kind === "sem_marca" ? "sem-marca" : null,
-  ].filter((trecho): trecho is string => trecho !== null && trecho !== "");
+  const recorte = [conta === null ? null : trechoDoNome(conta.slug), trechoDaMarca(marca)].filter((trecho): trecho is string => trecho !== null && trecho !== "");
   const nome = [`vendas-ml-${range.from}-a-${range.to}`, ...recorte, "por-dia"].join("-");
 
   return csv(diasDoMlParaCsv(data), `${nome}.csv`);
