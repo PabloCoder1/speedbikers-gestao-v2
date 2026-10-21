@@ -18356,3 +18356,18 @@ As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamen
 - e2e: `vendas-multicanal.spec.ts`, `ensaio-loja-live.spec.ts` e `vendas-shopee.spec.ts` (a marca agora atravessa do ML para a Shopee);
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-628 - O estoque do anúncio da Shopee diz de quando é a leitura
+
+**Contexto:** o A1 achou na D-619 que a venda baixa o estoque na Shopee sem mudar o `update_time` do item. Com isso, o estoque de `/anuncios/shopee` ficava com dias de atraso (mediana de ~5 dias). A fila dele passa a reler o item ativo a cada 6 h, mas a leitura continua tendo uma hora, e o número não dizia qual. A lista (`get_shopee_listings`) já devolve `details_synced_at`.
+
+**Decisão:**
+- Embaixo do estoque, quando ele existe e a hora da leitura também: "lido há N min" (ou "há N h", "há N dias"), pelo `formatAge` das outras telas, com a data e a hora completas no `title`.
+- Depois de 7 dias, "lido em <dia>", no fuso de negócio (`formatDay`).
+- O item ainda não lido continua "—", sem hora inventada.
+
+**Publicação:** só a web. A coluna já está em produção, sem migration nem parâmetro novo.
+
+**Verificacao:** e2e `anuncios-shopee` 10/10. O anúncio lido do seed diz "lido há N min", com N de pelo menos 30, e a hora no `title`; o item que espera os detalhes não ganha hora.
+
+**Impacto:** `apps/web/app/(app)/anuncios/shopee/page.tsx`, `apps/web/e2e/anuncios-shopee.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
