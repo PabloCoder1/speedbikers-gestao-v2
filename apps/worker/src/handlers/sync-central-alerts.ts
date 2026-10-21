@@ -42,6 +42,9 @@ export const FONTES_ALERTAS = [
   "shopee_sem_vinculo",
   "shopee_ruptura",
   "shopee_prejuizo",
+  // D-627: a divergencia de estoque da Shopee, a ultima; so depois da
+  // migration 20261021150000 em producao.
+  "shopee_divergencia",
 ] as const;
 
 const resultadoSchema = z.object({

@@ -18320,6 +18320,13 @@ A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre
 - **Correcao (D-621 b):** a releitura vai para a fila `backfill`, a de prioridade baixa (1/s, 2 simultaneas), que nunca disputa com o trafego vivo e fica dentro do limite do Mercado Livre. Nenhuma permissao de producao muda.
 - O teste do enfileiramento passa a exigir `backfill`.
 
+**Em producao (21/10, worker `worker-00054-vxr`, `3b40485c`, desde 14:22 UTC):** a reconciliacao das 14:30 releu, nas quatro contas, as perguntas que a V3 tinha abertas e o Mercado Livre nao listava, sem nenhuma falha.
+- ~89% eram apagadas e viraram `DELETED`.
+- ~10% tinham sido respondidas pelo app do Mercado Livre com o webhook perdido, a lacuna da D-089, e viraram `ANSWERED`.
+- Uma era `BANNED`.
+- Todas resolveram pela D-102.
+- Na rodada seguinte (14:40), nenhuma pergunta aberta sobrava fora da lista do Mercado Livre. A fila "Pendente" ficou so com as perguntas que existem.
+
 **Impacto:** `apps/worker/src/handlers/{sync-support-question,sync-support-questions-reconcile,ml-support-questions-fetch,persist-support-question}{,.test}.ts`, `apps/worker/src/index.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
 
 ## D-622 - A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
@@ -18515,6 +18522,65 @@ As três gravam em `actions` com a loja em `shopee_shop_id`, o texto pronto em `
 - e2e: `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-627 - A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
+
+**Contexto:** o ultimo dos quatro detectores da Shopee que o dono escolheu em 20/10. A primeira medida (21/10, so proporcoes) parecia dizer que um terco dos anuncios divergia, mas o estoque guardado tinha dias de atraso. Isso foi corrigido pela D-619.
+
+Com o estoque relido, e o saldo do V3 levado ao INSTANTE da leitura pelo ledger, o quadro mudou:
+- ~94% das unidades vinculadas, fora do armazem da Shopee, batem;
+- ~3,5% mostram na Shopee mais que o V3 tinha;
+- ~2,6% mostram menos;
+- quando divergem, a mediana e de 2 unidades.
+
+Comparar com o saldo de AGORA misturaria as vendas entre a leitura e a conta.
+
+**Decisao (a regra recomendada ao dono em 21/10):**
+1. **O sinal:** a unidade de anuncio ATIVA, de loja LIVE, vinculada a um PRODUTO, com a ultima leitura boa, cujo estoque na Shopee PASSA do saldo LOCAL do V3 no instante da leitura.
+   - Esse saldo e o saldo de agora menos os movimentos LOCAL do SKU depois da leitura.
+   - O kit fica de fora: nao tem saldo proprio.
+   - O item do armazem da Shopee (`is_fulfillment_by_shopee`) fica de fora: o estoque dele soma o armazem e a loja, o hibrido da D-619.
+2. **So a Shopee ACIMA do V3:** e o caso que pode vender sem produto. Abaixo nao e alerta aqui, porque o zero ja e a ruptura (D-611).
+3. **A acao:**
+   - `kind = shopee_divergencia`, com `subject_key = loja:item:variacao`, a loja e o SKU;
+   - severidade alta quando o V3 nao tinha saldo nenhum (notifica, D-411); media nos outros casos;
+   - confianca media;
+   - impacto NULO: a diferenca e de unidades, e ausencia nao vira zero.
+4. **A evidencia:**
+   - o estoque da Shopee e a hora da leitura;
+   - o saldo do V3 na leitura e agora;
+   - a diferenca;
+   - a recomendacao de conferir o UpSeller ou ajustar a quantidade.
+5. **O catalogo atrasado nao roda a fonte (D-619)**, e o ciclo de vida e o de sempre: 3 dias sem detectar encerram, com o motivo.
+
+**Verificacao:**
+- **Integracao:** 2 testes, e os da ruptura e da D-619 seguem verdes.
+  - Vira acao a unidade acima do saldo na leitura, a variacao, e a sem saldo como alta.
+  - Ficam de fora:
+    - a que vendeu depois da leitura (o saldo de agora enganaria);
+    - a abaixo do saldo;
+    - a do armazem da Shopee;
+    - o kit;
+    - a de leitura falha;
+    - a fora do ar;
+    - a sem SKU.
+  - O estoque de volta encerra no 3o dia, com o motivo.
+- **Worker:** 4 de 4, com a setima fonte.
+- **Mutacao:** 6, e cada uma derruba testes:
+  - o saldo de agora no lugar do da leitura;
+  - o armazem incluido;
+  - o kit incluido;
+  - a severidade sempre media;
+  - o igual detectado;
+  - a leitura que falhou detectada.
+- **Producao (so contagem e tempo):** a consulta do detector leva ~82 ms pelo indice do ledger por SKU e instante. Hoje cairiam ~3,5% das unidades avaliadas, e ~0,5% como alta.
+
+**Publicacao:**
+1. a migration `20261021150000`;
+2. o worker, com a fonte nova;
+3. a tela (A2): o rotulo do kind e o atalho da D-609.
+
+**Impacto:** `supabase/migrations/20261021150000_shopee_divergencia_na_central.sql`, `apps/worker/src/handlers/sync-central-alerts{,.test}.ts`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF,ROADMAP}.md`.
 
 ## D-628 - O estoque do anúncio da Shopee diz de quando é a leitura
 

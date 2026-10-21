@@ -171,6 +171,12 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 - **O cálculo:** uma vez por dia, no gatilho das 08:00 (`diagnostics.listing-sales-drop`). A tela diz de quando é (`queda_calculada_em`) e que é sobre dias fechados.
 - **Para a tela:** manda `p_queda`/`p_queda_dias` só com valor e só depois da migration `20261021160000` em produção.
 
+### 3.27 A divergência de estoque entre a Shopee e o V3 na Central (C-78, D-627) — em código
+
+- **A ação:** `actions.kind = 'shopee_divergencia'`, com `shopee_shop_id` e `sku_id`, `subject_key = <loja>:<item>:<variação ou ->`. A severidade é `alta` quando o V3 não tinha saldo na leitura (essa notifica) e `media` nos outros casos. A confiança é `media`, e o impacto é NULO.
+- **O `evidence.detector`:** `shopee_shop_id`, `loja`, `item_id`, `model_id`, `anuncio`, `variacao`, `sku_anuncio`, `sku`, `estoque_shopee`, `estoque_lido_em`, `saldo_v3_na_leitura`, `saldo_v3_agora` e `diferenca`.
+- **Para a tela:** o rótulo do kind e o atalho da D-609 para `/anuncios/shopee` (`q=<sku_anuncio>`, ou `q=<item_id>`). A tela lê depois da migration `20261021150000` em produção.
+
 ### 3.26 A dispersão de preço do mesmo SKU na lista de /anuncios (C-77, D-625) — em código
 
 - **`get_listings_dashboard`:** `p_preco text default 'all'` ('all' | 'divergente') e `p_preco_teto numeric default null` no fim. 'divergente' exige o teto, que a web manda da `TETO_DISPERSAO_PCT`.

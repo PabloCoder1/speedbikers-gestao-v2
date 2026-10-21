@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **541** (D-001 a D-630).
+Decisões registradas: **542** (D-001 a D-630).
 
 ## Por domínio
 
@@ -125,7 +125,7 @@ Decisões registradas: **541** (D-001 a D-630).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (39)
+### estoque (40)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -166,6 +166,7 @@ Decisões registradas: **541** (D-001 a D-630).
 - **D-504** — A Home pinta sem esperar a cobertura: so a "Atencao necessaria" espera a segunda rodada, que comeca quando a organizacao chega, e os pausados viram contagem direta
 - **D-614** — A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 - **D-615** — O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
+- **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
 
 ### interface (69)
 

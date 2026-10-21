@@ -24665,6 +24665,148 @@ describe("a dispersão de preço do mesmo SKU na lista de /anuncios (D-625, C-77
 });
 
 /*
+  D-627 (C-78): a divergência de estoque entre a Shopee e o V3 vira ação na
+  Central. A unidade ativa de loja live, vinculada a um PRODUTO e fora do
+  armazém da Shopee, cujo estoque na Shopee passa do saldo LOCAL que o V3
+  tinha no instante da leitura (o saldo de agora menos o que se moveu depois).
+*/
+describe("a divergência de estoque entre a Shopee e o V3 na Central de Ações (D-627)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d627";
+  const LOJA = "dddd6270-0000-4000-8000-0000000a0627";
+  const sku: Record<string, string> = {};
+
+  interface Acao {
+    subject_key: string;
+    status: string;
+    severity: string;
+    impacto: string | null;
+    sku_id: string | null;
+    shopee_shop_id: string | null;
+    recommendation: string;
+    detector: Record<string, unknown>;
+    motivo: string | null;
+  }
+
+  const sincronizar = async (dia: string) =>
+    (
+      await client.query<{ r: { fontes: string[]; criadas: number; encerradas: number } }>(
+        "select public.sincronizar_alertas_central($1, $2::date, array['shopee_divergencia']) as r",
+        [ORG, dia],
+      )
+    ).rows[0]?.r;
+
+  const acoes = async () =>
+    (
+      await client.query<Acao>(
+        `select subject_key, status, severity, estimated_impact_brl::text as impacto, sku_id, shopee_shop_id, recommendation,
+                evidence -> 'detector' as detector, evidence -> 'encerramento' ->> 'motivo' as motivo
+           from public.actions where organization_id = $1 and kind = 'shopee_divergencia' order by subject_key`,
+        [ORG],
+      )
+    ).rows;
+
+  async function saldo(chave: string, quantidade: number, quando: string) {
+    await client.query(
+      `insert into public.stock_movements (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1, $2, 'LOCAL', $3, 'AJUSTE_RECONCILIACAO', $4, ${quando}) on conflict do nothing`,
+      [ORG, sku[chave], quantidade, `d627-${chave}-${String(quantidade)}-${quando}`],
+    );
+  }
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-627', 'org-d627') on conflict (id) do nothing", [ORG]);
+    const criados = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1, 'D627-P1', 'PRODUTO'), ($1, 'D627-P2', 'PRODUTO'), ($1, 'D627-P3', 'PRODUTO'), ($1, 'D627-P4', 'PRODUTO'),
+              ($1, 'D627-P5', 'PRODUTO'), ($1, 'D627-P6', 'PRODUTO'), ($1, 'D627-K', 'KIT')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku`,
+      [ORG],
+    );
+
+    for (const r of criados.rows) sku[r.sku.replace("D627-", "")] = r.id;
+
+    // Os saldos nascem antes da leitura (há 3 h). O P1 vende 2 DEPOIS da
+    // leitura (agora): o saldo de agora é 3, mas na leitura era 5.
+    await saldo("P1", 5, "now() - interval '3 hours'");
+    await saldo("P1", -2, "now()");
+    await saldo("P2", 2, "now() - interval '3 hours'");
+    await saldo("P4", 5, "now() - interval '3 hours'");
+    await saldo("P6", 1, "now() - interval '3 hours'");
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_synced_until, orders_last_success_at, items_synced_until)
+       values ($1, $2, 'live', 990627001, 'Loja Real', 'CONNECTED', now() - interval '60 days', now(), now(), now())
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    // Lidos há 2 h. 1: 5 na Shopee, o V3 tinha 5 (vendeu depois). 2: 4 contra
+    // 2. 3: 3 contra nada. 4: 1 contra 5 (abaixo). 5: do armazém da Shopee. 6:
+    // kit. 7: a leitura falhou. 8: fora do ar. 9: sem SKU. 10: variação com 6
+    // contra 1.
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model,
+                                        details_synced_at, details_update_time, details_error, available_stock, is_fulfillment_by_shopee)
+       values ($1, $2, 1, 'NORMAL', now() - interval '3 days', 'Vendeu depois', 'D627-P1', false, now() - interval '2 hours', now() - interval '3 days', null, 5, false),
+              ($1, $2, 2, 'NORMAL', now() - interval '3 days', 'Acima', 'D627-P2', false, now() - interval '2 hours', now() - interval '3 days', null, 4, false),
+              ($1, $2, 3, 'NORMAL', now() - interval '3 days', 'Sem saldo', 'D627-P3', false, now() - interval '2 hours', now() - interval '3 days', null, 3, false),
+              ($1, $2, 4, 'NORMAL', now() - interval '3 days', 'Abaixo', 'D627-P4', false, now() - interval '2 hours', now() - interval '3 days', null, 1, false),
+              ($1, $2, 5, 'NORMAL', now() - interval '3 days', 'Armazém', 'D627-P5', false, now() - interval '2 hours', now() - interval '3 days', null, 10, true),
+              ($1, $2, 6, 'NORMAL', now() - interval '3 days', 'Kit', 'D627-K', false, now() - interval '2 hours', now() - interval '3 days', null, 2, false),
+              ($1, $2, 7, 'NORMAL', now() - interval '3 days', 'Falhou', 'D627-P3', false, now() - interval '2 hours', now() - interval '3 days', 'nao_devolvido', 9, false),
+              ($1, $2, 8, 'UNLIST', now() - interval '3 days', 'Fora do ar', 'D627-P3', false, now() - interval '2 hours', now() - interval '3 days', null, 9, false),
+              ($1, $2, 9, 'NORMAL', now() - interval '3 days', 'Sem SKU', null, false, now() - interval '2 hours', now() - interval '3 days', null, 9, false),
+              ($1, $2, 10, 'NORMAL', now() - interval '3 days', 'Variações', null, true, now() - interval '2 hours', now() - interval '3 days', null, null, false)
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, item_id, model_id, organization_id, model_name, model_sku, model_status, available_stock)
+       values ($1, 10, 101, $2, 'Azul', 'D627-P6', 'MODEL_NORMAL', 6) on conflict do nothing`,
+      [LOJA, ORG],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.actions where organization_id = $1", [ORG]);
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  });
+
+  it("a Shopee acima do saldo do V3 NA LEITURA vira ação; sem saldo nenhum, alta", async () => {
+    const r = await sincronizar("2026-10-12");
+    const lista = await acoes();
+
+    expect(r?.fontes).toEqual(["shopee_divergencia"]);
+    // O 1 não: na leitura o V3 tinha 5, igual à Shopee (o saldo de agora, 3, enganaria).
+    expect(lista.map((a) => [a.subject_key, a.severity, a.sku_id])).toEqual([
+      [`${LOJA}:10:101`, "media", sku.P6],
+      [`${LOJA}:2:-`, "media", sku.P2],
+      [`${LOJA}:3:-`, "alta", sku.P3],
+    ]);
+    expect(lista.every((a) => a.status === "novo" && a.impacto === null && a.shopee_shop_id === LOJA)).toBe(true);
+
+    const [, acima, semSaldo] = lista;
+
+    expect(acima?.detector).toMatchObject({ estoque_shopee: 4, saldo_v3_na_leitura: 2, saldo_v3_agora: 2, diferenca: 2, sku: "D627-P2", item_id: 2 });
+    expect(typeof acima?.detector.estoque_lido_em).toBe("string");
+    expect(semSaldo?.recommendation).toMatch(/pode vender sem produto/);
+    expect(acima?.recommendation).toMatch(/mais do que o V3 tinha/);
+  });
+
+  it("o estoque de volta ao saldo encerra a ação no 3o dia, com o motivo", async () => {
+    await client.query("update public.shopee_items set available_stock = 2 where shopee_shop_id = $1 and item_id = 2", [LOJA]);
+
+    for (const dia of ["2026-10-13", "2026-10-14"]) await sincronizar(dia);
+
+    const r = await sincronizar("2026-10-15");
+    const lista = await acoes();
+
+    expect(r?.encerradas).toBe(1);
+    expect(lista.find((a) => a.subject_key === `${LOJA}:2:-`)).toMatchObject({ status: "resolvido" });
+    expect(lista.find((a) => a.subject_key === `${LOJA}:2:-`)?.motivo).toMatch(/voltou a não passar do saldo do V3/);
+    expect(lista.filter((a) => a.status === "novo")).toHaveLength(2);
+  });
+});
+
+/*
   D-629 (C-79): a queda nas vendas por anúncio, pré-calculada uma vez por dia.
   As unidades do período (dias fechados até ontem) contra as 8 janelas
   anteriores de mesmo tamanho, desde a primeira venda; z <= -2 com 4 amostras
