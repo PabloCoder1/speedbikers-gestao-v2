@@ -10,7 +10,7 @@ import { z, ZodError } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
-import { persistSupportQuestion } from "./persist-support-question.js";
+import { markSupportQuestionDeleted, persistSupportQuestion } from "./persist-support-question.js";
 
 /**
  * Primeira entrada de rede do domínio `support` (D-087): processa exatamente
@@ -21,6 +21,9 @@ import { persistSupportQuestion } from "./persist-support-question.js";
 const payloadSchema = z.object({
   mlAccountId: z.uuid(),
   questionId: z.number().int().positive(),
+  // D-621: a reconciliação também enfileira a releitura de uma pergunta que
+  // a V3 tem aberta e a varredura não viu; sem o campo, é o webhook.
+  source: z.enum(["WEBHOOK", "RECONCILIATION"]).default("WEBHOOK"),
 });
 
 export interface SyncSupportQuestionDeps {
@@ -67,7 +70,7 @@ export function createSyncSupportQuestionHandler(deps: SyncSupportQuestionDeps):
       };
     }
 
-    const { mlAccountId, questionId } = parsed.data;
+    const { mlAccountId, questionId, source } = parsed.data;
     const account = await deps.db
       .from("ml_accounts")
       .select("organization_id, seller_id, status")
@@ -134,6 +137,34 @@ export function createSyncSupportQuestionHandler(deps: SyncSupportQuestionDeps):
         questionId,
       });
     } catch (error) {
+      // D-621: o 404 é a pergunta apagada no Mercado Livre (D-201). Ela sai
+      // da fila "Pendente" como `DELETED`, em vez de falhar o job e ficar
+      // aberta na V3 para sempre.
+      if (error instanceof MercadoLivreApiError && error.status === 404) {
+        try {
+          const marked = await markSupportQuestionDeleted(
+            deps.db,
+            { organizationId: account.data.organization_id, mlAccountId, source },
+            { questionId, observedAt: observedAt.toISOString() },
+          );
+
+          context.logger.warn("sync_support_question_deleted_remotely", {
+            ml_account_id: mlAccountId,
+            question_id: String(questionId),
+            case_found: marked.supportCaseId !== null,
+            transition_applied: marked.transitionApplied,
+          });
+
+          return { status: "done", processed: marked.supportCaseId === null ? 0 : 1 };
+        } catch (markError) {
+          return {
+            status: "failed",
+            retryable: true,
+            reason: markError instanceof Error ? markError.message : "erro desconhecido ao marcar a pergunta apagada",
+          };
+        }
+      }
+
       return remoteFailure(error);
     }
 
@@ -148,7 +179,7 @@ export function createSyncSupportQuestionHandler(deps: SyncSupportQuestionDeps):
     try {
       await persistSupportQuestion(
         deps.db,
-        { organizationId: account.data.organization_id, mlAccountId, source: "WEBHOOK" },
+        { organizationId: account.data.organization_id, mlAccountId, source },
         mapQuestionToSupportProjection(question, observedAt),
       );
     } catch (error) {

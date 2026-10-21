@@ -18217,3 +18217,53 @@ As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamen
 - e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-621 - A pergunta apagada no Mercado Livre sai da fila "Pendente", e a reconciliacao rele a pergunta aberta que a varredura nao viu
+
+**Contexto:** achado de 21/10, ao conferir os erros do worker depois da reconciliacao do UpSeller. O `sync.support.questions` falha todo dia com 404 em `GET /questions/{id}`, a pergunta apagada no Mercado Livre (D-201). A D-201 parou a repeticao do job, mas o caso ficava `UNANSWERED` e `NOVO` na V3 para sempre.
+
+Na leitura de producao (so contagem e proporcao):
+- todas as perguntas que deram 404 desde 14/09 estao na V3 como `UNANSWERED`/`NOVO`;
+- elas sao ~87% das perguntas abertas: a fila "Pendente" de `/atendimento/perguntas` era quase toda de perguntas que nao existem mais.
+
+A varredura de 10 em 10 minutos (D-089) so enxerga `UNANSWERED` no Mercado Livre. Ela nunca fecharia uma pergunta que saiu desse conjunto. A lacuna que `docs/MERCADO_LIVRE.md` registrava (a pergunta respondida fora da V3 com o webhook perdido) e a mesma, e agora tem evidencia.
+
+**Decisao:**
+1. **O 404 e a pergunta apagada:** o job marca o caso `external_status = DELETED`, o status oficial, com a resposta bloqueada (`STATUS_DELETED`, o formato que o mapper ja usa).
+   - O case que ninguem triou resolve pela MESMA transicao guardada da pergunta encerrada no Mercado Livre (D-102): esperado `NOVO`, a mesma chave `auto-resolve:<case>`, e quem ja esta triando nao e atropelado.
+   - O instante e o da observacao: o Mercado Livre nao diz quando apagou.
+   - O job conclui com um aviso (`sync_support_question_deleted_remotely`), e nao mais com `job_failed`. A pergunta que a V3 nunca gravou conclui sem trabalho.
+   - Na tela, a pergunta passa da aba "Pendente" para a aba "Deletado", que ja existe.
+2. **A reconciliacao rele o que nao viu:** depois de uma varredura completa (nao truncada), toda pergunta `UNANSWERED` da conta na V3 que a varredura nao listou e relida por ID, pelo mesmo `sync.support.questions` do webhook.
+   - O job leva `source = RECONCILIATION`, para a auditoria do evento.
+   - Respondida fora, ela resolve pela D-102; apagada, pela regra 1; ainda aberta, nada muda.
+   - Reler uma pergunta aberta custa so uma leitura, entao a varredura nao precisa ser perfeita.
+   - Sao no maximo 200 por rodada, as mais antigas primeiro, e cada pergunta no maximo uma vez por dia (o dedupe leva o dia).
+   - As abertas sao lidas em paginas de 1.000.
+   - A falha dessa leitura nao derruba a reconciliacao ja gravada: volta na rodada seguinte.
+
+**Verificacao:**
+- **Testes do worker:** 54 nos quatro arquivos de perguntas, 11 deles novos.
+  - O 404 marca e conclui, sem persistir.
+  - O 404 de pergunta nunca gravada conclui sem trabalho.
+  - A falha ao marcar e retryable.
+  - A origem `RECONCILIATION` chega a persistencia.
+  - A marcacao grava `DELETED` e pede a transicao guardada com a chave e o instante.
+  - A releitura so das nao vistas, da conta, com a fila e o dedupe do dia.
+  - Nada com a varredura truncada, as paginas de 1.000 e o teto de 200.
+  - A falha da leitura das abertas nao derruba.
+  - Os IDs vistos incluem a falha de persistencia e excluem o seller divergente.
+- **Mutacao:** 7, e cada uma derruba testes:
+  - o 404 sem a regra;
+  - a releitura sem o filtro do visto;
+  - a releitura com a varredura truncada;
+  - a releitura sem teto;
+  - a apagada sem a resolucao;
+  - a apagada sem o status oficial;
+  - a varredura sem os vistos.
+
+**Publicacao:** so o worker, sem migration.
+- Vai no proximo deploy do worker, o das fontes novas da Central, que espera as migrations de producao.
+- Na primeira hora depois dele, as rodadas de 10 minutos releem as perguntas abertas que o Mercado Livre nao lista mais, e a fila "Pendente" fica so com o que existe.
+
+**Impacto:** `apps/worker/src/handlers/{sync-support-question,sync-support-questions-reconcile,ml-support-questions-fetch,persist-support-question}{,.test}.ts`, `apps/worker/src/index.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
