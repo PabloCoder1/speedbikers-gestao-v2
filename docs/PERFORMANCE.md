@@ -1508,7 +1508,7 @@ O "antes" das quatro linhas de baixo foi medido antes da migration; o C-58 foi r
 
 **Antes** (produção, como `authenticated`, 30 dias): `get_stock_coverage_summary` levava 200-270 ms quente e tocava ~109 mil páginas em toda chamada; fria, ~2,5 s na Home (LCP de 2,75 s, a "Atenção necessária"). O resumo contava quatro números por cima da `get_stock_coverage` inteira, com as janelas de tendência e o histórico que não usa. Dentro da função, o plano tocava ~4 vezes o mesmo corpo escrito direto (~109 mil contra ~23 mil páginas).
 
-**Depois** (o corpo próprio, medido como consulta direta em produção): ~6,6 mil páginas, ~25 ms. A medida da função nova em produção entra aqui depois da migration `20261020210000`.
+**Depois, corrigido pela D-623** (21/10): o corpo da D-615 contava só a venda do ML, e o resumo deixou de bater com a contagem sobre `get_stock_coverage` assim que foi aplicado. Os ~6,6 mil acessos e ~25 ms eram desse corpo errado. Com a venda da Shopee (a leitura da D-459), medido como consulta direta em produção: ~49 mil acessos a páginas e ~89 ms quente. A leitura da Shopee é ~42 mil desses acessos, a mesma que `get_stock_coverage` faz, e é o próximo alvo se a Home pedir.
 
 ### O alerta de produto no prejuízo da central (D-471, 15/10/2026)
 

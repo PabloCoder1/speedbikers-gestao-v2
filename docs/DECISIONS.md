@@ -18310,6 +18310,39 @@ As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamen
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
 
+## D-623 - O resumo de cobertura da Home volta a contar a venda da Shopee: a D-615 tinha so o ML
+
+**Contexto:** a D-615 deu a `get_stock_coverage_summary` um corpo proprio, com as expressoes de `get_stock_coverage`. Mas as vendas dela eram so do ML (`daily_sku_metrics`), e desde a D-459 (C-65, 15/10) a `get_stock_coverage` soma o ML e a Shopee.
+
+A conferencia em producao depois da aplicacao (21/10, como `authenticated`, 30 dias) mostrou o resumo diferente da contagem sobre `get_stock_coverage`:
+- mais SKUs "sem cobertura";
+- menos "em ruptura";
+- um total menor.
+
+O SKU que vende so na Shopee caia em "sem cobertura", saia da ruptura e, sem saldo, saia do total. A "Atencao necessaria" da Home mostrou esses numeros desde a migration `20261020210000`.
+
+A suite da D-615 comparava numa organizacao sem venda da Shopee, e o erro passou.
+
+**Decisao:**
+1. **As vendas do resumo sao as de `get_stock_coverage`:** o ML mais a Shopee.
+   - A Shopee entra pela mesma leitura da D-459: itens de vendas VALIDAS das lojas LIVE, por SKU, no dia de Sao Paulo da janela.
+   - O SKU so da Shopee entra no total.
+2. **A assinatura, as colunas e o resto do corpo nao mudam.**
+3. **A comparacao com venda da Shopee vira teste**, na suite da D-459, que tem SKU so da Shopee.
+
+**Verificacao:**
+- **Integracao:** o resumo e igual a contagem sobre `get_stock_coverage` na organizacao da D-459.
+  - Contra o corpo da D-615, o teste falha com "sem cobertura" 3 em vez de 2, o mesmo erro de producao.
+  - Com o corpo novo, os 12 testes de cobertura e resumo passam.
+- **Producao (como `authenticated`, 30 dias):** o corpo novo, rodado como consulta direta, e igual a contagem sobre `get_stock_coverage`.
+  - Leva ~89 ms quente, com ~49 mil acessos a paginas; a leitura da Shopee e ~42 mil deles, a mesma que `get_stock_coverage` faz.
+  - Antes da D-615 eram 200-270 ms e ~109 mil.
+  - Os ~25 ms e ~6,6 mil da D-615 eram do corpo sem a Shopee: o numero nao vale.
+
+**Publicacao:** a migration `20261021130000` vai a producao assim que entrar na main, porque corrige um numero que a Home mostra hoje. O A3 rele o LCP depois dela.
+
+**Impacto:** `supabase/migrations/20261021130000_resumo_da_cobertura_com_a_shopee.sql`, `packages/db/src/rls.integration.test.ts`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF,ROADMAP}.md`.
+
 ## D-628 - O estoque do anúncio da Shopee diz de quando é a leitura
 
 **Contexto:** o A1 achou na D-619 que a venda baixa o estoque na Shopee sem mudar o `update_time` do item. Com isso, o estoque de `/anuncios/shopee` ficava com dias de atraso (mediana de ~5 dias). A fila dele passa a reler o item ativo a cada 6 h, mas a leitura continua tendo uma hora, e o número não dizia qual. A lista (`get_shopee_listings`) já devolve `details_synced_at`.

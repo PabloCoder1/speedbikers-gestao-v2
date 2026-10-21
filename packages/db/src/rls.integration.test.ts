@@ -5169,6 +5169,31 @@ describe("Demanda da Shopee na cobertura e na reposição (D-459, C-65)", () => 
     ]);
   });
 
+  it("D-623: o resumo da Home é a contagem sobre get_stock_coverage, com a venda da Shopee", async () => {
+    // O SKU B só vende na Shopee (saldo 4): tem cobertura pela venda de lá.
+    // A D-615 lia só o ML, o contava "sem cobertura", e o resumo deixou de
+    // bater em produção.
+    const [resumo] = await asUser<Record<string, string>>(
+      ADMIN,
+      `select total, em_ruptura, virtuais, sem_cobertura from public.get_stock_coverage_summary('${ORG}', current_date - 29, current_date)`,
+    );
+    const [contagem] = await asUser<Record<string, string>>(
+      ADMIN,
+      `select count(*)::bigint as total,
+              count(*) filter (where is_ruptura)::bigint as em_ruptura,
+              count(*) filter (where stock_is_virtual)::bigint as virtuais,
+              count(*) filter (where days_of_coverage is null and not stock_is_virtual)::bigint as sem_cobertura
+         from public.get_stock_coverage('${ORG}', current_date - 29, current_date)`,
+    );
+    const [soShopee] = await asUser<{ coberto: boolean }>(
+      ADMIN,
+      `select days_of_coverage is not null as coberto from public.get_stock_coverage('${ORG}', current_date - 29, current_date) where sku_id = '${sku.B ?? ""}'`,
+    );
+
+    expect(soShopee).toEqual({ coberto: true });
+    expect(resumo).toEqual(contagem);
+  });
+
   it("sem loja live com pedidos lidos (só a de teste e uma real nunca lida): a parte da Shopee nula e o total só do ML", async () => {
     const [z] = await asUser<Linha>(
       ADMIN,
