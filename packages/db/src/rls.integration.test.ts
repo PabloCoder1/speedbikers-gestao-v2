@@ -24519,3 +24519,147 @@ describe("o estoque do anúncio da Shopee fresco (D-619)", () => {
     expect(pendentes.rows.map((r) => r.item_id)).toEqual(["3", "5"]);
   });
 });
+
+/*
+  D-625 (C-77): a dispersão de preço do mesmo SKU na lista de /anuncios. A
+  régua do diagnóstico do SKU: preço efetivo (promocional, senão o
+  cadastrado), (maior − menor) ÷ menor, sobre os anúncios ATIVOS e PAUSADOS do
+  conjunto de get_sku_listings (listings.sku_id ∪ vínculo ITEM, inclusive por
+  variação), e o teto comparado com a dispersão CHEIA, com `>` estrito.
+*/
+describe("a dispersão de preço do mesmo SKU na lista de /anuncios (D-625, C-77)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d625";
+  const CONTA_A = "cccccccc-0000-4000-8000-0000000a0625";
+  const CONTA_B = "cccccccc-0000-4000-8000-0000000b0625";
+  const sku: Record<string, string> = {};
+
+  interface Linha {
+    item_id: string;
+    preco_efetivo: number | null;
+    sku_preco_min: number | null;
+    sku_preco_max: number | null;
+    sku_anuncios_com_preco: number | null;
+    sku_dispersao_pct: number | null;
+    sku_dispersao_sku_id: string | null;
+    total_count: string;
+  }
+
+  const lista = async (extra = "") =>
+    (
+      await client.query<Linha>(
+        `select item_id, preco_efetivo::float8, sku_preco_min::float8, sku_preco_max::float8, sku_anuncios_com_preco,
+                sku_dispersao_pct::float8, sku_dispersao_sku_id, total_count::text
+           from public.get_listings_dashboard($1, current_date - 29, current_date, p_limit => 50${extra})`,
+        [ORG],
+      )
+    ).rows;
+
+  const divergentes = async (teto: string | null) =>
+    (
+      await client.query<{ preco_divergente: string | null }>(
+        "select preco_divergente::text from public.get_listings_dashboard_counts($1, p_preco_teto => $2::numeric)",
+        [ORG, teto],
+      )
+    ).rows[0]?.preco_divergente;
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-625', 'org-d625') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $3, 'Conta A', 'rlstest-d625a', 'CONNECTED', 9990625, now()),
+              ($2, $3, 'Conta B', 'rlstest-d625b', 'CONNECTED', 9990626, now())
+       on conflict (id) do nothing`,
+      [CONTA_A, CONTA_B, ORG],
+    );
+    const criados = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1, 'D625-X', 'PRODUTO'), ($1, 'D625-Y', 'PRODUTO'), ($1, 'D625-Z', 'PRODUTO'), ($1, 'D625-K', 'KIT'), ($1, 'D625-W', 'PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id, sku`,
+      [ORG],
+    );
+
+    for (const r of criados.rows) sku[r.sku.slice(-1)] = r.id;
+
+    // X: 100, 85 (promoção sobre 100) e 95 (por variação, o 07); o 200 está
+    // encerrado e fica fora. Y: 50 e 55,02 (pausado) -- 10,04%. Z: 90 e o 95
+    // do 07. K: kit, um preço só. W: o outro anúncio está encerrado.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, promotional_price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB6250001', 'MLB6250001', 'active', 100, null, 'BRL', 1, $4),
+              ($1, $3, 'MLB6250002', 'MLB6250002', 'active', 100, 85, 'BRL', 1, $4),
+              ($1, $2, 'MLB6250003', 'MLB6250003', 'closed', 200, null, 'BRL', 0, $4),
+              ($1, $2, 'MLB6250004', 'MLB6250004', 'active', 50, null, 'BRL', 1, $5),
+              ($1, $3, 'MLB6250005', 'MLB6250005', 'paused', 55.02, null, 'BRL', 1, $5),
+              ($1, $2, 'MLB6250006', 'MLB6250006', 'active', 70, null, 'BRL', 1, null),
+              ($1, $3, 'MLB6250007', 'MLB6250007', 'active', 95, null, 'BRL', 1, null),
+              ($1, $2, 'MLB6250008', 'MLB6250008', 'active', 90, null, 'BRL', 1, $6),
+              ($1, $2, 'MLB6250009', 'MLB6250009', 'active', 500, null, 'BRL', 1, $7),
+              ($1, $2, 'MLB6250010', 'MLB6250010', 'active', 40, null, 'BRL', 1, $8),
+              ($1, $3, 'MLB6250011', 'MLB6250011', 'closed', 60, null, 'BRL', 0, $8)
+       on conflict do nothing`,
+      [ORG, CONTA_A, CONTA_B, sku.X, sku.Y, sku.Z, sku.K, sku.W],
+    );
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id, variation_id)
+       values ($1, $2, $3, 'ITEM', 'MLB6250007', '1'), ($1, $2, $4, 'ITEM', 'MLB6250007', '2')`,
+      [ORG, CONTA_B, sku.X, sku.Z],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.sku_listing_links where organization_id = $1", [ORG]);
+    await client.query("delete from public.listings where organization_id = $1", [ORG]);
+  });
+
+  it("cada linha leva o preço ao comprador e a dispersão do SKU entre os ativos e pausados", async () => {
+    const linhas = await lista();
+    const por = Object.fromEntries(linhas.map((l) => [l.item_id, l]));
+    const x = { sku_preco_min: 85, sku_preco_max: 100, sku_anuncios_com_preco: 3, sku_dispersao_pct: 17.6, sku_dispersao_sku_id: sku.X };
+
+    expect(linhas).toHaveLength(11);
+    expect(por.MLB6250002).toMatchObject({ preco_efetivo: 85, ...x });
+    expect(por.MLB6250001).toMatchObject({ preco_efetivo: 100, ...x });
+    // O encerrado não entra no conjunto, mas a linha dele mostra a dispersão do SKU.
+    expect(por.MLB6250003).toMatchObject({ preco_efetivo: 200, ...x });
+    // Por variação: X (17,6%) e Z (5,6%) -- a linha leva a maior, e diz qual.
+    expect(por.MLB6250007).toMatchObject({ preco_efetivo: 95, ...x });
+    expect(por.MLB6250008).toMatchObject({ sku_dispersao_pct: 5.6, sku_dispersao_sku_id: sku.Z, sku_anuncios_com_preco: 2 });
+    // 10,04% aparece como 10,0: o arredondamento é só da exibição.
+    expect(por.MLB6250004).toMatchObject({ sku_dispersao_pct: 10, sku_dispersao_sku_id: sku.Y, sku_preco_min: 50, sku_preco_max: 55.02 });
+    // Sem SKU, kit de um preço só, e SKU com o outro anúncio encerrado: nulos.
+    for (const item of ["MLB6250006", "MLB6250009", "MLB6250010", "MLB6250011"]) {
+      expect(por[item]).toMatchObject({ sku_preco_min: null, sku_preco_max: null, sku_anuncios_com_preco: null, sku_dispersao_pct: null, sku_dispersao_sku_id: null });
+    }
+  });
+
+  it("'divergente' compara a dispersão cheia com o teto, com > estrito, e a faixa conta o mesmo recorte", async () => {
+    const dez = await lista(", p_preco => 'divergente', p_preco_teto => 10");
+    const dezECinco = await lista(", p_preco => 'divergente', p_preco_teto => 10.05");
+
+    expect(dez.map((l) => l.item_id).sort()).toEqual(["MLB6250001", "MLB6250002", "MLB6250003", "MLB6250004", "MLB6250005", "MLB6250007"]);
+    expect(dez[0]?.total_count).toBe("6");
+    expect(await divergentes("10")).toBe("6");
+    // 10,04% não passa de 10,05%: só o X fica.
+    expect(dezECinco.map((l) => l.item_id).sort()).toEqual(["MLB6250001", "MLB6250002", "MLB6250003", "MLB6250007"]);
+    expect(await divergentes("10.05")).toBe("4");
+    // O teto igual à dispersão (10,04%) não acende: `>` estrito, na lista e na faixa.
+    expect((await lista(", p_preco => 'divergente', p_preco_teto => 10.04")).map((l) => l.item_id).sort()).toEqual([
+      "MLB6250001", "MLB6250002", "MLB6250003", "MLB6250007",
+    ]);
+    expect(await divergentes("10.04")).toBe("4");
+    // Sem teto não há régua: a contagem é nula, e o filtro é recusado.
+    expect(await divergentes(null)).toBeNull();
+    await expect(lista(", p_preco => 'divergente'")).rejects.toThrow(/p_preco_teto/);
+  });
+
+  it("a ordem pela dispersão vai do maior ao menor, com os sem dispersão no fim", async () => {
+    const linhas = await lista(", p_order => 'dispersao_desc'");
+
+    expect(linhas.map((l) => l.item_id)).toEqual([
+      "MLB6250001", "MLB6250002", "MLB6250003", "MLB6250007",
+      "MLB6250004", "MLB6250005",
+      "MLB6250008",
+      "MLB6250006", "MLB6250009", "MLB6250010", "MLB6250011",
+    ]);
+  });
+});

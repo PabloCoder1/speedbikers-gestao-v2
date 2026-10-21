@@ -18418,6 +18418,61 @@ A suite da D-615 comparava numa organizacao sem venda da Shopee, e o erro passou
 
 **Impacto:** `apps/web/app/(app)/vendas/multicanal.tsx`, `apps/web/e2e/{vendas-multicanal,ensaio-loja-live}.spec.ts` e os docs; nenhuma migration, RPC, worker ou api.
 
+## D-625 - A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
+
+**Contexto:** pedido do dono via A3 (21/10), na reformulacao da `/anuncios`: filtrar "diferenca de preco do mesmo SKU entre contas". A regua ja existia na web, por SKU, no diagnostico (`lib/sku-diagnostico.ts`, D-317/D-318/D-389):
+- o preco efetivo e o promocional, senao o cadastrado;
+- a dispersao e (maior - menor) / menor;
+- o teto e de 10% (`TETO_DISPERSAO_PCT`).
+
+Para virar filtro de uma lista paginada, ela precisa estar no SQL da `get_listings_dashboard`. O A2 pediu a MESMA regua, para as duas telas nao divergirem.
+
+**As duas decisoes do A2 e do A3 (21/10):**
+1. O conjunto do SKU e so de anuncios ATIVOS e PAUSADOS. O encerrado fica fora: um preco antigo de anuncio fechado marcaria "divergente" um SKU alinhado.
+2. O teto se compara com a dispersao CHEIA, com `>` estrito. O diagnostico arredondava antes (10,04% virava 10,0 e nao acendia).
+
+O A2 muda o diagnostico para as duas regras na D-630, no mesmo deploy da tela.
+
+**Decisao:**
+1. **O conjunto do SKU e o de `get_sku_listings` (D-122):** `listings.sku_id` uniao o vinculo ITEM, inclusive por variacao, com o preco do ITEM. So entram anuncios ativos ou pausados com preco efetivo conhecido.
+2. **A linha:**
+   - `preco_efetivo` e o preco desta linha;
+   - `sku_preco_min`, `sku_preco_max`, `sku_anuncios_com_preco` e `sku_dispersao_pct` (uma casa, so para exibir) sao do SKU;
+   - tudo NULO sem SKU ou com um preco so no SKU;
+   - o anuncio vinculado por variacao pode ter varios SKUs: a linha leva o de MAIOR dispersao, e `sku_dispersao_sku_id` diz qual;
+   - o anuncio encerrado nao entra no conjunto, mas a linha dele mostra a dispersao do SKU.
+3. **O filtro:**
+   - `p_preco` 'all' | 'divergente', em que 'divergente' e a dispersao cheia > `p_preco_teto`;
+   - o teto vem da web, que manda a `TETO_DISPERSAO_PCT`; fica num lugar so;
+   - sem teto, 'divergente' e recusado, em vez de cair num numero inventado.
+4. **A ordem e a faixa:**
+   - a ordem `dispersao_desc`/`dispersao_asc` usa a dispersao cheia, com os sem dispersao no fim;
+   - a faixa ganha `preco_divergente` pelo mesmo predicado e com o mesmo teto, NULA sem teto: ausencia nao e zero.
+5. **O kit** e SKU proprio e nunca se mistura com componente.
+6. **`security invoker`:** quem ve so parte das contas ve a dispersao so entre elas.
+7. **Os numeros de hoje nao mudam:** as colunas e os parametros novos ficam no fim, com padrao que nao filtra.
+
+**Verificacao:**
+- **Integracao:** 3 testes numa organizacao propria, com duas contas, e as suites da lista, da faixa e da `get_sku_listings` seguem verdes.
+  - Por linha: a promocao no preco, o encerrado fora do conjunto, a variacao com a maior dispersao e o SKU dito, os 10,04% exibidos como 10,0, e os nulos (sem SKU, kit de um preco, SKU com o outro anuncio encerrado).
+  - O filtro e a faixa batem: 6 com teto 10, e 4 com 10,04 (o `>` estrito) e com 10,05. Sem teto, a faixa e nula e o filtro e recusado.
+  - A ordem pela dispersao, com os nulos no fim.
+- **Integracao inteira com o banco recriado:** passou.
+- **Mutacao:** 7, e cada uma derruba testes:
+  - o encerrado no conjunto;
+  - o filtro com `>=`;
+  - o filtro arredondado;
+  - a faixa com `>=`;
+  - a variacao com a menor;
+  - sem o vinculo ITEM;
+  - o preco cadastrado em vez do efetivo.
+
+**Publicacao:**
+1. a migration `20261021140000`;
+2. a tela (A3, fatia B) e a D-630 (A2) mandam `p_preco`/`p_preco_teto` so depois dela em producao.
+
+**Impacto:** `supabase/migrations/20261021140000_dispersao_de_preco_na_lista.sql`, `packages/db/src/{types,rls.integration.test}.ts`, `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
+
 ## D-626 - As ações dos detectores da Shopee na Central de Ações: o rótulo, o anúncio e o atalho (C-73, C-74, C-76)
 
 **Contexto:** o dono escolheu quatro detectores da Shopee na Central de Ações, um de cada vez. Os três primeiros são do A1; as migrations dos dois primeiros (`20261020180000` e `20261020190000`) vão no run das quatro do A1:
