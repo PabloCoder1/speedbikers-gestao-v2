@@ -553,6 +553,51 @@ test("/notificacoes: o recorte da loja live mostra o aviso dela, e o lote marca 
   await semErro(page);
 });
 
+test("/notificacoes e a Home: a mudança de preço do anúncio da Shopee tem o anúncio, a loja e o destino (D-638, C-81)", async ({ page }) => {
+  const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+
+  if (loja.data === null) throw new Error(`loja live sem organização: ${loja.error.message}`);
+
+  // O evento como o worker do A1 grava (C-81): o mesmo tipo do ML, a loja na coluna,
+  // o item da Shopee em `entity_id` e os nomes no `after`, porque `domain_events` não tem
+  // relação com `shopee_shops`. É só de inserção e fica (o banco do e2e é recriado).
+  const evento = await db.from("domain_events").insert({
+    organization_id: loja.data.organization_id,
+    event_type: "listing.price.changed",
+    entity_type: "shopee_item",
+    entity_id: "990777001",
+    shopee_shop_id: lojaId,
+    severity: "informativo",
+    source: "system",
+    occurred_at: new Date().toISOString(),
+    dedup_key: `e2e-d638-${lojaId}`,
+    before: { price: 100, current_price: 90, model_id: 7001 },
+    after: { price: 120, current_price: 120, model_id: 7001, model_name: "Preta", item_name: LOJA_LIVE.skuTitulo, shop_name: LOJA_LIVE.nome },
+  });
+
+  expect(evento.error).toBeNull();
+
+  await entrar(page, `/notificacoes?loja=${lojaId}`);
+
+  const linha = page.locator("main .sb-notification-row").filter({ hasText: "Anúncio Shopee" });
+
+  await expect(linha).toHaveCount(1);
+  await expect(linha.locator(".sb-notification-title")).toHaveText("Preço do anúncio alterado");
+  await expect(linha.locator(".sb-notification-account")).toHaveText(LOJA_LIVE.nome);
+  await expect(linha.locator(".sb-notification-diff")).toHaveText("R$ 100,00 → R$ 120,00");
+
+  const alvo = linha.getByRole("link", { name: `Anúncio Shopee ${LOJA_LIVE.skuTitulo} · Preta`, exact: true });
+
+  await expect(alvo).toHaveAttribute("href", `/anuncios/shopee?loja=${lojaId}&q=990777001`);
+
+  // A atividade recente da Home diz a loja de onde veio, como diz a conta do ML.
+  await page.goto("/");
+  await expect(
+    page.locator(".sb-feed-row").filter({ hasText: "Preço do anúncio alterado" }).filter({ hasText: LOJA_LIVE.nome }),
+  ).toHaveCount(1);
+  await semErro(page);
+});
+
 test("/acoes: a ação da Shopee vendendo sem vínculo tem rótulo, a loja e o atalho para o anúncio (D-626, C-73)", async ({ page }) => {
   // A ação como a `sincronizar_alertas_central` a grava (D-609), para o anúncio
   // da loja live: a loja em `shopee_shop_id` e o retrato em `evidence.detector`.

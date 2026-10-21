@@ -18919,3 +18919,60 @@ Com a navegação atrasada em 600 ms (a resposta RSC segura no Playwright), o CL
 - **fotos** a 1440 e a 390 px nos três recortes: a barra sob o título, e a faixa de números começando na mesma altura.
 
 **Impacto:** `apps/web/components/page-title.tsx`, `apps/web/app/globals.css`, `apps/web/app/(app)/faturamento/{page.tsx,multicanal.tsx}`, `apps/web/e2e/faturamento-multicanal.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.
+
+## D-638 - A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
+
+**Contexto:** o C-81 do A1, o histórico de preço da Shopee (o C-13 do A2, liberado pelo dono em 21/10), faz o worker gravar um `domain_events` quando o preço de um modelo da Shopee muda entre duas leituras do catálogo. A forma, combinada em 21/10:
+- `event_type` `listing.price.changed`, o mesmo do ML;
+- `entity_type` `shopee_item`, `entity_id` = o `item_id` em texto;
+- a loja em `shopee_shop_id`, e `ml_account_id` nulo;
+- `before` = `{price, current_price, model_id}`; `after` = o mesmo, mais `model_name`, `item_name` e `shop_name`;
+- `price` é o `original_price`, porque o `current_price` é o da promoção.
+
+O gatilho de D-073 faz a notificação de todo evento. Sem esta decisão, a mudança de preço da Shopee chegaria à Central, ao aviso em tempo real e à atividade da Home:
+- sem destino, porque `entityHref` não conhecia `shopee_item`;
+- sem origem, porque `domain_events` só tem relação com `ml_accounts` e o embed traz só a conta do ML;
+- com o `entity_type` cru no texto.
+
+Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
+
+**Decisão:**
+1. **`lib/event-format.ts`, o leitor único da Central e do aviso:**
+   - `shopee_item` tem o rótulo "Anúncio Shopee";
+   - o texto é "Anúncio Shopee <item_name> · <model_name>", com o item quando o nome não vem;
+   - o destino é `/anuncios/shopee?loja=<shopee_shop_id>&q=<item_id>`, o mesmo atalho das ações da Shopee (D-626), e só com a loja e o item numérico. Sem a loja, nenhum destino, nunca a tela do ML;
+   - `entityHref` recebe a loja como quarto argumento.
+2. **A origem do evento** (`eventOriginLabel`): a conta do ML pelo embed, ou a loja pelo `shop_name` do `after`. Sem nenhum dos dois, nada: a linha não inventa origem. Vale para a Central, o aviso e a atividade da Home.
+3. **A Central e o aviso leem a coluna `shopee_shop_id`** do evento (existe desde a D-435), e o aviso agrupa por loja como agrupa por conta.
+4. **`shouldNotify` não muda:** a regra "todas as contas" vale para o evento da loja, e a de uma conta do ML específica não casa com ele. A preferência por loja é o C-82.
+5. **Não muda:** o diff (o `price`, como no ML) e o rótulo do tipo ("Preço do anúncio alterado").
+
+**O contrato da tela que vem depois** (C-81, combinado com o A1 em 21/10), para a `/precos` e a aba Preços do SKU:
+- `get_price_changes` ganha no fim `p_marketplace` e `p_shopee_shop_id`, e cinco colunas novas: `marketplace`, `shopee_shop_id`, `model_id`, `model_name` e `series_start_shopee`;
+- `p_marketplace` nulo ou `mercado_livre` é só o ML, como hoje, e a tela atual não muda com a migration; `shopee` e `todos` pedem a Shopee;
+- conta com loja, ou marketplace contraditório, é recusado com erro;
+- `series_start_shopee` nulo quer dizer "a loja ainda não é registrada", nunca "sem mudança";
+- a tela manda os params novos só depois da migration em produção.
+
+**Publicação:** só a web, ANTES do worker do C-81. O evento antigo, sem `shop_name`, continua com o texto de antes. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/event-format.test.ts`, 25 testes, 4 novos. Cobrem:
+  - o diff pelo `price` e nunca pelo `current_price`;
+  - o destino só com a loja e o item numérico;
+  - o texto com e sem nome e variação;
+  - a origem pela conta ou pela loja, nunca inventada.
+- **e2e:** no ensaio da loja live, um evento no formato do C-81 confere:
+  - na Central do recorte da loja: o título, a loja, o diff "R$ 100,00 → R$ 120,00" e o link "Anúncio Shopee <nome> · Preta" para a lista da loja buscada pelo item;
+  - na atividade da Home, a loja como origem.
+- **mutação:** sem a loja passada a `entityHref` na linha da Central, o e2e reprova (o link some).
+- **specs:** `notificacoes` e `home` 11/11, e o ensaio 17/17, com o banco recriado.
+- **suíte inteira:** chromium 261/261, `loja-live` 17/17 e convite 3/3, com o banco recriado do zero. Numa primeira rodada, um caso de `sugestoes` reprovou por tempo: o título não apareceu em 5 s, num banco já mexido pela suíte. Com o banco recriado, ele passou três vezes seguidas, e a tela não é tocada aqui.
+
+**Impacto:**
+- `apps/web/lib/{event-format.ts,event-format.test.ts}`;
+- `apps/web/app/(app)/notificacoes/{page.tsx,notification-row.tsx}`;
+- `apps/web/components/notification-toasts.tsx`;
+- `apps/web/app/(app)/page.tsx`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
