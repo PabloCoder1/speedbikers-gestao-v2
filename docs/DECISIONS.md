@@ -18687,6 +18687,72 @@ A forma fechada com o A2 e o A3 e a da venda anomala (D-064) em janelas:
 
 **Impacto:** `apps/web/lib/{sku-diagnostico.ts,sku-diagnostico.test.ts}` e `docs/{DECISIONS,DECISIONS_INDEX}.md`; nenhuma migration, RPC, worker ou api.
 
+## D-631 - O anuncio criado ou excluido no Mercado Livre chega a V3 na hora, e o excluido sai das telas
+
+**Contexto:** pedido do dono (21/10). Ele apagou anuncios da conta SbMotos no Mercado Livre, e eles continuavam no sistema. O pedido foi para que saiam assim que forem apagados, e que o anuncio criado tambem entre logo.
+
+Lido no codigo e em producao (so contagem):
+1. **A varredura do catalogo** (`/users/{id}/items/search`, `search_type=scan`, a cada 6 h) nao devolve o anuncio excluido, e a V3 so gravava o que ela devolvia.
+   - A linha ficava com o ultimo status visto, ate "ativo", para sempre.
+   - Na SbMotos havia centenas de anuncios "ativos" ou "pausados" sem leitura havia mais de um dia, alguns desde 15/09.
+2. **O Mercado Livre ja manda a notificacao `items`** (milhares por dia, contadas nos logs da api de 21/10), e a api a descartava sem consumidor (D-179).
+   - O anuncio novo so aparecia na varredura seguinte, ate 6 h depois.
+   - Nada muda no aplicativo do Mercado Livre.
+3. **A documentacao oficial** ("Sincronizacao e modificacao de publicacoes", lida em 21/10):
+   - "Closed: Este e o status final do item... deleted: e adicionado quando o item esta fechado e o seller decide remove-lo";
+   - "depois de um tempo, os itens finalizados nao serao mais mostrados para sua consulta";
+   - o item traz o subestado no campo `sub_status`, uma lista (o exemplo da "Publicacao de produtos": `"sub_status": ["out_of_stock"]`).
+
+**Decisao:**
+1. **Excluido = `closed` com `deleted` no `sub_status`, ou 404 na leitura do item sozinho.**
+   - `listings` ganha `sub_status` (a lista do Mercado Livre) e `deleted_at` (a primeira vez que a V3 viu a exclusao).
+   - O anuncio que volta a existir perde a marca.
+2. **A linha fica:** e historico de venda e de vinculo. A lista e a faixa de `/anuncios` (e o CSV), os anuncios do SKU (`get_sku_listings`, que o diagnostico usa) e a visao de vinculos deixam de mostra-la. Mesma assinatura e mesmo retorno das quatro funcoes.
+3. **Na hora: o topico `items` ganha job proprio**, `sync.listing.item`, na fila da conta, como `questions` e `messages`.
+   - O job le aquele anuncio com a MESMA leitura da varredura: `fetchListings` com `itemIds`, com promocao, descricao, eventos de diff e a marca de exclusao.
+   - O banco e lido so para aquele item. Nao grava `sync_runs`.
+4. **A rede de seguranca:** depois de cada varredura INTEIRA, o que a V3 tem vivo e a varredura nao listou e relido pelo multiget. Isso cura a exclusao cuja notificacao se perdeu e as de antes desta decisao.
+5. **Sem presumir o multiget:** o multiget nao promete a ordem das entradas nem o corpo do 404.
+   - O item que voltou e reconhecido pelo `id` do corpo.
+   - O resto do lote e relido sozinho, e so o 404 dessa leitura vale como "nao existe mais".
+   - O 404 marca so a linha que existe e ainda nao esta marcada.
+6. **O dono do item:** a leitura pede `seller_id`, e o item de outro vendedor nunca vira linha da conta. A notificacao traz o id de fora da varredura.
+
+**Verificacao:**
+- **Worker:**
+  - `fetchListings` com 5 testes novos:
+    - o vivo fora da varredura relido e marcado;
+    - o ja marcado nao relido, com a primeira data guardada;
+    - o 404 do lote relido sozinho e marcado;
+    - a notificacao sem varredura;
+    - a volta perde a marca, e o item de outro vendedor nao vira linha.
+  - O teste da D-193 passou a provar tambem os 1.310 relidos.
+  - O 404 do teste antigo virou 500 (a falha de item que vira `partial`).
+  - O job `sync.listing.item` com 4 testes.
+- **Api:** o topico `items` vira `sync.listing.item` com o `itemId`, e o recurso fora do formato nao vira job. 141 de 141.
+- **Integracao:** 2 testes. A lista, a faixa, os anuncios do SKU e a visao de vinculos mostram so o vivo, e a linha excluida continua no banco com o subestado.
+- **Mutacao:** 9, e cada uma derruba testes.
+  - No banco, o filtro tirado de cada uma das quatro funcoes.
+  - No worker:
+    - sem reler o fora da varredura;
+    - o 404 sozinho como falha;
+    - sem conferir o vendedor;
+    - a exclusao sem a primeira data;
+    - sem o subestado.
+
+**Publicacao:**
+1. a migration `20261021170000`;
+2. o worker e a api.
+
+A varredura seguinte de cada conta marca os excluidos que ja existem, e da em diante a notificacao marca na hora.
+
+**Impacto:**
+- `supabase/migrations/20261021170000_anuncio_excluido_sai_das_telas.sql`;
+- `apps/worker/src/handlers/{ml-listings-fetch,listing-schema,sync-listing-item,sync-listings-snapshot,webhook-received}*.ts` e `apps/worker/src/index.ts`;
+- `apps/api/src/webhook{,.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
+
 ## D-632 - A divergência de estoque da Shopee na Central de Ações (C-78)
 
 **Contexto:** o 4º detector da Shopee que o dono escolheu é a D-627 do A1 (C-78, #299, migration `20261021150000`): `shopee_divergencia`, o anúncio cujo estoque na Shopee não bate com o saldo da V3. A ação grava a loja em `shopee_shop_id` e o `sku_id` vinculado. O `evidence.detector` traz a loja, o item, a variação, o SKU do anúncio e os estoques, como os detectores da D-626.

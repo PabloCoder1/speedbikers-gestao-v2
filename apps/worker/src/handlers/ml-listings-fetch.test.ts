@@ -31,6 +31,8 @@ interface PreviousRow {
   promotion_checked_at?: string | null;
   /** D-420: as campanhas da última leitura. */
   promotions?: unknown;
+  /** D-631: quando a V3 viu o anúncio excluído. */
+  deleted_at?: string | null;
 }
 
 /** Fake encadeável: `.eq()`/`.is()` devolvem a si mesmos e o `await` resolve. */
@@ -48,6 +50,7 @@ function chain<T>(result: T): T {
   const self = {
     eq: () => self,
     is: () => self,
+    in: () => self,
     order: () => self,
     range: () => self,
     then: (resolve: (value: T) => unknown) => Promise.resolve(result).then(resolve),
@@ -77,6 +80,7 @@ function chainPaginada<T>(linhas: T[]): { data: T[]; error: null } {
   const self = (from: number, to: number): unknown => ({
     eq: () => self(from, to),
     is: () => self(from, to),
+    in: () => self(from, to),
     order: () => self(from, to),
     range: (novoFrom: number, novoTo: number) => self(novoFrom, novoTo),
     then: (resolve: (value: { data: T[]; error: null }) => unknown) =>
@@ -98,9 +102,12 @@ function fakeDb(options: {
   db: FetchListingsParams["db"];
   upserted: Record<string, unknown>[];
   domainEvents: Record<string, unknown>[];
+  /** D-631: as marcas de exclusão gravadas por `update`, com os itens. */
+  marcados: { values: Record<string, unknown>; itens: string[] }[];
 } {
   const upserted: Record<string, unknown>[] = [];
   const domainEvents: Record<string, unknown>[] = [];
+  const marcados: { values: Record<string, unknown>; itens: string[] }[] = [];
 
   const db = {
     from: (table: string) => ({
@@ -127,6 +134,39 @@ function fakeDb(options: {
 
         throw new Error(`select inesperado em ${table}`);
       },
+      // D-631: a marca de exclusão do item que o Mercado Livre não devolve mais.
+      // Só a linha que existe e ainda não está marcada volta do `select`.
+      update: (values: Record<string, unknown>) => {
+        if (table !== "listings") throw new Error(`update inesperado em ${table}`);
+
+        const filtros: Record<string, unknown> = {};
+        const self = {
+          eq: (coluna: string, valor: unknown) => {
+            filtros[coluna] = valor;
+            return self;
+          },
+          in: (coluna: string, valor: unknown) => {
+            filtros[coluna] = valor;
+            return self;
+          },
+          is: (coluna: string, valor: unknown) => {
+            filtros[coluna] = valor;
+            return self;
+          },
+          select: () => {
+            const itens = (filtros.item_id as string[] | undefined) ?? [];
+            const existentes = (options.previous ?? [])
+              .filter((row) => itens.includes(row.item_id) && (row.deleted_at ?? null) === null)
+              .map((row) => ({ item_id: row.item_id }));
+
+            marcados.push({ values, itens });
+
+            return Promise.resolve({ data: existentes, error: null });
+          },
+        };
+
+        return self;
+      },
       upsert: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
         if (table === "domain_events") {
           domainEvents.push(rows as Record<string, unknown>);
@@ -147,7 +187,7 @@ function fakeDb(options: {
     }),
   } as unknown as FetchListingsParams["db"];
 
-  return { db, upserted, domainEvents };
+  return { db, upserted, domainEvents, marcados };
 }
 
 function item(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -286,7 +326,10 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const result = await fetchListings(params(fake.db, client));
 
-    expect(result.itemsProcessed).toBe(1);
+    // D-631: os 1.310 que a V3 tem vivos e a varredura não listou são relidos
+    // -- o que também prova que as duas páginas do estado anterior foram lidas.
+    expect(result.itemsOutsideScan).toBe(TOTAL - 1);
+    expect(result.itemsProcessed).toBe(TOTAL);
 
     // O preço mudou de 10 para 100. O evento só existe se o estado ANTERIOR
     // foi encontrado — ou seja, se a segunda página foi lida.
@@ -347,7 +390,8 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
     const fake = fakeDb({});
     const { client } = fakeClient({
       scanPages: [{ results: ["MLB1", "MLB2"], scroll_id: null }],
-      codes: { MLB2: 404 },
+      // D-631: o 404 virou "não existe mais"; a falha de verdade é outro código.
+      codes: { MLB2: 500 },
     });
 
     const result = await fetchListings(params(fake.db, client));
@@ -415,6 +459,8 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
       itemsProcessed: 0,
       itemsFailed: 0,
       itemsWithoutLink: 0,
+      itemsMarkedDeleted: 0,
+      itemsOutsideScan: 0,
     });
     expect(fake.upserted).toHaveLength(0);
   });
@@ -443,6 +489,9 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
     const multiget = requests.find((request) => request.path === "/items");
 
     expect(String(multiget?.searchParams?.attributes)).toContain("available_quantity");
+    // D-631: o subestado (a exclusão) e o dono do item.
+    expect(String(multiget?.searchParams?.attributes)).toContain("sub_status");
+    expect(String(multiget?.searchParams?.attributes)).toContain("seller_id");
     expect(String(multiget?.searchParams?.attributes)).not.toContain("descriptions");
   });
 
@@ -699,5 +748,108 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
       expect(fake.upserted[0]).toMatchObject({ description_fingerprint: null });
       expect(lines.join()).toContain("listing_description_fetch_failed");
     });
+  });
+});
+
+/*
+  D-631: o anúncio excluído no Mercado Livre sai da V3. A varredura não o
+  devolve, então o que a V3 tem vivo e a varredura não listou é relido; o
+  excluído (`closed` + `deleted`, ou 404 lido sozinho) ganha `deleted_at`. A
+  notificação `items` lê só o anúncio dela, sem varredura.
+*/
+describe("fetchListings — o anúncio excluído e a leitura por notificação (D-631)", () => {
+  const multigets = (requests: RequestOptions<unknown>[]) =>
+    requests.filter((r) => r.path === "/items").map((r) => String(r.searchParams?.ids));
+
+  it("o anúncio vivo que a varredura não listou é relido; excluído no ML, ganha deleted_at", async () => {
+    const fake = fakeDb({
+      previous: [
+        { item_id: "MLB1", title: "Anúncio MLB1", status: "active", price: 100, available_quantity: 5 },
+        { item_id: "MLB9", title: "Anúncio MLB9", status: "active", price: 100, available_quantity: 5 },
+      ],
+    });
+    const { client, requests } = fakeClient({
+      scanPages: [{ results: ["MLB1"], scroll_id: null }],
+      bodies: { MLB9: item("MLB9", { status: "closed", sub_status: ["deleted"] }) },
+    });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    expect(multigets(requests)).toEqual(["MLB1,MLB9"]);
+    expect(result).toMatchObject({ itemsOutsideScan: 1, itemsMarkedDeleted: 1, itemsFailed: 0 });
+    expect(fake.upserted.find((r) => r.item_id === "MLB9")).toMatchObject({
+      status: "closed",
+      sub_status: ["deleted"],
+      deleted_at: SYNCED_AT.toISOString(),
+    });
+    expect(fake.upserted.find((r) => r.item_id === "MLB1")).toMatchObject({ deleted_at: null });
+  });
+
+  it("o já marcado excluído não é relido a cada varredura, e a exclusão guarda a primeira data", async () => {
+    const fake = fakeDb({
+      previous: [
+        { item_id: "MLB1", title: "Anúncio MLB1", status: "closed", price: 100, available_quantity: 0, deleted_at: "2026-08-01T00:00:00.000Z" },
+        { item_id: "MLB2", title: "Anúncio MLB2", status: "closed", price: 100, available_quantity: 0, deleted_at: "2026-08-01T00:00:00.000Z" },
+      ],
+    });
+    const { client, requests } = fakeClient({
+      scanPages: [{ results: ["MLB1"], scroll_id: null }],
+      bodies: { MLB1: item("MLB1", { status: "closed", sub_status: ["deleted"] }) },
+    });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    // MLB2 já está marcado: não volta ao multiget.
+    expect(multigets(requests)).toEqual(["MLB1"]);
+    expect(result.itemsOutsideScan).toBe(0);
+    expect(fake.upserted[0]).toMatchObject({ item_id: "MLB1", deleted_at: "2026-08-01T00:00:00.000Z" });
+  });
+
+  it("o item que não volta no lote é relido sozinho; o 404 sozinho é o anúncio que não existe mais", async () => {
+    const fake = fakeDb({
+      previous: [
+        { item_id: "MLB1", title: "Anúncio MLB1", status: "active", price: 100, available_quantity: 5 },
+        { item_id: "MLB2", title: "Anúncio MLB2", status: "active", price: 100, available_quantity: 5 },
+      ],
+    });
+    const { client, requests } = fakeClient({
+      scanPages: [{ results: ["MLB1", "MLB2"], scroll_id: null }],
+      codes: { MLB2: 404 },
+    });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    expect(multigets(requests)).toEqual(["MLB1,MLB2", "MLB2"]);
+    expect(result).toMatchObject({ itemsMarkedDeleted: 1, itemsFailed: 0, itemsProcessed: 1 });
+    expect(fake.marcados).toEqual([
+      { values: { deleted_at: SYNCED_AT.toISOString(), synced_at: SYNCED_AT.toISOString() }, itens: ["MLB2"] },
+    ]);
+  });
+
+  it("a notificação lê só o anúncio dela, sem varredura", async () => {
+    const fake = fakeDb({});
+    const { client, requests } = fakeClient({ scanPages: [{ results: ["MLB1", "MLB2"], scroll_id: null }] });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB5"] });
+
+    expect(requests.some((r) => r.path.endsWith("/items/search"))).toBe(false);
+    expect(multigets(requests)).toEqual(["MLB5"]);
+    expect(result).toMatchObject({ itemsDiscovered: 1, itemsProcessed: 1, itemsOutsideScan: 0 });
+    expect(fake.upserted.map((r) => r.item_id)).toEqual(["MLB5"]);
+  });
+
+  it("o anúncio que volta a existir perde a marca; o de outro vendedor nunca vira linha", async () => {
+    const fake = fakeDb({
+      previous: [{ item_id: "MLB3", title: "Anúncio MLB3", status: "closed", price: 100, available_quantity: 0, deleted_at: "2026-08-01T00:00:00.000Z" }],
+    });
+    const { client } = fakeClient({
+      scanPages: [],
+      bodies: { MLB3: item("MLB3", { status: "active", seller_id: SELLER_ID }), MLB4: item("MLB4", { seller_id: 999 }) },
+    });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB3", "MLB4"] });
+
+    expect(fake.upserted.map((r) => [r.item_id, r.deleted_at])).toEqual([["MLB3", null]]);
+    expect(result.itemsFailed).toBe(1);
   });
 });

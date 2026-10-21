@@ -194,6 +194,39 @@ describe("receiveWebhook", () => {
 });
 
 /**
+ * D-631: o tópico `items` — o anúncio criado, alterado ou excluído — vira a
+ * leitura daquele anúncio na hora. Antes era descartado sem consumidor, e o
+ * anúncio excluído nunca saía da V3.
+ */
+describe("receiveWebhook — tópico items", () => {
+  it("enfileira `sync.listing.item` com o item_id do resource, na fila da conta", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "items", resource: "/items/MLB1054990648" });
+
+    expect(outcome).toMatchObject({ status: "enqueued", jobType: "sync.listing.item" });
+    expect(ctx.enqueued).toEqual([
+      expect.objectContaining({
+        jobType: "sync.listing.item",
+        organizationId: ACCOUNT.organization_id,
+        queue: `ml-sync-${ACCOUNT.slug}`,
+        payload: { mlAccountId: ACCOUNT.id, itemId: "MLB1054990648" },
+      }),
+    ]);
+    expect(ctx.enqueued[0]?.dedupeKey).toMatch(/^ml-webhook:\/items\/MLB1054990648:/);
+  });
+
+  it("resource fora do formato de item não vira job", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "items", resource: "/items/MLB1/prices" });
+
+    expect(outcome).toMatchObject({ status: "unroutable_resource" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+});
+
+/**
  * Tópico `questions` — primeiro tópico com job próprio no ACK (Fase 7B).
  * O handler já existia (D-087); o que faltava era o produtor.
  */
@@ -302,7 +335,8 @@ describe("receiveWebhook — tópico questions", () => {
    * `sync.webhook.received` que terminaram `done / processed: 0`, cada uma
    * tendo custado task + invocação de worker + linha de `job_runs`.
    */
-  it.each(["shipments", "items", "user-products", "collections", "seller-promotions", "stock-location"])(
+  // D-631: `items` saiu da lista — ganhou job próprio (`sync.listing.item`).
+  it.each(["shipments", "user-products", "collections", "seller-promotions", "stock-location"])(
     "tópico %s não tem consumidor: ACK sem enfileirar nada",
     async (topic) => {
       const ctx = deps();
