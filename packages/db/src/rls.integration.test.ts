@@ -24968,3 +24968,79 @@ describe("a queda nas vendas por anúncio (D-629, C-79)", () => {
     await expect(asAnon("select * from public.listing_sales_drop")).rejects.toThrow(/permission denied/i);
   });
 });
+
+/*
+  D-631: o anúncio excluído no Mercado Livre (`deleted_at`) sai das telas do
+  catálogo — a lista e a faixa de /anuncios, os anúncios do SKU e a visão de
+  vínculos. A linha fica no banco (histórico de venda e de vínculo).
+*/
+describe("o anúncio excluído no Mercado Livre sai das telas (D-631)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d631";
+  const CONTA = "cccccccc-0000-4000-8000-0000000a0631";
+  let sku = "";
+
+  beforeAll(async () => {
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-631', 'org-d631') on conflict (id) do nothing", [ORG]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta D-631', 'rlstest-d631', 'CONNECTED', 9990631, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    sku =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'D631-X', 'PRODUTO') on conflict on constraint skus_org_key_unique do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+    // 1: vivo. 2: excluído pelo vendedor (closed + deleted). 3: o Mercado Livre
+    // não o devolve mais (404), ainda com o último status visto. Os três do SKU.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, sub_status, price, currency_id, available_quantity, sku_id, deleted_at)
+       values ($1, $2, 'MLB6310001', 'Vivo', 'active', '{}', 10, 'BRL', 1, $3, null),
+              ($1, $2, 'MLB6310002', 'Excluido', 'closed', '{deleted}', 10, 'BRL', 0, $3, now()),
+              ($1, $2, 'MLB6310003', 'Sumiu', 'active', '{}', 10, 'BRL', 1, $3, now())
+       on conflict do nothing`,
+      [ORG, CONTA, sku],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.listings where organization_id = $1", [ORG]);
+  });
+
+  it("a lista, a faixa, os anúncios do SKU e a visão de vínculos mostram só o vivo", async () => {
+    const lista = await client.query<{ item_id: string; total_count: string }>(
+      "select item_id, total_count::text from public.get_listings_dashboard($1, current_date - 29, current_date, p_limit => 50)",
+      [ORG],
+    );
+    const faixa = await client.query<{ total: string; active: string }>(
+      "select total::text, active::text from public.get_listings_dashboard_counts($1)",
+      [ORG],
+    );
+    const doSku = await client.query<{ item_id: string }>("select item_id from public.get_sku_listings($1, $2)", [ORG, sku]);
+    const vinculos = await client.query<{ r: { linhas: { item_id: string }[] } }>(
+      "select public.get_listings_link_overview($1, current_date - 29, current_date) as r",
+      [ORG],
+    );
+
+    expect(lista.rows.map((l) => l.item_id)).toEqual(["MLB6310001"]);
+    expect(lista.rows[0]?.total_count).toBe("1");
+    expect(faixa.rows[0]).toEqual({ total: "1", active: "1" });
+    expect(doSku.rows.map((l) => l.item_id)).toEqual(["MLB6310001"]);
+    expect((vinculos.rows[0]?.r.linhas ?? []).map((l) => l.item_id)).toEqual(["MLB6310001"]);
+  });
+
+  it("a linha excluída continua no banco, com o subestado", async () => {
+    const linhas = await client.query<{ item_id: string; sub_status: string[]; excluido: boolean }>(
+      "select item_id, sub_status, deleted_at is not null as excluido from public.listings where organization_id = $1 order by item_id",
+      [ORG],
+    );
+
+    expect(linhas.rows).toEqual([
+      { item_id: "MLB6310001", sub_status: [], excluido: false },
+      { item_id: "MLB6310002", sub_status: ["deleted"], excluido: true },
+      { item_id: "MLB6310003", sub_status: [], excluido: true },
+    ]);
+  });
+});

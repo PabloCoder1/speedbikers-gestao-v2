@@ -54,6 +54,13 @@ export type MercadoLivreNotification = z.infer<typeof mercadoLivreNotificationSc
 const QUESTION_RESOURCE_PATTERN = /^\/questions\/(\d+)$/;
 
 /**
+ * D-631: `resource` do tópico `items` — `/items/MLB...`. O job relê o anúncio
+ * (criado, alterado ou excluído); antes o tópico era descartado sem
+ * consumidor, e o anúncio excluído nunca saía da V3.
+ */
+const ITEM_RESOURCE_PATTERN = /^\/items\/(MLB\d+)$/;
+
+/**
  * Tópico tipificado `messages`: diferente de todos os outros, o `resource` é
  * o ID da mensagem CRU, sem barra nem caminho — `"fd1d2e37ad004ede9e0bf25..."`,
  * não `"/messages/fd1d..."` (D-083, secao 2.12). O ID é hexadecimal longo, não
@@ -151,6 +158,16 @@ function routeJob(
     }
 
     return { jobType: "sync.support.questions", payload: { mlAccountId, questionId } };
+  }
+
+  if (notification.topic === "items") {
+    const match = ITEM_RESOURCE_PATTERN.exec(notification.resource);
+
+    if (match === null) {
+      return null;
+    }
+
+    return { jobType: "sync.listing.item", payload: { mlAccountId, itemId: match[1] } };
   }
 
   if (notification.topic === "messages") {
