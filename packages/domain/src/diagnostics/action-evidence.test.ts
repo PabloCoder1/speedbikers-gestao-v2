@@ -143,6 +143,7 @@ describe("os detectores da Shopee (D-626)", () => {
       ["shopee_sem_vinculo", "Shopee vendendo sem vínculo"],
       ["shopee_ruptura", "Ruptura no anúncio da Shopee"],
       ["shopee_prejuizo", "Produto no prejuízo na Shopee"],
+      ["shopee_divergencia", "Divergência de estoque na Shopee"],
     ] as const) {
       const view = describeActionEvidence(kind, SHOPEE_SEM_VINCULO);
 

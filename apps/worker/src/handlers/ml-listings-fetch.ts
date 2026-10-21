@@ -1,7 +1,7 @@
 import type { AdminClient, Json } from "@sb/db";
 import { detectListingEvents } from "@sb/domain";
 import type { ListingSnapshot } from "@sb/domain";
-import type { MercadoLivreClient, PromotionOffer } from "@sb/mercado-livre";
+import type { ItemsMultigetEntry, MercadoLivreClient, PromotionOffer } from "@sb/mercado-livre";
 import {
   chunkItemIds,
   effectivePromotionalPrice,
@@ -61,6 +61,10 @@ const ITEM_ATTRIBUTES = [
   "id",
   "title",
   "status",
+  // D-631: o subestado diz a exclusao (`closed` + `deleted`), e o vendedor
+  // confere o dono do item na leitura por notificacao.
+  "sub_status",
+  "seller_id",
   "price",
   "currency_id",
   "available_quantity",
@@ -104,6 +108,10 @@ interface ListingUpsertRow {
   description_source_updated_at: string | null;
   thumbnail_url: string | null;
   permalink: string | null;
+  /** D-631: o subestado do Mercado Livre na leitura. `null` sem o campo. */
+  sub_status: string[] | null;
+  /** D-631: quando a V3 viu o anúncio excluído; `null` enquanto ele existe. */
+  deleted_at: string | null;
   synced_at: string;
 }
 
@@ -117,6 +125,12 @@ export interface FetchListingsParams {
   accessToken: string;
   logger: Logger;
   now?: () => Date;
+  /**
+   * D-631: só estes anúncios, sem varredura — a leitura de uma notificação
+   * `items` (criado, alterado ou excluído). Sem o campo, é a varredura do
+   * catálogo inteiro, que também relê o que a V3 tem e a varredura não listou.
+   */
+  itemIds?: readonly string[];
 }
 
 export interface FetchListingsResult {
@@ -127,6 +141,10 @@ export interface FetchListingsResult {
   itemsFailed: number;
   /** Anúncios reais que nenhum vínculo alcança — o número que motivou a Fase 4B. */
   itemsWithoutLink: number;
+  /** D-631: anúncios que esta leitura viu excluídos (`closed` + `deleted`, ou 404). */
+  itemsMarkedDeleted: number;
+  /** D-631: anúncios que a V3 tinha e a varredura não listou — relidos um a um. */
+  itemsOutsideScan: number;
 }
 
 /** O que uma leitura boa de `/seller-promotions/items/{id}` diz do anúncio. */
@@ -176,8 +194,20 @@ function promocaoDaLinha(
   };
 }
 
+/**
+ * D-631: o Mercado Livre marca a exclusão como status `closed` com `deleted`
+ * no subestado ("deleted: é adicionado quando o item está fechado e o seller
+ * decide removê-lo" — documentação oficial, "Sincronização e modificação de
+ * publicações", lida em 21/10/2026).
+ */
+function excluidoNoMercadoLivre(item: ParsedListingItem): boolean {
+  return item.status === "closed" && (item.sub_status ?? []).includes("deleted");
+}
+
 export async function fetchListings(params: FetchListingsParams): Promise<FetchListingsResult> {
   const syncedAt = params.now?.() ?? new Date();
+  // D-631: na leitura por notificação, o banco é lido só para estes itens.
+  const soEstes = params.itemIds === undefined ? null : [...new Set(params.itemIds)];
 
   // Vínculos viram LOOKUP, não fonte de enumeração. Uma consulta só: com
   // catálogo completo, uma consulta por item seria milhares de idas ao banco.
@@ -188,15 +218,18 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // começar, e o sintoma seria mudo: vínculo ausente do Map vira `sku_id`
   // nulo no anúncio, e o painel perde o SKU sem nada quebrar.
   const links = await readAllPages<{ item_id: string | null; sku_id: string }>(
-    (from, to) =>
-      params.db
+    (from, to) => {
+      let consulta = params.db
         .from("sku_listing_links")
         .select("item_id, sku_id")
         .eq("ml_account_id", params.mlAccountId)
         .eq("ref_kind", "ITEM")
-        .is("variation_id", null)
-        .order("id")
-        .range(from, to),
+        .is("variation_id", null);
+
+      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+
+      return consulta.order("id").range(from, to);
+    },
     { label: "falha ao ler sku_listing_links" },
   );
 
@@ -232,18 +265,22 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     in_promotion: boolean | null;
     promotion_checked_at: string | null;
     promotions: Json | null;
+    deleted_at: string | null;
   }>(
-    (from, to) =>
-      params.db
+    (from, to) => {
+      let consulta = params.db
         .from("listings")
         .select(
-          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions",
+          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions, deleted_at",
         )
-        .eq("ml_account_id", params.mlAccountId)
-        // `listings_account_item_unique (ml_account_id, item_id)` — com a
-        // conta já fixada no filtro, `item_id` é ordenação estável.
-        .order("item_id")
-        .range(from, to),
+        .eq("ml_account_id", params.mlAccountId);
+
+      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+
+      // `listings_account_item_unique (ml_account_id, item_id)` — com a
+      // conta já fixada no filtro, `item_id` é ordenação estável.
+      return consulta.order("item_id").range(from, to);
+    },
     { label: "falha ao ler listings anteriores" },
   );
 
@@ -265,18 +302,37 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Fase 1 — descoberta. Drenada INTEIRA antes de escrever: o scroll expira
   // em 5 min e a FAQ oficial diz que deixá-lo aberto gera 429.
-  const discovered: string[] = [];
+  const discovered: string[] = soEstes === null ? [] : [...soEstes];
   let scanPages = 0;
 
-  for await (const batch of scanSellerItems({
-    client: params.mercadoLivre,
-    sellerId: params.sellerId,
-    accessToken: params.accessToken,
-    limit: 100,
-  })) {
-    discovered.push(...batch);
-    scanPages += 1;
+  if (soEstes === null) {
+    for await (const batch of scanSellerItems({
+      client: params.mercadoLivre,
+      sellerId: params.sellerId,
+      accessToken: params.accessToken,
+      limit: 100,
+    })) {
+      discovered.push(...batch);
+      scanPages += 1;
+    }
   }
+
+  // D-631: a varredura NÃO devolve o anúncio excluído, e a V3 só gravava o que
+  // ela devolvia — a linha ficava com o último status visto, até "ativo",
+  // para sempre. Depois da varredura INTEIRA (ela drena ou lança), o que a V3
+  // tem vivo e a varredura não listou é relido pelo multiget: excluído,
+  // encerrado ou ainda vivo, a linha converge.
+  const listados = new Set(discovered);
+  const foraDaVarredura =
+    soEstes === null
+      ? previousRows.filter((row) => (row.deleted_at ?? null) === null && !listados.has(row.item_id)).map((row) => row.item_id)
+      : [];
+  const paraLer = [...discovered, ...foraDaVarredura];
+  // D-631: o que o Mercado Livre não devolve mais (404 na leitura do item
+  // sozinho) — "depois de um tempo, os itens finalizados não serão mais
+  // mostrados para sua consulta" (documentação oficial).
+  const inexistentes: string[] = [];
+  let itemsMarkedDeleted = 0;
 
   let itemsProcessed = 0;
   let itemsFailed = 0;
@@ -288,7 +344,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   let exemploDeMedidaIlegivel: string | null = null;
 
   // Fase 2 — hidratação em lotes de 20 (máximo documentado).
-  for (const chunk of chunkItemIds(discovered)) {
+  for (const chunk of chunkItemIds(paraLer)) {
     const entries = await getItemsBatch({
       client: params.mercadoLivre,
       ids: chunk,
@@ -297,19 +353,36 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     });
 
     const itensValidos: ParsedListingItem[] = [];
+    // D-631: o multiget não promete a ordem das entradas nem o corpo do 404.
+    // O item que voltou é reconhecido pelo `id` do corpo; o resto do lote é
+    // relido SOZINHO, e só o 404 dessa leitura diz que o item não existe.
+    const devolvidos = new Set<string>();
 
-    for (const entry of entries) {
+    const classificar = (entry: ItemsMultigetEntry, idDaLeituraSozinha: string | null): void => {
       // O envelope verbose carrega o código POR ITEM: um anúncio removido
       // entre a varredura e a hidratação não derruba o lote inteiro.
       if (entry.code !== 200) {
+        if (idDaLeituraSozinha === null) return;
+
+        if (entry.code === 404) {
+          inexistentes.push(idDaLeituraSozinha);
+
+          return;
+        }
+
         itemsFailed += 1;
         params.logger.warn("listing_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
+          item_id: idDaLeituraSozinha,
           code: entry.code,
         });
 
-        continue;
+        return;
       }
+
+      const idDoCorpo = (entry.body as { id?: unknown } | null)?.id;
+
+      if (typeof idDoCorpo === "string") devolvidos.add(idDoCorpo);
 
       const parsed = listingItemSchema.safeParse(entry.body);
 
@@ -320,10 +393,42 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           reason: parsed.error.message,
         });
 
-        continue;
+        return;
+      }
+
+      // D-631: na leitura por notificação o id vem de fora da varredura do
+      // vendedor — o item de outro vendedor nunca vira linha desta conta.
+      if (parsed.data.seller_id !== undefined && parsed.data.seller_id !== null && parsed.data.seller_id !== params.sellerId) {
+        itemsFailed += 1;
+        params.logger.warn("listing_item_other_seller", {
+          ml_account_id: params.mlAccountId,
+          item_id: parsed.data.id,
+        });
+
+        return;
       }
 
       itensValidos.push(parsed.data);
+    };
+
+    for (const entry of entries) classificar(entry, chunk.length === 1 ? (chunk[0] ?? null) : null);
+
+    if (chunk.length > 1) {
+      for (const id of chunk.filter((item) => !devolvidos.has(item))) {
+        const [sozinho] = await getItemsBatch({
+          client: params.mercadoLivre,
+          ids: [id],
+          accessToken: params.accessToken,
+          attributes: ITEM_ATTRIBUTES,
+        });
+
+        if (sozinho === undefined) {
+          itemsFailed += 1;
+          continue;
+        }
+
+        classificar(sozinho, id);
+      }
     }
 
     // ENRIQUECIMENTO POR ITEM — preço promocional (D-389) e descrição
@@ -438,8 +543,16 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         description_source_updated_at: descricaoAtualizadaEmPorItem.get(item.id) ?? null,
         thumbnail_url: fotoDoItem(item),
         permalink: linkDoItem(item),
+        sub_status: item.sub_status ?? null,
+        // D-631: excluído = `closed` com `deleted` no subestado. A primeira vez
+        // que a V3 o viu assim fica; o anúncio que volta a existir perde a marca.
+        deleted_at: excluidoNoMercadoLivre(item)
+          ? (previousListingRowsByItem.get(item.id)?.deleted_at ?? syncedAt.toISOString())
+          : null,
         synced_at: syncedAt.toISOString(),
       });
+
+      if (excluidoNoMercadoLivre(item)) itemsMarkedDeleted += 1;
 
       pending.push({
         current: {
@@ -492,6 +605,30 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     }
   }
 
+  // D-631: o item que o Mercado Livre não devolve mais sai das telas. Só a
+  // linha que existe e ainda não está marcada; um id que a V3 nunca gravou
+  // não cria nada.
+  if (inexistentes.length > 0) {
+    const marcados = await params.db
+      .from("listings")
+      .update({ deleted_at: syncedAt.toISOString(), synced_at: syncedAt.toISOString() })
+      .eq("ml_account_id", params.mlAccountId)
+      .in("item_id", inexistentes)
+      .is("deleted_at", null)
+      .select("item_id");
+
+    if (marcados.error !== null) {
+      itemsFailed += inexistentes.length;
+      params.logger.error("listing_not_marked_deleted", {
+        ml_account_id: params.mlAccountId,
+        items: inexistentes.length,
+        reason: marcados.error.message,
+      });
+    } else {
+      itemsMarkedDeleted += marcados.data.length;
+    }
+  }
+
   // Instrumentação deliberada: a doc oficial NÃO diz quais status a varredura
   // devolve sem filtro (a frase "sempre serão itens ativos" pertence a OUTRO
   // endpoint da mesma página). Sem isto, a resposta continuaria sendo palpite.
@@ -505,7 +642,17 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     itens_com_medidas: itensComMedidas,
     itens_com_medidas_legiveis: itensComMedidasLegiveis,
     exemplo_de_medida_ilegivel: exemploDeMedidaIlegivel,
+    itens_fora_da_varredura: foraDaVarredura.length,
+    itens_excluidos: itemsMarkedDeleted,
+    itens_inexistentes: inexistentes.length,
   });
 
-  return { itemsDiscovered: discovered.length, itemsProcessed, itemsFailed, itemsWithoutLink };
+  return {
+    itemsDiscovered: discovered.length,
+    itemsProcessed,
+    itemsFailed,
+    itemsWithoutLink,
+    itemsMarkedDeleted,
+    itemsOutsideScan: foraDaVarredura.length,
+  };
 }

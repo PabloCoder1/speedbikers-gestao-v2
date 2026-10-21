@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **542** (D-001 a D-630).
+Decisões registradas: **544** (D-001 a D-632).
 
 ## Por domínio
 
@@ -125,7 +125,7 @@ Decisões registradas: **542** (D-001 a D-630).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (40)
+### estoque (41)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -167,6 +167,7 @@ Decisões registradas: **542** (D-001 a D-630).
 - **D-614** — A venda da Shopee nas movimentações de estoque: rótulos, origem e o link do pedido (C-68)
 - **D-615** — O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
 - **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
+- **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
 
 ### interface (69)
 
@@ -240,7 +241,7 @@ Decisões registradas: **542** (D-001 a D-630).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (100)
+### mercado-livre (101)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -342,6 +343,7 @@ Decisões registradas: **542** (D-001 a D-630).
 - **D-626** — As ações dos detectores da Shopee na Central de Ações: o rótulo, o anúncio e o atalho (C-73, C-74, C-76)
 - **D-628** — O estoque do anúncio da Shopee diz de quando é a leitura
 - **D-629** — A queda nas vendas por anuncio (C-79): a regua da venda anomala em janelas, pre-calculada uma vez por dia
+- **D-631** — O anuncio criado ou excluido no Mercado Livre chega a V3 na hora, e o excluido sai das telas
 
 ### outros (78)
 

@@ -30,6 +30,7 @@ import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
 import { createListingSalesDropHandler } from "./handlers/listing-sales-drop.js";
+import { createSyncListingItemHandler } from "./handlers/sync-listing-item.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-visits-snapshot.js";
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
@@ -234,6 +235,8 @@ const app = createWorkerApp({
       encryptionKey,
     }),
     "sync.webhook.received": createWebhookReceivedHandler({ db, mercadoLivre, oauth, encryptionKey }),
+    // D-631: a notificação `items` relê o anúncio na hora (criado, alterado, excluído).
+    "sync.listing.item": createSyncListingItemHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "maintenance.reconcile-balances": createReconcileBalancesHandler({ db }),
     "maintenance.verify-ledger-integrity": createVerifyLedgerIntegrityHandler({ db }),
     "maintenance.check-ai-budget": createCheckAiBudgetHandler({ db, budgetUsd: env.AI_MONTHLY_BUDGET_USD }),
