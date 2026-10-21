@@ -18312,3 +18312,47 @@ As duas seguem as linhas e as regras do C-53. O A1 mediu a leitura do cancelamen
 - e2e: `vendas-multicanal.spec.ts` e `ensaio-loja-live.spec.ts`;
 - docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
 - nenhuma migration, RPC, worker ou api.
+
+## D-622 - A marca no "Todos" e na Shopee de /vendas: o recorte do ML nos dois canais (C-72)
+
+**Contexto:** a parte (a2) do item 4 do dono, de 20/10. O "Todos" de `/vendas` dizia que o filtro de marca era só do ML. O C-72 do A1 (D-605) pôs `p_supplier_brand` e `p_sem_marca` no fim das quatro funções do "Todos" (resumo, série, hoje e cancelamento), com a regra do ML (D-237) e o grão de SKU dos dois canais. Sob marca, compras, ticket, recebido e cancelamento vêm NULOS, porque o pack e o pedido atravessam produtos. A migration `20261020170000` está em produção desde 20/10, 19:09 UTC.
+
+**Decisão:**
+1. **O mesmo menu e a mesma URL da tela do ML:**
+   - `marca=` e `semMarca=1`, com o "Sem marca", que é a venda sem produto vinculado e o produto sem marca, nos dois canais;
+   - a lista vem do banco (`get_supplier_brands`, D-194);
+   - a troca de marketplace leva a marca nos dois sentidos, porque a tela do ML lê os mesmos nomes; o `/faturamento` e a `/vendas/shopee` não a recebem;
+   - "Limpar filtros" tira contas e marca.
+2. **A marca vai às funções do C-72 só com valor**, na leitura da tela e no CSV (o arquivo ganha `-marca-…` ou `-sem-marca` no nome, como o do ML).
+3. **O que não se aplica sob marca é dito, nunca zero:**
+   - compras e ticket médio: "—" com a ressalva na célula;
+   - o cancelamento: a célula diz que não se aplica, de cara. A leitura nem sai, e o C-72 a devolveria NULA;
+   - a compra sai das métricas do gráfico, e `metric=compras` cai no faturamento;
+   - a nota abaixo do hoje explica de onde vêm unidades e receita e o que não se aplica.
+4. **O ranking de produtos (C-59) não recorta por marca.** Sob marca, o painel diz isso, com o link para o mesmo recorte sem marca, em vez de mostrar o ranking inteiro como se fosse da marca. O C-75 do A1 (D-613, #286) põe o mesmo recorte no `get_marketplace_sku_sales`. Quando a migration `20261020200000` estiver em produção, a D-624 passa a mandá-lo, só com valor, e o aviso sai..
+
+**Publicação:** só a web. A migration está em produção. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:**
+  - o endereço com a marca e o "sem marca";
+  - a marca atravessando para o ML e para a Shopee, e fora do `/faturamento`;
+  - as métricas do gráfico sob marca;
+  - a ressalva da faixa.
+- **e2e:**
+  - no seed, que não cadastra marca:
+    - o "Todos" sem marca é igual ao ML sem marca;
+    - compras, ticket e cancelamento são "—" com o porquê;
+    - a compra sai do gráfico, e o ranking diz que não recorta;
+    - o CSV e o caminho de volta ao ML levam a marca;
+  - no ensaio da loja live, uma marca só do produto dela, durante o teste: a faixa com exatamente R$ 1.100 e 11 unidades, e a linha da loja com a receita e a compra "—".
+- **Suíte inteira:** com o banco recriado do zero, 257 de 258 na 3300, os 14 do ensaio da loja live e os 3 de convite na 3000. A falha foi um teste antigo que afirmava que só o período atravessa do ML para a Shopee; a regra mudou de propósito, o teste foi atualizado e o spec passou 10/10..
+
+**Impacto:**
+- web:
+  - `apps/web/app/(app)/vendas/{multicanal.tsx,page.tsx,exportar/route.ts}`;
+  - `apps/web/lib/vendas-multicanal.ts` e o teste;
+- db: `packages/db/src/types.ts`, só a CORRECAO MANUAL de `get_marketplace_sales_daily.compras` (NULA sob marca), a pedido do A1;
+- e2e: `vendas-multicanal.spec.ts`, `ensaio-loja-live.spec.ts` e `vendas-shopee.spec.ts` (a marca agora atravessa do ML para a Shopee);
+- docs: `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS,ROADMAP}.md`;
+- nenhuma migration, RPC, worker ou api.
