@@ -401,6 +401,7 @@ número.
 | **D-628** | O estoque do anúncio da Shopee com a hora da leitura | A1 (D-619) | ✔ D-628 (#292) |
 | **D-630** | O diagnóstico do SKU mede a dispersão de preço com a régua do C-77 | A1 (C-77, D-625) e A3 | ✔ D-630 (#298) |
 | **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | ✔ D-632 (#300) |
+| **D-636** | O cabeçalho da `/faturamento` com a mesma forma nos três recortes | A3 (o achado e a escolha) | ✔ D-636 (#306) |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
