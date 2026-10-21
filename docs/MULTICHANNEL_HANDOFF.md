@@ -130,6 +130,8 @@
 - O esqueleto da `/faturamento` reserva a janela (achado e medida do A3, D-526): **na `main`, #290** (`8eb3053e`), CLS de 0,23–0,27 para 0.
 - D-628 — o estoque da `/anuncios/shopee` diz de quando é a leitura ("lido há N min/h/dias", a pedido do A1 na D-619): **na `main`, #292** (`4089b805`).
 - D-624 e D-626 — o ranking do "Todos" recortando pela marca (C-75) e as ações dos detectores da Shopee na Central de Ações (C-73, C-74 e o rótulo do C-76): **na `main`, #293** (`9d1eb905`), no ar desde 21/10, 13:31 UTC (deploy READY, sem erro de execução). As ações da Shopee nascem com o worker `worker-00053-bwq` do A1, a partir da rodada das 08:00 de 22/10; depois dela, o A1 confere em agregado se a evidência traz o que o atalho lê.
+- D-630 — o diagnóstico do SKU mede a dispersão de preço com a régua do C-77: só os anúncios ativos e pausados, e o teto comparado em centavos inteiros, com `>` estrito. **Na `main`, #298** (`67e7b939`), no ar desde 21/10, 15:25 UTC (deploy READY). A lista de `/anuncios` ganha o mesmo filtro na fatia B do A3 (D-528).
+- D-632 — a divergência de estoque da Shopee na Central de Ações (C-78 da D-627): o rótulo "Divergência de estoque na Shopee" e os atalhos da D-626, "Anúncio na Shopee" e "Estoque do SKU". **Na `main`, #300** (`c6f572d3`), no ar desde 21/10, 17:02 UTC (deploy READY). As ações nascem com o worker do A1 que traz a D-627, a partir da rodada das 08:00 de 22/10.
 - A guarda de tela estreita (`e2e/tela-estreita-e-acessibilidade.spec.ts`, D-510) passa a cobrir `/contas` (a faixa da D-600), `/anuncios/shopee`, `/vendas/shopee` e `/faturamento?marketplace=shopee` (a cascata com os degraus da D-492 e da D-498): nenhuma rola para o lado nem corta tabela a 390 px.
 - T5b (D-452, C-61: a cascata do recebido, a série e os produtos), T5d (D-458, C-64: o repasse), T6b (D-448, C-60: a Curva ABC com "Todos" e "Shopee"), T6b2 (D-450: o Excel com o recorte) e as devoluções em `/vendas/shopee` (D-460, C-62, decisão do dono de 15/10). Cada uma validada com a suíte e2e inteira; entram juntas pelo **#177**, que encadeia o #164, o #165, o #167 e o #174 para um merge só (cada merge isolado reabria conflito no índice das decisões).
 
@@ -146,10 +148,14 @@
 - **A fila do A1 (D-499 → D-497 (b) → D-495 → D-491) está em produção desde 20/10.** O que ainda toca as telas:
   - **D-491** (C-69, migration `20261020130000` em produção desde 16:22 UTC): a tela D-616 (#272) está no ar, e o botão de lote voltou com a loja no recorte (D-604).
   - **D-495 (b)** (C-68, no ar desde 14:22 UTC): o banco foi conferido. Todo movimento da Shopee tem a loja e o dia do link, e todo estorno do armazém tem a sua venda. Falta a conferência visual da `/estoque/movimentacoes` pelo dono.
-- **As outras opções do item 4** (o dono escolheu o SKU primeiro nas telas, em 20/10; o A1 tem as três):
-  - `/vendas` no "Todos", a marca: a D-622 (em andamento, acima).
-  - Central de Ações: os quatro detectores da Shopee, na ordem do dono, todos do A1 e com as migrations em produção (D-609/C-73, D-611/C-74, D-617/C-76 e D-627/C-78). As telas: a D-626 (os três primeiros, no ar, #293) e a **D-632** (a divergência de estoque: o rótulo e os atalhos da D-626, PR #300, em código e validada). As ações nascem com o worker novo do A1, a partir da rodada das 08:00 de 22/10.
-- **Sem fonte hoje:** o histórico de preço da Shopee (`/precos`), o chat da Shopee (`/atendimento`) e a Shopee nas ferramentas do Copiloto.
+- **O item 4 do dono está feito nas telas**: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622 e D-624) e os quatro detectores da Shopee na Central de Ações (D-626 e D-632). O que resta dele:
+  - a conferência, pelo A1 e em agregado, das primeiras ações da Shopee depois da rodada das 08:00 de 22/10: quantas nasceram de cada `kind` e quantas trazem no `evidence.detector` a loja e o `sku_anuncio` ou o `item_id`, que acendem o atalho do anúncio. A do prejuízo não traz o anúncio (só a loja e o SKU), então só tem o atalho do SKU (A1, 21/10);
+  - a olhada do dono na tela de produção: a aba Vendas do SKU, o "Todos" com marca e, a partir de 22/10, a Central de Ações.
+- **A `/anuncios/shopee` no padrão novo de filtros** (o painel Filtros, os chips do que está ativo e o voltar à lista), depois da fatia A do A3 (D-527) na `main`: o A3 entrega o `FilterPanel` e o `voltarALista` e não toca na tela; o A2 amplia os caminhos do `voltarALista` para `/anuncios/shopee`.
+- **Esperam um contrato do A1 e a escolha do dono:**
+  - as preferências de notificação por loja Shopee (`notification_preferences` só conhece a conta do ML, `ml_account_id`);
+  - a Shopee no `/diagnostico` (a linha de base, os eventos e os preços são do ML).
+- **Sem fonte hoje:** o histórico de preço da Shopee em `/precos` (o banco guarda só o preço atual, em `shopee_items` e `shopee_item_models`), o chat da Shopee em `/atendimento` e a Shopee nas ferramentas do Copiloto.
 
 **Bloqueios**
 - Nenhum na tela. O que falta, acima, espera o A1 ou o dono. O Go Live foi em 16/10 (duas lojas live em produção, 90 dias de pedidos lidos), e as telas mostram os números da Shopee. Conferido só lendo: a meta do mês de outubro soma ML + Shopee no realizado; a meta geral cadastrada passou a comparar com os dois, e as metas por marketplace ainda não foram cadastradas — decisão do dono.
