@@ -24,7 +24,7 @@ import { StatePill } from "../../../../components/state-pill";
 import { FormularioFiltro } from "../../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
-import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatDay, formatPercent } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
 import { pageNumbers } from "../../../../lib/listings-dashboard";
 import { revenueShare } from "../../../../lib/listings-view";
@@ -853,6 +853,14 @@ export default async function AnunciosShopeePage({
                             <span className="sb-an-zerado">0</span>
                           ) : (
                             formatCount(row.available_stock)
+                          )}
+                          {/* D-628: a venda baixa o estoque na Shopee sem mudar o item, e a leitura
+                              pode ter horas (o A1 relê o item ativo a cada 6 h, D-619): o número diz
+                              de quando é. */}
+                          {row.available_stock !== null && row.details_synced_at !== null && (
+                            <small className="sb-an-sub" title={`Estoque lido da Shopee em ${formatDateTime(row.details_synced_at)}`}>
+                              lido {formatAge(row.details_synced_at, agora) ?? `em ${formatDay(row.details_synced_at)}`}
+                            </small>
                           )}
                         </td>
                         {/* D-606: nulas com a loja nunca lida -- "—", nunca
