@@ -55,9 +55,11 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   frete_anomalo: "Frete anômalo",
   ads_campanha: "Campanha de Ads",
   produto_prejuizo: "Produto no prejuízo",
-  // Os detectores da Shopee (D-609, D-611; a tela é a D-626): o anúncio da loja live.
+  // Os detectores da Shopee (D-609, D-611, D-617; a tela é a D-626): o anúncio da loja live.
   shopee_sem_vinculo: "Shopee vendendo sem vínculo",
   shopee_ruptura: "Ruptura no anúncio da Shopee",
+  // D-617 (C-76): o produto no prejuízo numa loja Shopee; o atalho é o do SKU.
+  shopee_prejuizo: "Produto no prejuízo na Shopee",
 };
 
 /** Os `kind` que são problema por definição, sem direção a ler. */
@@ -68,6 +70,7 @@ const PROBLEMAS: ReadonlySet<string> = new Set([
   "produto_prejuizo",
   "shopee_sem_vinculo",
   "shopee_ruptura",
+  "shopee_prejuizo",
 ]);
 
 /**
