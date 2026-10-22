@@ -7936,9 +7936,13 @@ export type Database = {
           p_date_to: string
           p_organization_id: string
           p_sku_ids: string[]
+          // C-83 (D-639): 'ML' e/ou 'SHOPEE'; nulo = so o ML.
+          p_marketplaces?: string[] | null
         }
         Returns: {
           average_price: number
+          // C-83 (D-639): 'ML' | 'SHOPEE'.
+          marketplace: string
           sku_id: string
         }[]
       }
@@ -7948,9 +7952,13 @@ export type Database = {
           p_organization_id: string
           p_sku_ids: string[]
           p_to: string
+          // C-83 (D-639): 'ML' e/ou 'SHOPEE'; nulo = so o ML.
+          p_marketplaces?: string[] | null
         }
         Returns: {
           event_type: string
+          // C-83 (D-639): 'ML' | 'SHOPEE'; NULO no evento do SKU (vale para os dois).
+          marketplace: string | null
           occurred_at: string
           sku_id: string
         }[]
@@ -8043,11 +8051,14 @@ export type Database = {
         }[]
       }
       get_sku_sales_baseline: {
-        Args: { p_as_of: string; p_organization_id: string; p_sku_id?: string }
+        // C-83 (D-639): p_marketplaces 'ML' e/ou 'SHOPEE'; nulo = so o ML.
+        Args: { p_as_of: string; p_organization_id: string; p_sku_id?: string; p_marketplaces?: string[] | null }
         Returns: {
           baseline_mean: number
           baseline_stddev: number
           current_units_sold: number
+          // C-83 (D-639): uma linha por SKU E canal ('ML' | 'SHOPEE').
+          marketplace: string
           sample_count: number
           sku: string
           sku_id: string

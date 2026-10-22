@@ -19045,3 +19045,38 @@ Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
 - `apps/web/app/(app)/page.tsx`;
 - `apps/web/e2e/ensaio-loja-live.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-639 - O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
+
+**Contexto:** a frente C-11 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-83.
+- As tres funcoes do diagnostico (`get_sku_sales_baseline`, `get_sku_average_prices` e `get_sku_correlated_events`) so conheciam o ML.
+- Elas servem tres consumidores: o `/diagnostico`, o diagnostico do SKU e o worker da venda anomala, que abre os cartoes da Central.
+- O pedido deixava com o A1 (e o dono, se preciso) a regra do worker, para a Central e o `/diagnostico` nao divergirem.
+
+**A pergunta ao dono (22/10):** o detector deve considerar a Shopee? A resposta foi **"Por canal"**: cada canal e avaliado separado, uma queda no ML vira alerta mesmo que a Shopee compense, e o alerta diz o canal. As opcoes recusadas foram somar os canais (a queda compensada sumiria) e manter so o ML (a Central e o `/diagnostico` divergiriam).
+
+**Decisao:**
+1. **O padrao do C-60:** `p_marketplaces text[]` no fim das tres ('ML' e/ou 'SHOPEE'; NULO = so o ML, o resultado de antes) e a coluna `marketplace` no fim. A lista vazia e o valor fora da lista sao recusados.
+2. **A linha de base:** por SKU, dia da semana e canal, a mesma regra de D-063 (as 8 ultimas ocorrencias do dia da semana, minimo de 4).
+   - Na Shopee: `shopee_sales_items` com a situacao VALIDA e so a loja live, somada entre as lojas por dia, o mesmo grao do ML entre contas.
+   - As duas materializacoes de D-183 ficam.
+3. **O preco medio:** o mesmo metodo do ML (a media dos precos medios do dia); na Shopee, so os itens com a receita conhecida.
+4. **A correlacao:** o evento do SKU vem com `marketplace` NULO e vale para os dois canais. Os do anuncio e do pedido do ML vem como 'ML'. A mudanca de preco do anuncio da Shopee (C-81, D-633) vem como 'SHOPEE', ligada ao SKU pela unidade (`shopee_listing_units`). A Shopee nao grava cancelamento nem devolucao como evento: so o preco correlaciona.
+5. **O worker:** pede os dois canais e avalia cada um. A acao leva `evidence.marketplace`, e a do ML mantem a `dedup_key` de antes. A da Shopee leva o canal na chave (`sales_anomaly:shopee:<sku>:<dia>`), com o impacto pelo preco medio dela. A reclamacao aberta (SAC) entra so no ML.
+
+**Fora daqui:** a venda anomala grava uma acao por SKU por dia e nunca fecha (o caso da D-263, que acumula em producao). Com a Shopee, isso passa a valer por canal. O episodio por assunto e uma fatia propria.
+
+**Verificacao:**
+- integracao: 6 testes (a linha de base sem canal igual a de antes; os dois canais, com o cancelado e o sandbox fora; o preco medio por canal sem a receita desconhecida; a correlacao por canal; as recusas; a RLS). As 32 de antes das tres funcoes seguem verdes;
+- worker: 3 testes novos, 12 de 12 (os dois canais pedidos; a queda so na Shopee com a chave e o preco dela; os dois canais com os eventos de cada um);
+- mutacao: 10 no SQL, todas pegas;
+- `db reset` e a suite inteira, 1124 de 1124 (com o C-81, o C-82 e o C-80/C-85 juntos).
+
+**Publicacao:** a migration `20261022130000`, depois o worker. A tela (A2) manda `p_marketplaces` so depois da migration em producao.
+
+**Impacto:**
+- `supabase/migrations/20261022130000_diagnostico_por_canal.sql`;
+- `apps/worker/src/handlers/detect-sales-anomaly-actions{,.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
