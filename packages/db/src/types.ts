@@ -2422,6 +2422,7 @@ export type Database = {
           id: string
           min_severity: string
           ml_account_id: string | null
+          shopee_shop_id: string | null
           updated_at: string
           user_id: string
         }
@@ -2432,6 +2433,7 @@ export type Database = {
           id?: string
           min_severity?: string
           ml_account_id?: string | null
+          shopee_shop_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -2442,6 +2444,7 @@ export type Database = {
           id?: string
           min_severity?: string
           ml_account_id?: string | null
+          shopee_shop_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -2451,6 +2454,13 @@ export type Database = {
             columns: ["ml_account_id"]
             isOneToOne: false
             referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_preferences_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
             referencedColumns: ["id"]
           },
           {
@@ -7129,6 +7139,12 @@ export type Database = {
           p_preco_teto?: number | null
           // C-79 (D-629), migration 20261021160000: 'all' | 'queda'.
           p_queda?: string
+          // C-85 (D-637), migration 20261022120000: 'all' | 'atencao'. 'atencao'
+          // exige p_preco_teto e o periodo de 7/15/30/60/90 dias terminando hoje.
+          p_atencao?: string
+          // C-80 (D-637): as contas escolhidas; vazio, ou junto com
+          // p_ml_account_id, e recusado. Nulo = todas.
+          p_ml_account_ids?: string[] | null
         }
         Returns: {
           account_label: string
@@ -7165,6 +7181,9 @@ export type Database = {
           queda_estado: string | null
           queda_z: number | null
           queda_calculada_em: string | null
+          // C-85 (D-637): na ordem sem_estoque_vendendo, sem_vinculo_vendendo,
+          // acao_aberta, queda, preco_divergente. NULO sem as cinco reguas.
+          atencao_motivos: string[] | null
           // D-385: somas do recorte filtrado inteiro (antes do limit). A
           // de visitas e NULA quando nenhum anuncio do recorte tem visita.
           recorte_faturamento: number
@@ -7192,6 +7211,11 @@ export type Database = {
           p_preco_teto?: number | null
           // C-79 (D-629): os dias do periodo da tela; sem ele em_queda e NULA.
           p_queda_dias?: number | null
+          // C-85 (D-637): o periodo da tela, para precisam_atencao.
+          p_date_from?: string | null
+          p_date_to?: string | null
+          // C-80 (D-637): as mesmas regras da lista.
+          p_ml_account_ids?: string[] | null
         }
         Returns: {
           active: number
@@ -7204,6 +7228,9 @@ export type Database = {
           preco_divergente: number | null
           // C-79 (D-629): = p_queda 'queda' no mesmo periodo; NULA sem periodo.
           em_queda: number | null
+          // C-85 (D-637): = p_atencao 'atencao' no mesmo periodo; NULA sem
+          // o teto ou sem o periodo de 7/15/30/60/90 dias terminando hoje.
+          precisam_atencao: number | null
           promotion_unknown: number
           total: number
           unlinked: number

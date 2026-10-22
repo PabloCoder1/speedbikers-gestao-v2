@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **549** (D-001 a D-638).
+Decisões registradas: **551** (D-001 a D-638).
 
 ## Por domínio
 
@@ -242,7 +242,7 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (103)
+### mercado-livre (104)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -346,6 +346,7 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-629** — A queda nas vendas por anuncio (C-79): a regua da venda anomala em janelas, pre-calculada uma vez por dia
 - **D-631** — O anuncio criado ou excluido no Mercado Livre chega a V3 na hora, e o excluido sai das telas
 - **D-634** — O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
+- **D-637** — Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 
 ### outros (80)
@@ -497,7 +498,7 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-618** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
 - **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 
-### worker/infra (92)
+### worker/infra (93)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -591,4 +592,5 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-518** — A Central de Negocio, blocos 2 e 3: cada termo explicado a um toque, remover com confirmacao, limites agrupados e o nome fixo nas tabelas do celular
 - **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
+- **D-635** — A loja da Shopee na preferencia de aviso (C-82)
 

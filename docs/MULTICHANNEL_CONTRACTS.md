@@ -163,6 +163,27 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.31 Várias contas e "Precisam de atenção" na /anuncios (C-80 e C-85, D-637) — em código
+
+- **C-80, `p_ml_account_ids uuid[] default null`**, no fim da `get_listings_dashboard` (e, por ela, do CSV) e da `get_listings_dashboard_counts`.
+  - Nulo = todas as contas alcançadas.
+  - Vazio é recusado, e junto com `p_ml_account_id` também.
+  - A conta fora da RLS não aparece. A dispersão (C-77) compara com todas as contas visíveis; a queda é por anúncio.
+- **C-85, na lista:** `p_atencao text default 'all'` ('all' | 'atencao', antes do `p_ml_account_ids`) e a coluna `atencao_motivos text[]` no fim.
+  - Ordem dos motivos: `sem_estoque_vendendo`, `sem_vinculo_vendendo`, `acao_aberta` (ação aberta com a conta e o `mlb_id` do anuncio), `queda` (C-79) e `preco_divergente` (C-77).
+  - NULA sem `p_preco_teto` ou sem o período de 7, 15, 30, 60 ou 90 dias terminando hoje.
+  - `{}` fora de ativo/pausado ou sem motivo. 'atencao' sem essas réguas é recusado.
+- **C-85, na faixa:** `p_date_from`, `p_date_to` e `precisam_atencao` (o mesmo conjunto do filtro, com o N da queda pelas datas). NULA sem as réguas.
+- **Para a tela:** manda os parâmetros novos só com valor e só depois da migration `20261022120000` em produção. Manda o `p_preco_teto` sempre, para a coluna vir preenchida. NULO não vira "sem atenção".
+
+### 3.30 A loja da Shopee na preferência de aviso (C-82, D-635) — em código
+
+- **A coluna:** `notification_preferences.shopee_shop_id` (FK para `shopee_shops`, apagar a loja apaga a regra). Conta OU loja na mesma linha, nunca as duas (`notification_preferences_uma_origem`).
+- **Os escopos (um por usuário):** geral (sem tipo, sem conta, sem loja); só tipo; só conta; tipo e conta; só loja; tipo e loja. A duplicata é recusada pelo índice do escopo (`notification_preferences_unique_*`).
+- **A RLS:** cada um vê e grava a sua; a gravação só aceita loja que o usuário alcança (`private.accessible_shopee_shops()`).
+- **`get_settings_overview`:** a regra geral exige loja nula.
+- **Para a tela:** o seletor "Conta ou loja" e o `shouldNotify` com a loja (a regra da loja só casa evento com o mesmo `shopee_shop_id`; a regra de conta nunca casa evento da loja). Manda `shopee_shop_id` só depois da migration `20261022110000` em produção.
+
 ### 3.29 O histórico de preço da Shopee em /precos e na aba Preços do SKU (C-81, D-633) — em código
 
 - **O evento:** `listing.price.changed` com `shopee_shop_id` (o `ml_account_id` é NULO), `entity_type = 'shopee_item'` e `entity_id` = o item da Shopee.

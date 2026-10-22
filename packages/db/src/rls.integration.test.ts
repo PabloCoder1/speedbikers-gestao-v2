@@ -15776,6 +15776,130 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   });
 });
 
+// C-82 (20261022110000, D-635) -- a loja da Shopee na preferencia de aviso.
+describe("notification_preferences com a loja da Shopee (C-82, D-635)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000c082";
+  const OUTRA_ORG = "99999999-0000-4000-8000-00000001c082";
+  const USUARIO = "aaaaaaaa-0000-4000-8000-00000000c082";
+  const CONTA = "cccccccc-0000-4000-8000-0000000c0082";
+  const LOJA = "dddd0820-0000-4000-8000-0000000a0082";
+  const LOJA_DE_OUTRA_ORG = "dddd0820-0000-4000-8000-0000000b0082";
+  const LOJA_APAGADA = "dddd0820-0000-4000-8000-0000000c0082";
+
+  const regra = (campos: string, valores: string) =>
+    `insert into public.notification_preferences (user_id, ${campos}) values ('${USUARIO}', ${valores}) returning id`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'usuario-c082@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [USUARIO],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org C-82', 'org-c082'), ($2, 'Outra C-82', 'org-c082-b') on conflict (id) do nothing",
+      [ORG, OUTRA_ORG],
+    );
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, USUARIO]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta C-82', 'rlstest-c082', 'CONNECTED', 9990082, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $4, 'live', 990082001, 'Loja C82', 'CONNECTED', now()),
+              ($2, $5, 'live', 990082002, 'Loja de outra org', 'CONNECTED', now()),
+              ($3, $4, 'live', 990082003, 'Loja que sai', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, LOJA_DE_OUTRA_ORG, LOJA_APAGADA, ORG, OUTRA_ORG],
+    );
+  });
+
+  it("a regra só da loja não é a regra geral do resumo de configurações", async () => {
+    await asUserPersist(USUARIO, regra("shopee_shop_id, min_severity", `'${LOJA}', 'critico'`));
+
+    const soDaLoja = await asUser<{ geral: string | null; minhas: string }>(
+      USUARIO,
+      `select notification_global_min_severity as geral, notification_prefs_mine::text as minhas from public.get_settings_overview('${ORG}')`,
+    );
+
+    expect(soDaLoja).toEqual([{ geral: null, minhas: "1" }]);
+
+    // A regra geral convive com a da loja: escopos diferentes.
+    await asUserPersist(USUARIO, regra("min_severity", "'importante'"));
+
+    const comAGeral = await asUser<{ geral: string | null }>(
+      USUARIO,
+      `select notification_global_min_severity as geral from public.get_settings_overview('${ORG}')`,
+    );
+
+    expect(comAGeral).toEqual([{ geral: "importante" }]);
+  });
+
+  it("um escopo por loja e um por tipo e loja, como os da conta", async () => {
+    await expect(asUser(USUARIO, regra("shopee_shop_id, min_severity", `'${LOJA}', 'importante'`))).rejects.toThrow(
+      /notification_preferences_unique_shop_only/,
+    );
+
+    await asUserPersist(USUARIO, regra("event_type, shopee_shop_id", `'listing.price.changed', '${LOJA}'`));
+
+    await expect(asUser(USUARIO, regra("event_type, shopee_shop_id", `'listing.price.changed', '${LOJA}'`))).rejects.toThrow(
+      /notification_preferences_unique_event_and_shop/,
+    );
+
+    // O mesmo tipo sem loja e com a conta continuam escopos proprios.
+    await asUserPersist(USUARIO, regra("event_type", "'listing.price.changed'"));
+    await asUserPersist(USUARIO, regra("event_type, ml_account_id", `'listing.price.changed', '${CONTA}'`));
+
+    const linhas = await asUser<{ n: string }>(
+      USUARIO,
+      "select count(*)::text as n from public.notification_preferences where event_type = 'listing.price.changed'",
+    );
+
+    expect(linhas).toEqual([{ n: "3" }]);
+  });
+
+  it("conta e loja na mesma regra é recusado", async () => {
+    await expect(asUser(USUARIO, regra("ml_account_id, shopee_shop_id", `'${CONTA}', '${LOJA}'`))).rejects.toThrow(
+      /notification_preferences_uma_origem/,
+    );
+  });
+
+  it("só grava loja que o usuário alcança, nem no update", async () => {
+    await expect(asUser(USUARIO, regra("shopee_shop_id", `'${LOJA_DE_OUTRA_ORG}'`))).rejects.toThrow(/row-level security/i);
+
+    await expect(
+      asUser(
+        USUARIO,
+        `update public.notification_preferences set shopee_shop_id = '${LOJA_DE_OUTRA_ORG}'
+          where user_id = '${USUARIO}' and event_type is null and shopee_shop_id = '${LOJA}'`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("a regra de antes, sem loja, segue igual, e quem não é dono não vê a regra da loja", async () => {
+    const deOutro = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.notification_preferences where user_id = '${USUARIO}'`,
+    );
+
+    expect(deOutro).toHaveLength(0);
+  });
+
+  it("apagar a loja apaga as regras dela", async () => {
+    await asUserPersist(USUARIO, regra("shopee_shop_id", `'${LOJA_APAGADA}'`));
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA_APAGADA]);
+
+    const restam = await client.query<{ n: string }>(
+      "select count(*)::text as n from public.notification_preferences where shopee_shop_id = $1",
+      [LOJA_APAGADA],
+    );
+
+    expect(restam.rows).toEqual([{ n: "0" }]);
+  });
+});
+
 describe("ai_runs (observabilidade de custo do Copiloto, D-077)", () => {
   // Linhas próprias desta suíte, sem afterAll de limpeza — mesma convenção
   // já aceita no resto do arquivo ("o ambiente local acumula até o
@@ -25190,6 +25314,224 @@ describe("a queda nas vendas por anúncio (D-629, C-79)", () => {
   catálogo — a lista e a faixa de /anuncios, os anúncios do SKU e a visão de
   vínculos. A linha fica no banco (histórico de venda e de vínculo).
 */
+// C-80 + C-85 (20261022120000, D-637) -- varias contas e "Precisam de atencao"
+// na /anuncios: a lista, a faixa e as recusas.
+describe("várias contas e precisam de atenção na /anuncios (C-80, C-85, D-637)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000c085";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000c085";
+  const CONTA_A = "cccccccc-0000-4000-8000-0000000a0085";
+  const CONTA_B = "cccccccc-0000-4000-8000-0000000b0085";
+  const TETO = 30;
+  let hoje = "";
+  // As contas ficam fora do prefixo `rlstest` da limpeza global: as metricas
+  // de venda as prendem pela FK, como na suite D-172.
+  let de = "";
+
+  interface Linha {
+    item_id: string;
+    atencao_motivos: string[] | null;
+    total_count: string;
+  }
+
+  interface Faixa {
+    total: string;
+    precisam_atencao: string | null;
+  }
+
+  const lista = (extra: string) =>
+    asUser<Linha>(
+      ADMIN,
+      `select item_id, atencao_motivos, total_count::text
+         from public.get_listings_dashboard(p_organization_id => '${ORG}', p_date_from => '${de}', p_date_to => '${hoje}', p_limit => 100${extra})
+        order by item_id`,
+    );
+
+  const faixa = (extra: string) =>
+    asUser<Faixa>(
+      ADMIN,
+      `select total::text, precisam_atencao::text from public.get_listings_dashboard_counts(p_organization_id => '${ORG}'${extra})`,
+    );
+
+  const motivos = (linhas: Linha[]) => Object.fromEntries(linhas.map((l) => [l.item_id, l.atencao_motivos]));
+
+  beforeAll(async () => {
+    const dias = await client.query<{ hoje: string; de: string; ontem: string }>(
+      `select (now() at time zone 'America/Sao_Paulo')::date::text as hoje,
+              ((now() at time zone 'America/Sao_Paulo')::date - 6)::text as de,
+              ((now() at time zone 'America/Sao_Paulo')::date - 1)::text as ontem`,
+    );
+    hoje = dias.rows[0]?.hoje ?? "";
+    de = dias.rows[0]?.de ?? "";
+    const ontem = dias.rows[0]?.ontem ?? "";
+
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-c085@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org C-85', 'org-c085') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $3, 'Conta A C-85', 'atencaotest-c085-a', 'CONNECTED', 9990851, now()),
+              ($2, $3, 'Conta B C-85', 'atencaotest-c085-b', 'CONNECTED', 9990852, now())
+       on conflict (id) do nothing`,
+      [CONTA_A, CONTA_B, ORG],
+    );
+
+    const sku = async (codigo: string) =>
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, $2, 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG, codigo],
+        )
+      ).rows[0]?.id ?? "";
+    const s1 = await sku("C85-1");
+    const s3 = await sku("C85-3");
+    const s4 = await sku("C85-4");
+    const s5 = await sku("C85-5");
+    const s7 = await sku("C85-7");
+
+    // 1 vende sem estoque. 2 vende sem vinculo E sem estoque (dois motivos, na
+    // ordem). 3 pausado com acao aberta. 4 em
+    // queda (conta B). 5 e 6, o mesmo SKU a 100 e 200 em contas diferentes:
+    // dispersao de 100%. 7 vende, sem motivo. 8 encerrado: nao e candidato. 9
+    // sem vinculo e sem venda (a metrica so existe com venda: units_sold > 0).
+    // 10 sem estoque e sem venda: parado, nao "vendendo sem estoque".
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB8500001', 'Sem estoque', 'active', 50, 'BRL', 0, $4),
+              ($1, $2, 'MLB8500002', 'Sem vinculo', 'active', 50, 'BRL', 0, null),
+              ($1, $2, 'MLB8500003', 'Com acao', 'paused', 50, 'BRL', 5, $5),
+              ($1, $3, 'MLB8500004', 'Em queda', 'active', 50, 'BRL', 5, $6),
+              ($1, $2, 'MLB8500005', 'Barato', 'active', 100, 'BRL', 5, $7),
+              ($1, $3, 'MLB8500006', 'Caro', 'active', 200, 'BRL', 5, $7),
+              ($1, $2, 'MLB8500007', 'Tranquilo', 'active', 50, 'BRL', 5, $8),
+              ($1, $2, 'MLB8500008', 'Encerrado', 'closed', 50, 'BRL', 0, $8),
+              ($1, $2, 'MLB8500009', 'Zerado', 'active', 50, 'BRL', 5, null),
+              ($1, $2, 'MLB8500010', 'Parado', 'active', 50, 'BRL', 0, $4)
+       on conflict (ml_account_id, item_id) do update
+         set status = excluded.status, price = excluded.price, available_quantity = excluded.available_quantity, sku_id = excluded.sku_id`,
+      [ORG, CONTA_A, CONTA_B, s1, s3, s4, s5, s7],
+    );
+    await client.query(
+      `insert into public.daily_listing_metrics (organization_id, ml_account_id, mlb_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, 'MLB8500001', $3, 2, 100, 1, 1),
+              ($1, $2, 'MLB8500002', $3, 2, 100, 1, 1),
+              ($1, $2, 'MLB8500007', $3, 2, 100, 1, 1),
+              ($1, $2, 'MLB8500008', $3, 2, 100, 1, 1)
+       on conflict do nothing`,
+      [ORG, CONTA_A, ontem],
+    );
+    // A acao aberta do 3 conta; a resolvida do 7 e a do SKU do 7 (sem anuncio) nao.
+    await client.query(
+      `insert into public.actions (organization_id, kind, severity, confidence, evidence, recommendation, status, created_by, dedup_key, ml_account_id, mlb_id, sku_id)
+       values ($1, 'frete_anomalo', 'media', 'media', '{}', 'x', 'novo', 'system', 'c085-aberta', $2, 'MLB8500003', null),
+              ($1, 'frete_anomalo', 'media', 'media', '{}', 'x', 'resolvido', 'system', 'c085-resolvida', $2, 'MLB8500007', null),
+              ($1, 'venda_anomala', 'media', 'media', '{}', 'x', 'novo', 'system', 'c085-do-sku', null, null, $3)
+       on conflict do nothing`,
+      [ORG, CONTA_A, s7],
+    );
+    // A queda dos 7 dias no 4; a de 15 dias no 7 nao vale no periodo de 7.
+    await client.query(
+      `insert into public.listing_sales_drop (organization_id, ml_account_id, item_id, periodo_dias, periodo_de, periodo_ate, unidades_periodo, amostras, estado, z, calculado_em)
+       values ($1, $2, 'MLB8500004', 7, $4::date - 6, $4::date, 0, 8, 'queda', -3, now()),
+              ($1, $3, 'MLB8500007', 15, $4::date - 14, $4::date, 0, 8, 'queda', -3, now())
+       on conflict do nothing`,
+      [ORG, CONTA_B, CONTA_A, ontem],
+    );
+  });
+
+  it("cada anúncio ativo ou pausado leva os seus motivos, na ordem; o encerrado e o tranquilo, nenhum", async () => {
+    const linhas = await lista(`, p_preco_teto => ${String(TETO)}`);
+
+    expect(motivos(linhas)).toEqual({
+      MLB8500001: ["sem_estoque_vendendo"],
+      MLB8500002: ["sem_estoque_vendendo", "sem_vinculo_vendendo"],
+      MLB8500003: ["acao_aberta"],
+      MLB8500004: ["queda"],
+      MLB8500005: ["preco_divergente"],
+      MLB8500006: ["preco_divergente"],
+      MLB8500007: [],
+      MLB8500008: [],
+      MLB8500009: [],
+      MLB8500010: [],
+    });
+  });
+
+  it("'atencao' filtra o OU das cinco, e a faixa conta o mesmo conjunto", async () => {
+    const linhas = await lista(`, p_preco_teto => ${String(TETO)}, p_atencao => 'atencao'`);
+    const contagem = await faixa(`, p_preco_teto => ${String(TETO)}, p_date_from => '${de}', p_date_to => '${hoje}'`);
+
+    expect(linhas.map((l) => l.item_id)).toEqual(["MLB8500001", "MLB8500002", "MLB8500003", "MLB8500004", "MLB8500005", "MLB8500006"]);
+    expect(linhas[0]?.total_count).toBe("6");
+    expect(contagem).toEqual([{ total: "10", precisam_atencao: "6" }]);
+  });
+
+  it("as contas escolhidas recortam a lista e a faixa; a dispersão segue comparando com a outra conta", async () => {
+    const soA = await lista(`, p_preco_teto => ${String(TETO)}, p_atencao => 'atencao', p_ml_account_ids => array['${CONTA_A}']::uuid[]`);
+    const soB = await lista(`, p_preco_teto => ${String(TETO)}, p_ml_account_ids => array['${CONTA_B}']::uuid[]`);
+    const faixaA = await faixa(
+      `, p_preco_teto => ${String(TETO)}, p_date_from => '${de}', p_date_to => '${hoje}', p_ml_account_ids => array['${CONTA_A}']::uuid[]`,
+    );
+    const asDuas = await lista(`, p_ml_account_ids => array['${CONTA_A}', '${CONTA_B}']::uuid[]`);
+
+    // O 5 so e divergente por causa do 6, que e da conta B.
+    expect(soA.map((l) => l.item_id)).toEqual(["MLB8500001", "MLB8500002", "MLB8500003", "MLB8500005"]);
+    expect(soB.map((l) => l.item_id)).toEqual(["MLB8500004", "MLB8500006"]);
+    expect(faixaA).toEqual([{ total: "8", precisam_atencao: "4" }]);
+    expect(asDuas).toHaveLength(10);
+  });
+
+  it("sem o teto, ou com o período que não termina hoje ou fora de 7 a 90 dias, os motivos e a contagem ficam NULOS", async () => {
+    const semTeto = await lista("");
+    const ontem = await asUser<Linha>(
+      ADMIN,
+      `select item_id, atencao_motivos, total_count::text
+         from public.get_listings_dashboard(p_organization_id => '${ORG}', p_date_from => '${de}'::date - 1, p_date_to => '${hoje}'::date - 1, p_preco_teto => ${String(TETO)})`,
+    );
+    const dezDias = await asUser<Linha>(
+      ADMIN,
+      `select item_id, atencao_motivos, total_count::text
+         from public.get_listings_dashboard(p_organization_id => '${ORG}', p_date_from => '${hoje}'::date - 9, p_date_to => '${hoje}', p_preco_teto => ${String(TETO)})`,
+    );
+    const faixaSemDatas = await faixa(`, p_preco_teto => ${String(TETO)}`);
+    const faixaSemTeto = await faixa(`, p_date_from => '${de}', p_date_to => '${hoje}'`);
+
+    for (const linhas of [semTeto, ontem, dezDias]) {
+      expect(linhas.length).toBeGreaterThan(0);
+      expect(new Set(linhas.map((l) => l.atencao_motivos))).toEqual(new Set([null]));
+    }
+    expect(faixaSemDatas[0]?.precisam_atencao).toBeNull();
+    expect(faixaSemTeto[0]?.precisam_atencao).toBeNull();
+  });
+
+  it("recusa o filtro sem as réguas, o array vazio e conta com contas", async () => {
+    await expect(lista(", p_atencao => 'atencao'")).rejects.toThrow(/p_atencao exige/);
+    await expect(lista(`, p_ml_account_ids => array[]::uuid[]`)).rejects.toThrow(/p_ml_account_ids vazio/);
+    await expect(lista(`, p_ml_account_id => '${CONTA_A}', p_ml_account_ids => array['${CONTA_A}']::uuid[]`)).rejects.toThrow(/juntos/);
+    await expect(faixa(`, p_ml_account_ids => array[]::uuid[]`)).rejects.toThrow(/p_ml_account_ids vazio/);
+    await expect(faixa(`, p_ml_account_id => '${CONTA_A}', p_ml_account_ids => array['${CONTA_B}']::uuid[]`)).rejects.toThrow(/juntos/);
+  });
+
+  it("a chamada de antes, sem os parâmetros novos, segue igual, e quem é de fora não vê nada", async () => {
+    const antes = await asUser<{ n: string }>(
+      ADMIN,
+      `select count(*)::text as n from public.get_listings_dashboard('${ORG}', '${de}', '${hoje}')`,
+    );
+    const faixaAntes = await asUser<{ total: string }>(ADMIN, `select total::text from public.get_listings_dashboard_counts('${ORG}')`);
+    const deFora = await asUser<{ item_id: string }>(
+      DE_OUTRA_ORG,
+      `select item_id from public.get_listings_dashboard(p_organization_id => '${ORG}', p_date_from => '${de}', p_date_to => '${hoje}', p_ml_account_ids => array['${CONTA_A}']::uuid[])`,
+    );
+
+    expect(antes).toEqual([{ n: "10" }]);
+    expect(faixaAntes).toEqual([{ total: "10" }]);
+    expect(deFora).toHaveLength(0);
+  });
+});
+
 describe("o anúncio excluído no Mercado Livre sai das telas (D-631)", () => {
   const ORG = "99999999-0000-4000-8000-00000000d631";
   const CONTA = "cccccccc-0000-4000-8000-0000000a0631";
