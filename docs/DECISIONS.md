@@ -19176,6 +19176,38 @@ O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a respondera
 
 **Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
 
+## D-647 - O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+
+**Contexto:** dois achados de 22/10. As migrations de hoje já estavam na `main`, e o disparo de produção ainda não tinha sido feito.
+- **O do A2 (D-648):** a aba Decisões do SKU passa a mostrar o motivo com que o sistema encerrou a ação. O motivo do acumulado da D-643 citava "(D-643)", um código interno, na frente do operador.
+- **O do A3:** a busca de `get_listings_dashboard` usava `ilike '%' || p_search || '%'`. O `%` e o `_` digitados viravam curinga: "KIT_R" achava "KIT-R", e "50%" achava tudo que tinha "50".
+  - O resultado só crescia, então era frágil, mas não quebrava.
+  - O CSV de `/anuncios` lê a mesma função.
+
+**Decisão** (migration `20261022160000`, sem mudar contrato):
+1. **O motivo novo:** "Substituída pelo acompanhamento por SKU e canal: o alerta volta como um cartão só, atualizado enquanto a venda fugir do esperado e encerrado quando ela voltar ao normal."
+   - Vale para a venda acima e para a venda abaixo do esperado (sugestão do A2).
+   - O resto de `registrar_vendas_anomalas` é o da D-643.
+2. **Nenhuma linha nasce com o texto antigo.** Quem chama a função é o worker novo. A publicação vai nesta ordem: as migrations de hoje, esta, e só então o worker.
+3. **A busca vira texto puro**, com `strpos` sobre `lower`, como a Curva ABC (`20261007200000`).
+   - Muda na lista, que serve também ao CSV, e na faixa (`get_listings_dashboard_counts`), porque as duas precisam contar o mesmo.
+   - O resto dos corpos é o da `20261022120000`. O `pg_get_functiondef` foi comparado antes e depois: só mudam as três linhas da busca em cada função e o texto do motivo, e as permissões ficam iguais.
+
+**Verificação:**
+- integração:
+  - na lista e na faixa, a busca com `_` ou com `%` não acha mais o anúncio;
+  - a busca pelo próprio código acha, em qualquer caixa;
+  - o motivo do acumulado não leva código de decisão;
+- mutação: 5, e cada uma derruba o teste: a lista e a faixa de volta ao `ilike`, a busca e a coluna sem `lower`, e o texto antigo do motivo;
+- `db reset` e a suíte inteira: 1130 de 1130.
+
+**Fora desta correção:** o mesmo `ilike '%' || p_…` segue em outras 11 funções de busca: estoque, movimentações, compras, reposição, Full, documentos, vinculações e histórico de preço. Elas ficam para uma fatia própria, no mesmo padrão.
+
+**Impacto:**
+- `supabase/migrations/20261022160000_motivo_e_busca_literal.sql`;
+- `packages/db/src/rls.integration.test.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
+
 ## D-650 - A barra do topo cabe no celular: a busca cede espaço ao "Sair"
 
 **Contexto:** no teste de pior caso de 22/10, o A3 achou o "Sair" cortado na barra do topo do celular, em toda tela. Com o Pixel 5 emulado, a 320 px só aparecia a borda do botão, e a 360 px ele aparecia como "Sai". A 390 px cabia. Não depende de dado: a barra é a mesma em toda rota. Abaixo de 850 px a barra lateral vira o trilho de 58 px, e a barra do topo fica com o resto. Nesse resto a busca (`width: min(455px, 50%)`) não encolhia, e o atalho "Ctrl K" ocupava espaço num aparelho de toque. As ações (notificações, perfil e "Sair") transbordavam pela direita. É o shell, então o conserto é do A2, como o A3 indicou.

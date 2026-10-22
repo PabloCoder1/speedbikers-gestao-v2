@@ -12100,6 +12100,35 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     }
   });
 
+  it("D-647: a busca é texto puro, na lista e na faixa — `%` e `_` não são curinga, e maiúscula não importa", async () => {
+    const naLista = async (busca: string): Promise<number> =>
+      Number(
+        (
+          await asUser<{ total_count: string }>(
+            ADMIN_SB,
+            `select total_count from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+               p_search => '${busca}', p_limit => 1)`,
+          )
+        )[0]?.total_count ?? 0,
+      );
+    const naFaixa = async (busca: string): Promise<number> =>
+      Number(
+        (await asUser<{ total: string }>(ADMIN_SB, `select total from public.get_listings_dashboard_counts('${ORG_SB}', p_search => '${busca}')`))[0]
+          ?.total,
+      );
+
+    // O anúncio continua achado pelo próprio código, em qualquer caixa.
+    expect(await naLista("MLB9001005")).toBeGreaterThan(0);
+    expect(await naLista("mlb9001005")).toBe(await naLista("MLB9001005"));
+    expect(await naFaixa("mlb9001005")).toBe(await naLista("MLB9001005"));
+    // Com `ilike`, o `_` era "qualquer caractere" e o `%`, "qualquer texto":
+    // os dois achavam o MLB9001005. Agora são o caractere digitado.
+    for (const busca of ["MLB900100_", "%MLB9001005"]) {
+      expect(await naLista(busca)).toBe(0);
+      expect(await naFaixa(busca)).toBe(0);
+    }
+  });
+
   it("p_order ordena pela coluna pedida, nulo vai para o fim e valor desconhecido é a ordem de antes", async () => {
     const ordem = async (order: string | null): Promise<{ item_id: string; price: string; visits: string | null }[]> =>
       asUser(
@@ -15337,12 +15366,14 @@ describe("a venda anômala como episódio por SKU e canal (D-643)", () => {
 
     expect(primeira).toMatchObject({ legado_encerradas: 2, criadas: 2, atualizadas: 0 });
     expect(repetida).toMatchObject({ legado_encerradas: 0, criadas: 0, atualizadas: 2 });
-    expect(linhas.slice(0, 3).map((l) => [l.status, l.motivo?.includes("D-643") ?? false])).toEqual([
+    expect(linhas.slice(0, 3).map((l) => [l.status, l.motivo?.includes("acompanhamento por SKU e canal") ?? false])).toEqual([
       ["resolvido", true],
       ["resolvido", true],
       // A que uma pessoa ja tinha resolvido nao ganha o motivo do sistema.
       ["resolvido", false],
     ]);
+    // D-647: o motivo aparece na tela; nunca leva o codigo da decisao.
+    expect(linhas.filter((l) => /D-\d{3}/.test(l.motivo ?? ""))).toEqual([]);
     expect(linhas.slice(3).map((l) => [l.subject_key, l.status, l.dedup_key, l.last_detected_on, l.primeira])).toEqual([
       [`ML:${sku}`, "novo", `venda_anomala:ML:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],
       [`SHOPEE:${sku}`, "novo", `venda_anomala:SHOPEE:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],
