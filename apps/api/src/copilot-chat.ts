@@ -2,6 +2,8 @@ import { recordAiRun } from "@sb/db";
 import { toSalesMetricDate } from "@sb/domain";
 import {
   listingPerformanceInputSchema,
+  marketplaceSalesSummaryInputSchema,
+  marketplaceSkuSalesInputSchema,
   resolveCatalogEntityInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
@@ -16,6 +18,8 @@ import type { Caller } from "./auth.js";
 import type { CopilotDeps } from "./copilot.js";
 import {
   runListingPerformance,
+  runMarketplaceSalesSummary,
+  runMarketplaceSkuSales,
   runResolveCatalogEntity,
   runSalesAccountComparison,
   runSalesPeriodComparison,
@@ -108,8 +112,12 @@ function forcedToolForMessage(message: string): "resolve_catalog_entity" | "sale
   const normalized = message.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
   const asksForProduct = /\b(produto|produtos|sku|skus|item|itens)\b/.test(normalized);
   const asksForDecline = /\b(queda|quedas|caiu|ca[ií]ram|vendeu menos|venderam menos|perdeu receita)\b/.test(normalized);
+  // C-84: sales_sku_declines e so do Mercado Livre. Forcar a queda da Shopee
+  // nela responderia sobre o canal errado; o modelo diz que nao ha queda da
+  // Shopee no chat.
+  const asksForShopee = /\bshopee\b/.test(normalized);
 
-  return asksForProduct && asksForDecline ? "sales_sku_declines" : undefined;
+  return asksForProduct && asksForDecline && !asksForShopee ? "sales_sku_declines" : undefined;
 }
 
 /**
@@ -218,6 +226,51 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
       required: ["itemId", "mlAccountId", "dateFrom", "dateTo"],
     },
   },
+  /*
+    C-84 (D-641): a Shopee. As de cima sao do Mercado Livre; estas duas leem as
+    RPCs multicanal das telas. A descricao diz o que a receita da Shopee e e o
+    que estas NAO respondem.
+  */
+  {
+    name: "marketplace_sales_summary",
+    description:
+      "Vendas de um período POR CANAL (Mercado Livre e Shopee) e por conta ou loja: compras, unidades, receita conhecida e ticket médio, mais o total. Use para qualquer pergunta sobre a Shopee ou para comparar os canais. A receita da Shopee é a CONHECIDA: purchasesWithoutRevenue diz quantas compras ficaram de fora. Pedido do ML e compra da Shopee não somam: some compras. Linha de conta com countsInTotals falso (loja sandbox ou ainda não lida) não entra no total.",
+    input_schema: {
+      type: "object",
+      properties: {
+        dateFrom: DATE_PROPERTY,
+        dateTo: DATE_PROPERTY,
+        marketplaces: {
+          type: "array",
+          items: { type: "string", enum: ["ML", "SHOPEE"] },
+          description: "Canais; omita para os dois",
+        },
+        accountIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "UUIDs de contas do ML e/ou lojas da Shopee (da lista do contexto); omita para todas",
+        },
+      },
+      required: ["dateFrom", "dateTo"],
+    },
+  },
+  {
+    name: "marketplace_sku_sales",
+    description:
+      "Os SKUs mais vendidos de um período, com unidades, receita e compras do Mercado Livre e da Shopee em colunas separadas. Use para 'o que mais vendeu na Shopee' ou 'qual produto vende mais em cada canal'. Não compara com o período anterior (não diz o que caiu) e não fala de anúncio.",
+    input_schema: {
+      type: "object",
+      properties: {
+        dateFrom: DATE_PROPERTY,
+        dateTo: DATE_PROPERTY,
+        marketplaces: { type: "array", items: { type: "string", enum: ["ML", "SHOPEE"] }, description: "Canais; omita para os dois" },
+        accountIds: { type: "array", items: { type: "string" }, description: "UUIDs de contas do ML e/ou lojas da Shopee; omita para todas" },
+        orderBy: { type: "string", enum: ["revenue", "units"], description: "Ordenar por receita (padrão) ou unidades" },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Quantidade de SKUs; padrão 10" },
+      },
+      required: ["dateFrom", "dateTo"],
+    },
+  },
 ];
 
 interface ChatToolRunner {
@@ -242,6 +295,8 @@ const RUNNERS: Record<string, ChatToolRunner> = {
   resolve_catalog_entity: { schema: resolveCatalogEntityInputSchema, run: runResolveCatalogEntity },
   sku_replenishment: { schema: skuReplenishmentInputSchema, run: runSkuReplenishment },
   listing_performance: { schema: listingPerformanceInputSchema, run: runListingPerformance },
+  marketplace_sales_summary: { schema: marketplaceSalesSummaryInputSchema, run: runMarketplaceSalesSummary },
+  marketplace_sku_sales: { schema: marketplaceSkuSalesInputSchema, run: runMarketplaceSkuSales },
 };
 
 /**
@@ -267,21 +322,27 @@ function describeContext(context: CopilotContext | undefined): string[] {
   ];
 }
 
-function buildSystemPrompt(
-  today: string,
-  accounts: { id: string; label: string }[],
-  context: CopilotContext | undefined,
-): string {
-  const accountList =
-    accounts.length > 0
-      ? accounts.map((account) => `- ${account.label}: ${account.id}`).join("\n")
-      : "(nenhuma conta acessível)";
+/** C-84: a conta do ML ou a loja da Shopee que o usuário alcança (`marketplace_accounts`, sob RLS). */
+interface ChatAccount {
+  marketplace: string;
+  id: string;
+  label: string;
+}
+
+function buildSystemPrompt(today: string, accounts: ChatAccount[], context: CopilotContext | undefined): string {
+  const lista = (marketplace: string, vazio: string) => {
+    const doCanal = accounts.filter((account) => account.marketplace === marketplace);
+
+    return doCanal.length > 0 ? doCanal.map((account) => `- ${account.label}: ${account.id}`).join("\n") : vazio;
+  };
 
   return [
-    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados da operação no Mercado Livre.",
+    "Você é o Copiloto da Speed Bikers Gestão, um assistente de dados da operação no Mercado Livre e na Shopee.",
     `Hoje é ${today} (fuso America/Sao_Paulo). Use esta data para calcular períodos como "últimos 7 dias".`,
     "Contas Mercado Livre que este usuário pode consultar (rótulo: UUID):",
-    accountList,
+    lista("ML", "(nenhuma conta acessível)"),
+    "Lojas Shopee que este usuário pode consultar (rótulo: UUID):",
+    lista("SHOPEE", "(nenhuma loja acessível)"),
     ...describeContext(context),
     "Regras estritas:",
     "- Responda SOMENTE com base nos resultados das ferramentas. Nunca invente número, conta ou período.",
@@ -291,6 +352,9 @@ function buildSystemPrompt(
     "- Quando a pergunta trouxer um código (por exemplo 13014, SB-001 ou MLB123), use resolve_catalog_entity ANTES de outra ferramenta. SKU usa sku_replenishment; LISTING usa listing_performance com o mlAccountId retornado. AMBIGUO não é licença para adivinhar: mostre a ambiguidade ou use somente a conta que o usuário explicitou. MLB é sempre anúncio.",
     "- Em listing_performance, SEM_COBERTURA significa que a coleta de visitas não cobriu a janela: diga que visitas são desconhecidas, nunca '0 visitas' ou 'falta de tráfego'. PARCIAL exige declarar quantos dias foram observados. Só trate visitas como zero sob cobertura observada.",
     "- Não sugira que um anúncio está pausado, inativo ou sem visibilidade sem o status retornado pela ferramenta; hipótese não é fato.",
+    "- sales_summary, sales_period_comparison, sales_account_comparison, sales_sku_declines, resolve_catalog_entity, sku_replenishment e listing_performance são SÓ do Mercado Livre: mlAccountId nunca é uma loja da Shopee. Para a Shopee, ou para os dois canais juntos, use marketplace_sales_summary (vendas por canal e por conta ou loja) ou marketplace_sku_sales (os SKUs mais vendidos por canal).",
+    "- Da Shopee o chat não tem queda por produto, desempenho de anúncio nem estoque por loja: diga isso em vez de responder com o dado do Mercado Livre.",
+    "- A receita da Shopee é a conhecida: diga quantas compras ficaram sem receita (purchasesWithoutRevenue ou shopeeItemsWithoutRevenue) quando houver.",
     "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, quedas por produto, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
     "- Número ausente NÃO é zero: cobertura, estado e sugestão vêm nulos sob recusa (sem configuração de reposição, saldo sentinela, histórico incompleto), e conversão vem nula quando não houve visita. Diga a recusa em vez de preencher a lacuna.",
     "- Perguntas sobre um dia ainda em andamento podem estar incompletas — as métricas fecham por dia.",
@@ -316,8 +380,17 @@ export async function runCopilotChat(
   let costUsd = 0;
 
   try {
-    const accountsResult = await userClient.from("ml_accounts").select("id, label").order("label");
-    const accounts = accountsResult.error === null ? accountsResult.data : [];
+    // C-84: as contas do ML e as lojas live da Shopee, sob a RLS de quem pergunta.
+    const accountsResult = await userClient
+      .from("marketplace_accounts")
+      .select("marketplace, account_id, name, environment")
+      .order("name");
+    const accounts: ChatAccount[] =
+      accountsResult.error === null
+        ? accountsResult.data
+            .filter((row) => row.environment === "live")
+            .map((row) => ({ marketplace: row.marketplace, id: row.account_id, label: row.name }))
+        : [];
 
     const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];

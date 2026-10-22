@@ -163,6 +163,26 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.33 A Shopee no Copiloto (C-84, D-641) — em código
+
+- **Duas ferramentas novas** no chat e no `/query`, sem migration (as RPCs já estão em produção):
+  - `marketplace_sales_summary` (`get_marketplace_sales_summary`) devolve `{ total, byMarketplace, byAccount }`. Cada linha traz `marketplace`, `accountId`, `accountName`, `countsInTotals`, `purchases`, `units`, `knownRevenue`, `purchasesWithoutRevenue`, `averageTicket`, `mlOrders` e `lastUpdatedAt`;
+  - `marketplace_sku_sales` (`get_marketplace_sku_sales`) devolve `{ orderBy, totalSkus, rows }` com as colunas de cada canal.
+- **As ferramentas de antes** continuam só do ML. O prompt lista as lojas live da Shopee à parte e diz que a queda, o anúncio e o estoque da Shopee não existem no chat.
+- **`narrate_sku_diagnosis`** aceita `marketplace` ('ML' | 'SHOPEE'), o canal do diagnóstico do C-83; ausente é o do ML. Pode mandar antes desta api em produção: a de antes descarta a chave desconhecida (o `z.object` do Zod), então o pedido não falha, só a narração sai sem o canal.
+- **Para a tela:** o rótulo das duas no `TOOL_LABEL` do chat (sugestão: "consultou vendas por canal" e "consultou os SKUs mais vendidos por canal").
+
+### 3.32 O diagnóstico de venda por canal (C-83, D-639) — em código
+
+- **As três funções** (`get_sku_sales_baseline`, `get_sku_average_prices` e `get_sku_correlated_events`) recebem no fim `p_marketplaces text[]` ('ML' e/ou 'SHOPEE'; nulo = só o ML, o resultado de antes) e devolvem no fim `marketplace`. A lista vazia ou um valor fora dela é recusado.
+- **A linha de base:** uma linha por SKU, dia da semana e canal, com a mesma régua (8 ocorrências, mínimo de 4). Na Shopee, a venda VALIDA da loja live.
+- **O preço médio:** por canal, a média dos preços do dia; na Shopee, só com a receita conhecida.
+- **A correlação:** `marketplace` NULO no evento do SKU (vale para os dois canais), 'ML' no do anúncio e do pedido do ML, e 'SHOPEE' na mudança de preço do anúncio da Shopee (C-81).
+- **O worker (decisão do dono, 22/10, "por canal"):** cada canal é avaliado separado.
+  - A ação `venda_anomala` leva `evidence.marketplace`.
+  - A do ML mantém a chave de antes; a da Shopee é `sales_anomaly:shopee:<sku>:<dia>`.
+- **Para a tela:** o `/diagnostico` e o diagnóstico do SKU mandam `p_marketplaces` só com valor e só depois da migration `20261022130000` em produção. Com os dois canais, o mesmo SKU pode ter duas linhas.
+
 ### 3.31 Várias contas e "Precisam de atenção" na /anuncios (C-80 e C-85, D-637) — em código
 
 - **C-80, `p_ml_account_ids uuid[] default null`**, no fim da `get_listings_dashboard` (e, por ela, do CSV) e da `get_listings_dashboard_counts`.

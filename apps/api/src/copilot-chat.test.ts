@@ -13,7 +13,18 @@ const CALLER: Caller = {
   role: "ADMIN",
 };
 
-const ACCOUNTS = [{ id: "acc-1", label: "Speedbikers loja 1" }];
+// C-84: a lista vem de `marketplace_accounts` (a conta do ML e as lojas da Shopee).
+const ACCOUNTS = [
+  { marketplace: "ML", account_id: "acc-1", name: "Speedbikers loja 1", environment: "live" },
+  { marketplace: "SHOPEE", account_id: "shop-1", name: "Loja SB", environment: "live" },
+  { marketplace: "SHOPEE", account_id: "shop-teste", name: "Loja de teste", environment: "sandbox" },
+];
+
+const MARKETPLACE_ROWS = [
+  { nivel: "TOTAL", marketplace: null, account_id: null, account_name: null, environment: null, compras: 12, unidades: 15, receita_bruta: 1500, pedidos_sem_receita: 1, ticket_medio: 136.36, pedidos_ml: null, ultima_atualizacao: "2026-08-28T00:00:00Z" },
+  { nivel: "MARKETPLACE", marketplace: "SHOPEE", account_id: null, account_name: null, environment: null, compras: 4, unidades: 5, receita_bruta: 300, pedidos_sem_receita: 1, ticket_medio: 100, pedidos_ml: null, ultima_atualizacao: "2026-08-28T00:00:00Z" },
+  { nivel: "CONTA", marketplace: "SHOPEE", account_id: "shop-1", account_name: "Loja SB", environment: "live", compras: 4, unidades: 5, receita_bruta: 300, pedidos_sem_receita: 1, ticket_medio: 100, pedidos_ml: null, ultima_atualizacao: "2026-08-28T00:00:00Z" },
+];
 
 const SUMMARY_ROW = {
   units_sold: 10,
@@ -25,11 +36,11 @@ const SUMMARY_ROW = {
   last_computed_at: "2026-08-28T00:00:00Z",
 };
 
-/** Fake: `ml_accounts` para o system prompt e a RPC de vendas. */
+/** Fake: `marketplace_accounts` para o system prompt e as RPCs de vendas. */
 function fakeUserClient(): UserClient {
   return {
     from: (table: string) => {
-      if (table !== "ml_accounts") throw new Error(`tabela inesperada: ${table}`);
+      if (table !== "marketplace_accounts") throw new Error(`tabela inesperada: ${table}`);
 
       const chain = {
         select: () => chain,
@@ -38,7 +49,10 @@ function fakeUserClient(): UserClient {
 
       return chain;
     },
-    rpc: () => ({ single: () => Promise.resolve({ data: SUMMARY_ROW, error: null }) }),
+    rpc: (fn: string) =>
+      fn === "get_marketplace_sales_summary"
+        ? Promise.resolve({ data: MARKETPLACE_ROWS, error: null })
+        : { single: () => Promise.resolve({ data: SUMMARY_ROW, error: null }) },
   } as unknown as UserClient;
 }
 
@@ -209,6 +223,58 @@ describe("runCopilotChat (D-114)", () => {
     expect(run0.cost_usd).toBeCloseTo(0.003);
     expect(run0.tool_names).toEqual(["copilot_chat", "sales_summary"]);
     expect(run0.llm_used).toBe(true);
+  });
+});
+
+/* C-84 (D-641): a Shopee no chat. */
+describe("a Shopee no Copiloto (C-84)", () => {
+  it("o prompt lista as lojas live da Shopee à parte das contas do ML, e a sandbox não", async () => {
+    const { plan } = await run([finalText("ok")]);
+    const system = plan.mock.calls[0]?.[0]?.system ?? "";
+
+    expect(system).toContain("Contas Mercado Livre que este usuário pode consultar (rótulo: UUID):\n- Speedbikers loja 1: acc-1");
+    expect(system).toContain("Lojas Shopee que este usuário pode consultar (rótulo: UUID):\n- Loja SB: shop-1");
+    expect(system).not.toContain("shop-teste");
+    expect(system).toMatch(/SÓ do Mercado Livre: mlAccountId nunca é uma loja da Shopee/);
+  });
+
+  it("oferece as duas ferramentas multicanal", async () => {
+    const { plan } = await run([finalText("ok")]);
+    const nomes = (plan.mock.calls[0]?.[0]?.tools ?? []).map((tool) => tool.name);
+
+    expect(nomes).toEqual(expect.arrayContaining(["marketplace_sales_summary", "marketplace_sku_sales"]));
+  });
+
+  it("a queda pedida da Shopee não é forçada para a ferramenta do Mercado Livre", async () => {
+    const { plan } = await run([finalText("ok")], "Quais produtos caíram na Shopee nos últimos 7 dias?");
+
+    expect(plan.mock.calls[0]?.[0]?.toolChoice).toBeUndefined();
+  });
+
+  it("marketplace_sales_summary roda a RPC multicanal e devolve o total, o canal e a loja", async () => {
+    const { events, plan } = await run([
+      {
+        blocks: [
+          {
+            type: "tool_use",
+            id: "tu-1",
+            name: "marketplace_sales_summary",
+            input: { dateFrom: "2026-08-21", dateTo: "2026-08-28", marketplaces: ["SHOPEE"] },
+          },
+        ],
+        stopReason: "tool_use",
+        costUsd: 0.001,
+      },
+      finalText("Na Shopee, 4 compras."),
+    ]);
+
+    const segunda = plan.mock.calls[1]?.[0]?.messages ?? [];
+    const resultado = JSON.stringify(segunda[segunda.length - 1]);
+
+    expect(events).toContainEqual({ type: "tool", name: "marketplace_sales_summary" });
+    expect(resultado).toContain("byMarketplace");
+    expect(resultado).toContain("countsInTotals");
+    expect(resultado).toContain("Loja SB");
   });
 });
 
