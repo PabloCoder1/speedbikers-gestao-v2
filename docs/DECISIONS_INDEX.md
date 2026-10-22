@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **554** (D-001 a D-645).
+Decisões registradas: **555** (D-001 a D-646).
 
 ## Por domínio
 
-### atendimento (58)
+### atendimento (59)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -76,6 +76,7 @@ Decisões registradas: **554** (D-001 a D-645).
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 - **D-645** — A conexão da loja do TikTok Shop (fatia 1)
+- **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
 
 ### banco/rls (46)
 
