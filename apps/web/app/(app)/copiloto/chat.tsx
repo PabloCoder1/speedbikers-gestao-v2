@@ -4,6 +4,7 @@ import { useRef, useState, type ReactNode } from "react";
 
 import type { CopilotScreenContext } from "../../../components/copilot-context";
 import { createClient } from "../../../lib/supabase/browser";
+import { rotuloDaFerramenta } from "../../../lib/copiloto-ferramentas";
 
 /**
  * Chat do Copiloto (D-114). O texto chega por SSE delta a delta — inclusive
@@ -46,15 +47,6 @@ const SUGESTOES = [
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-const TOOL_LABEL: Record<string, string> = {
-  sales_summary: "consultou vendas do período",
-  sales_period_comparison: "comparou com o período anterior",
-  sales_account_comparison: "comparou as contas",
-  // As duas de D-293. O marcador existe para o ESCOPO ficar visível: sem ele,
-  // uma resposta sobre estoque e uma sobre venda chegam iguais na tela.
-  sku_replenishment: "consultou estoque e reposição do SKU",
-  listing_performance: "consultou desempenho do anúncio",
-};
 
 interface Exchange {
   question: string;
@@ -270,7 +262,7 @@ export function CopilotChat({
             {exchange.tools.length > 0 && (
               <p className="sb-copilot-tools" aria-label="Fontes consultadas">
                 <span className="sb-copilot-tools-label">Fontes consultadas</span>
-                {exchange.tools.map((tool) => TOOL_LABEL[tool] ?? tool).join(" · ")}
+                {exchange.tools.map(rotuloDaFerramenta).join(" · ")}
               </p>
             )}
 
