@@ -163,6 +163,24 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.34 A conexão da loja do TikTok Shop (C-86, D-645) — em código
+
+- **A leitura:** `tiktok_shops`, pela RLS, para quem é da organização. A tela lê estas colunas:
+  - `id`, `shop_id` (texto) e `shop_name` (NULO se o TikTok não mandou);
+  - `region`, `seller_type` e `seller_name`;
+  - `granted_scopes text[]`;
+  - `status` (CONNECTED ou ERROR), `last_error` e `connected_at`;
+  - `auth_expires_at`, o fim da autorização (NULO se não veio).
+- **Conectar:** `POST /v1/tiktok-shop/connect`, com o JWT de ADMIN e sem corpo, devolve `{ authorizationUrl }`. A tela abre o link; o TikTok devolve o navegador para `GET /oauth/tiktok-shop/callback`, que responde em JSON, como o da Shopee.
+- **Os códigos:**
+  - 503 `not_configured`: o TikTok não está ligado no ambiente;
+  - 403: o papel não é ADMIN;
+  - 409 `rejected`: a autorização não pôde começar.
+- **Ainda não há:** pedidos, renovação e webhook (fatias 2 e 3). A loja conectada não tem venda nenhuma, e nada do TikTok entra nos totais.
+- **Para a tela:** o TikTok em `/contas`, ao lado das lojas da Shopee, com o botão "Conectar loja do TikTok Shop" só para ADMIN.
+  - A tela pode ler `tiktok_shops` só depois da migration `20261022170000` em produção.
+  - Até a api ser publicada com as variáveis, o botão recebe 503. A tela diz "TikTok Shop ainda não está disponível", sem erro.
+
 ### 3.33 A Shopee no Copiloto (C-84, D-641) — em código
 
 - **Duas ferramentas novas** no chat e no `/query`, sem migration (as RPCs já estão em produção):

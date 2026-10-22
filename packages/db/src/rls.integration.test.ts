@@ -2669,6 +2669,70 @@ describe("lojas Shopee (D-425)", () => {
 });
 
 /*
+  D-645: as lojas do TikTok Shop (fatia 1). Lidas por quem e da organizacao;
+  escritas so pela api (service role); credenciais e states fora do alcance do
+  navegador.
+*/
+describe("lojas do TikTok Shop (D-645)", () => {
+  const LOJA = "dddd6450-0000-4000-8000-00000000d645";
+  const SHOP_ID = "7000714532876273420";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.tiktok_shops (id, organization_id, shop_id, shop_name, seller_type, status)
+       values ($1, $2, $3, 'Loja TikTok Teste', 'LOCAL', 'CONNECTED') on conflict do nothing`,
+      [LOJA, ORG_SB, SHOP_ID],
+    );
+    await client.query(
+      `insert into public.tiktok_credentials
+         (tiktok_shop_id, shop_cipher, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at, refresh_token_expires_at)
+       values ($1, 'GCP_cipher_de_teste', repeat('a', 60), repeat('b', 60), now() + interval '7 days', now() + interval '365 days')
+       on conflict do nothing`,
+      [LOJA],
+    );
+  });
+
+  afterAll(async () => {
+    // Apagar a loja leva a credencial junto (on delete cascade).
+    await client.query("delete from public.tiktok_shops where id = $1", [LOJA]);
+  });
+
+  it("quem é da organização vê a loja; outra organização não vê", async () => {
+    const minhas = await asUser<{ shop_id: string; shop_name: string }>(
+      ADMIN_SB,
+      `select shop_id, shop_name from public.tiktok_shops where shop_id = '${SHOP_ID}'`,
+    );
+    const deOutra = await asUser(DE_OUTRA_ORG, `select 1 from public.tiktok_shops where shop_id = '${SHOP_ID}'`);
+
+    expect(minhas).toEqual([{ shop_id: SHOP_ID, shop_name: "Loja TikTok Teste" }]);
+    expect(deOutra).toHaveLength(0);
+  });
+
+  it("nem o ADMIN grava loja pelo navegador — só a api", async () => {
+    await expect(
+      asUser(ADMIN_SB, `insert into public.tiktok_shops (organization_id, shop_id) values ('${ORG_SB}', '7000714532876273421')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it.each(["tiktok_credentials", "tiktok_oauth_states"])("authenticated e anon são recusados em %s", async (t) => {
+    await expect(asUser(ADMIN_SB, `select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(`select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("a mesma loja não entra duas vezes; id fora do formato e token curto (texto claro) são recusados", async () => {
+    await expect(
+      client.query("insert into public.tiktok_shops (organization_id, shop_id) values ($1, $2)", [ORG_OUTRA, SHOP_ID]),
+    ).rejects.toThrow(/tiktok_shops_unica/);
+    await expect(
+      client.query("insert into public.tiktok_shops (organization_id, shop_id) values ($1, 'MLB123')", [ORG_SB]),
+    ).rejects.toThrow(/tiktok_shops_shop_id_check/);
+    await expect(
+      client.query("update public.tiktok_credentials set access_token_ciphertext = 'abc' where tiktok_shop_id = $1", [LOJA]),
+    ).rejects.toThrow(/tiktok_credentials_cifradas/);
+  });
+});
+
+/*
   D-426: os pedidos da Shopee. Lidos por quem é da organização; escritos só
   pelo worker; apagar a loja leva pedidos e itens junto.
 */
