@@ -18948,6 +18948,47 @@ Com a navegação atrasada em 600 ms (a resposta RSC segura no Playwright), o CL
 
 **Impacto:** `apps/web/components/page-title.tsx`, `apps/web/app/globals.css`, `apps/web/app/(app)/faturamento/{page.tsx,multicanal.tsx}`, `apps/web/e2e/faturamento-multicanal.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.
 
+## D-637 - Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
+
+**Contexto:** dois pedidos do A3 para a fatia E de Anuncios, numa migration so porque recriam as mesmas funcoes (`get_listings_dashboard`, que tambem alimenta o CSV, e `get_listings_dashboard_counts`).
+- **C-80:** escolher mais de uma conta.
+- **C-85:** "Precisam de atencao", aprovado pelo dono em 21/10: "Aprovo 'Precisam de atenção' com as cinco condições (vendendo sem estoque, sem vínculo com venda, ação aberta por anúncio, queda nas vendas e diferença de preço), por faturamento e sem pontuação".
+
+Lido antes de decidir (definicoes atuais e contagens de producao, so agregado):
+1. Quatro das cinco condicoes ja estavam no CTE `base` da lista: o estoque, o vinculo, a queda (C-79) e a dispersao (C-77).
+2. A acao por anuncio e rara: das acoes abertas, quase todas sao por SKU (a venda anomala) e so a de frete traz `mlb_id`. Contar a de SKU acenderia quase todo anuncio vinculado.
+3. A queda so existe com o periodo de 7, 15, 30, 60 ou 90 dias terminando hoje (C-79). A `/anuncios` usa sempre um desses presets.
+
+**Decisao:**
+1. **C-80:** `p_ml_account_ids uuid[]` no fim da lista e da faixa.
+   - Nulo = todas as contas alcancadas.
+   - O array vazio e conta com contas juntas sao recusados: um defeito da tela aparece no teste em vez de mudar o recorte calado.
+   - A conta fora da RLS nao aparece. A dispersao continua comparando com todas as contas visiveis, e a queda e por anuncio.
+2. **C-85, os cinco motivos**, so em anuncio ativo ou pausado, nesta ordem:
+   - `sem_estoque_vendendo`: estoque 0 e venda no periodo;
+   - `sem_vinculo_vendendo`: sem SKU e sem vinculo, com venda;
+   - `acao_aberta`: acao `novo`/`em_andamento` com a conta e o `mlb_id` do anuncio (a de SKU e a da Shopee nao contam);
+   - `queda`: o estado do C-79 no periodo;
+   - `preco_divergente`: a dispersao cheia acima do teto (C-77).
+3. **Na lista:** `p_atencao` ('all' | 'atencao') e `atencao_motivos text[]` em toda linha.
+   - NULO quando a lista nao pode ser avaliada inteira (sem o teto, ou sem o periodo da queda): "nenhum motivo" seria falso.
+   - `{}` fora de ativo/pausado, que nao e candidato, ou quando nenhum vale.
+   - O filtro sem as reguas e recusado. A ordem continua por faturamento, sem pontuacao.
+4. **Na faixa:** `p_date_from`/`p_date_to` e `precisam_atencao`, com o N da queda pela MESMA regra das datas da lista (nao pelo `p_queda_dias`), para a lista e o numero nunca divergirem. NULA sem as reguas.
+
+**Verificacao:**
+- integracao: 6 testes em dez anuncios de duas contas: os motivos e a ordem, o filtro e a faixa no mesmo conjunto, as contas com a dispersao entre contas, os NULOS sem regua, as recusas, e a chamada de antes com a RLS;
+- mutacao: 13 (8 na lista, 5 na faixa), e cada uma derruba testes;
+- `db reset` e a suite inteira, 1118 de 1118 (com o C-81 e o C-82 juntos).
+- **A medir:** o custo da faixa nova em producao como `authenticated` (a venda nos 90 dias e as acoes abertas). O conector do banco caiu em 22/10 antes da medicao.
+
+**Publicacao:** a migration `20261022120000`, sem worker nem api. A tela (A3) manda os parametros novos so depois dela em producao, e o `p_preco_teto` sempre, para a coluna vir preenchida.
+
+**Impacto:**
+- `supabase/migrations/20261022120000_varias_contas_e_atencao_na_lista.sql`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
 ## D-638 - A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 
 **Contexto:** o C-81 do A1, o histórico de preço da Shopee (o C-13 do A2, liberado pelo dono em 21/10), faz o worker gravar um `domain_events` quando o preço de um modelo da Shopee muda entre duas leituras do catálogo. A forma, combinada em 21/10:
