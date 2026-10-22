@@ -19062,7 +19062,7 @@ Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
    - As duas materializacoes de D-183 ficam.
 3. **O preco medio:** o mesmo metodo do ML (a media dos precos medios do dia); na Shopee, so os itens com a receita conhecida.
 4. **A correlacao:** o evento do SKU vem com `marketplace` NULO e vale para os dois canais. Os do anuncio e do pedido do ML vem como 'ML'. A mudanca de preco do anuncio da Shopee (C-81, D-633) vem como 'SHOPEE', ligada ao SKU pela unidade (`shopee_listing_units`). A Shopee nao grava cancelamento nem devolucao como evento: so o preco correlaciona.
-5. **O worker:** pede os dois canais e avalia cada um. A acao leva `evidence.marketplace`, e a do ML mantem a `dedup_key` de antes. A da Shopee leva o canal na chave (`sales_anomaly:shopee:<sku>:<dia>`), com o impacto pelo preco medio dela. A reclamacao aberta (SAC) entra so no ML.
+5. **O worker:** pede os dois canais e avalia cada um. A acao leva `evidence.marketplace`. (As chaves abaixo foram substituidas pelo episodio da D-643.) A do ML mantem a `dedup_key` de antes. A da Shopee leva o canal na chave (`sales_anomaly:shopee:<sku>:<dia>`), com o impacto pelo preco medio dela. A reclamacao aberta (SAC) entra so no ML.
 
 **Fora daqui:** a venda anomala grava uma acao por SKU por dia e nunca fecha (o caso da D-263, que acumula em producao). Com a Shopee, isso passa a valer por canal. O episodio por assunto e uma fatia propria.
 
@@ -19181,4 +19181,40 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `packages/contracts/src/{copilot-tools,index}.ts`;
 - `apps/api/src/copilot{,-chat}{,.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,COPILOT,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
+## D-643 - A venda anomala vira um episodio por SKU e canal
+
+**Contexto:** o worker da venda anomala gravava uma acao por SKU por dia (`sales_anomaly:<sku>:<dia>`), e nenhuma fechava sozinha.
+- A D-263 viu 1.449 abertas no Dev; em producao elas acumulam desde setembro (milhares, quase todas a venda anomala).
+- A D-403 deu aos outros alertas da Central o episodio por assunto e citou a venda anomala como o caso que ficou de fora.
+- Com o C-83 (D-639), a venda anomala passou a ser por canal, e o acumulo valeria para os dois.
+
+**As perguntas ao dono (22/10):**
+1. Virar episodio? Resposta: **"Episodio"**. Um cartao por SKU e canal, atualizado enquanto a anomalia aparece e encerrado quando ela some, como o frete, os Ads e o prejuizo.
+2. E os acumulados? Resposta: **"Encerrar os velhos"**. Encerrados com o motivo, nada apagado; o episodio nasce no proximo dia em que a anomalia aparecer.
+
+**Decisao:**
+1. **O ciclo da D-403 numa funcao SQL**, `registrar_vendas_anomalas(organizacao, dia, detectadas)`: `security invoker`, executavel so pelo `service_role`, numa transacao. O assunto e `<canal>:<sku>` (`ML:` ou `SHOPEE:`). Os passos:
+   - o detectado com episodio aberto atualiza a evidencia, a severidade e o impacto, e guarda a primeira deteccao;
+   - o fechado por uma pessoa e ainda detectado (ate anteontem) nao reabre, so anota a continuidade;
+   - o detectado sem episodio vira episodio novo (`dedup_key` = `venda_anomala:<assunto>:<dia>`);
+   - tres dias sem deteccao encerram, com `evidence.encerramento`;
+   - o indice parcial `actions_um_episodio_aberto` garante um aberto por assunto.
+2. **O acumulado** (venda anomala aberta SEM assunto) e encerrado pela propria funcao, com o motivo. A cada rodada, e nao so na migration: cobre tambem o que o worker antigo gravar entre a migration e o deploy.
+3. **O worker** manda as deteccoes do dia a funcao em vez de gravar a acao. O ciclo roda mesmo sem anomalia nenhuma, porque e ele que envelhece e encerra os episodios. As chaves por canal do C-83 (D-639) ficam substituidas pelo assunto.
+4. **Sem notificacao:** a venda anomala nao notificava e continua assim. O D-411 e dos alertas da Central; aqui seriam centenas por dia.
+
+**Verificacao:**
+- integracao: 5 testes. Cobrem o acumulado encerrado com o motivo (o ja resolvido intocado), um episodio por canal, a mesma rodada sem duplicar, a atualizacao no dia seguinte com a primeira deteccao, tres dias encerrando, o fechado por uma pessoa nao reabrindo com a continuidade andando, o episodio novo quando volta, e a funcao recusada ao usuario e com a lista obrigatoria;
+- mutacao: 6, e cada uma derruba testes. Duas sobreviveram na primeira rodada e mostraram teste fraco: o contador da continuidade conta a linha mesmo sem mudar a data, e o `permission denied` casava com a recusa da tabela. As duas asercoes foram endurecidas;
+- worker: 12 de 12;
+- `db reset` e a suite inteira, 1129 de 1129 (com o C-81 ao C-84 juntos).
+
+**Publicacao:** a migration `20261022140000`, depois o worker (o mesmo deploy do C-81 e do C-83). A tela (A2) ja mostra o episodio dos outros tipos, com `primeira_deteccao`, `ultima_deteccao` e `encerramento` na evidencia.
+
+**Impacto:**
+- `supabase/migrations/20261022140000_venda_anomala_por_episodio.sql`;
+- `apps/worker/src/handlers/detect-sales-anomaly-actions{,.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,API,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
