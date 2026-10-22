@@ -19092,3 +19092,76 @@ Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
 - `apps/web/app/(app)/page.tsx`;
 - `apps/web/e2e/ensaio-loja-live.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-639 - O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
+
+**Contexto:** a frente C-11 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-83.
+- As tres funcoes do diagnostico (`get_sku_sales_baseline`, `get_sku_average_prices` e `get_sku_correlated_events`) so conheciam o ML.
+- Elas servem tres consumidores: o `/diagnostico`, o diagnostico do SKU e o worker da venda anomala, que abre os cartoes da Central.
+- O pedido deixava com o A1 (e o dono, se preciso) a regra do worker, para a Central e o `/diagnostico` nao divergirem.
+
+**A pergunta ao dono (22/10):** o detector deve considerar a Shopee? A resposta foi **"Por canal"**: cada canal e avaliado separado, uma queda no ML vira alerta mesmo que a Shopee compense, e o alerta diz o canal. As opcoes recusadas foram somar os canais (a queda compensada sumiria) e manter so o ML (a Central e o `/diagnostico` divergiriam).
+
+**Decisao:**
+1. **O padrao do C-60:** `p_marketplaces text[]` no fim das tres ('ML' e/ou 'SHOPEE'; NULO = so o ML, o resultado de antes) e a coluna `marketplace` no fim. A lista vazia e o valor fora da lista sao recusados.
+2. **A linha de base:** por SKU, dia da semana e canal, a mesma regra de D-063 (as 8 ultimas ocorrencias do dia da semana, minimo de 4).
+   - Na Shopee: `shopee_sales_items` com a situacao VALIDA e so a loja live, somada entre as lojas por dia, o mesmo grao do ML entre contas.
+   - As duas materializacoes de D-183 ficam.
+3. **O preco medio:** o mesmo metodo do ML (a media dos precos medios do dia); na Shopee, so os itens com a receita conhecida.
+4. **A correlacao:** o evento do SKU vem com `marketplace` NULO e vale para os dois canais. Os do anuncio e do pedido do ML vem como 'ML'. A mudanca de preco do anuncio da Shopee (C-81, D-633) vem como 'SHOPEE', ligada ao SKU pela unidade (`shopee_listing_units`). A Shopee nao grava cancelamento nem devolucao como evento: so o preco correlaciona.
+5. **O worker:** pede os dois canais e avalia cada um. A acao leva `evidence.marketplace`, e a do ML mantem a `dedup_key` de antes. A da Shopee leva o canal na chave (`sales_anomaly:shopee:<sku>:<dia>`), com o impacto pelo preco medio dela. A reclamacao aberta (SAC) entra so no ML.
+
+**Fora daqui:** a venda anomala grava uma acao por SKU por dia e nunca fecha (o caso da D-263, que acumula em producao). Com a Shopee, isso passa a valer por canal. O episodio por assunto e uma fatia propria.
+
+**Verificacao:**
+- integracao: 6 testes (a linha de base sem canal igual a de antes; os dois canais, com o cancelado e o sandbox fora; o preco medio por canal sem a receita desconhecida; a correlacao por canal; as recusas; a RLS). As 32 de antes das tres funcoes seguem verdes;
+- worker: 3 testes novos, 12 de 12 (os dois canais pedidos; a queda so na Shopee com a chave e o preco dela; os dois canais com os eventos de cada um);
+- mutacao: 10 no SQL, todas pegas;
+- `db reset` e a suite inteira, 1124 de 1124 (com o C-81, o C-82 e o C-80/C-85 juntos).
+
+**Publicacao:** a migration `20261022130000`, depois o worker. A tela (A2) manda `p_marketplaces` so depois da migration em producao.
+
+**Impacto:**
+- `supabase/migrations/20261022130000_diagnostico_por_canal.sql`;
+- `apps/worker/src/handlers/detect-sales-anomaly-actions{,.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
+## D-641 - A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
+
+**Contexto:** a frente C-14 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-84. As sete ferramentas do chat (`apps/api/src/copilot-chat.ts`) liam so o Mercado Livre:
+- as de venda (`get_sales_summary`, `get_sales_sku_declines`) recebem a conta do ML;
+- a lista de contas do prompt vinha de `ml_accounts`;
+- uma pergunta de queda por produto era FORCADA para `sales_sku_declines`, mesmo citando a Shopee, e responderia com o dado do ML.
+
+Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS, sem agregacao nova a fazer.
+- `get_marketplace_sales_summary` (C-58) devolve o total, cada canal e cada conta ou loja. A loja sandbox, ou ainda sem a primeira leitura de pedidos, aparece mas fica fora das somas.
+- `get_marketplace_sku_sales` (C-59) devolve o ranking de SKUs com as colunas por canal.
+- `marketplace_accounts` (security invoker) lista as contas do ML e as lojas da Shopee com o mesmo id que essas RPCs recebem.
+
+**Decisao:**
+1. **Duas ferramentas novas**, nos dois caminhos do Copiloto (o chat e o `/query`), com contrato Zod em `@sb/contracts`:
+   - `marketplace_sales_summary`: a venda por canal e por conta ou loja, com o total. Cada linha leva `countsInTotals` (a mesma regra das somas da RPC). A receita da Shopee e a conhecida, com `purchasesWithoutRevenue` ao lado.
+   - `marketplace_sku_sales`: o ranking por receita ou unidades, com as colunas de cada canal. Nao compara periodos.
+   - Sem canal pedido, as duas leem os dois canais.
+2. **As ferramentas de antes ficam como estao e so do ML.** O prompt diz isso: `mlAccountId` nunca e uma loja.
+3. **O prompt lista as contas do ML e, a parte, as lojas live da Shopee**, de `marketplace_accounts` sob a RLS de quem pergunta. A loja sandbox nao entra.
+4. **A queda pedida da Shopee nao e forcada para a ferramenta do ML.** O prompt manda dizer que o chat nao tem queda por produto, desempenho de anuncio nem estoque por loja da Shopee.
+5. **A narracao do diagnostico ganha o canal** (pedido do A2, que leva o C-83 a `/diagnostico`): `narrate_sku_diagnosis` aceita `marketplace` ('ML' | 'SHOPEE'), e o prompt diz o canal. Ausente e o diagnostico de antes, do ML.
+
+**Fora daqui:** a queda por produto da Shopee (pede uma RPC de duas janelas, como `get_sales_sku_declines`), o desempenho do anuncio da Shopee e a resolucao de um id de item da Shopee em `resolve_catalog_entity`.
+
+**Verificacao:**
+- api: 8 testes novos, 55 de 55 no Copiloto:
+  - no chat (4): as lojas live no prompt, a parte, e a sandbox fora; as duas ferramentas oferecidas; a queda da Shopee nao forcada; uma rodada real de `marketplace_sales_summary`;
+  - nos executores (3): os dois canais por padrao e o `countsInTotals` da sandbox e da loja nao lida; as contas pedidas e o erro da RPC; a ordem traduzida e as colunas do ranking;
+  - na narracao (1): o canal no prompt, e o ML quando ausente;
+- `pnpm run check` e `pnpm run build`.
+
+**Publicacao:** so a api, sem migration (as RPCs ja estao em producao). A tela (A2) da o rotulo das ferramentas novas no chat (`TOOL_LABEL` de `apps/web/app/(app)/copiloto/chat.tsx`).
+
+**Impacto:**
+- `packages/contracts/src/{copilot-tools,index}.ts`;
+- `apps/api/src/copilot{,-chat}{,.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,COPILOT,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
