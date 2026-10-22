@@ -19222,3 +19222,32 @@ O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a respondera
 - **suíte inteira**, com o banco recriado do zero: chromium 261/261, `loja-live` 17/17 e convite 3/3.
 
 **Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-650 - A barra do topo cabe no celular: a busca cede espaço ao "Sair"
+
+**Contexto:** no teste de pior caso de 22/10, o A3 achou o "Sair" cortado na barra do topo do celular, em toda tela. Com o Pixel 5 emulado, a 320 px só aparecia a borda do botão, e a 360 px ele aparecia como "Sai". A 390 px cabia. Não depende de dado: a barra é a mesma em toda rota. Abaixo de 850 px a barra lateral vira o trilho de 58 px, e a barra do topo fica com o resto. Nesse resto a busca (`width: min(455px, 50%)`) não encolhia, e o atalho "Ctrl K" ocupava espaço num aparelho de toque. As ações (notificações, perfil e "Sair") transbordavam pela direita. É o shell, então o conserto é do A2, como o A3 indicou.
+
+**Decisão:** a proposta do A3, num bloco `@media (max-width: 760px)` no `globals.css`:
+- `.sb-search { flex: 1 1 auto; width: auto; min-width: 0 }`: a busca fica com o que sobra, e o rótulo já corta com reticências;
+- `.sb-search kbd { display: none }`: o atalho de teclado sai do celular;
+- `.sb-top-actions { flex: none }`: as ações não encolhem.
+
+Acima de 760 px nada muda.
+
+**O esqueleto da barra** (`components/carregando.tsx`), que aparece em toda navegação antes da tela, tinha outra forma:
+- ainda mostrava o ✦ do Copiloto, que saiu da barra real na D-377;
+- não tinha o "Sair".
+
+No celular, a busca do esqueleto era 22 px mais larga que a real, e a barra pulava quando a tela chegava. Agora as ações do esqueleto são as do `Shell`: notificações, a régua, o perfil (com a mesma folga de 8 px à direita do `button.sb-profile`) e o lugar do "Sair". O "Sair" do esqueleto é só o espaço, invisível, porque um botão que não responde não é controle. A 320, 360 e 390 px o esqueleto e a barra real têm a mesma largura de busca e a mesma posição das ações.
+
+**Verificação:**
+- **e2e:** `e2e/tela-estreita-e-acessibilidade.spec.ts` ganha a guarda da barra a 320, 360 e 390 px, com o celular emulado. O "Sair", as notificações e a busca ficam inteiros dentro da barra e da janela, a busca tem pelo menos 44 px e não passa por cima das ações. Os elementos são achados pelo papel, nunca pela classe.
+- **mutação:** com o CSS de antes, a guarda reprova a 320 px (o "Sair" começa no px 308, e só 12 dos 46 px aparecem) e a 360 px (32 dos 46). A 390 px passa, como o A3 mediu.
+- **medida, à mão:** a busca tem 61, 101 e 131 px a 320, 360 e 390, com o "Sair" inteiro, e o esqueleto dá os mesmos números.
+- **suíte inteira**, com o banco recriado do zero: chromium 264/264 (os 3 novos inclusos), `loja-live` 17/17, convite 3/3.
+
+**Impacto:**
+- `apps/web/app/globals.css`;
+- `apps/web/components/carregando.tsx`;
+- `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md` (com a D-638 e a D-646 marcadas como no ar).

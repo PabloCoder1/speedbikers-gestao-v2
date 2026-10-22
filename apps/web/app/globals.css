@@ -901,6 +901,29 @@ body {
 }
 
 /*
+  A BARRA DO TOPO NO CELULAR (D-650, o achado do A3 de 22/10 no teste de pior
+  caso). A busca tinha `width: min(455px, 50%)` e não encolhia, então as ações
+  transbordavam a barra: a 360 px o "Sair" aparecia cortado, e a 320 só a
+  borda dele. Aqui a busca fica com o que sobra e as ações não encolhem. O
+  atalho "Ctrl K" sai: num aparelho de toque ele só ocupa espaço.
+*/
+@media (max-width: 760px) {
+  .sb-search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .sb-search kbd {
+    display: none;
+  }
+
+  .sb-top-actions {
+    flex: none;
+  }
+}
+
+/*
  * COMPOSIÇÃO DO FIGMA (D6) — cabeçalho de página, painel, faixa de KPIs,
  * botões, menu de filtro e controle segmentado.
  *
@@ -5604,6 +5627,12 @@ table {
  */
 .sb-carregando-topbar {
   position: relative;
+}
+
+/* D-650: o perfil do esqueleto com a mesma folga do `button.sb-profile` real,
+   para a busca não mudar de largura quando a tela chega. */
+.sb-carregando-topbar .sb-profile {
+  padding-right: 8px;
 }
 
 .sb-carregando-progresso {
