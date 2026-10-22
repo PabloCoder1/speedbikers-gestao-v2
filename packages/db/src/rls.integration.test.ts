@@ -15776,6 +15776,130 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   });
 });
 
+// C-82 (20261022110000, D-635) -- a loja da Shopee na preferencia de aviso.
+describe("notification_preferences com a loja da Shopee (C-82, D-635)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000c082";
+  const OUTRA_ORG = "99999999-0000-4000-8000-00000001c082";
+  const USUARIO = "aaaaaaaa-0000-4000-8000-00000000c082";
+  const CONTA = "cccccccc-0000-4000-8000-0000000c0082";
+  const LOJA = "dddd0820-0000-4000-8000-0000000a0082";
+  const LOJA_DE_OUTRA_ORG = "dddd0820-0000-4000-8000-0000000b0082";
+  const LOJA_APAGADA = "dddd0820-0000-4000-8000-0000000c0082";
+
+  const regra = (campos: string, valores: string) =>
+    `insert into public.notification_preferences (user_id, ${campos}) values ('${USUARIO}', ${valores}) returning id`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'usuario-c082@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [USUARIO],
+    );
+    await client.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'Org C-82', 'org-c082'), ($2, 'Outra C-82', 'org-c082-b') on conflict (id) do nothing",
+      [ORG, OUTRA_ORG],
+    );
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, USUARIO]);
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta C-82', 'rlstest-c082', 'CONNECTED', 9990082, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $4, 'live', 990082001, 'Loja C82', 'CONNECTED', now()),
+              ($2, $5, 'live', 990082002, 'Loja de outra org', 'CONNECTED', now()),
+              ($3, $4, 'live', 990082003, 'Loja que sai', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA, LOJA_DE_OUTRA_ORG, LOJA_APAGADA, ORG, OUTRA_ORG],
+    );
+  });
+
+  it("a regra só da loja não é a regra geral do resumo de configurações", async () => {
+    await asUserPersist(USUARIO, regra("shopee_shop_id, min_severity", `'${LOJA}', 'critico'`));
+
+    const soDaLoja = await asUser<{ geral: string | null; minhas: string }>(
+      USUARIO,
+      `select notification_global_min_severity as geral, notification_prefs_mine::text as minhas from public.get_settings_overview('${ORG}')`,
+    );
+
+    expect(soDaLoja).toEqual([{ geral: null, minhas: "1" }]);
+
+    // A regra geral convive com a da loja: escopos diferentes.
+    await asUserPersist(USUARIO, regra("min_severity", "'importante'"));
+
+    const comAGeral = await asUser<{ geral: string | null }>(
+      USUARIO,
+      `select notification_global_min_severity as geral from public.get_settings_overview('${ORG}')`,
+    );
+
+    expect(comAGeral).toEqual([{ geral: "importante" }]);
+  });
+
+  it("um escopo por loja e um por tipo e loja, como os da conta", async () => {
+    await expect(asUser(USUARIO, regra("shopee_shop_id, min_severity", `'${LOJA}', 'importante'`))).rejects.toThrow(
+      /notification_preferences_unique_shop_only/,
+    );
+
+    await asUserPersist(USUARIO, regra("event_type, shopee_shop_id", `'listing.price.changed', '${LOJA}'`));
+
+    await expect(asUser(USUARIO, regra("event_type, shopee_shop_id", `'listing.price.changed', '${LOJA}'`))).rejects.toThrow(
+      /notification_preferences_unique_event_and_shop/,
+    );
+
+    // O mesmo tipo sem loja e com a conta continuam escopos proprios.
+    await asUserPersist(USUARIO, regra("event_type", "'listing.price.changed'"));
+    await asUserPersist(USUARIO, regra("event_type, ml_account_id", `'listing.price.changed', '${CONTA}'`));
+
+    const linhas = await asUser<{ n: string }>(
+      USUARIO,
+      "select count(*)::text as n from public.notification_preferences where event_type = 'listing.price.changed'",
+    );
+
+    expect(linhas).toEqual([{ n: "3" }]);
+  });
+
+  it("conta e loja na mesma regra é recusado", async () => {
+    await expect(asUser(USUARIO, regra("ml_account_id, shopee_shop_id", `'${CONTA}', '${LOJA}'`))).rejects.toThrow(
+      /notification_preferences_uma_origem/,
+    );
+  });
+
+  it("só grava loja que o usuário alcança, nem no update", async () => {
+    await expect(asUser(USUARIO, regra("shopee_shop_id", `'${LOJA_DE_OUTRA_ORG}'`))).rejects.toThrow(/row-level security/i);
+
+    await expect(
+      asUser(
+        USUARIO,
+        `update public.notification_preferences set shopee_shop_id = '${LOJA_DE_OUTRA_ORG}'
+          where user_id = '${USUARIO}' and event_type is null and shopee_shop_id = '${LOJA}'`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("a regra de antes, sem loja, segue igual, e quem não é dono não vê a regra da loja", async () => {
+    const deOutro = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.notification_preferences where user_id = '${USUARIO}'`,
+    );
+
+    expect(deOutro).toHaveLength(0);
+  });
+
+  it("apagar a loja apaga as regras dela", async () => {
+    await asUserPersist(USUARIO, regra("shopee_shop_id", `'${LOJA_APAGADA}'`));
+    await client.query("delete from public.shopee_shops where id = $1", [LOJA_APAGADA]);
+
+    const restam = await client.query<{ n: string }>(
+      "select count(*)::text as n from public.notification_preferences where shopee_shop_id = $1",
+      [LOJA_APAGADA],
+    );
+
+    expect(restam.rows).toEqual([{ n: "0" }]);
+  });
+});
+
 describe("ai_runs (observabilidade de custo do Copiloto, D-077)", () => {
   // Linhas próprias desta suíte, sem afterAll de limpeza — mesma convenção
   // já aceita no resto do arquivo ("o ambiente local acumula até o

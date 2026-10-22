@@ -163,6 +163,14 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.30 A loja da Shopee na preferência de aviso (C-82, D-635) — em código
+
+- **A coluna:** `notification_preferences.shopee_shop_id` (FK para `shopee_shops`, apagar a loja apaga a regra). Conta OU loja na mesma linha, nunca as duas (`notification_preferences_uma_origem`).
+- **Os escopos (um por usuário):** geral (sem tipo, sem conta, sem loja); só tipo; só conta; tipo e conta; só loja; tipo e loja. A duplicata é recusada pelo índice do escopo (`notification_preferences_unique_*`).
+- **A RLS:** cada um vê e grava a sua; a gravação só aceita loja que o usuário alcança (`private.accessible_shopee_shops()`).
+- **`get_settings_overview`:** a regra geral exige loja nula.
+- **Para a tela:** o seletor "Conta ou loja" e o `shouldNotify` com a loja (a regra da loja só casa evento com o mesmo `shopee_shop_id`; a regra de conta nunca casa evento da loja). Manda `shopee_shop_id` só depois da migration `20261022110000` em produção.
+
 ### 3.29 O histórico de preço da Shopee em /precos e na aba Preços do SKU (C-81, D-633) — em código
 
 - **O evento:** `listing.price.changed` com `shopee_shop_id` (o `ml_account_id` é NULO), `entity_type = 'shopee_item'` e `entity_id` = o item da Shopee.
