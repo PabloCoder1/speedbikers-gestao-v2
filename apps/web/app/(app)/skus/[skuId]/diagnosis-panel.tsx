@@ -3,6 +3,7 @@
 import type { SalesAnomalyDiagnosis } from "@sb/domain";
 import { useState, type ReactNode } from "react";
 
+import { CANAL_ROTULO, type Canal } from "../../../../lib/diagnostico-por-canal";
 import { formatCurrency } from "../../../../lib/format";
 import { createClient } from "../../../../lib/supabase/browser";
 import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
@@ -43,8 +44,14 @@ export function DiagnosisPanel({
   skuId,
   embutido = false,
   problemasDeAnuncio = 0,
+  canal,
+  canais = ["ML"],
 }: {
   skuId: string;
+  /** D-644: o canal fixo, quando quem chama já escolheu (o `/diagnostico`). */
+  canal?: Canal;
+  /** D-644: os canais que a aba do SKU oferece; só com mais de um aparece a escolha. */
+  canais?: readonly Canal[];
   /*
     EMBUTIDO: sem a moldura de painel (P3 de A4, fechado em D-287).
 
@@ -69,6 +76,8 @@ export function DiagnosisPanel({
   problemasDeAnuncio?: number;
 }): ReactNode {
   const [result, setResult] = useState<SkuDiagnosisResult | null>(null);
+  const [canalEscolhido, setCanalEscolhido] = useState<Canal>(canal ?? "ML");
+  const canalDoPedido = canal ?? canalEscolhido;
   const [busy, setBusy] = useState(false);
 
   const [narrativa, setNarrativa] = useState<string | null>(null);
@@ -80,13 +89,13 @@ export function DiagnosisPanel({
     setNarrativa(null);
     setNarrationError(null);
 
-    const outcome = await diagnoseSku(skuId);
+    const outcome = await diagnoseSku(skuId, canalDoPedido);
 
     setBusy(false);
     setResult(outcome);
   }
 
-  async function handleNarrate(diagnosis: SalesAnomalyDiagnosis, impactBrl: number | null): Promise<void> {
+  async function handleNarrate(diagnosis: SalesAnomalyDiagnosis, impactBrl: number | null, canalDoDiagnostico: Canal): Promise<void> {
     setNarrating(true);
     setNarrationError(null);
 
@@ -109,7 +118,8 @@ export function DiagnosisPanel({
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({
           tool: "narrate_sku_diagnosis",
-          input: { diagnosis, impactBrl },
+          // D-644: o canal da anomalia vai para a narração (C-84 do A1); a api de antes descarta a chave.
+          input: { diagnosis, impactBrl, marketplace: canalDoDiagnostico },
         }),
       });
     } catch {
@@ -168,16 +178,38 @@ export function DiagnosisPanel({
               você pedir.
             </p>
           </div>
-          <button
-            type="button"
-            className="sb-button sb-button-primary"
-            disabled={busy}
-            onClick={() => {
-              void handleClick();
-            }}
-          >
-            {busy ? "Analisando…" : "O que aconteceu?"}
-          </button>
+          <div style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center", flexWrap: "wrap" }}>
+            {/* D-644 (C-83): cada canal é avaliado separado; a escolha só aparece com a Shopee. */}
+            {canal === undefined && canais.length > 1 && (
+              <select
+                className="sb-input"
+                aria-label="Canal do diagnóstico"
+                value={canalEscolhido}
+                disabled={busy}
+                onChange={(event) => {
+                  setCanalEscolhido(event.target.value === "SHOPEE" ? "SHOPEE" : "ML");
+                  setResult(null);
+                  setNarrativa(null);
+                }}
+              >
+                {canais.map((opcao) => (
+                  <option key={opcao} value={opcao}>
+                    {CANAL_ROTULO[opcao]}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              className="sb-button sb-button-primary"
+              disabled={busy}
+              onClick={() => {
+                void handleClick();
+              }}
+            >
+              {busy ? "Analisando…" : "O que aconteceu?"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -275,7 +307,7 @@ export function DiagnosisPanel({
               className="sb-button"
               disabled={narrating}
               onClick={() => {
-                void handleNarrate(anomalia, result.impactBrl);
+                void handleNarrate(anomalia, result.impactBrl, result.canal);
               }}
             >
               {narrating ? "Narrando…" : "Narrar com IA"}

@@ -24,6 +24,8 @@ export function actionShortcuts(input: {
   mlbId?: string | null;
   /** O anúncio da Shopee dos detectores da Shopee (D-626), lido da evidência (`readShopeeListingRef`). */
   shopee?: { readonly lojaId: string; readonly busca: string } | null;
+  /** D-644 (C-83): o canal da venda anômala (`evidence.marketplace`). */
+  canal?: "ML" | "SHOPEE" | null;
 }): ActionShortcut[] {
   const shortcuts: ActionShortcut[] = [];
 
@@ -49,7 +51,10 @@ export function actionShortcuts(input: {
     const busca = encodeURIComponent(input.sku);
 
     shortcuts.push(
-      { label: "Anúncios do SKU", href: `/anuncios?busca=${busca}` },
+      // D-644: a venda anômala da Shopee leva aos anúncios da Shopee, buscados pelo SKU.
+      input.canal === "SHOPEE"
+        ? { label: "Anúncios do SKU na Shopee", href: `/anuncios/shopee?${new URLSearchParams({ q: input.sku }).toString()}` }
+        : { label: "Anúncios do SKU", href: `/anuncios?busca=${busca}` },
       { label: "Reposição", href: `/reposicao?busca=${busca}` },
     );
   }

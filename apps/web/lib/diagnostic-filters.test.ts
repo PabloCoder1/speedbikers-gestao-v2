@@ -9,7 +9,7 @@ import {
   type DiagnosticFilters,
 } from "./diagnostic-filters";
 
-const base: DiagnosticFilters = { confidence: "todas", selectedSkuId: null };
+const base: DiagnosticFilters = { confidence: "todas", selectedSkuId: null, selectedCanal: null };
 
 const diag = (skuId: string, confianca: "media" | "alta") => ({ escopo: { skuId }, confianca });
 
@@ -45,6 +45,7 @@ describe("leitura da URL", () => {
     expect(resolveDiagnosticFilters({ confianca: "alta", sku: "abc" })).toEqual({
       confidence: "alta",
       selectedSkuId: "abc",
+      selectedCanal: null,
     });
   });
 
@@ -96,7 +97,32 @@ describe("href", () => {
     const comSku = buildDiagnosticHref(base, { selectedSkuId: "abc" });
     expect(comSku).toBe("/diagnostico?sku=abc");
 
-    const atual: DiagnosticFilters = { confidence: "alta", selectedSkuId: "abc" };
+    const atual: DiagnosticFilters = { confidence: "alta", selectedSkuId: "abc", selectedCanal: null };
     expect(buildDiagnosticHref(atual, {})).toBe("/diagnostico?confianca=alta&sku=abc");
+  });
+});
+
+/** D-644 (C-83): o diagnóstico é por SKU e canal. */
+describe("o canal na seleção (D-644)", () => {
+  const porCanal = (skuId: string, canal: "ML" | "SHOPEE") => ({ escopo: { skuId }, confianca: "alta" as const, canal });
+
+  it("lê o canal da URL só nos dois valores que existem", () => {
+    expect(resolveDiagnosticFilters({ sku: "abc", canal: "shopee" }).selectedCanal).toBe("SHOPEE");
+    expect(resolveDiagnosticFilters({ sku: "abc", canal: "ml" }).selectedCanal).toBe("ML");
+    expect(resolveDiagnosticFilters({ sku: "abc", canal: "tiktok" }).selectedCanal).toBeNull();
+  });
+
+  it("o mesmo SKU em dois canais: o canal escolhe a linha; sem ele, a primeira do SKU", () => {
+    const lista = [porCanal("forte", "ML"), porCanal("dois", "ML"), porCanal("dois", "SHOPEE")];
+
+    expect(selectDiagnosis(lista, "dois", "SHOPEE")?.canal).toBe("SHOPEE");
+    expect(selectDiagnosis(lista, "dois", null)?.canal).toBe("ML");
+    // O canal que o SKU não tem cai na primeira linha DELE, não na primeira da lista.
+    expect(selectDiagnosis([porCanal("forte", "ML"), porCanal("dois", "SHOPEE")], "dois", "ML")?.escopo.skuId).toBe("dois");
+  });
+
+  it("o canal vai na URL só com o SKU", () => {
+    expect(buildDiagnosticHref(base, { selectedSkuId: "abc", selectedCanal: "SHOPEE" })).toBe("/diagnostico?sku=abc&canal=shopee");
+    expect(buildDiagnosticHref(base, { selectedCanal: "SHOPEE" })).toBe("/diagnostico");
   });
 });

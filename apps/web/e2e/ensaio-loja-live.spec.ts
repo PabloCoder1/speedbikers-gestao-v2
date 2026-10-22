@@ -718,3 +718,125 @@ test("/acoes: a divergência de estoque da Shopee tem rótulo, o anúncio e o es
     await db.from("actions").delete().eq("id", acao.data?.id ?? "");
   }
 });
+
+/**
+ * D-644 (C-83 do A1, D-639): o diagnóstico de venda POR CANAL — decisão do dono
+ * de 22/10. A loja live ganha o histórico que a linha de base pede (o mesmo dia
+ * da semana de ontem em quatro semanas anteriores: 2, 1, 2 unidades, mais o
+ * pedido de 8 dias atrás do fixture, 1) e um pico ontem (9 a mais que o 1 do
+ * fixture). Vai no FIM do ensaio: os pedidos novos mudariam as contas dos casos
+ * de cima, e a loja sai inteira no `afterAll`.
+ */
+test("/diagnostico, o SKU e a Central: a anomalia de venda da Shopee é avaliada no canal dela (D-644, C-83)", async ({ page }) => {
+  const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+
+  if (loja.data === null) throw new Error(`loja live sem organização: ${loja.error.message}`);
+
+  const organizationId = loja.data.organization_id;
+  // O meio-dia de São Paulo (15:00 UTC) de N dias atrás: o dia de negócio é o de São Paulo.
+  const hojeSp = new Date(Date.now() - 3 * 3_600_000);
+  const diaSp = (n: number): string =>
+    new Date(Date.UTC(hojeSp.getUTCFullYear(), hojeSp.getUTCMonth(), hojeSp.getUTCDate() - n, 15, 0, 0)).toISOString();
+  const historico = [
+    { sn: "E2EDIAG-15", dia: 15, unidades: 2 },
+    { sn: "E2EDIAG-22", dia: 22, unidades: 1 },
+    { sn: "E2EDIAG-29", dia: 29, unidades: 2 },
+    { sn: "E2EDIAG-PICO", dia: 1, unidades: 9 },
+  ];
+
+  const pedidos = await db.from("shopee_orders").insert(
+    historico.map((h) => ({
+      shopee_shop_id: lojaId,
+      organization_id: organizationId,
+      order_sn: h.sn,
+      order_status: "COMPLETED",
+      currency: "BRL",
+      total_amount: 100 * h.unidades,
+      shopee_created_at: diaSp(h.dia),
+      shopee_updated_at: diaSp(h.dia),
+      paid_at: diaSp(h.dia),
+    })),
+  );
+
+  expect(pedidos.error).toBeNull();
+
+  const itens = await db.from("shopee_order_items").insert(
+    historico.map((h) => ({
+      shopee_shop_id: lojaId,
+      order_sn: h.sn,
+      position: 0,
+      organization_id: organizationId,
+      item_id: 990777001,
+      item_name: LOJA_LIVE.skuTitulo,
+      item_sku: LOJA_LIVE.sku,
+      quantity: h.unidades,
+      original_price: 120,
+      discounted_price: 100,
+      sku_id: skuId,
+      vinculo_via: "SKU_DO_PEDIDO",
+    })),
+  );
+
+  expect(itens.error).toBeNull();
+
+  // 1. O /diagnostico: a anomalia do SKU no canal Shopee, com o canal dito na lista e no detalhe.
+  await entrar(page, "/diagnostico");
+
+  const lista = page.getByRole("region", { name: "Anomalias detectadas" });
+  const daShopee = lista.getByRole("link").filter({ hasText: `${LOJA_LIVE.sku} · Shopee` });
+
+  await expect(page.getByText("Cada canal é avaliado separado")).toBeVisible();
+  await expect(daShopee).toHaveCount(1);
+  await daShopee.click();
+  await expect(page).toHaveURL(new RegExp(`sku=${skuId}&canal=shopee`));
+
+  const detalhe = page.getByRole("region", { name: "Diagnóstico da anomalia selecionada" });
+
+  await expect(detalhe).toContainText("Alta de venda");
+  await expect(detalhe).toContainText(`${LOJA_LIVE.sku} · Shopee ·`);
+
+  // 2. A aba do SKU: o canal se escolhe, e a Shopee acha a mesma anomalia.
+  await page.goto(`/skus/${skuId}?aba=diagnostico`);
+
+  const painel = page.getByRole("region", { name: "Diagnóstico de venda" });
+
+  await painel.getByLabel("Canal do diagnóstico").selectOption("SHOPEE");
+  await painel.getByRole("button", { name: "O que aconteceu?" }).click();
+  await expect(painel.getByText("Histórico insuficiente")).toHaveCount(0);
+  await expect(painel).toContainText("Alta");
+
+  // 3. A Central: a venda anômala que o worker grava para a Shopee (C-83) diz o canal e leva à lista da Shopee.
+  const acao = await db
+    .from("actions")
+    .insert({
+      organization_id: organizationId,
+      kind: "venda_anomala",
+      sku_id: skuId,
+      severity: "media",
+      confidence: "alta",
+      status: "novo",
+      evidence: { direcao: "alta", z_score: 14.7, marketplace: "SHOPEE", evidencias: [], causas_candidatas: [] },
+      recommendation: "Confira o que mudou na venda do SKU na Shopee.",
+      created_by: "system",
+      dedup_key: `sales_anomaly:shopee:${skuId}:e2e`,
+    })
+    .select("id")
+    .single();
+
+  expect(acao.error).toBeNull();
+
+  try {
+    await page.goto("/acoes?tipo=venda_anomala");
+
+    const cartao = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Venda anômala na Shopee", level: 3 }) });
+
+    await expect(cartao).toHaveCount(1);
+    await expect(cartao.getByRole("link", { name: "Anúncios do SKU na Shopee" })).toHaveAttribute(
+      "href",
+      `/anuncios/shopee?q=${LOJA_LIVE.sku}`,
+    );
+    await semErro(page);
+  } finally {
+    await db.from("actions").delete().eq("id", acao.data?.id ?? "");
+  }
+});
