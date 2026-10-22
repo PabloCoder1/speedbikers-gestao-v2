@@ -24,7 +24,12 @@ function describeWriteError(error: { message: string; code?: string } | null): s
   if (error === null) return null;
 
   if (error.code === "23505") {
-    return "Já existe uma preferência para essa combinação de tipo de evento e conta — edite ou remova a existente em vez de criar outra.";
+    return "Já existe uma preferência para essa combinação de tipo de evento e conta ou loja — edite ou remova a existente em vez de criar outra.";
+  }
+
+  // D-642: a RLS do C-82 só grava loja que a pessoa alcança (D-433).
+  if (error.code === "42501") {
+    return "Você não tem acesso a essa loja da Shopee — escolha outra, ou peça o acesso a quem administra.";
   }
 
   return "Não foi possível salvar a preferência.";
@@ -33,6 +38,8 @@ function describeWriteError(error: { message: string; code?: string } | null): s
 export async function createPreference(input: {
   eventType: string | null;
   mlAccountId: string | null;
+  /** D-642 (C-82): a loja da Shopee; nunca junto da conta (o banco recusa). */
+  shopeeShopId: string | null;
   minSeverity: string;
   enabled: boolean;
 }): Promise<PreferenceActionResult> {
@@ -45,10 +52,16 @@ export async function createPreference(input: {
     return { ok: false, message: "Sessão expirada — atualize a página e tente de novo." };
   }
 
+  if (input.mlAccountId !== null && input.shopeeShopId !== null) {
+    return { ok: false, message: "Escolha uma conta do Mercado Livre ou uma loja da Shopee, não as duas." };
+  }
+
   const { error } = await supabase.from("notification_preferences").insert({
     user_id: userId,
     event_type: input.eventType,
     ml_account_id: input.mlAccountId,
+    // Só com valor: a coluna nasce com a migration do C-82.
+    ...(input.shopeeShopId === null ? {} : { shopee_shop_id: input.shopeeShopId }),
     min_severity: input.minSeverity,
     enabled: input.enabled,
   });

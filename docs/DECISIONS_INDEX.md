@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **549** (D-001 a D-638).
+Decisões registradas: **550** (D-001 a D-642).
 
 ## Por domínio
 
@@ -496,7 +496,7 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-618** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
 - **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 
-### worker/infra (93)
+### worker/infra (94)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -591,4 +591,5 @@ Decisões registradas: **549** (D-001 a D-638).
 - **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 - **D-635** — A loja da Shopee na preferencia de aviso (C-82)
+- **D-642** — A loja da Shopee na preferência de aviso (C-82)
 

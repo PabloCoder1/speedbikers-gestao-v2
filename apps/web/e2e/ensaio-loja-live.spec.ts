@@ -718,3 +718,36 @@ test("/acoes: a divergência de estoque da Shopee tem rótulo, o anúncio e o es
     await db.from("actions").delete().eq("id", acao.data?.id ?? "");
   }
 });
+
+/**
+ * D-642 (C-82 do A1, D-635): a loja da Shopee na preferência de aviso. A regra
+ * nasce pelo formulário, aparece com a loja na tabela e sai pela remoção com
+ * confirmação — o banco fica como estava.
+ */
+test("/notificacoes/preferencias: uma regra de aviso para a loja live, com a loja como origem (D-642, C-82)", async ({ page }) => {
+  await entrar(page, "/notificacoes/preferencias");
+
+  const novaRegra = page.getByRole("region", { name: "Nova regra" });
+  const origem = novaRegra.getByLabel("Conta ou loja");
+
+  // As duas origens no mesmo menu, cada uma no seu grupo.
+  await expect(origem.locator("optgroup")).toHaveCount(2);
+  await origem.selectOption({ label: LOJA_LIVE.nome });
+  await novaRegra.getByLabel("Severidade mínima").selectOption("importante");
+  await novaRegra.getByRole("button", { name: "Adicionar preferência" }).click();
+
+  const linha = page.locator("tbody tr").filter({ hasText: `Shopee · ${LOJA_LIVE.nome}` });
+
+  await expect(linha).toHaveCount(1);
+  await expect(linha).toContainText("Todos os tipos");
+
+  // A mesma combinação de novo é recusada, e a tela diz por quê (o índice do escopo, 23505).
+  await origem.selectOption({ label: LOJA_LIVE.nome });
+  await novaRegra.getByRole("button", { name: "Adicionar preferência" }).click();
+  await expect(novaRegra.getByRole("alert")).toContainText("Já existe uma preferência para essa combinação");
+
+  await linha.getByRole("button", { name: "Remover" }).click();
+  await page.getByRole("dialog", { name: "Remover regra de notificação" }).getByRole("button", { name: "Remover regra" }).click();
+  await expect(linha).toHaveCount(0);
+  await semErro(page);
+});
