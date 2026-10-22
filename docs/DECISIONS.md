@@ -19199,3 +19199,24 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,API,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
+## D-646 - O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
+
+**Contexto:** o C-84 do A1 (D-641, #316; o contrato está em `docs/MULTICHANNEL_CONTRACTS.md` §3.33) dá ao Copiloto duas ferramentas novas com a Shopee:
+- `marketplace_sales_summary`, as vendas por canal;
+- `marketplace_sku_sales`, os SKUs mais vendidos por canal.
+
+O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a responderam, pelo `TOOL_LABEL` (o escopo visível da D-293). A leitura para esta fatia achou duas ferramentas que já existiam sem rótulo e apareciam com o nome cru: `sales_sku_declines` e `resolve_catalog_entity`.
+
+**Decisão:**
+1. O rótulo sai do componente para `lib/copiloto-ferramentas.ts` (`rotuloDaFerramenta`), testável, com as nove ferramentas da api:
+   - as duas do C-84: "consultou vendas por canal" e "consultou os SKUs mais vendidos por canal", as sugestões do A1;
+   - as duas que faltavam: "consultou os SKUs que mais caíram" e "achou o SKU ou o anúncio citado".
+2. A ferramenta desconhecida, nova na api antes da tela, continua aparecendo pelo nome em vez de sumir: o operador ainda vê que ela foi usada.
+
+**Publicação:** só a web. Ela não depende do deploy da api: o rótulo de uma ferramenta que a api ainda não usa simplesmente não aparece. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/copiloto-ferramentas.test.ts` (3): toda ferramenta da api tem rótulo, as duas da Shopee dizem o canal e a desconhecida sai pelo nome.
+- **suíte inteira**, com o banco recriado do zero: chromium 261/261, `loja-live` 17/17 e convite 3/3.
+
+**Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
