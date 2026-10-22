@@ -145,7 +145,7 @@ Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma 
 
 ### `tiktok_shops` / `tiktok_credentials` / `tiktok_oauth_states` — conexão TikTok Shop (D-645)
 
-Migration `20261022150000`. O desenho da Shopee (D-425): a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização.
+Migration `20261022170000`. O desenho da Shopee (D-425): a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização.
 - **`tiktok_shops`:**
   - `shop_id` é o `id` da loja no TikTok, texto de dígitos, único;
   - também guarda `shop_name`, `region`, `seller_type` (LOCAL ou CROSS_BORDER), `shop_code`, `open_id` e `seller_name` de quem autorizou, e os `granted_scopes`;

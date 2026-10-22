@@ -178,7 +178,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
   - 409 `rejected`: a autorização não pôde começar.
 - **Ainda não há:** pedidos, renovação e webhook (fatias 2 e 3). A loja conectada não tem venda nenhuma, e nada do TikTok entra nos totais.
 - **Para a tela:** o TikTok em `/contas`, ao lado das lojas da Shopee, com o botão "Conectar loja do TikTok Shop" só para ADMIN.
-  - A tela pode ler `tiktok_shops` só depois da migration `20261022150000` em produção.
+  - A tela pode ler `tiktok_shops` só depois da migration `20261022170000` em produção.
   - Até a api ser publicada com as variáveis, o botão recebe 503. A tela diz "TikTok Shop ainda não está disponível", sem erro.
 
 ### 3.33 A Shopee no Copiloto (C-84, D-641) — em código

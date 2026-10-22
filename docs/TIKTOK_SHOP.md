@@ -286,7 +286,7 @@ Fonte: P`seller-center-development-shops`.
 **Fatia 1 em código (D-645, 22/10):**
 - **O que existe:**
   - o cliente `@sb/tiktok-shop`, com a assinatura conferida no exemplo oficial;
-  - as tabelas `tiktok_shops`, `tiktok_credentials` e `tiktok_oauth_states` (migration `20261022150000`);
+  - as tabelas `tiktok_shops`, `tiktok_credentials` e `tiktok_oauth_states` (migration `20261022170000`);
   - `POST /v1/tiktok-shop/connect` e `GET /oauth/tiktok-shop/callback`;
   - o interruptor: sem `TIKTOK_SHOP_SERVICE_ID`, `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`, as rotas respondem 503.
 - **Para ligar em produção, na ordem:**

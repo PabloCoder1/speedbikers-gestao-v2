@@ -19170,7 +19170,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
    - **manda o token** no cabeçalho `x-tts-access-token`;
    - **trata o erro:** `code` diferente de 0 é erro mesmo com HTTP 200; 429, 5xx e os códigos 36009002 e 36009003 são passageiros;
    - **não vaza a URL:** a mensagem de erro leva o método e o caminho, porque a troca do token leva o App Secret na query.
-2. **Tabelas próprias** (migration `20261022150000`), como as `shopee_*`:
+2. **Tabelas próprias** (migration `20261022170000`), como as `shopee_*`:
    - `tiktok_shops`: o `id` da loja como texto, único, mais nome, região, `seller_type`, código, quem autorizou, os escopos concedidos, o estado da conexão e o fim da autorização;
    - `tiktok_credentials`: o `shop_cipher` e os tokens, cifrados com a chave de `ml_credentials`;
    - `tiktok_oauth_states`: o `state` da autorização.
@@ -19217,7 +19217,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `db reset` e a suíte inteira, 1134 de 1134.
 
 **Publicação:**
-1. A migration `20261022150000`. Antes dela, a api nova sobe sem o TikTok (503).
+1. A migration `20261022170000`. Antes dela, a api nova sobe sem o TikTok (503).
 2. Os atos do dono (`docs/TIKTOK_SHOP.md` §15):
    - publicar o app;
    - guardar o App Key e o App Secret no Secret Manager de produção, como `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`;
@@ -19226,7 +19226,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 
 **Impacto:**
 - `packages/tiktok-shop/` (novo);
-- `supabase/migrations/20261022150000_lojas_tiktok_shop.sql`;
+- `supabase/migrations/20261022170000_lojas_tiktok_shop.sql`;
 - `apps/api/src/{tiktok-shops,tiktok-shops.test,app,app.test,env,env.test,index}.ts` e `apps/api/package.json`;
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `infra/{deploy-cloud-run,lib,setup-dev}.sh`, `.env.example`;
