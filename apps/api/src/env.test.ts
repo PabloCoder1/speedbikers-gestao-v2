@@ -109,4 +109,21 @@ describe("parseEnv", () => {
     expect(parseEnv({ ...OBRIGATORIAS, SHOPEE_PARTNER_ID: "abc" }).ok).toBe(false);
     expect(parseEnv({ ...OBRIGATORIAS, SHOPEE_ENVIRONMENT: "producao" }).ok).toBe(false);
   });
+
+  it("TikTok Shop (D-645): sem as variáveis o boot segue; service_id que não é número é recusado", () => {
+    const sem = parseEnv({ ...OBRIGATORIAS });
+
+    expect(sem.ok && sem.env.TIKTOK_SHOP_SERVICE_ID).toBeUndefined();
+
+    const com = parseEnv({
+      ...OBRIGATORIAS,
+      TIKTOK_SHOP_SERVICE_ID: "7697150457891358480",
+      TIKTOK_SHOP_APP_KEY: "chave",
+      TIKTOK_SHOP_APP_SECRET: "segredo-de-teste-longo",
+    });
+
+    expect(com.ok && com.env).toMatchObject({ TIKTOK_SHOP_SERVICE_ID: "7697150457891358480" });
+    expect(parseEnv({ ...OBRIGATORIAS, TIKTOK_SHOP_SERVICE_ID: "7697-abc" }).ok).toBe(false);
+    expect(parseEnv({ ...OBRIGATORIAS, TIKTOK_SHOP_APP_SECRET: "curto" }).ok).toBe(false);
+  });
 });
