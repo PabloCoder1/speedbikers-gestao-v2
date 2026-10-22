@@ -147,6 +147,11 @@ export type SalesAnomalyDiagnosisPayload = z.infer<typeof salesAnomalyDiagnosisS
 export const narrateSkuDiagnosisInputSchema = z.object({
   diagnosis: salesAnomalyDiagnosisSchema,
   impactBrl: z.number().nullable(),
+  /**
+   * C-84 (D-641, pedido do A2): o canal do diagnostico, que desde o C-83 e por
+   * canal. Ausente = o diagnostico de antes, so do Mercado Livre.
+   */
+  marketplace: z.enum(["ML", "SHOPEE"]).optional(),
 });
 export type NarrateSkuDiagnosisInput = z.infer<typeof narrateSkuDiagnosisInputSchema>;
 
@@ -231,6 +236,9 @@ export const COPILOT_TOOL_NAMES = [
   // Segunda leva (D-293): as ferramentas alem de venda.
   "sku_replenishment",
   "listing_performance",
+  // C-84 (D-641): a Shopee, pelas RPCs multicanal.
+  "marketplace_sales_summary",
+  "marketplace_sku_sales",
   "narrate_sku_diagnosis",
   "narrate_action",
   "suggest_support_reply",
@@ -336,3 +344,92 @@ export const listingPerformanceOutputSchema = z.object({
   visitsCoverage: z.enum(["SEM_COBERTURA", "PARCIAL", "COMPLETA"]),
 });
 export type ListingPerformanceOutput = z.infer<typeof listingPerformanceOutputSchema>;
+
+/**
+ * C-84 (D-641) — a Shopee no Copiloto. As ferramentas de venda de antes são
+ * do Mercado Livre (`get_sales_summary`, a conta do ML). Estas duas leem as
+ * RPCs multicanal que as telas já usam (C-58, C-59), sem agregação nova:
+ *
+ *  - `marketplace_sales_summary` lê `get_marketplace_sales_summary` (o total,
+ *    cada canal e cada conta ou loja);
+ *  - `marketplace_sku_sales` lê `get_marketplace_sku_sales` (o ranking de
+ *    SKUs com as colunas por canal).
+ *
+ * A receita da Shopee é a CONHECIDA: o pedido sem o preço pago fica de fora e
+ * é contado à parte. Pedido do ML e compra da Shopee não somam: a unidade que
+ * soma os canais é a compra.
+ */
+const marketplaceSchema = z.enum(["ML", "SHOPEE"]);
+
+const marketplaceScopeSchema = z.object({
+  dateFrom: dateSchema,
+  dateTo: dateSchema,
+  /** Ausente = os dois canais. */
+  marketplaces: z.array(marketplaceSchema).min(1).max(2).optional(),
+  /** Contas do ML e/ou lojas da Shopee (os ids do contexto); ausente = todas as alcançadas. */
+  accountIds: z.array(z.uuid()).min(1).max(20).optional(),
+});
+
+export const marketplaceSalesSummaryInputSchema = marketplaceScopeSchema;
+export type MarketplaceSalesSummaryInput = z.infer<typeof marketplaceSalesSummaryInputSchema>;
+
+const marketplaceSalesLineSchema = z.object({
+  /** NULO só na linha do total. */
+  marketplace: marketplaceSchema.nullable(),
+  /** Só na linha da conta ou loja. */
+  accountId: z.uuid().nullable(),
+  accountName: z.string().nullable(),
+  /**
+   * Só na linha da conta ou loja: a loja sandbox, ou ainda sem a primeira
+   * leitura de pedidos, aparece mas NÃO entra no total nem no canal.
+   */
+  countsInTotals: z.boolean(),
+  /** NULO = a loja ainda não foi lida (desconhecido, não zero). */
+  purchases: z.number().int().nullable(),
+  units: z.number().int().nullable(),
+  /** A receita conhecida; `purchasesWithoutRevenue` diz quantas compras ficaram de fora. */
+  knownRevenue: z.number().nullable(),
+  purchasesWithoutRevenue: z.number().int().nullable(),
+  averageTicket: z.number().nullable(),
+  /** Pedidos do ML (só no ML; não soma com a Shopee). */
+  mlOrders: z.number().int().nullable(),
+  lastUpdatedAt: z.string().nullable(),
+});
+
+export const marketplaceSalesSummaryOutputSchema = z.object({
+  /** NULO quando nenhum canal do recorte tem conta ou loja lida. */
+  total: marketplaceSalesLineSchema.nullable(),
+  byMarketplace: z.array(marketplaceSalesLineSchema),
+  byAccount: z.array(marketplaceSalesLineSchema),
+});
+export type MarketplaceSalesSummaryOutput = z.infer<typeof marketplaceSalesSummaryOutputSchema>;
+
+export const marketplaceSkuSalesInputSchema = marketplaceScopeSchema.extend({
+  orderBy: z.enum(["revenue", "units"]).default("revenue"),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+export type MarketplaceSkuSalesInput = z.infer<typeof marketplaceSkuSalesInputSchema>;
+
+export const marketplaceSkuSalesOutputSchema = z.object({
+  orderBy: z.enum(["revenue", "units"]),
+  /** Quantos SKUs o recorte tem, antes do limite. */
+  totalSkus: z.number().int(),
+  rows: z.array(
+    z.object({
+      skuId: z.uuid().nullable(),
+      sku: z.string().nullable(),
+      title: z.string().nullable(),
+      unitsMl: z.number().int().nullable(),
+      revenueMl: z.number().nullable(),
+      purchasesMl: z.number().int().nullable(),
+      unitsShopee: z.number().int().nullable(),
+      knownRevenueShopee: z.number().nullable(),
+      shopeeItemsWithoutRevenue: z.number().int().nullable(),
+      purchasesShopee: z.number().int().nullable(),
+      units: z.number().int().nullable(),
+      knownRevenue: z.number().nullable(),
+      purchases: z.number().int().nullable(),
+    }),
+  ),
+});
+export type MarketplaceSkuSalesOutput = z.infer<typeof marketplaceSkuSalesOutputSchema>;
