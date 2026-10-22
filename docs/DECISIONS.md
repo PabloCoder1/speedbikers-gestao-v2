@@ -17495,6 +17495,51 @@ Os paineis foram vistos nos tres estados, com fotos a 390 e 1440 px. A falha e a
 
 So web: sem migration, sem RPC e sem leitura nova.
 
+## D-532 - O proxy confere a sessao pela assinatura do token (getClaims), e as pre-buscas deixam de esperar o Auth
+
+**Contexto:** ao medir a `/anuncios` (D-531), o A3 viu ~48 chamadas ao `/auth/v1/user` por visita. O dono pediu a investigacao.
+
+A medida no build local, a 150 ms por chamada, com o registro de cada chamada do servidor ao Supabase:
+- **De onde vem:** cada visita dispara de 41 a 47 pre-buscas. A maioria e dos links da barra lateral, cada um duas vezes; o resto e de links do conteudo.
+- **O que cada pre-busca traz:** so a arvore de rotas e o titulo da pagina, com `no-store`, ate 1,3 KB e quase sempre 0 byte, sem dado nenhum.
+- **O custo:** cada pre-busca passa pelo `proxy.ts`, que chamava `supabase.auth.getUser()` e esperava a ida ao Auth.
+- **O total:** de 46 a 52 chamadas de Auth por visita (Home, `/anuncios`, `/central`), contra 12 a 16 de dado.
+- **A troca de tela pela barra lateral:** 614 a 617 ms.
+
+**Por que duas pre-buscas por link:** o cache de segmentos do Next 16 pede, para cada link, primeiro a arvore de rotas (`next-router-segment-prefetch: /_tree`) e depois o segmento. Nao e duplicacao do app: as duas rodadas saem uma atras da outra, em lotes de quatro, sem evento da pagina no meio. Com o `getClaims`, nenhuma das duas vai ao Auth.
+
+**O que foi medido e descartado:**
+1. **Desligar a pre-busca na barra lateral** (`prefetch={false}`, como o `ItemDeMenu` faz desde a D-500): as chamadas de Auth caem pela metade, mas a troca de tela fica 38 a 104 ms mais lenta. Saber a arvore antes do clique poupa uma ida ao servidor.
+2. **Conferir so a pre-busca pela assinatura:** o Next 16 tira do pedido que chega ao proxy os cabecalhos `rsc` e `next-router-prefetch` e o `_rsc` da query. A pre-busca chega igual a navegacao, entao o proxy nao tem como separa-la.
+3. **Pular o proxy na pre-busca** (`missing` no matcher): o cabecalho e do cliente. Quem o forjasse passaria sem conferencia, ate numa pagina. Relaxa a protecao: recusado.
+
+**Decisao (aprovada pelo dono em 22/10, PR #312):**
+- O `proxy.ts` troca `getUser` por `getClaims`. Ele confere a assinatura e a validade do token com a chave publica do projeto, sem ir ao Auth. O JWKS fica num cache global do modulo por 10 minutos, entao o cliente novo por requisicao nao o busca de novo.
+- Token adulterado ou vencido falha e cai no login. Vencido com refresh valido e renovado ali: o `getClaims` sem JWT passa pelo `getSession`, que renova com o refresh, e o `setAll` grava o cookie novo. Com chave simetrica (HS256), o `getClaims` chama o proprio `getUser`, e nada muda.
+- **O que muda em seguranca:**
+  - uma sessao encerrada em outro aparelho so para de abrir telas quando o token dela vence (1 h, `jwt_expiry`);
+  - o PostgREST ja aceita esse mesmo token ate vencer, para ler dado sob RLS: o proxy nao era a barreira da revogacao para o dado;
+  - o `Shell` continua com `getUser` na carga inteira da tela, e as acoes de servidor que chamam `getUser` seguem iguais.
+- **Conferido com o A1 (21/10):**
+  - o JWKS publico da producao tem uma chave so, ES256, como o Dev e o stack local. Nenhum token real foi decodificado; se o projeto ainda assinasse com o segredo legado, o `getClaims` cairia no `getUser`, sem piora;
+  - ninguem confia no proxy para barrar sessao revogada: a `api` valida o Bearer no Auth por conta propria (`apps/api/src/auth.ts`); o web nunca usa `service_role` (D-012), e toda leitura e rota vai com o JWT do usuario sob RLS; as acoes de servidor sensiveis chamam `getUser` sozinhas.
+- **O dono aprovou** em 22/10, e a mudanca foi ao PR #312.
+
+**Medido** (build local, 150 ms por chamada):
+- **Chamadas de Auth por visita:** de 46 a 52 (Home, `/anuncios`, `/central`) para **1**, a do `Shell` na carga inteira. O JWKS foi buscado uma vez no teste todo.
+- **Troca de tela pela barra lateral** (mediana de 5, com a rede ociosa antes do clique): de 614 para **443 ms** (`/anuncios` para `/estoque`) e de 617 para **423 ms** (`/estoque` para `/anuncios`). Toda requisicao deixa de esperar uma ida ao Auth antes de renderizar.
+
+**Verificacao:**
+- e2e novo, em `login.spec.ts`: a sessao de verdade com a assinatura do token trocada, no cookie, cai no login.
+- A suite inteira de e2e, com o banco recriado, duas vezes:
+  - no projeto chromium, 261 e 262 de 265;
+  - os 3 do convite falham fora da porta 3000 (o link do Supabase local aponta para ela) e passaram com o servidor nela (3 de 3);
+  - o de `/compras` falhou uma vez e passou sozinho e na segunda rodada: e intermitente;
+  - o ensaio da loja live, **16 de 16**, com as dependencias da worktree reinstaladas. Antes, 15 de 16: o teste da divergencia da Shopee (D-632) achava o titulo cru porque o `dist` do `@sb/domain` estava velho, e falhava igual com o `proxy.ts` da main. Era o ambiente, nao a mudanca.
+- `pnpm run check`, o build e o `docs:check`.
+
+**Impacto:** `apps/web/proxy.ts` e o e2e `login.spec.ts`. Sem migration, sem mudanca na `api` nem no banco.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.

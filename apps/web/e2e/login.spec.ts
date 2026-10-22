@@ -55,4 +55,52 @@ test.describe("login", () => {
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("link", { name: "Vendas" })).toBeVisible();
   });
+
+  /*
+    D-532: o `proxy.ts` confere o token pela ASSINATURA (`getClaims`), sem ir ao
+    servidor de Auth. O que não pode mudar é isto: um token adulterado no
+    cookie — a sessão de verdade com a assinatura trocada — cai no login, como
+    caía quando o Auth o recusava.
+  */
+  test("um token adulterado no cookie cai no login", async ({ page, context }) => {
+    await page.goto("/login?next=%2Fcompras");
+    await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+    await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/compras$/);
+
+    // O cookie da sessão do `@supabase/ssr`: `sb-<ref>-auth-token`, às vezes em
+    // pedaços (`.0`, `.1`), com o valor `base64-<JSON em base64url>`.
+    const pedacos = (await context.cookies())
+      .filter((cookie) => /^sb-.+-auth-token(\.\d+)?$/u.test(cookie.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    expect(pedacos.length).toBeGreaterThan(0);
+
+    const nome = pedacos[0]?.name.replace(/\.\d+$/u, "") ?? "";
+    const bruto = pedacos.map((cookie) => cookie.value).join("");
+    const sessao = JSON.parse(Buffer.from(bruto.replace(/^base64-/u, ""), "base64url").toString("utf8")) as {
+      access_token: string;
+    };
+    const [cabecalho, corpo, assinatura] = sessao.access_token.split(".");
+    const trocada = `${(assinatura ?? "").slice(0, -4)}${(assinatura ?? "").endsWith("AAAA") ? "BBBB" : "AAAA"}`;
+
+    sessao.access_token = `${cabecalho ?? ""}.${corpo ?? ""}.${trocada}`;
+
+    const valor = `base64-${Buffer.from(JSON.stringify(sessao), "utf8").toString("base64url")}`;
+    const novos = valor.match(/.{1,3180}/gu) ?? [];
+
+    await context.clearCookies();
+    await context.addCookies(
+      novos.map((parte, i) => ({
+        name: novos.length === 1 ? nome : `${nome}.${String(i)}`,
+        value: parte,
+        domain: pedacos[0]?.domain ?? "localhost",
+        path: "/",
+      })),
+    );
+
+    await page.goto("/compras");
+    await expect(page).toHaveURL(/\/login\?next=%2Fcompras$/);
+  });
 });

@@ -83,17 +83,36 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     },
   );
 
-  // `getUser` e não `getSession`: só o primeiro revalida o token contra o
-  // servidor de Auth. `getSession` devolve o que está no cookie, que o
-  // navegador pode ter alterado.
-  const { data } = await supabase.auth.getUser();
+  /*
+    QUEM É, CONFERIDO PELA ASSINATURA (D-532). `getClaims` confere a assinatura
+    e a validade do token com a chave pública do projeto (JWKS, guardada em
+    memória por 10 minutos), sem ir ao servidor de Auth. Era `getUser`, que
+    revalidava o token lá a CADA requisição: a carga, a navegação e cada uma
+    das ~45 pré-buscas de uma visita (os links da barra lateral) esperavam uma
+    ida ao Auth antes de renderizar. Medido no build local a 150 ms por
+    chamada: ~50 chamadas ao Auth por visita viraram 1, e a troca de tela pela
+    barra caiu de ~615 para ~430 ms.
+
+    `getSession` continua não servindo: devolve o que está no cookie sem
+    conferir, e o navegador pode tê-lo alterado. Token adulterado ou vencido
+    falha na assinatura e cai no login; vencido com refresh válido é renovado
+    aqui: o `getClaims` sem JWT passa pelo `getSession`, que renova com o
+    refresh, e o `setAll` grava o cookie novo.
+
+    O que muda: uma sessão encerrada em OUTRO aparelho só para de abrir telas
+    quando o token dela vence (1 h, `jwt_expiry`) — o mesmo prazo em que o
+    PostgREST já a aceita para ler dado. O `Shell` segue chamando `getUser`
+    na carga inteira da tela. Com chave simétrica (HS256), o `getClaims` chama
+    o próprio `getUser`, e nada muda.
+  */
+  const { data } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
 
   const isPublic =
     PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
-  if (data.user === null && !isPublic) {
+  if ((data?.claims.sub ?? null) === null && !isPublic) {
     const login = request.nextUrl.clone();
 
     // `next` precisa levar a QUERY STRING junto, não só o caminho (achado em
