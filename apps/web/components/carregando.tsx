@@ -11,7 +11,9 @@ import { SidebarNav } from "./nav";
  *   com forma própria passa o miolo como `children` (`/configuracoes`) — a
  *   moldura vem sempre.
  * - `CarregandoConteudo`: o miolo da tela (título, faixa de KPIs, painel), para
- *   quando a moldura real já está de pé e só o conteúdo espera.
+ *   quando a moldura real já está de pé e só o conteúdo espera. Sem o título
+ *   (`comTitulo={false}`) quando o título real já pintou e só os números
+ *   esperam a leitura lenta (as subtelas da Central, D-520).
  * - `CarregandoBloco`: um painel dentro de uma tela montada (ranking, margem,
  *   gaveta do Copiloto).
  *
@@ -44,19 +46,27 @@ function Linhas({ quantidade }: { quantidade: number }): ReactNode {
   ));
 }
 
-export function CarregandoConteudo({ rotulo = "Carregando a tela" }: { rotulo?: string }): ReactNode {
+export function CarregandoConteudo({
+  rotulo = "Carregando a tela",
+  comTitulo = true,
+}: {
+  rotulo?: string;
+  comTitulo?: boolean;
+}): ReactNode {
   return (
     <div className="sb-carregando" role="status">
       <span className="sb-sr-only">{rotulo}…</span>
 
       <div aria-hidden="true" className="sb-carregando-revela">
-        <div className="sb-page-title">
-          <div>
-            <Barra largura="6rem" altura="0.625rem" />
-            <Barra largura="min(18rem, 70%)" altura="1.75rem" />
-            <Barra largura="min(26rem, 90%)" altura="0.75rem" />
+        {comTitulo && (
+          <div className="sb-page-title">
+            <div>
+              <Barra largura="6rem" altura="0.625rem" />
+              <Barra largura="min(18rem, 70%)" altura="1.75rem" />
+              <Barra largura="min(26rem, 90%)" altura="0.75rem" />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="sb-kpi-strip" style={{ ["--sb-kpi-cols" as string]: "4" }}>
           {Array.from({ length: 4 }, (_, indice) => (

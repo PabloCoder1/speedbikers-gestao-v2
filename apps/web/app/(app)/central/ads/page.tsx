@@ -26,7 +26,7 @@ import {
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
-import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { CabecalhoDaCentral, funcaoAusente, SendoAtivado, type RespostaComCodigo } from "../comum";
 
 export const metadata = { title: "Sinais de Ads — Speed Bikers Gestão" };
 
@@ -106,28 +106,61 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   }
 
   const supabase = await createClient();
-  const resposta = await supabase.rpc("get_sinais_ads", { p_organization_id: membership.organizationId });
+  // Só os números esperam os sinais (D-520): o título e as abas pintam antes.
+  // Os limites dependem só da organização e saem junto, sem esperar a semana.
+  const leituraSinais = Promise.resolve(supabase.rpc("get_sinais_ads", { p_organization_id: membership.organizationId }));
+  const leituraLimites = carregarLimites(supabase, membership.organizationId);
 
-  // Função ausente (PGRST202): a web da `main` chega à produção antes de a
-  // migration passar pelo workflow — o precedente de D-363.
+  return (
+    <>
+      <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
+      <Suspense fallback={<CarregandoConteudo rotulo="Carregando os sinais de Ads" comTitulo={false} />}>
+        <CorpoDosSinais
+          leitura={leituraSinais}
+          leituraLimites={leituraLimites}
+          supabase={supabase}
+          query={query}
+          nivel={nivel}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * Os sinais abaixo do título já pintado (D-520): a semana, a faixa, as
+ * campanhas, a tabela e o método. Função ausente (PGRST202): a web da `main`
+ * chega à produção antes de a migration passar pelo workflow — o precedente
+ * de D-363.
+ */
+async function CorpoDosSinais({
+  leitura,
+  leituraLimites,
+  supabase,
+  query,
+  nivel,
+}: {
+  leitura: PromiseLike<RespostaComCodigo>;
+  leituraLimites: ReturnType<typeof carregarLimites>;
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  query: Consulta;
+  nivel: NivelAds | null;
+}): Promise<ReactNode> {
+  const resposta = await leitura;
+
   if (resposta.error !== null) {
-    return (
-      <>
-        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
-        {funcaoAusente(resposta.error) ? (
-          <SendoAtivado>
-            Os sinais de Ads estão sendo ativados neste ambiente: o banco ainda não recebeu a função de D-398. Assim
-            que a migração for aplicada, esta tela passa a listar as campanhas.
-          </SendoAtivado>
-        ) : (
-          <EstadoDaTela
-            tipo="erro"
-            titulo="Não foi possível carregar os sinais de Ads"
-            detalhe={resposta.error.message}
-            acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-          />
-        )}
-      </>
+    return funcaoAusente(resposta.error) ? (
+      <SendoAtivado>
+        Os sinais de Ads estão sendo ativados neste ambiente: o banco ainda não recebeu a função de D-398. Assim que a
+        migração for aplicada, esta tela passa a listar as campanhas.
+      </SendoAtivado>
+    ) : (
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Não foi possível carregar os sinais de Ads"
+        detalhe={resposta.error.message}
+        acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     );
   }
 
@@ -135,15 +168,12 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
 
   if (sinais === null) {
     return (
-      <>
-        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
-        <EstadoDaTela
-          tipo="erro"
-          titulo="Os sinais de Ads responderam num formato que esta tela não reconhece"
-          descricao="Nada foi mostrado."
-          acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
-        />
-      </>
+      <EstadoDaTela
+        tipo="erro"
+        titulo="Os sinais de Ads responderam num formato que esta tela não reconhece"
+        descricao="Nada foi mostrado."
+        acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+      />
     );
   }
 
@@ -151,39 +181,28 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
 
   if (janela.inicio === null || janela.fim === null) {
     return (
-      <>
-        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
-        <EstadoDaTela
-          tipo="vazio"
-          titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
-          descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
-        />
-      </>
+      <EstadoDaTela
+        tipo="vazio"
+        titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
+        descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
+      />
     );
   }
 
-  const [margem, limites] = await Promise.all([
-    margemDaSemana(supabase, janela.inicio, janela.fim),
-    carregarLimites(supabase, membership.organizationId),
-  ]);
+  const [margem, limites] = await Promise.all([margemDaSemana(supabase, janela.inicio, janela.fim), leituraLimites]);
   const margemBaixa = limites.margemAposAdsBaixa;
   const comSinal = sinais.campanhas.filter((c) => (NIVEIS_COM_SINAL as readonly string[]).includes(c.nivel));
   const lista = nivel === null ? comSinal : comSinal.filter((c) => c.nivel === nivel);
 
   return (
     <>
-      <Titulo
-        consulta={query}
-        subtitle={
-          <>
-            Semana de {formatBusinessDate(janela.inicio)} a {formatBusinessDate(janela.fim)} contra{" "}
-            {janela.anterior_inicio === null ? "a anterior" : formatBusinessDate(janela.anterior_inicio)} a{" "}
-            {janela.anterior_fim === null ? "" : formatBusinessDate(janela.anterior_fim)}. Todas as contas.
-            {janela.dias_pendentes.length > 0 &&
-              ` Vendas com Ads de ${listarDatas(janela.dias_pendentes)} ainda não consolidadas pelo Mercado Livre — ficam de fora.`}
-          </>
-        }
-      />
+      <p className="sb-central-recorte">
+        Semana de {formatBusinessDate(janela.inicio)} a {formatBusinessDate(janela.fim)} contra{" "}
+        {janela.anterior_inicio === null ? "a anterior" : formatBusinessDate(janela.anterior_inicio)} a{" "}
+        {janela.anterior_fim === null ? "" : formatBusinessDate(janela.anterior_fim)}. Todas as contas.
+        {janela.dias_pendentes.length > 0 &&
+          ` Vendas com Ads de ${listarDatas(janela.dias_pendentes)} ainda não consolidadas pelo Mercado Livre — ficam de fora.`}
+      </p>
 
       <KpiStrip cells={celulasDoResumo(sinais, margem)} />
 

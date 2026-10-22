@@ -280,6 +280,9 @@ test("/central/frete: resumo, filtro de nível e o caminho a partir da central",
 
   await expect(page.getByRole("heading", { level: 1, name: "Detector de frete" })).toBeVisible();
 
+  // O título chega antes dos números (D-520): espera o esqueleto sair antes de decidir o caminho.
+  await expect(page.locator(".sb-carregando")).toHaveCount(0);
+
   if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
     test.skip(true, "banco sem a função de D-397");
   }
@@ -321,6 +324,9 @@ test("/central/ads: abre a partir da central, sem erro, com o motivo quando não
   await page.getByRole("link", { name: "Sinais de Ads", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Sinais de Ads" })).toBeVisible();
 
+  // O título chega antes dos números (D-520): espera o esqueleto sair antes de decidir o caminho.
+  await expect(page.locator(".sb-carregando")).toHaveCount(0);
+
   if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
     test.skip(true, "banco sem a função de D-398");
   }
@@ -354,6 +360,9 @@ test("/central/produtos: abre da central com o mesmo recorte, e a ordem mora na 
   await page.getByRole("link", { name: "Ranking de produtos", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Ranking de produtos" })).toBeVisible();
   await expect(page).toHaveURL(/\/central\/produtos\?p=7d/);
+
+  // O título chega antes dos números (D-520): espera o esqueleto sair antes de decidir o caminho.
+  await expect(page.locator(".sb-carregando")).toHaveCount(0);
 
   if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
     test.skip(true, "banco sem a função de D-402");

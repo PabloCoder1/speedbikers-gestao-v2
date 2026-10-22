@@ -17363,6 +17363,17 @@ td.sb-pco-num-linha {
   margin-top: var(--sb-space-4);
 }
 
+/*
+  O recorte que a leitura decide (a janela do detector, a semana do Ads), na
+  primeira linha do conteúdo: o título pinta antes da leitura e não pode
+  esperar por ela (D-520). Mesma letra do subtítulo do cabeçalho.
+*/
+.sb-central-recorte {
+  margin: 0 0 var(--sb-space-3);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
 /* Os limites da central para quem só lê (D-408): rótulo, valor e a dica com o padrão. */
 .sb-limites-lista {
   display: grid;
