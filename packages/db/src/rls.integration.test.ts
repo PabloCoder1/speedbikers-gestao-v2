@@ -2669,6 +2669,70 @@ describe("lojas Shopee (D-425)", () => {
 });
 
 /*
+  D-645: as lojas do TikTok Shop (fatia 1). Lidas por quem e da organizacao;
+  escritas so pela api (service role); credenciais e states fora do alcance do
+  navegador.
+*/
+describe("lojas do TikTok Shop (D-645)", () => {
+  const LOJA = "dddd6450-0000-4000-8000-00000000d645";
+  const SHOP_ID = "7000714532876273420";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.tiktok_shops (id, organization_id, shop_id, shop_name, seller_type, status)
+       values ($1, $2, $3, 'Loja TikTok Teste', 'LOCAL', 'CONNECTED') on conflict do nothing`,
+      [LOJA, ORG_SB, SHOP_ID],
+    );
+    await client.query(
+      `insert into public.tiktok_credentials
+         (tiktok_shop_id, shop_cipher, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at, refresh_token_expires_at)
+       values ($1, 'GCP_cipher_de_teste', repeat('a', 60), repeat('b', 60), now() + interval '7 days', now() + interval '365 days')
+       on conflict do nothing`,
+      [LOJA],
+    );
+  });
+
+  afterAll(async () => {
+    // Apagar a loja leva a credencial junto (on delete cascade).
+    await client.query("delete from public.tiktok_shops where id = $1", [LOJA]);
+  });
+
+  it("quem é da organização vê a loja; outra organização não vê", async () => {
+    const minhas = await asUser<{ shop_id: string; shop_name: string }>(
+      ADMIN_SB,
+      `select shop_id, shop_name from public.tiktok_shops where shop_id = '${SHOP_ID}'`,
+    );
+    const deOutra = await asUser(DE_OUTRA_ORG, `select 1 from public.tiktok_shops where shop_id = '${SHOP_ID}'`);
+
+    expect(minhas).toEqual([{ shop_id: SHOP_ID, shop_name: "Loja TikTok Teste" }]);
+    expect(deOutra).toHaveLength(0);
+  });
+
+  it("nem o ADMIN grava loja pelo navegador — só a api", async () => {
+    await expect(
+      asUser(ADMIN_SB, `insert into public.tiktok_shops (organization_id, shop_id) values ('${ORG_SB}', '7000714532876273421')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it.each(["tiktok_credentials", "tiktok_oauth_states"])("authenticated e anon são recusados em %s", async (t) => {
+    await expect(asUser(ADMIN_SB, `select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(`select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("a mesma loja não entra duas vezes; id fora do formato e token curto (texto claro) são recusados", async () => {
+    await expect(
+      client.query("insert into public.tiktok_shops (organization_id, shop_id) values ($1, $2)", [ORG_OUTRA, SHOP_ID]),
+    ).rejects.toThrow(/tiktok_shops_unica/);
+    await expect(
+      client.query("insert into public.tiktok_shops (organization_id, shop_id) values ($1, 'MLB123')", [ORG_SB]),
+    ).rejects.toThrow(/tiktok_shops_shop_id_check/);
+    await expect(
+      client.query("update public.tiktok_credentials set access_token_ciphertext = 'abc' where tiktok_shop_id = $1", [LOJA]),
+    ).rejects.toThrow(/tiktok_credentials_cifradas/);
+  });
+});
+
+/*
   D-426: os pedidos da Shopee. Lidos por quem é da organização; escritos só
   pelo worker; apagar a loja leva pedidos e itens junto.
 */
@@ -12100,6 +12164,35 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     }
   });
 
+  it("D-647: a busca é texto puro, na lista e na faixa — `%` e `_` não são curinga, e maiúscula não importa", async () => {
+    const naLista = async (busca: string): Promise<number> =>
+      Number(
+        (
+          await asUser<{ total_count: string }>(
+            ADMIN_SB,
+            `select total_count from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}',
+               p_search => '${busca}', p_limit => 1)`,
+          )
+        )[0]?.total_count ?? 0,
+      );
+    const naFaixa = async (busca: string): Promise<number> =>
+      Number(
+        (await asUser<{ total: string }>(ADMIN_SB, `select total from public.get_listings_dashboard_counts('${ORG_SB}', p_search => '${busca}')`))[0]
+          ?.total,
+      );
+
+    // O anúncio continua achado pelo próprio código, em qualquer caixa.
+    expect(await naLista("MLB9001005")).toBeGreaterThan(0);
+    expect(await naLista("mlb9001005")).toBe(await naLista("MLB9001005"));
+    expect(await naFaixa("mlb9001005")).toBe(await naLista("MLB9001005"));
+    // Com `ilike`, o `_` era "qualquer caractere" e o `%`, "qualquer texto":
+    // os dois achavam o MLB9001005. Agora são o caractere digitado.
+    for (const busca of ["MLB900100_", "%MLB9001005"]) {
+      expect(await naLista(busca)).toBe(0);
+      expect(await naFaixa(busca)).toBe(0);
+    }
+  });
+
   it("p_order ordena pela coluna pedida, nulo vai para o fim e valor desconhecido é a ordem de antes", async () => {
     const ordem = async (order: string | null): Promise<{ item_id: string; price: string; visits: string | null }[]> =>
       asUser(
@@ -15337,12 +15430,14 @@ describe("a venda anômala como episódio por SKU e canal (D-643)", () => {
 
     expect(primeira).toMatchObject({ legado_encerradas: 2, criadas: 2, atualizadas: 0 });
     expect(repetida).toMatchObject({ legado_encerradas: 0, criadas: 0, atualizadas: 2 });
-    expect(linhas.slice(0, 3).map((l) => [l.status, l.motivo?.includes("D-643") ?? false])).toEqual([
+    expect(linhas.slice(0, 3).map((l) => [l.status, l.motivo?.includes("acompanhamento por SKU e canal") ?? false])).toEqual([
       ["resolvido", true],
       ["resolvido", true],
       // A que uma pessoa ja tinha resolvido nao ganha o motivo do sistema.
       ["resolvido", false],
     ]);
+    // D-647: o motivo aparece na tela; nunca leva o codigo da decisao.
+    expect(linhas.filter((l) => /D-\d{3}/.test(l.motivo ?? ""))).toEqual([]);
     expect(linhas.slice(3).map((l) => [l.subject_key, l.status, l.dedup_key, l.last_detected_on, l.primeira])).toEqual([
       [`ML:${sku}`, "novo", `venda_anomala:ML:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],
       [`SHOPEE:${sku}`, "novo", `venda_anomala:SHOPEE:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],

@@ -66,6 +66,8 @@ import type { ShopeePushDeps } from "./shopee-push.js";
 import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { TikTokShopsDeps } from "./tiktok-shops.js";
+import { completeTikTokConnect, startTikTokConnect } from "./tiktok-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
 import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
@@ -115,6 +117,8 @@ export interface AppDependencies {
   mlAccounts?: MlAccountsDeps;
   /** `undefined` sem as variáveis da Shopee (env.ts, D-425): as rotas dela respondem 503. */
   shopeeShops?: ShopeeShopsDeps;
+  /** D-645: a conexão do TikTok Shop; sem ela, as rotas respondem 503. */
+  tiktokShops?: TikTokShopsDeps;
   /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
   shopeePush?: ShopeePushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
@@ -362,6 +366,44 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     return context.json({ connected: true, shops: outcome.shops });
   });
 
+  // --------------------------------------------------------------------
+  // Callback da autorização do TikTok Shop (D-645). Público como o da Shopee:
+  // quem chega é o navegador do ADMIN redirecionado pelo TikTok, e a defesa é
+  // o `state`. O TikTok devolve `code` e `state`, ou `error=auth_denied`.
+  // --------------------------------------------------------------------
+  app.get("/oauth/tiktok-shop/callback", async (context) => {
+    const tiktokShops = dependencies.tiktokShops;
+
+    if (tiktokShops === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const state = context.req.query("state");
+
+    if (state === undefined) {
+      return context.json({ error: { code: "invalid_payload", message: "state ausente" } }, 400);
+    }
+
+    const code = context.req.query("code");
+    const error = context.req.query("error");
+
+    const outcome = await completeTikTokConnect(tiktokShops, {
+      state,
+      // A doc diz que a recusa traz `code=null`: o texto "null" não é código.
+      ...(code === undefined || code === "" || code === "null" ? {} : { code }),
+      ...(error === undefined || error === "" ? {} : { error }),
+    });
+
+    if (outcome.status === "invalid_state") {
+      return context.json({ error: { code: "invalid_state" } }, 400);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
+    }
+
+    return context.json({ connected: true, shops: outcome.shops });
+  });
 
   // --------------------------------------------------------------------
   // Push da Shopee (D-453). Público como o webhook do Mercado Livre, mas
@@ -1570,6 +1612,38 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await startShopeeConnect(shopeeShops, authorized.caller);
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    return context.json({ authorizationUrl: outcome.authorizationUrl });
+  });
+
+  // --------------------------------------------------------------------
+  // Conectar loja do TikTok Shop (D-645). Só ADMIN, como a Shopee. Sem corpo:
+  // a loja só é conhecida no retorno da autorização.
+  // --------------------------------------------------------------------
+  app.post("/v1/tiktok-shop/connect", async (context) => {
+    const auth = dependencies.auth;
+    const tiktokShops = dependencies.tiktokShops;
+
+    if (auth === undefined || tiktokShops === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("tiktok_connect_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const outcome = await startTikTokConnect(tiktokShops, authorized.caller);
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);

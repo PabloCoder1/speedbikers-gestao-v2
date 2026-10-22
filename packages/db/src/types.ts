@@ -5584,6 +5584,173 @@ export type Database = {
           },
         ]
       }
+      tiktok_credentials: {
+        Row: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at: string
+          encryption_key_version: number
+          refresh_locked_until: string | null
+          refresh_token_ciphertext: string
+          refresh_token_expires_at: string
+          shop_cipher: string
+          tiktok_shop_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at?: string
+          encryption_key_version?: number
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext: string
+          refresh_token_expires_at: string
+          shop_cipher: string
+          tiktok_shop_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token_ciphertext?: string
+          access_token_expires_at?: string
+          created_at?: string
+          encryption_key_version?: number
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext?: string
+          refresh_token_expires_at?: string
+          shop_cipher?: string
+          tiktok_shop_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_credentials_tiktok_shop_id_fkey"
+            columns: ["tiktok_shop_id"]
+            isOneToOne: true
+            referencedRelation: "tiktok_shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tiktok_oauth_states: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          organization_id: string
+          state: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          organization_id: string
+          state: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          organization_id?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_oauth_states_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tiktok_oauth_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tiktok_shops: {
+        Row: {
+          auth_expires_at: string | null
+          authorized_at: string | null
+          connected_at: string
+          created_at: string
+          created_by: string | null
+          granted_scopes: string[] | null
+          id: string
+          last_error: string | null
+          open_id: string | null
+          organization_id: string
+          region: string | null
+          seller_name: string | null
+          seller_type: string | null
+          shop_code: string | null
+          shop_id: string
+          shop_name: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          auth_expires_at?: string | null
+          authorized_at?: string | null
+          connected_at?: string
+          created_at?: string
+          created_by?: string | null
+          granted_scopes?: string[] | null
+          id?: string
+          last_error?: string | null
+          open_id?: string | null
+          organization_id: string
+          region?: string | null
+          seller_name?: string | null
+          seller_type?: string | null
+          shop_code?: string | null
+          shop_id: string
+          shop_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_expires_at?: string | null
+          authorized_at?: string | null
+          connected_at?: string
+          created_at?: string
+          created_by?: string | null
+          granted_scopes?: string[] | null
+          id?: string
+          last_error?: string | null
+          open_id?: string | null
+          organization_id?: string
+          region?: string | null
+          seller_name?: string | null
+          seller_type?: string | null
+          shop_code?: string | null
+          shop_id?: string
+          shop_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_shops_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tiktok_shops_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_account_permissions: {
         Row: {
           created_at: string

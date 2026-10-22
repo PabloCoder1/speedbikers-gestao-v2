@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **556** (D-001 a D-650).
+Decisões registradas: **559** (D-001 a D-654).
 
 ## Por domínio
 
-### atendimento (58)
+### atendimento (59)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -75,6 +75,7 @@ Decisões registradas: **556** (D-001 a D-650).
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
+- **D-645** — A conexão da loja do TikTok Shop (fatia 1)
 - **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
 
 ### banco/rls (46)
@@ -243,7 +244,7 @@ Decisões registradas: **556** (D-001 a D-650).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (105)
+### mercado-livre (106)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -350,6 +351,7 @@ Decisões registradas: **556** (D-001 a D-650).
 - **D-637** — Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
+- **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
 
 ### outros (81)
 
@@ -503,7 +505,7 @@ Decisões registradas: **556** (D-001 a D-650).
 - **D-641** — A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 - **D-643** — A venda anomala vira um episodio por SKU e canal
 
-### worker/infra (93)
+### worker/infra (94)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -598,4 +600,5 @@ Decisões registradas: **556** (D-001 a D-650).
 - **D-519** — A Central de Negocio, bloco 4: frete e Ads da /central no EstadoDaTela, e o que as seis telas repetiam num lugar so
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 - **D-635** — A loja da Shopee na preferencia de aviso (C-82)
+- **D-654** — A barra do topo com nome de perfil longo, logo acima do trilho
 

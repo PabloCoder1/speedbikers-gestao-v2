@@ -4,8 +4,9 @@ Terceiro canal da V3, **só leitura** como a Shopee (D-601). Este documento
 guarda o contrato **conferido** na documentação oficial e o estado da
 integração. Narrativa e porquê moram em `docs/DECISIONS.md` (D-601 em diante).
 
-**Estado (20/10/2026): nada implementado.** Esta é a primeira fatia: o contrato
-lido na documentação oficial, antes de qualquer código.
+**Estado (22/10/2026): a fatia 1, a conexão da loja, está em código (D-645)** e
+ainda não está ligada em produção. As rotas, as tabelas e o cliente estão
+descritos na §15. O contrato abaixo foi lido na documentação oficial antes do código.
 
 **Como a documentação foi lida.** O Partner Center é renderizado por
 JavaScript; o conteúdo de cada página `https://partner.tiktokshop.com/docv2/page/<slug>`
@@ -24,7 +25,8 @@ O que a documentação **não** confirma está na §14, e não se implementa por
 | | |
 |---|---|
 | Partner Center | `https://partner.tiktokshop.com`: o global, que serve o Brasil. `partner.us.tiktokshop.com` é só dos EUA (DA DOC, P`developer-onboarding`) |
-| Criado | Pelo dono em 16/10/2026, com os endereços reservados: Redirect URL `https://api-p6gzq3hzca-rj.a.run.app/oauth/tiktok-shop/callback`, Webhook URL `https://api-p6gzq3hzca-rj.a.run.app/push/tiktok-shop` e o IP de saída `34.95.145.35` (D-457). **As rotas ainda não existem** |
+| Criado | Pelo dono em 16/10/2026, com os endereços reservados: Redirect URL `https://api-p6gzq3hzca-rj.a.run.app/oauth/tiktok-shop/callback`, Webhook URL `https://api-p6gzq3hzca-rj.a.run.app/push/tiktok-shop` e o IP de saída `34.95.145.35` (D-457). A rota da Redirect URL existe desde a D-645; a do webhook, ainda não |
+| `service_id` | `7697150457891358480` (passado pelo dono em 22/10). Não é segredo: vai no link de autorização |
 | Segredos | App Key e App Secret ficam só no Secret Manager, criados pelo dono. Nunca em chat, print, `.env` versionado ou Git |
 
 **Tipos de desenvolvedor e de app (DA DOC; P`tts-developer-types`, P`seller-developer-onboarding-onepager`, P`create-your-app`, P`publish-custom-app`):**
@@ -280,6 +282,19 @@ Fonte: P`seller-center-development-shops`.
 2. **Guardar os segredos no Secret Manager** (`speedbikers-prod`): o **App Key** e o **App Secret**. Os nomes vêm na fatia 1, como `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`.
 3. **Pedir os escopos de leitura** na *Manage API*, se não vierem por padrão: pedidos, financeiro, produtos e devoluções.
 4. **Para ensaiar**, criar uma loja de desenvolvimento local do Brasil em *Development Kits*.
+
+**Fatia 1 em código (D-645, 22/10):**
+- **O que existe:**
+  - o cliente `@sb/tiktok-shop`, com a assinatura conferida no exemplo oficial;
+  - as tabelas `tiktok_shops`, `tiktok_credentials` e `tiktok_oauth_states` (migration `20261022170000`);
+  - `POST /v1/tiktok-shop/connect` e `GET /oauth/tiktok-shop/callback`;
+  - o interruptor: sem `TIKTOK_SHOP_SERVICE_ID`, `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`, as rotas respondem 503.
+- **Para ligar em produção, na ordem:**
+  1. a migration em produção;
+  2. o dono: o app publicado; os dois segredos com esses nomes em `speedbikers-prod`; e o `secretAccessor` dos dois para a conta da api (`v3-api-runtime`);
+  3. a api publicada com `TIKTOK_SHOP_SERVICE_ID`;
+  4. o ADMIN conecta pela `/contas` (tela do A2, C-86).
+- **O que a primeira conexão real confere:** o `user_type`, o `seller_type` e a região da loja, e os escopos concedidos. A falta de escopo só aparece na fatia 2, como o erro `105005`.
 
 **Fatias propostas,** no desenho da Shopee (D-425), cada uma conferida antes de codificar:
 - **1. Conexão:** `@sb/tiktok-shop` (assinatura e cliente, com o exemplo oficial em teste); tabelas próprias de loja, credencial cifrada e `state`; `POST /v1/tiktok-shop/connect` e `GET /oauth/tiktok-shop/callback`; `/contas`; o interruptor por variável, com 503 sem ela.

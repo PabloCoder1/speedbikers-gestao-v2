@@ -19191,6 +19191,84 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,API,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
+## D-645 - A conexão da loja do TikTok Shop (fatia 1)
+
+**Contexto:** a D-601 conferiu o contrato do TikTok Shop na documentação oficial (`docs/TIKTOK_SHOP.md`) e propôs as fatias no desenho da Shopee (D-425).
+- O dono criou o app em 16/10, com a Redirect URL reservada.
+- Em 22/10 o dono passou o `service_id` e pediu a fatia 1, a conexão.
+
+**Decisão:**
+1. **O cliente próprio, `@sb/tiktok-shop`.** O SDK oficial só sai com login (§14, item 10). O que o cliente faz:
+   - **assina como a doc** (P`sign-your-api-request`):
+     - a base é o caminho, os parâmetros da query em ordem como `{chave}{valor}` (sem `sign` e sem `access_token`) e o corpo exato;
+     - a base vai com o App Secret nas duas pontas, em HMAC-SHA256 hex;
+     - o teste confere o exemplo oficial;
+   - **serializa o corpo uma vez:** a mesma string é assinada e enviada;
+   - **manda o token** no cabeçalho `x-tts-access-token`;
+   - **trata o erro:** `code` diferente de 0 é erro mesmo com HTTP 200; 429, 5xx e os códigos 36009002 e 36009003 são passageiros;
+   - **não vaza a URL:** a mensagem de erro leva o método e o caminho, porque a troca do token leva o App Secret na query.
+2. **Tabelas próprias** (migration `20261022170000`), como as `shopee_*`:
+   - `tiktok_shops`: o `id` da loja como texto, único, mais nome, região, `seller_type`, código, quem autorizou, os escopos concedidos, o estado da conexão e o fim da autorização;
+   - `tiktok_credentials`: o `shop_cipher` e os tokens, cifrados com a chave de `ml_credentials`;
+   - `tiktok_oauth_states`: o `state` da autorização.
+
+   Os membros da organização leem a loja. Credencial e `state` só o `service_role` lê.
+3. **As duas rotas da api**, no desenho da Shopee:
+   - `POST /v1/tiktok-shop/connect` (só ADMIN) grava o `state` da organização, válido por 15 minutos, e devolve o link com o `service_id`;
+   - `GET /oauth/tiktok-shop/callback`:
+     - consome o `state` uma vez e troca o `code` (`grant_type=authorized_code`);
+     - recusa a autorização que não é de vendedor (`user_type` ≠ 0);
+     - lê as lojas autorizadas e grava loja, `cipher` e tokens.
+
+   Nas duas rotas:
+   - **a loja de outra organização não muda de dono**, e nada é gravado;
+   - **a recusa não troca token:** `error=auth_denied`, ou `code=null` mesmo sem erro.
+4. **O interruptor:** sem `TIKTOK_SHOP_SERVICE_ID`, `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`, as rotas respondem 503.
+   - O deploy só monta os segredos com o `service_id` definido, no desenho da Shopee (`infra/deploy-cloud-run.sh`, `infra/lib.sh` e `infra/setup-dev.sh`).
+   - Na fatia 1, só a api usa o TikTok.
+5. **Fora desta fatia:** a renovação do token e os pedidos (fatia 2, no worker), o webhook (fatia 3) e a tela de `/contas` (A2, contrato C-86).
+
+**Verificação:**
+- `@sb/tiktok-shop`, 10 testes:
+  - a assinatura: o exemplo oficial, o exemplo com corpo, e `sign` e `access_token` fora da base;
+  - a chamada de loja: a query e o cabeçalho;
+  - as classes de erro e a mensagem sem URL;
+  - a autorização: o link, a troca e a renovação;
+  - as lojas autorizadas;
+- api, 8 testes da conexão:
+  - o `state` e o link;
+  - a troca com os tokens cifrados e decifráveis;
+  - o `state` inválido;
+  - a recusa, inclusive o erro que chega junto com o `code`;
+  - a troca recusada, sem o segredo no log;
+  - a autorização que não é de vendedor;
+  - a resposta sem loja;
+  - a loja de outra organização;
+- api, 5 testes das rotas e 1 das variáveis;
+- mutação: 8, e cada uma derruba testes. Duas sobreviveram na primeira rodada e mostraram teste fraco: o `error` junto com o `code` e o `code=null` sem `error`. Os dois casos entraram;
+- RLS, 5 testes:
+  - o membro lê a loja da organização, e outra organização não lê;
+  - nem o ADMIN grava pelo navegador;
+  - credencial e `state` fechados para `authenticated` e `anon`;
+  - a loja duplicada, o `id` fora do formato e o token em texto claro recusados;
+- `db reset` e a suíte inteira, 1134 de 1134.
+
+**Publicação:**
+1. A migration `20261022170000`. Antes dela, a api nova sobe sem o TikTok (503).
+2. Os atos do dono (`docs/TIKTOK_SHOP.md` §15):
+   - publicar o app;
+   - guardar o App Key e o App Secret no Secret Manager de produção, como `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`;
+   - dar à conta da api o acesso aos dois.
+3. Com os atos feitos, a api com o `service_id`.
+
+**Impacto:**
+- `packages/tiktok-shop/` (novo);
+- `supabase/migrations/20261022170000_lojas_tiktok_shop.sql`;
+- `apps/api/src/{tiktok-shops,tiktok-shops.test,app,app.test,env,env.test,index}.ts` e `apps/api/package.json`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `infra/{deploy-cloud-run,lib,setup-dev}.sh`, `.env.example`;
+- `docs/{DECISIONS,DECISIONS_INDEX,TIKTOK_SHOP,API,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
 ## D-646 - O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
 
 **Contexto:** o C-84 do A1 (D-641, #316; o contrato está em `docs/MULTICHANNEL_CONTRACTS.md` §3.33) dá ao Copiloto duas ferramentas novas com a Shopee:
@@ -19212,6 +19290,38 @@ O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a respondera
 - **suíte inteira**, com o banco recriado do zero: chromium 261/261, `loja-live` 17/17 e convite 3/3.
 
 **Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-647 - O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+
+**Contexto:** dois achados de 22/10. As migrations de hoje já estavam na `main`, e o disparo de produção ainda não tinha sido feito.
+- **O do A2 (D-648):** a aba Decisões do SKU passa a mostrar o motivo com que o sistema encerrou a ação. O motivo do acumulado da D-643 citava "(D-643)", um código interno, na frente do operador.
+- **O do A3:** a busca de `get_listings_dashboard` usava `ilike '%' || p_search || '%'`. O `%` e o `_` digitados viravam curinga: "KIT_R" achava "KIT-R", e "50%" achava tudo que tinha "50".
+  - O resultado só crescia, então era frágil, mas não quebrava.
+  - O CSV de `/anuncios` lê a mesma função.
+
+**Decisão** (migration `20261022160000`, sem mudar contrato):
+1. **O motivo novo:** "Substituída pelo acompanhamento por SKU e canal: o alerta volta como um cartão só, atualizado enquanto a venda fugir do esperado e encerrado quando ela voltar ao normal."
+   - Vale para a venda acima e para a venda abaixo do esperado (sugestão do A2).
+   - O resto de `registrar_vendas_anomalas` é o da D-643.
+2. **Nenhuma linha nasce com o texto antigo.** Quem chama a função é o worker novo. A publicação vai nesta ordem: as migrations de hoje, esta, e só então o worker.
+3. **A busca vira texto puro**, com `strpos` sobre `lower`, como a Curva ABC (`20261007200000`).
+   - Muda na lista, que serve também ao CSV, e na faixa (`get_listings_dashboard_counts`), porque as duas precisam contar o mesmo.
+   - O resto dos corpos é o da `20261022120000`. O `pg_get_functiondef` foi comparado antes e depois: só mudam as três linhas da busca em cada função e o texto do motivo, e as permissões ficam iguais.
+
+**Verificação:**
+- integração:
+  - na lista e na faixa, a busca com `_` ou com `%` não acha mais o anúncio;
+  - a busca pelo próprio código acha, em qualquer caixa;
+  - o motivo do acumulado não leva código de decisão;
+- mutação: 5, e cada uma derruba o teste: a lista e a faixa de volta ao `ilike`, a busca e a coluna sem `lower`, e o texto antigo do motivo;
+- `db reset` e a suíte inteira: 1130 de 1130.
+
+**Fora desta correção:** o mesmo `ilike '%' || p_…` segue em outras 11 funções de busca: estoque, movimentações, compras, reposição, Full, documentos, vinculações e histórico de preço. Elas ficam para uma fatia própria, no mesmo padrão.
+
+**Impacto:**
+- `supabase/migrations/20261022160000_motivo_e_busca_literal.sql`;
+- `packages/db/src/rls.integration.test.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
 ## D-650 - A barra do topo cabe no celular: a busca cede espaço ao "Sair"
 
@@ -19241,3 +19351,23 @@ No celular, a busca do esqueleto era 22 px mais larga que a real, e a barra pula
 - `apps/web/components/carregando.tsx`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md` (com a D-638 e a D-646 marcadas como no ar).
+
+## D-654 - A barra do topo com nome de perfil longo, logo acima do trilho
+
+**Contexto:** o A3 refez o teste de pior caso no build do #323 (D-650). O celular ficou certo, mas sobrou uma faixa: entre 851 e 880 px, com um nome de perfil longo ("Maria Aparecida dos Santos Nascimento Ferreira", 46 caracteres), o "Sair" ainda cortava. O esquema aceita até 200 caracteres, e o perfil corta o nome em 14rem. Acima de 850 px a barra lateral inteira volta e o perfil mostra o nome. A causa é a mesma da D-650: fora do `@media (max-width: 760px)`, a busca (`min(455px, 50%)`) não cedia. O botão terminava no px 881: cortava 30 px a 851 e 1 px a 880. A 900 px cabia, e com nome curto o problema não aparecia.
+
+**Decisão:** a proposta do A3, que ele conferiu com o CSS injetado. Duas regras saem do media query e valem em toda largura:
+- `.sb-search { min-width: 0 }`: a busca cede quando as ações não cabem. Sem aperto, ela continua com a largura do desktop;
+- `.sb-top-actions { flex: none }`: as ações nunca encolhem.
+
+No celular continuam o `flex: 1 1 auto; width: auto` da busca e o `kbd` escondido. Pela medida do A3, a busca fica com 198, 207, 217 e 227 px a 851, 860, 870 e 880 px. A 900, 1024 e 1440 px nada muda (247, 371 e 455).
+
+**Verificação:**
+- **e2e:** `e2e/tela-estreita-e-acessibilidade.spec.ts` ganha a guarda com o nome longo a 851, 880 e 1440 px. O nome entra pela chave de serviço no `profiles.full_name` e volta ao do seed no `finally`. O "Sair" fica inteiro na barra e na janela, e a 1440 a busca segue com 455 px.
+- **mutação:** com o CSS só da D-650, a guarda reprova a 851 e a 880 (o "Sair" termina no px 881,2, a medida do A3) e passa a 1440.
+- **suíte inteira**, com o banco recriado do zero: chromium 267/267 (os 3 novos inclusos), `loja-live` 17/17, convite 3/3.
+
+**Impacto:**
+- `apps/web/app/globals.css`;
+- `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md` (com a D-650 marcada como no ar).
