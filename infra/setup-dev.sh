@@ -149,6 +149,14 @@ if [ -n "${SHOPEE_PARTNER_ID}" ]; then
   SEGREDOS_CONSUMIDORES+=("${SECRET_SHOPEE_PARTNER_KEY}:${SA_API} ${SA_WORKER}")
 fi
 
+# D-645: o App Key e o App Secret do TikTok Shop, com o mesmo interruptor do
+# deploy (TIKTOK_SHOP_SERVICE_ID). Na fatia 1 só a api conecta a loja; o worker
+# entra quando renovar os tokens e ler os pedidos (fatia 2).
+if [ -n "${TIKTOK_SHOP_SERVICE_ID}" ]; then
+  SEGREDOS_CONSUMIDORES+=("${SECRET_TIKTOK_SHOP_APP_KEY}:${SA_API}")
+  SEGREDOS_CONSUMIDORES+=("${SECRET_TIKTOK_SHOP_APP_SECRET}:${SA_API}")
+fi
+
 grant_secret_access() {
   local secret="$1" sa="$2" output
 

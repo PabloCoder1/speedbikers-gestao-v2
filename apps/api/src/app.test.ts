@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { createShopeeClient } from "@sb/shopee";
+import { createTikTokShopClient } from "@sb/tiktok-shop";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
@@ -18,6 +19,7 @@ import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
 import type { RelistDeps } from "./relist.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
+import type { TikTokShopsDeps } from "./tiktok-shops.js";
 import type { WebhookDeps } from "./webhook.js";
 
 function buildApp(): { app: ReturnType<typeof createApp>; lines: string[] } {
@@ -2159,6 +2161,152 @@ describe("conexão de loja Shopee (D-425)", () => {
 
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ connected: true, shops: [{ shopId: 54804, shopName: "Loja Teste BR" }] });
+    });
+  });
+});
+
+describe("conexão de loja do TikTok Shop (D-645)", () => {
+  const CHAVE_TIKTOK = randomBytes(32);
+
+  function chainTikTok(result: unknown): Record<string, unknown> {
+    const self: Record<string, unknown> = {};
+
+    for (const metodo of ["eq", "is", "gt", "in", "select"]) {
+      self[metodo] = () => self;
+    }
+
+    self.maybeSingle = () => Promise.resolve(result);
+    self.single = () => Promise.resolve(result);
+    self.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+
+    return self;
+  }
+
+  function withTikTok(options: { role?: Role; withAuth?: boolean; withDeps?: boolean; stateValido?: boolean } = {}) {
+    const chamadas: URL[] = [];
+    const authenticate = (_header: string | undefined, allowed: readonly Role[]): Promise<AuthResult> => {
+      if (options.withAuth === false) {
+        return Promise.resolve({ ok: false, status: 401, reason: "sem token" });
+      }
+
+      const role = options.role ?? "ADMIN";
+
+      return Promise.resolve(
+        allowed.includes(role)
+          ? { ok: true, caller: { userId: "u1", organizationId: "org-1", role } }
+          : { ok: false, status: 403, reason: "papel sem permissão para esta ação" },
+      );
+    };
+
+    const db = {
+      from: () => ({
+        insert: () => chainTikTok({ error: null }),
+        update: () =>
+          chainTikTok({ data: options.stateValido === false ? null : { organization_id: "org-1", created_by: "u1" }, error: null }),
+        select: () => chainTikTok({ data: [], error: null }),
+        upsert: () => chainTikTok({ data: { id: "loja-1" }, error: null }),
+      }),
+    } as unknown as TikTokShopsDeps["db"];
+
+    const respostas: Record<string, unknown> = {
+      "/api/v2/token/get": {
+        code: 0,
+        data: {
+          access_token: "TTP_access",
+          access_token_expire_in: 1793286000,
+          refresh_token: "TTP_refresh",
+          refresh_token_expire_in: 1824222000,
+          open_id: "7010736057180325637",
+          user_type: 0,
+        },
+      },
+      "/authorization/202309/shops": {
+        code: 0,
+        data: { shops: [{ id: "7000714532876273420", name: "Loja TikTok BR", region: "BR", cipher: "GCP_x" }] },
+      },
+    };
+
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: { authenticate },
+      ...(options.withDeps === false
+        ? {}
+        : {
+            tiktokShops: {
+              db,
+              logger: createLogger({}, { sink: () => undefined }),
+              encryptionKey: CHAVE_TIKTOK,
+              serviceId: "7697150457891358480",
+              client: createTikTokShopClient({
+                appKey: "chave-de-teste",
+                appSecret: "segredo-de-teste-nao-real",
+                fetchImpl: ((url: URL) => {
+                  chamadas.push(url);
+
+                  return Promise.resolve(new Response(JSON.stringify(respostas[url.pathname]), { status: 200 }));
+                }) as unknown as typeof fetch,
+              }),
+            },
+          }),
+    });
+
+    return { app, chamadas };
+  }
+
+  describe("POST /v1/tiktok-shop/connect", () => {
+    it("só ADMIN; sem login é 401; sem a configuração do TikTok é 503", async () => {
+      const gestor = await withTikTok({ role: "GESTOR" }).app.request("/v1/tiktok-shop/connect", { method: "POST" });
+      const anonimo = await withTikTok({ withAuth: false }).app.request("/v1/tiktok-shop/connect", { method: "POST" });
+      const desligado = await withTikTok({ withDeps: false }).app.request("/v1/tiktok-shop/connect", { method: "POST" });
+
+      expect(gestor.status).toBe(403);
+      expect(anonimo.status).toBe(401);
+      expect(desligado.status).toBe(503);
+    });
+
+    it("ADMIN recebe o link de autorização com o service_id", async () => {
+      const response = await withTikTok().app.request("/v1/tiktok-shop/connect", { method: "POST" });
+      const body = (await response.json()) as { authorizationUrl: string };
+
+      expect(response.status).toBe(200);
+      expect(body.authorizationUrl).toMatch(/^https:\/\/services\.tiktokshop\.com\/open\/authorize\?service_id=7697150457891358480&state=/);
+    });
+  });
+
+  describe("GET /oauth/tiktok-shop/callback", () => {
+    it("sem configuração é 503; sem state é 400; state inválido é 400", async () => {
+      expect((await withTikTok({ withDeps: false }).app.request("/oauth/tiktok-shop/callback?state=x")).status).toBe(503);
+      expect((await withTikTok().app.request("/oauth/tiktok-shop/callback?code=a")).status).toBe(400);
+
+      const invalido = await withTikTok({ stateValido: false }).app.request(
+        `/oauth/tiktok-shop/callback?state=${"s".repeat(43)}&code=a`,
+      );
+
+      expect(invalido.status).toBe(400);
+      expect(await invalido.json()).toEqual({ error: { code: "invalid_state" } });
+    });
+
+    it("a recusa do vendedor (code=null&error=auth_denied) é 400 e não troca token", async () => {
+      const recusa = withTikTok({ withAuth: false });
+      const soNull = withTikTok({ withAuth: false });
+      const response = await recusa.app.request(`/oauth/tiktok-shop/callback?state=${"s".repeat(43)}&code=null&error=auth_denied`);
+      // O texto "null" sozinho também não é código.
+      const semErro = await soNull.app.request(`/oauth/tiktok-shop/callback?state=${"s".repeat(43)}&code=null`);
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: "rejected" } });
+      expect(semErro.status).toBe(400);
+      expect(recusa.chamadas).toHaveLength(0);
+      expect(soNull.chamadas).toHaveLength(0);
+    });
+
+    it("não exige login (é o navegador vindo do TikTok) e devolve as lojas conectadas", async () => {
+      const response = await withTikTok({ withAuth: false }).app.request(
+        `/oauth/tiktok-shop/callback?state=${"s".repeat(43)}&code=TTP_code`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ connected: true, shops: [{ shopId: "7000714532876273420", shopName: "Loja TikTok BR" }] });
     });
   });
 });
