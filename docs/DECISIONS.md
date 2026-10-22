@@ -17506,6 +17506,8 @@ A medida no build local, a 150 ms por chamada, com o registro de cada chamada do
 - **O total:** de 46 a 52 chamadas de Auth por visita (Home, `/anuncios`, `/central`), contra 12 a 16 de dado.
 - **A troca de tela pela barra lateral:** 614 a 617 ms.
 
+**Por que duas pre-buscas por link:** o cache de segmentos do Next 16 pede, para cada link, primeiro a arvore de rotas (`next-router-segment-prefetch: /_tree`) e depois o segmento. Nao e duplicacao do app: as duas rodadas saem uma atras da outra, em lotes de quatro, sem evento da pagina no meio. Com o `getClaims`, nenhuma das duas vai ao Auth.
+
 **O que foi medido e descartado:**
 1. **Desligar a pre-busca na barra lateral** (`prefetch={false}`, como o `ItemDeMenu` faz desde a D-500): as chamadas de Auth caem pela metade, mas a troca de tela fica 38 a 104 ms mais lenta. Saber a arvore antes do clique poupa uma ida ao servidor.
 2. **Conferir so a pre-busca pela assinatura:** o Next 16 tira do pedido que chega ao proxy os cabecalhos `rsc` e `next-router-prefetch` e o `_rsc` da query. A pre-busca chega igual a navegacao, entao o proxy nao tem como separa-la.
