@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_SHOPEE_ESPERADO, E2E_SHOPEE_SHOP } from "./constants.js";
 import { login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/contas` — o painel "Lojas Shopee" (D-425). O que só se prova rodando: a
@@ -70,4 +72,104 @@ test("/contas: a faixa conta as contas do ML e as lojas Shopee, com a divisão a
   await expect(cadastradas).toContainText(`${String(cartoes)} do Mercado Livre · 1 da Shopee (1 de teste)`);
   await expect(page.locator(".sb-kpi").filter({ hasText: "Requerem atenção" })).toContainText("· 0 da Shopee");
   await expect(page.getByText("reautorize na Shopee")).toHaveCount(0);
+});
+
+/**
+ * D-652 (o C-86 do A1, D-645): as lojas do TikTok Shop na `/contas`. O seed não
+ * tem loja do TikTok: o painel diz que não há, o botão aparece ao ADMIN e a faixa
+ * diz "0 do TikTok Shop" (a leitura veio; zero é fato). Depois, duas lojas entram
+ * pela chave de serviço -- uma conectada com a autorização a 3 dias de vencer, e
+ * uma com erro -- e saem no `finally`. O clique no botão vai à api, que este e2e
+ * não sobe: as respostas da api são simuladas na rota.
+ */
+test.describe("/contas: as lojas do TikTok Shop (D-652, C-86)", () => {
+  test("sem loja, o painel diz que não há, o ADMIN vê o botão e a faixa diz zero", async ({ page }) => {
+    await login(page, "/contas");
+
+    const painel = page.getByRole("region", { name: "Lojas do TikTok Shop" });
+
+    await expect(painel).toContainText("Nenhuma loja do TikTok Shop conectada ainda.");
+    await expect(painel.getByRole("button", { name: "Conectar loja do TikTok Shop" })).toBeVisible();
+    await expect(painel).toContainText("Depois de autorizar no TikTok Shop, volte para esta tela");
+    await expect(page.locator(".sb-kpi").filter({ hasText: "Contas e lojas cadastradas" })).toContainText("· 0 do TikTok Shop");
+  });
+
+  test("o 503 da api é o TikTok ainda desligado: aviso sem erro; o 409 é erro", async ({ page }) => {
+    let resposta: { status: number; body: unknown } = { status: 503, body: { error: { code: "not_configured" } } };
+
+    await page.route("**/v1/tiktok-shop/connect", async (route) => {
+      await route.fulfill({ status: resposta.status, contentType: "application/json", body: JSON.stringify(resposta.body) });
+    });
+    await login(page, "/contas");
+
+    const painel = page.getByRole("region", { name: "Lojas do TikTok Shop" });
+    const botao = painel.getByRole("button", { name: "Conectar loja do TikTok Shop" });
+
+    await botao.click();
+    await expect(painel.getByRole("status")).toHaveText("O TikTok Shop ainda não está disponível.");
+    await expect(painel.getByRole("alert")).toHaveCount(0);
+
+    resposta = { status: 409, body: { error: { code: "rejected", message: "não foi possível iniciar a autorização" } } };
+    await botao.click();
+    await expect(painel.getByRole("alert")).toHaveText("O TikTok Shop não deixou a autorização começar. Tente de novo.");
+    await expect(painel.getByRole("status")).toHaveCount(0);
+  });
+
+  test("com lojas, a tabela, a autorização vencendo e a faixa contam o TikTok", async ({ page }) => {
+    const seed = await readSeedOutput();
+    const db = clienteDeServico();
+    const vence = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const inseridas = await db
+      .from("tiktok_shops")
+      .insert([
+        {
+          organization_id: seed.organizationId,
+          shop_id: "7495000000000000001",
+          shop_name: "Loja TikTok E2E",
+          region: "BR",
+          seller_type: "LOCAL",
+          seller_name: "Vendedor E2E",
+          granted_scopes: ["seller.authorization.info", "seller.order.info", "seller.product.basic"],
+          status: "CONNECTED",
+          auth_expires_at: vence,
+        },
+        {
+          organization_id: seed.organizationId,
+          shop_id: "7495000000000000002",
+          shop_name: null,
+          status: "ERROR",
+          last_error: "O TikTok Shop recusou a renovação do acesso: refresh token expired",
+        },
+      ])
+      .select("id");
+
+    expect(inseridas.error).toBeNull();
+
+    try {
+      await login(page, "/contas");
+
+      const tabela = page.getByRole("table", { name: "Lojas do TikTok Shop" });
+      const conectada = tabela.getByRole("row", { name: /Loja TikTok E2E/u });
+      const comErro = tabela.getByRole("row", { name: /Loja sem nome lido/u });
+
+      await expect(conectada).toContainText("7495000000000000001 · BR");
+      await expect(conectada).toContainText("Vendedor E2E");
+      await expect(conectada).toContainText("Conectada");
+      await expect(conectada).toContainText("3 permissões");
+      await expect(conectada).toContainText("reautorize no TikTok Shop: vence em até 7 dias");
+      await expect(comErro).toContainText("Com erro");
+      await expect(comErro).toContainText("refresh token expired");
+      // Sem permissões lidas nem vencimento: "—", nunca zero.
+      await expect(comErro.getByRole("cell", { name: "—", exact: true })).toHaveCount(3);
+
+      // A faixa: 2 lojas do TikTok cadastradas, 1 conectada, e as 2 requerem atenção.
+      await expect(page.locator(".sb-kpi").filter({ hasText: "Contas e lojas cadastradas" })).toContainText("· 2 do TikTok Shop");
+      await expect(page.locator(".sb-kpi").filter({ hasText: "Conectadas" })).toContainText("· 1 do TikTok Shop");
+      await expect(page.locator(".sb-kpi").filter({ hasText: "Requerem atenção" })).toContainText("· 2 do TikTok Shop");
+    } finally {
+      const apagou = await db.from("tiktok_shops").delete().in("shop_id", ["7495000000000000001", "7495000000000000002"]);
+
+      if (apagou.error !== null) console.error(`lojas do TikTok da D-652 ficaram no banco: ${apagou.error.message}`);
+    }
+  });
 });

@@ -404,6 +404,7 @@ número.
 | **D-636** | O cabeçalho da `/faturamento` com a mesma forma nos três recortes | A3 (o achado e a escolha) | ✔ D-636 (#306) |
 | **D-638** | A mudança de preço do anúncio da Shopee nas notificações, antes do worker | A1 (C-81, D-633) | ✔ D-638 (#309) |
 | **D-646** | O rótulo das ferramentas do Copiloto no chat, com as duas da Shopee | A1 (C-84, D-641) | ✔ D-646 (#318) |
+| **D-652** | As lojas do TikTok Shop na `/contas`: o painel, o botão e a faixa | A1 (C-86, D-645) | em código; depois do #320 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

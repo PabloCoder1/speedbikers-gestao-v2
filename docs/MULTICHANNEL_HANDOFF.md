@@ -212,6 +212,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-519: o bloco 4 da Central — os painéis Frete e Ads da `/central` no `EstadoDaTela` (falha com o "Tentar de novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO"), e o que as seis telas repetiam num lugar só (`app/(app)/central/comum.tsx` e `lib/central-periodo.ts`).
 
 **Em andamento**
+- D-652 — as lojas do TikTok Shop na `/contas` (C-86 do A1, D-645, #320): o painel ao lado do da Shopee, o botão de conectar para ADMIN (o 503 é aviso neutro, sem erro) e o TikTok como terceiro canal da faixa. Antes da migration `20261022170000`, o painel diz que as lojas chegam com a próxima atualização do banco. Em código e validada; empilhada sobre o #320, só web.
 - D-519 na `feat/ux-central-bloco4` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa a Central.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)

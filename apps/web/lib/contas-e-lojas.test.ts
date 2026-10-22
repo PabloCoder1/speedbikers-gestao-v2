@@ -58,3 +58,42 @@ describe("celulasDeContasELojas (D-600)", () => {
     expect(resumo(null)[0]?.[1]).toBe("5");
   });
 });
+
+describe("o TikTok Shop na faixa (D-652, C-86)", () => {
+  const tiktok = (lojas: readonly { status: string; auth_expires_at: string | null }[]) => ({ estado: "lidas" as const, lojas });
+  const comTiktok = (estado: Parameters<typeof celulasDeContasELojas>[3]) =>
+    celulasDeContasELojas(contas, [loja()], AGORA, estado).map((c) => [c.label, c.value, c.ressalva ?? null]);
+
+  it("lidas, as lojas do TikTok somam e aparecem na divisão, com a mesma régua de atenção da Shopee", () => {
+    expect(
+      comTiktok(tiktok([{ status: "CONNECTED", auth_expires_at: emDias(200) }, { status: "CONNECTED", auth_expires_at: emDias(5) }, { status: "ERROR", auth_expires_at: null }])),
+    ).toEqual([
+      ["Contas e lojas cadastradas", "9", "5 do Mercado Livre · 1 da Shopee · 3 do TikTok Shop"],
+      ["Conectadas", "5", "2 do Mercado Livre · 1 da Shopee · 2 do TikTok Shop"],
+      ["Aguardando conexão", "1", null],
+      ["Requerem atenção", "4", "2 do Mercado Livre · 0 da Shopee · 2 do TikTok Shop"],
+    ]);
+  });
+
+  it("lida e vazia, a divisão diz zero -- é fato, como na Shopee", () => {
+    expect(comTiktok(tiktok([]))[0]).toEqual(["Contas e lojas cadastradas", "6", "5 do Mercado Livre · 1 da Shopee · 0 do TikTok Shop"]);
+  });
+
+  it("a leitura falhou: não vira zero, a ressalva diz, e o número é o do que carregou", () => {
+    const [cadastradas] = comTiktok({ estado: "falhou" });
+
+    expect(cadastradas).toEqual(["Contas e lojas cadastradas", "6", "5 do Mercado Livre · 1 da Shopee · as lojas do TikTok Shop não carregaram"]);
+  });
+
+  it("sem a tabela (antes da migration), o TikTok fica fora da divisão -- e é o padrão de quem não passa nada", () => {
+    expect(comTiktok({ estado: "ausente" })).toEqual(comTiktok(undefined));
+    expect(comTiktok({ estado: "ausente" })[0]).toEqual(["Contas e lojas cadastradas", "6", "5 do Mercado Livre · 1 da Shopee"]);
+  });
+
+  it("as duas leituras falhando: as duas ressalvas, e o número só do ML", () => {
+    const [cadastradas] = celulasDeContasELojas(contas, null, AGORA, { estado: "falhou" });
+
+    expect(cadastradas?.value).toBe("5");
+    expect(cadastradas?.ressalva).toBe("5 do Mercado Livre · as lojas Shopee não carregaram · as lojas do TikTok Shop não carregaram");
+  });
+});

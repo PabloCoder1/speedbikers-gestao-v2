@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **558** (D-001 a D-654).
+Decisões registradas: **559** (D-001 a D-654).
 
 ## Por domínio
 
@@ -352,7 +352,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 - **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
 
-### outros (81)
+### outros (82)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -435,6 +435,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-633** — O historico de preco da Shopee (C-81)
 - **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
 - **D-650** — A barra do topo cabe no celular: a busca cede espaço ao "Sair"
+- **D-652** — As lojas do TikTok Shop na /contas (C-86)
 
 ### processo/docs (1)
 
