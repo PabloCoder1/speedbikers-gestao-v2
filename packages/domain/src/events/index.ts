@@ -10,6 +10,9 @@ export type { FulfillmentCapture } from "./fulfillment-events.js";
 export { detectListingEvents } from "./listing-events.js";
 export type { ListingSnapshot } from "./listing-events.js";
 
+export { detectShopeePriceEvents } from "./shopee-price-events.js";
+export type { ShopeePriceEventsInput, ShopeePriceReading } from "./shopee-price-events.js";
+
 export { classifySyncFreshness } from "./freshness.js";
 export type { FreshnessLevel } from "./freshness.js";
 

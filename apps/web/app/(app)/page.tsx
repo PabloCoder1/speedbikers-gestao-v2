@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { SalesChart } from "./vendas/sales-chart";
 import { TOM, type Tom } from "../../components/tone";
+import { eventOriginLabel } from "../../lib/event-format";
 import { eventTypeLabel, severityLabel } from "../../lib/labels";
 import { formatBusinessDate, formatCount, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
@@ -197,8 +198,23 @@ interface AtividadeLinha {
     severity: string;
     /** Quando a mudança ACONTECEU — ver o comentário do `select` (D-311). */
     occurred_at: string;
+    /** Só para o nome da loja da Shopee (`shop_name`, C-81, D-638). */
+    after: unknown;
+    shopee_shop_id: string | null;
     ml_accounts: { label: string } | null;
   } | null;
+}
+
+function origemDoEvento(evento: AtividadeLinha): string | null {
+  const domainEvent = evento.domain_events;
+
+  if (domainEvent === null) return null;
+
+  const after = typeof domainEvent.after === "object" && domainEvent.after !== null && !Array.isArray(domainEvent.after)
+    ? (domainEvent.after as Record<string, unknown>)
+    : null;
+
+  return eventOriginLabel(domainEvent.ml_accounts?.label, after, domainEvent.shopee_shop_id);
 }
 
 function primeira(data: unknown): SalesSummaryRow | null {
@@ -653,7 +669,7 @@ export default async function HomePage({
           as duas telas passam a mostrar o mesmo instante para o mesmo evento.
         */
         .select(
-          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label)))",
+          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, after, shopee_shop_id, ml_accounts(label)))",
         )
         .order("created_at", { ascending: false })
         .limit(ATIVIDADE_LIMITE),
@@ -837,6 +853,7 @@ export default async function HomePage({
                 povoada em vez de ficar sem data.
               */
               const instante = evento.domain_events?.occurred_at ?? evento.created_at;
+              const origem = origemDoEvento(evento);
 
               return (
               <Link key={evento.id} href="/notificacoes" className="sb-feed-row">
@@ -866,7 +883,8 @@ export default async function HomePage({
                   <small title={formatDateTime(instante)}>
                     {formatAge(instante, agora) ?? formatDateTime(instante)}
                     {evento.domain_events !== null && ` · ${severityLabel(evento.domain_events.severity)}`}
-                    {evento.domain_events?.ml_accounts != null && ` · ${evento.domain_events.ml_accounts.label}`}
+                    {/* D-638: a conta do ML ou a loja da Shopee (o `shop_name` do evento). */}
+                    {origem !== null && ` · ${origem}`}
                   </small>
                 </span>
                 <span aria-hidden="true" style={{ color: "var(--sb-text-soft)" }}>

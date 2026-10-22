@@ -18804,6 +18804,12 @@ Lido no codigo e em producao (so contagem):
 
 A varredura seguinte de cada conta marca os excluidos que ja existem, e da em diante a notificacao marca na hora.
 
+**Resultado em producao (21/10):** as migrations no run `39665807654`, o worker `worker-00056-wjk` e a api `api-00038-qsf` (`dc69d1fb`).
+- A notificacao `items` passou a virar `sync.listing.item` na hora, sem falha.
+- A varredura das 21:00 UTC releu, nas quatro contas, o que o ML nao listava mais e marcou o acumulo como excluido, todo pelo subestado `deleted` (nenhum por 404). A SbMotos, onde o dono apagou anuncios, tinha a maior parte.
+- Depois dela, nenhum anuncio vivo ficou sem leitura ha mais de um dia em conta nenhuma.
+- O anuncio CRIADO ainda nao foi visto em producao: ninguem criou anuncio na janela. O caminho e o mesmo `sync.listing.item`, coberto pelos testes.
+
 **Impacto:**
 - `supabase/migrations/20261021170000_anuncio_excluido_sai_das_telas.sql` e `20261021180000_anuncio_excluido_fora_das_contagens.sql` (D-631 b);
 - `packages/domain/src/listings/relist-preflight{,.test}.ts` (D-631 b);
@@ -18829,6 +18835,48 @@ A varredura seguinte de cada conta marca os excluidos que ja existem, e da em di
 - **e2e:** no ensaio da loja live, uma `shopee_divergencia` no formato do C-78 mostra o rótulo, a loja, o atalho para o anúncio e o estoque do SKU, e a ação é apagada no fim. `acoes` 3/3 e o ensaio 16/16, com o banco recriado.
 
 **Impacto:** `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts}`, `apps/web/lib/{action-shortcuts.ts,action-shortcuts.test.ts}`, `apps/web/e2e/ensaio-loja-live.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX}.md`.
+
+## D-633 - O historico de preco da Shopee (C-81)
+
+**Contexto:** a frente C-13 do A2, liberada pelo dono em 21/10 ("todas essas opções pode adicionar") e aceita pelo A1 como C-81. A `/precos`, o Excel e a aba Preços do SKU leem `get_price_changes`, que so conhecia o `listing.price.changed` do Mercado Livre. Da Shopee, o banco guardava so o preco atual (`shopee_items` e `shopee_item_models`), sobrescrito a cada leitura.
+
+Lido antes de decidir:
+1. **A documentacao oficial** (`get_item_base_info`, lida em 21/10 no navegador embutido): `original_price` e "The original price of the item in the listing currency", e `current_price` "will be the promotion price" quando ha promocao.
+2. **A releitura:** `shopee.items.hydrate` rele o item quando a Shopee marca mudanca (`update_time`) e o item ativo a cada 6 h (D-619). As variacoes sao apagadas e regravadas a cada leitura.
+3. **Os eventos da Shopee que ja existem** (`sync.failed` da loja) usam o MESMO tipo do ML, com a origem na coluna `shopee_shop_id`. A RLS do `domain_events` ja cobre a loja.
+4. **Quem le o tipo hoje** liga o evento a conta do ML (`get_price_changes`, a correlacao do diagnostico, a analise de conteudo), entao o evento da loja fica de fora ate ser ensinado.
+
+**Decisao:**
+1. **O evento:** `listing.price.changed` com `shopee_shop_id` e `ml_account_id` nulo, `entity_type = 'shopee_item'` e `entity_id` = o item.
+   - `before` = `{price, current_price, model_id}`; o `after` leva tambem `model_name`, `item_name` e `shop_name`, para o aviso dizer a origem sem outra ida (pedido do A2).
+   - `price` = `original_price`, o criterio do ML: a promocao nao e mudanca de preco. O `current_price` vai junto, informativo.
+   - So nasce quando `price` muda entre duas leituras com os dois lados lidos. A primeira leitura, a promocao sozinha e a variacao criada ou removida nao geram evento.
+   - `occurred_at` = a hora da leitura: a mudanca aconteceu entre a leitura anterior e ela.
+2. **No worker:** o preco que o banco tinha e lido ANTES de gravar (o lote, com as variacoes paginadas), e o evento e gravado logo depois de o item ser gravado. Sem os precos anteriores a tarefa falha antes de gravar: gravar por cima apagaria a mudanca para sempre.
+3. **Desde quando:** `shopee_shops.price_history_since`, gravado na primeira leitura da loja com a comparacao. A tela nunca diz "sem mudanca" antes disso.
+4. **`get_price_changes`** (`docs/MULTICHANNEL_CONTRACTS.md` §3.29): `p_marketplace` e `p_shopee_shop_id` no fim.
+   - Nulo continua sendo so o ML (pedido do A2, o padrao do C-60): a tela de hoje nao recebe a Shopee antes de saber mostra-la.
+   - Conta e loja juntas, ou marketplace que as contradiz, e recusado.
+   - `series_start` continua sendo o do ML; `series_start_shopee` e a data mais recente entre as lojas conectadas, NULA se alguma ainda nao foi registrada.
+
+**Verificacao:**
+- dominio: 5 testes (`detectShopeePriceEvents`);
+- worker: 2 testes no catalogo, 16 de 16 (o evento da loja depois da gravacao, a promocao sem evento e o `price_history_since`; a primeira leitura sem evento e a falha antes de gravar);
+- integracao: 7 testes (nulo = so o ML, com a serie do ML sem a Shopee; 'shopee' com a variacao, o SKU resolvido e a loja; 'todos' com os contadores e o mesmo numero em duas lojas; a loja e o "desde quando"; SKU, busca e direcao; as recusas; a RLS);
+- mutacao: 9 no SQL e 4 no worker, todas pegas;
+- `db reset` e a suite inteira, 1106 de 1106.
+
+**Publicacao:**
+1. a migration `20261021190000` pode entrar antes: nulo e o ML de hoje;
+2. o worker depois da migration: a fatia do A2 nas notificacoes (o `shopee_item` no `event-format`, a origem pelo `shop_name`) e a D-638, na `main` desde 21/10;
+3. a tela manda os params novos so depois da migration em producao.
+
+**Impacto:**
+- `supabase/migrations/20261021190000_historico_de_preco_da_shopee.sql`;
+- `packages/domain/src/events/{shopee-price-events,shopee-price-events.test,index}.ts`;
+- `apps/worker/src/handlers/{shopee-items-hydrate,domain-events,shopee-catalogo.test}.ts`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,SHOPEE,HANDOFF}.md`.
 
 ## D-634 - O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
 
@@ -18914,3 +18962,60 @@ Com a navegação atrasada em 600 ms (a resposta RSC segura no Playwright), o CL
 - **fotos** a 1440 e a 390 px nos três recortes: a barra sob o título, e a faixa de números começando na mesma altura.
 
 **Impacto:** `apps/web/components/page-title.tsx`, `apps/web/app/globals.css`, `apps/web/app/(app)/faturamento/{page.tsx,multicanal.tsx}`, `apps/web/e2e/faturamento-multicanal.spec.ts` e `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.
+
+## D-638 - A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
+
+**Contexto:** o C-81 do A1, o histórico de preço da Shopee (o C-13 do A2, liberado pelo dono em 21/10), faz o worker gravar um `domain_events` quando o preço de um modelo da Shopee muda entre duas leituras do catálogo. A forma, combinada em 21/10:
+- `event_type` `listing.price.changed`, o mesmo do ML;
+- `entity_type` `shopee_item`, `entity_id` = o `item_id` em texto;
+- a loja em `shopee_shop_id`, e `ml_account_id` nulo;
+- `before` = `{price, current_price, model_id}`; `after` = o mesmo, mais `model_name`, `item_name` e `shop_name`;
+- `price` é o `original_price`, porque o `current_price` é o da promoção.
+
+O gatilho de D-073 faz a notificação de todo evento. Sem esta decisão, a mudança de preço da Shopee chegaria à Central, ao aviso em tempo real e à atividade da Home:
+- sem destino, porque `entityHref` não conhecia `shopee_item`;
+- sem origem, porque `domain_events` só tem relação com `ml_accounts` e o embed traz só a conta do ML;
+- com o `entity_type` cru no texto.
+
+Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
+
+**Decisão:**
+1. **`lib/event-format.ts`, o leitor único da Central e do aviso:**
+   - `shopee_item` tem o rótulo "Anúncio Shopee";
+   - o texto é "Anúncio Shopee <item_name> · <model_name>", com o item quando o nome não vem;
+   - o destino é `/anuncios/shopee?loja=<shopee_shop_id>&q=<item_id>`, o mesmo atalho das ações da Shopee (D-626), e só com a loja e o item numérico. Sem a loja, nenhum destino, nunca a tela do ML;
+   - `entityHref` recebe a loja como quarto argumento.
+2. **A origem do evento** (`eventOriginLabel`): a conta do ML pelo embed, ou a loja pelo `shop_name` do `after`. Sem nenhum dos dois, nada: a linha não inventa origem. Vale para a Central, o aviso e a atividade da Home.
+3. **A Central e o aviso leem a coluna `shopee_shop_id`** do evento (existe desde a D-435), e o aviso agrupa por loja como agrupa por conta.
+4. **`shouldNotify` não muda:** a regra "todas as contas" vale para o evento da loja, e a de uma conta do ML específica não casa com ele. A preferência por loja é o C-82.
+5. **Não muda:** o diff (o `price`, como no ML) e o rótulo do tipo ("Preço do anúncio alterado").
+
+**O contrato da tela que vem depois** (C-81, combinado com o A1 em 21/10), para a `/precos` e a aba Preços do SKU:
+- `get_price_changes` ganha no fim `p_marketplace` e `p_shopee_shop_id`, e cinco colunas novas: `marketplace`, `shopee_shop_id`, `model_id`, `model_name` e `series_start_shopee`;
+- `p_marketplace` nulo ou `mercado_livre` é só o ML, como hoje, e a tela atual não muda com a migration; `shopee` e `todos` pedem a Shopee;
+- conta com loja, ou marketplace contraditório, é recusado com erro;
+- `series_start_shopee` nulo quer dizer "a loja ainda não é registrada", nunca "sem mudança";
+- a tela manda os params novos só depois da migration em produção.
+
+**Publicação:** só a web, ANTES do worker do C-81. O evento antigo, sem `shop_name`, continua com o texto de antes. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/event-format.test.ts`, 25 testes, 4 novos. Cobrem:
+  - o diff pelo `price` e nunca pelo `current_price`;
+  - o destino só com a loja e o item numérico;
+  - o texto com e sem nome e variação;
+  - a origem pela conta ou pela loja, nunca inventada.
+- **e2e:** no ensaio da loja live, um evento no formato do C-81 confere:
+  - na Central do recorte da loja: o título, a loja, o diff "R$ 100,00 → R$ 120,00" e o link "Anúncio Shopee <nome> · Preta" para a lista da loja buscada pelo item;
+  - na atividade da Home, a loja como origem.
+- **mutação:** sem a loja passada a `entityHref` na linha da Central, o e2e reprova (o link some).
+- **specs:** `notificacoes` e `home` 11/11, e o ensaio 17/17, com o banco recriado.
+- **suíte inteira:** chromium 261/261, `loja-live` 17/17 e convite 3/3, com o banco recriado do zero. Numa primeira rodada, um caso de `sugestoes` reprovou por tempo: o título não apareceu em 5 s, num banco já mexido pela suíte. Com o banco recriado, ele passou três vezes seguidas, e a tela não é tocada aqui.
+
+**Impacto:**
+- `apps/web/lib/{event-format.ts,event-format.test.ts}`;
+- `apps/web/app/(app)/notificacoes/{page.tsx,notification-row.tsx}`;
+- `apps/web/components/notification-toasts.tsx`;
+- `apps/web/app/(app)/page.tsx`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.

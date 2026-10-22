@@ -4092,6 +4092,7 @@ export type Database = {
           orders_last_success_at: string | null
           orders_sync_locked_until: string | null
           orders_synced_until: string | null
+          price_history_since: string | null
           returns_synced_until: string | null
           organization_id: string
           region: string | null
@@ -4120,6 +4121,7 @@ export type Database = {
           orders_last_success_at?: string | null
           orders_sync_locked_until?: string | null
           orders_synced_until?: string | null
+          price_history_since?: string | null
           returns_synced_until?: string | null
           organization_id: string
           region?: string | null
@@ -4148,6 +4150,7 @@ export type Database = {
           orders_last_success_at?: string | null
           orders_sync_locked_until?: string | null
           orders_synced_until?: string | null
+          price_history_since?: string | null
           returns_synced_until?: string | null
           organization_id?: string
           region?: string | null
@@ -7297,8 +7300,14 @@ export type Database = {
           p_organization_id: string
           p_search?: string | null
           p_sku_id?: string | null
+          // C-81: nulo ou 'mercado_livre' = so o ML (a tela de antes), 'shopee'
+          // ou 'todos'. A loja implica a Shopee.
+          p_marketplace?: string | null
+          p_shopee_shop_id?: string | null
         }
         Returns: {
+          // C-81: a conta do ML ou o nome da loja da Shopee ('Loja Shopee
+          // <shop_id>' sem nome lido); nunca nulo.
           account_label: string
           // ACRESCIMO MANUAL (D-264): `decreases`, `increases`,
           // `listings_affected` e `series_start` sao a faixa de KPIs do frame
@@ -7317,13 +7326,23 @@ export type Database = {
           increases: number
           item_id: string
           listings_affected: number
-          ml_account_id: string
+          // C-81: 'mercado_livre' | 'shopee'.
+          marketplace: string
+          // C-81: NULO na linha da Shopee (a origem e shopee_shop_id).
+          ml_account_id: string | null
+          // C-81: a variacao da Shopee; NULO no ML e no item sem variacao.
+          model_id: number | null
+          model_name: string | null
           occurred_at: string
           price_after: number
           price_before: number
           // DATE (dia civil ja convertido para America/Sao_Paulo no SQL), NULL
           // quando a organizacao nao tem nenhum evento de preco.
           series_start: string | null
+          // C-81: desde quando as lojas do recorte tem o preco registrado (a
+          // data mais recente entre elas); NULO = ainda nao registrada.
+          series_start_shopee: string | null
+          shopee_shop_id: string | null
           sku: string | null
           sku_id: string | null
           status: string | null
