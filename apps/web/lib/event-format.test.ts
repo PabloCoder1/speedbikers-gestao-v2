@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatCurrency } from "./format";
-import { entityHref, entityLabel, entityText, formatEventDiff, scalar } from "./event-format";
+import { entityHref, entityLabel, entityText, eventOriginLabel, formatEventDiff, scalar } from "./event-format";
 
 describe("formatEventDiff", () => {
   it("listing.price.changed formata os dois lados como moeda", () => {
@@ -178,5 +178,39 @@ describe("a loja Shopee parada ou em erro (D-435, rótulos de D-438)", () => {
     expect(entityText("shopee_shop", "cccc-dddd")).toBe("Loja Shopee cccc-dddd");
     expect(entityHref("shopee_shop", "cccc-dddd")).toBe("/contas");
     expect(entityLabel("shopee_shop")).toBe("Loja Shopee");
+  });
+});
+
+describe("a mudança de preço do anúncio da Shopee (C-81, D-638)", () => {
+  // A forma do worker do A1: before = {price, current_price, model_id}; o after leva também os nomes.
+  const ANTES = { price: 100, current_price: 90, model_id: 7001 };
+  const DEPOIS = { price: 120, current_price: 120, model_id: 7001, model_name: "Preto", item_name: "Capacete X", shop_name: "Loja Shopee Real" };
+  const LOJA = "aaaa-bbbb";
+
+  it("o diff é o do ML: o price (original_price), nunca o current_price da promoção", () => {
+    expect(formatEventDiff("listing.price.changed", ANTES, DEPOIS)).toBe(`${formatCurrency(100)} → ${formatCurrency(120)}`);
+  });
+
+  it("abre a lista da loja buscada pelo item, só com a loja e o item numérico", () => {
+    expect(entityHref("shopee_item", "990777001", DEPOIS, LOJA)).toBe("/anuncios/shopee?loja=aaaa-bbbb&q=990777001");
+    // Sem a loja (o evento antigo ou a coluna não lida), sem destino — nunca a tela do ML.
+    expect(entityHref("shopee_item", "990777001", DEPOIS)).toBeNull();
+    expect(entityHref("shopee_item", "MLB123", DEPOIS, LOJA)).toBeNull();
+  });
+
+  it("nomeia o anúncio e a variação quando vêm, e o item quando não", () => {
+    expect(entityLabel("shopee_item")).toBe("Anúncio Shopee");
+    expect(entityText("shopee_item", "990777001", DEPOIS)).toBe("Anúncio Shopee Capacete X · Preto");
+    expect(entityText("shopee_item", "990777001", { ...DEPOIS, model_name: null })).toBe("Anúncio Shopee Capacete X");
+    expect(entityText("shopee_item", "990777001", null)).toBe("Anúncio Shopee 990777001");
+  });
+
+  it("a origem é a conta do ML pelo embed, ou a loja pelo shop_name do evento", () => {
+    expect(eventOriginLabel("Loja E2E", DEPOIS)).toBe("Loja E2E");
+    expect(eventOriginLabel(null, DEPOIS)).toBe("Loja Shopee Real");
+    expect(eventOriginLabel(undefined, { shop_name: "  " })).toBeNull();
+    expect(eventOriginLabel(null, null)).toBeNull();
+    // A loja sem nome lido (`shop_name` nulo): a loja da coluna diz que é da Shopee, sem inventar nome.
+    expect(eventOriginLabel(null, { ...DEPOIS, shop_name: null }, LOJA)).toBe("Loja Shopee");
   });
 });
