@@ -19253,3 +19253,45 @@ O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a respondera
 - **suíte inteira**, com o banco recriado do zero: chromium 261/261, `loja-live` 17/17 e convite 3/3.
 
 **Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-652 - As lojas do TikTok Shop na /contas (C-86)
+
+**Contexto:** a fatia 1 do TikTok Shop (D-645 do A1, #320) conecta a loja: a tabela `tiktok_shops` (migration `20261022150000`), `POST /v1/tiktok-shop/connect` e o retorno `GET /oauth/tiktok-shop/callback`. O dono passou o `service_id` e pediu a fatia em 22/10. O contrato da tela é o C-86 (`docs/MULTICHANNEL_CONTRACTS.md` §3.34): o TikTok em `/contas`, ao lado das lojas da Shopee, com o botão de conectar só para ADMIN; até a api ter as variáveis do app, o botão recebe 503. A loja conectada ainda não tem pedido nem venda, e nada do TikTok entra nos totais.
+
+Duas respostas do A1 antes de começar:
+- o retorno da autorização para no JSON da api, como no ML e na Shopee. O redirect para a `/contas` é uma fatia dele, depois;
+- o `last_error` é texto para o operador, como na Shopee (nulo na fatia 1).
+
+**Decisão:**
+1. **O painel "Lojas do TikTok Shop"**, depois do da Shopee e com a mesma forma:
+   - a tabela tem a loja (o nome ou "Loja sem nome lido", com o `shop_id` e a região), o vendedor e o tipo, a conexão (com o `last_error` passado por `sanitizeErrorText`), as permissões concedidas (a contagem, com a lista no `title`; nulo é "—"), o vencimento da autorização (o fim do refresh token, com o aviso dos 7 dias da Shopee) e a data da conexão;
+   - o subtítulo diz que a V3 guarda só a conexão, e que os pedidos e as vendas do TikTok ainda não entram em tela nenhuma nem nos totais. Assim a loja conectada não parece quebrada;
+   - sem a tabela (o banco antes da migration, PGRST205 ou 42P01), o painel diz que as lojas chegam com a próxima atualização do banco, e o botão não aparece.
+2. **O botão "Conectar loja do TikTok Shop"** (`tiktok-connect-button.tsx`), só para ADMIN, com o desenho do da Shopee. O navegador vai inteiro para o `authorizationUrl`. Embaixo, a dica: "Depois de autorizar no TikTok Shop, volte para esta tela". As respostas que não são o link (`lib/conexao-tiktok.ts`):
+   - o 503 é aviso neutro ("O TikTok Shop ainda não está disponível."), com `role="status"`, sem o vermelho de erro;
+   - o 401, o 403 e o 409 são erro, cada um com o texto da tela. O `message` da api é técnico e fica de fora.
+3. **A faixa conta o TikTok como o terceiro canal** (`lib/contas-e-lojas.ts`), com a régua da Shopee: cadastradas, conectadas e as que requerem atenção (com erro, ou com a autorização vencendo). A divisão diz "· N do TikTok Shop". A leitura tem três estados:
+   - lida, o zero é fato e aparece;
+   - falhou, a ressalva diz "as lojas do TikTok Shop não carregaram", nunca "0";
+   - sem a tabela, o TikTok fica fora da divisão. Esse também é o padrão de quem chama sem o argumento.
+4. O subtítulo da tela passa a dizer "Mercado Livre, Shopee e TikTok Shop".
+
+**Publicação:** só a web. Empilhada sobre o #320 (os tipos de `tiktok_shops` no `packages/db`), e entra depois dele. A tela pode ir antes da migration `20261022150000` em produção: sem a tabela, ela fica como antes, só com o aviso no painel novo.
+
+**Verificação:**
+- **unitários:**
+  - `lib/contas-e-lojas.test.ts` (10, 5 novos: as lojas lidas com a régua de atenção, o zero, a leitura que falhou, a tabela ausente e as duas leituras falhando);
+  - `lib/conexao-tiktok.test.ts` (3 novos).
+- **e2e:** `e2e/contas.spec.ts` (3 novos):
+  - sem loja, o painel diz que não há, o ADMIN vê o botão e a dica, e a faixa diz "0 do TikTok Shop";
+  - com a api simulada na rota, o 503 é `role="status"` sem `alert`, e o 409 é `alert` com o texto da tela;
+  - duas lojas entram pela chave de serviço e saem no `finally`: uma conectada com a autorização a 3 dias e uma com erro. O teste confere a tabela (o `shop_id` com a região, o vendedor, "3 permissões", o aviso de reautorizar, o erro e os três "—") e a faixa (2 cadastradas, 1 conectada, 2 requerem atenção).
+- **antes da migration, à mão:** com a tabela renomeada no banco isolado, o painel diz que as lojas chegam com a próxima atualização, o botão some, a faixa fica sem o TikTok e a Shopee fica intacta, sem erro de página.
+- **suíte inteira**, com o banco recriado do zero: chromium 264/264 (os 3 novos inclusos), `loja-live` 17/17, convite 3/3.
+
+**Impacto:**
+- `apps/web/app/(app)/contas/{page.tsx,tiktok-connect-button.tsx}`;
+- `apps/web/lib/{contas-e-lojas.ts,contas-e-lojas.test.ts,conexao-tiktok.ts,conexao-tiktok.test.ts}`;
+- `apps/web/app/globals.css` (`.sb-account-connect-note`);
+- `apps/web/e2e/contas.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.

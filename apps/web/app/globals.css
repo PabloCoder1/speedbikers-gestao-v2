@@ -4826,6 +4826,13 @@ table {
   font-size: 0.75rem;
 }
 
+/* D-652: o aviso que não é erro (o TikTok Shop ainda desligado no servidor) e a dica embaixo do botão. */
+.sb-account-connect-note {
+  margin: 0.25rem 0 0;
+  color: var(--sb-text-soft);
+  font-size: 0.75rem;
+}
+
 .sb-account-form-error {
   width: 100%;
 }
