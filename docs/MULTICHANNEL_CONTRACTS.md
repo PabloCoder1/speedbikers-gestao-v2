@@ -180,7 +180,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 - **A correlação:** `marketplace` NULO no evento do SKU (vale para os dois canais), 'ML' no do anúncio e do pedido do ML, e 'SHOPEE' na mudança de preço do anúncio da Shopee (C-81).
 - **O worker (decisão do dono, 22/10, "por canal"):** cada canal é avaliado separado.
   - A ação `venda_anomala` leva `evidence.marketplace`.
-  - A do ML mantém a chave de antes; a da Shopee é `sales_anomaly:shopee:<sku>:<dia>`.
+  - Desde a D-643, a ação é um episódio por SKU e canal: `subject_key` = `ML:<sku>` ou `SHOPEE:<sku>`, com `primeira_deteccao`, `ultima_deteccao` e, ao encerrar, `encerramento` na evidência.
 - **Para a tela:** o `/diagnostico` e o diagnóstico do SKU mandam `p_marketplaces` só com valor e só depois da migration `20261022130000` em produção. Com os dois canais, o mesmo SKU pode ter duas linhas.
 
 ### 3.31 Várias contas e "Precisam de atenção" na /anuncios (C-80 e C-85, D-637) — em código
