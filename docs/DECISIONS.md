@@ -18825,7 +18825,7 @@ Lido antes de decidir:
 
 **Publicacao:**
 1. a migration `20261021190000` pode entrar antes: nulo e o ML de hoje;
-2. o worker espera a fatia do A2 nas notificacoes (o `shopee_item` no `event-format`, a origem pelo `shop_name`);
+2. o worker depois da migration: a fatia do A2 nas notificacoes (o `shopee_item` no `event-format`, a origem pelo `shop_name`) e a D-638, na `main` desde 21/10;
 3. a tela manda os params novos so depois da migration em producao.
 
 **Impacto:**
