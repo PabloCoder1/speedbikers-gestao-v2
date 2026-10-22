@@ -17495,6 +17495,43 @@ Os paineis foram vistos nos tres estados, com fotos a 390 e 1440 px. A falha e a
 
 So web: sem migration, sem RPC e sem leitura nova.
 
+## D-536 - A faixa de KPIs no celular: o valor nunca se corta (a fonte acompanha a celula, uma coluna abaixo de 340 px e o buraco das faixas impares)
+
+**Contexto:** no teste de pior caso dos componentes do A3 (a seguir a D-535), a faixa de KPIs (`components/kpi-strip.tsx`, em mais de 30 telas) tinha o valor em 18 px fixos numa celula de duas colunas. O valor formatado nao quebra, porque o espaco depois do "R$" do `Intl.NumberFormat` e o que nao quebra. Ele passava da celula, e a celula vizinha cobria os ultimos digitos: "R$ 1.284.519,60" lia-se "R$ 1.284.519,6", um valor errado na tela.
+
+Medido no build da `main` (banco isolado; valores trocados so no texto ja desenhado, o CSS intacto):
+- a 320 px, ja com o seed: "R$ 100,00" e "R$ 500,00" passavam 7 a 11 px;
+- a 360 px, um valor de seis digitos passava 24 px;
+- a 390 px, 9 px;
+- a 412 px, um de sete digitos passava 11 px;
+- a 900 px, duas celulas da `/central` passavam 10 px.
+
+Os valores do teste sao inventados.
+
+**Decisao** (so CSS, no bloco da faixa do `globals.css`):
+1. **A fonte do valor acompanha a largura util da propria celula:** `clamp(13px, 12cqi, 18px)`, com a celula como conteiner de tamanho (`container-type: inline-size`). 12cqi e o que um valor de oito digitos ("R$ 12.845.190,60", ~8em em negrito) precisa para caber. O valor fica em 18 px onde ha lugar: a 1024 e a 1440, quase sempre. Depende so da largura, nunca do texto, entao o esqueleto (`KpiCellCarregando`) e a tela pronta tem o mesmo tamanho, sem deslocamento.
+2. **No celular (ate 480 px), a celula respira 12 px dos lados, nao 16:** sao 8 px a mais para o valor.
+3. **Abaixo de 340 px de tela, uma coluna so:** em duas, a celula tem ~78 px uteis, e nem um valor curto cabia em 13 px.
+4. **A faixa de contagem impar fecha a linha:** a ultima celula de posicao impar ocupa as duas colunas, e nao so a de tres (D-393). A de cinco deixava a coluna 1 vazia na terceira linha (a `/faturamento` a 390 px). Com metade do fator (`6cqi`, menos o respiro que ela nao repete), o valor dela fica do tamanho dos vizinhos.
+
+Numero nao se corta nem quebra no meio. Diminuir a fonte foi preferido a uma coluna so ate ~400 px, que dobraria a altura de toda faixa no celular mais comum. Fica a escolha para o dono e o A2.
+
+**Medido** (o mesmo teste, depois):
+- nenhum valor passa da celula de 320 a 1024 px, com seis, sete e oito digitos, em `/`, `/faturamento`, `/central`, `/curva-abc`, `/estoque`, `/full`, `/anuncios` e `/saude`;
+- a fonte fica em 18 px a 320 (uma coluna), 13 px a 360, 14,5 px a 390, 15,8 px a 412, 15 px nas celulas estreitas da `/central` a 900 e 18 px a 1024;
+- todas as celulas da faixa com a mesma fonte, inclusive a que fecha a linha.
+
+**Verificacao:**
+- `pnpm run check` e o build.
+- e2e com o banco recriado: tela estreita, `faturamento`, `central` e `notificacoes`, 25 de 25.
+- A suite inteira: 256 passam. Os 11 que falham falham igual na `main` sem a mudanca, com o banco recriado. Tres sao do convite, que pede a porta 3000. Os outros oito dependem do dado ou da hora do banco local: `faturamento-multicanal`, `notificacoes` (2), `saude` (2), `sincronizacao` (2) e `vendas-multicanal`.
+
+**Achados para o A2** (texto das telas dele, nao mexidos):
+- "1 pedidos · 2 unidades" e "1 compras" na `/faturamento`: o plural fixo;
+- "UNKNOWN" como valor de uma celula da `/saude`, com o seed.
+
+**Impacto:** so `apps/web/app/globals.css` (o bloco da faixa de KPIs). Vale em toda tela com a faixa; acima de 480 px, so muda onde a celula e estreita.
+
 ## D-600 - A faixa de /contas com as contas do Mercado Livre e as lojas Shopee, e a numeração das decisões depois de D-499
 
 **Contexto:** a `/contas` se chama "Contas e lojas" desde a T1 (D-431), mas a faixa de indicadores ("Contas cadastradas", "Conectadas", "Aguardando conexão", "Requerem atenção") contava só as contas do Mercado Livre (`get_ml_account_cards`). Com duas lojas live desde o Go Live de 16/10, a faixa escondia metade dos canais. Era uma lacuna do inventário de `docs/MULTICHANNEL_SCREENS.md` §2: "indicadores só do ML; lojas num painel solto". E a faixa de decisões pares do A2 abaixo de D-500 acabou na D-498.

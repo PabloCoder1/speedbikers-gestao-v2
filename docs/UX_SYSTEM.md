@@ -170,6 +170,14 @@ Em ordem de impacto por custo. Cada item é uma fatia com medição antes/depois
     reporter diz se é a faixa e o gráfico (primeira rodada, com as leituras
     multicanal da D-488) ou a "Atenção" (a cobertura); a medida a frio das
     leituras está com o A1, e o que for de tela, com o A2.
+17. ~~**O valor da faixa de KPIs cortado no celular**~~ — **feito em branch**
+    (D-536, `fix/ux-kpi-celular`): no teste de pior caso, o valor em 18 px
+    fixos passava da célula de duas colunas, e a vizinha cobria os últimos
+    dígitos (a 360 px, um valor de seis dígitos; a 320, até "R$ 100,00"). A
+    fonte acompanha a largura da célula (`12cqi`, de 18 até 13 px), o respiro
+    lateral desce para 12 px no celular, abaixo de 340 px a faixa vira uma
+    coluna, e a faixa ímpar fecha a linha. Nenhum valor de até oito dígitos passa
+    da célula de 320 a 1024 px.
 
 ---
 
