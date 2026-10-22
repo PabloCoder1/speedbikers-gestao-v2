@@ -163,7 +163,20 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
-### 3.28 A queda nas vendas por anúncio na lista de /anuncios (C-79, D-629) — em código
+### 3.29 O histórico de preço da Shopee em /precos e na aba Preços do SKU (C-81, D-633) — em código
+
+- **O evento:** `listing.price.changed` com `shopee_shop_id` (o `ml_account_id` é NULO), `entity_type = 'shopee_item'` e `entity_id` = o item da Shopee.
+  - `before` = `{price, current_price, model_id}`; `after` = `{price, current_price, model_id, model_name, item_name, shop_name}`.
+  - `price` é o `original_price` (a promoção não é mudança de preço); `model_id` é NULO no item sem variação.
+  - Nasce só quando o `price` muda entre duas leituras; `occurred_at` é a hora da leitura que viu a mudança.
+- **`get_price_changes`:** no fim, `p_marketplace text default null` (NULO ou 'mercado_livre' = só o ML, como hoje; 'shopee'; 'todos') e `p_shopee_shop_id uuid default null` (implica a Shopee). Conta e loja juntas, ou marketplace que as contradiz, é recusado.
+- **As colunas no fim:** `marketplace`, `shopee_shop_id`, `model_id`, `model_name` e `series_start_shopee`.
+  - Na linha da Shopee: `item_id` = o item; `title`/`status` = `item_name`/`item_status` (vocabulário da Shopee); `sku_id`/`sku` = o vínculo de `shopee_listing_units`; `ml_account_id` NULO; `account_label` = o nome da loja ('Loja Shopee <shop_id>' sem nome lido, como nas outras RPCs).
+  - `listings_affected` conta por (conta ou loja, item); `series_start` é o do ML.
+- **Desde quando:** `series_start_shopee` = a data mais recente de `shopee_shops.price_history_since` entre as lojas conectadas do recorte; NULA se alguma ainda não foi registrada. Nunca "sem mudança" antes dela.
+- **Para a tela:** manda os parâmetros novos só com valor e só depois da migration `20261021190000` em produção. O aviso em tempo real e a Central conhecem o `shopee_item` (fatia do A2) antes do deploy do worker.
+
+### 3.28 A queda nas vendas por anúncio na lista de /anuncios (C-79, D-629) — em produção desde 21/10
 
 - **`get_listings_dashboard`:** `p_queda text default 'all'` ('all' | 'queda') no fim, e três colunas no fim: `queda_estado` ('queda' | 'normal' | 'sem_historico'), `queda_z` (duas casas) e `queda_calculada_em`. São NULAS quando o período da tela não termina hoje ou não é 7, 15, 30, 60 ou 90 dias.
 - **A régua:** as unidades dos N dias fechados até ONTEM contra as 8 janelas anteriores de mesmo tamanho, desde a primeira venda do anúncio, com z ≤ −2, ≥ 4 amostras, média > 0 e desvio > 0. Sem régua, 'sem_historico', nunca "sem queda".
@@ -171,13 +184,13 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 - **O cálculo:** uma vez por dia, no gatilho das 08:00 (`diagnostics.listing-sales-drop`). A tela diz de quando é (`queda_calculada_em`) e que é sobre dias fechados.
 - **Para a tela:** manda `p_queda`/`p_queda_dias` só com valor e só depois da migration `20261021160000` em produção.
 
-### 3.27 A divergência de estoque entre a Shopee e o V3 na Central (C-78, D-627) — em código
+### 3.27 A divergência de estoque entre a Shopee e o V3 na Central (C-78, D-627) — em produção desde 21/10
 
 - **A ação:** `actions.kind = 'shopee_divergencia'`, com `shopee_shop_id` e `sku_id`, `subject_key = <loja>:<item>:<variação ou ->`. A severidade é `alta` quando o V3 não tinha saldo na leitura (essa notifica) e `media` nos outros casos. A confiança é `media`, e o impacto é NULO.
 - **O `evidence.detector`:** `shopee_shop_id`, `loja`, `item_id`, `model_id`, `anuncio`, `variacao`, `sku_anuncio`, `sku`, `estoque_shopee`, `estoque_lido_em`, `saldo_v3_na_leitura`, `saldo_v3_agora` e `diferenca`.
 - **Para a tela:** o rótulo do kind e o atalho da D-609 para `/anuncios/shopee` (`q=<sku_anuncio>`, ou `q=<item_id>`). A tela lê depois da migration `20261021150000` em produção.
 
-### 3.26 A dispersão de preço do mesmo SKU na lista de /anuncios (C-77, D-625) — em código
+### 3.26 A dispersão de preço do mesmo SKU na lista de /anuncios (C-77, D-625) — em produção desde 21/10
 
 - **`get_listings_dashboard`:** `p_preco text default 'all'` ('all' | 'divergente') e `p_preco_teto numeric default null` no fim. 'divergente' exige o teto, que a web manda da `TETO_DISPERSAO_PCT`.
 - **As colunas no fim:** `preco_efetivo`, `sku_preco_min`, `sku_preco_max`, `sku_anuncios_com_preco`, `sku_dispersao_pct` (uma casa) e `sku_dispersao_sku_id`. As do SKU são NULAS sem SKU ou com um preço só.

@@ -12428,6 +12428,198 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
   });
 });
 
+// C-81 (20261021190000, D-633) -- o historico de preco da Shopee no
+// get_price_changes: nulo = so o ML (a tela de antes), 'shopee' e 'todos'.
+describe("get_price_changes com a Shopee (C-81, D-633)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000c081";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000c081";
+  const CONTA = "cccccccc-0000-4000-8000-0000000c0081";
+  const LOJA = "dddd0810-0000-4000-8000-0000000a0081";
+  const LOJA_NOVA = "dddd0810-0000-4000-8000-0000000b0081";
+  const FROM = "2026-10-01T00:00:00Z";
+  const TO = "2026-10-21T00:00:00Z";
+  let sku = "";
+
+  interface Linha {
+    item_id: string;
+    title: string | null;
+    status: string | null;
+    sku: string | null;
+    ml_account_id: string | null;
+    account_label: string;
+    price_before: string;
+    price_after: string;
+    marketplace: string;
+    shopee_shop_id: string | null;
+    model_id: string | null;
+    model_name: string | null;
+    total_count: string;
+    increases: string;
+    decreases: string;
+    listings_affected: string;
+    series_start: string | null;
+    series_start_shopee: string | null;
+  }
+
+  const ler = (args: string) =>
+    asUser<Linha>(
+      ADMIN,
+      `select item_id, title, status, sku, ml_account_id, account_label, price_before::text, price_after::text,
+              marketplace, shopee_shop_id, model_id::text, model_name, total_count::text, increases::text,
+              decreases::text, listings_affected::text, series_start::text, series_start_shopee::text
+         from public.get_price_changes('${ORG}', '${FROM}', '${TO}'${args})
+        order by marketplace, item_id, model_id nulls first, account_label`,
+    );
+
+  // A conta fica fora do prefixo `rlstest` da limpeza global: ela tem evento
+  // em `domain_events` (append-only, FK RESTRICT), como a suite D-172.
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-c081@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org C-81', 'org-c081') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    sku =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'C81-X', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta C-81', 'precotest-c081', 'CONNECTED', 9990081, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB8100001', 'Anúncio ML', 'active', 110, 'BRL', 1, $3) on conflict do nothing`,
+      [ORG, CONTA, sku],
+    );
+    // A loja registrada desde 10/10 e a nova, ainda sem a primeira leitura.
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, price_history_since)
+       values ($1, $3, 'live', 990081001, 'Loja C81', 'CONNECTED', now() - interval '60 days', '2026-10-10T15:00:00Z'),
+              ($2, $3, 'live', 990081002, 'Loja Nova', 'CONNECTED', now() - interval '1 day', null)
+       on conflict do nothing`,
+      [LOJA, LOJA_NOVA, ORG],
+    );
+    // 81001: sem variacao, vinculado pelo SKU do anuncio. 81002: com
+    // variacoes, a 2 vinculada pelo SKU da variacao. A loja nova tem um 81001
+    // dela: o mesmo numero em outra loja e outro anuncio.
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time, original_price, current_price)
+       values ($1, $3, 81001, 'NORMAL', now(), 'Capacete C81', 'C81-X', false, now(), now(), 120, 110),
+              ($1, $3, 81002, 'UNLIST', now(), 'Luva C81', null, true, now(), now(), null, null),
+              ($2, $3, 81001, 'NORMAL', now(), 'Bota C81', null, false, now(), now(), 33, 33)
+       on conflict do nothing`,
+      [LOJA, LOJA_NOVA, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_item_models (shopee_shop_id, organization_id, item_id, model_id, model_name, model_sku, model_status, original_price, current_price)
+       values ($1, $2, 81002, 1, 'Preta / P', null, 'NORMAL', 50, 50),
+              ($1, $2, 81002, 2, 'Preta / G', 'C81-X', 'NORMAL', 55, 55)
+       on conflict do nothing`,
+      [LOJA, ORG],
+    );
+    await client.query(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, shopee_shop_id, entity_type, entity_id, event_type, severity, source, dedup_key, before, after, occurred_at)
+       values
+         ($1, $2, null, 'listing', 'MLB8100001', 'listing.price.changed', 'informativo', 'sync', 'c081-ml', '{"price": 100}', '{"price": 110}', '2026-10-15T12:00:00Z'),
+         ($1, null, $3, 'shopee_item', '81001', 'listing.price.changed', 'informativo', 'sync', 'c081-sem-variacao',
+          '{"price": 100, "current_price": 100, "model_id": null}', '{"price": 120, "current_price": 110, "model_id": null, "model_name": null}', '2026-10-16T12:00:00Z'),
+         ($1, null, $3, 'shopee_item', '81002', 'listing.price.changed', 'informativo', 'sync', 'c081-variacao',
+          '{"price": 60, "current_price": 60, "model_id": 2}', '{"price": 55, "current_price": 55, "model_id": 2, "model_name": "Preta / G"}', '2026-10-17T12:00:00Z'),
+         ($1, null, $4, 'shopee_item', '81001', 'listing.price.changed', 'informativo', 'sync', 'c081-loja-nova',
+          '{"price": 30, "model_id": null}', '{"price": 33, "model_id": null}', '2026-10-18T12:00:00Z'),
+         -- Da Shopee e ANTES do ML, fora da janela: nao muda o inicio da serie do ML.
+         ($1, null, $3, 'shopee_item', '81001', 'listing.price.changed', 'informativo', 'sync', 'c081-antigo',
+          '{"price": 90, "model_id": null}', '{"price": 100, "model_id": null}', '2026-09-20T12:00:00Z'),
+         -- Sem o preco anterior: nao vira linha com NULL calado.
+         ($1, null, $3, 'shopee_item', '81001', 'listing.price.changed', 'informativo', 'sync', 'c081-incompleto',
+          '{"model_id": null}', '{"price": 130, "model_id": null}', '2026-10-19T12:00:00Z')
+       on conflict do nothing`,
+      [ORG, CONTA, LOJA, LOJA_NOVA],
+    );
+  });
+
+  it("sem marketplace (a chamada de antes) devolve só o ML, igual a antes", async () => {
+    const linhas = await ler("");
+
+    expect(linhas.map((l) => [l.marketplace, l.item_id, l.ml_account_id, l.account_label, l.total_count])).toEqual([
+      ["mercado_livre", "MLB8100001", CONTA, "Conta C-81", "1"],
+    ]);
+    // O inicio da serie do ML nao conta os eventos da Shopee.
+    expect(linhas[0]?.series_start).toBe("2026-10-15");
+  });
+
+  it("'shopee' devolve a loja: o item, a variação, o SKU resolvido e a loja como origem", async () => {
+    const linhas = await ler(", p_marketplace => 'shopee'");
+
+    expect(linhas.map((l) => [l.item_id, l.model_id, l.model_name, l.title, l.status, l.sku, l.ml_account_id, l.account_label, l.price_before, l.price_after])).toEqual([
+      ["81001", null, null, "Capacete C81", "NORMAL", "C81-X", null, "Loja C81", "100", "120"],
+      ["81001", null, null, "Bota C81", "NORMAL", null, null, "Loja Nova", "30", "33"],
+      ["81002", "2", "Preta / G", "Luva C81", "UNLIST", "C81-X", null, "Loja C81", "60", "55"],
+    ]);
+    expect(new Set(linhas.map((l) => l.marketplace))).toEqual(new Set(["shopee"]));
+    expect(linhas[0]?.shopee_shop_id).toBe(LOJA);
+    // Uma das lojas ainda nao tem a primeira leitura: nao ha "desde quando".
+    expect(linhas[0]?.series_start_shopee).toBeNull();
+  });
+
+  it("'todos' junta os dois, com os contadores do recorte inteiro (o mesmo número em duas lojas são dois anúncios)", async () => {
+    const linhas = await ler(", p_marketplace => 'todos'");
+
+    expect(linhas).toHaveLength(4);
+    expect(linhas[0]).toMatchObject({ total_count: "4", increases: "3", decreases: "1", listings_affected: "4" });
+  });
+
+  it("a loja implica a Shopee e diz desde quando é registrada", async () => {
+    const linhas = await ler(`, p_shopee_shop_id => '${LOJA}'`);
+
+    expect(linhas.map((l) => [l.item_id, l.account_label])).toEqual([
+      ["81001", "Loja C81"],
+      ["81002", "Loja C81"],
+    ]);
+    expect(linhas[0]?.series_start_shopee).toBe("2026-10-10");
+    expect(linhas[0]?.total_count).toBe("2");
+  });
+
+  it("o SKU, a busca e a direção valem para os dois marketplaces", async () => {
+    const doSku = await ler(`, p_sku_id => '${sku}', p_marketplace => 'todos'`);
+    const busca = await ler(", p_search => 'luva', p_marketplace => 'todos'");
+    const caiu = await ler(", p_direction => 'down', p_marketplace => 'todos'");
+
+    expect(doSku.map((l) => [l.marketplace, l.item_id])).toEqual([
+      ["mercado_livre", "MLB8100001"],
+      ["shopee", "81001"],
+      ["shopee", "81002"],
+    ]);
+    expect(busca.map((l) => l.item_id)).toEqual(["81002"]);
+    expect(caiu.map((l) => l.item_id)).toEqual(["81002"]);
+  });
+
+  it("conta e loja juntas, ou o marketplace que as contradiz, é recusado", async () => {
+    await expect(ler(`, p_ml_account_id => '${CONTA}', p_shopee_shop_id => '${LOJA}'`)).rejects.toThrow(/nao as duas/);
+    await expect(ler(`, p_ml_account_id => '${CONTA}', p_marketplace => 'shopee'`)).rejects.toThrow(/contradiz/);
+    await expect(ler(`, p_shopee_shop_id => '${LOJA}', p_marketplace => 'mercado_livre'`)).rejects.toThrow(/contradiz/);
+    await expect(ler(", p_marketplace => 'tiktok'")).rejects.toThrow(/p_marketplace deve ser/);
+  });
+
+  it("quem não alcança a organização não vê nada da loja", async () => {
+    const linhas = await asUser<{ item_id: string }>(
+      DE_OUTRA_ORG,
+      `select item_id from public.get_price_changes('${ORG}', '${FROM}', '${TO}', p_marketplace => 'todos')`,
+    );
+
+    expect(linhas).toHaveLength(0);
+  });
+});
+
 // get_fulfillment_overview (20260831210151, D-173) — a Central Full, e o
 // GRÃO do Full: um saldo por bucket (inventory_id), somado por SKU.
 describe("get_fulfillment_overview (D-173, Central Full)", () => {

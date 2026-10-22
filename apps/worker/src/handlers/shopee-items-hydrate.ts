@@ -1,4 +1,5 @@
 import type { TablesUpdate } from "@sb/db";
+import { detectShopeePriceEvents, type ShopeePriceReading } from "@sb/domain";
 import {
   ITEM_BASE_INFO_BATCH,
   ShopeeApiError,
@@ -14,7 +15,9 @@ import {
 import { ZodError } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { recordDomainEvents } from "./domain-events.js";
 import { falhaDaShopee, lerLojaConectada, type ShopeeJobDeps } from "./shopee-comum.js";
 import { ensureShopeeAccessToken } from "./shopee-token.js";
 
@@ -36,6 +39,10 @@ import { ensureShopeeAccessToken } from "./shopee-token.js";
  *   no meio, o item continua pendente e a nova tentativa o relê.
  * - `details_update_time` é o `update_time` que o detalhe trouxe (relógio da
  *   Shopee), comparado com o da lista.
+ * - C-81: o preço que o banco tinha é lido ANTES de gravar, e a mudança vira
+ *   `listing.price.changed` da loja logo depois de o item ser gravado
+ *   (`detectShopeePriceEvents`). Sem os preços anteriores a tarefa falha
+ *   antes de gravar: gravar por cima apagaria a mudança para sempre.
  */
 
 export type ShopeeItemsHydrateDeps = ShopeeJobDeps;
@@ -105,6 +112,69 @@ async function lerDetalhes(
   }
 
   return { itens, erros };
+}
+
+interface PrecosAnteriores {
+  /** O preço do próprio item (só o sem variação tem), por `item_id`. */
+  itens: Map<number, ShopeePriceReading>;
+  /** As variações gravadas, por `item_id`. */
+  variacoes: Map<number, ShopeePriceReading[]>;
+}
+
+/** C-81: o preço que o banco tinha antes desta leitura, do lote inteiro. */
+async function lerPrecosAnteriores(
+  deps: ShopeeItemsHydrateDeps,
+  lojaId: string,
+  ids: readonly number[],
+): Promise<PrecosAnteriores | { erro: string }> {
+  // O lote tem até 50 itens: uma linha por item, longe do teto de 1.000.
+  const itens = await deps.db
+    .from("shopee_items")
+    .select("item_id, original_price, current_price")
+    .eq("shopee_shop_id", lojaId)
+    .in("item_id", [...ids]);
+
+  if (itens.error !== null) return { erro: itens.error.message };
+
+  let variacoes: { item_id: number; model_id: number; original_price: number | null; current_price: number | null }[];
+
+  try {
+    // Até 50 itens com dezenas de variações cada: paginado.
+    variacoes = await readAllPages(
+      (from, to) =>
+        deps.db
+          .from("shopee_item_models")
+          .select("item_id, model_id, original_price, current_price")
+          .eq("shopee_shop_id", lojaId)
+          .in("item_id", [...ids])
+          .order("item_id")
+          .order("model_id")
+          .range(from, to),
+      { label: "variações anteriores" },
+    );
+  } catch (error) {
+    return { erro: error instanceof Error ? error.message : "erro" };
+  }
+
+  const anteriores: PrecosAnteriores = { itens: new Map(), variacoes: new Map() };
+
+  for (const linha of itens.data) {
+    anteriores.itens.set(linha.item_id, {
+      itemId: linha.item_id,
+      modelId: null,
+      price: linha.original_price,
+      currentPrice: linha.current_price,
+    });
+  }
+
+  for (const linha of variacoes) {
+    const doItem = anteriores.variacoes.get(linha.item_id) ?? [];
+
+    doItem.push({ itemId: linha.item_id, modelId: linha.model_id, price: linha.original_price, currentPrice: linha.current_price });
+    anteriores.variacoes.set(linha.item_id, doItem);
+  }
+
+  return anteriores;
 }
 
 function colunasDoItem(item: ShopeeItem, pendente: { shopee_updated_at: string }, now: Date): TablesUpdate<"shopee_items"> {
@@ -213,9 +283,25 @@ async function hidratar(
     return { outcome: falhaDaShopee(error, "erro desconhecido ao ler o detalhe dos itens da Shopee"), temMais: false };
   }
 
+  const ids = pendentes.data.map((linha) => linha.item_id);
+  const anteriores = await lerPrecosAnteriores(deps, loja.id, ids);
+
+  if ("erro" in anteriores) {
+    return {
+      outcome: { status: "failed", retryable: true, reason: `falha ao ler os preços anteriores: ${anteriores.erro}` },
+      temMais: false,
+    };
+  }
+
+  // O nome vai no evento (o aviso diz a origem sem outra ida). Sem ele o
+  // evento sai com o nome nulo, e o catálogo segue.
+  const nomeDaLoja = await deps.db.from("shopee_shops").select("shop_name").eq("id", loja.id).maybeSingle();
+  const shopName = nomeDaLoja.error === null ? (nomeDaLoja.data?.shop_name ?? null) : null;
+
   let lidos = 0;
   let variacoes = 0;
   let variacoesInvalidas = 0;
+  let mudancasDePreco = 0;
   const semDetalhe: { item_id: number; motivo: string }[] = [];
 
   for (const pendente of pendentes.data) {
@@ -315,8 +401,61 @@ async function hidratar(
       };
     }
 
+    // C-81: o preço que mudou, comparado com o que o banco tinha antes.
+    const nomeDoItem = texto(item.item_name);
+    const atuais: ShopeePriceReading[] =
+      models.length > 0
+        ? models.map((model) => {
+            const preco = precoEEstoque(model);
+
+            return {
+              itemId,
+              modelId: model.model_id,
+              modelName: model.name,
+              itemName: nomeDoItem,
+              price: preco.originalPrice,
+              currentPrice: preco.currentPrice,
+            };
+          })
+        : [
+            {
+              itemId,
+              modelId: null,
+              itemName: nomeDoItem,
+              price: item.has_model === false ? precoEEstoque(item).originalPrice : null,
+              currentPrice: item.has_model === false ? precoEEstoque(item).currentPrice : null,
+            },
+          ];
+    const doItem = anteriores.itens.get(itemId);
+    const mudancas = detectShopeePriceEvents({
+      shopeeShopId: loja.id,
+      shopName,
+      previous: [...(doItem === undefined ? [] : [doItem]), ...(anteriores.variacoes.get(itemId) ?? [])],
+      current: atuais,
+      readAt: now,
+    });
+
+    if (mudancas.length > 0) {
+      await recordDomainEvents(deps.db, { organizationId: loja.organization_id, shopeeShopId: loja.id }, mudancas, context.logger);
+      mudancasDePreco += mudancas.length;
+    }
+
     lidos += 1;
     variacoes += models.length;
+  }
+
+  if (lidos > 0) {
+    // Desde quando a loja tem o preço registrado: a primeira leitura com o
+    // C-81. A tela nunca diz "sem mudança" antes disso.
+    const marcada = await deps.db
+      .from("shopee_shops")
+      .update({ price_history_since: now.toISOString() })
+      .eq("id", loja.id)
+      .is("price_history_since", null);
+
+    if (marcada.error !== null) {
+      context.logger.warn("shopee_price_history_since_not_set", { shopee_shop_id: loja.id, reason: marcada.error.message });
+    }
   }
 
   if (semDetalhe.length > 0) {
@@ -333,6 +472,7 @@ async function hidratar(
     sem_detalhe: semDetalhe.length,
     variacoes,
     variacoes_fora_do_contrato: variacoesInvalidas,
+    mudancas_de_preco: mudancasDePreco,
     tem_mais: temMais,
   });
 
