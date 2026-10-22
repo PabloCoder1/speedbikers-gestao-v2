@@ -124,6 +124,19 @@ export const envSchema = z.object({
   SHOPEE_PUSH_PARTNER_KEY: z.string().min(16).optional(),
 
   /**
+   * TikTok Shop (D-645, fatia 1). As três juntas ligam a conexão de loja;
+   * faltando qualquer uma, as rotas do TikTok respondem 503 e o resto da api
+   * sobe igual — o interruptor da Shopee.
+   *
+   * App Key e App Secret são segredo (Secret Manager: `TIKTOK_SHOP_APP_KEY` e
+   * `TIKTOK_SHOP_APP_SECRET`). O `service_id` não é segredo. A Redirect URL
+   * não é variável: é uma só por app, cadastrada no Partner Center.
+   */
+  TIKTOK_SHOP_APP_KEY: z.string().min(1).optional(),
+  TIKTOK_SHOP_APP_SECRET: z.string().min(8).optional(),
+  TIKTOK_SHOP_SERVICE_ID: z.string().regex(/^[0-9]+$/, "precisa ser o número do service_id").optional(),
+
+  /**
    * Copiloto (D-082) — narração de diagnóstico via Claude Haiku 4.5. Segredo,
    * vem do Secret Manager (`infra/lib.sh` `SECRET_ANTHROPIC_KEY`). Único
    * consumidor: `narrate_sku_diagnosis` em `src/copilot.ts`.

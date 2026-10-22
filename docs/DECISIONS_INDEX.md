@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **553** (D-001 a D-643).
+Decisões registradas: **557** (D-001 a D-650).
 
 ## Por domínio
 
-### atendimento (57)
+### atendimento (59)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -75,6 +75,8 @@ Decisões registradas: **553** (D-001 a D-643).
 - **D-427** — Shopee, fatia 3: o financeiro de cada pedido vem da propria Shopee (get_escrow_detail), relido enquanto o pedido muda
 - **D-447** — Devolucoes da Shopee (E7a, C-62): a API returns em tabela propria, sem o comprador, com a situacao como a Shopee manda e o SKU de cada item
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
+- **D-645** — A conexão da loja do TikTok Shop (fatia 1)
+- **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
 
 ### banco/rls (46)
 
@@ -241,7 +243,7 @@ Decisões registradas: **553** (D-001 a D-643).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (105)
+### mercado-livre (106)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -348,8 +350,9 @@ Decisões registradas: **553** (D-001 a D-643).
 - **D-637** — Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
+- **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
 
-### outros (80)
+### outros (81)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -431,6 +434,7 @@ Decisões registradas: **553** (D-001 a D-643).
 - **D-624** — O ranking de produtos do "Todos" recorta pela marca (C-75)
 - **D-633** — O historico de preco da Shopee (C-81)
 - **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
+- **D-650** — A barra do topo cabe no celular: a busca cede espaço ao "Sair"
 
 ### processo/docs (1)
 

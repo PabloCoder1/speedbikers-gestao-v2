@@ -70,7 +70,7 @@ específica do ML · **4** ainda sem suporte para a Shopee · **5** não se apli
 | Integrações, Configurações | `/integracoes`, `/configuracoes` | 2 | — | cartões fixos; `get_settings_overview` (contagem ML) · `marketplace_accounts` e `shopee_shops` (Shopee) | — | T3b ✔ (D-446: cartão e seção da Shopee); T3c ✔ (D-462: o cartão julga os sete jobs) |
 | Usuários | `/usuarios` | 2 | — | `user_account_permissions` · `user_shopee_shop_permissions` (D-433) | — | T2 ✔ (D-434) |
 | Busca universal | Ctrl+K | 2 | — | `search_entities` | T7 ✔ (D-476): loja, anúncio e pedido da Shopee, com "Outros" para tipo desconhecido; o pedido abre filtrado em `/vendas/shopee` | C-08/C-57 → T7 |
-| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api, todas ML | Shopee nas ferramentas: o C-14 (C-84 do A1), aceito em 21/10 (liberado pelo dono) | C-14 |
+| Copiloto | `/copiloto`, gaveta | 2 | — | ferramentas da api: as de antes, do ML, e as duas por canal do C-84 (`marketplace_sales_summary` e `marketplace_sku_sales`) | — (a queda, o anúncio e o estoque da Shopee seguem fora do chat, C-84) | D-646 (o rótulo no chat) |
 | Shell e menu | todas | 2 | — | `marketplace_accounts` conectadas (contas do ML e lojas Shopee) | — (o "N contas conectadas" conta as lojas desde a D-438; a lacuna antiga estava desatualizada, D-490 §5) | ✔ D-438 |
 | Exportações | anúncios e Full (CSV); ABC, preços, compras (Excel) | conforme a tela | — | — | — (o recorte do Mercado Livre exporta a série por dia pela leitura da própria tela desde a D-602) | T11 ✔ (D-490): pedidos e anúncios da Shopee em CSV, com o recorte da tela; D-496 ✔: `/vendas` no "Todos" e na Shopee, por dia e por conta |
 | Sugestões, fornecedores, NF-e, importações, login | — | 1 / 5 | — | organização / ERP | — | — |
@@ -237,7 +237,7 @@ linhas.
 | C-11 | `/diagnostico` e o diagnóstico do SKU com a Shopee (liberado pelo dono em 21/10) | a linha de base, o preço médio e os eventos correlacionados com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-83 |
 | C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | aceito pelo A1 em 21/10 como o C-82 |
 | C-13 | Histórico de preço da Shopee em `/precos` e na aba Preços do SKU (liberado pelo dono em 21/10) | o evento de mudança de preço do modelo da Shopee e `get_price_changes` com a Shopee (abaixo) | o C-81 do A1 (D-633, #308; `docs/MULTICHANNEL_CONTRACTS.md` §3.29); a notificação é a D-638 e a tela, a D-640 |
-| C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | aceito pelo A1 em 21/10 como o C-84 |
+| C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | o C-84 do A1 (D-641, #316; `docs/MULTICHANNEL_CONTRACTS.md` §3.33); o rótulo no chat é a D-646, e o canal na narração do diagnóstico vai na D-644 |
 
 ### C-10 — o SKU com a Shopee: os pedidos e o dia a dia por canal (pedido ao A1 em 20/10)
 
@@ -402,7 +402,8 @@ número.
 | **D-630** | O diagnóstico do SKU mede a dispersão de preço com a régua do C-77 | A1 (C-77, D-625) e A3 | ✔ D-630 (#298) |
 | **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | ✔ D-632 (#300) |
 | **D-636** | O cabeçalho da `/faturamento` com a mesma forma nos três recortes | A3 (o achado e a escolha) | ✔ D-636 (#306) |
-| **D-638** | A mudança de preço do anúncio da Shopee nas notificações, antes do worker | A1 (C-81, D-633) | em código |
+| **D-638** | A mudança de preço do anúncio da Shopee nas notificações, antes do worker | A1 (C-81, D-633) | ✔ D-638 (#309) |
+| **D-646** | O rótulo das ferramentas do Copiloto no chat, com as duas da Shopee | A1 (C-84, D-641) | ✔ D-646 (#318) |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
