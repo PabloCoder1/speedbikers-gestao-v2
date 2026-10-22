@@ -6439,6 +6439,11 @@ export type Database = {
           vinculo_via: string | null
         }[]
       }
+      // D-643: o ciclo de episodio da venda anomala (so service_role).
+      registrar_vendas_anomalas: {
+        Args: { p_detectadas: Json; p_hoje: string; p_organization_id: string }
+        Returns: Json
+      }
       remove_shopee_sku_link: {
         Args: { p_link_id: string; p_reason: string }
         Returns: undefined
