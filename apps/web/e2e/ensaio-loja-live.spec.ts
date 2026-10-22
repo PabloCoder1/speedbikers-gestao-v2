@@ -749,8 +749,12 @@ test("/precos e a aba Preços do SKU: a mudança de preço da loja live, com o i
   // A loja ainda não registrada: a tela diz isso, e nunca "sem mudança".
   await entrar(page, "/precos?marketplace=shopee");
 
+  // A linha DESTE evento (110 → 120): o caso da D-638, acima, gravou outra mudança do mesmo item (100 → 120).
   const tabela = page.locator(".sb-price-table");
-  const linha = tabela.locator("tbody tr").filter({ hasText: "990777001" });
+  const linha = tabela
+    .locator("tbody tr")
+    .filter({ hasText: "990777001" })
+    .filter({ has: page.locator(".sb-price-before", { hasText: "110,00" }) });
 
   await expect(page.locator(".sb-price-note")).toContainText("A Shopee ainda não é registrada em todas as lojas deste recorte");
   await expect(linha).toHaveCount(1);
@@ -774,7 +778,7 @@ test("/precos e a aba Preços do SKU: a mudança de preço da loja live, com o i
   await expect(page.locator(".sb-price-note")).toContainText("A Shopee ainda não é registrada em todas as lojas deste recorte");
   await page.goto(`/precos?marketplace=shopee&loja=${lojaId}`);
   await expect(page.locator(".sb-price-note")).toContainText("A Shopee é registrada desde 21/10/2026");
-  await expect(page.locator(".sb-price-table tbody tr").filter({ hasText: "990777001" })).toHaveCount(1);
+  await expect(linha).toHaveCount(1);
 
   // O Mercado Livre continua sendo a tela de sempre: sem marketplace, a linha da Shopee não aparece.
   await page.goto("/precos");
@@ -783,7 +787,7 @@ test("/precos e a aba Preços do SKU: a mudança de preço da loja live, com o i
   // A aba Preços do SKU vê os dois marketplaces, com o mesmo destino para a lista da loja.
   await page.goto(`/skus/${skuId}?aba=precos`);
 
-  const doSku = page.locator("table tbody tr").filter({ hasText: "990777001" });
+  const doSku = page.locator("table tbody tr").filter({ hasText: "990777001" }).filter({ hasText: "R$ 110,00" });
 
   await expect(doSku).toHaveCount(1);
   await expect(doSku).toContainText(`Shopee · ${LOJA_LIVE.nome}`);
