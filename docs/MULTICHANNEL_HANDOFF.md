@@ -209,14 +209,15 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-516: o reporter de produção diz o elemento do LCP e do maior deslocamento, pela forma (tag, classes `sb-*` e a posição da seção; nunca texto ou rótulo), para a próxima carga lenta da Home dizer qual bloco a segura.
 - D-517: a reformulação da Central de Negócio (pedido do dono de 19/10; a tela é do A2, que a liberou e revisa), bloco 1 — abas comuns às seis telas, cabeçalho só com os filtros, vendas logo abaixo dos alertas, a comparação e o método recolhidos, e 2 `get_faturamento` por carga em vez de 4 (com a D-610 do A2). Auditoria e blocos em `docs/UX_SYSTEM.md` §6. **D-516 e D-517 na `main`** pelo #255 (`10901463`).
 - D-518: os blocos 2 e 3 da Central (pedido do dono de 19/10) — cada termo de metas, limites, frete, Ads e produtos explicado a um toque (`Ajuda`, `Glossario`), com a definição tirada do SQL (e os textos errados corrigidos); a situação do mês no topo de metas; remover com confirmação; os limites em quatro grupos; a coluna do nome fixa nas tabelas do celular; e sem as filas do "quem paga" e do ranking. **Em produção** desde 19/10 (#258, `5c290ccf`, deploy das 19:14 UTC).
-- D-519: o bloco 4 da Central — os painéis Frete e Ads da `/central` no `EstadoDaTela` (falha com o "Tentar de novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO"), e o que as seis telas repetiam num lugar só (`app/(app)/central/comum.tsx` e `lib/central-periodo.ts`).
+- D-519: o bloco 4 da Central — os painéis Frete e Ads da `/central` no `EstadoDaTela` (falha com o "Tentar de novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO"), e o que as seis telas repetiam num lugar só (`app/(app)/central/comum.tsx` e `lib/central-periodo.ts`). **Em produção** desde 19/10 (#261, `362a8620`, deploy das 20:15 UTC): a reformulação da Central fechou.
 
 **Em andamento**
-- D-519 na `feat/ux-central-bloco4` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa a Central.
+- Nada em código. A leitura dos web vitals de 19/10 à noite está em `docs/UX_SYSTEM.md` §5; a próxima espera cargas da Home e da `/central` depois da D-499.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)
 - O LCP da Home de 6 a 10 s em 19/10 (D-516): ler o `el` da próxima carga lenta; a medida a frio das leituras da Home está com o A1, e o que for de tela, com o A2.
 - Reler os web vitals quando houver carga completa de `/skus/[id]` (zero até 19/10).
+- O CSS de 267 KB que bloqueia a primeira pintura (§3, item 11): medir a cobertura por tela antes de mexer.
 
 **Para o A2**
 - Tela nova: os estados vão no `EstadoDaTela` (D-502); um pedaço que espera uma leitura cara vai num `Suspense` com o lugar reservado — bloco: esqueleto do tamanho dele (Home, D-504), e o bloco muito maior que o esqueleto, com outros abaixo, reserva ao menos a janela (`<CarregandoBloco altura="100vh"/>`, a `/central`, D-515); selo do cabeçalho: `ObjectBadgeTardio` (D-505); célula da faixa: `KpiCellTardia` (D-509).
