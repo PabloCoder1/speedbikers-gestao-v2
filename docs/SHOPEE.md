@@ -261,6 +261,12 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   unidade no catálogo sincronizado; remover pede motivo); histórico
   `shopee_sku_link_events`. **O manual vence o SKU do anúncio** — a
   precedência está na view.
+- **Preço (C-81, D-633):** `price_info.original_price` é o preço do
+  anúncio e `current_price` o da promoção, quando há (documentação de
+  `get_item_base_info`, conferida em 21/10/2026). A cada leitura a
+  hidratação compara o `original_price` com o gravado e registra a
+  mudança como `listing.price.changed` da loja; o histórico conta desde
+  `shopee_shops.price_history_since`.
 
 ## 4.4 Push — CONFIRMADO na documentação (D-453)
 

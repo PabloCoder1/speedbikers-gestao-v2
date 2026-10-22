@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { anuncioExcluido, avisoDeVinculoDoExcluido } from "../../../lib/anuncio-excluido";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/browser";
 import { iniciaisDaConta, TONS_DE_CONTA } from "../../../lib/vinculacoes-visao";
@@ -557,7 +558,7 @@ function ProcurarMlb({
     // Por (conta, anúncio): buscar só pelo MLB acharia o de outra conta.
     const { data, error } = await createClient()
       .from("listings")
-      .select("item_id, title, price, synced_at")
+      .select("item_id, title, price, synced_at, deleted_at")
       .eq("ml_account_id", conta)
       .eq("item_id", itemId)
       .maybeSingle();
@@ -572,8 +573,16 @@ function ProcurarMlb({
 
     if (data === null) {
       setAviso(
-        "Não encontramos este MLB no catálogo sincronizado desta conta. Pode ser MLB errado, conta não conectada ou anúncio novo (o catálogo sincroniza de 6 em 6 horas) — sem confirmar que ele existe, não vinculamos.",
+        "Não encontramos este MLB no catálogo sincronizado desta conta. Pode ser MLB errado, conta não conectada ou anúncio criado há poucos minutos (o novo chega pela notificação do Mercado Livre; a varredura do catálogo inteiro é de 6 em 6 horas) — sem confirmar que ele existe, não vinculamos.",
       );
+
+      return;
+    }
+
+    // D-634: a linha do anúncio excluído no Mercado Livre fica na V3 (D-631),
+    // mas ele não existe mais lá — a mesma regra do "não encontramos".
+    if (anuncioExcluido(data.deleted_at)) {
+      setAviso(avisoDeVinculoDoExcluido(data.item_id, data.deleted_at));
 
       return;
     }

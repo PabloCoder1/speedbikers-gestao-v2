@@ -299,8 +299,8 @@ export default async function PrecosPage({
             comparar a venda em janelas equivalentes dos dois lados de cada alteração, e a série ainda não tem
             os dois lados.{" "}
             {serieComeca !== null && <>O registro começa em {formatBusinessDate(serieComeca)}. </>}
-            A varredura de anúncios roda a cada 6h, então uma mudança feita e desfeita entre duas varreduras
-            não deixa registro — <strong>ausência de linha não é preço estável</strong>.
+            O preço é comparado a cada leitura do anúncio (a da notificação do Mercado Livre e a varredura de
+            6 em 6 horas), então uma mudança feita e desfeita entre duas leituras não deixa registro — <strong>ausência de linha não é preço estável</strong>.
           </p>
         </div>
 

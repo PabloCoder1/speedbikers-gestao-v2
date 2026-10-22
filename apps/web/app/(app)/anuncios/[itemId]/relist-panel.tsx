@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { TOM, tomDeRelist } from "../../../../components/tone";
 import { useDialogo } from "../../../../components/use-dialogo";
+import { anuncioExcluido, quandoAV3ViuAExclusao } from "../../../../lib/anuncio-excluido";
 import { relistStatusLabel } from "../../../../lib/labels";
 import { createClient } from "../../../../lib/supabase/browser";
 import {
@@ -121,9 +122,12 @@ export function RelistPanel({
   podeRepublicar,
   variacoes,
   operacao,
+  excluidoEm,
 }: {
   itemId: string;
   mlAccountId: string;
+  /** `listings.deleted_at` (D-631): preenchido, o painel não oferece ato nenhum (D-634). */
+  excluidoEm: string | null;
   /** ADMIN ou GESTOR — o mesmo par que a rota exige (D-161). */
   podeRepublicar: boolean;
   /** As variações do retrato do pedido e as que ficam fora do anúncio novo (D-364); o total também decide o pedido (D-369). */
@@ -141,7 +145,13 @@ export function RelistPanel({
   const operacaoAtual = operacao === null ? null : `${operacao.id}:${operacao.status}:${operacao.updatedAt}`;
   const aguardandoWorker =
     estado.kind === "enviando" || (estado.kind === "enfileirado" && estado.operacaoNoEnvio === operacaoAtual);
-  const atos = atosDaRepublicacao({ podeRepublicar, operacao, variacoesDoRetrato: variacoes.total, aguardandoWorker });
+  const atos = atosDaRepublicacao({
+    podeRepublicar,
+    operacao,
+    variacoesDoRetrato: variacoes.total,
+    aguardandoWorker,
+    excluido: anuncioExcluido(excluidoEm),
+  });
 
   useEffect(() => {
     if (!aguardandoWorker || estado.kind !== "enfileirado") {
@@ -242,10 +252,17 @@ export function RelistPanel({
         </p>
       )}
 
-      {!podeRepublicar && (
+      {anuncioExcluido(excluidoEm) ? (
         <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-          Republicar é decisão de gestão: só ADMIN e GESTOR podem pedir. Quem atende não encerra anúncio.
+          Este anúncio foi excluído no Mercado Livre ({quandoAV3ViuAExclusao(excluidoEm)}): a V3 não oferece republicá-lo.
+          Para voltar a vender o produto, crie um anúncio novo no Mercado Livre e vincule-o ao SKU.
         </p>
+      ) : (
+        !podeRepublicar && (
+          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+            Republicar é decisão de gestão: só ADMIN e GESTOR podem pedir. Quem atende não encerra anúncio.
+          </p>
+        )
       )}
 
       {atos.falha === "recusada" && (

@@ -131,6 +131,7 @@ export function atosDaRepublicacao({
   operacao,
   variacoesDoRetrato,
   aguardandoWorker,
+  excluido = false,
 }: {
   readonly podeRepublicar: boolean;
   readonly operacao: OperacaoDoPainel | null;
@@ -138,6 +139,13 @@ export function atosDaRepublicacao({
   readonly variacoesDoRetrato: number;
   /** Um ato foi enviado e o worker ainda não mudou a operação (D-360). */
   readonly aguardandoWorker: boolean;
+  /**
+   * D-634: o anúncio foi excluído no Mercado Livre (`listings.deleted_at`).
+   * Nenhum ato: a exclusão foi a decisão de tirar o anúncio do ar, e a
+   * conferência prévia (D-160) não a conhece. A explicação de uma falha
+   * anterior continua.
+   */
+  readonly excluido?: boolean;
 }): AtosDaRepublicacao {
   if (aguardandoWorker) {
     return { pedir: false, executar: false, retomar: false, falha: null, semRepublicacao: false };
@@ -153,7 +161,7 @@ export function atosDaRepublicacao({
   // conta de user products só geraria outra reprovação.
   const semRepublicacao = operacao !== null && reprovadaPorVariacoesUserProduct(operacao) && variacoesDoRetrato > 0;
 
-  if (!podeRepublicar) {
+  if (!podeRepublicar || excluido) {
     return { pedir: false, executar: false, retomar: false, falha, semRepublicacao };
   }
 

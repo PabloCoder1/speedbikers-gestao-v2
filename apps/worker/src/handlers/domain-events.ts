@@ -20,6 +20,8 @@ export interface RecordDomainEventsContext {
   organizationId: string;
   /** `null`/ausente para eventos organizacionais sem conta associada (D-054, ex.: `stock.balance.diverged`). */
   mlAccountId?: string | null;
+  /** C-81: o evento de uma loja da Shopee (`ml_account_id` nulo, `domain_events_uma_origem`). */
+  shopeeShopId?: string | null;
 }
 
 export async function recordDomainEvents(
@@ -38,6 +40,7 @@ export async function recordDomainEvents(
       {
         organization_id: context.organizationId,
         ml_account_id: context.mlAccountId ?? null,
+        shopee_shop_id: context.shopeeShopId ?? null,
         occurred_at: draft.occurredAt.toISOString(),
         event_type: draft.eventType,
         entity_type: draft.entityType,
