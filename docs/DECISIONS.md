@@ -18891,6 +18891,34 @@ O ponto que pesa: no 404 o worker grava só `deleted_at`, e o `status` fica o ú
 - `apps/web/e2e/anuncio-excluido.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX}.md`.
 
+## D-635 - A loja da Shopee na preferencia de aviso (C-82)
+
+**Contexto:** a frente C-12 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-82. `notification_preferences` so conhecia a conta do ML. O aviso em tempo real (`apps/web/lib/notification-preferences.ts`, o unico lugar que ainda decide pela preferencia, D-076) ja recebe o `shopee_shop_id` do evento desde a D-638, mas nao havia como dizer "desta loja, so o critico".
+
+Lido antes de decidir:
+1. **A tabela:** a RLS `notification_preferences_all_own` (cada um ve e grava a sua) e quatro indices unicos parciais, um por escopo (geral, so tipo, so conta, tipo e conta). A tela grava direto, por `insert` e por `update`/`delete` pelo `id`.
+2. **Quem le a preferencia no banco:** so `get_settings_overview`, que acha a "regra geral" como `event_type` e `ml_account_id` nulos. Uma regra so de loja casaria ali por engano.
+3. **A origem do evento:** `domain_events_uma_origem` (conta OU loja). A preferencia segue a mesma regra.
+
+**Decisao:**
+1. **A coluna `shopee_shop_id`**, com FK para `shopee_shops` (apagar a loja apaga a regra dela, como a conta) e o check `notification_preferences_uma_origem`: conta OU loja, nunca as duas.
+2. **A unicidade por escopo com a loja:** a regra geral e a so de tipo passam a exigir loja nula. A loja ganha os seus dois escopos (so a loja; tipo e loja), espelho dos da conta.
+3. **A RLS:** a mesma politica, com a gravacao restrita a loja que o usuario alcanca (`private.accessible_shopee_shops()`). A linha sem loja passa igual.
+4. **`get_settings_overview`:** a regra geral do resumo exige loja nula.
+5. **A tela (A2):** o seletor "Conta ou loja" e o `shouldNotify` com a loja (a especificidade conta a loja como conta a conta).
+
+**Verificacao:**
+- integracao: 6 testes (a regra so da loja fora da regra geral do resumo; os dois escopos da loja e os de antes convivendo; conta e loja juntas recusado; a loja de outra organizacao recusada no insert e no update; a RLS do dono; a cascata ao apagar a loja);
+- mutacao: 6, e cada uma derruba testes (a regra geral sem a loja nula, a gravacao sem a loja alcancavel, sem o check de origem, sem cada escopo novo e a geral sem exigir loja nula);
+- `db reset` e a suite inteira, 1105 de 1105 com o C-82 sozinho, e 1112 de 1112 com o C-81 junto.
+
+**Publicacao:** a migration `20261022110000`, sem worker nem api. A tela manda `shopee_shop_id` so depois dela em producao; antes, a coluna nao existe e a gravacao falharia.
+
+**Impacto:**
+- `supabase/migrations/20261022110000_preferencia_de_aviso_por_loja.sql`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
 ## D-636 - O cabeçalho da /faturamento tem a mesma forma nos três recortes
 
 **Contexto:** o A3 achou, em 21/10, que trocar o recorte da `/faturamento` pelo seletor desloca o conteúdo (CLS de 0,019 a 0,119). A medida no stack isolado com o seed confirmou a causa:
