@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **550** (D-001 a D-640).
+Decisões registradas: **551** (D-001 a D-640).
 
 ## Por domínio
 
@@ -242,7 +242,7 @@ Decisões registradas: **550** (D-001 a D-640).
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 - **D-640** — O histórico de preço da Shopee na /precos e na aba Preços do SKU (C-81)
 
-### mercado-livre (103)
+### mercado-livre (104)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -346,6 +346,7 @@ Decisões registradas: **550** (D-001 a D-640).
 - **D-629** — A queda nas vendas por anuncio (C-79): a regua da venda anomala em janelas, pre-calculada uma vez por dia
 - **D-631** — O anuncio criado ou excluido no Mercado Livre chega a V3 na hora, e o excluido sai das telas
 - **D-634** — O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
+- **D-637** — Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 
 ### outros (80)
