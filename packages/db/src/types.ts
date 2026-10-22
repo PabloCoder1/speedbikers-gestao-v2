@@ -2422,6 +2422,7 @@ export type Database = {
           id: string
           min_severity: string
           ml_account_id: string | null
+          shopee_shop_id: string | null
           updated_at: string
           user_id: string
         }
@@ -2432,6 +2433,7 @@ export type Database = {
           id?: string
           min_severity?: string
           ml_account_id?: string | null
+          shopee_shop_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -2442,6 +2444,7 @@ export type Database = {
           id?: string
           min_severity?: string
           ml_account_id?: string | null
+          shopee_shop_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -2451,6 +2454,13 @@ export type Database = {
             columns: ["ml_account_id"]
             isOneToOne: false
             referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_preferences_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
             referencedColumns: ["id"]
           },
           {
