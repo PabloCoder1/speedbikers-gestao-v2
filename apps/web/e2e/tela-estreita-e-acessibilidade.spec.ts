@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * GUARDA DE TELA ESTREITA E DE ACESSIBILIDADE BÁSICA (D-510).
@@ -256,3 +258,49 @@ for (const largura of [320, 360, 390]) {
     });
   });
 }
+
+/**
+ * A FAIXA LOGO ACIMA DO TRILHO, COM NOME DE PERFIL LONGO (D-654, o segundo achado
+ * do A3 de 22/10). Acima de 850 px a barra lateral inteira volta e o perfil
+ * mostra o nome (até 14rem); com um nome longo, a busca de `min(455px, 50%)` não
+ * cedia, e o "Sair" cortava até 880 px (30 px a 851). O nome entra pela chave de
+ * serviço e volta ao do seed no `finally`. A 1440 px, nada muda: a busca segue
+ * com os 455 px do desktop.
+ */
+test.describe("a barra do topo com nome de perfil longo (D-654)", () => {
+  const NOME_LONGO = "Maria Aparecida dos Santos Nascimento Ferreira";
+
+  for (const largura of [851, 880, 1440]) {
+    test(`a ${String(largura)} px, o "Sair" cabe inteiro`, async ({ page }) => {
+      await page.setViewportSize({ width: largura, height: 800 });
+      const seed = await readSeedOutput();
+      const db = clienteDeServico();
+      const antes = await db.from("profiles").select("full_name").eq("id", seed.userId).single();
+
+      expect(antes.error).toBeNull();
+      expect((await db.from("profiles").update({ full_name: NOME_LONGO }).eq("id", seed.userId)).error).toBeNull();
+
+      try {
+        await entrar(page);
+        await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
+        await expect(page.getByRole("banner")).toContainText(NOME_LONGO.slice(0, 12));
+
+        const barra = await page.getByRole("banner").boundingBox();
+        const sair = await page.getByRole("button", { name: "Sair", exact: true }).boundingBox();
+        const busca = await page.getByRole("button", { name: /^Buscar SKU/u }).boundingBox();
+
+        if (barra === null || sair === null || busca === null) throw new Error("a barra, o Sair ou a busca não estão na tela");
+
+        expect(sair.x + sair.width, `Sair até ${String(sair.x + sair.width)}, barra até ${String(barra.x + barra.width)}`).toBeLessThanOrEqual(
+          Math.min(barra.x + barra.width, largura) + 0.5,
+        );
+        // Sem aperto, a largura do desktop.
+        if (largura === 1440) expect(Math.round(busca.width)).toBe(455);
+      } finally {
+        const volta = await db.from("profiles").update({ full_name: antes.data?.full_name ?? null }).eq("id", seed.userId);
+
+        if (volta.error !== null) console.error(`o nome do perfil do seed não voltou: ${volta.error.message}`);
+      }
+    });
+  }
+});
