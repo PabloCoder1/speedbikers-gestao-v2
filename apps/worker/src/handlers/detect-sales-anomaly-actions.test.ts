@@ -20,6 +20,7 @@ const ENVELOPE = {
 };
 
 const ANOMALY_ROW = {
+  marketplace: "ML",
   sku_id: "sku-a",
   sku: "SKU-A",
   title: "Produto A",
@@ -31,6 +32,7 @@ const ANOMALY_ROW = {
 };
 
 const STABLE_ROW = {
+  marketplace: "ML",
   sku_id: "sku-b",
   sku: "SKU-B",
   title: "Produto B",
@@ -44,21 +46,29 @@ const STABLE_ROW = {
 function fakeDeps(options: {
   baseline?: typeof ANOMALY_ROW[];
   baselineFails?: boolean;
-  events?: { sku_id: string; event_type: string; occurred_at: string }[];
+  events?: { sku_id: string; event_type: string; occurred_at: string; marketplace: string | null }[];
   eventsFails?: boolean;
-  prices?: { sku_id: string; average_price: number }[];
+  prices?: { sku_id: string; average_price: number; marketplace: string }[];
   pricesFail?: boolean;
   upsertFails?: boolean;
-}): { deps: DetectSalesAnomalyActionsDeps; upserted: Record<string, unknown>[]; lines: string[] } {
+}): {
+  deps: DetectSalesAnomalyActionsDeps;
+  upserted: Record<string, unknown>[];
+  lines: string[];
+  args: Record<string, Record<string, unknown>>;
+} {
   const upserted: Record<string, unknown>[] = [];
   const lines: string[] = [];
+  const args: Record<string, Record<string, unknown>> = {};
 
   const baseline = options.baseline ?? [ANOMALY_ROW];
   const events = options.events ?? [];
-  const prices = options.prices ?? [{ sku_id: "sku-a", average_price: 50 }];
+  const prices = options.prices ?? [{ sku_id: "sku-a", average_price: 50, marketplace: "ML" }];
 
   const db = {
-    rpc: (fn: string) => {
+    rpc: (fn: string, rpcArgs: Record<string, unknown>) => {
+      args[fn] = rpcArgs;
+
       if (fn === "get_sku_sales_baseline") {
         return Promise.resolve(
           options.baselineFails === true ? { data: null, error: { message: "boom" } } : { data: baseline, error: null },
@@ -111,7 +121,7 @@ function fakeDeps(options: {
     },
   } as unknown as DetectSalesAnomalyActionsDeps["db"];
 
-  return { deps: { db, now: () => NOW }, upserted, lines };
+  return { deps: { db, now: () => NOW }, upserted, lines, args };
 }
 
 function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof createLogger>; payload: unknown } {
@@ -159,7 +169,7 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
 
   it("evento correlato entra na evidência", async () => {
     const { deps, upserted, lines } = fakeDeps({
-      events: [{ sku_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z" }],
+      events: [{ sku_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z", marketplace: null }],
     });
 
     await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
@@ -168,6 +178,60 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
 
     expect(evidence.causas_candidatas).toHaveLength(1);
     expect(evidence.causas_candidatas[0]?.event_type).toBe("stock.depleted");
+  });
+
+  it("C-83: pede os dois canais às três RPCs", async () => {
+    const { deps, lines, args } = fakeDeps({});
+
+    await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    for (const fn of ["get_sku_sales_baseline", "get_sku_correlated_events", "get_sku_average_prices"]) {
+      expect(args[fn]?.p_marketplaces).toEqual(["ML", "SHOPEE"]);
+    }
+  });
+
+  it("C-83: a queda só na Shopee vira a ação dela, com o canal, a chave e o preço da Shopee", async () => {
+    const { deps, upserted, lines } = fakeDeps({
+      baseline: [STABLE_ROW, { ...ANOMALY_ROW, marketplace: "SHOPEE" }, { ...STABLE_ROW, sku_id: "sku-a", marketplace: "ML" }],
+      prices: [
+        { sku_id: "sku-a", average_price: 50, marketplace: "ML" },
+        { sku_id: "sku-a", average_price: 40, marketplace: "SHOPEE" },
+      ],
+    });
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted).toHaveLength(1);
+    expect(upserted[0]).toMatchObject({
+      sku_id: "sku-a",
+      dedup_key: `sales_anomaly:shopee:sku-a:${AS_OF}`,
+      // |delta| = 3, o preço médio da Shopee = 40.
+      estimated_impact_brl: 120,
+    });
+    expect((upserted[0]?.evidence as { marketplace: string }).marketplace).toBe("SHOPEE");
+  });
+
+  it("C-83: a queda nos dois canais são duas ações; o evento do SKU vale para os dois, o do canal só para o dele", async () => {
+    const { deps, upserted, lines } = fakeDeps({
+      baseline: [ANOMALY_ROW, { ...ANOMALY_ROW, marketplace: "SHOPEE" }],
+      events: [
+        { sku_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z", marketplace: null },
+        { sku_id: "sku-a", event_type: "listing.status.paused", occurred_at: "2026-08-22T22:00:00.000Z", marketplace: "ML" },
+        { sku_id: "sku-a", event_type: "listing.price.changed", occurred_at: "2026-08-22T23:00:00.000Z", marketplace: "SHOPEE" },
+      ],
+    });
+
+    await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    const causas = (canal: string) =>
+      (upserted.find((row) => (row.evidence as { marketplace: string }).marketplace === canal)?.evidence as {
+        causas_candidatas: { event_type: string }[];
+      }).causas_candidatas.map((causa) => causa.event_type);
+
+    expect(upserted.map((row) => row.dedup_key)).toEqual([`sales_anomaly:sku-a:${AS_OF}`, `sales_anomaly:shopee:sku-a:${AS_OF}`]);
+    expect(causas("ML")).toEqual(["stock.depleted", "listing.status.paused"]);
+    expect(causas("SHOPEE")).toEqual(["stock.depleted", "listing.price.changed"]);
   });
 
   it("falha ao ler o baseline é retryable", async () => {
