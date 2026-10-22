@@ -203,6 +203,15 @@ SECRET_SHOPEE_PARTNER_KEY="${SECRET_SHOPEE_PARTNER_KEY:-SHOPEE_TEST_PARTNER_KEY}
 # Mechanism → Set Push), diferente da Partner Key. No Go Live, a de produção.
 SECRET_SHOPEE_PUSH_PARTNER_KEY="${SECRET_SHOPEE_PUSH_PARTNER_KEY:-SHOPEE_TEST_PUSH_PARTNER_KEY}"
 
+# TikTok Shop (D-645, docs/TIKTOK_SHOP.md). O service_id NÃO é segredo; o App
+# Key e o App Secret vivem no Secret Manager. Sem TIKTOK_SHOP_SERVICE_ID no
+# ambiente do deploy, a api sobe SEM o TikTok: as rotas dele respondem 503 e
+# nenhum segredo é montado. Não há sandbox de API separado (a loja de teste usa
+# os mesmos endereços), por isso não há variável de ambiente do TikTok.
+TIKTOK_SHOP_SERVICE_ID="${TIKTOK_SHOP_SERVICE_ID:-}"
+SECRET_TIKTOK_SHOP_APP_KEY="${SECRET_TIKTOK_SHOP_APP_KEY:-TIKTOK_SHOP_APP_KEY}"
+SECRET_TIKTOK_SHOP_APP_SECRET="${SECRET_TIKTOK_SHOP_APP_SECRET:-TIKTOK_SHOP_APP_SECRET}"
+
 # IP fixo de saída (D-457). A Shopee exige declarar os IPs que chamam a API
 # (lista obrigatória no Go Live), e o Cloud Run sai por um pool de IPs
 # dinâmicos do Google. Em produção, api e worker saem pela VPC com

@@ -3,6 +3,7 @@ import { createAdminClient, createUserClient } from "@sb/db";
 import { createMercadoLivreClient, loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { createShopeeClient } from "@sb/shopee";
+import { createTikTokShopClient } from "@sb/tiktok-shop";
 
 import { createAccountDirectory, loadAccountsFromDb } from "./account-directory.js";
 import { createAnthropicClient } from "./anthropic-client.js";
@@ -59,6 +60,19 @@ const shopeePush =
       }
     : undefined;
 
+// D-645: a conexão do TikTok Shop só liga com as três variáveis (env.ts). A
+// chave de cifra dos tokens é a mesma de `ml_credentials`.
+const tiktokShops =
+  env.TIKTOK_SHOP_APP_KEY !== undefined && env.TIKTOK_SHOP_APP_SECRET !== undefined && env.TIKTOK_SHOP_SERVICE_ID !== undefined
+    ? {
+        db,
+        logger,
+        encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
+        serviceId: env.TIKTOK_SHOP_SERVICE_ID,
+        client: createTikTokShopClient({ appKey: env.TIKTOK_SHOP_APP_KEY, appSecret: env.TIKTOK_SHOP_APP_SECRET }),
+      }
+    : undefined;
+
 const nfeImportDeps =
   env.DOCUMENTS_BUCKET !== undefined
     ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
@@ -96,6 +110,7 @@ const app = createApp({
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
   ...(shopeeShops !== undefined ? { shopeeShops } : {}),
   ...(shopeePush !== undefined ? { shopeePush } : {}),
+  ...(tiktokShops !== undefined ? { tiktokShops } : {}),
   // D-426: o gatilho horário dos pedidos, só com a Shopee configurada.
   ...(shopeeShops !== undefined
     ? { shopeeOrdersSchedule: { db, enqueuer, logger, environment: env.SHOPEE_ENVIRONMENT } }

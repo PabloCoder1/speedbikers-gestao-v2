@@ -143,6 +143,20 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma diferença: a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização. `shopee_shops` (`environment` sandbox|live, `shop_id` único por ambiente, `shop_name`, `region`, `shop_status` da Shopee, `status` da conexão CONNECTED|ERROR, `auth_expires_at` — a autorização vence em até 365 dias) é lida por membros da organização e escrita só pela api. `shopee_credentials` (tokens cifrados com a chave de `ml_credentials`, `refresh_token_expires_at` de 30 dias, trava `refresh_locked_until`) e `shopee_oauth_states` não têm política nem grant fora do `service_role`. Contrato da API em `docs/SHOPEE.md`.
 
+### `tiktok_shops` / `tiktok_credentials` / `tiktok_oauth_states` — conexão TikTok Shop (D-645)
+
+Migration `20261022150000`. O desenho da Shopee (D-425): a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização.
+- **`tiktok_shops`:**
+  - `shop_id` é o `id` da loja no TikTok, texto de dígitos, único;
+  - também guarda `shop_name`, `region`, `seller_type` (LOCAL ou CROSS_BORDER), `shop_code`, `open_id` e `seller_name` de quem autorizou, e os `granted_scopes`;
+  - `status` da conexão: CONNECTED ou ERROR;
+  - `auth_expires_at` é o fim da autorização, a validade do refresh token;
+  - lida por membros da organização e escrita só pela api.
+- **`tiktok_credentials`:** o `shop_cipher`, que vai em toda chamada de loja, e os tokens cifrados com a chave de `ml_credentials`. Também tem a trava `refresh_locked_until`, para a fatia 2.
+- **`tiktok_credentials` e `tiktok_oauth_states`** não têm política nem grant fora do `service_role`.
+
+Contrato da API em `docs/TIKTOK_SHOP.md`.
+
 ### `shopee_orders` / `shopee_order_items` — pedidos Shopee (D-426)
 
 Migration `20261013140000`. Espelho de `get_order_detail`, escrito só pelo worker (`shopee.orders.sync`) e lido por membros da organização. `shopee_orders` tem chave (`shopee_shop_id`, `order_sn`): status como a Shopee manda, `total_amount` NULO antes do pagamento (nunca zero), datas da Shopee, transportadora, forma de pagamento e cancelamento — nada do comprador. `shopee_order_items` tem chave (`shopee_shop_id`, `order_sn`, `position`) e é SUBSTITUÍDA a cada leitura do pedido; `item_sku`/`model_sku` são o SKU do vendedor (vínculo na fatia 4). Apagar a loja leva pedidos e itens. **Não entra no ledger de estoque** — a baixa é a fatia 5 (D-495). **D-495 (a), migration `20261019230000`:** `fulfillment_flag`, quem expede o pedido, como a Shopee devolve (`fulfilled_by_shopee` = o armazém dela, o equivalente ao Full); NULO até o pedido ser lido pelo worker da D-495, e a leitura sem o campo não apaga o valor guardado. `shopee_shops.orders_synced_until` é o marco da leitura (NULO = nunca; a primeira começa 90 dias atrás).

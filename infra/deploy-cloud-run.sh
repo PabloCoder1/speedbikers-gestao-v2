@@ -78,6 +78,13 @@ build_and_deploy() {
       ;;
   esac
 
+  # D-645: o service_id do TikTok Shop também é só dígitos.
+  case "${TIKTOK_SHOP_SERVICE_ID}" in
+    *[!0-9]*)
+      fail "TIKTOK_SHOP_SERVICE_ID='${TIKTOK_SHOP_SERVICE_ID}' tem caractere nao numerico. O service_id do TikTok Shop e so digitos."
+      ;;
+  esac
+
   step "Build da imagem: ${app}"
   info "${image}"
   gc builds submit \
@@ -179,6 +186,19 @@ YAML
       fi
     fi
 
+    # D-645: o TikTok Shop só entra com TIKTOK_SHOP_SERVICE_ID definido, o mesmo
+    # desenho da Shopee (e o mesmo motivo para montar o segredo só então). A
+    # Redirect URL não vai na revisão: é uma só por app, cadastrada no Partner
+    # Center. Na fatia 1 só a api usa o TikTok.
+    local tiktok_secret=""
+    if [ -n "${TIKTOK_SHOP_SERVICE_ID}" ]; then
+      cat >> "${env_file}" <<YAML
+TIKTOK_SHOP_SERVICE_ID: "${TIKTOK_SHOP_SERVICE_ID}"
+YAML
+      tiktok_secret=",TIKTOK_SHOP_APP_KEY=${SECRET_TIKTOK_SHOP_APP_KEY}:latest,TIKTOK_SHOP_APP_SECRET=${SECRET_TIKTOK_SHOP_APP_SECRET}:latest"
+      info "TikTok Shop ligado: service_id ${TIKTOK_SHOP_SERVICE_ID}"
+    fi
+
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
     # e não envia credencial do Google. A autenticação é própria da rota
     # (docs/API.md secao 2).
@@ -197,7 +217,7 @@ YAML
       --timeout 60s \
       --cpu 1 --memory 512Mi \
       --env-vars-file "${env_file}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest${shopee_secret}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest${shopee_secret}${tiktok_secret}" \
       --quiet
   else
     # O worker NÃO tem rota pública para fora — só o Cloud Tasks o invoca, com

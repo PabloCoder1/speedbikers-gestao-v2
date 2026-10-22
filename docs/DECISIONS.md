@@ -19154,3 +19154,80 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,API,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
+## D-645 - A conexão da loja do TikTok Shop (fatia 1)
+
+**Contexto:** a D-601 conferiu o contrato do TikTok Shop na documentação oficial (`docs/TIKTOK_SHOP.md`) e propôs as fatias no desenho da Shopee (D-425).
+- O dono criou o app em 16/10, com a Redirect URL reservada.
+- Em 22/10 o dono passou o `service_id` e pediu a fatia 1, a conexão.
+
+**Decisão:**
+1. **O cliente próprio, `@sb/tiktok-shop`.** O SDK oficial só sai com login (§14, item 10). O que o cliente faz:
+   - **assina como a doc** (P`sign-your-api-request`):
+     - a base é o caminho, os parâmetros da query em ordem como `{chave}{valor}` (sem `sign` e sem `access_token`) e o corpo exato;
+     - a base vai com o App Secret nas duas pontas, em HMAC-SHA256 hex;
+     - o teste confere o exemplo oficial;
+   - **serializa o corpo uma vez:** a mesma string é assinada e enviada;
+   - **manda o token** no cabeçalho `x-tts-access-token`;
+   - **trata o erro:** `code` diferente de 0 é erro mesmo com HTTP 200; 429, 5xx e os códigos 36009002 e 36009003 são passageiros;
+   - **não vaza a URL:** a mensagem de erro leva o método e o caminho, porque a troca do token leva o App Secret na query.
+2. **Tabelas próprias** (migration `20261022150000`), como as `shopee_*`:
+   - `tiktok_shops`: o `id` da loja como texto, único, mais nome, região, `seller_type`, código, quem autorizou, os escopos concedidos, o estado da conexão e o fim da autorização;
+   - `tiktok_credentials`: o `shop_cipher` e os tokens, cifrados com a chave de `ml_credentials`;
+   - `tiktok_oauth_states`: o `state` da autorização.
+
+   Os membros da organização leem a loja. Credencial e `state` só o `service_role` lê.
+3. **As duas rotas da api**, no desenho da Shopee:
+   - `POST /v1/tiktok-shop/connect` (só ADMIN) grava o `state` da organização, válido por 15 minutos, e devolve o link com o `service_id`;
+   - `GET /oauth/tiktok-shop/callback`:
+     - consome o `state` uma vez e troca o `code` (`grant_type=authorized_code`);
+     - recusa a autorização que não é de vendedor (`user_type` ≠ 0);
+     - lê as lojas autorizadas e grava loja, `cipher` e tokens.
+
+   Nas duas rotas:
+   - **a loja de outra organização não muda de dono**, e nada é gravado;
+   - **a recusa não troca token:** `error=auth_denied`, ou `code=null` mesmo sem erro.
+4. **O interruptor:** sem `TIKTOK_SHOP_SERVICE_ID`, `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`, as rotas respondem 503.
+   - O deploy só monta os segredos com o `service_id` definido, no desenho da Shopee (`infra/deploy-cloud-run.sh`, `infra/lib.sh` e `infra/setup-dev.sh`).
+   - Na fatia 1, só a api usa o TikTok.
+5. **Fora desta fatia:** a renovação do token e os pedidos (fatia 2, no worker), o webhook (fatia 3) e a tela de `/contas` (A2, contrato C-86).
+
+**Verificação:**
+- `@sb/tiktok-shop`, 10 testes:
+  - a assinatura: o exemplo oficial, o exemplo com corpo, e `sign` e `access_token` fora da base;
+  - a chamada de loja: a query e o cabeçalho;
+  - as classes de erro e a mensagem sem URL;
+  - a autorização: o link, a troca e a renovação;
+  - as lojas autorizadas;
+- api, 8 testes da conexão:
+  - o `state` e o link;
+  - a troca com os tokens cifrados e decifráveis;
+  - o `state` inválido;
+  - a recusa, inclusive o erro que chega junto com o `code`;
+  - a troca recusada, sem o segredo no log;
+  - a autorização que não é de vendedor;
+  - a resposta sem loja;
+  - a loja de outra organização;
+- api, 5 testes das rotas e 1 das variáveis;
+- mutação: 8, e cada uma derruba testes. Duas sobreviveram na primeira rodada e mostraram teste fraco: o `error` junto com o `code` e o `code=null` sem `error`. Os dois casos entraram;
+- RLS, 5 testes:
+  - o membro lê a loja da organização, e outra organização não lê;
+  - nem o ADMIN grava pelo navegador;
+  - credencial e `state` fechados para `authenticated` e `anon`;
+  - a loja duplicada, o `id` fora do formato e o token em texto claro recusados;
+- `db reset` e a suíte inteira, 1134 de 1134.
+
+**Publicação:**
+1. A migration `20261022150000`. Antes dela, a api nova sobe sem o TikTok (503).
+2. Os atos do dono (`docs/TIKTOK_SHOP.md` §15):
+   - publicar o app;
+   - guardar o App Key e o App Secret no Secret Manager de produção, como `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`;
+   - dar à conta da api o acesso aos dois.
+3. Com os atos feitos, a api com o `service_id`.
+
+**Impacto:**
+- `packages/tiktok-shop/` (novo);
+- `supabase/migrations/20261022150000_lojas_tiktok_shop.sql`;
+- `apps/api/src/{tiktok-shops,tiktok-shops.test,app,app.test,env,env.test,index}.ts` e `apps/api/package.json`;
+- `packages/db/src/{types,rls.integration.test}.ts`;
+- `infra/{deploy-cloud-run,lib,setup-dev}.sh`, `.env.example`;
+- `docs/{DECISIONS,DECISIONS_INDEX,TIKTOK_SHOP,API,DATABASE,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
