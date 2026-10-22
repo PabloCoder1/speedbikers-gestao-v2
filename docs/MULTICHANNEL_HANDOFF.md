@@ -207,6 +207,7 @@ Aberto em 14/10. Padrões, auditoria e fila em `docs/UX_SYSTEM.md`; decisões na
 - D-519: o bloco 4 da Central — os painéis Frete e Ads da `/central` no `EstadoDaTela` (falha com o "Tentar de novo" no recorte, formato desconhecido, vazio e o "SENDO ATIVADO"), e o que as seis telas repetiam num lugar só (`app/(app)/central/comum.tsx` e `lib/central-periodo.ts`).
 
 **Em andamento**
+- D-536 na `fix/ux-kpi-celular` (só CSS, a faixa de KPIs): no celular o valor em reais passava da célula e a vizinha cobria os últimos dígitos ("R$ 1.284.519,60" lia-se "R$ 1.284.519,6"). A fonte acompanha a largura da célula (18 até 13 px), uma coluna abaixo de 340 px, e a faixa ímpar fecha a linha. Vale em toda tela com a faixa: **o A2 revisa antes do PR**. Para o A2, achados de texto: "1 pedidos" e "1 compras" na `/faturamento`, e "UNKNOWN" numa célula da `/saude`.
 - D-519 na `feat/ux-central-bloco4` (só web, sem migration): o PR sai com a autorização do dono, e o A2 revisa a Central.
 
 **Falta** (`docs/UX_SYSTEM.md` §3)

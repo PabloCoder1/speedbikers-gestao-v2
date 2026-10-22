@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **555** (D-001 a D-650).
+Decisões registradas: **556** (D-001 a D-650).
 
 ## Por domínio
 
@@ -170,7 +170,7 @@ Decisões registradas: **555** (D-001 a D-650).
 - **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
 - **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
 
-### interface (69)
+### interface (70)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -239,6 +239,7 @@ Decisões registradas: **555** (D-001 a D-650).
 - **D-510** — Tela estreita: a Home e a sb-pair-grid deixam de rolar para o lado no celular, e as duas auditorias viram guarda de e2e
 - **D-512** — O Shell mora num layout de grupo, e a troca de tela deixa de ter esqueleto: a moldura persiste, e o sinal da D-500 vale para toda navegacao
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
+- **D-536** — A faixa de KPIs no celular: o valor nunca se corta (a fonte acompanha a celula, uma coluna abaixo de 340 px e o buraco das faixas impares)
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 

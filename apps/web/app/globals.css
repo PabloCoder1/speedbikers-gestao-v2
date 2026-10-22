@@ -1104,6 +1104,18 @@ body {
 }
 
 /*
+  ABAIXO DE 340 px DE TELA, UMA COLUNA (D-536). Em duas colunas a célula fica
+  com ~78 px úteis, e nem "R$ 500,00" cabia: o espaço depois do "R$" não quebra,
+  e a célula vizinha cobria os últimos dígitos.
+*/
+@media (max-width: 340px) {
+  .sb-kpi-strip,
+  .sb-kpi-strip-larga {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
   FLEX, não grid, e a diferença é o chip "ver lista" (A3).
   
   Com `grid` + `align-content: start` cada célula empilhava a partir do topo, e
@@ -1125,6 +1137,16 @@ body {
   min-width: 0;
   padding: 0.875rem 1rem;
   background: var(--sb-surface);
+  /* A célula é o contêiner do tamanho do valor (`cqi` no `.sb-kpi-value`, D-536). Só existe dentro da faixa, que
+     dá a largura dela; o conteúdo não a alarga. */
+  container-type: inline-size;
+}
+
+/* No celular a célula respira 12 px dos lados, não 16 (D-536): são 8 px a mais para o valor. */
+@media (max-width: 480px) {
+  .sb-kpi {
+    padding-inline: 0.75rem;
+  }
 }
 
 /* A métrica-âncora, como no Figma. Medido: branco 16,92x, rótulo 9,16x. */
@@ -1147,10 +1169,23 @@ body {
   Aqui a última ocupa a linha inteira, que é o que o comentário acima sempre
   disse querer. `:has` limita o alcance à faixa que tem exatamente três: as de
   quatro, cinco e seis continuam como estavam.
+
+  D-536: a de CINCO tinha o mesmo buraco (visto na `/faturamento` a 390 px, a
+  terceira linha com a coluna 1 vazia). Vale para toda contagem ímpar: a última
+  célula de posição ímpar ocupa a linha inteira.
 */
 @media (max-width: 850px) {
-  .sb-kpi-strip:has(> .sb-kpi:nth-child(3):last-child) > .sb-kpi:last-child {
+  .sb-kpi-strip > .sb-kpi:last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+}
+
+/* A célula que ocupa as duas colunas tem o dobro da largura: com metade do fator, menos o respiro que ela não
+   repete, o valor dela fica do tamanho dos vizinhos, e não maior (D-536). Na coluna única (até 340 px) ela tem a
+   largura das outras. */
+@media (min-width: 341px) and (max-width: 850px) {
+  .sb-kpi-strip > .sb-kpi:last-child:nth-child(odd) .sb-kpi-value {
+    font-size: clamp(0.8125rem, 6cqi - 0.1rem, 1.125rem);
   }
 }
 
@@ -1166,8 +1201,17 @@ body {
   color: var(--sb-text-soft);
 }
 
+/*
+  O VALOR NUNCA SE CORTA (D-536). Com 18 px fixos, um valor em reais passava da
+  célula estreita do celular, e a célula vizinha cobria os últimos dígitos:
+  "R$ 1.284.519,60" lia-se "R$ 1.284.519,6". A fonte acompanha a largura útil da
+  própria célula: 12cqi é o que um valor de oito dígitos ("R$ 12.845.190,60",
+  ~8em em negrito) precisa para caber, e ela desce de 18 px até 13 px. Abaixo de
+  340 px de tela a faixa vira uma coluna (acima). Depende só da largura, nunca do
+  texto, então o esqueleto e a tela pronta têm o mesmo tamanho.
+*/
 .sb-kpi-value {
-  font-size: 1.125rem;
+  font-size: clamp(0.8125rem, 12cqi, 1.125rem);
   font-weight: 700;
   letter-spacing: -0.025em;
 }
