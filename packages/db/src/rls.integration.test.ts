@@ -14785,6 +14785,218 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
   });
 });
 
+// C-83 (20261022130000, D-639) -- o diagnostico de venda por canal: a linha
+// de base, o preco medio e a correlacao com a Shopee.
+describe("o diagnóstico por canal (C-83, D-639)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000c083";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000c083";
+  const CONTA = "cccccccc-0000-4000-8000-0000000c0083";
+  const LOJA = "dddd0830-0000-4000-8000-0000000a0083";
+  const SANDBOX = "dddd0830-0000-4000-8000-0000000b0083";
+  // Uma quarta-feira; as oito anteriores sao o historico do mesmo dia da semana.
+  const AS_OF = "2026-10-21";
+  const QUARTAS = ["2026-10-14", "2026-10-07", "2026-09-30", "2026-09-23", "2026-09-16", "2026-09-09", "2026-09-02", "2026-08-26"];
+  let sku = "";
+
+  interface Base {
+    marketplace: string;
+    current_units_sold: string;
+    baseline_mean: string;
+    baseline_stddev: string;
+    sample_count: string;
+  }
+
+  const base = (extra: string) =>
+    asUser<Base>(
+      ADMIN,
+      `select marketplace, current_units_sold::text, baseline_mean::text, baseline_stddev::text, sample_count::text
+         from public.get_sku_sales_baseline('${ORG}', '${AS_OF}', '${sku}'${extra}) order by marketplace`,
+    );
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-c083@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org C-83', 'org-c083') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    // A conta fica fora do prefixo `rlstest` da limpeza global: as metricas e
+    // os eventos a prendem pela FK.
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1, $2, 'Conta C-83', 'diagtest-c083', 'CONNECTED', 9990083, now()) on conflict (id) do nothing`,
+      [CONTA, ORG],
+    );
+    sku =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'C83-X', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+
+    // ML: 3 unidades a 100 em cada uma das oito quartas; no dia, nada.
+    for (const dia of QUARTAS) {
+      await client.query(
+        `insert into public.daily_sku_metrics (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1, $2, $3, $4, 3, 300, 1, 1) on conflict do nothing`,
+        [ORG, CONTA, sku, dia],
+      );
+    }
+
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $3, 'live', 990083001, 'Loja C83', 'CONNECTED', now() - interval '90 days'),
+              ($2, $3, 'sandbox', 990083002, 'Teste', 'CONNECTED', now() - interval '90 days')
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model, details_synced_at, details_update_time)
+       values ($1, $2, 83001, 'NORMAL', now(), 'Item C83', 'C83-X', false, now(), now()) on conflict do nothing`,
+      [LOJA, ORG],
+    );
+
+    // Shopee: 2 unidades a 40 em seis quartas (a de 14/10 com mais 1 a 50 e 1
+    // a preco 0, sem receita conhecida); no dia, 5 a 40. O cancelado e o
+    // sandbox do dia nao contam. 15:00Z = 12:00 em Sao Paulo.
+    const pedidos: [string, string, string, number, number][] = [
+      ...QUARTAS.slice(0, 6).map((dia, i): [string, string, string, number, number] => [LOJA, `C83-H${String(i)}`, dia, 2, 40]),
+      [LOJA, "C83-HOJE", AS_OF, 5, 40],
+    ];
+
+    for (const [loja, sn, dia, quantidade, preco] of pedidos) {
+      await client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+         values ($1, $2, $3, 'COMPLETED', ($4::date + time '15:00') at time zone 'UTC', now(), ($4::date + time '15:01') at time zone 'UTC')
+         on conflict do nothing`,
+        [loja, ORG, sn, dia],
+      );
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+         values ($1, $2, 0, $3, 83001, $4, $5, $6, 'SKU_DO_PEDIDO') on conflict do nothing`,
+        [loja, sn, ORG, quantidade, preco, sku],
+      );
+    }
+
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, 'C83-H0', 1, $2, 83001, 1, 50, $3, 'SKU_DO_PEDIDO'),
+              ($1, 'C83-H0', 2, $2, 83001, 1, 0, $3, 'SKU_DO_PEDIDO')
+       on conflict do nothing`,
+      [LOJA, ORG, sku],
+    );
+    await client.query(
+      `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+       values ($1, $3, 'C83-CANCELADO', 'CANCELLED', '2026-10-21T15:00:00Z', now(), '2026-10-21T15:01:00Z'),
+              ($2, $3, 'C83-SANDBOX', 'COMPLETED', '2026-10-21T15:00:00Z', now(), '2026-10-21T15:01:00Z')
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG],
+    );
+    await client.query(
+      `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+       values ($1, 'C83-CANCELADO', 0, $3, 83001, 9, 40, $4, 'SKU_DO_PEDIDO'),
+              ($2, 'C83-SANDBOX', 0, $3, 83001, 9, 40, $4, 'SKU_DO_PEDIDO')
+       on conflict do nothing`,
+      [LOJA, SANDBOX, ORG, sku],
+    );
+
+    // A correlacao: um evento do SKU, um do anuncio do ML e um do anuncio da Shopee.
+    await client.query(
+      `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1, $2, 'MLB8300001', 'Anuncio C83', 'active', 100, 'BRL', 3, $3) on conflict do nothing`,
+      [ORG, CONTA, sku],
+    );
+    await client.query(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, shopee_shop_id, entity_type, entity_id, event_type, severity, source, dedup_key, before, after, occurred_at)
+       values
+         ($1, null, null, 'sku', $4, 'stock.depleted', 'importante', 'system', 'c083-sku', null, null, '2026-10-20T12:00:00Z'),
+         ($1, $2, null, 'listing', 'MLB8300001', 'listing.price.changed', 'informativo', 'sync', 'c083-ml', '{"price": 100}', '{"price": 90}', '2026-10-20T13:00:00Z'),
+         ($1, null, $3, 'shopee_item', '83001', 'listing.price.changed', 'informativo', 'sync', 'c083-shopee',
+          '{"price": 45, "model_id": null}', '{"price": 40, "model_id": null}', '2026-10-20T14:00:00Z')
+       on conflict do nothing`,
+      [ORG, CONTA, LOJA, sku],
+    );
+  });
+
+  it("sem canal, a linha de base é a do ML de antes", async () => {
+    expect(await base("")).toEqual([
+      { marketplace: "ML", current_units_sold: "0", baseline_mean: "3.00", baseline_stddev: "0.00", sample_count: "8" },
+    ]);
+  });
+
+  it("com os dois canais, uma linha por canal; na Shopee, só a venda válida da loja live", async () => {
+    expect(await base(", array['ML', 'SHOPEE']")).toEqual([
+      { marketplace: "ML", current_units_sold: "0", baseline_mean: "3.00", baseline_stddev: "0.00", sample_count: "8" },
+      // Seis quartas: 4 na de 14/10 (2 + 1 + 1) e 2 nas outras cinco.
+      { marketplace: "SHOPEE", current_units_sold: "5", baseline_mean: "2.33", baseline_stddev: "0.82", sample_count: "6" },
+    ]);
+    expect((await base(", array['SHOPEE']")).map((l) => l.marketplace)).toEqual(["SHOPEE"]);
+  });
+
+  it("o preço médio por canal: a média dos preços do dia, na Shopee só com a receita conhecida", async () => {
+    const precos = await asUser<{ marketplace: string; average_price: string }>(
+      ADMIN,
+      `select marketplace, average_price::text from public.get_sku_average_prices('${ORG}', array['${sku}']::uuid[], '2026-09-21', '${AS_OF}', array['ML', 'SHOPEE'])
+        order by marketplace`,
+    );
+    const soMl = await asUser<{ marketplace: string }>(
+      ADMIN,
+      `select marketplace from public.get_sku_average_prices('${ORG}', array['${sku}']::uuid[], '2026-09-21', '${AS_OF}')`,
+    );
+
+    // ML: 100 em todo dia. Shopee, na janela: 14/10 = (80 + 50) / 3 = 43,33
+    // (o item a preco 0 fica fora), e 07/10, 30/09, 23/09 e 21/10 = 40 ->
+    // (43,33 + 4 x 40) / 5 = 40,67.
+    expect(precos).toEqual([
+      { marketplace: "ML", average_price: "100.00" },
+      { marketplace: "SHOPEE", average_price: "40.67" },
+    ]);
+    expect(soMl).toEqual([{ marketplace: "ML" }]);
+  });
+
+  it("a correlação por canal: o evento do SKU sem canal, o do ML e o da Shopee pela unidade", async () => {
+    const eventos = (extra: string) =>
+      asUser<{ event_type: string; marketplace: string | null }>(
+        ADMIN,
+        `select event_type, marketplace from public.get_sku_correlated_events('${ORG}', array['${sku}']::uuid[], '2026-10-20T00:00:00Z', '2026-10-21T00:00:00Z'${extra})`,
+      );
+
+    expect(await eventos("")).toEqual([
+      { event_type: "stock.depleted", marketplace: null },
+      { event_type: "listing.price.changed", marketplace: "ML" },
+    ]);
+    expect(await eventos(", array['SHOPEE']")).toEqual([
+      { event_type: "stock.depleted", marketplace: null },
+      { event_type: "listing.price.changed", marketplace: "SHOPEE" },
+    ]);
+    expect(await eventos(", array['ML', 'SHOPEE']")).toHaveLength(3);
+  });
+
+  it("canal vazio ou fora da lista é recusado nas três", async () => {
+    await expect(base(", array[]::text[]")).rejects.toThrow(/p_marketplaces deve ter/);
+    await expect(base(", array['TIKTOK']")).rejects.toThrow(/p_marketplaces deve ter/);
+    await expect(
+      asUser(ADMIN, `select * from public.get_sku_average_prices('${ORG}', array['${sku}']::uuid[], '2026-09-21', '${AS_OF}', array['X'])`),
+    ).rejects.toThrow(/p_marketplaces deve ter/);
+    await expect(
+      asUser(ADMIN, `select * from public.get_sku_correlated_events('${ORG}', array['${sku}']::uuid[], now() - interval '1 day', now(), array[]::text[])`),
+    ).rejects.toThrow(/p_marketplaces deve ter/);
+  });
+
+  it("quem é de fora não vê a linha de base da organização", async () => {
+    const deFora = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select sku_id from public.get_sku_sales_baseline('${ORG}', '${AS_OF}', '${sku}', array['ML', 'SHOPEE'])`,
+    );
+
+    expect(deFora).toHaveLength(0);
+  });
+});
+
 describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
