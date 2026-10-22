@@ -19359,3 +19359,23 @@ No celular, a busca do esqueleto era 22 px mais larga que a real, e a barra pula
 - `apps/web/components/carregando.tsx`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md` (com a D-638 e a D-646 marcadas como no ar).
+
+## D-654 - A barra do topo com nome de perfil longo, logo acima do trilho
+
+**Contexto:** o A3 refez o teste de pior caso no build do #323 (D-650). O celular ficou certo, mas sobrou uma faixa: entre 851 e 880 px, com um nome de perfil longo ("Maria Aparecida dos Santos Nascimento Ferreira", 46 caracteres), o "Sair" ainda cortava. O esquema aceita até 200 caracteres, e o perfil corta o nome em 14rem. Acima de 850 px a barra lateral inteira volta e o perfil mostra o nome. A causa é a mesma da D-650: fora do `@media (max-width: 760px)`, a busca (`min(455px, 50%)`) não cedia. O botão terminava no px 881: cortava 30 px a 851 e 1 px a 880. A 900 px cabia, e com nome curto o problema não aparecia.
+
+**Decisão:** a proposta do A3, que ele conferiu com o CSS injetado. Duas regras saem do media query e valem em toda largura:
+- `.sb-search { min-width: 0 }`: a busca cede quando as ações não cabem. Sem aperto, ela continua com a largura do desktop;
+- `.sb-top-actions { flex: none }`: as ações nunca encolhem.
+
+No celular continuam o `flex: 1 1 auto; width: auto` da busca e o `kbd` escondido. Pela medida do A3, a busca fica com 198, 207, 217 e 227 px a 851, 860, 870 e 880 px. A 900, 1024 e 1440 px nada muda (247, 371 e 455).
+
+**Verificação:**
+- **e2e:** `e2e/tela-estreita-e-acessibilidade.spec.ts` ganha a guarda com o nome longo a 851, 880 e 1440 px. O nome entra pela chave de serviço no `profiles.full_name` e volta ao do seed no `finally`. O "Sair" fica inteiro na barra e na janela, e a 1440 a busca segue com 455 px.
+- **mutação:** com o CSS só da D-650, a guarda reprova a 851 e a 880 (o "Sair" termina no px 881,2, a medida do A3) e passa a 1440.
+- **suíte inteira**, com o banco recriado do zero: chromium 267/267 (os 3 novos inclusos), `loja-live` 17/17, convite 3/3.
+
+**Impacto:**
+- `apps/web/app/globals.css`;
+- `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md` (com a D-650 marcada como no ar).
