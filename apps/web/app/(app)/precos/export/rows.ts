@@ -16,7 +16,13 @@
  *     de um sinal grudado no valor.
  */
 
+import { anuncioDaMudanca, ehDaShopee } from "../../../../lib/mudanca-de-preco";
+
 export interface PriceChangeExportInput {
+  /** D-640 (C-81): 'mercado_livre' ou 'shopee'; decide o vocabulário da linha. */
+  marketplace: string;
+  shopee_shop_id: string | null;
+  model_name: string | null;
   occurred_at: string;
   title: string | null;
   sku: string | null;
@@ -52,13 +58,20 @@ export function buildPriceExportRows(
   rows: readonly PriceChangeExportInput[],
   statusLabel: (code: string) => string,
 ): PriceExportRow[] {
-  return rows.map((row) => ({
+  return rows.map((row) => {
+    // D-640: a linha da Shopee lê o status, a variação e a origem pelo leitor
+    // único da tela (`lib/mudanca-de-preco.ts`); a do ML fica como sempre.
+    const daShopee = ehDaShopee(row);
+    const anuncio = anuncioDaMudanca(row);
+    const titulo = row.title ?? "anúncio fora do catálogo";
+
+    return {
     occurredAt: row.occurred_at,
-    title: row.title ?? "anúncio fora do catálogo",
+    title: anuncio.variacao === null ? titulo : `${titulo} · ${anuncio.variacao}`,
     sku: row.sku ?? "sem vínculo",
     itemId: row.item_id,
-    status: row.status === null ? AUSENTE : statusLabel(row.status),
-    account: row.account_label,
+    status: row.status === null ? AUSENTE : daShopee ? (anuncio.status ?? AUSENTE) : statusLabel(row.status),
+    account: anuncio.origem,
     priceBefore: row.price_before,
     priceAfter: row.price_after,
     delta: row.delta,
@@ -66,7 +79,8 @@ export function buildPriceExportRows(
     // A MESMA regra da coluna "Direção" da tela: o sinal do delta, e nada
     // mais. Empate não existe — a RPC só emite evento quando o preço mudou.
     direction: row.delta > 0 ? "AUMENTO" : "REDUÇÃO",
-  }));
+    };
+  });
 }
 
 /**
@@ -81,7 +95,10 @@ export function buildPriceExportRows(
 export function describePriceExportFilters(input: {
   dayFrom: string;
   dayTo: string | null;
+  /** D-640: o recorte de marketplace; sem ele, o Mercado Livre de sempre. */
+  marketplace?: "ml" | "shopee" | "todos";
   accountLabel: string | null;
+  lojaLabel?: string | null;
   direction: string | null;
   search: string | null;
   formatDay: (day: string) => string;
@@ -91,7 +108,15 @@ export function describePriceExportFilters(input: {
     input.dayTo === null
       ? `De ${input.formatDay(input.dayFrom)} até hoje`
       : `De ${input.formatDay(input.dayFrom)} a ${input.formatDay(input.dayTo)}`,
-    input.accountLabel === null ? "Todas as contas" : `Conta: ${input.accountLabel}`,
+    input.marketplace === "shopee"
+      ? input.lojaLabel === null || input.lojaLabel === undefined
+        ? "Shopee · Todas as lojas"
+        : `Shopee · Loja: ${input.lojaLabel}`
+      : input.marketplace === "todos"
+        ? "Todos os marketplaces"
+        : input.accountLabel === null
+          ? "Todas as contas"
+          : `Conta: ${input.accountLabel}`,
   ];
 
   if (input.direction !== null) partes.push(`Só ${input.directionLabel(input.direction).toLowerCase()}`);

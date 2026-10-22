@@ -17,6 +17,9 @@ import {
  */
 
 const BASE: PriceChangeExportInput = {
+  marketplace: "mercado_livre",
+  shopee_shop_id: null,
+  model_name: null,
   occurred_at: "2026-09-01T12:00:00Z",
   title: "Pneu 29",
   sku: "SB-001",
@@ -119,5 +122,56 @@ describe("toSpreadsheetInstant", () => {
     // 01:30 UTC do dia 9 ainda é 22:30 do dia 8 em São Paulo — o mesmo caso
     // que o teste de vendas usa para o dia civil.
     expect(toSpreadsheetInstant("2026-09-09T01:30:00Z").toISOString()).toBe("2026-09-08T22:30:00.000Z");
+  });
+});
+
+/** D-640 (C-81): a linha da Shopee na mesma planilha. */
+describe("a planilha com a Shopee (D-640)", () => {
+  const DA_SHOPEE: PriceChangeExportInput = {
+    ...BASE,
+    marketplace: "shopee",
+    shopee_shop_id: "aaaa-bbbb",
+    model_name: "Preta",
+    item_id: "990777001",
+    status: "UNLIST",
+    account_label: "Loja Shopee Real",
+  };
+
+  it("o status é o da Shopee, a variação vai no título e a origem diz o marketplace", () => {
+    const [linha] = buildPriceExportRows([DA_SHOPEE], rotulo);
+
+    expect(linha?.itemId).toBe("990777001");
+    expect(linha?.status).toBe("Pausado");
+    expect(linha?.title).toBe("Pneu 29 · Preta");
+    expect(linha?.account).toBe("Shopee · Loja Shopee Real");
+  });
+
+  it("a linha do ML na mesma planilha fica como sempre", () => {
+    const [ml] = buildPriceExportRows([BASE, DA_SHOPEE], rotulo);
+
+    expect(ml?.status).toBe("Ativo");
+    expect(ml?.title).toBe("Pneu 29");
+    expect(ml?.account).toBe("Loja A");
+  });
+
+  it("o recorte descrito diz a Shopee e a loja, ou os dois marketplaces", () => {
+    const comum = {
+      dayFrom: "2026-09-01",
+      dayTo: null,
+      accountLabel: null,
+      direction: null,
+      search: null,
+      formatDay: (day: string): string => day.split("-").reverse().join("/"),
+      directionLabel: (code: string): string => code,
+    };
+
+    expect(describePriceExportFilters({ ...comum, marketplace: "shopee", lojaLabel: "Loja Real" })).toBe(
+      "De 01/09/2026 até hoje · Shopee · Loja: Loja Real",
+    );
+    expect(describePriceExportFilters({ ...comum, marketplace: "shopee", lojaLabel: null })).toBe(
+      "De 01/09/2026 até hoje · Shopee · Todas as lojas",
+    );
+    expect(describePriceExportFilters({ ...comum, marketplace: "todos" })).toBe("De 01/09/2026 até hoje · Todos os marketplaces");
+    expect(describePriceExportFilters({ ...comum, marketplace: "ml" })).toBe("De 01/09/2026 até hoje · Todas as contas");
   });
 });

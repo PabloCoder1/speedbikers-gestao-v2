@@ -25,9 +25,11 @@ export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
   const filters = resolvePriceFilters(Object.fromEntries(url.searchParams.entries()));
 
-  const [membership, accounts] = await Promise.all([
+  const [membership, accounts, lojas] = await Promise.all([
     currentMembership(supabase),
     supabase.from("ml_accounts").select("id, label").order("label"),
+    // D-640: a loja da URL é conferida contra as que a pessoa alcança, como a conta.
+    supabase.from("shopee_shops").select("id, shop_name").order("connected_at"),
   ]);
 
   if (membership.error !== null) {
@@ -44,9 +46,10 @@ export async function GET(request: Request): Promise<NextResponse> {
   // tocar a RPC — a MESMA regra da tela, para o arquivo não sair de um recorte
   // que a tela não produziria.
   const conta = (accounts.data ?? []).find((row) => row.id === filters.account) ?? null;
+  const loja = (lojas.data ?? []).find((row) => row.id === filters.loja) ?? null;
 
   const now = new Date();
-  const { data, error } = await loadPriceExportData(supabase, organizationId, filters, conta?.id ?? null, now);
+  const { data, error } = await loadPriceExportData(supabase, organizationId, filters, conta?.id ?? null, loja?.id ?? null, now);
 
   if (error !== null || data === null) {
     return NextResponse.json({ error: { code: "read_failed", message: error?.message } }, { status: 502 });
@@ -55,7 +58,9 @@ export async function GET(request: Request): Promise<NextResponse> {
   const buffer = await buildPriceChangesWorkbook({
     data,
     organizationName: membership.organizationName,
+    marketplace: filters.marketplace,
     accountLabel: conta?.label ?? null,
+    lojaLabel: loja === null ? null : (loja.shop_name ?? "Loja sem nome lido"),
     direction: filters.direction,
     search: filters.search,
     generatedAt: now,

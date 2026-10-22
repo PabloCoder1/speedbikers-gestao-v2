@@ -11,6 +11,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { SeletorDeMarketplace } from "../../../components/seletor-marketplace";
 import {
   formatBusinessDate,
   formatCount,
@@ -18,10 +19,12 @@ import {
   formatDateTime,
   formatPercent,
 } from "../../../lib/format";
-import { listingStatusLabel } from "../../../lib/labels";
+import { MARKETPLACE_ROTULO, ROTULO_TODOS, buscaCompativel } from "../../../lib/marketplace";
+import { anuncioDaMudanca } from "../../../lib/mudanca-de-preco";
 import {
   PAGE_SIZE,
   PRICE_DIRECTIONS,
+  argumentosDoMarketplace,
   buildPriceExportHref,
   buildPriceHref,
   priceDirectionLabel,
@@ -38,8 +41,11 @@ export const dynamic = "force-dynamic";
 
 function recorteLabel(filters: ReturnType<typeof resolvePriceFilters>): string {
   const partes = [
+    // D-640: o marketplace é dito só fora do recorte de sempre (o ML).
+    filters.marketplace === "ml" ? null : filters.marketplace === "todos" ? ROTULO_TODOS : MARKETPLACE_ROTULO.shopee,
     filters.direction === null ? null : priceDirectionLabel(filters.direction),
     filters.account === null ? null : "uma conta selecionada",
+    filters.loja === null ? null : "uma loja selecionada",
     filters.search === null ? null : `busca “${filters.search}”`,
     filters.dateFrom === null ? null : `desde ${filters.dateFrom.split("-").reverse().join("/")}`,
     filters.dateTo === null ? null : `até ${filters.dateTo.split("-").reverse().join("/")}`,
@@ -83,9 +89,11 @@ export default async function PrecosPage({
   const filters = resolvePriceFilters(await searchParams);
   const supabase = await createClient();
 
-  const [membership, accounts] = await Promise.all([
+  const [membership, accounts, lojasResult] = await Promise.all([
     currentMembership(),
     supabase.from("ml_accounts").select("id, label").order("label"),
+    // D-640: as lojas que a pessoa alcança (a RLS de D-433), para o seletor e o menu de loja.
+    supabase.from("shopee_shops").select("id, shop_name, environment").order("connected_at"),
   ]);
 
   const organizationId = membership.organizationId;
@@ -113,6 +121,10 @@ export default async function PrecosPage({
   // antes de tocar a RPC — mesma regra dos conjuntos fechados.
   const accountIds = new Set((accounts.data ?? []).map((row) => row.id));
   const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;
+  const lojas = lojasResult.data ?? [];
+  const loja = filters.loja !== null && lojas.some((row) => row.id === filters.loja) ? filters.loja : null;
+  const nomeDaLoja = (row: { shop_name: string | null; environment: string }): string =>
+    `${row.shop_name ?? "Loja sem nome lido"}${row.environment === "live" ? "" : " (teste)"}`;
 
   /*
     A janela mudou de casa em D-292: `resolvePriceWindow` é o ÚNICO dono da
@@ -127,7 +139,8 @@ export default async function PrecosPage({
     p_organization_id: organizationId,
     p_date_from: janelaConsulta.from,
     p_date_to: janelaConsulta.to,
-    p_ml_account_id: account,
+    // D-640 (C-81): o ML manda só o de sempre; a Shopee e o "Todos", o marketplace e a loja.
+    ...argumentosDoMarketplace(filters, account, loja),
     p_direction: filters.direction,
     p_search: filters.search,
     p_limit: PAGE_SIZE,
@@ -159,6 +172,14 @@ export default async function PrecosPage({
     não inventa data.
   */
   const serieComeca = resumo?.series_start ?? null;
+  /*
+    D-640 (C-81): desde quando a Shopee é registrada — a data MAIS RECENTE entre
+    as lojas do recorte, e nula se alguma ainda não foi. Antes dela não existe
+    histórico (o preço da Shopee só começou a ser comparado com o C-81), então
+    a frase nunca diz "sem mudança" para esse período.
+  */
+  const comShopee = filters.marketplace !== "ml";
+  const serieShopeeComeca = comShopee ? (resumo?.series_start_shopee ?? null) : null;
 
   const janela = summarizePagedWindow({
     page: filters.page,
@@ -222,10 +243,26 @@ export default async function PrecosPage({
     account === null
       ? "Todas as contas"
       : ((accounts.data ?? []).find((row) => row.id === account)?.label ?? "Conta");
-  const filtrosAtivos = [filters.direction, account, filters.search, filters.dateFrom, filters.dateTo].filter(
+  const rotuloLoja =
+    loja === null ? "Todas as lojas" : nomeDaLoja(lojas.find((row) => row.id === loja) ?? { shop_name: null, environment: "live" });
+  const filtrosAtivos = [filters.direction, account, loja, filters.search, filters.dateFrom, filters.dateTo].filter(
     (value) => value !== null,
   ).length;
-  const recorte = recorteLabel({ ...filters, account });
+  const recorte = recorteLabel({ ...filters, account, loja });
+  // "Limpar" tira os filtros e fica no marketplace escolhido: ele é o recorte, não um filtro.
+  const semFiltros = buildPriceHref(
+    { marketplace: filters.marketplace, search: null, direction: null, account: null, loja: null, dateFrom: null, dateTo: null, page: 1 },
+    {},
+  );
+  // O seletor leva o período, a direção e a busca que vale do outro lado (o MLB não vale na Shopee).
+  const paraOMarketplace = (destino: "ml" | "shopee" | "todos"): string =>
+    buildPriceHref(filters, {
+      marketplace: destino,
+      account: null,
+      loja: null,
+      search: destino === "ml" ? filters.search : buscaCompativel(filters.search, "shopee"),
+      page: 1,
+    });
 
   return (
     <>
@@ -257,6 +294,15 @@ export default async function PrecosPage({
         subtitle={janela.label}
         aside={
           <>
+            {/* D-640: o marketplace é o primeiro menu (D-431); sem loja Shopee, não aparece. */}
+            <SeletorDeMarketplace
+              ativo={filters.marketplace}
+              contas={{
+                ml: accounts.error === null ? accounts.data.length : null,
+                shopee: lojasResult.error === null ? lojas.length : null,
+              }}
+              destinos={{ ml: paraOMarketplace("ml"), shopee: paraOMarketplace("shopee"), todos: paraOMarketplace("todos") }}
+            />
             <FilterMenu
               rotulo={filters.direction === null ? "Direção" : priceDirectionLabel(filters.direction)}
               opcoes={[
@@ -268,21 +314,38 @@ export default async function PrecosPage({
                 })),
               ]}
             />
-            <FilterMenu
-              rotulo={rotuloConta}
-              opcoes={[
-                {
-                  href: buildPriceHref(filters, { account: null, page: 1 }),
-                  label: "Todas as contas",
-                  ativo: account === null,
-                },
-                ...(accounts.data ?? []).map((row) => ({
-                  href: buildPriceHref(filters, { account: row.id, page: 1 }),
-                  label: row.label,
-                  ativo: account === row.id,
-                })),
-              ]}
-            />
+            {filters.marketplace === "ml" && (
+              <FilterMenu
+                rotulo={rotuloConta}
+                opcoes={[
+                  {
+                    href: buildPriceHref(filters, { account: null, page: 1 }),
+                    label: "Todas as contas",
+                    ativo: account === null,
+                  },
+                  ...(accounts.data ?? []).map((row) => ({
+                    href: buildPriceHref(filters, { account: row.id, page: 1 }),
+                    label: row.label,
+                    ativo: account === row.id,
+                  })),
+                ]}
+              />
+            )}
+            {/* No "Todos" não há conta nem loja: a RPC recebe uma origem só (C-81). */}
+            {filters.marketplace === "shopee" && lojas.length > 0 && (
+              <FilterMenu
+                nome="Loja"
+                rotulo={rotuloLoja}
+                opcoes={[
+                  { href: buildPriceHref(filters, { loja: null, page: 1 }), label: "Todas as lojas", ativo: loja === null },
+                  ...lojas.map((row) => ({
+                    href: buildPriceHref(filters, { loja: row.id, page: 1 }),
+                    label: nomeDaLoja(row),
+                    ativo: loja === row.id,
+                  })),
+                ]}
+              />
+            )}
           </>
         }
       >
@@ -298,16 +361,33 @@ export default async function PrecosPage({
             Esta tela mostra <strong>o que mudou</strong>, não o efeito da mudança. Afirmar impacto exigiria
             comparar a venda em janelas equivalentes dos dois lados de cada alteração, e a série ainda não tem
             os dois lados.{" "}
-            {serieComeca !== null && <>O registro começa em {formatBusinessDate(serieComeca)}. </>}
-            O preço é comparado a cada leitura do anúncio (a da notificação do Mercado Livre e a varredura de
-            6 em 6 horas), então uma mudança feita e desfeita entre duas leituras não deixa registro — <strong>ausência de linha não é preço estável</strong>.
+            {filters.marketplace !== "shopee" && serieComeca !== null && (
+              <>
+                O registro {comShopee ? "do Mercado Livre " : ""}começa em {formatBusinessDate(serieComeca)}.{" "}
+              </>
+            )}
+            {comShopee &&
+              (serieShopeeComeca === null ? (
+                <>
+                  A Shopee ainda não é registrada em todas as lojas deste recorte: o preço dela só passou a ser
+                  comparado com a primeira leitura de cada loja, e antes disso não há histórico.{" "}
+                </>
+              ) : (
+                <>A Shopee é registrada desde {formatBusinessDate(serieShopeeComeca)}; antes disso não há histórico. </>
+              ))}
+            {filters.marketplace === "shopee"
+              ? "O preço da Shopee é o do anúncio (a promoção não conta como mudança), comparado a cada leitura do item: quando a Shopee avisa que ele mudou e a cada 6 horas."
+              : "O preço é comparado a cada leitura do anúncio (a da notificação do Mercado Livre e a varredura de 6 em 6 horas)."}{" "}
+            Uma mudança feita e desfeita entre duas leituras não deixa registro — <strong>ausência de linha não é preço estável</strong>.
           </p>
         </div>
 
         <FormularioFiltro action="/precos" className="sb-price-toolbar" aria-label="Filtrar histórico de preços">
           {/* GET nativo só envia os campos do form — preservar as dimensões de menu. */}
+          {filters.marketplace !== "ml" && <input type="hidden" name="marketplace" value={filters.marketplace} />}
           {filters.direction !== null && <input type="hidden" name="direcao" value={filters.direction} />}
           {account !== null && <input type="hidden" name="conta" value={account} />}
+          {loja !== null && <input type="hidden" name="loja" value={loja} />}
           <label className="sb-price-field sb-price-search">
             <span>Buscar</span>
             <span className="sb-price-input-shell">
@@ -317,7 +397,13 @@ export default async function PrecosPage({
                 type="search"
                 name="busca"
                 defaultValue={filters.search ?? ""}
-                placeholder="SKU, MLB ou título"
+                placeholder={
+                  filters.marketplace === "shopee"
+                    ? "SKU, item ou título"
+                    : filters.marketplace === "todos"
+                      ? "SKU, MLB, item ou título"
+                      : "SKU, MLB ou título"
+                }
                 aria-label="Buscar por MLB, SKU ou título"
               />
             </span>
@@ -339,7 +425,7 @@ export default async function PrecosPage({
           </div>
           <div className="sb-price-toolbar-actions">
             {filtrosAtivos > 0 && (
-              <Link className="sb-button" href="/precos">
+              <Link className="sb-button" href={semFiltros}>
                 Limpar {filtrosAtivos === 1 ? "filtro" : `${String(filtrosAtivos)} filtros`}
                 <CarregandoSeODemorar />
               </Link>
@@ -367,7 +453,7 @@ export default async function PrecosPage({
                 ? "Revise ou remova os filtros para ampliar a busca."
                 : "Quando um anúncio tiver uma alteração observada, ela aparecerá aqui."
             }
-            acao={filtrosAtivos > 0 ? { href: "/precos", rotulo: "Limpar filtros", mesmaTela: true } : undefined}
+            acao={filtrosAtivos > 0 ? { href: semFiltros, rotulo: "Limpar filtros", mesmaTela: true } : undefined}
           />
         )}
 
@@ -388,6 +474,8 @@ export default async function PrecosPage({
               <tbody>
                 {rows.map((row) => {
                   const subiu = row.delta > 0;
+                  // D-640: o destino, o status e a origem pelo marketplace da linha (o item da Shopee não é MLB).
+                  const anuncio = anuncioDaMudanca(row);
                   // Violeta para alta, vermelho para baixa — NÃO o verde do
                   // frame. Verde afirmaria que subir preço é bom, e uma
                   // redução pode ser promoção deliberada.
@@ -409,6 +497,7 @@ export default async function PrecosPage({
                       <td data-label="Anúncio" className="sb-price-product">
                         <strong className="sb-price-title">
                           {row.title ?? <span className="sb-price-missing">anúncio fora do catálogo</span>}
+                          {anuncio.variacao !== null && ` · ${anuncio.variacao}`}
                         </strong>
                         <div className="sb-mono sb-price-meta">
                           {row.sku_id !== null && row.sku !== null ? (
@@ -417,9 +506,9 @@ export default async function PrecosPage({
                             <span>sem vínculo</span>
                           )}
                           {" · "}
-                          <Link href={`/anuncios/${row.item_id}`}>{row.item_id}</Link>
-                          {row.status !== null && ` · ${listingStatusLabel(row.status)}`}
-                          {` · ${row.account_label}`}
+                          {anuncio.href === null ? <span>{row.item_id}</span> : <Link href={anuncio.href}>{row.item_id}</Link>}
+                          {anuncio.status !== null && ` · ${anuncio.status}`}
+                          {` · ${anuncio.origem}`}
                         </div>
                       </td>
 

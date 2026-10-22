@@ -41,7 +41,10 @@ const DATETIME_FORMAT = "dd/mm/yyyy hh:mm";
 export function buildPriceChangesWorkbook(input: {
   data: PriceExportData;
   organizationName: string | null;
+  /** D-640: o recorte de marketplace (o ML de sempre, a Shopee ou os dois). */
+  marketplace: "ml" | "shopee" | "todos";
   accountLabel: string | null;
+  lojaLabel: string | null;
   direction: string | null;
   search: string | null;
   generatedAt: Date;
@@ -96,7 +99,9 @@ export function buildPriceChangesWorkbook(input: {
     describePriceExportFilters({
       dayFrom: data.dayFrom,
       dayTo: data.dayTo,
+      marketplace: input.marketplace,
       accountLabel: input.accountLabel,
+      lojaLabel: input.lojaLabel,
       direction: input.direction,
       search: input.search,
       formatDay: formatBusinessDate,
@@ -147,9 +152,10 @@ export function buildPriceChangesWorkbook(input: {
     "Data / Hora (São Paulo)",
     "Anúncio",
     "SKU",
-    "MLB",
+    // D-640: fora do ML, o identificador é o MLB ou o item da Shopee, e a origem é a conta ou a loja.
+    input.marketplace === "ml" ? "MLB" : "Anúncio (MLB ou item)",
     "Situação",
-    "Conta",
+    input.marketplace === "ml" ? "Conta" : "Conta ou loja",
     "Preço anterior",
     "Preço atual",
     "Variação R$",

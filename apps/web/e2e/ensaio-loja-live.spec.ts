@@ -718,3 +718,82 @@ test("/acoes: a divergência de estoque da Shopee tem rótulo, o anúncio e o es
     await db.from("actions").delete().eq("id", acao.data?.id ?? "");
   }
 });
+
+/**
+ * D-640 (C-81 do A1, D-633): o histórico de preço da Shopee na /precos e na aba
+ * Preços do SKU. Vai no FIM do ensaio de propósito: o evento gera uma
+ * notificação da loja, e os casos de /notificacoes de cima contam as linhas dela.
+ */
+test("/precos e a aba Preços do SKU: a mudança de preço da loja live, com o item, o status e a loja (D-640, C-81)", async ({ page }) => {
+  const loja = await db.from("shopee_shops").select("organization_id").eq("id", lojaId).single();
+
+  if (loja.data === null) throw new Error(`loja live sem organização: ${loja.error.message}`);
+
+  // O evento como o worker do C-81 grava, com a promoção (`current_price`) só informativa.
+  const evento = await db.from("domain_events").insert({
+    organization_id: loja.data.organization_id,
+    event_type: "listing.price.changed",
+    entity_type: "shopee_item",
+    entity_id: "990777001",
+    shopee_shop_id: lojaId,
+    severity: "informativo",
+    source: "system",
+    occurred_at: new Date().toISOString(),
+    dedup_key: `e2e-d640-${lojaId}`,
+    before: { price: 110, current_price: 100, model_id: null },
+    after: { price: 120, current_price: 100, model_id: null, model_name: null, item_name: LOJA_LIVE.skuTitulo, shop_name: LOJA_LIVE.nome },
+  });
+
+  expect(evento.error).toBeNull();
+
+  // A loja ainda não registrada: a tela diz isso, e nunca "sem mudança".
+  await entrar(page, "/precos?marketplace=shopee");
+
+  // A linha DESTE evento (110 → 120): o caso da D-638, acima, gravou outra mudança do mesmo item (100 → 120).
+  const tabela = page.locator(".sb-price-table");
+  const linha = tabela
+    .locator("tbody tr")
+    .filter({ hasText: "990777001" })
+    .filter({ has: page.locator(".sb-price-before", { hasText: "110,00" }) });
+
+  await expect(page.locator(".sb-price-note")).toContainText("A Shopee ainda não é registrada em todas as lojas deste recorte");
+  await expect(linha).toHaveCount(1);
+  await expect(linha).toContainText(LOJA_LIVE.skuTitulo);
+  // O status é o da Shopee (NORMAL = Ativo), e a origem diz o marketplace e a loja.
+  await expect(linha).toContainText(`990777001 · Ativo · Shopee · ${LOJA_LIVE.nome}`);
+  await expect(linha.getByRole("link", { name: "990777001", exact: true })).toHaveAttribute(
+    "href",
+    `/anuncios/shopee?loja=${lojaId}&q=990777001`,
+  );
+  // O preço é o do anúncio (original_price), nunca o da promoção.
+  await expect(linha.locator(".sb-price-before")).toHaveText("R$ 110,00");
+  await expect(linha.locator(".sb-price-current")).toHaveText("R$ 120,00");
+
+  // Com a loja registrada (um instante: o dia é o de São Paulo), a frase diz desde quando — no recorte SÓ dela: a loja de teste do seed
+  // continua sem registro, e com ela no recorte a data é nula (a regra conservadora do C-81).
+  const registro = await db.from("shopee_shops").update({ price_history_since: "2026-10-21T15:00:00Z" }).eq("id", lojaId);
+
+  expect(registro.error).toBeNull();
+  await page.reload();
+  await expect(page.locator(".sb-price-note")).toContainText("A Shopee ainda não é registrada em todas as lojas deste recorte");
+  await page.goto(`/precos?marketplace=shopee&loja=${lojaId}`);
+  await expect(page.locator(".sb-price-note")).toContainText("A Shopee é registrada desde 21/10/2026");
+  await expect(linha).toHaveCount(1);
+
+  // O Mercado Livre continua sendo a tela de sempre: sem marketplace, a linha da Shopee não aparece.
+  await page.goto("/precos");
+  await expect(page.locator(".sb-price-table tbody tr").filter({ hasText: "990777001" })).toHaveCount(0);
+
+  // A aba Preços do SKU vê os dois marketplaces, com o mesmo destino para a lista da loja.
+  await page.goto(`/skus/${skuId}?aba=precos`);
+
+  const doSku = page.locator("table tbody tr").filter({ hasText: "990777001" }).filter({ hasText: "R$ 110,00" });
+
+  await expect(doSku).toHaveCount(1);
+  await expect(doSku).toContainText(`Shopee · ${LOJA_LIVE.nome}`);
+  await expect(doSku.getByRole("link", { name: "990777001", exact: true })).toHaveAttribute(
+    "href",
+    `/anuncios/shopee?loja=${lojaId}&q=990777001`,
+  );
+  await semErro(page);
+});

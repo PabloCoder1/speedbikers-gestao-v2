@@ -19080,6 +19080,70 @@ Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
 
+## D-640 - O histórico de preço da Shopee na /precos e na aba Preços do SKU (C-81)
+
+**Contexto:** o dono liberou em 21/10 o histórico de preço da Shopee (o C-13 do A2, o C-81 do A1, D-633, #308). O contrato está em `docs/MULTICHANNEL_CONTRACTS.md` §3.29.
+- `get_price_changes` ganha no fim `p_marketplace` e `p_shopee_shop_id`. Nulo ou `mercado_livre` é o ML de hoje; `shopee` e `todos` pedem a Shopee. A loja implica a Shopee, e conta com loja é recusada.
+- A RPC ganha cinco colunas: `marketplace`, `shopee_shop_id`, `model_id`, `model_name` e `series_start_shopee`.
+- Na linha da Shopee, as mesmas colunas da do ML mudam de vocabulário:
+  - `item_id` é o item da Shopee;
+  - `status` é o `item_status` da Shopee (NORMAL, UNLIST);
+  - `account_label` é o nome da loja.
+- O preço é o `original_price`, porque a promoção não é mudança.
+- `series_start_shopee` é a data mais recente de registro entre as lojas do recorte, e nula se alguma ainda não foi registrada.
+
+A notificação do mesmo evento é a D-638, no ar antes do worker.
+
+**Decisão:**
+1. **`lib/mudanca-de-preco.ts`**, o leitor único da linha para a tela, a planilha e a aba do SKU. Ele decide pela coluna `marketplace`:
+   - o destino: o item da Shopee vai para `/anuncios/shopee?loja=&q=<item>` (o atalho da D-626), nunca para `/anuncios/<id>`;
+   - o status pelo `shopeeItemStatus`, o mesmo da `/anuncios/shopee`;
+   - a variação (`model_name`);
+   - a origem "Shopee · <loja>".
+
+   Três leitores separados mandariam o item da Shopee para a tela do ML, que daria 404.
+2. **`/precos`:**
+   - o seletor de marketplace é o primeiro menu do painel (D-431), só com loja Shopee visível. Sem `marketplace` na URL é o Mercado Livre de sempre (como a `/faturamento` e a `/curva-abc`), e a tela do ML não muda;
+   - a conta vale só no ML e a loja só na Shopee; no "Todos" não há nenhuma das duas, porque a RPC recebe uma origem só;
+   - a troca leva o período, a direção e a busca (sem o MLB para a Shopee, `buscaCompativel`);
+   - "Limpar filtros" fica no marketplace escolhido;
+   - os argumentos novos vão só com valor (`argumentosDoMarketplace`): o ML manda só o `p_ml_account_id` de sempre.
+3. **Desde quando:** na Shopee e no "Todos", a frase diz "a Shopee é registrada desde DD/MM/AAAA" (o dia de São Paulo do instante) ou, nula, "a Shopee ainda não é registrada em todas as lojas deste recorte". Nunca diz "sem mudança" para o período antes do registro. O ML continua com "o registro começa em".
+4. **A leitura da Shopee dita:** o preço é o do anúncio (a promoção não conta), comparado a cada releitura do item, quando a Shopee avisa e a cada 6 horas.
+5. **A planilha:**
+   - leva o mesmo recorte (`marketplace`, `loja`);
+   - mantém as 11 colunas, e a do ML sai idêntica;
+   - na Shopee e no "Todos", as colunas viram "Anúncio (MLB ou item)" e "Conta ou loja", e o recorte descrito diz o marketplace e a loja.
+6. **A aba Preços do SKU** pede os dois marketplaces (`p_marketplace = 'todos'`). Sem loja Shopee, a resposta é a do ML. A coluna vira "Conta ou loja", e o texto da leitura ganha a Shopee só quando ela aparece no período.
+
+**Publicação:** só a web, e só DEPOIS da migration `20261021190000` em produção (o `p_marketplace` mandado antes dá PGRST202, e as colunas novas não existem). Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** 32 nos três arquivos tocados:
+  - `lib/mudanca-de-preco.test.ts`: o destino, o status, a variação e a origem nos dois marketplaces;
+  - `lib/price-filters.test.ts`: o marketplace e a loja na URL e os argumentos só com valor;
+  - `precos/export/rows.test.ts`: a linha da Shopee na planilha e o recorte descrito.
+- **e2e:** no fim do ensaio da loja live, um evento no formato do C-81 confere:
+  - em `/precos?marketplace=shopee`: o item, o status "Ativo", "Shopee · <loja>", o link para a lista da loja e o preço do anúncio (110 → 120), não o da promoção;
+  - a frase de registro: nula com a loja de teste no recorte, e com a data no recorte só da loja live registrada;
+  - a `/precos` sem marketplace sem a linha;
+  - a aba Preços do SKU com a linha e o link.
+- **mutação:** com a chamada sem os argumentos novos, o e2e reprova (a linha some).
+- **specs:** `precos` e `sku-dashboard` 13/13; o ensaio 17/17.
+- **suíte inteira**, com o banco recriado com a migration do #308 e a main (com a D-638):
+  - chromium 261/261;
+  - `loja-live` 18/18;
+  - convite 3/3.
+
+  Uma rodada anterior pegou a barra de menus do painel da `/precos` passando 63 px a 390 px, por causa do seletor. Os menus agora quebram de linha.
+
+**Impacto:**
+- `apps/web/lib/{mudanca-de-preco.ts,mudanca-de-preco.test.ts,price-filters.ts,price-filters.test.ts}`;
+- `apps/web/app/(app)/precos/{page.tsx,export/load.ts,export/rows.ts,export/rows.test.ts,export/workbook.ts,export/xlsx/route.ts}`;
+- `apps/web/app/(app)/skus/[skuId]/page.tsx`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
 ## D-641 - A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 
 **Contexto:** a frente C-14 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-84. As sete ferramentas do chat (`apps/api/src/copilot-chat.ts`) liam so o Mercado Livre:
