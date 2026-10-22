@@ -30,7 +30,14 @@ import type { HandlerContext, JobHandler } from "../router.js";
  * — uma queda no ML vira ação mesmo que a Shopee compense, e a ação diz o
  * canal (`evidence.marketplace`). Os eventos do SKU valem para os dois canais;
  * os do anúncio e do pedido, só para o canal deles. A reclamação aberta (SAC)
- * é do ML. A ação do ML mantém a `dedup_key` de antes.
+ * é do ML.
+ *
+ * **Episódio por SKU e canal (D-643, decisão do dono em 22/10):** o handler
+ * não grava a ação; manda as detecções do dia a `registrar_vendas_anomalas`,
+ * que faz o ciclo da D-403 numa transação (atualiza o aberto, não reabre o
+ * fechado por uma pessoa, cria o novo, encerra depois de 3 dias sem detecção
+ * e encerra o acumulado de antes). O assunto é `<canal>:<sku>`. O ciclo roda
+ * mesmo sem anomalia nenhuma: é ele que envelhece e encerra os episódios.
  */
 
 const payloadSchema = z.object({ organizationId: z.uuid() });
@@ -63,6 +70,32 @@ interface AveragePriceRow {
 }
 
 const chave = (skuId: string, marketplace: string): string => `${skuId}:${marketplace}`;
+
+/** D-643: uma detecção do dia, como `registrar_vendas_anomalas` recebe. */
+interface Deteccao {
+  subject_key: string;
+  severity: string;
+  confidence: string;
+  impacto: number | null;
+  sku_id: string;
+  evidence: Json;
+  recommendation: string;
+}
+
+async function registrarEpisodios(
+  deps: DetectSalesAnomalyActionsDeps,
+  organizationId: string,
+  asOf: string,
+  deteccoes: Deteccao[],
+): Promise<{ ok: true; ciclo: Json } | { ok: false; reason: string }> {
+  const ciclo = await deps.db.rpc("registrar_vendas_anomalas", {
+    p_organization_id: organizationId,
+    p_hoje: asOf,
+    p_detectadas: deteccoes as unknown as Json,
+  });
+
+  return ciclo.error === null ? { ok: true, ciclo: ciclo.data } : { ok: false, reason: ciclo.error.message };
+}
 
 const CORRELATION_WINDOW_DAYS_BEFORE = 3;
 const CORRELATION_WINDOW_DAYS_AFTER = 1;
@@ -134,7 +167,13 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     ];
 
     if (candidateSkuIds.length === 0) {
-      context.logger.info("detect_sales_anomaly_actions_done", { organization_id: organizationId, actions: 0 });
+      // Sem anomalia hoje: o ciclo roda assim mesmo, para envelhecer e
+      // encerrar os episódios de antes.
+      const vazio = await registrarEpisodios(deps, organizationId, asOf, []);
+
+      if (!vazio.ok) return { status: "failed", retryable: true, reason: vazio.reason };
+
+      context.logger.info("detect_sales_anomaly_actions_done", { organization_id: organizationId, actions: 0, ciclo: vazio.ciclo });
 
       return { status: "done", processed: 0 };
     }
@@ -228,41 +267,34 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       }
     }
 
-    const rows = diagnoses.map(({ diagnosis, marketplace }) => ({
-      organization_id: organizationId,
-      kind: "venda_anomala",
+    const deteccoes: Deteccao[] = diagnoses.map(({ diagnosis, marketplace }) => ({
+      // D-643: o assunto do episódio, um por SKU e canal.
+      subject_key: `${marketplace}:${diagnosis.escopo.skuId}`,
       severity: diagnosis.confianca,
       confidence: diagnosis.confianca,
-      estimated_impact_brl: estimateImpactBrl(
+      impacto: estimateImpactBrl(
         diagnosis.unitsDelta,
         averagePriceBySkuAndChannel.get(chave(diagnosis.escopo.skuId, marketplace)) ?? null,
       ),
       sku_id: diagnosis.escopo.skuId,
       evidence: toEvidence(diagnosis, marketplace),
       recommendation: diagnosis.proximosPassos.join(" "),
-      created_by: "system",
-      // A do ML e a de antes; a da Shopee leva o canal na chave.
-      dedup_key:
-        marketplace === "ML"
-          ? `sales_anomaly:${diagnosis.escopo.skuId}:${asOf}`
-          : `sales_anomaly:${marketplace.toLowerCase()}:${diagnosis.escopo.skuId}:${asOf}`,
     }));
 
-    if (rows.length > 0) {
-      const upsertResult = await deps.db.from("actions").upsert(rows, { onConflict: "organization_id,dedup_key" });
+    const registro = await registrarEpisodios(deps, organizationId, asOf, deteccoes);
 
-      if (upsertResult.error !== null) {
-        return { status: "failed", retryable: true, reason: upsertResult.error.message };
-      }
+    if (!registro.ok) {
+      return { status: "failed", retryable: true, reason: registro.reason };
     }
 
     context.logger.info("detect_sales_anomaly_actions_done", {
       organization_id: organizationId,
       signals: signals.length,
-      actions: rows.length,
+      actions: deteccoes.length,
       actions_shopee: diagnoses.filter((item) => item.marketplace === "SHOPEE").length,
+      ciclo: registro.ciclo,
     });
 
-    return { status: "done", processed: rows.length };
+    return { status: "done", processed: deteccoes.length };
   };
 }
