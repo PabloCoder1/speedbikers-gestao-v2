@@ -17511,7 +17511,7 @@ A medida no build local, a 150 ms por chamada, com o registro de cada chamada do
 2. **Conferir so a pre-busca pela assinatura:** o Next 16 tira do pedido que chega ao proxy os cabecalhos `rsc` e `next-router-prefetch` e o `_rsc` da query. A pre-busca chega igual a navegacao, entao o proxy nao tem como separa-la.
 3. **Pular o proxy na pre-busca** (`missing` no matcher): o cabecalho e do cliente. Quem o forjasse passaria sem conferencia, ate numa pagina. Relaxa a protecao: recusado.
 
-**Decisao (proposta, espera o sim do dono):**
+**Decisao (aprovada pelo dono em 22/10, PR #312):**
 - O `proxy.ts` troca `getUser` por `getClaims`. Ele confere a assinatura e a validade do token com a chave publica do projeto, sem ir ao Auth. O JWKS fica num cache global do modulo por 10 minutos, entao o cliente novo por requisicao nao o busca de novo.
 - Token adulterado ou vencido falha e cai no login. Vencido com refresh valido e renovado ali, e o cookie novo segue. Com chave simetrica (HS256), o `getClaims` chama o proprio `getUser`, e nada muda.
 - **O que muda em seguranca:**
@@ -17521,7 +17521,7 @@ A medida no build local, a 150 ms por chamada, com o registro de cada chamada do
 - **Conferido com o A1 (21/10):**
   - o JWKS publico da producao tem uma chave so, ES256, como o Dev e o stack local. Nenhum token real foi decodificado; se o projeto ainda assinasse com o segredo legado, o `getClaims` cairia no `getUser`, sem piora;
   - ninguem confia no proxy para barrar sessao revogada: a `api` valida o Bearer no Auth por conta propria (`apps/api/src/auth.ts`); o web nunca usa `service_role` (D-012), e toda leitura e rota vai com o JWT do usuario sob RLS; as acoes de servidor sensiveis chamam `getUser` sozinhas.
-- **O dono decide:** a mudanca so vai a PR com o sim dele.
+- **O dono aprovou** em 22/10, e a mudanca foi ao PR #312.
 
 **Medido** (build local, 150 ms por chamada):
 - **Chamadas de Auth por visita:** de 46 a 52 (Home, `/anuncios`, `/central`) para **1**, a do `Shell` na carga inteira. O JWKS foi buscado uma vez no teste todo.
