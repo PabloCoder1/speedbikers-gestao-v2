@@ -45,6 +45,13 @@ function fakeDb(
     marco?: string | null;
     pendentes?: { item_id: number; shopee_updated_at: string }[];
     travaLivre?: boolean;
+    /** C-81: o que o banco tinha antes da leitura. */
+    precosAnteriores?: {
+      itens?: { item_id: number; original_price: number | null; current_price: number | null }[];
+      variacoes?: { item_id: number; model_id: number; original_price: number | null; current_price: number | null }[];
+    };
+    falhaPrecos?: boolean;
+    shopName?: string | null;
   } = {},
 ) {
   const ops: Op[] = [];
@@ -57,6 +64,11 @@ function fakeDb(
     const filtros: Record<string, unknown> = {};
     const self = {
       eq: (coluna: string, valor: unknown) => {
+        filtros[coluna] = valor;
+
+        return self;
+      },
+      is: (coluna: string, valor: unknown) => {
         filtros[coluna] = valor;
 
         return self;
@@ -81,17 +93,41 @@ function fakeDb(
     },
     from: (table: string) => ({
       select: () => {
+        let faixa: [number, number] | null = null;
+        const lista = (): unknown[] => {
+          if (table === "shopee_items") return opcoes.precosAnteriores?.itens ?? [];
+          if (table === "shopee_item_models") return opcoes.precosAnteriores?.variacoes ?? [];
+
+          return [];
+        };
         const leitura = {
           eq: () => leitura,
+          in: () => leitura,
+          order: () => leitura,
+          range: (de: number, ate: number) => {
+            faixa = [de, ate];
+
+            return leitura;
+          },
           maybeSingle: () => {
             if (table !== "shopee_shops") return Promise.resolve({ data: credencial, error: null });
 
             const loja = opcoes.loja === undefined ? LOJA : opcoes.loja;
 
             return Promise.resolve({
-              data: loja === null ? null : { ...loja, items_synced_until: opcoes.marco ?? null },
+              data:
+                loja === null ? null : { ...loja, items_synced_until: opcoes.marco ?? null, shop_name: opcoes.shopName ?? null },
               error: null,
             });
+          },
+          // A leitura de lista (C-81): os preços anteriores, na faixa pedida.
+          then: (resolve: (value: unknown) => unknown) => {
+            if (opcoes.falhaPrecos === true) return Promise.resolve({ data: null, error: { message: "banco fora" } }).then(resolve);
+
+            const linhas = lista();
+            const data = faixa === null ? linhas : linhas.slice(faixa[0], faixa[1] + 1);
+
+            return Promise.resolve({ data, error: null }).then(resolve);
           },
         };
 
@@ -443,6 +479,8 @@ describe("shopee.items.hydrate (D-428)", () => {
       "insert:shopee_item_models",
       "update:shopee_items:2",
       "update:shopee_items:3",
+      // C-81: desde quando a loja tem o preço registrado; depois, a trava.
+      `update:shopee_shops:${LOJA_ID}`,
       `update:shopee_shops:${LOJA_ID}`,
     ]);
 
@@ -592,5 +630,102 @@ describe("shopee.items.hydrate (D-428)", () => {
         payload: { shopeeShopId: LOJA_ID },
       },
     ]);
+  });
+
+  it("C-81: o preço que mudou entre duas leituras vira listing.price.changed da loja", async () => {
+    const banco = fakeDb({
+      pendentes: [pendente(1), pendente(2)],
+      shopName: "Loja SB",
+      precosAnteriores: {
+        itens: [
+          { item_id: 1, original_price: 139.9, current_price: 139.9 },
+          { item_id: 2, original_price: null, current_price: null },
+        ],
+        variacoes: [
+          { item_id: 2, model_id: 21, original_price: 89.9, current_price: 89.9 },
+          { item_id: 2, model_id: 22, original_price: 70, current_price: 70 },
+        ],
+      },
+    });
+    const shopee = fakeShopee({
+      "/api/v2/product/get_item_base_info": detalheCom(SEM_VARIACAO, COM_VARIACAO),
+      "/api/v2/product/get_model_list": () => ({
+        error: "",
+        response: {
+          tier_variation: [{ name: "Cor", option_list: [{ option: "Azul" }, { option: "Preto" }] }],
+          model: [
+            { model_id: 21, model_sku: "BAU-AZUL", tier_index: [0], price_info: [{ currency: "BRL", current_price: 94.9, original_price: 99.9 }] },
+            // A 22 só entrou em promoção: o preço do anúncio é o mesmo.
+            { model_id: 22, model_sku: "", tier_index: [1], price_info: [{ currency: "BRL", current_price: 60, original_price: 70 }] },
+          ],
+        },
+      }),
+    });
+
+    const { outcome, logs } = await rodar(createShopeeItemsHydrateHandler, banco, shopee);
+
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+
+    const eventos = banco.ops.flatMap((o) => (o.op === "upsert" && o.table === "domain_events" ? [o.rows as unknown as Record<string, unknown>] : []));
+
+    expect(eventos).toEqual([
+      expect.objectContaining({
+        organization_id: ORG,
+        ml_account_id: null,
+        shopee_shop_id: LOJA_ID,
+        event_type: "listing.price.changed",
+        entity_type: "shopee_item",
+        entity_id: "1",
+        before: { price: 139.9, current_price: 139.9, model_id: null },
+        after: { price: 159.9, current_price: 149.9, model_id: null, model_name: null, item_name: "Painel Digital", shop_name: "Loja SB" },
+        occurred_at: NOW.toISOString(),
+      }),
+      expect.objectContaining({
+        shopee_shop_id: LOJA_ID,
+        entity_id: "2",
+        before: { price: 89.9, current_price: 89.9, model_id: 21 },
+        after: { price: 99.9, current_price: 94.9, model_id: 21, model_name: "Azul", item_name: "Baú", shop_name: "Loja SB" },
+      }),
+    ]);
+    // O evento vem DEPOIS de o item ser gravado: falha no meio não deixa evento sem a leitura.
+    // `recordDomainEvents` grava um evento por chamada (um objeto, não uma lista).
+    const ordem = banco.ops.map((o) => {
+      if (o.op === "upsert") return `evento:${String((o.rows as unknown as Record<string, unknown>).entity_id)}`;
+
+      return o.op === "update" ? `${o.table}:${typeof o.filtros.item_id === "number" ? String(o.filtros.item_id) : ""}` : "";
+    });
+
+    expect(ordem.indexOf("evento:1")).toBeGreaterThan(ordem.indexOf("shopee_items:1"));
+    expect(banco.ops).toContainEqual({
+      op: "update",
+      table: "shopee_shops",
+      row: { price_history_since: NOW.toISOString() },
+      filtros: { id: LOJA_ID, price_history_since: null },
+    });
+    expect(logs.find((l) => l.message === "shopee_items_hydrate_done")?.campos).toMatchObject({ mudancas_de_preco: 2 });
+  });
+
+  it("C-81: a primeira leitura não gera evento, e sem os preços anteriores a tarefa falha antes de gravar", async () => {
+    const primeira = fakeDb({ pendentes: [pendente(1)] });
+    const a = await rodar(
+      createShopeeItemsHydrateHandler,
+      primeira,
+      fakeShopee({ "/api/v2/product/get_item_base_info": detalheCom(SEM_VARIACAO) }),
+    );
+
+    expect(a.outcome).toEqual({ status: "done", processed: 1 });
+    expect(primeira.ops.filter((o) => o.op === "upsert" && o.table === "domain_events")).toEqual([]);
+
+    const semBanco = fakeDb({ pendentes: [pendente(1)], falhaPrecos: true });
+    const b = await rodar(
+      createShopeeItemsHydrateHandler,
+      semBanco,
+      fakeShopee({ "/api/v2/product/get_item_base_info": detalheCom(SEM_VARIACAO) }),
+    );
+
+    expect(b.outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(b.outcome.status === "failed" ? b.outcome.reason : "").toMatch(/preços anteriores/);
+    expect(escritas(semBanco.ops).filter((o) => o.table === "shopee_items" || o.table === "shopee_item_models")).toEqual([]);
+    expect(soltouATrava(semBanco.ops)).toBe(true);
   });
 });
