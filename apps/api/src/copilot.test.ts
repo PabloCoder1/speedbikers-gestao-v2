@@ -13,6 +13,8 @@ import {
   runSalesPeriodComparison,
   runSalesSkuDeclines,
   runListingPerformance,
+  runMarketplaceSalesSummary,
+  runMarketplaceSkuSales,
   runResolveCatalogEntity,
   runSalesSummary,
   runSkuReplenishment,
@@ -727,5 +729,74 @@ describe("runListingPerformance (D-293)", () => {
     // Anúncio fora do cadastro não inventa título nem preço.
     expect(result.title).toBeNull();
     expect(result.price).toBeNull();
+  });
+});
+
+describe("as ferramentas multicanal do Copiloto (C-84, D-641)", () => {
+  const linha = (over: Record<string, unknown>) => ({
+    nivel: "CONTA", marketplace: "SHOPEE", account_id: "shop-1", account_name: "Loja SB", environment: "live",
+    compras: 4, unidades: 5, receita_bruta: 300, pedidos_sem_receita: 1, ticket_medio: 100, pedidos_ml: null,
+    ultima_atualizacao: "2026-08-28T00:00:00Z", ...over,
+  });
+
+  it("o resumo pede os dois canais por padrão e separa o total, o canal e a conta", async () => {
+    const rpc = vi.fn(() => Promise.resolve({
+      data: [
+        linha({ nivel: "TOTAL", marketplace: null, account_id: null, account_name: null, environment: null }),
+        linha({ nivel: "MARKETPLACE", account_id: null, account_name: null, environment: null }),
+        linha({}),
+        // A loja sandbox e a loja ainda nao lida aparecem, mas nao entram no total.
+        linha({ account_id: "shop-teste", account_name: "Teste", environment: "sandbox" }),
+        linha({ account_id: "shop-nova", account_name: "Nova", compras: null, unidades: null, receita_bruta: null }),
+      ],
+      error: null,
+    }));
+
+    const result = await runMarketplaceSalesSummary({ rpc } as unknown as UserClient, { dateFrom: "2026-08-21", dateTo: "2026-08-28" }, "org-1");
+
+    expect(rpc).toHaveBeenCalledWith("get_marketplace_sales_summary", {
+      p_organization_id: "org-1", p_date_from: "2026-08-21", p_date_to: "2026-08-28", p_marketplaces: ["ML", "SHOPEE"],
+    });
+    expect(result.total).toMatchObject({ marketplace: null, countsInTotals: true, purchases: 4 });
+    expect(result.byMarketplace).toHaveLength(1);
+    expect(result.byAccount.map((conta) => [conta.accountId, conta.countsInTotals])).toEqual([
+      ["shop-1", true],
+      ["shop-teste", false],
+      ["shop-nova", false],
+    ]);
+  });
+
+  it("o resumo manda as contas pedidas, e erro da RPC vira erro da ferramenta", async () => {
+    const rpc = vi.fn(() => Promise.resolve({ data: null, error: { message: "boom" } }));
+
+    await expect(
+      runMarketplaceSalesSummary({ rpc } as unknown as UserClient, {
+        dateFrom: "2026-08-21", dateTo: "2026-08-28", marketplaces: ["SHOPEE"], accountIds: ["11111111-1111-4111-8111-111111111111"],
+      }, "org-1"),
+    ).rejects.toBeInstanceOf(CopilotToolError);
+    expect(rpc).toHaveBeenCalledWith("get_marketplace_sales_summary", expect.objectContaining({
+      p_marketplaces: ["SHOPEE"], p_account_ids: ["11111111-1111-4111-8111-111111111111"],
+    }));
+  });
+
+  it("o ranking traduz a ordem para a RPC e devolve as colunas por canal", async () => {
+    const rpc = vi.fn(() => Promise.resolve({
+      data: [{
+        sku_id: "11111111-1111-4111-8111-111111111111", sku: "SB-001", sku_title: "Pneu 29",
+        unidades_ml: 3, receita_ml: 300, compras_ml: 3, unidades_shopee: 2, receita_shopee: 150,
+        itens_shopee_sem_receita: 1, compras_shopee: 2, unidades: 5, receita_bruta: 450, compras: 5, total_count: 7,
+      }],
+      error: null,
+    }));
+
+    const result = await runMarketplaceSkuSales({ rpc } as unknown as UserClient, {
+      dateFrom: "2026-08-21", dateTo: "2026-08-28", orderBy: "units", limit: 5,
+    }, "org-1");
+
+    expect(rpc).toHaveBeenCalledWith("get_marketplace_sku_sales", expect.objectContaining({
+      p_marketplaces: ["ML", "SHOPEE"], p_ordem: "unidades", p_limit: 5, p_offset: 0,
+    }));
+    expect(result).toMatchObject({ orderBy: "units", totalSkus: 7 });
+    expect(result.rows[0]).toMatchObject({ sku: "SB-001", unitsShopee: 2, shopeeItemsWithoutRevenue: 1, knownRevenue: 450 });
   });
 });

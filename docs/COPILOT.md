@@ -73,6 +73,15 @@ Ferramenta nova exige: schema tipado, verificação de permissão, teste, e entr
 | `sales_sku_declines` | Comparação | Produtos que mais caíram contra a janela anterior equivalente, por unidades ou receita |
 | `resolve_catalog_entity` | Consulta pontual | Resolve automaticamente um código digitado como SKU ou anúncio ML sob RLS; `MLB…` é anúncio e colisão vira ambiguidade, nunca palpite |
 
+**A Shopee (C-84, D-641, 22/10/2026)** — as de cima são do Mercado Livre; estas duas leem as RPCs multicanal das telas, sem agregação nova:
+
+| Ferramenta | Categoria | O que faz |
+|---|---|---|
+| `marketplace_sales_summary` | Série temporal | Vendas por canal (ML e Shopee) e por conta ou loja, com o total — `get_marketplace_sales_summary`; a receita da Shopee é a conhecida, e a loja sandbox ou não lida fica fora das somas (`countsInTotals`) |
+| `marketplace_sku_sales` | Comparação | Os SKUs mais vendidos do período, com as colunas de cada canal — `get_marketplace_sku_sales`; não compara períodos |
+
+O prompt lista as contas do ML e, à parte, as lojas live da Shopee (`marketplace_accounts`). A queda por produto, o desempenho do anúncio e o estoque por loja da Shopee não existem no chat: o modelo diz isso em vez de responder com o dado do ML.
+
 Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita.
 
 `listing_performance` devolve a cobertura de visitas (`SEM_COBERTURA`, `PARCIAL`, `COMPLETA`) junto do valor. Sem dia observado, visitas são desconhecidas — nunca “0 visitas”.

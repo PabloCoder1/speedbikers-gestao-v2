@@ -163,6 +163,14 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 
 **Para a tela:** a taxa do ML no "Todos" é por compra e pode diferir da `/vendas` do ML, que é por pedido (5C). Diga "por compra" no rótulo ou na dica. Sem recorte de marca nesta fatia (D-605). A tela chama as duas só depois da migration `20261020150000` em produção.
 
+### 3.33 A Shopee no Copiloto (C-84, D-641) — em código
+
+- **Duas ferramentas novas** no chat e no `/query`, sem migration (as RPCs já estão em produção):
+  - `marketplace_sales_summary` (`get_marketplace_sales_summary`) devolve `{ total, byMarketplace, byAccount }`. Cada linha traz `marketplace`, `accountId`, `accountName`, `countsInTotals`, `purchases`, `units`, `knownRevenue`, `purchasesWithoutRevenue`, `averageTicket`, `mlOrders` e `lastUpdatedAt`;
+  - `marketplace_sku_sales` (`get_marketplace_sku_sales`) devolve `{ orderBy, totalSkus, rows }` com as colunas de cada canal.
+- **As ferramentas de antes** continuam só do ML. O prompt lista as lojas live da Shopee à parte e diz que a queda, o anúncio e o estoque da Shopee não existem no chat.
+- **Para a tela:** o rótulo das duas no `TOOL_LABEL` do chat (sugestão: "consultou vendas por canal" e "consultou os SKUs mais vendidos por canal"). Nada mais muda na web.
+
 ### 3.32 O diagnóstico de venda por canal (C-83, D-639) — em código
 
 - **As três funções** (`get_sku_sales_baseline`, `get_sku_average_prices` e `get_sku_correlated_events`) recebem no fim `p_marketplaces text[]` ('ML' e/ou 'SHOPEE'; nulo = só o ML, o resultado de antes) e devolvem no fim `marketplace`. A lista vazia ou um valor fora dela é recusado.

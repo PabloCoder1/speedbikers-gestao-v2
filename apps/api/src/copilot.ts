@@ -12,6 +12,10 @@ import type {
   CopilotToolName,
   ListingPerformanceInput,
   ListingPerformanceOutput,
+  MarketplaceSalesSummaryInput,
+  MarketplaceSalesSummaryOutput,
+  MarketplaceSkuSalesInput,
+  MarketplaceSkuSalesOutput,
   ResolveCatalogEntityInput,
   ResolveCatalogEntityOutput,
   NarrateActionInput,
@@ -32,6 +36,8 @@ import type {
 } from "@sb/contracts";
 import {
   listingPerformanceInputSchema,
+  marketplaceSalesSummaryInputSchema,
+  marketplaceSkuSalesInputSchema,
   narrateActionInputSchema,
   narrateSkuDiagnosisInputSchema,
   resolveCatalogEntityInputSchema,
@@ -455,6 +461,22 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
       costUsd: null,
     }),
   },
+  marketplace_sales_summary: {
+    inputSchema: marketplaceSalesSummaryInputSchema,
+    run: async (userClient, input, _deps, caller) => ({
+      data: await runMarketplaceSalesSummary(userClient, input, caller.organizationId),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
+  marketplace_sku_sales: {
+    inputSchema: marketplaceSkuSalesInputSchema,
+    run: async (userClient, input, _deps, caller) => ({
+      data: await runMarketplaceSkuSales(userClient, input, caller.organizationId),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
   narrate_sku_diagnosis: {
     inputSchema: narrateSkuDiagnosisInputSchema,
     run: async (userClient, input, deps) => {
@@ -770,5 +792,117 @@ export async function runListingPerformance(
     daysObserved,
     daysRequested,
     visitsCoverage,
+  };
+}
+
+/** C-84: a linha do resumo multicanal, como `get_marketplace_sales_summary` a devolve. */
+interface MarketplaceSummaryRow {
+  nivel: string;
+  marketplace: string | null;
+  account_id: string | null;
+  account_name: string | null;
+  environment: string | null;
+  compras: number | null;
+  unidades: number | null;
+  receita_bruta: number | null;
+  pedidos_sem_receita: number | null;
+  ticket_medio: number | null;
+  pedidos_ml: number | null;
+  ultima_atualizacao: string | null;
+}
+
+function toMarketplace(value: string | null): "ML" | "SHOPEE" | null {
+  return value === "ML" || value === "SHOPEE" ? value : null;
+}
+
+function toMarketplaceSalesLine(row: MarketplaceSummaryRow): MarketplaceSalesSummaryOutput["byAccount"][number] {
+  return {
+    marketplace: toMarketplace(row.marketplace),
+    accountId: row.account_id,
+    accountName: row.account_name,
+    // A mesma regra das somas da RPC: so conta ou loja live JA LIDA (a loja
+    // sem a primeira leitura vem com os numeros nulos).
+    countsInTotals: row.nivel !== "CONTA" || (row.environment === "live" && row.unidades !== null),
+    purchases: row.compras,
+    units: row.unidades,
+    knownRevenue: row.receita_bruta,
+    purchasesWithoutRevenue: row.pedidos_sem_receita,
+    averageTicket: row.ticket_medio,
+    mlOrders: row.pedidos_ml,
+    lastUpdatedAt: row.ultima_atualizacao,
+  };
+}
+
+/**
+ * `marketplace_sales_summary` (C-84, D-641) — a venda do periodo por canal e
+ * por conta ou loja, da mesma RPC de `/vendas` com os marketplaces. Sem canal
+ * pedido, os dois.
+ */
+export async function runMarketplaceSalesSummary(
+  userClient: UserClient,
+  input: MarketplaceSalesSummaryInput,
+  organizationId: string,
+): Promise<MarketplaceSalesSummaryOutput> {
+  const { data, error } = await userClient.rpc("get_marketplace_sales_summary", {
+    p_organization_id: organizationId,
+    p_date_from: input.dateFrom,
+    p_date_to: input.dateTo,
+    p_marketplaces: input.marketplaces ?? ["ML", "SHOPEE"],
+    ...(input.accountIds === undefined ? {} : { p_account_ids: input.accountIds }),
+  });
+
+  if (error !== null) throw new CopilotToolError(error.message);
+
+  const rows = data as MarketplaceSummaryRow[];
+  const total = rows.find((row) => row.nivel === "TOTAL");
+
+  return {
+    total: total === undefined ? null : toMarketplaceSalesLine(total),
+    byMarketplace: rows.filter((row) => row.nivel === "MARKETPLACE").map(toMarketplaceSalesLine),
+    byAccount: rows.filter((row) => row.nivel === "CONTA").map(toMarketplaceSalesLine),
+  };
+}
+
+/**
+ * `marketplace_sku_sales` (C-84, D-641) — os SKUs mais vendidos do periodo, com
+ * as colunas por canal, da mesma RPC do ranking de `/vendas` (C-59). A ordem e
+ * o limite sao do SQL.
+ */
+export async function runMarketplaceSkuSales(
+  userClient: UserClient,
+  input: MarketplaceSkuSalesInput,
+  organizationId: string,
+): Promise<MarketplaceSkuSalesOutput> {
+  const { data, error } = await userClient.rpc("get_marketplace_sku_sales", {
+    p_organization_id: organizationId,
+    p_date_from: input.dateFrom,
+    p_date_to: input.dateTo,
+    p_marketplaces: input.marketplaces ?? ["ML", "SHOPEE"],
+    ...(input.accountIds === undefined ? {} : { p_account_ids: input.accountIds }),
+    p_ordem: input.orderBy === "units" ? "unidades" : "receita",
+    p_limit: input.limit,
+    p_offset: 0,
+  });
+
+  if (error !== null) throw new CopilotToolError(error.message);
+
+  return {
+    orderBy: input.orderBy,
+    totalSkus: data[0]?.total_count ?? 0,
+    rows: data.map((row) => ({
+      skuId: row.sku_id,
+      sku: row.sku,
+      title: row.sku_title,
+      unitsMl: row.unidades_ml,
+      revenueMl: row.receita_ml,
+      purchasesMl: row.compras_ml,
+      unitsShopee: row.unidades_shopee,
+      knownRevenueShopee: row.receita_shopee,
+      shopeeItemsWithoutRevenue: row.itens_shopee_sem_receita,
+      purchasesShopee: row.compras_shopee,
+      units: row.unidades,
+      knownRevenue: row.receita_bruta,
+      purchases: row.compras,
+    })),
   };
 }

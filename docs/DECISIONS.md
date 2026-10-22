@@ -19080,3 +19080,39 @@ Por isso o A1 segura o deploy do worker até esta decisão estar no ar.
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
 
+## D-641 - A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
+
+**Contexto:** a frente C-14 do A2, liberada pelo dono em 21/10 e aceita pelo A1 como C-84. As sete ferramentas do chat (`apps/api/src/copilot-chat.ts`) liam so o Mercado Livre:
+- as de venda (`get_sales_summary`, `get_sales_sku_declines`) recebem a conta do ML;
+- a lista de contas do prompt vinha de `ml_accounts`;
+- uma pergunta de queda por produto era FORCADA para `sales_sku_declines`, mesmo citando a Shopee, e responderia com o dado do ML.
+
+Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS, sem agregacao nova a fazer.
+- `get_marketplace_sales_summary` (C-58) devolve o total, cada canal e cada conta ou loja. A loja sandbox, ou ainda sem a primeira leitura de pedidos, aparece mas fica fora das somas.
+- `get_marketplace_sku_sales` (C-59) devolve o ranking de SKUs com as colunas por canal.
+- `marketplace_accounts` (security invoker) lista as contas do ML e as lojas da Shopee com o mesmo id que essas RPCs recebem.
+
+**Decisao:**
+1. **Duas ferramentas novas**, nos dois caminhos do Copiloto (o chat e o `/query`), com contrato Zod em `@sb/contracts`:
+   - `marketplace_sales_summary`: a venda por canal e por conta ou loja, com o total. Cada linha leva `countsInTotals` (a mesma regra das somas da RPC). A receita da Shopee e a conhecida, com `purchasesWithoutRevenue` ao lado.
+   - `marketplace_sku_sales`: o ranking por receita ou unidades, com as colunas de cada canal. Nao compara periodos.
+   - Sem canal pedido, as duas leem os dois canais.
+2. **As ferramentas de antes ficam como estao e so do ML.** O prompt diz isso: `mlAccountId` nunca e uma loja.
+3. **O prompt lista as contas do ML e, a parte, as lojas live da Shopee**, de `marketplace_accounts` sob a RLS de quem pergunta. A loja sandbox nao entra.
+4. **A queda pedida da Shopee nao e forcada para a ferramenta do ML.** O prompt manda dizer que o chat nao tem queda por produto, desempenho de anuncio nem estoque por loja da Shopee.
+
+**Fora daqui:** a queda por produto da Shopee (pede uma RPC de duas janelas, como `get_sales_sku_declines`), o desempenho do anuncio da Shopee e a resolucao de um id de item da Shopee em `resolve_catalog_entity`.
+
+**Verificacao:**
+- api: 7 testes novos, 54 de 54 no Copiloto:
+  - no chat (4): as lojas live no prompt, a parte, e a sandbox fora; as duas ferramentas oferecidas; a queda da Shopee nao forcada; uma rodada real de `marketplace_sales_summary`;
+  - nos executores (3): os dois canais por padrao e o `countsInTotals` da sandbox e da loja nao lida; as contas pedidas e o erro da RPC; a ordem traduzida e as colunas do ranking;
+- `pnpm run check` e `pnpm run build`.
+
+**Publicacao:** so a api, sem migration (as RPCs ja estao em producao). A tela (A2) da o rotulo das ferramentas novas no chat (`TOOL_LABEL` de `apps/web/app/(app)/copiloto/chat.tsx`).
+
+**Impacto:**
+- `packages/contracts/src/{copilot-tools,index}.ts`;
+- `apps/api/src/copilot{,-chat}{,.test}.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,COPILOT,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
+
