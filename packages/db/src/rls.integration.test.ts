@@ -15254,6 +15254,152 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
   });
 });
 
+// D-643 (20261022140000) -- a venda anomala como episodio por SKU e canal, o
+// ciclo da D-403 em `registrar_vendas_anomalas`.
+describe("a venda anômala como episódio por SKU e canal (D-643)", () => {
+  const ORG = "99999999-0000-4000-8000-00000000d643";
+  const ADMIN = "aaaaaaaa-0000-4000-8000-00000000d643";
+  let sku = "";
+
+  interface Episodio {
+    subject_key: string | null;
+    status: string;
+    severity: string;
+    dedup_key: string;
+    last_detected_on: string | null;
+    primeira: string | null;
+    ultima: string | null;
+    motivo: string | null;
+  }
+
+  const deteccao = (canal: string, severidade: string, nota: string) => ({
+    subject_key: `${canal}:${sku}`,
+    severity: severidade,
+    confidence: severidade,
+    impacto: 100,
+    sku_id: sku,
+    evidence: { marketplace: canal, nota },
+    recommendation: "Ver o SKU.",
+  });
+
+  const ciclo = async (dia: string, detectadas: unknown[]) =>
+    (
+      await client.query<{ r: Record<string, number> }>("select public.registrar_vendas_anomalas($1, $2::date, $3::jsonb) as r", [
+        ORG,
+        dia,
+        JSON.stringify(detectadas),
+      ])
+    ).rows[0]?.r;
+
+  const episodios = async () =>
+    (
+      await client.query<Episodio>(
+        `select subject_key, status, severity, dedup_key, last_detected_on::text,
+                evidence ->> 'primeira_deteccao' as primeira, evidence ->> 'ultima_deteccao' as ultima,
+                evidence -> 'encerramento' ->> 'motivo' as motivo
+           from public.actions where organization_id = $1 and kind = 'venda_anomala'
+          order by created_at, dedup_key`,
+        [ORG],
+      )
+    ).rows;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-d643@rls.test', 'x', now(), '{}', now(), now())
+       on conflict (id) do nothing`,
+      [ADMIN],
+    );
+    await client.query("insert into public.organizations (id, name, slug) values ($1, 'Org D-643', 'org-d643') on conflict (id) do nothing", [ORG]);
+    await client.query("insert into public.organization_members (organization_id, user_id, role) values ($1, $2, 'ADMIN') on conflict do nothing", [ORG, ADMIN]);
+    sku =
+      (
+        await client.query<{ id: string }>(
+          "insert into public.skus (organization_id, sku, kind) values ($1, 'D643-X', 'PRODUTO') on conflict (organization_id, sku_key) do update set sku = excluded.sku returning id",
+          [ORG],
+        )
+      ).rows[0]?.id ?? "";
+    // O acumulado de antes: duas abertas por dia, sem assunto, e uma ja resolvida.
+    await client.query(
+      `insert into public.actions (organization_id, kind, severity, confidence, evidence, recommendation, status, created_by, dedup_key, sku_id, created_at)
+       values ($1, 'venda_anomala', 'alta', 'alta', '{}', 'x', 'novo', 'system', 'sales_anomaly:d643:2026-09-20', $2, '2026-09-20T12:00:00Z'),
+              ($1, 'venda_anomala', 'media', 'media', '{}', 'x', 'em_andamento', 'system', 'sales_anomaly:d643:2026-09-21', $2, '2026-09-21T12:00:00Z'),
+              ($1, 'venda_anomala', 'media', 'media', '{}', 'x', 'resolvido', 'system', 'sales_anomaly:d643:2026-09-22', $2, '2026-09-22T12:00:00Z')
+       on conflict do nothing`,
+      [ORG, sku],
+    );
+  });
+
+  it("encerra o acumulado e abre um episódio por canal; a mesma rodada de novo não duplica", async () => {
+    const primeira = await ciclo("2026-10-10", [deteccao("ML", "alta", "d1"), deteccao("SHOPEE", "media", "d1")]);
+    const repetida = await ciclo("2026-10-10", [deteccao("ML", "alta", "d1"), deteccao("SHOPEE", "media", "d1")]);
+    const linhas = await episodios();
+
+    expect(primeira).toMatchObject({ legado_encerradas: 2, criadas: 2, atualizadas: 0 });
+    expect(repetida).toMatchObject({ legado_encerradas: 0, criadas: 0, atualizadas: 2 });
+    expect(linhas.slice(0, 3).map((l) => [l.status, l.motivo?.includes("D-643") ?? false])).toEqual([
+      ["resolvido", true],
+      ["resolvido", true],
+      // A que uma pessoa ja tinha resolvido nao ganha o motivo do sistema.
+      ["resolvido", false],
+    ]);
+    expect(linhas.slice(3).map((l) => [l.subject_key, l.status, l.dedup_key, l.last_detected_on, l.primeira])).toEqual([
+      [`ML:${sku}`, "novo", `venda_anomala:ML:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],
+      [`SHOPEE:${sku}`, "novo", `venda_anomala:SHOPEE:${sku}:2026-10-10`, "2026-10-10", "2026-10-10"],
+    ]);
+  });
+
+  it("no dia seguinte, o episódio detectado é atualizado e guarda a primeira detecção", async () => {
+    expect(await ciclo("2026-10-11", [deteccao("ML", "media", "d2")])).toMatchObject({ atualizadas: 1, criadas: 0, encerradas: 0 });
+
+    const ml = (await episodios()).find((l) => l.subject_key === `ML:${sku}`);
+
+    expect(ml).toMatchObject({ status: "novo", severity: "media", last_detected_on: "2026-10-11", primeira: "2026-10-10", ultima: "2026-10-11" });
+  });
+
+  it("três dias sem detecção encerram o episódio, com o motivo; o detectado há dois dias fica aberto", async () => {
+    expect(await ciclo("2026-10-13", [])).toMatchObject({ encerradas: 1 });
+
+    const linhas = await episodios();
+
+    expect(linhas.find((l) => l.subject_key === `SHOPEE:${sku}`)).toMatchObject({ status: "resolvido" });
+    expect(linhas.find((l) => l.subject_key === `SHOPEE:${sku}`)?.motivo).toMatch(/há 3 dias/);
+    expect(linhas.find((l) => l.subject_key === `ML:${sku}`)).toMatchObject({ status: "novo" });
+  });
+
+  it("o fechado por uma pessoa não reabre enquanto a anomalia continua, e volta como episódio novo depois", async () => {
+    await client.query(
+      "update public.actions set status = 'resolvido' where organization_id = $1 and subject_key = $2 and status = 'novo'",
+      [ORG, `ML:${sku}`],
+    );
+
+    // Detectado ate anteontem: so anota a continuidade, e a data anda.
+    expect(await ciclo("2026-10-13", [deteccao("ML", "alta", "d4")])).toMatchObject({ continuas: 1, criadas: 0 });
+    expect((await episodios()).find((l) => l.subject_key === `ML:${sku}`)?.last_detected_on).toBe("2026-10-13");
+    // Dois dias depois a anomalia segue: por causa da continuidade, nao nasce episodio.
+    expect(await ciclo("2026-10-15", [deteccao("ML", "alta", "d6")])).toMatchObject({ continuas: 1, criadas: 0 });
+    // Cinco dias sem ela: episodio novo.
+    expect(await ciclo("2026-10-20", [deteccao("ML", "alta", "d10")])).toMatchObject({ criadas: 1 });
+
+    const ml = (await episodios()).filter((l) => l.subject_key === `ML:${sku}`);
+
+    expect(ml.map((l) => [l.status, l.dedup_key])).toEqual([
+      ["resolvido", `venda_anomala:ML:${sku}:2026-10-10`],
+      ["novo", `venda_anomala:ML:${sku}:2026-10-20`],
+    ]);
+  });
+
+  it("só o sistema roda o ciclo, e a lista de detecções é obrigatória", async () => {
+    // A recusa e a da FUNCAO: sem o grant, o usuario nem chega a tocar em `actions`.
+    await expect(asUser(ADMIN, `select public.registrar_vendas_anomalas('${ORG}', '2026-10-21', '[]')`)).rejects.toThrow(
+      /permission denied for function registrar_vendas_anomalas/i,
+    );
+    await expect(client.query("select public.registrar_vendas_anomalas($1, '2026-10-21', '{}'::jsonb)", [ORG])).rejects.toThrow(
+      /p_detectadas deve ser uma lista/,
+    );
+  });
+});
+
 describe("actions / update_action_status / get_sku_average_prices (Fase 6, Central de Ações, D-064)", () => {
   const CONTA_ACOES = "ddddaaaa-0000-4000-8000-0000000000bb";
 

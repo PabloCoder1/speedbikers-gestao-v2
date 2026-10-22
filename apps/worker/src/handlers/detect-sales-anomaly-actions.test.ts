@@ -50,7 +50,7 @@ function fakeDeps(options: {
   eventsFails?: boolean;
   prices?: { sku_id: string; average_price: number; marketplace: string }[];
   pricesFail?: boolean;
-  upsertFails?: boolean;
+  cicloFails?: boolean;
 }): {
   deps: DetectSalesAnomalyActionsDeps;
   upserted: Record<string, unknown>[];
@@ -89,6 +89,15 @@ function fakeDeps(options: {
         );
       }
 
+      // D-643: as detecções do dia vão ao ciclo de episódio, não a `actions`.
+      if (fn === "registrar_vendas_anomalas") {
+        upserted.push(...(rpcArgs.p_detectadas as Record<string, unknown>[]));
+
+        return Promise.resolve(
+          options.cicloFails === true ? { data: null, error: { message: "boom" } } : { data: { criadas: 0 }, error: null },
+        );
+      }
+
       throw new Error(`rpc inesperada no fake: ${fn}`);
     },
     from: (table: string) => {
@@ -105,18 +114,6 @@ function fakeDeps(options: {
         return chain;
       }
 
-      if (table === "actions") {
-        return {
-          upsert: (rows: Record<string, unknown>[]) => {
-            upserted.push(...rows);
-
-            return Promise.resolve(
-              options.upsertFails === true ? { error: { message: "boom" } } : { error: null },
-            );
-          },
-        };
-      }
-
       throw new Error(`tabela inesperada no fake: ${table}`);
     },
   } as unknown as DetectSalesAnomalyActionsDeps["db"];
@@ -129,34 +126,33 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
-  it("sem SKU em anomalia: done com zero, nada gravado, nem consulta eventos/preço", async () => {
-    const { deps, upserted, lines } = fakeDeps({ baseline: [STABLE_ROW] });
+  it("sem SKU em anomalia: done com zero e o ciclo roda vazio (D-643: é ele que encerra os episódios), sem consultar eventos/preço", async () => {
+    const { deps, upserted, lines, args } = fakeDeps({ baseline: [STABLE_ROW] });
 
     const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(upserted).toHaveLength(0);
+    expect(args.registrar_vendas_anomalas).toEqual({ p_organization_id: ORG_ID, p_hoje: AS_OF, p_detectadas: [] });
+    expect(args.get_sku_correlated_events).toBeUndefined();
   });
 
-  it("SKU em anomalia (queda): grava uma ação com impacto estimado e dedup_key por dia", async () => {
-    const { deps, upserted, lines } = fakeDeps({});
+  it("SKU em anomalia (queda): vai ao ciclo como a detecção do episódio ML:<sku>, com o impacto estimado", async () => {
+    const { deps, upserted, lines, args } = fakeDeps({});
 
     const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(args.registrar_vendas_anomalas).toMatchObject({ p_organization_id: ORG_ID, p_hoje: AS_OF });
     expect(upserted).toHaveLength(1);
     expect(upserted[0]).toMatchObject({
-      organization_id: ORG_ID,
-      kind: "venda_anomala",
+      subject_key: "ML:sku-a",
       severity: "alta",
       confidence: "alta",
       sku_id: "sku-a",
-      created_by: "system",
-      dedup_key: `sales_anomaly:sku-a:${AS_OF}`,
       // current=0, mean=3 -> |delta|=3, preço médio=50 -> 150.
-      estimated_impact_brl: 150,
+      impacto: 150,
     });
-    expect(upserted[0]?.status).toBeUndefined();
   });
 
   it("sem preço médio disponível para o SKU: impacto null, não zero", async () => {
@@ -164,7 +160,7 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
 
     await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
 
-    expect(upserted[0]?.estimated_impact_brl).toBeNull();
+    expect(upserted[0]?.impacto).toBeNull();
   });
 
   it("evento correlato entra na evidência", async () => {
@@ -190,7 +186,7 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     }
   });
 
-  it("C-83: a queda só na Shopee vira a ação dela, com o canal, a chave e o preço da Shopee", async () => {
+  it("C-83: a queda só na Shopee vira o episódio dela, com o canal, o assunto e o preço da Shopee", async () => {
     const { deps, upserted, lines } = fakeDeps({
       baseline: [STABLE_ROW, { ...ANOMALY_ROW, marketplace: "SHOPEE" }, { ...STABLE_ROW, sku_id: "sku-a", marketplace: "ML" }],
       prices: [
@@ -205,14 +201,14 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     expect(upserted).toHaveLength(1);
     expect(upserted[0]).toMatchObject({
       sku_id: "sku-a",
-      dedup_key: `sales_anomaly:shopee:sku-a:${AS_OF}`,
+      subject_key: "SHOPEE:sku-a",
       // |delta| = 3, o preço médio da Shopee = 40.
-      estimated_impact_brl: 120,
+      impacto: 120,
     });
     expect((upserted[0]?.evidence as { marketplace: string }).marketplace).toBe("SHOPEE");
   });
 
-  it("C-83: a queda nos dois canais são duas ações; o evento do SKU vale para os dois, o do canal só para o dele", async () => {
+  it("C-83: a queda nos dois canais são dois episódios; o evento do SKU vale para os dois, o do canal só para o dele", async () => {
     const { deps, upserted, lines } = fakeDeps({
       baseline: [ANOMALY_ROW, { ...ANOMALY_ROW, marketplace: "SHOPEE" }],
       events: [
@@ -229,7 +225,7 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
         causas_candidatas: { event_type: string }[];
       }).causas_candidatas.map((causa) => causa.event_type);
 
-    expect(upserted.map((row) => row.dedup_key)).toEqual([`sales_anomaly:sku-a:${AS_OF}`, `sales_anomaly:shopee:sku-a:${AS_OF}`]);
+    expect(upserted.map((row) => row.subject_key)).toEqual(["ML:sku-a", "SHOPEE:sku-a"]);
     expect(causas("ML")).toEqual(["stock.depleted", "listing.status.paused"]);
     expect(causas("SHOPEE")).toEqual(["stock.depleted", "listing.price.changed"]);
   });
@@ -258,8 +254,8 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: true });
   });
 
-  it("falha ao gravar em actions é retryable", async () => {
-    const { deps, lines } = fakeDeps({ upsertFails: true });
+  it("falha no ciclo de episódio é retryable", async () => {
+    const { deps, lines } = fakeDeps({ cicloFails: true });
 
     const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
 
