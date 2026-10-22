@@ -41,6 +41,11 @@ export type ActionTone = "problema" | "oportunidade" | "neutro";
 
 export interface ActionEvidenceView {
   readonly kindLabel: string;
+  /**
+   * D-644 (C-83): o canal da venda anômala, de `evidence.marketplace`. Nulo nas
+   * ações de antes do C-83 e nos outros `kind` — nunca "ML" por omissão.
+   */
+  readonly marketplace: "ML" | "SHOPEE" | null;
   /** `null` quando o `kind` não tem direção — nunca "Alta" por omissão. */
   readonly direcaoLabel: string | null;
   readonly tone: ActionTone;
@@ -205,11 +210,24 @@ export function readShopeeListingRef(raw: unknown): ShopeeListingRef | null {
   return null;
 }
 
+/**
+ * O canal de uma ação (D-644): `evidence.marketplace`, que o worker da venda
+ * anômala grava desde o C-83 (D-639). Qualquer outro valor vira `null`.
+ */
+export function readActionMarketplace(raw: unknown): "ML" | "SHOPEE" | null {
+  if (!isRecord(raw)) return null;
+
+  return raw.marketplace === "SHOPEE" ? "SHOPEE" : raw.marketplace === "ML" ? "ML" : null;
+}
+
 export function describeActionEvidence(kind: string, raw: unknown): ActionEvidenceView {
   const direcao = readDirecao(raw);
+  const marketplace = readActionMarketplace(raw);
 
   return {
-    kindLabel: actionKindLabel(kind),
+    // D-644: a venda anômala da Shopee diz o canal; a do ML fica como sempre (a conta já diz de onde é).
+    kindLabel: kind === "venda_anomala" && marketplace === "SHOPEE" ? "Venda anômala na Shopee" : actionKindLabel(kind),
+    marketplace,
     direcaoLabel: direcao === null ? null : direcao === "queda" ? "Queda" : "Alta",
     tone: toneFor(kind, direcao),
     evidencias: readEvidencias(raw),

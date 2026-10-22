@@ -179,6 +179,7 @@ export default async function AcoesPage({
   const cartoes = acoes.map((row): ActionCardData => {
     // D-626: o anúncio da Shopee dos detectores da Shopee, lido da evidência (nulo nas outras).
     const shopee = readShopeeListingRef(row.evidence);
+    const evidencia = describeActionEvidence(row.kind ?? "", row.evidence);
 
     return {
       id: row.id,
@@ -190,7 +191,7 @@ export default async function AcoesPage({
       severity: row.severity ?? "media",
       confidence: row.confidence ?? "media",
       estimated_impact_brl: row.estimated_impact_brl,
-      evidence: describeActionEvidence(row.kind ?? "", row.evidence),
+      evidence: evidencia,
       recommendation: row.recommendation ?? "",
       status: row.status ?? "novo",
       assignee_id: row.assignee_id,
@@ -207,6 +208,7 @@ export default async function AcoesPage({
         sku: row.sku,
         mlbId: row.mlb_id,
         shopee,
+        canal: evidencia.marketplace,
       }),
     };
   });

@@ -101,3 +101,18 @@ describe("os detectores da Shopee (D-626)", () => {
     expect(actionShortcuts({ kind: "shopee_sem_vinculo", skuId: null, sku: null, shopee: null })).toEqual([]);
   });
 });
+
+/** D-644 (C-83): a venda anômala da Shopee leva aos anúncios da Shopee. */
+describe("a venda anômala por canal (D-644)", () => {
+  it("na Shopee, os anúncios do SKU são os da Shopee; no ML, os de sempre", () => {
+    const shopee = actionShortcuts({ kind: "venda_anomala", skuId: "s1", sku: "SB-001", canal: "SHOPEE" });
+
+    expect(shopee).toContainEqual({ label: "Anúncios do SKU na Shopee", href: "/anuncios/shopee?q=SB-001" });
+    expect(shopee.some((atalho) => atalho.href.startsWith("/anuncios?"))).toBe(false);
+    expect(shopee).toContainEqual({ label: "Diagnóstico do SKU", href: "/skus/s1?aba=diagnostico" });
+
+    const ml = actionShortcuts({ kind: "venda_anomala", skuId: "s1", sku: "SB-001", canal: "ML" });
+
+    expect(ml).toContainEqual({ label: "Anúncios do SKU", href: "/anuncios?busca=SB-001" });
+  });
+});

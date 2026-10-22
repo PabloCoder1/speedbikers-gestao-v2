@@ -3,6 +3,7 @@
 import { diagnoseSalesAnomaly, estimateImpactBrl, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import type { CorrelatedEvent, SalesAnomalyDiagnosis } from "@sb/domain";
 
+import { eventoValeParaOCanal, type Canal } from "../../../../lib/diagnostico-por-canal";
 import { createClient } from "../../../../lib/supabase/server";
 
 /**
@@ -21,7 +22,14 @@ const AVERAGE_PRICE_WINDOW_DAYS = 30;
 export type SkuDiagnosisStatus = "insufficient_sample" | "no_anomaly" | "anomaly";
 
 export type SkuDiagnosisResult =
-  | { ok: true; status: SkuDiagnosisStatus; diagnosis: SalesAnomalyDiagnosis | null; impactBrl: number | null }
+  | {
+      ok: true;
+      status: SkuDiagnosisStatus;
+      diagnosis: SalesAnomalyDiagnosis | null;
+      impactBrl: number | null;
+      /** D-644 (C-83): o canal avaliado. */
+      canal: Canal;
+    }
   | { ok: false; message: string };
 
 interface BaselineRow {
@@ -35,8 +43,14 @@ interface BaselineRow {
   sample_count: number;
 }
 
-export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
+/**
+ * D-644 (C-83, decisão do dono de 22/10, "por canal"): um canal por vez. O
+ * Mercado Livre não manda `p_marketplaces` (nulo é o ML de sempre, e a ação
+ * funciona igual antes da migration); a Shopee manda `['SHOPEE']`.
+ */
+export async function diagnoseSku(skuId: string, canal: Canal = "ML"): Promise<SkuDiagnosisResult> {
   const supabase = await createClient();
+  const doCanal = canal === "ML" ? {} : { p_marketplaces: [canal] };
 
   const sku = await supabase.from("skus").select("organization_id").eq("id", skuId).maybeSingle();
 
@@ -53,6 +67,7 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
     p_organization_id: organizationId,
     p_as_of: asOf,
     p_sku_id: skuId,
+    ...doCanal,
   });
 
   if (baseline.error !== null) {
@@ -65,7 +80,7 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
   // semana) — SKU sem linha aqui significa histórico curto demais para um
   // desvio padrão confiável, não "sem venda".
   if (row === undefined) {
-    return { ok: true, status: "insufficient_sample", diagnosis: null, impactBrl: null };
+    return { ok: true, status: "insufficient_sample", diagnosis: null, impactBrl: null, canal };
   }
 
   const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
@@ -78,6 +93,7 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
     p_sku_ids: [skuId],
     p_from: windowStart,
     p_to: windowEnd,
+    ...doCanal,
   });
 
   if (eventsResult.error !== null) {
@@ -87,10 +103,13 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
     return { ok: false, message: "Não foi possível verificar eventos correlatos." };
   }
 
-  const relatedEvents: CorrelatedEvent[] = eventsResult.data.map((event) => ({
-    eventType: event.event_type,
-    occurredAt: new Date(event.occurred_at),
-  }));
+  // O evento do SKU (`marketplace` nulo) vale para os dois canais; o do anúncio, só para o dele.
+  const relatedEvents: CorrelatedEvent[] = eventsResult.data
+    .filter((event) => eventoValeParaOCanal((event as { marketplace?: unknown }).marketplace ?? null, canal))
+    .map((event) => ({
+      eventType: event.event_type,
+      occurredAt: new Date(event.occurred_at),
+    }));
 
   const diagnosis = diagnoseSalesAnomaly(
     organizationId,
@@ -109,7 +128,7 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
   );
 
   if (diagnosis === null) {
-    return { ok: true, status: "no_anomaly", diagnosis: null, impactBrl: null };
+    return { ok: true, status: "no_anomaly", diagnosis: null, impactBrl: null, canal };
   }
 
   // Preço médio é informação SECUNDÁRIA do card — diagnóstico principal já
@@ -120,10 +139,11 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
     p_sku_ids: [skuId],
     p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
     p_date_to: asOf,
+    ...doCanal,
   });
 
   const averagePrice = pricesResult.data?.[0]?.average_price ?? null;
   const impactBrl = estimateImpactBrl(diagnosis.unitsDelta, averagePrice);
 
-  return { ok: true, status: "anomaly", diagnosis, impactBrl };
+  return { ok: true, status: "anomaly", diagnosis, impactBrl, canal };
 }

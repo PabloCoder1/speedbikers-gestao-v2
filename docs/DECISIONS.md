@@ -19154,3 +19154,66 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,API,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
 
+## D-644 - O diagnóstico de venda por canal nas telas: o /diagnostico, o SKU e a Central (C-83)
+
+**Contexto:** o dono liberou em 21/10 a Shopee no diagnóstico (o C-11 do A2, o C-83 do A1, D-639, #315; o contrato está em `docs/MULTICHANNEL_CONTRACTS.md` §3.32). Em 22/10, perguntado pelo A1, ele decidiu **por canal**:
+- cada canal é avaliado separado;
+- uma queda no ML vira alerta mesmo que a Shopee compense;
+- o alerta diz o canal.
+
+O contrato tem três partes:
+- as três funções do diagnóstico recebem `p_marketplaces` (nulo = só o ML, o resultado de antes) e devolvem `marketplace`, então o mesmo SKU pode ter duas linhas;
+- na correlação, o evento do SKU vem com `marketplace` nulo e vale para os dois canais;
+- o worker grava `evidence.marketplace` na `venda_anomala`.
+
+**Decisão:**
+1. **`lib/diagnostico-por-canal.ts`**, a forma, sem soma:
+   - a chave do diagnóstico (o SKU e o canal);
+   - o canal de cada linha: ausente ou desconhecido é o ML;
+   - quais eventos valem para qual canal;
+   - os canais pedidos: os dois só com loja Shopee; sem loja, o parâmetro não vai, e a tela fica a de sempre;
+   - o canal na URL.
+2. **`/diagnostico`:**
+   - **a linha:** cada linha de base é um par SKU e canal;
+   - **o que entra por canal:** os eventos (o do SKU vale para os dois) e o preço médio (o da Shopee só com a receita conhecida). A reclamação aberta (SAC) entra só no ML (D-639);
+   - **o que a tela mostra:** o canal na lista e no detalhe, e a seleção leva o canal (`?sku=&canal=`, em `lib/diagnostic-filters.ts`);
+   - **o texto:** com os dois canais, a tela diz que cada um é avaliado separado.
+3. **O diagnóstico do SKU** (`diagnoseSku`) avalia um canal por vez:
+   - o ML não manda o parâmetro e funciona igual antes da migration; a Shopee manda `['SHOPEE']`;
+   - na aba do SKU, a escolha "Canal do diagnóstico" só aparece com loja Shopee;
+   - no `/diagnostico`, o painel embutido usa o canal da anomalia selecionada.
+4. **A Central de Ações:**
+   - `describeActionEvidence` (`packages/domain`) lê `evidence.marketplace`, e a venda anômala da Shopee se chama "Venda anômala na Shopee". A do ML fica como sempre, porque a conta já diz de onde é. A ação de antes do C-83 tem o canal nulo, nunca o ML por omissão;
+   - o atalho "Anúncios do SKU" da venda anômala da Shopee vai para `/anuncios/shopee?q=<sku>`, e não para a lista do ML.
+
+5. **A narração do Copiloto** (`narrate_sku_diagnosis`) recebe o canal da anomalia (`marketplace`), aceito pelo A1 no C-84 (#316). A api de antes descarta a chave desconhecida (`z.object`), então o pedido não falha antes dela: só a narração sai sem o canal.
+
+**Publicação:** só a web e o `packages/domain`, e só DEPOIS da migration `20261022130000` em produção. O `p_marketplaces` mandado antes dela dá PGRST202; a aba do SKU no ML funciona antes porque não o manda. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:**
+  - `lib/diagnostico-por-canal.test.ts` (4 novos);
+  - `lib/diagnostic-filters.test.ts` (15, 3 novos: o canal na URL e na seleção);
+  - `lib/action-shortcuts.test.ts` (o atalho da Shopee);
+  - `packages/domain/.../action-evidence.test.ts` (14, 2 novos: o rótulo e o canal; nulo sem ele).
+- **e2e:** no fim do ensaio da loja live, a loja ganha o histórico de quatro semanas e um pico ontem. O teste confere:
+  - no `/diagnostico`, a linha "<SKU> · Shopee", a URL com o canal e o detalhe "Alta de venda" com o canal;
+  - na aba do SKU, a escolha do canal acha a mesma anomalia;
+  - na Central, o cartão "Venda anômala na Shopee" com o atalho para os anúncios da Shopee.
+- **mutação:** sem os canais na linha de base, a linha da Shopee some e o e2e reprova.
+- **specs:** `diagnostico`, `acoes` e `sku-dashboard` 48/48, e o ensaio 18/18, com o banco recriado.
+- **suíte inteira:** com o banco recriado do zero (as migrations do #313 e do #315 e a main inclusas):
+  - chromium 261/261;
+  - `loja-live` 18/18;
+  - convite 3/3.
+
+  Depois do canal na narração, o build refeito passou em `diagnostico` e `sku-dashboard` (11/11) e no ensaio (18/18).
+
+**Impacto:**
+- `apps/web/lib/{diagnostico-por-canal.ts,diagnostico-por-canal.test.ts,diagnostic-filters.ts,diagnostic-filters.test.ts,action-shortcuts.ts,action-shortcuts.test.ts}`;
+- `apps/web/app/(app)/diagnostico/page.tsx`;
+- `apps/web/app/(app)/skus/[skuId]/{actions.ts,diagnosis-panel.tsx,page.tsx}` (o painel também manda o canal na narração);
+- `apps/web/app/(app)/acoes/page.tsx`;
+- `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts,index.ts}`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.

@@ -620,7 +620,8 @@ export default async function SkuDashboardPage({
           p_date_to: dateTo,
         })
       : Promise.resolve({ data: null, error: null }),
-    needsSales ? contarLojasShopee(supabase) : Promise.resolve(null),
+    // D-644: a aba de diagnóstico também precisa saber se há loja Shopee (o canal do diagnóstico).
+    needsSales || tab === "diagnostico" ? contarLojasShopee(supabase) : Promise.resolve(null),
   ]);
 
   const dashboard = dashboardResult.data;
@@ -2107,7 +2108,11 @@ export default async function SkuDashboardPage({
           </div>
 
           <div className="sb-skud-mt3">
-            <DiagnosisPanel skuId={sku.data.id} problemasDeAnuncio={diagnostico.problemas.length} />
+            <DiagnosisPanel
+              skuId={sku.data.id}
+              problemasDeAnuncio={diagnostico.problemas.length}
+              canais={lojasShopee !== null && lojasShopee > 0 ? ["ML", "SHOPEE"] : ["ML"]}
+            />
           </div>
         </>
       )}

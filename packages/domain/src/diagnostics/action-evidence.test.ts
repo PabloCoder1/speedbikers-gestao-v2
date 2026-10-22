@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeActionEvidence, readShopeeListingRef } from "./action-evidence.js";
+import { describeActionEvidence, readActionMarketplace, readShopeeListingRef } from "./action-evidence.js";
 
 /** Forma real gravada por `detect-sales-anomaly-actions.ts` (D-064). */
 const VENDA_ANOMALA = {
@@ -177,5 +177,25 @@ describe("readShopeeListingRef (D-626)", () => {
     expect(readShopeeListingRef({ detector: "texto" })).toBeNull();
     expect(readShopeeListingRef(null)).toBeNull();
     expect(readShopeeListingRef({ evidencias: [] })).toBeNull();
+  });
+});
+
+/** D-644 (C-83): o canal da venda anômala, que o worker grava em `evidence.marketplace`. */
+describe("a venda anômala por canal (D-644)", () => {
+  it("a da Shopee diz o canal no rótulo; a do ML fica como sempre", () => {
+    expect(describeActionEvidence("venda_anomala", { direcao: "queda", marketplace: "SHOPEE" })).toMatchObject({
+      kindLabel: "Venda anômala na Shopee",
+      marketplace: "SHOPEE",
+    });
+    expect(describeActionEvidence("venda_anomala", { direcao: "queda", marketplace: "ML" })).toMatchObject({
+      kindLabel: "Venda anômala",
+      marketplace: "ML",
+    });
+  });
+
+  it("sem o canal (a ação de antes do C-83) ou com valor estranho, nulo — nunca ML por omissão", () => {
+    expect(describeActionEvidence("venda_anomala", { direcao: "alta" }).marketplace).toBeNull();
+    expect(readActionMarketplace({ marketplace: "tiktok" })).toBeNull();
+    expect(readActionMarketplace(null)).toBeNull();
   });
 });

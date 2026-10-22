@@ -14,7 +14,16 @@ import {
   resolveDiagnosticFilters,
   selectDiagnosis,
 } from "../../../lib/diagnostic-filters";
+import {
+  CANAL_ROTULO,
+  canaisPedidos,
+  canalDaLinha,
+  chaveDoDiagnostico,
+  eventoValeParaOCanal,
+  type Canal,
+} from "../../../lib/diagnostico-por-canal";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
+import { contarLojasShopee } from "../../../lib/marketplace";
 import { eventTypeLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
@@ -56,7 +65,12 @@ interface BaselineRow {
   baseline_mean: number;
   baseline_stddev: number;
   sample_count: number;
+  /** D-644 (C-83): 'ML' ou 'SHOPEE'; ausente antes da migration, e aí é o ML. */
+  marketplace?: string;
 }
+
+/** Um diagnóstico e o canal dele (D-644): o mesmo SKU pode ter um em cada canal. */
+type DiagnosticoDoCanal = SalesAnomalyDiagnosis & { readonly canal: Canal };
 
 const CORRELATION_WINDOW_DAYS_BEFORE = 3;
 
@@ -107,16 +121,26 @@ export default async function DiagnosticoPage({
 
   const asOf = shiftBusinessDate(toSalesMetricDate(new Date()), -1);
 
+  /*
+    D-644 (C-83, decisão do dono de 22/10, "por canal"): com loja Shopee, a tela
+    pede os dois canais e avalia cada um separado — uma queda no ML aparece mesmo
+    que a Shopee compense. Sem loja, não manda o parâmetro: é o ML de sempre.
+  */
+  const canais = canaisPedidos(await contarLojasShopee(supabase));
+  const porCanal = canais === null ? {} : { p_marketplaces: [...canais] };
+
   const { data, error: baselineError } = await supabase.rpc("get_sku_sales_baseline", {
     p_organization_id: organizationId,
     p_as_of: asOf,
+    ...porCanal,
   });
 
   const signals = (data ?? []) as BaselineRow[];
 
   // Primeira passada, sem eventos: só para achar QUAIS SKUs são anomalia,
-  // evitando buscar domain_events de SKU nenhum sem necessidade.
-  const candidateSkuIds = signals
+  // evitando buscar domain_events de SKU nenhum sem necessidade. Um SKU com
+  // anomalia em qualquer canal entra (os eventos se separam por canal depois).
+  const candidateSkuIds = [...new Set(signals
     .filter(
       (row) =>
         diagnoseSalesAnomaly(
@@ -135,9 +159,10 @@ export default async function DiagnosticoPage({
           [],
         ) !== null,
     )
-    .map((row) => row.sku_id);
+    .map((row) => row.sku_id))];
 
-  const eventsBySku = new Map<string, CorrelatedEvent[]>();
+  // D-644: o evento guarda o canal dele (nulo = do SKU, vale para os dois).
+  const eventsBySku = new Map<string, { evento: CorrelatedEvent; marketplace: unknown }[]>();
   let eventsError: { message: string } | null = null;
   // T-R6: a evidência adicional continua sem derrubar o diagnóstico, mas a
   // falha dela é DITA — "sem sinal de SAC" e "impacto —" lidos de uma leitura
@@ -172,6 +197,7 @@ export default async function DiagnosticoPage({
         p_sku_ids: candidateSkuIds,
         p_from: windowStart,
         p_to: windowEnd,
+        ...porCanal,
       }),
       supabase
         .from("support_case_links")
@@ -186,7 +212,10 @@ export default async function DiagnosticoPage({
 
     for (const event of eventsResult.data ?? []) {
       const list = eventsBySku.get(event.sku_id) ?? [];
-      list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
+      list.push({
+        evento: { eventType: event.event_type, occurredAt: new Date(event.occurred_at) },
+        marketplace: (event as { marketplace?: unknown }).marketplace ?? null,
+      });
       eventsBySku.set(event.sku_id, list);
     }
 
@@ -205,9 +234,10 @@ export default async function DiagnosticoPage({
   // quando a causa real podia existir e só não foi lida (D-067).
   const error = baselineError ?? eventsError;
 
-  const diagnoses: SalesAnomalyDiagnosis[] = [];
+  const diagnoses: DiagnosticoDoCanal[] = [];
 
   for (const row of signals) {
+    const canal = canalDaLinha(row.marketplace);
     const diagnosis = diagnoseSalesAnomaly(
       organizationId,
       {
@@ -221,12 +251,15 @@ export default async function DiagnosticoPage({
         sampleCount: row.sample_count,
       },
       asOf,
-      eventsBySku.get(row.sku_id) ?? [],
-      { openClaims: openClaimsBySku.get(row.sku_id)?.size ?? 0 },
+      (eventsBySku.get(row.sku_id) ?? [])
+        .filter((item) => eventoValeParaOCanal(item.marketplace, canal))
+        .map((item) => item.evento),
+      // A reclamação aberta é do SAC do Mercado Livre: só entra no canal dele (D-639).
+      { openClaims: canal === "ML" ? (openClaimsBySku.get(row.sku_id)?.size ?? 0) : 0 },
     );
 
     if (diagnosis !== null) {
-      diagnoses.push(diagnosis);
+      diagnoses.push({ ...diagnosis, canal });
     }
   }
 
@@ -244,37 +277,41 @@ export default async function DiagnosticoPage({
     `null` quando não há preço médio no período: **impacto desconhecido é
     diferente de impacto zero** (D-067), e a tela mostra "—".
   */
-  const impactoPorSku = new Map<string, number | null>();
+  const impactoPorChave = new Map<string, number | null>();
 
   if (diagnoses.length > 0) {
     const precos = await supabase.rpc("get_sku_average_prices", {
       p_organization_id: organizationId,
-      p_sku_ids: diagnoses.map((d) => d.escopo.skuId),
+      p_sku_ids: [...new Set(diagnoses.map((d) => d.escopo.skuId))],
       // Janela do PREÇO, não a da correlação: são coisas diferentes e eu
       // tinha reusado a errada. 30 dias é o que `/skus/[skuId]/actions.ts` e o
       // worker de detecção já usam — três consumidores, uma janela.
       p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
       p_date_to: asOf,
+      ...porCanal,
     });
 
     precosError = precos.error;
 
-    const precoPorSku = new Map(
-      (precos.data ?? []).map((linha) => [linha.sku_id, linha.average_price]),
+    // D-644: o preço médio é do canal — o da Shopee só com a receita conhecida (C-83).
+    const precoPorChave = new Map(
+      (precos.data ?? []).map((linha) => [
+        chaveDoDiagnostico(linha.sku_id, canalDaLinha((linha as { marketplace?: unknown }).marketplace)),
+        linha.average_price,
+      ]),
     );
 
     for (const diagnosis of diagnoses) {
-      impactoPorSku.set(
-        diagnosis.escopo.skuId,
-        estimateImpactBrl(diagnosis.unitsDelta, precoPorSku.get(diagnosis.escopo.skuId) ?? null),
-      );
+      const chave = chaveDoDiagnostico(diagnosis.escopo.skuId, diagnosis.canal);
+
+      impactoPorChave.set(chave, estimateImpactBrl(diagnosis.unitsDelta, precoPorChave.get(chave) ?? null));
     }
   }
 
   // O recorte de confiança age sobre diagnósticos JÁ calculados — mesmo
   // conjunto, sem leitura nova.
   const visiveis = filterByConfidence(diagnoses, filters.confidence);
-  const selecionado = selectDiagnosis(visiveis, filters.selectedSkuId);
+  const selecionado = selectDiagnosis(visiveis, filters.selectedSkuId, filters.selectedCanal);
 
   const rotuloConfianca =
     filters.confidence === "alta"
@@ -323,8 +360,9 @@ export default async function DiagnosticoPage({
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
         Venda de {formatBusinessDate(asOf)} comparada ao baseline do mesmo dia da semana (últimas 8 ocorrências,
         média ± desvio padrão). Sem machine learning — estatística e correlação com eventos registrados.{" "}
+        {canais !== null && <>Cada canal é avaliado separado: uma queda no Mercado Livre aparece mesmo que a Shopee compense. </>}
         <strong>{formatCount(visiveis.length)}</strong> anomalia(s) no recorte, entre {formatCount(signals.length)}{" "}
-        SKU(s) com histórico suficiente.
+        {canais === null ? "SKU(s)" : "linha(s) de SKU e canal"} com histórico suficiente.
       </p>
 
       {error !== null && (
@@ -373,15 +411,16 @@ export default async function DiagnosticoPage({
           <section className="sb-panel sb-diagnostic-list" aria-label="Anomalias detectadas">
             {visiveis.map((diagnosis) => {
               const linha = skuLookup.get(diagnosis.escopo.skuId);
-              const impacto = impactoPorSku.get(diagnosis.escopo.skuId) ?? null;
+              const chave = chaveDoDiagnostico(diagnosis.escopo.skuId, diagnosis.canal);
+              const impacto = impactoPorChave.get(chave) ?? null;
               const causa = diagnosis.causasCandidatas[0];
 
               return (
                 <Link
-                  key={diagnosis.escopo.skuId}
+                  key={chave}
                   className="sb-diagnostic-item"
-                  href={buildDiagnosticHref(filters, { selectedSkuId: diagnosis.escopo.skuId })}
-                  aria-current={diagnosis.escopo.skuId === selecionado.escopo.skuId ? "true" : undefined}
+                  href={buildDiagnosticHref(filters, { selectedSkuId: diagnosis.escopo.skuId, selectedCanal: diagnosis.canal })}
+                  aria-current={chave === chaveDoDiagnostico(selecionado.escopo.skuId, selecionado.canal) ? "true" : undefined}
                 >
                   <StatusPill
                     code={diagnosis.direcao === "queda" ? "FAILED" : "APPLIED"}
@@ -389,6 +428,8 @@ export default async function DiagnosticoPage({
                   />
                   <b>
                     {linha?.sku}
+                    {/* D-644: com os dois canais, o canal da anomalia. */}
+                    {canais !== null && ` · ${CANAL_ROTULO[diagnosis.canal]}`}
                     {/* O código cru do evento ("listing.price.changed") vira rótulo (lote 3). */}
                     {causa !== undefined ? ` · ${eventTypeLabel(causa.eventType)}` : ""}
                   </b>
@@ -420,6 +461,7 @@ export default async function DiagnosticoPage({
                 </h2>
                 <p>
                   <span className="sb-mono">{skuLookup.get(selecionado.escopo.skuId)?.sku}</span> ·{" "}
+                  {canais !== null && <>{CANAL_ROTULO[selecionado.canal]} · </>}
                   {formatBusinessDate(asOf)}
                 </p>
               </div>
@@ -451,7 +493,7 @@ export default async function DiagnosticoPage({
               </div>
               <div>
                 <span>Impacto estimado</span>
-                <b>{formatCurrency(impactoPorSku.get(selecionado.escopo.skuId) ?? null)}</b>
+                <b>{formatCurrency(impactoPorChave.get(chaveDoDiagnostico(selecionado.escopo.skuId, selecionado.canal)) ?? null)}</b>
                 <span>
                   {selecionado.unitsDelta > 0 ? "+" : ""}
                   {formatCount(selecionado.unitsDelta)} un. × preço médio
@@ -504,7 +546,7 @@ export default async function DiagnosticoPage({
             */}
             <div className="sb-note sb-copilot-note">
               <span>✦ ANÁLISE DO COPILOTO</span>
-              <DiagnosisPanel skuId={selecionado.escopo.skuId} embutido />
+              <DiagnosisPanel skuId={selecionado.escopo.skuId} embutido canal={selecionado.canal} />
             </div>
 
             {/*
