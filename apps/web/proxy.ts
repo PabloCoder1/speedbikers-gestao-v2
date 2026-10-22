@@ -96,7 +96,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     `getSession` continua não servindo: devolve o que está no cookie sem
     conferir, e o navegador pode tê-lo alterado. Token adulterado ou vencido
     falha na assinatura e cai no login; vencido com refresh válido é renovado
-    aqui, e o cookie novo segue (`setAll`).
+    aqui: o `getClaims` sem JWT passa pelo `getSession`, que renova com o
+    refresh, e o `setAll` grava o cookie novo.
 
     O que muda: uma sessão encerrada em OUTRO aparelho só para de abrir telas
     quando o token dela vence (1 h, `jwt_expiry`) — o mesmo prazo em que o

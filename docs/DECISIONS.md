@@ -17515,7 +17515,7 @@ A medida no build local, a 150 ms por chamada, com o registro de cada chamada do
 
 **Decisao (aprovada pelo dono em 22/10, PR #312):**
 - O `proxy.ts` troca `getUser` por `getClaims`. Ele confere a assinatura e a validade do token com a chave publica do projeto, sem ir ao Auth. O JWKS fica num cache global do modulo por 10 minutos, entao o cliente novo por requisicao nao o busca de novo.
-- Token adulterado ou vencido falha e cai no login. Vencido com refresh valido e renovado ali, e o cookie novo segue. Com chave simetrica (HS256), o `getClaims` chama o proprio `getUser`, e nada muda.
+- Token adulterado ou vencido falha e cai no login. Vencido com refresh valido e renovado ali: o `getClaims` sem JWT passa pelo `getSession`, que renova com o refresh, e o `setAll` grava o cookie novo. Com chave simetrica (HS256), o `getClaims` chama o proprio `getUser`, e nada muda.
 - **O que muda em seguranca:**
   - uma sessao encerrada em outro aparelho so para de abrir telas quando o token dela vence (1 h, `jwt_expiry`);
   - o PostgREST ja aceita esse mesmo token ate vencer, para ler dado sob RLS: o proxy nao era a barreira da revogacao para o dado;
