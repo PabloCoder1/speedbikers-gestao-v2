@@ -260,6 +260,8 @@ function buildDiagnosisNarrationPrompt(input: NarrateSkuDiagnosisInput): string 
     diagnosis.proximosPassos.length > 0 ? diagnosis.proximosPassos.map((step) => `- ${step}`).join("\n") : "nenhum";
 
   return [
+    // C-84: o diagnostico e por canal desde o C-83; sem o canal, e o do ML.
+    `Canal: ${input.marketplace === "SHOPEE" ? "Shopee" : "Mercado Livre"}`,
     `Direção: ${diagnosis.direcao}`,
     `Confiança: ${diagnosis.confianca}`,
     `Z-score: ${diagnosis.zScore.toFixed(2)}`,

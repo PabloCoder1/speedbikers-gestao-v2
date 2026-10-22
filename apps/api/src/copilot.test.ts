@@ -299,6 +299,16 @@ describe("runNarrateSkuDiagnosis", () => {
     const call = narrate.mock.calls[0]?.[0];
     expect(call?.prompt).toContain("Vendeu 2 unidades ontem");
     expect(call?.prompt).toContain("Anúncio pausado");
+    // Sem o canal, o diagnostico e o do Mercado Livre, como antes do C-83.
+    expect(call?.prompt).toContain("Canal: Mercado Livre");
+  });
+
+  it("C-84: o canal do diagnóstico entra na narração", async () => {
+    const narrate = vi.fn<AnthropicClient["narrate"]>(() => Promise.resolve({ text: "ok", costUsd: 0 }));
+
+    await runNarrateSkuDiagnosis(fakeUserClientForSku({ id: "sku-1" }), { ...DIAGNOSIS_INPUT, marketplace: "SHOPEE" }, { narrate, plan: vi.fn() });
+
+    expect(narrate.mock.calls[0]?.[0]?.prompt).toContain("Canal: Shopee");
   });
 });
 

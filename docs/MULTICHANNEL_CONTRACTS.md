@@ -169,7 +169,8 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
   - `marketplace_sales_summary` (`get_marketplace_sales_summary`) devolve `{ total, byMarketplace, byAccount }`. Cada linha traz `marketplace`, `accountId`, `accountName`, `countsInTotals`, `purchases`, `units`, `knownRevenue`, `purchasesWithoutRevenue`, `averageTicket`, `mlOrders` e `lastUpdatedAt`;
   - `marketplace_sku_sales` (`get_marketplace_sku_sales`) devolve `{ orderBy, totalSkus, rows }` com as colunas de cada canal.
 - **As ferramentas de antes** continuam só do ML. O prompt lista as lojas live da Shopee à parte e diz que a queda, o anúncio e o estoque da Shopee não existem no chat.
-- **Para a tela:** o rótulo das duas no `TOOL_LABEL` do chat (sugestão: "consultou vendas por canal" e "consultou os SKUs mais vendidos por canal"). Nada mais muda na web.
+- **`narrate_sku_diagnosis`** aceita `marketplace` ('ML' | 'SHOPEE'), o canal do diagnóstico do C-83; ausente é o do ML. Pode mandar antes desta api em produção: a de antes descarta a chave desconhecida (o `z.object` do Zod), então o pedido não falha, só a narração sai sem o canal.
+- **Para a tela:** o rótulo das duas no `TOOL_LABEL` do chat (sugestão: "consultou vendas por canal" e "consultou os SKUs mais vendidos por canal").
 
 ### 3.32 O diagnóstico de venda por canal (C-83, D-639) — em código
 

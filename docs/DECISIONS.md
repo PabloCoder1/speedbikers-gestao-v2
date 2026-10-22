@@ -19100,13 +19100,15 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 2. **As ferramentas de antes ficam como estao e so do ML.** O prompt diz isso: `mlAccountId` nunca e uma loja.
 3. **O prompt lista as contas do ML e, a parte, as lojas live da Shopee**, de `marketplace_accounts` sob a RLS de quem pergunta. A loja sandbox nao entra.
 4. **A queda pedida da Shopee nao e forcada para a ferramenta do ML.** O prompt manda dizer que o chat nao tem queda por produto, desempenho de anuncio nem estoque por loja da Shopee.
+5. **A narracao do diagnostico ganha o canal** (pedido do A2, que leva o C-83 a `/diagnostico`): `narrate_sku_diagnosis` aceita `marketplace` ('ML' | 'SHOPEE'), e o prompt diz o canal. Ausente e o diagnostico de antes, do ML.
 
 **Fora daqui:** a queda por produto da Shopee (pede uma RPC de duas janelas, como `get_sales_sku_declines`), o desempenho do anuncio da Shopee e a resolucao de um id de item da Shopee em `resolve_catalog_entity`.
 
 **Verificacao:**
-- api: 7 testes novos, 54 de 54 no Copiloto:
+- api: 8 testes novos, 55 de 55 no Copiloto:
   - no chat (4): as lojas live no prompt, a parte, e a sandbox fora; as duas ferramentas oferecidas; a queda da Shopee nao forcada; uma rodada real de `marketplace_sales_summary`;
   - nos executores (3): os dois canais por padrao e o `countsInTotals` da sandbox e da loja nao lida; as contas pedidas e o erro da RPC; a ordem traduzida e as colunas do ranking;
+  - na narracao (1): o canal no prompt, e o ML quando ausente;
 - `pnpm run check` e `pnpm run build`.
 
 **Publicacao:** so a api, sem migration (as RPCs ja estao em producao). A tela (A2) da o rotulo das ferramentas novas no chat (`TOOL_LABEL` de `apps/web/app/(app)/copiloto/chat.tsx`).

@@ -147,6 +147,11 @@ export type SalesAnomalyDiagnosisPayload = z.infer<typeof salesAnomalyDiagnosisS
 export const narrateSkuDiagnosisInputSchema = z.object({
   diagnosis: salesAnomalyDiagnosisSchema,
   impactBrl: z.number().nullable(),
+  /**
+   * C-84 (D-641, pedido do A2): o canal do diagnostico, que desde o C-83 e por
+   * canal. Ausente = o diagnostico de antes, so do Mercado Livre.
+   */
+  marketplace: z.enum(["ML", "SHOPEE"]).optional(),
 });
 export type NarrateSkuDiagnosisInput = z.infer<typeof narrateSkuDiagnosisInputSchema>;
 
