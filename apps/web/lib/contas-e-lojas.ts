@@ -15,7 +15,7 @@
  * D-652 (C-86): a loja do TikTok Shop entra como o terceiro canal, com a mesma
  * forma da Shopee -- só existe depois de autorizada, CONNECTED ou ERROR, e o
  * `auth_expires_at` é o fim do refresh token. O canal chega com uma migration
- * (`20261022150000`): antes dela a tabela não existe, e o TikTok fica fora da
+ * (`20261022170000`): antes dela a tabela não existe, e o TikTok fica fora da
  * divisão em vez de virar "0" (é um canal que este banco ainda não tem).
  *
  * Contar linhas que a tela já lista não é agregar métrica: são os mesmos cartões

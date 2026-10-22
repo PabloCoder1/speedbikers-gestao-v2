@@ -218,3 +218,41 @@ test("acessibilidade básica: um h1, títulos sem pulo, nada sem nome, imagem co
 
   expect(problemas).toEqual([]);
 });
+
+/**
+ * A BARRA DO TOPO NO CELULAR (D-650, o achado do A3 de 22/10). A busca tinha
+ * `width: min(455px, 50%)` e não encolhia: a 360 px o "Sair" aparecia cortado,
+ * e a 320 só a borda dele. A guarda mede os três tamanhos que o A3 mediu. As
+ * notificações, a busca e o "Sair" ficam inteiros dentro da barra e da janela,
+ * e a busca não passa por cima das ações.
+ */
+for (const largura of [320, 360, 390]) {
+  test.describe(`a barra do topo a ${String(largura)} px (D-650)`, () => {
+    test.use({ viewport: { width: largura, height: 800 }, isMobile: true, hasTouch: true });
+
+    test(`o "Sair", as notificações e a busca cabem inteiros na barra`, async ({ page }) => {
+      await entrar(page);
+      // A barra REAL, e não a do esqueleto (`carregando.tsx`, `aria-hidden`), que vem antes.
+      await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
+
+      const barra = await page.getByRole("banner").boundingBox();
+      const sair = await page.getByRole("button", { name: "Sair", exact: true }).boundingBox();
+      const avisos = await page.getByRole("link", { name: /^Notificações/u }).boundingBox();
+      const busca = await page.getByRole("button", { name: /^Buscar SKU/u }).boundingBox();
+
+      if (barra === null || sair === null || avisos === null || busca === null) {
+        throw new Error("a barra do topo, o Sair, as notificações ou a busca não estão na tela");
+      }
+
+      const dentro = (caixa: { x: number; width: number }): boolean =>
+        caixa.x >= barra.x - 0.5 && caixa.x + caixa.width <= Math.min(barra.x + barra.width, largura) + 0.5;
+
+      expect(dentro(sair), `Sair em ${String(sair.x)}+${String(sair.width)}, barra até ${String(barra.x + barra.width)}`).toBe(true);
+      expect(dentro(avisos)).toBe(true);
+      expect(dentro(busca)).toBe(true);
+      // A busca encolhe, mas continua um alvo de toque, e não invade as ações.
+      expect(busca.width).toBeGreaterThanOrEqual(44);
+      expect(busca.x + busca.width).toBeLessThanOrEqual(avisos.x + 0.5);
+    });
+  });
+}

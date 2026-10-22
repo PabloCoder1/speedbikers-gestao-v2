@@ -19170,7 +19170,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
    - **manda o token** no cabeçalho `x-tts-access-token`;
    - **trata o erro:** `code` diferente de 0 é erro mesmo com HTTP 200; 429, 5xx e os códigos 36009002 e 36009003 são passageiros;
    - **não vaza a URL:** a mensagem de erro leva o método e o caminho, porque a troca do token leva o App Secret na query.
-2. **Tabelas próprias** (migration `20261022150000`), como as `shopee_*`:
+2. **Tabelas próprias** (migration `20261022170000`), como as `shopee_*`:
    - `tiktok_shops`: o `id` da loja como texto, único, mais nome, região, `seller_type`, código, quem autorizou, os escopos concedidos, o estado da conexão e o fim da autorização;
    - `tiktok_credentials`: o `shop_cipher` e os tokens, cifrados com a chave de `ml_credentials`;
    - `tiktok_oauth_states`: o `state` da autorização.
@@ -19217,7 +19217,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `db reset` e a suíte inteira, 1134 de 1134.
 
 **Publicação:**
-1. A migration `20261022150000`. Antes dela, a api nova sobe sem o TikTok (503).
+1. A migration `20261022170000`. Antes dela, a api nova sobe sem o TikTok (503).
 2. Os atos do dono (`docs/TIKTOK_SHOP.md` §15):
    - publicar o app;
    - guardar o App Key e o App Secret no Secret Manager de produção, como `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET`;
@@ -19226,7 +19226,7 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 
 **Impacto:**
 - `packages/tiktok-shop/` (novo);
-- `supabase/migrations/20261022150000_lojas_tiktok_shop.sql`;
+- `supabase/migrations/20261022170000_lojas_tiktok_shop.sql`;
 - `apps/api/src/{tiktok-shops,tiktok-shops.test,app,app.test,env,env.test,index}.ts` e `apps/api/package.json`;
 - `packages/db/src/{types,rls.integration.test}.ts`;
 - `infra/{deploy-cloud-run,lib,setup-dev}.sh`, `.env.example`;
@@ -19254,9 +19254,70 @@ O chat (`/copiloto`) diz embaixo de cada resposta quais ferramentas a respondera
 
 **Impacto:** `apps/web/lib/{copiloto-ferramentas.ts,copiloto-ferramentas.test.ts}`, `apps/web/app/(app)/copiloto/chat.tsx` e `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
 
+## D-647 - O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+
+**Contexto:** dois achados de 22/10. As migrations de hoje já estavam na `main`, e o disparo de produção ainda não tinha sido feito.
+- **O do A2 (D-648):** a aba Decisões do SKU passa a mostrar o motivo com que o sistema encerrou a ação. O motivo do acumulado da D-643 citava "(D-643)", um código interno, na frente do operador.
+- **O do A3:** a busca de `get_listings_dashboard` usava `ilike '%' || p_search || '%'`. O `%` e o `_` digitados viravam curinga: "KIT_R" achava "KIT-R", e "50%" achava tudo que tinha "50".
+  - O resultado só crescia, então era frágil, mas não quebrava.
+  - O CSV de `/anuncios` lê a mesma função.
+
+**Decisão** (migration `20261022160000`, sem mudar contrato):
+1. **O motivo novo:** "Substituída pelo acompanhamento por SKU e canal: o alerta volta como um cartão só, atualizado enquanto a venda fugir do esperado e encerrado quando ela voltar ao normal."
+   - Vale para a venda acima e para a venda abaixo do esperado (sugestão do A2).
+   - O resto de `registrar_vendas_anomalas` é o da D-643.
+2. **Nenhuma linha nasce com o texto antigo.** Quem chama a função é o worker novo. A publicação vai nesta ordem: as migrations de hoje, esta, e só então o worker.
+3. **A busca vira texto puro**, com `strpos` sobre `lower`, como a Curva ABC (`20261007200000`).
+   - Muda na lista, que serve também ao CSV, e na faixa (`get_listings_dashboard_counts`), porque as duas precisam contar o mesmo.
+   - O resto dos corpos é o da `20261022120000`. O `pg_get_functiondef` foi comparado antes e depois: só mudam as três linhas da busca em cada função e o texto do motivo, e as permissões ficam iguais.
+
+**Verificação:**
+- integração:
+  - na lista e na faixa, a busca com `_` ou com `%` não acha mais o anúncio;
+  - a busca pelo próprio código acha, em qualquer caixa;
+  - o motivo do acumulado não leva código de decisão;
+- mutação: 5, e cada uma derruba o teste: a lista e a faixa de volta ao `ilike`, a busca e a coluna sem `lower`, e o texto antigo do motivo;
+- `db reset` e a suíte inteira: 1130 de 1130.
+
+**Fora desta correção:** o mesmo `ilike '%' || p_…` segue em outras 11 funções de busca: estoque, movimentações, compras, reposição, Full, documentos, vinculações e histórico de preço. Elas ficam para uma fatia própria, no mesmo padrão.
+
+**Impacto:**
+- `supabase/migrations/20261022160000_motivo_e_busca_literal.sql`;
+- `packages/db/src/rls.integration.test.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_CONTRACTS,HANDOFF}.md`.
+
+## D-650 - A barra do topo cabe no celular: a busca cede espaço ao "Sair"
+
+**Contexto:** no teste de pior caso de 22/10, o A3 achou o "Sair" cortado na barra do topo do celular, em toda tela. Com o Pixel 5 emulado, a 320 px só aparecia a borda do botão, e a 360 px ele aparecia como "Sai". A 390 px cabia. Não depende de dado: a barra é a mesma em toda rota. Abaixo de 850 px a barra lateral vira o trilho de 58 px, e a barra do topo fica com o resto. Nesse resto a busca (`width: min(455px, 50%)`) não encolhia, e o atalho "Ctrl K" ocupava espaço num aparelho de toque. As ações (notificações, perfil e "Sair") transbordavam pela direita. É o shell, então o conserto é do A2, como o A3 indicou.
+
+**Decisão:** a proposta do A3, num bloco `@media (max-width: 760px)` no `globals.css`:
+- `.sb-search { flex: 1 1 auto; width: auto; min-width: 0 }`: a busca fica com o que sobra, e o rótulo já corta com reticências;
+- `.sb-search kbd { display: none }`: o atalho de teclado sai do celular;
+- `.sb-top-actions { flex: none }`: as ações não encolhem.
+
+Acima de 760 px nada muda.
+
+**O esqueleto da barra** (`components/carregando.tsx`), que aparece em toda navegação antes da tela, tinha outra forma:
+- ainda mostrava o ✦ do Copiloto, que saiu da barra real na D-377;
+- não tinha o "Sair".
+
+No celular, a busca do esqueleto era 22 px mais larga que a real, e a barra pulava quando a tela chegava. Agora as ações do esqueleto são as do `Shell`: notificações, a régua, o perfil (com a mesma folga de 8 px à direita do `button.sb-profile`) e o lugar do "Sair". O "Sair" do esqueleto é só o espaço, invisível, porque um botão que não responde não é controle. A 320, 360 e 390 px o esqueleto e a barra real têm a mesma largura de busca e a mesma posição das ações.
+
+**Verificação:**
+- **e2e:** `e2e/tela-estreita-e-acessibilidade.spec.ts` ganha a guarda da barra a 320, 360 e 390 px, com o celular emulado. O "Sair", as notificações e a busca ficam inteiros dentro da barra e da janela, a busca tem pelo menos 44 px e não passa por cima das ações. Os elementos são achados pelo papel, nunca pela classe.
+- **mutação:** com o CSS de antes, a guarda reprova a 320 px (o "Sair" começa no px 308, e só 12 dos 46 px aparecem) e a 360 px (32 dos 46). A 390 px passa, como o A3 mediu.
+- **medida, à mão:** a busca tem 61, 101 e 131 px a 320, 360 e 390, com o "Sair" inteiro, e o esqueleto dá os mesmos números.
+- **suíte inteira**, com o banco recriado do zero: chromium 264/264 (os 3 novos inclusos), `loja-live` 17/17, convite 3/3.
+
+**Impacto:**
+- `apps/web/app/globals.css`;
+- `apps/web/components/carregando.tsx`;
+- `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md` (com a D-638 e a D-646 marcadas como no ar).
+
 ## D-652 - As lojas do TikTok Shop na /contas (C-86)
 
-**Contexto:** a fatia 1 do TikTok Shop (D-645 do A1, #320) conecta a loja: a tabela `tiktok_shops` (migration `20261022150000`), `POST /v1/tiktok-shop/connect` e o retorno `GET /oauth/tiktok-shop/callback`. O dono passou o `service_id` e pediu a fatia em 22/10. O contrato da tela é o C-86 (`docs/MULTICHANNEL_CONTRACTS.md` §3.34): o TikTok em `/contas`, ao lado das lojas da Shopee, com o botão de conectar só para ADMIN; até a api ter as variáveis do app, o botão recebe 503. A loja conectada ainda não tem pedido nem venda, e nada do TikTok entra nos totais.
+**Contexto:** a fatia 1 do TikTok Shop (D-645 do A1, #320) conecta a loja: a tabela `tiktok_shops` (migration `20261022170000`), `POST /v1/tiktok-shop/connect` e o retorno `GET /oauth/tiktok-shop/callback`. O dono passou o `service_id` e pediu a fatia em 22/10. O contrato da tela é o C-86 (`docs/MULTICHANNEL_CONTRACTS.md` §3.34): o TikTok em `/contas`, ao lado das lojas da Shopee, com o botão de conectar só para ADMIN; até a api ter as variáveis do app, o botão recebe 503. A loja conectada ainda não tem pedido nem venda, e nada do TikTok entra nos totais.
 
 Duas respostas do A1 antes de começar:
 - o retorno da autorização para no JSON da api, como no ML e na Shopee. O redirect para a `/contas` é uma fatia dele, depois;
@@ -19276,7 +19337,7 @@ Duas respostas do A1 antes de começar:
    - sem a tabela, o TikTok fica fora da divisão. Esse também é o padrão de quem chama sem o argumento.
 4. O subtítulo da tela passa a dizer "Mercado Livre, Shopee e TikTok Shop".
 
-**Publicação:** só a web. Empilhada sobre o #320 (os tipos de `tiktok_shops` no `packages/db`), e entra depois dele. A tela pode ir antes da migration `20261022150000` em produção: sem a tabela, ela fica como antes, só com o aviso no painel novo.
+**Publicação:** só a web. Empilhada sobre o #320 (os tipos de `tiktok_shops` no `packages/db`), e entra depois dele. A tela pode ir antes da migration `20261022170000` em produção: sem a tabela, ela fica como antes, só com o aviso no painel novo.
 
 **Verificação:**
 - **unitários:**

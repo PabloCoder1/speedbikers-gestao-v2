@@ -84,7 +84,7 @@ export default async function ContasPage(): Promise<ReactNode> {
   // D-429: e o tamanho do catálogo de cada loja também — contado no SQL
   // (`get_shopee_shop_catalog_counts`), nulo quando o catálogo nunca foi lido.
   // D-652 (C-86): e as lojas do TikTok Shop, pela RLS de membro. A tabela chega com a
-  // migration `20261022150000`; antes dela, a leitura volta PGRST205 e o painel diz que
+  // migration `20261022170000`; antes dela, a leitura volta PGRST205 e o painel diz que
   // o canal chega com a próxima atualização do banco, sem erro.
   const [{ data, error }, lojasShopee, catalogoShopee, lojasTiktok] = await Promise.all([
     supabase.rpc("get_ml_account_cards", { p_organization_id: organizationId }),
