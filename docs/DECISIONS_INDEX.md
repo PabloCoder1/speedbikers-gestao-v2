@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **550** (D-001 a D-638).
+Decisões registradas: **552** (D-001 a D-641).
 
 ## Por domínio
 
@@ -241,7 +241,7 @@ Decisões registradas: **550** (D-001 a D-638).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (104)
+### mercado-livre (105)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -347,6 +347,7 @@ Decisões registradas: **550** (D-001 a D-638).
 - **D-634** — O anúncio excluído no Mercado Livre nas telas que leem o anúncio direto
 - **D-637** — Varias contas e "Precisam de atencao" na /anuncios (C-80 e C-85)
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
+- **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 
 ### outros (80)
 
@@ -435,7 +436,7 @@ Decisões registradas: **550** (D-001 a D-638).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (59)
+### vendas/métricas (60)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -496,6 +497,7 @@ Decisões registradas: **550** (D-001 a D-638).
 - **D-613** — A marca no ranking do "Todos" de /vendas (C-75): o recorte do C-72 em get_marketplace_sku_sales
 - **D-618** — O SKU com a Shopee: o dia a dia por canal e os pedidos da Shopee na aba Vendas (C-71)
 - **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
+- **D-641** — A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 
 ### worker/infra (93)
 
