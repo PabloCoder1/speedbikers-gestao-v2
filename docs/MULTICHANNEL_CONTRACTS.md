@@ -199,6 +199,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
 - **O worker (decisão do dono, 22/10, "por canal"):** cada canal é avaliado separado.
   - A ação `venda_anomala` leva `evidence.marketplace`.
   - Desde a D-643, a ação é um episódio por SKU e canal: `subject_key` = `ML:<sku>` ou `SHOPEE:<sku>`, com `primeira_deteccao`, `ultima_deteccao` e, ao encerrar, `encerramento` na evidência.
+  - O `encerramento.motivo` é texto para o operador, sem código de decisão (D-647).
 - **Para a tela:** o `/diagnostico` e o diagnóstico do SKU mandam `p_marketplaces` só com valor e só depois da migration `20261022130000` em produção. Com os dois canais, o mesmo SKU pode ter duas linhas.
 
 ### 3.31 Várias contas e "Precisam de atenção" na /anuncios (C-80 e C-85, D-637) — em código
@@ -213,6 +214,7 @@ Duas funções novas, com as linhas e as regras do C-53 (TOTAL, MARKETPLACE e CO
   - `{}` fora de ativo/pausado ou sem motivo. 'atencao' sem essas réguas é recusado.
 - **C-85, na faixa:** `p_date_from`, `p_date_to` e `precisam_atencao` (o mesmo conjunto do filtro, com o N da queda pelas datas). NULA sem as réguas.
 - **Para a tela:** manda os parâmetros novos só com valor e só depois da migration `20261022120000` em produção. Manda o `p_preco_teto` sempre, para a coluna vir preenchida. NULO não vira "sem atenção".
+- **A busca (D-647, migration `20261022160000`):** `p_search` é texto puro na lista, no CSV e na faixa. O `%` e o `_` são o caractere digitado, e a caixa não importa. A tela não muda.
 
 ### 3.30 A loja da Shopee na preferência de aviso (C-82, D-635) — em código
 
