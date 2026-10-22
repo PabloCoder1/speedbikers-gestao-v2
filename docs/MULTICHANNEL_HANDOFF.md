@@ -159,6 +159,7 @@
   - C-12, as preferências de notificação por loja Shopee. `notification_preferences` só conhece a conta do ML, `ml_account_id`.
   - C-11, a Shopee no `/diagnostico` e no diagnóstico do SKU. A linha de base, os eventos e os preços são do ML; o worker da venda anômala lê as mesmas RPCs.
   - C-14, a Shopee nas ferramentas do Copiloto: quase tudo na api.
+  - A fatia E de Anúncios do A3 (aprovada pelo dono em 21/10): o C-80 (várias contas) e o C-85 ("Precisam de atenção") numa migration só, em código (D-637, contrato §3.31); a tela espera a migration em produção.
 - **Sem fonte hoje:** o chat da Shopee em `/atendimento`.
 
 **Bloqueios**
