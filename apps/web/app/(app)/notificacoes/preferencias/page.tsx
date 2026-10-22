@@ -34,6 +34,7 @@ interface PreferenceQueryRow {
   id: string;
   event_type: string | null;
   ml_account_id: string | null;
+  shopee_shop_id: string | null;
   min_severity: string;
   enabled: boolean;
   ml_accounts: { label: string } | null;
@@ -60,22 +61,32 @@ function byPrecedence(a: PreferenceRowData, b: PreferenceRowData): number {
 export default async function PreferenciasPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const [preferencesResult, accountsResult] = await Promise.all([
+  const [preferencesResult, accountsResult, lojasResult] = await Promise.all([
     supabase
       .from("notification_preferences")
-      .select("id, event_type, ml_account_id, min_severity, enabled, ml_accounts(label)")
+      .select("id, event_type, ml_account_id, shopee_shop_id, min_severity, enabled, ml_accounts(label)")
       .order("created_at", { ascending: true }),
     supabase.from("ml_accounts").select("id, label").order("label", { ascending: true }),
+    // D-642 (C-82): as lojas que a pessoa alcança (a RLS de D-433) — as únicas que ela pode escolher.
+    supabase.from("shopee_shops").select("id, shop_name, environment").order("connected_at", { ascending: true }),
   ]);
 
-  const error = preferencesResult.error ?? accountsResult.error;
+  const error = preferencesResult.error ?? accountsResult.error ?? lojasResult.error;
   const accounts = accountsResult.data ?? [];
+  const lojas = (lojasResult.data ?? []).map((loja) => ({
+    id: loja.id,
+    label: `${loja.shop_name ?? "Loja sem nome lido"}${loja.environment === "live" ? "" : " (teste)"}`,
+  }));
+  const nomeDaLoja = new Map(lojas.map((loja) => [loja.id, loja.label]));
 
   const rows: PreferenceRowData[] = ((preferencesResult.data ?? []) as PreferenceQueryRow[])
     .map((row) => ({
       id: row.id,
       eventType: row.event_type,
-      accountLabel: row.ml_accounts?.label ?? null,
+      // D-642: a origem é a conta do ML ou a loja da Shopee (nunca as duas).
+      accountLabel:
+        row.ml_accounts?.label ??
+        (row.shopee_shop_id === null ? null : `Shopee · ${nomeDaLoja.get(row.shopee_shop_id) ?? "loja sem acesso"}`),
       minSeverity: row.min_severity,
       enabled: row.enabled,
     }))
@@ -123,7 +134,7 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
                   <thead>
                     <tr>
                       <th>Tipo de evento</th>
-                      <th>Conta</th>
+                      <th>Conta ou loja</th>
                       <th>Severidade mínima</th>
                       <th>Estado</th>
                       <th>
@@ -145,9 +156,9 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
           <div style={{ marginTop: "var(--sb-space-3)" }}>
             <Panel
               title="Nova regra"
-              subtitle="Deixe tipo de evento ou conta em aberto para uma regra mais abrangente."
+              subtitle="Deixe tipo de evento ou conta e loja em aberto para uma regra mais abrangente."
             >
-              <NewPreferenceForm eventTypes={eventTypes} eventSeverity={EVENT_SEVERITY} accounts={accounts} />
+              <NewPreferenceForm eventTypes={eventTypes} eventSeverity={EVENT_SEVERITY} accounts={accounts} lojas={lojas} />
             </Panel>
           </div>
         </>

@@ -94,7 +94,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     // D-197: esta leitura era feita pelo NAVEGADOR, dentro de
     // `NotificationToasts`, em toda página autenticada — uma ida a mais por
     // carregamento, e ela ficava na frente da assinatura de Realtime.
-    supabase.from("notification_preferences").select("event_type, ml_account_id, min_severity, enabled"),
+    supabase.from("notification_preferences").select("event_type, ml_account_id, shopee_shop_id, min_severity, enabled"),
     // D-438: contas do ML E lojas Shopee, pela fonte única das contas (C-52, D-435).
     supabase
       .from("marketplace_accounts")
@@ -117,6 +117,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const preferenceRules: NotificationPreferenceRule[] = (preferences.data ?? []).map((row) => ({
     eventType: row.event_type,
     mlAccountId: row.ml_account_id,
+    // D-642 (C-82): a regra da loja da Shopee.
+    shopeeShopId: row.shopee_shop_id,
     minSeverity: row.min_severity,
     enabled: row.enabled,
   }));

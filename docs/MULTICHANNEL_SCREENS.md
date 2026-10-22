@@ -235,7 +235,7 @@ linhas.
 | C-09 | `/saude` com veredito de atraso dos jobs `shopee.*` | nada novo: `job_runs` já os tem; falta a cadência em `apps/web/lib/sync-health.ts` (horários: pedidos e financeiro às :20, catálogo às :25) | T1 |
 | C-10 | Aba Vendas do SKU: o dia a dia por canal e os pedidos da Shopee com o SKU (escolha do dono em 20/10) | o dia a dia do SKU por marketplace e `get_shopee_orders` com `p_sku_id` (abaixo); o contrato de dados é o C-71 do A1 (D-607) | D-618 depois do contrato |
 | C-11 | `/diagnostico` e o diagnóstico do SKU com a Shopee (liberado pelo dono em 21/10) | a linha de base, o preço médio e os eventos correlacionados com a Shopee (abaixo) | aceito pelo A1 em 21/10 como o C-83 |
-| C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | aceito pelo A1 em 21/10 como o C-82 |
+| C-12 | Preferências de notificação por loja Shopee (liberado pelo dono em 21/10) | `notification_preferences.shopee_shop_id` (abaixo) | o C-82 do A1 (D-635, #311; `docs/MULTICHANNEL_CONTRACTS.md` §3.30); a tela é a D-642 |
 | C-13 | Histórico de preço da Shopee em `/precos` e na aba Preços do SKU (liberado pelo dono em 21/10) | o evento de mudança de preço do modelo da Shopee e `get_price_changes` com a Shopee (abaixo) | o C-81 do A1 (D-633, #308; `docs/MULTICHANNEL_CONTRACTS.md` §3.29); a notificação é a D-638 e a tela, a D-640 |
 | C-14 | A Shopee nas ferramentas do Copiloto (liberado pelo dono em 21/10) | as ferramentas da api com o marketplace e a loja (abaixo) | aceito pelo A1 em 21/10 como o C-84 |
 
@@ -403,6 +403,7 @@ número.
 | **D-632** | A divergência de estoque da Shopee na Central de Ações | A1 (C-78, D-627) | ✔ D-632 (#300) |
 | **D-636** | O cabeçalho da `/faturamento` com a mesma forma nos três recortes | A3 (o achado e a escolha) | ✔ D-636 (#306) |
 | **D-638** | A mudança de preço do anúncio da Shopee nas notificações, antes do worker | A1 (C-81, D-633) | em código |
+| **D-642** | A loja da Shopee na preferência de aviso | A1 (C-82, D-635) | em código; espera a migration `20261022110000` em produção |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece

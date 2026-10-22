@@ -19118,6 +19118,58 @@ Lido antes de decidir: as telas ja leem a venda multicanal por duas RPCs sob RLS
 - `apps/api/src/copilot{,-chat}{,.test}.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,COPILOT,MULTICHANNEL_CONTRACTS,MULTICHANNEL_HANDOFF,HANDOFF}.md`.
 
+## D-642 - A loja da Shopee na preferência de aviso (C-82)
+
+**Contexto:** o dono liberou em 21/10 as preferências de notificação por loja Shopee (o C-12 do A2, o C-82 do A1, D-635, #311; o contrato está em `docs/MULTICHANNEL_CONTRACTS.md` §3.30). `notification_preferences` ganha `shopee_shop_id`. A linha tem a conta OU a loja, nunca as duas (`notification_preferences_uma_origem`), em seis escopos:
+- geral;
+- só tipo;
+- só conta;
+- tipo e conta;
+- só loja;
+- tipo e loja.
+
+A duplicata é recusada pelo índice do escopo (23505), e a RLS só grava loja que a pessoa alcança. A preferência só decide o aviso em tempo real (D-076); a Central mostra tudo sempre. Desde a D-638, o evento da loja chega ao aviso com a coluna `shopee_shop_id`.
+
+**Decisão:**
+1. **`shouldNotify`** (`lib/notification-preferences.ts`):
+   - a regra pode ter a loja, e a regra da loja só casa evento da MESMA loja;
+   - a regra de uma conta do ML nunca casa evento de loja (ele chega com `ml_account_id` nulo), e a regra geral vale para os dois;
+   - na especificidade, a loja conta como a conta conta: tipo e loja vence só a loja, que vence a geral;
+   - a regra sem a loja (a de antes do C-82) vale nulo.
+2. **O shell** carrega a regra com a loja, e o aviso passa ao `shouldNotify` a loja do evento.
+3. **A tela `/notificacoes/preferencias`:**
+   - **o menu "Conta ou loja":** o Mercado Livre e a Shopee num menu só, cada um no seu grupo e num valor só (`ml:<id>` ou `shopee:<id>`), porque a regra tem uma origem. Só as lojas que a pessoa alcança aparecem;
+   - **a tabela:** a origem diz "Shopee · <loja>", e "Todas as contas e lojas" quando não há origem;
+   - **a recusa:** a da RLS (42501) diz que a pessoa não tem acesso à loja; a duplicata, que a combinação de tipo e conta ou loja já existe.
+4. **A gravação:** manda `shopee_shop_id` só com valor, e recusa na tela a conta junto com a loja antes do banco.
+
+**Publicação:** só a web, e só DEPOIS da migration `20261022110000` em produção. Antes dela, a leitura com `shopee_shop_id` falha: na tela das preferências, a página daria erro; no shell, a falha degrada para "sem regra" e todo evento viraria aviso. Nenhuma migration, RPC, worker ou api nesta decisão.
+
+**Verificacao:**
+- **unitários:** `lib/notification-preferences.test.ts`, 11 testes, 4 novos:
+  - a regra da loja casa só a mesma loja;
+  - a regra de conta nunca casa a loja;
+  - a da loja vence a geral pela severidade;
+  - tipo e loja vence só a loja.
+- **e2e:** no fim do ensaio da loja live:
+  - a regra para a loja nasce pelo formulário, com os dois grupos no menu;
+  - ela aparece como "Shopee · <loja>";
+  - a mesma combinação de novo é recusada com o porquê;
+  - a regra sai pela remoção com confirmação.
+- **mutação:** sem a loja no insert, a regra vira geral, e o e2e reprova.
+- **specs:** `notificacoes`, `home` e `configuracoes` 21/21, e o ensaio 18/18, com o banco recriado.
+- **suíte inteira:** com o banco recriado do zero (a migration do #311 e a main inclusas):
+  - chromium 261/261;
+  - `loja-live` 18/18;
+  - convite 3/3.
+
+**Impacto:**
+- `apps/web/lib/{notification-preferences.ts,notification-preferences.test.ts}`;
+- `apps/web/components/{shell.tsx,notification-toasts.tsx}`;
+- `apps/web/app/(app)/notificacoes/preferencias/{page.tsx,actions.ts,new-preference-form.tsx,preference-row.tsx}`;
+- `apps/web/e2e/ensaio-loja-live.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
 ## D-643 - A venda anomala vira um episodio por SKU e canal
 
 **Contexto:** o worker da venda anomala gravava uma acao por SKU por dia (`sales_anomaly:<sku>:<dia>`), e nenhuma fechava sozinha.

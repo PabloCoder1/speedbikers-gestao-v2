@@ -11,6 +11,10 @@ const SEVERITY_OPTIONS = ["informativo", "importante", "critico"];
 
 const ALL_TYPES = "";
 const ALL_ACCOUNTS = "";
+// D-642: a origem num valor só — `ml:<id>` ou `shopee:<id>` —, porque a regra
+// tem uma conta OU uma loja, nunca as duas (C-82).
+const PREFIXO_CONTA = "ml:";
+const PREFIXO_LOJA = "shopee:";
 
 /**
  * Agrupa o catálogo por domínio (`listing`, `stock`, `order`…) só para o
@@ -36,10 +40,13 @@ export function NewPreferenceForm({
   eventTypes,
   eventSeverity,
   accounts,
+  lojas,
 }: {
   eventTypes: string[];
   eventSeverity: Readonly<Record<string, EventSeverity>>;
   accounts: { id: string; label: string }[];
+  /** D-642: as lojas da Shopee que a pessoa alcança. */
+  lojas: { id: string; label: string }[];
 }): ReactNode {
   const router = useRouter();
   const [eventType, setEventType] = useState(ALL_TYPES);
@@ -69,7 +76,8 @@ export function NewPreferenceForm({
 
     const result = await createPreference({
       eventType: eventType === ALL_TYPES ? null : eventType,
-      mlAccountId: accountId === ALL_ACCOUNTS ? null : accountId,
+      mlAccountId: accountId.startsWith(PREFIXO_CONTA) ? accountId.slice(PREFIXO_CONTA.length) : null,
+      shopeeShopId: accountId.startsWith(PREFIXO_LOJA) ? accountId.slice(PREFIXO_LOJA.length) : null,
       minSeverity,
       enabled,
     });
@@ -125,7 +133,7 @@ export function NewPreferenceForm({
       </label>
 
       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
-        Conta
+        {lojas.length > 0 ? "Conta ou loja" : "Conta"}
         <select
           className="sb-input"
           value={accountId}
@@ -133,12 +141,31 @@ export function NewPreferenceForm({
             setAccountId(event.target.value);
           }}
         >
-          <option value={ALL_ACCOUNTS}>Todas as contas</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.label}
-            </option>
-          ))}
+          <option value={ALL_ACCOUNTS}>{lojas.length > 0 ? "Todas as contas e lojas" : "Todas as contas"}</option>
+          {lojas.length > 0 ? (
+            <>
+              <optgroup label="Mercado Livre">
+                {accounts.map((account) => (
+                  <option key={account.id} value={`${PREFIXO_CONTA}${account.id}`}>
+                    {account.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Shopee">
+                {lojas.map((loja) => (
+                  <option key={loja.id} value={`${PREFIXO_LOJA}${loja.id}`}>
+                    {loja.label}
+                  </option>
+                ))}
+              </optgroup>
+            </>
+          ) : (
+            accounts.map((account) => (
+              <option key={account.id} value={`${PREFIXO_CONTA}${account.id}`}>
+                {account.label}
+              </option>
+            ))
+          )}
         </select>
       </label>
 

@@ -150,7 +150,13 @@ export function NotificationToasts({
       // O recipient já existe (é por isso que este evento chegou aqui) —
       // a preferência só decide se aparece como toast, nunca se some da
       // Central de Notificações.
-      if (!shouldNotify(preferenceRules, { eventType: event.event_type, mlAccountId: event.ml_account_id, severity: event.severity })) {
+      if (!shouldNotify(preferenceRules, {
+          eventType: event.event_type,
+          mlAccountId: event.ml_account_id,
+          // D-642: a regra da loja casa pelo `shopee_shop_id` do evento (C-82).
+          shopeeShopId: event.shopee_shop_id,
+          severity: event.severity,
+        })) {
         return;
       }
 

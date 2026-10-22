@@ -44,7 +44,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
   );
 
   const label = preference.eventType === null ? "todos os tipos de evento" : eventTypeLabel(preference.eventType);
-  const account = preference.accountLabel ?? "todas as contas";
+  const account = preference.accountLabel ?? "todas as contas e lojas";
 
   async function save(next: { minSeverity: string; enabled: boolean }): Promise<void> {
     setBusy(true);
@@ -87,7 +87,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
   return (
     <tr>
       <td>{preference.eventType === null ? "Todos os tipos" : eventTypeLabel(preference.eventType)}</td>
-      <td>{preference.accountLabel ?? "Todas as contas"}</td>
+      <td>{preference.accountLabel ?? "Todas as contas e lojas"}</td>
       <td>
         <select
           className="sb-input"
