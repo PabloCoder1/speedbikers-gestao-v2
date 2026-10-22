@@ -135,8 +135,15 @@ export function CarregandoTela({ children }: { children?: ReactNode } = {}): Rea
             <span className="sb-search-label">Buscar SKU, anúncio, NF-e…</span>
           </div>
 
+          {/*
+            A MESMA FORMA DAS AÇÕES DO `Shell` (D-650): notificações, a régua,
+            o perfil e o lugar do "Sair". O ✦ do Copiloto saiu da barra real na
+            D-377 e tinha ficado aqui; sem o "Sair", a busca do esqueleto era
+            mais larga que a real e a barra pulava quando a tela chegava. O
+            "Sair" é só o espaço, invisível: um botão que não responde não é
+            controle.
+          */}
           <div className="sb-top-actions" aria-hidden="true">
-            <span className="sb-icon-button">✦</span>
             <span className="sb-icon-button">♧</span>
             <span className="sb-top-rule" />
             <div className="sb-profile">
@@ -146,6 +153,9 @@ export function CarregandoTela({ children }: { children?: ReactNode } = {}): Rea
                 <Barra largura="4rem" altura="0.5625rem" />
               </span>
             </div>
+            <span className="sb-button" style={{ visibility: "hidden" }}>
+              Sair
+            </span>
           </div>
 
           <span aria-hidden="true" className="sb-carregando-progresso sb-carregando-revela" />
