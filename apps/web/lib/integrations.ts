@@ -1,4 +1,5 @@
 import type { Tom } from "../components/tone";
+import { formatDay } from "./format";
 import { batchStatusLabel, mlAccountStatusLabel, statusTone } from "./labels";
 import { sanitizeErrorText } from "./sanitize";
 import { avisoDaAutorizacao, lojaDeTeste, vereditoDaLoja } from "./saude-loja-shopee";
@@ -674,7 +675,8 @@ function ia(input: IntegrationsInput): IntegrationCard {
     if (input.ai.budgetExceededAt !== null) {
       sync = {
         state: "atencao",
-        detail: `teto do mês ultrapassado em ${input.ai.budgetExceededAt.slice(0, 10)}; ${chamadas}; ${custo}`,
+        // D-656: o dia de São Paulo do instante, e não o começo do texto ISO (o dia em UTC).
+        detail: `teto do mês ultrapassado em ${formatDay(input.ai.budgetExceededAt)}; ${chamadas}; ${custo}`,
         observedAt: input.ai.budgetExceededAt,
       };
     } else if (input.ai.runsThisMonth === 0 || input.ai.lastRunAt === null) {
@@ -725,7 +727,7 @@ function supabase(input: IntegrationsInput): IntegrationCard {
     input.migration?.version === undefined || input.migration.version === null
       ? "migration aplicada não lida (restrita a ADMIN)"
       : `migration ${input.migration.version}${input.migration.name === null ? "" : ` (${input.migration.name})`} aplicada${
-          input.migration.applied_at === null ? "" : ` em ${input.migration.applied_at.slice(0, 10)}`
+          input.migration.applied_at === null ? "" : ` em ${formatDay(input.migration.applied_at)}`
         }${input.migration.count === null ? "" : `, ${String(input.migration.count)} no total`}`;
 
   return {

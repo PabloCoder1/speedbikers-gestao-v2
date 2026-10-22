@@ -8,6 +8,7 @@ import { TOM } from "../../../components/tone";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
+import { lastBusinessDays } from "../../../lib/business-window";
 import { formatCount, formatCurrency } from "../../../lib/format";
 import {
   PAGE_SIZE,
@@ -201,8 +202,15 @@ export default async function VinculacoesPage({
     );
   }
 
-  const hoje = new Date();
-  const desde = new Date(hoje.getTime() - JANELA_DIAS * 24 * 60 * 60 * 1000);
+  /*
+    A JANELA EM DIAS DE SÃO PAULO (D-656). Era `toISOString().slice(0, 10)`, o
+    dia em UTC: depois das 21h de Brasília "hoje" já era amanhã, e a janela
+    andava um dia (contava um dia sem dado e perdia o mais antigo) -- o defeito
+    que `lib/business-window.ts` tirou de seis telas em 18/09. A largura é a de
+    antes: de hoje − 30 a hoje, os dois inclusos, como o
+    `now() - 30 dias` da conferência (`get_link_integrity`).
+  */
+  const janela = lastBusinessDays(JANELA_DIAS + 1);
 
   /*
     A LEITURA ÚNICA (D-376). Página, contagens dos cartões e a linha por conta
@@ -211,8 +219,8 @@ export default async function VinculacoesPage({
   */
   const leitura = await supabase.rpc("get_listings_link_overview", {
     p_organization_id: organizationId,
-    p_date_from: desde.toISOString().slice(0, 10),
-    p_date_to: hoje.toISOString().slice(0, 10),
+    p_date_from: janela.from,
+    p_date_to: janela.to,
     // A conta entra na JANELA: vale para a lista E para as contagens (D-236).
     p_ml_account_id: contaEscolhida?.id ?? null,
     ...toRpcArgs(filters),
@@ -234,8 +242,7 @@ export default async function VinculacoesPage({
         accounts={accounts}
         contaEscolhida={contaEscolhida}
         organizationId={organizationId}
-        de={desde}
-        ate={hoje}
+        janela={janela}
       />
     );
   }
@@ -820,22 +827,20 @@ async function SemALeituraNova({
   accounts,
   contaEscolhida,
   organizationId,
-  de,
-  ate,
+  janela,
 }: {
   motivo: string;
   filters: LinkIntegrityFilters;
   accounts: readonly { id: string; slug: string; label: string }[];
   contaEscolhida: { id: string; slug: string; label: string } | null;
   organizationId: string;
-  de: Date;
-  ate: Date;
+  janela: { from: string; to: string };
 }): Promise<ReactNode> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_listings_dashboard", {
     p_organization_id: organizationId,
-    p_date_from: de.toISOString().slice(0, 10),
-    p_date_to: ate.toISOString().slice(0, 10),
+    p_date_from: janela.from,
+    p_date_to: janela.to,
     p_ml_account_id: contaEscolhida?.id ?? null,
     ...toRpcArgs(filters),
     p_limit: PAGE_SIZE,
