@@ -16,7 +16,7 @@ import {
 } from "../../../lib/action-filters";
 import { actionShortcuts } from "../../../lib/action-shortcuts";
 import { summarizePagedWindow } from "../../../lib/filters";
-import { formatBusinessDate, formatCount } from "../../../lib/format";
+import { formatCount, formatDay } from "../../../lib/format";
 import { currentMembership } from "../../../lib/request-membership";
 import { formatAge } from "../../../lib/relative-time";
 import { createClient } from "../../../lib/supabase/server";
@@ -196,11 +196,10 @@ export default async function AcoesPage({
       status: row.status ?? "novo",
       assignee_id: row.assignee_id,
       // Duração enquanto ela informa; acima de 7 dias a data absoluta diz mais
-      // (`lib/relative-time.ts`), e ela sai de `formatBusinessDate`, que é o
-      // único dono do fuso de negócio no projeto.
-      age:
-        formatAge(row.created_at, agora) ??
-        (row.created_at === null ? "—" : formatBusinessDate(row.created_at)),
+      // (`lib/relative-time.ts`). D-648: o dia sai de `formatDay`, porque
+      // `created_at` é um INSTANTE; `formatBusinessDate` só aceita `AAAA-MM-DD`
+      // e devolvia "—" para todo cartão com mais de 7 dias.
+      age: formatAge(row.created_at, agora) ?? formatDay(row.created_at),
       decisions: decisionsByAction.get(row.id) ?? [],
       shortcuts: actionShortcuts({
         kind: row.kind ?? "",

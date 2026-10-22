@@ -39,6 +39,22 @@ export interface ActionCandidateCause {
 /** Problema e oportunidade são o mesmo objeto com sinal invertido (D-064). */
 export type ActionTone = "problema" | "oportunidade" | "neutro";
 
+/**
+ * D-648: o ciclo de episódio (D-403; a venda anômala desde a D-643), lido da
+ * evidência que o banco escreve. Os dias são de negócio (`AAAA-MM-DD`, a coluna
+ * `date` do ciclo) e chegam crus — quem mostra formata sem `new Date`.
+ */
+export interface ActionEpisodeView {
+  /** O último dia em que o detector viu a condição. Nulo fora do ciclo. */
+  readonly ultimaDeteccao: string | null;
+  /**
+   * O encerramento automático: o banco fecha o episódio que sumiu há 3 dias e
+   * escreve o motivo. Nulo quando quem fechou foi uma pessoa (o ciclo nunca
+   * escreve nesse caso) e nas ações de fora do ciclo.
+   */
+  readonly encerramento: { readonly em: string | null; readonly motivo: string } | null;
+}
+
 export interface ActionEvidenceView {
   readonly kindLabel: string;
   /**
@@ -51,6 +67,7 @@ export interface ActionEvidenceView {
   readonly tone: ActionTone;
   readonly evidencias: readonly ActionEvidenceItem[];
   readonly causas: readonly ActionCandidateCause[];
+  readonly episodio: ActionEpisodeView;
 }
 
 const KIND_LABELS: Readonly<Record<string, string>> = {
@@ -220,6 +237,31 @@ export function readActionMarketplace(raw: unknown): "ML" | "SHOPEE" | null {
   return raw.marketplace === "SHOPEE" ? "SHOPEE" : raw.marketplace === "ML" ? "ML" : null;
 }
 
+const DIA_DE_NEGOCIO = /^\d{4}-\d{2}-\d{2}$/u;
+
+function readDia(source: Record<string, unknown>, key: string): string | null {
+  const value = source[key];
+
+  return typeof value === "string" && DIA_DE_NEGOCIO.test(value) ? value : null;
+}
+
+/**
+ * O ciclo de episódio da evidência (D-648). Só o encerramento `por: "sistema"`
+ * conta: é o único que o ciclo escreve, e um motivo sem autor não diria quem
+ * fechou.
+ */
+export function readActionEpisode(raw: unknown): ActionEpisodeView {
+  if (!isRecord(raw)) return { ultimaDeteccao: null, encerramento: null };
+
+  const fim = raw.encerramento;
+  const motivo = isRecord(fim) && fim.por === "sistema" ? readString(fim, "motivo") : null;
+
+  return {
+    ultimaDeteccao: readDia(raw, "ultima_deteccao"),
+    encerramento: motivo === null || !isRecord(fim) ? null : { em: readDia(fim, "em"), motivo },
+  };
+}
+
 export function describeActionEvidence(kind: string, raw: unknown): ActionEvidenceView {
   const direcao = readDirecao(raw);
   const marketplace = readActionMarketplace(raw);
@@ -232,5 +274,6 @@ export function describeActionEvidence(kind: string, raw: unknown): ActionEviden
     tone: toneFor(kind, direcao),
     evidencias: readEvidencias(raw),
     causas: readCausas(raw),
+    episodio: readActionEpisode(raw),
   };
 }

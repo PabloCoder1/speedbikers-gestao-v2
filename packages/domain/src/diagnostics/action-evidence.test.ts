@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeActionEvidence, readActionMarketplace, readShopeeListingRef } from "./action-evidence.js";
+import { describeActionEvidence, readActionEpisode, readActionMarketplace, readShopeeListingRef } from "./action-evidence.js";
 
 /** Forma real gravada por `detect-sales-anomaly-actions.ts` (D-064). */
 const VENDA_ANOMALA = {
@@ -197,5 +197,52 @@ describe("a venda anômala por canal (D-644)", () => {
     expect(describeActionEvidence("venda_anomala", { direcao: "alta" }).marketplace).toBeNull();
     expect(readActionMarketplace({ marketplace: "tiktok" })).toBeNull();
     expect(readActionMarketplace(null)).toBeNull();
+  });
+});
+
+describe("o ciclo de episódio no cartão (D-648)", () => {
+  /** A forma que o ciclo da D-403 (e o da venda anômala, D-643) escreve ao encerrar. */
+  const ENCERRADA = {
+    evidencias: [{ tipo: "venda_vs_baseline", descricao: "Vendeu 9 unidades a mais que o esperado." }],
+    primeira_deteccao: "2026-10-18",
+    ultima_deteccao: "2026-10-19",
+    encerramento: {
+      em: "2026-10-22",
+      por: "sistema",
+      motivo: "A venda do SKU neste canal voltou ao normal há 3 dias.",
+    },
+  };
+
+  it("lê a última detecção e o encerramento automático, com o dia cru", () => {
+    expect(describeActionEvidence("venda_anomala", ENCERRADA).episodio).toEqual({
+      ultimaDeteccao: "2026-10-19",
+      encerramento: { em: "2026-10-22", motivo: "A venda do SKU neste canal voltou ao normal há 3 dias." },
+    });
+  });
+
+  it("o episódio aberto tem a última detecção e nenhum encerramento", () => {
+    expect(readActionEpisode({ primeira_deteccao: "2026-10-20", ultima_deteccao: "2026-10-22" })).toEqual({
+      ultimaDeteccao: "2026-10-22",
+      encerramento: null,
+    });
+  });
+
+  it("só o encerramento do sistema conta; sem motivo, não há encerramento", () => {
+    expect(readActionEpisode({ encerramento: { em: "2026-10-22", por: "pessoa", motivo: "x" } }).encerramento).toBeNull();
+    expect(readActionEpisode({ encerramento: { em: "2026-10-22", por: "sistema" } }).encerramento).toBeNull();
+    expect(readActionEpisode({ encerramento: { em: "2026-10-22", por: "sistema", motivo: "" } }).encerramento).toBeNull();
+    expect(readActionEpisode({ encerramento: "sistema" }).encerramento).toBeNull();
+  });
+
+  it("um dia ilegível vira nulo, sem derrubar o motivo", () => {
+    expect(
+      readActionEpisode({ ultima_deteccao: "2026-10-22T03:00:00Z", encerramento: { em: 20261022, por: "sistema", motivo: "Sumiu." } }),
+    ).toEqual({ ultimaDeteccao: null, encerramento: { em: null, motivo: "Sumiu." } });
+  });
+
+  it("fora do ciclo (a ação de antes da D-403, o SAC) ou com payload estranho, tudo nulo", () => {
+    for (const raw of [RECLAMACOES, VENDA_ANOMALA, null, undefined, [], "x"]) {
+      expect(readActionEpisode(raw)).toEqual({ ultimaDeteccao: null, encerramento: null });
+    }
   });
 });

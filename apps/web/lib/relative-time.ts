@@ -11,8 +11,10 @@
  * é a mesma em qualquer fuso.
  *
  * Acima da janela útil a função devolve `null` e quem chama mostra a data
- * absoluta por `formatBusinessDate`, que já sabe o fuso de negócio. Uma
- * definição de "que dia é hoje" no projeto, não duas.
+ * absoluta por `formatDay` (ou `formatDateTime`), que já sabe o fuso de
+ * negócio. Uma definição de "que dia é hoje" no projeto, não duas. Nunca por
+ * `formatBusinessDate`: ela só aceita `AAAA-MM-DD`, e um instante vira "—"
+ * (o defeito que a D-648 corrigiu na Central de Ações).
  */
 
 const MINUTO = 60_000;

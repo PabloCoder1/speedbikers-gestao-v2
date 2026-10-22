@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **554** (D-001 a D-644).
+Decisões registradas: **555** (D-001 a D-648).
 
 ## Por domínio
 
@@ -169,7 +169,7 @@ Decisões registradas: **554** (D-001 a D-644).
 - **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
 - **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
 
-### interface (69)
+### interface (70)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -240,6 +240,7 @@ Decisões registradas: **554** (D-001 a D-644).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
+- **D-648** — O episódio da ação nas telas: a última detecção, o encerramento automático e a idade do cartão antigo
 
 ### mercado-livre (105)
 

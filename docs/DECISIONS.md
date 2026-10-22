@@ -19217,3 +19217,40 @@ O contrato tem três partes:
 - `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts,index.ts}`;
 - `apps/web/e2e/ensaio-loja-live.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.
+
+## D-648 - O episódio da ação nas telas: a última detecção, o encerramento automático e a idade do cartão antigo
+
+**Contexto:** desde a D-403, os alertas da central são episódios: um cartão por assunto, atualizado enquanto o detector vê a condição e encerrado pelo banco 3 dias depois de ela sumir. A D-643 do A1 (#319, decisão do dono de 22/10) levou a venda anômala para o mesmo ciclo. O banco escreve o ciclo na evidência:
+- `primeira_deteccao` e `ultima_deteccao` (dias de negócio, `AAAA-MM-DD`);
+- `encerramento` (`em`, `por: "sistema"` e `motivo`) quando fecha.
+
+Nenhuma tela lia esses campos. O A1 sugeriu mostrar o encerramento; ao olhar as telas, apareceram mais duas coisas:
+- **a fila da `/acoes` só traz as abertas** (`get_actions_queue`, `status in ('novo','em_andamento')`). A ação fechada aparece num lugar só, na aba Decisões do SKU, com o selo "Resolvido" e sem dizer que quem fechou foi o sistema;
+- **a idade do cartão com mais de 7 dias era "—".** `formatAge` devolve nulo acima da janela, e a tela caía em `formatBusinessDate(created_at)`, que só aceita `AAAA-MM-DD` e recebe um instante. Como o episódio dura dias, o defeito atinge justamente ele. O mesmo erro estava em "Alteração em —", na aba Diagnóstico do anúncio (`occurred_at` da `get_listing_content_change_analysis` é `timestamptz`).
+
+**Decisão:**
+1. **`readActionEpisode`** (`packages/domain`, dentro de `describeActionEvidence`): a última detecção e o encerramento, com os dias crus. Conta só o encerramento `por: "sistema"` com motivo, que é o único que o ciclo escreve. Dia ilegível vira nulo sem derrubar o motivo, e a ação de fora do ciclo fica com tudo nulo.
+2. **`/acoes`:** o cartão aberto diz "Última detecção em DD/MM/AAAA" na linha de metadados. A idade acima de 7 dias sai de `formatDay` (o dia de São Paulo do instante).
+3. **Aba Decisões do SKU:** a ação resolvida que o sistema fechou diz "Encerrada pelo sistema em DD/MM/AAAA: <motivo>", acima da recomendação. A primeira detecção não entra, porque a idade do cartão já é ela: o episódio nasce no dia da primeira detecção.
+4. **Aba Diagnóstico do anúncio:** "Alteração em" sai de `formatDay`.
+5. O comentário de `lib/relative-time.ts` mandava usar `formatBusinessDate`, que é a origem do defeito, e agora manda usar `formatDay` ou `formatDateTime`.
+
+**Publicação:** só a web e o `packages/domain`. Nenhuma migration, RPC, worker ou api. Funciona antes e depois da `20261022140000` (D-643) em produção: sem os campos, a tela fica como antes. Empilhada sobre a D-644 (#317), porque as duas mexem em `action-evidence.ts` e na `/acoes`; entra depois dela.
+
+**Verificação:**
+- **unitários:** `action-evidence.test.ts` (19, 5 novos: a leitura completa, o aberto, só o do sistema, o dia ilegível e o de fora do ciclo).
+- **e2e:** `e2e/episodio-da-acao.spec.ts` (2 novos). As ações entram pela chave de serviço e saem no `finally`, e a decisão sai em cascata com a ação:
+  - na `/acoes`, o cartão de 10 dias diz a última detecção e o dia em que nasceu, e o de reclamações do seed não ganha a linha;
+  - na aba Decisões, a resolvida pelo sistema diz quando e por quê, e a decisão do seed (ação aberta) não ganha a linha.
+- **mutação:** com as três telas de antes, os dois reprovam. O cartão de 10 dias aparece como "Venda anômala · Queda—", com "—" no lugar da data.
+- **anúncio, à mão:** um evento de título de 10 dias atrás, só no banco isolado, mostra "Alteração em 12/10/2026" na aba Diagnóstico. Não vira e2e porque o evento de domínio não se apaga e mudaria as contas de outros arquivos.
+- **suíte inteira**, com o banco recriado do zero: chromium 263/263, `loja-live` 18/18, convite 3/3.
+
+**Impacto:**
+- `packages/domain/src/diagnostics/{action-evidence.ts,action-evidence.test.ts,index.ts}`;
+- `apps/web/app/(app)/acoes/{action-card.tsx,page.tsx}`;
+- `apps/web/app/(app)/skus/[skuId]/page.tsx`;
+- `apps/web/app/(app)/anuncios/[itemId]/page.tsx`;
+- `apps/web/lib/relative-time.ts`;
+- `apps/web/e2e/episodio-da-acao.spec.ts`;
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md`.

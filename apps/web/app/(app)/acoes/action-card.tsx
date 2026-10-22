@@ -7,7 +7,7 @@ import Link from "next/link";
 
 import { StatusPill } from "../../../components/status-pill";
 import type { ActionShortcut } from "../../../lib/action-shortcuts";
-import { formatCurrency } from "../../../lib/format";
+import { formatBusinessDate, formatCurrency } from "../../../lib/format";
 import { formatDecisionSnapshot, outcomeWindowLabel } from "../../../lib/decision-format";
 import { actionSeverityLabel, actionStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
@@ -232,6 +232,18 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
 
           {assigneeId !== null && aberta && (
             <span className="sb-divide">{assigneeId === userId ? "Atribuída a você" : "Atribuída"}</span>
+          )}
+
+          {/*
+            D-648: o episódio (D-403, D-643) é um cartão só, atualizado enquanto
+            o detector vê a condição e encerrado pelo banco 3 dias depois de ela
+            sumir. A última detecção diz se ele ainda está vivo. (A fila só traz
+            as abertas; o motivo do encerramento aparece na aba Decisões do SKU.)
+          */}
+          {aberta && action.evidence.episodio.ultimaDeteccao !== null && (
+            <span className="sb-divide">
+              Última detecção em {formatBusinessDate(action.evidence.episodio.ultimaDeteccao)}
+            </span>
           )}
         </div>
 

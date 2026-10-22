@@ -2201,6 +2201,21 @@ export default async function SkuDashboardPage({
                       <StatusPill code={decision.actions.status} label={actionStatusLabel(decision.actions.status)} />
                     </div>
 
+                    {/*
+                      D-648: o episódio (D-403, D-643) que o banco encerrou 3 dias
+                      depois de a condição sumir. Sem esta linha, o selo dizia
+                      "Resolvido" e quem registrou a decisão não sabia que não foi
+                      uma pessoa que fechou, nem por quê.
+                    */}
+                    {decision.actions.status === "resolvido" && acao.episodio.encerramento !== null && (
+                      <p className="sb-skud-note">
+                        Encerrada pelo sistema
+                        {acao.episodio.encerramento.em !== null &&
+                          ` em ${formatBusinessDate(acao.episodio.encerramento.em)}`}
+                        : {acao.episodio.encerramento.motivo}
+                      </p>
+                    )}
+
                     <p className="sb-skud-note">
                       Recomendação da ação: {decision.actions.recommendation}
                     </p>

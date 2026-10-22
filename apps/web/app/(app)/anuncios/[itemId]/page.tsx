@@ -15,7 +15,7 @@ import { TOM, tomDeRelist, tomDeStatus } from "../../../../components/tone";
 import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { anuncioExcluido, EXCLUIDO_NO_MERCADO_LIVRE, quandoAV3ViuAExclusao } from "../../../../lib/anuncio-excluido";
 import { formatEventDiff } from "../../../../lib/event-format";
-import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatDay, formatPercent } from "../../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, relistStatusLabel, statusTone } from "../../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../../lib/full-filters";
 import { formatDecisionSnapshot } from "../../../../lib/decision-format";
@@ -1518,7 +1518,7 @@ export default async function AnuncioPage({
                           {alert ? `Alerta: anúncio entrou em queda após ${labels.toLowerCase()}.` : labels}
                         </b>
                         <p style={{ margin: "0.25rem 0 0" }}>
-                          Alteração em {formatBusinessDate(analysis.occurred_at)} · vendas {formatCount(analysis.baseline_units)} → {formatCount(analysis.outcome_units)}
+                          Alteração em {formatDay(analysis.occurred_at)} · vendas {formatCount(analysis.baseline_units)} → {formatCount(analysis.outcome_units)}
                           {analysis.baseline_visits !== null && analysis.outcome_visits !== null
                             ? ` · visitas ${formatCount(analysis.baseline_visits)} → ${formatCount(analysis.outcome_visits)}`
                             : ""}

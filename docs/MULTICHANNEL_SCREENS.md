@@ -404,6 +404,7 @@ número.
 | **D-636** | O cabeçalho da `/faturamento` com a mesma forma nos três recortes | A3 (o achado e a escolha) | ✔ D-636 (#306) |
 | **D-638** | A mudança de preço do anúncio da Shopee nas notificações, antes do worker | A1 (C-81, D-633) | em código |
 | **D-644** | O diagnóstico de venda por canal: o `/diagnostico`, o SKU e a Central | A1 (C-83, D-639) | em código; espera a migration `20261022130000` em produção |
+| **D-648** | O episódio da ação: a última detecção, o encerramento automático e a idade do cartão antigo | A1 (D-643, a sugestão) | em código; depois da D-644 |
 
 **T1 em código (D-431, 14/10).** O seletor (`components/seletor-marketplace.tsx`,
 regras em `lib/marketplace.ts`) é o primeiro menu das quatro telas e só aparece
