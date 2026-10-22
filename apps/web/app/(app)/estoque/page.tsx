@@ -11,7 +11,7 @@ import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
-import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
+import { formatCount, formatCurrency, formatDay } from "../../../lib/format";
 import { PAGE_SIZE, buildStockHref, resolveStockFilters, summarizeStockWindow } from "../../../lib/stock-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
@@ -506,9 +506,12 @@ export default async function EstoquePage({
                       );
                     })()}
                   </td>
-                  <td>
-                    {row.last_movement_at === null ? "—" : formatBusinessDate(row.last_movement_at.slice(0, 10))}
-                  </td>
+                  {/*
+                    D-656: o DIA de São Paulo do último movimento. `last_movement_at`
+                    é um instante, e o `.slice(0, 10)` dava o dia em UTC: o
+                    movimento das 21h às 24h de Brasília aparecia no dia seguinte.
+                  */}
+                  <td>{formatDay(row.last_movement_at)}</td>
                   <td>
                     <span className="sb-stock-row-actions">
                       <Link className="sb-button sb-button-sm" href={`/skus/${row.sku_id}`}>

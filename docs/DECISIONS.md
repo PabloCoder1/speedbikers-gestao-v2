@@ -19314,3 +19314,42 @@ No celular, a busca do esqueleto era 22 px mais larga que a real, e a barra pula
 - `apps/web/components/carregando.tsx`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF,MULTICHANNEL_SCREENS}.md` (com a D-638 e a D-646 marcadas como no ar).
+
+## D-656 - O dia de negócio nas telas que ainda tiravam o dia de um instante em UTC
+
+**Contexto:** a D-648 achou dois instantes passados para `formatBusinessDate`, que só aceita `AAAA-MM-DD` e devolve "—": a idade do cartão da `/acoes` e a "Alteração em" do anúncio. Uma busca pelo mesmo tipo de erro achou mais quatro lugares que tiravam o dia de um instante sem o fuso de São Paulo (D-050). O build, o typecheck e o e2e passam com qualquer um, porque o e2e roda de dia. Depois das 21h de Brasília, o dia em UTC já é amanhã.
+- **`/vinculacoes`:** a janela dos 30 dias (`get_listings_link_overview` e, sem a leitura nova, `get_listings_dashboard`) saía de `toISOString().slice(0, 10)`. À noite ela andava um dia: contava um dia sem dado e perdia o mais antigo. É o defeito que `lib/business-window.ts` tirou de seis telas em 18/09.
+- **Inspeção Rápida da `/produtos`:** a mesma janela em UTC.
+- **`/estoque`:** o "último movimento" era `formatBusinessDate(last_movement_at.slice(0, 10))`, o começo do texto ISO, que é o dia em UTC. O movimento das 21h às 24h aparecia no dia seguinte.
+- **`/integracoes`:** a data do teto da IA e a da última migration saíam cruas, em ISO e em UTC ("em 2026-10-22").
+
+A previsão de entrega do pedido de compra (`expected_at`) também usa `.slice(0, 10)`, e ali está certo: o dia escolhido é gravado como meia-noite UTC, então o começo do texto é o próprio dia.
+
+**Decisão:**
+1. **`/vinculacoes`:** `lastBusinessDays(JANELA_DIAS + 1)`, com a mesma largura de antes (de hoje − 30 a hoje, os dois inclusos, como o `now() - 30 dias` da `get_link_integrity`), agora em dias de São Paulo. O componente sem a leitura nova recebe a mesma janela.
+2. **Inspeção Rápida:** `lastBusinessDays(LOOKBACK_DAYS)`, a mesma largura.
+3. **`/estoque`:** o último movimento sai de `formatDay`.
+4. **`/integracoes`:** as duas datas saem de `formatDay` (DD/MM/AAAA, São Paulo).
+5. **A guarda `check:dia-de-negocio`** (`apps/web/scripts/check-dia-de-negocio.mjs`, na CI ao lado das outras guardas estáticas). Ela reprova três formas:
+   - `toISOString()` recortado;
+   - o `.slice(0, 10)` de um `*_at`/`*At`;
+   - `formatBusinessDate` de um `*_at`/`*At`.
+
+   Não reprova a previsão de compra, dois arquivos isentos com o motivo (a conta de calendário sobre uma data montada com `Date.UTC`) nem comentários. Ela se prova na carga com 12 amostras. Ficam três pendentes, numa lista que só diminui:
+   - a `/acoes` e o anúncio, já corrigidos na D-648 (#321), saem no merge dela;
+   - a janela da `/precos` (`lib/price-filters.ts`) começa à meia-noite UTC. A D-640 (#310) mexe no mesmo arquivo, e a correção vem depois dela.
+
+**Publicação:** só a web e a CI. Nenhuma migration, RPC, worker ou api.
+
+**Verificação:**
+- **unitários:** `lib/integrations.test.ts` (36, 2 casos novos: 02:30 UTC de 22/10 é "21/10/2026", nos dois textos). Os dois reprovam com o código de antes.
+- **a guarda:** com as correções revertidas, reprova os 10 lugares (os 8 desta decisão e os 2 da D-648); com elas, passa, com os 3 pendentes.
+- **e2e:** `estoque-ajuste`, `vinculacoes`, `produtos` e `integracoes` 19/19, com o banco recriado.
+- **suíte inteira**, com o banco recriado do zero: chromium 263/264, `loja-live` 17/17, convite 3/3. A falha foi o `web-vitals` (o CLS da `/central` deu 0,02, e o teste exige 0), medido enquanto um build pesado rodava na outra worktree. Sozinho, com a máquina ociosa, ele passou 3/3. A D-656 não toca na `/central` nem no shell.
+
+**Impacto:**
+- `apps/web/app/(app)/{vinculacoes/page.tsx,produtos/inspecao.ts,estoque/page.tsx}`;
+- `apps/web/lib/{integrations.ts,integrations.test.ts}`;
+- `apps/web/scripts/check-dia-de-negocio.mjs` e `apps/web/package.json`;
+- `.github/workflows/ci.yml` (o passo da guarda);
+- `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md`.

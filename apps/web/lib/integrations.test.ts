@@ -513,6 +513,10 @@ describe("IA / Copiloto", () => {
     estourou.ai = { runsThisMonth: 40, lastRunAt: horasAtras(1), monthCostUsd: 19.2, budgetExceededAt: horasAtras(5) };
     expect(card(estourou, "ia").sync?.state).toBe("atencao");
     expect(card(estourou, "ia").sync?.detail).toContain("teto do mês ultrapassado");
+    // D-656: o dia de São Paulo, no formato da tela, e não o ISO cru em UTC.
+    // 02:30 UTC de 22/10 é 23:30 de 21/10 em Brasília.
+    estourou.ai = { ...estourou.ai, budgetExceededAt: "2026-10-22T02:30:00Z" };
+    expect(card(estourou, "ia").sync?.detail).toContain("teto do mês ultrapassado em 21/10/2026;");
 
     const parado = base();
     parado.ai = { runsThisMonth: 0, lastRunAt: horasAtras(2000), monthCostUsd: 0, budgetExceededAt: null };
@@ -541,6 +545,11 @@ describe("Supabase e Google Cloud", () => {
     expect(s.configuration.state).toBe("nao_verificavel");
     expect(s.configuration.detail).toContain("migration 20260903160535 (settings_overview_rpc) aplicada");
     expect(s.configuration.detail).toContain("135 no total");
+
+    // D-656: o dia da migration é o de São Paulo (01:00 UTC de 22/10 é 22:00 de 21/10).
+    const tarde = base();
+    tarde.migration = { version: "20260903160535", name: "settings_overview_rpc", applied_at: "2026-10-22T01:00:00Z", count: 135 };
+    expect(card(tarde, "supabase").configuration.detail).toContain("aplicada em 21/10/2026");
   });
 
   it("Google Cloud: API e heartbeat em dia é ok; API muda é erro; heartbeat com última execução FALHA é erro; sem URL é não verificável", () => {

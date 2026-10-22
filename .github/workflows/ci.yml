@@ -128,6 +128,14 @@ jobs:
       - name: Guarda de vocabulario do hub de configuracoes
         run: pnpm --filter @sb/web run check:settings-vocabulary
 
+      # O dia de negocio e o de Sao Paulo (D-050), e um instante so vira dia
+      # pelo fuso (D-656): `toISOString().slice(0, 10)` e o `.slice(0, 10)` de um
+      # `*_at` dao o dia em UTC (depois das 21h, "hoje" ja e amanha), e
+      # `formatBusinessDate` de um instante mostra "—". Build, typecheck e e2e
+      # passam, porque o e2e roda de dia. Estatica, sem banco.
+      - name: Guarda do dia de negocio
+        run: pnpm --filter @sb/web run check:dia-de-negocio
+
       # O budget de contexto (HANDOFF e AGENTS) so existia como script local, e em
       # 2026-09-17 a v3 passou do limite sem nenhum PR reprovar. Guarda estatica,
       # roda em segundos e nao precisa de banco.

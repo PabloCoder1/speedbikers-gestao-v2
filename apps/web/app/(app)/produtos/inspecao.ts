@@ -2,6 +2,7 @@
 
 import { resolveReplenishmentPolicy, type ReplenishmentSetting } from "@sb/domain";
 
+import { lastBusinessDays } from "../../../lib/business-window";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura, type CoberturaDescrita } from "../../../lib/sku-coverage-display";
 
@@ -103,10 +104,6 @@ const VAZIO: SkuInspection = {
   error: null,
 };
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 export async function inspecionarSku(
   organizationId: string,
   skuId: string,
@@ -114,17 +111,16 @@ export async function inspecionarSku(
 ): Promise<SkuInspection> {
   const supabase = await createClient();
 
-  const dateTo = new Date();
-  const dateFrom = new Date(dateTo);
-
-  dateFrom.setDate(dateFrom.getDate() - (LOOKBACK_DAYS - 1));
+  // D-656: os `LOOKBACK_DAYS` dias de São Paulo, hoje incluído. Era o dia em UTC
+  // (`toISOString().slice(0, 10)`), que depois das 21h de Brasília já é amanhã.
+  const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
 
   const [coverageResult, dashboardResult, settingsResult, movementResult] = await Promise.all([
     supabase
       .rpc("get_stock_coverage", {
         p_organization_id: organizationId,
-        p_date_from: isoDate(dateFrom),
-        p_date_to: isoDate(dateTo),
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
         p_sku_id: skuId,
       })
       .maybeSingle(),
@@ -132,8 +128,8 @@ export async function inspecionarSku(
       .rpc("get_sku_dashboard", {
         p_organization_id: organizationId,
         p_sku_id: skuId,
-        p_date_from: isoDate(dateFrom),
-        p_date_to: isoDate(dateTo),
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
       })
       .maybeSingle(),
     supabase

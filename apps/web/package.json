@@ -18,7 +18,8 @@
     "check:control-styles": "node scripts/check-control-styles.mjs",
     "check:loading": "node scripts/check-loading.mjs",
     "check:navegacao-suave": "node scripts/check-navegacao-suave.mjs",
-    "check:settings-vocabulary": "node scripts/check-settings-vocabulary.mjs"
+    "check:settings-vocabulary": "node scripts/check-settings-vocabulary.mjs",
+    "check:dia-de-negocio": "node scripts/check-dia-de-negocio.mjs"
   },
   "dependencies": {
     "@sb/db": "workspace:*",
