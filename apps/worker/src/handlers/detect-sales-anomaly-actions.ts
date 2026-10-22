@@ -24,6 +24,13 @@ import type { HandlerContext, JobHandler } from "../router.js";
  * Severidade espelha confiança nesta primeira fatia: não há ainda base
  * evidencial para um limiar de severidade por valor em R$ (diferente do
  * z-score, que é convenção estatística padrão) — `docs/DECISIONS.md` D-064.
+ *
+ * **Por canal (C-83, D-639, decisão do dono em 22/10):** a linha de base vem
+ * por SKU E canal (Mercado Livre e Shopee), e cada canal é avaliado separado
+ * — uma queda no ML vira ação mesmo que a Shopee compense, e a ação diz o
+ * canal (`evidence.marketplace`). Os eventos do SKU valem para os dois canais;
+ * os do anúncio e do pedido, só para o canal deles. A reclamação aberta (SAC)
+ * é do ML. A ação do ML mantém a `dedup_key` de antes.
  */
 
 const payloadSchema = z.object({ organizationId: z.uuid() });
@@ -33,7 +40,12 @@ export interface DetectSalesAnomalyActionsDeps {
   now?: () => Date;
 }
 
+/** C-83: os canais avaliados, na mesma chamada para as três RPCs. */
+const MARKETPLACES = ["ML", "SHOPEE"] as const;
+
 interface BaselineRow {
+  /** C-83: 'ML' | 'SHOPEE'. */
+  marketplace: string;
   sku_id: string;
   sku: string;
   title: string | null;
@@ -47,7 +59,10 @@ interface BaselineRow {
 interface AveragePriceRow {
   sku_id: string;
   average_price: number;
+  marketplace: string;
 }
+
+const chave = (skuId: string, marketplace: string): string => `${skuId}:${marketplace}`;
 
 const CORRELATION_WINDOW_DAYS_BEFORE = 3;
 const CORRELATION_WINDOW_DAYS_AFTER = 1;
@@ -68,8 +83,9 @@ function toSignal(row: BaselineRow): SalesBaselineSignal {
   };
 }
 
-function toEvidence(diagnosis: SalesAnomalyDiagnosis): Json {
+function toEvidence(diagnosis: SalesAnomalyDiagnosis, marketplace: string): Json {
   return {
+    marketplace,
     direcao: diagnosis.direcao,
     z_score: diagnosis.zScore,
     units_delta: diagnosis.unitsDelta,
@@ -97,6 +113,7 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const baseline = await deps.db.rpc("get_sku_sales_baseline", {
       p_organization_id: organizationId,
       p_as_of: asOf,
+      p_marketplaces: [...MARKETPLACES],
     });
 
     if (baseline.error !== null) {
@@ -108,9 +125,13 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     // Primeira passada sem eventos: só para achar QUAIS SKUs são anomalia,
     // evitando buscar domain_events/preço de SKU nenhum sem necessidade —
     // mesmo raciocínio de `/diagnostico/page.tsx`.
-    const candidateSkuIds = signals
-      .filter((row) => diagnoseSalesAnomaly(organizationId, toSignal(row), asOf, []) !== null)
-      .map((row) => row.sku_id);
+    const candidateSkuIds = [
+      ...new Set(
+        signals
+          .filter((row) => diagnoseSalesAnomaly(organizationId, toSignal(row), asOf, []) !== null)
+          .map((row) => row.sku_id),
+      ),
+    ];
 
     if (candidateSkuIds.length === 0) {
       context.logger.info("detect_sales_anomaly_actions_done", { organization_id: organizationId, actions: 0 });
@@ -129,18 +150,22 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       p_sku_ids: candidateSkuIds,
       p_from: windowStart,
       p_to: windowEnd,
+      p_marketplaces: [...MARKETPLACES],
     });
 
     if (eventsResult.error !== null) {
       return { status: "failed", retryable: true, reason: eventsResult.error.message };
     }
 
-    const eventsBySku = new Map<string, CorrelatedEvent[]>();
+    // Por SKU E canal: o evento do SKU (marketplace nulo) vale para os dois.
+    const eventsBySkuAndChannel = new Map<string, CorrelatedEvent[]>();
 
     for (const event of eventsResult.data) {
-      const list = eventsBySku.get(event.sku_id) ?? [];
-      list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
-      eventsBySku.set(event.sku_id, list);
+      for (const marketplace of event.marketplace === null ? MARKETPLACES : [event.marketplace]) {
+        const list = eventsBySkuAndChannel.get(chave(event.sku_id, marketplace)) ?? [];
+        list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
+        eventsBySkuAndChannel.set(chave(event.sku_id, marketplace), list);
+      }
     }
 
     // D-116 — SAC como evidência: reclamações ABERTAS vinculadas aos SKUs
@@ -175,42 +200,52 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       p_sku_ids: candidateSkuIds,
       p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
       p_date_to: asOf,
+      p_marketplaces: [...MARKETPLACES],
     });
 
     if (pricesResult.error !== null) {
       return { status: "failed", retryable: true, reason: pricesResult.error.message };
     }
 
-    const averagePriceBySku = new Map(
-      (pricesResult.data as AveragePriceRow[]).map((row) => [row.sku_id, row.average_price]),
+    const averagePriceBySkuAndChannel = new Map(
+      (pricesResult.data as AveragePriceRow[]).map((row) => [chave(row.sku_id, row.marketplace), row.average_price]),
     );
 
-    const diagnoses: SalesAnomalyDiagnosis[] = [];
+    const diagnoses: { diagnosis: SalesAnomalyDiagnosis; marketplace: string }[] = [];
 
     for (const row of signals) {
-      const diagnosis = diagnoseSalesAnomaly(organizationId, toSignal(row), asOf, eventsBySku.get(row.sku_id) ?? [], {
-        openClaims: openClaimsBySku.get(row.sku_id)?.size ?? 0,
-      });
+      const diagnosis = diagnoseSalesAnomaly(
+        organizationId,
+        toSignal(row),
+        asOf,
+        eventsBySkuAndChannel.get(chave(row.sku_id, row.marketplace)) ?? [],
+        // A reclamação aberta é do Mercado Livre.
+        { openClaims: row.marketplace === "ML" ? (openClaimsBySku.get(row.sku_id)?.size ?? 0) : 0 },
+      );
 
       if (diagnosis !== null) {
-        diagnoses.push(diagnosis);
+        diagnoses.push({ diagnosis, marketplace: row.marketplace });
       }
     }
 
-    const rows = diagnoses.map((diagnosis) => ({
+    const rows = diagnoses.map(({ diagnosis, marketplace }) => ({
       organization_id: organizationId,
       kind: "venda_anomala",
       severity: diagnosis.confianca,
       confidence: diagnosis.confianca,
       estimated_impact_brl: estimateImpactBrl(
         diagnosis.unitsDelta,
-        averagePriceBySku.get(diagnosis.escopo.skuId) ?? null,
+        averagePriceBySkuAndChannel.get(chave(diagnosis.escopo.skuId, marketplace)) ?? null,
       ),
       sku_id: diagnosis.escopo.skuId,
-      evidence: toEvidence(diagnosis),
+      evidence: toEvidence(diagnosis, marketplace),
       recommendation: diagnosis.proximosPassos.join(" "),
       created_by: "system",
-      dedup_key: `sales_anomaly:${diagnosis.escopo.skuId}:${asOf}`,
+      // A do ML e a de antes; a da Shopee leva o canal na chave.
+      dedup_key:
+        marketplace === "ML"
+          ? `sales_anomaly:${diagnosis.escopo.skuId}:${asOf}`
+          : `sales_anomaly:${marketplace.toLowerCase()}:${diagnosis.escopo.skuId}:${asOf}`,
     }));
 
     if (rows.length > 0) {
@@ -225,6 +260,7 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       organization_id: organizationId,
       signals: signals.length,
       actions: rows.length,
+      actions_shopee: diagnoses.filter((item) => item.marketplace === "SHOPEE").length,
     });
 
     return { status: "done", processed: rows.length };
