@@ -79,3 +79,24 @@ test("/sugestoes: escolher no mestre abre o detalhe, e a seleção mora na URL",
   await expect(seletor).toBeVisible();
   await expect(seletor.locator("option")).toHaveCount(7);
 });
+
+test("/sugestoes: enviar e alterar o status persiste após recarregar", async ({ page }) => {
+  const texto = "Mostrar a data da última revisão da lista de fornecedores.";
+  await login(page, "/sugestoes");
+
+  await page.getByRole("textbox", { name: "Sugerir uma melhoria" }).fill(texto);
+  await page.getByRole("button", { name: "Enviar sugestão" }).click();
+  await expect(page.getByText("Enviada.", { exact: true })).toBeVisible();
+
+  const detalhe = page.getByRole("region", { name: "Detalhe da sugestão" });
+  await expect(detalhe).toContainText(texto);
+
+  const status = detalhe.getByLabel("Status da sugestão");
+  await expect(status).toHaveValue("nova");
+  await status.selectOption("em_analise");
+  await expect(status).toHaveValue("em_analise");
+
+  await page.reload();
+  await expect(detalhe).toContainText(texto);
+  await expect(status).toHaveValue("em_analise");
+});
