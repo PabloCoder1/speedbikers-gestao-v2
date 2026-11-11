@@ -32,3 +32,6 @@ overrides:
   "source-map-js@>=1.0.0 <1.2.2": "^1.2.2"
   # sharp (alto): CVE-2026-96889 na librsvg embutida. Chega por next (imagens).
   "sharp@<0.35.5": "^0.35.5"
+  # fast-xml-parser -- GHSA-474x-hrwr-fgx4: custo quadratico no parser de
+  # stop nodes. O cliente do Cloud Storage ainda aceita a versao afetada.
+  "fast-xml-parser@<=5.11.2": "5.12.0"

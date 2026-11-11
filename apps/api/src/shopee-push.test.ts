@@ -184,6 +184,26 @@ describe("POST /push/shopee (D-453)", () => {
     expect(comChave.enfileirados).toHaveLength(2);
   });
 
+  it("limita o diagnóstico de requisições recusadas a campos conhecidos e códigos numéricos", async () => {
+    const { enviar, enfileirados, filtros, logs } = cenario();
+    const corpo = '{"code":{"campo":"valor-privado"},"nome-privado":1,"data":{}}';
+    const profundo = '{"code":' + '['.repeat(12000) + '0' + ']'.repeat(12000) + '}';
+
+    expect((await enviar(corpo, null)).status).toBe(200);
+    expect((await enviar(profundo, null)).status).toBe(200);
+    expect((await enviar('{"code":"29"}', null)).status).toBe(200);
+
+    const recusas = logs.filter((log) => log.message === "shopee_push_signature_rejected");
+    expect(recusas).toMatchObject([
+      { corpo_chaves: ["data", "code"], code: null },
+      { corpo_chaves: ["code"], code: null },
+      { corpo_chaves: ["code"], code: 29 },
+    ]);
+    expect(JSON.stringify(recusas)).not.toContain("privado");
+    expect(enfileirados).toEqual([]);
+    expect(filtros).toEqual([]);
+  });
+
   it("loja desconhecida ou desconectada, push sem ação e autorização cancelada: 200 sem enfileirar", async () => {
     const desconhecida = cenario({ loja: null });
     const desconectada = cenario({ loja: { ...LOJA, status: "ERROR" } });
@@ -195,7 +215,9 @@ describe("POST /push/shopee (D-453)", () => {
     expect((await outros.enviar('{"data":{"ordersn":"X","tracking_no":"Y"},"shop_id":727720655,"code":4,"timestamp":1}')).status).toBe(200);
     expect((await outros.enviar(CANCELADA)).status).toBe(200);
     expect([...desconhecida.enfileirados, ...desconectada.enfileirados, ...outros.enfileirados]).toEqual([]);
-    expect(outros.logs.some((l) => l.message === "shopee_push_authorization_canceled" && l.severity === "WARNING")).toBe(true);
+    const cancelamento = outros.logs.find((l) => l.message === "shopee_push_authorization_canceled");
+    expect(cancelamento).toMatchObject({ severity: "WARNING", code: 2 });
+    expect(cancelamento).not.toHaveProperty("data");
   });
 
   it("falha passageira ao ler a loja ou enfileirar: 503, para a Shopee repetir; corpo inválido: 200", async () => {
