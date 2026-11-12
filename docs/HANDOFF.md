@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** Medir as variantes de `get_faturamento` consumidas pela web no PostgreSQL local, com e sem detalhe, sob RLS. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** Medição do faturamento concluída (6 call sites, gargalo CPU, próximo ganho requer pré-agregação diária — decisão do responsável). Varredura de código morto em packages/ (A25) e apps/web/lib/ (A24) concluída: zero código para apagar, oportunidade P3 de reduzir o barrel. 25 achados (A01–A25), 19 corrigidos localmente, 6 dependem de acesso externo. Próxima tarefa local: remover exports desnecessários do barrel (P3), ou aguardar reativação de GCP/Supabase para validar A01/A02. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
