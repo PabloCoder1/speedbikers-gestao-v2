@@ -12,9 +12,9 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-11 |
+| **Atualizado em** | 2026-11-12 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. A auditoria e as correções locais estão em `codex/sentinel-audit`. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
+| **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 (OAuth), D-658 (SAC) e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` e produção `imvjfgnaprqsfjlnsyev` constavam como `INACTIVE` em 11/11. Consultas leves de catálogo falharam nos dois. O job Dev da CI reportou `project is paused`. |
@@ -34,7 +34,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **API indisponível no endpoint verificado.** Faturamento de `speedbikers-prod` desativado, `/health` retornou 503 e as consultas ao Scheduler e ao Tasks retornaram `BILLING_DISABLED`. Após o responsável reativar o faturamento, confirmar o processamento em `job_runs` e revisar o backlog.
+- **API indisponível no endpoint verificado.** Faturamento de `speedbikers-prod` desativado, `/health` retornou 503 e as consultas ao Scheduler e ao Tasks retornaram `BILLING_DISABLED`. Incidente com o responsável. A auditoria segue no ambiente local. Validar `job_runs` e o backlog após a reativação.
 - **Supabase inacessível nas consultas de auditoria.** Dev e produção reportados inativos. Confirmar recuperação no painel e validar Auth, REST e banco por consultas leves.
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 

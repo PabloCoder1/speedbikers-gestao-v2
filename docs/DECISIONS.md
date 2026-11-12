@@ -19334,3 +19334,21 @@ No celular continuam o `flex: 1 1 auto; width: auto` da busca e o `kbd` escondid
 - `apps/web/app/globals.css`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md` (com a D-650 marcada como no ar).
+
+## D-657 - Conexão OAuth multicanal confirma a titularidade na gravação
+
+O callback consumia o state uma única vez, mas dois states de organizações diferentes podiam passar pela mesma consulta de proprietário antes da primeira gravação. A segunda escrita alterava a organização da loja. A separação entre loja e credenciais também deixava gravações parciais.
+
+Cada callback envia um lote para `shopee_connect_shops` ou `tiktok_connect_shops`. A RPC insere ou atualiza pela identidade externa e só atualiza se o proprietário gravado corresponde à organização do state. As lojas são ordenadas pela chave de conflito. A mesma transação grava as credenciais cifradas e reverte o lote quando qualquer loja pertence a outra organização ou uma constraint falha. Execução concedida apenas a `service_role`.
+
+Dois clientes PostgreSQL verificaram o bloqueio concorrente e a recusa da segunda organização. A integração testa reconexão pelo mesmo dono, reversão do lote, erro de credencial e recusa para `anon` e `authenticated` nos dois marketplaces. A migration `20261111175813` deve estar aplicada antes da API que chama as RPCs.
+
+## D-658 - Retomada do enfileiramento e autorização única do POST no SAC
+
+Uma falha de confirmação do Cloud Tasks podia deixar uma tentativa PENDING sem tarefa. Uma reentrega concorrente do worker podia alcançar `POST /answers` duas vezes, e a política HTTP padrão também repetia esse POST em 429 e 5xx.
+
+A nova confirmação grava a fila com a tentativa. Com o mesmo ID, usuário, conta, caso e conteúdo, a API pode retomar a tentativa nova que ainda não iniciou o envio, usando a mesma fila e chave de tarefa. O worker revalida a pergunta, registra `dispatch_started_at` por atualização condicional e só quem adquiriu a trava chama o Mercado Livre. O cliente faz uma tentativa HTTP. As gravações de desfecho são condicionadas à tentativa ainda PENDING e à trava correspondente.
+
+O job `support.reply.send.v2` recebe 503 de um worker antigo. A versão nova aceita o nome anterior para reconhecer tarefas legadas. Linhas antigas sem fila registrada, quedas após a trava e POSTs de resultado incerto exigem conciliação. O caso permanece bloqueado enquanto a tentativa estiver PENDING. Se houver confirmação do POST e falha na auditoria, `support_reply_sent` com `remote_message_id` e `support_reply_outcome_unrecorded` ajudam a conferir o transcript. O desfecho só deve ser registrado quando houver evidência suficiente, com a tentativa e organização conferidas e a trava preservada.
+
+Aplicar a migration `20261111175814`, drenar envios legados em andamento, publicar o worker e então a API. As regressões cobrem fila confirmada ou incerta, corrida da chave no insert, rejeição de reutilização fora do escopo, duas conexões concorrentes no PostgreSQL e reentrega após falha de auditoria.

@@ -43,6 +43,10 @@ Em 11/11/2026, as 12 referências abaixo foram removidas em uma única operaçã
 
 A consulta independente com `git ls-remote --heads origin` confirmou a ausência das 12 branches, 129 refs restantes e presença de `main`, `v3` e `v2-legacy`. Os commits removidos como referências permanecem alcançáveis pela `main` auditada. O SHA da tabela permite restaurar uma referência com `git push origin <SHA>:refs/heads/<nome>`.
 
+## Revisão de continuidade
+
+A releitura de GitHub encontrou os mesmos 129 nomes e SHAs e os mesmos 13 PRs abertos. Seis referências continuam em análise por aliases residuais. Foram limpos dois registros locais de worktree com caminho ausente, com as respectivas branches e SHAs preservados. [Inventário de limpeza](CLEANUP_CANDIDATES.md)
+
 ## Inventário por branch
 
 À frente e atrás são medidos em relação à `main` auditada. PRs fechados nesta tabela são PRs sem merge.

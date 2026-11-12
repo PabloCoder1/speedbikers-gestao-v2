@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **558** (D-001 a D-654).
+Decisões registradas: **560** (D-001 a D-658).
 
 ## Por domínio
 
-### atendimento (59)
+### atendimento (60)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -77,6 +77,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 - **D-645** — A conexão da loja do TikTok Shop (fatia 1)
 - **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
+- **D-658** — Retomada do enfileiramento e autorização única do POST no SAC
 
 ### banco/rls (46)
 
@@ -243,7 +244,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 
-### mercado-livre (106)
+### mercado-livre (107)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -351,6 +352,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 - **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+- **D-657** — Conexão OAuth multicanal confirma a titularidade na gravação
 
 ### outros (81)
 

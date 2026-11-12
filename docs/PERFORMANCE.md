@@ -1543,3 +1543,19 @@ O cálculo diário lê a `daily_listing_metrics` da organização.
 **Produção, 18 a 28/09:** 171.997 UPDATEs para ~6,4 mil mensagens (~27 regravações por linha): cada sincronização de caso faz upsert do transcript inteiro, com `observed_at` novo. Gatilho `support_messages_a_skip_unchanged` (migration `20260928170000`) pula a atualização quando só `observed_at`/`updated_at` mudariam. Ensaio no Dev: upsert idêntico manteve o `xmin`; conteúdo mudado gravou. Fica para medir depois do deploy: `n_tup_upd` e `n_dead_tup` de `support_messages` no `pg_stat_user_tables`. `listings` (~34 por linha) regrava por desenho -- cada captura grava `synced_at`, que a tela usa -- e `support_cases` ficou de fora porque o `update` do worker depende do `RETURNING`.
 
 **`get_link_integrity` em produção, depois da migration (28/09, como `authenticated`, transação só de leitura):** 3.093 ms a frio (12 mil blocos lidos do disco) e **629 ms** na repetição -- antes chegava a 7.540 ms no `pg_stat_statements`. Sobra um despejo pequeno (524 blocos temporários), candidato a `work_mem` se voltar a crescer.
+
+### Chamadas de Auth na renderização inicial (Sentinel A11, 11/11/2026)
+
+Ensaio local no código `3dce1b19`, Node 24.20.0 e Next 16.4.1 em `next dev --webpack`, com Auth e REST simulados por HTTP em loopback. O contador registra apenas `GET /auth/v1/user`. Para cada rota, 20 requisições HTML sequenciais depois da primeira renderização, alternando dois usuários sintéticos. O tempo inclui o corpo inteiro da resposta local. A simulação não mede latência de produção, RLS ou navegação no cliente.
+
+| Rota | GETs de Auth por requisição | p50 local | p95 local |
+|---|---:|---:|---:|
+| `/acoes` | 2 | 249,7 ms | 297,1 ms |
+| `/atendimento` | 2 | 293,4 ms | 372,3 ms |
+| `/configuracoes` | 2 | 312,4 ms | 420,8 ms |
+
+Em `/acoes` e `/atendimento`, o proxy, o Shell e a página têm chamadas explícitas a `getUser()`. O Next deduplica o GET do Shell e da página na mesma renderização RSC. Um segundo cache em React manteria as duas chamadas observadas, uma no proxy e outra na renderização. As respostas de duas requisições concorrentes com identidades diferentes renderizaram apenas o perfil de cada titular. Sem sessão, houve 307 e zero chamadas ao Auth ou REST. Com JWT rejeitado pelo simulador, houve um GET de Auth, 307 e zero chamadas REST. A otimização no proxy tem acompanhamento próprio. [PR #312](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/312)
+
+### Idas ao PostgREST para gravar OAuth multicanal (D-657)
+
+A inspeção dos callbacks e os testes de contrato mostram uma chamada de persistência por lote. Antes, após consumir o state, eram uma leitura de proprietário e duas escritas por loja, totalizando três chamadas para uma loja e cinco para duas. A troca do código e a leitura dos metadados no marketplace são etapas separadas. A contagem descreve o caminho local e não estima latência de produção.
