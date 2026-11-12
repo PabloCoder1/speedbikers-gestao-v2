@@ -7,7 +7,7 @@ import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/membership";
 
 /**
- * Fornecedores e pedidos de compra (Fase 4, docs/ROADMAP.md).
+ * Pedidos de compra (Fase 4, docs/ROADMAP.md).
  *
  * Server Actions (D-012, docs/ARCHITECTURE.md secao 4): escrita chamando as
  * RPCs `security definer` (`supabase/migrations/20260822234353_create_purchasing.sql`)
@@ -31,18 +31,6 @@ export interface PurchaseOrderItemInput {
   titleSnapshot: string | null;
   quantityOrdered: number;
   unitCost: number | null;
-}
-
-export interface SupplierInput {
-  name: string;
-  legalName: string | null;
-  document: string | null;
-  contactName: string | null;
-  email: string | null;
-  phone: string | null;
-  whatsapp: string | null;
-  website: string | null;
-  notes: string | null;
 }
 
 export interface PurchaseOrderDraftInput {
@@ -109,70 +97,6 @@ async function currentOrganizationId(
   }
 
   return { organizationId: membership.organizationId, failed: false };
-}
-
-export async function createSupplier(input: SupplierInput): Promise<ActionResult & { id?: string }> {
-  const supabase = await createClient();
-  const { organizationId, failed } = await currentOrganizationId(supabase);
-
-  if (failed) {
-    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
-  }
-
-  if (organizationId === null) {
-    return { ok: false, message: "Sua conta não está associada a nenhuma organização." };
-  }
-
-  const { data, error } = await supabase.rpc("create_supplier", {
-    p_organization_id: organizationId,
-    p_name: input.name,
-    ...omit("p_legal_name", input.legalName),
-    ...omit("p_document", input.document),
-    ...omit("p_contact_name", input.contactName),
-    ...omit("p_email", input.email),
-    ...omit("p_phone", input.phone),
-    ...omit("p_whatsapp", input.whatsapp),
-    ...omit("p_website", input.website),
-    ...omit("p_notes", input.notes),
-  });
-
-  const message = describeRpcError(error);
-
-  if (message !== null) {
-    return { ok: false, message };
-  }
-
-  revalidatePath("/fornecedores");
-
-  return { ok: true, message: null, ...(data?.id !== undefined ? { id: data.id } : {}) };
-}
-
-export async function updateSupplier(id: string, input: SupplierInput & { isActive: boolean }): Promise<ActionResult> {
-  const supabase = await createClient();
-
-  const { error } = await supabase.rpc("update_supplier", {
-    p_id: id,
-    p_name: input.name,
-    p_is_active: input.isActive,
-    ...omit("p_legal_name", input.legalName),
-    ...omit("p_document", input.document),
-    ...omit("p_contact_name", input.contactName),
-    ...omit("p_email", input.email),
-    ...omit("p_phone", input.phone),
-    ...omit("p_whatsapp", input.whatsapp),
-    ...omit("p_website", input.website),
-    ...omit("p_notes", input.notes),
-  });
-
-  const message = describeRpcError(error);
-
-  if (message !== null) {
-    return { ok: false, message };
-  }
-
-  revalidatePath("/fornecedores");
-
-  return { ok: true, message: null };
 }
 
 function itemsToJsonb(items: readonly PurchaseOrderItemInput[]): Json {

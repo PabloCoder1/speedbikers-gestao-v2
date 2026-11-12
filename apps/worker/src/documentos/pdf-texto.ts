@@ -301,10 +301,3 @@ export function lerLinhasDoPdf(bytes: Uint8Array): LinhaPdf[] {
     })
     .filter((linha) => linha.texto !== "");
 }
-
-/** O texto inteiro, uma linha por linha — para achar rótulo solto. */
-export function textoDoPdf(bytes: Uint8Array): string {
-  return lerLinhasDoPdf(bytes)
-    .map((linha) => linha.texto)
-    .join("\n");
-}
