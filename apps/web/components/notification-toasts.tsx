@@ -150,9 +150,13 @@ export function NotificationToasts({
       // O recipient já existe (é por isso que este evento chegou aqui) —
       // a preferência só decide se aparece como toast, nunca se some da
       // Central de Notificações.
-      if (!shouldNotify(preferenceRules, { eventType: event.event_type, mlAccountId: event.ml_account_id, severity: event.severity })) {
-        return;
-      }
+      const allowed = shouldNotify(preferenceRules, {
+        eventType: event.event_type,
+        mlAccountId: event.ml_account_id,
+        shopeeShopId: event.shopee_shop_id,
+        severity: event.severity,
+      });
+      if (!allowed) return;
 
       // D-638: a loja da Shopee agrupa à parte, como a conta do ML.
       const key = `${event.event_type}:${event.ml_account_id ?? event.shopee_shop_id ?? "org"}`;
