@@ -125,3 +125,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Resultado — `apps/web` componentes/hooks.** Varredura de `components/`, `hooks/` e `lib/` por exports com zero consumidores em `apps/web/`: nenhum achado adicional além dos 3 de A24.
 - **Conclusão.** Não há código morto para apagar em packages/. A oportunidade é P3: remover `export` e a re-exportação no barrel de funções que são detalhe interno (34 funções, ~77 constantes). Tree-shaking já elimina o código não alcançável. Registrado como A25.
 - **Próxima etapa.** Verificar o build da worktree e decidir próxima tarefa do plano. [Candidatos](CLEANUP_CANDIDATES.md) · [Plano](PLAN.md)
+
+### 12/11/2026 · Remoção de `buildManualLinkHref` (A24 parcial)
+
+- Função desconectada desde D-374: sem consumidor em nenhuma página, apenas no teste próprio.
+- Removida a definição em `link-integrity-filters.ts` e o bloco `describe("href da vinculação manual")` com 3 `it()` no teste.
+- Build, typecheck e 1452 testes passaram. Commit `3855cdd7`.
+- `valorDaOrdem` e `sobMarca` preservadas — possivelmente aguardando conexão na UI; decisão do responsável.
+- Push: 3 commits (A25 docs, HANDOFF, remoção A24) enviados ao remote.

@@ -55,7 +55,7 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Atualizar Hono, adaptador Node e parser XML | Auditoria passou. Testes locais cobrem o servidor HTTP e a leitura da NF-e |
 | P2 · medido localmente | Medir chamadas ao Auth na navegação | Dois GETs por render completo nas três rotas medidas, com Auth simulado. Repetir o ensaio após o PR #312 |
 | P3 · pronto localmente | Retirar casts temporários de Sugestões | Compilação e E2E de envio e triagem aprovados |
-| P2 · documentado | Varredura de código morto em `apps/web/lib/` (A24) | 703 exports analisados, 3 órfãos confirmados (`buildManualLinkHref`, `valorDaOrdem`, `sobMarca`), 71 com `export` desnecessário. Remoção depende do responsável. [SESSION_LOG](SESSION_LOG.md#12112026--varredura-de-código-morto-em-appsweblib) |
+| P2 · parcialmente corrigido | Varredura de código morto em `apps/web/lib/` (A24) | 703 exports analisados, 3 órfãos confirmados. `buildManualLinkHref` removida (commit `3855cdd7`). `valorDaOrdem` e `sobMarca` preservadas — possivelmente aguardam conexão na UI. 71 exports com `export` desnecessário (P3). [SESSION_LOG](SESSION_LOG.md#12112026--remoção-de-buildmanuallinkHref-a24-parcial) |
 | P3 · documentado | Varredura de código morto em `packages/` e `apps/web` componentes/hooks (A25) | 34 funções e ~77 constantes sem import externo, todas vivas por cadeias internas. Zero código para apagar. Oportunidade P3: remover `export` desnecessário do barrel. `apps/web` componentes e hooks sem achados. [SESSION_LOG](SESSION_LOG.md#12112026--varredura-de-código-morto-em-packages) · [Candidatos](CLEANUP_CANDIDATES.md) |
 
 [Achados e evidências](FINDINGS.md) · [Checkpoint](SESSION_LOG.md)
