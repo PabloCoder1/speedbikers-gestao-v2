@@ -199,10 +199,11 @@ describe.each(canais)("$nome OAuth", (canal) => {
 
 describe("Shopee OAuth e renovação concorrente", () => {
   const shopId = 821000004;
-  const travaAntiga = "2026-11-11T18:01:00Z";
-  const travaAtual = "2026-11-11T18:02:00Z";
+  const lockAntigo = randomUUID();
+  const lockAtual = randomUUID();
+  const mesmaExpiracao = "2026-11-11T18:01:00Z";
 
-  it("preserva a credencial e a trava novas ao receber uma recusa antiga", async () => {
+  it("descarta sucesso e recusa antigos mesmo com o mesmo prazo na nova trava", async () => {
     const conectar = (cifra: string) => api.rpc("shopee_connect_shops", {
       ...credenciais(dona, cifra),
       p_environment: "sandbox",
@@ -212,28 +213,53 @@ describe("Shopee OAuth e renovação concorrente", () => {
     const loja = await api.from("shopee_shops").select("id").eq("environment", "sandbox").eq("shop_id", shopId).single();
     if (loja.data === null) throw new Error("Loja de teste não gravada");
     const id = loja.data.id;
-    const credencial = () => api.from("shopee_credentials").select("refresh_token_ciphertext, refresh_locked_until")
+    const credencial = () => api.from("shopee_credentials")
+      .select("access_token_ciphertext,refresh_token_ciphertext,refresh_locked_until,refresh_lock_id")
       .eq("shopee_shop_id", id).single();
-    const travar = (ate: string) => api.from("shopee_credentials").update({ refresh_locked_until: ate }).eq("shopee_shop_id", id);
+    const travar = (lockId: string) => api.from("shopee_credentials")
+      .update({ refresh_locked_until: mesmaExpiracao, refresh_lock_id: lockId }).eq("shopee_shop_id", id);
     const estado = () => api.from("shopee_shops").select("status,last_error").eq("id", id).single();
-    const recusar = (ate: string) => api.rpc("shopee_reject_token_refresh", {
-      p_shopee_shop_id: id, p_locked_until: ate, p_error: "Recusa de teste",
+    const recusar = (lockId: string) => api.rpc("shopee_reject_token_refresh", {
+      p_shopee_shop_id: id, p_lock_id: lockId, p_error: "Recusa de teste",
     });
 
-    expect((await travar(travaAntiga)).error).toBeNull();
+    expect((await travar(lockAntigo)).error).toBeNull();
     expect((await conectar(chaveNova)).error).toBeNull();
-    expect((await travar(travaAtual)).error).toBeNull();
+    expect((await credencial()).data).toMatchObject({ refresh_locked_until: null, refresh_lock_id: null });
+    expect((await travar(lockAtual)).error).toBeNull();
 
-    expect(await recusar(travaAntiga)).toMatchObject({ error: null, data: false });
+    const sucessoAntigo = await api.from("shopee_credentials")
+      .update({ access_token_ciphertext: chaveRejeitada, refresh_token_ciphertext: chaveRejeitada,
+        refresh_locked_until: null, refresh_lock_id: null })
+      .eq("shopee_shop_id", id).eq("refresh_lock_id", lockAntigo).select("shopee_shop_id");
+    expect(sucessoAntigo).toMatchObject({ error: null, data: [] });
+    expect(await recusar(lockAntigo)).toMatchObject({ error: null, data: false });
+    const recusaLegada = await api.rpc("shopee_reject_token_refresh", {
+      p_shopee_shop_id: id, p_locked_until: mesmaExpiracao, p_error: "Recusa legada",
+    });
+    expect(recusaLegada.error?.code).toBe("23514");
     expect((await credencial()).data).toMatchObject({
+      access_token_ciphertext: chaveNova,
       refresh_token_ciphertext: chaveNova,
-      refresh_locked_until: "2026-11-11T18:02:00+00:00",
+      refresh_locked_until: "2026-11-11T18:01:00+00:00",
+      refresh_lock_id: lockAtual,
     });
     expect((await estado()).data).toEqual({ status: "CONNECTED", last_error: null });
 
-    expect(await recusar(travaAtual)).toMatchObject({ error: null, data: true });
-    expect((await credencial()).data).toEqual({ refresh_token_ciphertext: chaveNova, refresh_locked_until: null });
+    expect(await recusar(lockAtual)).toMatchObject({ error: null, data: true });
+    expect((await credencial()).data).toMatchObject({
+      refresh_token_ciphertext: chaveNova, refresh_locked_until: null, refresh_lock_id: null,
+    });
     expect((await estado()).data).toEqual({ status: "ERROR", last_error: "Recusa de teste" });
+
+    expect((await conectar(chaveNova)).error).toBeNull();
+    const travaLegada = await api.from("shopee_credentials")
+      .update({ refresh_locked_until: mesmaExpiracao }).eq("shopee_shop_id", id);
+    expect(travaLegada.error).toBeNull();
+    expect(await api.rpc("shopee_reject_token_refresh", {
+      p_shopee_shop_id: id, p_locked_until: mesmaExpiracao, p_error: "Recusa legada vigente",
+    })).toMatchObject({ error: null, data: true });
+    expect((await estado()).data).toEqual({ status: "ERROR", last_error: "Recusa legada vigente" });
   });
 
   it("reserva o registro da recusa ao service_role", async () => {
@@ -241,9 +267,15 @@ describe("Shopee OAuth e renovação concorrente", () => {
       select has_function_privilege('anon', fn, 'EXECUTE') as anon,
              has_function_privilege('authenticated', fn, 'EXECUTE') as authenticated,
              has_function_privilege('service_role', fn, 'EXECUTE') as service_role
-        from (select 'public.shopee_reject_token_refresh(uuid,timestamptz,text)'::regprocedure as fn) alvo
+        from unnest(array[
+          'public.shopee_reject_token_refresh(uuid,timestamptz,text)'::regprocedure,
+          'public.shopee_reject_token_refresh(uuid,uuid,text)'::regprocedure
+        ]) as alvo(fn)
     `);
-    expect(result.rows).toEqual([{ anon: false, authenticated: false, service_role: true }]);
+    expect(result.rows).toEqual([
+      { anon: false, authenticated: false, service_role: true },
+      { anon: false, authenticated: false, service_role: true },
+    ]);
   });
 });
 

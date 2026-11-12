@@ -17,7 +17,7 @@ Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd
 
 O inventário percorreu a árvore Git autoral de `apps`, `packages`, `infra`, `scripts`, `.github` e `supabase` (1.411 arquivos rastreados). A árvore contém três apps, oito packages, 58 páginas App Router, 11 route handlers, 54 specs Playwright e 305 migrations. A análise em profundidade priorizou dependências, segurança dos webhooks, OAuth multicanal, consistência dos jobs, Supabase e branches. Os mapas indicam onde a cobertura é estática ou depende de confirmação operacional.
 
-Na continuidade de 12/11, as mudanças em OAuth, renovação de credenciais e SAC foram atualizadas nos mapas de API e banco. A branch de auditoria passou a ter 309 migrations e o worker passou a reconhecer a versão protegida do job de resposta.
+Na continuidade de 12/11, as mudanças em OAuth, renovação de credenciais e SAC foram atualizadas nos mapas de API e banco. A branch de auditoria passou a ter 310 migrations e o worker passou a reconhecer a versão protegida do job de resposta.
 
 ## Como atualizar
 

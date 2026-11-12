@@ -47,7 +47,7 @@ function fakeDb(opcoes: { lida: Credencial | null; travada?: Credencial | null; 
     const executar = () => {
       if (aoAtualizar !== undefined && table !== undefined) {
         updates.push({ table, row: aoAtualizar, filtros });
-        if (opcoes.travaPerdida === true && filtros.refresh_locked_until === ATE) {
+        if (opcoes.travaPerdida === true && typeof filtros.refresh_lock_id === "string") {
           return Promise.resolve({ data: null, error: null });
         }
       }
@@ -75,7 +75,7 @@ function fakeDb(opcoes: { lida: Credencial | null; travada?: Credencial | null; 
     rpc: (name: string, args: Record<string, unknown>) => {
       recusas.push({ name, args });
 
-      return Promise.resolve({ data: opcoes.travaPerdida !== true, error: null });
+      return Promise.resolve({ data: opcoes.travaPerdida !== true || typeof args.p_lock_id !== "string", error: null });
     },
   } as unknown as ShopeeTokenDeps["db"];
 
@@ -161,7 +161,7 @@ describe("ensureShopeeAccessToken (D-426)", () => {
   });
 
   it("recusa definitiva: a loja vai para ERROR e não há nova tentativa", async () => {
-    const { db, recusas } = fakeDb({ lida: credencial("a", "r", 5) });
+    const { db, updates, recusas } = fakeDb({ lida: credencial("a", "r", 5) });
     const { client } = clienteShopee({ error: "refresh_token_expired", message: "Your refresh_token expired." });
 
     expect(await ensureShopeeAccessToken({ db, client, encryptionKey: KEY }, LOJA, NOW)).toMatchObject({
@@ -170,11 +170,11 @@ describe("ensureShopeeAccessToken (D-426)", () => {
     });
     expect(recusas).toMatchObject([{ name: "shopee_reject_token_refresh", args: {
       p_shopee_shop_id: LOJA.id,
-      p_locked_until: ATE,
+      p_lock_id: updates[0]?.row.refresh_lock_id,
     } }]);
   });
 
-  it("descarta o sucesso de uma renovação cuja trava foi substituída", async () => {
+  it("descarta o sucesso antigo mesmo quando a nova trava tem o mesmo prazo", async () => {
     const { db, updates } = fakeDb({ lida: credencial("a", "r", 5), travaPerdida: true });
     const { client } = clienteShopee(RENOVADO);
 
@@ -182,10 +182,12 @@ describe("ensureShopeeAccessToken (D-426)", () => {
       ok: false,
       retryable: true,
     });
-    expect(updates[1]?.filtros).toEqual({ shopee_shop_id: LOJA.id, refresh_locked_until: ATE });
+    expect(updates[0]?.row.refresh_locked_until).toBe(ATE);
+    expect(updates[0]?.row.refresh_lock_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(updates[1]?.filtros).toEqual({ shopee_shop_id: LOJA.id, refresh_lock_id: updates[0]?.row.refresh_lock_id });
   });
 
-  it("uma recusa antiga não marca ERROR nem solta a trava de outra renovação", async () => {
+  it("uma recusa antiga preserva o status e a nova trava com o mesmo prazo", async () => {
     const { db, updates, recusas } = fakeDb({ lida: credencial("a", "r", 5), travaPerdida: true });
     const { client } = clienteShopee({ error: "refresh_token_expired", message: "Your refresh_token expired." });
 
@@ -194,7 +196,7 @@ describe("ensureShopeeAccessToken (D-426)", () => {
       retryable: true,
     });
     expect(updates).toHaveLength(1);
-    expect(recusas[0]?.args.p_locked_until).toBe(ATE);
+    expect(recusas[0]?.args.p_lock_id).toBe(updates[0]?.row.refresh_lock_id);
   });
 
   it("erro de servidor da Shopee: passageiro, e a loja continua conectada", async () => {
@@ -206,7 +208,7 @@ describe("ensureShopeeAccessToken (D-426)", () => {
       retryable: true,
     });
     expect(updates.some((u) => u.table === "shopee_shops")).toBe(false);
-    expect(updates[1]?.filtros).toEqual({ shopee_shop_id: LOJA.id, refresh_locked_until: ATE });
+    expect(updates[1]?.filtros).toEqual({ shopee_shop_id: LOJA.id, refresh_lock_id: updates[0]?.row.refresh_lock_id });
     expect(recusas).toHaveLength(0);
   });
 

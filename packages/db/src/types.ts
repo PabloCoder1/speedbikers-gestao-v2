@@ -3372,6 +3372,7 @@ export type Database = {
           access_token_expires_at: string
           created_at: string
           encryption_key_version: number
+          refresh_lock_id: string | null
           refresh_locked_until: string | null
           refresh_token_ciphertext: string
           refresh_token_expires_at: string
@@ -3383,6 +3384,7 @@ export type Database = {
           access_token_expires_at: string
           created_at?: string
           encryption_key_version?: number
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext: string
           refresh_token_expires_at: string
@@ -3394,6 +3396,7 @@ export type Database = {
           access_token_expires_at?: string
           created_at?: string
           encryption_key_version?: number
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext?: string
           refresh_token_expires_at?: string
@@ -6707,7 +6710,9 @@ export type Database = {
         Returns: string
       }
       shopee_reject_token_refresh: {
-        Args: { p_error: string; p_locked_until: string; p_shopee_shop_id: string }
+        Args:
+          | { p_error: string; p_lock_id: string; p_shopee_shop_id: string }
+          | { p_error: string; p_locked_until: string; p_shopee_shop_id: string }
         Returns: boolean
       }
       shopee_resolve_order_item_skus: {

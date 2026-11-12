@@ -19366,3 +19366,11 @@ O callback gravava o par e o status em operações separadas. A reconexão prese
 A migration `20261112122618` cria `ml_connect_account` e `ml_reject_token_refresh`, com execução para `service_role`. A conexão trava a conta, confere organização e vendedor, grava o par cifrado, limpa a trava e marca CONNECTED na mesma transação. A renovação usa o prazo para adquirir a trava e um UUID para confirmar sua titularidade ao gravar ou liberar. O UUID distingue aquisições com o mesmo prazo. A recusa definitiva registra ERROR e libera a trava em uma transação, travando conta e credencial na mesma ordem da reconexão.
 
 Aplicar a migration antes da API e do worker. Coordenar a atualização dos dois serviços e encerrar renovações em execução no worker antigo antes de liberar novas reconexões. O teste local com duas conexões confirma que a recusa antiga espera a reconexão e perde a titularidade. O teste também cobre rollback, escopo da organização, vendedor e permissões.
+
+## D-661 - Cada aquisição da trava Shopee tem identidade própria
+
+D-659 usava o prazo como identidade. Com duas aquisições de prazo igual, antes e depois da reconexão, o PostgreSQL aceitava a gravação e a recusa definitivas da renovação antiga.
+
+A migration `20261112124430` acrescenta `shopee_credentials.refresh_lock_id`. O prazo continua determinando quando outra renovação pode adquirir a trava. O worker usa o UUID da aquisição para salvar o par, soltar a trava e registrar recusa definitiva. `shopee_connect_shops` invalida o UUID na mesma transação que troca as credenciais. A RPC de recusa por UUID é reservada a `service_role`. A sobrecarga legada por prazo continua disponível para linhas sem UUID. A constraint protege travas com UUID de gravações antigas que limpam somente o prazo.
+
+Aplicar a migration antes do worker. Encerrar renovações legadas em voo antes de liberar novas reconexões durante a troca de revisão. O teste local reproduz o prazo idêntico e verifica sucesso antigo, recusa antiga, recusa atual e compatibilidade com linhas legadas.

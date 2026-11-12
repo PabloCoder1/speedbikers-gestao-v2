@@ -112,7 +112,7 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   trava (uso único). Recusa definitiva (`refresh_token_expired`,
   `shop_access_expired`, `shop_banned`, `shop_no_linked`,
   `error_shop_refresh_token`, `error_auth`) → loja `ERROR`; o resto é
-  passageiro — `apps/worker/src/handlers/shopee-token.ts`. Em D-659, gravação e liberação exigem a trava adquirida; `shopee_reject_token_refresh` marca ERROR e libera a mesma trava de forma atômica. A reconexão limpa a trava anterior.
+  passageiro — `apps/worker/src/handlers/shopee-token.ts`. A gravação, a liberação e o registro de ERROR exigem o UUID da aquisição (D-659, D-661). O prazo controla quando é possível adquirir a trava. A reconexão limpa prazo e UUID junto com a troca de credenciais.
 - **Lista** (`GET /api/v2/order/get_order_list`): `time_range_field`
   (`create_time` | `update_time`), `time_from`/`time_to` com no máximo
   **15 dias**, `page_size` até **100**, `cursor`; devolve `more`,
