@@ -6686,6 +6686,10 @@ export type Database = {
         Args: { p_shopee_shop_id: string; p_until: string }
         Returns: string
       }
+      shopee_reject_token_refresh: {
+        Args: { p_error: string; p_locked_until: string; p_shopee_shop_id: string }
+        Returns: boolean
+      }
       shopee_resolve_order_item_skus: {
         Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }
         Returns: number

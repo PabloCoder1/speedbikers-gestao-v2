@@ -19352,3 +19352,9 @@ A nova confirmação grava a fila com a tentativa. Com o mesmo ID, usuário, con
 O job `support.reply.send.v2` recebe 503 de um worker antigo. A versão nova aceita o nome anterior para reconhecer tarefas legadas. Linhas antigas sem fila registrada, quedas após a trava e POSTs de resultado incerto exigem conciliação. O caso permanece bloqueado enquanto a tentativa estiver PENDING. Se houver confirmação do POST e falha na auditoria, `support_reply_sent` com `remote_message_id` e `support_reply_outcome_unrecorded` ajudam a conferir o transcript. O desfecho só deve ser registrado quando houver evidência suficiente, com a tentativa e organização conferidas e a trava preservada.
 
 Aplicar a migration `20261111175814`, drenar envios legados em andamento, publicar o worker e então a API. As regressões cobrem fila confirmada ou incerta, corrida da chave no insert, rejeição de reutilização fora do escopo, duas conexões concorrentes no PostgreSQL e reentrega após falha de auditoria.
+
+## D-659 - Renovação Shopee conclui apenas enquanto mantém a trava
+
+Uma reautorização da mesma loja troca as credenciais e limpa a trava anterior. Um refresh em andamento ainda conseguia gravar o par antigo, limpar a trava de outro job ou marcar ERROR após receber a recusa do token antigo.
+
+O worker condiciona sucesso e liberação da trava ao valor que adquiriu. Para recusa definitiva, `shopee_reject_token_refresh` trava a loja antes da credencial, na mesma ordem da reconexão D-657, e marca ERROR somente se a mesma trava ainda estiver vigente na linha. Se a credencial mudou, o job pode repetir a leitura da credencial atual. A RPC tem execução para `service_role`. Aplicar a migration `20261112120939` antes do worker correspondente.
