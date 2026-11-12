@@ -22,6 +22,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A16 | P1 · CORRIGIDO localmente (D-661) | No PostgreSQL local, o mesmo prazo em duas aquisições Shopee permitia uma gravação e uma recusa antigas | UUID por aquisição protege credenciais, status e trava. A reconexão limpa os dois campos. Validação cobre a sobrecarga legada e as permissões |
 | A17 | P1 · CORRIGIDO localmente (D-662) | Dois states OAuth da mesma conta Mercado Livre. Uma recusa atrasada de troca de token mudou a conta recém-conectada para ERROR no Supabase local | A falha só atualiza a conta da organização do state quando o status vigente é diferente de CONNECTED. Reproduzida a sequência antes e depois da correção |
 | A18 | P1 · CORRIGIDO localmente (D-663) | A primeira confirmação persistia a tentativa, mas a falha na fila seguida de recarga esvaziava o formulário | Perguntas e detalhe recuperam a mesma confirmação do autor antes do início do envio. A regressão Playwright verifica o mesmo payload nas duas entradas |
+| A19 | P2 · CORRIGIDO localmente (D-664) | O carregamento em lote de Perguntas cortava em 1.000 linhas e podia omitir a primeira mensagem recebida | A consulta paginada inclui no máximo a primeira mensagem recebida de cada caso. Regressão com 1.000 eventos anteriores à pergunta. [Medição](../PERFORMANCE.md#mensagens-transferidas-na-lista-de-perguntas-sentinel-a19-12112026) |
 
 ## Referências externas
 

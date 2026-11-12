@@ -80,7 +80,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · atendimento, conhec
 | `/atendimento/[caseId]` | [page.tsx](<../../apps/web/app/(app)/atendimento/[caseId]/page.tsx>) | Tabelas `support_cases`, `support_messages`, `support_case_deadlines`, `support_case_events`, `support_reply_attempts`, `reply_templates` |
 | `/atendimento/conhecimento` | [page.tsx](<../../apps/web/app/(app)/atendimento/conhecimento/page.tsx>) | Tabelas `knowledge_entries`, `profiles` |
 | `/atendimento/metricas` | [page.tsx](<../../apps/web/app/(app)/atendimento/metricas/page.tsx>) | RPC `get_support_metrics` |
-| `/atendimento/perguntas` | [page.tsx](<../../apps/web/app/(app)/atendimento/perguntas/page.tsx>) | Tabelas `ml_accounts`, `support_cases`, `support_messages`, `reply_templates` |
+| `/atendimento/perguntas` | [page.tsx](<../../apps/web/app/(app)/atendimento/perguntas/page.tsx>) | `ml_accounts` e casos paginados com a primeira mensagem recebida por cartão (D-664). `support_reply_attempts` e `reply_templates` para a pergunta aberta |
 | `/atendimento/templates` | [page.tsx](<../../apps/web/app/(app)/atendimento/templates/page.tsx>) | Tabelas `reply_templates` |
 
 ## Sessão e operação

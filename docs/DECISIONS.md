@@ -19390,3 +19390,11 @@ D-658 permite reenfileirar uma confirmação pendente com a mesma chave e o mesm
 O detalhe do atendimento reutiliza a leitura do histórico sob RLS. Perguntas consulta a tentativa pendente apenas do cartão aberto. As duas telas oferecem a retomada ao autor de uma confirmação `PENDING` com fila registrada e sem início de envio. O formulário mostra o texto confirmado em modo somente leitura e reapresenta o ID e o conteúdo à API quando o operador pede a retomada. A API e o worker mantêm a autorização e o controle de concorrência de D-658.
 
 O Playwright gravou uma tentativa no Supabase local antes de simular falha na fila. A recarga mostrou o texto confirmado nas duas entradas e a ação explícita repetiu o mesmo payload. A publicação depende da migration, do worker e da API de D-658.
+
+## D-664 - Cartão de Perguntas lê a primeira mensagem recebida
+
+A lista paginava os casos e, em outra consulta, baixava as mensagens de todos eles para encontrar a primeira recebida. Ao atingir o teto de 1.000 linhas do PostgREST, um cartão podia mostrar ausência de transcript apesar da pergunta já sincronizada.
+
+A consulta paginada dos casos inclui `support_messages` como embed. O recorte de filhos exige `INBOUND`, ordena por `occurred_at, id` e limita a uma linha por caso. A relação preserva casos sem mensagem recebida. A página usa a leitura sob RLS, a mesma chave composta do transcript e os campos já exibidos.
+
+No Supabase local, mil eventos anteriores escondiam a pergunta na leitura antiga. A nova consulta devolveu a primeira mensagem em uma linha e preservou um caso vazio. A regressão Playwright exercita o cartão na página de Perguntas.

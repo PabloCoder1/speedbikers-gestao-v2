@@ -1559,3 +1559,7 @@ Em `/acoes` e `/atendimento`, o proxy, o Shell e a página têm chamadas explíc
 ### Idas ao PostgREST para gravar OAuth multicanal (D-657)
 
 A inspeção dos callbacks e os testes de contrato mostram uma chamada de persistência por lote. Antes, após consumir o state, eram uma leitura de proprietário e duas escritas por loja, totalizando três chamadas para uma loja e cinco para duas. A troca do código e a leitura dos metadados no marketplace são etapas separadas. A contagem descreve o caminho local e não estima latência de produção.
+
+### Mensagens transferidas na lista de Perguntas (Sentinel A19, 12/11/2026)
+
+No PostgREST local, um caso sintético com 1.000 eventos de sistema seguidos de duas mensagens recebidas reproduziu a perda da pergunta. A consulta de mensagens devolveu 1.000 linhas, todas de sistema. Com D-664, o embed na consulta dos casos devolveu uma mensagem para esse cartão e zero para o caso sem transcript. A web retirou uma chamada PostgREST do carregamento de uma lista com casos. O ensaio mede chamadas e volume retornado com dados sintéticos. A latência com carga de produção continua pendente.

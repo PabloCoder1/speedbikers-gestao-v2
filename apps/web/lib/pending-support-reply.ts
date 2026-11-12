@@ -1,8 +1,5 @@
 import type { Tables } from "@sb/db";
 
-export const PENDING_SUPPORT_REPLY_FIELDS =
-  "status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at";
-
 export type StoredSupportReply = Pick<
   Tables<"support_reply_attempts">,
   "status" | "requested_by" | "client_request_id" | "final_text" | "suggested_text" | "dispatch_queue" | "dispatch_started_at"

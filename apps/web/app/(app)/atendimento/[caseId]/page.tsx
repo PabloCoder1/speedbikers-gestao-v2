@@ -21,7 +21,7 @@ import {
   supportReplyStateLabel,
   supportSenderKindLabel,
 } from "../../../../lib/labels";
-import { PENDING_SUPPORT_REPLY_FIELDS, pendingSupportReply, type StoredSupportReply } from "../../../../lib/pending-support-reply";
+import { pendingSupportReply, type StoredSupportReply } from "../../../../lib/pending-support-reply";
 import { safeNext } from "../../../../lib/safe-next";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
 import { createClient } from "../../../../lib/supabase/server";
@@ -190,7 +190,7 @@ export default async function AtendimentoDetalhePage({
     supabase
       .from("support_reply_attempts")
       .select(
-        `id, ${PENDING_SUPPORT_REPLY_FIELDS}, error_message, requested_at, resolved_at, profiles(full_name)`,
+        "id, status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at, error_message, requested_at, resolved_at, profiles(full_name)",
       )
       .eq("support_case_id", caseId)
       .order("requested_at", { ascending: false })

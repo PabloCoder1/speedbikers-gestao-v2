@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
@@ -5,7 +7,7 @@ import { expect, test } from "@playwright/test";
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
-test("retoma a mesma resposta confirmada depois de recarregar", async ({ page }) => {
+async function fixtureDaPergunta() {
   const seed = await readSeedOutput();
   const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
   if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
@@ -19,12 +21,17 @@ test("retoma a mesma resposta confirmada depois de recarregar", async ({ page })
     .single();
   if (caso.error !== null) throw new Error(caso.error.message);
 
+  return { seed, db, caso: caso.data };
+}
+
+test("retoma a mesma resposta confirmada depois de recarregar", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
   const texto = "Sim, a peça está disponível para envio.";
-  const detalhes = `/atendimento/${caso.data.id}`;
-  const perguntas = `/atendimento/perguntas?pergunta=${caso.data.id}`;
+  const detalhes = `/atendimento/${caso.id}`;
+  const perguntas = `/atendimento/perguntas?pergunta=${caso.id}`;
   const requests: unknown[] = [];
   let tentativaId: string | undefined;
-  await page.route(`**/v1/support/cases/${caso.data.id}/reply`, async (route) => {
+  await page.route(`**/v1/support/cases/${caso.id}/reply`, async (route) => {
     const headers = {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "authorization, content-type",
@@ -41,8 +48,8 @@ test("retoma a mesma resposta confirmada depois de recarregar", async ({ page })
       // entre a gravação no Supabase e a confirmação do enfileiramento.
       const tentativa = await db.from("support_reply_attempts").insert({
         organization_id: seed.organizationId,
-        ml_account_id: caso.data.ml_account_id,
-        support_case_id: caso.data.id,
+        ml_account_id: caso.ml_account_id,
+        support_case_id: caso.id,
         requested_by: seed.userId,
         client_request_id: body.clientRequestId,
         final_text: body.text,
@@ -82,6 +89,34 @@ test("retoma a mesma resposta confirmada depois de recarregar", async ({ page })
         .eq("id", tentativaId);
       expect.soft(encerrada.error, "encerrar a tentativa do teste").toBeNull();
     }
+  }
+});
+
+test("a pergunta aparece mesmo com mil eventos anteriores no transcript", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const prefixo = `e2e-evento-${randomUUID()}-`;
+  const inserted = await db.from("support_messages").insert(
+    Array.from({ length: 1_000 }, (_, index) => ({
+      organization_id: seed.organizationId,
+      ml_account_id: caso.ml_account_id,
+      support_case_id: caso.id,
+      external_message_key: prefixo + String(index),
+      direction: "SYSTEM",
+      sender_kind: "SYSTEM",
+      body: "Evento sintético anterior à pergunta.",
+      occurred_at: "2020-01-01T00:00:00.000Z",
+    })),
+  );
+  if (inserted.error !== null) throw new Error(inserted.error.message);
+
+  try {
+    await login(page, `/atendimento/perguntas?pergunta=${caso.id}`);
+    await expect(page.getByText(seed.supportQuestionText, { exact: true })).toBeVisible();
+  } finally {
+    const cleaned = await db.from("support_messages").delete()
+      .eq("support_case_id", caso.id)
+      .like("external_message_key", `${prefixo}%`);
+    expect.soft(cleaned.error, "remover eventos sintéticos").toBeNull();
   }
 });
 
