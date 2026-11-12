@@ -1174,6 +1174,7 @@ describe("conexão de conta Mercado Livre", () => {
   /** Mesmo espírito do `chain` de `ml-accounts.test.ts`: fake mínimo, encadeável e thenable. */
   function chain<T>(result: T): {
     eq: () => ReturnType<typeof chain<T>>;
+    neq: () => ReturnType<typeof chain<T>>;
     is: () => ReturnType<typeof chain<T>>;
     gt: () => ReturnType<typeof chain<T>>;
     select: () => ReturnType<typeof chain<T>>;
@@ -1182,6 +1183,7 @@ describe("conexão de conta Mercado Livre", () => {
   } {
     const self = {
       eq: () => self,
+      neq: () => self,
       is: () => self,
       gt: () => self,
       select: () => self,

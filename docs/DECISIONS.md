@@ -19374,3 +19374,11 @@ D-659 usava o prazo como identidade. Com duas aquisições de prazo igual, antes
 A migration `20261112124430` acrescenta `shopee_credentials.refresh_lock_id`. O prazo continua determinando quando outra renovação pode adquirir a trava. O worker usa o UUID da aquisição para salvar o par, soltar a trava e registrar recusa definitiva. `shopee_connect_shops` invalida o UUID na mesma transação que troca as credenciais. A RPC de recusa por UUID é reservada a `service_role`. A sobrecarga legada por prazo continua disponível para linhas sem UUID. A constraint protege travas com UUID de gravações antigas que limpam somente o prazo.
 
 Aplicar a migration antes do worker. Encerrar renovações legadas em voo antes de liberar novas reconexões durante a troca de revisão. O teste local reproduz o prazo idêntico e verifica sucesso antigo, recusa antiga, recusa atual e compatibilidade com linhas legadas.
+
+## D-662 - Falha no callback OAuth preserva conta Mercado Livre conectada
+
+Dois states válidos da mesma conta podem ser consumidos em paralelo. Uma troca de token atrasada e recusada marcava `ERROR` mesmo depois que o outro callback havia gravado a conexão. A sincronização periódica deixava de enfileirar para a conta.
+
+A API limita a escrita de `ERROR` à conta e organização do state e inclui `status <> 'CONNECTED'` no próprio `UPDATE`. Uma falha antes de conectar ainda pode ser registrada. Um callback que falha depois de uma conexão devolve sua recusa e preserva a conta. Uma conta conectada com token vencido continua elegível para nova autorização.
+
+O teste local manteve uma troca de token em espera, conectou a conta com outro state e depois liberou a recusa. A mesma sequência passou a preservar `CONNECTED` e `last_error`. A alteração entra com o deploy da API.

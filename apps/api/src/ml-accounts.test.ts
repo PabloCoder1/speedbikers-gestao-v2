@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Database } from "@sb/db";
 import { decryptToken, encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Caller } from "./auth.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
@@ -89,15 +89,14 @@ interface FakeDbOptions {
   connectResult?: { data: string | null; error: { code: string } | null };
 }
 
-function fakeDb(options: FakeDbOptions = {}): {
-  db: MlAccountsDeps["db"];
-  inserted: { table: string; row: unknown }[];
-  updated: { table: string; row: unknown }[];
-  connections: { name: string; args: ConnectArgs }[];
-} {
+function fakeDb(options: FakeDbOptions = {}) {
   const inserted: { table: string; row: unknown }[] = [];
   const updated: { table: string; row: unknown }[] = [];
   const connections: { name: string; args: ConnectArgs }[] = [];
+  const accountUpdate = {
+    eq: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
 
   const db = {
     from: (table: string) => ({
@@ -133,7 +132,7 @@ function fakeDb(options: FakeDbOptions = {}): {
           );
         }
 
-        return chain({ data: null, error: null });
+        return accountUpdate;
       },
     }),
     rpc: (name: string, args: ConnectArgs) => {
@@ -143,7 +142,7 @@ function fakeDb(options: FakeDbOptions = {}): {
     },
   } as unknown as MlAccountsDeps["db"];
 
-  return { db, inserted, updated, connections };
+  return { db, inserted, updated, connections, accountUpdate };
 }
 
 function deps(
@@ -319,7 +318,7 @@ describe("completeConnect", () => {
     expect(outcome).toEqual({ status: "invalid_state" });
   });
 
-  it("marca a conta em ERROR e rejeita quando o Mercado Livre nega a autorização", async () => {
+  it("registra a recusa do Mercado Livre apenas na conta da organização que ainda não está conectada", async () => {
     const { deps: d, db } = deps();
 
     const outcome = await completeConnect(d, { state: "s", error: "access_denied" });
@@ -327,6 +326,8 @@ describe("completeConnect", () => {
     expect(outcome).toEqual({ status: "rejected", reason: "autorização negada no Mercado Livre" });
     const accountsUpdate = db.updated.find((entry) => entry.table === "ml_accounts");
     expect(accountsUpdate?.row).toMatchObject({ status: "ERROR" });
+    expect(db.accountUpdate.eq.mock.calls).toEqual([["id", "acc-1"], ["organization_id", CALLER.organizationId]]);
+    expect(db.accountUpdate.neq.mock.calls).toEqual([["status", "CONNECTED"]]);
   });
 
   it("rejeita quando não há error nem code — callback malformado", async () => {

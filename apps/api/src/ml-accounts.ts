@@ -176,7 +176,7 @@ export async function completeConnect(
   } = claimed.data;
 
   if (params.error !== undefined || params.code === undefined) {
-    await markError(deps, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
+    await markError(deps, organizationId, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
 
     return { status: "rejected", reason: "autorização negada no Mercado Livre" };
   }
@@ -184,7 +184,7 @@ export async function completeConnect(
   if (codeVerifierCiphertext === null) {
     const reason = "state OAuth sem verificador PKCE; reinicie a conexão";
     deps.logger.error("ml_oauth_pkce_verifier_missing", { ml_account_id: mlAccountId });
-    await markError(deps, mlAccountId, reason);
+    await markError(deps, organizationId, mlAccountId, reason);
 
     return { status: "rejected", reason: "autorização expirada; inicie a conexão novamente" };
   }
@@ -196,7 +196,7 @@ export async function completeConnect(
   } catch {
     const reason = "verificador PKCE inválido ou ilegível; reinicie a conexão";
     deps.logger.error("ml_oauth_pkce_verifier_invalid", { ml_account_id: mlAccountId });
-    await markError(deps, mlAccountId, reason);
+    await markError(deps, organizationId, mlAccountId, reason);
 
     return { status: "rejected", reason: "autorização expirada; inicie a conexão novamente" };
   }
@@ -214,7 +214,7 @@ export async function completeConnect(
     const reason = error instanceof Error ? error.message : "erro desconhecido";
 
     deps.logger.error("ml_oauth_exchange_failed", { ml_account_id: mlAccountId, reason });
-    await markError(deps, mlAccountId, reason);
+    await markError(deps, organizationId, mlAccountId, reason);
 
     return { status: "rejected", reason: "não foi possível concluir a autorização com o Mercado Livre" };
   }
@@ -282,10 +282,17 @@ export async function completeConnect(
   return { status: "connected", mlAccountId };
 }
 
-async function markError(deps: MlAccountsDeps, mlAccountId: string, reason: string): Promise<void> {
-  // Best-effort: se isto falhar, o erro real já foi logado por quem chamou.
+async function markError(
+  deps: MlAccountsDeps,
+  organizationId: string,
+  mlAccountId: string,
+  reason: string,
+): Promise<void> {
+  // O filtro no UPDATE protege a conexão que outro callback pode ter gravado.
   await deps.db
     .from("ml_accounts")
     .update({ status: "ERROR", last_error: reason.slice(0, 2000) })
-    .eq("id", mlAccountId);
+    .eq("id", mlAccountId)
+    .eq("organization_id", organizationId)
+    .neq("status", "CONNECTED");
 }
