@@ -21,6 +21,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A15 | P1 · CORRIGIDO localmente (D-660) | A reconexão preservava a trava e uma renovação atrasada podia sobrescrever o par novo ou marcar ERROR | A reconexão troca o par, invalida a trava e grava CONNECTED na mesma transação. O worker só conclui com o UUID da trava vigente. Regressões cobrem renovação tardia, rollback e escopo |
 | A16 | P1 · CORRIGIDO localmente (D-661) | No PostgreSQL local, o mesmo prazo em duas aquisições Shopee permitia uma gravação e uma recusa antigas | UUID por aquisição protege credenciais, status e trava. A reconexão limpa os dois campos. Validação cobre a sobrecarga legada e as permissões |
 | A17 | P1 · CORRIGIDO localmente (D-662) | Dois states OAuth da mesma conta Mercado Livre. Uma recusa atrasada de troca de token mudou a conta recém-conectada para ERROR no Supabase local | A falha só atualiza a conta da organização do state quando o status vigente é diferente de CONNECTED. Reproduzida a sequência antes e depois da correção |
+| A18 | P1 · CORRIGIDO localmente (D-663) | A primeira confirmação persistia a tentativa, mas a falha na fila seguida de recarga esvaziava o formulário | Perguntas e detalhe recuperam a mesma confirmação do autor antes do início do envio. A regressão Playwright verifica o mesmo payload nas duas entradas |
 
 ## Referências externas
 

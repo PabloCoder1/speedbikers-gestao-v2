@@ -21,6 +21,7 @@ import {
   supportReplyStateLabel,
   supportSenderKindLabel,
 } from "../../../../lib/labels";
+import { PENDING_SUPPORT_REPLY_FIELDS, pendingSupportReply, type StoredSupportReply } from "../../../../lib/pending-support-reply";
 import { safeNext } from "../../../../lib/safe-next";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
 import { createClient } from "../../../../lib/supabase/server";
@@ -67,10 +68,8 @@ interface DeadlineRow {
   status: string;
 }
 
-interface ReplyAttemptRow {
+interface ReplyAttemptRow extends StoredSupportReply {
   id: string;
-  status: string;
-  final_text: string;
   error_message: string | null;
   requested_at: string;
   resolved_at: string | null;
@@ -191,7 +190,7 @@ export default async function AtendimentoDetalhePage({
     supabase
       .from("support_reply_attempts")
       .select(
-        "id, status, final_text, error_message, requested_at, resolved_at, profiles(full_name)",
+        `id, ${PENDING_SUPPORT_REPLY_FIELDS}, error_message, requested_at, resolved_at, profiles(full_name)`,
       )
       .eq("support_case_id", caseId)
       .order("requested_at", { ascending: false })
@@ -533,6 +532,7 @@ export default async function AtendimentoDetalhePage({
             caseId={supportCase.id}
             remoteReplyState={supportCase.remote_reply_state}
             remoteReplyBlockReason={supportCase.remote_reply_block_reason}
+            pendingReply={pendingSupportReply(attempts, viewerId)}
             templates={templates}
           />
           </div>

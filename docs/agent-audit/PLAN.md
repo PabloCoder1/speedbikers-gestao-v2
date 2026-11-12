@@ -1,5 +1,34 @@
 # Plano priorizado do Sentinel
 
+## Diagnóstico e critérios
+
+Há 18 achados em [FINDINGS.md](FINDINGS.md). Dezessete têm evidência direta ou medição. Doze receberam correção local, incluindo o recorte de tentativas novas de A06. Seis seguem em aberto e dependem em algum ponto de acesso, ação ou medição externa: A01, A02, A07, A08, A10 e A11. A08 ainda é hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+
+| Prioridade | Critério aplicado |
+| --- | --- |
+| P0 | Indisponibilidade observada ou risco de segurança com impacto crítico na operação. Preparar correções locais e respeitar a ordem de publicação. |
+| P1 | Ato errado, perda de sincronização, bloqueio de atendimento ou falta de controle de publicação. Priorizar impacto comprovado e reprodução com baixo risco de mudança. |
+| P2 | Desempenho, manutenção e limpeza. Remover apenas com dependências conferidas e exigir medição de ganho quando a mudança é motivada por custo ou latência. |
+| P3 | Tipos e ajustes pontuais com baixo impacto operacional. Aproveitar cobertura existente para evitar trabalho duplicado. |
+
+## Frentes de execução
+
+| Grupo e prioridade | Problema, módulos e abordagem | Dependências, verificação e estado |
+| --- | --- | --- |
+| Disponibilidade e publicação · P0/P1 · A01, A02, A07, A10 | API, worker, Supabase, GitHub Actions e Vercel. Separar falha de serviço, versão implantada, migrations e fila. Exigir CI da revisão e alinhar o corte dos serviços. | Recuperação externa antes de validar Auth/REST, `/health`, SHA, Scheduler, Tasks e `job_runs`. Revisão e checks obrigatórios dependem da administração do GitHub. |
+| Dependências e entradas públicas · P0/P1/P2 · A03, A04, A12 | Next.js/Zod, Hono e parser de NF-e. Atualizações direcionadas e redução de dados arbitrários no log de push Shopee. | Pronto localmente com auditoria de dependências, teste de assinatura/ACK, servidor HTTP, NF-e e build/E2E. Publicação pela esteira. |
+| OAuth e credenciais · P1 · A05, A14–A17 | Callbacks da API, RPCs e workers de refresh. Titularidade e gravação atômica, UUID por trava e proteção contra resultado de outra tentativa. | Pronto localmente. Concorrência, rollback, permissões e callback atrasado verificados. Migrations antes da API/worker, com encerramento de renovações antigas no corte. |
+| SAC e avisos · P1 · A06, A13, A18 | Preservar tentativa de resposta e escopo da loja. Retomar no formulário a confirmação persistida do mesmo operador. | D-658, D-663 e toasts prontos localmente. Playwright exercitou as duas entradas do SAC com erro de fila simulado e o mesmo ID. C-82 precede a publicação web. |
+| Limpeza e desempenho · P2/P3 · A08, A09, A11 | Git, scripts, web e SQL. Rastrear consumidores e medir chamadas/planos. Só versionar retirada de estruturas após conferir uso indireto, catálogo e retenção. | Inventário Git refeito, rotinas sem uso e casts removidos. Repetir Auth após #312. Testar localmente com carga sintética e confirmar frequência, cardinalidade, N+1 e dependências em tráfego representativo quando disponível. |
+
+## Ordem e dependências
+
+O trabalho começou pelos serviços e pela referência que publica a web para distinguir indisponibilidade, vulnerabilidade e atraso de versão. Em seguida, foram corrigidos dependências críticas, push Shopee, titularidade de OAuth, envio SAC, regras por loja e concorrência de credenciais. A segunda revisão das branches cruzou o Git remoto com PRs, worktrees e deploys.
+
+A retomada do SAC após recarga passou pela reprodução local. A próxima fatia verifica o limite de 1.000 linhas do histórico de atendimento. Depois, priorizar consumidores estáticos de web e scripts e medições de consultas quentes em estoque, vendas, faturamento e sincronização. Inventário, análise estática e benchmarks locais podem avançar em paralelo com a recuperação externa. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
+
+## Fila por tarefa
+
 | Prioridade | Tarefa | Critério de conclusão |
 |---|---|---|
 | P0 · depende do responsável | Restabelecer faturamento do GCP e acesso aos projetos Supabase necessários à operação | API `GET /health` responde com sucesso, Scheduler e Tasks voltam a ser observáveis, produção responde a consulta leve e `job_runs` confirma processamento recente. Conferir web, Auth e processamento em separado |
@@ -12,9 +41,10 @@
 | P1 · pronto localmente | Distinguir aquisições da trava Shopee com o mesmo prazo (A16, D-661) | UUID impede que sucesso, liberação ou recusa tardios alterem a credencial atual. Aplicar a migration antes do worker |
 | P1 · pronto localmente | Proteger reconexão Mercado Livre de refresh anterior (A15, D-660) | Sucesso e recusa antigos preservam o novo par, a conta e a trava. Aplicar migration e coordenar a publicação da API e do worker |
 | P1 · pronto localmente | Preservar conexão Mercado Livre diante de falha em outro callback OAuth (A17, D-662) | Duas autorizações da mesma conta confirmam que a recusa tardia preserva CONNECTED e a primeira tentativa recusada ainda registra ERROR. Publicar com a API |
-| P1 · próxima etapa local | Retomar confirmação pendente do SAC após recarregar o formulário (continuação de A06) | Reproduzir falha no enfileiramento seguida de recarga. Confirmar que o operador autorizado pode retomar a mesma tentativa antes do início do envio |
+| P1 · pronto localmente | Retomar confirmação pendente do SAC após recarregar o formulário (A18, D-663) | Falha de fila simulada e recarga preservaram a confirmação e o conteúdo nas duas telas. A ação manual repetiu o mesmo payload |
+| P2 · próxima etapa local | Verificar o histórico de atendimentos longos e a leitura em lote de Perguntas | Usar mais de 1.000 mensagens em fixture local para medir o recorte e preservar a ordem na leitura paginada |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
-| P2 · segunda triagem concluída | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | Seis aliases residuais pendentes. Dois registros órfãos de worktrees e três rotinas sem consumidores removidos localmente |
+| P2 · segunda triagem concluída | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões novas verificadas. Restam 23 refs, com PR aberto, worktree ou finalidade histórica. Dois registros órfãos de worktrees e três rotinas sem consumidores removidos em sessões anteriores |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |
 | P2 · pronto localmente | Atualizar Hono, adaptador Node e parser XML | Auditoria passou. Testes locais cobrem o servidor HTTP e a leitura da NF-e |
 | P2 · medido localmente | Medir chamadas ao Auth na navegação | Dois GETs por render completo nas três rotas medidas, com Auth simulado. Repetir o ensaio após o PR #312 |

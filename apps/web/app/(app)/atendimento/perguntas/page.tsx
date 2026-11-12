@@ -10,6 +10,7 @@ import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
+import { PENDING_SUPPORT_REPLY_FIELDS, pendingSupportReply, type PendingSupportReply } from "../../../../lib/pending-support-reply";
 import type { SupportCaseLinkRow } from "../../../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
 import { describeDeadline } from "../../../../lib/support-deadline";
@@ -246,11 +247,22 @@ export default async function PerguntasPage({
   const selecionada = tab === "pendente" ? (questions.find((question) => question.id === pergunta) ?? questions[0] ?? null) : null;
 
   let templates: ReplyTemplateOption[] = [];
+  let pendingReply: PendingSupportReply | null = null;
 
   if (selecionada !== null && selecionada.resolved_at === null) {
-    const templatesResult = await supabase.from("reply_templates").select("id, name, body").order("name");
+    const [templatesResult, attemptsResult, { data: auth }] = await Promise.all([
+      supabase.from("reply_templates").select("id, name, body").order("name"),
+      supabase
+        .from("support_reply_attempts")
+        .select(PENDING_SUPPORT_REPLY_FIELDS)
+        .eq("support_case_id", selecionada.id)
+        .eq("status", "PENDING")
+        .limit(1),
+      supabase.auth.getUser(),
+    ]);
 
     if (templatesResult.error === null) templates = templatesResult.data;
+    pendingReply = pendingSupportReply(attemptsResult.data ?? [], auth.user?.id ?? null);
   }
 
   const error = questionsResult.error?.message ?? accountsResult.error?.message ?? messagesResult.error?.message ?? null;
@@ -399,6 +411,7 @@ export default async function PerguntasPage({
                             caseId={question.id}
                             remoteReplyState={question.remote_reply_state}
                             remoteReplyBlockReason={question.remote_reply_block_reason}
+                            pendingReply={pendingReply}
                             templates={templates}
                             templatesLayout="sidebar"
                           />

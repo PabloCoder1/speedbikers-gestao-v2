@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { applyTemplate } from "../../../../lib/apply-template";
+import type { PendingSupportReply } from "../../../../lib/pending-support-reply";
 import { createClient } from "../../../../lib/supabase/browser";
 
 /**
@@ -14,10 +15,9 @@ import { createClient } from "../../../../lib/supabase/browser";
  * comando privilegiado, e a `api` é quem tem a credencial da conta. O `web`
  * nunca fala com o Mercado Livre (`docs/ARCHITECTURE.md` secao 4).
  *
- * **O `clientRequestId` é gerado AQUI, uma vez, e reusado enquanto o texto não
- * muda.** É o que impede que um duplo-clique, um retry de rede ou um F5 no meio
- * do envio virem duas respostas ao mesmo comprador. Gerar um id novo a cada
- * clique não deduplicaria nada — seria o mesmo que não ter chave.
+ * O identificador do formulário é reutilizado no retry de rede. Ao recarregar,
+ * a página lê a confirmação pendente do próprio usuário e fornece a chave e
+ * o texto persistidos para a retomada do mesmo envio.
  */
 
 const LIMITE = 2_000;
@@ -40,6 +40,7 @@ export interface ReplyFormProps {
   /** Dica remota da última sincronização — nunca autorização (D-086, decisão 3). */
   remoteReplyState: string;
   remoteReplyBlockReason: string | null;
+  pendingReply: PendingSupportReply | null;
   /** Templates da organização (D-111), lidos sob RLS pelo Server Component pai. */
   templates: ReplyTemplateOption[];
   /**
@@ -63,14 +64,14 @@ export function ReplyForm({
   caseId,
   remoteReplyState,
   remoteReplyBlockReason,
+  pendingReply,
   templates,
   templatesLayout = "select",
 }: ReplyFormProps): ReactNode {
   const router = useRouter();
   const [text, setText] = useState("");
   const [estado, setEstado] = useState<Estado>({ kind: "idle" });
-  // Um id por texto: enquanto a pessoa não mudar o que escreveu, reenviar é
-  // sempre a MESMA tentativa.
+  // O retry de uma confirmação usa o mesmo ID do primeiro envio.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   // D-112: o texto que a IA sugeriu, guardado para a AUDITORIA de D-096 —
   // `support_reply_attempts.suggested_text` registra o sugerido E o texto
@@ -80,8 +81,10 @@ export function ReplyForm({
   // Só usado no layout "sidebar" — filtra a lista, não a busca no servidor.
   const [templateSearch, setTemplateSearch] = useState("");
 
-  const restante = LIMITE - text.length;
-  const vazio = text.trim().length === 0;
+  const retomada = pendingReply !== null;
+  const resposta = pendingReply?.text ?? text;
+  const restante = LIMITE - resposta.length;
+  const vazio = resposta.trim().length === 0;
   const enviando = estado.kind === "sending";
 
   async function enviar(): Promise<void> {
@@ -98,16 +101,17 @@ export function ReplyForm({
     }
 
     try {
+      const confirmacao = pendingReply ?? { clientRequestId: requestId, text: text.trim(), suggestedText: aiSuggestion };
       const response = await fetch(`${API_URL}/v1/support/cases/${caseId}/reply`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          clientRequestId: requestId,
-          text: text.trim(),
+          clientRequestId: confirmacao.clientRequestId,
+          text: confirmacao.text,
           // Auditoria D-096/D-112: quando houve sugestão de IA, o texto
           // ORIGINAL sugerido viaja junto — a comparação com o texto final
           // é o que permite medir quanto o humano precisou corrigir.
-          ...(aiSuggestion === null ? {} : { suggestedText: aiSuggestion }),
+          ...(confirmacao.suggestedText === null ? {} : { suggestedText: confirmacao.suggestedText }),
         }),
       });
 
@@ -132,6 +136,11 @@ export function ReplyForm({
           kind: "error",
           message: "A tentativa anterior falhou. Revise o texto e confirme de novo.",
         });
+        if (pendingReply !== null) {
+          setText(pendingReply.text);
+          setAiSuggestion(pendingReply.suggestedText);
+          router.refresh();
+        }
 
         return;
       }
@@ -195,7 +204,13 @@ export function ReplyForm({
         </p>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
+      {retomada && estado.kind !== "queued" && (
+        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          A resposta já foi confirmada e aguarda envio.
+        </p>
+      )}
+
+      {!retomada && <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
         <button
           className="sb-button"
           type="button"
@@ -275,9 +290,9 @@ export function ReplyForm({
             Sugestão de IA inserida — revise antes de enviar.
           </span>
         )}
-      </div>
+      </div>}
 
-      {templatesLayout === "select" && templates.length > 0 && (
+      {!retomada && templatesLayout === "select" && templates.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
           <label htmlFor="template" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Inserir template
@@ -309,9 +324,10 @@ export function ReplyForm({
       <textarea
         className="sb-input"
         id="resposta"
-        value={text}
+        value={resposta}
         rows={4}
         maxLength={LIMITE}
+        readOnly={retomada}
         disabled={enviando || estado.kind === "queued"}
         onChange={(event) => {
           setText(event.target.value);
@@ -329,16 +345,18 @@ export function ReplyForm({
           disabled={vazio || enviando || estado.kind === "queued"}
           onClick={() => void enviar()}
         >
-          {enviando ? "Enviando…" : "Enviar resposta"}
+          {enviando ? "Enviando…" : retomada ? "Retomar envio" : "Enviar resposta"}
         </button>
 
-        <span style={{ fontSize: "0.75rem", color: restante < 0 ? "var(--sb-danger)" : "var(--sb-text-soft)" }}>
-          {restante} de {LIMITE} caracteres
-        </span>
+        {!retomada && (
+          <span style={{ fontSize: "0.75rem", color: restante < 0 ? "var(--sb-danger)" : "var(--sb-text-soft)" }}>
+            {restante} de {LIMITE} caracteres
+          </span>
+        )}
       </div>
 
       {estado.kind === "queued" && (
-        <p style={{ margin: 0, fontSize: "0.8125rem" }}>
+        <p role="status" style={{ margin: 0, fontSize: "0.8125rem" }}>
           Resposta confirmada e a caminho do Mercado Livre. Ela aparece na conversa assim que o
           envio for concluído — o resultado fica registrado em Tentativas de envio.
         </p>
@@ -352,7 +370,7 @@ export function ReplyForm({
     </div>
   );
 
-  if (templatesLayout === "select") {
+  if (templatesLayout === "select" || retomada) {
     return <div style={{ maxWidth: "48rem" }}>{compor}</div>;
   }
 

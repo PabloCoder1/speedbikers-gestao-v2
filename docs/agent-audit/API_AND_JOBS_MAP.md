@@ -34,7 +34,7 @@ Todos são `POST`. Os módulos da coluna API estão em [apps/api/src](../../apps
 
 | Caminho `/v1` | Papéis | Consumidor, módulo da API e persistência |
 |---|---|---|
-| `/support/cases/:caseId/reply` | ADMIN, GESTOR, OPERADOR | `atendimento/[caseId]/reply-form.tsx` → `support-reply.ts`, com permissão por conta → `support_reply_attempts` → `support.reply.send.v2` (D-658). O envio ativo se restringe a Perguntas. |
+| `/support/cases/:caseId/reply` | ADMIN, GESTOR, OPERADOR | `atendimento/[caseId]/reply-form.tsx` → `support-reply.ts`, com permissão por conta → `support_reply_attempts` → `support.reply.send.v2` (D-658). O envio ativo se restringe a Perguntas. A web restaura a confirmação pendente do autor, a partir da leitura sob RLS no detalhe ou no cartão aberto, e repete o payload na ação manual (D-663). |
 | `/organization/invites` e `/organization/members/:userId/access-link` | ADMIN | `usuarios/convidar.tsx` e `usuarios/reemitir-link.tsx` → `invites.ts` → Supabase Auth e escopo de `organization_members`. |
 | `/organization/members/:userId/suspension` | ADMIN | `/usuarios` → `member-suspension.ts` → banimento no Supabase Auth e evento em `organization_access_events`. |
 | `/pricing/ml-shipping-quote` | Todos os cinco | `faturamento/calculadora-preco.tsx` → `pricing-quote.ts` → cotação síncrona no ML com cliente de retentativa limitada. Teste de rota simulado em `faturamento.spec.ts`. |

@@ -1,7 +1,89 @@
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
+
+test("retoma a mesma resposta confirmada depois de recarregar", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const caso = await db.from("support_cases")
+    .select("id, ml_account_id")
+    .eq("organization_id", seed.organizationId)
+    .eq("external_case_id", seed.supportOpenExternalId)
+    .single();
+  if (caso.error !== null) throw new Error(caso.error.message);
+
+  const texto = "Sim, a peça está disponível para envio.";
+  const detalhes = `/atendimento/${caso.data.id}`;
+  const perguntas = `/atendimento/perguntas?pergunta=${caso.data.id}`;
+  const requests: unknown[] = [];
+  let tentativaId: string | undefined;
+  await page.route(`**/v1/support/cases/${caso.data.id}/reply`, async (route) => {
+    const headers = {
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "POST, OPTIONS",
+    };
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    const body = route.request().postDataJSON() as { clientRequestId: string; text: string };
+    requests.push(body);
+    if (tentativaId === undefined) {
+      // A API persiste PENDING antes de pedir a task. A falha simulada fica
+      // entre a gravação no Supabase e a confirmação do enfileiramento.
+      const tentativa = await db.from("support_reply_attempts").insert({
+        organization_id: seed.organizationId,
+        ml_account_id: caso.data.ml_account_id,
+        support_case_id: caso.data.id,
+        requested_by: seed.userId,
+        client_request_id: body.clientRequestId,
+        final_text: body.text,
+        dispatch_queue: "ml-sync-e2e",
+        status: "PENDING",
+      }).select("id").single();
+      if (tentativa.error !== null) throw new Error(tentativa.error.message);
+      tentativaId = tentativa.data.id;
+      await route.fulfill({ status: 503, headers, json: { error: { message: "Fila indisponível." } } });
+      return;
+    }
+    await route.fulfill({ status: 200, headers, json: { status: "queued", attemptId: tentativaId } });
+  });
+
+  try {
+    await login(page, perguntas);
+    await page.getByLabel("Sua resposta").fill(texto);
+    await page.getByRole("button", { name: "Enviar resposta" }).click();
+    await expect(page.getByText("Fila indisponível.")).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByLabel("Sua resposta")).toHaveValue(texto);
+    await expect(page.getByLabel("Sua resposta")).toHaveAttribute("readonly", "");
+    await expect(page.getByRole("button", { name: "Retomar envio" })).toBeVisible();
+    expect(requests).toHaveLength(1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(detalhes);
+    await expect(page.getByLabel("Sua resposta")).toHaveValue(texto);
+    await page.getByRole("button", { name: "Retomar envio" }).click();
+    await expect(page.getByText("Resposta confirmada e a caminho", { exact: false })).toBeVisible();
+    expect(requests).toEqual([requests[0], requests[0]]);
+  } finally {
+    if (tentativaId !== undefined) {
+      const encerrada = await db.from("support_reply_attempts")
+        .update({ status: "FAILED", resolved_at: new Date().toISOString(), error_code: "E2E", error_message: "Fim do teste local." })
+        .eq("id", tentativaId);
+      expect.soft(encerrada.error, "encerrar a tentativa do teste").toBeNull();
+    }
+  }
+});
 
 /**
  * Caixa de Entrada do Atendimento (Fase 7B, D-090) contra Postgres real, com

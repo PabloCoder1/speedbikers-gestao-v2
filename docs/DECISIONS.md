@@ -19382,3 +19382,11 @@ Dois states válidos da mesma conta podem ser consumidos em paralelo. Uma troca 
 A API limita a escrita de `ERROR` à conta e organização do state e inclui `status <> 'CONNECTED'` no próprio `UPDATE`. Uma falha antes de conectar ainda pode ser registrada. Um callback que falha depois de uma conexão devolve sua recusa e preserva a conta. Uma conta conectada com token vencido continua elegível para nova autorização.
 
 O teste local manteve uma troca de token em espera, conectou a conta com outro state e depois liberou a recusa. A mesma sequência passou a preservar `CONNECTED` e `last_error`. A alteração entra com o deploy da API.
+
+## D-663 - Retomada da confirmação do SAC após recarregar
+
+D-658 permite reenfileirar uma confirmação pendente com a mesma chave e o mesmo conteúdo. O navegador guardava a chave em memória. Depois da recarga, o formulário vazio gerava outra chave e o índice de tentativa pendente impedia concluir o envio original.
+
+O detalhe do atendimento reutiliza a leitura do histórico sob RLS. Perguntas consulta a tentativa pendente apenas do cartão aberto. As duas telas oferecem a retomada ao autor de uma confirmação `PENDING` com fila registrada e sem início de envio. O formulário mostra o texto confirmado em modo somente leitura e reapresenta o ID e o conteúdo à API quando o operador pede a retomada. A API e o worker mantêm a autorização e o controle de concorrência de D-658.
+
+O Playwright gravou uma tentativa no Supabase local antes de simular falha na fila. A recarga mostrou o texto confirmado nas duas entradas e a ação explícita repetiu o mesmo payload. A publicação depende da migration, do worker e da API de D-658.

@@ -17,7 +17,21 @@ Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd
 
 O inventário percorreu a árvore Git autoral de `apps`, `packages`, `infra`, `scripts`, `.github` e `supabase` (1.411 arquivos rastreados). A árvore contém três apps, oito packages, 58 páginas App Router, 11 route handlers, 54 specs Playwright e 305 migrations. A análise em profundidade priorizou dependências, segurança dos webhooks, OAuth multicanal, consistência dos jobs, Supabase e branches. Os mapas indicam onde a cobertura é estática ou depende de confirmação operacional.
 
-Na continuidade de 12/11, as mudanças em OAuth, renovação de credenciais e SAC foram atualizadas nos mapas de API e banco. A branch de auditoria passou a ter 310 migrations e o worker passou a reconhecer a versão protegida do job de resposta. O callback do Mercado Livre em `apps/api/src/ml-accounts.ts` passou a preservar contas conectadas diante de falhas de outra autorização (D-662).
+Na continuidade de 12/11, as mudanças em OAuth, renovação de credenciais e SAC foram atualizadas nos mapas de API e banco. A branch de auditoria passou a ter 310 migrations e o worker passou a reconhecer a versão protegida do job de resposta. O callback do Mercado Livre passou a preservar contas conectadas diante de falhas de outra autorização (D-662). Perguntas e detalhe do SAC recuperam uma confirmação pendente do autor após recarregar (D-663).
+
+## Cobertura e lacunas por área
+
+| Área | Evidência já disponível | Próxima verificação |
+| --- | --- | --- |
+| Next.js, páginas, componentes e route handlers | [Rotas](ROUTES_AND_PAGES.md), análise de consumidores, testes web e E2E selecionados. Remoções locais de ações órfãs e casts. | Auditar o uso de cada componente e rota candidata, incluindo links diretos e clientes externos. |
+| Hono, workers, filas e sincronização | [API e jobs](API_AND_JOBS_MAP.md). Rotas, webhooks, autorização, handlers e Scheduler declarados. Concorrência e retries testados em OAuth e SAC. | Validar o volume de jobs, falhas e backlog representativos após acesso aos serviços. |
+| Mercado Livre, Shopee e TikTok Shop | Callbacks, titularidade e credenciais mapeados. Regressões locais com concorrência. | Validar a revisão publicada e a autorização real de cada marketplace. TikTok mapeado na fatia OAuth disponível. |
+| Supabase/PostgreSQL, RPCs, views, triggers, índices e RLS | [Banco](DATABASE_MAP.md), migrations aplicadas localmente, 1.151 testes de integração e 38 embeds. Comparação local de definições de índices. | Conferir catálogo aplicado, dependências e estatísticas reais antes de retirar estruturas. |
+| Autenticação, papéis, escopo e segurança | Auth da web e da API mapeados. RLS e escopo por conta exercitados em regressões. Lockfile e entradas públicas inspecionados. | Completar a verificação dos papéis em todos os fluxos e conferir regras do ambiente publicado. |
+| Chamadas duplicadas, consultas repetidas e N+1 | Auth medido em três renders iniciais. Consulta em lote verificada em OAuth. | Medir navegação cliente, recortes grandes e os caminhos restantes. |
+| Estoque, vendas, faturamento e sincronização | Mapeados de entrada a projeção e consumidor. Revisão de SQL e testes de integração existentes. | Comparar planos, custo e consistência com cardinalidade representativa por canal. |
+| Dependências, scripts, agentes, skills e histórico Git | [Dependências](DEPENDENCY_GRAPH.md) e [limpeza](CLEANUP_CANDIDATES.md). Manifests, scripts de CI, 31 worktrees e referências Git cruzados. | Aprofundar consumidores indiretos de código, scripts e skills locais. |
+| Testes, pipelines, performance e recursos | Suítes do monorepo, replay de migrations e fluxos Playwright selecionados. CI e gates mapeados. | Verificar checks efetivos em merge, carga e consumo de recursos com o serviço acessível. |
 
 ## Como atualizar
 
