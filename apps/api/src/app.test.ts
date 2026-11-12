@@ -1222,8 +1222,8 @@ describe("conexão de conta Mercado Livre", () => {
 
           return chain({ data: { slug: "acc-1" }, error: null });
         },
-        upsert: () => chain({ data: null, error: null }),
       }),
+      rpc: () => Promise.resolve({ data: "acc-1", error: null }),
     } as unknown as MlAccountsDeps["db"];
   }
 

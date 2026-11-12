@@ -120,6 +120,16 @@ interface Loja {
   refresh_token_ciphertext: string | null;
 }
 
+async function aguardarBloqueio(): Promise<void> {
+  await vi.waitFor(async () => {
+    const bloqueio = await admin.query<{ bloqueada: boolean }>(
+      "select cardinality(pg_blocking_pids($1)) > 0 as bloqueada",
+      [concorrentePid],
+    );
+    expect(bloqueio.rows[0]?.bloqueada).toBe(true);
+  }, { timeout: 2_000, interval: 20 });
+}
+
 describe.each(canais)("$nome OAuth", (canal) => {
   it("serializa callbacks concorrentes e permite reconexão do mesmo dono", async () => {
     await primeiro.query("begin");
@@ -129,13 +139,7 @@ describe.each(canais)("$nome OAuth", (canal) => {
       await canal.conectarPg(primeiro, dona, canal.alvo, chaveOriginal);
       tentativa = canal.conectarPg(segundo, outra, canal.alvo, chaveRejeitada)
         .then(() => null, (error: unknown) => error);
-      await vi.waitFor(async () => {
-        const bloqueio = await admin.query<{ bloqueada: boolean }>(
-          "select cardinality(pg_blocking_pids($1)) > 0 as bloqueada",
-          [concorrentePid],
-        );
-        expect(bloqueio.rows[0]?.bloqueada).toBe(true);
-      }, { timeout: 2_000, interval: 20 });
+      await aguardarBloqueio();
     } finally {
       await primeiro.query("commit");
     }
@@ -240,5 +244,122 @@ describe("Shopee OAuth e renovação concorrente", () => {
         from (select 'public.shopee_reject_token_refresh(uuid,timestamptz,text)'::regprocedure as fn) alvo
     `);
     expect(result.rows).toEqual([{ anon: false, authenticated: false, service_role: true }]);
+  });
+});
+
+describe("Mercado Livre OAuth e renovação concorrente", () => {
+  // A recusa vigente produz evento append-only. Os fixtures deste bloco
+  // ficam na organização própria até o próximo reset do banco de testes.
+  const orgMl = randomUUID();
+  const conta = randomUUID();
+  const contaSemCredencial = randomUUID();
+  const seller = 821000005;
+  const lockAntigo = randomUUID();
+  const lockAtual = randomUUID();
+  const mesmaExpiracao = "2026-11-11T18:01:00Z";
+
+  function conectar(accountId: string, organizationId: string, sellerId: number, cifra: string) {
+    return api.rpc("ml_connect_account", {
+      p_organization_id: organizationId, p_ml_account_id: accountId, p_seller_id: sellerId, p_connected_at: agora,
+      p_access_token_ciphertext: cifra, p_refresh_token_ciphertext: cifra,
+      p_access_token_expires_at: vence, p_scopes: ["read"],
+    });
+  }
+
+  beforeAll(async () => {
+    await admin.query(
+      "insert into public.organizations (id, name, slug) values ($1, 'OAuth ML fixture', $1::uuid::text)",
+      [orgMl],
+    );
+    await admin.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug)
+       select id, $1, 'OAuth fixture', id::text from unnest($2::uuid[]) as t(id)`,
+      [orgMl, [conta, contaSemCredencial]],
+    );
+  });
+
+  it("serializa a recusa antiga com a reconexão e preserva a nova credencial", async () => {
+    expect((await conectar(conta, orgMl, seller, chaveOriginal)).data).toBe(conta);
+    const credencial = () => api.from("ml_credentials")
+      .select("access_token_ciphertext,refresh_token_ciphertext,refresh_lock_id,refresh_locked_until")
+      .eq("ml_account_id", conta).single();
+    const travar = (id: string) => api.from("ml_credentials")
+      .update({ refresh_lock_id: id, refresh_locked_until: mesmaExpiracao }).eq("ml_account_id", conta);
+    const estado = () => api.from("ml_accounts").select("status,last_error,seller_id").eq("id", conta).single();
+    expect((await travar(lockAntigo)).error).toBeNull();
+
+    await primeiro.query("begin");
+    let recusa: Promise<unknown>;
+    try {
+      await primeiro.query(
+        "select public.ml_connect_account($1, $2, $3, $4, $5, $5, $6, array['read'])",
+        [orgMl, conta, seller, agora, chaveNova, vence],
+      );
+      recusa = segundo.query<{ gravada: boolean }>(
+        "select public.ml_reject_token_refresh($1, $2, $3) as gravada", [conta, lockAntigo, "Recusa atrasada"],
+      ).then((resultado) => resultado.rows[0], (error: unknown) => error);
+      await aguardarBloqueio();
+    } finally {
+      await primeiro.query("commit");
+    }
+    expect(await recusa).toEqual({ gravada: false });
+    expect((await credencial()).data).toEqual({
+      access_token_ciphertext: chaveNova,
+      refresh_token_ciphertext: chaveNova,
+      refresh_lock_id: null,
+      refresh_locked_until: null,
+    });
+
+    // O UUID distingue duas aquisições com o mesmo horário de expiração.
+    expect((await travar(lockAtual)).error).toBeNull();
+    const sucessoAntigo = await api.from("ml_credentials")
+      .update({ access_token_ciphertext: chaveRejeitada, refresh_token_ciphertext: chaveRejeitada,
+        refresh_lock_id: null, refresh_locked_until: null })
+      .eq("ml_account_id", conta).eq("refresh_lock_id", lockAntigo).select("ml_account_id");
+    expect(sucessoAntigo).toMatchObject({ error: null, data: [] });
+    expect((await credencial()).data).toMatchObject({
+      access_token_ciphertext: chaveNova,
+      refresh_token_ciphertext: chaveNova,
+      refresh_lock_id: lockAtual,
+    });
+    expect((await estado()).data).toEqual({ status: "CONNECTED", last_error: null, seller_id: seller });
+
+    const recusaAtual = await api.rpc("ml_reject_token_refresh", {
+      p_ml_account_id: conta, p_lock_id: lockAtual, p_error: "Recusa vigente",
+    });
+    expect(recusaAtual).toMatchObject({ error: null, data: true });
+    expect((await estado()).data).toEqual({ status: "ERROR", last_error: "Recusa vigente", seller_id: seller });
+    expect((await credencial()).data).toMatchObject({ refresh_lock_id: null, refresh_locked_until: null });
+    expect((await conectar(conta, orgMl, seller, chaveNova)).error).toBeNull();
+    expect((await estado()).data).toEqual({ status: "CONNECTED", last_error: null, seller_id: seller });
+  });
+
+  it("confere organização, protege o vendedor e reverte a conta se a credencial falhar", async () => {
+    expect(await conectar(contaSemCredencial, outra, seller + 1, chaveOriginal)).toMatchObject({ error: null, data: null });
+    const falha = await conectar(contaSemCredencial, orgMl, seller + 1, "APP_USR-fixture-invalido");
+    expect(falha.error?.code).toBe("23514");
+    const estado = await api.from("ml_accounts").select("status,seller_id,connected_at").eq("id", contaSemCredencial).single();
+    expect(estado.data).toEqual({ status: "PENDING", seller_id: null, connected_at: null });
+
+    expect((await conectar(contaSemCredencial, orgMl, seller + 1, chaveOriginal)).error).toBeNull();
+    expect((await conectar(contaSemCredencial, orgMl, seller + 2, chaveRejeitada)).error?.code).toBe("PT409");
+    const par = await api.from("ml_credentials").select("access_token_ciphertext").eq("ml_account_id", contaSemCredencial).single();
+    expect(par.data).toEqual({ access_token_ciphertext: chaveOriginal });
+  });
+
+  it("reserva as duas RPCs de escrita ao service_role", async () => {
+    const result = await admin.query<{ anon: boolean; authenticated: boolean; service_role: boolean }>(`
+      select has_function_privilege('anon', fn, 'EXECUTE') as anon,
+             has_function_privilege('authenticated', fn, 'EXECUTE') as authenticated,
+             has_function_privilege('service_role', fn, 'EXECUTE') as service_role
+        from unnest(array[
+          'public.ml_connect_account(uuid,uuid,bigint,timestamptz,text,text,timestamptz,text[])'::regprocedure,
+          'public.ml_reject_token_refresh(uuid,uuid,text)'::regprocedure
+        ]) as alvo(fn)
+    `);
+    expect(result.rows).toEqual([
+      { anon: false, authenticated: false, service_role: true },
+      { anon: false, authenticated: false, service_role: true },
+    ]);
   });
 });

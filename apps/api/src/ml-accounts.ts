@@ -219,31 +219,21 @@ export async function completeConnect(
     return { status: "rejected", reason: "não foi possível concluir a autorização com o Mercado Livre" };
   }
 
-  // A MESMA LOJA. Numa reconexão, o ADMIN pode estar logado no Mercado Livre
-  // com OUTRA conta; sem esta conferência, os tokens da outra loja seriam
-  // gravados nesta linha e o sistema passaria a sincronizar a loja errada em
-  // silêncio. Conta que já tem `seller_id` só aceita o mesmo usuário do ML.
-  // Recusa ANTES de gravar qualquer credencial, e sem `markError`: a conta
-  // continua como estava.
-  const existing = await deps.db.from("ml_accounts").select("seller_id").eq("id", mlAccountId).maybeSingle();
+  // A RPC confere o vendedor com a linha travada. Conta e par de tokens
+  // ficam na mesma transação, com a trava de renovação anterior invalidada.
+  const connected = await deps.db.rpc("ml_connect_account", {
+    p_organization_id: organizationId,
+    p_ml_account_id: mlAccountId,
+    p_seller_id: token.user_id,
+    p_connected_at: now.toISOString(),
+    p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
+    p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
+    p_access_token_expires_at: new Date(now.getTime() + token.expires_in * 1000).toISOString(),
+    p_scopes: token.scope.split(" "),
+  });
 
-  if (existing.error !== null) {
-    deps.logger.error("ml_account_seller_check_failed", {
-      ml_account_id: mlAccountId,
-      reason: existing.error.message,
-    });
-
-    return { status: "rejected", reason: "não foi possível conferir a conta; tente de novo" };
-  }
-
-  const sellerAtual = existing.data?.seller_id ?? null;
-
-  if (sellerAtual !== null && sellerAtual !== token.user_id) {
-    deps.logger.warn("ml_oauth_seller_mismatch", {
-      ml_account_id: mlAccountId,
-      expected_seller_id: sellerAtual,
-      received_seller_id: token.user_id,
-    });
+  if (connected.error?.code === "PT409") {
+    deps.logger.warn("ml_oauth_seller_mismatch", { ml_account_id: mlAccountId, received_seller_id: token.user_id });
 
     return {
       status: "rejected",
@@ -251,50 +241,13 @@ export async function completeConnect(
     };
   }
 
-  const accessTokenExpiresAt = new Date(now.getTime() + token.expires_in * 1000);
+  if (connected.error !== null || connected.data === null) {
+    deps.logger.error("ml_account_not_connected", { ml_account_id: mlAccountId, code: connected.error?.code });
 
-  // Constraint completa (não parcial): upsert é seguro aqui, diferente do que
-  // vale para `sku_listing_links` (docs/DATABASE.md secao 4).
-  const credentials = await deps.db.from("ml_credentials").upsert(
-    {
-      ml_account_id: mlAccountId,
-      access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
-      refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
-      access_token_expires_at: accessTokenExpiresAt.toISOString(),
-      scopes: token.scope.split(" "),
-    },
-    { onConflict: "ml_account_id" },
-  );
-
-  if (credentials.error !== null) {
-    deps.logger.error("ml_credentials_not_stored", {
-      ml_account_id: mlAccountId,
-      reason: credentials.error.message,
-    });
-
-    return { status: "rejected", reason: "não foi possível gravar as credenciais" };
+    return { status: "rejected", reason: "não foi possível gravar a conexão da conta" };
   }
 
-  const accountUpdate = await deps.db
-    .from("ml_accounts")
-    .update({
-      seller_id: token.user_id,
-      status: "CONNECTED",
-      connected_at: now.toISOString(),
-      last_error: null,
-    })
-    .eq("id", mlAccountId)
-    .select("slug")
-    .maybeSingle();
-
-  if (accountUpdate.error !== null || accountUpdate.data === null) {
-    deps.logger.error("ml_account_not_connected", {
-      ml_account_id: mlAccountId,
-      reason: accountUpdate.error?.message ?? "linha não encontrada após o update",
-    });
-
-    return { status: "rejected", reason: "credenciais gravadas, mas a conta não pôde ser marcada como conectada" };
-  }
+  const slug = connected.data;
 
   // Dispara o backfill de história (fila `backfill`, prioridade baixa) assim
   // que a conta conecta — sem isso, os pedidos anteriores à conexão nunca
@@ -307,7 +260,7 @@ export async function completeConnect(
     .enqueue({
       jobType: "backfill.orders",
       organizationId,
-      dedupeKey: `backfill-orders:${accountUpdate.data.slug}:start`,
+      dedupeKey: `backfill-orders:${slug}:start`,
       queue: "backfill",
       payload: { mlAccountId },
     })

@@ -13856,6 +13856,7 @@ describe("get_ml_account_cards (D-299)", () => {
       "refresh_token_ciphertext",
       "encryption_key_version",
       "access_token_expires_at",
+      "refresh_lock_id",
       "refresh_locked_until",
       "scopes",
     ]) {

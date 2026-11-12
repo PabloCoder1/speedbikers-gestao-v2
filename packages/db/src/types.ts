@@ -2165,6 +2165,7 @@ export type Database = {
           created_at: string
           encryption_key_version: number
           ml_account_id: string
+          refresh_lock_id: string | null
           refresh_locked_until: string | null
           refresh_token_ciphertext: string
           scopes: string[] | null
@@ -2176,6 +2177,7 @@ export type Database = {
           created_at?: string
           encryption_key_version?: number
           ml_account_id: string
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext: string
           scopes?: string[] | null
@@ -2187,6 +2189,7 @@ export type Database = {
           created_at?: string
           encryption_key_version?: number
           ml_account_id?: string
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext?: string
           scopes?: string[] | null
@@ -6630,6 +6633,23 @@ export type Database = {
           p_sku_id: string
         }
         Returns: string
+      }
+      ml_connect_account: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_ml_account_id: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_scopes: string[]
+          p_seller_id: number
+        }
+        Returns: string | null
+      }
+      ml_reject_token_refresh: {
+        Args: { p_error: string; p_lock_id: string; p_ml_account_id: string }
+        Returns: boolean
       }
       shopee_connect_shops: {
         Args: {

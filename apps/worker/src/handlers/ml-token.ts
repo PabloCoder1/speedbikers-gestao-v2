@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import {
@@ -55,7 +57,8 @@ function recusaDefinitiva(error: unknown): boolean {
  * invalida o token que a outra execução ainda ia usar. Reivindicação
  * ATÔMICA — um único `UPDATE ... WHERE refresh_locked_until IS NULL OR
  * refresh_locked_until < now()` — mesmo padrão do consumo de `state` em
- * `apps/api/src/ml-accounts.ts`.
+ * `apps/api/src/ml-accounts.ts`. Cada aquisição recebe um ID próprio.
+ * A reconexão invalida esse ID junto com a troca das credenciais (D-660).
  */
 export async function ensureAccessToken(
   deps: TokenDeps,
@@ -83,9 +86,13 @@ export async function ensureAccessToken(
   // trava: o `refresh_token` lido antes já foi consumido, e usá-lo daria
   // `invalid_grant` -- a recusa definitiva que derruba a conta para ERROR
   // (auditoria de 2026-09-28).
+  const lockId = randomUUID();
   const claimed = await deps.db
     .from("ml_credentials")
-    .update({ refresh_locked_until: new Date(now.getTime() + REFRESH_LOCK_MS).toISOString() })
+    .update({
+      refresh_locked_until: new Date(now.getTime() + REFRESH_LOCK_MS).toISOString(),
+      refresh_lock_id: lockId,
+    })
     .eq("ml_account_id", mlAccountId)
     .or(`refresh_locked_until.is.null,refresh_locked_until.lt.${now.toISOString()}`)
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
@@ -95,11 +102,16 @@ export async function ensureAccessToken(
     return { ok: false, retryable: true, reason: "refresh do token em andamento por outra execução" };
   }
 
-  if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
+  const release = async (): Promise<void> => {
     await deps.db
       .from("ml_credentials")
-      .update({ refresh_locked_until: null })
-      .eq("ml_account_id", mlAccountId);
+      .update({ refresh_locked_until: null, refresh_lock_id: null })
+      .eq("ml_account_id", mlAccountId)
+      .eq("refresh_lock_id", lockId);
+  };
+
+  if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
+    await release();
 
     return { ok: true, accessToken: decryptToken(claimed.data.access_token_ciphertext, deps.encryptionKey) };
   }
@@ -114,22 +126,27 @@ export async function ensureAccessToken(
   } catch (error) {
     const reason = error instanceof Error ? error.message : "falha ao renovar o token";
 
-    await deps.db
-      .from("ml_credentials")
-      .update({ refresh_locked_until: null })
-      .eq("ml_account_id", mlAccountId);
-
     if (!recusaDefinitiva(error)) {
+      await release();
       // A conta continua CONNECTED: o job falha com nova tentativa, a próxima
       // execução tenta renovar de novo, e a tela já avisa "token vencido numa
       // conta conectada" enquanto isso durar.
       return { ok: false, retryable: true, reason };
     }
 
-    await deps.db
-      .from("ml_accounts")
-      .update({ status: "ERROR", last_error: reason.slice(0, 2000) })
-      .eq("id", mlAccountId);
+    const rejected = await deps.db.rpc("ml_reject_token_refresh", {
+      p_ml_account_id: mlAccountId,
+      p_lock_id: lockId,
+      p_error: reason,
+    });
+
+    if (rejected.error !== null) {
+      return { ok: false, retryable: true, reason: "não foi possível registrar a recusa da renovação do Mercado Livre" };
+    }
+
+    if (!rejected.data) {
+      return { ok: false, retryable: true, reason: "a trava de renovação do Mercado Livre mudou; leia a credencial novamente" };
+    }
 
     return { ok: false, retryable: false, reason };
   }
@@ -143,8 +160,12 @@ export async function ensureAccessToken(
       refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
       access_token_expires_at: newExpiresAt.toISOString(),
       refresh_locked_until: null,
+      refresh_lock_id: null,
     })
-    .eq("ml_account_id", mlAccountId);
+    .eq("ml_account_id", mlAccountId)
+    .eq("refresh_lock_id", lockId)
+    .select("ml_account_id")
+    .maybeSingle();
 
   if (saved.error !== null) {
     // O `refresh_token` antigo já foi consumido e o novo não ficou gravado: a
@@ -156,6 +177,10 @@ export async function ensureAccessToken(
       retryable: false,
       reason: `token renovado, mas a gravação falhou: ${saved.error.message}`.slice(0, 2000),
     };
+  }
+
+  if (saved.data === null) {
+    return { ok: false, retryable: true, reason: "a trava de renovação do Mercado Livre mudou; leia a credencial novamente" };
   }
 
   return { ok: true, accessToken: token.access_token };

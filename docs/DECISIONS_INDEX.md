@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **561** (D-001 a D-659).
+Decisões registradas: **562** (D-001 a D-660).
 
 ## Por domínio
 
@@ -245,7 +245,7 @@ Decisões registradas: **561** (D-001 a D-659).
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
 - **D-659** — Renovação Shopee conclui apenas enquanto mantém a trava
 
-### mercado-livre (107)
+### mercado-livre (108)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -354,6 +354,7 @@ Decisões registradas: **561** (D-001 a D-659).
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 - **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
 - **D-657** — Conexão OAuth multicanal confirma a titularidade na gravação
+- **D-660** — Reconexão Mercado Livre invalida a renovação anterior
 
 ### outros (81)
 

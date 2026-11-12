@@ -236,7 +236,7 @@ ml_accounts       label, slug (nomeia a fila ml-sync-<slug>, D-036), seller_id?,
                   status (PENDING | CONNECTED | REVOKED | ERROR), connected_at?, last_error?,
                   backfill_covered_until?
 ml_credentials    access_token_ciphertext, refresh_token_ciphertext, encryption_key_version,
-                  access_token_expires_at, scopes[], refresh_locked_until?
+                  access_token_expires_at, scopes[], refresh_locked_until?, refresh_lock_id?
 ml_oauth_states   state (PK), organization_id, ml_account_id, created_by?, redirect_to?,
                   code_verifier_ciphertext?, expires_at, consumed_at?
 ```
@@ -248,7 +248,7 @@ Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é es
 1. `POST /v1/ml-accounts/connect` (ADMIN) gera PKCE S256, grava um `state` de uso único e o `code_verifier` cifrado em `ml_oauth_states` (expira em 15 min), e devolve a `authorizationUrl` com somente o `code_challenge`.
 2. O navegador do ADMIN autoriza no Mercado Livre e é redirecionado para `GET /oauth/mercado-livre/callback` — rota pública, sem JWT nem OIDC, cuja única defesa é o `state` (mesmo espírito do webhook, D-043, mas com CSRF em vez de allowlist de IP).
 3. O callback **consome o `state` atomicamente**: um único `UPDATE ... WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()`, não um `SELECT` seguido de `UPDATE` — duas chamadas concorrentes com o mesmo `state` (aba duplicada, retry do navegador) só deixam uma passar.
-4. Decifra o `code_verifier`, troca o `code` com PKCE, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e grava em `ml_credentials` (`upsert` por `ml_account_id` — PK **não parcial**, diferente da armadilha de `sku_listing_links` descrita abaixo). Marca a conta `CONNECTED`.
+4. Decifra o `code_verifier`, troca o `code` com PKCE, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e chama `ml_connect_account`. A RPC confirma organização e vendedor com a conta travada e grava credenciais, invalidação da trava anterior e estado `CONNECTED` na mesma transação (D-660). A recusa definitiva da renovação só muda o estado da conta se `ml_reject_token_refresh` confirmar o UUID da trava.
 
 **`ml_credentials` nunca recebe GRANT nem para `authenticated`** — só `service_role` alcança, em qualquer cenário (mesmo padrão de `ml_oauth_states`). O texto claro do token nunca existe fora do processo da `api` entre a resposta do Mercado Livre e a chamada de `encryptToken`; o verifier PKCE também fica cifrado e nunca vai ao navegador (D-049).
 

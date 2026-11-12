@@ -19358,3 +19358,11 @@ Aplicar a migration `20261111175814`, drenar envios legados em andamento, public
 Uma reautorização da mesma loja troca as credenciais e limpa a trava anterior. Um refresh em andamento ainda conseguia gravar o par antigo, limpar a trava de outro job ou marcar ERROR após receber a recusa do token antigo.
 
 O worker condiciona sucesso e liberação da trava ao valor que adquiriu. Para recusa definitiva, `shopee_reject_token_refresh` trava a loja antes da credencial, na mesma ordem da reconexão D-657, e marca ERROR somente se a mesma trava ainda estiver vigente na linha. Se a credencial mudou, o job pode repetir a leitura da credencial atual. A RPC tem execução para `service_role`. Aplicar a migration `20261112120939` antes do worker correspondente.
+
+## D-660 - Reconexão Mercado Livre invalida a renovação anterior
+
+O callback gravava o par e o status em operações separadas. A reconexão preservava a trava antiga, e um worker atrasado podia sobrescrever as credenciais novas, liberar a trava de outro job ou marcar a conta reconectada como ERROR.
+
+A migration `20261112122618` cria `ml_connect_account` e `ml_reject_token_refresh`, com execução para `service_role`. A conexão trava a conta, confere organização e vendedor, grava o par cifrado, limpa a trava e marca CONNECTED na mesma transação. A renovação usa o prazo para adquirir a trava e um UUID para confirmar sua titularidade ao gravar ou liberar. O UUID distingue aquisições com o mesmo prazo. A recusa definitiva registra ERROR e libera a trava em uma transação, travando conta e credencial na mesma ordem da reconexão.
+
+Aplicar a migration antes da API e do worker. Coordenar a atualização dos dois serviços e encerrar renovações em execução no worker antigo antes de liberar novas reconexões. O teste local com duas conexões confirma que a recusa antiga espera a reconexão e perde a titularidade. O teste também cobre rollback, escopo da organização, vendedor e permissões.
