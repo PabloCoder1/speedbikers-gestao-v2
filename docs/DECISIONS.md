@@ -19422,3 +19422,11 @@ A RPC da tela de Sincronização lia `sync_runs` três vezes para obter última 
 A migration `20261112182921` calcula os indicadores numa agregação por conta, recurso e canal. A busca da execução mais recente usa conta, recurso e horário para localizar status e motivo pelo índice existente. Empates no horário são resolvidos pelo maior ID. O último sucesso inclui `partial` e a data do dado é o maior `latest_record_at` entre execuções com sucesso total ou parcial. A consulta continua sob RLS.
 
 As duas versões produziram os mesmos resultados nas comparações `EXCEPT ALL` para ADMIN e GESTOR, incluindo uma organização fora do escopo. A regressão da migration cobre o limite de 24 horas, motivo truncado, empates e grupo sem sucesso. No volume sintético de 40 mil linhas, a mediana para ADMIN caiu de 68,82 ms para 16,39 ms.
+
+## D-668 - O resumo de cobertura usa a data indexada dos pedidos Shopee
+
+O resumo da Home filtrava a venda da Shopee pela data calculada em `shopee_sales_items`. No ensaio local de 60 mil pedidos, o filtro levou a uma varredura de `shopee_orders` para a janela de 30 dias.
+
+A migration `20261112184110` usa o horário bruto do pedido entre o início do primeiro dia em São Paulo, inclusive, e o início do dia seguinte ao último, exclusivo. O intervalo segue o padrão das consultas multicanal e pode usar `shopee_orders_org_created_idx`. A regra de vendas válidas das lojas live continua sob RLS, com a mesma assinatura e as mesmas contagens.
+
+As comparações `EXCEPT ALL` deram os mesmos resultados para ADMIN e GESTOR nas janelas de 7, 30, 90 e 365 dias. As regressões conferem os pedidos nos dois limites do dia, inclusive em uma virada histórica do horário de verão. No ensaio de 30 dias, a mediana de ADMIN caiu de 38,14 ms para 13,10 ms.

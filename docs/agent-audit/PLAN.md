@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 22 achados em [FINDINGS.md](FINDINGS.md). Vinte e um têm evidência direta ou medição. Dezesseis receberam correção local, incluindo o recorte de tentativas novas de A06. Seis seguem em aberto e dependem em algum ponto de acesso, ação ou medição externa: A01, A02, A07, A08, A10 e A11. A08 ainda é hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 23 achados em [FINDINGS.md](FINDINGS.md). Vinte e dois têm evidência direta ou medição. Dezessete receberam correção local, incluindo o recorte de tentativas novas de A06. Seis seguem em aberto e dependem em algum ponto de acesso, ação ou medição externa: A01, A02, A07, A08, A10 e A11. A08 ainda é hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -25,7 +25,7 @@ Há 22 achados em [FINDINGS.md](FINDINGS.md). Vinte e um têm evidência direta 
 
 O trabalho começou pelos serviços e pela referência que publica a web para distinguir indisponibilidade, vulnerabilidade e atraso de versão. Em seguida, foram corrigidos dependências críticas, push Shopee, titularidade de OAuth, envio SAC, regras por loja e concorrência de credenciais. A segunda revisão das branches cruzou o Git remoto com PRs, worktrees e deploys.
 
-A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. A próxima fatia isola o custo da leitura Shopee de `get_stock_coverage_summary` com dados sintéticos, seguindo o ponto aberto de D-623. Seguem na fila vendas e faturamento, além da busca de consumidores estáticos de web e scripts. Inventário, análise estática e benchmarks locais podem avançar em paralelo com a recuperação externa. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
+A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. O resumo de cobertura usa os limites do dia de São Paulo no timestamp indexado dos pedidos Shopee. A próxima fatia mede as variantes de `get_faturamento` chamadas pela web. Seguem na fila vendas e a busca de consumidores estáticos de web e scripts. Inventário, análise estática e benchmarks locais podem avançar em paralelo com a recuperação externa. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
 
 ## Fila por tarefa
 
@@ -47,7 +47,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P1 · pronto localmente | Restringir o escopo de plataforma das RPCs de saúde (A21, D-666) | Excluir da última execução, das contagens e dos motivos os jobs de organizações removidas. Preservar o heartbeat e publicar a migration pela esteira |
 | P2 · medido localmente | Medir leituras de saúde de `/sincronizacao` | Três RPCs medidas com ADMIN e GESTOR em [volume sintético](../PERFORMANCE.md#rpcs-de-saúde-da-sincronização-12112026) |
 | P2 · pronto localmente | Compartilhar a leitura dos indicadores de `get_sync_health` (A22, D-667) | Equivalência sob RLS em três volumes e regressão para última execução, sucesso, recência e contagens |
-| P2 · próxima etapa local | Isolar o custo da Shopee em `get_stock_coverage_summary` (D-623) | Comparar blocos e resultado da leitura com SKUs, lojas e vendas sintéticas sob RLS |
+| P2 · pronto localmente | Recortar a Shopee em `get_stock_coverage_summary` pelo horário de criação (A23, D-668) | Equivalência em quatro janelas sob RLS, medição com 60 mil pedidos e regressão dos limites do dia em São Paulo |
+| P2 · próxima etapa local | Medir `get_faturamento` com e sem detalhe nas chamadas da web | Identificar os parâmetros realmente usados e medir tempo, blocos e linhas em janelas representativas por papel |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · segunda triagem concluída | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões novas verificadas. Restam 23 refs, com PR aberto, worktree ou finalidade histórica. Dois registros órfãos de worktrees e três rotinas sem consumidores removidos em sessões anteriores |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

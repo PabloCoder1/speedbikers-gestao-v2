@@ -5260,6 +5260,56 @@ describe("Demanda da Shopee na cobertura e na reposição (D-459, C-65)", () => 
     expect(resumo).toEqual(contagem);
   });
 
+  it.each([
+    { dia: "2024-06-01", inicio: "2024-06-01 03:00:00+00", fim: "2024-06-02 03:00:00+00" },
+    { dia: "2018-11-04", inicio: "2018-11-04 03:00:00+00", fim: "2018-11-05 02:00:00+00" },
+  ])("D-668: o resumo usa os limites do dia $dia em São Paulo", async ({ dia, inicio, fim }) => {
+    await client.query("begin");
+    try {
+      await client.query(
+        `with pedidos (marca, criado_em) as (
+           values ('D668-ANTES', $3::timestamptz - interval '1 microsecond'),
+                  ('D668-INICIO', $3::timestamptz),
+                  ('D668-FIM', $4::timestamptz - interval '1 microsecond'),
+                  ('D668-DEPOIS', $4::timestamptz)
+         ), novos_skus as (
+           insert into public.skus (organization_id, sku, kind, supplier_brand, supplier_brand_source)
+           select $1, marca, 'PRODUTO', marca, 'DERIVED' from pedidos
+           returning id, sku
+         ), novos_pedidos as (
+           insert into public.shopee_orders
+             (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+           select $2, $1, marca, 'COMPLETED', criado_em, criado_em, criado_em from pedidos
+           returning shopee_shop_id, order_sn, organization_id
+         )
+         insert into public.shopee_order_items
+           (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, sku_id, vinculo_via)
+         select p.shopee_shop_id, p.order_sn, 0, p.organization_id, 1, 2, s.id, 'SKU_DO_PEDIDO'
+         from novos_pedidos p join novos_skus s on s.sku = p.order_sn`,
+        [ORG, LOJA, inicio, fim],
+      );
+      await client.query("set local time zone 'Asia/Tokyo'");
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+      const { rows } = await client.query(
+        `select marca, resumo.total, resumo.em_ruptura
+         from unnest($3::text[]) as marca
+         cross join lateral public.get_stock_coverage_summary($1, $2, $2, marca) resumo
+         order by marca`,
+        [ORG, dia, ["D668-ANTES", "D668-INICIO", "D668-FIM", "D668-DEPOIS"]],
+      );
+
+      expect(rows).toEqual([
+        { marca: "D668-ANTES", total: "0", em_ruptura: "0" },
+        { marca: "D668-DEPOIS", total: "0", em_ruptura: "0" },
+        { marca: "D668-FIM", total: "1", em_ruptura: "1" },
+        { marca: "D668-INICIO", total: "1", em_ruptura: "1" },
+      ]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   it("sem loja live com pedidos lidos (só a de teste e uma real nunca lida): a parte da Shopee nula e o total só do ML", async () => {
     const [z] = await asUser<Linha>(
       ADMIN,

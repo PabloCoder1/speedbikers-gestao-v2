@@ -1594,3 +1594,20 @@ Comparação local das três versões em transações revertidas. Dois terços d
 | 200.000 | GESTOR | 214,42 ms / 16.167 | 47,64 ms / 5.438 |
 
 A variante com `row_number()` levou 69,43 ms para ADMIN com 40 mil linhas e tocou 847 blocos temporários. A consulta escolhida usou zero blocos temporários nos seis cenários. O plano do corpo em 40 mil linhas mostrou uma varredura de `sync_runs` e buscas pontuais em `sync_runs_freshness_idx`, 18 para ADMIN e nove para GESTOR. `EXCEPT ALL` em ambos os sentidos produziu zero diferenças para cada papel e para a organização alheia. A publicação ainda exige validação com a carga real.
+
+### Janela Shopee no resumo de cobertura (Sentinel A23, 12/11/2026)
+
+Comparação de `get_stock_coverage_summary` com 60 mil pedidos sintéticos ao longo de 365 dias, um item por pedido, lojas live e sandbox e duas organizações. O ADMIN alcança duas lojas live, com 50 mil pedidos. O GESTOR alcança uma, com 30 mil pedidos. Os dados incluem pedidos cancelados, não pagos e SKUs exclusivos por loja. Sete execuções por variante e papel em ordem alternada, após um aquecimento, com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. Tempos e blocos compartilhados são medianas da RPC completa.
+
+| Janela | Papel | Antes · mediana / blocos | D-668 · mediana / blocos |
+| ---: | --- | --- | --- |
+| 7 dias | ADMIN | 27,07 ms / 7.400 | 5,37 ms / 3.475 |
+| 7 dias | GESTOR | 19,82 ms / 4.946 | 4,10 ms / 2.171 |
+| 30 dias | ADMIN | 38,14 ms / 25.172 | 13,10 ms / 14.316 |
+| 30 dias | GESTOR | 24,28 ms / 14.642 | 8,83 ms / 8.704 |
+| 90 dias | ADMIN | 64,49 ms / 71.588 | 31,90 ms / 42.629 |
+| 90 dias | GESTOR | 37,78 ms / 39.962 | 20,91 ms / 25.765 |
+| 365 dias | ADMIN | 187,69 ms / 284.312 | 126,77 ms / 173.094 |
+| 365 dias | GESTOR | 103,40 ms / 155.996 | 75,78 ms / 104.662 |
+
+No corpo da consulta de 30 dias, a leitura de `shopee_orders` passou de `Seq Scan` a `Bitmap Heap Scan` para os dois papéis. O `Bitmap Index Scan` em `shopee_orders_org_created_idx` selecionou 4.521 entradas pela organização e pelos dois limites de horário. `EXCEPT ALL` nos dois sentidos conferiu as unidades da Shopee por SKU e as contagens da RPC nas quatro janelas. A RPC também coincidiu para filtro de marca, organização alheia e limites invertidos ou nulos. O ensaio foi revertido. A medição em produção depende da publicação e da disponibilidade do ambiente.

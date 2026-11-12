@@ -11,6 +11,7 @@ Inventário estático de `origin/main` em `d6169205`, conferido em 11/11/2026. O
 - Na continuidade, a stack local aplicou 310 migrations e executou 1.151 testes de integração. D-657 criou duas RPCs de conexão com execução para `service_role`. D-658 adicionou fila e início do envio às tentativas de resposta, com testes de imutabilidade e disputa em duas conexões. D-659 acrescentou `shopee_reject_token_refresh`. D-660 acrescentou duas RPCs do Mercado Livre e `ml_credentials.refresh_lock_id`. D-661 adotou o mesmo identificador na Shopee.
 - D-666 restringe `get_system_health` e `get_job_failures` às organizações administradas e ao heartbeat identificado pelo tipo e UUID de plataforma. A stack local passou a aplicar 311 migrations.
 - D-667 agrega os indicadores de `get_sync_health` numa leitura de `sync_runs` e usa o índice de frescor para obter o motivo e status da última execução.
+- D-668 usa os limites dos dias em São Paulo no timestamp dos pedidos da Shopee em `get_stock_coverage_summary`. A migration aproveita `shopee_orders_org_created_idx`.
 
 ## Consumidores por domínio
 
