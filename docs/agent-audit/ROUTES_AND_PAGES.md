@@ -77,7 +77,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · atendimento, conhec
 | Rota | Entrada | Referências diretas de dados |
 |---|---|---|
 | `/atendimento` | [page.tsx](<../../apps/web/app/(app)/atendimento/page.tsx>) | RPC `get_support_metrics`. Tabelas `support_cases`, `support_case_links`, `listings`, `skus`, `ml_accounts` |
-| `/atendimento/[caseId]` | [page.tsx](<../../apps/web/app/(app)/atendimento/[caseId]/page.tsx>) | Tabelas `support_cases`, `support_messages`, `support_case_deadlines`, `support_case_events`, `support_reply_attempts`, `reply_templates` |
+| `/atendimento/[caseId]` | [page.tsx](<../../apps/web/app/(app)/atendimento/[caseId]/page.tsx>) | Tabelas `support_cases`, `support_messages` com cursor de data e ID (D-665), `support_case_deadlines`, `support_case_events`, `support_reply_attempts`, `reply_templates` |
 | `/atendimento/conhecimento` | [page.tsx](<../../apps/web/app/(app)/atendimento/conhecimento/page.tsx>) | Tabelas `knowledge_entries`, `profiles` |
 | `/atendimento/metricas` | [page.tsx](<../../apps/web/app/(app)/atendimento/metricas/page.tsx>) | RPC `get_support_metrics` |
 | `/atendimento/perguntas` | [page.tsx](<../../apps/web/app/(app)/atendimento/perguntas/page.tsx>) | `ml_accounts` e casos paginados com a primeira mensagem recebida por cartão (D-664). `support_reply_attempts` e `reply_templates` para a pergunta aberta |

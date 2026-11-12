@@ -19398,3 +19398,11 @@ A lista paginava os casos e, em outra consulta, baixava as mensagens de todos el
 A consulta paginada dos casos inclui `support_messages` como embed. O recorte de filhos exige `INBOUND`, ordena por `occurred_at, id` e limita a uma linha por caso. A relação preserva casos sem mensagem recebida. A página usa a leitura sob RLS, a mesma chave composta do transcript e os campos já exibidos.
 
 No Supabase local, mil eventos anteriores escondiam a pergunta na leitura antiga. A nova consulta devolveu a primeira mensagem em uma linha e preservou um caso vazio. A regressão Playwright exercita o cartão na página de Perguntas.
+
+## D-665 - Detalhe do SAC pagina a conversa por data e mensagem
+
+O detalhe lia as mensagens mais antigas em uma consulta sem paginação. O teto do PostgREST ocultava as mais recentes em atendimentos com mais de mil registros.
+
+A conversa abre nas 50 mensagens mais recentes, em ordem cronológica de leitura. Os links avançam nas duas direções por `occurred_at, id`, com precisão de microssegundos e um registro extra para detectar a próxima página. A consulta opera sob a RLS da conta e usa as colunas do índice `support_messages_case_timeline_idx`. A navegação preserva o retorno à fila.
+
+A regressão usa 1.050 mensagens, com horários iguais na fronteira entre páginas, e insere outra enquanto o usuário lê. Um gestor sem acesso à conta recebe a página de atendimento não encontrado ao abrir o mesmo cursor.

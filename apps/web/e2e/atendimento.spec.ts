@@ -4,7 +4,8 @@ import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { login } from "./helpers.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { login, loginAs } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 async function fixtureDaPergunta() {
@@ -117,6 +118,78 @@ test("a pergunta aparece mesmo com mil eventos anteriores no transcript", async 
       .eq("support_case_id", caso.id)
       .like("external_message_key", `${prefixo}%`);
     expect.soft(cleaned.error, "remover eventos sintéticos").toBeNull();
+  }
+});
+
+test("o detalhe navega pelo histórico longo sem repetir mensagens com o mesmo horário", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const prefixo = `e2e-conversa-${randomUUID()}-`;
+  const prefixoId = randomUUID().slice(0, 24);
+  const voltando = "/atendimento?canal=QUESTION";
+  const url = `/atendimento/${caso.id}?volta=${encodeURIComponent(voltando)}`;
+  const escopo = {
+    organization_id: seed.organizationId,
+    ml_account_id: caso.ml_account_id,
+    support_case_id: caso.id,
+    direction: "INBOUND",
+    sender_kind: "CUSTOMER",
+  };
+  const mensagens = Array.from({ length: 1_050 }, (_, index) => {
+    const numero = index + 1;
+    return {
+      id: prefixoId + String(numero).padStart(12, "0"),
+      ...escopo,
+      external_message_key: prefixo + String(numero),
+      body: `Mensagem do histórico ${String(numero)}`,
+      occurred_at: numero === 1_050 ? "2030-01-01T00:00:00.123457Z" : "2030-01-01T00:00:00.123456Z",
+    };
+  });
+  const inserted = await db.from("support_messages").insert(mensagens);
+  if (inserted.error !== null) throw new Error(inserted.error.message);
+
+  try {
+    await login(page, url);
+    const timeline = page.getByRole("region", { name: "Conversa" }).locator("ol > li");
+    await expect(timeline).toHaveCount(50);
+    await expect(timeline.first()).toContainText("Mensagem do histórico 1001");
+    await expect(timeline.last()).toContainText("Mensagem do histórico 1050");
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+
+    const anteriores = page.getByRole("link", { name: "Mensagens anteriores" });
+    const paginaAnterior = await anteriores.getAttribute("href");
+    if (paginaAnterior === null) throw new Error("Cursor de mensagens anteriores ausente");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await anteriores.click();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 951", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1001", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Voltar à Caixa de Entrada/ })).toHaveAttribute("href", voltando);
+
+    const chegada = await db.from("support_messages").insert({
+      ...escopo,
+      id: prefixoId + "000000001051",
+      external_message_key: prefixo + "1051",
+      body: "Mensagem do histórico 1051",
+      occurred_at: "2030-01-01T00:00:00.123458Z",
+    });
+    if (chegada.error !== null) throw new Error(chegada.error.message);
+
+    await page.getByRole("link", { name: "Mensagens seguintes" }).click();
+    await expect(page.getByText("Mensagem do histórico 1050", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Mensagem do histórico 1051", { exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Mensagens seguintes" }).click();
+    await expect(page.getByText("Mensagem do histórico 1051", { exact: true })).toBeVisible();
+
+    await page.context().clearCookies();
+    await loginAs(page, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, paginaAnterior);
+    await expect(page.getByRole("heading", { name: "Página não encontrada" })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+  } finally {
+    const cleaned = await db.from("support_messages").delete()
+      .eq("support_case_id", caso.id)
+      .like("external_message_key", `${prefixo}%`);
+    expect.soft(cleaned.error, "remover mensagens sintéticas").toBeNull();
   }
 });
 

@@ -1563,3 +1563,7 @@ A inspeção dos callbacks e os testes de contrato mostram uma chamada de persis
 ### Mensagens transferidas na lista de Perguntas (Sentinel A19, 12/11/2026)
 
 No PostgREST local, um caso sintético com 1.000 eventos de sistema seguidos de duas mensagens recebidas reproduziu a perda da pergunta. A consulta de mensagens devolveu 1.000 linhas, todas de sistema. Com D-664, o embed na consulta dos casos devolveu uma mensagem para esse cartão e zero para o caso sem transcript. A web retirou uma chamada PostgREST do carregamento de uma lista com casos. O ensaio mede chamadas e volume retornado com dados sintéticos. A latência com carga de produção continua pendente.
+
+### Tamanho da leitura da conversa no SAC (Sentinel A20, 12/11/2026)
+
+Com 1.050 mensagens sintéticas, o detalhe antigo atingia o teto de 1.000 linhas do PostgREST e omitia a última mensagem. D-665 pede até 51 linhas e renderiza até 50 em cada navegação, com data e ID como cursor. O Playwright verifica o limite exibido, a ordem nos empates e a chegada de uma mensagem enquanto o operador está numa página anterior. A medição cobre volume local.
