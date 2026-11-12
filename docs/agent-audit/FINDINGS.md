@@ -24,6 +24,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A18 | P1 · CORRIGIDO localmente (D-663) | A primeira confirmação persistia a tentativa, mas a falha na fila seguida de recarga esvaziava o formulário | Perguntas e detalhe recuperam a mesma confirmação do autor antes do início do envio. A regressão Playwright verifica o mesmo payload nas duas entradas |
 | A19 | P2 · CORRIGIDO localmente (D-664) | O carregamento em lote de Perguntas cortava em 1.000 linhas e podia omitir a primeira mensagem recebida | A consulta paginada inclui no máximo a primeira mensagem recebida de cada caso. Regressão com 1.000 eventos anteriores à pergunta. [Medição](../PERFORMANCE.md#mensagens-transferidas-na-lista-de-perguntas-sentinel-a19-12112026) |
 | A20 | P2 · CORRIGIDO localmente (D-665) | O detalhe do SAC lia em ordem crescente e ocultava as mensagens mais recentes quando a consulta atingia 1.000 linhas | A conversa começa nas 50 mais recentes. A regressão percorre páginas com horários iguais e chegada de mensagem, preserva o link de retorno e verifica o escopo por conta |
+| A21 | P1 · CORRIGIDO localmente (D-666) | Após remover uma organização sintética, outro administrador passou a ver seu job nas RPCs de saúde e seu motivo em `get_job_failures` | A migration reconhece a plataforma pelo tipo e UUID do heartbeat. As regressões cobrem a última execução, a contagem e o motivo |
 
 ## Referências externas
 

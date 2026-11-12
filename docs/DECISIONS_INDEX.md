@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **567** (D-001 a D-665).
+Decisões registradas: **568** (D-001 a D-666).
 
 ## Por domínio
 
@@ -513,7 +513,7 @@ Decisões registradas: **567** (D-001 a D-665).
 - **D-641** — A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 - **D-643** — A venda anomala vira um episodio por SKU e canal
 
-### worker/infra (94)
+### worker/infra (95)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -609,4 +609,5 @@ Decisões registradas: **567** (D-001 a D-665).
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 - **D-635** — A loja da Shopee na preferencia de aviso (C-82)
 - **D-654** — A barra do topo com nome de perfil longo, logo acima do trilho
+- **D-666** — Telemetria de jobs exige escopo explícito de plataforma
 

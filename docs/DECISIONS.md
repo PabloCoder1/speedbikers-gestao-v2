@@ -19406,3 +19406,11 @@ O detalhe lia as mensagens mais antigas em uma consulta sem paginação. O teto 
 A conversa abre nas 50 mensagens mais recentes, em ordem cronológica de leitura. Os links avançam nas duas direções por `occurred_at, id`, com precisão de microssegundos e um registro extra para detectar a próxima página. A consulta opera sob a RLS da conta e usa as colunas do índice `support_messages_case_timeline_idx`. A navegação preserva o retorno à fila.
 
 A regressão usa 1.050 mensagens, com horários iguais na fronteira entre páginas, e insere outra enquanto o usuário lê. Um gestor sem acesso à conta recebe a página de atendimento não encontrado ao abrir o mesmo cursor.
+
+## D-666 - Telemetria de jobs exige escopo explícito de plataforma
+
+`job_runs` conserva a organização registrada no envelope. As RPCs de saúde classificavam a ausência desse ID no catálogo como telemetria de plataforma. No PostgreSQL local, apagar uma organização sintética tornou uma execução dela visível a outro administrador. `get_job_failures` incluiu também o motivo registrado.
+
+A migration `20261112181422` limita as duas RPCs a organizações administradas pelo chamador e ao par `system.ping` com o UUID de plataforma enviado pela API. A função privada `system_ping_organization_id()` fornece o identificador às consultas. `get_system_health` aplica o escopo à última execução e à contagem de falhas. `get_job_failures` filtra antes de agrupar e escolher a amostra de motivo.
+
+As regressões reproduzem a remoção em transação revertida, conferem tipo exclusivo e compartilhado, testam o motivo de falha e preservam o heartbeat de plataforma. A migration está preparada para a esteira de banco.

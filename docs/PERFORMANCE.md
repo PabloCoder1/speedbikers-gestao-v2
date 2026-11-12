@@ -1567,3 +1567,15 @@ No PostgREST local, um caso sintético com 1.000 eventos de sistema seguidos de 
 ### Tamanho da leitura da conversa no SAC (Sentinel A20, 12/11/2026)
 
 Com 1.050 mensagens sintéticas, o detalhe antigo atingia o teto de 1.000 linhas do PostgREST e omitia a última mensagem. D-665 pede até 51 linhas e renderiza até 50 em cada navegação, com data e ID como cursor. O Playwright verifica o limite exibido, a ordem nos empates e a chegada de uma mensagem enquanto o operador está numa página anterior. A medição cobre volume local.
+
+### RPCs de saúde da sincronização (12/11/2026)
+
+PostgreSQL local com D-666, 40.000 `sync_runs`, 60.000 `job_runs` e 540 métricas diárias sintéticas. O ADMIN administra duas contas, com 30.000 execuções de sincronização e 40.000 jobs. O GESTOR tem acesso a uma dessas contas. A terceira conta pertence a outra organização. Uma passagem de aquecimento e cinco medições por RPC e papel com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` como `authenticated`.
+
+| RPC | ADMIN · linhas / mediana / blocos | GESTOR · linhas / mediana / blocos |
+| --- | --- | --- |
+| `get_sync_health` | 18 / 65,46 ms / 2.649 | 9 / 39,84 ms / 2.655 |
+| `get_processing_health` | 2 / 0,97 ms / 78 | 1 / 1,12 ms / 69 |
+| `get_job_failures(7, 30)` | 7 / 2,05 ms / 478 | 0 / 0,39 ms / 2 |
+
+Os blocos compartilhados são os hits mais as leituras da terceira execução medida. O plano externo mostra `Function Scan`. O corpo de `get_sync_health` consulta `sync_runs` para última execução, último sucesso e contagens de 24 h. Comparar uma agregação que compartilhe a leitura sob RLS, preservando o tratamento de `partial` e `latest_record_at`.

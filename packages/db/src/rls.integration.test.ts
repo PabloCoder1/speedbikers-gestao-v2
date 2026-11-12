@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   classifySalesTrend,
   classifyStockState,
@@ -13560,6 +13562,32 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
     expect(rows.map((r) => r.job_type)).toContain("system.ping");
   });
 
+  it("jobs da organização excluída não aparecem nem alteram o estado de um tipo compartilhado", async () => {
+    const removida = randomUUID();
+    const compartilhado = "rlstest.job.removida.compartilhado";
+    const exclusivo = "rlstest.job.removida.exclusivo";
+    const falsoHeartbeat = "rlstest.job.falso-heartbeat";
+    const rows = await comJobRuns<{ job_type: string; job_status: string; job_failures_24h: string }>(
+      [
+        `insert into public.organizations (id, name, slug) values ('${removida}', 'Org removida', '${removida}')`,
+        inserirJob(ORG_SB, compartilhado, "done", "now() - interval '1 hour'"),
+        inserirJob(removida, compartilhado, "failed", "now()"),
+        inserirJob(removida, exclusivo, "failed", "now()"),
+        inserirJob("00000000-0000-4000-8000-000000000000", falsoHeartbeat, "failed", "now()"),
+        `delete from public.organizations where id = '${removida}'`,
+      ].join(";"),
+      ADMIN_SB,
+      JOBS_VISIVEIS,
+    );
+
+    expect(rows.find((row) => row.job_type === compartilhado)).toMatchObject({
+      job_status: "done",
+      job_failures_24h: "0",
+    });
+    expect(rows.map((row) => row.job_type)).not.toContain(exclusivo);
+    expect(rows.map((row) => row.job_type)).not.toContain(falsoHeartbeat);
+  });
+
   /**
    * O vazamento que sobrevive a um escopo feito pela metade. O mesmo
    * `job_type` roda em TODA organizacao (`sync.orders.window`), entao a linha
@@ -13732,6 +13760,23 @@ describe("get_job_failures (D-291, execucoes que falharam)", () => {
     );
 
     expect(rows.map((r) => r.job_type)).toContain("system.ping");
+  });
+
+  it("motivo de falha da organização excluída fica fora da telemetria de plataforma", async () => {
+    const removida = randomUUID();
+    const rows = await comFalhas<{ job_type: string; sample_reason: string }>(
+      [
+        `insert into public.organizations (id, name, slug) values ('${removida}', 'Org removida', '${removida}')`,
+        inserirFalha(removida, "system.ping", "motivo da organização removida", "now()"),
+        inserirFalha("00000000-0000-4000-8000-000000000000", "system.ping", "heartbeat de plataforma", "now()"),
+        `delete from public.organizations where id = '${removida}'`,
+      ].join(";"),
+      ADMIN_SB,
+      "select job_type, sample_reason from public.get_job_failures(7, 50) where job_type = 'system.ping'",
+    );
+
+    expect(rows.map((row) => row.sample_reason)).toContain("heartbeat de plataforma");
+    expect(rows.map((row) => row.sample_reason)).not.toContain("motivo da organização removida");
   });
 
   it("quem nao e ADMIN recebe ZERO linhas, nao erro e nao dado", async () => {
