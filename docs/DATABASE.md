@@ -268,6 +268,8 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 `latest_record_at` é o dado que sustenta a tela de Saúde da Sincronização: a distância entre `now()` e o registro mais recente que uma execução efetivamente trouxe, não `finished_at` — uma sincronização pode terminar sem trazer nada novo.
 
+`get_sync_health` agrega último horário, sucesso, recência do dado e contagens de 24 h por conta, recurso e canal (D-667). A consulta resolve status e motivo em uma busca pontual pelo índice `sync_runs_freshness_idx`, sob o mesmo escopo RLS.
+
 **Armadilha paga:** `ml_account_id` referencia `ml_accounts` com `on delete restrict`, não `cascade`. Numa tabela append-only, um `cascade` é fisicamente impossível de completar — o `DELETE` disparado pela cascata esbarra na mesma trigger que bloqueia `DELETE` direto, e a exclusão inteira falha. `restrict` torna isso explícito: apagar uma conta com histórico de sync falha alto, em vez de a cascata quebrar no meio com um erro que não aponta para a causa. Na prática nunca dispara — contas são desativadas por `status = 'REVOKED'`, nunca apagadas.
 
 **Telemetria de jobs (D-666).** `get_system_health` e `get_job_failures` expõem a administradores os registros das organizações que administram e o heartbeat de plataforma. Este é identificado pelo tipo `system.ping` e pelo UUID reservado do envelope. A migration `20261112181422` aplica o recorte antes de calcular a última execução, contar falhas e selecionar motivos.

@@ -19414,3 +19414,11 @@ A regressão usa 1.050 mensagens, com horários iguais na fronteira entre págin
 A migration `20261112181422` limita as duas RPCs a organizações administradas pelo chamador e ao par `system.ping` com o UUID de plataforma enviado pela API. A função privada `system_ping_organization_id()` fornece o identificador às consultas. `get_system_health` aplica o escopo à última execução e à contagem de falhas. `get_job_failures` filtra antes de agrupar e escolher a amostra de motivo.
 
 As regressões reproduzem a remoção em transação revertida, conferem tipo exclusivo e compartilhado, testam o motivo de falha e preservam o heartbeat de plataforma. A migration está preparada para a esteira de banco.
+
+## D-667 - Indicadores de get_sync_health compartilham uma agregação
+
+A RPC da tela de Sincronização lia `sync_runs` três vezes para obter última execução, último sucesso e contagens de 24 horas. O ensaio de 40 mil linhas mostrou 2.938 blocos compartilhados para ADMIN.
+
+A migration `20261112182921` calcula os indicadores numa agregação por conta, recurso e canal. A busca da execução mais recente usa conta, recurso e horário para localizar status e motivo pelo índice existente. Empates no horário são resolvidos pelo maior ID. O último sucesso inclui `partial` e a data do dado é o maior `latest_record_at` entre execuções com sucesso total ou parcial. A consulta continua sob RLS.
+
+As duas versões produziram os mesmos resultados nas comparações `EXCEPT ALL` para ADMIN e GESTOR, incluindo uma organização fora do escopo. A regressão da migration cobre o limite de 24 horas, motivo truncado, empates e grupo sem sucesso. No volume sintético de 40 mil linhas, a mediana para ADMIN caiu de 68,82 ms para 16,39 ms.

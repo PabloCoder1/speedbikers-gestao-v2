@@ -1579,3 +1579,18 @@ PostgreSQL local com D-666, 40.000 `sync_runs`, 60.000 `job_runs` e 540 métrica
 | `get_job_failures(7, 30)` | 7 / 2,05 ms / 478 | 0 / 0,39 ms / 2 |
 
 Os blocos compartilhados são os hits mais as leituras da terceira execução medida. O plano externo mostra `Function Scan`. O corpo de `get_sync_health` consulta `sync_runs` para última execução, último sucesso e contagens de 24 h. Comparar uma agregação que compartilhe a leitura sob RLS, preservando o tratamento de `partial` e `latest_record_at`.
+
+### Uma agregação em get_sync_health (Sentinel A22, 12/11/2026)
+
+Comparação local das três versões em transações revertidas. Dois terços das contas pertencem à organização consultada, com 75% das linhas. O ADMIN alcança as duas contas da organização. O GESTOR alcança uma. Foram usadas sete execuções por variante e papel, com ordem alternada e uma execução de aquecimento, por `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. As contagens da tabela abaixo são medianas de blocos compartilhados. Os fixtures incluíram execuções parciais, falhas e valores nulos.
+
+| Linhas sintéticas | Papel | Antes · mediana / blocos | D-667 · mediana / blocos |
+| ---: | --- | --- | --- |
+| 4.000 | ADMIN | 7,75 ms / 294 | 2,69 ms / 162 |
+| 4.000 | GESTOR | 5,14 ms / 300 | 2,07 ms / 140 |
+| 40.000 | ADMIN | 68,82 ms / 2.938 | 16,39 ms / 1.061 |
+| 40.000 | GESTOR | 38,97 ms / 2.944 | 10,43 ms / 1.030 |
+| 200.000 | ADMIN | 363,59 ms / 16.161 | 74,85 ms / 5.469 |
+| 200.000 | GESTOR | 214,42 ms / 16.167 | 47,64 ms / 5.438 |
+
+A variante com `row_number()` levou 69,43 ms para ADMIN com 40 mil linhas e tocou 847 blocos temporários. A consulta escolhida usou zero blocos temporários nos seis cenários. O plano do corpo em 40 mil linhas mostrou uma varredura de `sync_runs` e buscas pontuais em `sync_runs_freshness_idx`, 18 para ADMIN e nove para GESTOR. `EXCEPT ALL` em ambos os sentidos produziu zero diferenças para cada papel e para a organização alheia. A publicação ainda exige validação com a carga real.

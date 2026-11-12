@@ -7670,6 +7670,78 @@ describe("observabilidade de sincronização", () => {
     ).rejects.toThrow(/append-only/);
   });
 
+  it("get_sync_health mantém os indicadores e o escopo por conta", async () => {
+    const oculta = randomUUID();
+    const prefixo = randomUUID().slice(0, 24);
+    const consulta = `
+      select ml_account_id, channel, last_run_status, last_run_reason,
+             extract(epoch from now() - last_run_at)::int / 3600 as horas_execucao,
+             extract(epoch from now() - last_success_at)::int / 3600 as horas_sucesso,
+             extract(epoch from now() - latest_record_at)::int / 3600 as horas_dado,
+             runs_24h::int, failed_24h::int, items_24h::int
+      from public.get_sync_health($1)
+      where ml_account_id in ($2, $3) and resource = 'orders' and channel <> 'webhook'
+      order by channel, ml_account_id
+    `;
+
+    await client.query("begin");
+    try {
+      await client.query(
+        "insert into public.ml_accounts (id, organization_id, label, slug) values ($1, $2, 'Conta sem acesso', $1::uuid::text)",
+        [oculta, ORG_SB],
+      );
+      await client.query(
+        `insert into public.sync_runs
+           (id, organization_id, ml_account_id, job_id, resource, channel, status,
+            items_processed, started_at, finished_at, latest_record_at, reason)
+         select v.id, $1, v.conta, gen_random_uuid(), 'orders', v.canal, v.status, v.itens,
+                now() - make_interval(hours => v.horas) - interval '1 second',
+                now() - make_interval(hours => v.horas),
+                now() - make_interval(hours => v.horas_dado), v.motivo
+         from (values
+           (gen_random_uuid(), $2::uuid, 'backfill', 'done', 72, 5, 73, null::text),
+           (gen_random_uuid(), $2, 'backfill', 'done', 24, 11, 96, null),
+           (gen_random_uuid(), $2, 'backfill', 'partial', 2, 3, 120, 'parcial'),
+           ($4::uuid, $2, 'backfill', 'failed', 1, 4, 1, 'empate anterior'),
+           ($5::uuid, $2, 'backfill', 'failed', 1, null, null, repeat('x', 230)),
+           (gen_random_uuid(), $2, 'reconciliation', 'failed', 48, null, null, 'sem sucesso'),
+           (gen_random_uuid(), $3::uuid, 'backfill', 'done', 1, 99, 1, null)
+         ) v(id, conta, canal, status, horas, itens, horas_dado, motivo)`,
+        [ORG_SB, CONTA, oculta, prefixo + "000000000001", prefixo + "000000000002"],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ANALISTA_SB }),
+      ]);
+
+      const resultado = await client.query(consulta, [ORG_SB, CONTA, oculta]);
+      expect(resultado.rows).toEqual([
+        {
+          ml_account_id: CONTA, channel: "backfill", last_run_status: "failed",
+          last_run_reason: "x".repeat(200), horas_execucao: 1, horas_sucesso: 2, horas_dado: 73,
+          runs_24h: 4, failed_24h: 2, items_24h: 18,
+        },
+        {
+          ml_account_id: CONTA, channel: "reconciliation", last_run_status: "failed",
+          last_run_reason: "sem sucesso", horas_execucao: 48, horas_sucesso: null, horas_dado: null,
+          runs_24h: 0, failed_24h: 0, items_24h: 0,
+        },
+      ]);
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ADMIN_SB }),
+      ]);
+      expect((await client.query(consulta, [ORG_SB, CONTA, oculta])).rows).toHaveLength(3);
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: DE_OUTRA_ORG }),
+      ]);
+      expect((await client.query(consulta, [ORG_SB, CONTA, oculta])).rows).toHaveLength(0);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   describe("RLS", () => {
     it("quem tem permissão na conta enxerga sync_runs e sync_errors", async () => {
       const runs = await asUser(ANALISTA_SB, "select id from public.sync_runs");
