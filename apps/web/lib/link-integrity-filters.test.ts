@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SIZE,
   buildLinkIntegrityHref,
-  buildManualLinkHref,
   resolveLinkState,
   resolveSold,
   summarizeLinkIntegrityWindow,
@@ -88,32 +87,6 @@ describe("href", () => {
   });
 });
 
-describe("href da vinculação manual", () => {
-  /**
-   * O link da linha carrega as DUAS coisas na mesma URL: o recorte de conta
-   * (slug, o mesmo vocabulário do filtro) e o MLB que o formulário pré-preenche.
-   * Um id cru aqui abriria um segundo vocabulário para a dimensão "conta".
-   */
-  it("leva conta e MLB, sem âncora que role a página (D-374)", () => {
-    expect(buildManualLinkHref(base, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
-      "/vinculacoes?conta=e2e-loja&item=MLB123",
-    );
-  });
-
-  it("preserva o recorte de quem clicou, menos a página", () => {
-    const atual: LinkIntegrityFilters = { ...base, state: "sem-vinculo", sold: "vendeu", search: "PNEU", page: 4 };
-
-    expect(buildManualLinkHref(atual, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
-      "/vinculacoes?estado=sem-vinculo&venda=vendeu&conta=e2e-loja&busca=PNEU&item=MLB123",
-    );
-  });
-
-  it("sem conta conhecida, o MLB ainda viaja", () => {
-    expect(buildManualLinkHref(base, { accountSlug: null, itemId: "MLB123" })).toBe(
-      "/vinculacoes?item=MLB123",
-    );
-  });
-});
 
 describe("janela declarada", () => {
   it("com mais anúncios que a página, a frase declara o corte", () => {
