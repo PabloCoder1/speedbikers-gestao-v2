@@ -5285,6 +5285,8 @@ export type Database = {
       support_reply_attempts: {
         Row: {
           client_request_id: string
+          dispatch_queue: string | null
+          dispatch_started_at: string | null
           error_code: string | null
           error_message: string | null
           final_text: string
@@ -5301,6 +5303,8 @@ export type Database = {
         }
         Insert: {
           client_request_id: string
+          dispatch_queue?: string | null
+          dispatch_started_at?: string | null
           error_code?: string | null
           error_message?: string | null
           final_text: string
@@ -5317,6 +5321,8 @@ export type Database = {
         }
         Update: {
           client_request_id?: string
+          dispatch_queue?: string | null
+          dispatch_started_at?: string | null
           error_code?: string | null
           error_message?: string | null
           final_text?: string
@@ -6624,6 +6630,36 @@ export type Database = {
           p_sku_id: string
         }
         Returns: string
+      }
+      shopee_connect_shops: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_created_by: string | null
+          p_environment: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_refresh_token_expires_at: string
+          p_shops: Json
+        }
+        Returns: undefined
+      }
+      tiktok_connect_shops: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_created_by: string | null
+          p_granted_scopes: string[] | null
+          p_open_id: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_refresh_token_expires_at: string
+          p_seller_name: string | null
+          p_shops: Json
+        }
+        Returns: undefined
       }
       shopee_items_details_pending: {
         Args: { p_limit?: number; p_shopee_shop_id: string }

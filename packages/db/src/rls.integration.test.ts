@@ -17222,8 +17222,8 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
       await client.query(
         `insert into public.support_reply_attempts
            (id, organization_id, ml_account_id, support_case_id, client_request_id,
-            requested_by, final_text, status)
-         values ($1, $2, $3, $4, 'req-d096-ok', $5, 'Serve sim, amigo.', 'PENDING')
+            requested_by, final_text, status, dispatch_queue)
+         values ($1, $2, $3, $4, 'req-d096-ok', $5, 'Serve sim, amigo.', 'PENDING', 'ml-sync-conta-a')
          on conflict (id) do nothing`,
         [ATTEMPT_OK, ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
       );
@@ -17299,7 +17299,54 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
           `update public.support_reply_attempts set final_text='texto trocado' where id=$1`,
           [ATTEMPT_OK],
         ),
-      ).rejects.toThrow(/so o desfecho pode ser atualizado/i);
+      ).rejects.toThrow(/so o desfecho e o inicio do envio podem ser atualizados/i);
+    });
+
+    it("a fila de despacho fica imutavel", async () => {
+      await expect(
+        client.query(
+          `update public.support_reply_attempts set dispatch_queue='ml-sync-outra-fila' where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/so o desfecho e o inicio do envio podem ser atualizados/i);
+    });
+
+    it("a trava de envio exige fila registrada", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text, status, resolved_at, dispatch_started_at)
+           values ($1,$2,$3,'req-d096-sem-fila',$4,'texto','SUCCEEDED',now(),now())`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/dispatch_queue_required/i);
+    });
+
+    it("duas conexoes concorrentes adquirem uma unica trava de envio, que nao pode ser apagada", async () => {
+      const other = new Client({ connectionString: DB_URL });
+      const claimSql = `update public.support_reply_attempts
+        set dispatch_started_at=now()
+        where id=$1 and status='PENDING' and dispatch_started_at is null returning id`;
+
+      await other.connect();
+      try {
+        const claims = await Promise.all([
+          client.query(claimSql, [ATTEMPT_OK]),
+          other.query(claimSql, [ATTEMPT_OK]),
+        ]);
+
+        expect(claims.flatMap(({ rows }) => rows as { id: string }[])).toEqual([{ id: ATTEMPT_OK }]);
+      } finally {
+        await other.end();
+      }
+
+      await expect(
+        client.query(
+          `update public.support_reply_attempts set dispatch_started_at=null where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/inicio do envio e irreversivel/i);
     });
 
     it("PENDING transiciona UMA vez para terminal, e o desfecho nao pode ser reescrito", async () => {

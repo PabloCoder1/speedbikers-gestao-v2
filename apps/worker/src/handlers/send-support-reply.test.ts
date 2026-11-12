@@ -28,7 +28,7 @@ const ENCRYPTION_KEY = randomBytes(32);
 const OAUTH = { clientId: "APP_ID", clientSecret: "segredo", redirectUri: "" };
 
 const ENVELOPE = {
-  jobType: "support.reply.send",
+  jobType: "support.reply.send.v2",
   jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b41",
   organizationId: ORGANIZATION_ID,
   dedupeKey: "support-reply:req-1",
@@ -54,6 +54,8 @@ const DEFAULT_ATTEMPT = {
   support_case_id: "cccccccc-0000-4000-8000-000000000001",
   final_text: "Serve sim, amigo.",
   status: "PENDING",
+  dispatch_queue: "ml-sync-speedbikers-loja-1",
+  dispatch_started_at: null,
   support_cases: { external_case_id: String(QUESTION_ID), channel: "QUESTION" },
 };
 
@@ -65,13 +67,15 @@ function chain<T>(result: T) {
 interface FakeDbOptions {
   attempt?: Record<string, unknown> | null;
   credentialsMissing?: boolean;
+  outcomeWriteFails?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
   db: unknown;
   updates: Record<string, unknown>[];
 } {
-  const attempt = "attempt" in options ? options.attempt : DEFAULT_ATTEMPT;
+  const initialAttempt = "attempt" in options ? options.attempt : DEFAULT_ATTEMPT;
+  const attempt = initialAttempt == null ? null : { ...initialAttempt };
   const updates: Record<string, unknown>[] = [];
 
   const db = {
@@ -99,9 +103,27 @@ function fakeDb(options: FakeDbOptions = {}): {
         throw new Error(`select inesperado em ${table}`);
       },
       update: (patch: Record<string, unknown>) => {
-        updates.push({ table, ...patch });
-
-        return { eq: () => Promise.resolve({ error: null }) };
+        let mustBeUnclaimed = false;
+        const mutation = {
+          eq: () => mutation,
+          is: () => {
+            mustBeUnclaimed = true;
+            return mutation;
+          },
+          select: () => mutation,
+          maybeSingle: () => {
+            if (attempt === null || (mustBeUnclaimed && attempt.dispatch_started_at !== null)) {
+              return Promise.resolve({ data: null, error: null });
+            }
+            if (options.outcomeWriteFails === true && patch.status === "SUCCEEDED") {
+              return Promise.resolve({ data: null, error: { message: "falha no banco" } });
+            }
+            Object.assign(attempt, patch);
+            updates.push({ table, ...patch });
+            return Promise.resolve({ data: { id: ATTEMPT_ID }, error: null });
+          },
+        };
+        return mutation;
       },
     }),
   };
@@ -169,14 +191,17 @@ function run(
     now: () => NOW,
   });
 
+  const deliver = () => handler(ENVELOPE, {
+    payload,
+    logger: createLogger({}, { sink: (line) => lines.push(line) }),
+  });
+
   return {
     updates,
     calls,
     lines,
-    outcome: handler(ENVELOPE, {
-      payload,
-      logger: createLogger({}, { sink: (line) => lines.push(line) }),
-    }),
+    deliver,
+    outcome: deliver(),
   };
 }
 
@@ -203,7 +228,8 @@ describe("createSendSupportReplyHandler (D-096)", () => {
       `/questions/${String(QUESTION_ID)}`,
     ]);
 
-    expect(ctx.updates[0]).toMatchObject({
+    expect(ctx.updates[0]).toMatchObject({ dispatch_started_at: NOW.toISOString() });
+    expect(ctx.updates[1]).toMatchObject({
       table: "support_reply_attempts",
       status: "SUCCEEDED",
       remote_message_id: String(QUESTION_ID),
@@ -228,6 +254,33 @@ describe("createSendSupportReplyHandler (D-096)", () => {
     expect(await ctx.outcome).toEqual({ status: "done", processed: 0 });
     expect(ctx.calls).toHaveLength(0);
     expect(ctx.lines.join()).toContain("support_reply_already_resolved");
+  });
+
+  it("duas entregas concorrentes conseguem iniciar só um POST /answers", async () => {
+    const ctx = run();
+
+    await Promise.all([ctx.outcome, ctx.deliver()]);
+
+    expect(ctx.calls.filter((call) => call.path === "/answers")).toHaveLength(1);
+    expect(ctx.updates.filter((patch) => patch.dispatch_started_at !== undefined)).toHaveLength(1);
+  });
+
+  it("tentativa pendente do worker antigo exige conferência sem reenviar", async () => {
+    const ctx = run({ attempt: { ...DEFAULT_ATTEMPT, dispatch_queue: null } });
+
+    expect(await ctx.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(ctx.calls).toHaveLength(0);
+    expect(ctx.updates).toHaveLength(0);
+    expect(ctx.lines.join()).toContain("support_reply_legacy_outcome_unconfirmed");
+  });
+
+  it("falha ao gravar SUCCEEDED mantém a trava e impede uma reentrega de postar de novo", async () => {
+    const ctx = run({ outcomeWriteFails: true });
+
+    expect(await ctx.outcome).toEqual({ status: "done", processed: 1 });
+    expect(await ctx.deliver()).toEqual({ status: "done", processed: 0 });
+    expect(ctx.calls.filter((call) => call.path === "/answers")).toHaveLength(1);
+    expect(ctx.lines.join()).toContain("support_reply_outcome_unrecorded");
   });
 
   it.each([
@@ -270,7 +323,25 @@ describe("createSendSupportReplyHandler (D-096)", () => {
     const outcome = await ctx.outcome;
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
-    expect(ctx.updates[0]).toMatchObject({ status: "FAILED", error_code: "envio" });
+    expect(ctx.updates[0]).toMatchObject({ dispatch_started_at: NOW.toISOString() });
+    expect(ctx.updates[1]).toMatchObject({ status: "PENDING" });
+    expect(ctx.updates[1]?.error_message).toContain("Confira");
+    expect(await ctx.deliver()).toEqual({ status: "done", processed: 0 });
+    expect(ctx.calls.filter((call) => call.path === "/answers")).toHaveLength(1);
+  });
+
+  it("recusa explícita do POST permite nova confirmação após registrar FAILED", async () => {
+    const ctx = run({}, {
+      kind: "post_fails",
+      error: new MercadoLivreApiError("HTTP 400", {
+        status: 400,
+        errorClass: "not_retryable",
+        url: "/answers",
+      }),
+    });
+
+    expect(await ctx.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(ctx.updates[1]).toMatchObject({ status: "FAILED", error_code: "envio" });
   });
 
   it("falha ao REVALIDAR (antes do POST) é retryable e NÃO resolve a tentativa", async () => {
@@ -298,7 +369,7 @@ describe("createSendSupportReplyHandler (D-096)", () => {
     const ctx = run({}, { kind: "resync_fails", error: new Error("timeout") });
 
     expect(await ctx.outcome).toEqual({ status: "done", processed: 1 });
-    expect(ctx.updates[0]).toMatchObject({ status: "SUCCEEDED" });
+    expect(ctx.updates[1]).toMatchObject({ status: "SUCCEEDED" });
     expect(ctx.lines.join()).toContain("support_reply_resync_failed");
   });
 
