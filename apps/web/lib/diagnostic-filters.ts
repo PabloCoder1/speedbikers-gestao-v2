@@ -21,7 +21,7 @@
  * confiança). O frame sugere uma escala mais fina ("Alta · 91%"); ela não
  * existe, e o percentual não tem fonte.
  */
-export const CONFIDENCE_KEYS = ["todas", "alta", "media"] as const;
+const CONFIDENCE_KEYS = ["todas", "alta", "media"] as const;
 
 export type ConfidenceKey = (typeof CONFIDENCE_KEYS)[number];
 

@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 41 achados em [FINDINGS.md](FINDINGS.md). Quarenta têm evidência direta ou medição. Trinta e quatro receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 41 achados em [FINDINGS.md](FINDINGS.md). Quarenta têm evidência direta ou medição. Trinta e cinco receberam correção, incluindo o recorte de tentativas novas de A06 e a remoção de 33 exports internos desnecessários de A25. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -73,6 +73,6 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · medido localmente | Medir chamadas ao Auth na navegação | Dois GETs por render completo nas três rotas medidas, com Auth simulado. Repetir o ensaio após o PR #312 |
 | P3 · pronto localmente | Retirar casts temporários de Sugestões | Compilação e E2E de envio e triagem aprovados |
 | P2 · corrigido | Varredura de código morto em `apps/web/lib/` (A24) | Removidos os três helpers exclusivos de testes após cruzar referências com as implementações ativas |
-| P3 · documentado | Varredura de código morto em `packages/` e `apps/web` componentes/hooks (A25) | 34 funções e ~77 constantes sem import externo, todas vivas por cadeias internas. Zero código para apagar. Oportunidade P3: remover `export` desnecessário do barrel. `apps/web` componentes e hooks sem achados. [SESSION_LOG](SESSION_LOG.md#12112026--varredura-de-código-morto-em-packages) · [Candidatos](CLEANUP_CANDIDATES.md) |
+| P3 · pronto localmente | Varredura de código morto em `packages/` e `apps/web` componentes/hooks (A25) | 34 funções e ~77 constantes sem import externo, todas vivas por cadeias internas. Zero código para apagar. 33 `export` desnecessários removidos (2 mantidos por `typeof`). `apps/web` componentes e hooks sem achados. [SESSION_LOG](SESSION_LOG.md#12112026--varredura-de-código-morto-em-packages) · [Candidatos](CLEANUP_CANDIDATES.md) |
 
 [Achados e evidências](FINDINGS.md) · [Checkpoint](SESSION_LOG.md)

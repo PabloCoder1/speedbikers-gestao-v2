@@ -35,10 +35,10 @@ const DIA_MS = 24 * HORA_MS;
 
 /** Os limiares do vigia (D-435): atrasada e parada. */
 export const LIMIAR_ATRASO_H = 3;
-export const LIMIAR_PARADA_H = 12;
+const LIMIAR_PARADA_H = 12;
 
 /** A partir de quantos dias a tela avisa que a autorização vai vencer. */
-export const AVISO_AUTORIZACAO_DIAS = 30;
+const AVISO_AUTORIZACAO_DIAS = 30;
 
 export function lojaDeTeste(loja: Pick<LojaNaSaude, "environment">): boolean {
   return loja.environment !== "live";

@@ -186,7 +186,7 @@ const RESSALVA_QUEM: Partial<Record<SettingsSection["id"], string>> = {
  * por isso a marca é conferida à mão contra a condição da tela dona, citada ao
  * lado de cada uma.
  */
-export const INCLUI = {
+const INCLUI = {
   organizacao: [
     { termo: "Gerenciar acessos", arquivo: "app/(app)/usuarios/page.tsx" },
     // `...(isAdmin ? [{ label: "Convites pendentes" … }] : [])` na faixa.

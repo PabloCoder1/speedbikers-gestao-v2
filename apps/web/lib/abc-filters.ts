@@ -57,7 +57,7 @@ export const ABC_PERIODS = [7, 15, 30, 60, 90, 180, 365] as const;
 export const DEFAULT_PERIOD = 90;
 
 /** O teto do período personalizado: dois anos. Mais que isso é varredura que a tela não anuncia. */
-export const MAX_CUSTOM_DAYS = 731;
+const MAX_CUSTOM_DAYS = 731;
 
 export const ABC_KINDS = [
   { key: "produto", value: "PRODUTO", label: "Produtos" },

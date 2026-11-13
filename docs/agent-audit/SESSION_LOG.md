@@ -256,4 +256,12 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-684 (A41).** Em `/atendimento/perguntas`, três otimizações: (1) a lista de contas inicia sem `await` — quando não há filtro por conta (recorte "Todas as contas"), a consulta principal e os contadores por aba iniciam em paralelo com as contas em vez de depois delas; (2) `reply_templates` e `auth.getUser()` iniciam no topo da aba Pendente em vez de depois do resultado das perguntas; (3) `support_reply_attempts` continua sequencial porque depende do id da pergunta selecionada.
 - **Verificação das outras telas.** A Caixa de Entrada (`/atendimento/page.tsx`) já usa um único `Promise.all` para contas, auth e métricas na linha 194. O Detalhe (`/atendimento/[caseId]/page.tsx`) faz o mesmo na linha 184 com seis leituras. Nenhuma antecipação adicional é possível.
 - **Validação.** `pnpm run check` (37 tarefas, 1.456 + 1.015 testes) e `pnpm run build` passaram sem erros.
+- **Próxima etapa.** Limpeza P3 de exports internos, publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Limpeza P3 — exports internos desnecessários (A25)
+
+- **Base.** `codex/sentinel-audit` em `d10d1ad4`, após a etapa de Perguntas do SAC.
+- **Varredura.** Script em ESM encontrou 79 exports de valor sem import externo em `apps/web/lib/`. 44 são importados por arquivos `.test.ts` (precisam do `export`). 2 (`TIPOS_DOCUMENTO` e `CAMPOS_FORNECEDOR`) são usados apenas via `typeof` e o eslint reclama sem `export`. 33 restantes são seguros.
+- **Remoção.** `export` removido de 33 declarações em 21 arquivos: constantes, funções e enums que só são consumidos dentro do próprio módulo.
+- **Validação.** `pnpm run check` (37 tarefas, 1.456 testes web, lint limpo) e `pnpm run build` (10 tarefas) passaram sem erros.
 - **Próxima etapa.** Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

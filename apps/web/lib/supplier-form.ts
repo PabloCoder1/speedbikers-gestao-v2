@@ -74,7 +74,7 @@ export function cpfValido(valor: string): boolean {
 }
 
 /** Texto aparado; vazio vira ausência — o banco guarda NULL, nunca "". */
-export function texto(valor: unknown): string | null {
+function texto(valor: unknown): string | null {
   if (typeof valor !== "string") return null;
 
   const aparado = valor.trim();

@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-684 antecipa lista, contadores e templates em Perguntas do SAC. Caixa de Entrada e Detalhe já estavam paralelos. 34 achados corrigidos localmente (de 41). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** A25 concluído: 33 `export` desnecessários removidos em `apps/web/lib/` (2 mantidos por `typeof`). 35 achados corrigidos localmente (de 41). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

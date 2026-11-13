@@ -62,7 +62,7 @@ export const DOCUMENT_TYPES = ["NFE", "DANFE_PDF", "SAIDA_UPSELLER_PDF", "ENVIO_
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
 /** O nome curto de cada layout, do jeito que a operação chama. */
-export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   NFE: "NF-e (XML)",
   DANFE_PDF: "DANFE (PDF)",
   SAIDA_UPSELLER_PDF: "Pedido de saída",

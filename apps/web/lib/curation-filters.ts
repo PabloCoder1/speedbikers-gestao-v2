@@ -23,10 +23,10 @@ import { buildFilterHref, resolvePageParam, resolvePageSize, type PageSize } fro
 export const DEFAULT_PAGE_SIZE: PageSize = 50;
 
 /** `p_classified` da RPC. `todos` é a ausência do filtro; `pendente` é o padrão. */
-export const ESTADOS = { pendente: "PENDENTE", virtual: "VIRTUAL", fisico: "FISICO", todos: null } as const;
+const ESTADOS = { pendente: "PENDENTE", virtual: "VIRTUAL", fisico: "FISICO", todos: null } as const;
 
 /** `p_signal` da RPC. `null` é "qualquer sinal". */
-export const SINAIS = {
+const SINAIS = {
   sentinela: "SENTINELA",
   "sem-sinal": "SEM_SINAL",
   "sem-retrato": "SEM_RETRATO",
@@ -51,10 +51,10 @@ export const ORDENS = {
  * Os eixos de CATÁLOGO (D-373), além dos de curadoria. Cada um é lista fechada
  * na URL e vira o argumento de `get_products_overview`.
  */
-export const TIPOS = { produto: "PRODUTO", kit: "KIT" } as const;
+const TIPOS = { produto: "PRODUTO", kit: "KIT" } as const;
 
 /** `ENCERRANDO` = "ESTOQUE INATIVO" do ERP (`is_discontinued`, D-039); `INATIVO` = `is_active` falso. */
-export const SITUACOES = { ativo: "ATIVO", encerrando: "ENCERRANDO", inativo: "INATIVO" } as const;
+const SITUACOES = { ativo: "ATIVO", encerrando: "ENCERRANDO", inativo: "INATIVO" } as const;
 
 /**
  * Com ou sem anúncio que venda o SKU (D-122), e com ou sem venda em 90 dias.
@@ -122,7 +122,7 @@ function primeiro(bruto: string | string[] | undefined): string | undefined {
  * fila continua a um clique (o cartão "Não classificados"), e os links que
  * chegam com `estado=pendente` explícito continuam significando o mesmo.
  */
-export function resolveEstado(bruto: unknown): EstadoChave {
+function resolveEstado(bruto: unknown): EstadoChave {
   return typeof bruto === "string" && bruto in ESTADOS ? (bruto as EstadoChave) : "todos";
 }
 
@@ -130,7 +130,7 @@ function daLista<T extends string>(lista: Record<T, string>, bruto: unknown): T 
   return typeof bruto === "string" && bruto in lista ? (bruto as T) : null;
 }
 
-export function resolveSinal(bruto: unknown): SinalChave | null {
+function resolveSinal(bruto: unknown): SinalChave | null {
   return typeof bruto === "string" && bruto in SINAIS ? (bruto as SinalChave) : null;
 }
 

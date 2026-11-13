@@ -30,7 +30,7 @@ export const PRESETS_CENTRAL: readonly { readonly id: PresetCentral; readonly la
   { id: "mes-anterior", label: "Mês anterior" },
 ];
 
-export const PRESET_CENTRAL_PADRAO: PresetCentral = "30d";
+const PRESET_CENTRAL_PADRAO: PresetCentral = "30d";
 
 export interface PeriodoCentral {
   /** `null` = período personalizado. */

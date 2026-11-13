@@ -17,12 +17,12 @@ import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filte
 export const PAGE_SIZE = 50;
 
 /** O que a RPC aceita em `p_link_state`. `todos` é a ausência do filtro. */
-export const LINK_STATES = ["todos", "vinculados", "sem-vinculo"] as const;
+const LINK_STATES = ["todos", "vinculados", "sem-vinculo"] as const;
 
 export type LinkStateKey = (typeof LINK_STATES)[number];
 
 /** `p_sold` — houve venda na janela. Existe desde D-259, para a célula "Vendidos sem vínculo". */
-export const SOLD_STATES = ["todos", "vendeu", "nao-vendeu"] as const;
+const SOLD_STATES = ["todos", "vendeu", "nao-vendeu"] as const;
 
 export type SoldKey = (typeof SOLD_STATES)[number];
 
