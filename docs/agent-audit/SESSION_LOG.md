@@ -200,3 +200,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-676.** `apps/web/app/(app)/anuncios/shopee/page.tsx` inicia as duas RPCs após organização e lojas visíveis. Com atrasos controlados, a primeira saiu em 272 ms contra 473 ms antes, na mediana de todas as lojas. Argumentos conferidos nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-anúncios-da-shopee-sentinel-a33-13112026)
 - **Validação.** Passaram 19 casos Playwright de Anúncios, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`. O ensaio como GESTOR sem concessão exibiu o aviso e fez zero RPCs de catálogo.
 - **Próxima etapa.** Medir em `/vendas/shopee` o início das consultas de vendas, pedidos e devoluções. A publicação, a proteção da `main` e a verificação com carga real seguem no plano. [Plano](PLAN.md)
+
+### 13/11/2026 · Consultas de Vendas da Shopee
+
+- **Base.** `codex/sentinel-audit` em `894ffc13`, com D-676 concluída em Anúncios. Checkout original em `v3`, `9642d921`.
+- **D-677.** `apps/web/app/(app)/vendas/shopee/page.tsx` inicia vendas, pedidos e devoluções após resolver organização e lojas. No ensaio controlado, a primeira RPC saiu em 279 ms contra 471 ms antes, na mediana de todas as lojas. Argumentos conferidos nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-da-shopee-sentinel-a34-13112026)
+- **Validação.** Passaram dez casos Playwright de Vendas da Shopee, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`. O GESTOR sem concessão recebeu o aviso e fez zero RPCs de vendas, pedidos e devoluções.
+- **Próxima etapa.** Medir dependências das consultas da Curva ABC e preservar o recorte usado pela tela e pelo XLSX. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

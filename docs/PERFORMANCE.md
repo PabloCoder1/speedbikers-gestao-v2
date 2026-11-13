@@ -1754,3 +1754,16 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Busca e estado Sem SKU, janela de sete dias | 473 → 279 ms |
 
 `get_shopee_listings` e `get_shopee_listings_summary` retornaram HTTP 200 e receberam os mesmos argumentos nas 40 cargas medidas. As chamadas passaram a sair depois da organização e das lojas e antes da contagem de contas ML e dos filtros salvos. Uma carga adicional como GESTOR, sem concessão de loja, exibiu o aviso de catálogo vazio e fez zero chamadas a essas duas RPCs. A latência percebida em produção segue pendente.
+
+### Início das consultas de Vendas da Shopee (Sentinel A34, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio adicionou 125 ms à associação à organização, 250 ms à lista de lojas, 350 ms à contagem de contas ML e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC · antes → D-677 |
+| --- | ---: |
+| Todas as lojas visíveis | 471 → 279 ms |
+| Uma loja permitida | 466 → 281 ms |
+| Loja desconhecida na URL | 474 → 294 ms |
+| Pedido específico e situação Cancelada, janela de sete dias | 469 → 278 ms |
+
+`get_shopee_sales_by_shop`, `get_shopee_orders`, `get_shopee_returns_summary` e `get_shopee_returns` retornaram HTTP 200 e receberam os mesmos argumentos nas 40 cargas medidas. As quatro chamadas saíram após organização e lojas e antes da contagem ML e dos filtros salvos. Uma carga como GESTOR sem concessão exibiu o aviso e fez zero chamadas às quatro RPCs. O ensaio mede o início das requisições sob atraso controlado. A latência percebida em produção continua pendente.

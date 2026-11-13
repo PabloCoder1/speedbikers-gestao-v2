@@ -19482,3 +19482,9 @@ A lista e os contadores mantêm a mesma organização, conta e busca. A lista ta
 `/anuncios/shopee` aguardava organização, lojas, contagem de contas ML e filtros salvos antes de consultar a lista e o resumo. As duas RPCs agora começam após resolver a organização e as lojas visíveis. A contagem de contas e os filtros salvos continuam alimentando os controles.
 
 O catálogo só é consultado quando existe ao menos uma loja visível na organização. A loja pedida na URL continua validada contra a lista sob RLS. A busca, o estado e o período continuam restritos à lista, e o resumo mantém o escopo da loja.
+
+## D-677 - Vendas da Shopee inicia as consultas após validar as lojas visíveis
+
+Em `/vendas/shopee`, as consultas de vendas, pedidos e devoluções aguardavam também a contagem de contas do ML e os filtros salvos. As quatro RPCs agora começam após a organização e as lojas visíveis definirem o recorte. Os controles continuam recebendo a contagem e os filtros em paralelo.
+
+O painel por loja mantém o período inteiro sob RLS. Pedidos aceitam loja, situação e número do pedido. Devoluções aceitam loja e período e mantêm seu painel com streaming. Sem loja visível, a página exibe o aviso antes de consultar vendas, pedidos ou devoluções.

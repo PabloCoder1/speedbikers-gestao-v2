@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 33 achados em [FINDINGS.md](FINDINGS.md). Trinta e dois têm evidência direta ou medição. Vinte e seis receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 34 achados em [FINDINGS.md](FINDINGS.md). Trinta e três têm evidência direta ou medição. Vinte e sete receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -58,7 +58,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Antecipar as consultas do recorte ML em `/vendas` (A31, D-674) | Medir início, filtro de conta e marca, e validar gráfico, navegação e CSV |
 | P2 · pronto localmente | Antecipar lista e contadores em `/anuncios` (A32, D-675) | Rastrear as duas RPCs em quatro recortes e conferir busca, estado e conta |
 | P2 · pronto localmente | Antecipar lista e resumo em `/anuncios/shopee` (A33, D-676) | Quatro recortes com os mesmos argumentos e prova de zero consultas para GESTOR sem loja visível |
-| P2 · próxima etapa local | Medir início das leituras em `/vendas/shopee` | Rastrear vendas, pedidos e devoluções, validando organização, escopo de loja e período |
+| P2 · pronto localmente | Antecipar as consultas de `/vendas/shopee` (A34, D-677) | Quatro recortes com argumentos iguais e zero RPCs para GESTOR sem loja visível |
+| P2 · próxima etapa local | Medir início das consultas de `/curva-abc` | Isolar dependências de organização, contas, filtros salvos e cabeçalho e conferir recortes da curva e exportação |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · rechecado em 13/11 | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões verificadas na segunda triagem. As 24 refs atuais incluem a branch Sentinel e sete branches integradas com vínculo a worktrees existentes |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

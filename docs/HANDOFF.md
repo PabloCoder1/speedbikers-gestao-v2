@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-675 e D-676 antecipam lista e contadores de Anúncios do ML e da Shopee. Próxima fatia local: medir em `/vendas/shopee` quando começam as leituras de vendas, pedidos e devoluções após resolver a organização e as lojas visíveis. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-anúncios-da-shopee-sentinel-a33-13112026)
+- **Sentinel.** D-677 antecipa as consultas de Vendas da Shopee após resolver a organização e as lojas visíveis. Próxima fatia local: medir em `/curva-abc` quais leituras podem começar antes dos filtros salvos e das contagens do cabeçalho, preservando o recorte da curva e do XLSX. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-da-shopee-sentinel-a34-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

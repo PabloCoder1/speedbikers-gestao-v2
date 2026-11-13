@@ -114,24 +114,30 @@ export default async function VendasShopeePage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As lojas e os filtros salvos não dependem da organização (a RLS já os
-  // restringe): saem junto com o membership, como em `/anuncios/shopee`.
-  const [membership, lojasResult, contasMl, salvosResult] = await Promise.all([
+  // A organização e as lojas visíveis definem o recorte das RPCs. Os demais
+  // dados alimentam os controles da página.
+  const recortePromise = Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
       .select("id, organization_id, shop_name, shop_id, environment, status")
       .order("connected_at", { ascending: true }),
+  ]);
+  const cabecalhoPromise = Promise.all([
     // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
     // marketplace oferecer a volta a `/vendas`.
     contarContasMl(supabase),
     // D-494: as visões salvas desta tela -- a tabela é por usuário e por tela.
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas/shopee").order("name"),
   ]);
+  // O cabeçalho pode falhar antes de o recorte ser resolvido.
+  void cabecalhoPromise.catch(() => undefined);
+  const [membership, lojasResult] = await recortePromise;
 
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {
+    await cabecalhoPromise;
     return (
       <SemVendas>
         <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
@@ -140,6 +146,7 @@ export default async function VendasShopeePage({
   }
 
   if (lojasResult.error !== null) {
+    await cabecalhoPromise;
     return (
       <SemVendas>
         {isShopeeSchemaMissing(lojasResult.error) ? (
@@ -157,13 +164,9 @@ export default async function VendasShopeePage({
   }
 
   const lojas = lojasResult.data.filter((loja) => loja.organization_id === organizationId);
-  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
-    id: linha.id,
-    name: linha.name,
-    params: linha.params as Record<string, string>,
-  }));
 
   if (lojas.length === 0) {
+    await cabecalhoPromise;
     return (
       <SemVendas>
         <EstadoDaTela
@@ -208,8 +211,10 @@ export default async function VendasShopeePage({
   const listaDevolucoes = Promise.resolve(
     supabase.rpc("get_shopee_returns", { ...doPeriodoDevolucoes, p_limit: DEVOLUCOES_A_VISTA }),
   );
+  // O painel de devoluções recebe as promises originais, inclusive rejeições.
+  void Promise.all([resumoDevolucoes, listaDevolucoes]).catch(() => undefined);
 
-  const [porLoja, pedidos] = await Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_shopee_sales_by_shop", {
       p_organization_id: organizationId,
       p_date_from: filters.range.from,
@@ -232,6 +237,7 @@ export default async function VendasShopeePage({
       p_offset: (filters.pagina - 1) * SHOPEE_ORDERS_PAGE_SIZE,
     }),
   ]);
+  const [[porLoja, pedidos], [contasMl, salvosResult]] = await Promise.all([leituras, cabecalhoPromise]);
 
   // As RPCs ausentes (banco anterior a 20261014150000): a novidade ainda não
   // chegou, não é erro — a mesma estratégia de `/anuncios/shopee`.
@@ -243,6 +249,11 @@ export default async function VendasShopeePage({
     );
   }
 
+  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
+    id: linha.id,
+    name: linha.name,
+    params: linha.params as Record<string, string>,
+  }));
   const linhasPorLoja = porLoja.error === null ? porLoja.data : null;
   const rows = pedidos.data ?? [];
   // D-490: o CSV leva o recorte da tela inteiro, sem a página (`/vendas/shopee/exportar`).

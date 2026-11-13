@@ -37,7 +37,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 | `/full` | [page.tsx](<../../apps/web/app/(app)/full/page.tsx>) | RPC `get_fulfillment_overview`. Tabelas `ml_accounts` |
 | `/precos` | [page.tsx](<../../apps/web/app/(app)/precos/page.tsx>) | RPC `get_price_changes`. Tabelas `ml_accounts` |
 | `/vendas` | [page.tsx](<../../apps/web/app/(app)/vendas/page.tsx>) | No ML, `get_sales_*` aguarda a lista só com slug e `get_supplier_brands` usa a organização. Em [multicanal.tsx](<../../apps/web/app/(app)/vendas/multicanal.tsx>), organização e contas selecionadas definem o recorte de `get_marketplace_sales_*` e `get_marketplace_sku_sales`. `saved_filters` alimenta o menu. |
-| `/vendas/shopee` | [page.tsx](<../../apps/web/app/(app)/vendas/shopee/page.tsx>) | RPC `get_shopee_returns_summary`, `get_shopee_returns`, `get_shopee_sales_by_shop`, `get_shopee_orders`. Tabelas `shopee_shops`, `saved_filters` |
+| `/vendas/shopee` | [page.tsx](<../../apps/web/app/(app)/vendas/shopee/page.tsx>) | `get_shopee_returns_summary`, `get_shopee_returns`, `get_shopee_sales_by_shop` e `get_shopee_orders` começam após resolver organização e lojas visíveis. `saved_filters` e a contagem ML alimentam os controles. |
 | `/vinculacoes` | [page.tsx](<../../apps/web/app/(app)/vinculacoes/page.tsx>) | RPC `get_listings_link_overview`, `get_link_integrity`, `get_listings_dashboard`. Tabelas `ml_accounts`, `link_candidates`, `sku_listing_links` |
 
 ## Catálogo, estoque e compras
