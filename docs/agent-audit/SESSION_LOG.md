@@ -242,3 +242,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-682.** Em Preços, a consulta do consolidado começa após a organização. O XLSX sem conta na URL faz zero leituras da lista. O ensaio preservou os argumentos em quatro recortes. [Medição](../PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
 - **Validação.** Passaram quatro casos Playwright de Preços, 1.456 testes web no `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 - **Próxima etapa.** Medir a dependência da lista de contas em `/full` e conferir o CSV e a assinatura alternativa da RPC. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Consulta da Central Full
+
+- **Base.** `codex/sentinel-audit` em `509cdf84`, após a etapa de Preços.
+- **D-683.** Full inicia a RPC do consolidado quando a organização responde. No ensaio, o início passou de 273 para 179 ms. Quatro recortes preservaram os argumentos, os CSVs responderam com o mesmo filtro da tela e a assinatura antiga funcionou com falha simulada. [Medição](../PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
+- **Validação.** Passaram seis casos Playwright de Full, 1.456 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir em Perguntas do SAC se a lista e os contadores podem começar antes da lista de contas no consolidado. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

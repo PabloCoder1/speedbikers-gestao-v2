@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-682 antecipa a consulta de Preços no consolidado e dispensa a lista de contas no XLSX quando a URL não pede conta. Medir a dependência da lista de contas em `/full` e conferir o CSV e a assinatura alternativa da RPC. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
+- **Sentinel.** D-682 e D-683 antecipam as consultas de Preços e Full no consolidado. O XLSX de Preços sem conta na URL dispensa a lista de contas. Medir em Perguntas do SAC se a lista e os contadores podem começar antes da lista de contas no consolidado. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

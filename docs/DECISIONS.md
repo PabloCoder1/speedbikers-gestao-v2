@@ -19526,3 +19526,9 @@ O ensaio local com atrasos controlados confirmou a ordem das chamadas, os argume
 O Histórico de Preços e seu XLSX aguardavam a lista de contas em todos os recortes. A tela continua carregando essa lista para o seletor. A RPC começa após resolver a organização quando a URL não pede conta. O XLSX consolidado dispensa a lista porque o arquivo não precisa de um rótulo de conta.
 
 Com conta explícita, as duas entradas ainda validam o ID na lista visível sob RLS. O ensaio conferiu conta, período, direção e busca na tela e na exportação. [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
+
+## D-683 - A Central Full inicia a consulta do consolidado após resolver a organização
+
+A Central Full aguardava a lista de contas antes de consultar a visão, mesmo sem seleção na URL. A consulta consolidada começa assim que a associação à organização responde. A lista de contas segue alimentando o seletor e continua necessária para validar a conta quando informada.
+
+Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura antiga da RPC foram conferidos em ensaio local. [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)

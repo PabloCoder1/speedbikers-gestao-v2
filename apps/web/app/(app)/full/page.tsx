@@ -108,17 +108,16 @@ export default async function FullPage({
   const filters = resolveFullFilters(await searchParams);
   const supabase = await createClient();
 
-  // A RLS já restringe `ml_accounts` por organização E por permissão de conta
-  // (`accessible_accounts`), então esta leitura não depende da anterior — as
-  // duas saem juntas. A RPC abaixo SIM depende da conta escolhida.
-  const [membership, accounts] = await Promise.all([
-    currentMembership(),
+  const membershipPromise = currentMembership();
+  const accountsPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, label").order("label"),
-  ]);
+  );
+  void accountsPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
+    await accountsPromise;
     return (
       <>
         <PageTitle eyebrow="ESTOQUE / FULL" title="Central Full" />
@@ -127,8 +126,11 @@ export default async function FullPage({
     );
   }
 
-  const accountIds = new Set((accounts.data ?? []).map((row) => row.id));
-  const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;
+  // Só a conta pedida na URL precisa ser confirmada na lista visível sob RLS.
+  const account =
+    filters.account !== null && (await accountsPromise).data?.some((row) => row.id === filters.account)
+      ? filters.account
+      : null;
   const atual: FullFilters = { ...filters, account };
 
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
@@ -145,12 +147,15 @@ export default async function FullPage({
     p_offset: (atual.page - 1) * atual.pageSize,
   };
 
-  const leitura = await supabase.rpc("get_fulfillment_overview", {
-    ...argumentos,
-    p_focus: atual.focus,
-    p_sort: atual.sort,
-    p_low_coverage_days: LOW_COVERAGE_DAYS,
-  });
+  const [leitura, accounts] = await Promise.all([
+    supabase.rpc("get_fulfillment_overview", {
+      ...argumentos,
+      p_focus: atual.focus,
+      p_sort: atual.sort,
+      p_low_coverage_days: LOW_COVERAGE_DAYS,
+    }),
+    accountsPromise,
+  ]);
 
   /*
     A web pode chegar ao ar antes da migration de D-380 (ela só vai a produção

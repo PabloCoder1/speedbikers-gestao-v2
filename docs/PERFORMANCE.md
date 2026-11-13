@@ -1833,3 +1833,16 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Busca no consolidado | 272 → 149 ms |
 
 As 40 cargas medidas preservaram todos os argumentos. Os XLSX baixados nas cargas de aquecimento retornaram HTTP 200 e enviaram os mesmos filtros de conta, período, direção e busca da página. O consolidado sem conta na URL passou de uma consulta de contas por arquivo para zero. Uma conta informada e indisponível continuou sendo validada, com retorno ao consolidado. A latência percebida em produção segue pendente.
+
+### Consultas da Central Full (Sentinel A40, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio acrescentou 125 ms à organização, 250 ms à lista de contas e 50 ms à RPC. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura de organização ou contas.
+
+| Recorte | Início de `get_fulfillment_overview` · antes → D-683 |
+| --- | ---: |
+| Todas as contas | 273 → 179 ms |
+| Conta permitida | 281 → 299 ms |
+| Conta indisponível | 277 → 285 ms |
+| Busca no consolidado | 272 → 173 ms |
+
+Os argumentos coincidiram nas 40 cargas medidas. Nas cargas de aquecimento, os CSVs baixados pelo link da tela retornaram HTTP 200 e enviaram o mesmo recorte da página, com a paginação própria da exportação. Uma resposta simulada `PGRST202` acionou a assinatura antiga, que retornou HTTP 200 e preservou o recorte. A lista segue sendo aguardada com conta explícita. Esses recortes não apresentaram redução na mediana. A latência percebida em produção segue pendente.
