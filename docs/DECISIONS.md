@@ -19496,3 +19496,11 @@ A Curva ABC aguardava filtros salvos, contas do Mercado Livre e a contagem de lo
 As listas de marcas e categorias começam assim que a organização responde. A curva espera pela lista de contas do ML quando há um slug e pela lista multicanal quando a URL pede contas ou lojas por ID. Filtros salvos, contagens e listas continuam disponíveis no cabeçalho. A validação das contas e do filtro Sem Full continua compartilhada com o XLSX.
 
 O ensaio em sete recortes confirmou os mesmos argumentos nas três RPCs da tela e os mesmos filtros compartilhados com as curvas do XLSX. [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
+
+## D-679 - Reposição lê todas as regras da organização por cursor
+
+`/reposicao` e `/reposicao/configuracoes` consultavam `replenishment_settings` em uma chamada e recebiam até 1.000 regras. A primeira tela podia aplicar o padrão ou a regra de marca quando a regra específica por SKU ficava fora da resposta. A segunda podia ocultar exceções.
+
+As duas leituras filtram pela organização da sessão e usam o mesmo paginador por ID. A contagem exata da consulta já inclui o cursor. A leitura termina quando a página contém todas as regras restantes ou volta vazia. Uma falha descarta a leitura parcial e aciona o tratamento de erro da tela. O cliente conserva as policies existentes de RLS.
+
+O ensaio local recuperou 1.003 regras em duas chamadas por rota e conferiu a precedência por SKU e o isolamento entre organizações. [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)

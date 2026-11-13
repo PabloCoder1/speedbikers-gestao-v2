@@ -1783,3 +1783,14 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Shopee, conta desconhecida e filtro de marca | 477 → 327 ms | 478 → 144 ms |
 
 As três RPCs da tela retornaram HTTP 200 e receberam os mesmos argumentos nas 70 cargas medidas. Marca e categoria partiram após a organização. A curva aguardou a lista de contas apenas nos recortes com seleção na URL. Nas cargas de aquecimento, os 14 downloads do XLSX retornaram HTTP 200. As três curvas de cada arquivo receberam os mesmos filtros compartilhados com a tela, incluindo período, conta, marketplace, marca e Sem Full. A latência percebida em produção segue pendente.
+
+### Leitura das regras de reposição (Sentinel A36, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST com limite de 1.000 linhas. A organização tinha 1.003 regras, sendo 1.002 por SKU e um padrão. Outra organização tinha uma regra de marca. Uma carga de aquecimento e cinco medidas por versão e rota. As medianas cobrem da primeira chamada até a leitura do corpo da última resposta de `replenishment_settings`.
+
+| Rota | Chamadas antes → D-679 | Regras lidas antes → D-679 | Mediana antes → D-679 |
+| --- | ---: | ---: | ---: |
+| `/reposicao`, busca pelo SKU de prova | 1 → 2 | 1.000 → 1.003 | 24,0 → 49,0 ms |
+| `/reposicao/configuracoes` | 1 → 2 | 1.000 → 1.003 | 32,0 → 70,7 ms |
+
+A primeira página paginada trouxe 1.000 regras e a segunda trouxe três. A cobertura passou a mostrar a janela de 101 dias da regra específica, antes exibida como a janela padrão de 30 dias. A configuração passou de 999 para 1.002 exceções. A contagem sob RLS excluiu a regra da outra organização. O custo adicional medido inclui a segunda chamada e o recebimento das regras que faltavam. A latência com carga real segue pendente.

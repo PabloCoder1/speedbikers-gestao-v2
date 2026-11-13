@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-678 antecipa as consultas da Curva ABC e preserva o recorte compartilhado com o XLSX. A próxima fatia local vai reproduzir o limite de 1.000 regras em `/reposicao` e `/reposicao/configuracoes` e conferir a escolha de regra específica por SKU. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
+- **Sentinel.** D-679 corrige localmente o truncamento de regras em Reposição e Configuração. A próxima fatia vai verificar o mesmo limite na inspeção de Produtos e medir uma leitura restrita às regras aplicáveis ao SKU. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

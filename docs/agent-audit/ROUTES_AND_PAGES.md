@@ -66,8 +66,8 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/notas-fiscais/[id]` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/[id]/page.tsx>) | Tabelas `documents`, `document_items` |
 | `/notas-fiscais/nova` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/nova/page.tsx>) | Ver a entrada e seus imports |
 | `/produtos` | [page.tsx](<../../apps/web/app/(app)/produtos/page.tsx>) | RPC `get_products_overview`, `get_sku_curation_summary`, `get_sku_curation` |
-| `/reposicao` | [page.tsx](<../../apps/web/app/(app)/reposicao/page.tsx>) | RPC `get_replenishment_overview`, `get_supplier_brands`. Tabelas `replenishment_settings`, `marketplace_accounts` |
-| `/reposicao/configuracoes` | [page.tsx](<../../apps/web/app/(app)/reposicao/configuracoes/page.tsx>) | RPC `get_replenishment_reach`, `get_supplier_brands`. Tabelas `replenishment_settings` |
+| `/reposicao` | [page.tsx](<../../apps/web/app/(app)/reposicao/page.tsx>) | RPC `get_replenishment_overview`, `get_supplier_brands`. Leitura de `replenishment_settings` paginada por ID e escopada à organização (D-679). Tabela `marketplace_accounts` |
+| `/reposicao/configuracoes` | [page.tsx](<../../apps/web/app/(app)/reposicao/configuracoes/page.tsx>) | RPC `get_replenishment_reach`, `get_supplier_brands`. Leitura de `replenishment_settings` paginada por ID e escopada à organização (D-679) |
 | `/skus/[skuId]` | [page.tsx](<../../apps/web/app/(app)/skus/[skuId]/page.tsx>) | RPC `get_sku_abc_curve`, `get_sku_sales_daily_by_marketplace`, `get_shopee_orders`, `get_sku_dashboard`, `get_sku_listings`, `get_stock_coverage`, `get_sku_timeline`, `get_fulfillment_overview`, `get_price_changes`, `get_sku_sales_breakdown`, `get_sku_shopee_listings`, `get_sku_sales_by_marketplace_account`. Tabelas `skus`, `ml_accounts`, `sku_cost_history`, `action_decisions`, `actions`, `organization_members` |
 
 ## Atendimento

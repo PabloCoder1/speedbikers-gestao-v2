@@ -14,6 +14,7 @@ import {
   type GrupoDoAlcance,
 } from "../../../../lib/replenishment-reach";
 import { fraseDaRegra } from "../../../../lib/replenishment-rule";
+import { lerRegrasDeReposicao } from "../../../../lib/replenishment-settings";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 
@@ -114,15 +115,22 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
 
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
 
-  // Três leituras numa ida (D-185). As marcas só servem se o alcance falhar,
+  // As três leituras começam juntas (D-185). As marcas só servem se o alcance falhar,
   // mas são 17 textos: esperar a falha para pedi-las custaria uma segunda ida.
   const [settingsResult, reachResult, brandsResult] = await Promise.all([
-    supabase
-      .from("replenishment_settings")
-      .select(
-        "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note, updated_at, skus(sku)",
-      )
-      .order("supplier_brand", { ascending: true, nullsFirst: true }),
+    lerRegrasDeReposicao((depoisDe, limite) => {
+      const consulta = supabase
+        .from("replenishment_settings")
+        .select(
+          "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note, updated_at, skus(sku)",
+          { count: "exact" },
+        )
+        .eq("organization_id", organizationId)
+        .order("id")
+        .limit(limite);
+
+      return depoisDe === null ? consulta : consulta.gt("id", depoisDe);
+    }),
     supabase.rpc("get_replenishment_reach", {
       p_organization_id: organizationId,
       p_date_to: toSalesMetricDate(new Date()),

@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 35 achados em [FINDINGS.md](FINDINGS.md). Trinta e quatro têm evidência direta ou medição. Vinte e oito receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 36 achados em [FINDINGS.md](FINDINGS.md). Trinta e cinco têm evidência direta ou medição. Vinte e nove receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -60,7 +60,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Antecipar lista e resumo em `/anuncios/shopee` (A33, D-676) | Quatro recortes com os mesmos argumentos e prova de zero consultas para GESTOR sem loja visível |
 | P2 · pronto localmente | Antecipar as consultas de `/vendas/shopee` (A34, D-677) | Quatro recortes com argumentos iguais e zero RPCs para GESTOR sem loja visível |
 | P2 · pronto localmente | Antecipar as consultas de `/curva-abc` (A35, D-678) | Sete recortes com os mesmos argumentos antes e depois e equivalência dos filtros aplicados à curva e ao XLSX |
-| P2 · próxima etapa local | Conferir o limite de regras de `/reposicao` e `/reposicao/configuracoes` | Semear mais de 1.000 regras, verificar a política por SKU e a listagem sob RLS e medir as leituras |
+| P1 · pronto localmente | Completar a leitura das regras em `/reposicao` e `/reposicao/configuracoes` (A36, D-679) | 1.003 regras lidas sob RLS, precedência por SKU e 1.002 exceções verificadas |
+| P2 · próxima etapa local | Conferir a leitura de regras na inspeção de `/produtos` | Reproduzir o corte, medir uma leitura por SKU, marca e padrão e verificar a precedência e o escopo da organização |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · rechecado em 13/11 | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões verificadas na segunda triagem. As 24 refs atuais incluem a branch Sentinel e sete branches integradas com vínculo a worktrees existentes |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |
