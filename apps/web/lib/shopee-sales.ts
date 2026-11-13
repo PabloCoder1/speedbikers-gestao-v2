@@ -19,7 +19,7 @@ import type { Tom } from "../components/tone";
 import { buildFilterHref, resolvePageParam, summarizePagedWindow, type PagedWindow } from "./filters";
 import { DEFAULT_PERIOD_DAYS, resolvePeriodRange, type PeriodRange } from "./period";
 
-export const SHOPEE_SALES_PATH = "/vendas/shopee";
+const SHOPEE_SALES_PATH = "/vendas/shopee";
 
 const DIA = /^\d{4}-\d{2}-\d{2}$/u;
 

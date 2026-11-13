@@ -150,29 +150,7 @@ export async function completeShopeeConnect(
     return { status: "rejected", reason: "a Shopee não devolveu nenhuma loja autorizada" };
   }
 
-  // A MESMA ORGANIZAÇÃO. Uma loja já ligada a outra organização não muda de
-  // dono por uma nova autorização. Confere TODAS antes de gravar qualquer uma.
-  const existentes = await deps.db
-    .from("shopee_shops")
-    .select("shop_id, organization_id")
-    .eq("environment", environment)
-    .in("shop_id", shopIds);
-
-  if (existentes.error !== null) {
-    deps.logger.error("shopee_shop_owner_check_failed", { reason: existentes.error.message });
-
-    return { status: "rejected", reason: "não foi possível conferir as lojas; tente de novo" };
-  }
-
-  const deOutra = existentes.data.filter((linha) => linha.organization_id !== organizationId);
-
-  if (deOutra.length > 0) {
-    deps.logger.warn("shopee_shop_other_organization", { shop_ids: deOutra.map((linha) => linha.shop_id) });
-
-    return { status: "rejected", reason: "uma das lojas autorizadas já está ligada a outra organização" };
-  }
-
-  const conectadas: { shopId: number; shopName: string | null }[] = [];
+  const lojas = [];
 
   for (const shopId of shopIds) {
     // A leitura da loja dá o nome e o vencimento da autorização. Falhar nela
@@ -188,56 +166,43 @@ export async function completeShopeeConnect(
       });
     }
 
-    const loja = await deps.db
-      .from("shopee_shops")
-      .upsert(
-        {
-          organization_id: organizationId,
-          environment,
-          shop_id: shopId,
-          shop_name: info?.shop_name ?? null,
-          region: info?.region ?? null,
-          shop_status: info?.status ?? null,
-          status: "CONNECTED",
-          authorized_at: shopeeEpochToIso(info?.auth_time) ?? now.toISOString(),
-          auth_expires_at: shopeeEpochToIso(info?.expire_time),
-          connected_at: now.toISOString(),
-          last_error: null,
-          created_by: createdBy,
-        },
-        { onConflict: "environment,shop_id" },
-      )
-      .select("id")
-      .single();
-
-    if (loja.error !== null) {
-      deps.logger.error("shopee_shop_not_stored", { shop_id: shopId, reason: loja.error.message });
-
-      return { status: "rejected", reason: "não foi possível gravar a loja" };
-    }
-
-    // Numa conta principal, o primeiro par é o MESMO para todas as lojas; a
-    // primeira renovação de cada uma devolve um par próprio (documentação).
-    const credenciais = await deps.db.from("shopee_credentials").upsert(
-      {
-        shopee_shop_id: loja.data.id,
-        access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
-        refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
-        access_token_expires_at: new Date(now.getTime() + token.expire_in * 1000).toISOString(),
-        refresh_token_expires_at: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS).toISOString(),
-        refresh_locked_until: null,
-      },
-      { onConflict: "shopee_shop_id" },
-    );
-
-    if (credenciais.error !== null) {
-      deps.logger.error("shopee_credentials_not_stored", { shop_id: shopId, reason: credenciais.error.message });
-
-      return { status: "rejected", reason: "não foi possível gravar as credenciais da loja" };
-    }
-
-    conectadas.push({ shopId, shopName: info?.shop_name ?? null });
+    lojas.push({
+      shop_id: shopId,
+      shop_name: info?.shop_name ?? null,
+      region: info?.region ?? null,
+      shop_status: info?.status ?? null,
+      authorized_at: shopeeEpochToIso(info?.auth_time) ?? now.toISOString(),
+      auth_expires_at: shopeeEpochToIso(info?.expire_time),
+    });
   }
+
+  // O par inicial é compartilhado pelas lojas de uma conta principal.
+  // A RPC verifica o dono na gravação e confirma o lote inteiro numa transação.
+  const { error } = await deps.db.rpc("shopee_connect_shops", {
+    p_organization_id: organizationId,
+    p_created_by: createdBy,
+    p_environment: environment,
+    p_connected_at: now.toISOString(),
+    p_shops: lojas,
+    p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
+    p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
+    p_access_token_expires_at: new Date(now.getTime() + token.expire_in * 1000).toISOString(),
+    p_refresh_token_expires_at: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS).toISOString(),
+  });
+
+  if (error?.code === "PT409") {
+    deps.logger.warn("shopee_shop_other_organization", { shop_ids: shopIds });
+
+    return { status: "rejected", reason: "uma das lojas autorizadas já está ligada a outra organização" };
+  }
+
+  if (error !== null) {
+    deps.logger.error("shopee_shops_not_stored", { code: error.code });
+
+    return { status: "rejected", reason: "não foi possível gravar as lojas autorizadas" };
+  }
+
+  const conectadas = lojas.map((loja) => ({ shopId: loja.shop_id, shopName: loja.shop_name }));
 
   deps.logger.info("shopee_shops_connected", {
     environment,

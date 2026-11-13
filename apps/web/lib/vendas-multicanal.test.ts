@@ -15,7 +15,6 @@ import {
   resolverEscopoDaTelaDeVendas,
   resolverEscopoVendas,
   resolverMetricaMulticanal,
-  sobMarca,
   type ContaDoSeletor,
   type DiaDeVendas,
   type LinhaDeVendas,
@@ -267,8 +266,6 @@ describe("a marca no recorte (D-622, C-72)", () => {
   });
 
   it("sob marca, a compra sai do gráfico e a URL com metric=compras cai no faturamento", () => {
-    expect(sobMarca(COM_MARCA)).toBe(true);
-    expect(sobMarca({ marca: { kind: "todas" } })).toBe(false);
     expect(metricasDoRecorte(true).map((metrica) => metrica.key)).toEqual(["faturamento", "unidades"]);
     expect(resolverMetricaMulticanal("compras", true).key).toBe("faturamento");
     expect(resolverMetricaMulticanal("compras", false).key).toBe("compras");

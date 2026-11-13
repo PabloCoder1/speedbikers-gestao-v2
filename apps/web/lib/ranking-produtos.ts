@@ -10,7 +10,7 @@
  * cada campanha vendeu, e a de anúncio foi desligada (D-363): o ranking não
  * tem "maior gasto com Ads", e a tela diz por quê.
  */
-import { formatCount, formatCurrency, formatPercent } from "./format";
+import { formatCount, formatCurrency } from "./format";
 
 export type OrdemRanking =
   | "receita"
@@ -372,26 +372,4 @@ export function frasesDoRanking(r: ResumoDoRanking): FraseDoRanking[] {
   }
 
   return frases;
-}
-
-/** A coluna que a ordem destaca, para a tela saber qual número pôr em evidência. */
-export function valorDaOrdem(ordem: OrdemRanking, p: ProdutoDoRanking): string {
-  switch (ordem) {
-    case "receita":
-      return formatCurrency(p.receita_bruta);
-    case "lucro":
-    case "prejuizo":
-      return formatCurrency(p.resultado_venda);
-    case "margem":
-    case "menor_margem":
-      return formatPercent(p.margem_venda);
-    case "volume":
-      return formatCount(p.unidades);
-    case "frete":
-      return formatCurrency(p.frete_vendedor);
-    case "crescimento":
-      return formatVariacao(p.variacao_receita);
-    case "queda_margem":
-      return formatPontos(p.variacao_margem);
-  }
 }

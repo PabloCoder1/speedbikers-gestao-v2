@@ -141,7 +141,7 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 ### `shopee_shops` / `shopee_credentials` / `shopee_oauth_states` — conexão Shopee (D-425)
 
-Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma diferença: a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização. `shopee_shops` (`environment` sandbox|live, `shop_id` único por ambiente, `shop_name`, `region`, `shop_status` da Shopee, `status` da conexão CONNECTED|ERROR, `auth_expires_at` — a autorização vence em até 365 dias) é lida por membros da organização e escrita só pela api. `shopee_credentials` (tokens cifrados com a chave de `ml_credentials`, `refresh_token_expires_at` de 30 dias, trava `refresh_locked_until`) e `shopee_oauth_states` não têm política nem grant fora do `service_role`. Contrato da API em `docs/SHOPEE.md`.
+Migration `20261013120000`. Mesmo desenho das tabelas do Mercado Livre, com uma diferença: a loja nasce no RETORNO da autorização (a api cria a linha), e o `state` aponta para a organização. `shopee_shops` (`environment` sandbox|live, `shop_id` único por ambiente, `shop_name`, `region`, `shop_status` da Shopee, `status` da conexão CONNECTED|ERROR, `auth_expires_at` — a autorização vence em até 365 dias) é lida por membros da organização e escrita só pela api. `shopee_credentials` (tokens cifrados com a chave de `ml_credentials`, `refresh_token_expires_at` de 30 dias, prazo da trava `refresh_locked_until` e UUID `refresh_lock_id`, invalidado na reconexão em D-661) e `shopee_oauth_states` não têm política nem grant fora do `service_role`. Contrato da API em `docs/SHOPEE.md`.
 
 ### `tiktok_shops` / `tiktok_credentials` / `tiktok_oauth_states` — conexão TikTok Shop (D-645)
 
@@ -236,7 +236,7 @@ ml_accounts       label, slug (nomeia a fila ml-sync-<slug>, D-036), seller_id?,
                   status (PENDING | CONNECTED | REVOKED | ERROR), connected_at?, last_error?,
                   backfill_covered_until?
 ml_credentials    access_token_ciphertext, refresh_token_ciphertext, encryption_key_version,
-                  access_token_expires_at, scopes[], refresh_locked_until?
+                  access_token_expires_at, scopes[], refresh_locked_until?, refresh_lock_id?
 ml_oauth_states   state (PK), organization_id, ml_account_id, created_by?, redirect_to?,
                   code_verifier_ciphertext?, expires_at, consumed_at?
 ```
@@ -248,7 +248,7 @@ Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é es
 1. `POST /v1/ml-accounts/connect` (ADMIN) gera PKCE S256, grava um `state` de uso único e o `code_verifier` cifrado em `ml_oauth_states` (expira em 15 min), e devolve a `authorizationUrl` com somente o `code_challenge`.
 2. O navegador do ADMIN autoriza no Mercado Livre e é redirecionado para `GET /oauth/mercado-livre/callback` — rota pública, sem JWT nem OIDC, cuja única defesa é o `state` (mesmo espírito do webhook, D-043, mas com CSRF em vez de allowlist de IP).
 3. O callback **consome o `state` atomicamente**: um único `UPDATE ... WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()`, não um `SELECT` seguido de `UPDATE` — duas chamadas concorrentes com o mesmo `state` (aba duplicada, retry do navegador) só deixam uma passar.
-4. Decifra o `code_verifier`, troca o `code` com PKCE, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e grava em `ml_credentials` (`upsert` por `ml_account_id` — PK **não parcial**, diferente da armadilha de `sku_listing_links` descrita abaixo). Marca a conta `CONNECTED`.
+4. Decifra o `code_verifier`, troca o `code` com PKCE, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e chama `ml_connect_account`. A RPC confirma organização e vendedor com a conta travada e grava credenciais, invalidação da trava anterior e estado `CONNECTED` na mesma transação (D-660). A recusa definitiva da renovação só muda o estado da conta se `ml_reject_token_refresh` confirmar o UUID da trava.
 
 **`ml_credentials` nunca recebe GRANT nem para `authenticated`** — só `service_role` alcança, em qualquer cenário (mesmo padrão de `ml_oauth_states`). O texto claro do token nunca existe fora do processo da `api` entre a resposta do Mercado Livre e a chamada de `encryptToken`; o verifier PKCE também fica cifrado e nunca vai ao navegador (D-049).
 
@@ -268,13 +268,19 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 `latest_record_at` é o dado que sustenta a tela de Saúde da Sincronização: a distância entre `now()` e o registro mais recente que uma execução efetivamente trouxe, não `finished_at` — uma sincronização pode terminar sem trazer nada novo.
 
+`get_sync_health` agrega último horário, sucesso, recência do dado e contagens de 24 h por conta, recurso e canal (D-667). A consulta resolve status e motivo em uma busca pontual pelo índice `sync_runs_freshness_idx`, sob o mesmo escopo RLS.
+
 **Armadilha paga:** `ml_account_id` referencia `ml_accounts` com `on delete restrict`, não `cascade`. Numa tabela append-only, um `cascade` é fisicamente impossível de completar — o `DELETE` disparado pela cascata esbarra na mesma trigger que bloqueia `DELETE` direto, e a exclusão inteira falha. `restrict` torna isso explícito: apagar uma conta com histórico de sync falha alto, em vez de a cascata quebrar no meio com um erro que não aponta para a causa. Na prática nunca dispara — contas são desativadas por `status = 'REVOKED'`, nunca apagadas.
+
+**Telemetria de jobs (D-666).** `get_system_health` e `get_job_failures` expõem a administradores os registros das organizações que administram e o heartbeat de plataforma. Este é identificado pelo tipo `system.ping` e pelo UUID reservado do envelope. A migration `20261112181422` aplica o recorte antes de calcular a última execução, contar falhas e selecionar motivos.
 
 ### `shipping_sales` — as vendas que o detector de frete considera (D-409)
 
 **Implementado em 2026-09-25**, migration `20260923195958_vendas_com_frete_para_o_detector.sql`. Uma linha por pedido de um item só, quantidade 1, pago ou parcialmente reembolsado, fora do Flex, com o frete do vendedor capturado: `order_id` (chave, cascata de `orders`), conta, data, a linha (`line_id`), o anúncio (`listing_id`), SKU, título, preço, comissão e frete. **Mantida por gatilhos** em `orders` (status, logística, data), `order_items` (inserção, remoção e as colunas que a regra lê) e `order_financials` (o frete), que recalculam a linha do pedido por `private.sync_shipping_sale`; funções `security definer` sem `execute` para ninguém. Só leitura: RLS de conta na forma de conjunto (D-181), nem o `service_role` grava. O custo do produto NÃO mora aqui: é calculado na leitura, como em `get_faturamento`.
 
 ### `ml_sales_lines` — as linhas de venda que o faturamento do ML soma (D-499)
+
+No resumo de `get_faturamento`, D-669 conta pacotes distintos e pedidos avulsos distintos pelos IDs numéricos. A soma alimenta `compras` e o denominador do `ticket_medio`.
 
 **Em produção desde 2026-10-19** (D-499, 1ª parte), migration `20261019200000_linhas_de_venda_do_ml.sql`. Uma linha por item de pedido pago ou parcialmente reembolsado (os itens da mesma organização e conta do pedido): `line_id` (chave, o `order_items.id`), `order_id` (cascata de `orders`), organização, conta, data e pacote do pedido, SKU, quantidade, preço e comissão do item, e o frete rateado (`shipping_share`, o `seller_shipping_share` de D-413) e o desconto do pedido repetidos em cada linha. **Mantida por gatilhos** em `orders` (status, data, organização, conta, pacote), `order_items` (inserção, remoção e as colunas lidas) e `order_financials` (inserção, remoção e a mudança do frete rateado ou do desconto, pelo valor), que recalculam as linhas do pedido por `private.sync_ml_sales_lines`; funções `security definer` sem `execute` para ninguém. Índices: a data (a janela; a conta fica de fora porque a RLS filtra por subplano em hash) e o pedido. Só leitura: RLS de conta na forma de conjunto (D-181), nem o `service_role` grava. O custo do produto NÃO mora aqui. O `get_faturamento` passa a lê-la com a 2ª migration da D-499 (`20261019210000`): a saída do corpo novo foi igual à de antes em 51 casos conferidos em produção.
 
@@ -385,6 +391,8 @@ Projeção recomputável do ledger. Existe um **job de conferência** (D-056, im
 **`p_sku_id` opcional desde 2026-08-25 (D-080, migration `20260825150000_add_sku_filter_to_stock_coverage.sql`)**: nulo continua varrendo todos os SKUs da organização (uso de `/cobertura`, inalterado); preenchido filtra para UM SKU só — o Simulador de decisão do Dashboard de SKU (item 10, `docs/PRODUCT_REQUIREMENTS.md` secao "Simulador de decisão") usa esse filtro para pré-preencher a venda média diária real como premissa inicial, ajustável pelo usuário. Mesma pegadinha de assinatura já resolvida em D-078: `drop function` explícito antes de recriar, não `create or replace`.
 
 **Lacuna do gerador de tipos, nova instância**: colunas de retorno de RPC não herdam nulidade da lógica SQL — `days_of_coverage`/`title` vêm tipados como não-nulos em `packages/db/src/types.ts` mesmo podendo ser `NULL` de verdade. Mesma lacuna já conhecida para *parâmetros* de RPC, agora confirmada também do lado do *retorno*; contornado com uma interface local (`CoverageRow` em `apps/web/app/cobertura/page.tsx`) que reflete a nulidade real, com o resultado do RPC convertido para ela em vez de brigar com o tipo gerado.
+
+**`get_stock_coverage_summary(organization_id, date_from, date_to, supplier_brand)`** — o resumo da Home soma vendas do ML e vendas válidas de lojas live da Shopee e combina as vendas com o saldo local para contar cobertura e ruptura (D-623). D-668 usa `shopee_created_at` com o início do primeiro dia em São Paulo e o início do dia posterior ao último, permitindo o recorte no índice de pedidos. A consulta executa sob a RLS do usuário.
 
 **`get_sku_abc_curve(organization_id, date_from, date_to)`** — implementado em 2026-08-23, migration `20260823180901_create_sku_abc_curve_rpc.sql`, fecha "Curva ABC e filtros de Full" (`docs/ROADMAP.md`, Fase 5B). `security invoker`, mesmo raciocínio de `get_stock_coverage`. Soma `daily_sku_metrics.gross_revenue` por SKU no intervalo, ranqueia por receita decrescente e calcula o percentual acumulado (Pareto 80/15/5 — convenção padrão de analytics de varejo, não achado específico da V2). SKU sem venda no período (receita zero) fica de fora da curva — não há o que classificar. `full_quantity` vem de um `distinct on` sobre o último `fulfillment_stock_snapshots` conhecido por `(ml_account_id, item_id, variation_id)`, somado por SKU — existe para o filtro "somente sem estoque em Full" da tela `/curva-abc`, cruzando as duas metades do item do checklist numa tela só.
 

@@ -2,6 +2,7 @@
 
 import { resolveReplenishmentPolicy, type ReplenishmentSetting } from "@sb/domain";
 
+import { valorLiteralParaOr } from "../../../lib/postgrest-search";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura, type CoberturaDescrita } from "../../../lib/sku-coverage-display";
 
@@ -119,6 +120,15 @@ export async function inspecionarSku(
 
   dateFrom.setDate(dateFrom.getDate() - (LOOKBACK_DAYS - 1));
 
+  // Os índices únicos de reposição garantem até uma regra por escopo.
+  const escopos = [
+    `sku_id.eq.${valorLiteralParaOr(skuId)}`,
+    "and(sku_id.is.null,supplier_brand.is.null)",
+    ...(supplierBrand === null
+      ? []
+      : [`and(sku_id.is.null,supplier_brand.eq.${valorLiteralParaOr(supplierBrand)})`]),
+  ];
+
   const [coverageResult, dashboardResult, settingsResult, movementResult] = await Promise.all([
     supabase
       .rpc("get_stock_coverage", {
@@ -138,7 +148,9 @@ export async function inspecionarSku(
       .maybeSingle(),
     supabase
       .from("replenishment_settings")
-      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note"),
+      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note")
+      .eq("organization_id", organizationId)
+      .or(escopos.join(",")),
     /*
       A última movimentação sai da TABELA, não da RPC de `/estoque/movimentacoes`.
       Aquela filtra por TEXTO (`sku ilike`), e o código de um SKU casa qualquer

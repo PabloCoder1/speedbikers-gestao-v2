@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import type { Database } from "@sb/db";
 import { decryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { createShopeeClient } from "@sb/shopee";
@@ -14,7 +15,7 @@ const CALLER: Caller = {
   organizationId: "11111111-0000-4000-8000-000000000001",
   role: "ADMIN",
 };
-const OUTRA_ORG = "22222222-0000-4000-8000-000000000002";
+type ConnectArgs = Database["public"]["Functions"]["shopee_connect_shops"]["Args"];
 const ENCRYPTION_KEY = randomBytes(32);
 const NOW = new Date("2026-10-13T15:00:00.000Z");
 const REDIRECT = "https://api.exemplo.run.app/oauth/shopee/callback";
@@ -25,12 +26,11 @@ const REFRESH = "refresh-token-de-teste-0001";
 function chain(result: unknown): Record<string, unknown> {
   const self: Record<string, unknown> = {};
 
-  for (const metodo of ["eq", "is", "gt", "in", "select"]) {
+  for (const metodo of ["eq", "is", "gt", "select"]) {
     self[metodo] = () => self;
   }
 
   self.maybeSingle = () => Promise.resolve(result);
-  self.single = () => Promise.resolve(result);
   self.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
 
   return self;
@@ -38,23 +38,26 @@ function chain(result: unknown): Record<string, unknown> {
 
 interface Opcoes {
   state?: { data: { organization_id: string; environment: string; created_by: string | null } | null };
-  existentes?: { shop_id: number; organization_id: string }[];
+  rpcError?: { code: string; message?: string };
   stateInsertFalha?: boolean;
 }
 
 function fakeDb(opcoes: Opcoes = {}) {
-  const gravado: Record<string, unknown[]> = { insert: [], update: [], upsert: [] };
-  let proximoId = 1;
+  const gravado = {
+    insert: [] as { table: string; row: Record<string, unknown> }[],
+    update: [] as { table: string; row: Record<string, unknown> }[],
+    rpc: [] as { name: string; args: ConnectArgs }[],
+  };
 
   const db = {
     from: (table: string) => ({
-      insert: (row: unknown) => {
-        gravado.insert?.push({ table, row });
+      insert: (row: Record<string, unknown>) => {
+        gravado.insert.push({ table, row });
 
         return chain(opcoes.stateInsertFalha === true ? { error: { message: "boom" } } : { error: null });
       },
-      update: (row: unknown) => {
-        gravado.update?.push({ table, row });
+      update: (row: Record<string, unknown>) => {
+        gravado.update.push({ table, row });
 
         return chain({
           data:
@@ -64,13 +67,12 @@ function fakeDb(opcoes: Opcoes = {}) {
           error: null,
         });
       },
-      select: () => chain({ data: opcoes.existentes ?? [], error: null }),
-      upsert: (row: unknown) => {
-        gravado.upsert?.push({ table, row });
-
-        return chain({ data: { id: `loja-${String(proximoId++)}` }, error: null });
-      },
     }),
+    rpc: (name: string, args: ConnectArgs) => {
+      gravado.rpc.push({ name, args });
+
+      return Promise.resolve({ data: null, error: opcoes.rpcError ?? null });
+    },
   } as unknown as ShopeeShopsDeps["db"];
 
   return { db, gravado };
@@ -141,7 +143,8 @@ describe("startShopeeConnect (D-425)", () => {
     expect(outcome.status).toBe("redirect");
 
     const url = new URL(outcome.status === "redirect" ? outcome.authorizationUrl : "http://x");
-    const linha = (gravado.insert?.[0] as { table: string; row: Record<string, unknown> }).row;
+    const linha = gravado.insert[0]?.row;
+    if (linha === undefined) throw new Error("State não gravado");
 
     expect(url.origin + url.pathname).toBe("https://open.sandbox.test-stable.shopee.com/auth");
     expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT);
@@ -175,33 +178,32 @@ describe("completeShopeeConnect (D-425)", () => {
     expect(chamadas.map((c) => c.path)).toEqual(["/api/v2/auth/token/get", "/api/v2/shop/get_shop_info"]);
     expect(chamadas[0]?.body).toEqual({ code: "abc", partner_id: 1248019, shop_id: 54804 });
 
-    const [loja, credencial] = (gravado.upsert ?? []) as { table: string; row: Record<string, unknown> }[];
-
-    expect(loja).toMatchObject({
-      table: "shopee_shops",
-      row: {
-        organization_id: CALLER.organizationId,
-        environment: "sandbox",
-        shop_id: 54804,
-        shop_name: "Loja Teste BR",
-        region: "BR",
-        shop_status: "NORMAL",
-        status: "CONNECTED",
-        authorized_at: new Date(1791900000 * 1000).toISOString(),
-        auth_expires_at: new Date(1823436000 * 1000).toISOString(),
-        created_by: CALLER.userId,
+    expect(gravado.rpc).toHaveLength(1);
+    const chamada = gravado.rpc[0];
+    expect(chamada).toMatchObject({
+      name: "shopee_connect_shops",
+      args: {
+        p_organization_id: CALLER.organizationId,
+        p_environment: "sandbox",
+        p_created_by: CALLER.userId,
+        p_connected_at: NOW.toISOString(),
+        p_shops: [{
+          shop_id: 54804,
+          shop_name: "Loja Teste BR",
+          region: "BR",
+          shop_status: "NORMAL",
+          authorized_at: new Date(1791900000 * 1000).toISOString(),
+          auth_expires_at: new Date(1823436000 * 1000).toISOString(),
+        }],
+        p_access_token_expires_at: "2026-10-13T19:00:00.000Z",
+        p_refresh_token_expires_at: "2026-11-12T15:00:00.000Z",
       },
     });
-    expect(credencial?.table).toBe("shopee_credentials");
-    expect(credencial?.row).toMatchObject({
-      shopee_shop_id: "loja-1",
-      access_token_expires_at: "2026-10-13T19:00:00.000Z",
-      refresh_token_expires_at: "2026-11-12T15:00:00.000Z",
-    });
-    // Cifrados: nunca o texto claro na linha, e decifram de volta.
-    expect(credencial?.row.access_token_ciphertext).not.toContain(ACCESS);
-    expect(decryptToken(String(credencial?.row.access_token_ciphertext), ENCRYPTION_KEY)).toBe(ACCESS);
-    expect(decryptToken(String(credencial?.row.refresh_token_ciphertext), ENCRYPTION_KEY)).toBe(REFRESH);
+    if (chamada === undefined) throw new Error("RPC de conexão ausente");
+    const { args } = chamada;
+    expect(args.p_access_token_ciphertext).not.toContain(ACCESS);
+    expect(decryptToken(args.p_access_token_ciphertext, ENCRYPTION_KEY)).toBe(ACCESS);
+    expect(decryptToken(args.p_refresh_token_ciphertext, ENCRYPTION_KEY)).toBe(REFRESH);
     // E nenhum token no log.
     expect(lines.join("\n")).not.toContain(ACCESS);
     expect(lines.join("\n")).not.toContain(REFRESH);
@@ -220,11 +222,8 @@ describe("completeShopeeConnect (D-425)", () => {
     expect(outcome.status).toBe("connected");
     expect(chamadas[0]?.body).toEqual({ code: "abc", partner_id: 1248019, main_account_id: 900 });
     expect(chamadas.filter((c) => c.path === "/api/v2/shop/get_shop_info").map((c) => c.shopId)).toEqual(["11", "12"]);
-    expect(
-      ((gravado.upsert ?? []) as { table: string; row: Record<string, unknown> }[])
-        .filter((u) => u.table === "shopee_shops")
-        .map((u) => u.row.shop_id),
-    ).toEqual([11, 12]);
+    expect(gravado.rpc).toHaveLength(1);
+    expect(gravado.rpc[0]?.args.p_shops).toMatchObject([{ shop_id: 11 }, { shop_id: 12 }]);
   });
 
   it("state inválido, usado ou vencido: nada é chamado nem gravado", async () => {
@@ -234,7 +233,7 @@ describe("completeShopeeConnect (D-425)", () => {
       status: "invalid_state",
     });
     expect(chamadas).toEqual([]);
-    expect(gravado.upsert).toEqual([]);
+    expect(gravado.rpc).toEqual([]);
   });
 
   it("state do outro ambiente, ou retorno sem code: recusa sem trocar nada", async () => {
@@ -265,17 +264,17 @@ describe("completeShopeeConnect (D-425)", () => {
       status: "rejected",
       reason: "não foi possível concluir a autorização com a Shopee",
     });
-    expect(gravado.upsert).toEqual([]);
+    expect(gravado.rpc).toEqual([]);
   });
 
-  it("loja já ligada a OUTRA organização: recusa antes de gravar qualquer uma", async () => {
-    const { deps, gravado } = montar({ existentes: [{ shop_id: 54804, organization_id: OUTRA_ORG }] });
+  it("a RPC devolve conflito de organização: recusa a autorização", async () => {
+    const { deps, gravado } = montar({ rpcError: { code: "PT409" } });
 
     expect(await completeShopeeConnect(deps, { state: "s".repeat(43), code: "abc", shopId: 54804 })).toEqual({
       status: "rejected",
       reason: "uma das lojas autorizadas já está ligada a outra organização",
     });
-    expect(gravado.upsert).toEqual([]);
+    expect(gravado.rpc).toHaveLength(1);
   });
 
   it("a leitura da loja falha: conecta sem nome, e a autorização vale desde agora", async () => {
@@ -289,10 +288,10 @@ describe("completeShopeeConnect (D-425)", () => {
     const outcome = await completeShopeeConnect(deps, { state: "s".repeat(43), code: "abc", shopId: 54804 });
 
     expect(outcome).toEqual({ status: "connected", shops: [{ shopId: 54804, shopName: null }] });
-    expect(((gravado.upsert ?? [])[0] as { row: Record<string, unknown> }).row).toMatchObject({
+    expect(gravado.rpc[0]?.args.p_shops).toMatchObject([{
       shop_name: null,
       authorized_at: NOW.toISOString(),
       auth_expires_at: null,
-    });
+    }]);
   });
 });

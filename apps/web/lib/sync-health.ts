@@ -26,7 +26,7 @@ export type SyncVerdict = "ok" | "atencao" | "critico" | "nunca" | "sem_cadencia
  * janela anda com a retenção da API. Casas decimais dariam uma precisão que o
  * contrato remoto não oferece.
  */
-export const ORDER_BACKFILL_RETENTION_DAYS = 365;
+const ORDER_BACKFILL_RETENTION_DAYS = 365;
 
 export interface BackfillProgress {
   readonly percent: number | null;
@@ -260,7 +260,7 @@ export function classifyJobFreshness(jobType: string, lastRunAt: string | null, 
  * Central tinha uma constante própria de 24 h, e a revisão de D-231 apontou:
  * duas verdades para a mesma linha de `get_system_health`.
  */
-export const EVENT_JOB_SILENCE_MIN: Readonly<Record<string, number>> = {
+const EVENT_JOB_SILENCE_MIN: Readonly<Record<string, number>> = {
   "sync.webhook.received": 61, // maior intervalo em 7 dias (2026-08-27 → 09-03)
   "sync.support.questions": 631,
   "sync.support.messages": 600,

@@ -95,7 +95,7 @@ export { summarizePagedWindow };
  * testável — e porque a página calcula um instante só para a requisição
  * inteira.
  */
-export const LOOKBACK_DAYS = 30;
+const LOOKBACK_DAYS = 30;
 
 export interface PriceWindow {
   /** Dia civil de início, `YYYY-MM-DD` — é o que a tela e a planilha mostram. */

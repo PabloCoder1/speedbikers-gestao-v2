@@ -10,6 +10,7 @@ import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
+import { pendingSupportReply, type PendingSupportReply } from "../../../../lib/pending-support-reply";
 import type { SupportCaseLinkRow } from "../../../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
 import { describeDeadline } from "../../../../lib/support-deadline";
@@ -83,14 +84,7 @@ interface QuestionRow {
   ml_accounts: { label: string } | null;
   support_case_links: QuestionLinkRow[] | null;
   support_case_deadlines: { due_at: string | null; status: string }[] | null;
-}
-
-interface MessageRow {
-  support_case_id: string;
-  direction: string;
-  body: string | null;
-  body_state: string;
-  occurred_at: string;
+  support_messages: { body: string | null; body_state: string; occurred_at: string }[];
 }
 
 function tabFrom(value: string | string[] | undefined): TabKey {
@@ -172,25 +166,36 @@ export default async function PerguntasPage({
   const now = new Date();
   const supabase = await createClient();
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
-  const accounts = accountsResult.data ?? [];
-  const selectedAccount = accounts.find((account) => account.slug === accountSlug) ?? null;
+  const accountsPromise = supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
 
   const abaAtual = STATUS_TABS.find((candidate) => candidate.key === tab) ?? STATUS_TABS[0];
+  const pendente = tab === "pendente";
 
-  const baseSelect =
-    "id, external_case_id, external_status, priority, remote_reply_state, remote_reply_block_reason, resolved_at, last_activity_at, customer_external_id, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku, image_url), listings(item_id, title, thumbnail_url, price, available_quantity)), support_case_deadlines(due_at, status)";
+  const templatesPromise = pendente ? supabase.from("reply_templates").select("id, name, body").order("name") : null;
+  const authPromise = pendente ? supabase.auth.getUser() : null;
+
+  const earlyAccounts = accountSlug !== null ? await accountsPromise : null;
+  const selectedAccount = earlyAccounts?.data?.find((account) => account.slug === accountSlug) ?? null;
 
   /** `external_status.in.(...)` filtrado pela aba; Pendente também aceita nulo (D-067: sumir é pior que aparecer no lugar errado). */
   function recorte(statuses: readonly string[], incluiNulo: boolean): string {
     return incluiNulo ? `external_status.in.(${statuses.join(",")}),external_status.is.null` : `external_status.in.(${statuses.join(",")})`;
   }
 
+  // O embed limita os filhos por atendimento e preserva a linha do caso
+  // quando a primeira mensagem recebida ainda não foi sincronizada.
   let questionsQuery = supabase
     .from("support_cases")
-    .select(baseSelect, { count: "exact" })
+    .select(
+      "id, external_case_id, external_status, priority, remote_reply_state, remote_reply_block_reason, resolved_at, last_activity_at, customer_external_id, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku, image_url), listings(item_id, title, thumbnail_url, price, available_quantity)), support_case_deadlines(due_at, status), support_messages(body, body_state, occurred_at)",
+      { count: "exact" },
+    )
     .eq("channel", "QUESTION")
     .or(recorte(abaAtual.statuses, abaAtual.semStatusAqui))
+    .eq("support_messages.direction", "INBOUND")
+    .order("occurred_at", { referencedTable: "support_messages", ascending: true })
+    .order("id", { referencedTable: "support_messages", ascending: true })
+    .limit(1, { referencedTable: "support_messages" })
     .order("last_activity_at", { ascending: false })
     .range(from, from + PAGE_SIZE - 1);
 
@@ -199,7 +204,7 @@ export default async function PerguntasPage({
   // Uma contagem por aba, no MESMO recorte de conta — os números da faixa de
   // abas têm de bater com o que cada uma mostra (D-236), nunca ser a
   // organização inteira enquanto a lista está filtrada por conta.
-  const [contagens, questionsResult] = await Promise.all([
+  const [contagens, questionsResult, accountsResult] = await Promise.all([
     Promise.all(
       STATUS_TABS.map((candidateTab) => {
         let contagemQuery = supabase
@@ -214,46 +219,35 @@ export default async function PerguntasPage({
       }),
     ),
     questionsQuery,
+    accountsPromise,
   ]);
+  const accounts = accountsResult.data ?? [];
   const questions = (questionsResult.data ?? []) as unknown as QuestionRow[];
   const total = questionsResult.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // As mensagens de TODAS as perguntas da página, numa consulta só — não uma
-  // por cartão. A primeira INBOUND é a pergunta; o resto é histórico depois
-  // de respondida.
-  const ids = questions.map((question) => question.id);
-  const messagesResult =
-    ids.length === 0
-      ? { data: [] as MessageRow[], error: null }
-      : await supabase
-          .from("support_messages")
-          .select("support_case_id, direction, body, body_state, occurred_at")
-          .in("support_case_id", ids)
-          .order("occurred_at", { ascending: true });
-
-  const mensagensPorCaso = new Map<string, MessageRow[]>();
-
-  for (const message of messagesResult.data ?? []) {
-    const lista = mensagensPorCaso.get(message.support_case_id) ?? [];
-
-    lista.push(message);
-    mensagensPorCaso.set(message.support_case_id, lista);
-  }
-
-  // Só a aba Pendente abre resposta — responder uma pergunta já respondida,
-  // expirada, apagada ou desativada não é uma ação que a tela ofereça.
-  const selecionada = tab === "pendente" ? (questions.find((question) => question.id === pergunta) ?? questions[0] ?? null) : null;
+  const selecionada = pendente ? (questions.find((question) => question.id === pergunta) ?? questions[0] ?? null) : null;
 
   let templates: ReplyTemplateOption[] = [];
+  let pendingReply: PendingSupportReply | null = null;
 
-  if (selecionada !== null && selecionada.resolved_at === null) {
-    const templatesResult = await supabase.from("reply_templates").select("id, name, body").order("name");
+  if (selecionada !== null && selecionada.resolved_at === null && templatesPromise !== null && authPromise !== null) {
+    const [templatesResult, attemptsResult, { data: auth }] = await Promise.all([
+      templatesPromise,
+      supabase
+        .from("support_reply_attempts")
+        .select("status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at")
+        .eq("support_case_id", selecionada.id)
+        .eq("status", "PENDING")
+        .limit(1),
+      authPromise,
+    ]);
 
     if (templatesResult.error === null) templates = templatesResult.data;
+    pendingReply = pendingSupportReply(attemptsResult.data ?? [], auth.user?.id ?? null);
   }
 
-  const error = questionsResult.error?.message ?? accountsResult.error?.message ?? messagesResult.error?.message ?? null;
+  const error = questionsResult.error?.message ?? accountsResult.error?.message ?? null;
   const rotuloConta = selectedAccount?.label ?? "Todas as contas";
   const opcoesConta: FilterOption[] = [
     { href: perguntasHref({ tab, page: 1, account: null }), label: "Todas as contas", ativo: selectedAccount === null },
@@ -328,8 +322,7 @@ export default async function PerguntasPage({
                 {questions.map((question) => {
                   const reference = resolveSupportCaseReference(question.support_case_links);
                   const media = questionMedia(question.support_case_links);
-                  const mensagens = mensagensPorCaso.get(question.id) ?? [];
-                  const pergunta_ = mensagens.find((message) => message.direction === "INBOUND") ?? null;
+                  const pergunta_ = question.support_messages[0] ?? null;
                   const deadline = firstActiveDeadline(question.support_case_deadlines);
                   const deadlineView = deadline === null ? null : describeDeadline(deadline, now);
                   const expandida = selecionada?.id === question.id;
@@ -399,6 +392,7 @@ export default async function PerguntasPage({
                             caseId={question.id}
                             remoteReplyState={question.remote_reply_state}
                             remoteReplyBlockReason={question.remote_reply_block_reason}
+                            pendingReply={pendingReply}
                             templates={templates}
                             templatesLayout="sidebar"
                           />

@@ -30,22 +30,34 @@ interface Opcoes {
   naTrava?: typeof VENCENDO;
   /** Erro devolvido pela gravação do token novo. */
   falhaAoGravar?: { message: string };
+  travaPerdida?: boolean;
 }
 
-function fakeDb(opcoes: Opcoes = {}): {
-  deps: TokenDeps;
-  atualizacoes: { table: string; row: Record<string, unknown> }[];
-} {
+function fakeDb(opcoes: Opcoes = {}) {
   const atualizacoes: { table: string; row: Record<string, unknown> }[] = [];
+  const filtrosAtualizacao: Record<string, unknown>[] = [];
+  const registrarRecusa = vi.fn(() => Promise.resolve({ data: opcoes.travaPerdida !== true, error: null }));
 
-  const cadeia = (resultado: { data: unknown; error: { message: string } | null }) => {
+  const cadeia = (
+    resultado: { data: unknown; error: { message: string } | null },
+    filtros?: Record<string, unknown>,
+  ) => {
+    const executar = () => Promise.resolve(
+      opcoes.travaPerdida === true && typeof filtros?.refresh_lock_id === "string"
+        ? { data: null, error: null }
+        : resultado,
+    );
     const self = {
-      eq: () => self,
+      eq: (coluna: string, valor: unknown) => {
+        if (filtros !== undefined) filtros[coluna] = valor;
+
+        return self;
+      },
       or: () => self,
       select: () => self,
-      maybeSingle: () => Promise.resolve(resultado),
+      maybeSingle: executar,
       then: <R>(resolve: (value: { data: unknown; error: { message: string } | null }) => R) =>
-        Promise.resolve(resultado).then(resolve),
+        executar().then(resolve),
     };
 
     return self;
@@ -58,17 +70,20 @@ function fakeDb(opcoes: Opcoes = {}): {
       // atualizações só são registradas.
       update: (row: Record<string, unknown>) => {
         atualizacoes.push({ table, row });
+        const filtros: Record<string, unknown> = {};
+        filtrosAtualizacao.push(filtros);
 
         if (table === "ml_credentials" && "access_token_ciphertext" in row && opcoes.falhaAoGravar !== undefined) {
-          return cadeia({ data: null, error: opcoes.falhaAoGravar });
+          return cadeia({ data: null, error: opcoes.falhaAoGravar }, filtros);
         }
 
-        return cadeia({ data: table === "ml_credentials" ? (opcoes.naTrava ?? VENCENDO) : null, error: null });
+        return cadeia({ data: table === "ml_credentials" ? (opcoes.naTrava ?? VENCENDO) : null, error: null }, filtros);
       },
     }),
+    rpc: registrarRecusa,
   } as unknown as TokenDeps["db"];
 
-  return { deps: { db, oauth: OAUTH, encryptionKey: CHAVE }, atualizacoes };
+  return { deps: { db, oauth: OAUTH, encryptionKey: CHAVE }, atualizacoes, filtrosAtualizacao, registrarRecusa };
 }
 
 function respostaDoToken(status: number, corpo: unknown): void {
@@ -92,14 +107,15 @@ afterEach(() => {
 describe("ensureAccessToken: só a recusa definitiva derruba a conta (incidente de 27/09)", () => {
   it("403 sem corpo -- o bloqueio da saída de uma instância: nova tentativa, a conta continua CONNECTED", async () => {
     respostaDoToken(403, undefined);
-    const { deps, atualizacoes } = fakeDb();
+    const { deps, atualizacoes, filtrosAtualizacao } = fakeDb();
 
     const resultado = await ensureAccessToken(deps, CONTA, AGORA);
 
     expect(resultado).toEqual({ ok: false, retryable: true, reason: "Mercado Livre respondeu 403 na troca de token." });
     expect(atualizacoes.some((a) => a.table === "ml_accounts")).toBe(false);
     // A trava é solta, para a próxima execução poder tentar.
-    expect(atualizacoes.at(-1)).toEqual({ table: "ml_credentials", row: { refresh_locked_until: null } });
+    expect(atualizacoes.at(-1)).toEqual({ table: "ml_credentials", row: { refresh_locked_until: null, refresh_lock_id: null } });
+    expect(filtrosAtualizacao.at(-1)).toEqual({ ml_account_id: CONTA, refresh_lock_id: atualizacoes[0]?.row.refresh_lock_id });
   });
 
   it("403 do PolicyAgent, com JSON mas sem erro OAuth: também passageiro", async () => {
@@ -129,7 +145,7 @@ describe("ensureAccessToken: só a recusa definitiva derruba a conta (incidente 
 
   it("400 invalid_grant -- o refresh token não vale mais: ERROR, e é preciso reconectar", async () => {
     respostaDoToken(400, { error: "invalid_grant", error_description: "Error validating grant.", status: 400, cause: [] });
-    const { deps, atualizacoes } = fakeDb();
+    const { deps, atualizacoes, registrarRecusa } = fakeDb();
 
     const resultado = await ensureAccessToken(deps, CONTA, AGORA);
 
@@ -138,18 +154,19 @@ describe("ensureAccessToken: só a recusa definitiva derruba a conta (incidente 
       retryable: false,
       reason: "Mercado Livre recusou a troca de token: invalid_grant.",
     });
-    expect(atualizacoes.find((a) => a.table === "ml_accounts")?.row).toEqual({
-      status: "ERROR",
-      last_error: "Mercado Livre recusou a troca de token: invalid_grant.",
+    expect(registrarRecusa).toHaveBeenCalledWith("ml_reject_token_refresh", {
+      p_ml_account_id: CONTA,
+      p_lock_id: atualizacoes[0]?.row.refresh_lock_id,
+      p_error: "Mercado Livre recusou a troca de token: invalid_grant.",
     });
   });
 
   it("401 invalid_client -- credencial do app recusada: ERROR", async () => {
     respostaDoToken(401, { error: "invalid_client", status: 401 });
-    const { deps, atualizacoes } = fakeDb();
+    const { deps, registrarRecusa } = fakeDb();
 
     await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: false });
-    expect(atualizacoes.find((a) => a.table === "ml_accounts")?.row).toMatchObject({ status: "ERROR" });
+    expect(registrarRecusa).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -164,7 +181,7 @@ describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 2
     expect(resultado).toEqual({ ok: true, accessToken: "APP_USR-novo" });
     expect(fetch).not.toHaveBeenCalled();
     expect(atualizacoes.some((a) => a.table === "ml_accounts")).toBe(false);
-    expect(atualizacoes.at(-1)).toEqual({ table: "ml_credentials", row: { refresh_locked_until: null } });
+    expect(atualizacoes.at(-1)).toEqual({ table: "ml_credentials", row: { refresh_locked_until: null, refresh_lock_id: null } });
   });
 
   it("renova com o refresh token devolvido pela trava, não com o da primeira leitura", async () => {
@@ -189,5 +206,23 @@ describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 2
       retryable: false,
       reason: "token renovado, mas a gravação falhou: connection reset",
     });
+  });
+
+  it("um sucesso atrasado não substitui o par de uma reconexão", async () => {
+    respostaDoToken(200, { access_token: "APP_USR-x", refresh_token: "TG-x", expires_in: 21600, token_type: "Bearer", scope: "read", user_id: 1 });
+    const { deps, atualizacoes, filtrosAtualizacao } = fakeDb({ travaPerdida: true });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: true });
+    expect(atualizacoes[0]?.row.refresh_lock_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(filtrosAtualizacao.at(-1)).toEqual({ ml_account_id: CONTA, refresh_lock_id: atualizacoes[0]?.row.refresh_lock_id });
+  });
+
+  it("uma recusa atrasada não marca ERROR nem solta outra trava", async () => {
+    respostaDoToken(400, { error: "invalid_grant", status: 400 });
+    const { deps, atualizacoes, registrarRecusa } = fakeDb({ travaPerdida: true });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: true });
+    expect(atualizacoes).toHaveLength(1);
+    expect(registrarRecusa).toHaveBeenCalledTimes(1);
   });
 });

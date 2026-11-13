@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **558** (D-001 a D-654).
+Decisões registradas: **585** (D-001 a D-683).
 
 ## Por domínio
 
-### atendimento (59)
+### atendimento (62)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -77,6 +77,9 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 - **D-645** — A conexão da loja do TikTok Shop (fatia 1)
 - **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
+- **D-658** — Retomada do enfileiramento e autorização única do POST no SAC
+- **D-663** — Retomada da confirmação do SAC após recarregar
+- **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
 
 ### banco/rls (46)
 
@@ -127,7 +130,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (41)
+### estoque (44)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -170,8 +173,11 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-615** — O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
 - **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
 - **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
+- **D-668** — O resumo de cobertura usa a data indexada dos pedidos Shopee
+- **D-679** — Reposição lê todas as regras da organização por cursor
+- **D-683** — A Central Full inicia a consulta do consolidado após resolver a organização
 
-### interface (69)
+### interface (73)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -242,8 +248,12 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
+- **D-659** — Renovação Shopee conclui apenas enquanto mantém a trava
+- **D-661** — Cada aquisição da trava Shopee tem identidade própria
+- **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
+- **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 
-### mercado-livre (106)
+### mercado-livre (114)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -351,8 +361,16 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 - **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+- **D-657** — Conexão OAuth multicanal confirma a titularidade na gravação
+- **D-660** — Reconexão Mercado Livre invalida a renovação anterior
+- **D-662** — Falha no callback OAuth preserva conta Mercado Livre conectada
+- **D-669** — O faturamento do ML conta compras pelos IDs numéricos
+- **D-670** — O faturamento do ML inicia as consultas do período sem esperar pelas lojas Shopee
+- **D-674** — Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
+- **D-675** — A lista e os contadores de Anúncios começam assim que o recorte está resolvido
+- **D-676** — Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
 
-### outros (81)
+### outros (83)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -435,12 +453,14 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-633** — O historico de preco da Shopee (C-81)
 - **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
 - **D-650** — A barra do topo cabe no celular: a busca cede espaço ao "Sair"
+- **D-667** — Indicadores de get_sync_health compartilham uma agregação
+- **D-680** — A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (61)
+### vendas/métricas (64)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -503,8 +523,11 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 - **D-641** — A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 - **D-643** — A venda anomala vira um episodio por SKU e canal
+- **D-672** — Vendas multicanal inicia as consultas sem esperar os filtros salvos
+- **D-677** — Vendas da Shopee inicia as consultas após validar as lojas visíveis
+- **D-678** — A Curva ABC inicia as consultas assim que o recorte está resolvido
 
-### worker/infra (94)
+### worker/infra (98)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -600,4 +623,8 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 - **D-635** — A loja da Shopee na preferencia de aviso (C-82)
 - **D-654** — A barra do topo com nome de perfil longo, logo acima do trilho
+- **D-666** — Telemetria de jobs exige escopo explícito de plataforma
+- **D-671** — Faturamento multicanal inicia as leituras após resolver o recorte
+- **D-681** — Vinculações inicia a visão e os painéis em paralelo
+- **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
 

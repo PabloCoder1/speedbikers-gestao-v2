@@ -83,14 +83,16 @@ export default async function PrecosPage({
   const filters = resolvePriceFilters(await searchParams);
   const supabase = await createClient();
 
-  const [membership, accounts] = await Promise.all([
-    currentMembership(),
+  const membershipPromise = currentMembership();
+  const accountsPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, label").order("label"),
-  ]);
+  );
+  void accountsPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
+    await accountsPromise;
     return (
       <>
         <PageTitle
@@ -111,8 +113,10 @@ export default async function PrecosPage({
 
   // Conta desconhecida (ou de outra organização) na URL vira "sem filtro"
   // antes de tocar a RPC — mesma regra dos conjuntos fechados.
-  const accountIds = new Set((accounts.data ?? []).map((row) => row.id));
-  const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;
+  const account =
+    filters.account !== null && (await accountsPromise).data?.some((row) => row.id === filters.account)
+      ? filters.account
+      : null;
 
   /*
     A janela mudou de casa em D-292: `resolvePriceWindow` é o ÚNICO dono da
@@ -123,16 +127,19 @@ export default async function PrecosPage({
   const now = new Date();
   const janelaConsulta = resolvePriceWindow(filters, now);
 
-  const { data, error } = await supabase.rpc("get_price_changes", {
-    p_organization_id: organizationId,
-    p_date_from: janelaConsulta.from,
-    p_date_to: janelaConsulta.to,
-    p_ml_account_id: account,
-    p_direction: filters.direction,
-    p_search: filters.search,
-    p_limit: PAGE_SIZE,
-    p_offset: (filters.page - 1) * PAGE_SIZE,
-  });
+  const [{ data, error }, accounts] = await Promise.all([
+    supabase.rpc("get_price_changes", {
+      p_organization_id: organizationId,
+      p_date_from: janelaConsulta.from,
+      p_date_to: janelaConsulta.to,
+      p_ml_account_id: account,
+      p_direction: filters.direction,
+      p_search: filters.search,
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+    }),
+    accountsPromise,
+  ]);
 
   const rows = data ?? [];
   const resumo = rows[0] ?? null;

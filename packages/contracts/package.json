@@ -16,12 +16,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@sb/config": "workspace:*",
     "eslint": "10.8.1",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

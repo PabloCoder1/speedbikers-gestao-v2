@@ -22,7 +22,6 @@ export interface SuggestionActionResult {
   message: string | null;
 }
 
-
 export async function createSuggestion(originalText: string): Promise<SuggestionActionResult> {
   const trimmed = originalText.trim();
 
@@ -44,16 +43,11 @@ export async function createSuggestion(originalText: string): Promise<Suggestion
     return { ok: false, message: "Sessão expirada ou sem organização — atualize a página e tente de novo." };
   }
 
-  // `as never`: `feature_suggestions` ainda não existe em `Database`
-  // (types.ts não regenerado — migration ainda não aplicou no Supabase
-  // Dev quando este arquivo foi escrito, mesma situação já documentada em
-  // D-073/D-077). Trocar para o tipo gerado assim que `types.ts` for
-  // regenerado.
-  const { error } = await supabase.from("feature_suggestions" as never).insert({
+  const { error } = await supabase.from("feature_suggestions").insert({
     organization_id: organizationId,
     created_by: userId,
     original_text: trimmed,
-  } as never);
+  });
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível enviar a sugestão." };
@@ -67,11 +61,10 @@ export async function createSuggestion(originalText: string): Promise<Suggestion
 export async function updateSuggestionStatus(id: string, status: SuggestionStatus): Promise<SuggestionActionResult> {
   const supabase = await createClient();
 
-  // `as never`: mesma situação temporária de `createSuggestion`, acima.
   const { error } = await supabase
-    .from("feature_suggestions" as never)
-    .update({ status } as never)
-    .eq("id" as never, id);
+    .from("feature_suggestions")
+    .update({ status })
+    .eq("id", id);
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível atualizar — só ADMIN/GESTOR muda o status." };

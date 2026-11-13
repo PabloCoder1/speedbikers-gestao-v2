@@ -35,7 +35,7 @@ export type ResultadoDaValidacao =
   | { readonly ok: true; readonly valores: ValoresDaRegra }
   | { readonly ok: false; readonly erros: Partial<Record<CampoDaRegra, string>> };
 
-export const LIMITES = {
+const LIMITES = {
   prazo: { min: 1, max: 365 },
   cobertura: { min: 1, max: 365 },
   seguranca: { min: 0, max: 365 },

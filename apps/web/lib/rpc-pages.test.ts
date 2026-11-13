@@ -3,20 +3,36 @@ import { describe, expect, it } from "vitest";
 import { PAGINA_DO_POSTGREST, lerPaginasDaRpc } from "./rpc-pages";
 
 /** Um "servidor" com `total` linhas que, como o PostgREST, nunca devolve mais que `maxRows`. */
-function servidor(total: number, maxRows = PAGINA_DO_POSTGREST) {
+function servidor(total: number, maxRows = PAGINA_DO_POSTGREST, comContagem = false) {
   const chamadas: { offset: number; limite: number }[] = [];
   const lerPagina = (offset: number, limite: number) => {
     chamadas.push({ offset, limite });
     const fim = Math.min(total, offset + Math.min(limite, maxRows));
     const data = Array.from({ length: Math.max(0, fim - offset) }, (_, i) => offset + i);
 
-    return Promise.resolve({ data, error: null });
+    return Promise.resolve({ data, error: null, count: comContagem && offset === 0 ? total : null });
   };
 
   return { lerPagina, chamadas };
 }
 
 describe("lerPaginasDaRpc", () => {
+  it("termina na primeira página quando o total exato coincide com a resposta", async () => {
+    const { lerPagina, chamadas } = servidor(30, PAGINA_DO_POSTGREST, true);
+    const { linhas } = await lerPaginasDaRpc(lerPagina, 5_000);
+
+    expect(linhas).toHaveLength(30);
+    expect(chamadas).toEqual([{ offset: 0, limite: 1_000 }]);
+  });
+
+  it("continua paginando se o total exato supera a primeira página limitada pelo servidor", async () => {
+    const { lerPagina, chamadas } = servidor(750, 300, true);
+    const { linhas } = await lerPaginasDaRpc(lerPagina, 5_000);
+
+    expect(linhas).toEqual(Array.from({ length: 750 }, (_, i) => i));
+    expect(chamadas.map(({ offset }) => offset)).toEqual([0, 300, 600, 750]);
+  });
+
   it("lê o recorte inteiro acima do max_rows — o CSV de 4,5 mil anúncios não sai com mil", async () => {
     const { lerPagina } = servidor(4_500);
 

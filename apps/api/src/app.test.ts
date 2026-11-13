@@ -1174,6 +1174,7 @@ describe("conexão de conta Mercado Livre", () => {
   /** Mesmo espírito do `chain` de `ml-accounts.test.ts`: fake mínimo, encadeável e thenable. */
   function chain<T>(result: T): {
     eq: () => ReturnType<typeof chain<T>>;
+    neq: () => ReturnType<typeof chain<T>>;
     is: () => ReturnType<typeof chain<T>>;
     gt: () => ReturnType<typeof chain<T>>;
     select: () => ReturnType<typeof chain<T>>;
@@ -1182,6 +1183,7 @@ describe("conexão de conta Mercado Livre", () => {
   } {
     const self = {
       eq: () => self,
+      neq: () => self,
       is: () => self,
       gt: () => self,
       select: () => self,
@@ -1222,8 +1224,8 @@ describe("conexão de conta Mercado Livre", () => {
 
           return chain({ data: { slug: "acc-1" }, error: null });
         },
-        upsert: () => chain({ data: null, error: null }),
       }),
+      rpc: () => Promise.resolve({ data: "acc-1", error: null }),
     } as unknown as MlAccountsDeps["db"];
   }
 
@@ -1662,7 +1664,7 @@ describe("POST /v1/support/cases/:caseId/reply (D-096)", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "queued" });
     expect(enqueued[0]).toMatchObject({
-      jobType: "support.reply.send",
+      jobType: "support.reply.send.v2",
       queue: "ml-sync-speedbikers-loja-1",
     });
   });
@@ -2088,9 +2090,8 @@ describe("conexão de loja Shopee (D-425)", () => {
               options.stateValido === false ? null : { organization_id: "org-1", environment: "sandbox", created_by: "u1" },
             error: null,
           }),
-        select: () => chainShopee({ data: [], error: null }),
-        upsert: () => chainShopee({ data: { id: "loja-1" }, error: null }),
       }),
+      rpc: () => Promise.resolve({ data: null, error: null }),
     } as unknown as ShopeeShopsDeps["db"];
 
     const respostas: Record<string, unknown> = {
@@ -2203,9 +2204,8 @@ describe("conexão de loja do TikTok Shop (D-645)", () => {
         insert: () => chainTikTok({ error: null }),
         update: () =>
           chainTikTok({ data: options.stateValido === false ? null : { organization_id: "org-1", created_by: "u1" }, error: null }),
-        select: () => chainTikTok({ data: [], error: null }),
-        upsert: () => chainTikTok({ data: { id: "loja-1" }, error: null }),
       }),
+      rpc: () => Promise.resolve({ data: null, error: null }),
     } as unknown as TikTokShopsDeps["db"];
 
     const respostas: Record<string, unknown> = {

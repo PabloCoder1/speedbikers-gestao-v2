@@ -411,28 +411,29 @@ async function VendasContent({
   const isCustom = days === null;
   const period: Period = isCustom ? range : { days };
 
-  const [accountsResult, membershipResult, savedFiltersResult, lojasShopee] = await Promise.all([
+  const accountsPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
-    currentMembership(),
+  );
+  const membershipPromise = currentMembership();
+  const savedFiltersPromise = Promise.resolve(
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
-    // D-431: só o NÚMERO de lojas, para o seletor de marketplace saber se há
-    // outro canal. Nenhum número do Mercado Livre depende disto.
-    contarLojasShopee(supabase),
-  ]);
-
-  const accounts: AccountOption[] = accountsResult.data ?? [];
-  const organizationId = membershipResult.organizationId;
-  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    params: row.params as Record<string, string>,
-  }));
+  );
+  const cabecalhoPromise = Promise.all([accountsPromise, membershipPromise, savedFiltersPromise, contarLojasShopee(supabase)]);
+  const brandsPromise = membershipPromise.then(async ({ organizationId }) =>
+    organizationId === null
+      ? { data: null, error: null }
+      : supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+  );
+  // Com slug na URL, a página pode falhar na lista antes de consumir estas leituras.
+  void cabecalhoPromise.catch(() => undefined);
+  void brandsPromise.catch(() => undefined);
 
   const metric = resolveSalesMetric(query.metric);
 
   // Slug desconhecido cai em "todas as contas" em silêncio (`lib/vendas-ml-filtros.ts`,
   // a mesma regra do CSV do recorte, D-602).
-  const selectedAccount = resolverContaDaVenda(query, accounts);
+  const selectedAccount =
+    typeof query.account === "string" ? resolverContaDaVenda(query, (await accountsPromise).data ?? []) : null;
   const accountSlug = selectedAccount?.slug ?? null;
 
   // `exactOptionalPropertyTypes` distingue "propriedade ausente" de
@@ -452,6 +453,7 @@ async function VendasContent({
       p_order_by: ORDEM_POR_METRICA[metric.key] ?? "receita",
       p_limit: 10,
     }));
+  void topPromise.catch(() => undefined);
 
   /*
     A TAXA DE CANCELAMENTO NÃO SEGURA A TELA (D-509).
@@ -484,14 +486,7 @@ async function VendasContent({
     return [falha, falha] as const;
   });
 
-  const [
-    currentResult,
-    previousResult,
-    seriesResult,
-    previousSeriesResult,
-    todayResult,
-    brandsResult,
-  ] = await Promise.all([
+  const leituras = Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
       .single(),
@@ -522,19 +517,20 @@ async function VendasContent({
     // Sétima (D-158): visão "hoje" ao vivo sobre orders (L1) — independente
     // do período selecionado, respeita só o filtro de conta.
     supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter, ...brandFilter }).single(),
-    // A lista vem do BANCO, nunca das linhas da página (D-194). Não depende do
-    // recorte: as pílulas têm de continuar mostrando as outras marcas.
-    // Sem organização a página ainda renderiza (ela não faz early-return), e
-    // pedir a lista com id nulo seria erro de rede em vez de filtro vazio.
-    organizationId === null
-      ? Promise.resolve({ data: null, error: null })
-      : supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
-    // Décima primeira (D-244): os produtos que mais contribuíram — a tabela
-    // que fecha o frame `Sales`. Mesmo recorte de conta e marca; a coluna do
-    // ranking é a métrica do segmentado.
-
   ]);
 
+  const [
+    [currentResult, previousResult, seriesResult, previousSeriesResult, todayResult],
+    [accountsResult, membershipResult, savedFiltersResult, lojasShopee],
+    brandsResult,
+  ] = await Promise.all([leituras, cabecalhoPromise, brandsPromise]);
+  const accounts: AccountOption[] = accountsResult.data ?? [];
+  const organizationId = membershipResult.organizationId;
+  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    params: row.params as Record<string, string>,
+  }));
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
   const summary: SalesSummary | null = currentResult.data ?? null;

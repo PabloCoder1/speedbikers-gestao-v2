@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 
+import type { Database } from "@sb/db";
 import { decryptToken, encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Caller } from "./auth.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
@@ -68,6 +69,8 @@ function chain<T>(result: T): {
   return self;
 }
 
+type ConnectArgs = Database["public"]["Functions"]["ml_connect_account"]["Args"];
+
 interface FakeDbOptions {
   accountLookup?: {
     data: { id: string; status: string; seller_id?: number | null } | null;
@@ -83,20 +86,17 @@ interface FakeDbOptions {
     } | null;
     error: { message: string } | null;
   };
-  credentialsUpsertFails?: boolean;
-  accountUpdateFails?: boolean;
-  slug?: string;
+  connectResult?: { data: string | null; error: { code: string } | null };
 }
 
-function fakeDb(options: FakeDbOptions = {}): {
-  db: MlAccountsDeps["db"];
-  inserted: { table: string; row: unknown }[];
-  updated: { table: string; row: unknown }[];
-  upserted: { table: string; row: unknown }[];
-} {
+function fakeDb(options: FakeDbOptions = {}) {
   const inserted: { table: string; row: unknown }[] = [];
   const updated: { table: string; row: unknown }[] = [];
-  const upserted: { table: string; row: unknown }[] = [];
+  const connections: { name: string; args: ConnectArgs }[] = [];
+  const accountUpdate = {
+    eq: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
 
   const db = {
     from: (table: string) => ({
@@ -132,25 +132,17 @@ function fakeDb(options: FakeDbOptions = {}): {
           );
         }
 
-        return chain(
-          options.accountUpdateFails === true
-            ? { data: null, error: { message: "boom" } }
-            : { data: { slug: options.slug ?? "loja-1" }, error: null },
-        );
-      },
-      upsert: (row: unknown) => {
-        upserted.push({ table, row });
-
-        return chain(
-          options.credentialsUpsertFails === true
-            ? { data: null, error: { message: "boom" } }
-            : { data: null, error: null },
-        );
+        return accountUpdate;
       },
     }),
+    rpc: (name: string, args: ConnectArgs) => {
+      connections.push({ name, args });
+
+      return Promise.resolve(options.connectResult ?? { data: "loja-1", error: null });
+    },
   } as unknown as MlAccountsDeps["db"];
 
-  return { db, inserted, updated, upserted };
+  return { db, inserted, updated, connections, accountUpdate };
 }
 
 function deps(
@@ -326,7 +318,7 @@ describe("completeConnect", () => {
     expect(outcome).toEqual({ status: "invalid_state" });
   });
 
-  it("marca a conta em ERROR e rejeita quando o Mercado Livre nega a autorização", async () => {
+  it("registra a recusa do Mercado Livre apenas na conta da organização que ainda não está conectada", async () => {
     const { deps: d, db } = deps();
 
     const outcome = await completeConnect(d, { state: "s", error: "access_denied" });
@@ -334,6 +326,8 @@ describe("completeConnect", () => {
     expect(outcome).toEqual({ status: "rejected", reason: "autorização negada no Mercado Livre" });
     const accountsUpdate = db.updated.find((entry) => entry.table === "ml_accounts");
     expect(accountsUpdate?.row).toMatchObject({ status: "ERROR" });
+    expect(db.accountUpdate.eq.mock.calls).toEqual([["id", "acc-1"], ["organization_id", CALLER.organizationId]]);
+    expect(db.accountUpdate.neq.mock.calls).toEqual([["status", "CONNECTED"]]);
   });
 
   it("rejeita quando não há error nem code — callback malformado", async () => {
@@ -411,27 +405,26 @@ describe("completeConnect", () => {
 
     expect(outcome).toEqual({ status: "connected", mlAccountId: "acc-1" });
 
-    const credentials = db.upserted.find((entry) => entry.table === "ml_credentials");
-    expect(credentials).toBeDefined();
-    const row = credentials?.row as {
-      access_token_ciphertext: string;
-      refresh_token_ciphertext: string;
-      scopes: string[];
-    };
-
-    expect(row.access_token_ciphertext).not.toContain(TOKEN_RESPONSE_BODY.access_token);
-    expect(row.refresh_token_ciphertext).not.toContain(TOKEN_RESPONSE_BODY.refresh_token);
-    expect(decryptToken(row.access_token_ciphertext, ENCRYPTION_KEY)).toBe(TOKEN_RESPONSE_BODY.access_token);
-    expect(decryptToken(row.refresh_token_ciphertext, ENCRYPTION_KEY)).toBe(TOKEN_RESPONSE_BODY.refresh_token);
-    expect(row.scopes).toEqual(["offline_access", "read", "write"]);
-
-    const accountsUpdate = db.updated.find((entry) => entry.table === "ml_accounts");
-    expect(accountsUpdate?.row).toMatchObject({
-      status: "CONNECTED",
-      seller_id: TOKEN_RESPONSE_BODY.user_id,
-      connected_at: NOW.toISOString(),
-      last_error: null,
+    expect(db.connections).toHaveLength(1);
+    const connection = db.connections[0];
+    expect(connection).toMatchObject({
+      name: "ml_connect_account",
+      args: {
+        p_organization_id: CALLER.organizationId,
+        p_ml_account_id: "acc-1",
+        p_seller_id: TOKEN_RESPONSE_BODY.user_id,
+        p_connected_at: NOW.toISOString(),
+        p_access_token_expires_at: "2026-08-21T18:00:00.000Z",
+        p_scopes: ["offline_access", "read", "write"],
+      },
     });
+    if (connection === undefined) throw new Error("RPC de conexão ausente");
+    const { p_access_token_ciphertext, p_refresh_token_ciphertext } = connection.args;
+    expect(p_access_token_ciphertext).not.toContain(TOKEN_RESPONSE_BODY.access_token);
+    expect(p_refresh_token_ciphertext).not.toContain(TOKEN_RESPONSE_BODY.refresh_token);
+    expect(decryptToken(p_access_token_ciphertext, ENCRYPTION_KEY)).toBe(TOKEN_RESPONSE_BODY.access_token);
+    expect(decryptToken(p_refresh_token_ciphertext, ENCRYPTION_KEY)).toBe(TOKEN_RESPONSE_BODY.refresh_token);
+
   });
 
   /**
@@ -440,7 +433,7 @@ describe("completeConnect", () => {
    */
   it("recusa, sem gravar credencial nem marcar erro, quando o seller autorizado não é o da conta", async () => {
     const { deps: d, db } = deps({
-      dbOptions: { accountLookup: { data: { id: "acc-1", status: "CONNECTED", seller_id: 111 }, error: null } },
+      dbOptions: { connectResult: { data: null, error: { code: "PT409" } } },
     });
 
     const outcome = await completeConnect(d, { state: "s", code: "c" });
@@ -449,7 +442,7 @@ describe("completeConnect", () => {
       status: "rejected",
       reason: "a conta autorizada no Mercado Livre não é a desta loja — entre com o usuário da própria loja",
     });
-    expect(db.upserted).toHaveLength(0);
+    expect(db.connections).toHaveLength(1);
     expect(db.updated.filter((u) => u.table === "ml_accounts")).toHaveLength(0);
   });
 
@@ -461,11 +454,11 @@ describe("completeConnect", () => {
     });
 
     expect(await completeConnect(d, { state: "s", code: "c" })).toEqual({ status: "connected", mlAccountId: "acc-1" });
-    expect(db.upserted).toHaveLength(1);
+    expect(db.connections).toHaveLength(1);
   });
 
   it("dispara o backfill de história ao conectar — sem ele, pedidos anteriores à conexão nunca apareceriam", async () => {
-    const { deps: d, enqueued } = deps({ dbOptions: { slug: "sbmotos" } });
+    const { deps: d, enqueued } = deps({ dbOptions: { connectResult: { data: "sbmotos", error: null } } });
 
     const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
 
@@ -490,15 +483,15 @@ describe("completeConnect", () => {
   });
 
   it("devolve rejected quando a gravação das credenciais falha", async () => {
-    const { deps: d } = deps({ dbOptions: { credentialsUpsertFails: true } });
+    const { deps: d } = deps({ dbOptions: { connectResult: { data: null, error: { code: "23514" } } } });
 
     const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
 
-    expect(outcome).toEqual({ status: "rejected", reason: "não foi possível gravar as credenciais" });
+    expect(outcome).toEqual({ status: "rejected", reason: "não foi possível gravar a conexão da conta" });
   });
 
-  it("devolve rejected quando a conta não pôde ser marcada CONNECTED após gravar as credenciais", async () => {
-    const { deps: d } = deps({ dbOptions: { accountUpdateFails: true } });
+  it("devolve rejected quando a conta do state não está disponível na organização", async () => {
+    const { deps: d } = deps({ dbOptions: { connectResult: { data: null, error: null } } });
 
     const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
 

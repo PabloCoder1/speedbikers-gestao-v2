@@ -17,7 +17,7 @@ import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
 
 export type NivelFrete = "normal" | "atencao" | "provavel" | "forte";
 
-export const FAIXAS_DE_PRECO = ["ate_40", "40_79", "79_120", "120_200", "200_400", "acima_400"] as const;
+const FAIXAS_DE_PRECO = ["ate_40", "40_79", "79_120", "120_200", "200_400", "acima_400"] as const;
 
 export type FaixaDePreco = (typeof FAIXAS_DE_PRECO)[number];
 

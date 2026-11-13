@@ -19334,3 +19334,201 @@ No celular continuam o `flex: 1 1 auto; width: auto` da busca e o `kbd` escondid
 - `apps/web/app/globals.css`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md` (com a D-650 marcada como no ar).
+
+## D-657 - Conexão OAuth multicanal confirma a titularidade na gravação
+
+O callback consumia o state uma única vez, mas dois states de organizações diferentes podiam passar pela mesma consulta de proprietário antes da primeira gravação. A segunda escrita alterava a organização da loja. A separação entre loja e credenciais também deixava gravações parciais.
+
+Cada callback envia um lote para `shopee_connect_shops` ou `tiktok_connect_shops`. A RPC insere ou atualiza pela identidade externa e só atualiza se o proprietário gravado corresponde à organização do state. As lojas são ordenadas pela chave de conflito. A mesma transação grava as credenciais cifradas e reverte o lote quando qualquer loja pertence a outra organização ou uma constraint falha. Execução concedida apenas a `service_role`.
+
+Dois clientes PostgreSQL verificaram o bloqueio concorrente e a recusa da segunda organização. A integração testa reconexão pelo mesmo dono, reversão do lote, erro de credencial e recusa para `anon` e `authenticated` nos dois marketplaces. A migration `20261111175813` deve estar aplicada antes da API que chama as RPCs.
+
+## D-658 - Retomada do enfileiramento e autorização única do POST no SAC
+
+Uma falha de confirmação do Cloud Tasks podia deixar uma tentativa PENDING sem tarefa. Uma reentrega concorrente do worker podia alcançar `POST /answers` duas vezes, e a política HTTP padrão também repetia esse POST em 429 e 5xx.
+
+A nova confirmação grava a fila com a tentativa. Com o mesmo ID, usuário, conta, caso e conteúdo, a API pode retomar a tentativa nova que ainda não iniciou o envio, usando a mesma fila e chave de tarefa. O worker revalida a pergunta, registra `dispatch_started_at` por atualização condicional e só quem adquiriu a trava chama o Mercado Livre. O cliente faz uma tentativa HTTP. As gravações de desfecho são condicionadas à tentativa ainda PENDING e à trava correspondente.
+
+O job `support.reply.send.v2` recebe 503 de um worker antigo. A versão nova aceita o nome anterior para reconhecer tarefas legadas. Linhas antigas sem fila registrada, quedas após a trava e POSTs de resultado incerto exigem conciliação. O caso permanece bloqueado enquanto a tentativa estiver PENDING. Se houver confirmação do POST e falha na auditoria, `support_reply_sent` com `remote_message_id` e `support_reply_outcome_unrecorded` ajudam a conferir o transcript. O desfecho só deve ser registrado quando houver evidência suficiente, com a tentativa e organização conferidas e a trava preservada.
+
+Aplicar a migration `20261111175814`, drenar envios legados em andamento, publicar o worker e então a API. As regressões cobrem fila confirmada ou incerta, corrida da chave no insert, rejeição de reutilização fora do escopo, duas conexões concorrentes no PostgreSQL e reentrega após falha de auditoria.
+
+## D-659 - Renovação Shopee conclui apenas enquanto mantém a trava
+
+Uma reautorização da mesma loja troca as credenciais e limpa a trava anterior. Um refresh em andamento ainda conseguia gravar o par antigo, limpar a trava de outro job ou marcar ERROR após receber a recusa do token antigo.
+
+O worker condiciona sucesso e liberação da trava ao valor que adquiriu. Para recusa definitiva, `shopee_reject_token_refresh` trava a loja antes da credencial, na mesma ordem da reconexão D-657, e marca ERROR somente se a mesma trava ainda estiver vigente na linha. Se a credencial mudou, o job pode repetir a leitura da credencial atual. A RPC tem execução para `service_role`. Aplicar a migration `20261112120939` antes do worker correspondente.
+
+## D-660 - Reconexão Mercado Livre invalida a renovação anterior
+
+O callback gravava o par e o status em operações separadas. A reconexão preservava a trava antiga, e um worker atrasado podia sobrescrever as credenciais novas, liberar a trava de outro job ou marcar a conta reconectada como ERROR.
+
+A migration `20261112122618` cria `ml_connect_account` e `ml_reject_token_refresh`, com execução para `service_role`. A conexão trava a conta, confere organização e vendedor, grava o par cifrado, limpa a trava e marca CONNECTED na mesma transação. A renovação usa o prazo para adquirir a trava e um UUID para confirmar sua titularidade ao gravar ou liberar. O UUID distingue aquisições com o mesmo prazo. A recusa definitiva registra ERROR e libera a trava em uma transação, travando conta e credencial na mesma ordem da reconexão.
+
+Aplicar a migration antes da API e do worker. Coordenar a atualização dos dois serviços e encerrar renovações em execução no worker antigo antes de liberar novas reconexões. O teste local com duas conexões confirma que a recusa antiga espera a reconexão e perde a titularidade. O teste também cobre rollback, escopo da organização, vendedor e permissões.
+
+## D-661 - Cada aquisição da trava Shopee tem identidade própria
+
+D-659 usava o prazo como identidade. Com duas aquisições de prazo igual, antes e depois da reconexão, o PostgreSQL aceitava a gravação e a recusa definitivas da renovação antiga.
+
+A migration `20261112124430` acrescenta `shopee_credentials.refresh_lock_id`. O prazo continua determinando quando outra renovação pode adquirir a trava. O worker usa o UUID da aquisição para salvar o par, soltar a trava e registrar recusa definitiva. `shopee_connect_shops` invalida o UUID na mesma transação que troca as credenciais. A RPC de recusa por UUID é reservada a `service_role`. A sobrecarga legada por prazo continua disponível para linhas sem UUID. A constraint protege travas com UUID de gravações antigas que limpam somente o prazo.
+
+Aplicar a migration antes do worker. Encerrar renovações legadas em voo antes de liberar novas reconexões durante a troca de revisão. O teste local reproduz o prazo idêntico e verifica sucesso antigo, recusa antiga, recusa atual e compatibilidade com linhas legadas.
+
+## D-662 - Falha no callback OAuth preserva conta Mercado Livre conectada
+
+Dois states válidos da mesma conta podem ser consumidos em paralelo. Uma troca de token atrasada e recusada marcava `ERROR` mesmo depois que o outro callback havia gravado a conexão. A sincronização periódica deixava de enfileirar para a conta.
+
+A API limita a escrita de `ERROR` à conta e organização do state e inclui `status <> 'CONNECTED'` no próprio `UPDATE`. Uma falha antes de conectar ainda pode ser registrada. Um callback que falha depois de uma conexão devolve sua recusa e preserva a conta. Uma conta conectada com token vencido continua elegível para nova autorização.
+
+O teste local manteve uma troca de token em espera, conectou a conta com outro state e depois liberou a recusa. A mesma sequência passou a preservar `CONNECTED` e `last_error`. A alteração entra com o deploy da API.
+
+## D-663 - Retomada da confirmação do SAC após recarregar
+
+D-658 permite reenfileirar uma confirmação pendente com a mesma chave e o mesmo conteúdo. O navegador guardava a chave em memória. Depois da recarga, o formulário vazio gerava outra chave e o índice de tentativa pendente impedia concluir o envio original.
+
+O detalhe do atendimento reutiliza a leitura do histórico sob RLS. Perguntas consulta a tentativa pendente apenas do cartão aberto. As duas telas oferecem a retomada ao autor de uma confirmação `PENDING` com fila registrada e sem início de envio. O formulário mostra o texto confirmado em modo somente leitura e reapresenta o ID e o conteúdo à API quando o operador pede a retomada. A API e o worker mantêm a autorização e o controle de concorrência de D-658.
+
+O Playwright gravou uma tentativa no Supabase local antes de simular falha na fila. A recarga mostrou o texto confirmado nas duas entradas e a ação explícita repetiu o mesmo payload. A publicação depende da migration, do worker e da API de D-658.
+
+## D-664 - Cartão de Perguntas lê a primeira mensagem recebida
+
+A lista paginava os casos e, em outra consulta, baixava as mensagens de todos eles para encontrar a primeira recebida. Ao atingir o teto de 1.000 linhas do PostgREST, um cartão podia mostrar ausência de transcript apesar da pergunta já sincronizada.
+
+A consulta paginada dos casos inclui `support_messages` como embed. O recorte de filhos exige `INBOUND`, ordena por `occurred_at, id` e limita a uma linha por caso. A relação preserva casos sem mensagem recebida. A página usa a leitura sob RLS, a mesma chave composta do transcript e os campos já exibidos.
+
+No Supabase local, mil eventos anteriores escondiam a pergunta na leitura antiga. A nova consulta devolveu a primeira mensagem em uma linha e preservou um caso vazio. A regressão Playwright exercita o cartão na página de Perguntas.
+
+## D-665 - Detalhe do SAC pagina a conversa por data e mensagem
+
+O detalhe lia as mensagens mais antigas em uma consulta sem paginação. O teto do PostgREST ocultava as mais recentes em atendimentos com mais de mil registros.
+
+A conversa abre nas 50 mensagens mais recentes, em ordem cronológica de leitura. Os links avançam nas duas direções por `occurred_at, id`, com precisão de microssegundos e um registro extra para detectar a próxima página. A consulta opera sob a RLS da conta e usa as colunas do índice `support_messages_case_timeline_idx`. A navegação preserva o retorno à fila.
+
+A regressão usa 1.050 mensagens, com horários iguais na fronteira entre páginas, e insere outra enquanto o usuário lê. Um gestor sem acesso à conta recebe a página de atendimento não encontrado ao abrir o mesmo cursor.
+
+## D-666 - Telemetria de jobs exige escopo explícito de plataforma
+
+`job_runs` conserva a organização registrada no envelope. As RPCs de saúde classificavam a ausência desse ID no catálogo como telemetria de plataforma. No PostgreSQL local, apagar uma organização sintética tornou uma execução dela visível a outro administrador. `get_job_failures` incluiu também o motivo registrado.
+
+A migration `20261112181422` limita as duas RPCs a organizações administradas pelo chamador e ao par `system.ping` com o UUID de plataforma enviado pela API. A função privada `system_ping_organization_id()` fornece o identificador às consultas. `get_system_health` aplica o escopo à última execução e à contagem de falhas. `get_job_failures` filtra antes de agrupar e escolher a amostra de motivo.
+
+As regressões reproduzem a remoção em transação revertida, conferem tipo exclusivo e compartilhado, testam o motivo de falha e preservam o heartbeat de plataforma. A migration está preparada para a esteira de banco.
+
+## D-667 - Indicadores de get_sync_health compartilham uma agregação
+
+A RPC da tela de Sincronização lia `sync_runs` três vezes para obter última execução, último sucesso e contagens de 24 horas. O ensaio de 40 mil linhas mostrou 2.938 blocos compartilhados para ADMIN.
+
+A migration `20261112182921` calcula os indicadores numa agregação por conta, recurso e canal. A busca da execução mais recente usa conta, recurso e horário para localizar status e motivo pelo índice existente. Empates no horário são resolvidos pelo maior ID. O último sucesso inclui `partial` e a data do dado é o maior `latest_record_at` entre execuções com sucesso total ou parcial. A consulta continua sob RLS.
+
+As duas versões produziram os mesmos resultados nas comparações `EXCEPT ALL` para ADMIN e GESTOR, incluindo uma organização fora do escopo. A regressão da migration cobre o limite de 24 horas, motivo truncado, empates e grupo sem sucesso. No volume sintético de 40 mil linhas, a mediana para ADMIN caiu de 68,82 ms para 16,39 ms.
+
+## D-668 - O resumo de cobertura usa a data indexada dos pedidos Shopee
+
+O resumo da Home filtrava a venda da Shopee pela data calculada em `shopee_sales_items`. No ensaio local de 60 mil pedidos, o filtro levou a uma varredura de `shopee_orders` para a janela de 30 dias.
+
+A migration `20261112184110` usa o horário bruto do pedido entre o início do primeiro dia em São Paulo, inclusive, e o início do dia seguinte ao último, exclusivo. O intervalo segue o padrão das consultas multicanal e pode usar `shopee_orders_org_created_idx`. A regra de vendas válidas das lojas live continua sob RLS, com a mesma assinatura e as mesmas contagens.
+
+As comparações `EXCEPT ALL` deram os mesmos resultados para ADMIN e GESTOR nas janelas de 7, 30, 90 e 365 dias. As regressões conferem os pedidos nos dois limites do dia, inclusive em uma virada histórica do horário de verão. No ensaio de 30 dias, a mediana de ADMIN caiu de 38,14 ms para 13,10 ms.
+
+## D-669 - O faturamento do ML conta compras pelos IDs numéricos
+
+`get_faturamento` convertia o ID em texto e acrescentava um prefixo por tipo antes de contar compras. A migration `20261113131644` conta os IDs distintos de pacote e soma os IDs distintos dos pedidos avulsos. Assim, dois pedidos do mesmo pacote contam como uma compra, e um pedido avulso com o mesmo número do pacote conta separadamente. O ticket médio usa a mesma contagem.
+
+O JSON completo coincidiu em 36 combinações com ADMIN e GESTOR, incluindo tentativas de consultar contas fora do escopo. No ensaio local de 90 dias para ADMIN, com todas as contas, a mediana caiu de 314,32 ms para 271,82 ms sem detalhe. As regras de classificação, custo, frete e alíquota continuam na consulta sob RLS.
+
+## D-670 - O faturamento do ML inicia as consultas do período sem esperar pelas lojas Shopee
+
+`/faturamento` esperava a lista de contas ML e a contagem de lojas Shopee antes de iniciar as duas leituras de faturamento e a de Ads. A contagem de lojas alimenta o seletor de marketplace. A lista de contas é necessária para resolver o slug da URL quando informado.
+
+As três consultas começam em paralelo, logo após abrir o recorte consolidado ou resolver o slug com as contas visíveis sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis. O cabeçalho continua recebendo as duas leituras necessárias aos filtros.
+
+No Chromium com PostgREST local e atraso controlado nas duas leituras do cabeçalho, a primeira RPC no consolidado passou de 367 ms para 2 ms. Períodos, argumento de conta e quantidade de chamadas coincidiram nas duas versões.
+
+## D-671 - Faturamento multicanal inicia as leituras após resolver o recorte
+
+Os recortes Shopee e Todos aguardavam a lista de contas e lojas antes de iniciar as consultas. A organização é necessária para as RPCs da Shopee. A lista só é necessária para montar o filtro quando a URL pede lojas no recorte Shopee.
+
+Em Todos e na Shopee sem filtro, as consultas começam assim que a associação à organização resolve. Com filtro explícito, a Shopee continua usando apenas as lojas visíveis sob RLS e avisa quando descarta uma loja. O cabeçalho recebe a lista completa. A Central segue reaproveitando as respostas do Mercado Livre no bloco por marketplace.
+
+O ensaio local com atraso controlado confirmou a ordem das requisições, a mesma quantidade de chamadas e os mesmos argumentos nos quatro recortes exercitados.
+
+## D-672 - Vendas multicanal inicia as consultas sem esperar os filtros salvos
+
+O carregamento de Vendas multicanal iniciava a associação à organização, a lista de contas e os filtros salvos juntos. O resumo, a série diária, o ranking e as demais RPCs aguardavam as três respostas.
+
+As leituras começam quando a organização está disponível. Um filtro explícito de contas ainda aguarda a lista sob RLS. Os filtros salvos e a lista continuam disponíveis para montar o cabeçalho. A paginação da série diária e as regras de marca e cancelamento seguem as mesmas.
+
+## D-673 - Séries diárias encerram na primeira página quando a contagem confirma o total
+
+As séries de Vendas do ML e de Vendas multicanal pedem contagem exata na primeira página para janelas de até 90 dias. Quando o total coincide com as linhas entregues, a leitura termina. Se a contagem estiver ausente ou indicar que faltam linhas, a paginação continua até uma página vazia ou até o teto. Uma resposta curta pode resultar do limite do PostgREST.
+
+Em janelas maiores, as duas séries mantêm a paginação sem contagem. O leitor continua compartilhado entre a tela e os CSVs.
+
+## D-674 - Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
+
+As leituras de Vendas do ML aguardavam a lista de contas, a associação à organização, os filtros salvos e a contagem de lojas Shopee. As RPCs de vendas já recebem o escopo do usuário pela RLS. Só precisam da lista de contas quando a URL traz um slug. A lista de marcas usa a organização.
+
+As consultas de resumo, série, ranking, cancelamento e hoje começam assim que o filtro de conta está resolvido. A consulta de marcas começa quando a associação à organização responde. Os dados do cabeçalho são aguardados em paralelo, com as mesmas regras de filtro e erro.
+
+## D-675 - A lista e os contadores de Anúncios começam assim que o recorte está resolvido
+
+No dashboard de anúncios do ML, as duas RPCs aguardavam organização, lista de contas, filtros salvos e contagem de lojas Shopee. Agora iniciam após resolver a organização e, se a URL trouxer um slug, verificar a conta na lista visível sob RLS. Filtros salvos e contagem de lojas continuam alimentando o cabeçalho.
+
+A lista e os contadores mantêm a mesma organização, conta e busca. A lista também recebe os filtros de estado, período e ordenação. A compatibilidade com o banco anterior continua no mesmo fluxo.
+
+## D-676 - Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
+
+`/anuncios/shopee` aguardava organização, lojas, contagem de contas ML e filtros salvos antes de consultar a lista e o resumo. As duas RPCs agora começam após resolver a organização e as lojas visíveis. A contagem de contas e os filtros salvos continuam alimentando os controles.
+
+O catálogo só é consultado quando existe ao menos uma loja visível na organização. A loja pedida na URL continua validada contra a lista sob RLS. A busca, o estado e o período continuam restritos à lista, e o resumo mantém o escopo da loja.
+
+## D-677 - Vendas da Shopee inicia as consultas após validar as lojas visíveis
+
+Em `/vendas/shopee`, as consultas de vendas, pedidos e devoluções aguardavam também a contagem de contas do ML e os filtros salvos. As quatro RPCs agora começam após a organização e as lojas visíveis definirem o recorte. Os controles continuam recebendo a contagem e os filtros em paralelo.
+
+O painel por loja mantém o período inteiro sob RLS. Pedidos aceitam loja, situação e número do pedido. Devoluções aceitam loja e período e mantêm seu painel com streaming. Sem loja visível, a página exibe o aviso antes de consultar vendas, pedidos ou devoluções.
+
+## D-678 - A Curva ABC inicia as consultas assim que o recorte está resolvido
+
+A Curva ABC aguardava filtros salvos, contas do Mercado Livre e a contagem de lojas Shopee antes de iniciar a análise e as listas de marcas e categorias. Em Todos e Shopee, também aguardava a lista multicanal mesmo sem seleção de contas.
+
+As listas de marcas e categorias começam assim que a organização responde. A curva espera pela lista de contas do ML quando há um slug e pela lista multicanal quando a URL pede contas ou lojas por ID. Filtros salvos, contagens e listas continuam disponíveis no cabeçalho. A validação das contas e do filtro Sem Full continua compartilhada com o XLSX.
+
+O ensaio em sete recortes confirmou os mesmos argumentos nas três RPCs da tela e os mesmos filtros compartilhados com as curvas do XLSX. [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
+
+## D-679 - Reposição lê todas as regras da organização por cursor
+
+`/reposicao` e `/reposicao/configuracoes` consultavam `replenishment_settings` em uma chamada e recebiam até 1.000 regras. A primeira tela podia aplicar o padrão ou a regra de marca quando a regra específica por SKU ficava fora da resposta. A segunda podia ocultar exceções.
+
+As duas leituras filtram pela organização da sessão e usam o mesmo paginador por ID. A contagem exata da consulta já inclui o cursor. A leitura termina quando a página contém todas as regras restantes ou volta vazia. Uma falha descarta a leitura parcial e aciona o tratamento de erro da tela. O cliente conserva as policies existentes de RLS.
+
+O ensaio local recuperou 1.003 regras em duas chamadas por rota e conferiu a precedência por SKU e o isolamento entre organizações. [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
+
+## D-680 - A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
+
+A inspeção consultava até 1.000 regras de reposição sem recorte. A regra do SKU podia ficar fora da resposta, fazendo a gaveta mostrar o alvo de outra regra.
+
+A consulta filtra a organização e reúne os escopos do SKU, da marca e do padrão. Os índices únicos garantem até uma regra por escopo. A comparação de marca preserva a pontuação e a regra canônica continua resolvendo a precedência SKU, marca e padrão.
+
+O ensaio com 1.004 regras na organização confirmou a redução de 1.000 para três linhas, o alvo correto e a ausência de efeito da regra de outra organização. [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
+
+## D-681 - Vinculações inicia a visão e os painéis em paralelo
+
+A visão de Vinculações aguardava a lista de contas em qualquer recorte. Os painéis de candidatos e vínculos manuais aguardavam a resposta da visão. As três consultas podem começar assim que a organização está disponível e, quando a URL pede uma conta, assim que o slug é resolvido na lista visível sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis.
+
+Os painéis mantêm os limites de 200 candidatos abertos e oito vínculos manuais. A conferência com pedidos continua em streaming. Quando a visão falha, a tabela alternativa mantém os filtros e o aviso. Nesse caso, as duas leituras dos painéis já foram iniciadas e seus resultados são descartados.
+
+O ensaio local com atrasos controlados confirmou a ordem das chamadas, os argumentos e o caminho alternativo. [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
+
+## D-682 - Histórico de Preços inicia o consolidado sem esperar a lista de contas
+
+O Histórico de Preços e seu XLSX aguardavam a lista de contas em todos os recortes. A tela continua carregando essa lista para o seletor. A RPC começa após resolver a organização quando a URL não pede conta. O XLSX consolidado dispensa a lista porque o arquivo não precisa de um rótulo de conta.
+
+Com conta explícita, as duas entradas ainda validam o ID na lista visível sob RLS. O ensaio conferiu conta, período, direção e busca na tela e na exportação. [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
+
+## D-683 - A Central Full inicia a consulta do consolidado após resolver a organização
+
+A Central Full aguardava a lista de contas antes de consultar a visão, mesmo sem seleção na URL. A consulta consolidada começa assim que a associação à organização responde. A lista de contas segue alimentando o seletor e continua necessária para validar a conta quando informada.
+
+Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura antiga da RPC foram conferidos em ensaio local. [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)

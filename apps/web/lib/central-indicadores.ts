@@ -91,7 +91,7 @@ export interface EntradaCentral {
 }
 
 /** Diferença de cobertura acima da qual somas de pedidos cobertos deixam de ser comparáveis. */
-export const COBERTURA_TOLERADA = 0.05;
+const COBERTURA_TOLERADA = 0.05;
 
 /** O diário de Ads cobre `[from, to]` do primeiro ao último dia? E que dias dele a venda ainda não consolidou? */
 export function coberturaDoAds(
@@ -169,7 +169,7 @@ export interface Contribuicao {
  * pela participação da receita coberta — premissa declarada na tela, e que
  * some quando a cobertura chega a 100%.
  */
-export function contribuicao(
+function contribuicao(
   f: ResumoFaturamento,
   imposto: ImpostoDoPeriodo | null,
   investimentoAds: number | null,

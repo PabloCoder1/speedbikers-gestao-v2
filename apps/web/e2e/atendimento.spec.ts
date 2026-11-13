@@ -1,7 +1,197 @@
+import { randomUUID } from "node:crypto";
+
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { login } from "./helpers.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { login, loginAs } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
+
+async function fixtureDaPergunta() {
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const caso = await db.from("support_cases")
+    .select("id, ml_account_id")
+    .eq("organization_id", seed.organizationId)
+    .eq("external_case_id", seed.supportOpenExternalId)
+    .single();
+  if (caso.error !== null) throw new Error(caso.error.message);
+
+  return { seed, db, caso: caso.data };
+}
+
+test("retoma a mesma resposta confirmada depois de recarregar", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const texto = "Sim, a peça está disponível para envio.";
+  const detalhes = `/atendimento/${caso.id}`;
+  const perguntas = `/atendimento/perguntas?pergunta=${caso.id}`;
+  const requests: unknown[] = [];
+  let tentativaId: string | undefined;
+  await page.route(`**/v1/support/cases/${caso.id}/reply`, async (route) => {
+    const headers = {
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "POST, OPTIONS",
+    };
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    const body = route.request().postDataJSON() as { clientRequestId: string; text: string };
+    requests.push(body);
+    if (tentativaId === undefined) {
+      // A API persiste PENDING antes de pedir a task. A falha simulada fica
+      // entre a gravação no Supabase e a confirmação do enfileiramento.
+      const tentativa = await db.from("support_reply_attempts").insert({
+        organization_id: seed.organizationId,
+        ml_account_id: caso.ml_account_id,
+        support_case_id: caso.id,
+        requested_by: seed.userId,
+        client_request_id: body.clientRequestId,
+        final_text: body.text,
+        dispatch_queue: "ml-sync-e2e",
+        status: "PENDING",
+      }).select("id").single();
+      if (tentativa.error !== null) throw new Error(tentativa.error.message);
+      tentativaId = tentativa.data.id;
+      await route.fulfill({ status: 503, headers, json: { error: { message: "Fila indisponível." } } });
+      return;
+    }
+    await route.fulfill({ status: 200, headers, json: { status: "queued", attemptId: tentativaId } });
+  });
+
+  try {
+    await login(page, perguntas);
+    await page.getByLabel("Sua resposta").fill(texto);
+    await page.getByRole("button", { name: "Enviar resposta" }).click();
+    await expect(page.getByText("Fila indisponível.")).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByLabel("Sua resposta")).toHaveValue(texto);
+    await expect(page.getByLabel("Sua resposta")).toHaveAttribute("readonly", "");
+    await expect(page.getByRole("button", { name: "Retomar envio" })).toBeVisible();
+    expect(requests).toHaveLength(1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(detalhes);
+    await expect(page.getByLabel("Sua resposta")).toHaveValue(texto);
+    await page.getByRole("button", { name: "Retomar envio" }).click();
+    await expect(page.getByText("Resposta confirmada e a caminho", { exact: false })).toBeVisible();
+    expect(requests).toEqual([requests[0], requests[0]]);
+  } finally {
+    if (tentativaId !== undefined) {
+      const encerrada = await db.from("support_reply_attempts")
+        .update({ status: "FAILED", resolved_at: new Date().toISOString(), error_code: "E2E", error_message: "Fim do teste local." })
+        .eq("id", tentativaId);
+      expect.soft(encerrada.error, "encerrar a tentativa do teste").toBeNull();
+    }
+  }
+});
+
+test("a pergunta aparece mesmo com mil eventos anteriores no transcript", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const prefixo = `e2e-evento-${randomUUID()}-`;
+  const inserted = await db.from("support_messages").insert(
+    Array.from({ length: 1_000 }, (_, index) => ({
+      organization_id: seed.organizationId,
+      ml_account_id: caso.ml_account_id,
+      support_case_id: caso.id,
+      external_message_key: prefixo + String(index),
+      direction: "SYSTEM",
+      sender_kind: "SYSTEM",
+      body: "Evento sintético anterior à pergunta.",
+      occurred_at: "2020-01-01T00:00:00.000Z",
+    })),
+  );
+  if (inserted.error !== null) throw new Error(inserted.error.message);
+
+  try {
+    await login(page, `/atendimento/perguntas?pergunta=${caso.id}`);
+    await expect(page.getByText(seed.supportQuestionText, { exact: true })).toBeVisible();
+  } finally {
+    const cleaned = await db.from("support_messages").delete()
+      .eq("support_case_id", caso.id)
+      .like("external_message_key", `${prefixo}%`);
+    expect.soft(cleaned.error, "remover eventos sintéticos").toBeNull();
+  }
+});
+
+test("o detalhe navega pelo histórico longo sem repetir mensagens com o mesmo horário", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const prefixo = `e2e-conversa-${randomUUID()}-`;
+  const prefixoId = randomUUID().slice(0, 24);
+  const voltando = "/atendimento?canal=QUESTION";
+  const url = `/atendimento/${caso.id}?volta=${encodeURIComponent(voltando)}`;
+  const escopo = {
+    organization_id: seed.organizationId,
+    ml_account_id: caso.ml_account_id,
+    support_case_id: caso.id,
+    direction: "INBOUND",
+    sender_kind: "CUSTOMER",
+  };
+  const mensagens = Array.from({ length: 1_050 }, (_, index) => {
+    const numero = index + 1;
+    return {
+      id: prefixoId + String(numero).padStart(12, "0"),
+      ...escopo,
+      external_message_key: prefixo + String(numero),
+      body: `Mensagem do histórico ${String(numero)}`,
+      occurred_at: numero === 1_050 ? "2030-01-01T00:00:00.123457Z" : "2030-01-01T00:00:00.123456Z",
+    };
+  });
+  const inserted = await db.from("support_messages").insert(mensagens);
+  if (inserted.error !== null) throw new Error(inserted.error.message);
+
+  try {
+    await login(page, url);
+    const timeline = page.getByRole("region", { name: "Conversa" }).locator("ol > li");
+    await expect(timeline).toHaveCount(50);
+    await expect(timeline.first()).toContainText("Mensagem do histórico 1001");
+    await expect(timeline.last()).toContainText("Mensagem do histórico 1050");
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+
+    const anteriores = page.getByRole("link", { name: "Mensagens anteriores" });
+    const paginaAnterior = await anteriores.getAttribute("href");
+    if (paginaAnterior === null) throw new Error("Cursor de mensagens anteriores ausente");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await anteriores.click();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 951", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1001", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Voltar à Caixa de Entrada/ })).toHaveAttribute("href", voltando);
+
+    const chegada = await db.from("support_messages").insert({
+      ...escopo,
+      id: prefixoId + "000000001051",
+      external_message_key: prefixo + "1051",
+      body: "Mensagem do histórico 1051",
+      occurred_at: "2030-01-01T00:00:00.123458Z",
+    });
+    if (chegada.error !== null) throw new Error(chegada.error.message);
+
+    await page.getByRole("link", { name: "Mensagens seguintes" }).click();
+    await expect(page.getByText("Mensagem do histórico 1050", { exact: true })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Mensagem do histórico 1051", { exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Mensagens seguintes" }).click();
+    await expect(page.getByText("Mensagem do histórico 1051", { exact: true })).toBeVisible();
+
+    await page.context().clearCookies();
+    await loginAs(page, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, paginaAnterior);
+    await expect(page.getByRole("heading", { name: "Página não encontrada" })).toBeVisible();
+    await expect(page.getByText("Mensagem do histórico 1000", { exact: true })).toHaveCount(0);
+  } finally {
+    const cleaned = await db.from("support_messages").delete()
+      .eq("support_case_id", caso.id)
+      .like("external_message_key", `${prefixo}%`);
+    expect.soft(cleaned.error, "remover mensagens sintéticas").toBeNull();
+  }
+});
 
 /**
  * Caixa de Entrada do Atendimento (Fase 7B, D-090) contra Postgres real, com

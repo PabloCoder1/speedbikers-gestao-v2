@@ -70,6 +70,11 @@ import { LIBERACOES_A_VISTA, RepasseShopee } from "./repasse-shopee";
  */
 
 type Consulta = Record<string, string | string[] | undefined>;
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+interface Intervalo {
+  from: string;
+  to: string;
+}
 
 function rotuloDaLoja(conta: ContaDoSeletor): string {
   return `${conta.name}${conta.environment === "live" ? "" : " (teste)"}`;
@@ -96,16 +101,17 @@ export async function FaturamentoMulticanal({
   const anterior = previousBusinessDateRange(range.from, range.to);
   const periodo: Periodo = days === null ? range : { days };
 
-  const [membership, contasResult] = await Promise.all([
-    currentMembership(),
+  const membershipPromise = currentMembership();
+  const contasPromise = Promise.resolve(
     supabase
       .from("marketplace_accounts")
       .select("account_id, marketplace, name, environment")
       .order("marketplace", { ascending: true })
       .order("name", { ascending: true }),
-  ]);
-
-  const organizationId = membership.organizationId;
+  );
+  // A leitura do cabeçalho pode terminar antes da associação à organização.
+  void contasPromise.catch(() => undefined);
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
     return (
@@ -116,17 +122,17 @@ export async function FaturamentoMulticanal({
     );
   }
 
-  const todasAsContas: ContaDoSeletor[] = contasResult.data ?? [];
-  // No "Todos" não há recorte de loja (o lado do ML aceita uma conta só): o
-  // link com `contas` cai inteiro, e a tela avisa.
+  const pediuLojas = typeof query.contas === "string" && query.contas.trim() !== "";
+  // Só a Shopee com filtro explícito precisa da lista para resolver as lojas visíveis.
   const { selecionadas, descartadas } =
-    escopo === "shopee" ? resolverContas(query.contas, todasAsContas, "shopee") : { selecionadas: null, descartadas: 0 };
-  const contasIgnoradas = escopo === "todos" && typeof query.contas === "string" && query.contas.trim() !== "";
+    escopo === "shopee" && pediuLojas
+      ? resolverContas(query.contas, (await contasPromise).data ?? [], "shopee")
+      : { selecionadas: null, descartadas: 0 };
+  const contasIgnoradas = escopo === "todos" && pediuLojas;
   const recorte: RecorteDeFaturamento = { escopo, periodo, contas: selecionadas };
   // D-470: "Tentar de novo" é a mesma URL.
   const tentarDeNovo = hrefDeFaturamento(recorte);
 
-  const lojas = todasAsContas.filter((conta) => conta.marketplace === "SHOPEE");
   const historicoCurto = antesDoHistoricoShopee(escopo === "shopee" ? anterior.from : range.from, hoje);
   const rotuloLojas =
     selecionadas === null
@@ -148,6 +154,8 @@ export async function FaturamentoMulticanal({
     p_date_to: range.to,
     p_account_ids: selecionadas === null ? null : selecionadas.map((conta) => conta.account_id),
   };
+  const faturamentoShopee = escopo === "shopee" ? lerFaturamentoShopee(supabase, doPeriodoShopee, anterior) : null;
+  const faturamentoTodos = escopo === "todos" ? lerFaturamentoTodos(supabase, organizationId, range) : null;
   const leiturasAds =
     escopo === "shopee"
       ? {
@@ -172,17 +180,21 @@ export async function FaturamentoMulticanal({
         }
       : null;
 
-  const corpo =
-    escopo === "shopee" ? (
-      <CorpoShopee
-        organizationId={organizationId}
-        recorte={recorte}
-        range={range}
-        anterior={anterior}
-      />
-    ) : (
-      <CorpoTodos organizationId={organizationId} recorte={recorte} range={range} />
-    );
+  // Os blocos recebem as promises originais, inclusive suas rejeições.
+  void Promise.all([
+    faturamentoShopee, faturamentoTodos,
+    leiturasAds?.leitura, leiturasAds?.diaria,
+    leiturasRepasse?.leitura, leiturasRepasse?.pendente, leiturasRepasse?.liberacoes,
+  ]).catch(() => undefined);
+  const contasResult = await contasPromise;
+  const todasAsContas: ContaDoSeletor[] = contasResult.data ?? [];
+  const lojas = todasAsContas.filter((conta) => conta.marketplace === "SHOPEE");
+
+  const corpo = faturamentoShopee !== null ? (
+    <CorpoShopee recorte={recorte} range={range} leitura={faturamentoShopee} />
+  ) : (
+    faturamentoTodos !== null && <ComparacaoTodos recorte={recorte} range={range} leitura={faturamentoTodos} />
+  );
 
   return (
     <>
@@ -371,19 +383,38 @@ export async function FaturamentoMulticanal({
 /* Shopee                                                              */
 /* ------------------------------------------------------------------ */
 
+function lerFaturamentoShopee(
+  supabase: Supabase,
+  doPeriodo: { p_organization_id: string; p_date_from: string; p_date_to: string; p_account_ids: string[] | null },
+  anterior: Intervalo,
+) {
+  // Tudo numa ida (D-185): o C-58 do período e do anterior e, do C-61 (D-452),
+  // a composição do recebido, a série diária e os produtos -- sobre os MESMOS
+  // pedidos cobertos. Cada leitura nova falha sozinha, no painel dela.
+  return Promise.all([
+    supabase.rpc("get_shopee_faturamento", doPeriodo),
+    supabase.rpc("get_shopee_faturamento", {
+      ...doPeriodo,
+      p_date_from: anterior.from,
+      p_date_to: anterior.to,
+    }),
+    carregarLimites(supabase, doPeriodo.p_organization_id),
+    supabase.rpc("get_shopee_faturamento_composicao", doPeriodo),
+    supabase.rpc("get_shopee_faturamento_diario", doPeriodo),
+    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "receita", p_limit: 30 }),
+    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "margem", p_limit: 20 }),
+  ]);
+}
+
 async function CorpoShopee({
-  organizationId,
   recorte,
   range,
-  anterior,
+  leitura,
 }: {
-  organizationId: string;
   recorte: RecorteDeFaturamento;
-  range: { from: string; to: string };
-  anterior: { from: string; to: string };
+  range: Intervalo;
+  leitura: ReturnType<typeof lerFaturamentoShopee>;
 }): Promise<ReactNode> {
-  const supabase = await createClient();
-  const contas = recorte.contas === null ? null : recorte.contas.map((conta) => conta.account_id);
   const acao: AcaoDoEstado = { href: hrefDeFaturamento(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   // Com lojas escolhidas, o vazio é do recorte e "Limpar filtros" volta a todas.
   const vazio = {
@@ -393,31 +424,7 @@ async function CorpoShopee({
         ? undefined
         : { href: hrefDeFaturamento(recorte, { contas: null }), rotulo: "Limpar filtros", mesmaTela: true },
   };
-
-  const doPeriodo = { p_organization_id: organizationId, p_date_from: range.from, p_date_to: range.to, p_account_ids: contas };
-
-  // Tudo numa ida (D-185): o C-58 do período e do anterior e, do C-61 (D-452),
-  // a composição do recebido, a série diária e os produtos -- sobre os MESMOS
-  // pedidos cobertos. Cada leitura nova falha sozinha, no painel dela.
-  const [atualResult, anteriorResult, limites, composicaoResult, diarioResult, maisReceitaResult, menorMargemResult] = await Promise.all([
-    supabase.rpc("get_shopee_faturamento", {
-      p_organization_id: organizationId,
-      p_date_from: range.from,
-      p_date_to: range.to,
-      p_account_ids: contas,
-    }),
-    supabase.rpc("get_shopee_faturamento", {
-      p_organization_id: organizationId,
-      p_date_from: anterior.from,
-      p_date_to: anterior.to,
-      p_account_ids: contas,
-    }),
-    carregarLimites(supabase, organizationId),
-    supabase.rpc("get_shopee_faturamento_composicao", doPeriodo),
-    supabase.rpc("get_shopee_faturamento_diario", doPeriodo),
-    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "receita", p_limit: 30 }),
-    supabase.rpc("get_shopee_faturamento_por_sku", { ...doPeriodo, p_ordem: "margem", p_limit: 20 }),
-  ]);
+  const [atualResult, anteriorResult, limites, composicaoResult, diarioResult, maisReceitaResult, menorMargemResult] = await leitura;
 
   if (atualResult.error !== null) {
     return (
@@ -1002,6 +1009,26 @@ function Cobertura({ total }: { total: LinhaFaturamentoShopee | null }): ReactNo
  * D-480 (T8a), também a seção "Por marketplace" de `/central` — o mesmo bloco,
  * os mesmos números.
  */
+interface LeiturasDoMl {
+  readonly faturamento: Promise<RespostaRpc>;
+  readonly ads: Promise<RespostaRpc>;
+}
+
+function lerFaturamentoTodos(supabase: Supabase, organizationId: string, range: Intervalo, leiturasDoMl?: LeiturasDoMl) {
+  return Promise.all([
+    leiturasDoMl?.faturamento ??
+      supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, p_detalhe: false }),
+    supabase.rpc("get_shopee_faturamento", {
+      p_organization_id: organizationId,
+      p_date_from: range.from,
+      p_date_to: range.to,
+      p_account_ids: null,
+    }),
+    // D-498: Product Ads do ML para a linha de lucro após imposto e Ads.
+    leiturasDoMl?.ads ?? supabase.rpc("get_ads_overview", { p_date_from: range.from, p_date_to: range.to }),
+  ]);
+}
+
 export async function CorpoTodos({
   organizationId,
   recorte,
@@ -1010,7 +1037,7 @@ export async function CorpoTodos({
 }: {
   organizationId: string;
   recorte: RecorteDeFaturamento;
-  range: { from: string; to: string };
+  range: Intervalo;
   /**
    * D-610: as leituras do Mercado Livre que quem chama JÁ fez com os MESMOS
    * argumentos (o período `range`, sem conta; com ou sem detalhe, que o
@@ -1020,22 +1047,23 @@ export async function CorpoTodos({
    * com as outras (os timeouts de produção de 19/10). Sem elas, o bloco lê
    * sozinho, como no "Todos" de `/faturamento`.
    */
-  leiturasDoMl?: { readonly faturamento: Promise<RespostaRpc>; readonly ads: Promise<RespostaRpc> };
+  leiturasDoMl?: LeiturasDoMl;
 }): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const [mlResult, shopeeResult, adsMlResult] = await Promise.all([
-    leiturasDoMl?.faturamento ??
-      supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, p_detalhe: false }),
-    supabase.rpc("get_shopee_faturamento", {
-      p_organization_id: organizationId,
-      p_date_from: range.from,
-      p_date_to: range.to,
-      p_account_ids: null,
-    }),
-    // D-498: o Product Ads do ML, só para a linha do lucro após imposto e Ads -- a mesma leitura da central.
-    leiturasDoMl?.ads ?? supabase.rpc("get_ads_overview", { p_date_from: range.from, p_date_to: range.to }),
-  ]);
+  return <ComparacaoTodos recorte={recorte} range={range} leitura={lerFaturamentoTodos(supabase, organizationId, range, leiturasDoMl)} />;
+}
+
+async function ComparacaoTodos({
+  recorte,
+  range,
+  leitura,
+}: {
+  recorte: RecorteDeFaturamento;
+  range: Intervalo;
+  leitura: ReturnType<typeof lerFaturamentoTodos>;
+}): Promise<ReactNode> {
+  const [mlResult, shopeeResult, adsMlResult] = await leitura;
 
   // Cada lado falha sozinho: o outro continua de pé, e o que falhou diz por quê.
   const ml = mlResult.error === null ? lerFaturamento(mlResult.data) : null;

@@ -34,7 +34,7 @@ export const ACTIONS_PAGE_SIZE = 25;
  * crítico. As três entram, inclusive `baixa` — que hoje tem zero linhas no
  * Dev, e cujo "0" no painel é verdade medida, não ausência disfarçada (D-067).
  */
-export const SEVERITY_KEYS = ["todas", "alta", "media", "baixa"] as const;
+const SEVERITY_KEYS = ["todas", "alta", "media", "baixa"] as const;
 
 export type SeverityKey = (typeof SEVERITY_KEYS)[number];
 

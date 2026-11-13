@@ -30,6 +30,7 @@ import {
   posicaoCobertura,
   seloDaShopee,
 } from "../../../lib/replenishment-overview";
+import { lerRegrasDeReposicao } from "../../../lib/replenishment-settings";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 
@@ -142,7 +143,7 @@ export default async function ReposicaoPage({
   const filters = resolveReplenishmentFilters(query);
   const dateTo = toSalesMetricDate(new Date());
 
-  // Quatro leituras numa ida (D-185). A pesada é UMA agora (D-358).
+  // As quatro leituras começam juntas (D-185). A visão classifica o catálogo uma vez (D-358).
   const [overviewResult, settingsResult, brandsResult, lojasShopeeResult] = await Promise.all([
     supabase.rpc("get_replenishment_overview", {
       p_organization_id: organizationId,
@@ -153,11 +154,19 @@ export default async function ReposicaoPage({
       p_limit: PAGE_SIZE,
       p_offset: (filters.page - 1) * PAGE_SIZE,
     }),
-    supabase
-      .from("replenishment_settings")
-      .select(
-        "supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note",
-      ),
+    lerRegrasDeReposicao((depoisDe, limite) => {
+      const consulta = supabase
+        .from("replenishment_settings")
+        .select(
+          "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note",
+          { count: "exact" },
+        )
+        .eq("organization_id", organizationId)
+        .order("id")
+        .limit(limite);
+
+      return depoisDe === null ? consulta : consulta.gt("id", depoisDe);
+    }),
     // D-194: a agregação das marcas é do BANCO.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
     /*

@@ -12,15 +12,15 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-10-19 |
+| **Atualizado em** | 2026-11-13 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `main` em `f984b647` (PR #103) em 25/09 — envelhece a cada merge: confira com `git log -1 origin/main`. Toda página nova precisa ser dinâmica (D-331): estática sai sem nonce. Armadilhas de ambiente/build em `docs/TESTING.md`. |
+| **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
-| **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 (D-350), com 15 jobs e 7 filas parados: api `api-00042-8wd` (min 0) e worker `worker-00053-z26` em `1dc83ee` (21/09; conferido em 28/09). Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342). Confira com `gcloud run services describe worker --project speedbikers-gestao-v3`. |
-| **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | Worker `worker-00056-wjk` e api `api-00038-qsf` (`dc69d1fb`, 21/10: o anúncio criado ou excluído no ML chega na hora, D-631), saindo pelo IP fixo `34.95.145.35` (D-457); **Shopee LIVE** desde 16/10 (`SHOPEE_PARTNER_ID=2048641`, segredos `SHOPEE_LIVE_PARTNER_KEY` e `SHOPEE_LIVE_PUSH_PARTNER_KEY`, publicação autorizada pelo dono); duas lojas reais conectadas em 16/10, em dia em 19/10, com o push live chegando das duas (`docs/SHOPEE.md` §9); a loja sandbox foi removida de produção em 19/10, a pedido do dono. Volta ao sandbox: `worker-00048-hl2`/`api-00034-qxw` (a loja real para de sincronizar). Worker fixo na revisão (D-342). Dev pausado (D-350). |
-| **Migrations** | Produção até `20261021180000` (D-441 a D-499; os runs de 19/10 no histórico do workflow). D-497 e D-495 a, run `39414488323`; D-495 b, `39420778882`; D-491, `39439068303`; D-603, D-607 e D-605, `39478711110`; D-609 a D-619 (seis), `39598041230`, 21/10. D-623, C-77, C-78 e C-79, `39635034058`; D-631 e D-631 b, `39665807654`, 21/10. Pendentes: `20261021190000` (C-81, D-633: o histórico de preço da Shopee; o worker vem depois dela, as notificações já o conhecem, D-638), `20261022110000` (C-82, D-635: a loja na preferência de aviso), `20261022120000` (C-80 e C-85, D-637: várias contas e "Precisam de atenção" na `/anuncios`), `20261022130000` (C-83, D-639: o diagnóstico por canal) `20261022140000` (D-643: a venda anômala vira episódio e o acumulado é encerrado), `20261022160000` (D-647: o motivo sem código e a busca da `/anuncios` sem curinga; o worker vem depois dela) e `20261022170000` (D-645: as lojas do TikTok Shop). A api do C-84 (D-641, a Shopee no Copiloto) sai depois do merge, sem migration. Dispara-se depois da CI da `main` do mesmo commit (com a entrada `confirmacao` = ref de produção), segurando merges até o job `origem` passar; aprovações no ambiente; sem `--include-all`; nunca MCP. |
-| **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519: frete e Ads da `/central` no `EstadoDaTela` e o código repetido num lugar só) na `feat/ux-central-bloco4`. Auditoria em `docs/UX_SYSTEM.md` §6. |
+| **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
+| **Supabase** | Dev `nmgccyqquwxecqffsidr` e produção `imvjfgnaprqsfjlnsyev` constavam como `INACTIVE` em 11/11. Consultas leves de catálogo falharam nos dois. O job Dev da CI reportou `project is paused`. |
+| **Produção** | Cloud Run com 100% do tráfego configurado em `api-00038-qsf` e `worker-00056-wjk`, ambas com `APP_COMMIT=dc69d1fb`. O endpoint `/health` da API devolveu 503 em 11/11. O alias da web aponta para o build Vercel da `main` em `d6169205`. |
+| **Migrations** | Último workflow de produção com sucesso observado `39665807654`, até `20261021180000`. O run seguinte conferido (`39817649217`) parou na verificação de origem. A aplicação exige CI do SHA alvo e duas aprovações em `migrations-producao.yml`. |
+| **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
 | **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); C-57 (busca universal com a Shopee, D-467) no ar com a T7 (15/10); C-66 (metas por marketplace, D-473) no ar (16/10); telas T0 a T11 e D-484 a D-632 no ar (21/10; a última, a D-632, a divergência de estoque da Shopee na Central de Ações), com as quatro opções do item 4 do dono feitas: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622, D-624) e os detectores da Shopee (D-626, D-632) — lista na seção do Agente 2 de `docs/MULTICHANNEL_HANDOFF.md`; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
 ### O que está pronto
@@ -32,11 +32,11 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ---
 
-## P0 ativos (trilha 8B)
+## P0 ativos
 
-**Nenhum.** O bloco inteiro fechou — os oito com letra e os três sem (D-177 a D-183,
-D-209 a D-211). História e números: `docs/archive/handoffs/2026-09-17_p0-8b-e-varredura-das-rpcs.md`
-e `docs/PERFORMANCE.md`.
+- **API indisponível no endpoint verificado.** Faturamento de `speedbikers-prod` desativado, `/health` retornou 503 e as consultas ao Scheduler e ao Tasks retornaram `BILLING_DISABLED`. Incidente com o responsável. A auditoria segue no ambiente local. Validar `job_runs` e o backlog após a reativação.
+- **Supabase inacessível nas consultas de auditoria.** Dev e produção reportados inativos. Confirmar recuperação no painel e validar Auth, REST e banco por consultas leves.
+- **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
 ---
 
@@ -207,6 +207,8 @@ Nada disto pode ser feito por um agente.
 ---
 
 ## Próximos passos
+
+- **Sentinel.** 35 achados corrigidos localmente (de 41). Varredura final de antecipação de queries (13/11) confirmou todas as rotas otimizadas. Segunda rodada de dependências (13/11): vitest 4.1.12 + vite >=8.2.4 (1 alto + 4 moderados via launch-editor), hono 4.13.18 (2 moderados no mount/RegExpRouter) e @hono/node-server 2.1.8 (2 moderados em WebSocket e backslash), minimatch >=11.0.1 (moderado via eslint). Único moderado restante: uuid <11.1.1 via GCS/gaxios (sem fix sem major bump; risco negligível — nunca passa `buf`). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

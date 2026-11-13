@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { AdminClient } from "@sb/db";
 import { decryptToken, encryptToken } from "@sb/mercado-livre";
 import { REFRESH_TOKEN_TTL_MS, isDefinitiveRefreshRefusal, refreshAccessToken, type ShopeeClient } from "@sb/shopee";
@@ -14,6 +16,7 @@ import { REFRESH_TOKEN_TTL_MS, isDefinitiveRefreshRefusal, refreshAccessToken, t
  * - credencial que outra execução já renovou volta sem chamar a Shopee;
  * - só a RECUSA DEFINITIVA (`isDefinitiveRefreshRefusal`) marca a loja como
  *   ERROR; rede, 5xx, 429 e timeout são passageiros e a loja segue conectada.
+ *   O UUID da aquisição identifica quem pode gravar ou soltar a trava (D-661).
  */
 
 export interface ShopeeTokenDeps {
@@ -54,9 +57,13 @@ export async function ensureShopeeAccessToken(
   }
 
   // A trava, atômica, devolvendo a credencial do MOMENTO da trava.
+  const lockId = randomUUID();
   const travada = await deps.db
     .from("shopee_credentials")
-    .update({ refresh_locked_until: new Date(now.getTime() + REFRESH_LOCK_MS).toISOString() })
+    .update({
+      refresh_locked_until: new Date(now.getTime() + REFRESH_LOCK_MS).toISOString(),
+      refresh_lock_id: lockId,
+    })
     .eq("shopee_shop_id", loja.id)
     .or(`refresh_locked_until.is.null,refresh_locked_until.lt.${now.toISOString()}`)
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
@@ -67,7 +74,11 @@ export async function ensureShopeeAccessToken(
   }
 
   const soltar = async (): Promise<void> => {
-    await deps.db.from("shopee_credentials").update({ refresh_locked_until: null }).eq("shopee_shop_id", loja.id);
+    await deps.db
+      .from("shopee_credentials")
+      .update({ refresh_locked_until: null, refresh_lock_id: null })
+      .eq("shopee_shop_id", loja.id)
+      .eq("refresh_lock_id", lockId);
   };
 
   // Outra execução renovou entre a leitura e a trava: usa o que ela gravou.
@@ -85,18 +96,27 @@ export async function ensureShopeeAccessToken(
       shopId: loja.shopId,
     });
   } catch (error) {
-    await soltar();
-
     const reason = error instanceof Error ? error.message : "erro desconhecido ao renovar o token da loja";
 
     if (!isDefinitiveRefreshRefusal(error)) {
+      await soltar();
+
       return { ok: false, retryable: true, reason };
     }
 
-    await deps.db
-      .from("shopee_shops")
-      .update({ status: "ERROR", last_error: `A Shopee recusou a renovação do acesso: ${reason}`.slice(0, 2000) })
-      .eq("id", loja.id);
+    const recusada = await deps.db.rpc("shopee_reject_token_refresh", {
+      p_shopee_shop_id: loja.id,
+      p_lock_id: lockId,
+      p_error: `A Shopee recusou a renovação do acesso: ${reason}`,
+    });
+
+    if (recusada.error !== null) {
+      return { ok: false, retryable: true, reason: "não foi possível registrar a recusa da renovação da loja" };
+    }
+
+    if (!recusada.data) {
+      return { ok: false, retryable: true, reason: "a trava de renovação da loja mudou; leia a credencial novamente" };
+    }
 
     return { ok: false, retryable: false, reason };
   }
@@ -109,8 +129,12 @@ export async function ensureShopeeAccessToken(
       access_token_expires_at: new Date(now.getTime() + token.expire_in * 1000).toISOString(),
       refresh_token_expires_at: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS).toISOString(),
       refresh_locked_until: null,
+      refresh_lock_id: null,
     })
-    .eq("shopee_shop_id", loja.id);
+    .eq("shopee_shop_id", loja.id)
+    .eq("refresh_lock_id", lockId)
+    .select("shopee_shop_id")
+    .maybeSingle();
 
   if (gravada.error !== null) {
     // O refresh_token antigo já foi consumido e o novo não ficou gravado: sem
@@ -120,6 +144,10 @@ export async function ensureShopeeAccessToken(
       retryable: false,
       reason: `o token renovado da loja não pôde ser gravado (${gravada.error.message}); a loja precisa ser conectada de novo`,
     };
+  }
+
+  if (gravada.data === null) {
+    return { ok: false, retryable: true, reason: "a trava de renovação da loja mudou; leia a credencial novamente" };
   }
 
   return { ok: true, accessToken: token.access_token };

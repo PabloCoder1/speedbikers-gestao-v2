@@ -2165,6 +2165,7 @@ export type Database = {
           created_at: string
           encryption_key_version: number
           ml_account_id: string
+          refresh_lock_id: string | null
           refresh_locked_until: string | null
           refresh_token_ciphertext: string
           scopes: string[] | null
@@ -2176,6 +2177,7 @@ export type Database = {
           created_at?: string
           encryption_key_version?: number
           ml_account_id: string
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext: string
           scopes?: string[] | null
@@ -2187,6 +2189,7 @@ export type Database = {
           created_at?: string
           encryption_key_version?: number
           ml_account_id?: string
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext?: string
           scopes?: string[] | null
@@ -3369,6 +3372,7 @@ export type Database = {
           access_token_expires_at: string
           created_at: string
           encryption_key_version: number
+          refresh_lock_id: string | null
           refresh_locked_until: string | null
           refresh_token_ciphertext: string
           refresh_token_expires_at: string
@@ -3380,6 +3384,7 @@ export type Database = {
           access_token_expires_at: string
           created_at?: string
           encryption_key_version?: number
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext: string
           refresh_token_expires_at: string
@@ -3391,6 +3396,7 @@ export type Database = {
           access_token_expires_at?: string
           created_at?: string
           encryption_key_version?: number
+          refresh_lock_id?: string | null
           refresh_locked_until?: string | null
           refresh_token_ciphertext?: string
           refresh_token_expires_at?: string
@@ -5285,6 +5291,8 @@ export type Database = {
       support_reply_attempts: {
         Row: {
           client_request_id: string
+          dispatch_queue: string | null
+          dispatch_started_at: string | null
           error_code: string | null
           error_message: string | null
           final_text: string
@@ -5301,6 +5309,8 @@ export type Database = {
         }
         Insert: {
           client_request_id: string
+          dispatch_queue?: string | null
+          dispatch_started_at?: string | null
           error_code?: string | null
           error_message?: string | null
           final_text: string
@@ -5317,6 +5327,8 @@ export type Database = {
         }
         Update: {
           client_request_id?: string
+          dispatch_queue?: string | null
+          dispatch_started_at?: string | null
           error_code?: string | null
           error_message?: string | null
           final_text?: string
@@ -6625,6 +6637,53 @@ export type Database = {
         }
         Returns: string
       }
+      ml_connect_account: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_ml_account_id: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_scopes: string[]
+          p_seller_id: number
+        }
+        Returns: string | null
+      }
+      ml_reject_token_refresh: {
+        Args: { p_error: string; p_lock_id: string; p_ml_account_id: string }
+        Returns: boolean
+      }
+      shopee_connect_shops: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_created_by: string | null
+          p_environment: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_refresh_token_expires_at: string
+          p_shops: Json
+        }
+        Returns: undefined
+      }
+      tiktok_connect_shops: {
+        Args: {
+          p_access_token_ciphertext: string
+          p_access_token_expires_at: string
+          p_connected_at: string
+          p_created_by: string | null
+          p_granted_scopes: string[] | null
+          p_open_id: string
+          p_organization_id: string
+          p_refresh_token_ciphertext: string
+          p_refresh_token_expires_at: string
+          p_seller_name: string | null
+          p_shops: Json
+        }
+        Returns: undefined
+      }
       shopee_items_details_pending: {
         Args: { p_limit?: number; p_shopee_shop_id: string }
         Returns: {
@@ -6649,6 +6708,12 @@ export type Database = {
       shopee_advance_orders_synced_until: {
         Args: { p_shopee_shop_id: string; p_until: string }
         Returns: string
+      }
+      shopee_reject_token_refresh: {
+        Args:
+          | { p_error: string; p_lock_id: string; p_shopee_shop_id: string }
+          | { p_error: string; p_locked_until: string; p_shopee_shop_id: string }
+        Returns: boolean
       }
       shopee_resolve_order_item_skus: {
         Args: { p_order_sns?: string[] | null; p_shopee_shop_id: string }

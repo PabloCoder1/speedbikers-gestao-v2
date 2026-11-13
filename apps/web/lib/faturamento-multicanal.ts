@@ -296,7 +296,7 @@ type ChaveDoComponente =
  * A proteção de envio (D-483, D-492) era o "outros" inteiro na leitura real e
  * ganhou degrau próprio, logo antes dele.
  */
-export const COMPONENTES_DO_RECEBIDO: readonly { chave: ChaveDoComponente; rotulo: string }[] = [
+const COMPONENTES_DO_RECEBIDO: readonly { chave: ChaveDoComponente; rotulo: string }[] = [
   { chave: "comissao", rotulo: "Comissão da Shopee" },
   { chave: "taxa_servico", rotulo: "Taxa de serviço" },
   { chave: "taxa_transacao", rotulo: "Taxa de transação" },
@@ -317,7 +317,7 @@ function faixa(a: number, b: number): { inicio: number; largura: number } {
 }
 
 /** O degrau da D-485: o mesmo nome da linha informativa que ele substitui. */
-export const AJUSTES_DEPOIS_DO_REPASSE = "Ajustes depois do repasse";
+const AJUSTES_DEPOIS_DO_REPASSE = "Ajustes depois do repasse";
 
 export interface CascataShopee {
   readonly degraus: DegrauDaCascata[];

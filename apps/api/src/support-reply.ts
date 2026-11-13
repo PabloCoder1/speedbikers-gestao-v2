@@ -1,4 +1,4 @@
-import type { AdminClient } from "@sb/db";
+import type { AdminClient, Tables } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
@@ -63,6 +63,20 @@ interface CaseRow {
   external_case_id: string;
   ml_accounts: { slug: string } | null;
 }
+
+type ReplyAttempt = Pick<
+  Tables<"support_reply_attempts">,
+  | "id"
+  | "status"
+  | "error_message"
+  | "support_case_id"
+  | "ml_account_id"
+  | "requested_by"
+  | "final_text"
+  | "suggested_text"
+  | "dispatch_queue"
+  | "dispatch_started_at"
+>;
 
 export async function requestSupportReply(
   deps: SupportReplyDeps,
@@ -135,41 +149,62 @@ export async function requestSupportReply(
     return { status: "invalid", reason: "identificador remoto da pergunta inválido" };
   }
 
-  const slug = supportCase.ml_accounts?.slug;
-
-  if (slug === undefined) {
-    return { status: "error", reason: "conta sem slug para resolver a fila" };
-  }
-
-  // Idempotência antes de qualquer coisa: uma segunda confirmação com a mesma
-  // chave nunca chega ao worker, logo nunca chega ao Mercado Livre.
-  const existing = await deps.db
+  const findAttempt = () => deps.db
     .from("support_reply_attempts")
-    .select("id, status, error_message")
+    .select("id, status, error_message, support_case_id, ml_account_id, requested_by, final_text, suggested_text, dispatch_queue, dispatch_started_at")
     .eq("organization_id", caller.organizationId)
     .eq("client_request_id", request.clientRequestId)
     .maybeSingle();
+
+  const resume = (attempt: ReplyAttempt): SupportReplyOutcome | Promise<SupportReplyOutcome> => {
+    if (attempt.support_case_id !== supportCase.id ||
+        attempt.ml_account_id !== supportCase.ml_account_id ||
+        attempt.requested_by !== caller.userId ||
+        attempt.final_text !== request.text ||
+        attempt.suggested_text !== (request.suggestedText ?? null)) {
+      return { status: "invalid", reason: "chave de confirmação já usada para outra resposta" };
+    }
+
+    if (attempt.status === "SUCCEEDED") {
+      return { status: "already_sent", attemptId: attempt.id };
+    }
+
+    if (attempt.status === "PENDING") {
+      // O legado e o envio já iniciado têm desfecho incerto. Só a tentativa
+      // que usa a trava do worker e ainda não chegou ao POST pode retomar a fila.
+      if (attempt.dispatch_queue === null || attempt.dispatch_started_at !== null) {
+        return { status: "in_flight", attemptId: attempt.id };
+      }
+
+      return enqueueReply(deps, supportCase, questionId, attempt.id, attempt.dispatch_queue);
+    }
+
+    return {
+      status: "previously_failed",
+      attemptId: attempt.id,
+      reason: attempt.error_message ?? "tentativa anterior falhou",
+    };
+  };
+
+  const existing = await findAttempt();
 
   if (existing.error !== null) {
     return { status: "error", reason: existing.error.message };
   }
 
   if (existing.data !== null) {
-    if (existing.data.status === "SUCCEEDED") {
-      return { status: "already_sent", attemptId: existing.data.id };
-    }
-
-    if (existing.data.status === "PENDING") {
-      return { status: "in_flight", attemptId: existing.data.id };
-    }
-
-    return {
-      status: "previously_failed",
-      attemptId: existing.data.id,
-      reason: existing.data.error_message ?? "tentativa anterior falhou",
-    };
+    return resume(existing.data);
   }
 
+  const slug = supportCase.ml_accounts?.slug;
+
+  if (slug === undefined) {
+    return { status: "error", reason: "conta sem slug para resolver a fila" };
+  }
+
+  // O envio compartilha o rate limit da conta com as sincronizações (D-036).
+  // Guardar a fila mantém o nome completo da task estável em um retry.
+  const queue = `ml-sync-${slug}`;
   const attempt = await deps.db
     .from("support_reply_attempts")
     .insert({
@@ -180,6 +215,7 @@ export async function requestSupportReply(
       requested_by: caller.userId,
       final_text: request.text,
       suggested_text: request.suggestedText ?? null,
+      dispatch_queue: queue,
       status: "PENDING",
       requested_at: now.toISOString(),
     })
@@ -187,37 +223,50 @@ export async function requestSupportReply(
     .single();
 
   if (attempt.error !== null) {
-    // 23505 é corrida com outra requisição do MESMO `clientRequestId`: a outra
-    // ganhou, e enfileirar aqui produziria a segunda resposta que a chave
-    // existe para impedir.
-    if (attempt.error.code === "23505") {
-      return { status: "in_flight", attemptId: "" };
+    if (attempt.error.code !== "23505") {
+      return { status: "error", reason: attempt.error.message };
     }
 
-    return { status: "error", reason: attempt.error.message };
+    // Mesmo ID pode retomar a tentativa vencedora. O índice parcial por caso
+    // também pode colidir com outro ID, que continua responsável pelo envio.
+    const winner = await findAttempt();
+    if (winner.error !== null) {
+      return { status: "error", reason: winner.error.message };
+    }
+
+    return winner.data === null ? { status: "in_flight", attemptId: "" } : resume(winner.data);
   }
 
-  const attemptId = attempt.data.id;
+  return enqueueReply(deps, supportCase, questionId, attempt.data.id, queue);
+}
 
-  const enqueued = await deps.enqueuer.enqueue({
-    jobType: "support.reply.send",
-    organizationId: supportCase.organization_id,
-    // A chave do envio é a chave da task: mesmo com retry de rede do
-    // navegador, o Cloud Tasks colapsa em uma execução só.
-    dedupeKey: `support-reply:${request.clientRequestId}`,
-    // Fila da conta: o envio fala com o Mercado Livre e disputa o mesmo rate
-    // limit das sincronizações daquela conta (D-036).
-    queue: `ml-sync-${slug}`,
-    payload: { attemptId },
-  });
+async function enqueueReply(
+  deps: SupportReplyDeps,
+  supportCase: CaseRow,
+  questionId: number,
+  attemptId: string,
+  queue: string,
+): Promise<SupportReplyOutcome> {
+  try {
+    const enqueued = await deps.enqueuer.enqueue({
+      jobType: "support.reply.send.v2",
+      organizationId: supportCase.organization_id,
+      dedupeKey: `support-reply:${attemptId}`,
+      queue,
+      payload: { attemptId },
+    });
 
-  deps.logger.info("support_reply_queued", {
-    attempt_id: attemptId,
-    support_case_id: supportCase.id,
-    question_id: questionId,
-    // O TEXTO da resposta nunca entra no log — é conteúdo de atendimento.
-    deduplicated: enqueued.deduplicated,
-  });
+    deps.logger.info("support_reply_queued", {
+      attempt_id: attemptId,
+      support_case_id: supportCase.id,
+      question_id: questionId,
+      deduplicated: enqueued.deduplicated,
+    });
 
-  return { status: "queued", attemptId };
+    return { status: enqueued.deduplicated ? "in_flight" : "queued", attemptId };
+  } catch {
+    deps.logger.warn("support_reply_enqueue_unconfirmed", { attempt_id: attemptId, queue });
+
+    return { status: "error", reason: "enfileiramento da resposta não confirmado" };
+  }
 }

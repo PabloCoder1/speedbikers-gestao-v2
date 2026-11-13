@@ -1543,3 +1543,306 @@ O cálculo diário lê a `daily_listing_metrics` da organização.
 **Produção, 18 a 28/09:** 171.997 UPDATEs para ~6,4 mil mensagens (~27 regravações por linha): cada sincronização de caso faz upsert do transcript inteiro, com `observed_at` novo. Gatilho `support_messages_a_skip_unchanged` (migration `20260928170000`) pula a atualização quando só `observed_at`/`updated_at` mudariam. Ensaio no Dev: upsert idêntico manteve o `xmin`; conteúdo mudado gravou. Fica para medir depois do deploy: `n_tup_upd` e `n_dead_tup` de `support_messages` no `pg_stat_user_tables`. `listings` (~34 por linha) regrava por desenho -- cada captura grava `synced_at`, que a tela usa -- e `support_cases` ficou de fora porque o `update` do worker depende do `RETURNING`.
 
 **`get_link_integrity` em produção, depois da migration (28/09, como `authenticated`, transação só de leitura):** 3.093 ms a frio (12 mil blocos lidos do disco) e **629 ms** na repetição -- antes chegava a 7.540 ms no `pg_stat_statements`. Sobra um despejo pequeno (524 blocos temporários), candidato a `work_mem` se voltar a crescer.
+
+### Chamadas de Auth na renderização inicial (Sentinel A11, 11/11/2026)
+
+Ensaio local no código `3dce1b19`, Node 24.20.0 e Next 16.4.1 em `next dev --webpack`, com Auth e REST simulados por HTTP em loopback. O contador registra apenas `GET /auth/v1/user`. Para cada rota, 20 requisições HTML sequenciais depois da primeira renderização, alternando dois usuários sintéticos. O tempo inclui o corpo inteiro da resposta local. A simulação não mede latência de produção, RLS ou navegação no cliente.
+
+| Rota | GETs de Auth por requisição | p50 local | p95 local |
+|---|---:|---:|---:|
+| `/acoes` | 2 | 249,7 ms | 297,1 ms |
+| `/atendimento` | 2 | 293,4 ms | 372,3 ms |
+| `/configuracoes` | 2 | 312,4 ms | 420,8 ms |
+
+Em `/acoes` e `/atendimento`, o proxy, o Shell e a página têm chamadas explícitas a `getUser()`. O Next deduplica o GET do Shell e da página na mesma renderização RSC. Um segundo cache em React manteria as duas chamadas observadas, uma no proxy e outra na renderização. As respostas de duas requisições concorrentes com identidades diferentes renderizaram apenas o perfil de cada titular. Sem sessão, houve 307 e zero chamadas ao Auth ou REST. Com JWT rejeitado pelo simulador, houve um GET de Auth, 307 e zero chamadas REST. A otimização no proxy tem acompanhamento próprio. [PR #312](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/312)
+
+### Idas ao PostgREST para gravar OAuth multicanal (D-657)
+
+A inspeção dos callbacks e os testes de contrato mostram uma chamada de persistência por lote. Antes, após consumir o state, eram uma leitura de proprietário e duas escritas por loja, totalizando três chamadas para uma loja e cinco para duas. A troca do código e a leitura dos metadados no marketplace são etapas separadas. A contagem descreve o caminho local e não estima latência de produção.
+
+### Mensagens transferidas na lista de Perguntas (Sentinel A19, 12/11/2026)
+
+No PostgREST local, um caso sintético com 1.000 eventos de sistema seguidos de duas mensagens recebidas reproduziu a perda da pergunta. A consulta de mensagens devolveu 1.000 linhas, todas de sistema. Com D-664, o embed na consulta dos casos devolveu uma mensagem para esse cartão e zero para o caso sem transcript. A web retirou uma chamada PostgREST do carregamento de uma lista com casos. O ensaio mede chamadas e volume retornado com dados sintéticos. A latência com carga de produção continua pendente.
+
+### Tamanho da leitura da conversa no SAC (Sentinel A20, 12/11/2026)
+
+Com 1.050 mensagens sintéticas, o detalhe antigo atingia o teto de 1.000 linhas do PostgREST e omitia a última mensagem. D-665 pede até 51 linhas e renderiza até 50 em cada navegação, com data e ID como cursor. O Playwright verifica o limite exibido, a ordem nos empates e a chegada de uma mensagem enquanto o operador está numa página anterior. A medição cobre volume local.
+
+### RPCs de saúde da sincronização (12/11/2026)
+
+PostgreSQL local com D-666, 40.000 `sync_runs`, 60.000 `job_runs` e 540 métricas diárias sintéticas. O ADMIN administra duas contas, com 30.000 execuções de sincronização e 40.000 jobs. O GESTOR tem acesso a uma dessas contas. A terceira conta pertence a outra organização. Uma passagem de aquecimento e cinco medições por RPC e papel com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` como `authenticated`.
+
+| RPC | ADMIN · linhas / mediana / blocos | GESTOR · linhas / mediana / blocos |
+| --- | --- | --- |
+| `get_sync_health` | 18 / 65,46 ms / 2.649 | 9 / 39,84 ms / 2.655 |
+| `get_processing_health` | 2 / 0,97 ms / 78 | 1 / 1,12 ms / 69 |
+| `get_job_failures(7, 30)` | 7 / 2,05 ms / 478 | 0 / 0,39 ms / 2 |
+
+Os blocos compartilhados são os hits mais as leituras da terceira execução medida. O plano externo mostra `Function Scan`. O corpo de `get_sync_health` consulta `sync_runs` para última execução, último sucesso e contagens de 24 h. Comparar uma agregação que compartilhe a leitura sob RLS, preservando o tratamento de `partial` e `latest_record_at`.
+
+### Uma agregação em get_sync_health (Sentinel A22, 12/11/2026)
+
+Comparação local das três versões em transações revertidas. Dois terços das contas pertencem à organização consultada, com 75% das linhas. O ADMIN alcança as duas contas da organização. O GESTOR alcança uma. Foram usadas sete execuções por variante e papel, com ordem alternada e uma execução de aquecimento, por `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. As contagens da tabela abaixo são medianas de blocos compartilhados. Os fixtures incluíram execuções parciais, falhas e valores nulos.
+
+| Linhas sintéticas | Papel | Antes · mediana / blocos | D-667 · mediana / blocos |
+| ---: | --- | --- | --- |
+| 4.000 | ADMIN | 7,75 ms / 294 | 2,69 ms / 162 |
+| 4.000 | GESTOR | 5,14 ms / 300 | 2,07 ms / 140 |
+| 40.000 | ADMIN | 68,82 ms / 2.938 | 16,39 ms / 1.061 |
+| 40.000 | GESTOR | 38,97 ms / 2.944 | 10,43 ms / 1.030 |
+| 200.000 | ADMIN | 363,59 ms / 16.161 | 74,85 ms / 5.469 |
+| 200.000 | GESTOR | 214,42 ms / 16.167 | 47,64 ms / 5.438 |
+
+A variante com `row_number()` levou 69,43 ms para ADMIN com 40 mil linhas e tocou 847 blocos temporários. A consulta escolhida usou zero blocos temporários nos seis cenários. O plano do corpo em 40 mil linhas mostrou uma varredura de `sync_runs` e buscas pontuais em `sync_runs_freshness_idx`, 18 para ADMIN e nove para GESTOR. `EXCEPT ALL` em ambos os sentidos produziu zero diferenças para cada papel e para a organização alheia. A publicação ainda exige validação com a carga real.
+
+### Janela Shopee no resumo de cobertura (Sentinel A23, 12/11/2026)
+
+Comparação de `get_stock_coverage_summary` com 60 mil pedidos sintéticos ao longo de 365 dias, um item por pedido, lojas live e sandbox e duas organizações. O ADMIN alcança duas lojas live, com 50 mil pedidos. O GESTOR alcança uma, com 30 mil pedidos. Os dados incluem pedidos cancelados, não pagos e SKUs exclusivos por loja. Sete execuções por variante e papel em ordem alternada, após um aquecimento, com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. Tempos e blocos compartilhados são medianas da RPC completa.
+
+| Janela | Papel | Antes · mediana / blocos | D-668 · mediana / blocos |
+| ---: | --- | --- | --- |
+| 7 dias | ADMIN | 27,07 ms / 7.400 | 5,37 ms / 3.475 |
+| 7 dias | GESTOR | 19,82 ms / 4.946 | 4,10 ms / 2.171 |
+| 30 dias | ADMIN | 38,14 ms / 25.172 | 13,10 ms / 14.316 |
+| 30 dias | GESTOR | 24,28 ms / 14.642 | 8,83 ms / 8.704 |
+| 90 dias | ADMIN | 64,49 ms / 71.588 | 31,90 ms / 42.629 |
+| 90 dias | GESTOR | 37,78 ms / 39.962 | 20,91 ms / 25.765 |
+| 365 dias | ADMIN | 187,69 ms / 284.312 | 126,77 ms / 173.094 |
+| 365 dias | GESTOR | 103,40 ms / 155.996 | 75,78 ms / 104.662 |
+
+No corpo da consulta de 30 dias, a leitura de `shopee_orders` passou de `Seq Scan` a `Bitmap Heap Scan` para os dois papéis. O `Bitmap Index Scan` em `shopee_orders_org_created_idx` selecionou 4.521 entradas pela organização e pelos dois limites de horário. `EXCEPT ALL` nos dois sentidos conferiu as unidades da Shopee por SKU e as contagens da RPC nas quatro janelas. A RPC também coincidiu para filtro de marca, organização alheia e limites invertidos ou nulos. O ensaio foi revertido. A medição em produção depende da publicação e da disponibilidade do ambiente.
+
+### Faturamento do ML com e sem detalhe sob RLS (Sentinel, 13/11/2026)
+
+Medição da RPC `get_faturamento` com a definição de D-499, após o replay local das migrations até D-668. Foram usados 60 mil pedidos e 62.608 linhas de venda sintéticas em 120 dias, 1.500 SKUs por organização, kits, histórico de custo, alíquotas com vigência e pedidos com SKU ou frete ausentes. ADMIN alcançou as duas contas da organização, com 50 mil pedidos. GESTOR alcançou apenas uma, com 30 mil. Os outros 10 mil pedidos pertenciam a outra organização. Cada combinação teve um aquecimento e cinco medições por variante, em ordem alternada, com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` sob `authenticated`.
+
+| Papel | Conta selecionada | Janela | Pedidos no recorte | Sem detalhe · ms / blocos | Com detalhe · ms / blocos |
+| --- | --- | ---: | ---: | ---: | ---: |
+| ADMIN | Todas | 7 dias | 2.916 | 28,6 / 2.098 | 40,3 / 2.532 |
+| ADMIN | Todas | 30 dias | 12.500 | 106,2 / 2.152 | 139,5 / 2.586 |
+| ADMIN | Todas | 90 dias | 37.500 | 338,7 / 2.090 | 419,4 / 2.524 |
+| ADMIN | Uma | 7 dias | 1.750 | 20,9 / 2.098 | 28,5 / 2.532 |
+| ADMIN | Uma | 30 dias | 7.500 | 67,3 / 2.152 | 88,8 / 2.586 |
+| ADMIN | Uma | 90 dias | 22.500 | 192,5 / 2.090 | 251,4 / 2.524 |
+| GESTOR | Todas | 7 dias | 1.750 | 28,4 / 2.101 | 32,5 / 2.540 |
+| GESTOR | Todas | 30 dias | 7.500 | 62,5 / 2.155 | 85,6 / 2.594 |
+| GESTOR | Todas | 90 dias | 22.500 | 208,7 / 2.093 | 300,8 / 2.532 |
+| GESTOR | Uma | 7 dias | 1.750 | 20,3 / 2.101 | 27,6 / 2.540 |
+| GESTOR | Uma | 30 dias | 7.500 | 64,0 / 2.155 | 88,7 / 2.594 |
+| GESTOR | Uma | 90 dias | 22.500 | 194,4 / 2.093 | 253,6 / 2.532 |
+
+Tempos e blocos compartilhados são medianas. Todas as execuções medidas tiveram zero blocos temporários. O `resumo` coincidiu com e sem detalhe nas 12 combinações. A variante sem detalhe devolveu `null` em `diario`, `por_conta` e `por_sku`. Contas sem permissão devolveram zero pedidos. No plano direto do corpo para ADMIN em 90 dias, `classificado` processou 37.500 pedidos e acumulou 191,5 a 220,2 ms, contra 19,6 a 21,4 ms da varredura de `ml_sales_lines`. `por_sku_base` levou 57,5 ms com detalhe e teve zero execuções sem detalhe. Esses tempos de nós incluem seus filhos. A classificação por pedido é o primeiro ponto a investigar para reduzir o custo comum. Os números são locais e os dados sintéticos foram revertidos.
+
+### Contagem de compras no faturamento do ML (Sentinel A26, 13/11/2026)
+
+Com a mesma distribuição de 60 mil pedidos e 62.608 linhas sintéticas, o ensaio comparou quatro versões na mesma transação. A versão de D-499 foi comparada com a junção direta de custo no agrupamento dos pedidos, com a contagem numérica de compras e com a combinação das duas mudanças. O JSON completo coincidiu para ADMIN e GESTOR em 36 combinações de janela, conta e detalhe. A seleção incluiu uma conta permitida, todas as visíveis e uma fora do escopo. As medianas abaixo vêm de sete execuções intercaladas após o aquecimento em cada cenário.
+
+| Papel | Conta | Janela | Antes → D-669 sem detalhe | Antes → D-669 com detalhe |
+| --- | --- | ---: | ---: | ---: |
+| ADMIN | Todas | 7 dias | 32,93 → 29,99 ms | 39,32 → 37,22 ms |
+| ADMIN | Todas | 30 dias | 114,51 → 97,91 ms | 128,96 → 113,49 ms |
+| ADMIN | Todas | 90 dias | 314,32 → 271,82 ms | 365,60 → 326,82 ms |
+| ADMIN | Uma | 90 dias | 192,68 → 172,34 ms | 231,40 → 221,51 ms |
+| GESTOR | Todas | 7 dias | 22,16 → 18,94 ms | 36,47 → 32,00 ms |
+| GESTOR | Todas | 30 dias | 66,61 → 60,88 ms | 77,05 → 76,36 ms |
+| GESTOR | Todas | 90 dias | 202,60 → 185,08 ms | 211,54 → 199,64 ms |
+| GESTOR | Uma | 90 dias | 171,64 → 157,85 ms | 213,00 → 190,38 ms |
+
+Os blocos compartilhados foram iguais entre a versão original e D-669 nas 16 medições de cenário. Ambas tiveram zero blocos temporários. A junção direta de custo reduziu seis blocos no ensaio, mas elevou a mediana de 365,60 ms para 406,98 ms em 90 dias com detalhe para ADMIN. A combinação ficou em 358,95 ms nesse cenário. Foi versionada apenas a contagem numérica, que apresentou medianas menores nos 16 cenários. O ensaio foi revertido e o ganho com carga de produção ainda precisa ser medido.
+
+### Chamadas de faturamento por carga da Central (Sentinel, 13/11/2026)
+
+Ensaio no build local de `39ed8045` com as 314 migrations aplicadas, sessão autenticada no Chromium e requisições reais ao PostgREST local. O rastreio no processo Next registrou nome da RPC, período, detalhe, conta e status HTTP. Foram três cargas completas por combinação de papel e recorte, mais uma carga com conta sem concessão.
+
+| Recorte de `/central` | Cargas | `get_faturamento` | `get_ads_overview` | `get_shopee_faturamento` |
+| --- | ---: | ---: | ---: | ---: |
+| Todas as contas visíveis, ADMIN e GESTOR | 6 | 2 | 2 | 1 |
+| Uma conta permitida, ADMIN e GESTOR | 6 | 2 | 2 | 0 |
+| Conta sem concessão, GESTOR | 1 | 2 | 2 | 1 |
+
+As quantidades são por carga. As duas chamadas do ML cobriram 15–21/10 e 08–14/10/2026. O faturamento do período atual pediu detalhe e o anterior pediu o resumo. Com conta selecionada, as quatro chamadas do ML receberam o UUID da conta. No recorte consolidado, indicadores, alertas e o bloco por marketplace compartilharam a resposta atual do ML. A única chamada de faturamento adicional foi da Shopee para o período atual. Quando o slug não estava visível ao GESTOR, a página usou o recorte consolidado sob RLS. As RPCs rastreadas retornaram HTTP 200. A concessão temporária da conta ao GESTOR foi removida após o ensaio.
+
+### Início das consultas do período em Faturamento (Sentinel A27, 13/11/2026)
+
+Chromium autenticado, build de produção local e PostgREST local com 314 migrations. O rastreio de `fetch` no servidor adicionou 150 ms à resposta da lista de contas ML e 350 ms à resposta da contagem de lojas Shopee. Em cada versão foram cinco cargas medidas e uma de aquecimento por recorte, intercaladas entre os três recortes. O tempo abaixo vai do início da primeira leitura de contas ou lojas até a saída da primeira RPC do período. Os números descrevem o ensaio controlado.
+
+| Recorte do ML | Antes · mediana | D-670 · mediana |
+| --- | ---: | ---: |
+| Todas as contas visíveis, sem slug na URL | 367 ms | 2 ms |
+| Conta permitida na URL | 372 ms | 169 ms |
+| Slug desconhecido na URL | 369 ms | 178 ms |
+
+Em todas as cargas, a versão anterior iniciou as três RPCs depois das duas respostas do cabeçalho. Com D-670, as três saíram antes da resposta de Shopee em todos os recortes. No consolidado, saíram também antes da lista de contas. Quando a URL trazia um slug, esperaram apenas a lista. As duas chamadas de `get_faturamento` e a de `get_ads_overview` conservaram período, detalhe e filtro por conta. A latência percebida em produção continua pendente de medição.
+
+### Início das consultas de Faturamento nos recortes Shopee e Todos (Sentinel A28, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio do servidor adicionou 125 ms à resposta da associação à organização e 350 ms à lista de contas e lojas. Cada versão teve cinco cargas medidas e uma de aquecimento por recorte. O tempo vai do início da primeira leitura de organização ou lista até a primeira RPC de faturamento, Ads ou repasse.
+
+| Recorte | RPCs por carga | Antes · mediana | D-671 · mediana |
+| --- | ---: | ---: | ---: |
+| Todos | 3 | 367 ms | 151 ms |
+| Shopee, todas as lojas visíveis | 11 | 372 ms | 150 ms |
+| Shopee, uma loja permitida | 11 | 374 ms | 378 ms |
+| Shopee, loja inexistente na URL | 11 | 372 ms | 381 ms |
+
+Antes, todas as RPCs saíam depois das duas respostas. Com D-671, em Todos e na Shopee sem filtro, saíram depois da organização e antes da lista. Nos dois cenários com loja na URL, continuaram esperando a lista. Todas retornaram HTTP 200 com os mesmos períodos, organização e filtros de loja. O recorte com loja inexistente exibiu o aviso e consultou todas as lojas visíveis. Os tempos são do ensaio controlado. O ganho percebido na navegação em produção ainda precisa ser medido.
+
+### Início das consultas de Vendas multicanal (Sentinel A29, 13/11/2026)
+
+Chromium autenticado como ADMIN e PostgREST local. No processo Next, o ensaio adicionou 125 ms à associação à organização, 250 ms à lista de contas e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. A mediana mede o intervalo entre o início da primeira leitura do cabeçalho e a saída da primeira RPC de Vendas.
+
+| Recorte | Antes | D-672 |
+| --- | ---: | ---: |
+| Todos, sem filtro de conta | 467 ms | 149 ms |
+| Shopee, sem filtro de conta | 462 ms | 143 ms |
+| Todos, com uma conta permitida | 468 ms | 274 ms |
+| Shopee, com loja inexistente na URL | 472 ms | 282 ms |
+| Todos, com o filtro Sem marca | 464 ms | 146 ms |
+
+As primeiras páginas das séries e as demais RPCs iniciaram antes da resposta dos filtros salvos nos cinco recortes. Só os recortes com seleção na URL esperaram pela lista de contas. O rastreio conferiu os mesmos períodos, organização, marketplaces, conta e marca. Sem marca fez duas chamadas de cancelamento a menos que o recorte sem filtro de marca, como previsto. A série diária manteve a paginação até receber uma página vazia. A medição é local, com atrasos controlados.
+
+### Fim da paginação nas séries de Vendas (Sentinel A30, 13/11/2026)
+
+PostgREST local autenticado, 1.461 métricas diárias sintéticas do ML e sete medições intercaladas por variante após aquecimento. Comparação da página vazia com `count=exact` na primeira resposta. As linhas coincidiram nos períodos vazios, de 7, 30 e 90 dias, e no período de quatro anos, inclusive ao solicitar páginas de 300 linhas.
+
+| Série | Janela | Chamadas antes → D-673 | Mediana antes → D-673 |
+| --- | ---: | ---: | ---: |
+| ML | 7 dias | 2 → 1 | 31,68 → 15,64 ms |
+| ML | 30 dias | 2 → 1 | 30,02 → 15,69 ms |
+| ML | 90 dias | 2 → 1 | 30,27 → 15,08 ms |
+| Multicanal | 7 dias | 2 → 1 | 31,34 → 20,89 ms |
+| Multicanal | 30 dias | 2 → 1 | 33,51 → 21,83 ms |
+| Multicanal | 90 dias | 2 → 1 | 38,01 → 34,30 ms |
+
+O intervalo vazio precisou de uma chamada nas duas versões. Pedir contagem em períodos longos sem aproveitar o total nas páginas seguintes trouxe custo sem reduzir chamadas. D-673 restringe a contagem a janelas de até 90 dias. O teste unitário com servidor limitado a 300 linhas confirmou que uma primeira resposta parcial preserva todos os dados. A latência com carga real segue pendente.
+
+### Início das consultas de Vendas do Mercado Livre (Sentinel A31, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. O rastreio no Next acrescentou 125 ms à associação à organização, 250 ms à lista de contas ML, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC de vendas · antes → D-674 | Lista de marcas · antes → D-674 |
+| --- | ---: | ---: |
+| Todas as contas | 468 → 1 ms | 470 → 174 ms |
+| Uma conta permitida | 464 → 277 ms | 466 → 150 ms |
+| Slug desconhecido | 464 → 278 ms | 465 → 152 ms |
+| Todas as contas, filtro Sem marca | 466 → 1 ms | 466 → 177 ms |
+
+As nove chamadas conservaram os argumentos e retornaram sucesso. Sem slug, as consultas de vendas saíram antes da organização e da lista de contas. Com slug, aguardaram a lista e enviaram o UUID só quando a conta estava visível. A consulta de marcas aguardou a organização. Os tempos medem o início das requisições no ensaio controlado. A latência percebida em produção segue pendente.
+
+### Início das consultas de Anúncios do Mercado Livre (Sentinel A32, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. O rastreio acrescentou 125 ms à associação à organização, 250 ms à lista de contas do ML, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC · antes → D-675 |
+| --- | ---: |
+| Todas as contas | 467 → 151 ms |
+| Uma conta permitida | 470 → 283 ms |
+| Slug desconhecido | 472 → 272 ms |
+| Busca e estado ativo, janela de sete dias | 470 → 156 ms |
+
+`get_listings_dashboard` e `get_listings_dashboard_counts` retornaram HTTP 200. A comparação conferiu todos os argumentos das duas RPCs nas 40 cargas medidas. Ambas passaram a sair antes dos filtros salvos e da contagem de lojas Shopee. Com slug, aguardaram a lista de contas visíveis. A busca foi enviada às duas RPCs e o estado só à lista. Os números medem o início das requisições sob atrasos controlados. A latência percebida em produção segue pendente.
+
+### Início das consultas de Anúncios da Shopee (Sentinel A33, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio adicionou 125 ms à associação à organização, 250 ms à lista de lojas, 350 ms à contagem de contas ML e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC · antes → D-676 |
+| --- | ---: |
+| Todas as lojas visíveis | 473 → 272 ms |
+| Uma loja permitida | 471 → 276 ms |
+| Loja desconhecida na URL | 468 → 275 ms |
+| Busca e estado Sem SKU, janela de sete dias | 473 → 279 ms |
+
+`get_shopee_listings` e `get_shopee_listings_summary` retornaram HTTP 200 e receberam os mesmos argumentos nas 40 cargas medidas. As chamadas passaram a sair depois da organização e das lojas e antes da contagem de contas ML e dos filtros salvos. Uma carga adicional como GESTOR, sem concessão de loja, exibiu o aviso de catálogo vazio e fez zero chamadas a essas duas RPCs. A latência percebida em produção segue pendente.
+
+### Início das consultas de Vendas da Shopee (Sentinel A34, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio adicionou 125 ms à associação à organização, 250 ms à lista de lojas, 350 ms à contagem de contas ML e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC · antes → D-677 |
+| --- | ---: |
+| Todas as lojas visíveis | 471 → 279 ms |
+| Uma loja permitida | 466 → 281 ms |
+| Loja desconhecida na URL | 474 → 294 ms |
+| Pedido específico e situação Cancelada, janela de sete dias | 469 → 278 ms |
+
+`get_shopee_sales_by_shop`, `get_shopee_orders`, `get_shopee_returns_summary` e `get_shopee_returns` retornaram HTTP 200 e receberam os mesmos argumentos nas 40 cargas medidas. As quatro chamadas saíram após organização e lojas e antes da contagem ML e dos filtros salvos. Uma carga como GESTOR sem concessão exibiu o aviso e fez zero chamadas às quatro RPCs. O ensaio mede o início das requisições sob atraso controlado. A latência percebida em produção continua pendente.
+
+### Início das consultas da Curva ABC (Sentinel A35, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio adicionou 125 ms à associação à organização, 250 ms à lista de contas ML, 300 ms à lista multicanal, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. As medianas medem o tempo desde a primeira leitura do cabeçalho até o início da RPC de análise e até o início da primeira RPC de marca ou categoria.
+
+| Recorte | Curva · antes → D-678 | Marca e categoria · antes → D-678 |
+| --- | ---: | ---: |
+| Mercado Livre, todas as contas | 469 → 145 ms | 469 → 144 ms |
+| Mercado Livre, conta permitida e Sem Full | 475 → 267 ms | 475 → 142 ms |
+| Mercado Livre, slug desconhecido | 473 → 273 ms | 473 → 143 ms |
+| Todos, sem seleção de contas | 473 → 150 ms | 473 → 150 ms |
+| Todos, conta do ML e Sem Full | 469 → 321 ms | 470 → 146 ms |
+| Todos, só loja Shopee com Sem Full na URL | 475 → 324 ms | 475 → 149 ms |
+| Shopee, conta desconhecida e filtro de marca | 477 → 327 ms | 478 → 144 ms |
+
+As três RPCs da tela retornaram HTTP 200 e receberam os mesmos argumentos nas 70 cargas medidas. Marca e categoria partiram após a organização. A curva aguardou a lista de contas apenas nos recortes com seleção na URL. Nas cargas de aquecimento, os 14 downloads do XLSX retornaram HTTP 200. As três curvas de cada arquivo receberam os mesmos filtros compartilhados com a tela, incluindo período, conta, marketplace, marca e Sem Full. A latência percebida em produção segue pendente.
+
+### Leitura das regras de reposição (Sentinel A36, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST com limite de 1.000 linhas. A organização tinha 1.003 regras, sendo 1.002 por SKU e um padrão. Outra organização tinha uma regra de marca. Uma carga de aquecimento e cinco medidas por versão e rota. As medianas cobrem da primeira chamada até a leitura do corpo da última resposta de `replenishment_settings`.
+
+| Rota | Chamadas antes → D-679 | Regras lidas antes → D-679 | Mediana antes → D-679 |
+| --- | ---: | ---: | ---: |
+| `/reposicao`, busca pelo SKU de prova | 1 → 2 | 1.000 → 1.003 | 24,0 → 49,0 ms |
+| `/reposicao/configuracoes` | 1 → 2 | 1.000 → 1.003 | 32,0 → 70,7 ms |
+
+A primeira página paginada trouxe 1.000 regras e a segunda trouxe três. A cobertura passou a mostrar a janela de 101 dias da regra específica, antes exibida como a janela padrão de 30 dias. A configuração passou de 999 para 1.002 exceções. A contagem sob RLS excluiu a regra da outra organização. O custo adicional medido inclui a segunda chamada e o recebimento das regras que faltavam. A latência com carga real segue pendente.
+
+### Regras da inspeção de Produtos (Sentinel A37, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. A organização tinha 1.004 regras, com padrão, marca e SKU aplicáveis ao produto de prova. Outra organização tinha uma regra para a mesma marca. Houve uma abertura de aquecimento e cinco medidas da gaveta em cada versão. A mediana vai do início da leitura de `replenishment_settings` até a leitura do corpo pelo rastreador. O tamanho é o JSON serializado sem espaços adicionais.
+
+| Consulta de regras | Antes | D-680 |
+| --- | ---: | ---: |
+| Chamadas | 1 | 1 |
+| Linhas entregues | 1.000 | 3 |
+| Bytes do JSON | 183.966 | 536 |
+| Mediana da leitura local | 13,7 ms | 13,1 ms |
+
+A gaveta passou do padrão de 25 dias ao alvo de 66 dias do SKU. Ao remover essa regra, a marca com vírgula, parênteses, ponto, aspas e barra invertida retornou o alvo de 28 dias. Sem marca, ou sem regra da marca na organização, prevaleceu o padrão de 25 dias. Após retirar também o padrão, a gaveta informou ausência de política. A regra da outra organização ficou fora. A latência percebida em produção segue pendente.
+
+### Consultas dos painéis de Vinculações (Sentinel A38, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreador adicionou 125 ms à associação à organização, 250 ms à lista de contas, 450 ms à visão principal, 150 ms aos candidatos e 175 ms aos vínculos manuais. Foram cinco cargas medidas e uma de aquecimento por recorte e versão. O tempo começa na primeira leitura de organização ou contas. O bloco encerra quando chegam a visão, as contas e os dois painéis.
+
+| Recorte | Início da visão · antes → D-681 | Início dos painéis · antes → D-681 | Fim do bloco · antes → D-681 |
+| --- | ---: | ---: | ---: |
+| Todas as contas | 266 → 143 ms | 752 → 143 ms | 954 → 611 ms |
+| Conta permitida | 266 → 270 ms | 746 → 270 ms | 941 → 750 ms |
+| Slug desconhecido | 275 → 276 ms | 755 → 276 ms | 960 → 739 ms |
+| Busca, estado, venda e segunda página | 269 → 141 ms | 752 → 141 ms | 947 → 610 ms |
+
+Os argumentos das duas RPCs e das duas consultas dos painéis coincidiram nas 40 cargas medidas. As consultas dos painéis mantiveram os limites de 200 e oito linhas e o filtro de conta. Quando o rastreador simulou visão indisponível, a tabela alternativa preservou o recorte e exibiu o aviso. As duas consultas já iniciadas dos painéis foram descartadas, e a conferência pelos pedidos não foi disparada nesse cenário. Os tempos são do ensaio com atrasos controlados. A latência percebida em produção segue pendente.
+
+### Consultas do Histórico de Preços e do XLSX (Sentinel A39, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio acrescentou 125 ms à organização, 250 ms à lista de contas e 50 ms à RPC. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura de organização ou contas.
+
+| Recorte | Início de `get_price_changes` · antes → D-682 |
+| --- | ---: |
+| Todas as contas | 269 → 144 ms |
+| Conta permitida | 279 → 280 ms |
+| Conta indisponível | 274 → 273 ms |
+| Busca no consolidado | 272 → 149 ms |
+
+As 40 cargas medidas preservaram todos os argumentos. Os XLSX baixados nas cargas de aquecimento retornaram HTTP 200 e enviaram os mesmos filtros de conta, período, direção e busca da página. O consolidado sem conta na URL passou de uma consulta de contas por arquivo para zero. Uma conta informada e indisponível continuou sendo validada, com retorno ao consolidado. A latência percebida em produção segue pendente.
+
+### Consultas da Central Full (Sentinel A40, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio acrescentou 125 ms à organização, 250 ms à lista de contas e 50 ms à RPC. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura de organização ou contas.
+
+| Recorte | Início de `get_fulfillment_overview` · antes → D-683 |
+| --- | ---: |
+| Todas as contas | 273 → 179 ms |
+| Conta permitida | 281 → 299 ms |
+| Conta indisponível | 277 → 285 ms |
+| Busca no consolidado | 272 → 173 ms |
+
+Os argumentos coincidiram nas 40 cargas medidas. Nas cargas de aquecimento, os CSVs baixados pelo link da tela retornaram HTTP 200 e enviaram o mesmo recorte da página, com a paginação própria da exportação. Uma resposta simulada `PGRST202` acionou a assinatura antiga, que retornou HTTP 200 e preservou o recorte. A lista segue sendo aguardada com conta explícita. Esses recortes não apresentaram redução na mediana. A latência percebida em produção segue pendente.

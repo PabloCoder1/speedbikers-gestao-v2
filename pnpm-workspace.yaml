@@ -32,3 +32,13 @@ overrides:
   "source-map-js@>=1.0.0 <1.2.2": "^1.2.2"
   # sharp (alto): CVE-2026-96889 na librsvg embutida. Chega por next (imagens).
   "sharp@<0.35.5": "^0.35.5"
+  # fast-xml-parser -- GHSA-474x-hrwr-fgx4: custo quadratico no parser de
+  # stop nodes. O cliente do Cloud Storage ainda aceita a versao afetada.
+  "fast-xml-parser@<=5.11.2": "5.12.0"
+  # vite -- GHSA-587h-7wmj-h5pm (alto) + 4 moderados em launch-editor:
+  # bypass de fs.existsSync no Windows, escaping de %, CLI flag e server.fs.
+  # Chega por vitest (dev).
+  "vite@>=8.2.0 <=8.2.3": "^8.2.4"
+  # minimatch -- GHSA-g3hv-75wg-m249 (moderado): DoS por amplificacao de
+  # globparts. Chega por eslint > @eslint/config-array e por eslint direto.
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.1"

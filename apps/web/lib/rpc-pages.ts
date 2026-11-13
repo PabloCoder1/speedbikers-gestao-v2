@@ -21,6 +21,7 @@ export const PAGINA_DO_POSTGREST = 1000;
 export interface PaginaDaRpc<T> {
   data: T[] | null;
   error: { message: string } | null;
+  count?: number | null;
 }
 
 export async function lerPaginasDaRpc<T>(
@@ -38,12 +39,12 @@ export async function lerPaginasDaRpc<T>(
     }
 
     const lote = pagina.data ?? [];
+    const primeiraPaginaCompleta = linhas.length === 0 && pagina.count === lote.length;
     linhas.push(...lote);
 
-    // Só a página VAZIA é o fim. Tratar a incompleta como fim truncaria em
-    // silêncio se o `max_rows` do servidor for menor que a página pedida — o
-    // mesmo defeito, um nível abaixo. Custa uma ida a mais no fim.
-    if (lote.length === 0) {
+    // Sem total exato, só a página vazia confirma o fim. Uma página curta
+    // também pode ser efeito do limite do servidor.
+    if (primeiraPaginaCompleta || lote.length === 0) {
       break;
     }
   }

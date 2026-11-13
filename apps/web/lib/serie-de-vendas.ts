@@ -23,6 +23,14 @@ type Linha = Database["public"]["Functions"]["get_marketplace_sales_daily"]["Ret
 /** O teto da série: ~4,5 anos no "Todos". Passou dele, quem chama diz — nunca corta calado. */
 export const TETO_DA_SERIE = 5000;
 
+// A contagem paga a consulta completa. Restrinja-a às janelas dos presets,
+// onde o resultado costuma caber na primeira resposta.
+function contarPrimeiraPagina(offset: number, de: string, ate: string): { count: "exact" } | undefined {
+  const intervalo = Date.parse(ate) - Date.parse(de);
+
+  return offset === 0 && intervalo >= 0 && intervalo < 90 * 86_400_000 ? { count: "exact" } : undefined;
+}
+
 export function lerSerieDiaria(
   supabase: Supabase,
   argumentos: Argumentos,
@@ -30,7 +38,7 @@ export function lerSerieDiaria(
   return lerPaginasDaRpc(
     (offset, limite) =>
       supabase
-        .rpc("get_marketplace_sales_daily", argumentos)
+        .rpc("get_marketplace_sales_daily", argumentos, contarPrimeiraPagina(offset, argumentos.p_date_from, argumentos.p_date_to))
         .order("dia")
         .order("marketplace", { nullsFirst: false })
         .range(offset, offset + limite - 1),
@@ -55,7 +63,7 @@ export async function lerSerieDoMl(
   const { linhas, error } = await lerPaginasDaRpc(
     (offset, limite) =>
       supabase
-        .rpc("get_sales_daily_series", argumentos)
+        .rpc("get_sales_daily_series", argumentos, contarPrimeiraPagina(offset, argumentos.p_date_from, argumentos.p_date_to))
         .order("metric_date")
         .range(offset, offset + limite - 1),
     TETO_DA_SERIE,

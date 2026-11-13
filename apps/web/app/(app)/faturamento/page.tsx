@@ -103,22 +103,18 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
   const isCustom = days === null;
   const periodo: Periodo = isCustom ? range : { days };
 
-  // A conta da URL vira id aqui: as leituras abaixo dependem disto. O número
-  // de lojas Shopee (D-431) só decide se o seletor de marketplace aparece.
-  const [accountsResult, lojasShopee] = await Promise.all([
-    supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
-    contarLojasShopee(supabase),
-  ]);
-
-  const accounts = accountsResult.data ?? [];
   const requestedSlug = typeof query.account === "string" ? query.account : null;
-  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
-  const contaSlug = selectedAccount?.slug ?? null;
-  const contaFiltro = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
+  const accountsPromise = Promise.resolve(supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }));
+  const lojasShopeePromise = contarLojasShopee(supabase);
+  const contaPromise =
+    requestedSlug === null
+      ? Promise.resolve(null)
+      : accountsPromise.then(({ data }) => data?.find((account) => account.slug === requestedSlug) ?? null);
+  const filtroPromise = contaPromise.then((conta) => (conta === null ? {} : { p_ml_account_id: conta.id }));
 
-  // As duas em paralelo, e a página não espera por elas: o cabeçalho e os
-  // filtros saem antes, e os números chegam por streaming.
-  const leituras = Promise.all([
+  // As leituras do período só esperam a conta pedida na URL. A contagem de
+  // lojas Shopee controla o seletor de marketplace.
+  const leituras = filtroPromise.then((contaFiltro) => Promise.all([
     supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, ...contaFiltro }),
     supabase.rpc("get_faturamento", {
       p_date_from: previousRange.from,
@@ -126,15 +122,22 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
       ...contaFiltro,
       p_detalhe: false,
     }),
-  ]);
+  ]));
 
-  // Mercado Ads (D-363): leitura própria, em paralelo, com o mesmo recorte.
-  const leituraAds = supabase.rpc("get_ads_overview", {
+  const leituraAds = filtroPromise.then((contaFiltro) => supabase.rpc("get_ads_overview", {
     p_date_from: range.from,
     p_date_to: range.to,
-    ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
-  });
+    ...contaFiltro,
+  }));
 
+  // Se a leitura do cabeçalho lançar, os blocos abaixo não chegam a consumir
+  // estas promises. Cada bloco ainda recebe a rejeição da sua leitura.
+  void leituras.catch(() => undefined);
+  void leituraAds.catch(() => undefined);
+
+  const [accountsResult, lojasShopee, selectedAccount] = await Promise.all([accountsPromise, lojasShopeePromise, contaPromise]);
+  const accounts = accountsResult.data ?? [];
+  const contaSlug = selectedAccount?.slug ?? null;
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoLabel = isCustom ? "Período personalizado" : `Últimos ${String(days)} dias`;
 
@@ -267,7 +270,7 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
           }
         >
           <CampanhasAds
-            leitura={Promise.resolve(leituraAds)}
+            leitura={leituraAds}
             tentarDeNovo={montarHref("/faturamento", periodo, contaSlug)}
             periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
           />
