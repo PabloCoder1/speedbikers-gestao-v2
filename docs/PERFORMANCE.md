@@ -1649,3 +1649,15 @@ Com a mesma distribuição de 60 mil pedidos e 62.608 linhas sintéticas, o ensa
 | GESTOR | Uma | 90 dias | 171,64 → 157,85 ms | 213,00 → 190,38 ms |
 
 Os blocos compartilhados foram iguais entre a versão original e D-669 nas 16 medições de cenário. Ambas tiveram zero blocos temporários. A junção direta de custo reduziu seis blocos no ensaio, mas elevou a mediana de 365,60 ms para 406,98 ms em 90 dias com detalhe para ADMIN. A combinação ficou em 358,95 ms nesse cenário. Foi versionada apenas a contagem numérica, que apresentou medianas menores nos 16 cenários. O ensaio foi revertido e o ganho com carga de produção ainda precisa ser medido.
+
+### Chamadas de faturamento por carga da Central (Sentinel, 13/11/2026)
+
+Ensaio no build local de `39ed8045` com as 314 migrations aplicadas, sessão autenticada no Chromium e requisições reais ao PostgREST local. O rastreio no processo Next registrou nome da RPC, período, detalhe, conta e status HTTP. Foram três cargas completas por combinação de papel e recorte, mais uma carga com conta sem concessão.
+
+| Recorte de `/central` | Cargas | `get_faturamento` | `get_ads_overview` | `get_shopee_faturamento` |
+| --- | ---: | ---: | ---: | ---: |
+| Todas as contas visíveis, ADMIN e GESTOR | 6 | 2 | 2 | 1 |
+| Uma conta permitida, ADMIN e GESTOR | 6 | 2 | 2 | 0 |
+| Conta sem concessão, GESTOR | 1 | 2 | 2 | 1 |
+
+As quantidades são por carga. As duas chamadas do ML cobriram 15–21/10 e 08–14/10/2026. O faturamento do período atual pediu detalhe e o anterior pediu o resumo. Com conta selecionada, as quatro chamadas do ML receberam o UUID da conta. No recorte consolidado, indicadores, alertas e o bloco por marketplace compartilharam a resposta atual do ML. A única chamada de faturamento adicional foi da Shopee para o período atual. Quando o slug não estava visível ao GESTOR, a página usou o recorte consolidado sob RLS. As RPCs rastreadas retornaram HTTP 200. A concessão temporária da conta ao GESTOR foi removida após o ensaio.

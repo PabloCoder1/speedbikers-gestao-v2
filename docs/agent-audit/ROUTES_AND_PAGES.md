@@ -12,7 +12,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 |---|---|---|
 | `/` | [page.tsx](<../../apps/web/app/(app)/page.tsx>) | RPC `get_stock_coverage_summary`, `get_marketplace_sales_summary`, `get_marketplace_sales_daily`. Tabelas `actions`, `support_cases`, `notification_recipients`, `listings`, `profiles` |
 | `/acoes` | [page.tsx](<../../apps/web/app/(app)/acoes/page.tsx>) | RPC `get_actions_queue`. Tabelas `action_decisions`, `action_outcomes` |
-| `/central` | [page.tsx](<../../apps/web/app/(app)/central/page.tsx>) | RPC `get_faturamento`, `get_ads_overview`, `get_meta_do_mes`, `get_detector_frete`, `get_sinais_ads`. Tabelas `ml_accounts` |
+| `/central` | [page.tsx](<../../apps/web/app/(app)/central/page.tsx>) | `get_faturamento` e `get_ads_overview`, uma chamada por período. O bloco consolidado compartilha as respostas atuais do ML e chama `get_shopee_faturamento`. Também usa `get_meta_do_mes`, `get_detector_frete`, `get_sinais_ads` e `ml_accounts`. [Medição](../PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026) |
 | `/central/ads` | [page.tsx](<../../apps/web/app/(app)/central/ads/page.tsx>) | RPC `get_sinais_ads`, `get_faturamento` |
 | `/central/frete` | [page.tsx](<../../apps/web/app/(app)/central/frete/page.tsx>) | RPC `get_detector_frete` |
 | `/central/limites` | [page.tsx](<../../apps/web/app/(app)/central/limites/page.tsx>) | Tabelas `central_thresholds` |

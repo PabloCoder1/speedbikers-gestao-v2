@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-669 reduz o custo de `get_faturamento` ao contar compras pelos IDs numéricos. Próxima fatia local: conferir se a Central ainda consulta o faturamento do mesmo período duas vezes por carga, incluindo blocos que usam o recorte consolidado. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#contagem-de-compras-no-faturamento-do-ml-sentinel-a26-13112026)
+- **Sentinel.** A Central fez duas chamadas de faturamento do ML por carga nas 13 navegações locais. Próxima fatia: medir em `/faturamento` a espera pela lista de contas e pela contagem de lojas Shopee antes de iniciar as consultas do período. [Plano](agent-audit/PLAN.md) · [Medição da Central](PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
