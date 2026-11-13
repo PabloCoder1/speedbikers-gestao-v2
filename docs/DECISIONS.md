@@ -19430,3 +19430,9 @@ O resumo da Home filtrava a venda da Shopee pela data calculada em `shopee_sales
 A migration `20261112184110` usa o horário bruto do pedido entre o início do primeiro dia em São Paulo, inclusive, e o início do dia seguinte ao último, exclusivo. O intervalo segue o padrão das consultas multicanal e pode usar `shopee_orders_org_created_idx`. A regra de vendas válidas das lojas live continua sob RLS, com a mesma assinatura e as mesmas contagens.
 
 As comparações `EXCEPT ALL` deram os mesmos resultados para ADMIN e GESTOR nas janelas de 7, 30, 90 e 365 dias. As regressões conferem os pedidos nos dois limites do dia, inclusive em uma virada histórica do horário de verão. No ensaio de 30 dias, a mediana de ADMIN caiu de 38,14 ms para 13,10 ms.
+
+## D-669 - O faturamento do ML conta compras pelos IDs numéricos
+
+`get_faturamento` convertia o ID em texto e acrescentava um prefixo por tipo antes de contar compras. A migration `20261113131644` conta os IDs distintos de pacote e soma os IDs distintos dos pedidos avulsos. Assim, dois pedidos do mesmo pacote contam como uma compra, e um pedido avulso com o mesmo número do pacote conta separadamente. O ticket médio usa a mesma contagem.
+
+O JSON completo coincidiu em 36 combinações com ADMIN e GESTOR, incluindo tentativas de consultar contas fora do escopo. No ensaio local de 90 dias para ADMIN, com todas as contas, a mediana caiu de 314,32 ms para 271,82 ms sem detalhe. As regras de classificação, custo, frete e alíquota continuam na consulta sob RLS.

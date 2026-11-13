@@ -2252,6 +2252,33 @@ describe("get_faturamento (D-356)", () => {
     expect(dados.por_sku).toBeNull();
   });
 
+  it("conta um pacote uma vez e distingue um pedido avulso com o mesmo ID", async () => {
+    await client.query("begin");
+    try {
+      await client.query(
+        "update public.orders set pack_id = $1 where id = any($2::bigint[])",
+        [PEDIDOS[2], PEDIDOS.slice(0, 2)],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN_SB })]);
+      const { rows } = await client.query<{ com_detalhe: Faturamento; sem_detalhe: Faturamento }>(
+        `select public.get_faturamento($1, $1, $2, true) as com_detalhe,
+                public.get_faturamento($1, $1, $2, false) as sem_detalhe`,
+        [DIA, CONTA_A],
+      );
+
+      expect(rows[0]?.com_detalhe.resumo).toMatchObject({
+        pedidos: 4,
+        compras: 3,
+        receita_bruta: 280,
+        ticket_medio: 93.33,
+      });
+      expect(rows[0]?.sem_detalhe.resumo).toEqual(rows[0]?.com_detalhe.resumo);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   it("outra organização não enxerga nada — e margem sem cobertura é NULL, nunca 0%", async () => {
     const { resumo } = await faturamento(DE_OUTRA_ORG);
 

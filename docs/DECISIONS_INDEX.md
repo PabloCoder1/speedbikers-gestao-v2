@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **570** (D-001 a D-668).
+Decisões registradas: **571** (D-001 a D-669).
 
 ## Por domínio
 
@@ -250,7 +250,7 @@ Decisões registradas: **570** (D-001 a D-668).
 - **D-661** — Cada aquisição da trava Shopee tem identidade própria
 - **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
 
-### mercado-livre (109)
+### mercado-livre (110)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -361,6 +361,7 @@ Decisões registradas: **570** (D-001 a D-668).
 - **D-657** — Conexão OAuth multicanal confirma a titularidade na gravação
 - **D-660** — Reconexão Mercado Livre invalida a renovação anterior
 - **D-662** — Falha no callback OAuth preserva conta Mercado Livre conectada
+- **D-669** — O faturamento do ML conta compras pelos IDs numéricos
 
 ### outros (82)
 

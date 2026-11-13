@@ -1632,3 +1632,20 @@ Medição da RPC `get_faturamento` com a definição de D-499, após o replay lo
 | GESTOR | Uma | 90 dias | 22.500 | 194,4 / 2.093 | 253,6 / 2.532 |
 
 Tempos e blocos compartilhados são medianas. Todas as execuções medidas tiveram zero blocos temporários. O `resumo` coincidiu com e sem detalhe nas 12 combinações. A variante sem detalhe devolveu `null` em `diario`, `por_conta` e `por_sku`. Contas sem permissão devolveram zero pedidos. No plano direto do corpo para ADMIN em 90 dias, `classificado` processou 37.500 pedidos e acumulou 191,5 a 220,2 ms, contra 19,6 a 21,4 ms da varredura de `ml_sales_lines`. `por_sku_base` levou 57,5 ms com detalhe e teve zero execuções sem detalhe. Esses tempos de nós incluem seus filhos. A classificação por pedido é o primeiro ponto a investigar para reduzir o custo comum. Os números são locais e os dados sintéticos foram revertidos.
+
+### Contagem de compras no faturamento do ML (Sentinel A26, 13/11/2026)
+
+Com a mesma distribuição de 60 mil pedidos e 62.608 linhas sintéticas, o ensaio comparou quatro versões na mesma transação. A versão de D-499 foi comparada com a junção direta de custo no agrupamento dos pedidos, com a contagem numérica de compras e com a combinação das duas mudanças. O JSON completo coincidiu para ADMIN e GESTOR em 36 combinações de janela, conta e detalhe. A seleção incluiu uma conta permitida, todas as visíveis e uma fora do escopo. As medianas abaixo vêm de sete execuções intercaladas após o aquecimento em cada cenário.
+
+| Papel | Conta | Janela | Antes → D-669 sem detalhe | Antes → D-669 com detalhe |
+| --- | --- | ---: | ---: | ---: |
+| ADMIN | Todas | 7 dias | 32,93 → 29,99 ms | 39,32 → 37,22 ms |
+| ADMIN | Todas | 30 dias | 114,51 → 97,91 ms | 128,96 → 113,49 ms |
+| ADMIN | Todas | 90 dias | 314,32 → 271,82 ms | 365,60 → 326,82 ms |
+| ADMIN | Uma | 90 dias | 192,68 → 172,34 ms | 231,40 → 221,51 ms |
+| GESTOR | Todas | 7 dias | 22,16 → 18,94 ms | 36,47 → 32,00 ms |
+| GESTOR | Todas | 30 dias | 66,61 → 60,88 ms | 77,05 → 76,36 ms |
+| GESTOR | Todas | 90 dias | 202,60 → 185,08 ms | 211,54 → 199,64 ms |
+| GESTOR | Uma | 90 dias | 171,64 → 157,85 ms | 213,00 → 190,38 ms |
+
+Os blocos compartilhados foram iguais entre a versão original e D-669 nas 16 medições de cenário. Ambas tiveram zero blocos temporários. A junção direta de custo reduziu seis blocos no ensaio, mas elevou a mediana de 365,60 ms para 406,98 ms em 90 dias com detalhe para ADMIN. A combinação ficou em 358,95 ms nesse cenário. Foi versionada apenas a contagem numérica, que apresentou medianas menores nos 16 cenários. O ensaio foi revertido e o ganho com carga de produção ainda precisa ser medido.
