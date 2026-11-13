@@ -1807,3 +1807,16 @@ Build de produção local, Chromium autenticado como ADMIN e PostgREST local. A 
 | Mediana da leitura local | 13,7 ms | 13,1 ms |
 
 A gaveta passou do padrão de 25 dias ao alvo de 66 dias do SKU. Ao remover essa regra, a marca com vírgula, parênteses, ponto, aspas e barra invertida retornou o alvo de 28 dias. Sem marca, ou sem regra da marca na organização, prevaleceu o padrão de 25 dias. Após retirar também o padrão, a gaveta informou ausência de política. A regra da outra organização ficou fora. A latência percebida em produção segue pendente.
+
+### Consultas dos painéis de Vinculações (Sentinel A38, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreador adicionou 125 ms à associação à organização, 250 ms à lista de contas, 450 ms à visão principal, 150 ms aos candidatos e 175 ms aos vínculos manuais. Foram cinco cargas medidas e uma de aquecimento por recorte e versão. O tempo começa na primeira leitura de organização ou contas. O bloco encerra quando chegam a visão, as contas e os dois painéis.
+
+| Recorte | Início da visão · antes → D-681 | Início dos painéis · antes → D-681 | Fim do bloco · antes → D-681 |
+| --- | ---: | ---: | ---: |
+| Todas as contas | 266 → 143 ms | 752 → 143 ms | 954 → 611 ms |
+| Conta permitida | 266 → 270 ms | 746 → 270 ms | 941 → 750 ms |
+| Slug desconhecido | 275 → 276 ms | 755 → 276 ms | 960 → 739 ms |
+| Busca, estado, venda e segunda página | 269 → 141 ms | 752 → 141 ms | 947 → 610 ms |
+
+Os argumentos das duas RPCs e das duas consultas dos painéis coincidiram nas 40 cargas medidas. As consultas dos painéis mantiveram os limites de 200 e oito linhas e o filtro de conta. Quando o rastreador simulou visão indisponível, a tabela alternativa preservou o recorte e exibiu o aviso. As duas consultas já iniciadas dos painéis foram descartadas, e a conferência pelos pedidos não foi disparada nesse cenário. Os tempos são do ensaio com atrasos controlados. A latência percebida em produção segue pendente.

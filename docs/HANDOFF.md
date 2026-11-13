@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-680 corrige o alvo de cobertura na inspeção de Produtos com uma leitura de até três regras aplicáveis. A próxima fatia vai medir em `/vinculacoes` quando podem começar as consultas da visão principal e dos painéis de candidatos e vínculos manuais. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
+- **Sentinel.** D-681 inicia a visão e os painéis de Vinculações em paralelo após resolver o recorte. A próxima fatia vai medir a dependência da lista de contas em `/precos` e no XLSX, com conferência do recorte de conta, período e direção. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

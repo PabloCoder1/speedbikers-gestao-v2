@@ -228,3 +228,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-680.** A gaveta filtra por organização e carrega até três regras de reposição. O alvo do SKU de prova passou de 25 para 66 dias. As leituras caíram de 1.000 para três linhas em uma chamada. O ensaio conferiu a regra de marca com pontuação, o padrão, a ausência de política e o isolamento entre organizações. [Medição](../PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
 - **Validação.** Passaram seis casos Playwright de Produtos após reiniciar a stack e aplicar o seed padrão. A primeira rodada compartilhou os dados sintéticos do ensaio com a suíte e deixou o SKU principal marcado como virtual após uma asserção falhar. Uma falha no interceptador de navegação também desapareceu na rodada limpa. Passaram `pnpm run check` com 1.456 testes web, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir as dependências entre a visão e os painéis de Vinculações. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Visão e painéis de Vinculações
+
+- **Base.** `codex/sentinel-audit` em `4aa227f7`. Checkout original em `v3`, `9642d921`.
+- **D-681.** Visão, candidatos e vínculos manuais começam após a organização e o slug quando informado. No ensaio controlado, o bloco de todas as contas caiu de 954 para 611 ms. Quatro recortes mantiveram os argumentos. A falha simulada preservou a tabela alternativa, com duas consultas de painéis descartadas. [Medição](../PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
+- **Validação.** Passaram sete casos Playwright de Vinculações, 1.456 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir a dependência da lista de contas em Preços e no XLSX. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

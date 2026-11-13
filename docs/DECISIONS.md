@@ -19512,3 +19512,11 @@ A inspeção consultava até 1.000 regras de reposição sem recorte. A regra do
 A consulta filtra a organização e reúne os escopos do SKU, da marca e do padrão. Os índices únicos garantem até uma regra por escopo. A comparação de marca preserva a pontuação e a regra canônica continua resolvendo a precedência SKU, marca e padrão.
 
 O ensaio com 1.004 regras na organização confirmou a redução de 1.000 para três linhas, o alvo correto e a ausência de efeito da regra de outra organização. [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
+
+## D-681 - Vinculações inicia a visão e os painéis em paralelo
+
+A visão de Vinculações aguardava a lista de contas em qualquer recorte. Os painéis de candidatos e vínculos manuais aguardavam a resposta da visão. As três consultas podem começar assim que a organização está disponível e, quando a URL pede uma conta, assim que o slug é resolvido na lista visível sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis.
+
+Os painéis mantêm os limites de 200 candidatos abertos e oito vínculos manuais. A conferência com pedidos continua em streaming. Quando a visão falha, a tabela alternativa mantém os filtros e o aviso. Nesse caso, as duas leituras dos painéis já foram iniciadas e seus resultados são descartados.
+
+O ensaio local com atrasos controlados confirmou a ordem das chamadas, os argumentos e o caminho alternativo. [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
