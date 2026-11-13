@@ -19470,3 +19470,9 @@ Em janelas maiores, as duas séries mantêm a paginação sem contagem. O leitor
 As leituras de Vendas do ML aguardavam a lista de contas, a associação à organização, os filtros salvos e a contagem de lojas Shopee. As RPCs de vendas já recebem o escopo do usuário pela RLS. Só precisam da lista de contas quando a URL traz um slug. A lista de marcas usa a organização.
 
 As consultas de resumo, série, ranking, cancelamento e hoje começam assim que o filtro de conta está resolvido. A consulta de marcas começa quando a associação à organização responde. Os dados do cabeçalho são aguardados em paralelo, com as mesmas regras de filtro e erro.
+
+## D-675 - A lista e os contadores de Anúncios começam assim que o recorte está resolvido
+
+No dashboard de anúncios do ML, as duas RPCs aguardavam organização, lista de contas, filtros salvos e contagem de lojas Shopee. Agora iniciam após resolver a organização e, se a URL trouxer um slug, verificar a conta na lista visível sob RLS. Filtros salvos e contagem de lojas continuam alimentando o cabeçalho.
+
+A lista e os contadores mantêm a mesma organização, conta e busca. A lista também recebe os filtros de estado, período e ordenação. A compatibilidade com o banco anterior continua no mesmo fluxo.

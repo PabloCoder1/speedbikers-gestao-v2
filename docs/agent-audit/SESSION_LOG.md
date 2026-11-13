@@ -186,3 +186,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-674.** `apps/web/app/(app)/vendas/page.tsx` inicia as RPCs de vendas assim que a conta é resolvida. A consulta de marcas espera a organização. No ensaio controlado, a mediana até a primeira RPC de vendas passou de 468 para 1 ms sem slug e de 464 para 277 ms com conta permitida. A quantidade de chamadas e os argumentos coincidiram nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-do-mercado-livre-sentinel-a31-13112026)
 - **Validação.** Passaram 14 casos Playwright de Vendas, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir quais leituras do cabeçalho de `/anuncios` atrasam as RPCs de lista e contadores. Publicação e validação em produção continuam pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Lista e contadores de Anúncios do ML
+
+- **Base.** `codex/sentinel-audit` em `41526ca2`. Checkout original em `v3`, `9642d921`.
+- **D-675.** `apps/web/app/(app)/anuncios/page.tsx` inicia lista e contadores após resolver organização e conta solicitada. No ensaio controlado, a mediana até a primeira RPC caiu de 467 para 151 ms sem conta e de 470 para 283 ms com conta. Os argumentos coincidiram em quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-anúncios-do-mercado-livre-sentinel-a32-13112026)
+- **Validação.** Passaram 19 casos Playwright de Anúncios, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir as dependências de lista e resumo em `/anuncios/shopee`. A publicação e a validação em produção seguem pendentes. [Plano](PLAN.md)

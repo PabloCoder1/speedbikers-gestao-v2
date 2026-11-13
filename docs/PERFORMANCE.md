@@ -1728,3 +1728,16 @@ Build de produção local, Chromium autenticado como ADMIN e PostgREST local. O 
 | Todas as contas, filtro Sem marca | 466 → 1 ms | 466 → 177 ms |
 
 As nove chamadas conservaram os argumentos e retornaram sucesso. Sem slug, as consultas de vendas saíram antes da organização e da lista de contas. Com slug, aguardaram a lista e enviaram o UUID só quando a conta estava visível. A consulta de marcas aguardou a organização. Os tempos medem o início das requisições no ensaio controlado. A latência percebida em produção segue pendente.
+
+### Início das consultas de Anúncios do Mercado Livre (Sentinel A32, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. O rastreio acrescentou 125 ms à associação à organização, 250 ms à lista de contas do ML, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC · antes → D-675 |
+| --- | ---: |
+| Todas as contas | 467 → 151 ms |
+| Uma conta permitida | 470 → 283 ms |
+| Slug desconhecido | 472 → 272 ms |
+| Busca e estado ativo, janela de sete dias | 470 → 156 ms |
+
+`get_listings_dashboard` e `get_listings_dashboard_counts` retornaram HTTP 200. A comparação conferiu todos os argumentos das duas RPCs nas 40 cargas medidas. Ambas passaram a sair antes dos filtros salvos e da contagem de lojas Shopee. Com slug, aguardaram a lista de contas visíveis. A busca foi enviada às duas RPCs e o estado só à lista. Os números medem o início das requisições sob atrasos controlados. A latência percebida em produção segue pendente.

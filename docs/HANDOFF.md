@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-674 antecipa as consultas de Vendas do ML e preserva os filtros. Próxima fatia local: medir em `/anuncios` quais consultas de lista e contadores dependem da organização, do filtro de conta e das leituras do cabeçalho. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-do-mercado-livre-sentinel-a31-13112026)
+- **Sentinel.** D-675 antecipa lista e contadores de Anúncios do ML após resolver a organização e a conta solicitada. Próxima fatia local: medir em `/anuncios/shopee` se os filtros salvos e a contagem de contas ML atrasam a lista e o resumo após resolver a organização e as lojas visíveis. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-anúncios-do-mercado-livre-sentinel-a32-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

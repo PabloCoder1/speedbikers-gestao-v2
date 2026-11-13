@@ -30,7 +30,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 
 | Rota | Entrada | Referências diretas de dados |
 |---|---|---|
-| `/anuncios` | [page.tsx](<../../apps/web/app/(app)/anuncios/page.tsx>) | RPC `get_listings_dashboard`, `get_listings_dashboard_counts`. Tabelas `ml_accounts`, `saved_filters` |
+| `/anuncios` | [page.tsx](<../../apps/web/app/(app)/anuncios/page.tsx>) | `get_listings_dashboard` e `get_listings_dashboard_counts` começam após a organização e a conta solicitada. A lista recebe filtros de estado, período e ordenação. `saved_filters` e a contagem Shopee alimentam o cabeçalho. |
 | `/anuncios/[itemId]` | [page.tsx](<../../apps/web/app/(app)/anuncios/[itemId]/page.tsx>) | RPC `get_listing_dashboard_summary`, `get_listings_dashboard`, `get_fulfillment_overview`, `get_listing_content_change_analysis`. Tabelas `listings`, `domain_events`, `actions`, `daily_listing_metrics`, `daily_listing_visits`, `listing_relists`, `action_decisions` |
 | `/anuncios/shopee` | [page.tsx](<../../apps/web/app/(app)/anuncios/shopee/page.tsx>) | RPC `get_shopee_listings`, `get_shopee_listings_summary`. Tabelas `shopee_shops`, `saved_filters` |
 | `/faturamento` | [page.tsx](<../../apps/web/app/(app)/faturamento/page.tsx>) | No ML, `get_faturamento` e `get_ads_overview` iniciam assim que o recorte da URL é resolvido. Shopee e Todos usam `multicanal.tsx` e iniciam as RPCs após resolver a organização. A lista de `marketplace_accounts` alimenta o cabeçalho e valida o filtro explícito de lojas. |
