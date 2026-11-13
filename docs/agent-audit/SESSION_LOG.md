@@ -164,3 +164,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-671.** Todos e Shopee sem filtro iniciam as leituras após resolver a organização. Com filtro explícito, Shopee aguarda a lista de lojas visíveis. A mediana até a primeira RPC caiu de 367 para 151 ms em Todos e de 372 para 150 ms na Shopee sem filtro no ensaio controlado. Quantidade e argumentos das chamadas conferidos nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-faturamento-nos-recortes-shopee-e-todos-sentinel-a28-13112026)
 - **Validação.** Passaram 19 testes Playwright de Faturamento e Central, `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir se a lista de contas e os filtros salvos atrasam o início das consultas em Vendas multicanal. [Plano](PLAN.md)
+
+### 13/11/2026 · Vendas multicanal e revisão de branches
+
+- **Base.** `codex/sentinel-audit` em `f719eed8`, depois de `a3be2512` e `f2bae07d`. Checkout original em `v3`, `9642d921`.
+- **D-672.** `apps/web/app/(app)/vendas/multicanal.tsx` inicia as RPCs sem aguardar os filtros salvos. A lista é aguardada antes das RPCs só com conta explícita. O ensaio em cinco recortes confirmou os mesmos argumentos e antecipou a mediana de Todos de 467 para 149 ms. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-multicanal-sentinel-a29-13112026)
+- **Validação.** Passaram 14 testes Playwright de Vendas, 1.451 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Limpeza.** Rechecadas 24 branches e 13 PRs abertos. Sete refs integradas continuam vinculadas a worktrees existentes. [Inventário](BRANCH_AUDIT.md#inventário-por-branch)
+- **Próxima etapa.** Comparar no PostgREST a página vazia que encerra a série diária com uma leitura que informe a contagem exata. Produção e publicação continuam pendentes. [Plano](PLAN.md)

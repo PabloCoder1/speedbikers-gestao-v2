@@ -103,17 +103,22 @@ export async function VendasMulticanal({
 
   // As contas e os filtros salvos não dependem da organização (a RLS já os
   // restringe): saem junto com o membership.
-  const [membership, contasResult, salvosResult] = await Promise.all([
-    currentMembership(),
+  const membershipPromise = currentMembership();
+  const contasPromise = Promise.resolve(
     supabase
       .from("marketplace_accounts")
       .select("account_id, marketplace, name, environment")
       .order("marketplace", { ascending: true })
       .order("name", { ascending: true }),
+  );
+  const salvosPromise = Promise.resolve(
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
-  ]);
+  );
+  const filtrosPromise = Promise.all([contasPromise, salvosPromise]);
+  // A página pode sair por falta de organização antes de consumir os filtros.
+  void filtrosPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
     return (
@@ -124,8 +129,10 @@ export async function VendasMulticanal({
     );
   }
 
-  const todasAsContas: ContaDoSeletor[] = contasResult.data ?? [];
-  const { selecionadas, descartadas } = resolverContas(query.contas, todasAsContas, escopo);
+  const { selecionadas, descartadas } =
+    typeof query.contas === "string" && query.contas.trim() !== ""
+      ? resolverContas(query.contas, (await contasPromise).data ?? [], escopo)
+      : { selecionadas: null, descartadas: 0 };
   // D-622: a marca da URL, com os nomes da tela do ML (D-237); "sem marca" vence sobre `marca=`.
   const marca = resolverMarcaDaVenda(query);
   const comMarca = marca.kind !== "todas";
@@ -175,7 +182,7 @@ export async function VendasMulticanal({
   // As cinco leituras em paralelo: o período e o anterior, resumo e série, e
   // o ranking de produtos (C-59, D-444) na ordem da métrica do gráfico.
   const ordem = ordemDoRanking(metrica);
-  const [atualResult, anteriorResult, diasResult, diasAnterioresResult, rankingResult, marcasResult] = await Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_marketplace_sales_summary", { ...argumentosComMarca, p_date_from: range.from, p_date_to: range.to }),
     supabase.rpc("get_marketplace_sales_summary", {
       ...argumentosComMarca,
@@ -198,6 +205,11 @@ export async function VendasMulticanal({
     // A lista de marcas vem do BANCO (D-194), a mesma da tela do ML, e não depende do recorte.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
+  const [
+    [atualResult, anteriorResult, diasResult, diasAnterioresResult, rankingResult, marcasResult],
+    [contasResult, salvosResult],
+  ] = await Promise.all([leituras, filtrosPromise]);
+  const todasAsContas: ContaDoSeletor[] = contasResult.data ?? [];
   const marcas = (marcasResult.data ?? []).map((linha) => linha.supplier_brand);
 
   // Falha em qualquer uma é erro dito, nunca "sem venda" (D-067). O ranking

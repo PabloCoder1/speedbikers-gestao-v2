@@ -1686,3 +1686,17 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Shopee, loja inexistente na URL | 11 | 372 ms | 381 ms |
 
 Antes, todas as RPCs saíam depois das duas respostas. Com D-671, em Todos e na Shopee sem filtro, saíram depois da organização e antes da lista. Nos dois cenários com loja na URL, continuaram esperando a lista. Todas retornaram HTTP 200 com os mesmos períodos, organização e filtros de loja. O recorte com loja inexistente exibiu o aviso e consultou todas as lojas visíveis. Os tempos são do ensaio controlado. O ganho percebido na navegação em produção ainda precisa ser medido.
+
+### Início das consultas de Vendas multicanal (Sentinel A29, 13/11/2026)
+
+Chromium autenticado como ADMIN e PostgREST local. No processo Next, o ensaio adicionou 125 ms à associação à organização, 250 ms à lista de contas e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. A mediana mede o intervalo entre o início da primeira leitura do cabeçalho e a saída da primeira RPC de Vendas.
+
+| Recorte | Antes | D-672 |
+| --- | ---: | ---: |
+| Todos, sem filtro de conta | 467 ms | 149 ms |
+| Shopee, sem filtro de conta | 462 ms | 143 ms |
+| Todos, com uma conta permitida | 468 ms | 274 ms |
+| Shopee, com loja inexistente na URL | 472 ms | 282 ms |
+| Todos, com o filtro Sem marca | 464 ms | 146 ms |
+
+As primeiras páginas das séries e as demais RPCs iniciaram antes da resposta dos filtros salvos nos cinco recortes. Só os recortes com seleção na URL esperaram pela lista de contas. O rastreio conferiu os mesmos períodos, organização, marketplaces, conta e marca. Sem marca fez duas chamadas de cancelamento a menos que o recorte sem filtro de marca, como previsto. A série diária manteve a paginação até receber uma página vazia. A medição é local, com atrasos controlados.

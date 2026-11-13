@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-670 e D-671 antecipam as consultas de `/faturamento` conforme o recorte. Próxima fatia local: medir em `/vendas` se a lista de contas e os filtros salvos atrasam consultas que já têm organização e período resolvidos. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-faturamento-nos-recortes-shopee-e-todos-sentinel-a28-13112026)
+- **Sentinel.** D-672 antecipa as consultas de Vendas multicanal. A revisão de branches confirmou 24 refs remotas e sete refs integradas ainda vinculadas a worktrees. Próxima fatia local: avaliar se a série diária pode identificar o fim da paginação sem uma chamada vazia, inclusive com um limite menor do PostgREST. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-multicanal-sentinel-a29-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

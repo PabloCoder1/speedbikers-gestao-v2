@@ -19452,3 +19452,9 @@ Os recortes Shopee e Todos aguardavam a lista de contas e lojas antes de iniciar
 Em Todos e na Shopee sem filtro, as consultas começam assim que a associação à organização resolve. Com filtro explícito, a Shopee continua usando apenas as lojas visíveis sob RLS e avisa quando descarta uma loja. O cabeçalho recebe a lista completa. A Central segue reaproveitando as respostas do Mercado Livre no bloco por marketplace.
 
 O ensaio local com atraso controlado confirmou a ordem das requisições, a mesma quantidade de chamadas e os mesmos argumentos nos quatro recortes exercitados.
+
+## D-672 - Vendas multicanal inicia as consultas sem esperar os filtros salvos
+
+O carregamento de Vendas multicanal iniciava a associação à organização, a lista de contas e os filtros salvos juntos. O resumo, a série diária, o ranking e as demais RPCs aguardavam as três respostas.
+
+As leituras começam quando a organização está disponível. Um filtro explícito de contas ainda aguarda a lista sob RLS. Os filtros salvos e a lista continuam disponíveis para montar o cabeçalho. A paginação da série diária e as regras de marca e cancelamento seguem as mesmas.

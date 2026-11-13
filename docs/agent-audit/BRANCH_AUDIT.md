@@ -57,6 +57,10 @@ As 23 refs que ficam têm PR aberto (15), vínculo exclusivo com worktree (7) ou
 
 ## Inventário por branch
 
+Rechecagem de 13/11/2026. `git ls-remote` retornou 24 branches, incluindo `codex/sentinel-audit` em `4d94686f`. `main` permaneceu em `d6169205`. O GitHub retornou 13 PRs abertos. A classificação atual tem 13 branches de origem de PR, sete branches integradas ainda vinculadas a worktrees existentes, a branch de trabalho Sentinel, `main`, `v3` e `v2-legacy`. A `v3` continua como base do PR #76.
+
+As sete refs integradas foram cruzadas com os upstreams e caminhos de worktree. `feat/d654-barra-com-nome-longo` (`49a43442`), integrada no PR #325, ainda é upstream de `revisao-325`. As outras seis são `feat/curva-abc-filtros-excel`, `feat/notificacoes-triagem`, `feat/tiktok-fatia1-conexao`, `fix/faturamento-campanhas-visiveis`, `fix/sku-da-venda-pela-variacao` e `fix/web-vitals-rota-da-carga`. Nenhuma exclusão nesta rodada. Os dados de deploy e alias na tabela são da verificação anterior.
+
 À frente e atrás são medidos em relação à `main` auditada. PRs fechados nesta tabela são PRs sem merge.
 
 | Branch | SHA | Última atividade observada (UTC) | À frente / atrás | PRs | Classificação | Evidência |

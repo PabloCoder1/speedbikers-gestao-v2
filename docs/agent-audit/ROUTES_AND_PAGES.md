@@ -36,7 +36,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 | `/faturamento` | [page.tsx](<../../apps/web/app/(app)/faturamento/page.tsx>) | No ML, `get_faturamento` e `get_ads_overview` iniciam assim que o recorte da URL é resolvido. Shopee e Todos usam `multicanal.tsx` e iniciam as RPCs após resolver a organização. A lista de `marketplace_accounts` alimenta o cabeçalho e valida o filtro explícito de lojas. |
 | `/full` | [page.tsx](<../../apps/web/app/(app)/full/page.tsx>) | RPC `get_fulfillment_overview`. Tabelas `ml_accounts` |
 | `/precos` | [page.tsx](<../../apps/web/app/(app)/precos/page.tsx>) | RPC `get_price_changes`. Tabelas `ml_accounts` |
-| `/vendas` | [page.tsx](<../../apps/web/app/(app)/vendas/page.tsx>) | RPC `get_sales_top_skus`, `get_sales_expanded_summary`, `get_sales_summary`, `get_sales_today_summary`, `get_supplier_brands`. Tabelas `ml_accounts`, `saved_filters` |
+| `/vendas` | [page.tsx](<../../apps/web/app/(app)/vendas/page.tsx>) | No ML, RPCs `get_sales_*` e `get_supplier_brands`. Em [multicanal.tsx](<../../apps/web/app/(app)/vendas/multicanal.tsx>), organização e contas selecionadas definem o recorte das RPCs `get_marketplace_sales_*` e `get_marketplace_sku_sales`. `saved_filters` alimenta o menu. |
 | `/vendas/shopee` | [page.tsx](<../../apps/web/app/(app)/vendas/shopee/page.tsx>) | RPC `get_shopee_returns_summary`, `get_shopee_returns`, `get_shopee_sales_by_shop`, `get_shopee_orders`. Tabelas `shopee_shops`, `saved_filters` |
 | `/vinculacoes` | [page.tsx](<../../apps/web/app/(app)/vinculacoes/page.tsx>) | RPC `get_listings_link_overview`, `get_link_integrity`, `get_listings_dashboard`. Tabelas `ml_accounts`, `link_candidates`, `sku_listing_links` |
 
