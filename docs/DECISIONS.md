@@ -19464,3 +19464,9 @@ As leituras começam quando a organização está disponível. Um filtro explíc
 As séries de Vendas do ML e de Vendas multicanal pedem contagem exata na primeira página para janelas de até 90 dias. Quando o total coincide com as linhas entregues, a leitura termina. Se a contagem estiver ausente ou indicar que faltam linhas, a paginação continua até uma página vazia ou até o teto. Uma resposta curta pode resultar do limite do PostgREST.
 
 Em janelas maiores, as duas séries mantêm a paginação sem contagem. O leitor continua compartilhado entre a tela e os CSVs.
+
+## D-674 - Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
+
+As leituras de Vendas do ML aguardavam a lista de contas, a associação à organização, os filtros salvos e a contagem de lojas Shopee. As RPCs de vendas já recebem o escopo do usuário pela RLS. Só precisam da lista de contas quando a URL traz um slug. A lista de marcas usa a organização.
+
+As consultas de resumo, série, ranking, cancelamento e hoje começam assim que o filtro de conta está resolvido. A consulta de marcas começa quando a associação à organização responde. Os dados do cabeçalho são aguardados em paralelo, com as mesmas regras de filtro e erro.

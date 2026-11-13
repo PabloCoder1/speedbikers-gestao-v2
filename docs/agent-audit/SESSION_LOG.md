@@ -179,3 +179,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-673.** `serie-de-vendas.ts` pede contagem exata na primeira página para janelas de até 90 dias. `rpc-pages.ts` encerra a leitura quando essa página contém o total. A resposta parcial continua sendo paginada. No PostgREST local, as séries de 7 a 90 dias passaram de duas chamadas para uma. [Medição](../PERFORMANCE.md#fim-da-paginação-nas-séries-de-vendas-sentinel-a30-13112026)
 - **Validação.** Passaram seis testes do paginador, 1.453 testes web no `pnpm run check`, `pnpm run build`, `pnpm docs:check` e três casos Playwright de gráfico e CSV depois de D-673.
 - **Próxima etapa.** Medir o início das consultas do recorte Mercado Livre em `/vendas` com e sem conta, sob atraso controlado nas leituras do cabeçalho. A validação em produção depende da publicação e da disponibilidade do ambiente. [Plano](PLAN.md)
+
+### 13/11/2026 · Consultas de Vendas no Mercado Livre
+
+- **Base.** `codex/sentinel-audit` em `304b015b`. Checkout original em `v3`, `9642d921`.
+- **D-674.** `apps/web/app/(app)/vendas/page.tsx` inicia as RPCs de vendas assim que a conta é resolvida. A consulta de marcas espera a organização. No ensaio controlado, a mediana até a primeira RPC de vendas passou de 468 para 1 ms sem slug e de 464 para 277 ms com conta permitida. A quantidade de chamadas e os argumentos coincidiram nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-do-mercado-livre-sentinel-a31-13112026)
+- **Validação.** Passaram 14 casos Playwright de Vendas, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir quais leituras do cabeçalho de `/anuncios` atrasam as RPCs de lista e contadores. Publicação e validação em produção continuam pendentes. [Plano](PLAN.md)

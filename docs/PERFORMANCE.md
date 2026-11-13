@@ -1715,3 +1715,16 @@ PostgREST local autenticado, 1.461 métricas diárias sintéticas do ML e sete m
 | Multicanal | 90 dias | 2 → 1 | 38,01 → 34,30 ms |
 
 O intervalo vazio precisou de uma chamada nas duas versões. Pedir contagem em períodos longos sem aproveitar o total nas páginas seguintes trouxe custo sem reduzir chamadas. D-673 restringe a contagem a janelas de até 90 dias. O teste unitário com servidor limitado a 300 linhas confirmou que uma primeira resposta parcial preserva todos os dados. A latência com carga real segue pendente.
+
+### Início das consultas de Vendas do Mercado Livre (Sentinel A31, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. O rastreio no Next acrescentou 125 ms à associação à organização, 250 ms à lista de contas ML, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura do cabeçalho.
+
+| Recorte | Primeira RPC de vendas · antes → D-674 | Lista de marcas · antes → D-674 |
+| --- | ---: | ---: |
+| Todas as contas | 468 → 1 ms | 470 → 174 ms |
+| Uma conta permitida | 464 → 277 ms | 466 → 150 ms |
+| Slug desconhecido | 464 → 278 ms | 465 → 152 ms |
+| Todas as contas, filtro Sem marca | 466 → 1 ms | 466 → 177 ms |
+
+As nove chamadas conservaram os argumentos e retornaram sucesso. Sem slug, as consultas de vendas saíram antes da organização e da lista de contas. Com slug, aguardaram a lista e enviaram o UUID só quando a conta estava visível. A consulta de marcas aguardou a organização. Os tempos medem o início das requisições no ensaio controlado. A latência percebida em produção segue pendente.

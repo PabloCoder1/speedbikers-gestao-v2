@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-672 antecipa as consultas de Vendas multicanal e D-673 encerra as séries de até 90 dias na primeira página quando o total exato confirma a leitura completa. A revisão de branches confirmou 24 refs remotas. Próxima fatia local: medir as dependências do recorte Mercado Livre em `/vendas`, incluindo a contagem Shopee e os filtros salvos. [Plano](agent-audit/PLAN.md) · [Medições](PERFORMANCE.md#fim-da-paginação-nas-séries-de-vendas-sentinel-a30-13112026)
+- **Sentinel.** D-674 antecipa as consultas de Vendas do ML e preserva os filtros. Próxima fatia local: medir em `/anuncios` quais consultas de lista e contadores dependem da organização, do filtro de conta e das leituras do cabeçalho. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-do-mercado-livre-sentinel-a31-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
