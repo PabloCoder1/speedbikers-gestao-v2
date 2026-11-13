@@ -158,3 +158,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-670.** As duas consultas de faturamento e a de Ads começam em paralelo. No consolidado, partem enquanto as contas e lojas são lidas. Com slug na URL, aguardam a lista de contas visíveis. A contagem de lojas segue para o seletor de marketplace.
 - **Validação.** Chromium e PostgREST local compararam cinco cargas medidas por versão e recorte com atraso controlado. A mediana até a primeira RPC caiu de 367 para 2 ms no consolidado e de 372 para 169 ms com conta. Passaram dez casos Playwright, 1.451 testes web no `pnpm run check`, `check:waterfalls`, `pnpm run build` e `pnpm docs:check`. [Medição](../PERFORMANCE.md#início-das-consultas-do-período-em-faturamento-sentinel-a27-13112026)
 - **Próxima etapa.** Medir o que os recortes Shopee e Todos precisam esperar antes de iniciar as leituras. [Plano](PLAN.md)
+
+### 13/11/2026 · Consultas do Faturamento multicanal
+
+- **D-671.** Todos e Shopee sem filtro iniciam as leituras após resolver a organização. Com filtro explícito, Shopee aguarda a lista de lojas visíveis. A mediana até a primeira RPC caiu de 367 para 151 ms em Todos e de 372 para 150 ms na Shopee sem filtro no ensaio controlado. Quantidade e argumentos das chamadas conferidos nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-faturamento-nos-recortes-shopee-e-todos-sentinel-a28-13112026)
+- **Validação.** Passaram 19 testes Playwright de Faturamento e Central, `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir se a lista de contas e os filtros salvos atrasam o início das consultas em Vendas multicanal. [Plano](PLAN.md)

@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 27 achados em [FINDINGS.md](FINDINGS.md). Vinte e seis têm evidência direta ou medição. Vinte receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 28 achados em [FINDINGS.md](FINDINGS.md). Vinte e sete têm evidência direta ou medição. Vinte e um receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -25,7 +25,7 @@ Há 27 achados em [FINDINGS.md](FINDINGS.md). Vinte e seis têm evidência diret
 
 O trabalho começou pelos serviços e pela referência que publica a web para distinguir indisponibilidade, vulnerabilidade e atraso de versão. Em seguida, foram corrigidos dependências críticas, push Shopee, titularidade de OAuth, envio SAC, regras por loja e concorrência de credenciais. A segunda revisão das branches cruzou o Git remoto com PRs, worktrees e deploys.
 
-A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. O resumo de cobertura usa os limites do dia de São Paulo no timestamp indexado dos pedidos Shopee. A contagem numérica de compras reduziu o custo de `get_faturamento` sob RLS. A Central compartilha a leitura do período atual e o faturamento do ML inicia as leituras sem esperar a contagem de lojas Shopee. A próxima fatia mede as dependências dos recortes Shopee e Todos. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
+A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. O resumo de cobertura usa os limites do dia de São Paulo no timestamp indexado dos pedidos Shopee. A contagem numérica de compras reduziu o custo de `get_faturamento` sob RLS. A Central compartilha a leitura do período atual e os três recortes de Faturamento antecipam as consultas quando o filtro dispensa a lista de contas. A próxima fatia mede a lista de contas e os filtros salvos em Vendas multicanal. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
 
 ## Fila por tarefa
 
@@ -52,7 +52,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Contar compras pelos IDs numéricos em `get_faturamento` (A26, D-669) | Equivalência do JSON completo em 36 combinações e regressão para colisão de IDs entre pedido avulso e pacote |
 | P2 · medido localmente | Contar chamadas de faturamento por carga da Central | 13 cargas autenticadas confirmaram duas chamadas do ML e uma da Shopee no recorte consolidado. [Medição](../PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026) |
 | P2 · pronto localmente | Antecipar as consultas do período de `/faturamento` no ML (A27, D-670) | Medir início das RPCs e confirmar recortes sem slug, com conta permitida e com slug desconhecido |
-| P2 · próxima etapa local | Medir as dependências dos recortes Shopee e Todos em `/faturamento` | Rastrear o início das RPCs e distinguir dependências de organização e seleção de lojas das leituras usadas pelo cabeçalho |
+| P2 · pronto localmente | Antecipar as consultas dos recortes Shopee e Todos em `/faturamento` (A28, D-671) | Rastrear as RPCs em quatro recortes e validar a organização, os filtros e o compartilhamento de leituras com a Central |
+| P2 · próxima etapa local | Medir dependências das consultas em `/vendas` multicanal | Distinguir a seleção de contas, organização e marca das leituras de filtros salvos e cabeçalho |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · segunda triagem concluída | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões novas verificadas. Restam 23 refs, com PR aberto, worktree ou finalidade histórica. Dois registros órfãos de worktrees e três rotinas sem consumidores removidos em sessões anteriores |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

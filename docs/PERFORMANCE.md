@@ -1673,3 +1673,16 @@ Chromium autenticado, build de produção local e PostgREST local com 314 migrat
 | Slug desconhecido na URL | 369 ms | 178 ms |
 
 Em todas as cargas, a versão anterior iniciou as três RPCs depois das duas respostas do cabeçalho. Com D-670, as três saíram antes da resposta de Shopee em todos os recortes. No consolidado, saíram também antes da lista de contas. Quando a URL trazia um slug, esperaram apenas a lista. As duas chamadas de `get_faturamento` e a de `get_ads_overview` conservaram período, detalhe e filtro por conta. A latência percebida em produção continua pendente de medição.
+
+### Início das consultas de Faturamento nos recortes Shopee e Todos (Sentinel A28, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio do servidor adicionou 125 ms à resposta da associação à organização e 350 ms à lista de contas e lojas. Cada versão teve cinco cargas medidas e uma de aquecimento por recorte. O tempo vai do início da primeira leitura de organização ou lista até a primeira RPC de faturamento, Ads ou repasse.
+
+| Recorte | RPCs por carga | Antes · mediana | D-671 · mediana |
+| --- | ---: | ---: | ---: |
+| Todos | 3 | 367 ms | 151 ms |
+| Shopee, todas as lojas visíveis | 11 | 372 ms | 150 ms |
+| Shopee, uma loja permitida | 11 | 374 ms | 378 ms |
+| Shopee, loja inexistente na URL | 11 | 372 ms | 381 ms |
+
+Antes, todas as RPCs saíam depois das duas respostas. Com D-671, em Todos e na Shopee sem filtro, saíram depois da organização e antes da lista. Nos dois cenários com loja na URL, continuaram esperando a lista. Todas retornaram HTTP 200 com os mesmos períodos, organização e filtros de loja. O recorte com loja inexistente exibiu o aviso e consultou todas as lojas visíveis. Os tempos são do ensaio controlado. O ganho percebido na navegação em produção ainda precisa ser medido.

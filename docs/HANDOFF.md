@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-670 antecipa as consultas do período de `/faturamento` no recorte ML. Próxima fatia: medir quais leituras dos recortes Shopee e Todos dependem da lista de contas ou da organização. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-do-período-em-faturamento-sentinel-a27-13112026)
+- **Sentinel.** D-670 e D-671 antecipam as consultas de `/faturamento` conforme o recorte. Próxima fatia local: medir em `/vendas` se a lista de contas e os filtros salvos atrasam consultas que já têm organização e período resolvidos. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-faturamento-nos-recortes-shopee-e-todos-sentinel-a28-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

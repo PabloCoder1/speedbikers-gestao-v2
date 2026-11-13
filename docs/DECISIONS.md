@@ -19444,3 +19444,11 @@ O JSON completo coincidiu em 36 combinações com ADMIN e GESTOR, incluindo tent
 As três consultas começam em paralelo, logo após abrir o recorte consolidado ou resolver o slug com as contas visíveis sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis. O cabeçalho continua recebendo as duas leituras necessárias aos filtros.
 
 No Chromium com PostgREST local e atraso controlado nas duas leituras do cabeçalho, a primeira RPC no consolidado passou de 367 ms para 2 ms. Períodos, argumento de conta e quantidade de chamadas coincidiram nas duas versões.
+
+## D-671 - Faturamento multicanal inicia as leituras após resolver o recorte
+
+Os recortes Shopee e Todos aguardavam a lista de contas e lojas antes de iniciar as consultas. A organização é necessária para as RPCs da Shopee. A lista só é necessária para montar o filtro quando a URL pede lojas no recorte Shopee.
+
+Em Todos e na Shopee sem filtro, as consultas começam assim que a associação à organização resolve. Com filtro explícito, a Shopee continua usando apenas as lojas visíveis sob RLS e avisa quando descarta uma loja. O cabeçalho recebe a lista completa. A Central segue reaproveitando as respostas do Mercado Livre no bloco por marketplace.
+
+O ensaio local com atraso controlado confirmou a ordem das requisições, a mesma quantidade de chamadas e os mesmos argumentos nos quatro recortes exercitados.
