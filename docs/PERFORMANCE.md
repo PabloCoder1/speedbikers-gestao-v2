@@ -1661,3 +1661,15 @@ Ensaio no build local de `39ed8045` com as 314 migrations aplicadas, sessão aut
 | Conta sem concessão, GESTOR | 1 | 2 | 2 | 1 |
 
 As quantidades são por carga. As duas chamadas do ML cobriram 15–21/10 e 08–14/10/2026. O faturamento do período atual pediu detalhe e o anterior pediu o resumo. Com conta selecionada, as quatro chamadas do ML receberam o UUID da conta. No recorte consolidado, indicadores, alertas e o bloco por marketplace compartilharam a resposta atual do ML. A única chamada de faturamento adicional foi da Shopee para o período atual. Quando o slug não estava visível ao GESTOR, a página usou o recorte consolidado sob RLS. As RPCs rastreadas retornaram HTTP 200. A concessão temporária da conta ao GESTOR foi removida após o ensaio.
+
+### Início das consultas do período em Faturamento (Sentinel A27, 13/11/2026)
+
+Chromium autenticado, build de produção local e PostgREST local com 314 migrations. O rastreio de `fetch` no servidor adicionou 150 ms à resposta da lista de contas ML e 350 ms à resposta da contagem de lojas Shopee. Em cada versão foram cinco cargas medidas e uma de aquecimento por recorte, intercaladas entre os três recortes. O tempo abaixo vai do início da primeira leitura de contas ou lojas até a saída da primeira RPC do período. Os números descrevem o ensaio controlado.
+
+| Recorte do ML | Antes · mediana | D-670 · mediana |
+| --- | ---: | ---: |
+| Todas as contas visíveis, sem slug na URL | 367 ms | 2 ms |
+| Conta permitida na URL | 372 ms | 169 ms |
+| Slug desconhecido na URL | 369 ms | 178 ms |
+
+Em todas as cargas, a versão anterior iniciou as três RPCs depois das duas respostas do cabeçalho. Com D-670, as três saíram antes da resposta de Shopee em todos os recortes. No consolidado, saíram também antes da lista de contas. Quando a URL trazia um slug, esperaram apenas a lista. As duas chamadas de `get_faturamento` e a de `get_ads_overview` conservaram período, detalhe e filtro por conta. A latência percebida em produção continua pendente de medição.

@@ -19436,3 +19436,11 @@ As comparações `EXCEPT ALL` deram os mesmos resultados para ADMIN e GESTOR nas
 `get_faturamento` convertia o ID em texto e acrescentava um prefixo por tipo antes de contar compras. A migration `20261113131644` conta os IDs distintos de pacote e soma os IDs distintos dos pedidos avulsos. Assim, dois pedidos do mesmo pacote contam como uma compra, e um pedido avulso com o mesmo número do pacote conta separadamente. O ticket médio usa a mesma contagem.
 
 O JSON completo coincidiu em 36 combinações com ADMIN e GESTOR, incluindo tentativas de consultar contas fora do escopo. No ensaio local de 90 dias para ADMIN, com todas as contas, a mediana caiu de 314,32 ms para 271,82 ms sem detalhe. As regras de classificação, custo, frete e alíquota continuam na consulta sob RLS.
+
+## D-670 - O faturamento do ML inicia as consultas do período sem esperar pelas lojas Shopee
+
+`/faturamento` esperava a lista de contas ML e a contagem de lojas Shopee antes de iniciar as duas leituras de faturamento e a de Ads. A contagem de lojas alimenta o seletor de marketplace. A lista de contas é necessária para resolver o slug da URL quando informado.
+
+As três consultas começam em paralelo, logo após abrir o recorte consolidado ou resolver o slug com as contas visíveis sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis. O cabeçalho continua recebendo as duas leituras necessárias aos filtros.
+
+No Chromium com PostgREST local e atraso controlado nas duas leituras do cabeçalho, a primeira RPC no consolidado passou de 367 ms para 2 ms. Períodos, argumento de conta e quantidade de chamadas coincidiram nas duas versões.

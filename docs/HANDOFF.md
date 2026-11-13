@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** A Central fez duas chamadas de faturamento do ML por carga nas 13 navegações locais. Próxima fatia: medir em `/faturamento` a espera pela lista de contas e pela contagem de lojas Shopee antes de iniciar as consultas do período. [Plano](agent-audit/PLAN.md) · [Medição da Central](PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026)
+- **Sentinel.** D-670 antecipa as consultas do período de `/faturamento` no recorte ML. Próxima fatia: medir quais leituras dos recortes Shopee e Todos dependem da lista de contas ou da organização. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-do-período-em-faturamento-sentinel-a27-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
