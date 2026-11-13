@@ -265,3 +265,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Remoção.** `export` removido de 33 declarações em 21 arquivos: constantes, funções e enums que só são consumidos dentro do próprio módulo.
 - **Validação.** `pnpm run check` (37 tarefas, 1.456 testes web, lint limpo) e `pnpm run build` (10 tarefas) passaram sem erros.
 - **Próxima etapa.** Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Varredura final de antecipação de queries
+
+- **Base.** `codex/sentinel-audit` em `4ac59beb`, após A25 e as 14 otimizações D-670 a D-684.
+- **Páginas analisadas.** Home (`/page.tsx`), Central (`/central/page.tsx`), Diagnóstico (`/diagnostico/page.tsx`), Estoque (`/estoque/page.tsx`), Contas (`/contas/page.tsx`), Central de Ações (`/acoes/page.tsx`), Saúde (`/saude/page.tsx`), Compras (`/compras/page.tsx`), Configurações (`/configuracoes/page.tsx`), Usuários (`/usuarios/page.tsx`).
+- **Resultado.** Nenhuma oportunidade nova de antecipação encontrada. Todas as páginas já usam `Promise.all` para queries independentes, promises encadeadas quando há dependências parciais, ou cadeias estritas (cada etapa precisa do resultado da anterior). O padrão é consistente no projeto: `currentMembership()` resolve a organização, e as RPCs dependentes disparam juntas.
+- **Páginas previamente otimizadas (D-670 a D-684).** Faturamento ML, Faturamento Shopee/Todos, Vendas multicanal, Vendas ML, Anúncios ML, Anúncios Shopee, Vendas Shopee, Curva ABC, Reposição, Produtos, Vinculações, Preços, Full e Perguntas do SAC.
+- **Conclusão.** A auditoria de antecipação de queries cobre todas as rotas de alto tráfego. Os 35 achados locais estão completos. Restam 6 pendentes de ação ou acesso externo (A01, A02, A07, A08, A10, A11). [Plano](PLAN.md)

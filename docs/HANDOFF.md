@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** A25 concluído: 33 `export` desnecessários removidos em `apps/web/lib/` (2 mantidos por `typeof`). 35 achados corrigidos localmente (de 41). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** 35 achados corrigidos localmente (de 41). Varredura final de antecipação de queries (13/11) confirmou que todas as rotas de alto tráfego estão otimizadas — nenhuma oportunidade nova além das 14 otimizações D-670 a D-684. Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
