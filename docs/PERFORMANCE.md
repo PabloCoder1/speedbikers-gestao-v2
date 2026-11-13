@@ -1611,3 +1611,24 @@ Comparação de `get_stock_coverage_summary` com 60 mil pedidos sintéticos ao l
 | 365 dias | GESTOR | 103,40 ms / 155.996 | 75,78 ms / 104.662 |
 
 No corpo da consulta de 30 dias, a leitura de `shopee_orders` passou de `Seq Scan` a `Bitmap Heap Scan` para os dois papéis. O `Bitmap Index Scan` em `shopee_orders_org_created_idx` selecionou 4.521 entradas pela organização e pelos dois limites de horário. `EXCEPT ALL` nos dois sentidos conferiu as unidades da Shopee por SKU e as contagens da RPC nas quatro janelas. A RPC também coincidiu para filtro de marca, organização alheia e limites invertidos ou nulos. O ensaio foi revertido. A medição em produção depende da publicação e da disponibilidade do ambiente.
+
+### Faturamento do ML com e sem detalhe sob RLS (Sentinel, 13/11/2026)
+
+Medição da RPC `get_faturamento` com a definição de D-499, após o replay local das migrations até D-668. Foram usados 60 mil pedidos e 62.608 linhas de venda sintéticas em 120 dias, 1.500 SKUs por organização, kits, histórico de custo, alíquotas com vigência e pedidos com SKU ou frete ausentes. ADMIN alcançou as duas contas da organização, com 50 mil pedidos. GESTOR alcançou apenas uma, com 30 mil. Os outros 10 mil pedidos pertenciam a outra organização. Cada combinação teve um aquecimento e cinco medições por variante, em ordem alternada, com `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` sob `authenticated`.
+
+| Papel | Conta selecionada | Janela | Pedidos no recorte | Sem detalhe · ms / blocos | Com detalhe · ms / blocos |
+| --- | --- | ---: | ---: | ---: | ---: |
+| ADMIN | Todas | 7 dias | 2.916 | 28,6 / 2.098 | 40,3 / 2.532 |
+| ADMIN | Todas | 30 dias | 12.500 | 106,2 / 2.152 | 139,5 / 2.586 |
+| ADMIN | Todas | 90 dias | 37.500 | 338,7 / 2.090 | 419,4 / 2.524 |
+| ADMIN | Uma | 7 dias | 1.750 | 20,9 / 2.098 | 28,5 / 2.532 |
+| ADMIN | Uma | 30 dias | 7.500 | 67,3 / 2.152 | 88,8 / 2.586 |
+| ADMIN | Uma | 90 dias | 22.500 | 192,5 / 2.090 | 251,4 / 2.524 |
+| GESTOR | Todas | 7 dias | 1.750 | 28,4 / 2.101 | 32,5 / 2.540 |
+| GESTOR | Todas | 30 dias | 7.500 | 62,5 / 2.155 | 85,6 / 2.594 |
+| GESTOR | Todas | 90 dias | 22.500 | 208,7 / 2.093 | 300,8 / 2.532 |
+| GESTOR | Uma | 7 dias | 1.750 | 20,3 / 2.101 | 27,6 / 2.540 |
+| GESTOR | Uma | 30 dias | 7.500 | 64,0 / 2.155 | 88,7 / 2.594 |
+| GESTOR | Uma | 90 dias | 22.500 | 194,4 / 2.093 | 253,6 / 2.532 |
+
+Tempos e blocos compartilhados são medianas. Todas as execuções medidas tiveram zero blocos temporários. O `resumo` coincidiu com e sem detalhe nas 12 combinações. A variante sem detalhe devolveu `null` em `diario`, `por_conta` e `por_sku`. Contas sem permissão devolveram zero pedidos. No plano direto do corpo para ADMIN em 90 dias, `classificado` processou 37.500 pedidos e acumulou 191,5 a 220,2 ms, contra 19,6 a 21,4 ms da varredura de `ml_sales_lines`. `por_sku_base` levou 57,5 ms com detalhe e teve zero execuções sem detalhe. Esses tempos de nós incluem seus filhos. A classificação por pedido é o primeiro ponto a investigar para reduzir o custo comum. Os números são locais e os dados sintéticos foram revertidos.
