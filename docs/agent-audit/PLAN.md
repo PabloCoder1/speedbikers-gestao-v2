@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 40 achados em [FINDINGS.md](FINDINGS.md). Trinta e nove têm evidência direta ou medição. Trinta e três receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 41 achados em [FINDINGS.md](FINDINGS.md). Quarenta têm evidência direta ou medição. Trinta e quatro receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -65,7 +65,7 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Antecipar a visão e os painéis de `/vinculacoes` (A38, D-681) | Quatro recortes com os mesmos argumentos e limites. Tabela alternativa conferida com falha simulada da visão |
 | P2 · pronto localmente | Antecipar a consulta de `/precos` e evitar leitura sem conta no XLSX (A39, D-682) | Quatro recortes com os mesmos argumentos. O arquivo foi baixado e conferido em cada recorte |
 | P2 · pronto localmente | Antecipar a consulta de `/full` no consolidado (A40, D-683) | Quatro recortes com os mesmos argumentos da tela e do CSV. Assinatura antiga conferida com falha simulada |
-| P2 · próxima etapa local | Medir a dependência da lista de contas em `/atendimento/perguntas` | Conferir o início da lista e dos contadores por aba, a seleção de conta e o fluxo de resposta |
+| P2 · pronto localmente | Antecipar lista, contadores e templates em `/atendimento/perguntas` (A41, D-684) | No consolidado a lista e os contadores iniciam junto com as contas. Templates e auth iniciam no topo da aba Pendente. Caixa de Entrada e Detalhe já estavam paralelos |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · rechecado em 13/11 | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões verificadas na segunda triagem. As 24 refs atuais incluem a branch Sentinel e sete branches integradas com vínculo a worktrees existentes |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

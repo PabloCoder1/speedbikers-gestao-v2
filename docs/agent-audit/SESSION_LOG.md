@@ -249,3 +249,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-683.** Full inicia a RPC do consolidado quando a organização responde. No ensaio, o início passou de 273 para 179 ms. Quatro recortes preservaram os argumentos, os CSVs responderam com o mesmo filtro da tela e a assinatura antiga funcionou com falha simulada. [Medição](../PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
 - **Validação.** Passaram seis casos Playwright de Full, 1.456 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir em Perguntas do SAC se a lista e os contadores podem começar antes da lista de contas no consolidado. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Perguntas do SAC — antecipação de consultas
+
+- **Base.** `codex/sentinel-audit` em `06a63778`, após a etapa de Full.
+- **D-684 (A41).** Em `/atendimento/perguntas`, três otimizações: (1) a lista de contas inicia sem `await` — quando não há filtro por conta (recorte "Todas as contas"), a consulta principal e os contadores por aba iniciam em paralelo com as contas em vez de depois delas; (2) `reply_templates` e `auth.getUser()` iniciam no topo da aba Pendente em vez de depois do resultado das perguntas; (3) `support_reply_attempts` continua sequencial porque depende do id da pergunta selecionada.
+- **Verificação das outras telas.** A Caixa de Entrada (`/atendimento/page.tsx`) já usa um único `Promise.all` para contas, auth e métricas na linha 194. O Detalhe (`/atendimento/[caseId]/page.tsx`) faz o mesmo na linha 184 com seis leituras. Nenhuma antecipação adicional é possível.
+- **Validação.** `pnpm run check` (37 tarefas, 1.456 + 1.015 testes) e `pnpm run build` passaram sem erros.
+- **Próxima etapa.** Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

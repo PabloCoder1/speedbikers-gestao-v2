@@ -44,6 +44,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A38 | P2 · CORRIGIDO localmente (D-681) | Os painéis de Vinculações aguardavam a visão, que esperava a lista de contas mesmo sem seleção | A visão e os painéis começam em paralelo após a organização e o slug quando informado. O ensaio conferiu quatro recortes e a tabela alternativa. [Medição](../PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026) |
 | A39 | P2 · CORRIGIDO localmente (D-682) | Histórico de Preços e XLSX aguardavam as contas até no consolidado | A tela consulta o histórico após a organização no consolidado. O XLSX lê contas só com seleção na URL. O recorte foi conferido nos arquivos. [Medição](../PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026) |
 | A40 | P2 · CORRIGIDO localmente (D-683) | A consulta da Central Full esperava a lista de contas no consolidado | A consulta inicia após resolver a organização quando a URL não pede conta. CSV e assinatura antiga conferidos. [Medição](../PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026) |
+| A41 | P2 · CORRIGIDO localmente (D-684) | Em Perguntas do SAC a lista, os contadores e os templates esperavam a lista de contas e a seleção das perguntas de forma sequencial | No consolidado a lista e os contadores iniciam junto com as contas. Templates e auth iniciam no topo da aba Pendente em vez de esperar o resultado das perguntas. Caixa de Entrada e Detalhe já estavam paralelos |
 
 ## Referências externas
 

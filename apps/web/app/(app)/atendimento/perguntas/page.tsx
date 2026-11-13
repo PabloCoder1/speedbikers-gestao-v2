@@ -166,11 +166,16 @@ export default async function PerguntasPage({
   const now = new Date();
   const supabase = await createClient();
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
-  const accounts = accountsResult.data ?? [];
-  const selectedAccount = accounts.find((account) => account.slug === accountSlug) ?? null;
+  const accountsPromise = supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
 
   const abaAtual = STATUS_TABS.find((candidate) => candidate.key === tab) ?? STATUS_TABS[0];
+  const pendente = tab === "pendente";
+
+  const templatesPromise = pendente ? supabase.from("reply_templates").select("id, name, body").order("name") : null;
+  const authPromise = pendente ? supabase.auth.getUser() : null;
+
+  const earlyAccounts = accountSlug !== null ? await accountsPromise : null;
+  const selectedAccount = earlyAccounts?.data?.find((account) => account.slug === accountSlug) ?? null;
 
   /** `external_status.in.(...)` filtrado pela aba; Pendente também aceita nulo (D-067: sumir é pior que aparecer no lugar errado). */
   function recorte(statuses: readonly string[], incluiNulo: boolean): string {
@@ -199,7 +204,7 @@ export default async function PerguntasPage({
   // Uma contagem por aba, no MESMO recorte de conta — os números da faixa de
   // abas têm de bater com o que cada uma mostra (D-236), nunca ser a
   // organização inteira enquanto a lista está filtrada por conta.
-  const [contagens, questionsResult] = await Promise.all([
+  const [contagens, questionsResult, accountsResult] = await Promise.all([
     Promise.all(
       STATUS_TABS.map((candidateTab) => {
         let contagemQuery = supabase
@@ -214,28 +219,28 @@ export default async function PerguntasPage({
       }),
     ),
     questionsQuery,
+    accountsPromise,
   ]);
+  const accounts = accountsResult.data ?? [];
   const questions = (questionsResult.data ?? []) as unknown as QuestionRow[];
   const total = questionsResult.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Só a aba Pendente abre resposta — responder uma pergunta já respondida,
-  // expirada, apagada ou desativada não é uma ação que a tela ofereça.
-  const selecionada = tab === "pendente" ? (questions.find((question) => question.id === pergunta) ?? questions[0] ?? null) : null;
+  const selecionada = pendente ? (questions.find((question) => question.id === pergunta) ?? questions[0] ?? null) : null;
 
   let templates: ReplyTemplateOption[] = [];
   let pendingReply: PendingSupportReply | null = null;
 
-  if (selecionada !== null && selecionada.resolved_at === null) {
+  if (selecionada !== null && selecionada.resolved_at === null && templatesPromise !== null && authPromise !== null) {
     const [templatesResult, attemptsResult, { data: auth }] = await Promise.all([
-      supabase.from("reply_templates").select("id, name, body").order("name"),
+      templatesPromise,
       supabase
         .from("support_reply_attempts")
         .select("status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at")
         .eq("support_case_id", selecionada.id)
         .eq("status", "PENDING")
         .limit(1),
-      supabase.auth.getUser(),
+      authPromise,
     ]);
 
     if (templatesResult.error === null) templates = templatesResult.data;
