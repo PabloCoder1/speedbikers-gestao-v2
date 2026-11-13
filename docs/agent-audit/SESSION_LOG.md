@@ -235,3 +235,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-681.** Visão, candidatos e vínculos manuais começam após a organização e o slug quando informado. No ensaio controlado, o bloco de todas as contas caiu de 954 para 611 ms. Quatro recortes mantiveram os argumentos. A falha simulada preservou a tabela alternativa, com duas consultas de painéis descartadas. [Medição](../PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
 - **Validação.** Passaram sete casos Playwright de Vinculações, 1.456 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir a dependência da lista de contas em Preços e no XLSX. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Histórico de Preços e XLSX
+
+- **Base.** `codex/sentinel-audit` em `d1ddf667`. Checkout original em `v3`, `9642d921`.
+- **D-682.** Em Preços, a consulta do consolidado começa após a organização. O XLSX sem conta na URL faz zero leituras da lista. O ensaio preservou os argumentos em quatro recortes. [Medição](../PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
+- **Validação.** Passaram quatro casos Playwright de Preços, 1.456 testes web no `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
+- **Próxima etapa.** Medir a dependência da lista de contas em `/full` e conferir o CSV e a assinatura alternativa da RPC. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

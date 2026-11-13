@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **583** (D-001 a D-681).
+Decisões registradas: **584** (D-001 a D-682).
 
 ## Por domínio
 
@@ -526,7 +526,7 @@ Decisões registradas: **583** (D-001 a D-681).
 - **D-677** — Vendas da Shopee inicia as consultas após validar as lojas visíveis
 - **D-678** — A Curva ABC inicia as consultas assim que o recorte está resolvido
 
-### worker/infra (97)
+### worker/infra (98)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -625,4 +625,5 @@ Decisões registradas: **583** (D-001 a D-681).
 - **D-666** — Telemetria de jobs exige escopo explícito de plataforma
 - **D-671** — Faturamento multicanal inicia as leituras após resolver o recorte
 - **D-681** — Vinculações inicia a visão e os painéis em paralelo
+- **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
 

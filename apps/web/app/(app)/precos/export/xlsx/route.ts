@@ -25,10 +25,12 @@ export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
   const filters = resolvePriceFilters(Object.fromEntries(url.searchParams.entries()));
 
-  const [membership, accounts] = await Promise.all([
-    currentMembership(supabase),
-    supabase.from("ml_accounts").select("id, label").order("label"),
-  ]);
+  const membershipPromise = currentMembership(supabase);
+  const accountsPromise =
+    filters.account === null
+      ? Promise.resolve(null)
+      : Promise.resolve(supabase.from("ml_accounts").select("id, label").order("label"));
+  const [membership, accounts] = await Promise.all([membershipPromise, accountsPromise]);
 
   if (membership.error !== null) {
     return NextResponse.json({ error: { code: "membership_unavailable" } }, { status: 503 });
@@ -43,7 +45,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   // Conta desconhecida (ou de outra organização) vira "sem filtro" antes de
   // tocar a RPC — a MESMA regra da tela, para o arquivo não sair de um recorte
   // que a tela não produziria.
-  const conta = (accounts.data ?? []).find((row) => row.id === filters.account) ?? null;
+  const conta = accounts?.data?.find((row) => row.id === filters.account) ?? null;
 
   const now = new Date();
   const { data, error } = await loadPriceExportData(supabase, organizationId, filters, conta?.id ?? null, now);

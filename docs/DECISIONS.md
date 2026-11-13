@@ -19520,3 +19520,9 @@ A visão de Vinculações aguardava a lista de contas em qualquer recorte. Os pa
 Os painéis mantêm os limites de 200 candidatos abertos e oito vínculos manuais. A conferência com pedidos continua em streaming. Quando a visão falha, a tabela alternativa mantém os filtros e o aviso. Nesse caso, as duas leituras dos painéis já foram iniciadas e seus resultados são descartados.
 
 O ensaio local com atrasos controlados confirmou a ordem das chamadas, os argumentos e o caminho alternativo. [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
+
+## D-682 - Histórico de Preços inicia o consolidado sem esperar a lista de contas
+
+O Histórico de Preços e seu XLSX aguardavam a lista de contas em todos os recortes. A tela continua carregando essa lista para o seletor. A RPC começa após resolver a organização quando a URL não pede conta. O XLSX consolidado dispensa a lista porque o arquivo não precisa de um rótulo de conta.
+
+Com conta explícita, as duas entradas ainda validam o ID na lista visível sob RLS. O ensaio conferiu conta, período, direção e busca na tela e na exportação. [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)

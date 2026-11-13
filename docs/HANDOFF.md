@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-681 inicia a visão e os painéis de Vinculações em paralelo após resolver o recorte. A próxima fatia vai medir a dependência da lista de contas em `/precos` e no XLSX, com conferência do recorte de conta, período e direção. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
+- **Sentinel.** D-682 antecipa a consulta de Preços no consolidado e dispensa a lista de contas no XLSX quando a URL não pede conta. Medir a dependência da lista de contas em `/full` e conferir o CSV e a assinatura alternativa da RPC. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

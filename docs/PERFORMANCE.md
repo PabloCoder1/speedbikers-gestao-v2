@@ -1820,3 +1820,16 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Busca, estado, venda e segunda página | 269 → 141 ms | 752 → 141 ms | 947 → 610 ms |
 
 Os argumentos das duas RPCs e das duas consultas dos painéis coincidiram nas 40 cargas medidas. As consultas dos painéis mantiveram os limites de 200 e oito linhas e o filtro de conta. Quando o rastreador simulou visão indisponível, a tabela alternativa preservou o recorte e exibiu o aviso. As duas consultas já iniciadas dos painéis foram descartadas, e a conferência pelos pedidos não foi disparada nesse cenário. Os tempos são do ensaio com atrasos controlados. A latência percebida em produção segue pendente.
+
+### Consultas do Histórico de Preços e do XLSX (Sentinel A39, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio acrescentou 125 ms à organização, 250 ms à lista de contas e 50 ms à RPC. Foram cinco cargas medidas e uma de aquecimento por versão e recorte. O tempo começa na primeira leitura de organização ou contas.
+
+| Recorte | Início de `get_price_changes` · antes → D-682 |
+| --- | ---: |
+| Todas as contas | 269 → 144 ms |
+| Conta permitida | 279 → 280 ms |
+| Conta indisponível | 274 → 273 ms |
+| Busca no consolidado | 272 → 149 ms |
+
+As 40 cargas medidas preservaram todos os argumentos. Os XLSX baixados nas cargas de aquecimento retornaram HTTP 200 e enviaram os mesmos filtros de conta, período, direção e busca da página. O consolidado sem conta na URL passou de uma consulta de contas por arquivo para zero. Uma conta informada e indisponível continuou sendo validada, com retorno ao consolidado. A latência percebida em produção segue pendente.
