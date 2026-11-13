@@ -19488,3 +19488,11 @@ O catálogo só é consultado quando existe ao menos uma loja visível na organi
 Em `/vendas/shopee`, as consultas de vendas, pedidos e devoluções aguardavam também a contagem de contas do ML e os filtros salvos. As quatro RPCs agora começam após a organização e as lojas visíveis definirem o recorte. Os controles continuam recebendo a contagem e os filtros em paralelo.
 
 O painel por loja mantém o período inteiro sob RLS. Pedidos aceitam loja, situação e número do pedido. Devoluções aceitam loja e período e mantêm seu painel com streaming. Sem loja visível, a página exibe o aviso antes de consultar vendas, pedidos ou devoluções.
+
+## D-678 - A Curva ABC inicia as consultas assim que o recorte está resolvido
+
+A Curva ABC aguardava filtros salvos, contas do Mercado Livre e a contagem de lojas Shopee antes de iniciar a análise e as listas de marcas e categorias. Em Todos e Shopee, também aguardava a lista multicanal mesmo sem seleção de contas.
+
+As listas de marcas e categorias começam assim que a organização responde. A curva espera pela lista de contas do ML quando há um slug e pela lista multicanal quando a URL pede contas ou lojas por ID. Filtros salvos, contagens e listas continuam disponíveis no cabeçalho. A validação das contas e do filtro Sem Full continua compartilhada com o XLSX.
+
+O ensaio em sete recortes confirmou os mesmos argumentos nas três RPCs da tela e os mesmos filtros compartilhados com as curvas do XLSX. [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)

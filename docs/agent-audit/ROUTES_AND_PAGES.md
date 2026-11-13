@@ -51,7 +51,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/compras/[id]` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `purchase_order_events` |
 | `/compras/[id]/editar` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/editar/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `suppliers` |
 | `/compras/novo` | [page.tsx](<../../apps/web/app/(app)/compras/novo/page.tsx>) | RPC `get_suppliers_overview`, `get_supplier_brands`. Tabelas `purchase_orders`, `skus` |
-| `/curva-abc` | [page.tsx](<../../apps/web/app/(app)/curva-abc/page.tsx>) | RPC `get_sku_abc_analysis`, `get_supplier_brands`, `get_sku_categories`. Tabelas `ml_accounts`, `saved_filters`, `marketplace_accounts` |
+| `/curva-abc` | [page.tsx](<../../apps/web/app/(app)/curva-abc/page.tsx>) | RPC `get_sku_abc_analysis` após organização e a lista de contas quando a URL pede seleção. RPC `get_supplier_brands` e `get_sku_categories` após organização. Leituras do cabeçalho em `ml_accounts`, `saved_filters`, `marketplace_accounts` e contagem em `shopee_shops` (D-678) |
 | `/estoque` | [page.tsx](<../../apps/web/app/(app)/estoque/page.tsx>) | RPC `get_stock_balances`, `get_supplier_brands`, `get_stock_summary` |
 | `/estoque/[skuId]/ajuste` | [page.tsx](<../../apps/web/app/(app)/estoque/[skuId]/ajuste/page.tsx>) | Tabelas `skus`, `inventory_balances`, `stock_movements`, `profiles` |
 | `/estoque/movimentacoes` | [page.tsx](<../../apps/web/app/(app)/estoque/movimentacoes/page.tsx>) | RPC `get_stock_movements`, `get_stock_movements_summary` |

@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 34 achados em [FINDINGS.md](FINDINGS.md). Trinta e três têm evidência direta ou medição. Vinte e sete receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 35 achados em [FINDINGS.md](FINDINGS.md). Trinta e quatro têm evidência direta ou medição. Vinte e oito receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -25,7 +25,7 @@ Há 34 achados em [FINDINGS.md](FINDINGS.md). Trinta e três têm evidência dir
 
 O trabalho começou pelos serviços e pela referência que publica a web para distinguir indisponibilidade, vulnerabilidade e atraso de versão. Em seguida, foram corrigidos dependências críticas, push Shopee, titularidade de OAuth, envio SAC, regras por loja e concorrência de credenciais. A segunda revisão das branches cruzou o Git remoto com PRs, worktrees e deploys.
 
-A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. O resumo de cobertura usa os limites do dia de São Paulo no timestamp indexado dos pedidos Shopee. A contagem numérica de compras reduziu o custo de `get_faturamento` sob RLS. A Central compartilha a leitura do período atual e os três recortes de Faturamento antecipam as consultas quando o filtro dispensa a lista de contas. A próxima fatia mede a lista de contas e os filtros salvos em Vendas multicanal. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
+A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conversa foram exercitados localmente. A revisão de Sincronização corrigiu o escopo da telemetria e comparou as leituras de `get_sync_health`. O resumo de cobertura usa os limites do dia de São Paulo no timestamp indexado dos pedidos Shopee. A contagem numérica de compras reduziu o custo de `get_faturamento` sob RLS. A Central compartilha a leitura do período atual e os três recortes de Faturamento antecipam as consultas quando o filtro dispensa a lista de contas. A Curva ABC inicia suas consultas assim que a organização e a seleção pedida estão resolvidas. A publicação precisa respeitar a ordem migration, revisão de API/worker e web. No SAC, a versão de worker que conhece `support.reply.send.v2` precede a API, com conciliação das tentativas legadas ou de desfecho incerto.
 
 ## Fila por tarefa
 
@@ -59,7 +59,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Antecipar lista e contadores em `/anuncios` (A32, D-675) | Rastrear as duas RPCs em quatro recortes e conferir busca, estado e conta |
 | P2 · pronto localmente | Antecipar lista e resumo em `/anuncios/shopee` (A33, D-676) | Quatro recortes com os mesmos argumentos e prova de zero consultas para GESTOR sem loja visível |
 | P2 · pronto localmente | Antecipar as consultas de `/vendas/shopee` (A34, D-677) | Quatro recortes com argumentos iguais e zero RPCs para GESTOR sem loja visível |
-| P2 · próxima etapa local | Medir início das consultas de `/curva-abc` | Isolar dependências de organização, contas, filtros salvos e cabeçalho e conferir recortes da curva e exportação |
+| P2 · pronto localmente | Antecipar as consultas de `/curva-abc` (A35, D-678) | Sete recortes com os mesmos argumentos antes e depois e equivalência dos filtros aplicados à curva e ao XLSX |
+| P2 · próxima etapa local | Conferir o limite de regras de `/reposicao` e `/reposicao/configuracoes` | Semear mais de 1.000 regras, verificar a política por SKU e a listagem sob RLS e medir as leituras |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · rechecado em 13/11 | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões verificadas na segunda triagem. As 24 refs atuais incluem a branch Sentinel e sete branches integradas com vínculo a worktrees existentes |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

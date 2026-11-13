@@ -118,27 +118,34 @@ export default async function CurvaAbcPage({
   const pedidos = resolveAbcFilters(query, today);
   const multicanal = pedidos.escopo !== "ml";
 
-  // As contas não dependem da organização: a RLS já as restringe. As leituras
-  // que não dependem de nada saem juntas (D-195). Fora do ML, a lista de contas
-  // e lojas vem da fonte única (C-52); no ML basta o NÚMERO de lojas, que só
-  // decide se o seletor de marketplace aparece (D-431).
-  const [membership, accountsResult, savedFiltersResult, lojasShopee, contasDoRecorte] = await Promise.all([
-    currentMembership(),
+  // A RLS já restringe as contas. Fora do ML, a fonte única de contas e lojas
+  // (C-52) também valida as contas pedidas no link.
+  const membershipPromise = currentMembership();
+  const accountsPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
-    supabase.from("saved_filters").select("id, name, params").eq("screen", "/curva-abc").order("name"),
-    contarLojasShopee(supabase),
+  );
+  const contasDoRecortePromise = Promise.resolve(
     multicanal
       ? supabase
           .from("marketplace_accounts")
           .select("account_id, marketplace, name, environment")
           .order("marketplace", { ascending: true })
           .order("name", { ascending: true })
-      : Promise.resolve({ data: null, error: null }),
+      : { data: null, error: null },
+  );
+  const cabecalhoPromise = Promise.all([
+    accountsPromise,
+    contasDoRecortePromise,
+    supabase.from("saved_filters").select("id, name, params").eq("screen", "/curva-abc").order("name"),
+    contarLojasShopee(supabase),
   ]);
+  // O cabeçalho pode falhar antes de a organização ou a conta ser resolvida.
+  void cabecalhoPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
+    await cabecalhoPromise;
     return (
       <>
         <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Curva ABC</h1>
@@ -147,56 +154,65 @@ export default async function CurvaAbcPage({
     );
   }
 
-  const accounts = accountsResult.data ?? [];
+  // Marca e categoria dependem só da organização (D-194).
+  const filtrosPromise = Promise.all([
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+    supabase.rpc("get_sku_categories", { p_organization_id: organizationId }),
+  ]);
+  void filtrosPromise.catch(() => undefined);
 
-  // As contas do link que a pessoa alcança e que cabem no recorte; as outras
-  // caem, com aviso (D-440). A mesma regra do Excel (`aplicarContasDoRecorte`).
-  const todasAsContas: ContaDoSeletor[] = contasDoRecorte.data ?? [];
-  const { filters, selecionadas, descartadas, leMl } = aplicarContasDoRecorte(pedidos, todasAsContas);
+  // A curva só espera a lista de contas quando o link pede uma seleção.
+  // Slug desconhecido cai no consolidado. A seleção multicanal usa a mesma
+  // validação por RLS do Excel e conta as contas descartadas (D-440).
+  const selectedAccount =
+    pedidos.accountSlug === null
+      ? null
+      : ((await accountsPromise).data?.find((a) => a.slug === pedidos.accountSlug) ?? null);
+  const contasPedidas = pedidos.contas === null ? [] : ((await contasDoRecortePromise).data ?? []);
+  const { filters, selecionadas, descartadas, leMl } = aplicarContasDoRecorte(pedidos, contasPedidas);
   const janela = resolveAbcWindow(filters, today);
+
+  const [curva, [brandsResult, categoriesResult], [accountsResult, contasDoRecorte, savedFiltersResult, lojasShopee]] =
+    await Promise.all([
+      supabase.rpc("get_sku_abc_analysis", {
+        p_organization_id: organizationId,
+        p_date_from: janela.from,
+        p_date_to: janela.to,
+        p_prev_from: janela.prevFrom,
+        p_prev_to: janela.prevTo,
+        // O recorte ML chama a função EXATAMENTE como antes (C-60: marketplace
+        // nulo = só ML); fora dele, a conta vai em p_account_ids.
+        ...(filters.escopo === "ml"
+          ? { p_ml_account_id: selectedAccount?.id ?? null }
+          : {
+              p_marketplaces: marketplacesDoEscopo(filters.escopo),
+              p_account_ids: filters.contas === null ? null : [...filters.contas],
+            }),
+        p_supplier_brand: filters.brand,
+        p_category: filters.category,
+        p_kind: filters.kind?.value ?? null,
+        p_criterion: filters.criterion.key,
+        p_abc_class: filters.abcClass,
+        p_only_without_full: filters.onlyWithoutFull,
+        p_stock: filters.stock?.key ?? null,
+        p_movement: filters.movement?.key ?? null,
+        p_search: filters.search,
+        p_order: filters.order.key,
+        p_limit: PAGE_SIZE,
+        p_offset: (filters.page - 1) * PAGE_SIZE,
+      }),
+      filtrosPromise,
+      cabecalhoPromise,
+    ]);
+
+  const accounts = accountsResult.data ?? [];
+  const todasAsContas: ContaDoSeletor[] = contasDoRecorte.data ?? [];
   const contasDoMenu = todasAsContas.filter((c) => filters.escopo === "todos" || c.marketplace === "SHOPEE");
-  // Slug desconhecido cai em "consolidado" em silêncio — mesmo tratamento de
-  // `/vendas` e `/anuncios`.
-  const selectedAccount = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
   const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
     id: row.id,
     name: row.name,
     params: row.params as Record<string, string>,
   }));
-
-  // As listas de marca e categoria vêm do BANCO, nunca das linhas da página
-  // (D-194). Saem no mesmo round trip da curva.
-  const [curva, brandsResult, categoriesResult] = await Promise.all([
-    supabase.rpc("get_sku_abc_analysis", {
-      p_organization_id: organizationId,
-      p_date_from: janela.from,
-      p_date_to: janela.to,
-      p_prev_from: janela.prevFrom,
-      p_prev_to: janela.prevTo,
-      // O recorte ML chama a função EXATAMENTE como antes (C-60: marketplace
-      // nulo = só ML); fora dele, a conta vai em p_account_ids.
-      ...(filters.escopo === "ml"
-        ? { p_ml_account_id: selectedAccount?.id ?? null }
-        : {
-            p_marketplaces: marketplacesDoEscopo(filters.escopo),
-            p_account_ids: filters.contas === null ? null : [...filters.contas],
-          }),
-      p_supplier_brand: filters.brand,
-      p_category: filters.category,
-      p_kind: filters.kind?.value ?? null,
-      p_criterion: filters.criterion.key,
-      p_abc_class: filters.abcClass,
-      p_only_without_full: filters.onlyWithoutFull,
-      p_stock: filters.stock?.key ?? null,
-      p_movement: filters.movement?.key ?? null,
-      p_search: filters.search,
-      p_order: filters.order.key,
-      p_limit: PAGE_SIZE,
-      p_offset: (filters.page - 1) * PAGE_SIZE,
-    }),
-    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
-    supabase.rpc("get_sku_categories", { p_organization_id: organizationId }),
-  ]);
 
   const { data, error } = curva;
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);

@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-677 antecipa as consultas de Vendas da Shopee após resolver a organização e as lojas visíveis. Próxima fatia local: medir em `/curva-abc` quais leituras podem começar antes dos filtros salvos e das contagens do cabeçalho, preservando o recorte da curva e do XLSX. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-da-shopee-sentinel-a34-13112026)
+- **Sentinel.** D-678 antecipa as consultas da Curva ABC e preserva o recorte compartilhado com o XLSX. A próxima fatia local vai reproduzir o limite de 1.000 regras em `/reposicao` e `/reposicao/configuracoes` e conferir a escolha de regra específica por SKU. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

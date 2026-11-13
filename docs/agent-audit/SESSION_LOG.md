@@ -207,3 +207,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-677.** `apps/web/app/(app)/vendas/shopee/page.tsx` inicia vendas, pedidos e devoluções após resolver organização e lojas. No ensaio controlado, a primeira RPC saiu em 279 ms contra 471 ms antes, na mediana de todas as lojas. Argumentos conferidos nos quatro recortes. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-da-shopee-sentinel-a34-13112026)
 - **Validação.** Passaram dez casos Playwright de Vendas da Shopee, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`. O GESTOR sem concessão recebeu o aviso e fez zero RPCs de vendas, pedidos e devoluções.
 - **Próxima etapa.** Medir dependências das consultas da Curva ABC e preservar o recorte usado pela tela e pelo XLSX. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Consultas da Curva ABC
+
+- **Base.** `codex/sentinel-audit` em `eeb0ac9f`, com D-677 concluída em Vendas da Shopee. Checkout original em `v3`, `9642d921`.
+- **D-678.** A Curva ABC inicia as consultas de marca e categoria após resolver a organização. A curva espera pela lista de contas quando a URL pede uma seleção. No ensaio local, a mediana até iniciar a análise do ML caiu de 469 para 145 ms no consolidado. Sete recortes mantiveram os argumentos das três RPCs e os filtros compartilhados com o XLSX. [Medição](../PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
+- **Validação.** Passaram cinco casos Playwright da Curva ABC, 1.453 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** A próxima fatia vai reproduzir o limite de 1.000 regras em `/reposicao` e `/reposicao/configuracoes` e conferir a escolha de regra específica por SKU. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)

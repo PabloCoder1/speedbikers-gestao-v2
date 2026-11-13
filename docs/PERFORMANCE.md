@@ -1767,3 +1767,19 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Pedido específico e situação Cancelada, janela de sete dias | 469 → 278 ms |
 
 `get_shopee_sales_by_shop`, `get_shopee_orders`, `get_shopee_returns_summary` e `get_shopee_returns` retornaram HTTP 200 e receberam os mesmos argumentos nas 40 cargas medidas. As quatro chamadas saíram após organização e lojas e antes da contagem ML e dos filtros salvos. Uma carga como GESTOR sem concessão exibiu o aviso e fez zero chamadas às quatro RPCs. O ensaio mede o início das requisições sob atraso controlado. A latência percebida em produção continua pendente.
+
+### Início das consultas da Curva ABC (Sentinel A35, 13/11/2026)
+
+Chromium autenticado como ADMIN, build de produção local e PostgREST local. O rastreio adicionou 125 ms à associação à organização, 250 ms à lista de contas ML, 300 ms à lista multicanal, 350 ms à contagem de lojas Shopee e 450 ms aos filtros salvos. Foram cinco cargas medidas e uma de aquecimento por recorte em cada versão. As medianas medem o tempo desde a primeira leitura do cabeçalho até o início da RPC de análise e até o início da primeira RPC de marca ou categoria.
+
+| Recorte | Curva · antes → D-678 | Marca e categoria · antes → D-678 |
+| --- | ---: | ---: |
+| Mercado Livre, todas as contas | 469 → 145 ms | 469 → 144 ms |
+| Mercado Livre, conta permitida e Sem Full | 475 → 267 ms | 475 → 142 ms |
+| Mercado Livre, slug desconhecido | 473 → 273 ms | 473 → 143 ms |
+| Todos, sem seleção de contas | 473 → 150 ms | 473 → 150 ms |
+| Todos, conta do ML e Sem Full | 469 → 321 ms | 470 → 146 ms |
+| Todos, só loja Shopee com Sem Full na URL | 475 → 324 ms | 475 → 149 ms |
+| Shopee, conta desconhecida e filtro de marca | 477 → 327 ms | 478 → 144 ms |
+
+As três RPCs da tela retornaram HTTP 200 e receberam os mesmos argumentos nas 70 cargas medidas. Marca e categoria partiram após a organização. A curva aguardou a lista de contas apenas nos recortes com seleção na URL. Nas cargas de aquecimento, os 14 downloads do XLSX retornaram HTTP 200. As três curvas de cada arquivo receberam os mesmos filtros compartilhados com a tela, incluindo período, conta, marketplace, marca e Sem Full. A latência percebida em produção segue pendente.
