@@ -1794,3 +1794,16 @@ Build de produção local, Chromium autenticado como ADMIN e PostgREST com limit
 | `/reposicao/configuracoes` | 1 → 2 | 1.000 → 1.003 | 32,0 → 70,7 ms |
 
 A primeira página paginada trouxe 1.000 regras e a segunda trouxe três. A cobertura passou a mostrar a janela de 101 dias da regra específica, antes exibida como a janela padrão de 30 dias. A configuração passou de 999 para 1.002 exceções. A contagem sob RLS excluiu a regra da outra organização. O custo adicional medido inclui a segunda chamada e o recebimento das regras que faltavam. A latência com carga real segue pendente.
+
+### Regras da inspeção de Produtos (Sentinel A37, 13/11/2026)
+
+Build de produção local, Chromium autenticado como ADMIN e PostgREST local. A organização tinha 1.004 regras, com padrão, marca e SKU aplicáveis ao produto de prova. Outra organização tinha uma regra para a mesma marca. Houve uma abertura de aquecimento e cinco medidas da gaveta em cada versão. A mediana vai do início da leitura de `replenishment_settings` até a leitura do corpo pelo rastreador. O tamanho é o JSON serializado sem espaços adicionais.
+
+| Consulta de regras | Antes | D-680 |
+| --- | ---: | ---: |
+| Chamadas | 1 | 1 |
+| Linhas entregues | 1.000 | 3 |
+| Bytes do JSON | 183.966 | 536 |
+| Mediana da leitura local | 13,7 ms | 13,1 ms |
+
+A gaveta passou do padrão de 25 dias ao alvo de 66 dias do SKU. Ao remover essa regra, a marca com vírgula, parênteses, ponto, aspas e barra invertida retornou o alvo de 28 dias. Sem marca, ou sem regra da marca na organização, prevaleceu o padrão de 25 dias. Após retirar também o padrão, a gaveta informou ausência de política. A regra da outra organização ficou fora. A latência percebida em produção segue pendente.

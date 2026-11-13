@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-679 corrige localmente o truncamento de regras em Reposição e Configuração. A próxima fatia vai verificar o mesmo limite na inspeção de Produtos e medir uma leitura restrita às regras aplicáveis ao SKU. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
+- **Sentinel.** D-680 corrige o alvo de cobertura na inspeção de Produtos com uma leitura de até três regras aplicáveis. A próxima fatia vai medir em `/vinculacoes` quando podem começar as consultas da visão principal e dos painéis de candidatos e vínculos manuais. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

@@ -19504,3 +19504,11 @@ O ensaio em sete recortes confirmou os mesmos argumentos nas três RPCs da tela 
 As duas leituras filtram pela organização da sessão e usam o mesmo paginador por ID. A contagem exata da consulta já inclui o cursor. A leitura termina quando a página contém todas as regras restantes ou volta vazia. Uma falha descarta a leitura parcial e aciona o tratamento de erro da tela. O cliente conserva as policies existentes de RLS.
 
 O ensaio local recuperou 1.003 regras em duas chamadas por rota e conferiu a precedência por SKU e o isolamento entre organizações. [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
+
+## D-680 - A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
+
+A inspeção consultava até 1.000 regras de reposição sem recorte. A regra do SKU podia ficar fora da resposta, fazendo a gaveta mostrar o alvo de outra regra.
+
+A consulta filtra a organização e reúne os escopos do SKU, da marca e do padrão. Os índices únicos garantem até uma regra por escopo. A comparação de marca preserva a pontuação e a regra canônica continua resolvendo a precedência SKU, marca e padrão.
+
+O ensaio com 1.004 regras na organização confirmou a redução de 1.000 para três linhas, o alvo correto e a ausência de efeito da regra de outra organização. [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)

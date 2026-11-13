@@ -7,3 +7,8 @@
 export function termoSeguroParaOr(valor: string): string {
   return valor.replace(/[,()%*\\]/g, " ").trim();
 }
+
+/** Preserva o valor literal de uma comparação dentro de `.or()`. */
+export function valorLiteralParaOr(valor: string): string {
+  return `"${valor.replace(/["\\]/g, "\\$&")}"`;
+}

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **581** (D-001 a D-679).
+Decisões registradas: **582** (D-001 a D-680).
 
 ## Por domínio
 
@@ -369,7 +369,7 @@ Decisões registradas: **581** (D-001 a D-679).
 - **D-675** — A lista e os contadores de Anúncios começam assim que o recorte está resolvido
 - **D-676** — Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
 
-### outros (82)
+### outros (83)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -453,6 +453,7 @@ Decisões registradas: **581** (D-001 a D-679).
 - **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
 - **D-650** — A barra do topo cabe no celular: a busca cede espaço ao "Sair"
 - **D-667** — Indicadores de get_sync_health compartilham uma agregação
+- **D-680** — A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
 
 ### processo/docs (1)
 

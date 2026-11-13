@@ -221,3 +221,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-679.** Reposição e Configuração leem as regras por cursor na organização da sessão. No ensaio local, duas chamadas recuperaram 1.003 regras em cada rota. A linha do SKU passou a exibir a janela de 101 dias e a configuração passou a mostrar 1.002 exceções. A regra de outra organização ficou fora. [Medição](../PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
 - **Validação.** Passaram sete casos Playwright, 1.455 testes web no `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Reproduzir o truncamento na inspeção de Produtos e medir uma leitura restrita às regras aplicáveis ao SKU. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 13/11/2026 · Regras da Inspeção Rápida de Produtos
+
+- **Base.** `codex/sentinel-audit` em `3e5632c0`. Checkout original em `v3`, `9642d921`.
+- **D-680.** A gaveta filtra por organização e carrega até três regras de reposição. O alvo do SKU de prova passou de 25 para 66 dias. As leituras caíram de 1.000 para três linhas em uma chamada. O ensaio conferiu a regra de marca com pontuação, o padrão, a ausência de política e o isolamento entre organizações. [Medição](../PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
+- **Validação.** Passaram seis casos Playwright de Produtos após reiniciar a stack e aplicar o seed padrão. A primeira rodada compartilhou os dados sintéticos do ensaio com a suíte e deixou o SKU principal marcado como virtual após uma asserção falhar. Uma falha no interceptador de navegação também desapareceu na rodada limpa. Passaram `pnpm run check` com 1.456 testes web, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir as dependências entre a visão e os painéis de Vinculações. Publicação e medição com carga real seguem pendentes. [Plano](PLAN.md)
