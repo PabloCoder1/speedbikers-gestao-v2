@@ -19458,3 +19458,9 @@ O ensaio local com atraso controlado confirmou a ordem das requisições, a mesm
 O carregamento de Vendas multicanal iniciava a associação à organização, a lista de contas e os filtros salvos juntos. O resumo, a série diária, o ranking e as demais RPCs aguardavam as três respostas.
 
 As leituras começam quando a organização está disponível. Um filtro explícito de contas ainda aguarda a lista sob RLS. Os filtros salvos e a lista continuam disponíveis para montar o cabeçalho. A paginação da série diária e as regras de marca e cancelamento seguem as mesmas.
+
+## D-673 - Séries diárias encerram na primeira página quando a contagem confirma o total
+
+As séries de Vendas do ML e de Vendas multicanal pedem contagem exata na primeira página para janelas de até 90 dias. Quando o total coincide com as linhas entregues, a leitura termina. Se a contagem estiver ausente ou indicar que faltam linhas, a paginação continua até uma página vazia ou até o teto. Uma resposta curta pode resultar do limite do PostgREST.
+
+Em janelas maiores, as duas séries mantêm a paginação sem contagem. O leitor continua compartilhado entre a tela e os CSVs.

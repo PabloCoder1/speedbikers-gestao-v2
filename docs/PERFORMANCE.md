@@ -1700,3 +1700,18 @@ Chromium autenticado como ADMIN e PostgREST local. No processo Next, o ensaio ad
 | Todos, com o filtro Sem marca | 464 ms | 146 ms |
 
 As primeiras páginas das séries e as demais RPCs iniciaram antes da resposta dos filtros salvos nos cinco recortes. Só os recortes com seleção na URL esperaram pela lista de contas. O rastreio conferiu os mesmos períodos, organização, marketplaces, conta e marca. Sem marca fez duas chamadas de cancelamento a menos que o recorte sem filtro de marca, como previsto. A série diária manteve a paginação até receber uma página vazia. A medição é local, com atrasos controlados.
+
+### Fim da paginação nas séries de Vendas (Sentinel A30, 13/11/2026)
+
+PostgREST local autenticado, 1.461 métricas diárias sintéticas do ML e sete medições intercaladas por variante após aquecimento. Comparação da página vazia com `count=exact` na primeira resposta. As linhas coincidiram nos períodos vazios, de 7, 30 e 90 dias, e no período de quatro anos, inclusive ao solicitar páginas de 300 linhas.
+
+| Série | Janela | Chamadas antes → D-673 | Mediana antes → D-673 |
+| --- | ---: | ---: | ---: |
+| ML | 7 dias | 2 → 1 | 31,68 → 15,64 ms |
+| ML | 30 dias | 2 → 1 | 30,02 → 15,69 ms |
+| ML | 90 dias | 2 → 1 | 30,27 → 15,08 ms |
+| Multicanal | 7 dias | 2 → 1 | 31,34 → 20,89 ms |
+| Multicanal | 30 dias | 2 → 1 | 33,51 → 21,83 ms |
+| Multicanal | 90 dias | 2 → 1 | 38,01 → 34,30 ms |
+
+O intervalo vazio precisou de uma chamada nas duas versões. Pedir contagem em períodos longos sem aproveitar o total nas páginas seguintes trouxe custo sem reduzir chamadas. D-673 restringe a contagem a janelas de até 90 dias. O teste unitário com servidor limitado a 300 linhas confirmou que uma primeira resposta parcial preserva todos os dados. A latência com carga real segue pendente.

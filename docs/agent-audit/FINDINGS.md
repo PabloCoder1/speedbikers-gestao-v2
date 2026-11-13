@@ -33,6 +33,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A27 | P2 · CORRIGIDO localmente (D-670) | As consultas do período do ML esperavam a lista de contas e a contagem de lojas Shopee | No consolidado, as RPCs começam sem esperar por essas respostas. Com slug na URL, esperam a lista de contas visíveis. [Medição](../PERFORMANCE.md#início-das-consultas-do-período-em-faturamento-sentinel-a27-13112026) |
 | A28 | P2 · CORRIGIDO localmente (D-671) | Shopee e Todos esperavam a lista de contas mesmo sem filtro de loja | As RPCs começam após resolver a organização e só aguardam a lista quando a Shopee precisa validar lojas da URL. [Medição](../PERFORMANCE.md#início-das-consultas-de-faturamento-nos-recortes-shopee-e-todos-sentinel-a28-13112026) |
 | A29 | P2 · CORRIGIDO localmente (D-672) | Vendas multicanal esperava os filtros salvos e a lista de contas antes de iniciar as RPCs do período | Os filtros salvos são lidos em paralelo. A lista só precisa responder antes das RPCs quando a URL seleciona contas. [Medição](../PERFORMANCE.md#início-das-consultas-de-vendas-multicanal-sentinel-a29-13112026) |
+| A30 | P2 · CORRIGIDO localmente (D-673) | Séries de Vendas faziam uma chamada vazia mesmo quando a primeira página trazia todos os dados | Nas janelas de até 90 dias, a contagem exata encerra a leitura se coincidir com as linhas devolvidas. Páginas parciais e períodos maiores continuam paginados. [Medição](../PERFORMANCE.md#fim-da-paginação-nas-séries-de-vendas-sentinel-a30-13112026) |
 
 ## Referências externas
 

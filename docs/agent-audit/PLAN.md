@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 29 achados em [FINDINGS.md](FINDINGS.md). Vinte e oito têm evidência direta ou medição. Vinte e dois receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
+Há 30 achados em [FINDINGS.md](FINDINGS.md). Vinte e nove têm evidência direta ou medição. Vinte e três receberam correção, incluindo o recorte de tentativas novas de A06. A25 é um inventário de exports internos. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -54,7 +54,8 @@ A retomada do SAC, o carregamento do texto em Perguntas e a paginação da conve
 | P2 · pronto localmente | Antecipar as consultas do período de `/faturamento` no ML (A27, D-670) | Medir início das RPCs e confirmar recortes sem slug, com conta permitida e com slug desconhecido |
 | P2 · pronto localmente | Antecipar as consultas dos recortes Shopee e Todos em `/faturamento` (A28, D-671) | Rastrear as RPCs em quatro recortes e validar a organização, os filtros e o compartilhamento de leituras com a Central |
 | P2 · pronto localmente | Antecipar as consultas de `/vendas` multicanal (A29, D-672) | Conferir organização, conta, período, marca e quantidade de chamadas em cinco recortes |
-| P2 · próxima etapa local | Medir alternativas à chamada vazia no fim da série diária | Confirmar a informação de fim no PostgREST, medir o custo e preservar a leitura quando o servidor usa um teto menor |
+| P2 · pronto localmente | Encerrar a série de até 90 dias na primeira página completa (A30, D-673) | Medição das duas RPCs, contagem ausente e página parcial com teto menor, gráfico e CSV |
+| P2 · próxima etapa local | Medir as dependências do recorte ML em `/vendas` | Distinguir organização, filtro de conta, filtros salvos e contagem Shopee. Conferir argumentos e início das RPCs com e sem conta |
 | P1 · depende do responsável pelo GitHub | Exigir revisão e checks na `main` que publica a web | Configurar os checks de typecheck/lint/test/build, integração, E2E e scripts, e conferir as regras efetivas e uma tentativa de merge com check pendente |
 | P2 · rechecado em 13/11 | Classificar branches e artefatos com o [inventário](BRANCH_AUDIT.md) e as [evidências de uso](CLEANUP_CANDIDATES.md) | 106 exclusões verificadas na segunda triagem. As 24 refs atuais incluem a branch Sentinel e sete branches integradas com vínculo a worktrees existentes |
 | P2 · depende de acesso | Medir consultas quentes e uso de estruturas com risco de descontinuação | Consultar catálogo e janela de estatísticas, inspecionar planos representativos em ambiente autorizado e confirmar consumidores indiretos e retenção |

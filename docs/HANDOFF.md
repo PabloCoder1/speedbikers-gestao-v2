@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-672 antecipa as consultas de Vendas multicanal. A revisão de branches confirmou 24 refs remotas e sete refs integradas ainda vinculadas a worktrees. Próxima fatia local: avaliar se a série diária pode identificar o fim da paginação sem uma chamada vazia, inclusive com um limite menor do PostgREST. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#início-das-consultas-de-vendas-multicanal-sentinel-a29-13112026)
+- **Sentinel.** D-672 antecipa as consultas de Vendas multicanal e D-673 encerra as séries de até 90 dias na primeira página quando o total exato confirma a leitura completa. A revisão de branches confirmou 24 refs remotas. Próxima fatia local: medir as dependências do recorte Mercado Livre em `/vendas`, incluindo a contagem Shopee e os filtros salvos. [Plano](agent-audit/PLAN.md) · [Medições](PERFORMANCE.md#fim-da-paginação-nas-séries-de-vendas-sentinel-a30-13112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

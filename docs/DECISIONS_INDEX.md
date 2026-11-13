@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **574** (D-001 a D-672).
+Decisões registradas: **575** (D-001 a D-673).
 
 ## Por domínio
 
@@ -175,7 +175,7 @@ Decisões registradas: **574** (D-001 a D-672).
 - **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
 - **D-668** — O resumo de cobertura usa a data indexada dos pedidos Shopee
 
-### interface (72)
+### interface (73)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -249,6 +249,7 @@ Decisões registradas: **574** (D-001 a D-672).
 - **D-659** — Renovação Shopee conclui apenas enquanto mantém a trava
 - **D-661** — Cada aquisição da trava Shopee tem identidade própria
 - **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
+- **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 
 ### mercado-livre (111)
 
