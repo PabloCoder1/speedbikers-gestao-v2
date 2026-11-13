@@ -19476,3 +19476,9 @@ As consultas de resumo, série, ranking, cancelamento e hoje começam assim que 
 No dashboard de anúncios do ML, as duas RPCs aguardavam organização, lista de contas, filtros salvos e contagem de lojas Shopee. Agora iniciam após resolver a organização e, se a URL trouxer um slug, verificar a conta na lista visível sob RLS. Filtros salvos e contagem de lojas continuam alimentando o cabeçalho.
 
 A lista e os contadores mantêm a mesma organização, conta e busca. A lista também recebe os filtros de estado, período e ordenação. A compatibilidade com o banco anterior continua no mesmo fluxo.
+
+## D-676 - Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
+
+`/anuncios/shopee` aguardava organização, lojas, contagem de contas ML e filtros salvos antes de consultar a lista e o resumo. As duas RPCs agora começam após resolver a organização e as lojas visíveis. A contagem de contas e os filtros salvos continuam alimentando os controles.
+
+O catálogo só é consultado quando existe ao menos uma loja visível na organização. A loja pedida na URL continua validada contra a lista sob RLS. A busca, o estado e o período continuam restritos à lista, e o resumo mantém o escopo da loja.

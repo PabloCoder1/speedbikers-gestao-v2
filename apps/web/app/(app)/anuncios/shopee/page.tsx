@@ -157,24 +157,29 @@ export default async function AnunciosShopeePage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As lojas e os filtros salvos não dependem da organização (a RLS já os
-  // restringe): saem junto com o membership, como em `/anuncios` (D-195).
-  const [membership, lojasResult, contasMl, salvosResult] = await Promise.all([
+  // A lista de lojas define o recorte do catálogo. A contagem ML e os
+  // filtros salvos alimentam apenas os controles da página.
+  const recortePromise = Promise.all([
     currentMembership(),
     supabase
       .from("shopee_shops")
       .select("id, organization_id, shop_name, shop_id, environment, status, orders_last_success_at")
       .order("connected_at", { ascending: true }),
+  ]);
+  const cabecalhoPromise = Promise.all([
     // D-431: só o NÚMERO de contas do Mercado Livre, para o seletor de
     // marketplace oferecer a volta a `/anuncios`.
     contarContasMl(supabase),
     // D-494: as visões salvas desta tela -- a tabela é por usuário e por tela.
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/anuncios/shopee").order("name"),
   ]);
+  void cabecalhoPromise.catch(() => undefined);
+  const [membership, lojasResult] = await recortePromise;
 
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {
+    await cabecalhoPromise;
     return (
       <SemCatalogo>
         <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
@@ -185,6 +190,7 @@ export default async function AnunciosShopeePage({
   // Tabela das lojas ausente (banco anterior a 20261013120000): a mesma
   // estratégia de `/contas` — a novidade ainda não chegou, não é erro.
   if (lojasResult.error !== null) {
+    await cabecalhoPromise;
     return (
       <SemCatalogo>
         {isShopeeSchemaMissing(lojasResult.error) ? (
@@ -202,15 +208,11 @@ export default async function AnunciosShopeePage({
   }
 
   const lojas = lojasResult.data.filter((loja) => loja.organization_id === organizationId);
-  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
-    id: linha.id,
-    name: linha.name,
-    params: linha.params as Record<string, string>,
-  }));
   // Quem vê os botões do vínculo manual: o mesmo corte das RPCs de escrita.
   const podeVincular = podeVincularShopee(membership.role);
 
   if (lojas.length === 0) {
+    await cabecalhoPromise;
     return (
       <SemCatalogo>
         <EstadoDaTela
@@ -260,7 +262,7 @@ export default async function AnunciosShopeePage({
     sem estado nem busca — cada célula É um filtro de estado, e contá-la já
     filtrada por outro daria sempre zero ou o próprio número.
   */
-  const [lista, resumo] = await Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_shopee_listings", {
       p_organization_id: organizationId,
       p_shopee_shop_id: filters.loja,
@@ -276,6 +278,12 @@ export default async function AnunciosShopeePage({
       p_shopee_shop_id: filters.loja,
     }),
   ]);
+  const [[lista, resumo], [contasMl, salvosResult]] = await Promise.all([leituras, cabecalhoPromise]);
+  const salvos: SavedFilter[] = (salvosResult.data ?? []).map((linha) => ({
+    id: linha.id,
+    name: linha.name,
+    params: linha.params as Record<string, string>,
+  }));
 
   // Catálogo ausente (banco anterior a 20261013180000): as RPCs não existem.
   const catalogoAusente = isShopeeSchemaMissing(lista.error) || isShopeeSchemaMissing(resumo.error);
