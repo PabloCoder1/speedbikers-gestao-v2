@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** 35 achados corrigidos localmente (de 41). Varredura final de antecipação de queries (13/11) confirmou que todas as rotas de alto tráfego estão otimizadas — nenhuma oportunidade nova além das 14 otimizações D-670 a D-684. Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** 35 achados corrigidos localmente (de 41). Varredura final de antecipação de queries (13/11) confirmou todas as rotas otimizadas. Segunda rodada de dependências (13/11): vitest 4.1.12 + vite >=8.2.4 (1 alto + 4 moderados via launch-editor), hono 4.13.18 (2 moderados no mount/RegExpRouter) e @hono/node-server 2.1.8 (2 moderados em WebSocket e backslash), minimatch >=11.0.1 (moderado via eslint). Único moderado restante: uuid <11.1.1 via GCS/gaxios (sem fix sem major bump; risco negligível — nunca passa `buf`). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

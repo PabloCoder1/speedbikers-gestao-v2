@@ -273,3 +273,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Resultado.** Nenhuma oportunidade nova de antecipação encontrada. Todas as páginas já usam `Promise.all` para queries independentes, promises encadeadas quando há dependências parciais, ou cadeias estritas (cada etapa precisa do resultado da anterior). O padrão é consistente no projeto: `currentMembership()` resolve a organização, e as RPCs dependentes disparam juntas.
 - **Páginas previamente otimizadas (D-670 a D-684).** Faturamento ML, Faturamento Shopee/Todos, Vendas multicanal, Vendas ML, Anúncios ML, Anúncios Shopee, Vendas Shopee, Curva ABC, Reposição, Produtos, Vinculações, Preços, Full e Perguntas do SAC.
 - **Conclusão.** A auditoria de antecipação de queries cobre todas as rotas de alto tráfego. Os 35 achados locais estão completos. Restam 6 pendentes de ação ou acesso externo (A01, A02, A07, A08, A10, A11). [Plano](PLAN.md)
+
+### 13/11/2026 · Segunda rodada de dependências (A42)
+
+- **Base.** `codex/sentinel-audit` após a varredura de queries.
+- **Auditoria.** `pnpm audit --audit-level moderate` encontrou 6 avisos novos desde a última rodada (A03/A12): 1 alto e 4 moderados em vite 8.2.1 via vitest (launch-editor: bypass de `fs.existsSync` no Windows, omissão de `%` no escaping, CLI flag e server.fs), 2 moderados em hono <4.13.16 (mount bypass e RegExpRouter skip), 2 moderados em @hono/node-server <2.1.6 (WebSocket upgrade crash e backslash bypass), 1 moderado em minimatch <11.0.1 via eslint (DoS por globparts), 1 moderado em uuid <11.1.1 via GCS/gaxios.
+- **Correções.** vitest 4.1.11 → 4.1.12 em 10 workspaces. Override de vite `>=8.2.0 <=8.2.3` → `^8.2.4` no `pnpm-workspace.yaml`. hono 4.13.11 → 4.13.18 e @hono/node-server 2.1.3 → 2.1.8 na api e no worker. Override de minimatch `>=7.0.0 <11.0.1` → `^11.0.1`.
+- **Residual.** uuid 9.0.1 (gaxios) e 8.3.2 (exceljs) — o fix exige uuid >=11.1.1, dois majors acima. O advisory (GHSA-w5hq-g745-h8pq) afeta apenas chamadas com parâmetro `buf` em v3/v5/v6, que nenhum consumidor usa. Risco negligível; registrado sem forçar.
+- **Validação.** `pnpm audit` de 6 avisos para 1 moderado. `pnpm run check` (37 tarefas, 2.471 testes), `pnpm run build` (10 tarefas) e `pnpm docs:check` passaram.

@@ -2,7 +2,7 @@
 
 ## Diagnóstico e critérios
 
-Há 41 achados em [FINDINGS.md](FINDINGS.md). Quarenta têm evidência direta ou medição. Trinta e cinco receberam correção, incluindo o recorte de tentativas novas de A06 e a remoção de 33 exports internos desnecessários de A25. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação. A varredura final de antecipação de queries (13/11) confirmou que todas as rotas de alto tráfego não cobertas pelo D-670–D-684 já estão otimizadas: nenhuma oportunidade nova foi encontrada.
+Há 41 achados em [FINDINGS.md](FINDINGS.md). Quarenta têm evidência direta ou medição. Trinta e cinco receberam correção, incluindo o recorte de tentativas novas de A06 e a remoção de 33 exports internos desnecessários de A25. Seis dependem de acesso, ação ou medição externa (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência. Banco e desempenho concentram as lacunas de observação. A varredura final de antecipação de queries (13/11) confirmou que todas as rotas de alto tráfego não cobertas pelo D-670–D-684 já estão otimizadas: nenhuma oportunidade nova foi encontrada. A segunda rodada de dependências (13/11) reduziu a auditoria de 6 avisos (1 alto + 5 moderados) para 1 moderado residual (uuid via GCS/exceljs, sem fix sem major bump).
 
 | Prioridade | Critério aplicado |
 | --- | --- |
