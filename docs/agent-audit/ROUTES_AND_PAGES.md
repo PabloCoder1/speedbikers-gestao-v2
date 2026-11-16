@@ -42,7 +42,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 
 ## Catálogo, estoque e compras
 
-Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-compra, curva-abc-multicanal, estoque-ajuste, fornecedores, importacoes, nota-fiscal, produtos, reposicao, reposicao-configuracoes, sku-dashboard, sku-shopee, vendas-por-sku-multicanal.
+Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-compra, curva-abc-multicanal, estoque-ajuste, movimentacoes, fornecedores, importacoes, nota-fiscal, produtos, reposicao, reposicao-configuracoes, sku-dashboard, sku-shopee, vendas-por-sku-multicanal.
 
 | Rota | Entrada | Referências diretas de dados |
 |---|---|---|
@@ -54,7 +54,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/curva-abc` | [page.tsx](<../../apps/web/app/(app)/curva-abc/page.tsx>) | RPC `get_sku_abc_analysis` após organização e a lista de contas quando a URL pede seleção. RPC `get_supplier_brands` e `get_sku_categories` após organização. Leituras do cabeçalho em `ml_accounts`, `saved_filters`, `marketplace_accounts` e contagem em `shopee_shops` (D-678). O SKU abre no clique (D-696) |
 | `/estoque` | [page.tsx](<../../apps/web/app/(app)/estoque/page.tsx>) | RPC `get_stock_balances`, `get_supplier_brands`, `get_stock_summary`. Os cartões de indicadores e os links por SKU consultam o destino ao clicar (D-687/D-688) |
 | `/estoque/[skuId]/ajuste` | [page.tsx](<../../apps/web/app/(app)/estoque/[skuId]/ajuste/page.tsx>) | Tabelas `skus`, `inventory_balances`, `stock_movements`, `profiles` |
-| `/estoque/movimentacoes` | [page.tsx](<../../apps/web/app/(app)/estoque/movimentacoes/page.tsx>) | RPC `get_stock_movements`, `get_stock_movements_summary` |
+| `/estoque/movimentacoes` | [page.tsx](<../../apps/web/app/(app)/estoque/movimentacoes/page.tsx>) | RPC `get_stock_movements`, `get_stock_movements_summary`. O SKU e a origem abrem ao clicar na linha (D-701) |
 | `/fornecedores` | [page.tsx](<../../apps/web/app/(app)/fornecedores/page.tsx>) | RPC `get_suppliers_overview` |
 | `/fornecedores/[supplierId]` | [page.tsx](<../../apps/web/app/(app)/fornecedores/[supplierId]/page.tsx>) | RPC `get_supplier_overview`, `get_supplier_purchased_skus`. Tabelas `purchase_orders`, `suppliers` |
 | `/fornecedores/[supplierId]/editar` | [page.tsx](<../../apps/web/app/(app)/fornecedores/[supplierId]/editar/page.tsx>) | Tabelas `suppliers`, `purchase_orders` |

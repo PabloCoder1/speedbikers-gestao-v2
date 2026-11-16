@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **602** (D-001 a D-700).
+Decisões registradas: **603** (D-001 a D-701).
 
 ## Por domínio
 
@@ -130,7 +130,7 @@ Decisões registradas: **602** (D-001 a D-700).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (49)
+### estoque (50)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -181,6 +181,7 @@ Decisões registradas: **602** (D-001 a D-700).
 - **D-692** — A tabela da Central Full abre o SKU e a Reposição ao clicar
 - **D-693** — A Reposição inclui SKUs com saldo atual exclusivo no Full
 - **D-695** — A tabela de Reposição abre o detalhe do SKU ao clicar
+- **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
 
 ### interface (74)
 

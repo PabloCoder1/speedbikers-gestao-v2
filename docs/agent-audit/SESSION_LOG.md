@@ -407,3 +407,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Base.** `codex/sentinel-audit` em `2f22565a`.
 - **Lacuna.** O commit `d10d1ad4` citou a D-684 no plano, nos achados, no handoff e neste registro, mas não escreveu a seção em `DECISIONS.md`. O índice passava de D-683 para D-685. A seção foi escrita a partir do registro de 13/11 e diz o que a D-685 revisou depois.
 - **Validação.** `pnpm docs:index` e `pnpm docs:check` passaram.
+
+### 16/11/2026 · Prefetch por linha em Movimentações
+
+- **Base.** `codex/sentinel-audit` em `620f0b02`.
+- **D-701 (A58).** Em uma página com 50 movimentos, a mediana de pré-buscas antes do clique caiu de 62 para zero, entre links de SKU e de origem, e cada jornada fez 62 verificações de sessão a menos. Cada clique abriu o SKU, o pedido de compra ou a nota fiscal da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-por-linha-em-movimentações-sentinel-a58-16112026)
+- **Validação.** A regressão nova, em `movimentacoes.spec.ts`, registrou duas pré-buscas no build anterior e passou no corrigido. Ela cobre o link de SKU: o seed não tem movimento com origem. Os movimentos sintéticos foram removidos com os gatilhos de imutabilidade suspensos só nessa transação, e o banco voltou às contagens do seed. Passaram os 9 casos Playwright de Movimentações, troca de tela e Ajuste de Estoque. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links de SKU no ranking de Faturamento. Histórico de Preços e exceções da Configuração de Reposição também têm links por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)

@@ -2026,3 +2026,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-700 | 0 | 0 | 9 | 20 | 214 ms (193–255) |
 
 Antes, foram 42 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 46 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à lista. O painel de devoluções ficou fora do ensaio, porque só lista itens quando há loja real com devoluções lidas. A latência com tráfego real segue pendente.
+
+### Prefetch dos links por linha em Movimentações (Sentinel A58, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. O banco recebeu 49 movimentos sintéticos, um por SKU, 25 com origem em uma nota fiscal e 24 em cinco pedidos de compra. Com o movimento do seed, a página de 50 linhas ficou cheia, com 50 links de SKU e 49 de origem. Cada jornada abriu a tela, rolou por cinco pontos da tabela e abriu o SKU da linha 31. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Pré-buscas na abertura | Pré-buscas na rolagem | De SKU | De origem | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Anterior | 16 | 46 | 52 | 10 | 72 | 83 | 193 ms (166–229) |
+| D-701 | 0 | 0 | 0 | 0 | 10 | 21 | 178 ms (167–210) |
+
+Antes, foram 56 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 62 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o destino esperado, no SKU, no pedido de compra e na nota fiscal. A regressão verificou o retorno à lista. O link para pedido da Shopee ficou fora do ensaio. A latência com tráfego real segue pendente.
