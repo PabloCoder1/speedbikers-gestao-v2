@@ -385,7 +385,7 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Base.** `codex/sentinel-audit` em `4baaffb7`, 14 commits à frente de `origin/codex/sentinel-audit` (`c88ea687`).
 - **CI.** A execução do PR em `c88ea687` reprovou em dois passos. A guarda `check:settings-vocabulary` não achou a tabela `INCLUI`: a limpeza A25 tirou o `export` que o script localiza por texto. O passo roda só na CI, fora de `pnpm run check`. O `export` voltou em `868efe5f`, com o motivo no comentário da tabela. No job de E2E, o build web falhou ao resolver os arquivos da fonte Inter em `next/font/google`, na primeira execução da CI com Next 16.4.1. O build local com a mesma versão passa e o Google Fonts devolve as URLs no formato esperado. A causa não foi reproduzida.
 - **Validação.** As sete guardas que só a CI roda (`settings-vocabulary`, `waterfalls`, `server-actions`, `table-styles`, `control-styles`, `loading` e `navegacao-suave`) e `pnpm audit --prod --audit-level high` passaram localmente.
-- **Próxima etapa.** Conferir o build web do job de E2E na próxima execução da CI.
+- **Reexecução.** Na CI de `93ae87d6`, o job de typecheck, lint, test e build passou com a guarda, e o build web do job de E2E passou. A falha das fontes não se repetiu. Os testes E2E ainda estavam em curso neste registro.
 
 ### 16/11/2026 · Prefetch do SKU nos rankings de Vendas
 
