@@ -401,3 +401,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Devoluções.** O link de SKU do painel de devoluções não mudou. Com a loja de teste do seed, o painel não lista itens, mesmo com devoluções gravadas e a leitura marcada. O ensaio precisa de loja real no banco local.
 - **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após remover os pedidos e SKUs sintéticos, passaram os 20 casos Playwright de Vendas da Shopee e de Vendas multicanal. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU em Movimentações. Ranking de Faturamento, Histórico de Preços e exceções da Configuração de Reposição também têm links por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Decisão D-684 ausente
+
+- **Base.** `codex/sentinel-audit` em `2f22565a`.
+- **Lacuna.** O commit `d10d1ad4` citou a D-684 no plano, nos achados, no handoff e neste registro, mas não escreveu a seção em `DECISIONS.md`. O índice passava de D-683 para D-685. A seção foi escrita a partir do registro de 13/11 e diz o que a D-685 revisou depois.
+- **Validação.** `pnpm docs:index` e `pnpm docs:check` passaram.

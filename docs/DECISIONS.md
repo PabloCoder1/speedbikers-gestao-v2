@@ -19533,6 +19533,12 @@ A Central Full aguardava a lista de contas antes de consultar a visão, mesmo se
 
 Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura antiga da RPC foram conferidos em ensaio local. [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
 
+## D-684 - Perguntas inicia a lista e os contadores sem esperar a lista de contas
+
+Em Perguntas do SAC, a lista e os contadores por aba esperavam a lista de contas em todos os recortes. Sem conta na URL, as duas consultas começam em paralelo com a leitura das contas. Com conta na URL, a consulta ainda espera a lista para resolver o slug. A tentativa de resposta pendente continua sequencial, porque depende da pergunta selecionada.
+
+A etapa também antecipava os modelos de resposta e a verificação do usuário para o topo da aba Pendente. A D-685 revisou esse ponto: essas leituras só começam com uma pergunta selecionada e aberta. Não houve medição própria. A da D-685 cobre a tela. [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+
 ## D-685 - Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 
 Uma URL com uma página acima do total retornava `PGRST103` no PostgREST. Perguntas mostrava falha de carregamento. A página usa a mesma detecção da Caixa de Entrada e oferece voltar à primeira página da aba e conta atuais. Os erros de leitura continuam com a ação de tentar novamente.
