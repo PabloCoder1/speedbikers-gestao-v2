@@ -281,3 +281,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Correções.** vitest 4.1.11 → 4.1.12 em 10 workspaces. Override de vite `>=8.2.0 <=8.2.3` → `^8.2.4` no `pnpm-workspace.yaml`. hono 4.13.11 → 4.13.18 e @hono/node-server 2.1.3 → 2.1.8 na api e no worker. Override de minimatch `>=7.0.0 <11.0.1` → `^11.0.1`.
 - **Residual.** uuid 9.0.1 (gaxios) e 8.3.2 (exceljs) — o fix exige uuid >=11.1.1, dois majors acima. O advisory (GHSA-w5hq-g745-h8pq) afeta apenas chamadas com parâmetro `buf` em v3/v5/v6, que nenhum consumidor usa. Risco negligível; registrado sem forçar.
 - **Validação.** `pnpm audit` de 6 avisos para 1 moderado. `pnpm run check` (37 tarefas, 2.471 testes), `pnpm run build` (10 tarefas) e `pnpm docs:check` passaram.
+
+### 16/11/2026 · Retomada e revisão de Perguntas do SAC
+
+- **Base.** `codex/sentinel-audit` em `c88ea687`, igual à referência local de `origin/codex/sentinel-audit`. O checkpoint inclui D-684, a limpeza A25 e as atualizações A42. `git cherry HEAD sentinel-continue` não apontou correções exclusivas nessa branch. Checkout original em `v3`, `9642d921`.
+- **D-685.** O Supabase local devolveu 416 para uma página além do fim em Perguntas. A tela passou a oferecer retorno à primeira página da mesma aba e conta. A revisão também reutilizou a promessa de contas e limitou as leituras do formulário ao caso selecionado e aberto. O rastreio manteve o paralelismo do consolidado e registrou as mesmas chamadas HTTP de contas e Auth por documento. [Medição](../PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+- **Validação.** Os 17 casos Playwright de Atendimento passaram, incluindo o retorno ao recorte da conta e a retomada de resposta pendente. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir as chamadas de Auth na navegação cliente, incluindo prefetch e carregamento de recursos, para retomar A11. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

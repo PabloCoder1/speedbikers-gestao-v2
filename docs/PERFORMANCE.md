@@ -1846,3 +1846,11 @@ Chromium autenticado como ADMIN, build de produção local e PostgREST local. O 
 | Busca no consolidado | 272 → 173 ms |
 
 Os argumentos coincidiram nas 40 cargas medidas. Nas cargas de aquecimento, os CSVs baixados pelo link da tela retornaram HTTP 200 e enviaram o mesmo recorte da página, com a paginação própria da exportação. Uma resposta simulada `PGRST202` acionou a assinatura antiga, que retornou HTTP 200 e preservou o recorte. A lista segue sendo aguardada com conta explícita. Esses recortes não apresentaram redução na mediana. A latência percebida em produção segue pendente.
+
+### Leituras e paginação de Perguntas do SAC (Sentinel A43, 16/11/2026)
+
+Build de produção local, sessão ADMIN do Chromium e Supabase local. Foram seis documentos autenticados por recorte e versão, com 250 ms adicionados à lista de contas. Os cinco recortes cobriram consolidado, conta visível, slug desconhecido, página além do fim e aba Respondido. A lista e os cinco contadores receberam os mesmos parâmetros nas 60 requisições. No consolidado a leitura começou antes das contas. Com slug, a lista e os contadores aguardaram a validação e receberam o mesmo ID de conta.
+
+No SDK isolado, aguardar duas vezes o mesmo builder disparou duas leituras. O Next deduplicou a leitura HTTP na página antes da mudança. O ensaio registrou uma consulta de contas e duas chamadas de Auth por documento nas duas versões. A promessa compartilhada remove a segunda execução do builder da página. Modelos e tentativa pendente foram lidos uma vez com pergunta aberta e zero vezes nos recortes sem formulário.
+
+Para uma página além do fim, o PostgREST retornou 416 nas duas versões. Com D-685 a página exibiu o retorno à primeira página do recorte. Os tempos de início serviram para conferir a ordem das leituras sob atraso controlado. Latência e tráfego da navegação cliente em produção seguem pendentes.

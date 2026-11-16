@@ -8,6 +8,7 @@ import { PageTitle } from "../../../../components/page-title";
 import { Panel } from "../../../../components/panel";
 import { LinkDeFiltro } from "../../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
+import { isPageBeyondEnd } from "../../../../lib/filters";
 import { formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
 import { pendingSupportReply, type PendingSupportReply } from "../../../../lib/pending-support-reply";
@@ -166,13 +167,12 @@ export default async function PerguntasPage({
   const now = new Date();
   const supabase = await createClient();
 
-  const accountsPromise = supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true });
+  const accountsPromise = Promise.resolve(
+    supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
+  );
 
   const abaAtual = STATUS_TABS.find((candidate) => candidate.key === tab) ?? STATUS_TABS[0];
   const pendente = tab === "pendente";
-
-  const templatesPromise = pendente ? supabase.from("reply_templates").select("id, name, body").order("name") : null;
-  const authPromise = pendente ? supabase.auth.getUser() : null;
 
   const earlyAccounts = accountSlug !== null ? await accountsPromise : null;
   const selectedAccount = earlyAccounts?.data?.find((account) => account.slug === accountSlug) ?? null;
@@ -231,23 +231,25 @@ export default async function PerguntasPage({
   let templates: ReplyTemplateOption[] = [];
   let pendingReply: PendingSupportReply | null = null;
 
-  if (selecionada !== null && selecionada.resolved_at === null && templatesPromise !== null && authPromise !== null) {
+  if (selecionada !== null && selecionada.resolved_at === null) {
     const [templatesResult, attemptsResult, { data: auth }] = await Promise.all([
-      templatesPromise,
+      supabase.from("reply_templates").select("id, name, body").order("name"),
       supabase
         .from("support_reply_attempts")
         .select("status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at")
         .eq("support_case_id", selecionada.id)
         .eq("status", "PENDING")
         .limit(1),
-      authPromise,
+      supabase.auth.getUser(),
     ]);
 
     if (templatesResult.error === null) templates = templatesResult.data;
     pendingReply = pendingSupportReply(attemptsResult.data ?? [], auth.user?.id ?? null);
   }
 
-  const error = questionsResult.error?.message ?? accountsResult.error?.message ?? null;
+  const paginaVazia = isPageBeyondEnd(questionsResult.error);
+  const erroLista = paginaVazia ? null : questionsResult.error?.message ?? null;
+  const error = erroLista ?? accountsResult.error?.message ?? null;
   const rotuloConta = selectedAccount?.label ?? "Todas as contas";
   const opcoesConta: FilterOption[] = [
     { href: perguntasHref({ tab, page: 1, account: null }), label: "Todas as contas", ativo: selectedAccount === null },
@@ -305,7 +307,15 @@ export default async function PerguntasPage({
             title={`Perguntas · ${abaAtual.label.toLowerCase()}`}
             subtitle={total > 0 ? `${formatCount(total)} ${total === 1 ? "pergunta" : "perguntas"} nesta aba` : undefined}
           >
-            {questions.length === 0 && (
+            {paginaVazia && (
+              <EstadoDaTela
+                tipo="filtro"
+                titulo="Esta página não existe neste recorte."
+                acao={{ href: perguntasHref({ tab, page: 1, account: accountSlug }), rotulo: "Voltar à primeira página", mesmaTela: true }}
+              />
+            )}
+
+            {!paginaVazia && questions.length === 0 && (
               <EstadoDaTela
                 tipo="vazio"
                 titulo={`Nenhuma pergunta ${abaAtual.label.toLowerCase()}`}

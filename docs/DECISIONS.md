@@ -19532,3 +19532,9 @@ Com conta explícita, as duas entradas ainda validam o ID na lista visível sob 
 A Central Full aguardava a lista de contas antes de consultar a visão, mesmo sem seleção na URL. A consulta consolidada começa assim que a associação à organização responde. A lista de contas segue alimentando o seletor e continua necessária para validar a conta quando informada.
 
 Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura antiga da RPC foram conferidos em ensaio local. [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
+
+## D-685 - Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
+
+Uma URL com uma página acima do total retornava `PGRST103` no PostgREST. Perguntas mostrava falha de carregamento. A página usa a mesma detecção da Caixa de Entrada e oferece voltar à primeira página da aba e conta atuais. Os erros de leitura continuam com a ação de tentar novamente.
+
+A lista de contas é uma promessa executada uma vez e pode ser reutilizada para resolver o slug e montar o seletor. Sem slug, lista e contadores começam em paralelo com as contas. Modelos, tentativa pendente e verificação do usuário para a resposta só são solicitados quando há uma pergunta selecionada e aberta. [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)

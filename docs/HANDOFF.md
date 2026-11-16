@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-13 |
+| **Atualizado em** | 2026-11-16 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** 35 achados corrigidos localmente (de 41). Varredura final de antecipação de queries (13/11) confirmou todas as rotas otimizadas. Segunda rodada de dependências (13/11): vitest 4.1.12 + vite >=8.2.4 (1 alto + 4 moderados via launch-editor), hono 4.13.18 (2 moderados no mount/RegExpRouter) e @hono/node-server 2.1.8 (2 moderados em WebSocket e backslash), minimatch >=11.0.1 (moderado via eslint). Único moderado restante: uuid <11.1.1 via GCS/gaxios (sem fix sem major bump; risco negligível — nunca passa `buf`). Publicação e medição com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** D-685 corrige o retorno à primeira página em Perguntas do SAC e preserva a antecipação do consolidado. A última rodada de dependências está registrada em A42. Medir as chamadas de Auth na navegação cliente, incluindo prefetch e carregamento de recursos, para retomar A11. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

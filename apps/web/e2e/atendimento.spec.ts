@@ -4,7 +4,7 @@ import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_ML_ACCOUNT } from "./constants.js";
 import { login, loginAs } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -24,6 +24,19 @@ async function fixtureDaPergunta() {
 
   return { seed, db, caso: caso.data };
 }
+
+test("/atendimento/perguntas: página fora do recorte volta à primeira da mesma conta", async ({ page }) => {
+  const recorte = `/atendimento/perguntas?conta=${E2E_ML_ACCOUNT.slug}`;
+
+  await login(page, `${recorte}&pagina=999`);
+  await expect(page.getByText("Esta página não existe neste recorte.")).toBeVisible();
+  await expect(page.getByText("Não foi possível carregar as perguntas.")).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Voltar à primeira página" }).click();
+  await expect(page).toHaveURL((url) => `${url.pathname}${url.search}` === recorte);
+  await expect(page.getByRole("article").first()).toBeVisible();
+});
 
 test("retoma a mesma resposta confirmada depois de recarregar", async ({ page }) => {
   const { seed, db, caso } = await fixtureDaPergunta();

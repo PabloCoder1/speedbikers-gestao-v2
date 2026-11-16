@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **585** (D-001 a D-683).
+Decisões registradas: **586** (D-001 a D-685).
 
 ## Por domínio
 
@@ -177,7 +177,7 @@ Decisões registradas: **585** (D-001 a D-683).
 - **D-679** — Reposição lê todas as regras da organização por cursor
 - **D-683** — A Central Full inicia a consulta do consolidado após resolver a organização
 
-### interface (73)
+### interface (74)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -252,6 +252,7 @@ Decisões registradas: **585** (D-001 a D-683).
 - **D-661** — Cada aquisição da trava Shopee tem identidade própria
 - **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
+- **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 
 ### mercado-livre (114)
 
