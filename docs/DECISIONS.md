@@ -19604,3 +19604,9 @@ O link do SKU usa `prefetch={false}` na tabela de Reposição. A regressão conf
 Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao rolar uma página de 50 SKUs, a web fez 38 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
 
 O link do título usa `prefetch={false}` no ranking. A regressão confere o SKU esperado e o retorno com a busca, o período e o critério originais. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026)
+
+## D-697 - O ranking de Produtos da Central abre o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 SKUs, a web fez 54 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` no ranking. A regressão confere o SKU esperado e o retorno à conta, ao período e à ordem originais. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-produtos-da-central-sentinel-a54-16112026)

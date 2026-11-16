@@ -57,6 +57,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A51 | P2 · CORRIGIDO localmente (D-694) | Abrir e rolar Produtos disparava verificações de sessão para links de SKU antes do clique | No ensaio com 100 SKUs, a mediana caiu de 49 para zero. A regressão validou o SKU aberto, a volta ao recorte e o atalho de diagnóstico. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-produtos-sentinel-a51-16112026) |
 | A52 | P2 · CORRIGIDO localmente (D-695) | Abrir e rolar a tabela de Reposição disparava verificações de sessão para links de SKU antes do clique | No ensaio com 100 SKUs, a mediana caiu de 54 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026) |
 | A53 | P2 · CORRIGIDO localmente (D-696) | Rolar a Curva ABC disparava verificações de sessão para links de SKU antes do clique | No ensaio com 50 SKUs, a mediana caiu de 38 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026) |
+| A54 | P2 · CORRIGIDO localmente (D-697) | Abrir e rolar o ranking de Produtos da Central disparava verificações de sessão para links de SKU antes do clique | No ensaio com 50 SKUs, a mediana caiu de 54 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-produtos-da-central-sentinel-a54-16112026) |
 
 ## Referências externas
 

@@ -17,7 +17,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 | `/central/frete` | [page.tsx](<../../apps/web/app/(app)/central/frete/page.tsx>) | RPC `get_detector_frete` |
 | `/central/limites` | [page.tsx](<../../apps/web/app/(app)/central/limites/page.tsx>) | Tabelas `central_thresholds` |
 | `/central/metas` | [page.tsx](<../../apps/web/app/(app)/central/metas/page.tsx>) | RPC `get_meta_do_mes`. Tabelas `monthly_goals`, `tax_rates`, `monthly_goals_marketplace` |
-| `/central/produtos` | [page.tsx](<../../apps/web/app/(app)/central/produtos/page.tsx>) | RPC `get_ranking_produtos`. Tabelas `ml_accounts` |
+| `/central/produtos` | [page.tsx](<../../apps/web/app/(app)/central/produtos/page.tsx>) | RPC `get_ranking_produtos`. Tabelas `ml_accounts`. O detalhe do SKU abre ao clicar no ranking (D-697) |
 | `/copiloto` | [page.tsx](<../../apps/web/app/(app)/copiloto/page.tsx>) | Ver a entrada e seus imports |
 | `/diagnostico` | [page.tsx](<../../apps/web/app/(app)/diagnostico/page.tsx>) | RPC `get_sku_sales_baseline`, `get_sku_correlated_events`, `get_sku_average_prices`. Tabelas `support_case_links` |
 | `/notificacoes` | [page.tsx](<../../apps/web/app/(app)/notificacoes/page.tsx>) | Tabelas `notification_recipients`, `ml_accounts`, `shopee_shops` |

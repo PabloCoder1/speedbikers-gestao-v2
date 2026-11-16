@@ -550,7 +550,7 @@ function Linha({
     <tr>
       <td className="sb-num">{posicao}</td>
       <td className="sb-col-fixa">
-        <Link className="sb-entity" href={`/skus/${p.sku_id}`} title={p.title ?? p.sku}>
+        <Link className="sb-entity" prefetch={false} href={`/skus/${p.sku_id}`} title={p.title ?? p.sku}>
           {p.title ?? p.sku}
         </Link>
         <span className="sb-central-motivo">

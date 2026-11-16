@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-696 desativa o prefetch do detalhe de SKU na tabela da Curva ABC. Em uma página com 50 SKUs, as verificações de sessão desses destinos antes do clique caíram de 38 para zero na mediana. Medir o prefetch dos links de SKU no ranking de Produtos da Central. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026)
+- **Sentinel.** D-697 desativa o prefetch do detalhe de SKU no ranking de Produtos da Central. Em uma página com 50 SKUs, as verificações de sessão desses destinos antes do clique caíram de 54 para zero na mediana. Medir o prefetch dos links de anúncio no painel de Frete da Central. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-produtos-da-central-sentinel-a54-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
