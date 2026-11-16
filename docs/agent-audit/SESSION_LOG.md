@@ -421,3 +421,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-702 (A59).** Com o ranking por receita cheio, de 30 produtos, a mediana de pré-buscas de SKU antes do clique caiu de 31 para zero, e cada jornada fez 31 verificações de sessão a menos. O clique abriu o SKU da posição em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-faturamento-sentinel-a59-16112026)
 - **Validação.** A regressão registrou duas pré-buscas no build anterior e passou no corrigido. Após remover os pedidos e SKUs sintéticos, o banco voltou às contagens do seed e passaram os 11 casos Playwright de Faturamento e Faturamento multicanal. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU e de anúncio no Histórico de Preços. As exceções da Configuração de Reposição também têm link por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Corrida no teste de filtros de Produtos
+
+- **Base.** `codex/sentinel-audit` em `60befc36`.
+- **CI.** Na execução de `620f0b02`, a primeira com a suíte E2E inteira nesta branch, passaram 288 casos e um falhou: o caso dos filtros que atualizam no lugar, em `produtos.spec.ts`, com `route.continue: Route is already handled!`. Os 17 casos do projeto `loja-live` não rodaram, porque dependem do projeto principal.
+- **Causa.** O teste segura por 1 s toda resposta RSC de `/produtos` para ver a barra de atualização. As pré-buscas dos links de filtro passam pela mesma rota, e quatro ainda estavam seguradas quando o teste removia a rota. O caso não mudou nesta branch e passava na `main`. Não foi apurado o que mudou o tempo dessas pré-buscas.
+- **Correção.** A remoção da rota espera os handlers em curso. Localmente o caso falhou em 5 de 8 execuções antes e passou em 25 de 25 depois.
+- **Próxima etapa.** Conferir a suíte E2E e o projeto `loja-live` na CI do próximo push.
