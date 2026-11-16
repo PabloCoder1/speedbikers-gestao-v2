@@ -383,8 +383,9 @@ test("/produtos: atalho, filtro, 'limpar' do grupo e chip atualizam no lugar, se
   await expect(page.locator(".sb-atualizando-barra")).toBeVisible();
   await expect(page).toHaveURL(/tipo=produto/);
   await atualizacaoTerminou(page);
-  // As pré-buscas dos filtros também passam pela rota e ainda estão seguradas aqui.
-  await page.unroute("**/produtos**", { behavior: "wait" });
+  // As pré-buscas dos filtros também passam pela rota e ainda estão seguradas aqui:
+  // removida a rota, o `continue()` delas falha, e esse erro não é do teste.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 
   await tipo.getByRole("link", { name: "Limpar Tipo" }).click();
   await expect(page).not.toHaveURL(/tipo=/);
