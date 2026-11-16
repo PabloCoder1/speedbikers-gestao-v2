@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-694 desativa o prefetch do detalhe de SKU na tabela de Produtos. Em uma página com 100 SKUs, as verificações de sessão desses destinos antes do clique caíram de 49 para zero na mediana. Medir o prefetch dos links de SKU na tabela de Reposição. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-produtos-sentinel-a51-16112026)
+- **Sentinel.** D-695 desativa o prefetch do detalhe de SKU na tabela de Reposição. Em uma página com 100 SKUs, as verificações de sessão desses destinos antes do clique caíram de 54 para zero na mediana. Medir o prefetch dos links de SKU na tabela da Curva ABC. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

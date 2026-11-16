@@ -19592,3 +19592,9 @@ A migration `20261116164846` inclui também SKUs com saldo Full positivo. Entra 
 Os títulos dos produtos disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 100 SKUs, a web fez 49 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
 
 O link do título usa `prefetch={false}` na tabela. A Inspeção rápida funciona pelo botão da própria linha e seus atalhos aparecem ao abrir a gaveta. A regressão confere o SKU esperado, o retorno ao recorte e o destino da ação Ver diagnóstico. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-produtos-sentinel-a51-16112026)
+
+## D-695 - A tabela de Reposição abre o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 100 SKUs, a web fez 54 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do SKU usa `prefetch={false}` na tabela de Reposição. A regressão confere o SKU esperado e o retorno à busca com o filtro original. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026)

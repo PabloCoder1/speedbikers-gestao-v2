@@ -1958,3 +1958,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-694 | 0 | 0 | 0 | 43 | 145 ms (126–160) |
 
 Antes, foram 47 destinos distintos na mediana. As pré-buscas medidas passavam pelo Auth sem consultar a Data API. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou a volta à busca e a abertura da aba Diagnóstico pela Inspeção rápida. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU em Reposição (Sentinel A52, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Cada jornada abriu a mesma busca no filtro Sem estado com 100 SKUs sintéticos com saldo apenas no Full. O navegador rolou por cinco pontos e abriu o SKU da linha 96. A linha estava sem seleção de compra. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Auth de prefetch de SKU na abertura | Auth de prefetch de SKU na rolagem | Auth de prefetch de SKU antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | 4 | 50 | 54 | 83 | 140 ms (121–159) |
+| D-695 | 0 | 0 | 0 | 29 | 146 ms (132–203) |
+
+Antes, foram 52 destinos distintos na mediana. As pré-buscas medidas passavam pelo Auth sem consultar a Data API. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou a volta à mesma busca com o filtro Sem estado aplicado. A latência com tráfego real segue pendente.

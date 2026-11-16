@@ -516,7 +516,7 @@ export default async function ReposicaoPage({
                                 )}
                               </td>
                               <td>
-                                <Link className="sb-rep-sku" href={`/skus/${row.sku_id}`}>
+                                <Link className="sb-rep-sku" prefetch={false} href={`/skus/${row.sku_id}`}>
                                   {row.sku}
                                 </Link>
                                 <span className="sb-rep-titulo">
