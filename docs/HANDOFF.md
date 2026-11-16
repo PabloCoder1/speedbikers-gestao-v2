@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-688 desativa o prefetch nos links por SKU da tabela de Estoque. No ensaio com 100 SKUs, as verificações de sessão desses destinos antes do clique caíram de 59 para zero na mediana. Medir o prefetch dos links por anúncio e SKU na listagem de Anúncios do Mercado Livre, incluindo a abertura direta da aba Preços. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
+- **Sentinel.** D-689 desativa o prefetch nos links por linha de Anúncios do Mercado Livre. No ensaio com 100 anúncios, as verificações de sessão desses destinos antes do clique caíram de 70 para zero na mediana. Medir o prefetch dos links para SKU em Anúncios da Shopee e conferir a abertura do SKU vinculado. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-em-anúncios-do-mercado-livre-sentinel-a46-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

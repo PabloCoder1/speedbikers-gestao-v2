@@ -19556,3 +19556,9 @@ Os atalhos de Configurações usam `prefetch={false}`. A faixa compartilhada ace
 Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 SKUs, a abertura e a rolagem fizeram 59 verificações de sessão na mediana para detalhes e ajustes. Os destinos ainda exigiram uma requisição RSC no clique.
 
 O nome do produto, o link Ver SKU e o link Ajustar usam `prefetch={false}` na tabela de Estoque. O Chromium abriu os dois destinos para o SKU da linha clicada. O teste de regressão também confere o retorno ao mesmo filtro de Estoque. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
+
+## D-689 - A tabela de Anúncios do Mercado Livre consulta os destinos da linha ao clicar
+
+Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 anúncios, a abertura e a rolagem fizeram 70 verificações de sessão na mediana para anúncios, SKUs e a aba Preços. Cada destino ainda fez uma requisição RSC no clique.
+
+O título, o ID do anúncio, o SKU vinculado e o atalho Campanhas usam `prefetch={false}` na tabela. A regressão confere a ausência das pré-buscas, a abertura dos registros e a navegação direta para a aba Preços. [Medição](PERFORMANCE.md#prefetch-dos-links-em-anúncios-do-mercado-livre-sentinel-a46-16112026)

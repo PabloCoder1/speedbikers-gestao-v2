@@ -1887,3 +1887,15 @@ Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase loc
 | Ajustar | 8 → 0 | 51 → 0 | 83 → 18 | 231 → 141 ms |
 
 Na mediana, 55 destinos distintos disparavam 59 verificações de sessão antes do clique, sem consultas à Data API nessas pré-buscas. Com D-688, todas as execuções registraram zero pré-buscas dos links por SKU antes do clique. Cada clique iniciou uma requisição RSC que retornou HTTP 200 para o SKU esperado. Na amostra local, o detalhe levou 25 ms a mais na mediana e o ajuste levou 90 ms a menos. A diferença no detalhe foi aceita pela redução de chamadas ao abrir e rolar a tabela. A latência com tráfego real segue pendente.
+
+### Prefetch dos links em Anúncios do Mercado Livre (Sentinel A46, 16/11/2026)
+
+O Chromium autenticado como ADMIN abriu uma listagem com 100 anúncios sintéticos vinculados a 100 SKUs em um Supabase local isolado. Em um contexto novo de 1440 × 900 por jornada, rolou até cinco posições da tabela e clicou na linha 96. Cada destino teve cinco repetições medidas e um aquecimento por build. O build anterior foi comparado ao D-689 com a mesma consulta, linha e URL. A latência vai do início do clique até o título principal do destino ficar visível. O rastreio separou as verificações de sessão na abertura, na rolagem e após o clique.
+
+| Destino | Auth dos links na abertura | Auth dos links na rolagem | Auth dos links antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anúncio | 17 → 0 | 51 → 0 | 68 → 0 | 120 → 39 | 308 ms (274–338) → 174 ms (155–196) |
+| SKU | 17 → 0 | 56 → 0 | 73 → 0 | 126 → 42 | 233 ms (205–297) → 134 ms (122–150) |
+| Campanhas | 17 → 0 | 52 → 0 | 70 → 0 | 118 → 37 | 231 ms (181–294) → 151 ms (147–175) |
+
+Antes do clique, a mediana geral foi de 70 verificações para 64 destinos distintos, incluindo a aba Preços como destino separado. Depois, foram zero verificações para esses links em todas as repetições. As pré-buscas medidas não consultavam a Data API. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio ou SKU esperado e o atalho Campanhas abriu diretamente a aba Preços. A latência com tráfego real segue pendente.

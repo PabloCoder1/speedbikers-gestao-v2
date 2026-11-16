@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **589** (D-001 a D-688).
+Decisões registradas: **590** (D-001 a D-689).
 
 ## Por domínio
 
@@ -256,7 +256,7 @@ Decisões registradas: **589** (D-001 a D-688).
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 
-### mercado-livre (114)
+### mercado-livre (115)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -372,6 +372,7 @@ Decisões registradas: **589** (D-001 a D-688).
 - **D-674** — Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
 - **D-675** — A lista e os contadores de Anúncios começam assim que o recorte está resolvido
 - **D-676** — Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
+- **D-689** — A tabela de Anúncios do Mercado Livre consulta os destinos da linha ao clicar
 
 ### outros (84)
 

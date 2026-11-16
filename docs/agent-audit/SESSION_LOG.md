@@ -309,3 +309,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-688 (A45).** A tabela de Estoque passou a consultar o detalhe e o ajuste de SKU ao clicar. O ensaio de rolagem por uma página com 100 SKUs registrou mediana de 59 → 0 verificações de sessão para esses destinos antes do clique. Uma requisição RSC por clique abriu o SKU escolhido. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
 - **Validação.** O teste de prefetch falhou no build anterior e passou no corrigido. Após remover os 100 SKUs sintéticos do banco isolado, passaram os 12 casos Playwright de Ajuste de Estoque e Dashboard de SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links por anúncio e SKU na listagem de Anúncios do Mercado Livre, incluindo a abertura direta da aba Preços. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch por linha em Anúncios do Mercado Livre
+
+- **Base.** `codex/sentinel-audit` em `940d8abd`.
+- **D-689 (A46).** O ensaio com 100 anúncios registrou mediana de 70 → 0 verificações de sessão dos links por linha antes do clique. Cada clique abriu o anúncio, o SKU vinculado ou a aba Preços com uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-em-anúncios-do-mercado-livre-sentinel-a46-16112026)
+- **Validação.** A regressão registrou seis pré-buscas no build anterior e passou no corrigido. Após remover os registros sintéticos do banco isolado, passaram os 19 casos Playwright selecionados de Anúncios e Detalhe do Anúncio. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links para SKU em Anúncios da Shopee e conferir a abertura do SKU vinculado. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

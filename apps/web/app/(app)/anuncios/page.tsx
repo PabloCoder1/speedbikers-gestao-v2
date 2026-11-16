@@ -812,6 +812,7 @@ export default async function AnunciosPage({
                             <span className="sb-an-produto-texto">
                               <Link
                                 className="sb-entity sb-an-titulo"
+                                prefetch={false}
                                 href={`/anuncios/${row.item_id}`}
                                 title={`${row.title} — sincronizado em ${formatDateTime(row.synced_at)}`}
                               >
@@ -819,12 +820,12 @@ export default async function AnunciosPage({
                               </Link>
                               <span className="sb-an-meta">
                                 {/* Dashboard 360º do anúncio (D-168) — o destino individual. */}
-                                <Link className="sb-mono" href={`/anuncios/${row.item_id}`}>
+                                <Link className="sb-mono" prefetch={false} href={`/anuncios/${row.item_id}`}>
                                   {row.item_id}
                                 </Link>
                                 <span aria-hidden="true">·</span>
                                 {row.sku_id !== null && row.sku !== null ? (
-                                  <Link className="sb-mono" href={`/skus/${row.sku_id}`}>
+                                  <Link className="sb-mono" prefetch={false} href={`/skus/${row.sku_id}`}>
                                     {row.sku}
                                   </Link>
                                 ) : (
@@ -865,7 +866,7 @@ export default async function AnunciosPage({
                             // campanhas em que ele pode entrar.
                             <span className="sb-an-preco-promo">
                               {formatCurrency(row.price)}
-                              <Link className="sb-an-preco-de" href={`/anuncios/${row.item_id}?aba=preco`}>
+                              <Link className="sb-an-preco-de" prefetch={false} href={`/anuncios/${row.item_id}?aba=preco`}>
                                 Campanhas →
                               </Link>
                             </span>
