@@ -393,3 +393,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-699 (A56).** Com o ranking cheio, de 10 SKUs, a mediana de pré-buscas de SKU antes do clique caiu de 14 para zero nos recortes Mercado Livre e Todos, e cada jornada fez 14 verificações de sessão a menos. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
 - **Validação.** A regressão registrou duas pré-buscas em cada recorte no build anterior e passou no corrigido. Após remover os SKUs sintéticos, passaram os 29 casos Playwright selecionados de Vendas e SKU. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU nos pedidos e nas devoluções de Vendas da Shopee. Movimentações, ranking de Faturamento, Histórico de Preços e exceções da Configuração de Reposição também têm links por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch do SKU nos pedidos de Vendas da Shopee
+
+- **Base.** `codex/sentinel-audit` em `93ae87d6`.
+- **D-700 (A57).** Em uma página com 50 pedidos, a mediana de pré-buscas de SKU antes do clique caiu de 46 para zero, e cada jornada fez 46 verificações de sessão a menos. O clique abriu o SKU do item em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-nos-pedidos-de-vendas-da-shopee-sentinel-a57-16112026)
+- **Devoluções.** O link de SKU do painel de devoluções não mudou. Com a loja de teste do seed, o painel não lista itens, mesmo com devoluções gravadas e a leitura marcada. O ensaio precisa de loja real no banco local.
+- **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após remover os pedidos e SKUs sintéticos, passaram os 20 casos Playwright de Vendas da Shopee e de Vendas multicanal. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links de SKU em Movimentações. Ranking de Faturamento, Histórico de Preços e exceções da Configuração de Reposição também têm links por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)

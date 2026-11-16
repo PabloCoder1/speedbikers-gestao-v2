@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-699 desativa o prefetch do detalhe de SKU nos rankings de Vendas. Com o ranking cheio, as pré-buscas de SKU antes do clique caíram de 14 para zero na mediana nos recortes Mercado Livre e Todos. A guarda de vocabulário do hub de Configurações voltou a passar com o `export` de `INCLUI` restaurado. Medir o prefetch dos links de SKU nos pedidos e nas devoluções de Vendas da Shopee. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
+- **Sentinel.** D-700 desativa o prefetch do detalhe de SKU na lista de pedidos de Vendas da Shopee. Em uma página com 50 pedidos, as pré-buscas de SKU antes do clique caíram de 46 para zero na mediana. D-699 fez o mesmo nos rankings de Vendas. A guarda de vocabulário do hub de Configurações voltou a passar com o `export` de `INCLUI` restaurado. Medir o prefetch dos links de SKU em Movimentações. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-pedidos-de-vendas-da-shopee-sentinel-a57-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

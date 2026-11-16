@@ -414,3 +414,35 @@ test("/vendas/shopee: o CSV dos pedidos sai com o recorte da lista (D-490)", asy
   expect(comFinanceiro).toContain(";Teste;");
   expect(comFinanceiro).toContain(";Sim;");
 });
+
+test("/vendas/shopee: o SKU do pedido carrega ao clicar e a volta preserva a lista", async ({ page }) => {
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname.startsWith("/skus/")) prefetches.push(pathname);
+  });
+
+  await login(page, "/vendas/shopee");
+  await esperaPedidos(page, ESPERADO.naLista);
+
+  const sku = linhaDoPedido(page, comFinanceiro.orderSn).getByRole("link", { name: E2E_SKU_CODE, exact: true });
+  const destino = (await sku.getAttribute("href")) ?? "";
+
+  expect(destino).toMatch(/^\/skus\/[0-9a-f-]{36}$/);
+  await sku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await sku.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/vendas/shopee");
+  await esperaPedidos(page, ESPERADO.naLista);
+  await expect(sku).toBeVisible();
+});

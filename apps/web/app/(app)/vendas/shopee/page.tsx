@@ -729,7 +729,7 @@ export default async function VendasShopeePage({
                                     <span aria-hidden="true">·</span>
                                     {item.skuId !== null && item.sku !== null ? (
                                       <>
-                                        <Link className="sb-mono" href={`/skus/${item.skuId}`}>
+                                        <Link className="sb-mono" prefetch={false} href={`/skus/${item.skuId}`}>
                                           {item.sku}
                                         </Link>
                                         <span>{origemDoSkuShopee(item.vinculoVia)}</span>

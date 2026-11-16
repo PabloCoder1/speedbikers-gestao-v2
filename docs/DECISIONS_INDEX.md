@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **600** (D-001 a D-699).
+Decisões registradas: **601** (D-001 a D-700).
 
 ## Por domínio
 
@@ -473,7 +473,7 @@ Decisões registradas: **600** (D-001 a D-699).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (66)
+### vendas/métricas (67)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -541,6 +541,7 @@ Decisões registradas: **600** (D-001 a D-699).
 - **D-678** — A Curva ABC inicia as consultas assim que o recorte está resolvido
 - **D-696** — A tabela da Curva ABC abre o detalhe do SKU ao clicar
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
+- **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
 ### worker/infra (98)
 

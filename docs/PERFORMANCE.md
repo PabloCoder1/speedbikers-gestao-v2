@@ -2015,3 +2015,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-699 | Todos | 0 | 0 | 13 | 27 | 197 ms (189–215) |
 
 Antes, foram 10 destinos distintos na mediana. O ranking fica abaixo da primeira tela, então as pré-buscas só começavam na rolagem. Sem elas, cada jornada fez 14 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno ao mesmo recorte. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU nos pedidos de Vendas da Shopee (Sentinel A57, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. A loja Shopee de teste recebeu 44 pedidos sintéticos, com um item e um SKU por pedido. Com os seis pedidos do seed, a página de 50 pedidos ficou cheia e somou 50 links de SKU. Cada jornada abriu a tela, rolou por cinco pontos da lista e abriu o SKU do 31º pedido sintético. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Pré-buscas de SKU na abertura | Pré-buscas de SKU na rolagem | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | 0 | 46 | 55 | 66 | 212 ms (195–225) |
+| D-700 | 0 | 0 | 9 | 20 | 214 ms (193–255) |
+
+Antes, foram 42 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 46 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à lista. O painel de devoluções ficou fora do ensaio, porque só lista itens quando há loja real com devoluções lidas. A latência com tráfego real segue pendente.
