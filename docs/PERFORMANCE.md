@@ -2048,3 +2048,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-702 | 0 | 0 | 15 | 26 | 185 ms (112–202) |
 
 Antes, foram 27 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 31 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno ao mesmo recorte. A lista de menor margem e o recorte multicanal usam o mesmo componente e ficaram fora do ensaio. A latência com tráfego real segue pendente.
+
+### Prefetch dos links por linha no Histórico de Preços (Sentinel A60, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. O banco recebeu 48 alterações de preço sintéticas do Mercado Livre, cada uma em um anúncio próprio vinculado a um SKU próprio. Com as duas alterações do seed, a página de 50 linhas ficou cheia, com 50 links de anúncio e 49 de SKU. Cada jornada abriu a tela, rolou por cinco pontos da tabela e abriu o SKU do 31º link. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Pré-buscas na abertura | Pré-buscas na rolagem | Pré-buscas antes do clique | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Anterior | 13 | 81 | 93 | 103 | 118 | 187 ms (181–219) |
+| D-703 | 0 | 0 | 0 | 10 | 23 | 159 ms (145–170) |
+
+Antes, foram 89 destinos distintos na mediana, com 46 pré-buscas de SKU e 46 de anúncio. Sem as pré-buscas, a jornada fez 93 verificações de sessão a menos antes do clique. Em todas as execuções corrigidas houve zero pré-buscas antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU ou o anúncio esperado. A regressão verificou o retorno à tabela. As linhas de anúncio da Shopee ficaram fora do ensaio. A latência com tráfego real segue pendente.

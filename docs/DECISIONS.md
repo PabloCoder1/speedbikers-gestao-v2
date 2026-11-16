@@ -19646,3 +19646,9 @@ Os dois links usam `prefetch={false}`. A regressão confere o SKU esperado e o r
 Os links de SKU das listas de produtos disparavam prefetch ao entrar na área visível. Ao rolar o ranking por receita cheio, com 30 produtos, a web fez 31 pré-buscas de SKU na mediana. Sem elas, a jornada fez 31 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
 
 O link do título usa `prefetch={false}` no componente que serve o ranking por receita e a lista de menor margem, no Mercado Livre e no recorte multicanal. A regressão confere o SKU esperado no ranking por receita e o retorno ao mesmo recorte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-faturamento-sentinel-a59-16112026)
+
+## D-703 - O Histórico de Preços abre o SKU e o anúncio ao clicar
+
+Cada linha tem um link para o anúncio e, quando há vínculo, outro para o SKU. Os dois disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 alterações, a web fez 93 pré-buscas na mediana, e as verificações de sessão antes do clique passaram de 100. O clique ainda fez uma requisição RSC.
+
+Os dois links usam `prefetch={false}`. A regressão confere o SKU e o anúncio esperados e o retorno à tabela. [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-no-histórico-de-preços-sentinel-a60-16112026)

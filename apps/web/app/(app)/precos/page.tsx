@@ -419,12 +419,12 @@ export default async function PrecosPage({
                         </strong>
                         <div className="sb-mono sb-price-meta">
                           {row.sku_id !== null && row.sku !== null ? (
-                            <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
+                            <Link prefetch={false} href={`/skus/${row.sku_id}`}>{row.sku}</Link>
                           ) : (
                             <span>sem vínculo</span>
                           )}
                           {" · "}
-                          <Link href={`/anuncios/${row.item_id}`}>{row.item_id}</Link>
+                          <Link prefetch={false} href={`/anuncios/${row.item_id}`}>{row.item_id}</Link>
                           {row.status !== null && ` · ${listingStatusLabel(row.status)}`}
                           {` · ${row.account_label}`}
                         </div>

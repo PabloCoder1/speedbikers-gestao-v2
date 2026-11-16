@@ -429,3 +429,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Causa.** O teste segura por 1 s toda resposta RSC de `/produtos` para ver a barra de atualização. As pré-buscas dos links de filtro passam pela mesma rota, e quatro ainda estavam seguradas quando o teste removia a rota. O caso não mudou nesta branch e passava na `main`. Não foi apurado o que mudou o tempo dessas pré-buscas.
 - **Correção.** A primeira tentativa, em `48c562b4`, passou a `page.unroute` uma opção que ela não aceita. Reprovou no typecheck da CI e, em execução, deixava a rota instalada: por isso as 25 repetições locais passaram. O commit saiu sem typecheck depois da edição. A correção válida remove as rotas com `unrouteAll({ behavior: "ignoreErrors" })`. Esperar os handlers não serve, porque as requisições seguradas são devolvidas ao navegador quando a rota sai e o `continue()` delas falha do mesmo jeito. Localmente o caso falhou em 5 de 8 execuções antes e passou em 30 de 30 depois, com typecheck e lint.
 - **Próxima etapa.** Conferir a suíte E2E e o projeto `loja-live` na CI do próximo push.
+
+### 16/11/2026 · Prefetch por linha no Histórico de Preços
+
+- **Base.** `codex/sentinel-audit` em `b902ef2b`.
+- **D-703 (A60).** Em uma página com 50 alterações, a mediana de pré-buscas antes do clique caiu de 93 para zero, entre links de SKU e de anúncio, e as verificações de sessão antes do clique caíram de 103 para 10. Cada clique abriu o SKU ou o anúncio da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-por-linha-no-histórico-de-preços-sentinel-a60-16112026)
+- **Validação.** A regressão registrou cinco pré-buscas no build anterior e passou no corrigido. Os eventos sintéticos entraram e saíram com os gatilhos suspensos na transação, para não gerar avisos, e o banco voltou às contagens do seed. Passaram os 5 casos Playwright de Preços. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch do link de SKU nas exceções da Configuração de Reposição. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)

@@ -2,8 +2,9 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 
-import { E2E_LISTING_PRICE_EVENT, E2E_LISTING_PRICE_EVENT_ALTA } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_PRICE_EVENT, E2E_LISTING_PRICE_EVENT_ALTA, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/precos` — Histórico de Preços depois da migração para o frame
@@ -163,4 +164,47 @@ test("/precos: o chip da faixa mostra exatamente as linhas que ele conta", async
   const afetados = faixa.locator(".sb-kpi", { hasText: "Anúncios afetados" });
 
   await expect(afetados.getByRole("link", { name: "ver lista" })).toHaveCount(0);
+});
+
+test("/precos: o SKU e o anúncio da linha carregam ao clicar e a volta preserva a tabela", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const [vinculado] = E2E_LISTINGS;
+  const sku = `/skus/${skuId}`;
+  const anuncio = `/anuncios/${vinculado.itemId}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && /^\/(skus|anuncios)\//u.test(pathname)) prefetches.push(pathname);
+  });
+
+  await login(page, "/precos");
+
+  const linha = page.locator("tbody tr").filter({ hasText: vinculado.itemId });
+  const linkDoSku = linha.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+  const linkDoAnuncio = linha.getByRole("link", { name: vinculado.itemId, exact: true });
+
+  await expect(linkDoSku).toHaveAttribute("href", sku);
+  await expect(linkDoAnuncio).toHaveAttribute("href", anuncio);
+  await linkDoSku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await linkDoSku.click();
+  await expect(page).toHaveURL((url) => url.pathname === sku);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/precos");
+
+  await linkDoAnuncio.click();
+  await expect(page).toHaveURL((url) => url.pathname === anuncio);
+  await expect(page.getByRole("heading", { level: 2, name: vinculado.title, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/precos");
+  await expect(linkDoAnuncio).toBeVisible();
 });
