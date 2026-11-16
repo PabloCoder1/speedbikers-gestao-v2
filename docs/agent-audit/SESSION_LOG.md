@@ -323,3 +323,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-690 (A47).** A mediana de verificações de sessão para links de SKU antes do clique caiu de 48 para zero no ensaio com 50 anúncios. O primeiro clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-anúncios-da-shopee-sentinel-a47-16112026)
 - **Validação.** O teste registrou duas pré-buscas no build anterior e passou no corrigido. Após remover os dados sintéticos, passaram os 14 casos Playwright selecionados, incluindo dois do projeto que usa uma loja marcada como live em ambiente local. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de anúncio e SKU na Central de Vinculações. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch por linha em Vinculações
+
+- **Base.** `codex/sentinel-audit` em `268d4401`.
+- **D-691 (A48).** Em uma página com 50 anúncios, a mediana de verificações de sessão dos links por linha antes do clique caiu de 69,5 para zero. Cada clique abriu o anúncio ou o SKU esperado em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
+- **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após a remoção dos dados sintéticos, passaram os 26 casos Playwright selecionados de Vinculações, Anúncio e SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links de SKU e reposição na tabela da Central Full. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

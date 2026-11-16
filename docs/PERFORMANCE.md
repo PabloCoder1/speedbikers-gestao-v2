@@ -1910,3 +1910,14 @@ O Chromium autenticado como ADMIN abriu uma página com 50 anúncios sintéticos
 | D-690 | 0 | 0 | 0 | 26 | 135 ms (123–146) |
 
 Antes, foram 45 destinos distintos na mediana. As pré-buscas passavam pelo Auth e não consultavam a Data API. Em todas as execuções corrigidas, o primeiro clique fez uma requisição RSC com HTTP 200 para o SKU esperado e a tabela fez zero prefetch de SKU. A latência com tráfego real segue pendente.
+
+### Prefetch dos links na Central de Vinculações (Sentinel A48, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Cada jornada abriu uma página com 50 anúncios sintéticos ligados a 50 SKUs, rolou por cinco pontos e abriu o anúncio ou o SKU da linha 48. Foram cinco repetições medidas e um aquecimento por destino e build, com contextos novos de 1440 × 900. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Destino | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth de prefetch antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anúncio | 13 → 0 | 59 → 0 | 72 → 0 | 103 → 25 | 237 ms (210–385) → 166 ms (156–179) |
+| SKU | 13 → 0 | 55 → 0 | 67 → 0 | 102 → 27 | 227 ms (181–323) → 157 ms (138–172) |
+
+A mediana geral antes do clique foi de 69,5 verificações de sessão para os links da tabela. As pré-buscas medidas passavam pelo Auth sem consultas à Data API. Em todas as execuções corrigidas, a tabela fez zero pré-buscas para esses destinos e cada clique fez uma requisição RSC com HTTP 200 para o registro esperado. A latência com tráfego real segue pendente.

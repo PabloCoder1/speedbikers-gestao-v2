@@ -2,6 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 
 import { E2E_LISTINGS, E2E_LISTING_SOLD_UNLINKED, E2E_ML_ACCOUNT, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/vinculacoes` — Integridade de Catálogo (D21, D-259), com o popup de D-374 e
@@ -100,6 +101,45 @@ test("/vinculacoes: os cartões contam o que a tabela mostra, e vínculo por var
     `${String(ESPERADO.porVariacao)} deles por variação`,
   );
   await expect(destaque(page, "CATÁLOGO VINCULADO")).toContainText("estão ligados");
+});
+
+test("/vinculacoes: os detalhes do anúncio e do SKU carregam ao clicar", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const [vinculado] = E2E_LISTINGS;
+  const filtro = `?busca=${vinculado.itemId}`;
+  const anuncio = `/anuncios/${vinculado.itemId}`;
+  const sku = `/skus/${skuId}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && (pathname === anuncio || pathname === sku)) prefetches.push(pathname);
+  });
+
+  await login(page, "/vinculacoes" + filtro);
+  await esperaResumo(page);
+  const linha = tabela(page).getByRole("row").filter({ hasText: vinculado.itemId });
+  const linkAnuncio = linha.getByRole("link", { name: vinculado.title, exact: true });
+  const linkSku = linha.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+  await expect(linkAnuncio).toHaveAttribute("href", anuncio);
+  await expect(linkSku).toHaveAttribute("href", sku);
+  await linkAnuncio.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await linkAnuncio.click();
+  await expect(page).toHaveURL((url) => url.pathname === anuncio);
+  await expect(page.getByRole("heading", { level: 2, name: vinculado.title, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/vinculacoes" && url.search === filtro);
+  await linkSku.click();
+  await expect(page).toHaveURL((url) => url.pathname === sku);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
 });
 
 test("/vinculacoes: clicar em 'Vendeu sem vínculo' mostra exatamente aquelas linhas", async ({ page }) => {

@@ -38,7 +38,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 | `/precos` | [page.tsx](<../../apps/web/app/(app)/precos/page.tsx>) | RPC `get_price_changes` após a organização. A lista `ml_accounts` só bloqueia a consulta quando há conta na URL (D-682) |
 | `/vendas` | [page.tsx](<../../apps/web/app/(app)/vendas/page.tsx>) | No ML, `get_sales_*` aguarda a lista só com slug e `get_supplier_brands` usa a organização. Em [multicanal.tsx](<../../apps/web/app/(app)/vendas/multicanal.tsx>), organização e contas selecionadas definem o recorte de `get_marketplace_sales_*` e `get_marketplace_sku_sales`. `saved_filters` alimenta o menu. |
 | `/vendas/shopee` | [page.tsx](<../../apps/web/app/(app)/vendas/shopee/page.tsx>) | `get_shopee_returns_summary`, `get_shopee_returns`, `get_shopee_sales_by_shop` e `get_shopee_orders` começam após resolver organização e lojas visíveis. `saved_filters` e a contagem ML alimentam os controles. |
-| `/vinculacoes` | [page.tsx](<../../apps/web/app/(app)/vinculacoes/page.tsx>) | `get_listings_link_overview`, `link_candidates` e `sku_listing_links` começam em paralelo após resolver organização e slug quando informado. `get_link_integrity` chega por streaming. `get_listings_dashboard` fornece a tabela alternativa (D-681) |
+| `/vinculacoes` | [page.tsx](<../../apps/web/app/(app)/vinculacoes/page.tsx>) | `get_listings_link_overview`, `link_candidates` e `sku_listing_links` começam em paralelo após resolver organização e slug quando informado. `get_link_integrity` chega por streaming. `get_listings_dashboard` fornece a tabela alternativa (D-681). Anúncio e SKU da linha carregam ao clicar (D-691) |
 
 ## Catálogo, estoque e compras
 

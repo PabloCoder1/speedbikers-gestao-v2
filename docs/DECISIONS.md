@@ -19568,3 +19568,9 @@ O título, o ID do anúncio, o SKU vinculado e o atalho Campanhas usam `prefetch
 O link da coluna Vínculo disparava prefetch assim que entrava na área visível. Ao abrir e rolar uma página de 50 anúncios da Shopee, a web fez 48 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
 
 O link de SKU usa `prefetch={false}` na coluna Vínculo, tanto para o vínculo pelo código do anúncio quanto para o manual. A regressão confere o SKU esperado e o retorno ao filtro original. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-anúncios-da-shopee-sentinel-a47-16112026)
+
+## D-691 - A tabela de Vinculações abre o anúncio e o SKU ao clicar
+
+Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 anúncios, a web fez 69,5 verificações de sessão na mediana para anúncios e SKUs antes do clique. O clique ainda fez uma requisição RSC.
+
+O título do anúncio e o link para o SKU usam `prefetch={false}` na tabela compartilhada pela visão principal e pela alternativa. A regressão confere os dois destinos e o retorno à busca original. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
