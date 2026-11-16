@@ -785,7 +785,7 @@ export default async function AnunciosShopeePage({
                         <td className="sb-an-quebra sb-an-vinculo" data-label="Vínculo">
                           {row.estado === "VINCULADO" && row.sku_id !== null && row.sku !== null ? (
                             <>
-                              <Link className="sb-entity sb-mono" href={`/skus/${row.sku_id}`} title={row.sku_title ?? undefined}>
+                              <Link className="sb-entity sb-mono" prefetch={false} href={`/skus/${row.sku_id}`} title={row.sku_title ?? undefined}>
                                 {row.sku}
                               </Link>
                               <small className="sb-an-sub">

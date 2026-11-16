@@ -2,6 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 
 import { E2E_ANOMALIA, E2E_SHOPEE_ESPERADO, E2E_SHOPEE_ITEMS, E2E_SHOPEE_LEITURA_MINUTOS, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/anuncios/shopee` — o catálogo da loja Shopee e o vínculo pelo SKU do
@@ -133,6 +134,37 @@ test("/anuncios/shopee: o vínculo pelo SKU do anúncio leva ao SKU, e cada esta
   // Clicar no SKU leva à página dele.
   await linkSku.click();
   await expect(page).toHaveURL(/\/skus\/[0-9a-f-]{36}$/);
+});
+
+test("/anuncios/shopee: o SKU vinculado carrega ao clicar", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const filtro = `?q=${String(skuNoItem.itemId)}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname === destino) prefetches.push(pathname);
+  });
+
+  await login(page, "/anuncios/shopee" + filtro);
+  const link = tabela(page).getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+  await expect(link).toHaveAttribute("href", destino);
+  await link.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await link.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/anuncios/shopee" && url.search === filtro);
+  await expect(link).toBeVisible();
 });
 
 test("/anuncios/shopee: clicar num contador filtra a lista para exatamente aquele estado", async ({ page }) => {

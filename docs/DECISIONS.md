@@ -19562,3 +19562,9 @@ O nome do produto, o link Ver SKU e o link Ajustar usam `prefetch={false}` na ta
 Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 anúncios, a abertura e a rolagem fizeram 70 verificações de sessão na mediana para anúncios, SKUs e a aba Preços. Cada destino ainda fez uma requisição RSC no clique.
 
 O título, o ID do anúncio, o SKU vinculado e o atalho Campanhas usam `prefetch={false}` na tabela. A regressão confere a ausência das pré-buscas, a abertura dos registros e a navegação direta para a aba Preços. [Medição](PERFORMANCE.md#prefetch-dos-links-em-anúncios-do-mercado-livre-sentinel-a46-16112026)
+
+## D-690 - Anúncios da Shopee abre o SKU vinculado ao clicar
+
+O link da coluna Vínculo disparava prefetch assim que entrava na área visível. Ao abrir e rolar uma página de 50 anúncios da Shopee, a web fez 48 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link de SKU usa `prefetch={false}` na coluna Vínculo, tanto para o vínculo pelo código do anúncio quanto para o manual. A regressão confere o SKU esperado e o retorno ao filtro original. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-anúncios-da-shopee-sentinel-a47-16112026)

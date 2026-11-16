@@ -1899,3 +1899,14 @@ O Chromium autenticado como ADMIN abriu uma listagem com 100 anúncios sintétic
 | Campanhas | 17 → 0 | 52 → 0 | 70 → 0 | 118 → 37 | 231 ms (181–294) → 151 ms (147–175) |
 
 Antes do clique, a mediana geral foi de 70 verificações para 64 destinos distintos, incluindo a aba Preços como destino separado. Depois, foram zero verificações para esses links em todas as repetições. As pré-buscas medidas não consultavam a Data API. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio ou SKU esperado e o atalho Campanhas abriu diretamente a aba Preços. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU em Anúncios da Shopee (Sentinel A47, 16/11/2026)
+
+O Chromium autenticado como ADMIN abriu uma página com 50 anúncios sintéticos de uma loja Shopee de teste, cada um vinculado a um SKU pelo código do anúncio. O Supabase rodou localmente em uma instância isolada. Cada build teve um aquecimento e cinco repetições em contextos novos de 1440 × 900. O navegador abriu o mesmo filtro, rolou por cinco pontos e clicou no SKU da linha 48. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth de prefetch antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| D-689 | 7 | 41 | 48 | 74 | 128 ms (121–139) |
+| D-690 | 0 | 0 | 0 | 26 | 135 ms (123–146) |
+
+Antes, foram 45 destinos distintos na mediana. As pré-buscas passavam pelo Auth e não consultavam a Data API. Em todas as execuções corrigidas, o primeiro clique fez uma requisição RSC com HTTP 200 para o SKU esperado e a tabela fez zero prefetch de SKU. A latência com tráfego real segue pendente.
