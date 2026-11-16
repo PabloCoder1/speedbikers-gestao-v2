@@ -58,6 +58,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A52 | P2 · CORRIGIDO localmente (D-695) | Abrir e rolar a tabela de Reposição disparava verificações de sessão para links de SKU antes do clique | No ensaio com 100 SKUs, a mediana caiu de 54 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026) |
 | A53 | P2 · CORRIGIDO localmente (D-696) | Rolar a Curva ABC disparava verificações de sessão para links de SKU antes do clique | No ensaio com 50 SKUs, a mediana caiu de 38 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026) |
 | A54 | P2 · CORRIGIDO localmente (D-697) | Abrir e rolar o ranking de Produtos da Central disparava verificações de sessão para links de SKU antes do clique | No ensaio com 50 SKUs, a mediana caiu de 54 para zero. O teste abriu o SKU correto e voltou ao mesmo recorte. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-produtos-da-central-sentinel-a54-16112026) |
+| A55 | P2 · CORRIGIDO localmente (D-698) | Abrir e rolar o Detector de frete disparava verificações de sessão para links de anúncio antes do clique | No ensaio com 30 observações, a mediana caiu de 24 para zero. A jornada abriu o anúncio correto e voltou ao mesmo nível. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-anúncio-no-detector-de-frete-sentinel-a55-16112026) |
 
 ## Referências externas
 

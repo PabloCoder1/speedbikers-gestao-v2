@@ -1991,3 +1991,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-697 | 0 | 0 | 0 | 46 | 123 ms (118–138) |
 
 Antes, foram 50 destinos distintos na mediana. As pré-buscas medidas passavam pelo Auth sem consultar a Data API. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à mesma conta, ao período e à ordem. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de anúncio no Detector de frete (Sentinel A55, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. O Detector de frete gerou 30 observações de nível Forte indício a partir de 520 pedidos sintéticos, distribuídos por 65 anúncios. Cada jornada abriu o filtro desse nível, rolou por cinco pontos e abriu o anúncio do cartão 26. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Auth de prefetch de anúncio na abertura | Auth de prefetch de anúncio na rolagem | Auth de prefetch de anúncio antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | 4 | 20 | 24 | 55 | 161 ms (156–175) |
+| D-698 | 0 | 0 | 0 | 31 | 169 ms (160–176) |
+
+Antes, foram 22 destinos distintos na mediana. As pré-buscas medidas passavam pelo Auth sem consultar a Data API. Em todas as execuções corrigidas houve zero pré-buscas desses anúncios antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio esperado. Voltar preservou o filtro Forte indício e o cartão continuou acessível. A latência com tráfego real segue pendente.

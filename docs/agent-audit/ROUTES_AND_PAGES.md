@@ -14,7 +14,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 | `/acoes` | [page.tsx](<../../apps/web/app/(app)/acoes/page.tsx>) | RPC `get_actions_queue`. Tabelas `action_decisions`, `action_outcomes` |
 | `/central` | [page.tsx](<../../apps/web/app/(app)/central/page.tsx>) | `get_faturamento` e `get_ads_overview`, uma chamada por período. O bloco consolidado compartilha as respostas atuais do ML e chama `get_shopee_faturamento`. Também usa `get_meta_do_mes`, `get_detector_frete`, `get_sinais_ads` e `ml_accounts`. [Medição](../PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026) |
 | `/central/ads` | [page.tsx](<../../apps/web/app/(app)/central/ads/page.tsx>) | RPC `get_sinais_ads`, `get_faturamento` |
-| `/central/frete` | [page.tsx](<../../apps/web/app/(app)/central/frete/page.tsx>) | RPC `get_detector_frete` |
+| `/central/frete` | [page.tsx](<../../apps/web/app/(app)/central/frete/page.tsx>) | RPC `get_detector_frete`. O detalhe do anúncio abre ao clicar no cartão (D-698) |
 | `/central/limites` | [page.tsx](<../../apps/web/app/(app)/central/limites/page.tsx>) | Tabelas `central_thresholds` |
 | `/central/metas` | [page.tsx](<../../apps/web/app/(app)/central/metas/page.tsx>) | RPC `get_meta_do_mes`. Tabelas `monthly_goals`, `tax_rates`, `monthly_goals_marketplace` |
 | `/central/produtos` | [page.tsx](<../../apps/web/app/(app)/central/produtos/page.tsx>) | RPC `get_ranking_produtos`. Tabelas `ml_accounts`. O detalhe do SKU abre ao clicar no ranking (D-697) |
