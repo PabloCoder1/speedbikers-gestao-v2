@@ -1098,7 +1098,7 @@ async function SalesRanking({
                     {topSkus.map((linha) => (
                       <tr key={linha.sku_id}>
                         <td>
-                          <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
+                          <Link className="sb-entity" prefetch={false} href={`/skus/${linha.sku_id}`}>
                             {linha.title ?? linha.sku}
                           </Link>
                           <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>

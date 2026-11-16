@@ -2002,3 +2002,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-698 | 0 | 0 | 0 | 31 | 169 ms (160–176) |
 
 Antes, foram 22 destinos distintos na mediana. As pré-buscas medidas passavam pelo Auth sem consultar a Data API. Em todas as execuções corrigidas houve zero pré-buscas desses anúncios antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio esperado. Voltar preservou o filtro Forte indício e o cartão continuou acessível. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU no ranking de Vendas (Sentinel A56, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Dez SKUs com venda no período padrão preencheram o ranking, que mostra no máximo dez produtos, nos recortes Mercado Livre e Todos. Cada jornada abriu o recorte, rolou por cinco linhas do ranking e abriu o SKU da linha 8. Foram cinco repetições medidas e um aquecimento por build e por recorte, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Recorte | Pré-buscas de SKU na abertura | Pré-buscas de SKU na rolagem | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | Mercado Livre | 0 | 14 | 30 | 44 | 191 ms (172–196) |
+| Anterior | Todos | 0 | 14 | 27 | 41 | 195 ms (123–213) |
+| D-699 | Mercado Livre | 0 | 0 | 16 | 30 | 194 ms (185–204) |
+| D-699 | Todos | 0 | 0 | 13 | 27 | 197 ms (189–215) |
+
+Antes, foram 10 destinos distintos na mediana. O ranking fica abaixo da primeira tela, então as pré-buscas só começavam na rolagem. Sem elas, cada jornada fez 14 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno ao mesmo recorte. A latência com tráfego real segue pendente.

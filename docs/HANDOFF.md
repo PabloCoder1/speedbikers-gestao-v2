@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-698 desativa o prefetch dos anúncios nos cartões do Detector de frete. Em uma lista com 30 observações, as verificações de sessão desses destinos antes do clique caíram de 24 para zero na mediana. Medir o prefetch dos links de SKU no ranking de Vendas, nos recortes Mercado Livre e Todos. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-anúncio-no-detector-de-frete-sentinel-a55-16112026)
+- **Sentinel.** D-699 desativa o prefetch do detalhe de SKU nos rankings de Vendas. Com o ranking cheio, as pré-buscas de SKU antes do clique caíram de 14 para zero na mediana nos recortes Mercado Livre e Todos. A guarda de vocabulário do hub de Configurações voltou a passar com o `export` de `INCLUI` restaurado. Medir o prefetch dos links de SKU nos pedidos e nas devoluções de Vendas da Shopee. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

@@ -127,3 +127,47 @@ test("/vendas?marketplace=todos: o ranking de produtos dá ao SKU a receita do r
   await expect(linha.getByRole("cell").nth(4)).toContainText(receitaMl);
   await expect(linha.getByRole("cell").nth(5)).toContainText("—");
 });
+
+const RANKINGS_DE_VENDAS = [
+  { marketplace: "ml", ranking: "Produtos que mais contribuíram" },
+  { marketplace: "todos", ranking: "Produtos que mais venderam" },
+] as const;
+
+for (const { marketplace, ranking } of RANKINGS_DE_VENDAS) {
+  test(`/vendas?marketplace=${marketplace}: o SKU do ranking carrega ao clicar e a volta preserva o recorte`, async ({
+    page,
+  }) => {
+    const { skuId } = await readSeedOutput();
+    const destino = `/skus/${skuId}`;
+    const recorte = `?marketplace=${marketplace}`;
+    const prefetches: string[] = [];
+
+    page.on("request", (request) => {
+      const headers = request.headers();
+      const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+      const { pathname } = new URL(request.url());
+
+      if (prefetch && pathname === destino) prefetches.push(pathname);
+    });
+
+    await login(page, "/vendas" + recorte);
+
+    const titulo = "Produto de teste E2E";
+    const produto = page
+      .getByRole("region", { name: ranking })
+      .getByRole("link", { name: titulo, exact: true });
+
+    await expect(produto).toHaveAttribute("href", destino);
+    await produto.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches).toEqual([]);
+
+    await produto.click();
+    await expect(page).toHaveURL((url) => url.pathname === destino);
+    await expect(page.getByRole("heading", { level: 2, name: titulo, exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === "/vendas" && url.search === recorte);
+    await expect(produto).toBeVisible();
+  });
+}

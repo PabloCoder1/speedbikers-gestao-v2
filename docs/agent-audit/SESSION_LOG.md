@@ -379,3 +379,17 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-698 (A55).** A mediana de verificações de sessão para links de anúncio antes do clique caiu de 24 para zero no ensaio com 30 observações. O clique abriu o anúncio do cartão em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-anúncio-no-detector-de-frete-sentinel-a55-16112026)
 - **Validação.** O ensaio exercitou os dois builds, o anúncio esperado e o retorno ao filtro Forte indício. Após recriar o banco local e aplicar o seed padrão, passaram os 19 casos Playwright selecionados de Central e Detalhe do Anúncio. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU no ranking de Vendas, nos recortes Mercado Livre e Todos. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Guarda de vocabulário na CI do PR #328
+
+- **Base.** `codex/sentinel-audit` em `4baaffb7`, 14 commits à frente de `origin/codex/sentinel-audit` (`c88ea687`).
+- **CI.** A execução do PR em `c88ea687` reprovou em dois passos. A guarda `check:settings-vocabulary` não achou a tabela `INCLUI`: a limpeza A25 tirou o `export` que o script localiza por texto. O passo roda só na CI, fora de `pnpm run check`. O `export` voltou em `868efe5f`, com o motivo no comentário da tabela. No job de E2E, o build web falhou ao resolver os arquivos da fonte Inter em `next/font/google`, na primeira execução da CI com Next 16.4.1. O build local com a mesma versão passa e o Google Fonts devolve as URLs no formato esperado. A causa não foi reproduzida.
+- **Validação.** As sete guardas que só a CI roda (`settings-vocabulary`, `waterfalls`, `server-actions`, `table-styles`, `control-styles`, `loading` e `navegacao-suave`) e `pnpm audit --prod --audit-level high` passaram localmente.
+- **Próxima etapa.** Conferir o build web do job de E2E na próxima execução da CI.
+
+### 16/11/2026 · Prefetch do SKU nos rankings de Vendas
+
+- **Base.** `codex/sentinel-audit` em `868efe5f`.
+- **D-699 (A56).** Com o ranking cheio, de 10 SKUs, a mediana de pré-buscas de SKU antes do clique caiu de 14 para zero nos recortes Mercado Livre e Todos, e cada jornada fez 14 verificações de sessão a menos. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
+- **Validação.** A regressão registrou duas pré-buscas em cada recorte no build anterior e passou no corrigido. Após remover os SKUs sintéticos, passaram os 29 casos Playwright selecionados de Vendas e SKU. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links de SKU nos pedidos e nas devoluções de Vendas da Shopee. Movimentações, ranking de Faturamento, Histórico de Preços e exceções da Configuração de Reposição também têm links por linha com prefetch. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)

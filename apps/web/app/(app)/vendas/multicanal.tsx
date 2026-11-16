@@ -903,7 +903,7 @@ function RankingDeProdutos({
                       </>
                     ) : (
                       <>
-                        <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
+                        <Link className="sb-entity" prefetch={false} href={`/skus/${linha.sku_id}`}>
                           {linha.sku_title ?? linha.sku ?? "—"}
                         </Link>
                         <small className="sb-an-sub sb-mono">SKU {linha.sku ?? "—"}</small>

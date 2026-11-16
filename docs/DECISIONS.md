@@ -19613,6 +19613,12 @@ O link do título usa `prefetch={false}` no ranking. A regressão confere o SKU 
 
 ## D-698 - O Detector de frete abre o detalhe do anúncio ao clicar
 
-Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 SKUs, a web fez 24 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+Os links dos anúncios disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma lista com 30 observações, a web fez 24 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
 
 O link do anúncio usa `prefetch={false}` em cada cartão. O ensaio confere o detalhe esperado e o retorno ao mesmo nível do detector. [Medição](PERFORMANCE.md#prefetch-dos-links-de-anúncio-no-detector-de-frete-sentinel-a55-16112026)
+
+## D-699 - Os rankings de Vendas abrem o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao rolar o ranking cheio, com 10 SKUs, a web fez 14 pré-buscas de SKU na mediana nos recortes Mercado Livre e Todos. Sem elas, a jornada fez 14 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` nos dois rankings. A regressão confere o SKU esperado e o retorno ao mesmo recorte de marketplace. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
