@@ -19652,3 +19652,9 @@ O link do título usa `prefetch={false}` no componente que serve o ranking por r
 Cada linha tem um link para o anúncio e, quando há vínculo, outro para o SKU. Os dois disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 alterações, a web fez 93 pré-buscas na mediana, e as verificações de sessão antes do clique passaram de 100. O clique ainda fez uma requisição RSC.
 
 Os dois links usam `prefetch={false}`. A regressão confere o SKU e o anúncio esperados e o retorno à tabela. [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-no-histórico-de-preços-sentinel-a60-16112026)
+
+## D-704 - As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
+
+A tabela de exceções lista todas as regras por SKU, sem paginação, e o link de cada uma disparava prefetch ao entrar na área visível. Ao abrir e rolar 50 exceções, a web fez 52 pré-buscas de SKU na mediana. Sem elas, a jornada fez 52 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca, e o seed não tem regra: a regressão grava uma exceção no banco local, confere o SKU esperado e o retorno à tela, e apaga a regra ao final. [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)

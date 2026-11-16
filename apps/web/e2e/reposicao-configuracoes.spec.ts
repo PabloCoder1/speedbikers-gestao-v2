@@ -1,6 +1,10 @@
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
+import { E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * CONFIGURAÇÃO DE REPOSIÇÃO (D-361) — a tela que nenhum caso olhava.
@@ -116,4 +120,67 @@ test("configuração de reposição: a reposição leva à configuração e volt
 
   await page.getByRole("link", { name: "← Cobertura e reposição" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Cobertura e reposição" })).toBeVisible();
+});
+
+/**
+ * A exceção por SKU (D-704): o seed não tem regra e a gaveta só cria padrão e
+ * marca, então o caso grava a exceção direto no banco local e a apaga no fim —
+ * `reposicao.spec.ts` roda depois e conta com o seed sem regra.
+ */
+test("configuração de reposição: a exceção por SKU abre o SKU ao clicar e a volta preserva a tela", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const regra = await db
+    .from("replenishment_settings")
+    .insert({
+      organization_id: seed.organizationId,
+      sku_id: seed.skuId,
+      lead_time_days: 15,
+      target_coverage_days: 30,
+      safety_stock_days: 5,
+    })
+    .select("id")
+    .single();
+
+  if (regra.error !== null) throw new Error(regra.error.message);
+
+  try {
+    const destino = `/skus/${seed.skuId}`;
+    const prefetches: string[] = [];
+
+    page.on("request", (request) => {
+      const headers = request.headers();
+      const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+      const { pathname } = new URL(request.url());
+
+      if (prefetch && pathname === destino) prefetches.push(pathname);
+    });
+
+    await login(page, "/reposicao/configuracoes");
+
+    const sku = page
+      .getByRole("region", { name: "Exceções por SKU" })
+      .getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+    await expect(sku).toHaveAttribute("href", destino);
+    await sku.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches).toEqual([]);
+
+    await sku.click();
+    await expect(page).toHaveURL((endereco) => endereco.pathname === destino);
+    await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL((endereco) => endereco.pathname === "/reposicao/configuracoes");
+    await expect(sku).toBeVisible();
+  } finally {
+    await db.from("replenishment_settings").delete().eq("id", regra.data.id);
+  }
 });

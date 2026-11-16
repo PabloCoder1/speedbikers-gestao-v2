@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-703 desativa o prefetch dos links de SKU e de anúncio no Histórico de Preços. Em uma página com 50 alterações, as pré-buscas antes do clique caíram de 93 para zero na mediana. D-699 a D-702 fizeram o mesmo nos rankings de Vendas, nos pedidos de Vendas da Shopee, em Movimentações e nas listas do Faturamento. Medir o prefetch do link de SKU nas exceções da Configuração de Reposição. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-no-histórico-de-preços-sentinel-a60-16112026)
+- **Sentinel.** D-704 desativa o prefetch do link de SKU nas exceções da Configuração de Reposição. Com 50 exceções, as pré-buscas de SKU antes do clique caíram de 52 para zero na mediana. D-699 a D-703 fizeram o mesmo nos rankings de Vendas, nos pedidos de Vendas da Shopee, em Movimentações, nas listas do Faturamento e no Histórico de Preços. A fila de tabelas com link por linha terminou. Restam o painel de devoluções da Shopee, que pede loja real no banco local, e as telas de detalhe ainda não medidas. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

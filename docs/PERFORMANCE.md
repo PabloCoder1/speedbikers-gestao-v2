@@ -2059,3 +2059,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-703 | 0 | 0 | 0 | 10 | 23 | 159 ms (145–170) |
 
 Antes, foram 89 destinos distintos na mediana, com 46 pré-buscas de SKU e 46 de anúncio. Sem as pré-buscas, a jornada fez 93 verificações de sessão a menos antes do clique. Em todas as execuções corrigidas houve zero pré-buscas antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU ou o anúncio esperado. A regressão verificou o retorno à tabela. As linhas de anúncio da Shopee ficaram fora do ensaio. A latência com tráfego real segue pendente.
+
+### Prefetch do link de SKU nas exceções de Reposição (Sentinel A61, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. O banco recebeu 50 regras de reposição por SKU sintéticas, uma por SKU, que a tabela de exceções mostra inteira. Cada jornada abriu a Configuração de Reposição, rolou por cinco pontos da tabela e abriu o SKU da linha 31. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Pré-buscas de SKU na abertura | Pré-buscas de SKU na rolagem | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | 4 | 48 | 64 | 75 | 177 ms (165–198) |
+| D-704 | 0 | 0 | 12 | 23 | 162 ms (155–229) |
+
+Antes, foram 50 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 52 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à tela. A latência com tráfego real segue pendente.

@@ -487,7 +487,7 @@ export default async function ReposicaoConfigPage(): Promise<ReactNode> {
                   {regrasDeSku.map((r) => (
                     <tr key={r.id}>
                       <td>
-                        <Link className="sb-rep-sku" href={`/skus/${r.skuId ?? ""}`}>
+                        <Link className="sb-rep-sku" prefetch={false} href={`/skus/${r.skuId ?? ""}`}>
                           {r.skuCodigo ?? r.skuId}
                         </Link>
                       </td>
