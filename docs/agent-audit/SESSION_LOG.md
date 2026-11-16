@@ -337,3 +337,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-692 (A49).** Em uma página com 50 SKUs, a mediana de verificações de sessão dos links por linha antes do clique caiu de 77 para zero. Cada clique abriu o SKU ou a Reposição filtrada em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
 - **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após a remoção dos dados sintéticos, passaram os 21 casos Playwright selecionados de Central Full, Reposição e SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
 - **Próxima etapa.** Investigar por que um SKU com saldo apenas no Full fica fora da busca de Reposição (A50). Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · SKUs com saldo exclusivo no Full em Reposição
+
+- **Base.** `codex/sentinel-audit` em `5353e58a`.
+- **D-693 (A50).** A lista de Reposição e o alcance das regras incluem o Full positivo atual pela última captura de cada bucket visível. O ensaio passou de 1.000 para 1.400 SKUs elegíveis, com os mesmos dados para os 1.000 anteriores. [Medição](../PERFORMANCE.md#skus-com-saldo-exclusivo-no-full-na-reposição-sentinel-a50-16112026)
+- **Validação.** A regressão falhou na busca e no alcance com a versão anterior. Após o reset local e o registro da migration `20261116164846`, passaram 1.158 testes de integração. Passaram 21 casos Playwright e a jornada do SKU exclusivo do Full sem sugestão de compra. Passaram `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links da tabela de Produtos e conferir a abertura do SKU. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

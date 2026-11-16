@@ -19570,9 +19570,12 @@ describe("get_replenishment_reach (D-361)", () => {
   const TODAY = "2026-08-23";
 
   /*
-    Cinco SKUs, um em cada fronteira do universo de `get_purchase_suggestions`:
+    Oito SKUs nas fronteiras do universo de `get_purchase_suggestions`:
 
-      so-saldo      saldo, sem venda            -> na reposição, sem venda 30d
+      so-saldo      saldo local, sem venda      -> na reposição, sem venda 30d
+      so-full       Full positivo atual        -> na reposição, sem venda 30d
+      full-zerado   última captura com zero    -> só no cadastro
+      full-antigo   última captura há 4 dias   -> só no cadastro
       venda-30d     venda há 5 dias             -> na reposição, com venda 30d, regra própria
       venda-40d     venda há 40 dias (<90, >30) -> na reposição, sem venda 30d
       so-cadastro   nada                        -> só no cadastro, regra própria FORA do universo
@@ -19588,7 +19591,7 @@ describe("get_replenishment_reach (D-361)", () => {
       [CONTA, ORG_SB],
     );
 
-    for (const nome of ["so-saldo", "venda-30d", "venda-40d", "so-cadastro", "venda-120d"]) {
+    for (const nome of ["so-saldo", "so-full", "full-zerado", "full-antigo", "venda-30d", "venda-40d", "so-cadastro", "venda-120d"]) {
       const sku = await client.query<{ id: string }>(
         `insert into public.skus
            (organization_id, sku, kind, supplier_brand, supplier_brand_source, supplier_brand_set_at)
@@ -19616,9 +19619,21 @@ describe("get_replenishment_reach (D-361)", () => {
     );
 
     await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, sku_id, item_id, inventory_id, quantity, captured_at)
+       values ($1,$2,$3,'MLB910361001','reach-full-a',99,now() - interval '2 days'),
+              ($1,$2,$3,'MLB910361001','reach-full-a',7,now() - interval '1 hour'),
+              ($1,$2,$3,'MLB910361001','reach-full-b',5,now() - interval '1 hour'),
+              ($1,$2,$4,'MLB910361002','reach-zero',8,now() - interval '2 days'),
+              ($1,$2,$4,'MLB910361002','reach-zero',0,now() - interval '1 hour'),
+              ($1,$2,$5,'MLB910361003','reach-old',9,now() - interval '4 days')`,
+      [ORG_SB, CONTA, ids["so-full"], ids["full-zerado"], ids["full-antigo"]],
+    );
+
+    await client.query(
       `insert into public.replenishment_settings (organization_id, sku_id, lead_time_days, target_coverage_days)
-       values ($1,$2,15,30), ($1,$3,15,30)`,
-      [ORG_SB, ids["venda-30d"], ids["so-cadastro"]],
+       values ($1,$2,15,30), ($1,$3,15,30), ($1,$4,15,30)`,
+      [ORG_SB, ids["venda-30d"], ids["so-cadastro"], ids["so-full"]],
     );
   });
 
@@ -19631,7 +19646,7 @@ describe("get_replenishment_reach (D-361)", () => {
     skus_com_regra_sku_venda_30d: string;
   }
 
-  it("conta cada fronteira do universo: saldo OU métrica em 90 dias, e venda em 30", async () => {
+  it("conta cada fronteira do universo: saldo em outros locais, Full atual positivo ou métrica em 90 dias", async () => {
     // ADMIN alcança todas as contas por papel. Ver o caso do ANALISTA abaixo.
     const rows = await asUser<Linha>(
       ADMIN_SB,
@@ -19639,12 +19654,52 @@ describe("get_replenishment_reach (D-361)", () => {
     );
 
     expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.skus)).toBe(5);
-    expect(Number(rows[0]?.skus_na_reposicao)).toBe(3);
+    expect(Number(rows[0]?.skus)).toBe(8);
+    expect(Number(rows[0]?.skus_na_reposicao)).toBe(4);
     expect(Number(rows[0]?.skus_com_venda_30d)).toBe(1);
-    // A regra própria de `so-cadastro` fica FORA: ele não está na reposição.
-    expect(Number(rows[0]?.skus_com_regra_sku)).toBe(1);
+    // A regra própria do Full entra no alcance. A regra de so-cadastro fica fora.
+    expect(Number(rows[0]?.skus_com_regra_sku)).toBe(2);
     expect(Number(rows[0]?.skus_com_regra_sku_venda_30d)).toBe(1);
+  });
+
+  it("inclui o Full positivo visível sem inventar cobertura ou compra", async () => {
+    interface Alvo {
+      sku: string;
+      full_quantity: number;
+      units_30d: number;
+      coverage_days: number | null;
+      state: string | null;
+      suggested_quantity: number | null;
+    }
+
+    const buscar = (usuario: string, sku: string) =>
+      asUser<{ v: { total: number; linhas: Alvo[] } }>(
+        usuario,
+        `select public.get_replenishment_overview('${ORG_SB}','${TODAY}',null,'${sku}',null,1,0) as v`
+      );
+
+    const [visivel] = await buscar(ADMIN_SB, "REACHTEST-so-full");
+    expect(visivel?.v.total).toBe(1);
+    expect(visivel?.v.linhas).toMatchObject([{
+      sku: "REACHTEST-so-full",
+      full_quantity: 12,
+      units_30d: 0,
+      coverage_days: null,
+      state: null,
+      suggested_quantity: null,
+    }]);
+
+    for (const codigo of ["REACHTEST-full-zerado", "REACHTEST-full-antigo"]) {
+      const [foraDoRecorte] = await buscar(ADMIN_SB, codigo);
+      expect(foraDoRecorte?.v.total).toBe(0);
+      expect(foraDoRecorte?.v.linhas).toEqual([]);
+    }
+
+    for (const usuario of [ANALISTA_SB, DE_OUTRA_ORG]) {
+      const [semAcesso] = await buscar(usuario, "REACHTEST-so-full");
+      expect(semAcesso?.v.total).toBe(0);
+      expect(semAcesso?.v.linhas).toEqual([]);
+    }
   });
 
   it("o universo É o de get_purchase_suggestions: a mesma marca dá o mesmo total nas duas", async () => {
@@ -19662,8 +19717,8 @@ describe("get_replenishment_reach (D-361)", () => {
 
   /*
     Achado ao escrever o primeiro caso como ANALISTA: ele via 1 SKU na
-    reposição, não 3. A conta do fixture não está entre as dele, e a RLS de
-    `daily_sku_metrics` esconde as vendas dela — só o SKU com saldo sobra.
+    reposição, não 4. A conta do fixture não está entre as dele, e a RLS de
+    `daily_sku_metrics` esconde as vendas, e a RLS do Full esconde as capturas. Só o saldo local sobra.
     Não é defeito: a função é invoker, e `/reposicao` mostra a ele o mesmo
     recorte. O que precisa valer é que as DUAS telas concordem para ele.
   */

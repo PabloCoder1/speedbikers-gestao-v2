@@ -19580,3 +19580,9 @@ O título do anúncio e o link para o SKU usam `prefetch={false}` na tabela comp
 Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 SKUs, a web fez 77 verificações de sessão na mediana para detalhes de SKU e buscas em Reposição antes do clique. O clique ainda fez uma requisição RSC.
 
 O link do SKU e a ação Ver reposição usam `prefetch={false}` na tabela. A regressão confere o detalhe, o retorno à busca na Central Full e a busca em Reposição pelo mesmo SKU. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
+
+## D-693 - A Reposição inclui SKUs com saldo atual exclusivo no Full
+
+O recorte partia dos saldos de inventário e de vendas dos últimos 90 dias. O saldo Full era somado depois, para os SKUs que já estavam no recorte. Um SKU que só tinha saldo no Full ficava fora da busca, inclusive ao abrir Reposição pela Central Full.
+
+A migration `20261116164846` inclui também SKUs com saldo Full positivo. Entra a última captura por conta e bucket na janela de três dias, somada por SKU sob RLS. Reposição e o alcance das regras aplicam o mesmo critério, e continuam exigindo o histórico e a amostra já usados para calcular cobertura, estado e sugestão de compra. As assinaturas e permissões das RPCs foram preservadas. [Medição](PERFORMANCE.md#skus-com-saldo-exclusivo-no-full-na-reposição-sentinel-a50-16112026)

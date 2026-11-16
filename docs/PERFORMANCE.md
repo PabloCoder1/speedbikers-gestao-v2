@@ -1934,3 +1934,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 A mediana geral antes do clique foi de 77 verificações de sessão para os links da tabela. As pré-buscas medidas passavam pelo Auth sem consultas à Data API. Em todas as execuções corrigidas, a tabela fez zero pré-buscas para esses destinos e cada clique fez uma requisição RSC com HTTP 200 para o destino esperado. Em Reposição, foram conferidos o parâmetro `busca`, o valor da busca e o link do SKU retornado. A latência com tráfego real segue pendente.
 
 No primeiro ensaio, um SKU com snapshot Full e sem saldo em outros locais nem histórico de vendas aparecia na Central Full e retornava lista vazia em Reposição, com a busca aplicada. A RPC confirmou o recorte vazio e passou a devolver o SKU após incluir uma venda recente. A medição de prefetch usa o segundo cenário nas duas versões. O caso exclusivo do Full segue em A50.
+
+### SKUs com saldo exclusivo no Full na Reposição (Sentinel A50, 16/11/2026)
+
+Supabase local, PostgreSQL sob RLS como ADMIN. A organização sintética tinha 1.500 SKUs, 60 mil linhas diárias de venda e 12 mil capturas Full em dois buckets por SKU. As estatísticas dessas tabelas foram atualizadas antes do ensaio. A mediana usa cinco execuções após dois aquecimentos por consulta e versão, com EXPLAIN ANALYZE e BUFFERS. As duas versões usaram os mesmos dados em uma transação revertida ao final.
+
+| Consulta | Tempo de execução, antes → D-693 | Blocos compartilhados, antes → D-693 |
+| --- | ---: | ---: |
+| Visão de Reposição | 314,4 → 300,9 ms | 185.125 → 185.125 |
+| Busca por SKU já elegível | 307,5 → 319,1 ms | 185.125 → 185.125 |
+| Busca por SKU só com Full | 104,2 → 293,9 ms | 121.576 → 185.125 |
+| Alcance das regras | 42,4 → 62,8 ms | 60.114 → 60.354 |
+
+A lista e o alcance passaram de 1.000 para 1.400 SKUs. Os 1.000 registros que já eram elegíveis coincidiram em todos os campos exceto o total da lista. Os 100 SKUs cuja captura mais recente era zero ficaram fora. A busca que devolvia uma lista vazia passou a retornar o SKU e seu saldo Full, com maior custo de execução. O alcance passou a consultar o Full. A medição com tráfego real segue pendente.
