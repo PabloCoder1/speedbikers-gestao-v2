@@ -121,7 +121,7 @@ function Cartao({ secao, papel }: { secao: SettingsSection; papel: string | null
         */}
         <nav className="sb-channel-nav sb-settings-links" aria-label={`Telas de ${secao.label}`}>
           {secao.links.map((link) => (
-            <Link key={link.href} href={link.href}>
+            <Link key={link.href} href={link.href} prefetch={false}>
               {link.label} →
             </Link>
           ))}

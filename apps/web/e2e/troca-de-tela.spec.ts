@@ -51,18 +51,24 @@ async function chegou(page: Page, titulo: RegExp): Promise<void> {
   await expect(page.locator(".sb-atualizando-barra")).toHaveCount(0);
 }
 
-test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {
+function contarPrefetches(page: Page, caminho: string): () => number {
   let prefetches = 0;
   page.on("request", (request) => {
     const headers = request.headers();
     const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
 
-    if (prefetch && new URL(request.url()).pathname === "/estoque") prefetches += 1;
+    if (prefetch && new URL(request.url()).pathname === caminho) prefetches += 1;
   });
+
+  return () => prefetches;
+}
+
+test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {
+  const prefetches = contarPrefetches(page, "/estoque");
   const titulo = await abrirHome(page);
 
   await expect(page.getByRole("link", { name: "Estoque", exact: true }).first()).toBeVisible();
-  expect(prefetches).toBe(0);
+  expect(prefetches()).toBe(0);
 
   await segurarTela(page, "/estoque");
   await page.getByRole("navigation", { name: "Navegação principal" }).getByRole("link", { name: "Estoque", exact: true }).click();
@@ -71,6 +77,40 @@ test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", a
   await chegou(page, /^Visão de estoque$/);
   await expect(page).toHaveURL(/\/estoque$/);
 });
+
+const ATALHOS = [
+  {
+    origem: "/configuracoes",
+    seletor: ".sb-settings-links a[href^='/reposicao/configuracoes']",
+    destino: "/reposicao/configuracoes",
+    titulo: /^Configuração de reposição$/,
+  },
+  {
+    origem: "/estoque",
+    seletor: ".sb-kpi-link[href='/full']",
+    destino: "/full",
+    titulo: /^Central Full$/,
+  },
+];
+
+for (const { origem, seletor, destino, titulo } of ATALHOS) {
+  test(`atalhos sob demanda em ${origem}: abre ${destino} pelo clique`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const prefetches = contarPrefetches(page, destino);
+    await login(page, origem);
+
+    const link = page.locator(seletor);
+    await link.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches()).toBe(0);
+
+    const href = await link.getAttribute("href");
+    expect(href).toMatch(new RegExp(`^${destino}`));
+    await link.click();
+    await expect(page).toHaveURL((url) => `${url.pathname}${url.hash}` === href);
+    await chegou(page, titulo);
+  });
+}
 
 test("link no conteúdo: o IndicadorDeNavegacao dá o sinal até a tela nova chegar", async ({ page }) => {
   const titulo = await abrirHome(page);

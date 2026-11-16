@@ -52,7 +52,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/compras/[id]/editar` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/editar/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `suppliers` |
 | `/compras/novo` | [page.tsx](<../../apps/web/app/(app)/compras/novo/page.tsx>) | RPC `get_suppliers_overview`, `get_supplier_brands`. Tabelas `purchase_orders`, `skus` |
 | `/curva-abc` | [page.tsx](<../../apps/web/app/(app)/curva-abc/page.tsx>) | RPC `get_sku_abc_analysis` após organização e a lista de contas quando a URL pede seleção. RPC `get_supplier_brands` e `get_sku_categories` após organização. Leituras do cabeçalho em `ml_accounts`, `saved_filters`, `marketplace_accounts` e contagem em `shopee_shops` (D-678) |
-| `/estoque` | [page.tsx](<../../apps/web/app/(app)/estoque/page.tsx>) | RPC `get_stock_balances`, `get_supplier_brands`, `get_stock_summary` |
+| `/estoque` | [page.tsx](<../../apps/web/app/(app)/estoque/page.tsx>) | RPC `get_stock_balances`, `get_supplier_brands`, `get_stock_summary`. Os cartões de indicadores consultam o destino ao clicar (D-687) |
 | `/estoque/[skuId]/ajuste` | [page.tsx](<../../apps/web/app/(app)/estoque/[skuId]/ajuste/page.tsx>) | Tabelas `skus`, `inventory_balances`, `stock_movements`, `profiles` |
 | `/estoque/movimentacoes` | [page.tsx](<../../apps/web/app/(app)/estoque/movimentacoes/page.tsx>) | RPC `get_stock_movements`, `get_stock_movements_summary` |
 | `/fornecedores` | [page.tsx](<../../apps/web/app/(app)/fornecedores/page.tsx>) | RPC `get_suppliers_overview` |
@@ -89,7 +89,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · configuracoes, cont
 
 | Rota | Entrada | Referências diretas de dados |
 |---|---|---|
-| `/configuracoes` | [page.tsx](<../../apps/web/app/(app)/configuracoes/page.tsx>) | RPC `get_settings_overview`. Tabelas `shopee_shops` |
+| `/configuracoes` | [page.tsx](<../../apps/web/app/(app)/configuracoes/page.tsx>) | RPC `get_settings_overview`. Tabela `shopee_shops`. Os atalhos dos cartões consultam o destino ao clicar (D-687) |
 | `/contas` | [page.tsx](<../../apps/web/app/(app)/contas/page.tsx>) | RPC `get_ml_account_cards`, `get_shopee_shop_catalog_counts`. Tabelas `shopee_shops` |
 | `/integracoes` | [page.tsx](<../../apps/web/app/(app)/integracoes/page.tsx>) | RPC `get_sync_health`, `get_system_health`, `get_ai_monthly_cost_usd`. Tabelas `ml_accounts`, `marketplace_accounts`, `erp_import_batches`, `ai_runs`, `domain_events` |
 | `/login` | [page.tsx](<../../apps/web/app/login/page.tsx>) | Ver a entrada e seus imports |

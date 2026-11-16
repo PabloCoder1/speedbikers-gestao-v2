@@ -295,3 +295,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-686 (A11).** Os links da barra lateral passaram a buscar a tela no clique. Em quatro repetições de cada jornada, o total de Auth de Perguntas → Estoque passou de 57 para 29 e o de Configurações → Vendas, de 55 para 29. O indicador de troca de tela e o redirecionamento sem sessão foram exercitados. [Medição](../PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
 - **Validação.** O build anterior falhou na nova asserção de prefetch e o build corrigido passou. Passaram sete casos Playwright de navegação, rolagem e cabeçalhos, além de `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos atalhos de Configurações e dos cartões de Estoque para decidir quais consultas antecipadas ajudam a primeira navegação. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch em Configurações e Estoque
+
+- **Base.** `codex/sentinel-audit` em `8eebecd2`.
+- **D-687 (A44).** Atalhos de Configurações e cartões de Estoque consultam o destino ao clicar. O ensaio registrou 31 para 13 chamadas de Auth até Configuração de Reposição e 30 para 25 até Central Full. As duas primeiras navegações fizeram uma requisição RSC em cada execução. [Medição](../PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
+- **Validação.** Os dois testes de prefetch falharam no build anterior e passaram no corrigido. Na primeira rodada ampla, o Auth local retornou 500 no login de um caso de Full. A repetição em sequência passou nos 23 casos Playwright selecionados. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links por SKU na tabela de Estoque durante a rolagem e a abertura do primeiro detalhe. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

@@ -19544,3 +19544,9 @@ A lista de contas é uma promessa executada uma vez e pode ser reutilizada para 
 Em duas jornadas com Chromium, a tela de entrada disparava 48 verificações de sessão por prefetch antes de qualquer ação. O menu aberto expõe várias rotas ao prefetch automático do Next. Cada pedido de prefetch autenticado passa pelo proxy.
 
 Os links dos grupos e do rodapé da barra lateral usam `prefetch={false}`. A troca de tela continua pelo App Router com o indicador de carregamento. Nos dois destinos medidos, o clique fez uma requisição RSC. Os atalhos do conteúdo ainda podem iniciar prefetch. Requisições sem sessão foram redirecionadas ao login, inclusive com cabeçalhos de prefetch. [Medição](PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
+
+## D-687 - Configurações e cartões de Estoque consultam o destino ao clicar
+
+Os links de Configurações e os cartões da faixa de indicadores de Estoque disparavam prefetch quando apareciam no navegador. Em dois fluxos medidos, cada destino fez duas verificações de Auth antes do clique e ainda precisou de uma requisição RSC no clique.
+
+Os atalhos de Configurações usam `prefetch={false}`. A faixa compartilhada aceita a opção por cartão, adotada em Estoque para os destinos Produtos e Central Full. A navegação usa os mesmos links, inclusive a âncora de configuração de reposição. [Medição](PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)

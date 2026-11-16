@@ -1865,3 +1865,14 @@ Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase loc
 | Configurações → Vendas | 48 → 22 | 51 → 25 | 4 → 4 | 55 → 29 |
 
 Cada documento fez duas chamadas, cada clique fez uma chamada na requisição de destino e o POST de telemetria fez uma chamada em cada fase. Arquivos estáticos, fontes e imagens excluídos pelo matcher fizeram zero. Parte do prefetch de Estoque passou a ocorrer após o clique pelos links do conteúdo. O total da jornada captura esse custo. Sem sessão, tanto o pedido de documento quanto o pedido RSC com indicação de prefetch receberam 307 para o login. O ensaio mede volume local de chamadas. A latência percebida com tráfego real segue pendente.
+
+### Prefetch em Configurações e Estoque (Sentinel A44, 16/11/2026)
+
+Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase local. Cinco repetições medidas e uma de aquecimento por versão e jornada, em contextos novos. O link entrou em vista antes de aguardar o navegador ficar ocioso e clicar. As fases antes e depois do clique terminaram após a rede ficar ociosa e mais 750 ms. O intervalo do clique começa antes da ação do Playwright e termina quando o título do destino fica visível.
+
+| Jornada | Auth na abertura · antes → D-687 | Auth após o clique · antes → D-687 | Auth na jornada · antes → D-687 | Mediana até o título · antes → D-687 |
+| --- | ---: | ---: | ---: | ---: |
+| Configurações → Configuração de reposição | 25 → 7 | 6 → 6 | 31 → 13 | 145 → 137 ms |
+| Estoque → Central Full | 19 → 14 | 11 → 11 | 30 → 25 | 134 → 127 ms |
+
+As pré-buscas dos destinos testados caíram de duas para zero, e o clique continuou fazendo uma requisição RSC em cada execução. O link de Configurações preservou a âncora quando o seed estava sem regra de reposição. Os tempos locais se sobrepuseram entre versões. A redução confirmada é de chamadas. A latência com tráfego real segue pendente.

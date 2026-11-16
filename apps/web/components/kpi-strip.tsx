@@ -64,6 +64,8 @@ export interface KpiCellData {
    * lista saem da mesma consulta filtrada.
    */
   readonly href?: string;
+  /** Desativa a pré-busca quando o destino deve ser lido só ao abrir o link. */
+  readonly prefetch?: false;
   /** Tom do chip, como no frame: cada estado tem o seu. */
   readonly tom?: Tom;
   /**
@@ -158,7 +160,7 @@ export function KpiCell({ cell }: { cell: KpiCellData }): ReactNode {
       {cell.metricId !== undefined && <span className="sb-kpi-id">{cell.metricId}</span>}
 
       {cell.href !== undefined && (
-        <Link className="sb-kpi-link" href={cell.href} style={TOM[cell.tom ?? "info"]}>
+        <Link className="sb-kpi-link" href={cell.href} prefetch={cell.prefetch ?? null} style={TOM[cell.tom ?? "info"]}>
           ver lista
           <CarregandoSeODemorar />
         </Link>

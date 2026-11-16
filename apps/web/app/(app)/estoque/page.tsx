@@ -193,6 +193,7 @@ export default async function EstoquePage({
       previous: null,
       ressalva: confirmados === 0 ? razaoDaRecusa : `sobre ${formatCount(confirmados)} SKU(s) confirmados como físicos`,
       href: "/produtos?estado=pendente&sinal=sentinela",
+      prefetch: false,
       tom: confirmados === 0 ? "atencao" : "neutro",
     },
     {
@@ -220,6 +221,7 @@ export default async function EstoquePage({
       value: formatCount(total?.full_quantity ?? 0),
       previous: null,
       href: "/full",
+      prefetch: false,
       tom: "ok",
     },
     {
@@ -229,6 +231,7 @@ export default async function EstoquePage({
       previous: null,
       ressalva: confirmados === 0 ? razaoDaRecusa : `sobre ${formatCount(confirmados)} SKU(s) confirmados`,
       href: "/produtos?estado=pendente&sinal=sentinela",
+      prefetch: false,
       tom: confirmados === 0 ? "atencao" : "neutro",
     },
     {

@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-686 desativa o prefetch automático da barra lateral. No ensaio local, as jornadas Perguntas → Estoque e Configurações → Vendas caíram de 57 e 55 chamadas de Auth para 29 cada. Medir o prefetch dos atalhos de Configurações e dos cartões de Estoque para decidir quais consultas antecipadas ajudam a primeira navegação. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
+- **Sentinel.** D-687 retira o prefetch automático dos atalhos de Configurações e dos cartões de Estoque. As jornadas até Configuração de Reposição e Full passaram de 31 para 13 e de 30 para 25 chamadas de Auth. Medir o prefetch dos links por SKU na tabela de Estoque durante a rolagem e a abertura do primeiro detalhe. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
