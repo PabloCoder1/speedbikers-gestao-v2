@@ -185,8 +185,10 @@ const RESSALVA_QUEM: Partial<Record<SettingsSection["id"], string>> = {
  * guarda confere que a string existe no arquivo, não para quem ela aparece, e
  * por isso a marca é conferida à mão contra a condição da tela dona, citada ao
  * lado de cada uma.
+ *
+ * O `export` fica mesmo sem import: a guarda localiza `export const INCLUI`.
  */
-const INCLUI = {
+export const INCLUI = {
   organizacao: [
     { termo: "Gerenciar acessos", arquivo: "app/(app)/usuarios/page.tsx" },
     // `...(isAdmin ? [{ label: "Convites pendentes" … }] : [])` na faixa.
