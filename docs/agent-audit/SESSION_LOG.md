@@ -358,3 +358,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-695 (A52).** A mediana de verificações de sessão para links de SKU antes do clique caiu de 54 para zero no ensaio com 100 SKUs. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026)
 - **Validação.** A regressão registrou duas pré-buscas no build anterior e passou no corrigido. Após remover os SKUs sintéticos, passaram os 24 casos Playwright selecionados de Reposição, Configuração, Central Full e SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU na tabela da Curva ABC. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch do detalhe de SKU na Curva ABC
+
+- **Base.** `codex/sentinel-audit` em `891334a5`.
+- **D-696 (A53).** A mediana de verificações de sessão para links de SKU antes do clique caiu de 38 para zero no ensaio com 50 SKUs. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026)
+- **Validação.** A regressão registrou duas pré-buscas no build anterior e passou no corrigido. Após remover os SKUs sintéticos, passaram os 16 casos Playwright selecionados, incluindo o recorte com loja Shopee live de teste local. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links de SKU no ranking de Produtos da Central. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)

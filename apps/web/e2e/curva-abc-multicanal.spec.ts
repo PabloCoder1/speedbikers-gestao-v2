@@ -1,8 +1,9 @@
 import { type Page, expect, test } from "@playwright/test";
 import JSZip from "jszip";
 
-import { E2E_SHOPEE_SHOP } from "./constants.js";
+import { E2E_SHOPEE_SHOP, E2E_SKU_CODE } from "./constants.js";
 import { atualizacaoTerminou, login, marcarSemRecarga, naoRecarregou } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/curva-abc` com MAIS DE UM MARKETPLACE (D-448, etapa T6b), sobre o C-60
@@ -37,6 +38,41 @@ async function valorDaFaixa(page: Page, rotulo: string): Promise<string> {
 function tabela(page: Page) {
   return page.locator(".sb-abc-table-wrap table");
 }
+
+test("/curva-abc: o detalhe do SKU carrega ao clicar e o retorno preserva o ranking", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const filtro = `?criterio=unidades&dias=30&busca=${E2E_SKU_CODE}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname === destino) prefetches.push(pathname);
+  });
+
+  await login(page, "/curva-abc" + filtro);
+  const linha = tabela(page).getByRole("row").filter({ hasText: E2E_SKU_CODE });
+  const titulo = "Produto de teste E2E";
+  const sku = linha.getByRole("link", { name: titulo, exact: true });
+
+  await expect(sku).toHaveAttribute("href", destino);
+  await sku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await sku.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: titulo, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/curva-abc" && url.search === filtro);
+  await expect(page.getByRole("searchbox", { name: "Buscar por SKU ou nome do produto" })).toHaveValue(E2E_SKU_CODE);
+  await expect(grupo(page, "Critério").getByRole("link", { name: "Unidades", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect(sku).toBeVisible();
+});
 
 test("/curva-abc: o seletor oferece Todos, e trocar leva o período — 'Pedidos' vira 'Compras'", async ({ page }) => {
   await login(page, "/curva-abc?criterio=pedidos&dias=30");

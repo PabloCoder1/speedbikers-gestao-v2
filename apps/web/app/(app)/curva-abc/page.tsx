@@ -839,7 +839,7 @@ export default async function CurvaAbcPage({
                           </div>
                         </td>
                         <td>
-                          <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                          <Link className="sb-entity" prefetch={false} href={`/skus/${row.sku_id}`}>
                             {row.title ?? "Produto sem título"}
                           </Link>
                           <div className="sb-mono">
