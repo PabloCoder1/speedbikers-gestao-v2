@@ -19640,3 +19640,9 @@ O link do SKU usa `prefetch={false}` em cada item da lista. A regressão confere
 Cada linha tem um link para o SKU e, quando há origem, outro para a nota fiscal, o pedido de compra ou o pedido da Shopee. Os dois disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 movimentos, a web fez 62 pré-buscas na mediana. Sem elas, a jornada fez 62 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
 
 Os dois links usam `prefetch={false}`. A regressão confere o SKU esperado e o retorno à lista. O link de origem foi conferido no ensaio, para nota fiscal e pedido de compra: o seed não tem movimento com origem. [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-em-movimentações-sentinel-a58-16112026)
+
+## D-702 - As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
+
+Os links de SKU das listas de produtos disparavam prefetch ao entrar na área visível. Ao rolar o ranking por receita cheio, com 30 produtos, a web fez 31 pré-buscas de SKU na mediana. Sem elas, a jornada fez 31 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` no componente que serve o ranking por receita e a lista de menor margem, no Mercado Livre e no recorte multicanal. A regressão confere o SKU esperado no ranking por receita e o retorno ao mesmo recorte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-faturamento-sentinel-a59-16112026)

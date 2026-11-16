@@ -2037,3 +2037,14 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-701 | 0 | 0 | 0 | 0 | 10 | 21 | 178 ms (167–210) |
 
 Antes, foram 56 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 62 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o destino esperado, no SKU, no pedido de compra e na nota fiscal. A regressão verificou o retorno à lista. O link para pedido da Shopee ficou fora do ensaio. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU no ranking de Faturamento (Sentinel A59, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. O banco recebeu 29 pedidos pagos sintéticos do Mercado Livre, um item e um SKU por pedido. Com o pedido do seed, o ranking por receita ficou com os 30 produtos que mostra no máximo. A lista de menor margem ficou vazia, porque os SKUs sintéticos não têm custo. Cada jornada abriu o recorte Mercado Livre, rolou por cinco pontos do ranking e abriu o SKU da posição 21. Foram cinco repetições medidas e um aquecimento por build, em contextos novos de 1440 × 900. As pré-buscas foram contadas no navegador e as verificações de sessão no log de acesso do gateway local, do login até o destino carregar. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Build | Pré-buscas de SKU na abertura | Pré-buscas de SKU na rolagem | Auth antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Anterior | 0 | 31 | 46 | 57 | 190 ms (130–217) |
+| D-702 | 0 | 0 | 15 | 26 | 185 ms (112–202) |
+
+Antes, foram 27 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 31 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno ao mesmo recorte. A lista de menor margem e o recorte multicanal usam o mesmo componente e ficaram fora do ensaio. A latência com tráfego real segue pendente.

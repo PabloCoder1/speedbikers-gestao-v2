@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/faturamento` (D-356) — o dinheiro de cada venda, e o caminho entre ele e
@@ -161,4 +162,39 @@ test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", as
   await freteGratis.getByRole("radio", { name: "Ofereço", exact: true }).click();
   await expect(calc.locator(".sb-calc-margem")).toHaveText("45,3%");
   expect(pedidoDeFrete).toMatchObject({ preco: 50, ofereceFreteGratis: true });
+});
+
+test("/faturamento: o SKU do ranking carrega ao clicar e a volta preserva o recorte", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const recorte = "?marketplace=ml";
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname.startsWith("/skus/")) prefetches.push(pathname);
+  });
+
+  await login(page, "/faturamento" + recorte);
+
+  const titulo = "Produto de teste E2E";
+  const produto = page
+    .getByRole("list", { name: "Produtos por receita" })
+    .getByRole("link", { name: titulo, exact: true });
+
+  await expect(produto).toHaveAttribute("href", destino);
+  await produto.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await produto.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: titulo, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/faturamento" && url.search === recorte);
+  await expect(produto).toBeVisible();
 });

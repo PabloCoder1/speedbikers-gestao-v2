@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-701 desativa o prefetch dos links de SKU e de origem na tabela de Movimentações. Em uma página com 50 movimentos, as pré-buscas antes do clique caíram de 62 para zero na mediana. D-699 e D-700 fizeram o mesmo nos rankings de Vendas e nos pedidos de Vendas da Shopee. Medir o prefetch dos links de SKU no ranking de Faturamento. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-em-movimentações-sentinel-a58-16112026)
+- **Sentinel.** D-702 desativa o prefetch do detalhe de SKU nas listas de produtos do Faturamento. Com o ranking por receita cheio, as pré-buscas de SKU antes do clique caíram de 31 para zero na mediana. D-699 a D-701 fizeram o mesmo nos rankings de Vendas, nos pedidos de Vendas da Shopee e em Movimentações. Medir o prefetch dos links de SKU e de anúncio no Histórico de Preços. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-faturamento-sentinel-a59-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
