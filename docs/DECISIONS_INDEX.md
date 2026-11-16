@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **594** (D-001 a D-693).
+Decisões registradas: **595** (D-001 a D-694).
 
 ## Por domínio
 
@@ -378,7 +378,7 @@ Decisões registradas: **594** (D-001 a D-693).
 - **D-690** — Anúncios da Shopee abre o SKU vinculado ao clicar
 - **D-691** — A tabela de Vinculações abre o anúncio e o SKU ao clicar
 
-### outros (84)
+### outros (85)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -464,6 +464,7 @@ Decisões registradas: **594** (D-001 a D-693).
 - **D-667** — Indicadores de get_sync_health compartilham uma agregação
 - **D-680** — A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
 - **D-686** — A barra lateral consulta o destino a partir do clique
+- **D-694** — A tabela de Produtos abre o detalhe do SKU ao clicar
 
 ### processo/docs (1)
 

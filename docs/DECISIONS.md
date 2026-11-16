@@ -19586,3 +19586,9 @@ O link do SKU e a ação Ver reposição usam `prefetch={false}` na tabela. A re
 O recorte partia dos saldos de inventário e de vendas dos últimos 90 dias. O saldo Full era somado depois, para os SKUs que já estavam no recorte. Um SKU que só tinha saldo no Full ficava fora da busca, inclusive ao abrir Reposição pela Central Full.
 
 A migration `20261116164846` inclui também SKUs com saldo Full positivo. Entra a última captura por conta e bucket na janela de três dias, somada por SKU sob RLS. Reposição e o alcance das regras aplicam o mesmo critério, e continuam exigindo o histórico e a amostra já usados para calcular cobertura, estado e sugestão de compra. As assinaturas e permissões das RPCs foram preservadas. [Medição](PERFORMANCE.md#skus-com-saldo-exclusivo-no-full-na-reposição-sentinel-a50-16112026)
+
+## D-694 - A tabela de Produtos abre o detalhe do SKU ao clicar
+
+Os títulos dos produtos disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 100 SKUs, a web fez 49 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` na tabela. A Inspeção rápida funciona pelo botão da própria linha e seus atalhos aparecem ao abrir a gaveta. A regressão confere o SKU esperado, o retorno ao recorte e o destino da ação Ver diagnóstico. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-produtos-sentinel-a51-16112026)

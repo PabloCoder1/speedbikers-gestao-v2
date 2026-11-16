@@ -9,6 +9,7 @@ import {
   E2E_USER_PASSWORD,
 } from "./constants.js";
 import { atualizacaoTerminou, login, marcarSemRecarga, naoRecarregou } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/produtos` — a curadoria, depois da migração da composição para o Figma.
@@ -154,6 +155,45 @@ test("/produtos: a Inspeção Rápida mostra o retrato real e recusa o que não 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+
+test("/produtos: o título do produto carrega o SKU ao clicar", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const filtro = `?estado=todos&busca=${E2E_SKU_CODE}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname === destino) prefetches.push(pathname);
+  });
+
+  await login(page, "/produtos" + filtro);
+  const linha = page.getByRole("row").filter({ hasText: E2E_SKU_CODE });
+  const titulo = "Produto de teste E2E";
+  const produto = linha.getByRole("link", { name: titulo, exact: true });
+
+  await expect(produto).toHaveAttribute("href", destino);
+  await produto.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await produto.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: titulo, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/produtos" && url.search === filtro);
+  await linha.getByRole("button", { name: "Inspecionar", exact: true }).click();
+  const gaveta = page.getByRole("dialog", { name: `Inspeção rápida do SKU ${E2E_SKU_CODE}` });
+
+  await expect(gaveta.getByRole("link", { name: "Abrir página completa →" })).toHaveAttribute("href", destino);
+  await gaveta.getByRole("link", { name: "Ver diagnóstico", exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === destino && url.searchParams.get("aba") === "diagnostico");
+  await expect(page.getByRole("region", { name: "Saúde do SKU" })).toBeVisible();
+});
 
 /**
  * As opcoes que o UpSeller da e esta tela nao tinha (D-315): quantos itens por
