@@ -19538,3 +19538,9 @@ Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura a
 Uma URL com uma página acima do total retornava `PGRST103` no PostgREST. Perguntas mostrava falha de carregamento. A página usa a mesma detecção da Caixa de Entrada e oferece voltar à primeira página da aba e conta atuais. Os erros de leitura continuam com a ação de tentar novamente.
 
 A lista de contas é uma promessa executada uma vez e pode ser reutilizada para resolver o slug e montar o seletor. Sem slug, lista e contadores começam em paralelo com as contas. Modelos, tentativa pendente e verificação do usuário para a resposta só são solicitados quando há uma pergunta selecionada e aberta. [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+
+## D-686 - A barra lateral consulta o destino a partir do clique
+
+Em duas jornadas com Chromium, a tela de entrada disparava 48 verificações de sessão por prefetch antes de qualquer ação. O menu aberto expõe várias rotas ao prefetch automático do Next. Cada pedido de prefetch autenticado passa pelo proxy.
+
+Os links dos grupos e do rodapé da barra lateral usam `prefetch={false}`. A troca de tela continua pelo App Router com o indicador de carregamento. Nos dois destinos medidos, o clique fez uma requisição RSC. Os atalhos do conteúdo ainda podem iniciar prefetch. Requisições sem sessão foram redirecionadas ao login, inclusive com cabeçalhos de prefetch. [Medição](PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)

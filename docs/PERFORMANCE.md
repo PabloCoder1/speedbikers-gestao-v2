@@ -1854,3 +1854,14 @@ Build de produção local, sessão ADMIN do Chromium e Supabase local. Foram sei
 No SDK isolado, aguardar duas vezes o mesmo builder disparou duas leituras. O Next deduplicou a leitura HTTP na página antes da mudança. O ensaio registrou uma consulta de contas e duas chamadas de Auth por documento nas duas versões. A promessa compartilhada remove a segunda execução do builder da página. Modelos e tentativa pendente foram lidos uma vez com pergunta aberta e zero vezes nos recortes sem formulário.
 
 Para uma página além do fim, o PostgREST retornou 416 nas duas versões. Com D-685 a página exibiu o retorno à primeira página do recorte. Os tempos de início serviram para conferir a ordem das leituras sob atraso controlado. Latência e tráfego da navegação cliente em produção seguem pendentes.
+
+### Auth na navegação cliente (Sentinel A11, 16/11/2026)
+
+Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase local. Quatro repetições de cada jornada por versão, sempre em um contexto novo. O contador correlacionou os `GET /auth/v1/user` com os documentos, as requisições RSC e os cabeçalhos de prefetch recebidos pelo Next. A fase de abertura terminou após a página ficar ociosa e mais 750 ms. O mesmo critério encerrou a fase do clique. Todos os totais se repetiram nas quatro rodadas.
+
+| Jornada | Auth por prefetch antes do clique | Auth na abertura | Auth após o clique | Auth na jornada completa |
+| --- | ---: | ---: | ---: | ---: |
+| Perguntas → Estoque | 48 → 14 | 51 → 17 | 6 → 12 | 57 → 29 |
+| Configurações → Vendas | 48 → 22 | 51 → 25 | 4 → 4 | 55 → 29 |
+
+Cada documento fez duas chamadas, cada clique fez uma chamada na requisição de destino e o POST de telemetria fez uma chamada em cada fase. Arquivos estáticos, fontes e imagens excluídos pelo matcher fizeram zero. Parte do prefetch de Estoque passou a ocorrer após o clique pelos links do conteúdo. O total da jornada captura esse custo. Sem sessão, tanto o pedido de documento quanto o pedido RSC com indicação de prefetch receberam 307 para o login. O ensaio mede volume local de chamadas. A latência percebida com tráfego real segue pendente.

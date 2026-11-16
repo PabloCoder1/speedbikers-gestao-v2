@@ -288,3 +288,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-685.** O Supabase local devolveu 416 para uma página além do fim em Perguntas. A tela passou a oferecer retorno à primeira página da mesma aba e conta. A revisão também reutilizou a promessa de contas e limitou as leituras do formulário ao caso selecionado e aberto. O rastreio manteve o paralelismo do consolidado e registrou as mesmas chamadas HTTP de contas e Auth por documento. [Medição](../PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
 - **Validação.** Os 17 casos Playwright de Atendimento passaram, incluindo o retorno ao recorte da conta e a retomada de resposta pendente. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir as chamadas de Auth na navegação cliente, incluindo prefetch e carregamento de recursos, para retomar A11. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Auth na navegação cliente
+
+- **Base.** `codex/sentinel-audit` em `69fa9232`.
+- **D-686 (A11).** Os links da barra lateral passaram a buscar a tela no clique. Em quatro repetições de cada jornada, o total de Auth de Perguntas → Estoque passou de 57 para 29 e o de Configurações → Vendas, de 55 para 29. O indicador de troca de tela e o redirecionamento sem sessão foram exercitados. [Medição](../PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
+- **Validação.** O build anterior falhou na nova asserção de prefetch e o build corrigido passou. Passaram sete casos Playwright de navegação, rolagem e cabeçalhos, além de `pnpm run check`, `pnpm run build` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos atalhos de Configurações e dos cartões de Estoque para decidir quais consultas antecipadas ajudam a primeira navegação. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

@@ -52,7 +52,17 @@ async function chegou(page: Page, titulo: RegExp): Promise<void> {
 }
 
 test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {
+  let prefetches = 0;
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+    if (prefetch && new URL(request.url()).pathname === "/estoque") prefetches += 1;
+  });
   const titulo = await abrirHome(page);
+
+  await expect(page.getByRole("link", { name: "Estoque", exact: true }).first()).toBeVisible();
+  expect(prefetches).toBe(0);
 
   await segurarTela(page, "/estoque");
   await page.getByRole("navigation", { name: "Navegação principal" }).getByRole("link", { name: "Estoque", exact: true }).click();

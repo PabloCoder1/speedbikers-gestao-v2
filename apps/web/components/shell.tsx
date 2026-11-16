@@ -167,7 +167,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
         <div className="sb-sidebar-bottom">
           <SidebarRodapeLink href="/sugestoes" label="Sugestões de melhoria" icone="lampada" />
-          <Link href="/contas" className="sb-account">
+          <Link href="/contas" prefetch={false} className="sb-account">
             <span aria-hidden="true" className="sb-account-mark">
               {iniciais(orgName)}
             </span>

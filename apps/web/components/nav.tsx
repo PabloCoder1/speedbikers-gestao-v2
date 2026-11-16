@@ -338,10 +338,13 @@ export function SidebarNav({
                     `useLinkStatus`): a troca de tela não tem mais `loading.tsx`
                     (D-512). `data-pendente-proprio` avisa o
                     `IndicadorDeNavegacao` para não desenhar a barra de novo.
+                    A busca começa no clique: o prefetch de cada destino da
+                    sidebar passa pela verificação de sessão.
                   */
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     aria-current={ativo ? "page" : undefined}
                     className="sb-nav-link"
                     title={item.label}
@@ -381,7 +384,7 @@ export function SidebarRodapeLink({
   const ativo = pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <Link href={href} className="sb-sidebar-link" aria-current={ativo ? "page" : undefined} data-pendente-proprio="">
+    <Link href={href} prefetch={false} className="sb-sidebar-link" aria-current={ativo ? "page" : undefined} data-pendente-proprio="">
       <Icone nome={icone} />
       <span>{label}</span>
       <CarregandoSeODemorar />

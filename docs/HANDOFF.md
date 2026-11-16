@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-685 corrige o retorno à primeira página em Perguntas do SAC e preserva a antecipação do consolidado. A última rodada de dependências está registrada em A42. Medir as chamadas de Auth na navegação cliente, incluindo prefetch e carregamento de recursos, para retomar A11. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+- **Sentinel.** D-686 desativa o prefetch automático da barra lateral. No ensaio local, as jornadas Perguntas → Estoque e Configurações → Vendas caíram de 57 e 55 chamadas de Auth para 29 cada. Medir o prefetch dos atalhos de Configurações e dos cartões de Estoque para decidir quais consultas antecipadas ajudam a primeira navegação. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
