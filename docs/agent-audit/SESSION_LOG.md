@@ -302,3 +302,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-687 (A44).** Atalhos de Configurações e cartões de Estoque consultam o destino ao clicar. O ensaio registrou 31 para 13 chamadas de Auth até Configuração de Reposição e 30 para 25 até Central Full. As duas primeiras navegações fizeram uma requisição RSC em cada execução. [Medição](../PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
 - **Validação.** Os dois testes de prefetch falharam no build anterior e passaram no corrigido. Na primeira rodada ampla, o Auth local retornou 500 no login de um caso de Full. A repetição em sequência passou nos 23 casos Playwright selecionados. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links por SKU na tabela de Estoque durante a rolagem e a abertura do primeiro detalhe. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch por SKU na tabela de Estoque
+
+- **Base.** `codex/sentinel-audit` em `b554b3bc`.
+- **D-688 (A45).** A tabela de Estoque passou a consultar o detalhe e o ajuste de SKU ao clicar. O ensaio de rolagem por uma página com 100 SKUs registrou mediana de 59 → 0 verificações de sessão para esses destinos antes do clique. Uma requisição RSC por clique abriu o SKU escolhido. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
+- **Validação.** O teste de prefetch falhou no build anterior e passou no corrigido. Após remover os 100 SKUs sintéticos do banco isolado, passaram os 12 casos Playwright de Ajuste de Estoque e Dashboard de SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls` e `pnpm docs:check`.
+- **Próxima etapa.** Medir o prefetch dos links por anúncio e SKU na listagem de Anúncios do Mercado Livre, incluindo a abertura direta da aba Preços. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

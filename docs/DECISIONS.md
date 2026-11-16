@@ -19550,3 +19550,9 @@ Os links dos grupos e do rodapé da barra lateral usam `prefetch={false}`. A tro
 Os links de Configurações e os cartões da faixa de indicadores de Estoque disparavam prefetch quando apareciam no navegador. Em dois fluxos medidos, cada destino fez duas verificações de Auth antes do clique e ainda precisou de uma requisição RSC no clique.
 
 Os atalhos de Configurações usam `prefetch={false}`. A faixa compartilhada aceita a opção por cartão, adotada em Estoque para os destinos Produtos e Central Full. A navegação usa os mesmos links, inclusive a âncora de configuração de reposição. [Medição](PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
+
+## D-688 - A tabela de Estoque abre detalhe e ajuste de SKU ao clicar
+
+Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 SKUs, a abertura e a rolagem fizeram 59 verificações de sessão na mediana para detalhes e ajustes. Os destinos ainda exigiram uma requisição RSC no clique.
+
+O nome do produto, o link Ver SKU e o link Ajustar usam `prefetch={false}` na tabela de Estoque. O Chromium abriu os dois destinos para o SKU da linha clicada. O teste de regressão também confere o retorno ao mesmo filtro de Estoque. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)

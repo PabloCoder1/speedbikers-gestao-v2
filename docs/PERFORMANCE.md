@@ -1876,3 +1876,14 @@ Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase loc
 | Estoque → Central Full | 19 → 14 | 11 → 11 | 30 → 25 | 134 → 127 ms |
 
 As pré-buscas dos destinos testados caíram de duas para zero, e o clique continuou fazendo uma requisição RSC em cada execução. O link de Configurações preservou a âncora quando o seed estava sem regra de reposição. Os tempos locais se sobrepuseram entre versões. A redução confirmada é de chamadas. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU em Estoque (Sentinel A45, 16/11/2026)
+
+Chromium 1440 × 900 com sessão ADMIN, build de produção local e Supabase local. O recorte tinha uma página de 100 SKUs sintéticos com saldo local. Em cada execução, a tabela passou pelas linhas 1, 26, 51, 76 e 96. Após a última parada, o clique abriu o detalhe ou o ajuste do SKU da linha 96. Foram cinco execuções medidas e uma de aquecimento por caminho e versão, em contextos novos. O tempo vai do início da ação de clique ao título visível no destino.
+
+| Ação | Auth dos links por SKU na abertura · antes → D-688 | Auth dos links por SKU na rolagem · antes → D-688 | Auth total na jornada · antes → D-688 | Mediana do clique · antes → D-688 |
+| --- | ---: | ---: | ---: | ---: |
+| Ver SKU | 8 → 0 | 51 → 0 | 84 → 25 | 146 → 171 ms |
+| Ajustar | 8 → 0 | 51 → 0 | 83 → 18 | 231 → 141 ms |
+
+Na mediana, 55 destinos distintos disparavam 59 verificações de sessão antes do clique, sem consultas à Data API nessas pré-buscas. Com D-688, todas as execuções registraram zero pré-buscas dos links por SKU antes do clique. Cada clique iniciou uma requisição RSC que retornou HTTP 200 para o SKU esperado. Na amostra local, o detalhe levou 25 ms a mais na mediana e o ajuste levou 90 ms a menos. A diferença no detalhe foi aceita pela redução de chamadas ao abrir e rolar a tabela. A latência com tráfego real segue pendente.

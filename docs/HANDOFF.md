@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-687 retira o prefetch automático dos atalhos de Configurações e dos cartões de Estoque. As jornadas até Configuração de Reposição e Full passaram de 31 para 13 e de 30 para 25 chamadas de Auth. Medir o prefetch dos links por SKU na tabela de Estoque durante a rolagem e a abertura do primeiro detalhe. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
+- **Sentinel.** D-688 desativa o prefetch nos links por SKU da tabela de Estoque. No ensaio com 100 SKUs, as verificações de sessão desses destinos antes do clique caíram de 59 para zero na mediana. Medir o prefetch dos links por anúncio e SKU na listagem de Anúncios do Mercado Livre, incluindo a abertura direta da aba Preços. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

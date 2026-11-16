@@ -48,6 +48,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A42 | P1 · CORRIGIDO localmente | A rodada de 13/11 registrou avisos em dependências de testes, lint e servidor HTTP | Atualizações em `c88ea687`. A rodada registrou `uuid` como residual. [Registro](SESSION_LOG.md#13112026--segunda-rodada-de-dependências-a42) |
 | A43 | P2 · CORRIGIDO localmente (D-685) | Link para página além do fim em Perguntas recebia HTTP 416 e exibia erro de carregamento | `PGRST103` oferece retorno à primeira página da mesma aba e conta. O ensaio também conferiu as leituras da lista, dos contadores e do formulário. [Medição](../PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026) |
 | A44 | P2 · CORRIGIDO localmente (D-687) | Atalhos de Configurações e cartões de Estoque iniciavam prefetch autenticado. Os dois destinos medidos ainda precisavam ser carregados ao clicar | Os atalhos e cartões medidos consultam sob demanda. As chamadas de Auth caíram de 31 para 13 e de 30 para 25 nas duas jornadas. [Medição](../PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026) |
+| A45 | P2 · CORRIGIDO localmente (D-688) | Rolar a tabela de Estoque disparava verificações de sessão para detalhes e ajustes de SKUs antes do clique | No ensaio, a mediana dessas chamadas caiu de 59 para zero. Detalhe e ajuste responderam no clique para o SKU escolhido. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026) |
 
 ## Referências externas
 
