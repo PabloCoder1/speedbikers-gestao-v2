@@ -330,3 +330,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-691 (A48).** Em uma página com 50 anúncios, a mediana de verificações de sessão dos links por linha antes do clique caiu de 69,5 para zero. Cada clique abriu o anúncio ou o SKU esperado em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
 - **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após a remoção dos dados sintéticos, passaram os 26 casos Playwright selecionados de Vinculações, Anúncio e SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
 - **Próxima etapa.** Medir o prefetch dos links de SKU e reposição na tabela da Central Full. Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 16/11/2026 · Prefetch por linha na Central Full
+
+- **Base.** `codex/sentinel-audit` em `2bf0d1ef`.
+- **D-692 (A49).** Em uma página com 50 SKUs, a mediana de verificações de sessão dos links por linha antes do clique caiu de 77 para zero. Cada clique abriu o SKU ou a Reposição filtrada em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
+- **Validação.** A regressão registrou quatro pré-buscas no build anterior e passou no corrigido. Após a remoção dos dados sintéticos, passaram os 21 casos Playwright selecionados de Central Full, Reposição e SKU. Passaram `pnpm run check`, `pnpm run build`, `check:waterfalls`, `check:navegacao-suave` e `pnpm docs:check`.
+- **Próxima etapa.** Investigar por que um SKU com saldo apenas no Full fica fora da busca de Reposição (A50). Publicação e validação com carga real seguem pendentes. [Plano](PLAN.md)

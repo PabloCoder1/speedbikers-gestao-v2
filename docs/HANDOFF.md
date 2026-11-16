@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-691 desativa o prefetch dos links por anúncio e SKU na tabela de Vinculações. Em uma página com 50 anúncios, as verificações de sessão desses destinos antes do clique caíram de 69,5 para zero na mediana. Medir o prefetch dos links de SKU e reposição na tabela da Central Full. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
+- **Sentinel.** D-692 desativa o prefetch dos links de SKU e Reposição na tabela da Central Full. Em uma página com 50 SKUs, as verificações de sessão desses destinos antes do clique caíram de 77 para zero na mediana. Investigar por que um SKU com saldo apenas no Full fica fora da busca de Reposição (A50). Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

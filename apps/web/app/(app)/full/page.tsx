@@ -498,7 +498,7 @@ export default async function FullPage({
                               "Todas as contas" a linha ficaria ambígua sem ela.
                             */}
                             <span className="sb-mono sb-full-product-meta">
-                              <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
+                              <Link prefetch={false} href={`/skus/${row.sku_id}`}>{row.sku}</Link>
                               {` · ${row.account_label}`}
                             </span>
                           </span>
@@ -556,7 +556,7 @@ export default async function FullPage({
                         Fica o caminho que EXISTE.
                       */}
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <Link className="sb-full-action" href={`/reposicao?busca=${encodeURIComponent(row.sku)}`}>
+                        <Link className="sb-full-action" prefetch={false} href={`/reposicao?busca=${encodeURIComponent(row.sku)}`}>
                           Ver reposição →
                         </Link>
                       </td>

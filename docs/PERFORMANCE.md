@@ -1921,3 +1921,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | SKU | 13 → 0 | 55 → 0 | 67 → 0 | 102 → 27 | 227 ms (181–323) → 157 ms (138–172) |
 
 A mediana geral antes do clique foi de 69,5 verificações de sessão para os links da tabela. As pré-buscas medidas passavam pelo Auth sem consultas à Data API. Em todas as execuções corrigidas, a tabela fez zero pré-buscas para esses destinos e cada clique fez uma requisição RSC com HTTP 200 para o registro esperado. A latência com tráfego real segue pendente.
+
+### Prefetch dos links na Central Full (Sentinel A49, 16/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Cada jornada abriu uma página com 50 SKUs sintéticos com captura Full e venda recente, rolou por cinco pontos e abriu o detalhe ou a Reposição filtrada da linha 48. Foram cinco repetições medidas e um aquecimento por destino e build, com contextos novos de 1440 × 900. A latência vai do início do clique até o título principal do destino ficar visível.
+
+| Destino | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth de prefetch antes do clique | Auth total na jornada | Clique, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | ---: | --- |
+| SKU | 13 → 0 | 64 → 0 | 77 → 0 | 112 → 29 | 178 ms (156–190) → 139 ms (126–141) |
+| Reposição | 13 → 0 | 64 → 0 | 77 → 0 | 112 → 28 | 190 ms (180–197) → 160 ms (131–167) |
+
+A mediana geral antes do clique foi de 77 verificações de sessão para os links da tabela. As pré-buscas medidas passavam pelo Auth sem consultas à Data API. Em todas as execuções corrigidas, a tabela fez zero pré-buscas para esses destinos e cada clique fez uma requisição RSC com HTTP 200 para o destino esperado. Em Reposição, foram conferidos o parâmetro `busca`, o valor da busca e o link do SKU retornado. A latência com tráfego real segue pendente.
+
+No primeiro ensaio, um SKU com snapshot Full e sem saldo em outros locais nem histórico de vendas aparecia na Central Full e retornava lista vazia em Reposição, com a busca aplicada. A RPC confirmou o recorte vazio e passou a devolver o SKU após incluir uma venda recente. A medição de prefetch usa o segundo cenário nas duas versões. O caso exclusivo do Full segue em A50.

@@ -19574,3 +19574,9 @@ O link de SKU usa `prefetch={false}` na coluna Vínculo, tanto para o vínculo p
 Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 anúncios, a web fez 69,5 verificações de sessão na mediana para anúncios e SKUs antes do clique. O clique ainda fez uma requisição RSC.
 
 O título do anúncio e o link para o SKU usam `prefetch={false}` na tabela compartilhada pela visão principal e pela alternativa. A regressão confere os dois destinos e o retorno à busca original. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
+
+## D-692 - A tabela da Central Full abre o SKU e a Reposição ao clicar
+
+Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 SKUs, a web fez 77 verificações de sessão na mediana para detalhes de SKU e buscas em Reposição antes do clique. O clique ainda fez uma requisição RSC.
+
+O link do SKU e a ação Ver reposição usam `prefetch={false}` na tabela. A regressão confere o detalhe, o retorno à busca na Central Full e a busca em Reposição pelo mesmo SKU. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
