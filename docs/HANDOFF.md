@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-16 |
+| **Atualizado em** | 2026-11-17 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-704 desativa o prefetch do link de SKU nas exceções da Configuração de Reposição. Com 50 exceções, as pré-buscas de SKU antes do clique caíram de 52 para zero na mediana. D-699 a D-703 fizeram o mesmo nos rankings de Vendas, nos pedidos de Vendas da Shopee, em Movimentações, nas listas do Faturamento e no Histórico de Preços. A fila de tabelas com link por linha terminou. Restam o painel de devoluções da Shopee, que pede loja real no banco local, e as telas de detalhe ainda não medidas. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
+- **Sentinel.** D-705 abre o SKU vinculado no detalhe do pedido de compra ao clicar. Em um rascunho local com 50 SKUs, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 51 para zero na mediana. A próxima medição é nos produtos do fornecedor, seguida pelas abas do SKU. O painel de devoluções da Shopee ainda pede uma fixture de loja real no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

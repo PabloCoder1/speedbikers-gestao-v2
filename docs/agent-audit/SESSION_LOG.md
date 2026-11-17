@@ -443,3 +443,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-704 (A61).** Com 50 exceções por SKU, a mediana de pré-buscas de SKU antes do clique caiu de 52 para zero, e cada jornada fez 52 verificações de sessão a menos. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
 - **Validação.** A regressão grava uma exceção no banco local e a apaga ao final, porque a tela não cria regra por SKU. Ela registrou duas pré-buscas no build anterior e passou no corrigido. Após remover as regras e os SKUs sintéticos, passaram os 9 casos Playwright de Configuração de Reposição e de Reposição, e a tabela de regras voltou a ficar vazia. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** A fila de tabelas com link por linha terminou. Medir as telas de detalhe (itens do pedido de compra, produtos do fornecedor e abas do SKU) antes de decidir se mudam. O painel de devoluções da Shopee segue esperando loja real no banco local. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do SKU nos itens do pedido de compra
+
+- **Base.** `codex/sentinel-audit` em `513c38f4`.
+- **D-705 (A62).** Nos pedidos com 2 e 50 SKUs, as chamadas ao Auth por pré-busca antes do clique caíram de 4 e 51 para zero, na mediana. O clique abriu o SKU correto em uma requisição RSC. A mediana do clique subiu 27 ms e 6 ms, respectivamente. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+- **Validação.** O novo caso Playwright detectou duas pré-buscas no build anterior. Com a correção e o banco isolado recriado com o seed padrão, passaram os 16 casos de Compras, Pedido de compra e Detalhe do SKU. Passaram o check, o build e as guardas de leituras em série e navegação.
+- **Próxima etapa.** Medir os links nos produtos do fornecedor e depois nas abas do SKU. A fixture local de devoluções da Shopee, a publicação e a validação com tráfego real seguem pendentes. [Plano](PLAN.md)

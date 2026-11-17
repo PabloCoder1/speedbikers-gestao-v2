@@ -19658,3 +19658,9 @@ Os dois links usam `prefetch={false}`. A regressão confere o SKU e o anúncio e
 A tabela de exceções lista todas as regras por SKU, sem paginação, e o link de cada uma disparava prefetch ao entrar na área visível. Ao abrir e rolar 50 exceções, a web fez 52 pré-buscas de SKU na mediana. Sem elas, a jornada fez 52 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
 
 O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca, e o seed não tem regra: a regressão grava uma exceção no banco local, confere o SKU esperado e o retorno à tela, e apaga a regra ao final. [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
+
+## D-705 - Os itens vinculados do pedido de compra abrem o SKU ao clicar
+
+No detalhe do pedido, o link do SKU vinculado usa `prefetch={false}`. Em rascunhos locais com 2 e 50 SKUs, a mudança evitou 4 e 51 chamadas ao Auth antes do clique, na mediana. A mediana do clique aumentou 27 ms no pedido menor e 6 ms no maior. O pedido maior motivou aplicar o comportamento a todos os links de SKU da tabela.
+
+Itens em texto livre aparecem pelo código registrado no pedido. A regressão cria um rascunho pela interface, abre o SKU vinculado e verifica o retorno ao mesmo pedido. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)

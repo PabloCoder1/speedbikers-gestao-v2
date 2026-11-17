@@ -2070,3 +2070,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-704 | 0 | 0 | 12 | 23 | 162 ms (155–229) |
 
 Antes, foram 50 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 52 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à tela. A latência com tráfego real segue pendente.
+
+### Prefetch dos links de SKU nos itens do pedido de compra (Sentinel A62, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Foram criados dois rascunhos sintéticos, com 2 e 50 SKUs distintos, mais um item em texto livre em cada. Cada jornada abriu o detalhe, rolou pelos itens e clicou no SKU da posição 2 ou 48. Por build e pedido, houve cinco repetições medidas e um aquecimento, sempre em contextos novos de 1440 × 900. O trace local atribuiu chamadas ao Auth às requisições de prefetch de `/skus/[skuId]` antes do clique. O total de chamadas ao Auth cobre a abertura do pedido até o carregamento do SKU. O tempo vai do clique até o título principal do detalhe do SKU ficar visível.
+
+| SKUs | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 4 | 0 | 15 | 27 | 129 ms (118–145) |
+| 2 | D-705 | 0 | 0 | 11 | 23 | 156 ms (133–171) |
+| 50 | Anterior | 6 | 45 | 62 | 74 | 146 ms (134–149) |
+| 50 | D-705 | 0 | 0 | 11 | 23 | 152 ms (142–181) |
+
+Antes da mudança, as pré-buscas atingiam 2 e 48 destinos distintos, respectivamente, na mediana. O trace registrou zero chamadas REST de dados nessas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, o retorno abriu o mesmo pedido e o item em texto livre apareceu sem link. A mediana do clique subiu 27 ms no rascunho menor e 6 ms no maior. A latência e a frequência de cliques com tráfego real seguem pendentes.
