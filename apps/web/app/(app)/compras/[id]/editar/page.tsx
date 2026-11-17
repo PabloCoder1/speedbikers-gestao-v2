@@ -43,12 +43,14 @@ export default async function EditarPedidoDeCompraPage({
   const [order, items, suppliers] = await Promise.all([
     supabase
       .from("purchase_orders")
-      .select("id, status, supplier_id, destination_warehouse_name, notes, expected_at")
+      .select("id, status, supplier_id, destination_warehouse_name, notes, expected_at, updated_at, organization_id")
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("purchase_order_items")
-      .select("id, sku_id, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, skus(is_imported)")
+      .select(
+        "id, sku_id, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, review_decision, review_reason, review_note, skus(is_imported)",
+      )
       .eq("purchase_order_id", id)
       .order("position"),
     supabase.from("suppliers").select("id, name").eq("is_active", true).order("name").limit(500),
@@ -103,6 +105,7 @@ export default async function EditarPedidoDeCompraPage({
     destinationWarehouseName: info.destination_warehouse_name,
     notes: info.notes,
     expectedAt: info.expected_at === null ? null : info.expected_at.slice(0, 10),
+    updatedAt: info.updated_at,
     items:
       items.data.length === 0
         ? [
@@ -124,6 +127,9 @@ export default async function EditarPedidoDeCompraPage({
             isImported: item.skus?.is_imported ?? null,
             quantityOrdered: String(item.quantity_ordered),
             unitCost: item.unit_cost === null ? "" : String(item.unit_cost),
+            reviewDecision: item.review_decision === "MANTER" || item.review_decision === "REDUZIR" ? item.review_decision : null,
+            reviewReason: item.review_reason,
+            reviewNote: item.review_note,
           })),
   };
 
@@ -146,7 +152,7 @@ export default async function EditarPedidoDeCompraPage({
         />
       )}
 
-      <PurchaseOrderForm suppliers={suppliers.data ?? []} orderId={id} initial={initial} />
+      <PurchaseOrderForm suppliers={suppliers.data ?? []} orderId={id} initial={initial} organizationId={info.organization_id} />
     </>
   );
 }

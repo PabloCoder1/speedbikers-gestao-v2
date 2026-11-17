@@ -108,6 +108,39 @@ const PURCHASE_ORDER_EVENT: Record<string, string> = {
   ORDERED: "Marcado como pedido",
   RECEIVED: "Recebido",
   CANCELLED: "Cancelado",
+  // D-724/D-725.
+  PARTIALLY_RECEIVED: "Recebido em parte",
+  STAGE_CHANGED: "Etapa atualizada",
+  COSTS_UPDATED: "Custos atualizados",
+};
+
+/** `purchase_orders.logistics_stage` (D-725) — a etapa por cima do status. */
+export const LOGISTICS_STAGE: Record<string, string> = {
+  COTACAO: "Em cotação",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
+  EM_PRODUCAO: "Em produção",
+  PRONTO_EMBARQUE: "Pronto para embarque",
+  EMBARCADO: "Embarcado",
+  EM_TRANSITO: "Em trânsito",
+  DESEMBARACO: "Em desembaraço",
+  TRANSPORTE_NACIONAL: "Transporte nacional",
+};
+
+/** As etapas que valem para cada status — a mesma regra de `set_purchase_order_stage`. */
+export const STAGES_BY_STATUS: Record<string, readonly string[]> = {
+  DRAFT: ["COTACAO", "AGUARDANDO_APROVACAO"],
+  ORDERED: ["EM_PRODUCAO", "PRONTO_EMBARQUE", "EMBARCADO", "EM_TRANSITO", "DESEMBARACO", "TRANSPORTE_NACIONAL"],
+};
+
+/** `purchase_order_costs.kind` (D-725). */
+export const PURCHASE_COST_KIND: Record<string, string> = {
+  FRETE_INTERNACIONAL: "Frete internacional",
+  SEGURO: "Seguro",
+  TRIBUTOS: "Tributos",
+  DESPESAS_ADUANEIRAS: "Despesas aduaneiras",
+  DESEMBARACO: "Desembaraço",
+  TRANSPORTE_NACIONAL: "Transporte nacional",
+  OUTROS: "Outros",
 };
 
 /** `stock_movements.location_kind` — Full (D-018) fica fora, é snapshot, não ledger. */

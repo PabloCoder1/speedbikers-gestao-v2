@@ -12,12 +12,14 @@ import { TOM, tomDeStatus } from "../../../../components/tone";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "../../../../lib/purchase-order-cost";
 import { purchaseOrderEtapas } from "../../../../lib/purchase-order-steps";
-import { purchaseOrderEventLabel, purchaseOrderStatusLabel, statusTone } from "../../../../lib/labels";
+import { LOGISTICS_STAGE, purchaseOrderEventLabel, purchaseOrderStatusLabel, statusTone } from "../../../../lib/labels";
+import { rotuloMotivoManter, rotuloRecomendacao } from "../../../../lib/purchase-fit-vocabulary";
 import { podeOperarCompras } from "../../../../lib/purchase-order-permission";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
 import { ExportActions } from "./export-actions";
+import { CustosDoPedido, EtapaLogistica, RecebimentoParcial } from "./operacao-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -57,18 +59,22 @@ export default async function PedidoDeCompraPage({
   // três leituras de forma independente, então disparar itens e eventos antes
   // de saber se o pedido existe não mostra nada a quem não podia ver. O preço
   // são duas consultas desperdiçadas no caminho 404, que é o caminho raro.
-  const [membership, order, items, events] = await Promise.all([
+  // D-722/D-725: decisões da revisão, custos adicionais e o custo de chegada
+  // partem do mesmo `id` — juntas com as outras, sem fila.
+  const [membership, order, items, events, decisoes, custos, chegada] = await Promise.all([
     currentMembership(),
     supabase
       .from("purchase_orders")
       .select(
-        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, supplier_id, suppliers(name)",
+        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, supplier_id, logistics_stage, logistics_stage_at, is_import, exchange_rate, suppliers(name)",
       )
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("purchase_order_items")
-      .select("id, position, sku_id, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, skus(is_imported)")
+      .select(
+        "id, position, sku_id, sku_snapshot, title_snapshot, quantity_ordered, quantity_received, unit_cost, recommended_quantity, review_recommendation, review_decision, review_reason, review_note, skus(is_imported)",
+      )
       .eq("purchase_order_id", id)
       .order("position"),
     supabase
@@ -76,6 +82,19 @@ export default async function PedidoDeCompraPage({
       .select("id, event_type, metadata, occurred_at, autor:profiles(full_name)")
       .eq("purchase_order_id", id)
       .order("occurred_at", { ascending: false }),
+    supabase
+      .from("purchase_order_review_decisions")
+      .select("id, sku_snapshot, recommendation, decision, quantity_before, quantity_after, recommended_quantity, reason, note, decided_at")
+      .eq("purchase_order_id", id)
+      .order("decided_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("purchase_order_costs")
+      .select("id, kind, description, amount, currency, exchange_rate, status")
+      .eq("purchase_order_id", id)
+      .order("created_at")
+      .limit(200),
+    supabase.rpc("get_purchase_order_landed_cost", { p_purchase_order_id: id }),
   ]);
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu" — a tela
@@ -118,6 +137,25 @@ export default async function PedidoDeCompraPage({
   const cost = summarizePurchaseOrderCost(items.error !== null ? null : items.data);
   const costNote = purchaseOrderCostNote(cost);
 
+  // D-724: quanto já chegou. "Pedido feito" não é "mercadoria disponível".
+  const totalPedido = items.error !== null ? null : items.data.reduce((s, i) => s + i.quantity_ordered, 0);
+  const totalRecebido = items.error !== null ? null : items.data.reduce((s, i) => s + i.quantity_received, 0);
+  const recebimento =
+    totalPedido === null || totalRecebido === null || (info.status !== "ORDERED" && info.status !== "RECEIVED" && totalRecebido === 0)
+      ? null
+      : `${formatCount(totalRecebido)} de ${formatCount(totalPedido)} un`;
+  const chegadaLida = chegada.error === null && typeof chegada.data === "object" && chegada.data !== null ? (chegada.data as Record<string, unknown>) : null;
+  const custosLinhas = (custos.data ?? []).map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    description: c.description,
+    amount: c.amount,
+    currency: c.currency,
+    exchangeRate: c.exchange_rate,
+    status: c.status,
+  }));
+  const mostrarCustos = info.is_import || info.currency !== "BRL" || custosLinhas.length > 0;
+
   const etapas = purchaseOrderEtapas({
     status: info.status,
     approvedAt: info.approved_at,
@@ -139,6 +177,10 @@ export default async function PedidoDeCompraPage({
     // a mostrava como a véspera às 21h (D-365).
     ["Previsão", info.expected_at === null ? "—" : formatBusinessDate(info.expected_at.slice(0, 10))],
     ["Itens", items.error !== null ? "—" : String(items.data.length)],
+    ...(info.logistics_stage === null
+      ? []
+      : ([["Etapa", LOGISTICS_STAGE[info.logistics_stage] ?? info.logistics_stage]] as const)),
+    ...(recebimento === null ? [] : ([["Recebido", recebimento]] as const)),
     [
       "Valor estimado",
       <>
@@ -223,7 +265,18 @@ export default async function PedidoDeCompraPage({
           `check_purchase_order_writer` (ADMIN/GESTOR). Os outros papéis veem o
           pedido e a trilha, sem botão que o banco vai recusar (lote 1, 18/09). */}
       {podeOperar ? (
-        <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
+        <>
+          <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
+          <div className="sb-pod-operacoes">
+            <EtapaLogistica purchaseOrderId={info.id} status={info.status} etapa={info.logistics_stage} />
+            {info.status === "ORDERED" && items.error === null && (
+              <RecebimentoParcial
+                purchaseOrderId={info.id}
+                itens={items.data.map((i) => ({ id: i.id, sku: i.sku_snapshot, pedido: i.quantity_ordered, recebido: i.quantity_received }))}
+              />
+            )}
+          </div>
+        </>
       ) : (
         <p className="sb-note">
           <span>SOMENTE LEITURA</span>
@@ -263,6 +316,7 @@ export default async function PedidoDeCompraPage({
                     <th>SKU</th>
                     <th>Origem (cadastro)</th>
                     <th className="sb-num">Quantidade</th>
+                    {(info.status === "ORDERED" || info.status === "RECEIVED") && <th className="sb-num">Recebido</th>}
                     <th className="sb-num">Custo unitário</th>
                     <th className="sb-num">Subtotal</th>
                   </tr>
@@ -278,6 +332,16 @@ export default async function PedidoDeCompraPage({
                         {item.title_snapshot !== null && (
                           <span className="sb-pod-item-title">{item.title_snapshot}</span>
                         )}
+                        {/* D-722: a recomendação de quando o item foi salvo e a decisão do comprador. */}
+                        {item.review_recommendation !== null && (
+                          <span className="sb-pod-item-title">
+                            sistema: {rotuloRecomendacao(item.review_recommendation).toLowerCase()}
+                            {item.recommended_quantity !== null && ` (${formatCount(item.recommended_quantity)} un)`}
+                            {item.review_decision !== null && ` · decisão: ${item.review_decision === "MANTER" ? "manter" : "reduzir"}`}
+                            {item.review_reason !== null &&
+                              ` — ${rotuloMotivoManter(item.review_reason).toLowerCase()}`}
+                          </span>
+                        )}
                       </td>
                       <td>
                         {item.skus?.is_imported === true
@@ -287,6 +351,9 @@ export default async function PedidoDeCompraPage({
                             : "—"}
                       </td>
                       <td className="sb-num">{formatCount(item.quantity_ordered)}</td>
+                      {(info.status === "ORDERED" || info.status === "RECEIVED") && (
+                        <td className="sb-num">{formatCount(item.quantity_received)}</td>
+                      )}
                       <td className="sb-num">
                         {item.unit_cost === null ? "—" : formatCurrency(item.unit_cost)}
                       </td>
@@ -301,6 +368,96 @@ export default async function PedidoDeCompraPage({
           )}
         </Panel>
       </div>
+
+      {mostrarCustos ? (
+        <div className="sb-pod-section">
+          <Panel
+            title="Custos e importação"
+            subtitle="Frete, seguro, tributos e despesas de chegada, estimados e realizados em separado. O custo de chegada rateia os adicionais pelo valor de cada item."
+          >
+            {chegadaLida !== null && (
+              <dl className="sb-fact-grid sb-pod-chegada">
+                <div>
+                  <dt>Produtos (R$)</dt>
+                  <dd>{typeof chegadaLida.produtos_brl === "number" ? formatCurrency(chegadaLida.produtos_brl) : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Adicionais estimados</dt>
+                  <dd>{typeof chegadaLida.adicionais_estimados_brl === "number" ? formatCurrency(chegadaLida.adicionais_estimados_brl) : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Adicionais realizados</dt>
+                  <dd>{typeof chegadaLida.adicionais_realizados_brl === "number" ? formatCurrency(chegadaLida.adicionais_realizados_brl) : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Câmbio do pedido</dt>
+                  <dd>{info.currency === "BRL" ? "BRL" : info.exchange_rate === null ? "pendente" : `${info.currency} ${String(info.exchange_rate)}`}</dd>
+                </div>
+              </dl>
+            )}
+            {chegadaLida !== null &&
+              (chegadaLida.cambio_pendente === true || (typeof chegadaLida.itens_sem_custo === "number" && chegadaLida.itens_sem_custo > 0)) && (
+                <p className="sb-pco-aviso">
+                  Pendente para o custo de chegada:
+                  {chegadaLida.cambio_pendente === true && " câmbio"}
+                  {chegadaLida.cambio_pendente === true && typeof chegadaLida.itens_sem_custo === "number" && chegadaLida.itens_sem_custo > 0 && " e"}
+                  {typeof chegadaLida.itens_sem_custo === "number" && chegadaLida.itens_sem_custo > 0 && ` ${formatCount(chegadaLida.itens_sem_custo)} item(ns) sem custo`}
+                  . Sem eles o valor fica desconhecido — nunca convertido a 1 nem somado como zero. NCM, tributos e medidas só entram quando informados.
+                </p>
+              )}
+            <CustosDoPedido purchaseOrderId={info.id} custos={custosLinhas} podeEditar={podeOperar && info.status !== "CANCELLED"} />
+          </Panel>
+        </div>
+      ) : (
+        podeOperar &&
+        info.status !== "CANCELLED" && (
+          <details className="sb-rep-metodo sb-pod-section">
+            <summary>Custos adicionais (frete, seguro, tributos, desembaraço)</summary>
+            <div>
+              <CustosDoPedido purchaseOrderId={info.id} custos={[]} podeEditar />
+            </div>
+          </details>
+        )
+      )}
+
+      {decisoes.error === null && decisoes.data.length > 0 && (
+        <div className="sb-pod-section">
+          <Panel
+            title="Decisões da revisão"
+            subtitle="O que o sistema recomendou e o que foi decidido, inclusive os itens retirados. Retirar do pedido não mexe no catálogo nem no estoque."
+          >
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Recomendação</th>
+                  <th>Decisão</th>
+                  <th className="sb-num">De → para</th>
+                  <th>Motivo</th>
+                  <th>Quando</th>
+                </tr>
+              </thead>
+              <tbody>
+                {decisoes.data.map((d) => (
+                  <tr key={d.id}>
+                    <td className="sb-mono">{d.sku_snapshot}</td>
+                    <td>{rotuloRecomendacao(d.recommendation)}</td>
+                    <td>{d.decision === "MANTER" ? "Manter" : d.decision === "REDUZIR" ? "Reduzir" : "Retirar"}</td>
+                    <td className="sb-num">
+                      {formatCount(d.quantity_before)} → {formatCount(d.quantity_after)}
+                    </td>
+                    <td>
+                      {d.reason === null ? "—" : rotuloMotivoManter(d.reason)}
+                      {d.note !== null && <span className="sb-pod-item-title">{d.note}</span>}
+                    </td>
+                    <td>{formatDateTime(d.decided_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        </div>
+      )}
 
       <div className="sb-pod-section">
         <Panel title="Histórico" subtitle="Cada mudança de etapa, com quem fez e quando. O histórico nunca é reescrito.">

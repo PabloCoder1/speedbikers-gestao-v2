@@ -9174,6 +9174,296 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
 }
 
 /*
+ * REVISÃO DO PEDIDO (D-722) — o que merece atenção primeiro; os recomendados
+ * recolhidos. Uma linha por item questionável, com as ações ao alcance do
+ * teclado e o painel de análise sob demanda.
+ */
+.sb-rev-classes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--sb-space-2);
+  margin: 0 0 var(--sb-space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.sb-rev-classe {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-rev-classe strong {
+  font-size: 1.125rem;
+  color: var(--sb-primary);
+}
+
+.sb-rev-classe span {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-rev-classe-retirar strong {
+  color: var(--sb-danger-ink);
+}
+
+.sb-rev-classe-avaliar strong,
+.sb-rev-classe-margem strong {
+  color: var(--sb-accent-ink);
+}
+
+.sb-rev-grupo h3 {
+  margin: var(--sb-space-3) 0 var(--sb-space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sb-rev-lista {
+  display: grid;
+  gap: var(--sb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-rev-item {
+  padding: 0.625rem var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-rev-item-retirado {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.sb-rev-item-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+}
+
+.sb-rev-item-sku {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.sb-rev-item-sku b {
+  font-family: var(--sb-mono);
+  font-size: 0.75rem;
+  color: var(--sb-secondary);
+}
+
+.sb-rev-item-sku span {
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-rev-selos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.sb-rev-selos .sb-status {
+  font-size: 0.6875rem;
+}
+
+.sb-rev-decidido {
+  font-size: 0.6875rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-rev-motivo {
+  margin: 0.375rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+}
+
+.sb-rev-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.sb-rev-analise {
+  flex-basis: 100%;
+}
+
+.sb-rev-analise .sb-cmp-painel {
+  width: auto;
+  min-width: 0;
+}
+
+.sb-rev-justificativa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sb-space-2);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-rev-status {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-rev-alternar {
+  margin-top: var(--sb-space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+}
+
+.sb-rev-impacto {
+  margin: var(--sb-space-3) 0 0;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-rev-impacto small {
+  color: var(--sb-muted-ink);
+}
+
+@media (max-width: 850px) {
+  .sb-rev-classes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+ * AVALIAÇÃO DE COMPRA (D-720/D-721) — Reposição e pedido de compra.
+ * A linha mostra o selo da situação e a margem; o porquê fica no <details>,
+ * que abre por baixo do SKU sem empurrar as outras colunas. Só tokens da casa.
+ */
+.sb-cmp-detalhes {
+  margin-top: 0.25rem;
+}
+
+.sb-cmp-detalhes > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sb-cmp-detalhes > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sb-cmp-detalhes > summary .sb-status {
+  font-size: 0.6875rem;
+}
+
+.sb-cmp-ver {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+}
+
+.sb-cmp-detalhes > summary:focus-visible {
+  outline: 2px solid var(--sb-secondary);
+  outline-offset: 2px;
+  border-radius: var(--sb-radius);
+}
+
+.sb-cmp-painel {
+  display: grid;
+  gap: var(--sb-space-2);
+  width: min(34rem, calc(100vw - 22rem));
+  min-width: 18rem;
+  margin-top: var(--sb-space-2);
+  padding: var(--sb-space-2) var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  white-space: normal;
+}
+
+.sb-cmp-painel h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+.sb-cmp-recomendado,
+.sb-cmp-periodo {
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-cmp-motivos {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+}
+
+.sb-cmp-motivo-atencao {
+  font-weight: 500;
+}
+
+.sb-cmp-meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-muted-ink);
+}
+
+.sb-cmp-margem b {
+  font-weight: 600;
+}
+
+.sb-cmp-margem small,
+.sb-cmp-cobertura {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-cmp-tabela-margem {
+  font-size: 0.6875rem;
+}
+
+.sb-cmp-tabela-margem td,
+.sb-cmp-tabela-margem th {
+  padding: 0.25rem 0.5rem;
+}
+
+.sb-cmp-nivel-conta td:first-child {
+  padding-left: 1.25rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cmp-nivel-total td {
+  font-weight: 600;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+/*
  * CALCULADORA DE PREÇO (D-359) — `/faturamento#calculadora`.
  * Entradas à esquerda, a margem à direita e grudada no topo enquanto a pessoa
  * rola pelas medidas. Só tokens da casa.
@@ -16898,6 +17188,20 @@ td.sb-pco-num-linha {
 
 /* PEDIDO DE COMPRA — detalhe (lote 4 do pente fino, 18/09): classes no lugar do estilo inline. */
 .sb-pod-section { margin-top: var(--sb-space-3); }
+
+/* D-724/D-725: receber em parte, etapa logística e custos do pedido. */
+.sb-pod-operacoes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sb-space-3); margin-top: var(--sb-space-3); }
+.sb-pod-operacao { flex: 1 1 100%; }
+.sb-pod-etapa { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sb-space-2); }
+.sb-pod-receber { display: grid; gap: var(--sb-space-2); padding: var(--sb-space-3); border: 1px solid var(--sb-border); border-radius: var(--sb-radius); background: var(--sb-surface); }
+.sb-pod-receber-ajuda { margin: 0; font-size: 0.75rem; color: var(--sb-text-soft); }
+.sb-pod-receber-acoes { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
+.sb-pod-qtd { width: 7rem; text-align: right; }
+.sb-pod-custos { display: grid; gap: var(--sb-space-3); }
+.sb-pod-custo-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sb-space-2); }
+.sb-pod-custo-desc { flex: 1 1 14rem; }
+.sb-pod-moeda { width: 4.5rem; text-transform: uppercase; }
+.sb-pod-chegada { margin-bottom: var(--sb-space-2); }
 .sb-pod-cost-note { display: block; color: var(--sb-accent-ink); font-size: 0.6875rem; }
 .sb-pod-notes { display: grid; gap: 0.2rem; margin: var(--sb-space-3) 0 0; padding: 0.75rem 1rem; border-left: 3px solid var(--sb-secondary); border-radius: var(--sb-radius-md); background: var(--sb-surface); color: var(--sb-text); font-size: 0.8125rem; white-space: pre-wrap; }
 .sb-pod-notes > span { color: var(--sb-text-soft); font-family: var(--sb-mono); font-size: 0.625rem; letter-spacing: 0.06em; }

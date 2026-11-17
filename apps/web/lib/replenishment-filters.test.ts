@@ -13,7 +13,14 @@ describe("resolveReplenishmentFilters", () => {
   it("lê as dimensões da URL", () => {
     const f = resolveReplenishmentFilters({ marca: "NAVETEC", estado: "RUPTURA", busca: "3001", pagina: "3" });
 
-    expect(f).toEqual({ brand: "NAVETEC", state: "RUPTURA", search: "3001", page: 3 });
+    expect(f).toEqual({ brand: "NAVETEC", state: "RUPTURA", search: "3001", page: 3, marginDays: 30 });
+  });
+
+  it("período da margem: só 7, 15, 30, 60 e 90; o padrão fica fora da URL (D-720)", () => {
+    expect(resolveReplenishmentFilters({ margem: "90" }).marginDays).toBe(90);
+    expect(resolveReplenishmentFilters({ margem: "45" }).marginDays).toBe(30);
+    expect(buildReplenishmentHref(resolveReplenishmentFilters({ margem: "90" }), {})).toBe("/reposicao?margem=90");
+    expect(buildReplenishmentHref(resolveReplenishmentFilters({}), { marginDays: 30 })).toBe("/reposicao");
   });
 
   it("string vazia e espaços viram null, não filtro que não casa com nada", () => {

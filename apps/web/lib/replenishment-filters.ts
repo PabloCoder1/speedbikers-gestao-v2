@@ -17,6 +17,11 @@ import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filte
  */
 export const PAGE_SIZE = 100;
 
+/** Janelas da margem por SKU (D-720); 30 é o padrão (o mesmo ritmo da sugestão). */
+export const PERIODOS_MARGEM = [7, 15, 30, 60, 90] as const;
+export type PeriodoMargem = (typeof PERIODOS_MARGEM)[number];
+export const PERIODO_MARGEM_PADRAO: PeriodoMargem = 30;
+
 export interface ReplenishmentFilters {
   brand: string | null;
   /**
@@ -30,6 +35,8 @@ export interface ReplenishmentFilters {
   state: string | null;
   search: string | null;
   page: number;
+  /** Ausente = o padrão (30 dias). */
+  marginDays?: PeriodoMargem;
 }
 
 function readParam(raw: unknown): string | null {
@@ -46,6 +53,7 @@ export function resolveReplenishmentFilters(
     state: readParam(query.estado),
     search: readParam(query.busca),
     page: resolvePageParam(query.pagina),
+    marginDays: lerPeriodoMargem(query.margem),
   };
 }
 
@@ -54,6 +62,12 @@ export function resolveReplenishmentFilters(
  * que o CONJUNTO muda — mesma regra de `/estoque` (D-139) e `/anuncios`
  * (D-138).
  */
+function lerPeriodoMargem(raw: unknown): PeriodoMargem {
+  const n = typeof raw === "string" ? Number(raw) : NaN;
+
+  return (PERIODOS_MARGEM as readonly number[]).includes(n) ? (n as PeriodoMargem) : PERIODO_MARGEM_PADRAO;
+}
+
 export function buildReplenishmentHref(
   current: ReplenishmentFilters,
   override: Partial<ReplenishmentFilters>,
@@ -62,8 +76,13 @@ export function buildReplenishmentHref(
 
   return buildFilterHref(
     "/reposicao",
-    { marca: next.brand,
-      estado: next.state, busca: next.search },
+    {
+      marca: next.brand,
+      estado: next.state,
+      busca: next.search,
+      // O padrão não vai para a URL: o link de sempre continua igual.
+      margem: next.marginDays === undefined || next.marginDays === PERIODO_MARGEM_PADRAO ? null : String(next.marginDays),
+    },
     override.page === undefined ? 1 : next.page,
   );
 }

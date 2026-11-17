@@ -29,7 +29,10 @@ create or replace function public.get_purchase_analysis(
   p_sku_ids uuid[],
   p_date_to date default null,
   p_exclude_order_id uuid default null,
-  p_supplier_id uuid default null
+  p_supplier_id uuid default null,
+  -- Falso = só os extras: a Reposição já tem os ingredientes da sugestão na
+  -- linha da visão e não paga a segunda varredura do catálogo.
+  p_incluir_sugestao boolean default true
 )
 returns jsonb
 language plpgsql
@@ -63,7 +66,8 @@ begin
   sugestao as materialized (
     select o.*
     from public.get_purchase_suggestions(p_organization_id, v_ate, null, null, 1000000, 0, null) o
-    where o.sku_id in (select a.sku_id from alvo a)
+    where coalesce(p_incluir_sugestao, true)
+      and o.sku_id in (select a.sku_id from alvo a)
   ),
   primeira_venda as (
     select x.sku_id, min(x.dia) as dia
@@ -196,7 +200,7 @@ begin
         'purchase_cost', a.purchase_cost, 'stock_is_virtual', a.stock_is_virtual,
         -- Fora do universo da reposição (sem saldo, venda nem anúncio): os
         -- ingredientes da sugestão vêm nulos e a tela diz "fora da reposição".
-        'na_reposicao', s.sku_id is not null,
+        'na_reposicao', case when coalesce(p_incluir_sugestao, true) then s.sku_id is not null end,
         'local_quantity', s.local_quantity, 'reservado', s.reservado, 'transito', s.transito,
         'full_quantity', s.full_quantity,
         'units_15d', s.units_15d, 'units_30d', s.units_30d, 'units_60d', s.units_60d, 'units_90d', s.units_90d,
@@ -237,8 +241,8 @@ begin
 end;
 $$;
 
-comment on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid) is
-  'Ingredientes da avaliação de compra (D-721) para até 500 SKUs: as colunas de get_purchase_suggestions, idade comercial (1ª venda ML/Shopee e cadastro), dias dos últimos 30 com o vendável zerado (LOCAL do ledger no fim do dia e Full das capturas de 3 dias; nulo sem fonte), pedidos sobrepostos em rascunho/aprovado (fora p_exclude_order_id), a última compra e as regras do fornecedor p_supplier_id. Também o piso de margem (D-410) e os dias de produto recente. security invoker.';
+comment on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid, boolean) is
+  'Ingredientes da avaliação de compra (D-721) para até 500 SKUs: as colunas de get_purchase_suggestions, idade comercial (1ª venda ML/Shopee e cadastro), dias dos últimos 30 com o vendável zerado (LOCAL do ledger no fim do dia e Full das capturas de 3 dias; nulo sem fonte), pedidos sobrepostos em rascunho/aprovado (fora p_exclude_order_id), a última compra e as regras do fornecedor p_supplier_id. p_incluir_sugestao falso: só os extras, na_reposicao nulo. Também o piso de margem (D-410) e os dias de produto recente. security invoker.';
 
-revoke all on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid) from public, anon;
-grant execute on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid) to authenticated, service_role;
+revoke all on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid, boolean) from public, anon;
+grant execute on function public.get_purchase_analysis(uuid, uuid[], date, uuid, uuid, boolean) to authenticated, service_role;

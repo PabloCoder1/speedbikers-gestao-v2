@@ -1,4 +1,4 @@
-import { composeSkuReplenishment, toSalesMetricDate } from "@sb/domain";
+import { composeSkuReplenishment, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import type {
   PurchaseSuggestionRefusal,
   ReplenishmentSetting,
@@ -8,6 +8,7 @@ import type {
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 
+import { CelulaMargem, PainelAnalise, SeloSituacao } from "../../../components/analise-compra";
 import { CarregandoSeODemorar } from "../../../components/carregando-link";
 import { FilterMenu } from "../../../components/filter-menu";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
@@ -19,10 +20,13 @@ import { TrendBadge } from "../../../components/trend-badge";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import {
   PAGE_SIZE,
+  PERIODOS_MARGEM,
+  PERIODO_MARGEM_PADRAO,
   buildReplenishmentHref,
   resolveReplenishmentFilters,
   summarizeReplenishmentWindow,
 } from "../../../lib/replenishment-filters";
+import { avaliarSku, comIngredientesDaVisao, lerAnalise, lerMargens } from "../../../lib/purchase-analysis";
 import {
   demandaDaShopee,
   idadeDaLeitura,
@@ -178,6 +182,38 @@ export default async function ReposicaoPage({
   ]);
 
   const visao = overviewResult.error === null ? lerVisaoReposicao(overviewResult.data) : null;
+
+  /*
+    D-720/D-721: a margem por SKU e os extras da avaliação de compra, só para os
+    SKUs DESTA página (até 100). Dependem da página — por isso vêm depois da
+    visão —, mas juntas entre si. A análise vai sem a sugestão
+    (`p_incluir_sugestao: false`): os ingredientes já estão na linha da visão,
+    e repetir `get_purchase_suggestions` dobraria o custo da tela. Falha das
+    duas não derruba a reposição: a linha segue sem a análise (D-067).
+  */
+  const skuIds = visao?.linhas.map((l) => l.sku_id) ?? [];
+  const diasMargem = filters.marginDays ?? PERIODO_MARGEM_PADRAO;
+  const [analiseResult, margensResult] =
+    skuIds.length === 0
+      ? [null, null]
+      : await Promise.all([
+          supabase.rpc("get_purchase_analysis", {
+            p_organization_id: organizationId,
+            p_sku_ids: skuIds,
+            p_date_to: dateTo,
+            p_incluir_sugestao: false,
+          }),
+          supabase.rpc("get_sku_margins", {
+            p_organization_id: organizationId,
+            p_sku_ids: skuIds,
+            p_date_from: shiftBusinessDate(dateTo, -(diasMargem - 1)),
+            p_date_to: dateTo,
+          }),
+        ]);
+  const analise = analiseResult !== null && analiseResult.error === null ? lerAnalise(analiseResult.data) : null;
+  const margens = margensResult !== null && margensResult.error === null ? lerMargens(margensResult.data) : null;
+  const extras = new Map((analise?.linhas ?? []).map((l) => [l.sku_id, l]));
+  const analiseFalhou = skuIds.length > 0 && (analise === null || margens === null);
   const erro =
     overviewResult.error?.message ??
     settingsResult.error?.message ??
@@ -233,10 +269,19 @@ export default async function ReposicaoPage({
                 })),
               ]}
             />
+            <FilterMenu
+              rotulo={`Margem: ${String(diasMargem)} dias`}
+              opcoes={PERIODOS_MARGEM.map((dias) => ({
+                href: buildReplenishmentHref(filters, { marginDays: dias }),
+                ativo: diasMargem === dias,
+                label: `Margem dos últimos ${String(dias)} dias`,
+              }))}
+            />
             <FormularioFiltro action="/reposicao" className="sb-rep-busca">
               {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
               {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
               {filters.state !== null && <input type="hidden" name="estado" value={filters.state} />}
+              {diasMargem !== PERIODO_MARGEM_PADRAO && <input type="hidden" name="margem" value={String(diasMargem)} />}
               <input
                 className="sb-input"
                 type="search"
@@ -401,6 +446,16 @@ export default async function ReposicaoPage({
             </div>
           </details>
 
+          {analiseFalhou && (
+            <EstadoDaTela
+              tipo="erro"
+              titulo="A margem e a análise de compra não carregaram"
+              detalhe={analiseResult?.error?.message ?? margensResult?.error?.message ?? "a leitura voltou fora do contrato esperado"}
+              descricao="A reposição abaixo continua válida; só a margem e o painel de análise de cada SKU ficaram de fora."
+              acao={{ href: buildReplenishmentHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
+          )}
+
           <Panel
             title={estadoAtivo === null ? "Recomendação de compra" : `Recomendação de compra · ${estadoAtivo}`}
             subtitle={`Em ordem de prioridade. ${windowInfo.label}`}
@@ -477,6 +532,12 @@ export default async function ReposicaoPage({
                           <th>Estado</th>
                           <th className="sb-num">Sugestão</th>
                           <th className="sb-num" title="Custo cadastrado × sugestão">Custo</th>
+                          <th
+                            className="sb-num"
+                            title={`Margem consolidada dos últimos ${String(diasMargem)} dias: (recebido após taxas − custo) ÷ receita, das vendas cobertas em todas as contas e lojas que você alcança`}
+                          >
+                            Margem {String(diasMargem)}d
+                          </th>
                         </tr>
                       </thead>
 
@@ -495,6 +556,17 @@ export default async function ReposicaoPage({
                           const custoLinha = sugestao !== null && sugestao > 0 && custo !== null ? sugestao * custo : null;
                           const estado = stockState.state;
                           const barra = posicaoCobertura(stockState.coverageDays, breakdown.demandWindowDays);
+                          const extra = extras.get(row.sku_id);
+                          const avaliacao =
+                            extra === undefined || analise === null
+                              ? null
+                              : avaliarSku(
+                                  comIngredientesDaVisao(extra, row),
+                                  margens?.porSku.get(row.sku_id) ?? null,
+                                  settings,
+                                  { margemMinima: analise.margemMinima, newProductDays: analise.newProductDays },
+                                  null,
+                                );
 
                           return (
                             <tr key={row.sku_id} className={estado !== null && URGENTES.has(estado) ? "sb-rep-linha-urgente" : undefined}>
@@ -524,6 +596,23 @@ export default async function ReposicaoPage({
                                   {/* Marca vazia é estado legítimo (D-129). */}
                                   {row.supplier_brand !== null && <em> · {row.supplier_brand}</em>}
                                 </span>
+                                {avaliacao !== null && analise !== null && (
+                                  <details className="sb-cmp-detalhes">
+                                    <summary>
+                                      <SeloSituacao avaliacao={avaliacao} />
+                                      <span className="sb-cmp-ver">análise</span>
+                                    </summary>
+                                    <PainelAnalise
+                                      avaliacao={avaliacao}
+                                      margemMinima={analise.margemMinima}
+                                      periodoMargem={margens === null ? null : { de: margens.de, ate: margens.ate }}
+                                      lojasTiktok={margens?.lojasTiktok ?? 0}
+                                      sugestao={sugestao}
+                                      noPedido={null}
+                                      tetoDias={policy?.maxCoverageDays ?? null}
+                                    />
+                                  </details>
+                                )}
                               </td>
                               <td>
                                 {/* "—" = sem venda no período da curva, não classe faltando. */}
@@ -659,6 +748,13 @@ export default async function ReposicaoPage({
                                   <span className="sb-rep-mudo">sem custo</span>
                                 ) : (
                                   <span className="sb-rep-mudo">—</span>
+                                )}
+                              </td>
+                              <td className="sb-num">
+                                {margens === null ? (
+                                  <span className="sb-rep-mudo">—</span>
+                                ) : (
+                                  <CelulaMargem margem={margens.porSku.get(row.sku_id) ?? null} margemMinima={margens.margemMinima} />
                                 )}
                               </td>
                             </tr>

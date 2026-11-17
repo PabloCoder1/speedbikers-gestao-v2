@@ -6366,6 +6366,7 @@ export type Database = {
         Args: {
           p_date_to?: string
           p_exclude_order_id?: string
+          p_incluir_sugestao?: boolean
           p_organization_id: string
           p_sku_ids: string[]
           p_supplier_id?: string
@@ -7008,7 +7009,8 @@ export type Database = {
         Args: {
           p_id: string
           p_note?: string
-          p_stage: string
+          // CORRECAO MANUAL (D-725): nulo limpa a etapa — o gerador não marca parâmetro anulável.
+          p_stage: string | null
         }
         Returns: {
           approved_at: string | null
@@ -9463,7 +9465,6 @@ export type Database = {
           isSetofReturn: false
         }
       }
-    }
       upsert_purchase_order_cost: {
         Args: {
           p_amount: number
@@ -9535,6 +9536,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+    }
     Enums: {
       [_ in never]: never
     }
