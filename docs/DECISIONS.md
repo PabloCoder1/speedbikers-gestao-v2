@@ -19760,3 +19760,11 @@ Vincular um anúncio a partir do detalhe do SKU deixava o diálogo em Gravando o
 A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz que o vínculo não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Diferente da recusa do servidor, que segue para a mensagem de erro e pede nova busca, a falha de transporte não diz nada sobre o anúncio: ele continua no diálogo e Confirmar vinculação fica disponível. A mensagem de erro do diálogo também passa a ser anunciada como alerta.
 
 A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.
+
+## D-720 - Notificações e preferências recuperam os controles após falha da ação
+
+Marcar uma notificação como lida, marcar todas, criar uma regra de alerta e alterar ou remover uma regra ligavam o estado pendente antes da Server Action e só o desligavam depois da resposta. A interrupção da conexão rejeitava a promessa e deixava o botão em Marcando ou Adicionando, a linha da regra desabilitada ou o diálogo de remoção preso, sem aviso. Os quatro componentes foram reproduzidos em Chromium derrubando o POST da ação.
+
+Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-719. Marcar como lida é idempotente, e o aviso pede só nova tentativa. Criar, alterar e remover uma regra podem ter sido gravados antes da queda, e o aviso pede conferir a lista ou recarregar a página antes de tentar novamente. A mensagem do diálogo de remoção passa a ser anunciada como alerta.
+
+As regressões usam um helper comum, `derrubarPrimeiraAcao`, e conferem no banco que nada foi gravado na tentativa derrubada. Marcar todas não repete a tentativa, porque zeraria a caixa que os outros casos contam. Cada caso devolve as leituras e as regras do usuário ao estado em que as encontrou.

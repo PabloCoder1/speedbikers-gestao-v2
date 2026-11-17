@@ -62,3 +62,25 @@ export async function atualizacaoTerminou(page: Page): Promise<void> {
   await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
   await expect(page.locator(".sb-atualizando-barra")).toHaveCount(0);
 }
+
+/**
+ * Derruba a primeira chamada de Server Action da página (o POST com
+ * `next-action`), como uma conexão que cai no meio, e deixa as outras
+ * passarem. Devolve uma função que diz se a queda aconteceu.
+ */
+export async function derrubarPrimeiraAcao(page: Page): Promise<() => boolean> {
+  let derrubada = false;
+
+  await page.route("**/*", async (rota) => {
+    const pedido = rota.request();
+
+    if (!derrubada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+      derrubada = true;
+      await rota.abort("failed");
+    } else {
+      await rota.continue();
+    }
+  });
+
+  return () => derrubada;
+}

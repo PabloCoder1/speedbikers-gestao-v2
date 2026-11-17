@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_ML_ACCOUNT } from "./constants.js";
-import { login } from "./helpers.js";
+import { E2E_ML_ACCOUNT, E2E_USER_EMAIL } from "./constants.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
 
 /**
  * Central de Notificações (`/notificacoes`) pelo frame `CentralScreen` na
@@ -294,4 +295,104 @@ test("/notificacoes: página além do fim é página vazia, não falha de leitur
 
   await expect(page).toHaveURL(/\/notificacoes$/);
   await expect(page.locator("main li").first()).toBeVisible();
+});
+
+/**
+ * A LEITURA QUE PERDE A CONEXÃO (D-720). O POST derrubado deixava o botão em
+ * "Marcando…", desabilitado e sem aviso. Os dois casos guardam o `read_at` de
+ * cada notificação do usuário e devolvem no fim: a suíte conta as não lidas.
+ */
+async function leiturasDoUsuario() {
+  const supabase = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(supabase.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = clienteDeServico();
+  const usuarios = await db.auth.admin.listUsers();
+
+  if (usuarios.error !== null) throw new Error(usuarios.error.message);
+
+  const usuario = usuarios.data.users.find((u) => u.email === E2E_USER_EMAIL);
+
+  if (usuario === undefined) throw new Error("Usuário do seed não encontrado.");
+
+  const leituras = await db.from("notification_recipients").select("notification_id, read_at").eq("user_id", usuario.id);
+
+  if (leituras.error !== null) throw new Error(leituras.error.message);
+
+  return {
+    db,
+    userId: usuario.id,
+    antes: leituras.data,
+    async atuais() {
+      const agora = await db.from("notification_recipients").select("notification_id, read_at").eq("user_id", usuario.id);
+
+      if (agora.error !== null) throw new Error(agora.error.message);
+
+      return agora.data;
+    },
+    async restaurar() {
+      for (const leitura of leituras.data) {
+        const volta = await db
+          .from("notification_recipients")
+          .update({ read_at: leitura.read_at })
+          .eq("user_id", usuario.id)
+          .eq("notification_id", leitura.notification_id);
+
+        expect.soft(volta.error).toBeNull();
+      }
+    },
+  };
+}
+
+test("/notificacoes: falha de conexão ao marcar como lida libera o botão e permite nova tentativa", async ({ page }) => {
+  const leituras = await leiturasDoUsuario();
+
+  try {
+    await leituras.db.from("notification_recipients").update({ read_at: null }).eq("user_id", leituras.userId);
+    await login(page, "/notificacoes");
+
+    const linha = page.locator("main li[data-state='unread']").first();
+    const marcar = linha.getByRole("button", { name: /^Marcar como lida:/ });
+    const caiu = await derrubarPrimeiraAcao(page);
+
+    await marcar.click();
+    await expect(linha.getByRole("alert")).toContainText("Não foi possível confirmar a leitura");
+    await expect(marcar).toBeEnabled();
+    expect(caiu()).toBe(true);
+    expect((await leituras.atuais()).every((leitura) => leitura.read_at === null)).toBe(true);
+
+    await marcar.click();
+    await expect(page.locator("main li[data-state='read']")).toHaveCount(1);
+    expect((await leituras.atuais()).filter((leitura) => leitura.read_at !== null)).toHaveLength(1);
+  } finally {
+    await leituras.restaurar();
+  }
+});
+
+test("/notificacoes: falha de conexão ao marcar todas libera a confirmação sem escrever", async ({ page }) => {
+  const leituras = await leiturasDoUsuario();
+
+  try {
+    await leituras.db.from("notification_recipients").update({ read_at: null }).eq("user_id", leituras.userId);
+    await login(page, "/notificacoes");
+    await page.getByRole("button", { name: "Marcar todas como lidas" }).click();
+
+    const confirmacao = page.getByRole("group", { name: "Confirmar leitura de todas as notificações" });
+    const confirmar = confirmacao.getByRole("button", { name: "Confirmar", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+
+    await confirmar.click();
+    await expect(confirmacao.getByRole("alert")).toContainText("Não foi possível confirmar a leitura");
+    await expect(confirmar).toBeEnabled();
+    await expect(confirmacao.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    expect(caiu()).toBe(true);
+    expect((await leituras.atuais()).every((leitura) => leitura.read_at === null)).toBe(true);
+
+    // A nova tentativa zeraria a caixa que os outros casos contam: o caso cancela.
+    await confirmacao.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Marcar todas como lidas" })).toBeVisible();
+  } finally {
+    await leituras.restaurar();
+  }
 });

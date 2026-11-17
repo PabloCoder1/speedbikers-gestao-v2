@@ -582,3 +582,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Shopee.** Vincular um anúncio preenche o SKU dos itens de pedido ainda sem SKU, e remover o vínculo não desfaz, por desenho: o pedido guarda a atribuição. Os casos de falha de conexão e de recusa de catálogo vinculavam o item sem SKU e deixavam o pedido do seed atribuído. A limpeza agora chama a mesma resolução do fim do seed.
 - **Validação.** Os quatro specs em sequência passaram, 42 casos, e o banco terminou com as contagens do seed. Passaram `pnpm run check`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Conferir a suíte completa na CI. Depois, seguir a fila do inventário de Server Actions sem tratamento de exceção. [Plano](PLAN.md)
+
+### 17/11/2026 · Falha de transporte em Notificações e Preferências
+
+- **Base.** `codex/sentinel-audit` em `60784059`, com a CI verde: 338 casos de E2E, incluindo os 20 do `loja-live`.
+- **D-720 (A78).** Os quatro componentes de Notificações da fila ligavam o estado pendente antes da ação e só o desligavam depois da resposta. Derrubar o POST deixou cada um com os controles presos: Marcando na linha e na confirmação de marcar todas, Adicionando no formulário e a severidade, a caixa Ativa e o diálogo de remoção desabilitados. A correção segue as D-716 a D-719.
+- **Regressões.** O helper `derrubarPrimeiraAcao`, em `e2e/helpers.ts`, derruba a primeira Server Action da página. Dois casos novos em `notificacoes.spec.ts` e o arquivo novo `notificacoes-preferencias.spec.ts` falharam no build anterior e passaram em duas repetições no corrigido. Eles guardam e devolvem as leituras e as regras do usuário. Repetir `notificacoes.spec.ts` inteiro quebra a contagem inicial em casos antigos, porque o caso do recorte de não lidas deixa uma lida de propósito; uma rodada única passa, como na CI.
+- **Validação.** Passaram os 24 casos de Notificações, Preferências e troca de tela. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Usuários e o nome do perfil: `acesso-membro.tsx`, `member-controls.tsx` e `editar-nome.tsx`. [Plano](PLAN.md)

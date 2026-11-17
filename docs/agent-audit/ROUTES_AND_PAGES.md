@@ -20,8 +20,8 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 | `/central/produtos` | [page.tsx](<../../apps/web/app/(app)/central/produtos/page.tsx>) | RPC `get_ranking_produtos`. Tabelas `ml_accounts`. O detalhe do SKU abre ao clicar no ranking (D-697) |
 | `/copiloto` | [page.tsx](<../../apps/web/app/(app)/copiloto/page.tsx>) | Ver a entrada e seus imports |
 | `/diagnostico` | [page.tsx](<../../apps/web/app/(app)/diagnostico/page.tsx>) | RPC `get_sku_sales_baseline`, `get_sku_correlated_events`, `get_sku_average_prices`. Tabelas `support_case_links` |
-| `/notificacoes` | [page.tsx](<../../apps/web/app/(app)/notificacoes/page.tsx>) | Tabelas `notification_recipients`, `ml_accounts`, `shopee_shops` |
-| `/notificacoes/preferencias` | [page.tsx](<../../apps/web/app/(app)/notificacoes/preferencias/page.tsx>) | Tabelas `notification_preferences`, `ml_accounts` |
+| `/notificacoes` | [page.tsx](<../../apps/web/app/(app)/notificacoes/page.tsx>) | Tabelas `notification_recipients`, `ml_accounts`, `shopee_shops`. Marcar como lida e marcar todas liberam os controles após falha de transporte (D-720). |
+| `/notificacoes/preferencias` | [page.tsx](<../../apps/web/app/(app)/notificacoes/preferencias/page.tsx>) | Tabelas `notification_preferences`, `ml_accounts`. Criar, alterar e remover regra liberam os controles após falha de transporte (D-720). |
 | `/sugestoes` | [page.tsx](<../../apps/web/app/(app)/sugestoes/page.tsx>) | Tabelas `feature_suggestions` |
 
 ## Comercial e anúncios

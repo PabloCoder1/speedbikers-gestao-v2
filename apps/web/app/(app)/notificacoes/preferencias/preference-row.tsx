@@ -50,9 +50,18 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
     setBusy(true);
     setError(null);
 
-    const result = await updatePreference(preference.id, next);
+    let result: Awaited<ReturnType<typeof updatePreference>>;
 
-    setBusy(false);
+    try {
+      result = await updatePreference(preference.id, next);
+    } catch {
+      // A alteração pode ter sido gravada antes de a conexão cair.
+      setError("Não foi possível confirmar a alteração. Recarregue a página antes de tentar novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);
@@ -68,9 +77,17 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
     setBusy(true);
     setError(null);
 
-    const result = await deletePreference(preference.id);
+    let result: Awaited<ReturnType<typeof deletePreference>>;
 
-    setBusy(false);
+    try {
+      result = await deletePreference(preference.id);
+    } catch {
+      setError("Não foi possível confirmar a remoção. Recarregue a página antes de tentar novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);
@@ -164,7 +181,9 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
               </p>
 
               {error !== null && (
-                <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)", fontSize: "0.75rem" }}>{error}</p>
+                <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)", fontSize: "0.75rem" }}>
+                  {error}
+                </p>
               )}
 
               <div style={{ display: "flex", gap: "var(--sb-space-2)", justifyContent: "flex-end" }}>
