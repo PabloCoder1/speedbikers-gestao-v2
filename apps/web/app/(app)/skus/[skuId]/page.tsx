@@ -30,6 +30,7 @@ import {
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../../lib/full-filters";
 import { formatAge } from "../../../../lib/relative-time";
+import { lerPaginasDaRpc } from "../../../../lib/rpc-pages";
 import {
   formatShopeeMoney,
   isShopeeSchemaMissing,
@@ -392,6 +393,10 @@ export default async function SkuDashboardPage({
       ).catch(falhaDoSku)
     : Promise.resolve({ data: null, error: null });
 
+  const recorteDeAnuncios = {
+    p_organization_id: sku.data.organization_id,
+    p_sku_id: sku.data.id,
+  };
   const [
     dashboardResult,
     listingsResult,
@@ -433,12 +438,20 @@ export default async function SkuDashboardPage({
       A união é SQL (`get_sku_listings`) e não duas idas: o PostgREST não tem
       relação entre `listings` e `sku_listing_links` para embutir, e agregar
       duas listas em JS seria a terceira definição da mesma palavra.
+      As páginas respeitam o teto do PostgREST. A chave da conta desempata
+      anúncios com o mesmo MLB, título e nome de conta (D-714).
     */
     needsListings
-      ? supabase.rpc("get_sku_listings", {
-          p_organization_id: sku.data.organization_id,
-          p_sku_id: sku.data.id,
-        })
+      ? lerPaginasDaRpc(
+          (offset, limite) =>
+            supabase.rpc("get_sku_listings", recorteDeAnuncios, offset === 0 ? { count: "exact" } : undefined)
+              .order("account_label", { nullsFirst: false })
+              .order("title", { nullsFirst: false })
+              .order("item_id")
+              .order("ml_account_id")
+              .range(offset, offset + limite - 1),
+          Number.POSITIVE_INFINITY,
+        ).then(({ linhas, error }) => ({ data: linhas, error }))
       : Promise.resolve({ data: null, error: null }),
     /*
       As contas para o seletor de "Vincular anúncio" — só as CONECTADAS.

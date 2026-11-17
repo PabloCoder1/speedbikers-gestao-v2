@@ -37,6 +37,7 @@ Paths de tela na coluna final são relativas a `apps/web/app/(app)`. Os objetos 
 
 | Objeto | Dependências e proteção |
 |---|---|
+| `get_sku_listings` | Une vínculo direto e por variação sob RLS. A conta vem do par vinculado mesmo sem linha em `listings`. A ordenação termina na chave da conta, e a web lê em páginas. D-714, migration [20261117171808](../../supabase/migrations/20261117171808_preserve_account_in_sku_listings.sql), validada localmente. |
 | `marketplace_accounts` | Une contas ML e lojas Shopee que o chamador pode acessar, com `security_invoker`. A conexão TikTok tem fluxo próprio no snapshot. |
 | `shopee_listing_units` | Catálogo, modelos e vínculo manual, com `security_invoker`. |
 | `shopee_sales_orders` | Pedido Shopee por loja, situação da venda, receita e recebido, com `security_invoker`. Alimenta vendas e faturamento. |

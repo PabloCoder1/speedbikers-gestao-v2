@@ -2191,3 +2191,17 @@ Dois builds de produção rodaram no Chromium com sessão ADMIN, Supabase local 
 | Conta na URL | 1 → 0 | 8 → 7 | 132 ms (119–145) | 119 ms (100–138) |
 
 Nos dois builds, as pré-buscas de outras abas geraram zero chamadas REST de dados. Cada clique fez uma requisição RSC com HTTP 200, ativou Anúncios e mostrou a seção Shopee. Voltar restaurou a aba Diagnóstico e a URL original, incluindo a conta quando informada. A latência e a frequência de uso com tráfego real seguem pendentes.
+
+### Leitura completa dos anúncios ML no SKU (Sentinel A71, 17/11/2026)
+
+Ensaio no Chromium com build de produção e Supabase local isolado. A fixture tem um SKU, duas contas com o mesmo nome, 500 anúncios diretos por conta com os mesmos títulos e MLBs, um anúncio por variação e um vínculo ainda sem anúncio sincronizado. Um anúncio excluído vinculado também foi semeado. O conjunto esperado é de 1.002 linhas.
+
+| Leitura | Resultado local |
+| --- | --- |
+| Tela original, aba Anúncios | 1.000 linhas |
+| RPC paginada | 1.000 linhas no offset 0, 2 no offset 1.000 e zero no offset 1.002 |
+| Tabela após D-714 | 1.002 linhas, com os MLBs esperados |
+| Conta do vínculo sem anúncio, RPC anterior | Nula |
+| Tabela e Diagnóstico após paginação e migration D-714 | 1.002 anúncios, com conta válida no vínculo sem anúncio |
+
+A paginação usou ordem por nome da conta, título, MLB e ID da conta. O trace registrou HTTP 206 na primeira página com `Content-Range: 0-999/1002`, HTTP 200 nas seguintes e nenhum erro de faixa. A paginação isolada expôs outro defeito. O vínculo sem anúncio tinha conta nula na RPC e fazia o escopo padrão do Diagnóstico selecionar só ele. A migration `20261117171808` corrige a origem do ID da conta e acrescenta o desempate na ordem SQL. A regressão verificou vínculos por variação, vínculo sem leitura, exclusão e isolamento por conta. A leitura completa acrescenta chamadas quando ultrapassa uma página. A latência com dados reais segue pendente.

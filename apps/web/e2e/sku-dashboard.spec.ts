@@ -450,6 +450,120 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
   await expect(page.getByRole("button", { name: "O que aconteceu?" })).toBeVisible();
 });
 
+test("SKU: todos os anúncios ML aparecem acima de mil, incluindo vínculo por variação e anúncio sem leitura", async ({ page }) => {
+  test.setTimeout(60_000);
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const sku = await db.from("skus").insert({
+    organization_id: seed.organizationId,
+    sku: "E2E-SKU-PAGINACAO-ML",
+    title: "Produto E2E com mais de mil anúncios",
+  }).select("id").single();
+
+  if (sku.error !== null) throw new Error(sku.error.message);
+
+  const slugs = ["e2e-paginacao-ml-0", "e2e-paginacao-ml-1"];
+  try {
+    const contas: string[] = [];
+    for (const [indice, slug] of slugs.entries()) {
+      const conta = await db.from("ml_accounts").insert({
+        organization_id: seed.organizationId,
+        slug,
+        label: "Conta E2E de paginação",
+        status: "CONNECTED",
+        seller_id: 720000001 + indice,
+        connected_at: new Date().toISOString(),
+      }).select("id").single();
+
+      if (conta.error !== null) throw new Error(conta.error.message);
+      contas.push(conta.data.id);
+
+      // Mesmos nomes, títulos e MLBs em duas contas exercitam o desempate da paginação.
+      const anuncios = await db.from("listings").insert(Array.from({ length: 500 }, (_, n) => ({
+        organization_id: seed.organizationId,
+        ml_account_id: conta.data.id,
+        item_id: `MLB720000${String(n + 1).padStart(3, "0")}`,
+        sku_id: sku.data.id,
+        title: "Anúncio E2E da paginação",
+        status: "active",
+        price: 100,
+        currency_id: "BRL",
+        available_quantity: 1,
+        synced_at: new Date().toISOString(),
+      })));
+
+      if (anuncios.error !== null) throw new Error(anuncios.error.message);
+    }
+
+    const primeiraConta = contas[0];
+    if (primeiraConta === undefined) throw new Error("A fixture precisa de uma conta.");
+
+    const especiais = await db.from("listings").insert([
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta,
+        item_id: "MLB729999998", title: "Anúncio E2E da paginação", status: "active",
+        price: 100, currency_id: "BRL", available_quantity: 1, synced_at: new Date().toISOString(),
+      },
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        item_id: "MLB729999997", title: "Anúncio excluído E2E", status: "closed",
+        price: 100, currency_id: "BRL", available_quantity: 0,
+        synced_at: new Date().toISOString(), deleted_at: new Date().toISOString(),
+      },
+    ]);
+    if (especiais.error !== null) throw new Error(especiais.error.message);
+
+    const vinculos = await db.from("sku_listing_links").insert([
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        ref_kind: "ITEM", item_id: "MLB729999998", variation_id: "72001", source: "MANUAL",
+      },
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        ref_kind: "ITEM", item_id: "MLB729999999", source: "MANUAL",
+      },
+    ]);
+    if (vinculos.error !== null) throw new Error(vinculos.error.message);
+
+    const origem = `/skus/${sku.data.id}`;
+    await login(page, origem + "?aba=anuncios");
+    const painel = page.getByRole("region", { name: "Anúncios vinculados", exact: true });
+    const linhas = painel.locator("tbody tr");
+
+    await expect(linhas).toHaveCount(1_002, { timeout: 20_000 });
+    const codigos = await linhas.locator(".sb-skud-mono-caption a").allTextContents();
+    expect(codigos.sort()).toEqual([
+      ...Array.from({ length: 500 }, (_, n) => `MLB720000${String(n + 1).padStart(3, "0")}`)
+        .flatMap((codigo) => [codigo, codigo]),
+      "MLB729999998", "MLB729999999",
+    ].sort());
+    await expect(painel).toContainText("1002 anúncios deste SKU");
+    await expect(linhas.filter({ hasText: "MLB720000001" })).toHaveCount(2);
+    await expect(linhas.filter({ hasText: "MLB729999998" })).toContainText("por variação");
+    await expect(linhas.filter({ hasText: "MLB729999999" })).toContainText("ainda não sincronizado");
+    await expect(linhas.filter({ hasText: "MLB729999997" })).toHaveCount(0);
+
+    await page.goto(origem + "?aba=diagnostico");
+    const saude = page.getByRole("region", { name: "Saúde do SKU", exact: true });
+    await expect(saude.locator(".sb-stat").filter({
+      has: page.getByText("Anúncios", { exact: true }),
+    }).locator(".sb-stat-value")).toHaveText("1.002");
+  } finally {
+    const removidas = await db.from("ml_accounts").delete()
+      .eq("organization_id", seed.organizationId).in("slug", slugs);
+    const removido = await db.from("skus").delete().eq("id", sku.data.id);
+
+    expect.soft(removidas.error).toBeNull();
+    expect.soft(removido.error).toBeNull();
+  }
+});
+
 test("Diagnóstico do SKU: Reler agora lê dados novos e preserva o escopo da conta", async ({ page }) => {
   const seed = await readSeedOutput();
   const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");

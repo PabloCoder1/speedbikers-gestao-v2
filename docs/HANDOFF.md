@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** Reler agora no Diagnóstico do SKU foi verificado com alterações no banco local após a abertura da página. A releitura buscou dados novos e preservou a conta da URL. A próxima verificação é o limite de 1.000 anúncios nas leituras do detalhe do SKU. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
+- **Sentinel.** D-714 pagina a leitura dos anúncios do Mercado Livre no SKU e preserva a conta do vínculo ainda sem anúncio sincronizado. A fixture com 1.002 anúncios passou a aparecer inteira. A próxima verificação é o teto de 200 da RPC de anúncios Shopee do SKU. A migration `20261117171808` foi aplicada apenas no banco local e precede a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

@@ -76,6 +76,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A70 | P2 · CORRIGIDO localmente (D-713) | O link de Diagnóstico para a aba Anúncios do SKU disparava pré-busca ao entrar na área visível | No consolidado e com conta na URL, o Auth de prefetch do destino caiu de uma chamada para zero. O retorno restaurou o recorte original. [Medição](../PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026) |
 
+| A71 | P1 · CORRIGIDO localmente (D-714) | O detalhe do SKU recebia só 1.000 anúncios ML. O vínculo sem anúncio sincronizado vinha com conta nula e podia virar o escopo padrão do Diagnóstico | A leitura agora pagina a RPC com ordem total. A migration preserva a conta do par vinculado. A fixture de 1.002 linhas chegou completa à tabela e ao Diagnóstico. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

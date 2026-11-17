@@ -19712,3 +19712,11 @@ As regressões verificam Preços e Vinculações, com atraso na requisição de 
 O link aba Anúncios no painel de limites do diagnóstico usa `prefetch={false}`. As duas jornadas locais, no consolidado e com conta na URL, evitaram uma chamada ao Auth por pré-busca antes do clique. As medianas do clique passaram de 122 para 118 ms e de 132 para 119 ms.
 
 A regressão atrasa a resposta da aba, verifica o indicador de atualização e volta ao Diagnóstico. O benchmark confere o retorno ao recorte de conta. [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+
+## D-714 - A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
+
+A web usa o paginador de RPC existente, com contagem exata na primeira página e sem teto de descarte no cliente. A ordenação preserva nome da conta, título e MLB e acrescenta o ID da conta para desempatar contas de mesmo nome com o mesmo anúncio. Em caso de erro, o paginador devolve o erro e descarta o lote incompleto.
+
+A migration `20261117171808` também corrige a RPC. O campo `ml_account_id` vinha da linha opcional de `listings`. Um vínculo ainda sem essa linha devolvia conta nula, que o Diagnóstico podia selecionar ao resolver o escopo padrão. O ID passa a vir do par de conta e anúncio já determinado pelo vínculo. A assinatura e a política `security invoker` continuam válidas para os consumidores existentes.
+
+A reprodução mostrou 1.000 de 1.002 anúncios na tela original. Com paginação e a migration, a tabela e o Diagnóstico receberam o conjunto inteiro, incluindo variação e vínculo ainda sem leitura, com o anúncio excluído fora. A migration foi aplicada só no banco local. A publicação exige sua aplicação antes da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)

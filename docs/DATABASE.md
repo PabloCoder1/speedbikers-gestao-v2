@@ -123,6 +123,8 @@ Identidade: `(organization_id, sku_key)` UNIQUE, com `sku_key = upper(btrim(sku)
 
 **Identificadores nativos do Mercado Livre a capturar desde o início:** os anúncios carregam `inventory_id` e `user_product_id`. A V2 os extraiu do payload e indexou; eles amarram anúncio a Full e agrupam variações, poupando trabalho manual de vinculação.
 
+`get_sku_listings` reúne o vínculo direto e os vínculos ITEM por conta e anúncio sob RLS. A conta devolvida vem desse par vinculado, inclusive quando o anúncio ainda não foi sincronizado (D-714, migration `20261117171808`). A web pagina a resposta para superar o `max_rows` do PostgREST, com ordem por nome da conta, título, MLB e ID da conta. A migration foi validada localmente e deve preceder a publicação da web.
+
 ### `link_candidates` — Central de Vinculações
 
 Referência de anúncio cujo SKU ainda não existe no catálogo (`docs/PROMPT_MASTER.md` secao 15). Hoje a única fonte é a importação do UpSeller (`source = 'ERP_IMPORT'`, `source_row_id` aponta para `erp_import_rows`); outras fontes (NF-e, código de fornecedor) entram quando existirem.

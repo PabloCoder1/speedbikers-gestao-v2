@@ -19394,6 +19394,39 @@ describe("get_sku_listings — os anuncios de um SKU pela regua canonica (D-316)
     expect(linhas[1]?.apenas_cache).toBe(false);
   });
 
+  it("preserva a conta do vínculo sem anúncio sincronizado e respeita a permissão dessa conta", async () => {
+    await client.query(
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, ref_kind, item_id, sku_id, source)
+       values ($1,$2,'ITEM','MLB700000008',$4,'MANUAL'),
+              ($1,$3,'ITEM','MLB700000008',$4,'MANUAL')`,
+      [ORG_SB, CONTA, CONTA_SEM_ACESSO, SKU],
+    );
+
+    try {
+      const consulta = `select item_id, ml_account_id, listing_id, title
+        from public.get_sku_listings('${ORG_SB}', '${SKU}')
+        where item_id = 'MLB700000008' order by ml_account_id`;
+      const admin = await asUser<{ ml_account_id: string; listing_id: string | null; title: string | null }>(
+        ADMIN_SB, consulta,
+      );
+      expect(admin).toEqual([
+        { item_id: "MLB700000008", ml_account_id: CONTA, listing_id: null, title: null },
+        { item_id: "MLB700000008", ml_account_id: CONTA_SEM_ACESSO, listing_id: null, title: null },
+      ]);
+
+      const analista = await asUser<{ ml_account_id: string }>(ANALISTA_SB, consulta);
+      expect(analista).toEqual([admin[0]]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([]);
+    } finally {
+      await client.query(
+        `delete from public.sku_listing_links
+         where organization_id = $1 and sku_id = $2 and item_id = 'MLB700000008'`,
+        [ORG_SB, SKU],
+      );
+    }
+  });
+
   it("uma linha por (conta, anuncio), mesmo com duas variacoes vinculadas", async () => {
     await client.query(
       `insert into public.sku_listing_links
