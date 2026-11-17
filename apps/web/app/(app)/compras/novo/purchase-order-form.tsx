@@ -37,9 +37,11 @@ import {
   type DecisaoItem,
   type ItemRetirado,
   type LinhaRevisao,
+  planoDoFornecedor,
 } from "./revisao-pedido";
 import { TrazerReposicao } from "./trazer-reposicao";
-import { useAnalisePedido } from "./use-analise-pedido";
+import { carregarAnalisePedido, useAnalisePedido } from "./use-analise-pedido";
+import { lerProdutosFornecidos } from "../../../../lib/supplier-skus";
 
 /**
  * O formulário do pedido de compra — criação e edição do rascunho.
@@ -187,6 +189,7 @@ export function PurchaseOrderForm({
   );
   const [retirados, setRetirados] = useState<readonly ItemRetirado[]>([]);
   const requestId = useRef<string | null>(null);
+  const [trazendoFornecedor, setTrazendoFornecedor] = useState(false);
   const focarLinha = useRef<string | null>(null);
   const tabelaRef = useRef<HTMLTableSectionElement | null>(null);
 
@@ -298,6 +301,86 @@ export function PurchaseOrderForm({
 
       return resto.length === 0 ? [emptyItem()] : resto;
     });
+  }
+
+  /*
+    D-725: planejamento por fornecedor. Dos produtos que ELE fornece (o vínculo
+    explícito de D-723), traz só os que a avaliação manda comprar, na quantidade
+    recomendada — o mínimo e o múltiplo dele já aplicados —, e diz quantos
+    ficaram de fora e por quê. Nada entra sem aparecer na revisão abaixo.
+  */
+  async function trazerDoFornecedor(): Promise<void> {
+    if (organizationId === undefined || supplierId === "") return;
+
+    setTrazendoFornecedor(true);
+    setAvisoTrazer(null);
+
+    const { data, error: erro } = await createClient().rpc("get_supplier_skus", { p_supplier_id: supplierId, p_limit: 200 });
+    const lista = erro === null ? lerProdutosFornecidos(data) : null;
+
+    if (lista === null) {
+      setAvisoTrazer("Não foi possível ler os produtos deste fornecedor agora.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    if (lista.linhas.length === 0) {
+      setAvisoTrazer("Este fornecedor ainda não tem produtos cadastrados — cadastre na página dele, em Produtos fornecidos.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    const lida = await carregarAnalisePedido({
+      organizationId,
+      skuIds: lista.linhas.map((l) => l.skuId),
+      supplierId,
+      orderId,
+    });
+
+    if (lida === null) {
+      setAvisoTrazer("A análise de compra não carregou agora — tente de novo.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    const avaliacoes = new Map(
+      lista.linhas.map((l) => {
+        const linha = lida.linhas.get(l.skuId);
+
+        return [
+          l.skuId,
+          linha === undefined
+            ? null
+            : avaliarSku(linha, lida.margens.get(l.skuId) ?? null, lida.settings, { margemMinima: lida.margemMinima, newProductDays: lida.newProductDays }, null),
+        ] as const;
+      }),
+    );
+    const plano = planoDoFornecedor(lista.linhas, avaliacoes, skusNoPedido);
+
+    setItems((atual) => [
+      ...atual.filter((i) => i.skuSnapshot.trim() !== "" || i.quantityOrdered.trim() !== "" || i.unitCost.trim() !== ""),
+      ...plano.trazer.map((t) => ({
+        ...emptyItem(),
+        skuId: t.skuId,
+        skuSnapshot: t.sku,
+        titleSnapshot: t.title,
+        quantityOrdered: String(t.quantidade),
+        unitCost: t.custo === null ? "" : String(t.custo),
+        unitCostSuggested: t.custo !== null,
+      })),
+    ]);
+    setAvisoTrazer(
+      `${formatCount(plano.trazer.length)} produto(s) do fornecedor trazidos com a quantidade recomendada (mínimo e múltiplo aplicados)` +
+        (plano.semNecessidade > 0 ? ` · ${formatCount(plano.semNecessidade)} sem necessidade de compra agora` : "") +
+        (plano.semDados > 0 ? ` · ${formatCount(plano.semDados)} sem dados para recomendar` : "") +
+        (plano.jaNoPedido > 0 ? ` · ${formatCount(plano.jaNoPedido)} já estavam no pedido` : "") +
+        (lista.total > lista.linhas.length ? ` · os primeiros ${formatCount(lista.linhas.length)} de ${formatCount(lista.total)}` : "") +
+        ".",
+    );
+    setTrazendoFornecedor(false);
   }
 
   function desfazerRetirada(key: string): void {
@@ -849,6 +932,19 @@ export function PurchaseOrderForm({
                 >
                   <Icone nome="ciclo" tamanho={14} />
                   Trazer da reposição
+                </button>
+              )}
+              {supplierId !== "" && organizationId !== undefined && (
+                <button
+                  type="button"
+                  className="sb-button"
+                  disabled={trazendoFornecedor}
+                  onClick={() => {
+                    void trazerDoFornecedor();
+                  }}
+                >
+                  <Icone nome="ciclo" tamanho={14} />
+                  {trazendoFornecedor ? "Analisando o fornecedor…" : "Trazer produtos do fornecedor"}
                 </button>
               )}
               <button

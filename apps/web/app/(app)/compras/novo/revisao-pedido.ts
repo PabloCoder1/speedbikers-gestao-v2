@@ -267,3 +267,61 @@ export function planoDoLote(linhas: readonly LinhaRevisao[]): { key: string; aca
 
   return plano;
 }
+
+/** Um produto do catálogo do fornecedor (D-723), no que o planejamento precisa. */
+export interface ProdutoDoFornecedor {
+  readonly skuId: string;
+  readonly sku: string;
+  readonly title: string | null;
+  readonly supplierCode: string | null;
+  readonly unitCost: number | null;
+  readonly currency: string;
+  readonly cadastroCost: number | null;
+}
+
+export interface PlanoFornecedor {
+  /** O que entra no pedido, com a quantidade que o sistema compraria (MOQ e múltiplo já aplicados). */
+  readonly trazer: readonly (ProdutoDoFornecedor & { readonly quantidade: number; readonly custo: number | null })[];
+  /** Estoque e pedidos já cobrem: nada a comprar agora. */
+  readonly semNecessidade: number;
+  /** Sem base para número (fora da reposição, sem regra, histórico ou amostra). */
+  readonly semDados: number;
+  /** Já estavam no pedido. */
+  readonly jaNoPedido: number;
+}
+
+/**
+ * Planejamento por fornecedor (D-725): dos produtos que ele fornece, só os que
+ * a avaliação manda comprar, na quantidade recomendada. O custo é o do
+ * fornecedor quando em reais — outra moeda fica para o comprador converter,
+ * nunca convertida a 1 —, senão o do cadastro.
+ */
+export function planoDoFornecedor(
+  produtos: readonly ProdutoDoFornecedor[],
+  avaliacoes: ReadonlyMap<string, AvaliacaoSku | null>,
+  noPedido: ReadonlySet<string>,
+): PlanoFornecedor {
+  const trazer: (ProdutoDoFornecedor & { quantidade: number; custo: number | null })[] = [];
+  let semNecessidade = 0;
+  let semDados = 0;
+  let jaNoPedido = 0;
+
+  for (const p of produtos) {
+    if (noPedido.has(p.skuId)) {
+      jaNoPedido += 1;
+      continue;
+    }
+
+    const q = avaliacoes.get(p.skuId)?.fit?.recommendedQuantity ?? null;
+
+    if (q === null) semDados += 1;
+    else if (q <= 0) semNecessidade += 1;
+    else {
+      const custo = p.currency === "BRL" && p.unitCost !== null ? p.unitCost : p.cadastroCost !== null && p.cadastroCost > 0 ? p.cadastroCost : null;
+
+      trazer.push({ ...p, quantidade: q, custo });
+    }
+  }
+
+  return { trazer, semNecessidade, semDados, jaNoPedido };
+}

@@ -6,12 +6,14 @@ import {
   camposDoItem,
   classificarParaRevisao,
   impactoDaRevisao,
+  planoDoFornecedor,
   planoDoLote,
   quantidadeParaReduzir,
   registrosDeDecisao,
   type DecisaoItem,
   type ItemRetirado,
   type LinhaRevisao,
+  type ProdutoDoFornecedor,
 } from "./revisao-pedido";
 
 const PADRAO: ReplenishmentSetting = {
@@ -203,5 +205,39 @@ describe("impactoDaRevisao", () => {
       unidadesReduzidas: 190,
       prioridade: 2,
     });
+  });
+});
+
+describe("planoDoFornecedor (D-725)", () => {
+  const produto = (skuId: string, over: Partial<ProdutoDoFornecedor> = {}): ProdutoDoFornecedor => ({
+    skuId,
+    sku: skuId.toUpperCase(),
+    title: null,
+    supplierCode: null,
+    unitCost: 9,
+    currency: "BRL",
+    cadastroCost: 10,
+    ...over,
+  });
+
+  it("traz só o que precisa de compra, na quantidade recomendada; o resto é contado por motivo", () => {
+    const plano = planoDoFornecedor(
+      [produto("a"), produto("b"), produto("c"), produto("d", { currency: "USD", unitCost: 2 })],
+      new Map([
+        ["a", avaliacao(ALTO_GIRO, 0)],
+        ["b", avaliacao(BAIXO_GIRO, 0)],
+        ["c", null],
+        ["d", avaliacao(ALTO_GIRO, 0)],
+      ]),
+      new Set(["x"]),
+    );
+
+    expect(plano.trazer.map((t) => [t.skuId, t.quantidade, t.custo])).toEqual([
+      ["a", 110, 9],
+      // Custo em dólar não é convertido a 1: cai no do cadastro.
+      ["d", 110, 10],
+    ]);
+    expect(plano.semNecessidade).toBe(1);
+    expect(plano.semDados).toBe(1);
   });
 });
