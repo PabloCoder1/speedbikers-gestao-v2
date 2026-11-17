@@ -18534,9 +18534,13 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "create_saved_filter",
     "create_sku_listing_link",
     "create_supplier",
+    // D-725: a organizacao sai do PEDIDO do custo; papel refeito nela.
+    "delete_purchase_order_cost",
     "delete_saved_filter",
     // D-372: papel NA organizacao do fornecedor e recusa com pedido de compra.
     "delete_supplier",
+    // D-723: a organizacao sai do proprio vinculo; papel refeito nela.
+    "delete_supplier_sku",
     "dismiss_link_candidate",
     // D-291: LEITURA de log de execucao, agregada. Entrou na lista com a
     // auditoria feita: autorizacao ADMIN refeita dentro, `search_path`
@@ -18569,6 +18573,9 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "link_document_item",
     "mark_purchase_order_ordered",
     "receive_purchase_order",
+    // D-724: organizacao do pedido, papel refeito, e cada item tem de ser DESTE
+    // pedido; quantidade limitada ao pendente; idempotente pela requisicao.
+    "receive_purchase_order_items",
     // D-429: o vinculo manual Shopee. Os dois validam o escopo de cada
     // parametro: a organizacao sai da LOJA (ou do vinculo), o papel e
     // conferido nela (has_org_role ADMIN/GESTOR/OPERADOR), o SKU tem de ser
@@ -18577,6 +18584,10 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "remove_sku_listing_link",
     "resolve_link_candidate",
     "retarget_sku_listing_link",
+    // D-725: organizacao do pedido, papel refeito, etapa validada pelo status.
+    "set_purchase_order_stage",
+    // D-721: has_org_role(ADMIN) na organizacao pedida.
+    "set_purchase_review_settings",
     "set_shopee_sku_link",
     "set_skus_stock_virtual",
     "set_skus_supplier_brand",
@@ -18587,6 +18598,10 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "update_action_status",
     "update_purchase_order_draft",
     "update_supplier",
+    // D-725: organizacao do pedido; o custo editado tem de ser DESTE pedido.
+    "upsert_purchase_order_cost",
+    // D-723: organizacao do FORNECEDOR, papel refeito nela, SKU da mesma organizacao.
+    "upsert_supplier_sku",
   ];
 
   it("a superficie SECURITY DEFINER exposta a authenticated e exatamente a lista versionada (D-182)", async () => {

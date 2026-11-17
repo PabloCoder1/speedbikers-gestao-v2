@@ -2886,6 +2886,66 @@ export type Database = {
         }
         Relationships: []
       }
+      purchase_order_costs: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          exchange_rate: number | null
+          id: string
+          kind: string
+          organization_id: string
+          purchase_order_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          exchange_rate?: number | null
+          id?: string
+          kind: string
+          organization_id: string
+          purchase_order_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          exchange_rate?: number | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          purchase_order_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_costs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_costs_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_order_events: {
         Row: {
           actor_user_id: string | null
@@ -2950,6 +3010,13 @@ export type Database = {
           sku_snapshot: string
           title_snapshot: string | null
           unit_cost: number | null
+          quantity_received: number
+          recommended_quantity: number | null
+          review_decision: string | null
+          review_note: string | null
+          review_reason: string | null
+          review_recommendation: string | null
+          supplier_sku_code: string | null
         }
         Insert: {
           created_at?: string
@@ -2962,6 +3029,13 @@ export type Database = {
           sku_snapshot: string
           title_snapshot?: string | null
           unit_cost?: number | null
+          quantity_received?: number
+          recommended_quantity?: number | null
+          review_decision?: string | null
+          review_note?: string | null
+          review_reason?: string | null
+          review_recommendation?: string | null
+          supplier_sku_code?: string | null
         }
         Update: {
           created_at?: string
@@ -2974,6 +3048,13 @@ export type Database = {
           sku_snapshot?: string
           title_snapshot?: string | null
           unit_cost?: number | null
+          quantity_received?: number
+          recommended_quantity?: number | null
+          review_decision?: string | null
+          review_note?: string | null
+          review_reason?: string | null
+          review_recommendation?: string | null
+          supplier_sku_code?: string | null
         }
         Relationships: [
           {
@@ -2992,6 +3073,82 @@ export type Database = {
           },
           {
             foreignKeyName: "purchase_order_items_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_order_review_decisions: {
+        Row: {
+          actor_user_id: string | null
+          decided_at: string
+          decision: string
+          id: string
+          note: string | null
+          organization_id: string
+          purchase_order_id: string
+          quantity_after: number
+          quantity_before: number
+          reason: string | null
+          recommendation: string
+          recommended_quantity: number | null
+          sku_id: string | null
+          sku_snapshot: string
+          unit_cost: number | null
+        }
+        Insert: {
+          actor_user_id?: string | null
+          decided_at?: string
+          decision: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          purchase_order_id: string
+          quantity_after: number
+          quantity_before: number
+          reason?: string | null
+          recommendation: string
+          recommended_quantity?: number | null
+          sku_id?: string | null
+          sku_snapshot: string
+          unit_cost?: number | null
+        }
+        Update: {
+          actor_user_id?: string | null
+          decided_at?: string
+          decision?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          purchase_order_id?: string
+          quantity_after?: number
+          quantity_before?: number
+          reason?: string | null
+          recommendation?: string
+          recommended_quantity?: number | null
+          sku_id?: string | null
+          sku_snapshot?: string
+          unit_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_review_decisions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_review_decisions_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_review_decisions_sku_id_fkey"
             columns: ["sku_id"]
             isOneToOne: false
             referencedRelation: "skus"
@@ -3022,6 +3179,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         Insert: {
           approved_at?: string | null
@@ -3045,6 +3207,11 @@ export type Database = {
           status?: string
           supplier_id?: string | null
           updated_at?: string
+          exchange_rate?: number | null
+          is_import?: boolean
+          logistics_stage?: string | null
+          logistics_stage_at?: string | null
+          request_id?: string | null
         }
         Update: {
           approved_at?: string | null
@@ -3068,6 +3235,11 @@ export type Database = {
           status?: string
           supplier_id?: string | null
           updated_at?: string
+          exchange_rate?: number | null
+          is_import?: boolean
+          logistics_stage?: string | null
+          logistics_stage_at?: string | null
+          request_id?: string | null
         }
         Relationships: [
           {
@@ -3117,6 +3289,35 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_review_settings: {
+        Row: {
+          new_product_days: number
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          new_product_days?: number
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          new_product_days?: number
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_review_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -4793,6 +4994,85 @@ export type Database = {
           },
         ]
       }
+      supplier_skus: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          id: string
+          is_preferred: boolean
+          lead_time_days: number | null
+          minimum_order_quantity: number | null
+          notes: string | null
+          organization_id: string
+          pack_multiple: number | null
+          sku_id: string
+          supplier_code: string | null
+          supplier_id: string
+          unit_cost: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          id?: string
+          is_preferred?: boolean
+          lead_time_days?: number | null
+          minimum_order_quantity?: number | null
+          notes?: string | null
+          organization_id: string
+          pack_multiple?: number | null
+          sku_id: string
+          supplier_code?: string | null
+          supplier_id: string
+          unit_cost?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          id?: string
+          is_preferred?: boolean
+          lead_time_days?: number | null
+          minimum_order_quantity?: number | null
+          notes?: string | null
+          organization_id?: string
+          pack_multiple?: number | null
+          sku_id?: string
+          supplier_code?: string | null
+          supplier_id?: string
+          unit_cost?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_skus_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_skus_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_skus_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           contact_name: string | null
@@ -5959,6 +6239,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -5991,6 +6276,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -6033,10 +6323,22 @@ export type Database = {
       // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
       // gerador nunca marca coluna de retorno de `returns table` como nula
       // (classe D-133). `exported_at` entrou na reverificacao de c48fb70.
+      delete_purchase_order_cost: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       delete_supplier: {
         Args: { p_id: string }
         // D-372: devolve o caminho da logo, NULL quando nao havia (o gerador nao marcaria o nulo).
         Returns: string | null
+      }
+      delete_supplier_sku: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
       }
       get_erp_stock_cutoffs: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
@@ -6058,6 +6360,22 @@ export type Database = {
         }
         // D-397: jsonb com janela, resumo, faixas e alertas. A forma tipada
         // mora em apps/web/lib/detector-frete.ts.
+        Returns: Json
+      }
+      get_purchase_analysis: {
+        Args: {
+          p_date_to?: string
+          p_exclude_order_id?: string
+          p_organization_id: string
+          p_sku_ids: string[]
+          p_supplier_id?: string
+        }
+        Returns: Json
+      }
+      get_purchase_order_landed_cost: {
+        Args: {
+          p_purchase_order_id: string
+        }
         Returns: Json
       }
       get_shopee_ads_daily: {
@@ -6558,6 +6876,15 @@ export type Database = {
         // campanhas. A forma tipada mora em apps/web/lib/sinais-ads.ts.
         Returns: Json
       }
+      get_sku_margins: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+          p_sku_ids: string[]
+        }
+        Returns: Json
+      }
       get_sku_sales_by_marketplace_account: {
         Args: {
           p_date_from: string
@@ -6619,6 +6946,56 @@ export type Database = {
         }[]
       }
       // D-643: o ciclo de episodio da venda anomala (so service_role).
+      get_supplier_skus: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_search?: string
+          p_supplier_id: string
+        }
+        Returns: Json
+      }
+      receive_purchase_order_items: {
+        Args: {
+          p_id: string
+          p_items: Json
+          p_request_id: string
+        }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       registrar_vendas_anomalas: {
         Args: { p_detectadas: Json; p_hoje: string; p_organization_id: string }
         Returns: Json
@@ -6626,6 +7003,65 @@ export type Database = {
       remove_shopee_sku_link: {
         Args: { p_link_id: string; p_reason: string }
         Returns: undefined
+      }
+      set_purchase_order_stage: {
+        Args: {
+          p_id: string
+          p_note?: string
+          p_stage: string
+        }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      set_purchase_review_settings: {
+        Args: {
+          p_new_product_days: number
+          p_organization_id: string
+        }
+        Returns: {
+          new_product_days: number
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_review_settings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       set_shopee_sku_link: {
         Args: {
@@ -7001,10 +7437,14 @@ export type Database = {
         Args: {
           p_currency?: string
           p_destination_warehouse_name?: string
+          p_exchange_rate?: number
           p_expected_at?: string
+          p_is_import?: boolean
           p_items: Json
           p_notes?: string
           p_organization_id: string
+          p_request_id?: string
+          p_review?: Json
           p_supplier_id?: string
         }
         Returns: {
@@ -7029,6 +7469,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -8686,6 +9131,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -8735,6 +9185,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -8925,10 +9380,14 @@ export type Database = {
         Args: {
           p_currency?: string
           p_destination_warehouse_name?: string
+          p_exchange_rate?: number
           p_expected_at?: string
+          p_expected_updated_at?: string
           p_id: string
+          p_is_import?: boolean
           p_items: Json
           p_notes?: string
+          p_review?: Json
           p_supplier_id?: string
         }
         Returns: {
@@ -8953,6 +9412,11 @@ export type Database = {
           status: string
           supplier_id: string | null
           updated_at: string
+          exchange_rate: number | null
+          is_import: boolean
+          logistics_stage: string | null
+          logistics_stage_at: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -9000,6 +9464,77 @@ export type Database = {
         }
       }
     }
+      upsert_purchase_order_cost: {
+        Args: {
+          p_amount: number
+          p_currency?: string
+          p_description?: string
+          p_exchange_rate?: number
+          p_id?: string
+          p_kind: string
+          p_purchase_order_id: string
+          p_status?: string
+        }
+        Returns: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          exchange_rate: number | null
+          id: string
+          kind: string
+          organization_id: string
+          purchase_order_id: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_order_costs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      upsert_supplier_sku: {
+        Args: {
+          p_currency?: string
+          p_description?: string
+          p_is_preferred?: boolean
+          p_lead_time_days?: number
+          p_minimum_order_quantity?: number
+          p_notes?: string
+          p_pack_multiple?: number
+          p_sku_id: string
+          p_supplier_code?: string
+          p_supplier_id: string
+          p_unit_cost?: number
+        }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          id: string
+          is_preferred: boolean
+          lead_time_days: number | null
+          minimum_order_quantity: number | null
+          notes: string | null
+          organization_id: string
+          pack_multiple: number | null
+          sku_id: string
+          supplier_code: string | null
+          supplier_id: string
+          unit_cost: number | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "supplier_skus"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     Enums: {
       [_ in never]: never
     }
