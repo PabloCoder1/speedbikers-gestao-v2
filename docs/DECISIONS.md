@@ -19676,3 +19676,9 @@ A regressão cria um pedido pela interface a partir do fornecedor, abre o SKU na
 No detalhe do SKU, os links de anúncio do Mercado Livre usam `prefetch={false}` no cartão da Visão geral, nas duas entradas da linha de Anúncios e nas alterações da aba Preços. No ensaio local, desativar a pré-busca evitou 6, 51 e 50 chamadas ao Auth antes do clique, na mediana das três jornadas.
 
 As regressões conferem o anúncio esperado e o retorno à aba de origem. O destino dos links do Mercado Livre é o detalhe do anúncio. Os links da Shopee vão para uma lista filtrada e pedem medição própria. [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+
+## D-708 - O painel do fornecedor abre o pedido de compra ao clicar
+
+O link da linha de Pedidos de compra usa `prefetch={false}`. No ensaio local, a mudança evitou 3 chamadas ao Auth antes do clique no fornecedor com 2 pedidos e 49 no fornecedor com 50. A mediana do clique ficou em 121 ms na lista cheia e subiu de 107 para 116 ms na lista curta.
+
+A regressão confere o número do pedido aberto e o retorno ao mesmo fornecedor. [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)

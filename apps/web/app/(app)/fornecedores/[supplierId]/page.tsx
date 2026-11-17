@@ -330,7 +330,7 @@ export default async function FornecedorPage({
                 {orders.map((order) => (
                   <tr key={order.id}>
                     <td className="sb-mono">
-                      <Link href={`/compras/${order.id}`}>#{order.order_number}</Link>
+                      <Link href={`/compras/${order.id}`} prefetch={false}>#{order.order_number}</Link>
                     </td>
                     <td>
                       <StatusPill code={order.status} label={purchaseOrderStatusLabel(order.status)} />

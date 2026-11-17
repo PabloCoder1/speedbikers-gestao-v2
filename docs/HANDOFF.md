@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-707 abre anúncios do Mercado Livre ao clicar na Visão geral, em Anúncios e em Preços do detalhe do SKU. As chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 6, 51 e 50 para zero na mediana. A próxima medição é nos pedidos do fornecedor. Os links da Shopee no detalhe do SKU e em Devoluções pedem uma loja live de teste com dados no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+- **Sentinel.** D-708 abre os pedidos de compra do fornecedor ao clicar. Em 50 pedidos locais, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 49 para zero na mediana. As próximas medições são os links da Shopee no detalhe do SKU e em Devoluções com dados sintéticos de loja live no banco local. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

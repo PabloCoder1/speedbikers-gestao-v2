@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **609** (D-001 a D-707).
+Decisões registradas: **610** (D-001 a D-708).
 
 ## Por domínio
 
@@ -384,7 +384,7 @@ Decisões registradas: **609** (D-001 a D-707).
 - **D-703** — O Histórico de Preços abre o SKU e o anúncio ao clicar
 - **D-707** — O detalhe do SKU abre anúncios do Mercado Livre ao clicar
 
-### outros (89)
+### outros (90)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -475,6 +475,7 @@ Decisões registradas: **609** (D-001 a D-707).
 - **D-702** — As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
 - **D-705** — Os itens vinculados do pedido de compra abrem o SKU ao clicar
 - **D-706** — Os produtos do fornecedor abrem o SKU ao clicar
+- **D-708** — O painel do fornecedor abre o pedido de compra ao clicar
 
 ### processo/docs (1)
 

@@ -2111,3 +2111,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | Preços | D-707 | 0 | 0 | 15 | 26 | 160 ms (144–255) |
 
 No build anterior, as medianas de Auth atribuídas às pré-buscas de anúncio antes do clique foram 6, 51 e 50. As medianas foram calculadas por fase e também sobre o total de cada jornada. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio esperado. Voltar restaurou a mesma URL e aba nas três jornadas. Os links para anúncios da Shopee e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links de pedido no painel do fornecedor (Sentinel A65, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Dois fornecedores sintéticos receberam 2 e 50 pedidos de compra, com um item em texto livre por pedido. Cada jornada abriu o fornecedor, rolou a seção Pedidos de compra e clicou no segundo ou no 48º pedido. Houve cinco repetições medidas e um aquecimento por fornecedor e build, em contextos novos de 1440 × 900. O trace atribuiu chamadas ao Auth à jornada e à requisição que as originou. O total cobre da abertura do fornecedor até o pedido carregar. A latência do clique vai até o título principal do pedido ficar visível.
+
+| Pedidos | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 2 | 1 | 17 | 23 | 107 ms (106–111) |
+| 2 | D-708 | 0 | 0 | 14 | 20 | 116 ms (111–129) |
+| 50 | Anterior | 2 | 47 | 63 | 69 | 121 ms (108–135) |
+| 50 | D-708 | 0 | 0 | 14 | 20 | 121 ms (110–130) |
+
+Antes, as pré-buscas atingiam 2 e 48 pedidos distintos, na mediana. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas nos dois builds. Todos os cliques fizeram uma requisição RSC com HTTP 200, abriram o pedido e o item esperados e permitiram retornar ao mesmo fornecedor. A mediana do clique ficou em 121 ms na lista cheia e subiu 9 ms na lista curta. A frequência de cliques e a latência com tráfego real seguem pendentes.

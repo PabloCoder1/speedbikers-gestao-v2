@@ -260,6 +260,41 @@ test("excluir fornecedor: some de vez quando não tem pedido, e com pedido expli
   await expect(page.getByRole("link", { name: nome, exact: true })).toHaveCount(0);
 });
 
+test("painel do fornecedor: o pedido de compra abre ao clicar e a volta preserva o fornecedor", async ({ page }) => {
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && /^\/compras\/[0-9a-f-]{36}$/.test(pathname)) prefetches.push(request.url());
+  });
+
+  await login(page, "/fornecedores");
+  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+  await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}$/);
+
+  const fornecedor = page.url();
+  const pedido = page.getByRole("region", { name: "Pedidos de compra" }).getByRole("link", { name: /^#\d+$/ }).first();
+  const destino = await pedido.getAttribute("href");
+  const numero = await pedido.innerText();
+
+  expect(destino).toMatch(/^\/compras\/[0-9a-f-]{36}$/);
+  await pedido.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await pedido.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 1, name: "Pedido de compra" })).toBeVisible();
+  await expect(page.getByText(`PEDIDO ${numero}`, { exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(fornecedor);
+  await expect(pedido).toBeVisible();
+});
+
 test("painel do fornecedor: o SKU comprado abre ao clicar e o retorno mostra o mesmo fornecedor", async ({ page }) => {
   const { skuId, skuCode } = await readSeedOutput();
 

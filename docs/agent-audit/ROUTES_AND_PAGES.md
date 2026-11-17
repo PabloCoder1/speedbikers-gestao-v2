@@ -56,7 +56,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/estoque/[skuId]/ajuste` | [page.tsx](<../../apps/web/app/(app)/estoque/[skuId]/ajuste/page.tsx>) | Tabelas `skus`, `inventory_balances`, `stock_movements`, `profiles` |
 | `/estoque/movimentacoes` | [page.tsx](<../../apps/web/app/(app)/estoque/movimentacoes/page.tsx>) | RPC `get_stock_movements`, `get_stock_movements_summary`. O SKU e a origem abrem ao clicar na linha (D-701) |
 | `/fornecedores` | [page.tsx](<../../apps/web/app/(app)/fornecedores/page.tsx>) | RPC `get_suppliers_overview` |
-| `/fornecedores/[supplierId]` | [page.tsx](<../../apps/web/app/(app)/fornecedores/[supplierId]/page.tsx>) | RPC `get_supplier_overview`, `get_supplier_purchased_skus`. Tabelas `purchase_orders`, `suppliers`. O SKU comprado abre ao clicar (D-706) |
+| `/fornecedores/[supplierId]` | [page.tsx](<../../apps/web/app/(app)/fornecedores/[supplierId]/page.tsx>) | RPC `get_supplier_overview`, `get_supplier_purchased_skus`. Tabelas `purchase_orders`, `suppliers`. O SKU comprado e o pedido abrem ao clicar (D-706, D-708) |
 | `/fornecedores/[supplierId]/editar` | [page.tsx](<../../apps/web/app/(app)/fornecedores/[supplierId]/editar/page.tsx>) | Tabelas `suppliers`, `purchase_orders` |
 | `/fornecedores/novo` | [page.tsx](<../../apps/web/app/(app)/fornecedores/novo/page.tsx>) | Ver a entrada e seus imports |
 | `/importacoes` | [page.tsx](<../../apps/web/app/(app)/importacoes/page.tsx>) | Tabelas `erp_import_batches` |
