@@ -9,3 +9,5 @@ export * from "./sales-trend.js";
 export * from "./sku-replenishment.js";
 export * from "./stock-state.js";
 export * from "./usable-stock.js";
+export * from "./purchase-fit.js";
+export * from "./sku-margin.js";
