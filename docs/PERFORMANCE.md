@@ -2083,3 +2083,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | 50 | D-705 | 0 | 0 | 11 | 23 | 152 ms (142–181) |
 
 Antes da mudança, as pré-buscas atingiam 2 e 48 destinos distintos, respectivamente, na mediana. O trace registrou zero chamadas REST de dados nessas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, o retorno abriu o mesmo pedido e o item em texto livre apareceu sem link. A mediana do clique subiu 27 ms no rascunho menor e 6 ms no maior. A latência e a frequência de cliques com tráfego real seguem pendentes.
+
+### Prefetch dos links de SKU nos produtos do fornecedor (Sentinel A63, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Dois fornecedores sintéticos tinham um pedido cada com 2 e 49 SKUs vinculados, mais um item em texto livre em cada. O segundo encheu as 50 linhas da seção SKUs já comprados. Cada jornada abriu o fornecedor, rolou a seção e clicou no segundo ou no 48º SKU vinculado. Por build e fornecedor foram cinco repetições medidas e um aquecimento, em contextos novos de 1440 × 900. O trace atribuiu as chamadas ao Auth à jornada e à requisição que as originou. O total vai da abertura do fornecedor até o SKU carregar. O tempo do clique termina quando o título principal do SKU fica visível.
+
+| Links de SKU | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 0 | 4 | 20 | 32 | 134 ms (127–151) |
+| 2 | D-706 | 0 | 0 | 16 | 28 | 119 ms (117–143) |
+| 49 | Anterior | 0 | 53 | 69 | 81 | 138 ms (131–221) |
+| 49 | D-706 | 0 | 0 | 16 | 28 | 132 ms (118–148) |
+
+Antes, o trace registrou pré-buscas para 2 e 49 destinos distintos. Em ambos os builds foram zero as chamadas REST de dados atribuídas a essas pré-buscas. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, voltar abriu o mesmo fornecedor e o item em texto livre apareceu sem link. A medição dos links de pedidos de compra, a latência e o volume de cliques com tráfego real seguem pendentes.

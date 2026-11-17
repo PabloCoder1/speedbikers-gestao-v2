@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_SUPPLIER, E2E_SUPPLIER_INATIVO } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/fornecedores` — a Base de Fornecedores depois da migração para o frame
@@ -257,4 +258,52 @@ test("excluir fornecedor: some de vez quando não tem pedido, e com pedido expli
 
   await expect(page).toHaveURL(/\/fornecedores$/);
   await expect(page.getByRole("link", { name: nome, exact: true })).toHaveCount(0);
+});
+
+test("painel do fornecedor: o SKU comprado abre ao clicar e o retorno mostra o mesmo fornecedor", async ({ page }) => {
+  const { skuId, skuCode } = await readSeedOutput();
+
+  await login(page, "/fornecedores");
+  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+  await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}$/);
+
+  const fornecedor = page.url();
+  await page.getByRole("link", { name: "Novo pedido", exact: true }).click();
+
+  const linha = page.locator("tbody tr").first();
+  const busca = linha.getByPlaceholder("SKU ou nome…");
+
+  await busca.scrollIntoViewIfNeeded();
+  await busca.fill(skuCode);
+  await expect(page.getByRole("option", { selected: true }).filter({ hasText: skuCode })).toBeVisible();
+  await busca.press("Enter");
+  await linha.locator('input[type="number"]').first().fill("2");
+  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
+  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+
+  const destino = `/skus/${skuId}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+    if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
+  });
+
+  await page.goto(fornecedor);
+  const sku = page.getByRole("region", { name: "SKUs já comprados" }).getByRole("link", { name: skuCode, exact: true });
+
+  await expect(sku).toHaveAttribute("href", destino);
+  await sku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await sku.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByText(`SKU ${skuCode}`, { exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(fornecedor);
+  await expect(sku).toBeVisible();
 });

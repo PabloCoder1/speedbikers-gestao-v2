@@ -19664,3 +19664,9 @@ O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca,
 No detalhe do pedido, o link do SKU vinculado usa `prefetch={false}`. Em rascunhos locais com 2 e 50 SKUs, a mudança evitou 4 e 51 chamadas ao Auth antes do clique, na mediana. A mediana do clique aumentou 27 ms no pedido menor e 6 ms no maior. O pedido maior motivou aplicar o comportamento a todos os links de SKU da tabela.
 
 Itens em texto livre aparecem pelo código registrado no pedido. A regressão cria um rascunho pela interface, abre o SKU vinculado e verifica o retorno ao mesmo pedido. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+
+## D-706 - Os produtos do fornecedor abrem o SKU ao clicar
+
+Na seção SKUs já comprados, rolar até os itens disparava pré-buscas dos SKUs vinculados. Em duas listas locais com 2 e 49 links, a mediana de chamadas ao Auth atribuídas às pré-buscas foi de 4 e 53. Com `prefetch={false}` nos links de SKU, os dois casos chegaram a zero antes do clique. A medição local do clique foi de 134 para 119 ms e de 138 para 132 ms na mediana.
+
+A regressão cria um pedido pela interface a partir do fornecedor, abre o SKU na seção de produtos e verifica o retorno ao fornecedor. A seção Pedidos de compra será medida à parte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)

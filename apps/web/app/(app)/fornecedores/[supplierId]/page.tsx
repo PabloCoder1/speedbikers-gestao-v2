@@ -375,7 +375,11 @@ export default async function FornecedorPage({
                     <tr key={`${row.sku_id ?? "livre"}:${row.sku}`}>
                       <td className="sb-mono">
                         {/* Item digitado livre não tem vínculo — vira texto, não link morto. */}
-                        {row.sku_id === null ? row.sku : <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>}
+                        {row.sku_id === null ? row.sku : (
+                          <Link href={`/skus/${row.sku_id}`} prefetch={false}>
+                            {row.sku}
+                          </Link>
+                        )}
                         {row.title !== null && (
                           <div
                             style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontFamily: "inherit" }}

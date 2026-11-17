@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-705 abre o SKU vinculado no detalhe do pedido de compra ao clicar. Em um rascunho local com 50 SKUs, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 51 para zero na mediana. A próxima medição é nos produtos do fornecedor, seguida pelas abas do SKU. O painel de devoluções da Shopee ainda pede uma fixture de loja real no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+- **Sentinel.** D-706 abre o SKU ao clicar na seção SKUs já comprados do fornecedor. Na tabela cheia, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 53 para zero na mediana. As próximas medições são nas abas do SKU, na lista de pedidos do fornecedor e no painel de devoluções da Shopee, que pede uma loja live com devoluções no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
