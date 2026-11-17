@@ -35,7 +35,16 @@ export function classificarParaRevisao(avaliacao: AvaliacaoSku | null): ClasseRe
   if (fit.recommendation === "RETIRAR") return "RETIRAR";
   if (fit.recommendation === "REDUZIR" || fit.recommendation === "REVISAR") return "AVALIAR";
   if (fit.marginBand === "NEGATIVA" || fit.marginBand === "ABAIXO_DO_MINIMO") return "MARGEM";
-  if (fit.recommendation === null || fit.situation === "DADOS_INSUFICIENTES") return "SEM_DADOS";
+  // "Recomendado para compra" exige NÚMERO: produto recente ou sem base para
+  // quantidade não é recomendação, é falta de conclusão confiável.
+  if (
+    fit.recommendation === null ||
+    fit.recommendedQuantity === null ||
+    fit.situation === "DADOS_INSUFICIENTES" ||
+    fit.situation === "PRODUTO_RECENTE"
+  ) {
+    return "SEM_DADOS";
+  }
 
   return "COMPRAR";
 }

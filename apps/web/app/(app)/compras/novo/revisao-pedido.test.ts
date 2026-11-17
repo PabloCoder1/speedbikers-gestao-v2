@@ -102,6 +102,8 @@ describe("classificarParaRevisao", () => {
     expect(classificarParaRevisao(avaliacao(ALTO_GIRO, 100, 0.04))).toBe("MARGEM");
     expect(classificarParaRevisao(avaliacao({ history_days_90: 30 }, 10))).toBe("SEM_DADOS");
     expect(classificarParaRevisao(null)).toBe("SEM_DADOS");
+    // Produto recente nunca é "recomendado para compra" sem número: é sem conclusão.
+    expect(classificarParaRevisao(avaliacao({ ...BAIXO_GIRO, days_since_first_sale: 20 }, 10))).toBe("SEM_DADOS");
   });
 });
 

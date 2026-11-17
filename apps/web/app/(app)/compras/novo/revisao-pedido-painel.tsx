@@ -328,7 +328,7 @@ export function RevisaoPedido(p: Props): ReactNode {
             <div className="sb-rev-grupo">
               <button
                 type="button"
-                className="sb-rev-alternar"
+                className="sb-text-button"
                 aria-expanded={verRecomendados}
                 onClick={() => {
                   setVerRecomendados((v) => !v);
