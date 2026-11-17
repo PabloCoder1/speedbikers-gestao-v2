@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { E2E_LISTING_TRAFFIC } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_TRAFFIC } from "./constants.js";
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -162,6 +162,56 @@ test("atalhos de abas do anúncio: o menu Ações abre as republicações sob de
   await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "");
   await expect(republicacoes).toBeVisible();
 });
+
+for (const { item, rotulo, destino, titulo, busca } of [
+  {
+    item: E2E_LISTING_TRAFFIC.itemId,
+    rotulo: "Ver na Central de Preços",
+    destino: "/precos",
+    titulo: /^Histórico de Preços$/,
+    busca: true,
+  },
+  {
+    item: E2E_LISTINGS[1].itemId,
+    rotulo: "Vincular a um SKU",
+    destino: "/vinculacoes",
+    titulo: /^Integridade de Catálogo$/,
+    busca: false,
+  },
+]) {
+  test(`menu Ações entre telas: ${rotulo} carrega no clique`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const origem = `/anuncios/${item}`;
+    const query = busca ? `?busca=${item}` : "";
+    const prefetches = contarPrefetches(page, destino);
+    const menu = page.locator("summary").filter({ hasText: /^Ações/u });
+    const link = page.getByRole("link", { name: rotulo, exact: true });
+
+    await login(page, origem);
+    await expect(page.getByRole("heading", { level: 1, name: "Detalhe do anúncio", exact: true })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    const antesDeAbrir = prefetches();
+
+    await menu.click();
+    await expect(link).toHaveAttribute("href", destino + query);
+    await link.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches()).toBe(antesDeAbrir);
+
+    await segurarTela(page, destino);
+    await link.click();
+    await esperandoNaTelaAnterior(page, "Detalhe do anúncio");
+    await chegou(page, titulo);
+    await expect(page).toHaveURL((url) => url.pathname === destino && url.search === query);
+    if (busca) {
+      await expect(page.getByRole("searchbox", { name: "Buscar por MLB, SKU ou título" })).toHaveValue(item);
+    }
+
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === origem && url.search === "");
+    await expect(menu).toBeVisible();
+  });
+}
 
 test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {
   const prefetches = contarPrefetches(page, "/estoque");

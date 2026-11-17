@@ -492,3 +492,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-711 (A68).** A comparação de seis jornadas registrou zero chamadas ao Auth por pré-busca de outras abas após o ajuste. Antes eram duas no SKU e três no anúncio. Um clique abriu o destino em uma requisição RSC, marcou a aba ativa e a volta restaurou a Visão geral. [Medição](../PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
 - **Validação.** Os dois casos novos acusaram duas e três pré-buscas no build anterior. No build corrigido passaram os 30 casos Playwright de Troca de tela, Detalhe do SKU e Detalhe do anúncio, incluindo Decisões e Histórico pelo menu Ações.
 - **Próxima etapa.** Medir os links para outras telas no menu Ações do anúncio. A abertura do menu elevou o Auth antes do clique de 9 para 21 na comparação corrigida. Esta etapa alterou as duas páginas e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch dos links do menu Ações do anúncio
+
+- **Base.** `codex/sentinel-audit` em `07365a48`.
+- **D-712 (A69).** Nos seis caminhos, abrir o menu passou de medianas de 8 a 10 chamadas ao Auth por pré-busca para zero. Cada clique abriu o destino esperado em uma requisição RSC. O MLB entrou na busca de Preços e de Anúncios, e a volta restaurou a Visão geral do anúncio. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+- **Validação.** Os dois novos casos detectaram pré-buscas no build anterior após levar o link à área visível. No corrigido passaram os 36 casos Playwright de navegação, Detalhe do anúncio, anúncio excluído, Anúncios e Preços. Os novos casos atrasaram a requisição e conferiram o indicador durante a navegação.
+- **Próxima etapa.** Medir o atalho de Diagnóstico para Anúncios no detalhe do SKU. D-712 alterou uma página e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

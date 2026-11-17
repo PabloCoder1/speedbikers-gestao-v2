@@ -2165,3 +2165,18 @@ Comparação de dois builds de produção no Chromium com sessão ADMIN e Supaba
 | Anúncio · Histórico pelo menu Ações | 3 → 0 | 24 → 21 | 126 ms (109–136) | 122 ms (109–138) |
 
 As pré-buscas de outras abas geraram zero chamadas REST de dados nos dois builds. Cada clique fez uma requisição RSC com HTTP 200, marcou a aba ativa e permitiu voltar à Visão geral sem recarregar o documento na troca. No build corrigido, abrir o menu Ações elevou o total de Auth antes do clique de 9 para 21 em comparação com o atalho direto de Republicações. O trace mostrou ali pré-buscas adicionais para SKU, Preços, Anúncios e Central de Ações. A frequência e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links do menu Ações do anúncio (Sentinel A69, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN e Supabase local isolado. Foram usados dois anúncios do seed padrão, um com SKU e outro sem vínculo. Cada jornada esperou a Visão geral com o menu fechado, abriu Ações e então clicou no destino. Houve cinco repetições medidas e um aquecimento por jornada e build, em contextos novos de 1440 × 900. O trace distinguiu os destinos do menu, inclusive Anúncios com e sem busca pelo MLB. A latência vai do clique até o título principal do destino ficar visível.
+
+| Destino | Auth de prefetch ao abrir o menu | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-712, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| SKU vinculado | 8 → 0 | 18 → 10 | 137 ms (105–153) | 111 ms (107–132) |
+| Preços filtrado pelo MLB | 10 → 0 | 20 → 10 | 139 ms (127–214) | 121 ms (120–141) |
+| Anúncios filtrado pelo MLB | 10 → 0 | 21 → 10 | 145 ms (132–213) | 130 ms (123–135) |
+| Central de Ações | 8 → 0 | 18 → 10 | 197 ms (191–206) | 180 ms (177–186) |
+| Catálogo | 8 → 0 | 18 → 10 | 169 ms (131–194) | 125 ms (118–137) |
+| Vinculações | 8 → 0 | 18 → 10 | 132 ms (119–153) | 132 ms (127–140) |
+
+Com o menu fechado, o total era de nove chamadas ao Auth nos dois builds. No corrigido, abrir Ações acrescentou uma chamada de `/api/vitals` em todas as amostras, e zero pré-buscas dos destinos. As pré-buscas de destinos do menu geraram zero chamadas REST de dados nos dois builds. Cada clique teve uma requisição RSC com HTTP 200 e voltou à mesma Visão geral. Preços e Anúncios exibiram o MLB esperado na busca e na lista. A frequência de uso do menu e a latência com tráfego real seguem pendentes.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **613** (D-001 a D-711).
+Decisões registradas: **614** (D-001 a D-712).
 
 ## Por domínio
 
@@ -262,7 +262,7 @@ Decisões registradas: **613** (D-001 a D-711).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 
-### mercado-livre (122)
+### mercado-livre (123)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -386,6 +386,7 @@ Decisões registradas: **613** (D-001 a D-711).
 - **D-707** — O detalhe do SKU abre anúncios do Mercado Livre ao clicar
 - **D-709** — Os links de anúncio e devolução da Shopee carregam ao clicar
 - **D-710** — As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+- **D-712** — Os links para outras telas no menu Ações do anúncio carregam ao clicar
 
 ### outros (90)
 

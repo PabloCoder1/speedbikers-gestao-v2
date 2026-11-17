@@ -721,28 +721,28 @@ export default async function AnuncioPage({
               {row.sku_id === null ? (
                 // D-634: o excluído não se vincula (os diálogos recusam).
                 excluidoEm === null && (
-                  <Link className="sb-menu-item" href="/vinculacoes">
+                  <Link className="sb-menu-item" href="/vinculacoes" prefetch={false}>
                     Vincular a um SKU
                   </Link>
                 )
               ) : (
-                <Link className="sb-menu-item" href={`/skus/${row.sku_id}`}>
+                <Link className="sb-menu-item" href={`/skus/${row.sku_id}`} prefetch={false}>
                   Abrir o SKU {row.skus?.sku ?? ""}
                 </Link>
               )}
-              <Link className="sb-menu-item" href={`/precos?busca=${encodeURIComponent(row.item_id)}`}>
+              <Link className="sb-menu-item" href={`/precos?busca=${encodeURIComponent(row.item_id)}`} prefetch={false}>
                 Ver na Central de Preços
               </Link>
-              <Link className="sb-menu-item" href={`/anuncios?busca=${encodeURIComponent(row.item_id)}`}>
+              <Link className="sb-menu-item" href={`/anuncios?busca=${encodeURIComponent(row.item_id)}`} prefetch={false}>
                 Achar na lista de anúncios
               </Link>
               <LinkDeFiltro className="sb-menu-item" href={href("historico")} prefetch={false}>
                 Linha do tempo e republicações
               </LinkDeFiltro>
-              <Link className="sb-menu-item" href="/acoes">
+              <Link className="sb-menu-item" href="/acoes" prefetch={false}>
                 Ver ações abertas
               </Link>
-              <Link className="sb-menu-item" href="/anuncios">
+              <Link className="sb-menu-item" href="/anuncios" prefetch={false}>
                 Voltar ao catálogo
               </Link>
             </div>

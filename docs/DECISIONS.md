@@ -19700,3 +19700,9 @@ As abas usam o indicador de atualização no lugar. As regressões atrasam a res
 Foi aplicado `prefetch={false}` aos atalhos de Anúncios e Decisões no SKU e aos de Vendas, Tráfego e Histórico no anúncio, incluindo o link Linha do tempo e republicações no menu Ações. A comparação local registrou duas chamadas ao Auth a menos por jornada no SKU e três no anúncio. Todos os destinos continuaram a abrir com uma única resposta RSC e preservaram a aba no histórico de navegação.
 
 As regressões conferem os destinos dos links antes do clique e exercitam a abertura de Decisões e de Republicações pelo menu. As pré-buscas para outras telas que aparecem ao abrir o menu Ações ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
+
+## D-712 - Os links para outras telas no menu Ações do anúncio carregam ao clicar
+
+Os links para SKU ou Vinculações, Central de Preços, busca de Anúncios, Central de Ações e catálogo usam `prefetch={false}` nesse menu. As seis jornadas locais mediram 8 a 10 chamadas ao Auth por pré-busca na abertura, conforme o destino, e zero no build corrigido. Os atalhos filtrados levaram o MLB à busca e o retorno restaurou a Visão geral do anúncio.
+
+As regressões verificam Preços e Vinculações, com atraso na requisição de navegação para conferir o indicador de atualização. [Medição](PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
