@@ -2,6 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 
 import { E2E_ANOMALIA, E2E_SHOPEE_ESPERADO, E2E_SHOPEE_ITEMS, E2E_SHOPEE_LEITURA_MINUTOS, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -327,6 +328,99 @@ test("/anuncios/shopee: vincular à mão a variação fora do catálogo, e remov
   await faixaDiz("Vinculados", E2E_SHOPEE_ESPERADO.vinculados);
   await faixaDiz("SKU fora do catálogo", E2E_SHOPEE_ESPERADO.skuForaDoCatalogo);
 });
+
+for (const caso of [
+  { nome: "item sem variação", item: skuNoItem, modelo: null, nomeDaLinha: skuNoItem.nome, origem: E2E_SKU_CODE, destino: E2E_ANOMALIA.sku },
+  { nome: "variação", item: duasVariacoes, modelo: variacaoVinculada.modelId, nomeDaLinha: variacaoVinculada.nome, origem: E2E_ANOMALIA.sku, destino: E2E_SKU_CODE },
+]) {
+  test(`/anuncios/shopee: trocar e remover o vínculo (${caso.nome}) atualiza os dois SKUs e o retorno pelo histórico`, async ({ page }) => {
+    test.setTimeout(90_000);
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+    const db = clienteDeServico();
+    const seed = await readSeedOutput();
+    const item = await db.from("shopee_items").select("shopee_shop_id")
+      .eq("organization_id", seed.organizationId).eq("item_id", caso.item.itemId).single();
+    if (item.error !== null) throw new Error(item.error.message);
+
+    const linha = () => tabela(page).getByRole("row", { name: new RegExp(caso.nomeDaLinha) });
+    const linhaNoSku = () => page.getByRole("table", { name: "Anúncios da Shopee deste SKU", exact: true })
+      .getByRole("row", { name: new RegExp(caso.nomeDaLinha) });
+    const voltarALista = () => page.getByRole("region", { name: "Anúncios da Shopee", exact: true })
+      .getByRole("link", { name: "Todos os anúncios da Shopee →", exact: true }).click();
+
+    async function abrirSku(codigo: string, via: string): Promise<string> {
+      const link = linha().getByRole("link", { name: codigo, exact: true });
+      const href = await link.getAttribute("href");
+      if (href === null) throw new Error("O vínculo precisa levar ao SKU.");
+      await link.click();
+      await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios", exact: true }).click();
+      await expect(linhaNoSku()).toContainText(via);
+      return href + "?aba=anuncios";
+    }
+
+    async function vincular(codigo: string, botao: string): Promise<void> {
+      await linha().getByRole("button", { name: botao, exact: true }).click();
+      const popup = page.getByRole("dialog");
+      await popup.getByLabel("SKU de destino").fill(codigo);
+      await popup.getByRole("option").filter({ hasText: codigo }).first().click();
+      await popup.getByRole("button", { name: botao === "Trocar SKU" ? botao : "Vincular", exact: true }).click();
+      await expect(popup).toHaveCount(0);
+      await expect(linha()).toContainText("vínculo manual");
+      await expect(linha().getByRole("link", { name: codigo, exact: true })).toBeVisible();
+      await expect(celula(page, "Vinculados").getByText(String(E2E_SHOPEE_ESPERADO.vinculados), { exact: true })).toBeVisible();
+    }
+
+    async function conferirMudanca(anterior: string, codigo: string, via: string): Promise<string> {
+      // Volta a uma aba já visitada, usando o histórico do router.
+      await page.goBack();
+      await expect(page).toHaveURL((u) => u.pathname + u.search === anterior);
+      await expect(page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios", exact: true }))
+        .toHaveAttribute("aria-current", "page");
+      await expect(page.getByRole("region", { name: "Anúncios da Shopee", exact: true })).toBeVisible();
+      await expect(page.getByText("Não foi possível carregar os anúncios da Shopee", { exact: true })).toHaveCount(0);
+      await expect(linhaNoSku()).toHaveCount(0);
+      await page.goForward();
+      await expect(page).toHaveURL((u) => u.pathname === "/anuncios/shopee");
+      const atual = await abrirSku(codigo, via);
+      await voltarALista();
+      return atual;
+    }
+
+    try {
+      await login(page, "/anuncios/shopee");
+      await expect(linha()).toContainText("pelo SKU do anúncio");
+      let anterior = await abrirSku(caso.origem, "pelo SKU do anúncio");
+      await voltarALista();
+
+      await vincular(caso.destino, "Vincular a outro SKU");
+      anterior = await conferirMudanca(anterior, caso.destino, "vínculo manual");
+      await vincular(caso.origem, "Trocar SKU");
+      anterior = await conferirMudanca(anterior, caso.origem, "vínculo manual");
+      await vincular(caso.destino, "Trocar SKU");
+      anterior = await conferirMudanca(anterior, caso.destino, "vínculo manual");
+
+      await linha().getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+      const confirmacao = page.getByRole("dialog");
+      const remover = confirmacao.getByRole("button", { name: "Remover vínculo manual", exact: true });
+      await expect(confirmacao).toContainText(caso.origem);
+      await expect(remover).toBeDisabled();
+      await confirmacao.getByLabel("Motivo da remoção").fill("e2e: restaurar o SKU do anúncio após trocar o vínculo");
+      await remover.click();
+      await expect(confirmacao).toHaveCount(0);
+      await expect(linha()).toContainText("pelo SKU do anúncio");
+      await expect(linha().getByRole("button", { name: "Trocar SKU", exact: true })).toHaveCount(0);
+      await conferirMudanca(anterior, caso.origem, "pelo SKU do anúncio");
+    } finally {
+      // Restaura só esta unidade caso uma asserção interrompa a jornada.
+      const limpeza = db.from("shopee_sku_links").delete().eq("organization_id", seed.organizationId)
+        .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", caso.item.itemId);
+      const resultado = await (caso.modelo === null ? limpeza.is("model_id", null) : limpeza.eq("model_id", caso.modelo));
+      expect.soft(resultado.error).toBeNull();
+    }
+  });
+}
 
 /** O seletor de marketplace do cabeçalho (D-431), pelo nome acessível dele. */
 function seletorDeMarketplace(page: Page) {
