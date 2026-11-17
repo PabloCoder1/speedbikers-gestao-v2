@@ -48,6 +48,15 @@ async function esperaLinhas(page: Page, quantidade: number): Promise<void> {
   await expect(tabela(page).getByRole("row")).toHaveCount(quantidade + 1);
 }
 
+/**
+ * Vincular preenche o SKU dos itens de pedido ainda sem SKU, e remover não
+ * desfaz: o pedido guarda a atribuição. A mesma resolução do fim do seed
+ * devolve os pedidos da loja ao fixture, que `vendas-shopee.spec.ts` conta.
+ */
+function restaurarPedidosDoSeed(db: ReturnType<typeof clienteDeServico>, lojaId: string) {
+  return db.rpc("shopee_resolve_order_item_skus", { p_shopee_shop_id: lojaId });
+}
+
 const { skuNoItem, duasVariacoes, semSku, aguardando, apagado } = E2E_SHOPEE_ITEMS;
 const [variacaoVinculada, variacaoFora] = duasVariacoes.variacoes;
 
@@ -480,7 +489,9 @@ for (const operacao of ["vincular", "remover"] as const) {
     } finally {
       const limpeza = await db.from("shopee_sku_links").delete().eq("organization_id", seed.organizationId)
         .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null);
+      const pedidos = await restaurarPedidosDoSeed(db, item.data.shopee_shop_id);
       expect.soft(limpeza.error).toBeNull();
+      expect.soft(pedidos.error).toBeNull();
     }
   });
 }
@@ -546,8 +557,10 @@ test("/anuncios/shopee: recusa de catálogo permite tentar de novo e remoção e
     const restaurado = await mudarStatus(item.data.item_status);
     const limpeza = await db.from("shopee_sku_links").delete().eq("organization_id", seed.organizationId)
       .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null);
+    const pedidos = await restaurarPedidosDoSeed(db, item.data.shopee_shop_id);
     expect.soft(restaurado.error).toBeNull();
     expect.soft(limpeza.error).toBeNull();
+    expect.soft(pedidos.error).toBeNull();
     await outraSessao.close();
   }
 });

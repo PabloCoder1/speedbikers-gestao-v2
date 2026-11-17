@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_SUPPLIER, E2E_SUPPLIER_INATIVO } from "./constants.js";
+import { E2E_PURCHASE_ORDERS, E2E_SUPPLIER, E2E_SUPPLIER_INATIVO } from "./constants.js";
 import { login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -295,50 +296,67 @@ test("painel do fornecedor: o pedido de compra abre ao clicar e a volta preserva
   await expect(pedido).toBeVisible();
 });
 
+/**
+ * O seed não tem item de pedido com SKU vinculado, e um pedido novo não pode
+ * ser apagado (o histórico do pedido é só de inclusão): sobraria na gaveta do
+ * fornecedor de `gavetas.spec.ts`. O caso vincula um item do seed ao SKU de
+ * teste e desfaz no fim.
+ */
 test("painel do fornecedor: o SKU comprado abre ao clicar e o retorno mostra o mesmo fornecedor", async ({ page }) => {
-  const { skuId, skuCode } = await readSeedOutput();
+  const { skuId, skuCode, organizationId } = await readSeedOutput();
+  const supabase = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
 
-  await login(page, "/fornecedores");
-  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
-  await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}$/);
+  if (!["127.0.0.1", "localhost"].includes(supabase.hostname)) throw new Error("Este teste exige Supabase local.");
 
-  const fornecedor = page.url();
-  await page.getByRole("link", { name: "Novo pedido", exact: true }).click();
+  const db = clienteDeServico();
+  const [primeiroItem] = E2E_PURCHASE_ORDERS[0].itens;
 
-  const linha = page.locator("tbody tr").first();
-  const busca = linha.getByPlaceholder("SKU ou nome…");
+  const item = await db
+    .from("purchase_order_items")
+    .select("id, sku_id")
+    .eq("organization_id", organizationId)
+    .eq("sku_snapshot", primeiroItem.sku)
+    .single();
 
-  await busca.scrollIntoViewIfNeeded();
-  await busca.fill(skuCode);
-  await expect(page.getByRole("option", { selected: true }).filter({ hasText: skuCode })).toBeVisible();
-  await busca.press("Enter");
-  await linha.locator('input[type="number"]').first().fill("2");
-  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
-  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+  if (item.error !== null) throw new Error(item.error.message);
 
-  const destino = `/skus/${skuId}`;
-  const prefetches: string[] = [];
+  const vinculado = await db.from("purchase_order_items").update({ sku_id: skuId }).eq("id", item.data.id);
 
-  page.on("request", (request) => {
-    const headers = request.headers();
-    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+  if (vinculado.error !== null) throw new Error(vinculado.error.message);
 
-    if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
-  });
+  try {
+    await login(page, "/fornecedores");
+    await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+    await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}$/);
 
-  await page.goto(fornecedor);
-  const sku = page.getByRole("region", { name: "SKUs já comprados" }).getByRole("link", { name: skuCode, exact: true });
+    const fornecedor = page.url();
+    const destino = `/skus/${skuId}`;
+    const prefetches: string[] = [];
 
-  await expect(sku).toHaveAttribute("href", destino);
-  await sku.scrollIntoViewIfNeeded();
-  await page.waitForLoadState("networkidle");
-  expect(prefetches).toEqual([]);
+    page.on("request", (request) => {
+      const headers = request.headers();
+      const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
 
-  await sku.click();
-  await expect(page).toHaveURL((url) => url.pathname === destino);
-  await expect(page.getByText(`SKU ${skuCode}`, { exact: true })).toBeVisible();
+      if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
+    });
 
-  await page.goBack();
-  await expect(page).toHaveURL(fornecedor);
-  await expect(sku).toBeVisible();
+    const sku = page.getByRole("region", { name: "SKUs já comprados" }).getByRole("link", { name: skuCode, exact: true });
+
+    await expect(sku).toHaveAttribute("href", destino);
+    await sku.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches).toEqual([]);
+
+    await sku.click();
+    await expect(page).toHaveURL((url) => url.pathname === destino);
+    await expect(page.getByText(`SKU ${skuCode}`, { exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(fornecedor);
+    await expect(sku).toBeVisible();
+  } finally {
+    const restaurado = await db.from("purchase_order_items").update({ sku_id: item.data.sku_id }).eq("id", item.data.id);
+
+    expect.soft(restaurado.error).toBeNull();
+  }
 });
