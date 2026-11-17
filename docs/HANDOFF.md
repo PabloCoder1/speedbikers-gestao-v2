@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-706 abre o SKU ao clicar na seção SKUs já comprados do fornecedor. Na tabela cheia, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 53 para zero na mediana. As próximas medições são nas abas do SKU, na lista de pedidos do fornecedor e no painel de devoluções da Shopee, que pede uma loja live com devoluções no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
+- **Sentinel.** D-707 abre anúncios do Mercado Livre ao clicar na Visão geral, em Anúncios e em Preços do detalhe do SKU. As chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 6, 51 e 50 para zero na mediana. A próxima medição é nos pedidos do fornecedor. Os links da Shopee no detalhe do SKU e em Devoluções pedem uma loja live de teste com dados no banco local. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

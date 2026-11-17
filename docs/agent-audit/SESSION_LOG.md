@@ -457,3 +457,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-706 (A63).** Com 2 e 49 links de SKU, as chamadas ao Auth por pré-busca antes do clique caíram de 4 e 53 para zero na mediana. O clique abriu o SKU certo em uma requisição RSC. A comparação identificou cada jornada no trace. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
 - **Validação.** O caso novo detectou duas pré-buscas no build anterior. Após recriar o banco local e carregar o seed padrão, passaram os 26 casos Playwright de Fornecedores, Compras, Pedido de compra e Detalhe do SKU. O check e o build passaram.
 - **Próxima etapa.** Medir as abas do SKU e os links da seção Pedidos de compra do fornecedor. O painel de devoluções da Shopee pede uma loja live com devoluções no banco local. Publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch de anúncios do Mercado Livre no detalhe do SKU
+
+- **Base.** `codex/sentinel-audit` em `1dcf35aa`.
+- **D-707 (A64).** As chamadas ao Auth por pré-busca antes do clique caíram de 6 para zero na Visão geral, de 51 para zero em Anúncios e de 50 para zero em Preços, na mediana. O clique abriu o anúncio esperado em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+- **Validação.** Os três casos novos detectaram duas pré-buscas cada no build anterior. No build corrigido passaram os 26 casos Playwright de Detalhe do SKU, Detalhe do anúncio e Preços com o seed padrão em banco recriado. Passaram o check, o build, as guardas de leituras em série e navegação e o `docs:check`.
+- **Próxima etapa.** Medir os pedidos do fornecedor. Os links da Shopee no detalhe do SKU e em Devoluções seguem na fila de medição local. Publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

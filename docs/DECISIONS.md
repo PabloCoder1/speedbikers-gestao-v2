@@ -19670,3 +19670,9 @@ Itens em texto livre aparecem pelo código registrado no pedido. A regressão cr
 Na seção SKUs já comprados, rolar até os itens disparava pré-buscas dos SKUs vinculados. Em duas listas locais com 2 e 49 links, a mediana de chamadas ao Auth atribuídas às pré-buscas foi de 4 e 53. Com `prefetch={false}` nos links de SKU, os dois casos chegaram a zero antes do clique. A medição local do clique foi de 134 para 119 ms e de 138 para 132 ms na mediana.
 
 A regressão cria um pedido pela interface a partir do fornecedor, abre o SKU na seção de produtos e verifica o retorno ao fornecedor. A seção Pedidos de compra será medida à parte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
+
+## D-707 - O detalhe do SKU abre anúncios do Mercado Livre ao clicar
+
+No detalhe do SKU, os links de anúncio do Mercado Livre usam `prefetch={false}` no cartão da Visão geral, nas duas entradas da linha de Anúncios e nas alterações da aba Preços. No ensaio local, desativar a pré-busca evitou 6, 51 e 50 chamadas ao Auth antes do clique, na mediana das três jornadas.
+
+As regressões conferem o anúncio esperado e o retorno à aba de origem. O destino dos links do Mercado Livre é o detalhe do anúncio. Os links da Shopee vão para uma lista filtrada e pedem medição própria. [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)

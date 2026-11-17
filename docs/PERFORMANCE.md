@@ -2096,3 +2096,18 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | 49 | D-706 | 0 | 0 | 16 | 28 | 132 ms (118–148) |
 
 Antes, o trace registrou pré-buscas para 2 e 49 destinos distintos. Em ambos os builds foram zero as chamadas REST de dados atribuídas a essas pré-buscas. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, voltar abriu o mesmo fornecedor e o item em texto livre apareceu sem link. A medição dos links de pedidos de compra, a latência e o volume de cliques com tráfego real seguem pendentes.
+
+### Prefetch dos links do Mercado Livre no detalhe do SKU (Sentinel A64, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Um SKU sintético recebeu 50 anúncios distintos e uma alteração de preço por anúncio. A Visão geral mostrou os primeiros quatro, e as tabelas de Anúncios e Preços exibiram 50 linhas cada. Cada jornada abriu uma aba, rolou até os links e clicou no quarto anúncio na Visão geral ou na 41ª linha nas duas tabelas. Na aba Anúncios, o clique foi no link Ver. Houve cinco repetições medidas e um aquecimento por aba e build, em contextos novos de 1440 × 900. O trace identificou cada jornada e atribuiu as chamadas ao Auth à requisição que as originou. O tempo do clique termina quando o título principal do detalhe do anúncio fica visível.
+
+| Aba | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Visão geral | Anterior | 6 | 0 | 23 | 34 | 146 ms (131–227) |
+| Visão geral | D-707 | 0 | 0 | 17 | 28 | 149 ms (138–193) |
+| Anúncios | Anterior | 11 | 41 | 66 | 78 | 179 ms (144–195) |
+| Anúncios | D-707 | 0 | 0 | 15 | 26 | 159 ms (142–173) |
+| Preços | Anterior | 9 | 41 | 65 | 75 | 155 ms (129–179) |
+| Preços | D-707 | 0 | 0 | 15 | 26 | 160 ms (144–255) |
+
+No build anterior, as medianas de Auth atribuídas às pré-buscas de anúncio antes do clique foram 6, 51 e 50. As medianas foram calculadas por fase e também sobre o total de cada jornada. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio esperado. Voltar restaurou a mesma URL e aba nas três jornadas. Os links para anúncios da Shopee e a latência com tráfego real seguem pendentes.

@@ -986,10 +986,7 @@ export default async function SkuDashboardPage({
                         <span className="sb-skud-grow">
                           {/* O MLB abre o Dashboard do Anúncio, como na aba Anúncios —
                               aqui era texto (lote 3 do pente fino). */}
-                          <Link className="sb-skud-id-link"
-                            href={`/anuncios/${linha.item_id}`}
-                           
-                          >
+                          <Link className="sb-skud-id-link" href={`/anuncios/${linha.item_id}`} prefetch={false}>
                             {linha.item_id}
                           </Link>
                           <small className="sb-skud-meta-xs">
@@ -1332,7 +1329,7 @@ export default async function SkuDashboardPage({
                           */}
                           {listing.title ?? <span className="sb-skud-soft">ainda não sincronizado</span>}
                           <div className="sb-skud-mono-caption">
-                            <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
+                            <Link href={`/anuncios/${listing.item_id}`} prefetch={false}>{listing.item_id}</Link>
                           </div>
                         </td>
                         <td>
@@ -1358,7 +1355,7 @@ export default async function SkuDashboardPage({
                         <td className="sb-skud-caption">{acao.rotuloForma}</td>
                         <td>
                           <span className="sb-skud-row">
-                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`}>
+                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`} prefetch={false}>
                               Ver
                             </Link>
 
@@ -1669,7 +1666,7 @@ export default async function SkuDashboardPage({
                           {formatDateTime(linha.occurred_at)}
                         </td>
                         <td>
-                          <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
+                          <Link href={`/anuncios/${linha.item_id}`} prefetch={false}>{linha.item_id}</Link>
                           {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
                               catálogo depois do evento, e o evento continua sendo
                               verdade. Mostrar o MLB sem título é mais honesto do que

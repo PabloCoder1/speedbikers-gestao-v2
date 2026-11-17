@@ -132,6 +132,48 @@ test("aba Preços existe e não confunde ausência de evento com preço parado",
   await expect(page.getByText("uma alteração feita e desfeita entre duas leituras não deixa registro")).toBeVisible();
 });
 
+for (const { aba, busca, secao } of [
+  { aba: "Visão geral", busca: "", secao: "Anúncios vinculados" },
+  { aba: "Anúncios", busca: "?aba=anuncios", secao: "Anúncios vinculados" },
+  { aba: "Preços", busca: "?aba=precos", secao: "Mudanças de preço observadas" },
+]) {
+  test(`SKU · ${aba}: o anúncio abre ao clicar e a volta preserva a aba`, async ({ page }) => {
+    const { skuId } = await readSeedOutput();
+    const anuncio = E2E_LISTINGS[0];
+    const origem = `/skus/${skuId}`;
+    const destino = `/anuncios/${anuncio.itemId}`;
+    const prefetches: string[] = [];
+
+    page.on("request", (request) => {
+      const headers = request.headers();
+      const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+      if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
+    });
+
+    await login(page, origem + busca);
+    const painel = page.getByRole("region", { name: secao, exact: true });
+    const link = painel.getByRole("link", { name: anuncio.itemId, exact: true });
+    const abrir = aba === "Anúncios"
+      ? painel.getByRole("row").filter({ hasText: anuncio.itemId }).getByRole("link", { name: "Ver", exact: true })
+      : link;
+
+    await expect(link).toHaveAttribute("href", destino);
+    await expect(abrir).toHaveAttribute("href", destino);
+    await link.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches).toEqual([]);
+
+    await abrir.click();
+    await expect(page).toHaveURL((url) => url.pathname === destino);
+    await expect(page.getByRole("heading", { level: 2, name: anuncio.title, exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === origem && url.search === busca);
+    await expect(link).toBeVisible();
+  });
+}
+
 /**
  * Aba Vendas (D-227) — a única com RPC própria, e por isso a única em que o
  * e2e precisa provar NÚMERO, não só fiação: total, por conta e por dia saem
