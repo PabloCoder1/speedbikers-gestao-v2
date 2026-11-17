@@ -2205,3 +2205,15 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | Tabela e Diagnóstico após paginação e migration D-714 | 1.002 anúncios, com conta válida no vínculo sem anúncio |
 
 A paginação usou ordem por nome da conta, título, MLB e ID da conta. O trace registrou HTTP 206 na primeira página com `Content-Range: 0-999/1002`, HTTP 200 nas seguintes e nenhum erro de faixa. A paginação isolada expôs outro defeito. O vínculo sem anúncio tinha conta nula na RPC e fazia o escopo padrão do Diagnóstico selecionar só ele. A migration `20261117171808` corrige a origem do ID da conta e acrescenta o desempate na ordem SQL. A regressão verificou vínculos por variação, vínculo sem leitura, exclusão e isolamento por conta. A leitura completa acrescenta chamadas quando ultrapassa uma página. A latência com dados reais segue pendente.
+
+### Leitura completa dos anúncios Shopee no SKU (Sentinel A72, 17/11/2026)
+
+Ensaio no Chromium com build de produção e Supabase local isolado. A fixture tem um SKU próprio, duas lojas de mesmo nome (uma live e uma sandbox), 500 itens sem variação em cada uma com os mesmos IDs e nomes, e duas variações de outro item. Uma variação indica outro SKU, mas o vínculo manual a traz para o SKU do ensaio. Dois itens apagados, um pelo vendedor e outro pela Shopee, também foram semeados. O conjunto esperado é de 1.002 unidades.
+
+| Leitura | Linhas na tabela |
+| --- | ---: |
+| Tela e RPC originais | 200 |
+| Apenas retirada do limite SQL | 1.000 |
+| RPC e paginação da web após D-715 | 1.002 |
+
+A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.

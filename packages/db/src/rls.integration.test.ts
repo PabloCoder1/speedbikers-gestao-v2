@@ -3961,6 +3961,37 @@ describe("permissão por loja Shopee (D-433)", () => {
     }
   });
 
+  it("o painel do SKU supera 200 anúncios e mantém a permissão por loja e organização (D-715)", async () => {
+    await client.query(
+      `insert into public.shopee_items
+         (organization_id, shopee_shop_id, item_id, item_name, item_sku, item_status,
+          has_model, details_synced_at, shopee_updated_at)
+       select $1, loja, item, 'Anuncio D715', 'D433-SKU', 'NORMAL', false, now(), now()
+       from unnest($2::uuid[]) loja cross join generate_series(715100, 715300) item`,
+      [ORG, [LOJA_A, LOJA_B]],
+    );
+
+    try {
+      const consulta = `select count(*)::int as n from public.get_sku_shopee_listings('${ORG}', '${skuId}')`;
+      expect(await asUser(ADMIN, consulta)).toEqual([{ n: 402 }]);
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 0 }]);
+      await client.query(
+        "insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)",
+        [ANALISTA, LOJA_A],
+      );
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 201 }]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([{ n: 0 }]);
+      expect(await asUser(ADMIN, `select * from public.get_sku_shopee_listings('${ORG_OUTRA}', '${skuId}')`)).toEqual([]);
+      await expect(asAnon(consulta)).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1 and shopee_shop_id = $2", [ANALISTA, LOJA_A]);
+      await client.query(
+        "delete from public.shopee_items where shopee_shop_id = any($1::uuid[]) and item_id between 715100 and 715300",
+        [[LOJA_A, LOJA_B]],
+      );
+    }
+  });
+
   it("só o ADMIN da organização da loja concede, e só a quem é membro dela", async () => {
     await expect(
       asUser(ANALISTA, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}')`),

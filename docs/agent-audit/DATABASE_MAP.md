@@ -40,6 +40,7 @@ Paths de tela na coluna final são relativas a `apps/web/app/(app)`. Os objetos 
 | `get_sku_listings` | Une vínculo direto e por variação sob RLS. A conta vem do par vinculado mesmo sem linha em `listings`. A ordenação termina na chave da conta, e a web lê em páginas. D-714, migration [20261117171808](../../supabase/migrations/20261117171808_preserve_account_in_sku_listings.sql), validada localmente. |
 | `marketplace_accounts` | Une contas ML e lojas Shopee que o chamador pode acessar, com `security_invoker`. A conexão TikTok tem fluxo próprio no snapshot. |
 | `shopee_listing_units` | Catálogo, modelos e vínculo manual, com `security_invoker`. |
+| `get_sku_shopee_listings` | D-715 retira o teto de 200 e desempata pela loja. A web pagina a leitura da view canônica, com RLS por loja e organização. Migration [20261117173152](../../supabase/migrations/20261117173152_complete_sku_shopee_listings.sql), validada localmente. |
 | `shopee_sales_orders` | Pedido Shopee por loja, situação da venda, receita e recebido, com `security_invoker`. Alimenta vendas e faturamento. |
 | `shopee_sales_items` | Itens da venda Shopee e SKU, com `security_invoker`. Alimenta RPCs de vendas e cobertura em SQL. |
 | `private.accessible_orgs`, `private.has_account_access`, `private.accessible_shopee_shops` | Fronteiras de organização, conta ML e loja Shopee. Conferir a assinatura e a última redefinição em [migrations](../../supabase/migrations), inclusive a migration [permissão por loja](../../supabase/migrations/20261014190000_permissao_por_loja_shopee.sql). |

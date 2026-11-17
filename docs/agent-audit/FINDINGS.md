@@ -78,6 +78,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A71 | P1 · CORRIGIDO localmente (D-714) | O detalhe do SKU recebia só 1.000 anúncios ML. O vínculo sem anúncio sincronizado vinha com conta nula e podia virar o escopo padrão do Diagnóstico | A leitura agora pagina a RPC com ordem total. A migration preserva a conta do par vinculado. A fixture de 1.002 linhas chegou completa à tabela e ao Diagnóstico. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026) |
 
+| A72 | P2 · CORRIGIDO localmente (D-715) | O painel Shopee do SKU exibia só 200 anúncios sem indicar o corte. Retirar apenas o limite SQL ainda deixava o teto de 1.000 do PostgREST | A migration remove o limite SQL e a web pagina com desempate pela loja. A fixture de 1.002 unidades chegou completa, incluindo variações e vínculo manual, com anúncios excluídos fora. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

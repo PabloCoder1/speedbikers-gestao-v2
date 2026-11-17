@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 import { apagarLojaLive, clienteDeServico, criarLojaLive, LOJA_LIVE, type ClienteDeServico } from "./loja-shopee-live.js";
 
 /**
@@ -57,6 +58,85 @@ function registrarPrefetches(page: Page, destino: (url: URL) => boolean): string
 
   return prefetches;
 }
+
+test("Shopee: o SKU mostra todos os anúncios acima de mil, com variações e lojas de mesmo nome", async ({ page }) => {
+  test.setTimeout(60_000);
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const { organizationId } = await readSeedOutput();
+  const codigo = "E2E-SHOPEE-PAGINACAO";
+  const produto = await db.from("skus").insert({ organization_id: organizationId, sku: codigo }).select("id").single();
+  if (produto.error !== null) throw new Error(produto.error.message);
+
+  const shops = [990888001, 990888002];
+  try {
+    const lojas: string[] = [];
+    const agora = new Date().toISOString();
+    for (const [indice, shopId] of shops.entries()) {
+      const loja = await db.from("shopee_shops").insert({
+        organization_id: organizationId, shop_id: shopId, shop_name: "Loja E2E de paginação",
+        environment: indice === 0 ? "live" : "sandbox", status: "CONNECTED",
+      }).select("id").single();
+      if (loja.error !== null) throw new Error(loja.error.message);
+      lojas.push(loja.data.id);
+
+      const itens = await db.from("shopee_items").insert(Array.from({ length: 500 }, (_, n) => ({
+        organization_id: organizationId, shopee_shop_id: loja.data.id, item_id: 990888100 + n,
+        item_name: "Anúncio E2E da paginação", item_status: "NORMAL", item_sku: codigo,
+        has_model: false, details_synced_at: agora, shopee_updated_at: agora,
+        currency: "BRL", current_price: 100, available_stock: 1,
+      })));
+      if (itens.error !== null) throw new Error(itens.error.message);
+    }
+
+    const primeiraLoja = lojas[0];
+    if (primeiraLoja === undefined) throw new Error("A fixture precisa de uma loja.");
+    const especiais = await db.from("shopee_items").insert([
+      {
+        organization_id: organizationId, shopee_shop_id: primeiraLoja, item_id: 990888998,
+        item_name: "Anúncio E2E da paginação", item_status: "NORMAL", item_sku: codigo,
+        has_model: true, details_synced_at: agora, shopee_updated_at: agora,
+      },
+      ...["SELLER_DELETE", "SHOPEE_DELETE"].map((status, n) => ({
+        organization_id: organizationId, shopee_shop_id: primeiraLoja, item_id: 990888996 + n,
+        item_name: "Anúncio excluído E2E", item_status: status, item_sku: codigo,
+        has_model: false, details_synced_at: agora, shopee_updated_at: agora,
+      })),
+    ]);
+    if (especiais.error !== null) throw new Error(especiais.error.message);
+    const modelos = await db.from("shopee_item_models").insert([10, 20].map((modelo) => ({
+      organization_id: organizationId, shopee_shop_id: primeiraLoja, item_id: 990888998,
+      model_id: modelo, model_name: `Variação ${String(modelo)}`, model_sku: modelo === 10 ? LOJA_LIVE.sku : codigo,
+    })));
+    if (modelos.error !== null) throw new Error(modelos.error.message);
+    // Fixture pela chave local: sem criar histórico append-only para uma loja temporária.
+    const manual = await db.from("shopee_sku_links").insert({
+      organization_id: organizationId, shopee_shop_id: primeiraLoja, item_id: 990888998,
+      model_id: 10, sku_id: produto.data.id, source: "MANUAL",
+    });
+    if (manual.error !== null) throw new Error(manual.error.message);
+
+    await entrar(page, `/skus/${produto.data.id}?aba=anuncios`);
+    const tabela = page.getByRole("table", { name: "Anúncios da Shopee deste SKU", exact: true });
+    const linhas = tabela.locator("tbody tr");
+    await expect(linhas).toHaveCount(1_002, { timeout: 20_000 });
+    expect((await linhas.locator(".sb-skud-mono-caption").allTextContents()).map((s) => s.trim()).sort()).toEqual([
+      ...Array.from({ length: 500 }, (_, n) => String(990888100 + n)).flatMap((id) => [id, id]),
+      "990888998 · variação 10", "990888998 · variação 20",
+    ].sort());
+    await expect(linhas.filter({ hasText: "Teste" })).toHaveCount(500);
+    await expect(linhas.filter({ hasText: "variação 10" })).toContainText("vínculo manual");
+    await expect(linhas.filter({ hasText: "variação 20" })).toContainText("pelo SKU do anúncio");
+    await expect(linhas.filter({ hasText: "Anúncio excluído E2E" })).toHaveCount(0);
+    await semErro(page);
+  } finally {
+    const removidas = await db.from("shopee_shops").delete().eq("organization_id", organizationId).in("shop_id", shops);
+    const removido = await db.from("skus").delete().eq("id", produto.data.id);
+    expect.soft(removidas.error).toBeNull();
+    expect.soft(removido.error).toBeNull();
+  }
+});
 
 test("Shopee: o anúncio do SKU abre a busca ao clicar e a volta preserva a aba", async ({ page }) => {
   const item = "990777001";

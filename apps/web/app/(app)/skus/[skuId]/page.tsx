@@ -611,13 +611,21 @@ export default async function SkuDashboardPage({
       OS ANÚNCIOS DA SHOPEE DESTE SKU (D-429). `get_sku_shopee_listings` lê a
       view `shopee_listing_units` com a precedência da casa — o vínculo
       MANUAL vence o pelo SKU do anúncio —, a mesma régua de
-      `/anuncios/shopee`. Mesma ida do `Promise.all`, só na aba que os mostra.
+      `/anuncios/shopee`. A leitura começa no `Promise.all`, só na aba que os mostra.
+      D-715: leitura completa em páginas, com desempate pela loja.
     */
     needsShopee
-      ? supabase.rpc("get_sku_shopee_listings", {
-          p_organization_id: sku.data.organization_id,
-          p_sku_id: sku.data.id,
-        })
+      ? lerPaginasDaRpc(
+          (offset, limite) =>
+            supabase.rpc("get_sku_shopee_listings", recorteDeAnuncios, offset === 0 ? { count: "exact" } : undefined)
+              .order("shop_name", { nullsFirst: false })
+              .order("item_name", { nullsFirst: false })
+              .order("item_id")
+              .order("model_id", { nullsFirst: true })
+              .order("shopee_shop_id")
+              .range(offset, offset + limite - 1),
+          Number.POSITIVE_INFINITY,
+        ).then(({ linhas, error }) => ({ data: linhas, error }))
       : Promise.resolve({ data: null, error: null }),
     /*
       AS VENDAS ENTRE MARKETPLACES (D-444, C-59): o total da operação e uma

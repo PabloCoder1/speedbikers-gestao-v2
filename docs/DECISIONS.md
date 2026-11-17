@@ -19720,3 +19720,11 @@ A web usa o paginador de RPC existente, com contagem exata na primeira página e
 A migration `20261117171808` também corrige a RPC. O campo `ml_account_id` vinha da linha opcional de `listings`. Um vínculo ainda sem essa linha devolvia conta nula, que o Diagnóstico podia selecionar ao resolver o escopo padrão. O ID passa a vir do par de conta e anúncio já determinado pelo vínculo. A assinatura e a política `security invoker` continuam válidas para os consumidores existentes.
 
 A reprodução mostrou 1.000 de 1.002 anúncios na tela original. Com paginação e a migration, a tabela e o Diagnóstico receberam o conjunto inteiro, incluindo variação e vínculo ainda sem leitura, com o anúncio excluído fora. A migration foi aplicada só no banco local. A publicação exige sua aplicação antes da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)
+
+## D-715 - O painel Shopee do SKU lê todos os anúncios em páginas
+
+A RPC `get_sku_shopee_listings` tinha teto SQL de 200 previsto na D-429, sem aviso de corte no painel do SKU. A migration `20261117173152` retira esse teto e acrescenta o ID da loja ao desempate da ordenação. A assinatura e as permissões ficam preservadas por `create or replace`, com `security invoker` e a mesma view canônica.
+
+A web usa o paginador existente, com contagem exata na primeira página e ordem por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O erro da RPC conserva o código para a mensagem de banco ainda sem a função. Um erro interrompe a leitura e descarta as páginas parciais.
+
+A fixture de 1.002 unidades reproduziu 200 linhas na tela original e 1.000 após retirar apenas o limite SQL. Com a paginação, o conjunto chegou inteiro, incluindo variações, precedência manual e lojas de mesmo nome, com os anúncios apagados fora e o sandbox marcado. A migration foi aplicada apenas no banco local e deve preceder a publicação da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
