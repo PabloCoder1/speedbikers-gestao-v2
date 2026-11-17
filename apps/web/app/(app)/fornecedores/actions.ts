@@ -246,3 +246,63 @@ export async function definirAtivo(id: string, ativo: boolean): Promise<{ ok: bo
 
   return { ok: true, mensagem: null };
 }
+
+/** D-723: um produto fornecido — o vínculo explícito fornecedor × SKU, com MOQ, múltiplo e prazo. */
+export interface ProdutoFornecidoInput {
+  skuId: string;
+  supplierCode: string | null;
+  unitCost: number | null;
+  currency: string;
+  minimumOrderQuantity: number | null;
+  packMultiple: number | null;
+  leadTimeDays: number | null;
+  isPreferred: boolean;
+  notes: string | null;
+}
+
+function mensagemProduto(message: string): string {
+  if (message.includes("sem permissao")) return "Só ADMIN e GESTOR cadastram produtos do fornecedor.";
+  if (message.includes("outra organizacao")) return "Esse SKU é de outra organização.";
+  if (message.includes("nao encontrado")) return "Registro não encontrado.";
+  if (message.includes("check constraint")) return "Confira os números: mínimo e múltiplo maiores que zero, prazo até 730 dias.";
+
+  return "Não foi possível salvar o produto do fornecedor.";
+}
+
+export async function salvarProdutoFornecido(
+  supplierId: string,
+  input: ProdutoFornecidoInput,
+): Promise<{ ok: boolean; mensagem: string | null }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("upsert_supplier_sku", {
+    p_supplier_id: supplierId,
+    p_sku_id: input.skuId,
+    p_currency: input.currency,
+    p_is_preferred: input.isPreferred,
+    ...(input.supplierCode === null ? {} : { p_supplier_code: input.supplierCode }),
+    ...(input.unitCost === null ? {} : { p_unit_cost: input.unitCost }),
+    ...(input.minimumOrderQuantity === null ? {} : { p_minimum_order_quantity: input.minimumOrderQuantity }),
+    ...(input.packMultiple === null ? {} : { p_pack_multiple: input.packMultiple }),
+    ...(input.leadTimeDays === null ? {} : { p_lead_time_days: input.leadTimeDays }),
+    ...(input.notes === null ? {} : { p_notes: input.notes }),
+  });
+
+  if (error !== null) return { ok: false, mensagem: mensagemProduto(error.message) };
+
+  revalidatePath(`/fornecedores/${supplierId}`);
+
+  return { ok: true, mensagem: null };
+}
+
+export async function removerProdutoFornecido(supplierId: string, id: string): Promise<{ ok: boolean; mensagem: string | null }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("delete_supplier_sku", { p_id: id });
+
+  if (error !== null) return { ok: false, mensagem: mensagemProduto(error.message) };
+
+  revalidatePath(`/fornecedores/${supplierId}`);
+
+  return { ok: true, mensagem: null };
+}

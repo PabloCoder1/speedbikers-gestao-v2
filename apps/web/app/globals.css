@@ -17202,6 +17202,14 @@ td.sb-pco-num-linha {
 .sb-pod-custo-desc { flex: 1 1 14rem; }
 .sb-pod-moeda { width: 4.5rem; text-transform: uppercase; }
 .sb-pod-chegada { margin-bottom: var(--sb-space-2); }
+
+/* D-723: produtos fornecidos. */
+.sb-forn-produtos { display: grid; gap: var(--sb-space-3); }
+.sb-forn-preferido { font-family: var(--sb-font, inherit); font-size: 0.6875rem; color: var(--sb-text-soft); }
+.sb-forn-busca { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sb-space-2); flex-basis: 100%; }
+.sb-forn-resultados { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0; padding: 0; list-style: none; flex-basis: 100%; }
+.sb-forn-escolhido { margin: 0; flex-basis: 100%; font-size: 0.8125rem; }
+.sb-forn-check { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; }
 .sb-pod-cost-note { display: block; color: var(--sb-accent-ink); font-size: 0.6875rem; }
 .sb-pod-notes { display: grid; gap: 0.2rem; margin: var(--sb-space-3) 0 0; padding: 0.75rem 1rem; border-left: 3px solid var(--sb-secondary); border-radius: var(--sb-radius-md); background: var(--sb-surface); color: var(--sb-text); font-size: 0.8125rem; white-space: pre-wrap; }
 .sb-pod-notes > span { color: var(--sb-text-soft); font-family: var(--sb-mono); font-size: 0.625rem; letter-spacing: 0.06em; }

@@ -11,6 +11,8 @@ import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from 
 import { purchaseOrderStatusLabel } from "../../../../lib/labels";
 import { createClient } from "../../../../lib/supabase/server";
 import { currentMembership } from "../../../../lib/request-membership";
+import { lerProdutosFornecidos } from "../../../../lib/supplier-skus";
+import { ProdutosFornecidos } from "./produtos-fornecidos";
 import { formatarDocumento, idadeRelativa } from "../../../../lib/suppliers-overview";
 import { Canais, temCanal } from "../canais";
 import { ExcluirFornecedor } from "../excluir-fornecedor";
@@ -79,7 +81,7 @@ export default async function FornecedorPage({
     );
   }
 
-  const [overviewResult, skusResult, ordersResult, logoResult] = await Promise.all([
+  const [overviewResult, skusResult, ordersResult, logoResult, produtosResult] = await Promise.all([
     supabase
       .rpc("get_supplier_overview", { p_organization_id: organizationId, p_supplier_id: supplierId })
       .maybeSingle(),
@@ -98,7 +100,10 @@ export default async function FornecedorPage({
     // Separada (D-370): sem a migration a coluna não existe, e o erro dela não
     // pode virar 404 do painel.
     supabase.from("suppliers").select("logo_path").eq("id", supplierId).maybeSingle(),
+    // D-723: os produtos fornecidos, paginados na RPC (até 200; aqui 100).
+    supabase.rpc("get_supplier_skus", { p_supplier_id: supplierId, p_limit: 100, p_offset: 0 }),
   ]);
+  const produtos = produtosResult.error === null ? lerProdutosFornecidos(produtosResult.data) : null;
 
   // Sem cast: os tipos gerados de `get_supplier_overview` ja descrevem esta
   // linha exatamente (o lint reprovou a assercao por ser redundante), entao
@@ -347,6 +352,19 @@ export default async function FornecedorPage({
           </div>
         )}
       </Panel>
+
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel
+          title="Produtos fornecidos"
+          subtitle="O que este fornecedor vende, com código, custo, mínimo, múltiplo e prazo. Nada é obrigatório além do SKU; o mínimo e o múltiplo ajustam a quantidade recomendada nos pedidos para ele."
+        >
+          {produtos === null ? (
+            <p className="sb-note sb-note-perigo">Não foi possível carregar os produtos fornecidos agora.</p>
+          ) : (
+            <ProdutosFornecidos supplierId={supplierId} produtos={produtos.linhas} total={produtos.total} podeEditar={podeEditar} />
+          )}
+        </Panel>
+      </div>
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel
