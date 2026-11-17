@@ -1,3 +1,5 @@
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import {
@@ -446,4 +448,109 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
 
   // O motor de anomalia de venda continua onde estava, e continua sob demanda.
   await expect(page.getByRole("button", { name: "O que aconteceu?" })).toBeVisible();
+});
+
+test("Diagnóstico do SKU: Reler agora lê dados novos e preserva o escopo da conta", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const original = await db.from("listings")
+    .select("id, ml_account_id, available_quantity")
+    .eq("organization_id", seed.organizationId)
+    .eq("item_id", E2E_LISTINGS[0].itemId)
+    .single();
+
+  if (original.error !== null) throw new Error(original.error.message);
+
+  const conta = await db.from("ml_accounts").insert({
+    organization_id: seed.organizationId,
+    slug: "e2e-reler-diagnostico",
+    label: "Conta E2E da releitura",
+    status: "CONNECTED",
+    seller_id: 710000001,
+    connected_at: new Date().toISOString(),
+  }).select("id").single();
+
+  if (conta.error !== null) throw new Error(conta.error.message);
+
+  try {
+    let quantidadeOutraConta = 97;
+    let quantidadeOriginal = original.data.available_quantity;
+    const anuncio = await db.from("listings").insert({
+      organization_id: seed.organizationId,
+      ml_account_id: conta.data.id,
+      item_id: "MLB710000001",
+      sku_id: seed.skuId,
+      title: "Anúncio da conta E2E da releitura",
+      status: "active",
+      price: 100,
+      currency_id: "BRL",
+      available_quantity: quantidadeOutraConta,
+      synced_at: new Date().toISOString(),
+    }).select("id").single();
+
+    if (anuncio.error !== null) throw new Error(anuncio.error.message);
+
+    const caminho = `/skus/${seed.skuId}`;
+    await login(page, `${caminho}?aba=diagnostico`);
+    await expect(page.getByRole("region", { name: "Saúde do SKU", exact: true })).toBeVisible();
+
+    for (const escopo of [null, original.data.ml_account_id]) {
+      const origem = `${caminho}?aba=diagnostico${escopo === null ? "" : `&escopo=${escopo}`}`;
+
+      await page.goto(origem);
+      const saude = page.getByRole("region", { name: "Saúde do SKU", exact: true });
+      const estoque = saude.locator(".sb-stat").filter({
+        has: page.getByText("Estoque anunciado", { exact: true }),
+      }).locator(".sb-stat-value");
+      const reler = saude.getByRole("link", { name: /^Reler agora/ });
+
+      await expect(reler).toHaveAttribute("href", origem);
+      await page.waitForLoadState("networkidle");
+      const antes = Number((await estoque.innerText()).replace(/\D/gu, ""));
+
+      // Altera as duas contas. No recorte, só os 13 da conta escolhida entram.
+      quantidadeOriginal += 13;
+      quantidadeOutraConta += 31;
+      const atualizado = await db.from("listings")
+        .update({ available_quantity: quantidadeOriginal }).eq("id", original.data.id);
+      const outra = await db.from("listings")
+        .update({ available_quantity: quantidadeOutraConta }).eq("id", anuncio.data.id);
+
+      if (atualizado.error !== null) throw new Error(atualizado.error.message);
+      if (outra.error !== null) throw new Error(outra.error.message);
+
+      await page.route(
+        (destino) => destino.pathname === caminho
+          && destino.searchParams.has("_rsc")
+          && destino.searchParams.get("aba") === "diagnostico"
+          && destino.searchParams.get("escopo") === escopo,
+        async (route) => {
+          await new Promise((pronto) => setTimeout(pronto, 1_200));
+          await route.continue();
+        },
+      );
+
+      await reler.click();
+      await expect(page.locator(".sb-content[aria-busy='true']")).toHaveCount(1);
+      await expect(estoque).toHaveText(String(antes));
+      await expect(estoque).toHaveText(String(antes + (escopo === null ? 44 : 13)));
+      await expect(page).toHaveURL((destino) => destino.pathname + destino.search === origem);
+      await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "Abas do SKU" })
+        .getByRole("link", { name: "Diagnóstico", exact: true })).toHaveAttribute("aria-current", "page");
+    }
+  } finally {
+    const restaurado = await db.from("listings")
+      .update({ available_quantity: original.data.available_quantity }).eq("id", original.data.id);
+    const removida = await db.from("ml_accounts").delete().eq("id", conta.data.id);
+
+    expect.soft(restaurado.error).toBeNull();
+    expect.soft(removida.error).toBeNull();
+  }
 });

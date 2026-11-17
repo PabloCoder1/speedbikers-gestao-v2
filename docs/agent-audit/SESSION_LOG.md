@@ -506,3 +506,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-713 (A70).** Consolidado e conta na URL passaram de uma pré-busca de Anúncios para zero. Os cliques abriram a aba em uma requisição RSC e a volta restaurou a URL original. [Medição](../PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
 - **Validação.** O caso novo detectou uma pré-busca no build anterior. No corrigido passaram os 24 casos Playwright de Troca de tela e Detalhe do SKU, incluindo espera com o painel anterior visível e retorno ao Diagnóstico.
 - **Próxima etapa.** Verificar se Reler agora em Diagnóstico lê uma alteração feita no banco local após abrir a página e preserva o escopo. Esta etapa alterou a página do SKU, o spec de navegação e os mapas. Nenhuma migration alterada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Verificação da releitura do Diagnóstico do SKU
+
+- **Base.** `codex/sentinel-audit` em `f6252b55`.
+- **Resultado.** Reler agora já buscava dados novos. Uma reprodução no build de produção observou uma requisição RSC com HTTP 200 no consolidado e no recorte de conta. A URL permaneceu a mesma.
+- **Regressão.** O novo caso em `sku-dashboard.spec.ts` cria uma segunda conta com anúncio do mesmo SKU e altera os estoques de ambas após abrir a página. O consolidado incorpora as duas alterações, e o recorte incorpora só a selecionada. Uma resposta atrasada verifica o valor anterior visível e o indicador de atualização até a nova leitura chegar.
+- **Validação.** Passaram os 25 casos Playwright de SKU e navegação e a repetição isolada do caso de releitura após o ajuste das asserções de limpeza. A conta e o anúncio do teste foram removidos, e o estoque original voltou ao valor do seed. Check, build e docs passaram. O teste e os mapas foram atualizados.
+- **Próxima etapa.** Auditar o limite de 1.000 anúncios nas leituras do detalhe do SKU, com cardinalidade sintética e contagens conhecidas. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

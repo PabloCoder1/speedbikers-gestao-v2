@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-713 carrega ao clicar o atalho de Diagnóstico para Anúncios no SKU. No consolidado e com conta na URL, a pré-busca do destino caiu de uma chamada ao Auth para zero. A próxima verificação é se Reler agora atualiza o diagnóstico após mudança nos dados. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+- **Sentinel.** Reler agora no Diagnóstico do SKU foi verificado com alterações no banco local após a abertura da página. A releitura buscou dados novos e preservou a conta da URL. A próxima verificação é o limite de 1.000 anúncios nas leituras do detalhe do SKU. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
