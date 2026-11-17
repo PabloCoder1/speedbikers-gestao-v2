@@ -557,3 +557,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Correção.** `@sb/config` declarava `@eslint/js`, `eslint`, `globals` e `typescript-eslint` em `dependencies`, embora os dez pacotes que o usam o declarem em `devDependencies`. As quatro passaram para `devDependencies`, e o lockfile mudou uma linha. O audit de produção passou com três moderados: `uuid`, já registrado, e dois do Next 16.4.1, que exigem `'use cache'` ou `unstable_cache`, ausentes no código. O aviso do `picomatch` segue no audit completo.
 - **Validação.** `pnpm run check` passou nas 37 tarefas, com o lint de todos os pacotes. O `pnpm deploy --legacy --prod` da API terminou sem `@sb/config` e sem ferramentas de lint. Passaram `pnpm run build`, as sete guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Retomar a falha de transporte no diálogo de remover vínculo ML do SKU. Conferir a publicação do `picomatch` 4.0.8. [Plano](PLAN.md)
+
+### 17/11/2026 · Falha de transporte ao remover vínculo ML no SKU
+
+- **Base.** `codex/sentinel-audit` em `7f96f6bc`.
+- **Banco local.** Ao retomar, o banco isolado estava vazio, sem usuários, SKUs nem vínculos, depois de um reset sem seed. O seed foi reaplicado antes da etapa.
+- **D-718 (A76).** Bloquear o POST da ação reproduziu o diálogo de remover vínculo preso em Removendo, sem alerta, com Remover e Cancelar desabilitados. A correção segue as D-716 e D-717: trata a exceção, libera o estado em `finally` e anuncia o aviso como alerta.
+- **Validação.** O caso novo em `sku-dashboard.spec.ts` falhou no build anterior e passou em três repetições no corrigido, ao lado do caso existente de vincular e remover. Ele confere o vínculo intacto após o POST bloqueado e removido na nova tentativa. Passaram os 38 casos Playwright de SKU, Vinculações e troca de tela, e o banco ficou só com o vínculo do seed. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Procurar outros diálogos que aguardam Server Action sem tratar exceção e conferir cada um antes de mudar. Publicação das correções, incluindo as migrations `20261117171808` e `20261117173152`, e validação com carga real seguem pendentes. [Plano](PLAN.md)

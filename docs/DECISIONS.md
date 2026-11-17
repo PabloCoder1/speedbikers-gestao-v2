@@ -19744,3 +19744,11 @@ Vincular um anúncio, resolver um candidato do ERP e descartar um candidato agua
 As rotinas tratam a exceção da ação e liberam o estado pendente em `finally`. O aviso informa que o vínculo ou o descarte não pôde ser confirmado e pede conferir a lista antes de tentar novamente, pois a comunicação pode falhar depois da gravação no servidor. O SKU escolhido, o anúncio e o candidato continuam no popup. O cliente aguarda uma nova ação da pessoa.
 
 As regressões consultam o banco para confirmar que o POST bloqueado não criou vínculo nem fechou o candidato. Na nova tentativa, o vínculo aponta para o SKU escolhido, a resolução deixa o candidato RESOLVED e o descarte o deixa DISMISSED. O anúncio da fixture é arquivado ao fim, com o SKU nulo, seguindo a exclusão lógica permitida pela API. Vínculos e lote temporários são removidos. O fluxo de sucesso e o avanço entre variações mantêm a sequência anterior.
+
+## D-718 - O diálogo de remover vínculo do SKU recupera os controles após falha da ação
+
+Remover a vinculação a partir do detalhe do SKU só liberava o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa e deixava o diálogo em Removendo, sem alerta, com Remover e Cancelar desabilitados e o Esc desligado. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e libera o estado pendente em `finally`. A mensagem, agora anunciada como alerta, informa que a remoção não pôde ser confirmada e pede conferir a lista antes de tentar novamente, pela mesma razão das D-716 e D-717: a comunicação pode falhar depois da gravação. O diálogo continua aberto até uma nova ação da pessoa.
+
+A regressão cria o vínculo pela tela num anúncio do seed sem vínculo, confere que o POST bloqueado não removeu a linha, e que a nova tentativa fecha o diálogo e apaga o vínculo. O que sobrar é apagado ao fim. A recusa do servidor segue o caminho anterior.
