@@ -478,6 +478,93 @@ test("Dashboard do SKU: falha de conexão ao remover o vínculo libera o diálog
 });
 
 /**
+ * D-719: o vínculo que perde a conexão no meio. O POST bloqueado deixava o
+ * diálogo em "Gravando o vínculo…", com Cancelar e Esc desligados. O anúncio
+ * encontrado fica no diálogo para a nova tentativa.
+ */
+test("Dashboard do SKU: falha de conexão ao vincular o anúncio conserva o anúncio e permite nova tentativa", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const alvo = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "nenhum");
+
+  if (alvo === undefined) throw new Error("O seed não tem anúncio sem vínculo.");
+
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const destino = `/skus/${seed.skuId}`;
+  const erros: string[] = [];
+
+  page.on("pageerror", (erro) => erros.push(erro.message));
+
+  const vinculoDoAlvo = () =>
+    db.from("sku_listing_links").select("sku_id").eq("organization_id", seed.organizationId).eq("item_id", alvo.itemId);
+
+  try {
+    await login(page, `${destino}?aba=anuncios`);
+    await page.getByRole("button", { name: "+ Vincular anúncio" }).click();
+
+    const modal = page.getByRole("dialog", { name: "Vincular anúncio" });
+
+    await modal.getByLabel("MLB / id do anúncio").fill(alvo.itemId);
+    await modal.getByRole("button", { name: "Procurar anúncio" }).click();
+    await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+
+    let bloqueada = false;
+
+    await page.route(
+      (endereco) => endereco.pathname === destino,
+      async (rota) => {
+        const pedido = rota.request();
+
+        if (!bloqueada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+          bloqueada = true;
+          await rota.abort("failed");
+        } else {
+          await rota.continue();
+        }
+      },
+    );
+
+    const confirmar = modal.getByRole("button", { name: "Confirmar vinculação", exact: true });
+
+    await confirmar.click();
+    await expect(modal.getByRole("alert")).toContainText("Não foi possível confirmar");
+    await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+    await expect(modal).toContainText(alvo.title);
+    await expect(confirmar).toBeEnabled();
+    await expect(modal.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    expect(bloqueada).toBe(true);
+    expect(erros).toEqual([]);
+
+    const antes = await vinculoDoAlvo();
+
+    expect(antes.error).toBeNull();
+    expect(antes.data).toHaveLength(0);
+
+    await confirmar.click();
+    await expect(modal).toHaveCount(0);
+    await expect(page.locator("tbody tr", { hasText: alvo.itemId })).toBeVisible();
+
+    const depois = await vinculoDoAlvo();
+
+    expect(depois.error).toBeNull();
+    expect(depois.data?.map((linha) => linha.sku_id)).toEqual([seed.skuId]);
+  } finally {
+    const limpeza = await db
+      .from("sku_listing_links")
+      .delete()
+      .eq("organization_id", seed.organizationId)
+      .eq("item_id", alvo.itemId);
+
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+/**
  * A ABA DIAGNÓSTICO (D-317) — três níveis, cada um com régua escrita.
  *
  * A aba era UMA LINHA: um botão que calculava a anomalia de venda no clique, e

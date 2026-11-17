@@ -65,7 +65,7 @@ type Estado =
   | { kind: "fechado" }
   | { kind: "aberto" }
   | { kind: "buscando" }
-  | { kind: "encontrado"; anuncio: Encontrado }
+  | { kind: "encontrado"; anuncio: Encontrado; aviso?: string }
   | { kind: "nao_encontrado" }
   | { kind: "excluido"; itemId: string; deletedAt: string }
   | { kind: "gravando"; anuncio: Encontrado }
@@ -160,13 +160,26 @@ export function VincularAnuncio({
   async function confirmar(anuncio: Encontrado): Promise<void> {
     setEstado({ kind: "gravando", anuncio });
 
-    const resultado = await createManualLink({
-      mlAccountId: conta,
-      itemId: anuncio.itemId,
-      // Anúncio inteiro: a variação não é sincronizada, então a tela não a pede.
-      variationId: "",
-      skuId,
-    });
+    let resultado: Awaited<ReturnType<typeof createManualLink>>;
+
+    try {
+      resultado = await createManualLink({
+        mlAccountId: conta,
+        itemId: anuncio.itemId,
+        // Anúncio inteiro: a variação não é sincronizada, então a tela não a pede.
+        variationId: "",
+        skuId,
+      });
+    } catch {
+      // O vínculo pode ter sido gravado antes de a conexão cair.
+      setEstado({
+        kind: "encontrado",
+        anuncio,
+        aviso: "Não foi possível confirmar o vínculo. Confira a lista antes de tentar novamente.",
+      });
+
+      return;
+    }
 
     if (!resultado.ok) {
       setEstado({ kind: "erro", mensagem: resultado.message ?? "Não foi possível vincular." });
@@ -265,7 +278,7 @@ export function VincularAnuncio({
             </label>
 
             {estado.kind === "erro" && (
-              <p style={{ margin: "var(--sb-space-3) 0 0", color: "var(--sb-danger)", fontSize: "0.75rem" }}>
+              <p role="alert" style={{ margin: "var(--sb-space-3) 0 0", color: "var(--sb-danger)", fontSize: "0.75rem" }}>
                 {estado.mensagem}
               </p>
             )}
@@ -327,6 +340,12 @@ export function VincularAnuncio({
                     Atenção: a última sincronização mostra este anúncio vinculado ao SKU{" "}
                     <strong>{estado.anuncio.skuAtual}</strong>. Trocar o SKU de um vínculo existente é feito em
                     Vinculações, que preserva o histórico dos pedidos já gravados.
+                  </p>
+                )}
+
+                {estado.kind === "encontrado" && estado.aviso !== undefined && (
+                  <p role="alert" style={{ margin: "0.5rem 0 0", color: "var(--sb-danger)" }}>
+                    {estado.aviso}
                   </p>
                 )}
               </div>

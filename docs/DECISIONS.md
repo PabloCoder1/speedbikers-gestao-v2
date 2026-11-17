@@ -19752,3 +19752,11 @@ Remover a vinculação a partir do detalhe do SKU só liberava o estado pendente
 A rotina trata a exceção e libera o estado pendente em `finally`. A mensagem, agora anunciada como alerta, informa que a remoção não pôde ser confirmada e pede conferir a lista antes de tentar novamente, pela mesma razão das D-716 e D-717: a comunicação pode falhar depois da gravação. O diálogo continua aberto até uma nova ação da pessoa.
 
 A regressão cria o vínculo pela tela num anúncio do seed sem vínculo, confere que o POST bloqueado não removeu a linha, e que a nova tentativa fecha o diálogo e apaga o vínculo. O que sobrar é apagado ao fim. A recusa do servidor segue o caminho anterior.
+
+## D-719 - O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
+
+Vincular um anúncio a partir do detalhe do SKU deixava o diálogo em Gravando o vínculo quando a Server Action falhava no transporte. Cancelar, a nova tentativa e o Esc ficavam desligados, sem aviso. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz que o vínculo não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Diferente da recusa do servidor, que segue para a mensagem de erro e pede nova busca, a falha de transporte não diz nada sobre o anúncio: ele continua no diálogo e Confirmar vinculação fica disponível. A mensagem de erro do diálogo também passa a ser anunciada como alerta.
+
+A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.
