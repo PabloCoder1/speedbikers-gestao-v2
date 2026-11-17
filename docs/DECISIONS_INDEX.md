@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **606** (D-001 a D-704).
+Decisões registradas: **608** (D-001 a D-721).
 
 ## Por domínio
 
@@ -81,7 +81,7 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-663** — Retomada da confirmação do SAC após recarregar
 - **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
 
-### banco/rls (46)
+### banco/rls (47)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -129,6 +129,7 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
+- **D-720** — A unicidade do Full passa a ser o índice da timeline
 
 ### estoque (51)
 
@@ -547,7 +548,7 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (99)
+### worker/infra (100)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -648,4 +649,5 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-681** — Vinculações inicia a visão e os painéis em paralelo
 - **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
 - **D-684** — Perguntas inicia a lista e os contadores sem esperar a lista de contas
+- **D-721** — `job_runs` guarda 30 dias de execuções concluídas
 

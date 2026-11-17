@@ -19658,3 +19658,17 @@ Os dois links usam `prefetch={false}`. A regressão confere o SKU e o anúncio e
 A tabela de exceções lista todas as regras por SKU, sem paginação, e o link de cada uma disparava prefetch ao entrar na área visível. Ao abrir e rolar 50 exceções, a web fez 52 pré-buscas de SKU na mediana. Sem elas, a jornada fez 52 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
 
 O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca, e o seed não tem regra: a regressão grava uma exceção no banco local, confere o SKU esperado e o retorno à tela, e apaga a regra ao final. [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
+
+## D-720 - A unicidade do Full passa a ser o índice da timeline
+
+`fulfillment_stock_snapshots` tinha dois índices com as mesmas três colunas: a constraint unique `(ml_account_id, inventory_id, captured_at)`, toda ASC, e o `fulfillment_stock_snapshots_timeline_idx`, com o instante DESC. A migration `20260928160000` manteve o segundo de propósito: a varredura reversa da unique não dá a ordem mista do `distinct on` do Full atual (D-465). O motivo continua certo, e a saída não é apagar um dos dois. A unicidade passa a ser um índice unique na ordem do `distinct on`, `(ml_account_id, inventory_id, captured_at DESC)`, que ocupa o lugar dos dois. O nome `fulfillment_stock_snapshots_unique` continua. Nenhum código cita a constraint, e o worker grava com `insert` simples: a colisão segue 23505.
+
+No backup de produção de 22/10, restaurado: os índices da tabela caíram de 67 para 47 MB. A construção travou as escritas por 0,42 s. As três formas de leitura (Full atual da organização, Full atual com a conta fixa e as capturas anteriores que o worker lê) mantiveram as mesmas páginas, e a do worker passou a usar o índice novo. A medição foi direta no Postgres, não pelas RPCs como `authenticated`. Migration `20261117182500_full_snapshot_unique_in_distinct_order.sql`; teste em `packages/db/src/telemetry-retention.integration.test.ts`. [Medição](PERFORMANCE.md#unicidade-do-full-e-retenção-de-job_runs-d-720-e-d-721-17112026)
+
+## D-721 - `job_runs` guarda 30 dias de execuções concluídas
+
+A D-222 limpou uma vez a massa de um defeito morto e recusou uma política de retenção. O backup de produção de 22/10 mostrou outra coisa: um fluxo corrente de ~70 MB/mês em disco, a maior parte webhook concluído (`docs/database-migration/SIZE_REPORT.md`). Sem teto, a tabela cresce para sempre, e esse crescimento pesa em qualquer plano do Supabase.
+
+`private.expurgar_job_runs()` apaga as execuções `done` com mais de 30 dias, em lotes. Ficam de fora a falha, que nunca sai (`get_job_failures` lê até 90 dias), e a mais recente de cada organização e tipo sem execução na janela: ela é a "última execução" da Saúde do Sistema e o `reconciled_at` do corte do UpSeller (D-351). O append-only continua físico (D-221). O gatilho de DELETE só deixa passar a linha `done` vencida, e só quando a transação ligou `sb.expurgo_job_runs`, o que o expurgo faz. DELETE solto, mesmo do dono, falha recente e UPDATE seguem recusados.
+
+O agendamento é um ato, não a migration (o padrão da D-418): `select private.agendar_expurgo_de_telemetria();` em produção, depois do deploy, às 06:30 UTC. No backup restaurado, o acúmulo saiu em três chamadas, de 0,6 a 1,9 s cada, e todas as falhas ficaram. Sem VACUUM FULL, o espaço volta para uso da própria tabela, e ela para de crescer em vez de encolher. Migration `20261117182600_job_runs_retention.sql`.

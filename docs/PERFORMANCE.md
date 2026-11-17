@@ -2070,3 +2070,19 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-704 | 0 | 0 | 12 | 23 | 162 ms (155–229) |
 
 Antes, foram 50 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 52 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à tela. A latência com tráfego real segue pendente.
+
+### Unicidade do Full e retenção de job_runs (D-720 e D-721, 17/11/2026)
+
+Medido no backup de produção de 22/10 restaurado num PostgreSQL 17.6 isolado, sem *bloat*, com "agora" fixado no instante do backup nas leituras do Full. Cada forma teve um aquecimento e cinco medidas, direto no Postgres e não pelas RPCs como `authenticated`.
+
+| Forma | Antes | D-720 |
+| --- | --- | --- |
+| Full atual da organização (3 dias) | 49,6 ms, 528 páginas, `org_captured_idx` | 40,2 ms, 528 páginas, `org_captured_idx` |
+| Full atual com a conta fixa | 7,7 ms, 528 páginas | 8,5 ms, 528 páginas |
+| Capturas anteriores de 200 inventários (worker) | 17,6 ms, 5.769 páginas, `timeline_idx` | 16,1 ms, 5.769 páginas, `unique` |
+| Índices da tabela | 67 MB | 47 MB |
+| Lock da construção | — | 0,42 s |
+
+A diferença em milissegundos é ruído. A medida que importa é páginas e índice escolhido, e nenhuma forma piorou.
+
+D-721, no mesmo backup: com o corte de 30 dias contado a partir de 17/11, o acúmulo saiu em três chamadas de 100 mil linhas no máximo (1,9 s, 1,3 s e 0,6 s), e todas as falhas ficaram. O tamanho em disco não cai sem VACUUM FULL. O ganho é o teto: a tabela para em ~30 dias de execuções, em vez de crescer ~70 MB/mês.
