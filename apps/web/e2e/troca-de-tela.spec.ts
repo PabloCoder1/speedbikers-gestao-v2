@@ -106,6 +106,63 @@ for (const { entidade, aba, rotulo, tituloAnterior } of [
   });
 }
 
+test("atalhos de abas do SKU: o painel de decisões abre sob demanda", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const caminho = `/skus/${skuId}`;
+  const prefetches = contarPrefetches(page, caminho);
+
+  await login(page, caminho);
+  const anuncios = page.getByRole("region", { name: "Anúncios vinculados", exact: true }).getByRole("link", { name: /^Ver aba/ });
+  const decisoes = page.getByRole("region", { name: "Últimas decisões", exact: true }).getByRole("link", { name: /^Ver aba/ });
+  const abas = page.getByRole("navigation", { name: "Abas do SKU", exact: true });
+
+  await expect(anuncios).toHaveAttribute("href", `${caminho}?aba=anuncios`);
+  await expect(decisoes).toHaveAttribute("href", `${caminho}?aba=decisoes`);
+  await anuncios.scrollIntoViewIfNeeded();
+  await decisoes.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches()).toBe(0);
+
+  await decisoes.click();
+  await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "?aba=decisoes");
+  await expect(abas.getByRole("link", { name: "Decisões", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Decisões registradas", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "");
+  await expect(decisoes).toBeVisible();
+});
+
+test("atalhos de abas do anúncio: o menu Ações abre as republicações sob demanda", async ({ page }) => {
+  const caminho = `/anuncios/${E2E_LISTING_TRAFFIC.itemId}`;
+  const prefetches = contarPrefetches(page, caminho);
+
+  await login(page, caminho);
+  const vendas = page.getByRole("region", { name: "Vendas por dia", exact: true }).getByRole("link", { name: /^Detalhar/ });
+  const trafego = page.getByRole("region", { name: "Visitas por dia", exact: true }).getByRole("link", { name: /^Detalhar/ });
+  const republicacoes = page.getByRole("link", { name: "Republicações", exact: true });
+  const acoes = page.locator("summary").filter({ hasText: /^Ações/u });
+  const linhaDoTempo = page.getByRole("link", { name: "Linha do tempo e republicações", exact: true });
+
+  await expect(vendas).toHaveAttribute("href", `${caminho}?aba=vendas`);
+  await expect(trafego).toHaveAttribute("href", `${caminho}?aba=trafego`);
+  await expect(republicacoes).toHaveAttribute("href", `${caminho}?aba=historico`);
+  await vendas.scrollIntoViewIfNeeded();
+  await trafego.scrollIntoViewIfNeeded();
+  await acoes.click();
+  await expect(linhaDoTempo).toHaveAttribute("href", `${caminho}?aba=historico`);
+  await page.waitForLoadState("networkidle");
+  expect(prefetches()).toBe(0);
+
+  await linhaDoTempo.click();
+  await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "?aba=historico");
+  await expect(page.getByRole("heading", { name: "Republicações", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "");
+  await expect(republicacoes).toBeVisible();
+});
+
 test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {
   const prefetches = contarPrefetches(page, "/estoque");
   const titulo = await abrirHome(page);

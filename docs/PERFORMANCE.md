@@ -2150,3 +2150,18 @@ Comparação de dois builds de produção no Chromium com sessão ADMIN, Supabas
 | Anúncio · Preço → Visão geral | 7 → 1 | 14 → 8 | 18 → 14 | 145 ms (125–148) | 137 ms (125–151) |
 
 O destino escolhido foi pré-buscado uma vez no build anterior e zero vezes no corrigido. As pré-buscas restantes foram dos atalhos para Anúncios e Decisões no SKU e para Histórico, Vendas e Tráfego no anúncio. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas de abas antes do clique. Cada troca fez uma requisição RSC com HTTP 200 e atualizou a aba ativa sem novo documento. Voltar restaurou a URL e a aba inicial. A frequência real de troca e a latência em produção seguem pendentes.
+
+### Prefetch dos atalhos para abas nos detalhes (Sentinel A68, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN e Supabase local isolado, usando o seed padrão. Cada jornada abriu a Visão geral de um SKU ou anúncio, levou o atalho à janela visível e clicou. A sexta jornada abriu o menu Ações para alcançar Histórico. Cada build teve cinco repetições medidas e um aquecimento por jornada, em contextos novos de 1440 × 900. O trace contou chamadas ao Auth de pré-buscas de outras abas da mesma rota. A latência vai do clique até o controle ou título que identifica o painel de destino ficar visível.
+
+| Atalho | Auth de prefetch de abas antes do clique | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-711, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| SKU · Anúncios | 2 → 0 | 9 → 7 | 109 ms (104–131) | 115 ms (112–181) |
+| SKU · Decisões | 2 → 0 | 9 → 7 | 110 ms (99–120) | 114 ms (107–123) |
+| Anúncio · Vendas | 3 → 0 | 12 → 9 | 120 ms (117–136) | 111 ms (109–116) |
+| Anúncio · Tráfego | 3 → 0 | 12 → 9 | 121 ms (117–128) | 125 ms (115–135) |
+| Anúncio · Republicações | 3 → 0 | 12 → 9 | 116 ms (104–131) | 117 ms (104–123) |
+| Anúncio · Histórico pelo menu Ações | 3 → 0 | 24 → 21 | 126 ms (109–136) | 122 ms (109–138) |
+
+As pré-buscas de outras abas geraram zero chamadas REST de dados nos dois builds. Cada clique fez uma requisição RSC com HTTP 200, marcou a aba ativa e permitiu voltar à Visão geral sem recarregar o documento na troca. No build corrigido, abrir o menu Ações elevou o total de Auth antes do clique de 9 para 21 em comparação com o atalho direto de Republicações. O trace mostrou ali pré-buscas adicionais para SKU, Preços, Anúncios e Central de Ações. A frequência e a latência com tráfego real seguem pendentes.

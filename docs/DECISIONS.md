@@ -19694,3 +19694,9 @@ As regressões verificam a busca do item, a abertura do SKU correto e o retorno 
 Os links das abas no `ObjectHeader` usam `prefetch={false}`. O Chromium mediu quatro jornadas, entrando pela Visão geral ou direto na aba de preço de cada detalhe. Cada troca precisou de uma requisição RSC nos dois builds. A mudança poupou de 4 a 8 verificações de sessão antes do primeiro clique, conforme a jornada.
 
 As abas usam o indicador de atualização no lugar. As regressões atrasam a resposta e verificam que o painel anterior fica visível, que o indicador sai ao concluir e que voltar restaura a aba anterior. Os atalhos para abas que aparecem no conteúdo ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+
+## D-711 - Os atalhos da Visão geral abrem outras abas ao clicar
+
+Foi aplicado `prefetch={false}` aos atalhos de Anúncios e Decisões no SKU e aos de Vendas, Tráfego e Histórico no anúncio, incluindo o link Linha do tempo e republicações no menu Ações. A comparação local registrou duas chamadas ao Auth a menos por jornada no SKU e três no anúncio. Todos os destinos continuaram a abrir com uma única resposta RSC e preservaram a aba no histórico de navegação.
+
+As regressões conferem os destinos dos links antes do clique e exercitam a abertura de Decisões e de Republicações pelo menu. As pré-buscas para outras telas que aparecem ao abrir o menu Ações ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)

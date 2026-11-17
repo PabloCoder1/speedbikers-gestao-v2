@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-710 carrega as abas do cabeçalho do SKU e do anúncio ao acioná-las. Na Visão geral, as chamadas ao Auth por pré-busca de outras abas caíram de 8 para 2 no SKU e de 7 para 3 no anúncio. A próxima medição é nos atalhos do conteúdo que ainda fazem prefetch. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+- **Sentinel.** D-711 carrega ao clicar os atalhos de abas medidos no SKU e no anúncio. As chamadas ao Auth atribuídas às pré-buscas de abas na Visão geral caíram de 2 para zero no SKU e de 3 para zero no anúncio. A próxima medição é nos links para outras telas que disparam prefetch ao abrir o menu Ações do anúncio. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

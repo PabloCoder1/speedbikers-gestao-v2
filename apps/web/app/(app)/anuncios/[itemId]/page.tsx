@@ -689,7 +689,7 @@ export default async function AnuncioPage({
               afordância que não leva a lugar nenhum.
             */}
             {tab !== "historico" && (
-              <LinkDeFiltro className="sb-text-button" href={href("historico")}>
+              <LinkDeFiltro className="sb-text-button" href={href("historico")} prefetch={false}>
                 Republicações
                 <span aria-hidden="true">→</span>
               </LinkDeFiltro>
@@ -736,7 +736,7 @@ export default async function AnuncioPage({
               <Link className="sb-menu-item" href={`/anuncios?busca=${encodeURIComponent(row.item_id)}`}>
                 Achar na lista de anúncios
               </Link>
-              <LinkDeFiltro className="sb-menu-item" href={href("historico")}>
+              <LinkDeFiltro className="sb-menu-item" href={href("historico")} prefetch={false}>
                 Linha do tempo e republicações
               </LinkDeFiltro>
               <Link className="sb-menu-item" href="/acoes">
@@ -846,7 +846,7 @@ export default async function AnuncioPage({
                 title="Vendas por dia"
                 subtitle={`unidades vendidas, últimos ${String(LOOKBACK_DAYS)} dias`}
                 aside={
-                  <LinkDeFiltro className="sb-anuncio-link" href={href("vendas")}>
+                  <LinkDeFiltro className="sb-anuncio-link" href={href("vendas")} prefetch={false}>
                     Detalhar →
                   </LinkDeFiltro>
                 }
@@ -868,7 +868,7 @@ export default async function AnuncioPage({
                 title="Visitas por dia"
                 subtitle={`coletadas por varredura, últimos ${String(LOOKBACK_DAYS)} dias`}
                 aside={
-                  <LinkDeFiltro className="sb-anuncio-link" href={href("trafego")}>
+                  <LinkDeFiltro className="sb-anuncio-link" href={href("trafego")} prefetch={false}>
                     Detalhar →
                   </LinkDeFiltro>
                 }

@@ -970,7 +970,7 @@ export default async function SkuDashboardPage({
                     listingsResult.error !== null ? "não foi possível carregar" : resumoDeAnuncios(listings.length)
                   }
                   aside={
-                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`} prefetch={false}>
                       Ver aba →
                       <CarregandoSeODemorar />
                     </Link>
@@ -1014,7 +1014,7 @@ export default async function SkuDashboardPage({
                       : `${formatCount(decisions.length)} registrada(s) para este SKU`
                   }
                   aside={
-                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`} prefetch={false}>
                       Ver aba →
                       <CarregandoSeODemorar />
                     </Link>

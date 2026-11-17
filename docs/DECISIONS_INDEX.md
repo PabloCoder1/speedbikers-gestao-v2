@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **612** (D-001 a D-710).
+Decisões registradas: **613** (D-001 a D-711).
 
 ## Por domínio
 
@@ -184,7 +184,7 @@ Decisões registradas: **612** (D-001 a D-710).
 - **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
 - **D-704** — As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
 
-### interface (74)
+### interface (75)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -260,6 +260,7 @@ Decisões registradas: **612** (D-001 a D-710).
 - **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
+- **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 
 ### mercado-livre (122)
 
