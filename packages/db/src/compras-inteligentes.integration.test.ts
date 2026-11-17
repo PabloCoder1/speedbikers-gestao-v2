@@ -357,7 +357,7 @@ describe("ciclo do pedido (D-722 a D-725)", () => {
 
     expect(b.id).toBe(a.id);
 
-    const pedidos = await client.query("select count(*)::int as n from public.purchase_orders where organization_id = $1 and request_id = $2", [ORG, req]);
+    const pedidos = await client.query<{ n: number }>("select count(*)::int as n from public.purchase_orders where organization_id = $1 and request_id = $2", [ORG, req]);
     const decisoes = await client.query<{ decision: string; reason: string | null }>(
       "select decision, reason from public.purchase_order_review_decisions where purchase_order_id = $1 order by sku_snapshot",
       [a.id],

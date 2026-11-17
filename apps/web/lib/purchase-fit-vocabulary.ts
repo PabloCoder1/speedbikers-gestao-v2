@@ -124,9 +124,9 @@ export function fraseDoMotivo(code: PurchaseReasonCode, c: ContextoMotivo): stri
       return `No pedido: ${c.noPedido === null ? "—" : NUM.format(c.noPedido)} un; o sistema compraria ${c.recomendado === null ? "—" : NUM.format(c.recomendado)}.`;
     case "ACIMA_DO_TETO":
       return `Com o pedido, a cobertura vai a ${dias(c.coberturaDepoisDias)} — acima do teto de ${dias(c.tetoDias)}.`;
-    case "VENDA_EM_QUEDA":
+    case "DEMANDA_EM_QUEDA":
       return "A venda dos últimos 30 dias caiu mais de 25% contra os 60 anteriores.";
-    case "VENDA_CRESCENDO":
+    case "DEMANDA_CRESCENDO":
       return "A venda dos últimos 30 dias cresceu mais de 25% contra os 60 anteriores.";
     case "SEM_VENDA_90D":
       return "Nenhuma venda em 90 dias, com estoque disponível.";
@@ -148,9 +148,9 @@ export function fraseDoMotivo(code: PurchaseReasonCode, c: ContextoMotivo): stri
       return "Produto marcado como descontinuado no ERP.";
     case "PEDIDO_SOBREPOSTO":
       return `Outros pedidos em aberto já somam ${NUM.format(c.outrosPedidos)} un deste SKU.`;
-    case "AJUSTE_MOQ":
+    case "ARREDONDADO_MOQ":
       return "Quantidade ajustada ao mínimo do fornecedor.";
-    case "AJUSTE_MULTIPLO":
+    case "ARREDONDADO_MULTIPLO":
       return "Quantidade ajustada ao múltiplo de embalagem.";
     case "SEM_CONFIGURACAO":
       return "Sem regra de reposição (prazo e cobertura) para este SKU.";

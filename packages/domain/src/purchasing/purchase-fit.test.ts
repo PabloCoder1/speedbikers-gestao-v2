@@ -199,8 +199,8 @@ describe("assessPurchaseFit — reposição", () => {
     const sobe = avaliar(linha({ units_15d: 50, units_30d: 90, units_60d: 120, units_90d: 150 }));
     const cai = avaliar(linha({ local_quantity: 400, units_15d: 5, units_30d: 10, units_60d: 60, units_90d: 110 }));
 
-    expect(codes(sobe)).toContain("VENDA_CRESCENDO");
-    expect(codes(cai)).toContain("VENDA_EM_QUEDA");
+    expect(codes(sobe)).toContain("DEMANDA_CRESCENDO");
+    expect(codes(cai)).toContain("DEMANDA_EM_QUEDA");
     expect(cai.situation).toBe("BAIXO_GIRO");
   });
 
@@ -271,6 +271,6 @@ describe("adjustToSupplierRules", () => {
     const r = avaliar(linha({ local_quantity: 115 }), { minimumOrderQuantity: 50 });
 
     expect(r.recommendedQuantity).toBe(50); // sugestão 5 → MOQ 50
-    expect(r.reasons.map((x) => x.code)).toContain("AJUSTE_MOQ");
+    expect(r.reasons.map((x) => x.code)).toContain("ARREDONDADO_MOQ");
   });
 });

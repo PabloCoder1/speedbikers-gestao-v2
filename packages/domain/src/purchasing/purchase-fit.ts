@@ -56,8 +56,8 @@ export type PurchaseReasonCode =
   | "COBERTURA_JA_ATENDE"
   | "ACIMA_DA_SUGESTAO"
   | "ACIMA_DO_TETO"
-  | "VENDA_EM_QUEDA"
-  | "VENDA_CRESCENDO"
+  | "DEMANDA_EM_QUEDA"
+  | "DEMANDA_CRESCENDO"
   | "SEM_VENDA_90D"
   | "MARGEM_NEGATIVA"
   | "MARGEM_ABAIXO_DO_MINIMO"
@@ -68,8 +68,8 @@ export type PurchaseReasonCode =
   | "DISPONIBILIDADE_DESCONHECIDA"
   | "DESCONTINUADO"
   | "PEDIDO_SOBREPOSTO"
-  | "AJUSTE_MOQ"
-  | "AJUSTE_MULTIPLO"
+  | "ARREDONDADO_MOQ"
+  | "ARREDONDADO_MULTIPLO"
   | "SEM_CONFIGURACAO"
   | "ESTOQUE_VIRTUAL"
   | "HISTORICO_INCOMPLETO"
@@ -194,8 +194,8 @@ export function assessPurchaseFit(input: PurchaseFitInput): PurchaseFitResult {
     turnover = cobre ? "BAIXO" : "ALTO";
   }
 
-  if (verdict.trend.trend === "CAINDO") add("VENDA_EM_QUEDA", turnover === "ALTO" ? "info" : "atencao");
-  if (verdict.trend.trend === "CRESCENDO") add("VENDA_CRESCENDO", "info");
+  if (verdict.trend.trend === "CAINDO") add("DEMANDA_EM_QUEDA", turnover === "ALTO" ? "info" : "atencao");
+  if (verdict.trend.trend === "CRESCENDO") add("DEMANDA_CRESCENDO", "info");
   if (turnover === "PARADO") add("SEM_VENDA_90D");
 
   // ---- Disponibilidade no período ---------------------------------------
@@ -224,8 +224,8 @@ export function assessPurchaseFit(input: PurchaseFitInput): PurchaseFitResult {
 
     const adjusted = adjustToSupplierRules(net, input.minimumOrderQuantity, input.packMultiple);
 
-    if (adjusted.moqApplied) add("AJUSTE_MOQ", "info");
-    if (adjusted.multipleApplied) add("AJUSTE_MULTIPLO", "info");
+    if (adjusted.moqApplied) add("ARREDONDADO_MOQ", "info");
+    if (adjusted.multipleApplied) add("ARREDONDADO_MULTIPLO", "info");
     recommendedQuantity = input.isDiscontinued ? 0 : adjusted.quantity;
   } else if (!isNew && !input.isDiscontinued && usable !== null && windowDays !== null) {
     /*
