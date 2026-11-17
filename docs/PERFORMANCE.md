@@ -2180,3 +2180,14 @@ Comparação de dois builds de produção no Chromium com sessão ADMIN e Supaba
 | Vinculações | 8 → 0 | 18 → 10 | 132 ms (119–153) | 132 ms (127–140) |
 
 Com o menu fechado, o total era de nove chamadas ao Auth nos dois builds. No corrigido, abrir Ações acrescentou uma chamada de `/api/vitals` em todas as amostras, e zero pré-buscas dos destinos. As pré-buscas de destinos do menu geraram zero chamadas REST de dados nos dois builds. Cada clique teve uma requisição RSC com HTTP 200 e voltou à mesma Visão geral. Preços e Anúncios exibiram o MLB esperado na busca e na lista. A frequência de uso do menu e a latência com tráfego real seguem pendentes.
+
+### Prefetch do atalho de Diagnóstico para Anúncios no SKU (Sentinel A70, 17/11/2026)
+
+Dois builds de produção rodaram no Chromium com sessão ADMIN, Supabase local isolado e o seed padrão. Cada jornada abriu Diagnóstico diretamente, no consolidado ou com a conta do anúncio na URL, rolou até o painel de limites e clicou em aba Anúncios. Por build e recorte houve cinco repetições medidas e um aquecimento, em contextos novos de 1440 × 900. O trace atribuiu ao destino Anúncios as chamadas ao Auth por pré-busca. A latência termina quando o botão Vincular anúncio da aba está visível.
+
+| Recorte | Auth de prefetch antes do clique | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-713, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| Consolidado | 1 → 0 | 8 → 7 | 122 ms (116–203) | 118 ms (110–137) |
+| Conta na URL | 1 → 0 | 8 → 7 | 132 ms (119–145) | 119 ms (100–138) |
+
+Nos dois builds, as pré-buscas de outras abas geraram zero chamadas REST de dados. Cada clique fez uma requisição RSC com HTTP 200, ativou Anúncios e mostrou a seção Shopee. Voltar restaurou a aba Diagnóstico e a URL original, incluindo a conta quando informada. A latência e a frequência de uso com tráfego real seguem pendentes.

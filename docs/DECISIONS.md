@@ -19706,3 +19706,9 @@ As regressões conferem os destinos dos links antes do clique e exercitam a aber
 Os links para SKU ou Vinculações, Central de Preços, busca de Anúncios, Central de Ações e catálogo usam `prefetch={false}` nesse menu. As seis jornadas locais mediram 8 a 10 chamadas ao Auth por pré-busca na abertura, conforme o destino, e zero no build corrigido. Os atalhos filtrados levaram o MLB à busca e o retorno restaurou a Visão geral do anúncio.
 
 As regressões verificam Preços e Vinculações, com atraso na requisição de navegação para conferir o indicador de atualização. [Medição](PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+
+## D-713 - O atalho de Diagnóstico para Anúncios do SKU carrega ao clicar
+
+O link aba Anúncios no painel de limites do diagnóstico usa `prefetch={false}`. As duas jornadas locais, no consolidado e com conta na URL, evitaram uma chamada ao Auth por pré-busca antes do clique. As medianas do clique passaram de 122 para 118 ms e de 132 para 119 ms.
+
+A regressão atrasa a resposta da aba, verifica o indicador de atualização e volta ao Diagnóstico. O benchmark confere o retorno ao recorte de conta. [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)

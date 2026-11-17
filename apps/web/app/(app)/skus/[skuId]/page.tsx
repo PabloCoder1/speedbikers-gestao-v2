@@ -2092,7 +2092,7 @@ export default async function SkuDashboardPage({
                     ))}
                     <li>
                       Shopee: este diagnóstico julga só os anúncios do Mercado Livre. Os anúncios da Shopee vinculados
-                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</LinkDeFiltro>, mas
+                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`} prefetch={false}>aba Anúncios</LinkDeFiltro>, mas
                       preço, estoque anunciado e ações ainda não têm régua para eles aqui.
                     </li>
                     <li>

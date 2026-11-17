@@ -74,6 +74,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A68 | P2 · CORRIGIDO localmente (D-711) | Os atalhos da Visão geral e do menu Ações antecipavam destinos de outras abas dos detalhes | Em seis jornadas, as chamadas ao Auth atribuídas a pré-buscas de outras abas caíram de 2 para zero no SKU e de 3 para zero no anúncio. [Medição](../PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026) |
 | A69 | P2 · CORRIGIDO localmente (D-712) | Abrir o menu Ações no detalhe do anúncio disparava pré-buscas para outras telas | As medianas de chamadas ao Auth por pré-busca na abertura foram de 8 a 10 antes do ajuste e zero depois. Os seis caminhos abriram o destino esperado. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026) |
 
+| A70 | P2 · CORRIGIDO localmente (D-713) | O link de Diagnóstico para a aba Anúncios do SKU disparava pré-busca ao entrar na área visível | No consolidado e com conta na URL, o Auth de prefetch do destino caiu de uma chamada para zero. O retorno restaurou o recorte original. [Medição](../PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

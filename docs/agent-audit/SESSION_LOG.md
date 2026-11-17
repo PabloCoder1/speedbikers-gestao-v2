@@ -499,3 +499,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-712 (A69).** Nos seis caminhos, abrir o menu passou de medianas de 8 a 10 chamadas ao Auth por pré-busca para zero. Cada clique abriu o destino esperado em uma requisição RSC. O MLB entrou na busca de Preços e de Anúncios, e a volta restaurou a Visão geral do anúncio. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
 - **Validação.** Os dois novos casos detectaram pré-buscas no build anterior após levar o link à área visível. No corrigido passaram os 36 casos Playwright de navegação, Detalhe do anúncio, anúncio excluído, Anúncios e Preços. Os novos casos atrasaram a requisição e conferiram o indicador durante a navegação.
 - **Próxima etapa.** Medir o atalho de Diagnóstico para Anúncios no detalhe do SKU. D-712 alterou uma página e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do atalho de Diagnóstico para Anúncios no SKU
+
+- **Base.** `codex/sentinel-audit` em `e90f14ce`.
+- **D-713 (A70).** Consolidado e conta na URL passaram de uma pré-busca de Anúncios para zero. Os cliques abriram a aba em uma requisição RSC e a volta restaurou a URL original. [Medição](../PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+- **Validação.** O caso novo detectou uma pré-busca no build anterior. No corrigido passaram os 24 casos Playwright de Troca de tela e Detalhe do SKU, incluindo espera com o painel anterior visível e retorno ao Diagnóstico.
+- **Próxima etapa.** Verificar se Reler agora em Diagnóstico lê uma alteração feita no banco local após abrir a página e preserva o escopo. Esta etapa alterou a página do SKU, o spec de navegação e os mapas. Nenhuma migration alterada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

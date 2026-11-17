@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-712 carrega os destinos do menu Ações do anúncio ao clicar. As medianas de chamadas ao Auth por pré-busca ao abrir o menu eram de 8 a 10 e chegaram a zero. A próxima medição é no atalho de Diagnóstico para Anúncios no SKU. Na última verificação, o PR #328 tinha CI verde em `513c38f4`. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+- **Sentinel.** D-713 carrega ao clicar o atalho de Diagnóstico para Anúncios no SKU. No consolidado e com conta na URL, a pré-busca do destino caiu de uma chamada ao Auth para zero. A próxima verificação é se Reler agora atualiza o diagnóstico após mudança nos dados. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

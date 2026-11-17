@@ -106,6 +106,41 @@ for (const { entidade, aba, rotulo, tituloAnterior } of [
   });
 }
 
+test("Diagnóstico do SKU: o atalho de anúncios abre sob demanda e volta ao diagnóstico", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const caminho = `/skus/${skuId}`;
+  const origem = `${caminho}?aba=diagnostico`;
+  const prefetches = contarPrefetches(page, caminho, "anuncios");
+  const abas = page.getByRole("navigation", { name: "Abas do SKU", exact: true });
+
+  await login(page, origem);
+  await expect(abas.getByRole("link", { name: "Diagnóstico", exact: true })).toHaveAttribute("aria-current", "page");
+  const painel = page.getByRole("region", { name: "O que esta tela NÃO julga", exact: true });
+  const link = painel.getByRole("link", { name: "aba Anúncios", exact: true });
+
+  await expect(link).toHaveAttribute("href", `${caminho}?aba=anuncios`);
+  await link.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches()).toBe(0);
+
+  await segurarTela(page, caminho, "anuncios");
+  await link.click();
+  await expect(page.locator(".sb-content[aria-busy='true']")).toHaveCount(1);
+  await expect(page.locator(".sb-atualizando-barra")).toHaveCount(1);
+  await expect(painel).toBeVisible();
+
+  await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "?aba=anuncios");
+  await expect(abas.getByRole("link", { name: "Anúncios", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", { name: "+ Vincular anúncio", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Anúncios da Shopee", exact: true })).toBeVisible();
+  await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname + url.search === origem);
+  await expect(abas.getByRole("link", { name: "Diagnóstico", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(link).toBeVisible();
+});
+
 test("atalhos de abas do SKU: o painel de decisões abre sob demanda", async ({ page }) => {
   const { skuId } = await readSeedOutput();
   const caminho = `/skus/${skuId}`;
