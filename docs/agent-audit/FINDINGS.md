@@ -82,6 +82,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A73 | P2 · CORRIGIDO localmente (D-716) | Uma falha de transporte da Server Action deixava os diálogos Shopee presos em Gravando ou Removendo, sem alerta e com os controles desabilitados | As duas regressões falharam no build anterior. Os diálogos agora tratam a exceção, liberam o estado pendente em `finally` e preservam os campos. O aviso pede conferir a lista antes de tentar novamente. [Verificação](SESSION_LOG.md) |
 
+| A74 | P2 · CORRIGIDO localmente (D-717) | Uma falha de transporte deixava o popup de Vinculações preso, tanto no vínculo manual quanto na resolução e no descarte de candidato | As três regressões reproduziram o estado pendente sem alerta. O popup agora trata a exceção, libera os controles em `finally` e preserva o SKU escolhido. A nova tentativa foi confirmada no banco. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

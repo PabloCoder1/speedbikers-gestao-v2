@@ -19736,3 +19736,11 @@ As rotinas de vincular e remover só liberavam o estado pendente depois que a Se
 Cada rotina trata a exceção e libera o estado pendente em `finally`. A mensagem informa que o vínculo ou a remoção não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Uma falha de comunicação pode ocorrer depois da gravação no servidor, por isso o cliente não anuncia que nada mudou nem repete a ação automaticamente. O SKU escolhido e o motivo permanecem no diálogo.
 
 As regressões conferem a ausência de gravação quando o POST foi bloqueado, os controles liberados e a nova tentativa. Outro caso usa a RPC real para recusar um item que saiu do catálogo e duas sessões autenticadas para remover um vínculo enquanto a primeira ainda tem o diálogo aberto. Os dois estados já exibiam a recusa e permitiam recuperar a tela. O banco e as ações de servidor mantêm seu contrato.
+
+## D-717 - O popup de Vinculações recupera os controles após falha da ação
+
+Vincular um anúncio, resolver um candidato do ERP e descartar um candidato aguardavam a Server Action antes de liberar o estado pendente. A interrupção da conexão rejeitava a promessa e deixava o popup sem alerta e com os controles desabilitados. Os três caminhos foram reproduzidos em Chromium bloqueando o POST antes do envio.
+
+As rotinas tratam a exceção da ação e liberam o estado pendente em `finally`. O aviso informa que o vínculo ou o descarte não pôde ser confirmado e pede conferir a lista antes de tentar novamente, pois a comunicação pode falhar depois da gravação no servidor. O SKU escolhido, o anúncio e o candidato continuam no popup. O cliente aguarda uma nova ação da pessoa.
+
+As regressões consultam o banco para confirmar que o POST bloqueado não criou vínculo nem fechou o candidato. Na nova tentativa, o vínculo aponta para o SKU escolhido, a resolução deixa o candidato RESOLVED e o descarte o deixa DISMISSED. O anúncio da fixture é arquivado ao fim, com o SKU nulo, seguindo a exclusão lógica permitida pela API. Vínculos e lote temporários são removidos. O fluxo de sucesso e o avanço entre variações mantêm a sequência anterior.

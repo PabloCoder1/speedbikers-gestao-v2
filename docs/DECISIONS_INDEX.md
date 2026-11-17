@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **618** (D-001 a D-716).
+Decisões registradas: **619** (D-001 a D-717).
 
 ## Por domínio
 
@@ -391,7 +391,7 @@ Decisões registradas: **618** (D-001 a D-716).
 - **D-714** — A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 
-### outros (91)
+### outros (92)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -484,6 +484,7 @@ Decisões registradas: **618** (D-001 a D-716).
 - **D-706** — Os produtos do fornecedor abrem o SKU ao clicar
 - **D-708** — O painel do fornecedor abre o pedido de compra ao clicar
 - **D-716** — Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+- **D-717** — O popup de Vinculações recupera os controles após falha da ação
 
 ### processo/docs (1)
 
