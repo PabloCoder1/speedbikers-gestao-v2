@@ -471,3 +471,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-708 (A65).** No painel do fornecedor, as chamadas ao Auth por pré-busca antes do clique caíram de 3 e 49 para zero para listas com 2 e 50 pedidos. A mediana do clique na lista cheia foi de 121 ms nos dois builds. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
 - **Validação.** O caso novo detectou sete requisições de prefetch no build anterior. Passaram os 18 casos Playwright de Fornecedores e Compras com o seed padrão em banco recriado, além do check e build. A página, o spec e os mapas da auditoria foram atualizados.
 - **Próxima etapa.** Reutilizar a loja live sintética do Playwright para medir os anúncios da Shopee no SKU e os links de SKU nas devoluções. Nenhuma migration alterada nesta etapa. Publicação e validação real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch de anúncios da Shopee no SKU e de SKUs em Devoluções
+
+- **Base.** `codex/sentinel-audit` em `a3c789dd`. O ensaio local reaproveitou a loja sintética do projeto Playwright `loja-live` com 50 anúncios e 10 devoluções.
+- **D-709 (A66).** As chamadas ao Auth por pré-busca caíram de 48 e 13 para zero, na mediana, nos anúncios e em Devoluções. Foram alterados os links nas duas telas, o spec `ensaio-loja-live.spec.ts` e os mapas da auditoria. [Medição](../PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+- **Validação.** Cada caso novo mostrou duas pré-buscas no build anterior. No corrigido passaram os 34 casos Chromium de SKU, Anúncios e Vendas da Shopee e os 19 casos de `loja-live`, incluindo o retorno à aba ou ao filtro da loja. Passaram check, build, docs e as guardas de leituras em série e navegação.
+- **Próxima etapa.** Medir as abas do `ObjectHeader` nos detalhes de SKU e anúncio. As cinco repetições da jornada de anúncios da Shopee registraram sete chamadas ao Auth para outras abas do SKU. Nenhuma migration foi alterada nas duas etapas desta retomada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

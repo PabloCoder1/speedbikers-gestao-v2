@@ -1479,6 +1479,7 @@ export default async function SkuDashboardPage({
                                     onde o vínculo manual se troca ou remove. */}
                                 <Link
                                   href={`/anuncios/shopee?q=${String(anuncio.item_id)}`}
+                                  prefetch={false}
                                   title="Abrir em Anúncios da Shopee"
                                 >
                                   {anuncio.item_id}

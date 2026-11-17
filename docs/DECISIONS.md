@@ -19682,3 +19682,9 @@ As regressões conferem o anúncio esperado e o retorno à aba de origem. O dest
 O link da linha de Pedidos de compra usa `prefetch={false}`. No ensaio local, a mudança evitou 3 chamadas ao Auth antes do clique no fornecedor com 2 pedidos e 49 no fornecedor com 50. A mediana do clique ficou em 121 ms na lista cheia e subiu de 107 para 116 ms na lista curta.
 
 A regressão confere o número do pedido aberto e o retorno ao mesmo fornecedor. [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
+
+## D-709 - Os links de anúncio e devolução da Shopee carregam ao clicar
+
+Na tabela de Anúncios da Shopee do SKU, o link do número do item usa `prefetch={false}` e abre a lista filtrada pelo número. Em Devoluções, a mesma opção vale para SKUs vinculados. O ensaio com loja sintética do projeto `loja-live` registrou a redução de 48 e 13 chamadas ao Auth para zero antes do clique, na mediana.
+
+As regressões verificam a busca do item, a abertura do SKU correto e o retorno à aba original ou ao filtro de loja. [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)

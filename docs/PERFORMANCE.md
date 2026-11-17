@@ -2124,3 +2124,16 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | 50 | D-708 | 0 | 0 | 14 | 20 | 121 ms (110–130) |
 
 Antes, as pré-buscas atingiam 2 e 48 pedidos distintos, na mediana. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas nos dois builds. Todos os cliques fizeram uma requisição RSC com HTTP 200, abriram o pedido e o item esperados e permitiram retornar ao mesmo fornecedor. A mediana do clique ficou em 121 ms na lista cheia e subiu 9 ms na lista curta. A frequência de cliques e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links da Shopee no SKU e em Devoluções (Sentinel A66, 17/11/2026)
+
+Dois builds de produção rodaram no Chromium com sessão ADMIN e Supabase local isolado. O seed do ensaio `loja-live` recebeu itens sintéticos adicionais. O SKU mostrou 50 anúncios, e o painel mostrou 10 devoluções com SKUs distintos e um item avulso. Cada jornada abriu a aba ou o filtro de loja, rolou e clicou no anúncio da linha 41 ou no SKU da 10ª devolução. Houve cinco repetições medidas e um aquecimento por jornada e build, em contextos novos de 1440 × 900. O trace distinguiu as buscas por item na lista de anúncios e as requisições aos SKUs da fixture. O clique foi cronometrado até o título principal do destino ficar visível.
+
+| Lista | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Anúncios Shopee do SKU | Anterior | 4 | 44 | 72 | 81 | 139 ms (131–162) |
+| Anúncios Shopee do SKU | D-709 | 0 | 0 | 24 | 32 | 140 ms (133–175) |
+| Devoluções | Anterior | 6 | 7 | 22 | 32 | 147 ms (105–172) |
+| Devoluções | D-709 | 0 | 0 | 9 | 20 | 145 ms (131–153) |
+
+As chamadas ao Auth por pré-busca foram de 48 para zero nos anúncios e de 13 para zero em Devoluções. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas. Cada clique observou uma requisição RSC com HTTP 200. A lista filtrada mostrou apenas o anúncio esperado e a outra jornada mostrou o título do SKU vinculado. Voltar restaurou o recorte original e o item avulso apareceu sem link. A latência e a frequência de cliques com tráfego real seguem pendentes.

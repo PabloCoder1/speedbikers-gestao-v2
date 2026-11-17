@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-708 abre os pedidos de compra do fornecedor ao clicar. Em 50 pedidos locais, as chamadas ao Auth atribuídas às pré-buscas antes do clique caíram de 49 para zero na mediana. As próximas medições são os links da Shopee no detalhe do SKU e em Devoluções com dados sintéticos de loja live no banco local. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
+- **Sentinel.** D-709 abre ao clicar os anúncios da Shopee no SKU e os SKUs de Devoluções. As chamadas ao Auth por pré-busca caíram de 48 e 13 para zero na mediana local. A próxima medição é o prefetch das abas dos detalhes de SKU e anúncio. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

@@ -45,6 +45,68 @@ async function semErro(page: Page): Promise<void> {
   await expect(page.locator(".sb-content").getByText(SEM_ERRO)).toHaveCount(0);
 }
 
+function registrarPrefetches(page: Page, destino: (url: URL) => boolean): string[] {
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+    if (prefetch && destino(new URL(request.url()))) prefetches.push(request.url());
+  });
+
+  return prefetches;
+}
+
+test("Shopee: o anúncio do SKU abre a busca ao clicar e a volta preserva a aba", async ({ page }) => {
+  const item = "990777001";
+  const origem = `/skus/${skuId}?aba=anuncios`;
+  const destino = (url: URL) => url.pathname === "/anuncios/shopee" && url.searchParams.get("q") === item;
+  const prefetches = registrarPrefetches(page, destino);
+
+  await entrar(page, origem);
+  const link = page.getByRole("table", { name: "Anúncios da Shopee deste SKU" }).getByRole("link", { name: item, exact: true });
+
+  await expect(link).toHaveAttribute("href", `/anuncios/shopee?q=${item}`);
+  await link.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await link.click();
+  await expect(page).toHaveURL(destino);
+  const linhas = page.getByRole("table", { name: "Anúncios da Shopee", exact: true }).locator("tbody tr");
+
+  await expect(linhas).toHaveCount(1);
+  await expect(linhas.first().getByText(item, { exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname + url.search === origem);
+  await expect(link).toBeVisible();
+});
+
+test("Shopee: o SKU de devolução abre ao clicar e a volta preserva a loja", async ({ page }) => {
+  const origem = `/vendas/shopee?loja=${lojaId}`;
+  const href = `/skus/${skuId}`;
+  const destino = (url: URL) => url.pathname === href;
+  const prefetches = registrarPrefetches(page, destino);
+
+  await entrar(page, origem);
+  const link = page.getByRole("list", { name: "Devoluções mais recentes" }).getByRole("link", { name: LOJA_LIVE.sku, exact: true });
+
+  await expect(link).toHaveAttribute("href", href);
+  await link.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await link.click();
+  await expect(page).toHaveURL(destino);
+  await expect(page.getByRole("heading", { level: 2, name: LOJA_LIVE.skuTitulo, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname + url.search === origem);
+  await expect(link).toBeVisible();
+});
+
 /** "1.234" → 1234 (a contagem com o separador de milhar). */
 function inteiro(texto: string): number {
   return Number(texto.replace(/\D/gu, ""));
