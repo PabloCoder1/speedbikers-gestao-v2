@@ -478,3 +478,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-709 (A66).** As chamadas ao Auth por pré-busca caíram de 48 e 13 para zero, na mediana, nos anúncios e em Devoluções. Foram alterados os links nas duas telas, o spec `ensaio-loja-live.spec.ts` e os mapas da auditoria. [Medição](../PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
 - **Validação.** Cada caso novo mostrou duas pré-buscas no build anterior. No corrigido passaram os 34 casos Chromium de SKU, Anúncios e Vendas da Shopee e os 19 casos de `loja-live`, incluindo o retorno à aba ou ao filtro da loja. Passaram check, build, docs e as guardas de leituras em série e navegação.
 - **Próxima etapa.** Medir as abas do `ObjectHeader` nos detalhes de SKU e anúncio. As cinco repetições da jornada de anúncios da Shopee registraram sete chamadas ao Auth para outras abas do SKU. Nenhuma migration foi alterada nas duas etapas desta retomada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do seletor de abas no SKU e no anúncio
+
+- **Base.** `codex/sentinel-audit` em `d121f271`.
+- **D-710 (A67).** Em quatro jornadas com o seed padrão, a pré-busca de outras abas caiu de 8 para 2 e 0 no SKU, e de 7 para 3 e 1 no anúncio. O clique continuou a abrir a aba com uma requisição RSC. Os links para outras abas que aparecem fora do seletor explicam as requisições restantes. [Medição](../PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+- **Validação.** Os dois casos novos acusaram uma pré-busca cada no build anterior. No corrigido, passaram os 28 casos de Troca de tela, Detalhe do SKU e Detalhe do anúncio. As regressões acionaram a aba com Enter, atrasaram a resposta e verificaram o painel anterior, o indicador e o retorno à aba inicial.
+- **Próxima etapa.** Medir os atalhos para abas fora do seletor. Esta etapa alterou o cabeçalho e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)

@@ -2137,3 +2137,16 @@ Dois builds de produção rodaram no Chromium com sessão ADMIN e Supabase local
 | Devoluções | D-709 | 0 | 0 | 9 | 20 | 145 ms (131–153) |
 
 As chamadas ao Auth por pré-busca foram de 48 para zero nos anúncios e de 13 para zero em Devoluções. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas. Cada clique observou uma requisição RSC com HTTP 200. A lista filtrada mostrou apenas o anúncio esperado e a outra jornada mostrou o título do SKU vinculado. Voltar restaurou o recorte original e o item avulso apareceu sem link. A latência e a frequência de cliques com tráfego real seguem pendentes.
+
+### Prefetch do seletor de abas no SKU e no anúncio (Sentinel A67, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN, Supabase local isolado e o seed padrão. Cada jornada abriu diretamente a Visão geral ou a aba de preços de um SKU ou anúncio do Mercado Livre. Cinco repetições medidas e um aquecimento por jornada e build usaram contextos novos de 1440 × 900. O trace contou saídas ao Auth atribuídas a pré-buscas de outras abas da mesma rota, incluindo os atalhos do conteúdo. A latência vai do clique até o título do painel de destino ficar visível.
+
+| Troca | Auth de prefetch antes do clique | Auth total antes do clique | Auth total até carregar a aba | Clique anterior, mediana (mín.–máx.) | Clique D-710, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | --- | --- |
+| SKU · Visão geral → Preços | 8 → 2 | 15 → 9 | 17 → 11 | 139 ms (115–156) | 130 ms (107–148) |
+| SKU · Preços → Visão geral | 8 → 0 | 15 → 7 | 17 → 11 | 113 ms (113–151) | 120 ms (112–128) |
+| Anúncio · Visão geral → Preço | 7 → 3 | 16 → 12 | 18 → 14 | 124 ms (108–132) | 135 ms (114–150) |
+| Anúncio · Preço → Visão geral | 7 → 1 | 14 → 8 | 18 → 14 | 145 ms (125–148) | 137 ms (125–151) |
+
+O destino escolhido foi pré-buscado uma vez no build anterior e zero vezes no corrigido. As pré-buscas restantes foram dos atalhos para Anúncios e Decisões no SKU e para Histórico, Vendas e Tráfego no anúncio. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas de abas antes do clique. Cada troca fez uma requisição RSC com HTTP 200 e atualizou a aba ativa sem novo documento. Voltar restaurou a URL e a aba inicial. A frequência real de troca e a latência em produção seguem pendentes.

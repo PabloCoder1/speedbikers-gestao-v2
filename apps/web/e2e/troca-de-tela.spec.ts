@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { E2E_LISTING_TRAFFIC } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * A TROCA DE TELA SEM ESQUELETO (D-512, D-513): com o `Shell` no layout e sem
@@ -17,9 +19,9 @@ import { login } from "./helpers.js";
 
 const ESPERA_MS = 1_500;
 
-async function segurarTela(page: Page, caminho: string): Promise<void> {
+async function segurarTela(page: Page, caminho: string, aba?: string): Promise<void> {
   await page.route(
-    (url) => url.pathname === caminho && url.searchParams.has("_rsc"),
+    (url) => url.pathname === caminho && url.searchParams.has("_rsc") && (aba === undefined || url.searchParams.get("aba") === aba),
     async (route) => {
       await new Promise((pronto) => setTimeout(pronto, ESPERA_MS));
       await route.continue();
@@ -51,16 +53,57 @@ async function chegou(page: Page, titulo: RegExp): Promise<void> {
   await expect(page.locator(".sb-atualizando-barra")).toHaveCount(0);
 }
 
-function contarPrefetches(page: Page, caminho: string): () => number {
+function contarPrefetches(page: Page, caminho: string, aba?: string): () => number {
   let prefetches = 0;
   page.on("request", (request) => {
     const headers = request.headers();
     const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const url = new URL(request.url());
 
-    if (prefetch && new URL(request.url()).pathname === caminho) prefetches += 1;
+    if (prefetch && url.pathname === caminho && (aba === undefined || url.searchParams.get("aba") === aba)) prefetches += 1;
   });
 
   return () => prefetches;
+}
+
+for (const { entidade, aba, rotulo, tituloAnterior } of [
+  { entidade: "SKU", aba: "precos", rotulo: "Preços", tituloAnterior: "Anúncios vinculados" },
+  { entidade: "anúncio", aba: "preco", rotulo: "Preço", tituloAnterior: "Checagem do anúncio" },
+]) {
+  test(`abas do ${entidade}: abre ao acionar e mantém o painel até a troca`, async ({ page }) => {
+    const caminho = entidade === "SKU"
+      ? `/skus/${(await readSeedOutput()).skuId}`
+      : `/anuncios/${E2E_LISTING_TRAFFIC.itemId}`;
+    const prefetches = contarPrefetches(page, caminho, aba);
+    const abas = page.getByRole("navigation", { name: `Abas do ${entidade}`, exact: true });
+    const visaoGeral = abas.getByRole("link", { name: "Visão geral", exact: true });
+    const destino = abas.getByRole("link", { name: rotulo, exact: true });
+    const painelAnterior = page.getByRole("heading", { name: tituloAnterior, exact: true });
+
+    await login(page, caminho);
+    await expect(visaoGeral).toHaveAttribute("aria-current", "page");
+    await expect(destino).toHaveAttribute("href", `${caminho}?aba=${aba}`);
+    await destino.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches()).toBe(0);
+
+    await segurarTela(page, caminho, aba);
+    await destino.press("Enter");
+    await expect(page.locator(".sb-content[aria-busy='true']")).toHaveCount(1);
+    await expect(page.locator(".sb-atualizando-barra")).toHaveCount(1);
+    await expect(painelAnterior).toBeVisible();
+
+    await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === `?aba=${aba}`);
+    await expect(destino).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: "Mudanças de preço observadas", exact: true })).toBeVisible();
+    await expect(page.locator(".sb-atualizando-barra")).toHaveCount(0);
+    await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === caminho && url.search === "");
+    await expect(visaoGeral).toHaveAttribute("aria-current", "page");
+    await expect(painelAnterior).toBeVisible();
+  });
 }
 
 test("link da sidebar: a tela anterior fica, com o sinal, até a nova chegar", async ({ page }) => {

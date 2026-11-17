@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-709 abre ao clicar os anúncios da Shopee no SKU e os SKUs de Devoluções. As chamadas ao Auth por pré-busca caíram de 48 e 13 para zero na mediana local. A próxima medição é o prefetch das abas dos detalhes de SKU e anúncio. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+- **Sentinel.** D-710 carrega as abas do cabeçalho do SKU e do anúncio ao acioná-las. Na Visão geral, as chamadas ao Auth por pré-busca de outras abas caíram de 8 para 2 no SKU e de 7 para 3 no anúncio. A próxima medição é nos atalhos do conteúdo que ainda fazem prefetch. O PR #328 está em `513c38f4` com CI verde nesse SHA. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

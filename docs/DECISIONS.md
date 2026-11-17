@@ -19688,3 +19688,9 @@ A regressão confere o número do pedido aberto e o retorno ao mesmo fornecedor.
 Na tabela de Anúncios da Shopee do SKU, o link do número do item usa `prefetch={false}` e abre a lista filtrada pelo número. Em Devoluções, a mesma opção vale para SKUs vinculados. O ensaio com loja sintética do projeto `loja-live` registrou a redução de 48 e 13 chamadas ao Auth para zero antes do clique, na mediana.
 
 As regressões verificam a busca do item, a abertura do SKU correto e o retorno à aba original ou ao filtro de loja. [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+
+## D-710 - As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+
+Os links das abas no `ObjectHeader` usam `prefetch={false}`. O Chromium mediu quatro jornadas, entrando pela Visão geral ou direto na aba de preço de cada detalhe. Cada troca precisou de uma requisição RSC nos dois builds. A mudança poupou de 4 a 8 verificações de sessão antes do primeiro clique, conforme a jornada.
+
+As abas usam o indicador de atualização no lugar. As regressões atrasam a resposta e verificam que o painel anterior fica visível, que o indicador sai ao concluir e que voltar restaura a aba anterior. Os atalhos para abas que aparecem no conteúdo ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
