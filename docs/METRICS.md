@@ -629,6 +629,32 @@ Lidas por `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee
 - **Cobertura:** liberação fora da leitura (`escrow_releases_read_from` até o marco) é desconhecida; o resumo diz se o período está coberto, tolerando 2 h de atraso no fim. Loja nunca lida: NULO; lida sem repasse: 0.
 - **Não muda o recebido** (`shopee_recebido` segue o `escrow_amount`): o repasse é o realizado ao lado do previsto.
 
+## 5X. Margem por SKU entre marketplaces (D-720) — DEFINIDAS E IMPLEMENTADAS
+
+Lidas por `get_sku_margins` para uma lista de SKUs (até 500) e um período (até 366 dias): uma linha por conta do ML, por loja da Shopee, por marketplace e o consolidado. Os somatórios vêm do SQL; a razão, de `evaluateSkuMargin` (`@sb/domain`).
+
+| Id | Definição |
+|---|---|
+| `sku_margem` | `(recebido_coberto − custo_coberto) ÷ receita_coberta`, só pedidos cobertos. ML: a regra de 5F (preço − comissão − frete do vendedor; taxa fixa, parcelamento e Mercado Pago fora). Shopee: a de 5U (escrow + ajustes depois do repasse). Zero cobertura = NULO. |
+| `sku_margem_consolidada` | A mesma razão sobre a SOMA das contas e lojas — nunca a média das porcentagens. Só o que a RLS de quem chama alcança. |
+| `sku_margem_qualidade` | Confiável (≥ 80% da receita coberta e custo histórico), parcial (< 80%), estimada (algum coberto com custo atual) ou indisponível. |
+
+- **Não é lucro líquido:** imposto, Ads e custos fixos ficam fora (para eles, 5K e 5U).
+- **Pedido da Shopee com vários SKUs** não é atribuído ao SKU (a regra de 5U); **TikTok Shop** sem pedidos lidos: margem indisponível.
+- **Cancelamento e devolução:** as vendas válidas de cada canal (ML pago ou parcialmente reembolsado, 5C.3; Shopee VALIDA, 5S). A devolução reverte estoque, não receita (5C.3).
+- **Projeção de compra:** `projectPurchaseMargin` usa a razão recebido ÷ preço observada; sem ela, a tarifa de referência do ML (Clássico 7%, Premium 17%) como SIMULAÇÃO declarada. Nunca substitui a margem realizada.
+
+## 5Y. Avaliação de compra (D-721) — DEFINIDA E IMPLEMENTADA
+
+| Id | Definição |
+|---|---|
+| `giro_relativo` | ALTO: o aproveitável não cobre a janela da política no ritmo de 30 dias; BAIXO: cobre; PARADO: zero venda em 90 dias com estoque; INDEFINIDO: sem base. |
+| `dias_ruptura_30` | Dias dos últimos 30 com o vendável zerado: LOCAL no fim do dia (saldo atual menos os movimentos posteriores do ledger) e Full do dia pela definição de D-173. NULO com estoque virtual ou sem saldo nem captura. |
+| `quantidade_recomendada` | A sugestão (5D.3) menos os rascunhos e aprovados de outros pedidos, ajustada ao mínimo e ao múltiplo do fornecedor; zero com descontinuado; zero com amostra pequena e estoque que já cobre a janela. |
+| `situacao_compra` | Comprar agora, comprar em breve, acompanhar, coberto por pedidos, estoque em excesso (só com teto, D-148), baixo giro, margem insuficiente, revisar, produto recente, dados insuficientes — regras em D-721. |
+
+A situação nunca vira pontuação: a tela mostra os motivos com os números, e a decisão é do comprador.
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |

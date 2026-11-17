@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **606** (D-001 a D-704).
+Decisões registradas: **612** (D-001 a D-725).
 
 ## Por domínio
 
@@ -477,7 +477,7 @@ Decisões registradas: **606** (D-001 a D-704).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (67)
+### vendas/métricas (69)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -546,8 +546,10 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-696** — A tabela da Curva ABC abre o detalhe do SKU ao clicar
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
+- **D-720** — Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
+- **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 
-### worker/infra (99)
+### worker/infra (103)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -648,4 +650,8 @@ Decisões registradas: **606** (D-001 a D-704).
 - **D-681** — Vinculações inicia a visão e os painéis em paralelo
 - **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
 - **D-684** — Perguntas inicia a lista e os contadores sem esperar a lista de contas
+- **D-722** — A revisão do pedido registra a decisão do comprador, inclusive do item retirado
+- **D-723** — Fornecedor × SKU é um vínculo explícito, com mínimo, múltiplo e prazo
+- **D-724** — Recebimento parcial baixa só o trânsito do que chegou
+- **D-725** — Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
 

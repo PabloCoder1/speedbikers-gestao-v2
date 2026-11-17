@@ -2070,3 +2070,21 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 | D-704 | 0 | 0 | 12 | 23 | 162 ms (155–229) |
 
 Antes, foram 50 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 52 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à tela. A latência com tráfego real segue pendente.
+
+## Compras inteligentes: margem por SKU e análise de compra (D-720, D-721) — 17/11/2026
+
+**Ambiente: stack Supabase LOCAL isolado (Docker, `sb-compras`), seed do e2e mais 3 SKUs de demonstração com 90 dias de venda — 5 SKUs na organização. Número SINTÉTICO, não vale como medida de produção.** Dev e produção estavam `INACTIVE` (pausados) em 17/11, sem como medir lá.
+
+Como `authenticated` (claims do usuário do seed, RLS ativa), 5 rodadas, tempo do `psql`:
+
+| Chamada | Mediana | Faixa |
+|---|---|---|
+| `get_sku_margins`, 90 dias | 26,0 ms | 22,6–39,1 |
+| `get_purchase_analysis`, só extras (`p_incluir_sugestao` falso, o que a Reposição usa) | 14,0 ms | 12,0–18,2 |
+| `get_purchase_analysis` completa (o pedido de compra) | 22,7 ms | 21,3–26,8 |
+
+O que a medida NÃO prova, e precisa ser medido com volume real antes de chamar de rápido:
+
+- **A análise completa chama `get_purchase_suggestions` para o catálogo inteiro**, como `get_purchase_order_suggestions` (D-371) — ~250 a 490 ms no Dev em D-358. Por isso a Reposição usa só os extras: a 2ª leitura da página não repete a varredura.
+- **`get_sku_margins` lê a Shopee por `get_shopee_faturamento_pedidos` da organização no período** e só depois filtra os SKUs; o ML parte do índice novo `ml_sales_lines (sku_id, date_created)`. Em 90 dias com 100 SKUs da página, conferir as páginas lidas (lição de `measure-rpc-as-authenticated`: RPC quente rápida pode esconder cache frio).
+- **A ruptura reconstrói 30 dias por SKU** (ledger + Full canônico por dia, `lateral` por SKU × dia): 100 SKUs são 3.000 buscas no índice `(organization_id, sku_id, captured_at desc)`.
