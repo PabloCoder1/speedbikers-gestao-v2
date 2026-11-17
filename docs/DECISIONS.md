@@ -19728,3 +19728,11 @@ A RPC `get_sku_shopee_listings` tinha teto SQL de 200 previsto na D-429, sem avi
 A web usa o paginador existente, com contagem exata na primeira página e ordem por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O erro da RPC conserva o código para a mensagem de banco ainda sem a função. Um erro interrompe a leitura e descarta as páginas parciais.
 
 A fixture de 1.002 unidades reproduziu 200 linhas na tela original e 1.000 após retirar apenas o limite SQL. Com a paginação, o conjunto chegou inteiro, incluindo variações, precedência manual e lojas de mesmo nome, com os anúncios apagados fora e o sandbox marcado. A migration foi aplicada apenas no banco local e deve preceder a publicação da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+
+## D-716 - Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+
+As rotinas de vincular e remover só liberavam o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa, deixando o diálogo sem alerta e com os botões presos em Gravando ou Removendo. A reprodução em Chromium bloqueou o POST da ação antes do envio, nos dois caminhos.
+
+Cada rotina trata a exceção e libera o estado pendente em `finally`. A mensagem informa que o vínculo ou a remoção não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Uma falha de comunicação pode ocorrer depois da gravação no servidor, por isso o cliente não anuncia que nada mudou nem repete a ação automaticamente. O SKU escolhido e o motivo permanecem no diálogo.
+
+As regressões conferem a ausência de gravação quando o POST foi bloqueado, os controles liberados e a nova tentativa. Outro caso usa a RPC real para recusar um item que saiu do catálogo e duas sessões autenticadas para remover um vínculo enquanto a primeira ainda tem o diálogo aberto. Os dois estados já exibiam a recusa e permitiam recuperar a tela. O banco e as ações de servidor mantêm seu contrato.

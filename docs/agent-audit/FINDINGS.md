@@ -80,6 +80,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A72 | P2 · CORRIGIDO localmente (D-715) | O painel Shopee do SKU exibia só 200 anúncios sem indicar o corte. Retirar apenas o limite SQL ainda deixava o teto de 1.000 do PostgREST | A migration remove o limite SQL e a web pagina com desempate pela loja. A fixture de 1.002 unidades chegou completa, incluindo variações e vínculo manual, com anúncios excluídos fora. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026) |
 
+| A73 | P2 · CORRIGIDO localmente (D-716) | Uma falha de transporte da Server Action deixava os diálogos Shopee presos em Gravando ou Removendo, sem alerta e com os controles desabilitados | As duas regressões falharam no build anterior. Os diálogos agora tratam a exceção, liberam o estado pendente em `finally` e preservam os campos. O aviso pede conferir a lista antes de tentar novamente. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

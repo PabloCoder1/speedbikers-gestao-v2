@@ -422,6 +422,136 @@ for (const caso of [
   });
 }
 
+for (const operacao of ["vincular", "remover"] as const) {
+  test(`/anuncios/shopee: falha de conexão ao ${operacao} libera o diálogo e permite nova tentativa`, async ({ page }) => {
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+    const db = clienteDeServico();
+    const seed = await readSeedOutput();
+    const item = await db.from("shopee_items").select("shopee_shop_id")
+      .eq("organization_id", seed.organizationId).eq("item_id", semSku.itemId).single();
+    if (item.error !== null) throw new Error(item.error.message);
+    const linha = () => tabela(page).getByRole("row", { name: new RegExp(semSku.nome) });
+    const erros: string[] = [];
+    page.on("pageerror", (erro) => erros.push(erro.message));
+
+    try {
+      await login(page, "/anuncios/shopee");
+      await linha().getByRole("button", { name: "Vincular", exact: true }).click();
+      let dialogo = page.getByRole("dialog");
+      await dialogo.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
+      await dialogo.getByRole("option").filter({ hasText: E2E_SKU_CODE }).first().click();
+      if (operacao === "remover") {
+        await dialogo.getByRole("button", { name: "Vincular", exact: true }).click();
+        await expect(dialogo).toHaveCount(0);
+        await linha().getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+        dialogo = page.getByRole("dialog");
+        await dialogo.getByLabel("Motivo da remoção").fill("e2e: nova tentativa após falha de conexão");
+      }
+
+      let bloqueada = false;
+      await page.route((u) => u.pathname === "/anuncios/shopee", async (route) => {
+        const request = route.request();
+        if (!bloqueada && request.method() === "POST" && request.headers()["next-action"] !== undefined) {
+          bloqueada = true;
+          await route.abort("failed");
+        } else {
+          await route.continue();
+        }
+      });
+      const botao = dialogo.getByRole("button", { name: operacao === "vincular" ? "Vincular" : "Remover vínculo manual", exact: true });
+      await botao.click();
+      await expect(dialogo.getByRole("alert")).toContainText("Não foi possível confirmar");
+      await expect(botao).toBeEnabled();
+      await expect(dialogo.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+      expect(bloqueada).toBe(true);
+      expect(erros).toEqual([]);
+
+      const antes = await db.from("shopee_sku_links").select("sku_id")
+        .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null).maybeSingle();
+      expect(antes.error).toBeNull();
+      expect(antes.data?.sku_id ?? null).toBe(operacao === "vincular" ? null : seed.skuId);
+      if (operacao === "vincular") await expect(dialogo.getByRole("status")).toContainText(E2E_SKU_CODE);
+      else await expect(dialogo.getByLabel("Motivo da remoção")).toHaveValue("e2e: nova tentativa após falha de conexão");
+
+      await botao.click();
+      await expect(dialogo).toHaveCount(0);
+      await expect(linha()).toContainText(operacao === "vincular" ? "vínculo manual" : "Sem SKU no anúncio");
+    } finally {
+      const limpeza = await db.from("shopee_sku_links").delete().eq("organization_id", seed.organizationId)
+        .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null);
+      expect.soft(limpeza.error).toBeNull();
+    }
+  });
+}
+
+test("/anuncios/shopee: recusa de catálogo permite tentar de novo e remoção em outra sessão informa o conflito", async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const item = await db.from("shopee_items").select("shopee_shop_id,item_status")
+    .eq("organization_id", seed.organizationId).eq("item_id", semSku.itemId).single();
+  if (item.error !== null) throw new Error(item.error.message);
+  const outraSessao = await browser.newContext({ baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000" });
+  const linha = (p: Page) => tabela(p).getByRole("row", { name: new RegExp(semSku.nome) });
+  const mudarStatus = (status: string) => db.from("shopee_items").update({ item_status: status })
+    .eq("organization_id", seed.organizationId).eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId);
+
+  try {
+    await login(page, "/anuncios/shopee");
+    await linha(page).getByRole("button", { name: "Vincular", exact: true }).click();
+    let dialogo = page.getByRole("dialog");
+    await dialogo.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
+    await dialogo.getByRole("option").filter({ hasText: E2E_SKU_CODE }).first().click();
+    const excluido = await mudarStatus("SELLER_DELETE");
+    expect(excluido.error).toBeNull();
+    await dialogo.getByRole("button", { name: "Vincular", exact: true }).click();
+    await expect(dialogo.getByRole("alert")).toContainText("saiu do catálogo");
+    await expect(dialogo.getByRole("button", { name: "Vincular", exact: true })).toBeEnabled();
+    await expect(dialogo.getByRole("status")).toContainText(E2E_SKU_CODE);
+    const recusado = await db.from("shopee_sku_links").select("id")
+      .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null).maybeSingle();
+    expect(recusado.error).toBeNull();
+    expect(recusado.data).toBeNull();
+
+    const restaurado = await mudarStatus(item.data.item_status);
+    expect(restaurado.error).toBeNull();
+    await dialogo.getByRole("button", { name: "Vincular", exact: true }).click();
+    await expect(dialogo).toHaveCount(0);
+    await expect(linha(page)).toContainText("vínculo manual");
+    await linha(page).getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+    dialogo = page.getByRole("dialog");
+    await dialogo.getByLabel("Motivo da remoção").fill("e2e: remoção na primeira sessão");
+
+    const outraPagina = await outraSessao.newPage();
+    await login(outraPagina, "/anuncios/shopee");
+    await linha(outraPagina).getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+    const outroDialogo = outraPagina.getByRole("dialog");
+    await outroDialogo.getByLabel("Motivo da remoção").fill("e2e: remoção concorrente na segunda sessão");
+    await outroDialogo.getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+    await expect(outroDialogo).toHaveCount(0);
+    await expect(linha(outraPagina)).toContainText("Sem SKU no anúncio");
+
+    await dialogo.getByRole("button", { name: "Remover vínculo manual", exact: true }).click();
+    await expect(dialogo.getByRole("alert")).toContainText("Este vínculo manual não existe mais");
+    await expect(dialogo.getByRole("button", { name: "Remover vínculo manual", exact: true })).toBeEnabled();
+    await expect(dialogo.getByLabel("Motivo da remoção")).toHaveValue("e2e: remoção na primeira sessão");
+    await dialogo.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await page.reload();
+    await expect(linha(page)).toContainText("Sem SKU no anúncio");
+    await expect(linha(page).getByRole("button", { name: "Vincular", exact: true })).toBeEnabled();
+  } finally {
+    const restaurado = await mudarStatus(item.data.item_status);
+    const limpeza = await db.from("shopee_sku_links").delete().eq("organization_id", seed.organizationId)
+      .eq("shopee_shop_id", item.data.shopee_shop_id).eq("item_id", semSku.itemId).is("model_id", null);
+    expect.soft(restaurado.error).toBeNull();
+    expect.soft(limpeza.error).toBeNull();
+    await outraSessao.close();
+  }
+});
+
 /** O seletor de marketplace do cabeçalho (D-431), pelo nome acessível dele. */
 function seletorDeMarketplace(page: Page) {
   return page.locator("details.sb-menu").filter({ has: page.locator('summary[aria-label^="Marketplace:"]') });

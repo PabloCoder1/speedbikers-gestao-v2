@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. Troca e remoção do vínculo manual Shopee foram verificadas em item e variação, incluindo os dois SKUs e o retorno pelo histórico. A próxima verificação é o tratamento de falhas ao gravar o vínculo. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+- **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. D-716 libera os diálogos Shopee após falha de conexão, com preenchimento preservado e aviso de operação não confirmada. Recusa do catálogo e remoção concorrente foram verificadas. A próxima verificação é a falha de transporte nas ações de Vinculações do Mercado Livre. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
