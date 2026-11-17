@@ -95,7 +95,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · configuracoes, cont
 | `/login` | [page.tsx](<../../apps/web/app/login/page.tsx>) | Ver a entrada e seus imports |
 | `/saude` | [page.tsx](<../../apps/web/app/(app)/saude/page.tsx>) | RPC `get_system_health` |
 | `/sincronizacao` | [page.tsx](<../../apps/web/app/(app)/sincronizacao/page.tsx>) | RPC `get_sync_health`, `get_processing_health`, `get_job_failures`. Tabelas `ml_accounts`, `domain_events`, `marketplace_accounts`, `shopee_shops` |
-| `/usuarios` | [page.tsx](<../../apps/web/app/(app)/usuarios/page.tsx>) | RPC `get_organization_members`. Tabelas `organization_members`, `ml_accounts`, `user_account_permissions`, `shopee_shops`, `user_shopee_shop_permissions`, `organization_access_events` |
+| `/usuarios` | [page.tsx](<../../apps/web/app/(app)/usuarios/page.tsx>) | RPC `get_organization_members`. Tabelas `organization_members`, `ml_accounts`, `user_account_permissions`, `shopee_shops`, `user_shopee_shop_permissions`, `organization_access_events`. Papel, acesso, remoção e o nome do perfil liberam os controles após falha de transporte (D-721). |
 
 ## Route handlers
 

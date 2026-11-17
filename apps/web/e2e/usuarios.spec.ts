@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_SHOPEE_SHOP } from "./constants.js";
-import { login, loginAs } from "./helpers.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_ML_ACCOUNT, E2E_SHOPEE_SHOP } from "./constants.js";
+import { derrubarPrimeiraAcao, login, loginAs } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Administração de Usuários (`/usuarios`) pelo frame `AdminScreen` na variação
@@ -364,4 +366,124 @@ test("/usuarios: o GESTOR vê a tela em leitura, e o papel lido é o DELE", asyn
     conveniência; quem recusa é o banco (D-175).
   */
   await expect(page.getByRole("region", { name: "Histórico de acesso" })).toHaveCount(0);
+});
+
+function bancoLocal() {
+  const supabase = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(supabase.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  return clienteDeServico();
+}
+
+/**
+ * A GAVETA QUE PERDE A CONEXÃO (D-721). Trocar o papel, alternar uma conta e
+ * remover da organização deixavam os controles desabilitados e sem aviso
+ * quando o POST da ação caía. O caso não repete as tentativas: as três
+ * mudariam o GESTOR que os outros casos usam, e o caminho de sucesso já tem
+ * caso próprio.
+ */
+test("/usuarios: falha de conexão na gaveta do GESTOR libera papel, acesso e remoção sem gravar", async ({ page }) => {
+  const db = bancoLocal();
+  const seed = await readSeedOutput();
+  const membros = () =>
+    db.from("organization_members").select("user_id, role").eq("organization_id", seed.organizationId).eq("role", "GESTOR");
+  const antes = await membros();
+
+  if (antes.error !== null) throw new Error(antes.error.message);
+
+  expect(antes.data).toHaveLength(1);
+
+  await login(page, "/usuarios");
+  await page.getByRole("region", { name: "Gerenciar acessos" }).getByRole("button", { name: "E2E Gestor", exact: true }).click();
+
+  const gaveta = page.getByRole("dialog", { name: /Detalhe do usuário/ });
+  const papel = gaveta.getByLabel("Papel do membro");
+  let caiu = await derrubarPrimeiraAcao(page);
+
+  await papel.selectOption("ADMIN");
+  await expect(gaveta.getByRole("alert").filter({ hasText: "troca de papel" })).toBeVisible();
+  await expect(papel).toBeEnabled();
+  await expect(papel).toHaveValue("GESTOR");
+  expect(caiu()).toBe(true);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  caiu = await derrubarPrimeiraAcao(page);
+
+  const conta = gaveta
+    .getByRole("group", { name: "Contas Mercado Livre permitidas" })
+    .getByRole("checkbox", { name: E2E_ML_ACCOUNT.label });
+  const marcadaAntes = await conta.isChecked();
+
+  await conta.click();
+  await expect(gaveta.getByRole("alert").filter({ hasText: "Não foi possível confirmar o acesso" })).toBeVisible();
+  await expect(conta).toBeEnabled();
+  expect(await conta.isChecked()).toBe(marcadaAntes);
+  expect(caiu()).toBe(true);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  caiu = await derrubarPrimeiraAcao(page);
+  await gaveta.getByRole("button", { name: "Remover", exact: true }).click();
+
+  const remover = gaveta.getByRole("button", { name: "Remover da organização", exact: true });
+
+  await remover.click();
+  await expect(gaveta.getByRole("alert").filter({ hasText: "Não foi possível confirmar a remoção" })).toBeVisible();
+  await expect(remover).toBeEnabled();
+  await expect(gaveta.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+  expect(caiu()).toBe(true);
+  await gaveta.getByRole("button", { name: "Cancelar", exact: true }).click();
+
+  const depois = await membros();
+
+  expect(depois.error).toBeNull();
+  expect(depois.data).toEqual(antes.data);
+});
+
+test("meu perfil: falha de conexão ao salvar o nome libera o formulário e permite nova tentativa", async ({ page }) => {
+  const db = bancoLocal();
+  const usuarios = await db.auth.admin.listUsers();
+
+  if (usuarios.error !== null) throw new Error(usuarios.error.message);
+
+  const usuario = usuarios.data.users.find((u) => u.email === "e2e@speedbikers.test");
+
+  if (usuario === undefined) throw new Error("Usuário do seed não encontrado.");
+
+  const perfil = await db.from("profiles").select("full_name").eq("id", usuario.id).single();
+
+  if (perfil.error !== null) throw new Error(perfil.error.message);
+
+  const nomeNovo = "E2E Nome Temporário";
+
+  try {
+    await login(page, "/usuarios");
+    await page.getByRole("button", { name: /^Meu perfil — / }).click();
+    await page.getByRole("button", { name: /^(Editar|Adicionar) nome$/ }).click();
+    await page.getByLabel("Nome completo").fill(nomeNovo);
+
+    const salvar = page.getByRole("button", { name: "Salvar", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+
+    await salvar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar o nome" })).toBeVisible();
+    await expect(salvar).toBeEnabled();
+    await expect(page.getByLabel("Nome completo")).toHaveValue(nomeNovo);
+    expect(caiu()).toBe(true);
+
+    const antes = await db.from("profiles").select("full_name").eq("id", usuario.id).single();
+
+    expect(antes.data?.full_name).toBe(perfil.data.full_name);
+
+    await salvar.click();
+    await expect(page.getByLabel("Nome completo")).toHaveCount(0);
+
+    const depois = await db.from("profiles").select("full_name").eq("id", usuario.id).single();
+
+    expect(depois.data?.full_name).toBe(nomeNovo);
+  } finally {
+    const volta = await db.from("profiles").update({ full_name: perfil.data.full_name }).eq("id", usuario.id);
+
+    expect.soft(volta.error).toBeNull();
+  }
 });

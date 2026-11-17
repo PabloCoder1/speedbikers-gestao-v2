@@ -590,3 +590,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Regressões.** O helper `derrubarPrimeiraAcao`, em `e2e/helpers.ts`, derruba a primeira Server Action da página. Dois casos novos em `notificacoes.spec.ts` e o arquivo novo `notificacoes-preferencias.spec.ts` falharam no build anterior e passaram em duas repetições no corrigido. Eles guardam e devolvem as leituras e as regras do usuário. Repetir `notificacoes.spec.ts` inteiro quebra a contagem inicial em casos antigos, porque o caso do recorte de não lidas deixa uma lida de propósito; uma rodada única passa, como na CI.
 - **Validação.** Passaram os 24 casos de Notificações, Preferências e troca de tela. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Usuários e o nome do perfil: `acesso-membro.tsx`, `member-controls.tsx` e `editar-nome.tsx`. [Plano](PLAN.md)
+
+### 17/11/2026 · Falha de transporte em Usuários e no nome do perfil
+
+- **Base.** `codex/sentinel-audit` em `e6cff19a`.
+- **D-721 (A79).** Derrubar o POST deixou o seletor de papel desabilitado na gaveta do GESTOR e o formulário do nome em Salvando, com o campo e Cancelar desabilitados. Alternar acesso e remover da organização têm a mesma forma e receberam a mesma correção. Suspender e reativar já passavam por `chamarApi`, que trata a falha de rede.
+- **Regressões.** Dois casos novos em `usuarios.spec.ts` falharam no build anterior e passaram em duas repetições no corrigido. O da gaveta derruba o POST três vezes, em papel, conta e remoção, sem repetir as tentativas, e confere no banco o mesmo membro com o mesmo papel. O do nome repete a tentativa e devolve o nome original.
+- **Validação.** Passaram os 12 casos de Usuários, e o banco terminou com os mesmos papéis, concessões e nomes. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Contas, sugestões e filtros salvos: `new-account-form.tsx`, `new-suggestion-form.tsx` e `saved-filters.tsx`. [Plano](PLAN.md)

@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. D-717 recupera o popup de Vinculações após falha de transporte no vínculo manual, na resolução e no descarte de candidato. O SKU escolhido é preservado, e a operação não confirmada recebe aviso. O audit de produção da CI reprovava todo PR com um aviso alto do `picomatch` sem versão corrigida publicada: as ferramentas de lint de `@sb/config` passaram para `devDependencies` (A75). D-718 e D-719 liberam os diálogos de remover e vincular anúncio ML do SKU após falha de transporte. D-720 fez o mesmo em Notificações e Preferências. Restam oito componentes do inventário de 17/11 e cinco com `useTransition` a conferir, no plano. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-721 liberam diálogos e formulários quando a Server Action cai no transporte; restam cinco componentes e cinco com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

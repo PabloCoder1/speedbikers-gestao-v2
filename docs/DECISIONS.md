@@ -19768,3 +19768,11 @@ Marcar uma notificação como lida, marcar todas, criar uma regra de alerta e al
 Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-719. Marcar como lida é idempotente, e o aviso pede só nova tentativa. Criar, alterar e remover uma regra podem ter sido gravados antes da queda, e o aviso pede conferir a lista ou recarregar a página antes de tentar novamente. A mensagem do diálogo de remoção passa a ser anunciada como alerta.
 
 As regressões usam um helper comum, `derrubarPrimeiraAcao`, e conferem no banco que nada foi gravado na tentativa derrubada. Marcar todas não repete a tentativa, porque zeraria a caixa que os outros casos contam. Cada caso devolve as leituras e as regras do usuário ao estado em que as encontrou.
+
+## D-721 - Usuários e o nome do perfil recuperam os controles após falha da ação
+
+Na gaveta de um membro, trocar o papel, alternar uma conta ou loja permitida e remover da organização ligavam o estado pendente antes da Server Action e só o desligavam depois da resposta. Salvar o próprio nome fazia o mesmo. A interrupção da conexão deixava o seletor de papel, as caixas de acesso, o diálogo de remoção ou o formulário do nome desabilitados e sem aviso. Os casos foram reproduzidos em Chromium derrubando o POST da ação.
+
+Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-720. Papel, acesso e remoção podem ter sido gravados antes da queda, e o aviso pede recarregar a página antes de tentar novamente. Salvar o nome é idempotente, e o aviso pede só nova tentativa, com o nome digitado preservado. Suspender e reativar o acesso usam `chamarApi`, que já tratava a falha de rede.
+
+A regressão da gaveta não repete as tentativas, porque mudariam o GESTOR que os outros casos usam, e confere no banco que o membro e o papel continuam iguais. A do nome repete a tentativa e devolve o nome original no fim.
