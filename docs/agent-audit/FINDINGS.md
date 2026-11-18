@@ -93,6 +93,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A81 | P2 · CORRIGIDO localmente (D-723) | A interrupção da Server Action prendia criar e editar compra em Salvando e o item da NF-e em Vinculando ou Desvinculando, sem aviso | Os quatro caminhos foram reproduzidos. A correção conserva os campos e o vínculo, libera os controles na falha e permite nova tentativa. A compra mantém o botão bloqueado enquanto abre o detalhe após sucesso. [Verificação](SESSION_LOG.md) |
 
+| A82 | P2 · CORRIGIDO localmente (D-724) | A falha de transporte no ajuste de estoque derrubava o formulário para a fronteira de erro do segmento, perdendo os campos | A exceção é tratada dentro da transição, com aviso, campos preservados e nova tentativa disponível. A regressão confirma saldo intacto no POST bloqueado e uma única saída na nova tentativa, compensada ao final. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

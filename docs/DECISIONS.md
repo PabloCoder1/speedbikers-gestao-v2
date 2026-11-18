@@ -19792,3 +19792,11 @@ As duas ações do formulário de compra e as de vincular e desvincular item da 
 Em compras, a exceção libera o botão. O sucesso conserva Salvando até a navegação para o detalhe, como antes, para evitar novo envio entre a resposta e a troca de tela. A regressão segura a requisição RSC do detalhe e confere o botão ainda desabilitado. No item da NF-e, `finally` libera o estado da ação tanto na recusa quanto na exceção.
 
 As regressões de criação de compra e vínculo da nota foram incorporadas aos fluxos existentes. A criação mantém a mesma quantidade de pedidos do teste anterior. A edição usa um rascunho do seed, mantém SKU, quantidade e custo e devolve o destino no fim. A remoção do vínculo da NF-e devolve o SKU e o contador inicial ao terminar. As consultas conferem a ausência de gravação no POST bloqueado e o resultado após nova tentativa, com custo ausente preservado.
+
+## D-724 - Ajuste de estoque preserva o formulário quando a ação falha no transporte
+
+O ajuste manual aguardava a Server Action dentro de `useTransition`, sem tratar a exceção. Bloquear o POST trocou o formulário pela fronteira de erro do segmento, com “Algo deu errado nesta tela”, perdendo o preenchimento. O problema difere dos estados pendentes manuais das D-716 a D-723: a transição encaminha a exceção para a fronteira de erro.
+
+A chamada agora tem tratamento local, conservando operação, local, quantidade, motivo, referência e observação. A própria transição libera os controles ao terminar. O alerta informa que o ajuste não foi confirmado e orienta conferir as movimentações antes de tentar novamente: uma resposta perdida pode ocorrer depois da gravação. Não há repetição automática. A recusa declarada e a limpeza dos campos após sucesso seguem o fluxo existente.
+
+A regressão bloqueia a primeira ação, confere saldo intacto e ausência do movimento identificado pela referência, e tenta novamente. O banco precisa ter uma única saída de cinco unidades, com motivo e autor corretos. Ao terminar, o teste registra a contrapartida da fixture e confere o saldo original; não apaga movimentos nem desliga a proteção do ledger.
