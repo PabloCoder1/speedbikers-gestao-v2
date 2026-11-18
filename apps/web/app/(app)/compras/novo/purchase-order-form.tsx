@@ -12,6 +12,8 @@ import { createClient } from "../../../../lib/supabase/browser";
 import { formatarDocumento, idadeRelativa } from "../../../../lib/suppliers-overview";
 import { Canais } from "../../fornecedores/canais";
 import { LogoFornecedor } from "../../fornecedores/logo";
+import { avaliarSku, type AvaliacaoSku } from "../../../../lib/purchase-analysis";
+import type { MotivoManter } from "../../../../lib/purchase-fit-vocabulary";
 import { createPurchaseOrder, updatePurchaseOrderDraft } from "../actions";
 
 import { ItemRow, type DraftItem, type SugestaoDaLinha, type UltimaCompra } from "./item-row";
@@ -27,7 +29,19 @@ import {
   somarDias,
 } from "./rascunho";
 import { lerSugestoes, marcaDoFornecedor, type SugestaoItem } from "./sugestoes";
+import { RevisaoPedido } from "./revisao-pedido-painel";
+import {
+  camposDoItem,
+  impactoDaRevisao,
+  registrosDeDecisao,
+  type DecisaoItem,
+  type ItemRetirado,
+  type LinhaRevisao,
+  planoDoFornecedor,
+} from "./revisao-pedido";
 import { TrazerReposicao } from "./trazer-reposicao";
+import { carregarAnalisePedido, useAnalisePedido } from "./use-analise-pedido";
+import { lerProdutosFornecidos } from "../../../../lib/supplier-skus";
 
 /**
  * O formulário do pedido de compra — criação e edição do rascunho.
@@ -79,6 +93,8 @@ export interface PurchaseOrderFormInitial {
   /** Data de negócio `YYYY-MM-DD` — já vem cortada de `expected_at`, nunca `new Date(...)` aqui (mesmo raciocínio de `formatBusinessDate`). */
   expectedAt: string | null;
   items: DraftItem[];
+  /** D-722: o `updated_at` lido, para a edição recusar quando outra pessoa salvou no meio. */
+  updatedAt?: string | null;
 }
 
 /** Os campos além de id e nome são opcionais: a edição passa só os dois. */
@@ -144,6 +160,36 @@ export function PurchaseOrderForm({
   const [trazendo, setTrazendo] = useState(false);
   const [avisoTrazer, setAvisoTrazer] = useState<string | null>(null);
   const pedindoSugestao = useRef<Set<string>>(new Set());
+  /*
+    D-722: as decisões da revisão, por linha (a chave do item), e os itens
+    retirados — que saem do pedido mas vão para o histórico. A edição nasce com
+    as decisões já salvas. O identificador da criação é um só por formulário:
+    o duplo clique, ou a repetição depois de uma falha de rede, devolve o MESMO
+    pedido em vez de criar dois.
+  */
+  const [decisoes, setDecisoes] = useState<ReadonlyMap<string, DecisaoItem>>(
+    () =>
+      new Map(
+        (initial?.items ?? []).flatMap((i) =>
+          i.reviewDecision === null || i.reviewDecision === undefined
+            ? []
+            : [
+                [
+                  i.key,
+                  {
+                    decision: i.reviewDecision,
+                    reason: (i.reviewReason ?? null) as MotivoManter | null,
+                    note: i.reviewNote ?? "",
+                    quantityBefore: Number(i.quantityOrdered),
+                  },
+                ] as const,
+              ],
+        ),
+      ),
+  );
+  const [retirados, setRetirados] = useState<readonly ItemRetirado[]>([]);
+  const requestId = useRef<string | null>(null);
+  const [trazendoFornecedor, setTrazendoFornecedor] = useState(false);
   const focarLinha = useRef<string | null>(null);
   const tabelaRef = useRef<HTMLTableSectionElement | null>(null);
 
@@ -160,6 +206,202 @@ export function PurchaseOrderForm({
   );
   const resumo = useMemo(() => resumirRascunho(items), [items]);
   const mix = detectOriginMix(items.filter((i) => i.skuSnapshot.trim() !== ""));
+
+  const { analise, estado: estadoAnalise, foraDoLimite } = useAnalisePedido({
+    organizationId,
+    skuIds: [...skusNoPedido],
+    supplierId: supplierId === "" ? null : supplierId,
+    orderId,
+  });
+
+  // A avaliação de cada linha usa a QUANTIDADE ATUAL: mudar o número refaz a recomendação.
+  const linhasRevisao: LinhaRevisao[] = items
+    .filter((i) => i.skuSnapshot.trim() !== "")
+    .map((i) => {
+      const quantidade = numeroPositivo(i.quantityOrdered);
+      const linhaAnalise = i.skuId === null || analise === null ? undefined : analise.linhas.get(i.skuId);
+      const avaliacao: AvaliacaoSku | null =
+        linhaAnalise === undefined || analise === null
+          ? null
+          : avaliarSku(
+              linhaAnalise,
+              analise.margens.get(linhaAnalise.sku_id) ?? null,
+              analise.settings,
+              { margemMinima: analise.margemMinima, newProductDays: analise.newProductDays },
+              quantidade,
+            );
+
+      return {
+        key: i.key,
+        skuId: i.skuId,
+        sku: i.skuSnapshot.trim(),
+        quantidade,
+        custo: i.unitCost.trim() === "" ? null : custoInformado(i.unitCost),
+        avaliacao,
+      };
+    });
+  const impacto = impactoDaRevisao(linhasRevisao, retirados, decisoes);
+
+  function decidir(key: string, decisao: DecisaoItem | null): void {
+    setDecisoes((atual) => {
+      const proximo = new Map(atual);
+
+      if (decisao === null) proximo.delete(key);
+      else proximo.set(key, decisao);
+
+      return proximo;
+    });
+  }
+
+  function manter(key: string, reason: MotivoManter | null, note: string): void {
+    const item = items.find((i) => i.key === key);
+    const anterior = decisoes.get(key);
+
+    decidir(key, { decision: "MANTER", reason, note, quantityBefore: anterior?.quantityBefore ?? Number(item?.quantityOrdered ?? 0) });
+  }
+
+  function reduzir(key: string, quantidade: number): void {
+    const item = items.find((i) => i.key === key);
+
+    if (item === undefined) return;
+
+    const antes = decisoes.get(key)?.quantityBefore ?? Number(item.quantityOrdered);
+
+    decidir(key, { decision: "REDUZIR", reason: null, note: "", quantityBefore: antes });
+    setItems((atual) => atual.map((i) => (i.key === key ? { ...i, quantityOrdered: String(quantidade) } : i)));
+  }
+
+  function retirar(key: string): void {
+    const item = items.find((i) => i.key === key);
+    const linha = linhasRevisao.find((l) => l.key === key);
+
+    if (item === undefined || linha === undefined) return;
+
+    const fit = linha.avaliacao?.fit ?? null;
+
+    setRetirados((atual) => [
+      ...atual,
+      {
+        key,
+        skuId: item.skuId,
+        sku: linha.sku,
+        titulo: item.titleSnapshot,
+        quantidade: decisoes.get(key)?.quantityBefore ?? linha.quantidade ?? 0,
+        custo: linha.custo,
+        recommendation: fit?.recommendation ?? null,
+        recommendedQuantity: fit?.recommendedQuantity ?? null,
+        reason: null,
+        note: "",
+      },
+    ]);
+    decidir(key, null);
+    // Retirar a última linha deixa uma vazia no lugar: o formulário nunca fica sem linha.
+    setItems((atual) => {
+      const resto = atual.filter((i) => i.key !== key);
+
+      return resto.length === 0 ? [emptyItem()] : resto;
+    });
+  }
+
+  /*
+    D-725: planejamento por fornecedor. Dos produtos que ELE fornece (o vínculo
+    explícito de D-723), traz só os que a avaliação manda comprar, na quantidade
+    recomendada — o mínimo e o múltiplo dele já aplicados —, e diz quantos
+    ficaram de fora e por quê. Nada entra sem aparecer na revisão abaixo.
+  */
+  async function trazerDoFornecedor(): Promise<void> {
+    if (organizationId === undefined || supplierId === "") return;
+
+    setTrazendoFornecedor(true);
+    setAvisoTrazer(null);
+
+    const { data, error: erro } = await createClient().rpc("get_supplier_skus", { p_supplier_id: supplierId, p_limit: 200 });
+    const lista = erro === null ? lerProdutosFornecidos(data) : null;
+
+    if (lista === null) {
+      setAvisoTrazer("Não foi possível ler os produtos deste fornecedor agora.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    if (lista.linhas.length === 0) {
+      setAvisoTrazer("Este fornecedor ainda não tem produtos cadastrados — cadastre na página dele, em Produtos fornecidos.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    const lida = await carregarAnalisePedido({
+      organizationId,
+      skuIds: lista.linhas.map((l) => l.skuId),
+      supplierId,
+      orderId,
+    });
+
+    if (lida === null) {
+      setAvisoTrazer("A análise de compra não carregou agora — tente de novo.");
+      setTrazendoFornecedor(false);
+
+      return;
+    }
+
+    const avaliacoes = new Map(
+      lista.linhas.map((l) => {
+        const linha = lida.linhas.get(l.skuId);
+
+        return [
+          l.skuId,
+          linha === undefined
+            ? null
+            : avaliarSku(linha, lida.margens.get(l.skuId) ?? null, lida.settings, { margemMinima: lida.margemMinima, newProductDays: lida.newProductDays }, null),
+        ] as const;
+      }),
+    );
+    const plano = planoDoFornecedor(lista.linhas, avaliacoes, skusNoPedido);
+
+    setItems((atual) => [
+      ...atual.filter((i) => i.skuSnapshot.trim() !== "" || i.quantityOrdered.trim() !== "" || i.unitCost.trim() !== ""),
+      ...plano.trazer.map((t) => ({
+        ...emptyItem(),
+        skuId: t.skuId,
+        skuSnapshot: t.sku,
+        titleSnapshot: t.title,
+        quantityOrdered: String(t.quantidade),
+        unitCost: t.custo === null ? "" : String(t.custo),
+        unitCostSuggested: t.custo !== null,
+      })),
+    ]);
+    setAvisoTrazer(
+      `${formatCount(plano.trazer.length)} produto(s) do fornecedor trazidos com a quantidade recomendada (mínimo e múltiplo aplicados)` +
+        (plano.semNecessidade > 0 ? ` · ${formatCount(plano.semNecessidade)} sem necessidade de compra agora` : "") +
+        (plano.semDados > 0 ? ` · ${formatCount(plano.semDados)} sem dados para recomendar` : "") +
+        (plano.jaNoPedido > 0 ? ` · ${formatCount(plano.jaNoPedido)} já estavam no pedido` : "") +
+        (lista.total > lista.linhas.length ? ` · os primeiros ${formatCount(lista.linhas.length)} de ${formatCount(lista.total)}` : "") +
+        ".",
+    );
+    setTrazendoFornecedor(false);
+  }
+
+  function desfazerRetirada(key: string): void {
+    const r = retirados.find((x) => x.key === key);
+
+    if (r === undefined) return;
+
+    setRetirados((atual) => atual.filter((x) => x.key !== key));
+    setItems((atual) => [
+      ...atual.filter((i) => i.skuSnapshot.trim() !== "" || i.quantityOrdered.trim() !== "" || i.unitCost.trim() !== ""),
+      {
+        ...emptyItem(),
+        key: r.key,
+        skuId: r.skuId,
+        skuSnapshot: r.sku,
+        titleSnapshot: r.titulo,
+        quantityOrdered: String(r.quantidade),
+        unitCost: r.custo === null ? "" : String(r.custo),
+      },
+    ]);
+  }
 
   // O ÚLTIMO CUSTO pago a este fornecedor, por SKU — uma leitura por troca de
   // fornecedor, não por linha. Falha aqui só tira a referência, nunca o pedido.
@@ -424,13 +666,22 @@ export function PurchaseOrderForm({
       notes: notes.trim() === "" ? null : notes.trim(),
       // Data de negócio como meia-noite UTC: os leitores cortam com `slice(0, 10)`.
       expectedAt: expectedAt === "" ? null : new Date(expectedAt).toISOString(),
-      items: validItems.map((item) => ({
-        skuId: item.skuId,
-        skuSnapshot: item.skuSnapshot.trim(),
-        titleSnapshot: item.titleSnapshot,
-        quantityOrdered: Number(item.quantityOrdered),
-        unitCost: item.unitCost.trim() === "" ? null : Number(item.unitCost),
-      })),
+      items: validItems.map((item) => {
+        const linha = linhasRevisao.find((l) => l.key === item.key);
+        const revisao = linha === undefined ? null : camposDoItem(linha, decisoes.get(item.key));
+
+        return {
+          skuId: item.skuId,
+          skuSnapshot: item.skuSnapshot.trim(),
+          titleSnapshot: item.titleSnapshot,
+          quantityOrdered: Number(item.quantityOrdered),
+          unitCost: item.unitCost.trim() === "" ? null : Number(item.unitCost),
+          ...(revisao ?? {}),
+        };
+      }),
+      review: registrosDeDecisao(linhasRevisao, retirados, decisoes),
+      requestId: isEditing ? null : (requestId.current ??= crypto.randomUUID()),
+      expectedUpdatedAt: isEditing ? (initial?.updatedAt ?? null) : null,
     };
 
     if (isEditing) {
@@ -683,6 +934,19 @@ export function PurchaseOrderForm({
                   Trazer da reposição
                 </button>
               )}
+              {supplierId !== "" && organizationId !== undefined && (
+                <button
+                  type="button"
+                  className="sb-button"
+                  disabled={trazendoFornecedor}
+                  onClick={() => {
+                    void trazerDoFornecedor();
+                  }}
+                >
+                  <Icone nome="ciclo" tamanho={14} />
+                  {trazendoFornecedor ? "Analisando o fornecedor…" : "Trazer produtos do fornecedor"}
+                </button>
+              )}
               <button
                 type="button"
                 className="sb-button sb-pco-colar-botao"
@@ -842,6 +1106,27 @@ export function PurchaseOrderForm({
           )}
         </section>
 
+        {/* REVISÃO (D-722) */}
+        <RevisaoPedido
+          linhas={linhasRevisao}
+          retirados={retirados}
+          decisoes={decisoes}
+          analise={analise}
+          estado={estadoAnalise}
+          foraDoLimite={foraDoLimite}
+          impacto={impacto}
+          onManter={manter}
+          onReduzir={reduzir}
+          onRetirar={retirar}
+          onDesfazerRetirada={desfazerRetirada}
+          onLote={(plano) => {
+            for (const passo of plano) {
+              if (passo.acao === "RETIRAR") retirar(passo.key);
+              else reduzir(passo.key, passo.quantidade);
+            }
+          }}
+        />
+
         {/* OBSERVAÇÕES */}
         <section className="sb-pco-cartao" aria-labelledby="pco-notas">
           <header className="sb-pco-cartao-topo">
@@ -916,6 +1201,28 @@ export function PurchaseOrderForm({
               </dd>
             </div>
           </dl>
+
+          {analise !== null && (impacto.emRisco > 0 || impacto.prioridade > 0 || impacto.retirados > 0) && (
+            <dl className="sb-pco-resumo-fatos sb-rev-resumo">
+              <div>
+                <dt>Prioridade</dt>
+                <dd>{formatCount(impacto.prioridade)} item(ns)</dd>
+              </div>
+              <div>
+                <dt>Pedem atenção</dt>
+                <dd>{formatCount(impacto.emRisco)} item(ns)</dd>
+              </div>
+              {impacto.retirados > 0 && (
+                <div>
+                  <dt>Retirados</dt>
+                  <dd>
+                    {formatCount(impacto.retirados)} · {formatCount(impacto.unidadesRetiradas)} un
+                    {impacto.valorRetirado !== null && <small> · {formatCurrency(impacto.valorRetirado)} a menos no planejado</small>}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
 
           {resumo.incompletas > 0 && (
             <p className="sb-pco-aviso sb-pco-aviso-compacto">

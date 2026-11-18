@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000";
+const serverPort = new URL(baseURL).port || "3000";
+
 /**
  * Playwright "a partir da Fase 5, apenas nos fluxos críticos" (docs/TESTING.md
  * secao 3) — por isso um projeto só (Chromium) e um worker só: a suíte inteira
@@ -18,7 +21,7 @@ export default defineConfig({
   reporter: [["list"]],
 
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",
+    baseURL,
     trace: "retain-on-failure",
   },
 
@@ -43,8 +46,8 @@ export default defineConfig({
   // isso num passo separado, depois de subir o Supabase local, porque as
   // variáveis NEXT_PUBLIC_* são embutidas NO BUILD, não em runtime.
   webServer: {
-    command: "pnpm run start",
-    url: "http://127.0.0.1:3000",
+    command: `pnpm run start --port ${serverPort}`,
+    url: baseURL,
     reuseExistingServer: process.env.CI === undefined,
     timeout: 60_000,
   },

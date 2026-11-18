@@ -28,6 +28,28 @@ export interface LinhaReposicao extends SkuReplenishmentRow {
    */
   readonly units_30d_shopee: number | null;
   readonly units_90d_shopee: number | null;
+  /**
+   * D-763: os pedidos em aberto do SKU. Pendente = pedido feito ainda a chegar
+   * (já está no `transito`, nunca somar de novo); planejado = rascunho e
+   * aprovado. NULO = quem lê não tem acesso a pedidos de compra — desconhecido,
+   * nunca "sem pedido". Chave ausente (função de antes da migration) = nulo.
+   */
+  readonly compra_pendente: number | null;
+  readonly compra_planejada: number | null;
+  readonly compra_proxima_chegada: string | null;
+  readonly compra_atrasada: boolean | null;
+  readonly compra_pedidos: number | null;
+}
+
+/** D-763: as contagens do filtro de compra, no conjunto do filtro de estado. */
+export interface ContagensCompra {
+  readonly sem_pedido: number;
+  readonly encomendado: number;
+  readonly complementar: number;
+  readonly atrasado: number;
+  readonly chegada_prevista: number;
+  readonly planejado: number;
+  readonly unidades_encomendadas: number;
 }
 
 export interface AgregadoReposicao {
@@ -48,6 +70,8 @@ export interface VisaoReposicao {
   readonly totais: AgregadoReposicao;
   readonly comprarAgora: AgregadoReposicao;
   readonly linhas: readonly LinhaReposicao[];
+  /** Nulo = sem acesso a pedidos de compra, ou a função de antes de D-763. */
+  readonly contagensCompra: ContagensCompra | null;
   readonly vendasCalculadasEm: string | null;
   readonly fullCapturadoEm: string | null;
 }
@@ -109,9 +133,23 @@ function lerLinha(v: unknown): LinhaReposicao | null {
 
   if (!numOuNulo(shopee30) || !numOuNulo(shopee90)) return null;
 
+  const pendente = v.compra_pendente ?? null;
+  const planejada = v.compra_planejada ?? null;
+  const chegada = v.compra_proxima_chegada ?? null;
+  const atrasada = v.compra_atrasada ?? null;
+  const pedidos = v.compra_pedidos ?? null;
+
+  if (!numOuNulo(pendente) || !numOuNulo(planejada) || !numOuNulo(pedidos) || !textoOuNulo(chegada)) return null;
+  if (atrasada !== null && typeof atrasada !== "boolean") return null;
+
   return {
     units_30d_shopee: shopee30,
     units_90d_shopee: shopee90,
+    compra_pendente: pendente,
+    compra_planejada: planejada,
+    compra_proxima_chegada: chegada,
+    compra_atrasada: atrasada,
+    compra_pedidos: pedidos,
     sku_id: v.sku_id,
     sku: v.sku,
     title: v.title,
@@ -124,6 +162,31 @@ function lerLinha(v: unknown): LinhaReposicao | null {
     suggested_quantity: v.suggested_quantity,
     ...(numeros as Record<(typeof NUMERICOS)[number], number>),
   };
+}
+
+const CHAVES_COMPRA = [
+  "sem_pedido",
+  "encomendado",
+  "complementar",
+  "atrasado",
+  "chegada_prevista",
+  "planejado",
+  "unidades_encomendadas",
+] as const;
+
+function lerContagensCompra(v: unknown): ContagensCompra | null {
+  if (!ehObj(v)) return null;
+
+  const saida: Partial<Record<(typeof CHAVES_COMPRA)[number], number>> = {};
+
+  for (const chave of CHAVES_COMPRA) {
+    const valor = v[chave];
+
+    if (!ehNum(valor)) return null;
+    saida[chave] = valor;
+  }
+
+  return saida as ContagensCompra;
 }
 
 /** `null` = resposta fora do contrato. A tela recusa em vez de mostrar pedaço. */
@@ -161,6 +224,7 @@ export function lerVisaoReposicao(dado: unknown): VisaoReposicao | null {
     totais,
     comprarAgora,
     linhas,
+    contagensCompra: lerContagensCompra(dado.contagens_compra ?? null),
     vendasCalculadasEm: dado.vendas_calculadas_em,
     fullCapturadoEm: dado.full_capturado_em,
   };

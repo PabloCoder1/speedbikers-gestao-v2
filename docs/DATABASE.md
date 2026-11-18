@@ -533,6 +533,31 @@ Todas as mutações passam por RPC `security definer` (`create_purchase_order`, 
 
 **Deliberadamente fora desta etapa**: exportação Excel/PDF (D-034 exige os modelos de referência do usuário, ainda não recebidos); geração de `stock_movements` (`ENTRADA_TRANSITO`/`RECEBIMENTO_TRANSITO`, já aprovados no vocabulário fechado desde `20260821200000` — schema e ciclo primeiro, código de aplicação depois, mesmo padrão incremental do resto do ledger); tela de edição do rascunho (a RPC `update_purchase_order_draft` já existe e funciona, só falta a UI).
 
+### Compras inteligentes (D-720 a D-725) — revisão, recebimento parcial, importação, fornecedor × SKU
+
+Migrations `20261117100000_margem_por_sku`, `20261117110000_compras_revisao_recebimento_importacao` e `20261117120000_analise_de_compra`. Tudo aditivo: nenhum valor novo de `purchase_orders.status`, e os pedidos existentes continuam válidos.
+
+- **`purchase_orders`** ganhou `request_id` (único por organização: a criação é idempotente), `is_import`, `exchange_rate` (nulo = câmbio pendente, nunca 1), `logistics_stage`/`logistics_stage_at` (etapa por cima do status, validada por `set_purchase_order_stage` e zerada por gatilho quando o status muda).
+- **`purchase_order_items`** ganhou `quantity_received` (CHECK `0 ≤ recebido ≤ pedido`), `recommended_quantity`, `review_recommendation`, `review_decision` (MANTER/REDUZIR), `review_reason`, `review_note` e `supplier_sku_code`.
+- **`purchase_order_events`** aceita também `PARTIALLY_RECEIVED`, `STAGE_CHANGED` e `COSTS_UPDATED`.
+- **`purchase_order_review_decisions`** (append-only): a recomendação, a decisão, o de/para e o motivo, inclusive dos itens retirados (`quantity_after = 0`).
+- **`purchase_order_costs`**: custos adicionais por tipo, moeda, câmbio e situação (ESTIMADO/REALIZADO).
+- **`supplier_skus`**: o vínculo explícito fornecedor × SKU (código, custo, moeda, MOQ, múltiplo, prazo, preferido único por SKU).
+- **`purchase_review_settings`**: `new_product_days` por organização (padrão 60).
+
+RPCs de escrita (`security definer`, na lista versionada de D-182): `create_purchase_order` e `update_purchase_order_draft` (assinaturas novas, parâmetros no fim; a edição tem `p_expected_updated_at`), `receive_purchase_order_items`, `set_purchase_order_stage`, `upsert_purchase_order_cost`/`delete_purchase_order_cost`, `upsert_supplier_sku`/`delete_supplier_sku` e `set_purchase_review_settings`. `receive_purchase_order` e `cancel_purchase_order` passaram a mexer só no trânsito pendente. Leituras (`security invoker`): `get_sku_margins`, `get_purchase_analysis`, `get_purchase_order_landed_cost` e `get_supplier_skus`. Leitura das tabelas novas: ADMIN e GESTOR, como o resto de compras; a preferência, qualquer membro. Índices novos: `ml_sales_lines (sku_id, date_created)` e `purchase_order_items (organization_id, sku_id)`.
+
+### Pedidos já feitos e importação de pedidos anteriores (D-760 a D-764)
+
+Migrations `20261118210000_pedidos_ja_feitos.sql` e `20261118211000_importacao_pedidos_anteriores.sql`, empilhadas sobre as de D-720 a D-725. Nenhum controle paralelo de trânsito: o pedido externo é um `purchase_orders` comum e o ENTRADA_TRANSITO continua nascendo só em `mark_purchase_order_ordered`.
+
+- **`purchase_orders`**: `origin` (INTERNO, EXTERNO_MANUAL, PLANILHA), `external_reference`, `supplier_ordered_on` e `external_reference_key` (gerada: sem espaço e sem caixa). Índice único parcial `(organization_id, coalesce(supplier_id, zero), external_reference_key)` entre os não cancelados. Eventos novos: EXTERNAL_REGISTERED, EXTERNAL_LINKED, EXPECTED_CHANGED, ITEMS_ADDED.
+- **`purchase_import_batches`**: um arquivo por `(organization_id, file_sha256)`; o mesmo conteúdo volta ao mesmo lote.
+- **`purchase_import_rows`**: uma quantidade da planilha com a origem (aba, linha, coluna, texto original), o vínculo (`match_status`, `match_candidates`, `sku_id`), o que o usuário confirmou e o pedido/item gerado. Única por `(batch_id, sheet_name, row_number, column_ref)`.
+- **`purchase_import_row_events`**: o antes e o depois de cada correção (append-only).
+
+Leitura das três tabelas: ADMIN e GESTOR pela RLS; escrita direta revogada de `authenticated`, só pelas RPCs. RPCs de escrita (`security definer`, na lista de D-182): `register_placed_purchase_order`, `link_purchase_order_external_reference`, `add_purchase_order_items_placed`, `set_purchase_order_expected_at`, `create_purchase_import_batch`, `resolve_purchase_import_rows` e `commit_purchase_import_group`. Leituras (`security invoker`): `get_open_purchases_for_skus`, `get_purchase_import_batch` e `get_purchase_import_batches`. `get_replenishment_overview` ganhou `p_compra` no fim (assinatura nova: o parâmetro só vai com valor) e as colunas `compra_*` por linha, nulas para quem não lê compras. Uma função `invoker` não alcança o esquema `private`: o teste de papel de `has_org_role` é repetido inline sobre `organization_members`.
+
 ### `domain_events` — o event store
 
 **Implementado em 2026-08-21** (migration `20260821050000_create_domain_events.sql`). L2 append-only, mesmo mecanismo de `job_runs`/`sync_runs` (trigger recusa `UPDATE`/`DELETE`).

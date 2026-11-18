@@ -45,6 +45,10 @@ export interface DraftItem {
   unitCostSuggested?: boolean | undefined;
   /** Marca do SKU (D-129), só para exibição. */
   supplierBrand?: string | null | undefined;
+  /** D-722: a decisão salva antes (edição do rascunho) — a revisão nasce com ela. */
+  reviewDecision?: "MANTER" | "REDUZIR" | null | undefined;
+  reviewReason?: string | null | undefined;
+  reviewNote?: string | null | undefined;
 }
 
 export interface UltimaCompra {

@@ -12,14 +12,15 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-17 |
+| **Atualizado em** | 2026-11-18 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` e produção `imvjfgnaprqsfjlnsyev` constavam como `INACTIVE` em 11/11. Consultas leves de catálogo falharam nos dois. O job Dev da CI reportou `project is paused`. |
 | **Produção** | Cloud Run com 100% do tráfego configurado em `api-00038-qsf` e `worker-00056-wjk`, ambas com `APP_COMMIT=dc69d1fb`. O endpoint `/health` da API devolveu 503 em 11/11. O alias da web aponta para o build Vercel da `main` em `d6169205`. |
-| **Migrations** | Último workflow de produção com sucesso observado `39665807654`, até `20261021180000`. O run seguinte conferido (`39817649217`) parou na verificação de origem. A aplicação exige CI do SHA alvo e duas aprovações em `migrations-producao.yml`. |
+| **Migrations** | VM `sb-db`/`supabase-db`: histórico conferido em READ ONLY até `20261118211000` (17 versões após `20261022170000`). Aplicação extraordinária por SSH relatada em 18/11, não pelo workflow; objetos de compras conferem. Snapshot READY e dump legível, restore completo pendente. O fluxo oficial ainda usa Supabase hosted e não foi disparado. [VM](../infra/vm/README.md). |
+| **Compras (D-720 a D-725, D-760 a D-764)** | #330 atualizado em `27a267be`, incorporado ao #332 sem duplicar commits. Migrations até `20261118211000` verificadas na VM, sem reaplicação. Locais: check/build/docs/guardas, 1.197 testes SQL e 4 cenários Chromium de compras/importação verdes; CI remota dos HEADs publicados deve concluir antes dos merges #330 → #332. As três planilhas reais seguem pendentes. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
 | **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); C-57 (busca universal com a Shopee, D-467) no ar com a T7 (15/10); C-66 (metas por marketplace, D-473) no ar (16/10); telas T0 a T11 e D-484 a D-632 no ar (21/10; a última, a D-632, a divergência de estoque da Shopee na Central de Ações), com as quatro opções do item 4 do dono feitas: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622, D-624) e os detectores da Shopee (D-626, D-632) — lista na seção do Agente 2 de `docs/MULTICHANNEL_HANDOFF.md`; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 
@@ -135,21 +136,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   `C:\Program Files\Docker\Docker\resources\bin`; exporte antes de
   `supabase status`/`db reset`, senão a CLI diz "docker: command not found" como
   se não estivesse instalado.
-- **O teto de 1000 do PostgREST, e a única tela que ainda o ignora.**
-  `max_rows = 1000` (`supabase/config.toml`). Ler uma tabela sem `limit` e
-  imprimir `rows.length` como total faz a tela publicar o **teto do servidor**
-  achando que é o total — foi o que D-263 achou em `/acoes`, com 1.449 abertas.
-  Varri as demais páginas: sobra **uma**, `/sugestoes`, que conta por `.length`
-  sem janela. Hoje é **latente, não vivo** — `feature_suggestions` tem **0
-  linhas** no Dev (medido em 2026-09-08), e uma lista de sugestões enviadas por
-  humanos não chega a mil tão cedo. Fica registrado para não ser redescoberto;
-  vira dívida real no dia em que essa tabela crescer.
-- **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
-  `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
-  tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
-  volume, `count(*)` — nunca a estimativa (D-182).
-
----
+- **O teto de 1.000 do PostgREST e o `n_live_tup` que mente** — dois riscos estáveis, sem mudança desde setembro: texto em `docs/archive/handoffs/2026-11-17_trechos-do-handoff.md`.
 
 ## Atos humanos pendentes
 
