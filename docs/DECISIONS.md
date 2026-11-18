@@ -19808,3 +19808,11 @@ Reativar, inativar e excluir fornecedor aguardavam a Server Action dentro de `us
 O aviso de alteração pede conferir o fornecedor, e o de exclusão pede conferir a lista antes de tentar novamente. A falha de resposta não prova que a operação deixou de acontecer, portanto não há repetição automática. Recusas declaradas pelo servidor e as navegações após sucesso seguem o comportamento existente. A confirmação e a proteção de fornecedor com pedido não mudam.
 
 Três regressões usam fornecedores temporários sem pedidos. Além de conservar o nome ainda não salvo, conferem todos os campos selecionados do cadastro após o POST bloqueado. A nova tentativa precisa alterar só o estado ativo ou excluir o registro, conforme a ação. A limpeza remove as fixtures, sem alterar fornecedores do seed.
+
+## D-726 - Curadoria trata falhas de transporte e conserva os alvos de Desfazer
+
+A tabela de Produtos disparava uma função assíncrona com `void` dentro de `startTransition`, sem tratar a exceção da ação. Interromper o POST de classificar, aplicar marca, limpar marca ou desfazer não mostrava aviso. Outra reprodução segurou o POST: a confirmação já ficava bloqueada, mas os checkboxes de seleção e o campo de marca continuavam editáveis durante a gravação.
+
+O callback agora é assíncrono diretamente e trata a exceção localmente. A falha conserva seleção, marca e painel de confirmação; o resultado é anunciado como alerta e pede conferir os produtos antes de tentar novamente. Não há repetição automática. Os checkboxes da página e das linhas e o campo de marca ficam bloqueados durante a ação, para o lote em andamento conservar seu significado.
+
+Se a falha ocorre em Desfazer, o aviso mantém o botão e somente os IDs que a ação original alterou. A regressão envia um SKU pendente junto de outro já virtual, interrompe o desfazer e tenta novamente: só o primeiro volta a não classificado. As recusas declaradas e o resultado por linha seguem o fluxo existente. As fixtures devolvem os sete campos de classificação e marca aos valores anteriores, incluindo autores e datas.

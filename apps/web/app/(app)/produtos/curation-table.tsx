@@ -164,33 +164,42 @@ export function CurationTable({
   }
 
   function aplicar(acao: Pendente, alvos: string[], limpaSelecao: boolean): void {
-    startTransition(() => {
-      void (async () => {
-        const r =
+    startTransition(async () => {
+      let r: Awaited<ReturnType<typeof classifySkus>>;
+      try {
+        r =
           acao.tipo === "classificar"
             ? await classifySkus(organizationId, alvos, acao.decisao ?? "")
             : await setSupplierBrand(organizationId, alvos, acao.marca ?? "");
-
-        setPendente(null);
-
-        if (!r.ok || r.outcome === null) {
-          setResultado({ texto: r.message ?? "Não foi possível concluir a ação.", erro: true, desfazer: [] });
-
-          return;
-        }
-
-        const outcome: CurationOutcome = r.outcome;
-
+      } catch {
         setResultado({
-          texto: describeOutcome(outcome),
-          erro: false,
-          // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
-          // Mandar os enviados reverteria decisão que já era de outra pessoa.
-          desfazer: acao.tipo === "classificar" ? outcome.changedIds : [],
+          texto: "Não foi possível confirmar a ação. Confira os produtos antes de tentar novamente.",
+          erro: true,
+          // Na falha de Desfazer, conservar só os IDs alterados da ação original.
+          desfazer: acao.tipo === "classificar" && !limpaSelecao ? alvos : [],
         });
+        return;
+      }
 
-        if (limpaSelecao) setSelecionados(new Set());
-      })();
+      setPendente(null);
+
+      if (!r.ok || r.outcome === null) {
+        setResultado({ texto: r.message ?? "Não foi possível concluir a ação.", erro: true, desfazer: [] });
+
+        return;
+      }
+
+      const outcome: CurationOutcome = r.outcome;
+
+      setResultado({
+        texto: describeOutcome(outcome),
+        erro: false,
+        // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
+        // Mandar os enviados reverteria decisão que já era de outra pessoa.
+        desfazer: acao.tipo === "classificar" ? outcome.changedIds : [],
+      });
+
+      if (limpaSelecao) setSelecionados(new Set());
     });
   }
 
@@ -240,6 +249,7 @@ export function CurationTable({
           <input
             type="checkbox"
             aria-label="Selecionar esta página"
+            disabled={emCurso}
             checked={rows.length > 0 && ids.length === rows.length}
             onChange={(e) => {
               selecionarPagina(e.target.checked);
@@ -296,6 +306,7 @@ export function CurationTable({
             }}
             placeholder="Marca do fornecedor"
             aria-label="Marca do fornecedor"
+            disabled={emCurso}
           />
           <datalist id="marcas-conhecidas">
             {marcasConhecidas.map((m) => (
@@ -387,7 +398,7 @@ export function CurationTable({
 
       {resultado !== null && (
         <p
-          role="status"
+          role={resultado.erro ? "alert" : "status"}
           className="sb-panel-body"
           style={{
             margin: 0,
@@ -494,6 +505,7 @@ export function CurationTable({
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${row.sku}`}
+                      disabled={emCurso}
                       checked={selecionados.has(row.sku_id)}
                       onChange={() => {
                         alternar(row.sku_id);

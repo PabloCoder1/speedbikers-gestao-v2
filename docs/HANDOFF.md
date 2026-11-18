@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-725 recuperam diálogos e formulários após falha de transporte. A última fatia conserva a edição e a confirmação de Fornecedores após falha de transporte em reativar, inativar e excluir. Restam a curadoria de Produtos e a gaveta de regra de Reposição no inventário com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-726 recuperam diálogos e formulários após falha de transporte. A última fatia recupera as ações de curadoria de Produtos após falha de transporte, conserva os alvos de Desfazer e bloqueia o lote durante a gravação. Resta a gaveta de regra de Reposição neste inventário com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

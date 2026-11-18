@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **627** (D-001 a D-725).
+Decisões registradas: **628** (D-001 a D-726).
 
 ## Por domínio
 
-### atendimento (62)
+### atendimento (63)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -80,6 +80,7 @@ Decisões registradas: **627** (D-001 a D-725).
 - **D-658** — Retomada do enfileiramento e autorização única do POST no SAC
 - **D-663** — Retomada da confirmação do SAC após recarregar
 - **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
+- **D-726** — Curadoria trata falhas de transporte e conserva os alvos de Desfazer
 
 ### banco/rls (46)
 

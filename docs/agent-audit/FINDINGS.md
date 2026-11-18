@@ -97,6 +97,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A83 | P2 · CORRIGIDO localmente (D-725) | Reativar, inativar ou excluir fornecedor após interrupção da Server Action derrubava a edição para a fronteira de erro e perdia o rascunho | As duas interfaces tratam a exceção localmente, conservam o formulário e a confirmação e liberam nova tentativa com aviso. Três regressões conferem o cadastro intacto no POST bloqueado e o resultado da nova tentativa. [Verificação](SESSION_LOG.md) |
 
+| A84 | P2 · CORRIGIDO localmente (D-726) | A interrupção da Server Action de curadoria não mostrava aviso em classificar, aplicar marca, limpar marca ou desfazer; seleção e marca continuavam editáveis com a confirmação pendente | O callback trata a exceção, preserva o preenchimento e anuncia o erro. A nova tentativa de Desfazer conserva só os IDs originalmente alterados, e os controles do lote ficam bloqueados durante a gravação. Cinco regressões com consulta ao banco. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
