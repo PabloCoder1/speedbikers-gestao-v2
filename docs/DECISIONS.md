@@ -19901,6 +19901,15 @@ Extrai `chunk` (`apps/worker/src/chunk.ts`, `LOOKUP_CHUNK = 200`) reutilizado pe
 
 `@sb/worker` verde em `typecheck`, `eslint` e 68 arquivos / 1.042 testes (`measure-decision-outcomes.test.ts`: 14 casos cobrindo 1.250 decisões, 1.350 outcomes e chamada única da RPC por SKU; `erp-import-apply.test.ts`: 26 casos cobrindo 1.006 remoções humanas sob simulação do limite de 1.000 linhas do PostgREST).
 
+## D-737 - Next.js atualizado de 16.4.1 para 16.4.6 para encerrar os avisos moderados do framework
+
+O `next@16.4.1` carregava dois avisos moderados (`GHSA-mfr8-8qww-v76h` e `GHSA-vc7v-qv4w-wrv8`, corrigidos em `>=16.4.5`) e fazia o `next build` interromper a primeira tentativa com `SecurityFatalError`. O plano técnico (A03) já previa atualização compatível dentro da série `16.4.x`.
+
+Atualiza `next` para `16.4.6` em `apps/web/package.json` e `pnpm-lock.yaml`, sem alterar dependências principais do React nem forçar major em `@google-cloud/storage` ou `exceljs` pelo `uuid` transitivo (`<11.1.1`), que segue como único aviso moderado em `pnpm audit --prod`. O corte alto de `pnpm audit --prod --audit-level high` continua passando com saída zero.
+
+`@sb/web` verde em `vitest` (139 arquivos / 1.489 testes), `typecheck`, `eslint`, as sete guardas estáticas e `next build` em `16.4.6` na primeira tentativa sem `SecurityFatalError`.
+
+
 
 
 

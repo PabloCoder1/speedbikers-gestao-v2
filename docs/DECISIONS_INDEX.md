@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **638** (D-001 a D-736).
+Decisões registradas: **639** (D-001 a D-737).
 
 ## Por domínio
 
@@ -397,7 +397,7 @@ Decisões registradas: **638** (D-001 a D-736).
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-734** — Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
 
-### outros (100)
+### outros (101)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -499,6 +499,7 @@ Decisões registradas: **638** (D-001 a D-736).
 - **D-728** — Cadastros da Central preservam os campos após falha ou recusa
 - **D-729** — Confirmação de remoção conserva a ação após falha de transporte
 - **D-730** — Remoções da Central conferem erro e linhas afetadas
+- **D-737** — Next.js atualizado de 16.4.1 para 16.4.6 para encerrar os avisos moderados do framework
 
 ### processo/docs (1)
 
