@@ -82,7 +82,12 @@ meta instance/attributes/backup-script > /usr/local/bin/sb-backup.sh || true
 chmod 0755 /usr/local/bin/sb-backup.sh
 echo '15 6 * * * root /usr/local/bin/sb-backup.sh >> /var/log/sb-backup.log 2>&1' > /etc/cron.d/sb-backup
 
-# 6. Sobe a pilha.
+# 5b. Caddyfile do HTTPS (metadado `caddyfile`): só as rotas de API, sem o Studio.
+if meta instance/attributes/caddyfile > /tmp/Caddyfile.new && [ -s /tmp/Caddyfile.new ]; then
+  install -m 0644 /tmp/Caddyfile.new "$DIR/volumes/proxy/caddy/Caddyfile"
+fi
+
+# 6. Sobe a pilha (o COMPOSE_FILE do .env inclui o overlay do Caddy).
 cd "$DIR"
 export COMPOSE_PROJECT_NAME=supabase
 docker compose pull -q
