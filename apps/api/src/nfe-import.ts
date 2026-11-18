@@ -5,6 +5,7 @@ import { recusaDoDocumentoGravado } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import type { Caller } from "./auth.js";
+import { confirmAndEnqueueApply } from "./confirm-import-apply.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { FileStore } from "./erp-import.js";
 
@@ -326,28 +327,41 @@ export async function confirmNfeApply(
     };
   }
 
-  const updated = await deps.db
-    .from("documents")
-    .update({ status: "APPLYING", applied_by: caller.userId })
-    .eq("id", documentId)
-    .eq("status", "PARSED");
-
-  if (updated.error !== null) {
-    deps.logger.error("nfe_apply_not_confirmed", { document_id: documentId, reason: updated.error.message });
-
-    return { status: "rejected", reason: "não foi possível confirmar a aplicação" };
-  }
-
-  await deps.enqueuer.enqueue({
-    jobType: "nfe.import.apply",
-    organizationId: caller.organizationId,
-    // Uma aplicação por documento. Reconfirmar não duplica trabalho.
-    dedupeKey: `nfe-apply:${documentId}`,
-    queue: "maintenance",
-    payload: { documentId },
+  const rejected = await confirmAndEnqueueApply({
+    caller,
+    logger: deps.logger,
+    enqueuer: deps.enqueuer,
+    logPrefix: "nfe_apply",
+    targetKey: "document_id",
+    targetId: documentId,
+    job: {
+      jobType: "nfe.import.apply",
+      organizationId: caller.organizationId,
+      // Uma aplicação por documento. Reconfirmar não duplica trabalho.
+      dedupeKey: `nfe-apply:${documentId}`,
+      queue: "maintenance",
+      payload: { documentId },
+    },
+    markApplying: async () =>
+      await deps.db
+        .from("documents")
+        .update({ status: "APPLYING", applied_by: caller.userId })
+        .eq("id", documentId)
+        .eq("status", "PARSED")
+        .select("id")
+        .maybeSingle(),
+    rollbackApplying: async () =>
+      await deps.db
+        .from("documents")
+        .update({ status: "PARSED", applied_by: null })
+        .eq("id", documentId)
+        .eq("status", "APPLYING")
+        .eq("applied_by", caller.userId),
   });
 
-  deps.logger.info("nfe_apply_confirmed", { document_id: documentId, confirmed_by: caller.userId });
+  if (rejected !== null) {
+    return rejected;
+  }
 
   return { status: "queued", documentId };
 }

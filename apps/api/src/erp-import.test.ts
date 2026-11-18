@@ -227,7 +227,13 @@ describe("receiveUpload", () => {
  * Banco falso para `confirmApply`: só a cadeia `select().eq().eq().maybeSingle()`
  * e `update().eq().eq()`, que é o que o comando usa.
  */
-function applyDb(options: { status?: string; missing?: boolean; updateFails?: boolean }): {
+function applyDb(options: {
+  status?: string;
+  missing?: boolean;
+  updateFails?: boolean;
+  updateRaced?: boolean;
+  rollbackFails?: boolean;
+}): {
   db: ImportDeps["db"];
   updates: Record<string, unknown>[];
 } {
@@ -249,14 +255,22 @@ function applyDb(options: { status?: string; missing?: boolean; updateFails?: bo
       update: (values: Record<string, unknown>) => {
         updates.push(values);
 
-        return {
-          eq: () => ({
-            eq: () =>
-              Promise.resolve(
-                options.updateFails === true ? { error: { message: "boom" } } : { error: null },
-              ),
-          }),
+        const result =
+          values.status === "PARSED"
+            ? { data: null, error: options.rollbackFails === true ? { message: "rollback boom" } : null }
+            : options.updateFails === true
+              ? { data: null, error: { message: "boom" } }
+              : options.updateRaced === true
+                ? { data: null, error: null }
+                : { data: { id: "batch-1" }, error: null };
+
+        const chain = {
+          eq: () => chain,
+          select: () => ({ maybeSingle: () => Promise.resolve(result) }),
+          then: <R>(resolve: (value: typeof result) => R) => Promise.resolve(result).then(resolve),
         };
+
+        return chain;
       },
     }),
   } as unknown as ImportDeps["db"];
@@ -265,7 +279,14 @@ function applyDb(options: { status?: string; missing?: boolean; updateFails?: bo
 }
 
 function applyDeps(
-  options: { status?: string; missing?: boolean; updateFails?: boolean } = {},
+  options: {
+    status?: string;
+    missing?: boolean;
+    updateFails?: boolean;
+    updateRaced?: boolean;
+    enqueueFails?: boolean;
+    rollbackFails?: boolean;
+  } = {},
 ): { deps: ImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
   const { db, updates } = applyDb(options);
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
@@ -279,6 +300,10 @@ function applyDeps(
       store: { upload: () => Promise.resolve() },
       enqueuer: {
         enqueue: (request) => {
+          if (options.enqueueFails === true) {
+            return Promise.reject(new Error("cloud tasks down"));
+          }
+
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
 
           return Promise.resolve({
@@ -346,5 +371,24 @@ describe("confirmApply", () => {
 
     expect(outcome).toMatchObject({ status: "rejected" });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("corrida concorrente que atualiza zero linhas é recusada sem enfileirar", async () => {
+    const ctx = applyDeps({ updateRaced: true });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("falha ao enfileirar devolve o lote para PARSED antes de falhar", async () => {
+    const ctx = applyDeps({ enqueueFails: true });
+
+    await expect(confirmApply(ctx.deps, CALLER, "batch-1")).rejects.toThrow("cloud tasks down");
+    expect(ctx.updates).toEqual([
+      { status: "APPLYING", applied_by: CALLER.userId },
+      { status: "PARSED", applied_by: null },
+    ]);
   });
 });

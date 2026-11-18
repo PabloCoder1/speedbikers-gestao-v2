@@ -293,6 +293,8 @@ function applyDb(options: {
   status?: string;
   missing?: boolean;
   updateFails?: boolean;
+  updateRaced?: boolean;
+  rollbackFails?: boolean;
   totalItems?: number | null;
   resolvedItems?: number | null;
   documentType?: string;
@@ -340,14 +342,22 @@ function applyDb(options: {
       update: (values: Record<string, unknown>) => {
         updates.push(values);
 
-        return {
-          eq: () => ({
-            eq: () =>
-              Promise.resolve(
-                options.updateFails === true ? { error: { message: "boom" } } : { error: null },
-              ),
-          }),
+        const result =
+          values.status === "PARSED"
+            ? { data: null, error: options.rollbackFails === true ? { message: "rollback boom" } : null }
+            : options.updateFails === true
+              ? { data: null, error: { message: "boom" } }
+              : options.updateRaced === true
+                ? { data: null, error: null }
+                : { data: { id: "doc-1" }, error: null };
+
+        const chain = {
+          eq: () => chain,
+          select: () => ({ maybeSingle: () => Promise.resolve(result) }),
+          then: <R>(resolve: (value: typeof result) => R) => Promise.resolve(result).then(resolve),
         };
+
+        return chain;
       },
     }),
   } as unknown as NfeImportDeps["db"];
@@ -360,6 +370,9 @@ function applyDeps(
     status?: string;
     missing?: boolean;
     updateFails?: boolean;
+    updateRaced?: boolean;
+    enqueueFails?: boolean;
+    rollbackFails?: boolean;
     totalItems?: number | null;
     resolvedItems?: number | null;
     documentType?: string;
@@ -380,6 +393,10 @@ function applyDeps(
       store: { upload: () => Promise.resolve() },
       enqueuer: {
         enqueue: (request) => {
+          if (options.enqueueFails === true) {
+            return Promise.reject(new Error("cloud tasks down"));
+          }
+
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
 
           return Promise.resolve({
@@ -492,6 +509,25 @@ describe("confirmNfeApply", () => {
 
     expect(outcome).toMatchObject({ status: "rejected" });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("corrida concorrente que atualiza zero linhas é recusada sem enfileirar", async () => {
+    const ctx = applyDeps({ updateRaced: true });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("falha ao enfileirar devolve o documento para PARSED antes de falhar", async () => {
+    const ctx = applyDeps({ enqueueFails: true });
+
+    await expect(confirmNfeApply(ctx.deps, CALLER, "doc-1")).rejects.toThrow("cloud tasks down");
+    expect(ctx.updates).toEqual([
+      { status: "APPLYING", applied_by: CALLER.userId },
+      { status: "PARSED", applied_by: null },
+    ]);
   });
 });
 

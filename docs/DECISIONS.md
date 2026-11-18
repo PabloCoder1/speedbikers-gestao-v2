@@ -19885,5 +19885,14 @@ Em `ensureAccessToken` (`apps/worker/src/handlers/ml-token.ts`), erros de leitur
 
 A suíte `@sb/worker` passou em `typecheck`, `lint` e 68 arquivos / 1.038 testes, incluindo 20 casos em `ml-account-read.test.ts` (os dez handlers em erro transitório e ausência genuína) e 13 em `ml-token.test.ts`.
 
+## D-735 - Confirmação de importação ERP e NF-e exige linha afetada e reverte PARSED se a fila falhar
+
+Em `confirmApply` (`erp-import.ts`) e `confirmNfeApply` (`nfe-import.ts`), a transição condicional de `'PARSED'` para `'APPLYING'` não selecionava o `id` afetado (`.select("id").maybeSingle()`). Em uma corrida concorrente entre duas confirmações ou mudança simultânea de estado, o chamador perdedor recebia erro nulo com zero linhas alteradas, seguia para `enqueuer.enqueue` e devolvia `{ status: "queued" }` (HTTP 200) em falso. Se `enqueuer.enqueue` falhasse após a escrita de `'APPLYING'`, o lote ou documento ficava preso em `'APPLYING'` e recusava novas confirmações.
+
+O helper compartilhado `confirmAndEnqueueApply` (`apps/api/src/confirm-import-apply.ts`) passa a exigir retorno do `id` na transição `PARSED -> APPLYING`: zero linhas devolve `rejected` (HTTP 409) sem tocar a fila. Quando `enqueuer.enqueue` falha, executa compensação condicional devolvendo `{ status: "PARSED", applied_by: null }` apenas se o registro seguir em `'APPLYING'` com o mesmo `applied_by`, registra log explícito em eventual falha da compensação e relança o erro para resposta 500. Schema, filas, worker e contrato de sucesso não mudam.
+
+A suíte `@sb/api` passou em `typecheck`, `eslint` e 39 arquivos / 513 testes (`erp-import.test.ts`: 24 casos; `nfe-import.test.ts`: 29 casos), cobrindo corrida de zero linhas e rollback condicional quando o enfileiramento falha.
+
+
 
 

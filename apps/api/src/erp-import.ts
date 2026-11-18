@@ -4,6 +4,7 @@ import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 
 import type { Caller } from "./auth.js";
+import { confirmAndEnqueueApply } from "./confirm-import-apply.js";
 import type { Enqueuer } from "./enqueue.js";
 
 /**
@@ -187,28 +188,41 @@ export async function confirmApply(
     return { status: "rejected", reason: `lote em ${batch.data.status}, não está pronto para aplicação` };
   }
 
-  const updated = await deps.db
-    .from("erp_import_batches")
-    .update({ status: "APPLYING", applied_by: caller.userId })
-    .eq("id", batchId)
-    .eq("status", "PARSED");
-
-  if (updated.error !== null) {
-    deps.logger.error("erp_apply_not_confirmed", { batch_id: batchId, reason: updated.error.message });
-
-    return { status: "rejected", reason: "não foi possível confirmar a aplicação" };
-  }
-
-  await deps.enqueuer.enqueue({
-    jobType: "erp.import.apply",
-    organizationId: caller.organizationId,
-    // Uma aplicação por lote. Reconfirmar não duplica trabalho.
-    dedupeKey: `erp-apply:${batchId}`,
-    queue: "maintenance",
-    payload: { batchId },
+  const rejected = await confirmAndEnqueueApply({
+    caller,
+    logger: deps.logger,
+    enqueuer: deps.enqueuer,
+    logPrefix: "erp_apply",
+    targetKey: "batch_id",
+    targetId: batchId,
+    job: {
+      jobType: "erp.import.apply",
+      organizationId: caller.organizationId,
+      // Uma aplicação por lote. Reconfirmar não duplica trabalho.
+      dedupeKey: `erp-apply:${batchId}`,
+      queue: "maintenance",
+      payload: { batchId },
+    },
+    markApplying: async () =>
+      await deps.db
+        .from("erp_import_batches")
+        .update({ status: "APPLYING", applied_by: caller.userId })
+        .eq("id", batchId)
+        .eq("status", "PARSED")
+        .select("id")
+        .maybeSingle(),
+    rollbackApplying: async () =>
+      await deps.db
+        .from("erp_import_batches")
+        .update({ status: "PARSED", applied_by: null })
+        .eq("id", batchId)
+        .eq("status", "APPLYING")
+        .eq("applied_by", caller.userId),
   });
 
-  deps.logger.info("erp_apply_confirmed", { batch_id: batchId, confirmed_by: caller.userId });
+  if (rejected !== null) {
+    return rejected;
+  }
 
   return { status: "queued", batchId };
 }
