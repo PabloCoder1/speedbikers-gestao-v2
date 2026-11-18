@@ -42,7 +42,15 @@ const PALAVRAS: readonly (readonly [PapelColuna, RegExp])[] = [
   ["DESCRICAO", /\b(descri[çc][ãa]o|produto|nome|item)\b/i],
 ];
 
-const NAO_QUANTIDADE = /\b(valor|pre[çc]o|custo|fob|usd|us\$|r\$|total|peso|kg|cbm|m3|caixa|cx|ctn|unit[áa]rio|margem|%)\b/i;
+/**
+ * Números que não são quantidade encomendada. INVOICE e CEST vieram da tabela
+ * de códigos de importação (preço em dólar e código fiscal); SOMA e TOTAL, das
+ * fórmulas do modelo de pedido.
+ */
+const NAO_QUANTIDADE =
+  /\b(valor|pre[çc]o|price|custo|fob|invoice|usd|us\$|r\$|total|soma|subtotal|peso|kg|cbm|m3|caixa|cx|ctn|unit[áa]rio|margem|cest|ean|gtin|ncm|%)\b/i;
+/** Acima disto, a quantidade pede confirmação: um EAN lido como número passaria de 7 trilhões. */
+const QUANTIDADE_PLAUSIVEL = 1_000_000;
 const CABECALHO_QUANTIDADE = /\b(qtd|qtde|quant(idade)?|pedido|encomendad[oa])\b/i;
 /**
  * "30632-1", "31011", "JS31205", "31604-2", "PO-2026-001": um código sem
@@ -50,6 +58,30 @@ const CABECALHO_QUANTIDADE = /\b(qtd|qtde|quant(idade)?|pedido|encomendad[oa])\b
  * nunca vira referência.
  */
 const CARA_DE_REFERENCIA = /^(?=[^\s]*\d{3})[A-Z0-9][A-Z0-9\-/.]{2,39}$/i;
+
+/**
+ * A referência de um cabeçalho: o próprio código, ou o código antes de uma
+ * anotação separada por " - " ("A2026C701A  - ok" → "A2026C701A"). `null`
+ * quando o cabeçalho não parece código de pedido.
+ */
+export function referenciaDoCabecalho(titulo: string): string | null {
+  const t = titulo.trim();
+
+  if (CARA_DE_REFERENCIA.test(t)) return t;
+
+  const token = /^(\S+)\s+-\s*.*$/.exec(t)?.[1];
+
+  return token !== undefined && CARA_DE_REFERENCIA.test(token) ? token : null;
+}
+
+/** EAN/GTIN escrito como texto ou número, com o apóstrofo do Excel tirado. */
+export function limparEan(texto: string): string {
+  return texto.trim().replace(/^'+/, "").replace(/\s/g, "");
+}
+
+function pareceGtin(c: Celula): boolean {
+  return /^\d{8}$|^\d{12,14}$/.test(limparEan(c.texto));
+}
 
 export interface Quantidade {
   readonly valor: number | null;
@@ -70,7 +102,7 @@ export function interpretarQuantidade(bruto: string, numerica: boolean): Quantid
   if (numerica && /^-?\d+(\.\d+)?(E[-+]?\d+)?$/i.test(t)) {
     const n = Number(t);
 
-    return n > 0 ? { valor: n, precisaConfirmar: false } : { valor: null, precisaConfirmar: true };
+    return n > 0 ? { valor: n, precisaConfirmar: n > QUANTIDADE_PLAUSIVEL } : { valor: null, precisaConfirmar: true };
   }
 
   const simples = /^\d{1,3}(\.\d{3})+$/.test(t) ? t.replace(/\./g, "") : /^\d+(,\d+)?$/.test(t) ? t.replace(",", ".") : null;
@@ -78,7 +110,7 @@ export function interpretarQuantidade(bruto: string, numerica: boolean): Quantid
   if (simples !== null) {
     const n = Number(simples);
 
-    return n > 0 ? { valor: n, precisaConfirmar: false } : { valor: null, precisaConfirmar: true };
+    return n > 0 ? { valor: n, precisaConfirmar: n > QUANTIDADE_PLAUSIVEL } : { valor: null, precisaConfirmar: true };
   }
 
   if (/^\d+(\s*\+\s*\d+)+$/.test(t)) {
@@ -123,27 +155,51 @@ export function classificarAba(aba: Aba, linhaCabecalho = detectarCabecalho(aba)
     const titulo = (cabecalho.get(coluna)?.texto ?? "").trim();
     let preenchidas = 0;
     let numericas = 0;
+    let decimais = 0;
+    let gtins = 0;
 
     for (const [n, linha] of aba.grade) {
-      if (n <= linhaCabecalho) continue;
+      // Linha com uma célula só é título de seção ("BAU ALUMÍNIO"): não diz o que a coluna é.
+      if (n <= linhaCabecalho || linha.size <= 1) continue;
       const c = linha.get(coluna);
 
       if (c === undefined) continue;
       preenchidas += 1;
-      if (ehNumero(c)) numericas += 1;
+      if (pareceGtin(c)) gtins += 1;
+      if (ehNumero(c)) {
+        numericas += 1;
+        // Só número de verdade conta como decimal: "200 + 200" não é preço.
+        const n = Number(c.texto.trim().replace(",", "."));
+
+        if (Number.isFinite(n) && !Number.isInteger(n)) decimais += 1;
+      }
     }
 
     let papel: PapelColuna = "IGNORAR";
     let referencia: string | null = null;
+    const refDoTitulo = referenciaDoCabecalho(titulo);
     const porPalavra = PALAVRAS.find(([p, re]) => !usados.has(p) && re.test(titulo) && !(p === "CODIGO" && CABECALHO_QUANTIDADE.test(titulo)));
-    const maioriaNumerica = preenchidas > 0 && numericas / preenchidas >= 0.8;
+    // Coluna com referência no cabeçalho aceita linhas de título de seção no meio.
+    const proporcao = preenchidas === 0 ? 0 : numericas / preenchidas;
+    const maioriaNumerica = proporcao >= (refDoTitulo === null ? 0.8 : 0.5);
+    const textos = preenchidas - numericas;
 
-    if (porPalavra !== undefined && !(CARA_DE_REFERENCIA.test(titulo) && maioriaNumerica)) {
+    if (porPalavra !== undefined && !(refDoTitulo !== null && maioriaNumerica)) {
       papel = porPalavra[0];
       if (papel !== "OBSERVACAO") usados.add(papel);
-    } else if (maioriaNumerica && !NAO_QUANTIDADE.test(titulo)) {
+    } else if (preenchidas > 0 && gtins / preenchidas >= 0.6) {
+      // Números de 8 a 14 dígitos são EAN, nunca quantidade (o MANOPLA do modelo).
+      papel = usados.has("EAN") ? "IGNORAR" : "EAN";
+      usados.add("EAN");
+    } else if (NAO_QUANTIDADE.test(titulo) || (numericas > 0 && decimais / numericas >= 0.3)) {
+      // Preço, custo, fiscal ou fórmula de total — e coluna de decimais é preço, não peça.
+      papel = "IGNORAR";
+    } else if (maioriaNumerica) {
       papel = "QUANTIDADE";
-      referencia = CARA_DE_REFERENCIA.test(titulo) ? titulo : null;
+      referencia = refDoTitulo;
+    } else if (titulo === "" && textos > 0 && textos / preenchidas >= 0.8) {
+      // Texto solto sem cabeçalho ("NÃO VAMOS TRABALHAR", "INATIVO"): guardado como observação.
+      papel = "OBSERVACAO";
     }
 
     saida.push({ coluna, cabecalho: titulo, papel, referencia, preenchidas, numericas });
@@ -200,7 +256,8 @@ export function montarLinhas(aba: Aba, cls: ClassificacaoAba): LinhaMontada[] {
     if (n <= cls.linhaCabecalho) continue;
 
     const code = texto(linha, codigo);
-    const eanTexto = texto(linha, ean);
+    const eanBruto = texto(linha, ean);
+    const eanTexto = eanBruto === null ? null : limparEan(eanBruto);
     const description = texto(linha, descricao);
 
     if (code === null && eanTexto === null && description === null) continue;

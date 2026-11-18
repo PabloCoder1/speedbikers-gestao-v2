@@ -148,6 +148,61 @@ describe("cabeçalho como referência", () => {
   });
 });
 
+/**
+ * Os casos achados nas três planilhas reais (18/11), reproduzidos com XML
+ * sintético — as planilhas da empresa nunca entram no repositório.
+ */
+describe("layouts das planilhas reais", () => {
+  const t = (ref: string, texto: string) => `<c r="${ref}" t="inlineStr"><is><t>${texto}</t></is></c>`;
+  const n = (ref: string, v: string) => `<c r="${ref}"><v>${v}</v></c>`;
+  const cls = (xml: string) => classificarAba({ nome: "A", grade: lerAba(`<worksheet><sheetData>${xml}</sheetData></worksheet>`, []).grade, cortada: false });
+  const papel = (c: ReturnType<typeof cls>, col: string) => c.colunas.find((x) => x.coluna === col);
+
+  it("EAN como texto com apóstrofo, sem cabeçalho, é EAN e nunca quantidade (MANOPLA do modelo)", () => {
+    const c = cls(
+      `<row r="1">${t("A1", "CÓDIGO")}${t("B1", "PRODUTO")}</row>` +
+        `<row r="2">${t("A2", "XLBLACK")}${t("B2", "MANOPLA")}${t("C2", "'7908927701099")}</row>` +
+        `<row r="3">${t("A3", "XLRED")}${t("B3", "MANOPLA")}${n("C3", "7908927701112")}</row>`,
+    );
+
+    expect(papel(c, "C")?.papel).toBe("EAN");
+    expect(interpretarQuantidade("7908927701112", true).precisaConfirmar).toBe(true);
+  });
+
+  it("INVOICE, CEST e coluna de decimais não são quantidade (tabela de códigos)", () => {
+    const c = cls(
+      `<row r="1">${t("A1", "CÓDIGO")}${t("B1", "CEST")}${t("C1", "INVOICE")}</row>` +
+        `<row r="2">${t("A2", "AC10")}${n("B2", "2600100")}${n("C2", "0.69")}${n("D2", "1.18")}</row>` +
+        `<row r="3">${t("A3", "AF01")}${n("B3", "2600100")}${n("C3", "0.65")}${n("D3", "2.5")}</row>`,
+    );
+
+    expect([papel(c, "B")?.papel, papel(c, "C")?.papel, papel(c, "D")?.papel]).toEqual(["IGNORAR", "IGNORAR", "IGNORAR"]);
+  });
+
+  it("'A2026C701A  - ok' é a referência A2026C701A, e título de seção no meio não tira a coluna", () => {
+    const c = cls(
+      `<row r="1">${t("A1", "CODIGO")}${t("B1", "JS30632-1")}${t("C1", "A2026C701A  - ok")}</row>` +
+        `<row r="2">${t("A2", "BAU05")}${n("B2", "158")}${n("C2", "670")}</row>` +
+        `<row r="3">${t("B3", "BAU PLÁSTICO OFFRACER")}</row>` +
+        `<row r="4">${t("B4", "BAU ALUMÍNIO")}</row>`,
+    );
+
+    expect(papel(c, "B")).toMatchObject({ papel: "QUANTIDADE", referencia: "JS30632-1" });
+    expect(papel(c, "C")).toMatchObject({ papel: "QUANTIDADE", referencia: "A2026C701A" });
+  });
+
+  it("texto solto sem cabeçalho ('NÃO VAMOS TRABALHAR') vira observação, não se perde", () => {
+    const c = cls(
+      `<row r="1">${t("A1", "CODIGO")}${t("B1", "PRODUTO")}${t("C1", "30632-1")}</row>` +
+        `<row r="2">${t("A2", "ACDO")}${t("B2", "ACELERADOR")}${t("D2", "NÃO VAMOS TRABALHAR")}</row>` +
+        `<row r="3">${t("A3", "AC10")}${t("B3", "ACELERADOR")}${n("C3", "2000")}${t("D3", "S/MARGEM")}</row>`,
+    );
+
+    expect(papel(c, "D")?.papel).toBe("OBSERVACAO");
+    expect(montarLinhas({ nome: "A", grade: lerAba(`<worksheet><sheetData><row r="1">${t("A1", "CODIGO")}${t("B1", "PRODUTO")}${t("C1", "30632-1")}</row><row r="3">${t("A3", "AC10")}${t("B3", "ACELERADOR")}${n("C3", "2000")}${t("D3", "S/MARGEM")}</row></sheetData></worksheet>`, []).grade, cortada: false }, c)[0]?.notes).toBe("S/MARGEM");
+  });
+});
+
 describe("interpretarQuantidade", () => {
   it.each([
     ["120", true, 120, false],
