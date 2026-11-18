@@ -19877,4 +19877,13 @@ Nove testes de contrato em `apps/web/lib/notificacoes-resultados.test.ts` cobrem
 
 Três testes de contrato em `apps/web/lib/sugestoes-resultados.test.ts` (suíte `@sb/web`: 139 arquivos, 1.489 testes) e 32 regressões Chromium em `sugestoes.spec.ts`, `conhecimento.spec.ts`, `templates.spec.ts` e `atendimento.spec.ts` cobrem perda de autorização via RLS e falhas de transporte com nova tentativa, sem alterar compras/reposição nem worktrees/migrations do Claude.
 
+## D-734 - Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
+
+Em `ensureAccessToken` (`apps/worker/src/handlers/ml-token.ts`), erros de leitura em `ml_credentials` eram agrupados com `credentials.data === null` e devolviam `{ ok: false, retryable: false, reason: "conta CONNECTED sem credenciais gravadas" }`, descartando webhooks e sincronizações em quedas transitórias do Postgres/PostgREST; erro na reserva da trava de refresh (`claimed`) também reutilizava o motivo de corrida entre instâncias. Nos dez handlers mais antigos do Mercado Livre (`webhook-received`, `backfill-orders`, `sync-orders-window`, `sync-ads-campaigns`, `sync-fulfillment-snapshot`, `sync-listings-snapshot`, `sync-listing-visits-snapshot`, `sync-support-claims-reconcile`, `sync-support-messages-reconcile` e `sync-support-questions-reconcile`), `account.error !== null` era tratado igual a `account.data === null`, registrando `*_account_missing` e encerrando em `{ status: "done", processed: 0 }`.
+
+`ml-token.ts` passa a distinguir erros de banco ao ler `ml_credentials` e reservar a trava como `{ ok: false, retryable: true }` com motivo explícito, preservando `retryable: false` somente para credenciais genuinamente ausentes (`data === null`). Os dez handlers passam a usar o helper compartilhado `resolveMlAccountRead` (`apps/worker/src/handlers/ml-account-read.ts`): falha na leitura de `ml_accounts` devolve `{ status: "failed", retryable: true }`, enquanto `data === null` sem erro mantém o log de conta ausente e `{ status: "done", processed: 0 }`, igual a `lerLojaConectada` (D-426) e aos handlers mais recentes. Schema, travas de token, RPCs e políticas de fila não mudam.
+
+A suíte `@sb/worker` passou em `typecheck`, `lint` e 68 arquivos / 1.038 testes, incluindo 20 casos em `ml-account-read.test.ts` (os dez handlers em erro transitório e ausência genuína) e 13 em `ml-token.test.ts`.
+
+
 

@@ -71,7 +71,15 @@ export async function ensureAccessToken(
     .eq("ml_account_id", mlAccountId)
     .maybeSingle();
 
-  if (credentials.error !== null || credentials.data === null) {
+  if (credentials.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao ler credenciais Mercado Livre: ${credentials.error.message}`,
+    };
+  }
+
+  if (credentials.data === null) {
     return { ok: false, retryable: false, reason: "conta CONNECTED sem credenciais gravadas" };
   }
 
@@ -98,7 +106,15 @@ export async function ensureAccessToken(
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao reservar refresh do token: ${claimed.error.message}`,
+    };
+  }
+
+  if (claimed.data === null) {
     return { ok: false, retryable: true, reason: "refresh do token em andamento por outra execução" };
   }
 

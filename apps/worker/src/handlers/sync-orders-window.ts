@@ -7,6 +7,7 @@ import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ceilToHour, fetchOrdersWindow, floorToHour } from "./ml-orders-fetch.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -88,19 +89,25 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, seller_id, status, connected_at")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_orders_window_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_orders_window_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED" || account.data.seller_id === null) {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED" || account.seller_id === null) {
       // Desconectada entre o enfileiramento e a execução — corrida benigna,
       // não erro. A próxima janela, se a conta reconectar, cobre o intervalo.
       context.logger.info("sync_orders_window_account_not_connected", { ml_account_id: mlAccountId });
@@ -109,13 +116,13 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
     }
 
     // Copiados para variáveis locais logo após a guarda: acesso repetido a
-    // `account.data.seller_id` dentro do closure de `fetchOrdersWindow`,
-    // abaixo, não preserva o estreitamento de tipo do `if` acima.
+    // `account.seller_id` dentro do closure de `fetchOrdersWindow`, abaixo,
+    // preserva o estreitamento do destructuring.
     const {
       organization_id: organizationId,
       seller_id: sellerId,
       connected_at: connectedAt,
-    } = account.data;
+    } = account;
 
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);

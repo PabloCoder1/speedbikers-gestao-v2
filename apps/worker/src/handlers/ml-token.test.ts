@@ -28,6 +28,12 @@ const RENOVADA_POR_OUTRA = {
 interface Opcoes {
   /** A credencial que o UPDATE da trava devolve; por padrão, a mesma da leitura. */
   naTrava?: typeof VENCENDO;
+  /** Erro devolvido pela leitura inicial das credenciais. */
+  falhaAoLerCredenciais?: { message: string };
+  /** Credenciais ausentes no banco sem erro. */
+  credenciaisAusentes?: boolean;
+  /** Erro devolvido ao tentar reservar a trava do refresh. */
+  falhaNaTrava?: { message: string };
   /** Erro devolvido pela gravação do token novo. */
   falhaAoGravar?: { message: string };
   travaPerdida?: boolean;
@@ -65,13 +71,27 @@ function fakeDb(opcoes: Opcoes = {}) {
 
   const db = {
     from: (table: string) => ({
-      select: () => cadeia({ data: table === "ml_credentials" ? VENCENDO : null, error: null }),
+      select: () => {
+        if (table === "ml_credentials" && opcoes.falhaAoLerCredenciais !== undefined) {
+          return cadeia({ data: null, error: opcoes.falhaAoLerCredenciais });
+        }
+
+        if (table === "ml_credentials" && opcoes.credenciaisAusentes === true) {
+          return cadeia({ data: null, error: null });
+        }
+
+        return cadeia({ data: table === "ml_credentials" ? VENCENDO : null, error: null });
+      },
       // A trava é reivindicada com sucesso e devolve a credencial; as outras
       // atualizações só são registradas.
       update: (row: Record<string, unknown>) => {
         atualizacoes.push({ table, row });
         const filtros: Record<string, unknown> = {};
         filtrosAtualizacao.push(filtros);
+
+        if (table === "ml_credentials" && "refresh_locked_until" in row && opcoes.falhaNaTrava !== undefined) {
+          return cadeia({ data: null, error: opcoes.falhaNaTrava }, filtros);
+        }
 
         if (table === "ml_credentials" && "access_token_ciphertext" in row && opcoes.falhaAoGravar !== undefined) {
           return cadeia({ data: null, error: opcoes.falhaAoGravar }, filtros);
@@ -224,5 +244,35 @@ describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 2
     await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: true });
     expect(atualizacoes).toHaveLength(1);
     expect(registrarRecusa).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha transitória ao ler credenciais é retryable=true em vez de acusar ausência", async () => {
+    const { deps } = fakeDb({ falhaAoLerCredenciais: { message: "connection reset" } });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "falha ao ler credenciais Mercado Livre: connection reset",
+    });
+  });
+
+  it("credenciais ausentes sem erro seguem não retryable", async () => {
+    const { deps } = fakeDb({ credenciaisAusentes: true });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      reason: "conta CONNECTED sem credenciais gravadas",
+    });
+  });
+
+  it("falha do banco ao reservar a trava do refresh mantém retryable=true com motivo explícito", async () => {
+    const { deps } = fakeDb({ falhaNaTrava: { message: "statement timeout" } });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "falha ao reservar refresh do token: statement timeout",
+    });
   });
 });
