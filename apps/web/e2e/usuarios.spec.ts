@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 
-import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_ML_ACCOUNT, E2E_SHOPEE_SHOP } from "./constants.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_ML_ACCOUNT, E2E_SHOPEE_SHOP, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
 import { derrubarPrimeiraAcao, login, loginAs } from "./helpers.js";
 import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
@@ -56,22 +58,45 @@ test("/usuarios: com DOIS membros a tela abre — a regressão de D-234", async 
   ).toBeVisible();
 });
 
-test("/usuarios: o histórico de acesso mostra as duas entradas que o banco gravou", async ({ page }) => {
-  await login(page, "/usuarios");
-
-  /*
-    O histórico não é escrito pela tela: `organization_access_events` é
-    append-only e preenchido por trigger. Ou seja, o seed cria os dois membros
-    e o BANCO registra as duas entradas — se elas não estiverem aqui, o
-    registro de auditoria parou de funcionar, e isso é silencioso.
-  */
-  const historico = page.getByRole("region", { name: "Histórico de acesso" });
-
-  await expect(historico.getByRole("cell", { name: "entrou como ADMIN" })).toBeVisible();
-  await expect(historico.getByRole("cell", { name: "entrou como GESTOR" })).toBeVisible();
-
-  // A janela é declarada, não implícita — a leitura tem `limit(50)` (D-131).
-  await expect(historico.getByText(/50 mudanças mais recentes/)).toBeVisible();
+test("/usuarios: o histórico conserva as entradas do seed e mostra a janela recente do banco", async ({ page }) => {
+  const db = bancoLocal();
+  const seed = await readSeedOutput();
+  const gestor = await db.from("organization_members").select("user_id, role").eq("organization_id", seed.organizationId).eq("role", "GESTOR").single();
+  if (gestor.error !== null) throw new Error(gestor.error.message);
+  const alvo = gestor.data.user_id;
+  const papel = gestor.data.role;
+  // A tabela de auditoria concede leitura ao ADMIN autenticado, não à service_role.
+  const leitor = createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "", {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const sessao = await leitor.auth.signInWithPassword({ email: E2E_USER_EMAIL, password: E2E_USER_PASSWORD });
+  if (sessao.error !== null) throw new Error(sessao.error.message);
+  // As entradas iniciais continuam no banco, mesmo fora das 50 mais recentes.
+  const entradas = await leitor.from("organization_access_events").select("target_user_id, new_role")
+    .eq("organization_id", seed.organizationId).eq("event_type", "MEMBER_ADDED")
+    .in("target_user_id", [seed.userId, alvo]).order("new_role").limit(3);
+  expect(entradas.error).toBeNull();
+  expect(entradas.data).toEqual([{ target_user_id: seed.userId, new_role: "ADMIN" }, { target_user_id: alvo, new_role: "GESTOR" }]);
+  try {
+    // Duas mudanças conhecidas entram na janela; a auditoria não é apagada.
+    for (const role of ["ANALISTA", papel]) {
+      const mudanca = await db.from("organization_members").update({ role }).eq("organization_id", seed.organizationId).eq("user_id", alvo).select("role").single();
+      expect(mudanca.error).toBeNull();
+      expect(mudanca.data?.role).toBe(role);
+    }
+    const recentes = await leitor.from("organization_access_events").select("id").eq("organization_id", seed.organizationId).order("occurred_at", { ascending: false }).limit(50);
+    if (recentes.error !== null) throw new Error(recentes.error.message);
+    await login(page, "/usuarios");
+    const historico = page.getByRole("region", { name: "Histórico de acesso" });
+    await expect(historico.getByRole("cell", { name: "GESTOR → ANALISTA", exact: true }).first()).toBeVisible();
+    await expect(historico.getByRole("cell", { name: "ANALISTA → GESTOR", exact: true }).first()).toBeVisible();
+    await expect(historico.getByRole("row")).toHaveCount(recentes.data.length + 1);
+    await expect(historico.getByText(/50 mudanças mais recentes/)).toBeVisible();
+  } finally {
+    const volta = await db.from("organization_members").update({ role: papel }).eq("organization_id", seed.organizationId).eq("user_id", alvo).select("role").single();
+    expect.soft(volta.error).toBeNull();
+    expect.soft(volta.data?.role).toBe(papel);
+  }
 });
 
 test("/usuarios: a faixa tem os CINCO papéis do check, não os três do frame", async ({ page }) => {

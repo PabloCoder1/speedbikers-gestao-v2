@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **632** (D-001 a D-730).
+Decisões registradas: **633** (D-001 a D-731).
 
 ## Por domínio
 
@@ -572,7 +572,7 @@ Decisões registradas: **632** (D-001 a D-730).
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (100)
+### worker/infra (101)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -674,4 +674,5 @@ Decisões registradas: **632** (D-001 a D-730).
 - **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
 - **D-684** — Perguntas inicia a lista e os contadores sem esperar a lista de contas
 - **D-720** — Notificações e preferências recuperam os controles após falha da ação
+- **D-731** — Usuários confirma a escrita antes de anunciar mudança de papel ou acesso
 

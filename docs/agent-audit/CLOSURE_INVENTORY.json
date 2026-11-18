@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-18; auditoria base 010c252d, F04 testado localmente até A88/D-730",
+  "corte": "2026-11-18; auditoria base 010c252d, F03/F04 com evidências locais até A89/D-731",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-720–728; 010c252d; E2E A79–86",
+      "evidencia": "D-720–728 e D-731/A89; transporte e resultado real de papel/revogação em Usuários; cinco regressões de navegador e treze contratos",
       "fase": 3
     },
     {

@@ -109,6 +109,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A88 | P2 · CORRIGIDO localmente (D-730) | Remover metas/alíquota ou restaurar limites ignorava erro e linhas afetadas do DELETE. Perda da escrita com a confirmação aberta terminava sem aviso de que nada foi removido | O servidor devolve a recusa e só revalida após chave afetada; a confirmação mostra o aviso sem expor detalhes internos. Quatro regressões reais de RLS, oito contratos e 47 E2E relacionados passaram. Schema e autorização permanecem iguais. [Verificação](SESSION_LOG.md) |
 
+| A89 | P1 · CORRIGIDO localmente (D-731) | Troca de papel e revogações ML/Shopee retornavam ok=true após escrita filtrada pela RLS; concessão já removida também não produzia aviso de resultado vazio | A escrita retorna a chave afetada; zero linhas não anuncia sucesso nem revalida a tela. Cinco regressões conferem perda de autorização, estado real e nova tentativa/releitura; treze contratos preservam filtros e último ADMIN. RLS permanece responsável pela autorização. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
