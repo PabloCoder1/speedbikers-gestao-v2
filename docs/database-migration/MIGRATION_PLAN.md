@@ -161,3 +161,42 @@ Vault.)
 | Ponto único de falha (uma VM) | Snapshot diário e roteiro de recriação em minutos a partir do bucket |
 | Realtime e Storage com ajuste fino diferente do gerenciado | Cobertos pelo e2e do ensaio (toast de notificação, avatar) |
 | Prazo de 90 dias da pausa | Conferir no painel antes de tudo (3.3, item 1) |
+
+### 3.6 Resultado do ensaio local (18/11/2026)
+
+Pilha oficial do Supabase para auto-hospedagem (`docker compose`; imagens:
+Postgres 17.6.1.136, GoTrue 2.197, PostgREST 14.18, Realtime 2.148, Storage
+1.89, Envoy), com chaves novas e descartáveis, e o backup de 22/10 carregado.
+O que foi provado, e o que não foi:
+
+| Verificação | Resultado |
+|---|---|
+| 315 migrations do Git numa instalação vazia | Aplicadas sem erro em ~65 s |
+| Carga dos dados do backup (91 tabelas, só-dados, FKs suspensas) | 63 s, sem erro |
+| Contagem por tabela, origem × destino | **91 de 91 iguais** |
+| Chaves estrangeiras do `public` | 216 verificadas, **0 órfãos** |
+| Sequências | Todas à frente do maior id |
+| Usuários do Auth e identidades | Migram com o hash de senha original (8 e 8) |
+| Seis telas pesadas como `authenticated` (ADMIN) | Todas sem erro; a mais lenta, faturamento de 90 dias com detalhe, ~0,75–0,85 s |
+| Mesmas telas com o banco limitado a 2 CPUs | Sem mudança relevante (0,74 s) |
+| 3 usuários pesados ao mesmo tempo, 2 CPUs | Pior caso 1,9 s (o limite do papel é 8 s) |
+| Auth próprio: criar usuário, entrar com senha, token `HS256` | Funciona (100–200 ms) |
+| PostgREST pelo gateway com o token do usuário | RLS aplicada; anônimo recebe 401; usuário sem vínculo vê 0 linhas |
+| Memória da pilha ociosa | ~2,1 GB com Studio, imgproxy, meta e functions; ~1,7 GB sem eles |
+
+**Ajustes que o ensaio exigiu (valem para a VM):**
+
+- **Disco.** Postgres não pode gravar numa pasta do NTFS do Windows (PANIC
+  por `fsync`). Na VM Linux a pasta de dados é um disco SSD comum, sem esse
+  problema. No ensaio local usei volume nativo do Docker.
+- **Linhas-padrão.** Algumas migrations plantam linhas (`metric_definitions`,
+  organização padrão, buckets). A carga apaga as linhas da tabela antes do
+  `COPY` dela.
+- **Colunas.** O `auth` do Supabase hospedado e o da pilha própria podem ter
+  versões diferentes de GoTrue: a carga leva só as colunas comuns. Sessões e
+  refresh tokens não migram (o `JWT_SECRET` muda, ninguém continuaria logado).
+- **Tempos.** Medidos numa máquina de desenvolvimento. Uma vCPU de nuvem é
+  mais lenta; o dimensionamento da VM (2 vCPU, 8 GB) tem folga de memória e
+  precisa ser reconferido nas primeiras semanas.
+- **Sem cron ainda.** O `pg_cron` existe na imagem, mas o agendamento (vigia,
+  expurgo) é ato posterior ao corte.
