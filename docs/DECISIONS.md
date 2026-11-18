@@ -19800,3 +19800,11 @@ O ajuste manual aguardava a Server Action dentro de `useTransition`, sem tratar 
 A chamada agora tem tratamento local, conservando operação, local, quantidade, motivo, referência e observação. A própria transição libera os controles ao terminar. O alerta informa que o ajuste não foi confirmado e orienta conferir as movimentações antes de tentar novamente: uma resposta perdida pode ocorrer depois da gravação. Não há repetição automática. A recusa declarada e a limpeza dos campos após sucesso seguem o fluxo existente.
 
 A regressão bloqueia a primeira ação, confere saldo intacto e ausência do movimento identificado pela referência, e tenta novamente. O banco precisa ter uma única saída de cinco unidades, com motivo e autor corretos. Ao terminar, o teste registra a contrapartida da fixture e confere o saldo original; não apaga movimentos nem desliga a proteção do ledger.
+
+## D-725 - Ações do fornecedor conservam a edição após falha de transporte
+
+Reativar, inativar e excluir fornecedor aguardavam a Server Action dentro de `useTransition`, sem tratar a exceção. Nos três casos, bloquear o POST substituiu a edição pela fronteira de erro do segmento, perdendo o rascunho. Os componentes de alternar ativo e excluir agora tratam a exceção localmente, mantendo a confirmação e o formulário montados; a própria transição libera os controles.
+
+O aviso de alteração pede conferir o fornecedor, e o de exclusão pede conferir a lista antes de tentar novamente. A falha de resposta não prova que a operação deixou de acontecer, portanto não há repetição automática. Recusas declaradas pelo servidor e as navegações após sucesso seguem o comportamento existente. A confirmação e a proteção de fornecedor com pedido não mudam.
+
+Três regressões usam fornecedores temporários sem pedidos. Além de conservar o nome ainda não salvo, conferem todos os campos selecionados do cadastro após o POST bloqueado. A nova tentativa precisa alterar só o estado ativo ou excluir o registro, conforme a ação. A limpeza remove as fixtures, sem alterar fornecedores do seed.

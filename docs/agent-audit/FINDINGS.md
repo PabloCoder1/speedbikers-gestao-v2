@@ -95,6 +95,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A82 | P2 · CORRIGIDO localmente (D-724) | A falha de transporte no ajuste de estoque derrubava o formulário para a fronteira de erro do segmento, perdendo os campos | A exceção é tratada dentro da transição, com aviso, campos preservados e nova tentativa disponível. A regressão confirma saldo intacto no POST bloqueado e uma única saída na nova tentativa, compensada ao final. [Verificação](SESSION_LOG.md) |
 
+| A83 | P2 · CORRIGIDO localmente (D-725) | Reativar, inativar ou excluir fornecedor após interrupção da Server Action derrubava a edição para a fronteira de erro e perdia o rascunho | As duas interfaces tratam a exceção localmente, conservam o formulário e a confirmação e liberam nova tentativa com aviso. Três regressões conferem o cadastro intacto no POST bloqueado e o resultado da nova tentativa. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
