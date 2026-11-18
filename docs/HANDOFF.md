@@ -42,7 +42,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
-- **Produção pausada e sem retomada no Free** (18/11): o painel recusa, banco de 2,0 GB no disco (~1,1 GB lógico). Prazo de retomada: 27/11/2027. Sem cartão para o Pro: VM `sb-db` criada e carregada (18/11), fora de uso até o corte: `infra/selfhost-db/README.md`.
+- **Produção na VM `sb-db`** (corte 18/11): Supabase hospedado pausado (2,0 GB). URL provisória sslip.io, sem domínio nem SMTP. 403 do ML em ~10% de `GET /items`: acompanhar. `infra/selfhost-db/README.md`.
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
