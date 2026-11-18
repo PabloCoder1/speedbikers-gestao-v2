@@ -109,3 +109,60 @@ test("/contas: a faixa conta as contas do ML e as lojas Shopee, com a divisão a
   await expect(page.locator(".sb-kpi").filter({ hasText: "Requerem atenção" })).toContainText("· 0 da Shopee");
   await expect(page.getByText("reautorize na Shopee")).toHaveCount(0);
 });
+
+/**
+ * D-741: resposta 200 com JSON inválido (ex.: HTML de proxy) nos conectores
+ * OAuth não pode travar o botão em estado ocupado nem gerar rejeição sem
+ * feedback visível.
+ */
+test("/contas: JSON inválido em 200 OK ao conectar ML ou Shopee mostra alerta e reabilita botão (D-741)", async ({
+  page,
+}) => {
+  const seed = await readSeedOutput();
+  const db = clienteDeServico();
+  const slug = `e2e-d741-${Date.now().toString(36)}`;
+
+  await page.route("**/v1/shopee/connect", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: "<html><body>proxy</body></html>",
+    });
+  });
+
+  await page.route("**/v1/ml-accounts/connect", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: "<html><body>proxy</body></html>",
+    });
+  });
+
+  let limpeza: { error: { message: string } | null } | undefined;
+
+  try {
+    await login(page, "/contas");
+
+    await page.getByLabel("Rótulo").fill("Conta D741");
+    await page.getByLabel("Identificador (nomeia a fila interna)").fill(slug);
+    await page.getByRole("button", { name: "Cadastrar conta" }).click();
+
+    const botaoMl = page.getByRole("button", { name: "Conectar Conta D741 ao Mercado Livre" });
+    await expect(botaoMl).toBeVisible();
+    await botaoMl.click();
+
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível" })).toBeVisible();
+    await expect(botaoMl).toBeEnabled();
+
+    const botaoShopee = page.getByRole("button", { name: "Conectar loja Shopee" });
+    await expect(botaoShopee).toBeVisible();
+    await botaoShopee.click();
+
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível" })).toHaveCount(2);
+    await expect(botaoShopee).toBeEnabled();
+  } finally {
+    limpeza = await db.from("ml_accounts").delete().eq("organization_id", seed.organizationId).eq("slug", slug);
+  }
+
+  expect(limpeza.error).toBeNull();
+});

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **639** (D-001 a D-737).
+Decisões registradas: **643** (D-001 a D-741).
 
 ## Por domínio
 
-### atendimento (64)
+### atendimento (65)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -82,6 +82,7 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
 - **D-726** — Curadoria trata falhas de transporte e conserva os alvos de Desfazer
 - **D-733** — Sugestões e atendimento tratam falha de transporte e confirmam escrita de status
+- **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 
 ### banco/rls (46)
 
@@ -188,7 +189,7 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-724** — Ajuste de estoque preserva o formulário quando a ação falha no transporte
 - **D-727** — Regra de reposição conserva a gaveta após falha da ação
 
-### interface (75)
+### interface (76)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -265,8 +266,9 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
+- **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (128)
+### mercado-livre (129)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -396,6 +398,7 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-734** — Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
+- **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 
 ### outros (101)
 
@@ -575,7 +578,7 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (104)
+### worker/infra (105)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -682,6 +685,4 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-735** — Confirmação de importação ERP e NF-e exige linha afetada e reverte PARSED se a fila falhar
 - **D-736** — Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
 - **D-738** — Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
-- **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
-- **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 

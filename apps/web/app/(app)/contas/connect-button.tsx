@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { createClient } from "../../../lib/supabase/browser";
+import { iniciarConexaoOAuth } from "./iniciar-conexao";
 
 /**
  * Início da autorização OAuth de uma conta (`POST /v1/ml-accounts/connect`,
@@ -15,16 +15,6 @@ import { createClient } from "../../../lib/supabase/browser";
  * O token da sessão vai no header `Authorization`; a `api` reavalia o papel
  * no banco.
  */
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-interface ConnectResponse {
-  authorizationUrl: string;
-}
-
-interface ErrorResponse {
-  error: { code: string; message?: string };
-}
 
 export function ConnectButton({
   mlAccountId,
@@ -43,46 +33,21 @@ export function ConnectButton({
     setBusy(true);
     setError(null);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const resultado = await iniciarConexaoOAuth({
+      caminho: "/v1/ml-accounts/connect",
+      corpo: { mlAccountId },
+    });
 
-    if (token === undefined) {
-      setError("Sua sessão expirou. Entre de novo.");
+    if (!resultado.ok) {
+      setError(resultado.mensagem);
       setBusy(false);
 
       return;
     }
-
-    let response: Response;
-
-    try {
-      response = await fetch(`${API_URL}/v1/ml-accounts/connect`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ mlAccountId }),
-      });
-    } catch {
-      setError("Não foi possível contatar o servidor. Tente novamente.");
-      setBusy(false);
-
-      return;
-    }
-
-    if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as ErrorResponse | null;
-
-      setError(body?.error.message ?? "Não foi possível iniciar a conexão.");
-      setBusy(false);
-
-      return;
-    }
-
-    const body = (await response.json()) as ConnectResponse;
 
     // Redirecionamento de página inteira DE PROPÓSITO — é o Mercado Livre
     // pedindo login e consentimento; não é uma chamada de API comum.
-    window.location.href = body.authorizationUrl;
+    window.location.href = resultado.authorizationUrl;
   }
 
   return (

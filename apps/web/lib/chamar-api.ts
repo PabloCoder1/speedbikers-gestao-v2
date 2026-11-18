@@ -12,6 +12,62 @@ import { createClient } from "./supabase/browser";
 
 export type RespostaDaApi<T> = { ok: true; corpo: T } | { ok: false; mensagem: string };
 
+/**
+ * Lê o access token da sessão do navegador sem deixar falhas do cliente Auth
+ * escaparem sem tratamento para travar botões/formulários em estado ocupado.
+ */
+export async function lerTokenDeSessao(
+  mensagemExpirada = "Sessão expirada — atualize a página e entre de novo.",
+): Promise<{ ok: true; token: string } | { ok: false; mensagem: string }> {
+  try {
+    const { data } = await createClient().auth.getSession();
+    const token = data.session?.access_token;
+
+    if (token === undefined) {
+      return { ok: false, mensagem: mensagemExpirada };
+    }
+
+    return { ok: true, token };
+  } catch {
+    return { ok: false, mensagem: "Não foi possível ler sua sessão. Entre de novo." };
+  }
+}
+
+/**
+ * POST autenticado sem corpo para confirmar a aplicação de lote ou NF-e,
+ * recuperando erro de sessão, rede ou HTTP para liberar o botão na UI.
+ */
+export async function confirmarAplicacaoNaApi(
+  caminho: string,
+): Promise<{ ok: true } | { ok: false; mensagem: string }> {
+  const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
+
+  if (!sessao.ok) {
+    return sessao;
+  }
+
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}${caminho}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${sessao.token}` },
+    });
+
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      const message =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? (payload as { error?: { message?: string } }).error?.message
+          : undefined;
+
+      return { ok: false, mensagem: message ?? "Não foi possível confirmar a aplicação." };
+    }
+
+    return { ok: true };
+  } catch {
+    return { ok: false, mensagem: "Não foi possível falar com o servidor. Tente de novo." };
+  }
+}
+
 export async function chamarApi<T>(caminho: string, corpo: unknown): Promise<RespostaDaApi<T>> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -23,17 +79,16 @@ export async function chamarApi<T>(caminho: string, corpo: unknown): Promise<Res
     };
   }
 
-  const { data } = await createClient().auth.getSession();
-  const token = data.session?.access_token;
+  const sessao = await lerTokenDeSessao();
 
-  if (token === undefined) {
-    return { ok: false, mensagem: "Sessão expirada — atualize a página e entre de novo." };
+  if (!sessao.ok) {
+    return sessao;
   }
 
   try {
     const response = await fetch(`${apiUrl}${caminho}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
       body: JSON.stringify(corpo),
     });
 
