@@ -4,7 +4,7 @@ Este corte substitui a leitura de disponibilidade de 11/11. Foi apresentado ao d
 
 O diagnóstico inicial usa a base 010c252d. Foi atualizado com A87/D-729 e A88/D-730: transporte e recusa do banco nas quatro confirmações da Central. F04 mantém os mesmos dois pontos; não houve aumento de progresso por esta extensão da cobertura. Os estados remotos permanecem como observados na auditoria, não como nova verificação de disponibilidade.
 
-A89/D-731 acrescenta a confirmação real de papel/revogação em Usuários, com cinco regressões e treze contratos. A evidência de F03 foi ampliada sem novos pontos ou mudança de status. Compras/reposição e pedidos de importação realizados continuam na frente do Claude, fora destas alterações.
+A89/D-731 acrescenta a confirmação real de papel/revogação em Usuários, com cinco regressões e treze contratos. A evidência de F03 foi ampliada sem novos pontos ou mudança de status. Em continuidade no checkpoint Gemini (`D-732` a `D-737`), foram corrigidas Notificações/Preferências, Sugestões/Atendimento, erros transitórios de conta ML em 10 handlers + `ml-token`, corrida/rollback no apply de importação ERP/NF-e, paginação `>1.000` + memoização em workers e atualização do Next.js para `16.4.6`; o fechamento segue em `129/226 = 57,1%` (`22/43` entregas), preservando os estados remotos sem publicação. Compras/reposição e pedidos de importação realizados continuam na frente do Claude, fora destas alterações.
 
 ## A. Estado confirmado e limites
 
@@ -56,9 +56,9 @@ Os nove commits locais são `e6cff19a`, `7a5528fb`, `9747f146`, `80e16dbf`, `1c4
 
 ### Rechecagem de dependências em 18/11
 
-`pnpm audit --audit-level=high` retornou código1: três moderados (uuid e dois avisos Next.js) e um alto em picomatch. A indicação `>=4.0.8` do registry não corresponde a versão publicada: `pnpm view picomatch@4.0.8` reportou ausência. O [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) foi retirado pelo GitHub em 18/11; o [mantenedor](https://github.com/micromatch/picomatch/pull/235) discorda da classificação. Não alteramos dependências, não suprimimos o aviso e não afirmamos auditoria verde. `pnpm why` mostrou picomatch nas ferramentas Vitest/Vite; falta evidência de entrada de glob externo explorável na aplicação.
+Em `76a27296`, `pnpm audit --audit-level=high` retornou código 1: três moderados (`uuid` e dois avisos Next.js) e um alto em `picomatch` ([GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf), já retirado pelo GitHub em 18/11; o [mantenedor](https://github.com/micromatch/picomatch/pull/235) discordou da classificação e `pnpm why` mostrou `picomatch` apenas em Vitest/Vite).
 
-Os dois moderados Next apontam correção `>=16.4.5` e condições de cache: [GHSA-mfr8-8qww-v76h](https://github.com/advisories/GHSA-mfr8-8qww-v76h), [GHSA-vc7v-qv4w-wrv8](https://github.com/advisories/GHSA-vc7v-qv4w-wrv8). Não apareceu `use cache` ou `unstable_cache` no rastreio de app/lib. Atualização compatível e investigação do uuid continuam no plano; ausência de uma API no rastreio não prova segurança completa. A classificação usa o critério de evidência da skill security-review, sem promover aviso de scanner a exploração comprovada.
+No commit `8af66328` (`D-737`), o Next.js foi atualizado de `16.4.1` para `16.4.6`, eliminando [GHSA-mfr8-8qww-v76h](https://github.com/advisories/GHSA-mfr8-8qww-v76h) e [GHSA-vc7v-qv4w-wrv8](https://github.com/advisories/GHSA-vc7v-qv4w-wrv8). Após a atualização, `pnpm audit --prod --audit-level high` encerrou com código 0, restando apenas 1 aviso moderado transitivo em `uuid <11.1.1` (via `gaxios`/`exceljs`). A classificação continua usando o critério da skill `security-review` e aguarda publicação para ter efeito no ambiente remoto.
 
 
 
@@ -190,7 +190,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 |---|---|---|---:|---|---|---:|
 | F01 | Frontend e telas: Telas operacionais ML, estoque, pedidos, NF-e e fornecedores | A2/A3 | 8 | Publicado | ROADMAP fases 4–7; main d6169205 | 3 |
 | F02 | Frontend e telas: Central, multicanal e navegação sem perder recorte | Sentinel/A3 | 5 | Testado localmente | D-517–632; D-685–717, specs e SESSION_LOG | 3 |
-| F03 | Frontend e telas: Recuperação de falhas nos formulários e transições | Sentinel | 5 | Testado localmente | D-720–728 e D-731/A89; transporte e confirmação real de papel/revogação; cinco regressões e treze contratos | 3 |
+| F03 | Frontend e telas: Recuperação de falhas nos formulários e transições | Sentinel | 5 | Testado localmente | D-720–728, D-731/A89, D-732 e D-733; confirmação real e recuperação em Usuários, Notificações, Preferências, Sugestões e Atendimento; E2E e contratos locais | 3 |
 | F04 | Frontend e telas: Quatro operações da confirmação compartilhada | Sentinel | 2 | Testado localmente | D-729/A87 e D-730/A88: transporte e recusa sem linhas; banco/papéis conferidos e oito testes de contrato | 3 |
 | F05 | Frontend e telas: Nova experiência de compras e reposição aprovada | Agente Compras | 5 | Implementado | PR #330 d451cfd9; ainda separado | 3 |
 | B01 | Backend e APIs: API autenticada, contratos e limites de organização | Backend | 8 | Publicado | apps/api/src; main dc69d1fb na API | 3 |
@@ -213,7 +213,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | I05 | Google Cloud e infraestrutura: Pipeline de migrations para VM e rollback ensaiado | Infra/Database | 5 | Não iniciado | workflow ainda Supabase hospedado; README pendência6 | 2 |
 | I06 | Google Cloud e infraestrutura: Custo real, retenção de artefatos e dimensionamento | Infra/Dono | 3 | Em andamento | Billing429; ArtifactRegistry1.33GB; consumo não medido | 2 |
 | S01 | Segurança e autenticação: Auth/RLS e isolamento negativo implementados | Backend/Database | 8 | Publicado | DATABASE; integration tests; revalidação VM separada S04 | 3 |
-| S02 | Segurança e autenticação: Dependências Next/Zod/Hono/XML e webhook Shopee | Sentinel | 5 | Testado localmente | lockfile, testes, histórico Sentinel; não publicados | 1 |
+| S02 | Segurança e autenticação: Dependências Next/Zod/Hono/XML e webhook Shopee | Sentinel | 5 | Testado localmente | lockfile, Next.js 16.4.6 (`D-737`, `audit --prod --audit-level high` = 0), testes, histórico Sentinel; não publicados | 1 |
 | S03 | Segurança e autenticação: OAuth ML/Shopee/TikTok concorrente e credenciais protegidas | Sentinel | 5 | Testado localmente | migrations11175813,12120939,12122618,12124430 | 1 |
 | S04 | Segurança e autenticação: Auth VM real: login, convites, recuperação, SMTP e política | Dono/Database | 5 | Bloqueado | MIGRATION_PLAN: login não testado; README Auth/SMTP pendentes | 1 |
 | S05 | Segurança e autenticação: Revisão IAM e proteção efetiva de main | Infra/Dono | 3 | Em andamento | SA padrão Editor; main protected=false, sem checks obrigatórios ou rulesets em 18/11 | 2 |

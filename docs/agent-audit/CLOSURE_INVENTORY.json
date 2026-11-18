@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-720–728 e D-731/A89; transporte e resultado real de papel/revogação em Usuários; cinco regressões de navegador e treze contratos",
+      "evidencia": "D-720–728, D-731/A89, D-732 e D-733; confirmação real de linhas afetadas e limpeza de modal/detalhe em Usuários, Notificações, Preferências, Sugestões e Atendimento; E2E e contratos locais",
       "fase": 3
     },
     {
@@ -259,7 +259,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "lockfile, testes, histórico Sentinel; não publicados",
+      "evidencia": "lockfile, Next.js 16.4.6 (D-737, audit --prod high=0, 1 moderado uuid), testes, histórico Sentinel; não publicados",
       "fase": 1
     },
     {
@@ -299,7 +299,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Sentinel/Backend",
-      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36",
+      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736 readAllPages/memoizacao por SKU",
       "fase": 3
     },
     {
