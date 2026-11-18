@@ -19840,3 +19840,12 @@ O componente `RemoverComConfirmacao` entregava a Server Action diretamente ao fo
 A ação agora passa por `useActionState`, que trata a exceção e mantém a confirmação com alerta de alteração não confirmada. O aviso pede conferir os dados antes de tentar novamente: resposta perdida não prova ausência de gravação. Não há repetição automática. A confirmação e Cancelar ficam desabilitados durante o envio, evitando desmontar a ação ainda pendente; o foco ao cancelar continua voltando ao botão original. As ações do servidor, RLS e regras de exclusão não mudam.
 
 Quatro regressões usam dados futuros/únicos ou preservam os limites anteriores. Conferem a linha intacta no POST bloqueado, a confirmação disponível, o foco ao cancelar e o resultado da nova tentativa. Uma resposta segurada confere os dois botões bloqueados. O conjunto de Central, configurações, reposição e navegação passou em 43 casos Chromium. Publicação e aceite pós-recuperação continuam separados.
+
+
+## D-730 - Remoções da Central conferem erro e linhas afetadas
+
+A etapa D-729 tratou a interrupção da Server Action, mas as ações de remover metas/alíquota e restaurar os limites ignoravam o resultado do DELETE. A RLS pode filtrar uma remoção sem produzir erro: ao mudar GESTOR para OPERADOR com a confirmação aberta, as quatro ações terminavam e revalidavam a página sem informar que nada fora removido.
+
+As ações agora devolvem uma mensagem de recusa ou null após uma remoção confirmada. O componente compartilhado mostra o resultado, além de continuar tratando exceções de transporte. O próprio DELETE retorna somente a chave afetada; não há leitura prévia adicional. Erro do banco ou zero linhas não revalidam consumidores. A mensagem distingue resposta incerta de registro ausente/acesso alterado, sem divulgar detalhes internos do banco. RLS, filtros de alvo e schema permanecem os mesmos.
+
+Quatro regressões de navegador revogam a escrita após abrir a confirmação, conferem a linha intacta e o aviso, restauram o papel e confirmam a remoção na tentativa autorizada. Elas reaproveitam as fixtures dos quatro casos de transporte, que continuam passando. Oito testes de contrato cobrem erro do banco, zero linhas, sucesso e invalidação de consumidores, alvo fora da lista e sessão sem organização. Esta etapa fica restrita à Central; não altera compras/reposição, branch, worktree ou migrations do Claude.

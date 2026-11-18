@@ -26,8 +26,8 @@ export function RemoverComConfirmacao({
   textoDaConfirmacao = "Remover",
   pendente = "Removendo…",
 }: {
-  /** A ação de servidor; recebe o formulário com os `campos`. */
-  acao: (dados: FormData) => void | Promise<void>;
+  /** Recebe os `campos`; devolve o aviso de recusa, ou null após remover. */
+  acao: (dados: FormData) => string | null | Promise<string | null>;
   /** Os campos escondidos que a ação lê (a tabela e o id, nas metas). */
   campos?: Readonly<Record<string, string>>;
   /** O nome acessível do botão, que diz O QUÊ sai ("Remover a meta de outubro de 2026"). */
@@ -44,8 +44,7 @@ export function RemoverComConfirmacao({
   const [confirmando, setConfirmando] = useState(false);
   const [erro, executar, enviando] = useActionState(async (_anterior: string | null, dados: FormData): Promise<string | null> => {
     try {
-      await acao(dados);
-      return null;
+      return await acao(dados);
     } catch {
       return "Não foi possível confirmar a alteração. Confira os dados antes de tentar novamente.";
     }

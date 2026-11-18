@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **631** (D-001 a D-729).
+Decisões registradas: **632** (D-001 a D-730).
 
 ## Por domínio
 
@@ -395,7 +395,7 @@ Decisões registradas: **631** (D-001 a D-729).
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 
-### outros (99)
+### outros (100)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -496,6 +496,7 @@ Decisões registradas: **631** (D-001 a D-729).
 - **D-725** — Ações do fornecedor conservam a edição após falha de transporte
 - **D-728** — Cadastros da Central preservam os campos após falha ou recusa
 - **D-729** — Confirmação de remoção conserva a ação após falha de transporte
+- **D-730** — Remoções da Central conferem erro e linhas afetadas
 
 ### processo/docs (1)
 

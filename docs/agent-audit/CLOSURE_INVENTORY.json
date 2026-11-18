@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-18; base 010c252d, A87 testado localmente",
+  "corte": "2026-11-18; auditoria base 010c252d, F04 testado localmente até A88/D-730",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -39,7 +39,7 @@
       "peso": 2,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-729/A87; quatro regressões red→green, 43 E2E Chromium e banco conferido",
+      "evidencia": "D-729/A87 e D-730/A88: transporte e recusa sem linhas nas quatro confirmações; banco e papéis conferidos; oito testes de contrato",
       "fase": 3
     },
     {

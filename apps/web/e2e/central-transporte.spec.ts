@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 
-import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { derrubarPrimeiraAcao, login, loginAs } from "./helpers.js";
 import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -158,88 +159,111 @@ test("Central: meta recusada conserva mês, valor e observação até a correç�
   }
 });
 
-for (const tabela of ["monthly_goals", "monthly_goals_marketplace", "tax_rates", "central_thresholds"] as const) {
-  test(`Central: confirmação de ${tabela} conserva os dados após falha e permite nova tentativa`, async ({ page }) => {
-    const { db, seed } = await bancoLocal();
-    const nota = `e2e-central-remover-${crypto.randomUUID()}`;
-    const limites = tabela === "central_thresholds";
-    const anteriores = limites
-      ? await db.from("central_thresholds").select("*").eq("organization_id", seed.organizationId).maybeSingle()
-      : null;
-    expect(anteriores?.error ?? null).toBeNull();
-    const criada = tabela === "central_thresholds"
-      ? await db.from(tabela).upsert({ organization_id: seed.organizationId, ...GRAVADOS }, { onConflict: "organization_id" }).select("*").single()
-      : tabela === "tax_rates"
-        ? await db.from(tabela).insert({ organization_id: seed.organizationId, valid_from: "2096-07-01", rate: 0.0675, note: nota }).select("*").single()
-        : tabela === "monthly_goals_marketplace"
-          ? await db.from(tabela).insert({ organization_id: seed.organizationId, month: "2096-07-01", revenue_goal: 1234.56, note: nota, marketplace: "SHOPEE" }).select("*").single()
-          : await db.from(tabela).insert({ organization_id: seed.organizationId, month: "2096-07-01", revenue_goal: 1234.56, note: nota }).select("*").single();
-    expect(criada.error).toBeNull();
-    if (criada.data === null) throw new Error("Fixture de confirmação não foi criada.");
-    const ler = () => limites
-      ? db.from("central_thresholds").select("*").eq("organization_id", seed.organizationId).maybeSingle()
-      : db.from(tabela).select("*").eq("organization_id", seed.organizationId).eq("note", nota).maybeSingle();
-    try {
-      await login(page, limites ? "/central/limites" : "/central/metas");
-      const abrir = limites
-        ? page.getByRole("button", { name: "Voltar aos padrões", exact: true })
-        : page.getByRole("row").filter({ hasText: nota }).getByRole("button", { name: /^Remover a /u });
-      await abrir.click();
-      const grupo = limites
-        ? page.getByRole("group", { name: "Confirmar: Voltar aos padrões", exact: true })
-        : page.getByRole("row").filter({ hasText: nota }).getByRole("group");
-      await expect(grupo).toBeFocused();
-      const confirmar = grupo.getByRole("button", { name: limites ? "Voltar aos padrões" : "Remover", exact: true });
-      const cancelar = grupo.getByRole("button", { name: "Cancelar", exact: true });
-      const caiu = await derrubarPrimeiraAcao(page);
-      await confirmar.click();
-      await expect(grupo.getByRole("alert")).toContainText("Não foi possível confirmar a alteração");
-      await expect(confirmar).toBeEnabled();
-      await expect(cancelar).toBeEnabled();
-      expect(caiu()).toBe(true);
-      const falha = await ler();
-      expect(falha.error).toBeNull();
-      expect(falha.data).toEqual(criada.data);
-      // A falha não fecha a confirmação nem dispara uma segunda tentativa.
-      await cancelar.click();
-      await expect(abrir).toBeFocused();
-      await abrir.click();
-      if (tabela === "monthly_goals") {
-        let liberar!: () => void;
-        const espera = new Promise<void>((resolve) => { liberar = resolve; });
-        await page.route("**/*", async (rota) => {
-          const pedido = rota.request();
-          if (pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) await espera;
-          await rota.continue();
-        });
-        const pedido = page.waitForRequest((r) => r.method() === "POST" && r.headers()["next-action"] !== undefined);
-        try {
-          await confirmar.click();
-          await pedido;
-          await expect(grupo.getByRole("button", { name: "Removendo…", exact: true })).toBeDisabled();
-          await expect(cancelar).toBeDisabled();
-        } finally {
-          liberar();
+for (const acessoRevogado of [false, true]) {
+  for (const tabela of ["monthly_goals", "monthly_goals_marketplace", "tax_rates", "central_thresholds"] as const) {
+    test(`Central: confirmação de ${tabela} conserva os dados após ${acessoRevogado ? "acesso revogado" : "falha"} e permite nova tentativa`, async ({ page }) => {
+      const { db, seed } = await bancoLocal();
+      const gestor = acessoRevogado
+        ? await db.from("organization_members").select("user_id, role").eq("organization_id", seed.organizationId).eq("role", "GESTOR").single()
+        : null;
+      expect(gestor?.error ?? null).toBeNull();
+      async function restaurarAcesso(): Promise<void> {
+        if (gestor?.data !== undefined && gestor.data !== null) {
+          const volta = await db.from("organization_members").update({ role: gestor.data.role }).eq("organization_id", seed.organizationId).eq("user_id", gestor.data.user_id).select("role").single();
+          expect.soft(volta.error).toBeNull();
+          expect.soft(volta.data?.role).toBe(gestor.data.role);
         }
-      } else {
+      }
+      const nota = `e2e-central-remover-${crypto.randomUUID()}`;
+      const limites = tabela === "central_thresholds";
+      const anteriores = limites
+        ? await db.from("central_thresholds").select("*").eq("organization_id", seed.organizationId).maybeSingle()
+        : null;
+      expect(anteriores?.error ?? null).toBeNull();
+      const criada = tabela === "central_thresholds"
+        ? await db.from(tabela).upsert({ organization_id: seed.organizationId, ...GRAVADOS }, { onConflict: "organization_id" }).select("*").single()
+        : tabela === "tax_rates"
+          ? await db.from(tabela).insert({ organization_id: seed.organizationId, valid_from: "2096-07-01", rate: 0.0675, note: nota }).select("*").single()
+          : tabela === "monthly_goals_marketplace"
+            ? await db.from(tabela).insert({ organization_id: seed.organizationId, month: "2096-07-01", revenue_goal: 1234.56, note: nota, marketplace: "SHOPEE" }).select("*").single()
+            : await db.from(tabela).insert({ organization_id: seed.organizationId, month: "2096-07-01", revenue_goal: 1234.56, note: nota }).select("*").single();
+      expect(criada.error).toBeNull();
+      if (criada.data === null) throw new Error("Fixture de confirmação não foi criada.");
+      const ler = () => limites
+        ? db.from("central_thresholds").select("*").eq("organization_id", seed.organizationId).maybeSingle()
+        : db.from(tabela).select("*").eq("organization_id", seed.organizationId).eq("note", nota).maybeSingle();
+      try {
+        if (acessoRevogado) await loginAs(page, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, limites ? "/central/limites" : "/central/metas");
+        else await login(page, limites ? "/central/limites" : "/central/metas");
+        const abrir = limites
+          ? page.getByRole("button", { name: "Voltar aos padrões", exact: true })
+          : page.getByRole("row").filter({ hasText: nota }).getByRole("button", { name: /^Remover a /u });
+        await abrir.click();
+        const grupo = limites
+          ? page.getByRole("group", { name: "Confirmar: Voltar aos padrões", exact: true })
+          : page.getByRole("row").filter({ hasText: nota }).getByRole("group");
+        await expect(grupo).toBeFocused();
+        const confirmar = grupo.getByRole("button", { name: limites ? "Voltar aos padrões" : "Remover", exact: true });
+        const cancelar = grupo.getByRole("button", { name: "Cancelar", exact: true });
+        if (gestor?.data !== undefined && gestor.data !== null) {
+          const revogacao = await db.from("organization_members").update({ role: "OPERADOR" }).eq("organization_id", seed.organizationId).eq("user_id", gestor.data.user_id).select("role").single();
+          expect(revogacao.error).toBeNull();
+          expect(revogacao.data?.role).toBe("OPERADOR");
+        }
+        const caiu = acessoRevogado ? null : await derrubarPrimeiraAcao(page);
+        const resposta = acessoRevogado ? page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined) : null;
         await confirmar.click();
+        if (resposta !== null) expect((await resposta).status()).toBe(200);
+        const falha = await ler();
+        expect(falha.error).toBeNull();
+        expect(falha.data).toEqual(criada.data);
+        await expect(grupo.getByRole("alert")).toContainText(acessoRevogado ? "seu acesso foi alterado" : "Não foi possível confirmar a alteração");
+        await expect(confirmar).toBeEnabled();
+        await expect(cancelar).toBeEnabled();
+        if (caiu !== null) expect(caiu()).toBe(true);
+        await restaurarAcesso();
+        // A falha não fecha a confirmação nem dispara uma segunda tentativa.
+        await cancelar.click();
+        await expect(abrir).toBeFocused();
+        await abrir.click();
+        if (tabela === "monthly_goals") {
+          let liberar!: () => void;
+          const espera = new Promise<void>((resolve) => { liberar = resolve; });
+          await page.route("**/*", async (rota) => {
+            const pedido = rota.request();
+            if (pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) await espera;
+            await rota.continue();
+          });
+          const pedido = page.waitForRequest((r) => r.method() === "POST" && r.headers()["next-action"] !== undefined);
+          try {
+            await confirmar.click();
+            await pedido;
+            await expect(grupo.getByRole("button", { name: "Removendo…", exact: true })).toBeDisabled();
+            await expect(cancelar).toBeDisabled();
+          } finally {
+            liberar();
+          }
+        } else {
+          await confirmar.click();
+        }
+        await expect(grupo).not.toBeVisible();
+        const depois = await ler();
+        expect(depois.error).toBeNull();
+        expect(depois.data).toBeNull();
+        if (limites) await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
+      } finally {
+        await restaurarAcesso();
+        if (tabela === "central_thresholds") {
+          const dadosAnteriores = anteriores?.data ?? null;
+          const limpeza = dadosAnteriores === null
+            ? await db.from("central_thresholds").delete().eq("organization_id", seed.organizationId)
+            : await db.from("central_thresholds").upsert(dadosAnteriores, { onConflict: "organization_id" });
+          expect.soft(limpeza.error).toBeNull();
+        } else {
+          const limpeza = await db.from(tabela).delete().eq("organization_id", seed.organizationId).eq("note", nota);
+          expect.soft(limpeza.error).toBeNull();
+        }
       }
-      await expect(grupo).not.toBeVisible();
-      const depois = await ler();
-      expect(depois.error).toBeNull();
-      expect(depois.data).toBeNull();
-      if (limites) await expect(page.getByText("Os padrões do sistema: nenhum limite foi mudado ainda.")).toBeVisible();
-    } finally {
-      if (tabela === "central_thresholds") {
-        const dadosAnteriores = anteriores?.data ?? null;
-        const limpeza = dadosAnteriores === null
-          ? await db.from("central_thresholds").delete().eq("organization_id", seed.organizationId)
-          : await db.from("central_thresholds").upsert(dadosAnteriores, { onConflict: "organization_id" });
-        expect.soft(limpeza.error).toBeNull();
-      } else {
-        const limpeza = await db.from(tabela).delete().eq("organization_id", seed.organizationId).eq("note", nota);
-        expect.soft(limpeza.error).toBeNull();
-      }
-    }
-  });
+    });
+  }
 }

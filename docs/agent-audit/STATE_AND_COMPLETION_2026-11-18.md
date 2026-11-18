@@ -2,7 +2,7 @@
 
 Este corte substitui a leitura de disponibilidade de 11/11. Foi apresentado ao dono antes de novas alterações. Não é autorização para merge, deploy, mudança de faturamento, exclusão de nuvem ou migration em produção.
 
-O diagnóstico inicial usa a base010c252d. Este arquivo foi atualizado com a execução local A87/D-729; somente F04 ganhou aceite técnico após testes. Os estados remotos permanecem como observados durante a auditoria, não como promessas de disponibilidade futura.
+O diagnóstico inicial usa a base 010c252d. Foi atualizado com A87/D-729 e A88/D-730: transporte e recusa do banco nas quatro confirmações da Central. F04 mantém os mesmos dois pontos; não houve aumento de progresso por esta extensão da cobertura. Os estados remotos permanecem como observados na auditoria, não como nova verificação de disponibilidade.
 
 ## A. Estado confirmado e limites
 
@@ -189,7 +189,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | F01 | Frontend e telas: Telas operacionais ML, estoque, pedidos, NF-e e fornecedores | A2/A3 | 8 | Publicado | ROADMAP fases 4–7; main d6169205 | 3 |
 | F02 | Frontend e telas: Central, multicanal e navegação sem perder recorte | Sentinel/A3 | 5 | Testado localmente | D-517–632; D-685–717, specs e SESSION_LOG | 3 |
 | F03 | Frontend e telas: Recuperação de falhas nos formulários e transições | Sentinel | 5 | Testado localmente | D-720–728; 010c252d; E2E A79–86 | 3 |
-| F04 | Frontend e telas: Quatro operações da confirmação compartilhada | Sentinel | 2 | Testado localmente | D-729/A87; quatro regressões red→green, 43 E2E Chromium e banco conferido | 3 |
+| F04 | Frontend e telas: Quatro operações da confirmação compartilhada | Sentinel | 2 | Testado localmente | D-729/A87 e D-730/A88: transporte e recusa sem linhas; banco/papéis conferidos e oito testes de contrato | 3 |
 | F05 | Frontend e telas: Nova experiência de compras e reposição aprovada | Agente Compras | 5 | Implementado | PR #330 d451cfd9; ainda separado | 3 |
 | B01 | Backend e APIs: API autenticada, contratos e limites de organização | Backend | 8 | Publicado | apps/api/src; main dc69d1fb na API | 3 |
 | B02 | Backend e APIs: Worker idempotente, despacho e retentativas | Backend | 8 | Publicado | apps/worker/src; API_AND_JOBS_MAP | 3 |

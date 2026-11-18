@@ -107,7 +107,10 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A87 | P2 · CORRIGIDO localmente (D-729) | O POST interrompido nas três remoções de metas/alíquota e na restauração de limites derrubava a confirmação para a fronteira de erro | A ação compartilhada trata a exceção, conserva confirmação e campos ocultos e permite conferir/repetir manualmente. Cancelar fica bloqueado no envio. Quatro regressões e 43 E2E relacionados passaram, com conferência do banco. [Verificação](SESSION_LOG.md) |
 
+| A88 | P2 · CORRIGIDO localmente (D-730) | Remover metas/alíquota ou restaurar limites ignorava erro e linhas afetadas do DELETE. Perda da escrita com a confirmação aberta terminava sem aviso de que nada foi removido | O servidor devolve a recusa e só revalida após chave afetada; a confirmação mostra o aviso sem expor detalhes internos. Quatro regressões reais de RLS, oito contratos e 47 E2E relacionados passaram. Schema e autorização permanecem iguais. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
+
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
 - A03 · [Next.js Image Optimization](https://github.com/advisories/GHSA-2464-fhr4-w9xw), [Next.js use cache](https://github.com/advisories/GHSA-673q-mjm6-r5xr), [Next.js Server Actions](https://github.com/advisories/GHSA-p3m5-59mp-jv5r) e [Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
 - A11 · [Uso de getSession no Supabase Auth](https://supabase.com/docs/reference/javascript/auth-getsession).
