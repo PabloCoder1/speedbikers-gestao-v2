@@ -14,7 +14,7 @@
 | 2 | Tabelas que mais ocupam | `orders` 144 MB, `order_items` 115, `fulfillment_stock_snapshots` 113, `notification_recipients` 96, `job_runs` 85, `ml_sales_lines` 69, `domain_events` 66, `shopee_orders` 59. Índices são 38% do total | Medido |
 | 3 | O que otimizar sem perder dado importante | Compactar capturas repetidas do Full (94% repetem), reter telemetria (`job_runs`, `sync_runs`, entregas de notificação), parar a entrega de notificação informativa, trocar um índice quase duplicado | Medido + proposta |
 | 4 | Dá para operar no Supabase Free? | **Não.** Só o dado de negócio (~520 MB) já passa dos 500 MB. Free acima da cota = somente leitura | Medido |
-| 5 | Vale usar o Neon Launch? | **Não agora.** Como banco principal custaria ~US$ 19–39/mês contra US$ 25 do Pro, mais 3–6 semanas de reescrita (PostgREST, `auth.uid()`, Realtime, Vault, CI). Como banco de histórico não resolve: o quente já passa de 500 MB | Estimativa |
+| 5 | Vale usar o Neon Launch? | **Não agora.** Como banco principal custaria ~US$ 19–39/mês contra US$ 25 do Pro, mais 3–6 semanas de reescrita (PostgREST, `auth.uid()`, Realtime, CI). Como banco de histórico não resolve: o quente já passa de 500 MB | Estimativa |
 | 6 | Arquitetura recomendada e custo | **Supabase Pro só para a produção (US$ 25/mês) + Dev numa organização Free + o plano de otimização**, que segura o disco em 8 GB por ~4 anos | Estimativa |
 | 7 | Plano de migração | Não há migração de banco no cenário recomendado. Há uma **retomada controlada** da produção numa organização paga e as migrations de otimização. Plano em [MIGRATION_PLAN.md](MIGRATION_PLAN.md), com a migração para o Neon como contingência | — |
 
@@ -27,7 +27,7 @@ semanas no ritmo atual. Com o banco atual, nunca chega a estar dentro dela.
 - **Supabase** (sa-east-1, Postgres 17.6): banco, Auth (e-mail/senha e
   convites), PostgREST (web, api e worker pelo `supabase-js`), RLS por conta e
   organização (`private.accessible_accounts()`), `pg_cron` (vigia,
-  conciliação), Vault (credenciais dos marketplaces), Realtime
+  conciliação), Realtime
   (`notification_recipients`, `support_cases`), Storage (avatares).
 - **Cloud Run** (`speedbikers-prod`): `worker` (Cloud Tasks; ML, Shopee e
   TikTok; webhooks) e `api`, saindo pelo IP fixo.

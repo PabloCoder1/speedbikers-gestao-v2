@@ -64,7 +64,7 @@ pelo `\restrict`.
    não são tocados.
 3. **Schema pelas migrations do Git** (305 na `main`; mais 10 só na
    `codex/sentinel-audit`), com os ajustes de compatibilidade: *shim* de
-   `auth.uid()`/`auth.jwt()`, Vault → cifragem própria, `pg_cron` ou
+   `auth.uid()`/`auth.jwt()`, `pg_cron` ou
    agendador externo. Conferir `supabase_migrations.schema_migrations`
    contra o Git antes.
 4. **Dados:** `pg_restore --data-only --disable-triggers` (os gatilhos
@@ -83,3 +83,81 @@ pelo `\restrict`.
 9. **Corte [dono]:** troca das variáveis na Vercel e no Cloud Run (revisão
    nova, tráfego fixo, D-342), OAuth e webhooks continuam na api (URL igual).
    A origem fica intacta e pausada por pelo menos 30 dias ([ROLLBACK.md](ROLLBACK.md)).
+
+## Parte 3 — Supabase próprio numa VM do Google Cloud (caminho sem cartão novo)
+
+> Aberta em 18/11/2026, quando o dono informou que não consegue um cartão
+> Visa ou Mastercard para o Supabase (a bandeira dele não passa). A cobrança
+> do Google Cloud já existe para o Cloud Run, então a VM não pede meio de
+> pagamento novo. **Nada aqui foi provisionado.**
+
+**Por que este caminho e não o Neon (Parte 2).** Os componentes do Supabase
+(Postgres, GoTrue, PostgREST, Realtime, Storage, Kong) são de código aberto e
+rodam por `docker compose`. Web, api e worker só conhecem `SUPABASE_URL` e as
+chaves, então trocar a URL basta: nenhuma tela, RPC ou política de acesso
+muda. A stack local que o projeto já usa em todo teste (`supabase start`) é
+essa mesma pilha, o que prova a compatibilidade com o código.
+
+**Credenciais dos marketplaces não são problema.** Os tokens são cifrados na
+aplicação (AES-256-GCM, chave no Secret Manager). O banco só guarda o texto
+cifrado, e ele migra e continua decifrável. O schema `vault` do backup tem
+24 kB. (A primeira versão destes documentos dizia, errado, que dependia do
+Vault.)
+
+### 3.1 Desenho
+
+| Peça | Escolha |
+|---|---|
+| Máquina | Compute Engine em `southamerica-east1`, 2 vCPU e 8 GB, disco SSD de 100 GB, IP externo reservado |
+| Pilha | `docker compose` oficial do Supabase: Postgres 17, Kong, Auth, PostgREST, Realtime, Storage. Sem Studio e sem edge functions (o projeto não usa) |
+| HTTPS | Domínio próprio (ex.: `db.<domínio>`) + Caddy com certificado automático |
+| Chaves | `JWT_SECRET` novo, chaves anon/service_role e publishable geradas por mim e guardadas no Secret Manager; nunca no Git |
+| Backup | `pg_dump` diário para um bucket do Cloud Storage + snapshot diário do disco, com **teste de restauração** registrado |
+| Atualização | Imagens fixadas por versão; subir versão é ato planejado, com o stack local de ensaio |
+| Custo | **Estimativa: US$ 60–90/mês** (VM de 8 GB, disco, IP e tráfego). A estimativa anterior, de US$ 30–50, era baixa para uma máquina que roda a pilha inteira. Confirmar na calculadora do Google antes de criar |
+
+### 3.2 Ensaio local (antes de gastar um centavo)
+
+1. Subir a pilha oficial por `docker compose` na máquina local, com a mesma
+   versão das imagens que irão para a VM.
+2. Aplicar as migrations do Git (schema) e restaurar os dados do backup de
+   22/10 em modo só-dados, com gatilhos suspensos, na ordem das chaves
+   estrangeiras. Usuários do Auth entram pelo `auth.users` com o hash de
+   senha original.
+3. Apontar web, api e worker locais para ela e rodar `test:integration` e o
+   e2e completo.
+4. Medir o consumo de CPU e memória da pilha com a carga do seed, para
+   fechar o tamanho da VM.
+
+### 3.3 Atos do dono (sem cartão)
+
+1. **Retomar a produção no plano Free** (`speedbikers-prod` → *Resume
+   project*). Ela volta em somente leitura, que é o que basta para exportar o
+   estado atual: nenhum dado novo entra e nada é perdido. Conferir antes, no
+   painel, que o prazo de 90 dias da pausa não acabou.
+2. Autorizar a criação da VM (custo em 3.1) no projeto `speedbikers-prod` do
+   Google Cloud.
+3. Decidir o domínio do banco e ajustar o DNS.
+
+### 3.4 Corte
+
+1. Escalar o worker a zero e pausar o Scheduler (sem escrita nova).
+2. Dump final do Supabase de produção (somente leitura) e restauração na VM.
+3. Conferência da [VALIDATION.md](VALIDATION.md) §1: contagem, soma de valores
+   por mês, FKs e sequências.
+4. Trocar `SUPABASE_URL` e as chaves na Vercel e no Cloud Run (revisão nova,
+   tráfego fixo, D-342). Todos os usuários precisam entrar de novo, porque o
+   `JWT_SECRET` é outro.
+5. Reativar o worker e o Scheduler. Reler a janela do que ficou parado
+   (`backfill.orders` e a janela de Shopee e TikTok).
+6. O Supabase antigo fica intacto por 30 dias ([ROLLBACK.md](ROLLBACK.md)).
+   Depois disso o projeto pode ser excluído, e o Free deixa de importar.
+
+### 3.5 Riscos
+
+| Risco | Mitigação |
+|---|---|
+| A manutenção passa a ser nossa (atualização, segurança, disco cheio) | Imagens fixas, alerta de disco e CPU, backup com restauração testada |
+| Ponto único de falha (uma VM) | Snapshot diário e roteiro de recriação em minutos a partir do bucket |
+| Realtime e Storage com ajuste fino diferente do gerenciado | Cobertos pelo e2e do ensaio (toast de notificação, avatar) |
+| Prazo de 90 dias da pausa | Conferir no painel antes de tudo (3.3, item 1) |

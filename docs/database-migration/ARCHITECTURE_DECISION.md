@@ -58,7 +58,7 @@ Compatibilidade:
 |---|---|---|
 | Postgres 17, `pgcrypto`, `pg_trgm` | Sim | Baixo |
 | `pg_cron` (vigia, conciliação, retenção) | Conferir a disponibilidade no plano Launch | **Desconhecido** |
-| Supabase Vault (credenciais cifradas do ML, Shopee e TikTok) | Não existe | Médio: trocar por `pgsodium`/chave externa e migrar os segredos |
+| Credenciais do ML, Shopee e TikTok | **Não dependem do Vault.** O token é cifrado na aplicação (AES-256-GCM, `packages/mercado-livre/src/token-cipher.ts`) com chave do Secret Manager; o banco só guarda o texto cifrado. O schema `vault` do backup tem 24 kB | Nenhum: as linhas migram e continuam decifráveis com a mesma chave. (Corrigido em 18/11: a primeira versão deste documento dizia Vault.) |
 | RLS com `auth.uid()` (128 usos) | A função não existe; é possível criar um *shim* que lê `request.jwt.claims` | Médio, mas toca todas as políticas |
 | PostgREST (`supabase-js` `.from()`/`.rpc()` em web, api e worker) | Neon Data API (baseada em PostgREST) com JWKS de um provedor externo | **Alto**: configuração, papéis `anon`/`authenticated`/`service_role`, limites de linha, `Prefer` headers e o comportamento de erro precisam ser reprovados um a um |
 | Supabase Auth | Fica no Supabase Free, como emissor do JWT (chaves assimétricas/JWKS) | Médio. O projeto Supabase continua existindo, então a pausa por inatividade passa a ser um risco: o Auth seria pouco usado |
@@ -97,7 +97,7 @@ regressão silenciosa de autorização.
 | Cabe? | **Não** (≥ 1,09 GB contra 500 MB) | **Não** (quente > 500 MB) | Sim | Sim (8 GB) |
 | Custo/mês | US$ 0, mas somente leitura | US$ 0 + Neon ~US$ 19+ | **~US$ 19–39** | **US$ 25** |
 | Engenharia | — | Alta (dois bancos por RPC) | Alta (3–6 semanas) | Nenhuma |
-| Risco | Parada | Divergência, duas verdades | Autorização (RLS/JWT), Realtime, Vault, CI | Baixo |
+| Risco | Parada | Divergência, duas verdades | Autorização (RLS/JWT), Realtime, CI | Baixo |
 | Performance | — | Pior (rede entre bancos) | Partida a frio se dormir; igual se não dormir | Atual |
 | Manutenção | — | Duas plataformas | Duas plataformas (Neon + Supabase Auth) | Uma |
 
