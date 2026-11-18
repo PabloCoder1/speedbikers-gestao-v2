@@ -19869,3 +19869,12 @@ As três escritas passam a retornar somente a chave afetada (`id` em `notificati
 
 Nove testes de contrato em `apps/web/lib/notificacoes-resultados.test.ts` cobrem zero linhas, erro do banco e confirmação com chave retornada para criação, atualização, remoção e marcação individual. Quinze regressões Chromium em `notificacoes-preferencias.spec.ts` (4) e `notificacoes.spec.ts` (11) conferem falhas de transporte e remoções concorrentes por outra sessão antes de alterar severidade, estado, remover regra ou marcar notificação como lida, sem alterar compras/reposição nem trabalho do Claude.
 
+## D-733 - Sugestões e atendimento tratam falha de transporte e confirmam escrita de status
+
+`updateSuggestionStatus` (`sugestoes/actions.ts`) conferia apenas `error` sem pedir o `id` afetado, permitindo que zero linhas filtradas pela RLS ou por remoção concorrente retornassem `ok: true` e revalidassem `/sugestoes`. Na mesma tela, `<SuggestionDetail>` não usava `key` da sugestão selecionada, preservando status e alerta anteriores ao navegar entre sugestões, e `handleStatusChange` aguardava a Server Action sem `try/catch/finally`. Em `/atendimento`, `/atendimento/conhecimento` e `/atendimento/templates` (`TriageCell`, `KnowledgeRow`, `NewKnowledgeForm`, `NewTemplateForm`, `TemplateRow`), falhas de conexão deixavam botões/seletores bloqueados ou propagavam exceção sem preservar os campos, e cancelar a exclusão em `TemplateRow` mantinha o erro visível na linha.
+
+`updateSuggestionStatus` passa a retornar `.select("id")` e recusa zero linhas com aviso explícito (`ok: false`, orientando atualizar a página) sem revalidar consumidores. `SuggestionDetail` recebe `key={selecionada.id}` em `sugestoes/page.tsx` e trata exceções em `handleStatusChange` preservando o status anterior. Os cinco componentes clientes de atendimento agora tratam rejeições em `try/catch/finally`, preservam campos preenchidos e confirmações abertas, liberam controles ao concluir sem repetição automática, e `TemplateRow` limpa o erro ao cancelar ou alternar modo. RLS, schema, RPCs e filtros não mudam.
+
+Três testes de contrato em `apps/web/lib/sugestoes-resultados.test.ts` (suíte `@sb/web`: 139 arquivos, 1.489 testes) e 32 regressões Chromium em `sugestoes.spec.ts`, `conhecimento.spec.ts`, `templates.spec.ts` e `atendimento.spec.ts` cobrem perda de autorização via RLS e falhas de transporte com nova tentativa, sem alterar compras/reposição nem worktrees/migrations do Claude.
+
+

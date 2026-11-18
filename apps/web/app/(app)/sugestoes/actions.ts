@@ -61,13 +61,22 @@ export async function createSuggestion(originalText: string): Promise<Suggestion
 export async function updateSuggestionStatus(id: string, status: SuggestionStatus): Promise<SuggestionActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("feature_suggestions")
     .update({ status })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível atualizar — só ADMIN/GESTOR muda o status." };
+  }
+
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message:
+        "O status não foi atualizado — só ADMIN/GESTOR muda o status ou a sugestão não está mais disponível. Atualize a página para conferir.",
+    };
   }
 
   revalidatePath("/sugestoes");

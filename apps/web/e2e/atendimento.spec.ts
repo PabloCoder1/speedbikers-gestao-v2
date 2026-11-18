@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_ML_ACCOUNT } from "./constants.js";
-import { login, loginAs } from "./helpers.js";
+import { derrubarPrimeiraAcao, login, loginAs } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 async function fixtureDaPergunta() {
@@ -573,4 +573,46 @@ test("/atendimento: faixa de indicadores, busca por SKU e recortes rápidos", as
 
   await page.getByRole("link", { name: "Limpar filtros" }).click();
   await expect(page).toHaveURL(/\/atendimento$/);
+});
+
+test("/atendimento: falha de conexão na triagem libera controles e permite nova tentativa", async ({ page }) => {
+  const { seed, db, caso } = await fixtureDaPergunta();
+  const inicial = await db.from("support_cases").select("priority").eq("id", caso.id).single();
+  if (inicial.error !== null) throw new Error(inicial.error.message);
+  const prioridadeInicial = inicial.data.priority;
+  const proxima = prioridadeInicial === "CRITICA" ? "NORMAL" : "CRITICA";
+
+  try {
+    await login(page, "/atendimento");
+
+    const row = page.getByRole("row", { name: new RegExp(seed.supportOpenExternalId) });
+    const selectPrioridade = row.getByLabel("Prioridade");
+    await expect(selectPrioridade).toHaveValue(prioridadeInicial);
+
+    const caiu = await derrubarPrimeiraAcao(page);
+    await selectPrioridade.selectOption(proxima);
+
+    await expect(row.getByRole("alert").filter({ hasText: "Não foi possível confirmar a triagem" })).toBeVisible();
+    expect(caiu()).toBe(true);
+    await expect(selectPrioridade).toBeEnabled();
+    await expect(selectPrioridade).toHaveValue(prioridadeInicial);
+
+    const antes = await db.from("support_cases").select("priority").eq("id", caso.id).single();
+    expect(antes.error).toBeNull();
+    expect(antes.data?.priority).toBe(prioridadeInicial);
+
+    await selectPrioridade.selectOption(proxima);
+    await expect(selectPrioridade).toHaveValue(proxima);
+
+    const depois = await db.from("support_cases").select("priority").eq("id", caso.id).single();
+    expect(depois.error).toBeNull();
+    expect(depois.data?.priority).toBe(proxima);
+
+    // Restaura a prioridade original pela própria UI para manter caso e eventos coerentes.
+    await selectPrioridade.selectOption(prioridadeInicial);
+    await expect(selectPrioridade).toHaveValue(prioridadeInicial);
+  } finally {
+    const restaurado = await db.from("support_cases").update({ priority: prioridadeInicial }).eq("id", caso.id);
+    expect.soft(restaurado.error).toBeNull();
+  }
 });

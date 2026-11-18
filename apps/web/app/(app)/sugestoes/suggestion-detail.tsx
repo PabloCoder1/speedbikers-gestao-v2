@@ -132,17 +132,21 @@ export function SuggestionDetail({
     setBusy(true);
     setError(null);
 
-    const result = await updateSuggestionStatus(suggestion.id, next);
+    try {
+      const result = await updateSuggestionStatus(suggestion.id, next);
 
-    setBusy(false);
+      if (!result.ok) {
+        setError(result.message ?? "Não foi possível atualizar — só ADMIN/GESTOR muda o status.");
 
-    if (!result.ok) {
-      setError(result.message);
+        return;
+      }
 
-      return;
+      setStatus(next);
+    } catch {
+      setError("Não foi possível confirmar a alteração de status. Recarregue a página antes de tentar novamente.");
+    } finally {
+      setBusy(false);
     }
-
-    setStatus(next);
   }
 
   return (

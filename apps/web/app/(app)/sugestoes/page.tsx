@@ -169,7 +169,7 @@ export default async function SugestoesPage({
             ))}
           </section>
 
-          <SuggestionDetail suggestion={selecionada} canManage={canManage} />
+          <SuggestionDetail key={selecionada.id} suggestion={selecionada} canManage={canManage} />
         </div>
       )}
 

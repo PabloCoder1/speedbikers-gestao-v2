@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_CONHECIMENTO } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Base de Conhecimento (`/atendimento/conhecimento`) pelo frame `SupportScreen`
@@ -109,4 +111,113 @@ test("/conhecimento: revisao, filtros e novo registro ficam acessiveis", async (
   await expect(page.getByRole("dialog")).toContainText("sugerido");
   await page.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("/conhecimento: falha de conexão ao criar preserva os campos e libera nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const fato = `E2E Conhecimento ${crypto.randomUUID().slice(0, 8)}`;
+  const obs = "Observação de teste que não pode sumir na queda.";
+
+  const ler = () =>
+    db.from("knowledge_entries").select("id, status, note").eq("organization_id", seed.organizationId).eq("content", fato);
+
+  try {
+    await login(page, "/atendimento/conhecimento");
+    await page.getByRole("button", { name: "Novo conhecimento" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Enviar para validação" });
+    const campoSku = dialog.getByLabel(/SKU/);
+    const campoFato = dialog.getByLabel("Fato confirmado ou a revisar");
+    const campoObs = dialog.getByLabel(/Observação/);
+    const enviar = dialog.getByRole("button", { name: "Enviar para validação" });
+
+    await campoSku.fill(seed.skuCode);
+    await campoFato.fill(fato);
+    await campoObs.fill(obs);
+
+    const caiu = await derrubarPrimeiraAcao(page);
+    await enviar.click();
+
+    await expect(dialog.getByRole("alert").filter({ hasText: "Não foi possível confirmar o envio" })).toBeVisible();
+    expect(caiu()).toBe(true);
+    await expect(enviar).toBeEnabled();
+    await expect(campoSku).toHaveValue(seed.skuCode);
+    await expect(campoFato).toHaveValue(fato);
+    await expect(campoObs).toHaveValue(obs);
+
+    const antes = await ler();
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+
+    await enviar.click();
+    await expect(dialog.getByRole("status").filter({ hasText: "Registrado como SUGERIDO" })).toBeVisible();
+
+    const depois = await ler();
+    expect(depois.error).toBeNull();
+    expect(depois.data?.length).toBe(1);
+    expect(depois.data?.[0]?.status).toBe("SUGERIDO");
+    expect(depois.data?.[0]?.note).toBe(obs);
+  } finally {
+    const limpeza = await db
+      .from("knowledge_entries")
+      .delete()
+      .eq("organization_id", seed.organizationId)
+      .eq("content", fato);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+test("/conhecimento: falha de conexão ao validar libera os botões sem travar", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const fato = `E2E Validar ${crypto.randomUUID().slice(0, 8)}`;
+
+  const criado = await db
+    .from("knowledge_entries")
+    .insert({
+      organization_id: seed.organizationId,
+      created_by: seed.userId,
+      kind: "COMPATIBILIDADE",
+      source: "CONFIRMACAO_INTERNA",
+      status: "SUGERIDO",
+      content: fato,
+    })
+    .select("id")
+    .single();
+  if (criado.error !== null) throw new Error(criado.error.message);
+  const entryId = criado.data.id;
+
+  try {
+    await login(page, "/atendimento/conhecimento");
+
+    const row = page.getByRole("row", { name: new RegExp(fato) });
+    const validar = row.getByRole("button", { name: "Validar" });
+    await expect(validar).toBeVisible();
+
+    const caiu = await derrubarPrimeiraAcao(page);
+    await validar.click();
+
+    await expect(row.getByRole("alert").filter({ hasText: "Não foi possível confirmar a alteração" })).toBeVisible();
+    expect(caiu()).toBe(true);
+    await expect(validar).toBeEnabled();
+
+    const antes = await db.from("knowledge_entries").select("status").eq("id", entryId).single();
+    expect(antes.error).toBeNull();
+    expect(antes.data?.status).toBe("SUGERIDO");
+
+    await validar.click();
+    await expect(row).toContainText("Validado");
+
+    const depois = await db.from("knowledge_entries").select("status").eq("id", entryId).single();
+    expect(depois.error).toBeNull();
+    expect(depois.data?.status).toBe("VALIDADO");
+  } finally {
+    const limpeza = await db.from("knowledge_entries").delete().eq("id", entryId);
+    expect.soft(limpeza.error).toBeNull();
+  }
 });
