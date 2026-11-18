@@ -3961,6 +3961,37 @@ describe("permissão por loja Shopee (D-433)", () => {
     }
   });
 
+  it("o painel do SKU supera 200 anúncios e mantém a permissão por loja e organização (D-715)", async () => {
+    await client.query(
+      `insert into public.shopee_items
+         (organization_id, shopee_shop_id, item_id, item_name, item_sku, item_status,
+          has_model, details_synced_at, shopee_updated_at)
+       select $1, loja, item, 'Anuncio D715', 'D433-SKU', 'NORMAL', false, now(), now()
+       from unnest($2::uuid[]) loja cross join generate_series(715100, 715300) item`,
+      [ORG, [LOJA_A, LOJA_B]],
+    );
+
+    try {
+      const consulta = `select count(*)::int as n from public.get_sku_shopee_listings('${ORG}', '${skuId}')`;
+      expect(await asUser(ADMIN, consulta)).toEqual([{ n: 402 }]);
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 0 }]);
+      await client.query(
+        "insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)",
+        [ANALISTA, LOJA_A],
+      );
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 201 }]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([{ n: 0 }]);
+      expect(await asUser(ADMIN, `select * from public.get_sku_shopee_listings('${ORG_OUTRA}', '${skuId}')`)).toEqual([]);
+      await expect(asAnon(consulta)).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1 and shopee_shop_id = $2", [ANALISTA, LOJA_A]);
+      await client.query(
+        "delete from public.shopee_items where shopee_shop_id = any($1::uuid[]) and item_id between 715100 and 715300",
+        [[LOJA_A, LOJA_B]],
+      );
+    }
+  });
+
   it("só o ADMIN da organização da loja concede, e só a quem é membro dela", async () => {
     await expect(
       asUser(ANALISTA, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}')`),
@@ -19425,6 +19456,39 @@ describe("get_sku_listings — os anuncios de um SKU pela regua canonica (D-316)
     // O por variacao: tem link_id, entao a tela pode oferecer a remocao.
     expect(linhas[1]?.vinculo_forma).toBe("variacao");
     expect(linhas[1]?.apenas_cache).toBe(false);
+  });
+
+  it("preserva a conta do vínculo sem anúncio sincronizado e respeita a permissão dessa conta", async () => {
+    await client.query(
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, ref_kind, item_id, sku_id, source)
+       values ($1,$2,'ITEM','MLB700000008',$4,'MANUAL'),
+              ($1,$3,'ITEM','MLB700000008',$4,'MANUAL')`,
+      [ORG_SB, CONTA, CONTA_SEM_ACESSO, SKU],
+    );
+
+    try {
+      const consulta = `select item_id, ml_account_id, listing_id, title
+        from public.get_sku_listings('${ORG_SB}', '${SKU}')
+        where item_id = 'MLB700000008' order by ml_account_id`;
+      const admin = await asUser<{ ml_account_id: string; listing_id: string | null; title: string | null }>(
+        ADMIN_SB, consulta,
+      );
+      expect(admin).toEqual([
+        { item_id: "MLB700000008", ml_account_id: CONTA, listing_id: null, title: null },
+        { item_id: "MLB700000008", ml_account_id: CONTA_SEM_ACESSO, listing_id: null, title: null },
+      ]);
+
+      const analista = await asUser<{ ml_account_id: string }>(ANALISTA_SB, consulta);
+      expect(analista).toEqual([admin[0]]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([]);
+    } finally {
+      await client.query(
+        `delete from public.sku_listing_links
+         where organization_id = $1 and sku_id = $2 and item_id = 'MLB700000008'`,
+        [ORG_SB, SKU],
+      );
+    }
   });
 
   it("uma linha por (conta, anuncio), mesmo com duas variacoes vinculadas", async () => {

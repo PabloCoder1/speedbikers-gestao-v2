@@ -443,3 +443,142 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-704 (A61).** Com 50 exceções por SKU, a mediana de pré-buscas de SKU antes do clique caiu de 52 para zero, e cada jornada fez 52 verificações de sessão a menos. O clique abriu o SKU da linha em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
 - **Validação.** A regressão grava uma exceção no banco local e a apaga ao final, porque a tela não cria regra por SKU. Ela registrou duas pré-buscas no build anterior e passou no corrigido. Após remover as regras e os SKUs sintéticos, passaram os 9 casos Playwright de Configuração de Reposição e de Reposição, e a tabela de regras voltou a ficar vazia. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** A fila de tabelas com link por linha terminou. Medir as telas de detalhe (itens do pedido de compra, produtos do fornecedor e abas do SKU) antes de decidir se mudam. O painel de devoluções da Shopee segue esperando loja real no banco local. Publicação das correções e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do SKU nos itens do pedido de compra
+
+- **Base.** `codex/sentinel-audit` em `513c38f4`.
+- **D-705 (A62).** Nos pedidos com 2 e 50 SKUs, as chamadas ao Auth por pré-busca antes do clique caíram de 4 e 51 para zero, na mediana. O clique abriu o SKU correto em uma requisição RSC. A mediana do clique subiu 27 ms e 6 ms, respectivamente. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+- **Validação.** O novo caso Playwright detectou duas pré-buscas no build anterior. Com a correção e o banco isolado recriado com o seed padrão, passaram os 16 casos de Compras, Pedido de compra e Detalhe do SKU. Passaram o check, o build e as guardas de leituras em série e navegação.
+- **Próxima etapa.** Medir os links nos produtos do fornecedor e depois nas abas do SKU. A fixture local de devoluções da Shopee, a publicação e a validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do SKU nos produtos do fornecedor
+
+- **Base.** `codex/sentinel-audit` em `f4455eab`.
+- **D-706 (A63).** Com 2 e 49 links de SKU, as chamadas ao Auth por pré-busca antes do clique caíram de 4 e 53 para zero na mediana. O clique abriu o SKU certo em uma requisição RSC. A comparação identificou cada jornada no trace. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
+- **Validação.** O caso novo detectou duas pré-buscas no build anterior. Após recriar o banco local e carregar o seed padrão, passaram os 26 casos Playwright de Fornecedores, Compras, Pedido de compra e Detalhe do SKU. O check e o build passaram.
+- **Próxima etapa.** Medir as abas do SKU e os links da seção Pedidos de compra do fornecedor. O painel de devoluções da Shopee pede uma loja live com devoluções no banco local. Publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch de anúncios do Mercado Livre no detalhe do SKU
+
+- **Base.** `codex/sentinel-audit` em `1dcf35aa`.
+- **D-707 (A64).** As chamadas ao Auth por pré-busca antes do clique caíram de 6 para zero na Visão geral, de 51 para zero em Anúncios e de 50 para zero em Preços, na mediana. O clique abriu o anúncio esperado em uma requisição RSC. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+- **Validação.** Os três casos novos detectaram duas pré-buscas cada no build anterior. No build corrigido passaram os 26 casos Playwright de Detalhe do SKU, Detalhe do anúncio e Preços com o seed padrão em banco recriado. Passaram o check, o build, as guardas de leituras em série e navegação e o `docs:check`.
+- **Próxima etapa.** Medir os pedidos do fornecedor. Os links da Shopee no detalhe do SKU e em Devoluções seguem na fila de medição local. Publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Retomada e prefetch de pedidos no painel do fornecedor
+
+- **Base.** Worktree isolada em `codex/sentinel-audit`, `91077075` antes da etapa. A `v3` local tem trabalho em curso e `sentinel-continue` não trouxe patch exclusivo no `git cherry`. O GitHub mostrou 24 refs e 14 PRs abertos. PR #328 em `513c38f4`, com E2E, integração, scripts e check verdes no run `43959475822`. A etapa de aplicar migrations no Dev foi pulada. A `main` retornou sem proteção efetiva. [Branches](BRANCH_AUDIT.md)
+- **D-708 (A65).** No painel do fornecedor, as chamadas ao Auth por pré-busca antes do clique caíram de 3 e 49 para zero para listas com 2 e 50 pedidos. A mediana do clique na lista cheia foi de 121 ms nos dois builds. [Medição](../PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
+- **Validação.** O caso novo detectou sete requisições de prefetch no build anterior. Passaram os 18 casos Playwright de Fornecedores e Compras com o seed padrão em banco recriado, além do check e build. A página, o spec e os mapas da auditoria foram atualizados.
+- **Próxima etapa.** Reutilizar a loja live sintética do Playwright para medir os anúncios da Shopee no SKU e os links de SKU nas devoluções. Nenhuma migration alterada nesta etapa. Publicação e validação real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch de anúncios da Shopee no SKU e de SKUs em Devoluções
+
+- **Base.** `codex/sentinel-audit` em `a3c789dd`. O ensaio local reaproveitou a loja sintética do projeto Playwright `loja-live` com 50 anúncios e 10 devoluções.
+- **D-709 (A66).** As chamadas ao Auth por pré-busca caíram de 48 e 13 para zero, na mediana, nos anúncios e em Devoluções. Foram alterados os links nas duas telas, o spec `ensaio-loja-live.spec.ts` e os mapas da auditoria. [Medição](../PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+- **Validação.** Cada caso novo mostrou duas pré-buscas no build anterior. No corrigido passaram os 34 casos Chromium de SKU, Anúncios e Vendas da Shopee e os 19 casos de `loja-live`, incluindo o retorno à aba ou ao filtro da loja. Passaram check, build, docs e as guardas de leituras em série e navegação.
+- **Próxima etapa.** Medir as abas do `ObjectHeader` nos detalhes de SKU e anúncio. As cinco repetições da jornada de anúncios da Shopee registraram sete chamadas ao Auth para outras abas do SKU. Nenhuma migration foi alterada nas duas etapas desta retomada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do seletor de abas no SKU e no anúncio
+
+- **Base.** `codex/sentinel-audit` em `d121f271`.
+- **D-710 (A67).** Em quatro jornadas com o seed padrão, a pré-busca de outras abas caiu de 8 para 2 e 0 no SKU, e de 7 para 3 e 1 no anúncio. O clique continuou a abrir a aba com uma requisição RSC. Os links para outras abas que aparecem fora do seletor explicam as requisições restantes. [Medição](../PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+- **Validação.** Os dois casos novos acusaram uma pré-busca cada no build anterior. No corrigido, passaram os 28 casos de Troca de tela, Detalhe do SKU e Detalhe do anúncio. As regressões acionaram a aba com Enter, atrasaram a resposta e verificaram o painel anterior, o indicador e o retorno à aba inicial.
+- **Próxima etapa.** Medir os atalhos para abas fora do seletor. Esta etapa alterou o cabeçalho e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch dos atalhos para abas no SKU e no anúncio
+
+- **Base.** `codex/sentinel-audit` em `f2053c06`.
+- **D-711 (A68).** A comparação de seis jornadas registrou zero chamadas ao Auth por pré-busca de outras abas após o ajuste. Antes eram duas no SKU e três no anúncio. Um clique abriu o destino em uma requisição RSC, marcou a aba ativa e a volta restaurou a Visão geral. [Medição](../PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
+- **Validação.** Os dois casos novos acusaram duas e três pré-buscas no build anterior. No build corrigido passaram os 30 casos Playwright de Troca de tela, Detalhe do SKU e Detalhe do anúncio, incluindo Decisões e Histórico pelo menu Ações.
+- **Próxima etapa.** Medir os links para outras telas no menu Ações do anúncio. A abertura do menu elevou o Auth antes do clique de 9 para 21 na comparação corrigida. Esta etapa alterou as duas páginas e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch dos links do menu Ações do anúncio
+
+- **Base.** `codex/sentinel-audit` em `07365a48`.
+- **D-712 (A69).** Nos seis caminhos, abrir o menu passou de medianas de 8 a 10 chamadas ao Auth por pré-busca para zero. Cada clique abriu o destino esperado em uma requisição RSC. O MLB entrou na busca de Preços e de Anúncios, e a volta restaurou a Visão geral do anúncio. [Medição](../PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+- **Validação.** Os dois novos casos detectaram pré-buscas no build anterior após levar o link à área visível. No corrigido passaram os 36 casos Playwright de navegação, Detalhe do anúncio, anúncio excluído, Anúncios e Preços. Os novos casos atrasaram a requisição e conferiram o indicador durante a navegação.
+- **Próxima etapa.** Medir o atalho de Diagnóstico para Anúncios no detalhe do SKU. D-712 alterou uma página e o spec de navegação. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Prefetch do atalho de Diagnóstico para Anúncios no SKU
+
+- **Base.** `codex/sentinel-audit` em `e90f14ce`.
+- **D-713 (A70).** Consolidado e conta na URL passaram de uma pré-busca de Anúncios para zero. Os cliques abriram a aba em uma requisição RSC e a volta restaurou a URL original. [Medição](../PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+- **Validação.** O caso novo detectou uma pré-busca no build anterior. No corrigido passaram os 24 casos Playwright de Troca de tela e Detalhe do SKU, incluindo espera com o painel anterior visível e retorno ao Diagnóstico.
+- **Próxima etapa.** Verificar se Reler agora em Diagnóstico lê uma alteração feita no banco local após abrir a página e preserva o escopo. Esta etapa alterou a página do SKU, o spec de navegação e os mapas. Nenhuma migration alterada. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Verificação da releitura do Diagnóstico do SKU
+
+- **Base.** `codex/sentinel-audit` em `f6252b55`.
+- **Resultado.** Reler agora já buscava dados novos. Uma reprodução no build de produção observou uma requisição RSC com HTTP 200 no consolidado e no recorte de conta. A URL permaneceu a mesma.
+- **Regressão.** O novo caso em `sku-dashboard.spec.ts` cria uma segunda conta com anúncio do mesmo SKU e altera os estoques de ambas após abrir a página. O consolidado incorpora as duas alterações, e o recorte incorpora só a selecionada. Uma resposta atrasada verifica o valor anterior visível e o indicador de atualização até a nova leitura chegar.
+- **Validação.** Passaram os 25 casos Playwright de SKU e navegação e a repetição isolada do caso de releitura após o ajuste das asserções de limpeza. A conta e o anúncio do teste foram removidos, e o estoque original voltou ao valor do seed. Check, build e docs passaram. O teste e os mapas foram atualizados.
+- **Próxima etapa.** Auditar o limite de 1.000 anúncios nas leituras do detalhe do SKU, com cardinalidade sintética e contagens conhecidas. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Leitura completa dos anúncios ML do SKU
+
+- **Base.** `codex/sentinel-audit` em `989b2d47`.
+- **D-714 (A71).** O caso novo mostrou 1.000 linhas para 1.002 anúncios esperados. A página passou a usar o paginador de RPC existente, com ordem que desempata contas com o mesmo nome e MLB. A leitura completa expôs a conta nula do vínculo sem anúncio sincronizado, que fazia o Diagnóstico selecionar só esse vínculo. A migration `20261117171808` corrige a origem da conta na RPC. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)
+- **Validação.** Em banco local recriado com as migrations, passaram 1.159 testes de integração e 39 projeções com embed. Após outra recriação e o seed padrão, passaram os 44 casos Chromium de SKU, navegação, Anúncios e Vinculações. O caso novo confere as 1.002 linhas na tabela e no Diagnóstico, variação, anúncio ainda sem leitura e exclusão. A regressão SQL confere a conta do vínculo e as permissões por conta e organização. Check, build, docs e guardas de leituras em série e navegação passaram. A consulta de limpeza confirmou zero contas e SKUs da nova fixture.
+- **Próxima etapa.** Verificar o teto de 200 da RPC de anúncios Shopee do SKU com uma fixture maior que a janela. A migration desta etapa foi aplicada apenas no banco local e deve preceder a publicação da web. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Leitura completa dos anúncios Shopee do SKU
+
+- **Base.** `codex/sentinel-audit` em `c697beee`.
+- **D-715 (A72).** A fixture de 1.002 unidades mostrou 200 linhas no original e 1.000 após remover apenas o teto SQL. A migration `20261117173152` retira o limite e desempata pela loja, e a web lê a RPC em páginas. O trace confirmou lotes de 1.000, 2 e zero linhas. SKUs com um anúncio terminaram na primeira chamada. [Medição](../PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+- **Validação.** Em banco recriado com as migrations, passaram 1.160 testes de integração. O caso novo verifica 402 anúncios para o ADMIN, 201 para quem alcança só uma loja e zero sem acesso ou de outra organização, com recusa de anônimo. Após outro reset e seed, passaram 39 embeds, 48 casos Chromium de SKU, navegação, Anúncios e Vendas da Shopee e os 20 casos do ensaio `loja-live`. A nova regressão cobre nomes e IDs iguais entre lojas, variações, precedência manual, sandbox e itens apagados. A consulta de limpeza confirmou zero lojas e SKUs da nova fixture, e o advisor local de segurança não apontou problemas. Check, build, docs e guardas de leituras em série e navegação passaram.
+- **Próxima etapa.** Conferir troca e remoção do vínculo manual Shopee nos painéis dos dois SKUs envolvidos. A migration foi aplicada apenas no banco local e deve preceder a publicação da web. CI dos novos commits, publicação e validação com tráfego real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Verificação da troca e remoção do vínculo Shopee no SKU
+
+- **Base.** `codex/sentinel-audit` em `2fbfaf08`.
+- **Resultado.** O fluxo já atualizava a lista e os dois painéis. Duas regressões em `anuncios-shopee.spec.ts` cobrem o item sem variação e a variação: vínculo pelo SKU do anúncio, criação manual para outro SKU, duas trocas e remoção com motivo. Cada alteração confere a ausência no SKU anterior pelo histórico do router, a presença no destino e a origem do vínculo. O contador de vinculados permanece estável nas trocas.
+- **Validação.** Passaram os dois casos isolados e os 39 casos Chromium de Anúncios da Shopee, SKU e navegação. A conferência SQL confirmou os dois anúncios de volta ao SKU do anúncio, sem manual remanescente. Nas duas execuções de cada jornada, o histórico registrou duas criações, quatro trocas e duas remoções por unidade. Check, build e docs passaram.
+- **Próxima etapa.** Conferir recusas do servidor ao gravar o vínculo e a remoção concorrente por outra sessão, incluindo mensagem e nova tentativa. Esta etapa altera testes e mapas. As migrations pendentes das entregas anteriores, a CI dos novos commits, a publicação e a validação com tráfego real seguem no [plano](PLAN.md).
+
+### 17/11/2026 · Falhas na gravação do vínculo Shopee
+
+- **Base.** `codex/sentinel-audit` em `5629830b`.
+- **D-716 (A73).** Bloquear o POST da Server Action deixava Vincular e Remover presos no estado pendente. As duas regressões falharam no build anterior, sem alerta e com os botões desabilitados. Os diálogos agora tratam a exceção, liberam o estado em `finally` e conservam o SKU e o motivo. A mensagem informa que a operação não pôde ser confirmada e pede conferir a lista antes de tentar novamente.
+- **Validação.** As duas regressões passaram após a correção e confirmaram ausência de gravação no POST bloqueado, controles liberados e sucesso na nova tentativa. Outro caso verificou a recusa real do banco após o item sair do catálogo e a remoção concorrente em duas sessões autenticadas. Após reset e seed, passaram os 42 casos Chromium de Anúncios da Shopee, SKU e navegação. Os dois diálogos foram conferidos em desktop e celular, e o detector Impeccable não apontou problemas no arquivo alterado. A consulta de limpeza confirmou o item em UNLIST e sem vínculo manual restante. Check, build e docs passaram.
+- **Próxima etapa.** Verificar falhas de transporte em gravar e descartar na Central de Vinculações do Mercado Livre. Esta etapa altera um componente, o spec, a decisão e os mapas. As migrations pendentes das entregas anteriores, a CI dos novos commits, a publicação e a validação com tráfego real seguem no [plano](PLAN.md).
+
+### 17/11/2026 · Falhas de transporte na Central de Vinculações
+
+- **Base.** `codex/sentinel-audit` em `e9975de4`.
+- **D-717 (A74).** Bloquear o POST da ação reproduziu o diálogo preso sem alerta no vínculo manual, na resolução e no descarte de candidato. Os três casos falharam no build anterior. A correção trata a exceção, libera o estado pendente em `finally` e conserva o SKU escolhido. O aviso pede conferir a lista antes de tentar novamente, pois a gravação pode ter ocorrido antes de uma perda de comunicação.
+- **Validação.** Passaram os três casos isolados. As consultas confirmaram ausência de vínculo e, nos casos de candidato, status OPEN após o POST bloqueado. Após nova tentativa, o vínculo apontou para o SKU escolhido, a resolução terminou em RESOLVED e o descarte em DISMISSED. Após reset e seed, passaram os 47 casos Chromium de Vinculações, Anúncios, SKU e navegação. Os avisos foram conferidos em desktop e celular, e o detector Impeccable não apontou problemas no componente. A limpeza arquivou o anúncio da fixture com SKU nulo e confirmou zero vínculos, candidatos e lotes temporários restantes. Check, build e docs passaram.
+- **Próxima etapa.** Verificar falha de transporte no diálogo de remover vínculo ML do SKU. Esta etapa altera o componente, o spec, a decisão e os mapas. As migrations pendentes das entregas anteriores, a CI dos novos commits, a publicação e a validação com tráfego real seguem no [plano](PLAN.md).
+
+### 17/11/2026 · Aviso alto do picomatch no audit de produção
+
+- **Base.** `codex/sentinel-audit` em `2418fa99`, com 15 commits locais à frente de `origin/codex/sentinel-audit`.
+- **A75.** Antes de enviar os commits, `pnpm audit --prod --audit-level high` reprovou com o aviso alto GHSA-fc5q-39xc-vjpf no `picomatch` 4.0.7, por 14 caminhos, todos vindos de `typescript-eslint` em `@sb/config`. O lockfile não mudou nesta branch, e a correção indicada, 4.0.8, não está publicada no npm. O passo da CI reprovaria qualquer PR do repositório.
+- **Correção.** `@sb/config` declarava `@eslint/js`, `eslint`, `globals` e `typescript-eslint` em `dependencies`, embora os dez pacotes que o usam o declarem em `devDependencies`. As quatro passaram para `devDependencies`, e o lockfile mudou uma linha. O audit de produção passou com três moderados: `uuid`, já registrado, e dois do Next 16.4.1, que exigem `'use cache'` ou `unstable_cache`, ausentes no código. O aviso do `picomatch` segue no audit completo.
+- **Validação.** `pnpm run check` passou nas 37 tarefas, com o lint de todos os pacotes. O `pnpm deploy --legacy --prod` da API terminou sem `@sb/config` e sem ferramentas de lint. Passaram `pnpm run build`, as sete guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Retomar a falha de transporte no diálogo de remover vínculo ML do SKU. Conferir a publicação do `picomatch` 4.0.8. [Plano](PLAN.md)
+
+### 17/11/2026 · Falha de transporte ao remover vínculo ML no SKU
+
+- **Base.** `codex/sentinel-audit` em `7f96f6bc`.
+- **Banco local.** Ao retomar, o banco isolado estava vazio, sem usuários, SKUs nem vínculos, depois de um reset sem seed. O seed foi reaplicado antes da etapa.
+- **D-718 (A76).** Bloquear o POST da ação reproduziu o diálogo de remover vínculo preso em Removendo, sem alerta, com Remover e Cancelar desabilitados. A correção segue as D-716 e D-717: trata a exceção, libera o estado em `finally` e anuncia o aviso como alerta.
+- **Validação.** O caso novo em `sku-dashboard.spec.ts` falhou no build anterior e passou em três repetições no corrigido, ao lado do caso existente de vincular e remover. Ele confere o vínculo intacto após o POST bloqueado e removido na nova tentativa. Passaram os 38 casos Playwright de SKU, Vinculações e troca de tela, e o banco ficou só com o vínculo do seed. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Procurar outros diálogos que aguardam Server Action sem tratar exceção e conferir cada um antes de mudar. Publicação das correções, incluindo as migrations `20261117171808` e `20261117173152`, e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Falha de transporte ao vincular anúncio no SKU
+
+- **Base.** `codex/sentinel-audit` em `1204e525`.
+- **Inventário.** Um script listou os componentes cliente que importam ações de servidor. Doze aguardam a ação sem `try` e cinco usam `useTransition` sem `try`, listados no [plano](PLAN.md). O diálogo de vincular anúncio do SKU, vizinho do corrigido na D-718, foi o primeiro conferido.
+- **D-719 (A77).** Bloquear o POST da ação deixou o diálogo em Gravando o vínculo, sem alerta, com Cancelar, Confirmar e Esc desligados. A correção volta ao anúncio encontrado com um alerta e mantém Confirmar disponível. A mensagem de erro existente passou a ser alerta.
+- **Validação.** O caso novo em `sku-dashboard.spec.ts` falhou no build anterior e passou em três repetições no corrigido, junto com os casos de vincular e remover. Passaram os 39 casos Playwright de SKU, Vinculações e troca de tela, e o banco ficou só com o vínculo do seed. O diálogo foi conferido em 1440 e 390 px de largura, com o aviso dentro do cartão do anúncio. Passaram `pnpm run check`, `pnpm run build`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Seguir a fila do inventário, reproduzindo cada componente com POST bloqueado antes de mudar. Publicação das correções, incluindo as migrations `20261117171808` e `20261117173152`, e validação com carga real seguem pendentes. [Plano](PLAN.md)
+
+### 17/11/2026 · Dados deixados por specs novos no E2E da CI
+
+- **Base.** `codex/sentinel-audit` em `474e173b`.
+- **CI.** Na execução de `7f96f6bc`, com os 15 commits da manhã, passaram 314 casos e dois falharam: a gaveta do fornecedor em `gavetas.spec.ts` e a contagem de itens sem SKU em `vendas-shopee.spec.ts`. Os 20 casos do `loja-live` não rodaram. Os dois passavam na CI de `b902ef2b`. A ordem alfabética `fornecedores` e `anuncios-shopee` antes de `gavetas` e `vendas-shopee` reproduziu as duas falhas localmente.
+- **Fornecedor.** O caso do SKU comprado criava um rascunho de pedido pelo formulário para ter um item com SKU. O rascunho não pode ser apagado, porque o histórico do pedido só aceita inclusão, e a gaveta passava a contar um pedido e um SKU a mais. O caso agora vincula por alguns segundos um item do seed ao SKU de teste e desfaz no fim.
+- **Shopee.** Vincular um anúncio preenche o SKU dos itens de pedido ainda sem SKU, e remover o vínculo não desfaz, por desenho: o pedido guarda a atribuição. Os casos de falha de conexão e de recusa de catálogo vinculavam o item sem SKU e deixavam o pedido do seed atribuído. A limpeza agora chama a mesma resolução do fim do seed.
+- **Validação.** Os quatro specs em sequência passaram, 42 casos, e o banco terminou com as contagens do seed. Passaram `pnpm run check`, as guardas da CI e `pnpm docs:check`.
+- **Próxima etapa.** Conferir a suíte completa na CI. Depois, seguir a fila do inventário de Server Actions sem tratamento de exceção. [Plano](PLAN.md)

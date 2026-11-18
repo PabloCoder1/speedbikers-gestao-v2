@@ -350,7 +350,11 @@ export default async function PedidoDeCompraPage({
                       <td className="sb-mono">
                         {/* O SKU abre o dashboard dele (lote 3 do pente fino); item de
                             texto livre, sem SKU cadastrado, continua texto. */}
-                        {item.sku_id === null ? item.sku_snapshot : <Link href={`/skus/${item.sku_id}`}>{item.sku_snapshot}</Link>}
+                        {item.sku_id === null ? item.sku_snapshot : (
+                          <Link href={`/skus/${item.sku_id}`} prefetch={false}>
+                            {item.sku_snapshot}
+                          </Link>
+                        )}
                         {item.title_snapshot !== null && (
                           <span className="sb-pod-item-title">{item.title_snapshot}</span>
                         )}

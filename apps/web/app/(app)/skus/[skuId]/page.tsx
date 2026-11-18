@@ -30,6 +30,7 @@ import {
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../../lib/full-filters";
 import { formatAge } from "../../../../lib/relative-time";
+import { lerPaginasDaRpc } from "../../../../lib/rpc-pages";
 import {
   formatShopeeMoney,
   isShopeeSchemaMissing,
@@ -392,6 +393,10 @@ export default async function SkuDashboardPage({
       ).catch(falhaDoSku)
     : Promise.resolve({ data: null, error: null });
 
+  const recorteDeAnuncios = {
+    p_organization_id: sku.data.organization_id,
+    p_sku_id: sku.data.id,
+  };
   const [
     dashboardResult,
     listingsResult,
@@ -433,12 +438,20 @@ export default async function SkuDashboardPage({
       A união é SQL (`get_sku_listings`) e não duas idas: o PostgREST não tem
       relação entre `listings` e `sku_listing_links` para embutir, e agregar
       duas listas em JS seria a terceira definição da mesma palavra.
+      As páginas respeitam o teto do PostgREST. A chave da conta desempata
+      anúncios com o mesmo MLB, título e nome de conta (D-714).
     */
     needsListings
-      ? supabase.rpc("get_sku_listings", {
-          p_organization_id: sku.data.organization_id,
-          p_sku_id: sku.data.id,
-        })
+      ? lerPaginasDaRpc(
+          (offset, limite) =>
+            supabase.rpc("get_sku_listings", recorteDeAnuncios, offset === 0 ? { count: "exact" } : undefined)
+              .order("account_label", { nullsFirst: false })
+              .order("title", { nullsFirst: false })
+              .order("item_id")
+              .order("ml_account_id")
+              .range(offset, offset + limite - 1),
+          Number.POSITIVE_INFINITY,
+        ).then(({ linhas, error }) => ({ data: linhas, error }))
       : Promise.resolve({ data: null, error: null }),
     /*
       As contas para o seletor de "Vincular anúncio" — só as CONECTADAS.
@@ -598,13 +611,21 @@ export default async function SkuDashboardPage({
       OS ANÚNCIOS DA SHOPEE DESTE SKU (D-429). `get_sku_shopee_listings` lê a
       view `shopee_listing_units` com a precedência da casa — o vínculo
       MANUAL vence o pelo SKU do anúncio —, a mesma régua de
-      `/anuncios/shopee`. Mesma ida do `Promise.all`, só na aba que os mostra.
+      `/anuncios/shopee`. A leitura começa no `Promise.all`, só na aba que os mostra.
+      D-715: leitura completa em páginas, com desempate pela loja.
     */
     needsShopee
-      ? supabase.rpc("get_sku_shopee_listings", {
-          p_organization_id: sku.data.organization_id,
-          p_sku_id: sku.data.id,
-        })
+      ? lerPaginasDaRpc(
+          (offset, limite) =>
+            supabase.rpc("get_sku_shopee_listings", recorteDeAnuncios, offset === 0 ? { count: "exact" } : undefined)
+              .order("shop_name", { nullsFirst: false })
+              .order("item_name", { nullsFirst: false })
+              .order("item_id")
+              .order("model_id", { nullsFirst: true })
+              .order("shopee_shop_id")
+              .range(offset, offset + limite - 1),
+          Number.POSITIVE_INFINITY,
+        ).then(({ linhas, error }) => ({ data: linhas, error }))
       : Promise.resolve({ data: null, error: null }),
     /*
       AS VENDAS ENTRE MARKETPLACES (D-444, C-59): o total da operação e uma
@@ -970,7 +991,7 @@ export default async function SkuDashboardPage({
                     listingsResult.error !== null ? "não foi possível carregar" : resumoDeAnuncios(listings.length)
                   }
                   aside={
-                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=anuncios`} prefetch={false}>
                       Ver aba →
                       <CarregandoSeODemorar />
                     </Link>
@@ -986,10 +1007,7 @@ export default async function SkuDashboardPage({
                         <span className="sb-skud-grow">
                           {/* O MLB abre o Dashboard do Anúncio, como na aba Anúncios —
                               aqui era texto (lote 3 do pente fino). */}
-                          <Link className="sb-skud-id-link"
-                            href={`/anuncios/${linha.item_id}`}
-                           
-                          >
+                          <Link className="sb-skud-id-link" href={`/anuncios/${linha.item_id}`} prefetch={false}>
                             {linha.item_id}
                           </Link>
                           <small className="sb-skud-meta-xs">
@@ -1017,7 +1035,7 @@ export default async function SkuDashboardPage({
                       : `${formatCount(decisions.length)} registrada(s) para este SKU`
                   }
                   aside={
-                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`}>
+                    <Link className="sb-skud-link" href={`/skus/${skuId}?aba=decisoes`} prefetch={false}>
                       Ver aba →
                       <CarregandoSeODemorar />
                     </Link>
@@ -1332,7 +1350,7 @@ export default async function SkuDashboardPage({
                           */}
                           {listing.title ?? <span className="sb-skud-soft">ainda não sincronizado</span>}
                           <div className="sb-skud-mono-caption">
-                            <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
+                            <Link href={`/anuncios/${listing.item_id}`} prefetch={false}>{listing.item_id}</Link>
                           </div>
                         </td>
                         <td>
@@ -1358,7 +1376,7 @@ export default async function SkuDashboardPage({
                         <td className="sb-skud-caption">{acao.rotuloForma}</td>
                         <td>
                           <span className="sb-skud-row">
-                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`}>
+                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`} prefetch={false}>
                               Ver
                             </Link>
 
@@ -1482,6 +1500,7 @@ export default async function SkuDashboardPage({
                                     onde o vínculo manual se troca ou remove. */}
                                 <Link
                                   href={`/anuncios/shopee?q=${String(anuncio.item_id)}`}
+                                  prefetch={false}
                                   title="Abrir em Anúncios da Shopee"
                                 >
                                   {anuncio.item_id}
@@ -1669,7 +1688,7 @@ export default async function SkuDashboardPage({
                           {formatDateTime(linha.occurred_at)}
                         </td>
                         <td>
-                          <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
+                          <Link href={`/anuncios/${linha.item_id}`} prefetch={false}>{linha.item_id}</Link>
                           {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
                               catálogo depois do evento, e o evento continua sendo
                               verdade. Mostrar o MLB sem título é mais honesto do que
@@ -2094,7 +2113,7 @@ export default async function SkuDashboardPage({
                     ))}
                     <li>
                       Shopee: este diagnóstico julga só os anúncios do Mercado Livre. Os anúncios da Shopee vinculados
-                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`}>aba Anúncios</LinkDeFiltro>, mas
+                      a este SKU estão na <LinkDeFiltro href={`/skus/${skuId}?aba=anuncios`} prefetch={false}>aba Anúncios</LinkDeFiltro>, mas
                       preço, estoque anunciado e ações ainda não têm régua para eles aqui.
                     </li>
                     <li>

@@ -2071,6 +2071,153 @@ Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supab
 
 Antes, foram 50 destinos distintos na mediana. Sem as pré-buscas, cada jornada fez 52 verificações de sessão a menos. Em todas as execuções corrigidas houve zero pré-buscas de SKU antes do clique. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. A regressão verificou o retorno à tela. A latência com tráfego real segue pendente.
 
+### Prefetch dos links de SKU nos itens do pedido de compra (Sentinel A62, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Foram criados dois rascunhos sintéticos, com 2 e 50 SKUs distintos, mais um item em texto livre em cada. Cada jornada abriu o detalhe, rolou pelos itens e clicou no SKU da posição 2 ou 48. Por build e pedido, houve cinco repetições medidas e um aquecimento, sempre em contextos novos de 1440 × 900. O trace local atribuiu chamadas ao Auth às requisições de prefetch de `/skus/[skuId]` antes do clique. O total de chamadas ao Auth cobre a abertura do pedido até o carregamento do SKU. O tempo vai do clique até o título principal do detalhe do SKU ficar visível.
+
+| SKUs | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 4 | 0 | 15 | 27 | 129 ms (118–145) |
+| 2 | D-705 | 0 | 0 | 11 | 23 | 156 ms (133–171) |
+| 50 | Anterior | 6 | 45 | 62 | 74 | 146 ms (134–149) |
+| 50 | D-705 | 0 | 0 | 11 | 23 | 152 ms (142–181) |
+
+Antes da mudança, as pré-buscas atingiam 2 e 48 destinos distintos, respectivamente, na mediana. O trace registrou zero chamadas REST de dados nessas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, o retorno abriu o mesmo pedido e o item em texto livre apareceu sem link. A mediana do clique subiu 27 ms no rascunho menor e 6 ms no maior. A latência e a frequência de cliques com tráfego real seguem pendentes.
+
+### Prefetch dos links de SKU nos produtos do fornecedor (Sentinel A63, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Dois fornecedores sintéticos tinham um pedido cada com 2 e 49 SKUs vinculados, mais um item em texto livre em cada. O segundo encheu as 50 linhas da seção SKUs já comprados. Cada jornada abriu o fornecedor, rolou a seção e clicou no segundo ou no 48º SKU vinculado. Por build e fornecedor foram cinco repetições medidas e um aquecimento, em contextos novos de 1440 × 900. O trace atribuiu as chamadas ao Auth à jornada e à requisição que as originou. O total vai da abertura do fornecedor até o SKU carregar. O tempo do clique termina quando o título principal do SKU fica visível.
+
+| Links de SKU | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 0 | 4 | 20 | 32 | 134 ms (127–151) |
+| 2 | D-706 | 0 | 0 | 16 | 28 | 119 ms (117–143) |
+| 49 | Anterior | 0 | 53 | 69 | 81 | 138 ms (131–221) |
+| 49 | D-706 | 0 | 0 | 16 | 28 | 132 ms (118–148) |
+
+Antes, o trace registrou pré-buscas para 2 e 49 destinos distintos. Em ambos os builds foram zero as chamadas REST de dados atribuídas a essas pré-buscas. Cada clique fez uma requisição RSC com HTTP 200 para o SKU esperado. Em todas as execuções, voltar abriu o mesmo fornecedor e o item em texto livre apareceu sem link. A medição dos links de pedidos de compra, a latência e o volume de cliques com tráfego real seguem pendentes.
+
+### Prefetch dos links do Mercado Livre no detalhe do SKU (Sentinel A64, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Um SKU sintético recebeu 50 anúncios distintos e uma alteração de preço por anúncio. A Visão geral mostrou os primeiros quatro, e as tabelas de Anúncios e Preços exibiram 50 linhas cada. Cada jornada abriu uma aba, rolou até os links e clicou no quarto anúncio na Visão geral ou na 41ª linha nas duas tabelas. Na aba Anúncios, o clique foi no link Ver. Houve cinco repetições medidas e um aquecimento por aba e build, em contextos novos de 1440 × 900. O trace identificou cada jornada e atribuiu as chamadas ao Auth à requisição que as originou. O tempo do clique termina quando o título principal do detalhe do anúncio fica visível.
+
+| Aba | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Visão geral | Anterior | 6 | 0 | 23 | 34 | 146 ms (131–227) |
+| Visão geral | D-707 | 0 | 0 | 17 | 28 | 149 ms (138–193) |
+| Anúncios | Anterior | 11 | 41 | 66 | 78 | 179 ms (144–195) |
+| Anúncios | D-707 | 0 | 0 | 15 | 26 | 159 ms (142–173) |
+| Preços | Anterior | 9 | 41 | 65 | 75 | 155 ms (129–179) |
+| Preços | D-707 | 0 | 0 | 15 | 26 | 160 ms (144–255) |
+
+No build anterior, as medianas de Auth atribuídas às pré-buscas de anúncio antes do clique foram 6, 51 e 50. As medianas foram calculadas por fase e também sobre o total de cada jornada. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas nos dois builds. Cada clique fez uma requisição RSC com HTTP 200 para o anúncio esperado. Voltar restaurou a mesma URL e aba nas três jornadas. Os links para anúncios da Shopee e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links de pedido no painel do fornecedor (Sentinel A65, 17/11/2026)
+
+Dois builds de produção foram comparados no Chromium com sessão ADMIN e Supabase local isolado. Dois fornecedores sintéticos receberam 2 e 50 pedidos de compra, com um item em texto livre por pedido. Cada jornada abriu o fornecedor, rolou a seção Pedidos de compra e clicou no segundo ou no 48º pedido. Houve cinco repetições medidas e um aquecimento por fornecedor e build, em contextos novos de 1440 × 900. O trace atribuiu chamadas ao Auth à jornada e à requisição que as originou. O total cobre da abertura do fornecedor até o pedido carregar. A latência do clique vai até o título principal do pedido ficar visível.
+
+| Pedidos | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 2 | Anterior | 2 | 1 | 17 | 23 | 107 ms (106–111) |
+| 2 | D-708 | 0 | 0 | 14 | 20 | 116 ms (111–129) |
+| 50 | Anterior | 2 | 47 | 63 | 69 | 121 ms (108–135) |
+| 50 | D-708 | 0 | 0 | 14 | 20 | 121 ms (110–130) |
+
+Antes, as pré-buscas atingiam 2 e 48 pedidos distintos, na mediana. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas nos dois builds. Todos os cliques fizeram uma requisição RSC com HTTP 200, abriram o pedido e o item esperados e permitiram retornar ao mesmo fornecedor. A mediana do clique ficou em 121 ms na lista cheia e subiu 9 ms na lista curta. A frequência de cliques e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links da Shopee no SKU e em Devoluções (Sentinel A66, 17/11/2026)
+
+Dois builds de produção rodaram no Chromium com sessão ADMIN e Supabase local isolado. O seed do ensaio `loja-live` recebeu itens sintéticos adicionais. O SKU mostrou 50 anúncios, e o painel mostrou 10 devoluções com SKUs distintos e um item avulso. Cada jornada abriu a aba ou o filtro de loja, rolou e clicou no anúncio da linha 41 ou no SKU da 10ª devolução. Houve cinco repetições medidas e um aquecimento por jornada e build, em contextos novos de 1440 × 900. O trace distinguiu as buscas por item na lista de anúncios e as requisições aos SKUs da fixture. O clique foi cronometrado até o título principal do destino ficar visível.
+
+| Lista | Build | Auth de prefetch na abertura | Auth de prefetch na rolagem | Auth antes do clique | Auth total até o destino | Clique, mediana (mín.–máx.) |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Anúncios Shopee do SKU | Anterior | 4 | 44 | 72 | 81 | 139 ms (131–162) |
+| Anúncios Shopee do SKU | D-709 | 0 | 0 | 24 | 32 | 140 ms (133–175) |
+| Devoluções | Anterior | 6 | 7 | 22 | 32 | 147 ms (105–172) |
+| Devoluções | D-709 | 0 | 0 | 9 | 20 | 145 ms (131–153) |
+
+As chamadas ao Auth por pré-busca foram de 48 para zero nos anúncios e de 13 para zero em Devoluções. O trace registrou zero chamadas REST de dados atribuídas a essas pré-buscas. Cada clique observou uma requisição RSC com HTTP 200. A lista filtrada mostrou apenas o anúncio esperado e a outra jornada mostrou o título do SKU vinculado. Voltar restaurou o recorte original e o item avulso apareceu sem link. A latência e a frequência de cliques com tráfego real seguem pendentes.
+
+### Prefetch do seletor de abas no SKU e no anúncio (Sentinel A67, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN, Supabase local isolado e o seed padrão. Cada jornada abriu diretamente a Visão geral ou a aba de preços de um SKU ou anúncio do Mercado Livre. Cinco repetições medidas e um aquecimento por jornada e build usaram contextos novos de 1440 × 900. O trace contou saídas ao Auth atribuídas a pré-buscas de outras abas da mesma rota, incluindo os atalhos do conteúdo. A latência vai do clique até o título do painel de destino ficar visível.
+
+| Troca | Auth de prefetch antes do clique | Auth total antes do clique | Auth total até carregar a aba | Clique anterior, mediana (mín.–máx.) | Clique D-710, mediana (mín.–máx.) |
+| --- | ---: | ---: | ---: | --- | --- |
+| SKU · Visão geral → Preços | 8 → 2 | 15 → 9 | 17 → 11 | 139 ms (115–156) | 130 ms (107–148) |
+| SKU · Preços → Visão geral | 8 → 0 | 15 → 7 | 17 → 11 | 113 ms (113–151) | 120 ms (112–128) |
+| Anúncio · Visão geral → Preço | 7 → 3 | 16 → 12 | 18 → 14 | 124 ms (108–132) | 135 ms (114–150) |
+| Anúncio · Preço → Visão geral | 7 → 1 | 14 → 8 | 18 → 14 | 145 ms (125–148) | 137 ms (125–151) |
+
+O destino escolhido foi pré-buscado uma vez no build anterior e zero vezes no corrigido. As pré-buscas restantes foram dos atalhos para Anúncios e Decisões no SKU e para Histórico, Vendas e Tráfego no anúncio. O trace registrou zero chamadas REST de dados atribuídas às pré-buscas de abas antes do clique. Cada troca fez uma requisição RSC com HTTP 200 e atualizou a aba ativa sem novo documento. Voltar restaurou a URL e a aba inicial. A frequência real de troca e a latência em produção seguem pendentes.
+
+### Prefetch dos atalhos para abas nos detalhes (Sentinel A68, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN e Supabase local isolado, usando o seed padrão. Cada jornada abriu a Visão geral de um SKU ou anúncio, levou o atalho à janela visível e clicou. A sexta jornada abriu o menu Ações para alcançar Histórico. Cada build teve cinco repetições medidas e um aquecimento por jornada, em contextos novos de 1440 × 900. O trace contou chamadas ao Auth de pré-buscas de outras abas da mesma rota. A latência vai do clique até o controle ou título que identifica o painel de destino ficar visível.
+
+| Atalho | Auth de prefetch de abas antes do clique | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-711, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| SKU · Anúncios | 2 → 0 | 9 → 7 | 109 ms (104–131) | 115 ms (112–181) |
+| SKU · Decisões | 2 → 0 | 9 → 7 | 110 ms (99–120) | 114 ms (107–123) |
+| Anúncio · Vendas | 3 → 0 | 12 → 9 | 120 ms (117–136) | 111 ms (109–116) |
+| Anúncio · Tráfego | 3 → 0 | 12 → 9 | 121 ms (117–128) | 125 ms (115–135) |
+| Anúncio · Republicações | 3 → 0 | 12 → 9 | 116 ms (104–131) | 117 ms (104–123) |
+| Anúncio · Histórico pelo menu Ações | 3 → 0 | 24 → 21 | 126 ms (109–136) | 122 ms (109–138) |
+
+As pré-buscas de outras abas geraram zero chamadas REST de dados nos dois builds. Cada clique fez uma requisição RSC com HTTP 200, marcou a aba ativa e permitiu voltar à Visão geral sem recarregar o documento na troca. No build corrigido, abrir o menu Ações elevou o total de Auth antes do clique de 9 para 21 em comparação com o atalho direto de Republicações. O trace mostrou ali pré-buscas adicionais para SKU, Preços, Anúncios e Central de Ações. A frequência e a latência com tráfego real seguem pendentes.
+
+### Prefetch dos links do menu Ações do anúncio (Sentinel A69, 17/11/2026)
+
+Comparação de dois builds de produção no Chromium com sessão ADMIN e Supabase local isolado. Foram usados dois anúncios do seed padrão, um com SKU e outro sem vínculo. Cada jornada esperou a Visão geral com o menu fechado, abriu Ações e então clicou no destino. Houve cinco repetições medidas e um aquecimento por jornada e build, em contextos novos de 1440 × 900. O trace distinguiu os destinos do menu, inclusive Anúncios com e sem busca pelo MLB. A latência vai do clique até o título principal do destino ficar visível.
+
+| Destino | Auth de prefetch ao abrir o menu | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-712, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| SKU vinculado | 8 → 0 | 18 → 10 | 137 ms (105–153) | 111 ms (107–132) |
+| Preços filtrado pelo MLB | 10 → 0 | 20 → 10 | 139 ms (127–214) | 121 ms (120–141) |
+| Anúncios filtrado pelo MLB | 10 → 0 | 21 → 10 | 145 ms (132–213) | 130 ms (123–135) |
+| Central de Ações | 8 → 0 | 18 → 10 | 197 ms (191–206) | 180 ms (177–186) |
+| Catálogo | 8 → 0 | 18 → 10 | 169 ms (131–194) | 125 ms (118–137) |
+| Vinculações | 8 → 0 | 18 → 10 | 132 ms (119–153) | 132 ms (127–140) |
+
+Com o menu fechado, o total era de nove chamadas ao Auth nos dois builds. No corrigido, abrir Ações acrescentou uma chamada de `/api/vitals` em todas as amostras, e zero pré-buscas dos destinos. As pré-buscas de destinos do menu geraram zero chamadas REST de dados nos dois builds. Cada clique teve uma requisição RSC com HTTP 200 e voltou à mesma Visão geral. Preços e Anúncios exibiram o MLB esperado na busca e na lista. A frequência de uso do menu e a latência com tráfego real seguem pendentes.
+
+### Prefetch do atalho de Diagnóstico para Anúncios no SKU (Sentinel A70, 17/11/2026)
+
+Dois builds de produção rodaram no Chromium com sessão ADMIN, Supabase local isolado e o seed padrão. Cada jornada abriu Diagnóstico diretamente, no consolidado ou com a conta do anúncio na URL, rolou até o painel de limites e clicou em aba Anúncios. Por build e recorte houve cinco repetições medidas e um aquecimento, em contextos novos de 1440 × 900. O trace atribuiu ao destino Anúncios as chamadas ao Auth por pré-busca. A latência termina quando o botão Vincular anúncio da aba está visível.
+
+| Recorte | Auth de prefetch antes do clique | Auth total antes do clique | Clique anterior, mediana (mín.–máx.) | Clique D-713, mediana (mín.–máx.) |
+| --- | ---: | ---: | --- | --- |
+| Consolidado | 1 → 0 | 8 → 7 | 122 ms (116–203) | 118 ms (110–137) |
+| Conta na URL | 1 → 0 | 8 → 7 | 132 ms (119–145) | 119 ms (100–138) |
+
+Nos dois builds, as pré-buscas de outras abas geraram zero chamadas REST de dados. Cada clique fez uma requisição RSC com HTTP 200, ativou Anúncios e mostrou a seção Shopee. Voltar restaurou a aba Diagnóstico e a URL original, incluindo a conta quando informada. A latência e a frequência de uso com tráfego real seguem pendentes.
+
+### Leitura completa dos anúncios ML no SKU (Sentinel A71, 17/11/2026)
+
+Ensaio no Chromium com build de produção e Supabase local isolado. A fixture tem um SKU, duas contas com o mesmo nome, 500 anúncios diretos por conta com os mesmos títulos e MLBs, um anúncio por variação e um vínculo ainda sem anúncio sincronizado. Um anúncio excluído vinculado também foi semeado. O conjunto esperado é de 1.002 linhas.
+
+| Leitura | Resultado local |
+| --- | --- |
+| Tela original, aba Anúncios | 1.000 linhas |
+| RPC paginada | 1.000 linhas no offset 0, 2 no offset 1.000 e zero no offset 1.002 |
+| Tabela após D-714 | 1.002 linhas, com os MLBs esperados |
+| Conta do vínculo sem anúncio, RPC anterior | Nula |
+| Tabela e Diagnóstico após paginação e migration D-714 | 1.002 anúncios, com conta válida no vínculo sem anúncio |
+
+A paginação usou ordem por nome da conta, título, MLB e ID da conta. O trace registrou HTTP 206 na primeira página com `Content-Range: 0-999/1002`, HTTP 200 nas seguintes e nenhum erro de faixa. A paginação isolada expôs outro defeito. O vínculo sem anúncio tinha conta nula na RPC e fazia o escopo padrão do Diagnóstico selecionar só ele. A migration `20261117171808` corrige a origem do ID da conta e acrescenta o desempate na ordem SQL. A regressão verificou vínculos por variação, vínculo sem leitura, exclusão e isolamento por conta. A leitura completa acrescenta chamadas quando ultrapassa uma página. A latência com dados reais segue pendente.
+
+### Leitura completa dos anúncios Shopee no SKU (Sentinel A72, 17/11/2026)
+
+Ensaio no Chromium com build de produção e Supabase local isolado. A fixture tem um SKU próprio, duas lojas de mesmo nome (uma live e uma sandbox), 500 itens sem variação em cada uma com os mesmos IDs e nomes, e duas variações de outro item. Uma variação indica outro SKU, mas o vínculo manual a traz para o SKU do ensaio. Dois itens apagados, um pelo vendedor e outro pela Shopee, também foram semeados. O conjunto esperado é de 1.002 unidades.
+
+| Leitura | Linhas na tabela |
+| --- | ---: |
+| Tela e RPC originais | 200 |
+| Apenas retirada do limite SQL | 1.000 |
+| RPC e paginação da web após D-715 | 1.002 |
+
+A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
 ## Compras inteligentes: margem por SKU e análise de compra (D-720, D-721) — 17/11/2026
 
 **Ambiente: stack Supabase LOCAL isolado (Docker, `sb-compras`), seed do e2e mais 3 SKUs de demonstração com 90 dias de venda — 5 SKUs na organização. Número SINTÉTICO, não vale como medida de produção.** Dev e produção estavam `INACTIVE` (pausados) em 17/11, sem como medir lá.

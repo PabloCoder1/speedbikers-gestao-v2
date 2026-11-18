@@ -20,14 +20,14 @@ export const PAGINA_DO_POSTGREST = 1000;
 
 export interface PaginaDaRpc<T> {
   data: T[] | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
   count?: number | null;
 }
 
 export async function lerPaginasDaRpc<T>(
   lerPagina: (offset: number, limite: number) => PromiseLike<PaginaDaRpc<T>>,
   teto: number,
-): Promise<{ linhas: T[]; error: { message: string } | null }> {
+): Promise<{ linhas: T[]; error: PaginaDaRpc<T>["error"] }> {
   const linhas: T[] = [];
 
   while (linhas.length < teto) {

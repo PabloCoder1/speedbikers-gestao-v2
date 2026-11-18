@@ -15,7 +15,7 @@ import {
   type PlanoDeVinculo,
 } from "../../../lib/vinculo-sugestao";
 
-import { createManualLink, dismissLinkCandidate, resolveLinkCandidate } from "./actions";
+import { createManualLink, dismissLinkCandidate, resolveLinkCandidate, type ActionResult } from "./actions";
 import { BuscaSku } from "./busca-sku";
 
 /**
@@ -185,22 +185,28 @@ export function VincularDialog({
     setGravando(true);
     setErro(null);
 
-    const resultado =
-      modo.tipo === "candidato"
-        ? await resolveLinkCandidate(modo.candidateId, sku.skuId, { revalidar: false })
-        : anuncio === null
-          ? { ok: false, message: "Procure o anúncio antes de vincular." }
-          : await createManualLink(
-              {
-                mlAccountId: anuncio.mlAccountId,
-                itemId: anuncio.itemId,
-                variationId: alvoId ?? "",
-                skuId: sku.skuId,
-              },
-              { revalidar: false },
-            );
-
-    setGravando(false);
+    let resultado: ActionResult;
+    try {
+      resultado =
+        modo.tipo === "candidato"
+          ? await resolveLinkCandidate(modo.candidateId, sku.skuId, { revalidar: false })
+          : anuncio === null
+            ? { ok: false, message: "Procure o anúncio antes de vincular." }
+            : await createManualLink(
+                {
+                  mlAccountId: anuncio.mlAccountId,
+                  itemId: anuncio.itemId,
+                  variationId: alvoId ?? "",
+                  skuId: sku.skuId,
+                },
+                { revalidar: false },
+              );
+    } catch {
+      setErro("Não foi possível confirmar o vínculo. Confira a lista antes de tentar novamente.");
+      return;
+    } finally {
+      setGravando(false);
+    }
 
     if (!resultado.ok) {
       setErro(resultado.message ?? "Não foi possível vincular.");
@@ -245,9 +251,15 @@ export function VincularDialog({
     setGravando(true);
     setErro(null);
 
-    const resultado = await dismissLinkCandidate(modo.candidateId, { revalidar: false });
-
-    setGravando(false);
+    let resultado: ActionResult;
+    try {
+      resultado = await dismissLinkCandidate(modo.candidateId, { revalidar: false });
+    } catch {
+      setErro("Não foi possível confirmar o descarte. Confira a lista antes de tentar novamente.");
+      return;
+    } finally {
+      setGravando(false);
+    }
 
     if (!resultado.ok) {
       setErro(resultado.message ?? "Não foi possível descartar.");

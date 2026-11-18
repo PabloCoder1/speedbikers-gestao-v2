@@ -123,6 +123,8 @@ Identidade: `(organization_id, sku_key)` UNIQUE, com `sku_key = upper(btrim(sku)
 
 **Identificadores nativos do Mercado Livre a capturar desde o início:** os anúncios carregam `inventory_id` e `user_product_id`. A V2 os extraiu do payload e indexou; eles amarram anúncio a Full e agrupam variações, poupando trabalho manual de vinculação.
 
+`get_sku_listings` reúne o vínculo direto e os vínculos ITEM por conta e anúncio sob RLS. A conta devolvida vem desse par vinculado, inclusive quando o anúncio ainda não foi sincronizado (D-714, migration `20261117171808`). A web pagina a resposta para superar o `max_rows` do PostgREST, com ordem por nome da conta, título, MLB e ID da conta. A migration foi validada localmente e deve preceder a publicação da web.
+
 ### `link_candidates` — Central de Vinculações
 
 Referência de anúncio cujo SKU ainda não existe no catálogo (`docs/PROMPT_MASTER.md` secao 15). Hoje a única fonte é a importação do UpSeller (`source = 'ERP_IMPORT'`, `source_row_id` aponta para `erp_import_rows`); outras fontes (NF-e, código de fornecedor) entram quando existirem.
@@ -170,6 +172,8 @@ Migration `20261013180000`. `shopee_items` (chave loja + `item_id`): status e `u
 ### `shopee_sku_links` / `shopee_sku_link_events` — vínculo manual Shopee (D-429)
 
 Migration `20261014120000`. Um vínculo manual por unidade de anúncio Shopee (variação, ou item sem variação; índices parciais por loja + item + variação), com o SKU (`restrict`). Escrita só por `set_shopee_sku_link` e `remove_shopee_sku_link` (`security definer`; ADMIN, GESTOR ou OPERADOR da organização por `has_org_role`; SKU da mesma organização; a unidade no catálogo sincronizado; item com variação não recebe vínculo inteiro; remover exige motivo). `shopee_sku_link_events` é append-only (CREATED, RETARGETED com o SKU anterior, REMOVED com motivo) e prende a loja (`restrict`). Leitura por membros. A view `shopee_listing_units` dá precedência ao manual (`vinculo_via = MANUAL`, com `manual_link_id` e o `sku_pelo_anuncio`); `get_sku_shopee_listings` serve o painel do SKU e `get_shopee_shop_catalog_counts` a contagem por loja (NULA sem leitura).
+
+`get_sku_shopee_listings` tem leitura completa em páginas na D-715. A migration `20261117173152` retira o teto SQL de 200 e termina a ordem no ID da loja, mantendo assinatura, `security invoker` e a view canônica. A web pagina por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. Aplicada apenas localmente, a migration deve preceder a publicação da web.
 
 ### Vendas Shopee — `shopee_sales_orders` e o SKU gravado (D-430)
 

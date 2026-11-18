@@ -93,7 +93,7 @@ frescor do financeiro por loja (só por pedido, `financials_synced_at`).
 |---|---|---|---|---|
 | `get_shopee_listings` | `p_organization_id`, `p_shopee_shop_id?`, `p_estado?` (VINCULADO, SEM_SKU_NO_ANUNCIO, SKU_FORA_DO_CATALOGO, AGUARDANDO_LEITURA), `p_busca?`, `p_limit` (≤200), `p_offset` | uma linha por unidade: loja, item, variação, `sku_anuncio`, status, preço, estoque, imagem, `sku_id`/`sku`/`sku_title`, `estado`, `vinculo_via` (MANUAL \| SKU_DO_ANUNCIO), `manual_link_id`, `sku_pelo_anuncio`, `details_error`, `total_count` | offset, `total_count` por janela | produção |
 | `get_shopee_listings_summary` | `p_organization_id`, `p_shopee_shop_id?` | contadores por estado e `ultima_leitura` (a mais velha entre as lojas; NULA se alguma nunca foi lida) | — | produção |
-| `get_sku_shopee_listings` | `p_organization_id`, `p_sku_id` | os anúncios Shopee de um SKU (≤200); `environment` da loja no fim (C-55, D-432) | — | produção; `environment` em código |
+| `get_sku_shopee_listings` | `p_organization_id`, `p_sku_id` | os anúncios Shopee de um SKU; `environment` da loja no fim (C-55, D-432) | D-715: páginas PostgREST por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja; contagem exata na primeira | produção ainda limitada a 200; D-715 validada localmente, migration `20261117173152` antes da web |
 | `set_shopee_sku_link` / `remove_shopee_sku_link` | loja, item, variação, SKU, motivo | escrita (ADMIN/GESTOR/OPERADOR) | — | produção |
 
 Conflito de vínculo = `manual_link_id` preenchido e `sku_pelo_anuncio`
