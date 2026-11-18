@@ -681,4 +681,5 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-732** — Notificações e preferências confirmam a escrita antes de anunciar sucesso
 - **D-735** — Confirmação de importação ERP e NF-e exige linha afetada e reverte PARSED se a fila falhar
 - **D-736** — Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
+- **D-738** — Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
 

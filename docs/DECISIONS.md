@@ -19909,8 +19909,10 @@ Atualiza `next` para `16.4.6` em `apps/web/package.json` e `pnpm-lock.yaml`, sem
 
 `@sb/web` verde em `vitest` (139 arquivos / 1.489 testes), `typecheck`, `eslint`, as sete guardas estáticas e `next build` em `16.4.6` na primeira tentativa sem `SecurityFatalError`.
 
+## D-738 - Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
 
+Os handlers `detect-sales-anomaly-actions.ts` (`get_sku_sales_baseline`, `get_sku_correlated_events`, `support_case_links` e `get_sku_average_prices`) e `detect-support-pattern-actions.ts` (`support_case_links` de SKUs e pedidos) consultavam tabelas e RPCs sem `.range()` nem fatiamento de `.in(...)`. Com o crescimento do catálogo, dos canais (`ML` e `SHOPEE`) e das reclamações abertas além de `max_rows = 1000`, o PostgREST cortava linhas silenciosamente sem erro nem ordenação estável — anomalias ou padrões após a linha 1.000 sumiam daquele dia (levando episódios abertos a envelhecerem) e listas grandes de `candidateSkuIds` ou `caseIds` cresciam na URL do `.in(...)`.
 
+Os dois handlers passam a reutilizar `readAllPages` com ordenação estável (`(marketplace, sku_id)` em baseline/preços, `(sku_id, occurred_at, event_type, marketplace)` em eventos correlacionados e `id` em `support_case_links`) e fatiamento em lotes de `LOOKUP_CHUNK = 200` (`apps/worker/src/chunk.ts`) nos `.in(...)` de `support_case_links`. Em `detect-sales-anomaly-actions.ts`, erro em qualquer lote do sinal adicional de SAC continua degradando o sinal inteiro para `sem sinal de SAC` sem misturar sinal parcial nem derrubar o diagnóstico. Schema, RPCs e regras de domínio não mudam.
 
-
-
+Reprodução antes da correção registrou 4 falhas simulando o corte de 1.000 linhas; após a correção, `@sb/worker` passou em `tsc`, `eslint` e 68 arquivos / 1.048 testes (`detect-sales-anomaly-actions.test.ts`: 15 casos; `detect-support-pattern-actions.test.ts`: 8 casos).
