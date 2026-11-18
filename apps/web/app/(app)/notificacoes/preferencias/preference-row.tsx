@@ -33,13 +33,16 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
   const [error, setError] = useState<string | null>(null);
   const [removed, setRemoved] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  function fecharConfirmacao(): void {
+    setConfirmando(false);
+    setError(null);
+  }
+
   // Remover é destrutivo: foco vai para o Cancelar, e Esc some enquanto a
   // remoção está em voo — mesmo comportamento de `remover-vinculo.tsx`.
   const dialogo = useDialogo<HTMLDivElement>(
     confirmando,
-    () => {
-      setConfirmando(false);
-    },
+    fecharConfirmacao,
     !busy,
   );
 
@@ -159,7 +162,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           <div
             className="sb-backdrop"
             onClick={() => {
-              if (!busy) setConfirmando(false);
+              if (!busy) fecharConfirmacao();
             }}
           >
             <div
@@ -192,9 +195,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
                   className="sb-button"
                   disabled={busy}
                   data-foco-inicial
-                  onClick={() => {
-                    setConfirmando(false);
-                  }}
+                  onClick={fecharConfirmacao}
                 >
                   Cancelar
                 </button>

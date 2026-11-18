@@ -124,3 +124,111 @@ test("preferências: falha de conexão ao alterar e ao remover a regra libera a 
     await r.limpar();
   }
 });
+
+test("preferências: regra excluída por outra sessão informa recusa ao alterar severidade ou estado sem confirmar escrita", async ({ page }) => {
+  const r = await regras();
+
+  await r.limpar();
+
+  const criada = await r.db
+    .from("notification_preferences")
+    .insert({ user_id: r.userId, min_severity: "informativo", enabled: true })
+    .select("id")
+    .single();
+
+  if (criada.error !== null) throw new Error(criada.error.message);
+
+  try {
+    await login(page, "/notificacoes/preferencias");
+
+    const linha = tabelaDeRegras(page).getByRole("row").nth(1);
+    const severidade = linha.getByRole("combobox");
+    const ativa = linha.getByRole("checkbox");
+
+    await expect(severidade).toBeVisible();
+
+    // Outra sessão remove a regra depois de esta página já ter carregado.
+    const excluida = await r.db.from("notification_preferences").delete().eq("id", criada.data.id);
+
+    expect(excluida.error).toBeNull();
+
+    const respostaSeveridade = page.waitForResponse(
+      (res) => res.request().method() === "POST" && res.request().headers()["next-action"] !== undefined,
+    );
+
+    await severidade.selectOption("critico");
+    expect((await respostaSeveridade).status()).toBe(200);
+
+    await expect(linha.getByRole("alert")).toContainText("Atualize a página para conferir");
+    await expect(severidade).toHaveValue("informativo");
+    await expect(severidade).toBeEnabled();
+
+    const respostaEstado = page.waitForResponse(
+      (res) => res.request().method() === "POST" && res.request().headers()["next-action"] !== undefined,
+    );
+
+    await ativa.click();
+    expect((await respostaEstado).status()).toBe(200);
+
+    await expect(linha.getByRole("alert")).toContainText("Atualize a página para conferir");
+    await expect(ativa).toBeChecked();
+    await expect(ativa).toBeEnabled();
+    expect(await r.lista()).toHaveLength(0);
+  } finally {
+    await r.limpar();
+  }
+});
+
+test("preferências: regra excluída por outra sessão informa recusa ao remover sem fechar o diálogo em falso", async ({ page }) => {
+  const r = await regras();
+
+  await r.limpar();
+
+  const criada = await r.db
+    .from("notification_preferences")
+    .insert({ user_id: r.userId, min_severity: "informativo", enabled: true })
+    .select("id")
+    .single();
+
+  if (criada.error !== null) throw new Error(criada.error.message);
+
+  try {
+    await login(page, "/notificacoes/preferencias");
+
+    const linha = tabelaDeRegras(page).getByRole("row").nth(1);
+
+    await linha.getByRole("button", { name: "Remover", exact: true }).click();
+
+    const dialogo = page.getByRole("dialog", { name: "Remover regra de notificação" });
+    const remover = dialogo.getByRole("button", { name: "Remover regra", exact: true });
+    const cancelar = dialogo.getByRole("button", { name: "Cancelar", exact: true });
+
+    await expect(dialogo).toBeVisible();
+
+    const excluida = await r.db.from("notification_preferences").delete().eq("id", criada.data.id);
+
+    expect(excluida.error).toBeNull();
+
+    const resposta = page.waitForResponse(
+      (res) => res.request().method() === "POST" && res.request().headers()["next-action"] !== undefined,
+    );
+
+    await remover.click();
+    expect((await resposta).status()).toBe(200);
+
+    await expect(dialogo).toBeVisible();
+    await expect(dialogo.getByRole("alert")).toContainText("Atualize a página para conferir");
+    await expect(remover).toBeEnabled();
+    await expect(cancelar).toBeEnabled();
+    expect(await r.lista()).toHaveLength(0);
+
+    await cancelar.click();
+    await expect(dialogo).toHaveCount(0);
+    await expect(linha.getByRole("alert")).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByText("Nenhuma preferência configurada")).toBeVisible();
+  } finally {
+    await r.limpar();
+  }
+});

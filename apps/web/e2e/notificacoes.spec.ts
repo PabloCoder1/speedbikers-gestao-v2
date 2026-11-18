@@ -396,3 +396,45 @@ test("/notificacoes: falha de conexão ao marcar todas libera a confirmação se
     await leituras.restaurar();
   }
 });
+
+test("/notificacoes: destinatário removido por outra sessão informa recusa sem marcar como lida", async ({ page }) => {
+  const leituras = await leiturasDoUsuario();
+
+  if (leituras.antes.length === 0) throw new Error("Nenhuma notificação no seed.");
+
+  try {
+    await leituras.db.from("notification_recipients").update({ read_at: null }).eq("user_id", leituras.userId);
+    await login(page, "/notificacoes");
+
+    const primeiraLinha = page.locator("main li[data-state='unread']").first();
+    const botao = primeiraLinha.getByRole("button", { name: /^Marcar como lida:/ });
+
+    await expect(botao).toBeVisible();
+
+    const removidas = await leituras.db.from("notification_recipients").delete().eq("user_id", leituras.userId);
+
+    expect(removidas.error).toBeNull();
+
+    const resposta = page.waitForResponse(
+      (res) => res.request().method() === "POST" && res.request().headers()["next-action"] !== undefined,
+    );
+
+    await botao.click();
+    expect((await resposta).status()).toBe(200);
+
+    await expect(primeiraLinha.getByRole("alert")).toContainText("Atualize a página para conferir");
+    await expect(primeiraLinha).toHaveAttribute("data-state", "unread");
+    await expect(botao).toBeEnabled();
+  } finally {
+    const reinserida = await leituras.db.from("notification_recipients").upsert(
+      leituras.antes.map((l) => ({
+        notification_id: l.notification_id,
+        user_id: leituras.userId,
+        read_at: l.read_at,
+      })),
+      { onConflict: "notification_id,user_id" },
+    );
+
+    expect.soft(reinserida.error).toBeNull();
+  }
+});

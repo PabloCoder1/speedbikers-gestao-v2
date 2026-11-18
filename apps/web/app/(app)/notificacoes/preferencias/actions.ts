@@ -70,13 +70,21 @@ export async function updatePreference(
 ): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("notification_preferences")
     .update({ min_severity: input.minSeverity, enabled: input.enabled })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível atualizar a preferência." };
+  }
+
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message: "A preferência não foi alterada. Ela pode ter sido removida ou seu acesso mudou. Atualize a página para conferir.",
+    };
   }
 
   revalidatePath("/notificacoes/preferencias");
@@ -87,10 +95,21 @@ export async function updatePreference(
 export async function deletePreference(id: string): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase.from("notification_preferences").delete().eq("id", id);
+  const { data, error } = await supabase
+    .from("notification_preferences")
+    .delete()
+    .eq("id", id)
+    .select("id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível remover a preferência." };
+  }
+
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message: "Nada foi removido. A preferência já pode ter sido removida ou seu acesso mudou. Atualize a página para conferir.",
+    };
   }
 
   revalidatePath("/notificacoes/preferencias");
