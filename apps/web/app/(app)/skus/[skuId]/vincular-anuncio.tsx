@@ -109,52 +109,56 @@ export function VincularAnuncio({
 
     setEstado({ kind: "buscando" });
 
-    const supabase = createClient();
+    try {
+      const supabase = createClient();
 
-    /*
-      Por (conta, anúncio) — o índice único da tabela. Buscar só por `item_id`
-      acharia o anúncio de OUTRA conta e diria que está tudo certo, e é
-      exatamente o par que o vínculo grava.
-    */
-    const { data, error } = await supabase
-      .from("listings")
-      .select("item_id, title, status, price, available_quantity, synced_at, deleted_at, skus(sku)")
-      .eq("ml_account_id", conta)
-      .eq("item_id", itemId)
-      .maybeSingle();
+      /*
+        Por (conta, anúncio) — o índice único da tabela. Buscar só por `item_id`
+        acharia o anúncio de OUTRA conta e diria que está tudo certo, e é
+        exatamente o par que o vínculo grava.
+      */
+      const { data, error } = await supabase
+        .from("listings")
+        .select("item_id, title, status, price, available_quantity, synced_at, deleted_at, skus(sku)")
+        .eq("ml_account_id", conta)
+        .eq("item_id", itemId)
+        .maybeSingle();
 
-    if (error !== null) {
+      if (error !== null) {
+        setEstado({ kind: "erro", mensagem: "Não foi possível consultar o catálogo agora." });
+
+        return;
+      }
+
+      if (data === null) {
+        setEstado({ kind: "nao_encontrado" });
+
+        return;
+      }
+
+      // D-634: a linha do anúncio excluído no Mercado Livre fica na V3 (D-631),
+      // mas ele não existe mais lá — a mesma regra do "não encontramos".
+      if (anuncioExcluido(data.deleted_at)) {
+        setEstado({ kind: "excluido", itemId: data.item_id, deletedAt: data.deleted_at });
+
+        return;
+      }
+
+      setEstado({
+        kind: "encontrado",
+        anuncio: {
+          itemId: data.item_id,
+          title: data.title,
+          status: data.status,
+          price: data.price,
+          availableQuantity: data.available_quantity,
+          syncedAt: data.synced_at,
+          skuAtual: data.skus?.sku ?? null,
+        },
+      });
+    } catch {
       setEstado({ kind: "erro", mensagem: "Não foi possível consultar o catálogo agora." });
-
-      return;
     }
-
-    if (data === null) {
-      setEstado({ kind: "nao_encontrado" });
-
-      return;
-    }
-
-    // D-634: a linha do anúncio excluído no Mercado Livre fica na V3 (D-631),
-    // mas ele não existe mais lá — a mesma regra do "não encontramos".
-    if (anuncioExcluido(data.deleted_at)) {
-      setEstado({ kind: "excluido", itemId: data.item_id, deletedAt: data.deleted_at });
-
-      return;
-    }
-
-    setEstado({
-      kind: "encontrado",
-      anuncio: {
-        itemId: data.item_id,
-        title: data.title,
-        status: data.status,
-        price: data.price,
-        availableQuantity: data.available_quantity,
-        syncedAt: data.synced_at,
-        skuAtual: data.skus?.sku ?? null,
-      },
-    });
   }
 
   async function confirmar(anuncio: Encontrado): Promise<void> {

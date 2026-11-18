@@ -683,4 +683,5 @@ Decisões registradas: **639** (D-001 a D-737).
 - **D-736** — Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
 - **D-738** — Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
+- **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 

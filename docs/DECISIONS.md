@@ -19924,3 +19924,17 @@ A página `/diagnostico` (`apps/web/app/(app)/diagnostico/page.tsx`) chamava `ge
 Extrai as três leituras para `apps/web/lib/diagnostico-leitura.ts`, reutilizando `lerPaginasDaRpc` (`apps/web/lib/rpc-pages.ts`) com `{ count: "exact" }` apenas na primeira página (`offset === 0`) para não pagar ida extra quando o catálogo cabe em 1.000 linhas, ordenação estável (`sku_id` no baseline ML, `(sku_id, occurred_at, event_type, marketplace)` nos eventos, `id` nos vínculos de SAC e `(sku_id, marketplace)` nos preços médios) e fatiamento em lotes de 200 (`DIAGNOSTICO_CHUNK`) em paralelo para `support_case_links`. Erro em qualquer lote de SAC descarta dados parciais e propaga `claimsError` para o banner `Parte do diagnóstico não foi lida` (`D-067`/`D-468`).
 
 Reprodução pré-correção em `apps/web/lib/diagnostico-leitura.test.ts` registrou 4 falhas simulando o corte de 1.000 linhas; após a correção, os 5 novos contratos e a checagem completa de `@sb/web` passaram (`tsc`, `eslint`, `vitest` e guardas `check:waterfalls`/`check:navegacao-suave`/`check:loading`).
+
+## D-740 - Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
+
+Oito componentes clientes ainda deixavam indicadores de carregamento ou botões presos sem aviso quando uma Server Action, consulta ao catálogo ou leitura de sessão rejeitava na camada de transporte:
+
+1. `ActionCard` (`apps/web/app/(app)/acoes/action-card.tsx`): `run` e `handleRegisterDecision` chamavam Server Actions sem `try/catch/finally` (prendendo `emCurso` para sempre), e `handleExplain` mantinha `supabase.auth.getSession()` e `response.json()` fora do bloco `try/finally`.
+2. `DiagnosisPanel` (`apps/web/app/(app)/skus/[skuId]/diagnosis-panel.tsx`): `handleClick` chamava `diagnoseSku` sem `try/catch/finally` (prendendo `"Analisando…"`), e `handleNarrate` mantinha `getSession()` e `response.json()` fora do `try/finally`.
+3. `VincularAnuncio` (`apps/web/app/(app)/skus/[skuId]/vincular-anuncio.tsx`): `buscar` mantinha a consulta ao catálogo `listings` fora de `try/catch` em `{ kind: "buscando" }`.
+4. `RelistPanel` (`apps/web/app/(app)/anuncios/[itemId]/relist-panel.tsx`): `chamar` executava `getSession()` antes de entrar no `try/catch` já em `{ kind: "enviando" }`.
+5. Quatro gavetas de inspeção (`inspecao-anuncio.tsx`, `gaveta-pedido.tsx`, `inspecao-fornecedor.tsx`, `inspecao-rapida.tsx`): disparavam `await inspecionar*()` dentro de `startTransition(void (async () => ...))` sem `try/catch`, gerando rejeição não tratada e mantendo o estado de `"Lendo…"` eternamente.
+
+Extrai `useLeituraDeGaveta` em `apps/web/components/drawer.tsx` (compartilhado pelas quatro gavetas com controle de sequência contra resposta atrasada ao fechar/reabrir e fallback de erro de transporte em `role="alert"`) e envolve todas as chamadas assíncronas dos outros quatro componentes em `try/catch/finally`. Schema e Server Actions subjacentes não mudam.
+
+Reprodução pré-correção em Playwright (`acoes.spec.ts`, `gavetas.spec.ts` e `sku-dashboard.spec.ts` com `derrubarPrimeiraAcao`) registrou as 3 falhas exatas de travamento sem alerta; após a correção, `@sb/web` passou em `typecheck`, `eslint`, `next build` e 40 de 40 casos nos 6 specs E2E selecionados (`acoes`, `diagnostico`, `gavetas`, `produtos`, `republicacao` e `sku-dashboard`).
