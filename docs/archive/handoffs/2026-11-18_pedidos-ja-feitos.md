@@ -2,6 +2,12 @@
 
 Para o Codex Sentinel e para quem integrar. Decisões: D-760 a D-764 em `docs/DECISIONS.md`.
 
+**Atualização independente de 18/11:** a nota abaixo registra a entrega
+original. O catálogo da VM de produção já contém as migrations até
+`20261118211000`, conferidas por leitura; #330/#332 ainda aguardam integração
+com CI no HEAD publicado. Estado, backups e ensaios:
+[integração de compras/importação](2026-11-18_integracao-compras-importacao.md).
+
 ## Onde está
 
 - Branch `feat/importacoes-pedidos-ja-feitos`, worktree `.claude/worktrees/pedidos-ja-feitos`.

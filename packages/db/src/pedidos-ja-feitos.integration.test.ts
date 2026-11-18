@@ -146,20 +146,31 @@ async function transito(skuId: string): Promise<number> {
 }
 
 async function limpar(): Promise<void> {
-  for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
-    await client.query(`alter table public.${t} disable trigger user`);
-  }
+  // Os gatilhos pertencem à tabela inteira, não à organização do teste.
+  // A transação mantém o ALTER TABLE bloqueado até todos estarem ativos.
+  await client.query("begin");
 
-  for (const org of [ORG, OUTRA_ORG]) {
-    await client.query("delete from public.purchase_import_batches where organization_id = $1", [org]);
-    await client.query("delete from public.purchase_order_events where organization_id = $1", [org]);
-    await client.query("delete from public.purchase_orders where organization_id = $1", [org]);
-    await client.query("delete from public.stock_movements where organization_id = $1", [org]);
-    await client.query("delete from public.inventory_balances where organization_id = $1", [org]);
-  }
+  try {
+    for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
+      await client.query(`alter table public.${t} disable trigger user`);
+    }
 
-  for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
-    await client.query(`alter table public.${t} enable trigger user`);
+    for (const org of [ORG, OUTRA_ORG]) {
+      await client.query("delete from public.purchase_import_batches where organization_id = $1", [org]);
+      await client.query("delete from public.purchase_order_events where organization_id = $1", [org]);
+      await client.query("delete from public.purchase_orders where organization_id = $1", [org]);
+      await client.query("delete from public.stock_movements where organization_id = $1", [org]);
+      await client.query("delete from public.inventory_balances where organization_id = $1", [org]);
+    }
+
+    for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
+      await client.query(`alter table public.${t} enable trigger user`);
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
   }
 }
 

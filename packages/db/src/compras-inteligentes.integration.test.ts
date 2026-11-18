@@ -230,21 +230,32 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Append-only no teste: o dono da tabela desliga a trava só para limpar a organização própria.
-  for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
-    await client.query(`alter table public.${t} disable trigger user`);
+  // ALTER TABLE mantém a trava até COMMIT: nenhuma outra suíte insere
+  // movimentos enquanto o gatilho de projeção está desligado. ROLLBACK
+  // restaura os gatilhos também quando a limpeza falha.
+  await client.query("begin");
+
+  try {
+    // Append-only no teste: o dono da tabela desliga a trava só para limpar a organização própria.
+    for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
+      await client.query(`alter table public.${t} disable trigger user`);
+    }
+
+    await client.query("delete from public.purchase_order_review_decisions where organization_id = $1", [ORG]);
+    await client.query("delete from public.purchase_order_events where organization_id = $1", [ORG]);
+    await client.query("delete from public.purchase_orders where organization_id = $1", [ORG]);
+    await client.query("delete from public.stock_movements where organization_id = $1", [ORG]);
+    await client.query("delete from public.inventory_balances where organization_id = $1", [ORG]);
+
+    for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
+      await client.query(`alter table public.${t} enable trigger user`);
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
   }
-
-  await client.query("delete from public.purchase_order_review_decisions where organization_id = $1", [ORG]);
-  await client.query("delete from public.purchase_order_events where organization_id = $1", [ORG]);
-  await client.query("delete from public.purchase_orders where organization_id = $1", [ORG]);
-  await client.query("delete from public.stock_movements where organization_id = $1", [ORG]);
-  await client.query("delete from public.inventory_balances where organization_id = $1", [ORG]);
-
-  for (const t of ["purchase_order_events", "purchase_order_review_decisions", "stock_movements"]) {
-    await client.query(`alter table public.${t} enable trigger user`);
-  }
-
   await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS_ML]);
   await client.query("delete from public.orders where id = any($1)", [PEDIDOS_ML]);
   await client.query("delete from public.fulfillment_stock_snapshots where organization_id = $1", [ORG]);

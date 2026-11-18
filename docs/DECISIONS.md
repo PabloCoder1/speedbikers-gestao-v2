@@ -19659,6 +19659,52 @@ A tabela de exceções lista todas as regras por SKU, sem paginação, e o link 
 
 O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca, e o seed não tem regra: a regressão grava uma exceção no banco local, confere o SKU esperado e o retorno à tela, e apaga a regra ao final. [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
 
+## D-720 - Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
+
+A margem por SKU passa a ser lida por conta do Mercado Livre, por loja da Shopee, por marketplace e no consolidado, para qualquer lista de até 500 SKUs e período de até 366 dias (`get_sku_margins`). A fórmula é a do dono e a mesma de `margem_venda` (5F) e de `shopee_margem_venda` (5U): (recebido após taxas − custo do produto vendido) ÷ receita antes das taxas, só dos pedidos cobertos. O consolidado soma receita, recebido e custo e divide uma vez; a média das porcentagens nunca entra.
+
+Não houve regra nova de cobertura nem de custo. O Mercado Livre usa a mesma classificação de `get_faturamento`: frete observado, comissão, custo na data da venda (kit pelos componentes) e um item por pedido. Os pedidos do SKU são achados e lidos inteiros, porque a regra de um item por pedido precisa do pedido completo. A Shopee usa a própria `get_shopee_faturamento_pedidos`. Um teste de integração prova a equivalência com as duas RPCs de faturamento no mesmo SKU e no mesmo período.
+
+A leitura é `security invoker`. A RLS de quem chama recorta as contas e lojas, e o consolidado só soma o que a pessoa alcança. O TikTok Shop tem só a conexão (C-86), e a margem dele sai como indisponível, nunca como zero. A qualidade do número vai junto com ele: confiável, parcial (menos de 80% da receita coberta), estimada (custo atual no lugar do histórico) ou indisponível. O piso é o da organização (`central_thresholds.margin_floor`, D-410), o mesmo da Central e do Faturamento. A tarifa de referência do Mercado Livre (Clássico 7%, Premium 17%) só aparece na projeção de compra, como simulação declarada (`projectPurchaseMargin`), e nunca substitui uma taxa observada.
+
+## D-721 - A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
+
+A sugestão de compra (D-147) diz quanto falta para cobrir a janela da política. Ela não dizia quando NÃO comprar. `assessPurchaseFit` (`@sb/domain`) roda por cima do veredito de reposição (D-293) e devolve uma situação, uma recomendação dentro do pedido (manter, reduzir, retirar ou revisar), a quantidade que o sistema compraria e os motivos com os números. Nenhum limiar é inventado:
+
+- giro contra a janela da própria política: o estoque cobre ou não prazo + cobertura + segurança no ritmo dos últimos 30 dias, e "parado" é zero venda em 90 dias com estoque;
+- idade comercial pela 1ª venda (ou pelo cadastro, se nunca vendeu), contra `purchase_review_settings.new_product_days` (padrão 60). Produto recente nunca recebe "retirar" por vender pouco;
+- ruptura nos últimos 30 dias, reconstruída do ledger (LOCAL no fim do dia) e do Full canônico de D-173 aplicado no fim do dia. Houve ruptura: retirar e reduzir viram "revisar", porque a venda observada subestima a demanda;
+- margem contra o piso de D-410: negativa pede revisão; abaixo do mínimo com giro baixo reforça reduzir; abaixo do mínimo com giro alto mantém a compra e avisa para negociar;
+- rascunhos e aprovados de outros pedidos descontam da recomendação (o trânsito já está no aproveitável);
+- descontinuado, mínimo e múltiplo do fornecedor (D-723).
+
+A conta roda no domínio, como a da reposição. `get_purchase_analysis` entrega os ingredientes. Com `p_incluir_sugestao` falso, entrega só os extras, porque a Reposição já tem a linha da visão e não paga a segunda varredura do catálogo.
+
+## D-722 - A revisão do pedido registra a decisão do comprador, inclusive do item retirado
+
+Antes de confirmar, o pedido mostra o que merece atenção: o que o sistema recomenda retirar, o que precisa de avaliação, a margem insuficiente e o que não tem dados. Os recomendados ficam recolhidos. Cada item tem manter, reduzir, retirar e ver análise. Manter o que o sistema mandava retirar ou reduzir abre uma justificativa opcional, de um clique (compra estratégica, lançamento, campanha, negociação, pedido específico, reposição preventiva, outro). O lote aplica as recomendações de uma vez, e cada item continua reversível. Nada sai do pedido sem o clique do comprador.
+
+O item guarda a recomendação de quando foi salvo e a decisão. O histórico vai para `purchase_order_review_decisions`, append-only, com uma linha por decisão tomada diante de uma recomendação diferente de manter e uma por item retirado (quantidade final zero). Retirar do pedido não mexe no catálogo, nos anúncios nem no estoque. O valor retirado aparece como redução do pedido planejado, nunca como economia.
+
+A criação ficou idempotente por `p_request_id` (gerado no navegador, um por formulário), e a corrida entre duas chamadas iguais devolve o mesmo pedido. A edição recusa quando o `updated_at` lido mudou: outra pessoa salvou no meio, e a tela pede para recarregar em vez de sobrescrever.
+
+## D-723 - Fornecedor × SKU é um vínculo explícito, com mínimo, múltiplo e prazo
+
+`supplier_skus` guarda o que cada fornecedor vende: código no fornecedor, custo e moeda, quantidade mínima, múltiplo de embalagem, prazo e o fornecedor preferido (um por SKU). O vínculo é sempre explícito e nunca deduzido da marca (D-129). Nada é obrigatório além do SKU. O mínimo e o múltiplo ajustam a quantidade recomendada na revisão do pedido daquele fornecedor; zero continua zero. A leitura (`get_supplier_skus`) é paginada e traz o histórico de compra com o fornecedor.
+
+## D-724 - Recebimento parcial baixa só o trânsito do que chegou
+
+`quantity_received` por item e `receive_purchase_order_items`, idempotente pela requisição: a mesma requisição não recebe duas vezes, e receber acima do que falta é recusado. O pedido fica em ORDERED até chegar tudo e vira RECEIVED sozinho. O status não ganhou valor novo: "recebido em parte" é ORDERED com recebido maior que zero, e o evento PARTIALLY_RECEIVED fica no histórico.
+
+O saldo LOCAL continua vindo do UpSeller (D-055), e por isso receber no sistema não soma estoque local e não há como a mesma unidade entrar duas vezes. `receive_purchase_order` passou a receber só o pendente, e `cancel_purchase_order` fecha só o trânsito ainda pendente: o que já chegou continua recebido.
+
+## D-725 - Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
+
+Nenhum segundo sistema de compras. O pedido ganhou `is_import`, câmbio e `logistics_stage`, uma etapa por cima do status que o banco valida contra ele: cotação e aguardando aprovação no rascunho; produção, pronto para embarque, embarcado, em trânsito, desembaraço e transporte nacional no pedido feito. A etapa zera quando o status muda e cada troca registra STAGE_CHANGED.
+
+`purchase_order_costs` guarda frete internacional, seguro, tributos, despesas aduaneiras, desembaraço e transporte nacional, com estimado e realizado separados. `get_purchase_order_landed_cost` dá o custo de chegada por item, rateado pelo valor (premissa declarada). Moeda diferente de BRL sem câmbio deixa o valor em reais desconhecido, nunca convertido a 1, e item sem custo deixa o rateio desconhecido. Nada de NCM, imposto, peso ou cubagem inventado: o que não foi informado aparece como pendente.
+
+No novo pedido, "Trazer produtos do fornecedor" lê o catálogo dele (D-723), avalia cada SKU pelo mesmo motor da revisão (D-721) e traz só o que precisa de compra. A quantidade já vem ajustada ao mínimo e ao múltiplo, e o que ficou de fora é contado por motivo: sem necessidade agora, sem dados ou já no pedido.
 ## D-705 - Os itens vinculados do pedido de compra abrem o SKU ao clicar
 
 No detalhe do pedido, o link do SKU vinculado usa `prefetch={false}`. Em rascunhos locais com 2 e 50 SKUs, a mudança evitou 4 e 51 chamadas ao Auth antes do clique, na mediana. A mediana do clique aumentou 27 ms no pedido menor e 6 ms no maior. O pedido maior motivou aplicar o comportamento a todos os links de SKU da tabela.
@@ -19760,53 +19806,6 @@ Vincular um anúncio a partir do detalhe do SKU deixava o diálogo em Gravando o
 A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz que o vínculo não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Diferente da recusa do servidor, que segue para a mensagem de erro e pede nova busca, a falha de transporte não diz nada sobre o anúncio: ele continua no diálogo e Confirmar vinculação fica disponível. A mensagem de erro do diálogo também passa a ser anunciada como alerta.
 
 A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.
-
-## D-720 - Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
-
-A margem por SKU passa a ser lida por conta do Mercado Livre, por loja da Shopee, por marketplace e no consolidado, para qualquer lista de até 500 SKUs e período de até 366 dias (`get_sku_margins`). A fórmula é a do dono e a mesma de `margem_venda` (5F) e de `shopee_margem_venda` (5U): (recebido após taxas − custo do produto vendido) ÷ receita antes das taxas, só dos pedidos cobertos. O consolidado soma receita, recebido e custo e divide uma vez; a média das porcentagens nunca entra.
-
-Não houve regra nova de cobertura nem de custo. O Mercado Livre usa a mesma classificação de `get_faturamento`: frete observado, comissão, custo na data da venda (kit pelos componentes) e um item por pedido. Os pedidos do SKU são achados e lidos inteiros, porque a regra de um item por pedido precisa do pedido completo. A Shopee usa a própria `get_shopee_faturamento_pedidos`. Um teste de integração prova a equivalência com as duas RPCs de faturamento no mesmo SKU e no mesmo período.
-
-A leitura é `security invoker`. A RLS de quem chama recorta as contas e lojas, e o consolidado só soma o que a pessoa alcança. O TikTok Shop tem só a conexão (C-86), e a margem dele sai como indisponível, nunca como zero. A qualidade do número vai junto com ele: confiável, parcial (menos de 80% da receita coberta), estimada (custo atual no lugar do histórico) ou indisponível. O piso é o da organização (`central_thresholds.margin_floor`, D-410), o mesmo da Central e do Faturamento. A tarifa de referência do Mercado Livre (Clássico 7%, Premium 17%) só aparece na projeção de compra, como simulação declarada (`projectPurchaseMargin`), e nunca substitui uma taxa observada.
-
-## D-721 - A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
-
-A sugestão de compra (D-147) diz quanto falta para cobrir a janela da política. Ela não dizia quando NÃO comprar. `assessPurchaseFit` (`@sb/domain`) roda por cima do veredito de reposição (D-293) e devolve uma situação, uma recomendação dentro do pedido (manter, reduzir, retirar ou revisar), a quantidade que o sistema compraria e os motivos com os números. Nenhum limiar é inventado:
-
-- giro contra a janela da própria política: o estoque cobre ou não prazo + cobertura + segurança no ritmo dos últimos 30 dias, e "parado" é zero venda em 90 dias com estoque;
-- idade comercial pela 1ª venda (ou pelo cadastro, se nunca vendeu), contra `purchase_review_settings.new_product_days` (padrão 60). Produto recente nunca recebe "retirar" por vender pouco;
-- ruptura nos últimos 30 dias, reconstruída do ledger (LOCAL no fim do dia) e do Full canônico de D-173 aplicado no fim do dia. Houve ruptura: retirar e reduzir viram "revisar", porque a venda observada subestima a demanda;
-- margem contra o piso de D-410: negativa pede revisão; abaixo do mínimo com giro baixo reforça reduzir; abaixo do mínimo com giro alto mantém a compra e avisa para negociar;
-- rascunhos e aprovados de outros pedidos descontam da recomendação (o trânsito já está no aproveitável);
-- descontinuado, mínimo e múltiplo do fornecedor (D-723).
-
-A conta roda no domínio, como a da reposição. `get_purchase_analysis` entrega os ingredientes. Com `p_incluir_sugestao` falso, entrega só os extras, porque a Reposição já tem a linha da visão e não paga a segunda varredura do catálogo.
-
-## D-722 - A revisão do pedido registra a decisão do comprador, inclusive do item retirado
-
-Antes de confirmar, o pedido mostra o que merece atenção: o que o sistema recomenda retirar, o que precisa de avaliação, a margem insuficiente e o que não tem dados. Os recomendados ficam recolhidos. Cada item tem manter, reduzir, retirar e ver análise. Manter o que o sistema mandava retirar ou reduzir abre uma justificativa opcional, de um clique (compra estratégica, lançamento, campanha, negociação, pedido específico, reposição preventiva, outro). O lote aplica as recomendações de uma vez, e cada item continua reversível. Nada sai do pedido sem o clique do comprador.
-
-O item guarda a recomendação de quando foi salvo e a decisão. O histórico vai para `purchase_order_review_decisions`, append-only, com uma linha por decisão tomada diante de uma recomendação diferente de manter e uma por item retirado (quantidade final zero). Retirar do pedido não mexe no catálogo, nos anúncios nem no estoque. O valor retirado aparece como redução do pedido planejado, nunca como economia.
-
-A criação ficou idempotente por `p_request_id` (gerado no navegador, um por formulário), e a corrida entre duas chamadas iguais devolve o mesmo pedido. A edição recusa quando o `updated_at` lido mudou: outra pessoa salvou no meio, e a tela pede para recarregar em vez de sobrescrever.
-
-## D-723 - Fornecedor × SKU é um vínculo explícito, com mínimo, múltiplo e prazo
-
-`supplier_skus` guarda o que cada fornecedor vende: código no fornecedor, custo e moeda, quantidade mínima, múltiplo de embalagem, prazo e o fornecedor preferido (um por SKU). O vínculo é sempre explícito e nunca deduzido da marca (D-129). Nada é obrigatório além do SKU. O mínimo e o múltiplo ajustam a quantidade recomendada na revisão do pedido daquele fornecedor; zero continua zero. A leitura (`get_supplier_skus`) é paginada e traz o histórico de compra com o fornecedor.
-
-## D-724 - Recebimento parcial baixa só o trânsito do que chegou
-
-`quantity_received` por item e `receive_purchase_order_items`, idempotente pela requisição: a mesma requisição não recebe duas vezes, e receber acima do que falta é recusado. O pedido fica em ORDERED até chegar tudo e vira RECEIVED sozinho. O status não ganhou valor novo: "recebido em parte" é ORDERED com recebido maior que zero, e o evento PARTIALLY_RECEIVED fica no histórico.
-
-O saldo LOCAL continua vindo do UpSeller (D-055), e por isso receber no sistema não soma estoque local e não há como a mesma unidade entrar duas vezes. `receive_purchase_order` passou a receber só o pendente, e `cancel_purchase_order` fecha só o trânsito ainda pendente: o que já chegou continua recebido.
-
-## D-725 - Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
-
-Nenhum segundo sistema de compras. O pedido ganhou `is_import`, câmbio e `logistics_stage`, uma etapa por cima do status que o banco valida contra ele: cotação e aguardando aprovação no rascunho; produção, pronto para embarque, embarcado, em trânsito, desembaraço e transporte nacional no pedido feito. A etapa zera quando o status muda e cada troca registra STAGE_CHANGED.
-
-`purchase_order_costs` guarda frete internacional, seguro, tributos, despesas aduaneiras, desembaraço e transporte nacional, com estimado e realizado separados. `get_purchase_order_landed_cost` dá o custo de chegada por item, rateado pelo valor (premissa declarada). Moeda diferente de BRL sem câmbio deixa o valor em reais desconhecido, nunca convertido a 1, e item sem custo deixa o rateio desconhecido. Nada de NCM, imposto, peso ou cubagem inventado: o que não foi informado aparece como pendente.
-
-No novo pedido, "Trazer produtos do fornecedor" lê o catálogo dele (D-723), avalia cada SKU pelo mesmo motor da revisão (D-721) e traz só o que precisa de compra. A quantidade já vem ajustada ao mínimo e ao múltiplo, e o que ficou de fora é contado por motivo: sem necessidade agora, sem dados ou já no pedido.
 
 ## D-760 - O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 
