@@ -101,6 +101,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A85 | P2 · CORRIGIDO localmente (D-727) | Criar, editar ou remover regra de reposição após interrupção da Server Action derrubava a gaveta para a fronteira de erro, perdendo campos e confirmação | O salvamento devolve falha tratada e a remoção trata a exceção localmente. Três regressões conferem a gaveta preservada, o banco intacto no POST bloqueado e a nova tentativa. Uma quarta confere a recusa real de editar uma regra removida. [Verificação](SESSION_LOG.md) |
 
+| A86 | P2 · CORRIGIDO localmente (D-728) | A interrupção da Server Action derrubava os quatro cadastros da Central; recusas de validação também apagavam valores, e o reset nativo podia trocar Shopee por ML | O estado guarda os campos editados, trata a exceção e controla a limpeza após sucesso. Seis regressões conferem transporte, recusa, marketplace preservado, nove limites e atualização dos campos ao restaurar padrões. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

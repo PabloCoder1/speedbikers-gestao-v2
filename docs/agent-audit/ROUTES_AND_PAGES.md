@@ -15,8 +15,8 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 | `/central` | [page.tsx](<../../apps/web/app/(app)/central/page.tsx>) | `get_faturamento` e `get_ads_overview`, uma chamada por período. O bloco consolidado compartilha as respostas atuais do ML e chama `get_shopee_faturamento`. Também usa `get_meta_do_mes`, `get_detector_frete`, `get_sinais_ads` e `ml_accounts`. [Medição](../PERFORMANCE.md#chamadas-de-faturamento-por-carga-da-central-sentinel-13112026) |
 | `/central/ads` | [page.tsx](<../../apps/web/app/(app)/central/ads/page.tsx>) | RPC `get_sinais_ads`, `get_faturamento` |
 | `/central/frete` | [page.tsx](<../../apps/web/app/(app)/central/frete/page.tsx>) | RPC `get_detector_frete`. O detalhe do anúncio abre ao clicar no cartão (D-698) |
-| `/central/limites` | [page.tsx](<../../apps/web/app/(app)/central/limites/page.tsx>) | Tabelas `central_thresholds` |
-| `/central/metas` | [page.tsx](<../../apps/web/app/(app)/central/metas/page.tsx>) | RPC `get_meta_do_mes`. Tabelas `monthly_goals`, `tax_rates`, `monthly_goals_marketplace` |
+| `/central/limites` | [page.tsx](<../../apps/web/app/(app)/central/limites/page.tsx>) | Tabelas `central_thresholds`. Os nove campos permanecem após falha ou recusa e refletem os padrões restaurados (D-728) |
+| `/central/metas` | [page.tsx](<../../apps/web/app/(app)/central/metas/page.tsx>) | RPC `get_meta_do_mes`. Tabelas `monthly_goals`, `tax_rates`, `monthly_goals_marketplace`. Os cadastros preservam os campos e o marketplace após falha ou recusa, com limpeza controlada no sucesso (D-728) |
 | `/central/produtos` | [page.tsx](<../../apps/web/app/(app)/central/produtos/page.tsx>) | RPC `get_ranking_produtos`. Tabelas `ml_accounts`. O detalhe do SKU abre ao clicar no ranking (D-697) |
 | `/copiloto` | [page.tsx](<../../apps/web/app/(app)/copiloto/page.tsx>) | Ver a entrada e seus imports |
 | `/diagnostico` | [page.tsx](<../../apps/web/app/(app)/diagnostico/page.tsx>) | RPC `get_sku_sales_baseline`, `get_sku_correlated_events`, `get_sku_average_prices`. Tabelas `support_case_links` |
