@@ -62,6 +62,10 @@ support_reply_attempts    (Fase 7B — conceitual, nasce com resposta manual)
 sync_runs · sync_errors · job_runs · ai_runs
 ```
 
+Append-only não é eterno para `job_runs`: as execuções `done` com mais de 30
+dias saem pelo expurgo agendado, menos a última de cada organização e tipo, e
+falha nunca sai. O gatilho recusa qualquer outro DELETE (D-721).
+
 ### L3 — Analítico (recomputável)
 
 ```text

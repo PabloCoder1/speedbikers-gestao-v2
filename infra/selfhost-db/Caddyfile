@@ -1,0 +1,15 @@
+# HTTPS do banco (Caddy, certificado automático). Só as rotas de API que o app usa passam para o
+# gateway; o Studio e tudo o mais ficam fora da internet. PROXY_DOMAIN vem do .env (Secret Manager).
+{$PROXY_DOMAIN} {
+    @supabase_api path /auth/v1/* /rest/v1/* /realtime/v1/* /storage/v1/*
+
+    handle @supabase_api {
+        reverse_proxy api-gw:8000
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+
+    header -server
+}

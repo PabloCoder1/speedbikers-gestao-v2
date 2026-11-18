@@ -2217,3 +2217,19 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Unicidade do Full e retenção de job_runs (D-720 e D-721, 17/11/2026)
+
+Medido no backup de produção de 22/10 restaurado num PostgreSQL 17.6 isolado, sem *bloat*, com "agora" fixado no instante do backup nas leituras do Full. Cada forma teve um aquecimento e cinco medidas, direto no Postgres e não pelas RPCs como `authenticated`.
+
+| Forma | Antes | D-720 |
+| --- | --- | --- |
+| Full atual da organização (3 dias) | 49,6 ms, 528 páginas, `org_captured_idx` | 40,2 ms, 528 páginas, `org_captured_idx` |
+| Full atual com a conta fixa | 7,7 ms, 528 páginas | 8,5 ms, 528 páginas |
+| Capturas anteriores de 200 inventários (worker) | 17,6 ms, 5.769 páginas, `timeline_idx` | 16,1 ms, 5.769 páginas, `unique` |
+| Índices da tabela | 67 MB | 47 MB |
+| Lock da construção | — | 0,42 s |
+
+A diferença em milissegundos é ruído. A medida que importa é páginas e índice escolhido, e nenhuma forma piorou.
+
+D-721, no mesmo backup: com o corte de 30 dias contado a partir de 17/11, o acúmulo saiu em três chamadas de 100 mil linhas no máximo (1,9 s, 1,3 s e 0,6 s), e todas as falhas ficaram. O tamanho em disco não cai sem VACUUM FULL. O ganho é o teto: a tabela para em ~30 dias de execuções, em vez de crescer ~70 MB/mês.
