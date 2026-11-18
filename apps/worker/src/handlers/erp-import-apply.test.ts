@@ -167,7 +167,7 @@ function createFakeDb(seed: Record<string, FakeRow[]> = {}): {
         return Promise.resolve({ error: null });
       },
       then(resolve: (v: { data: FakeRow[]; error: null }) => void) {
-        resolve({ data: project(currentSelection(), cols), error: null });
+        resolve({ data: project(currentSelection().slice(0, 1000), cols), error: null });
       },
     };
 
@@ -569,6 +569,58 @@ describe("aplicação — vínculos", () => {
       sku_listing_link_events: [
         {
           id: "evt-1",
+          organization_id: ORG,
+          ml_account_id: "acc-1",
+          link_id: "link-antigo",
+          event_type: "REMOVED",
+          actor_source: "HUMAN",
+          ref_kind: "ITEM",
+          item_id: "MLB1722724235",
+          variation_id: "205704879161",
+          user_product_id: null,
+          sku_id: "sku-pi150",
+          link_source: "IMPORT_UPSELLER",
+          reason: "anuncio nao e nosso",
+        },
+      ],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.sku_listing_links ?? []).toHaveLength(0);
+    expect(tables.link_candidates ?? []).toHaveLength(0);
+    expect(tables.erp_import_rows?.[0]).toMatchObject({
+      apply_status: "UNRESOLVED",
+      apply_reason: "vínculo removido por decisão humana",
+    });
+  });
+
+  it("respeita supressão humana mesmo além de 1.000 remoções históricas (paginado)", async () => {
+    const extraEvents = Array.from({ length: 1005 }, (_, i) => ({
+      id: `evt-old-${String(i).padStart(4, "0")}`,
+      organization_id: ORG,
+      ml_account_id: "acc-1",
+      link_id: `link-old-${String(i)}`,
+      event_type: "REMOVED",
+      actor_source: "HUMAN",
+      ref_kind: "ITEM",
+      item_id: `MLB${String(9000000000 + i)}`,
+      variation_id: null,
+      user_product_id: null,
+      sku_id: "sku-pi150",
+      link_source: "IMPORT_UPSELLER",
+      reason: "antigo",
+    }));
+
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+      skus: [{ id: "sku-pi150", organization_id: ORG, sku: "PI150", sku_key: "PI150", kind: "PRODUTO" }],
+      ml_accounts: [{ id: "acc-1", organization_id: ORG, slug: "speedbikers-loja-1", label: "Speedbikers (loja 1)", status: "CONNECTED" }],
+      sku_listing_link_events: [
+        ...extraEvents,
+        {
+          id: "evt-z-1006",
           organization_id: ORG,
           ml_account_id: "acc-1",
           link_id: "link-antigo",

@@ -19893,6 +19893,15 @@ O helper compartilhado `confirmAndEnqueueApply` (`apps/api/src/confirm-import-ap
 
 A suíte `@sb/api` passou em `typecheck`, `eslint` e 39 arquivos / 513 testes (`erp-import.test.ts`: 24 casos; `nfe-import.test.ts`: 29 casos), cobrindo corrida de zero linhas e rollback condicional quando o enfileiramento falha.
 
+## D-736 - Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
+
+Em `measure-decision-outcomes.ts`, as leituras de `action_decisions`, `action_outcomes` e `actions` rodavam sem paginação nem fatiamento de `.in(...)`; além de 1.000 decisões ou mais de 1.000 outcomes (334+ decisões medidas em 3 janelas), o PostgREST truncava silenciosamente em 1.000 linhas ou recebia listas grandes demais na query string, ignorando decisões novas ou remediando janelas já gravadas. O laço também repetia a RPC `get_sku_decision_snapshot` para o mesmo `(organization_id, sku_id, as_of)` em várias janelas ou decisões do mesmo SKU na mesma execução. Em `erp-import-apply.ts`, `sku_listing_link_events` (`REMOVED`/`HUMAN`) e `link_candidates` (`ERP_IMPORT`/`OPEN`) também podiam cortar além de 1.000 registros históricos.
+
+Extrai `chunk` (`apps/worker/src/chunk.ts`, `LOOKUP_CHUNK = 200`) reutilizado pelos dois handlers. `erp-import-apply.ts` passa `sku_listing_link_events` e `link_candidates` para `readAllPages` ordenado por `id`. `measure-decision-outcomes.ts` passa `action_decisions` e blocos de 200 IDs de `action_outcomes` para `readAllPages` ordenado por `id`, fatia leituras de `actions` por 200, memoiza `get_sku_decision_snapshot` por `sku_id` na execução e faz `upsert` em lotes de 500. Schema, RPCs, regras de janela e semântica de falha não mudam.
+
+`@sb/worker` verde em `typecheck`, `eslint` e 68 arquivos / 1.042 testes (`measure-decision-outcomes.test.ts`: 14 casos cobrindo 1.250 decisões, 1.350 outcomes e chamada única da RPC por SKU; `erp-import-apply.test.ts`: 26 casos cobrindo 1.006 remoções humanas sob simulação do limite de 1.000 linhas do PostgREST).
+
+
 
 
 
