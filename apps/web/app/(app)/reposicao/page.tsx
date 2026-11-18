@@ -1,4 +1,4 @@
-import { composeSkuReplenishment, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
+import { assessOpenPurchase, composeSkuReplenishment, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import type {
   PurchaseSuggestionRefusal,
   ReplenishmentSetting,
@@ -18,7 +18,17 @@ import { Panel } from "../../../components/panel";
 import { TOM, type Tom } from "../../../components/tone";
 import { TrendBadge } from "../../../components/trend-badge";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
+import { LOGISTICS_STAGE } from "../../../lib/labels";
 import {
+  ORIGEM_PEDIDO,
+  dataDaPrevisao,
+  lerPedidosEmAberto,
+  previsaoTexto,
+  resumoPedidoJaFeito,
+  situacaoDoPedido,
+} from "../../../lib/open-purchases";
+import {
+  FILTROS_COMPRA,
   PAGE_SIZE,
   PERIODOS_MARGEM,
   PERIODO_MARGEM_PADRAO,
@@ -39,6 +49,7 @@ import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 
 import { podeOperarCompras } from "../../../lib/purchase-order-permission";
+import { JaFizPedido } from "./ja-fiz-pedido";
 import { SelecaoPedido } from "./selecao-pedido";
 
 export const metadata = { title: "Cobertura e reposição — Speed Bikers Gestão" };
@@ -120,6 +131,16 @@ function scopeLabel(scope: "SKU" | "MARCA" | "PADRAO", brand: string | null): st
   return "padrão da organização";
 }
 
+/** A chave de `contagens_compra` (D-763) de cada filtro do menu. */
+const CONTAGEM_DO_FILTRO = {
+  SEM_PEDIDO: "sem_pedido",
+  ENCOMENDADO: "encomendado",
+  COMPLEMENTAR: "complementar",
+  ATRASADO: "atrasado",
+  CHEGADA_PREVISTA: "chegada_prevista",
+  PLANEJADO: "planejado",
+} as const satisfies Record<keyof typeof FILTROS_COMPRA, string>;
+
 function ehEstado(valor: string | null): valor is StockOperationalState {
   return valor !== null && valor in ESTADOS;
 }
@@ -146,6 +167,9 @@ export default async function ReposicaoPage({
 
   const filters = resolveReplenishmentFilters(query);
   const dateTo = toSalesMetricDate(new Date());
+  // D-763: só ADMIN/GESTOR leem pedidos de compra (RLS). Para os demais, o filtro nem aparece.
+  const podeComprar = podeOperarCompras(membership.role);
+  const filtroCompra = podeComprar ? (filters.compra ?? null) : null;
 
   // As quatro leituras começam juntas (D-185). A visão classifica o catálogo uma vez (D-358).
   const [overviewResult, settingsResult, brandsResult, lojasShopeeResult] = await Promise.all([
@@ -157,6 +181,8 @@ export default async function ReposicaoPage({
       p_state: filters.state,
       p_limit: PAGE_SIZE,
       p_offset: (filters.page - 1) * PAGE_SIZE,
+      // Parâmetro novo só com valor: nulo pediria a assinatura nova antes da migration.
+      ...(filtroCompra === null ? {} : { p_compra: filtroCompra }),
     }),
     lerRegrasDeReposicao((depoisDe, limite) => {
       const consulta = supabase
@@ -193,9 +219,9 @@ export default async function ReposicaoPage({
   */
   const skuIds = visao?.linhas.map((l) => l.sku_id) ?? [];
   const diasMargem = filters.marginDays ?? PERIODO_MARGEM_PADRAO;
-  const [analiseResult, margensResult] =
+  const [analiseResult, margensResult, abertosResult, fornecedoresResult] =
     skuIds.length === 0
-      ? [null, null]
+      ? [null, null, null, null]
       : await Promise.all([
           supabase.rpc("get_purchase_analysis", {
             p_organization_id: organizationId,
@@ -209,11 +235,18 @@ export default async function ReposicaoPage({
             p_date_from: shiftBusinessDate(dateTo, -(diasMargem - 1)),
             p_date_to: dateTo,
           }),
+          // D-763: os pedidos em aberto destes SKUs (o painel "pedido já feito").
+          podeComprar ? supabase.rpc("get_open_purchases_for_skus", { p_organization_id: organizationId, p_sku_ids: skuIds }) : null,
+          podeComprar ? supabase.from("suppliers").select("id, name").eq("is_active", true).order("name").limit(500) : null,
         ]);
   const analise = analiseResult !== null && analiseResult.error === null ? lerAnalise(analiseResult.data) : null;
   const margens = margensResult !== null && margensResult.error === null ? lerMargens(margensResult.data) : null;
   const extras = new Map((analise?.linhas ?? []).map((l) => [l.sku_id, l]));
   const analiseFalhou = skuIds.length > 0 && (analise === null || margens === null);
+  // Falha desta leitura não derruba a reposição: o painel do pedido some, a linha fica (D-067).
+  const pedidosAbertos =
+    abertosResult !== null && abertosResult.error === null ? lerPedidosEmAberto(abertosResult.data) : null;
+  const fornecedores = fornecedoresResult?.data ?? [];
   const erro =
     overviewResult.error?.message ??
     settingsResult.error?.message ??
@@ -246,7 +279,17 @@ export default async function ReposicaoPage({
   const contagem = new Map((visao?.contagens ?? []).map((c) => [c.state, c]));
   const windowInfo = summarizeReplenishmentWindow(filters.page, visao?.total ?? 0, visao?.linhas.length ?? 0);
 
-  const filtroAtivo = filters.brand !== null || filters.search !== null || filters.state !== null;
+  const filtroAtivo = filters.brand !== null || filters.search !== null || filters.state !== null || filtroCompra !== null;
+  const contagensCompra = visao?.contagensCompra ?? null;
+  const opcoesCompra = (Object.keys(FILTROS_COMPRA) as (keyof typeof FILTROS_COMPRA)[]).map((codigo) => {
+    const n = contagensCompra === null ? null : contagensCompra[CONTAGEM_DO_FILTRO[codigo]];
+
+    return {
+      href: buildReplenishmentHref(filters, { compra: codigo }),
+      ativo: filtroCompra === codigo,
+      label: n === null ? FILTROS_COMPRA[codigo] : `${FILTROS_COMPRA[codigo]} (${formatCount(n)})`,
+    };
+  });
   const estadoAtivo = ehEstado(filters.state) ? ESTADOS[filters.state].rotulo : filters.state === "SEM_ESTADO" ? "Sem estado" : null;
 
   return (
@@ -269,6 +312,15 @@ export default async function ReposicaoPage({
                 })),
               ]}
             />
+            {podeComprar && (
+              <FilterMenu
+                rotulo={filtroCompra === null ? "Pedido de compra: todos" : FILTROS_COMPRA[filtroCompra]}
+                opcoes={[
+                  { href: buildReplenishmentHref(filters, { compra: null }), ativo: filtroCompra === null, label: "Todos os SKUs" },
+                  ...opcoesCompra,
+                ]}
+              />
+            )}
             <FilterMenu
               rotulo={`Margem: ${String(diasMargem)} dias`}
               opcoes={PERIODOS_MARGEM.map((dias) => ({
@@ -282,6 +334,7 @@ export default async function ReposicaoPage({
               {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
               {filters.state !== null && <input type="hidden" name="estado" value={filters.state} />}
               {diasMargem !== PERIODO_MARGEM_PADRAO && <input type="hidden" name="margem" value={String(diasMargem)} />}
+              {filtroCompra !== null && <input type="hidden" name="compra" value={filtroCompra} />}
               <input
                 className="sb-input"
                 type="search"
@@ -557,6 +610,25 @@ export default async function ReposicaoPage({
                           const estado = stockState.state;
                           const barra = posicaoCobertura(stockState.coverageDays, breakdown.demandWindowDays);
                           const extra = extras.get(row.sku_id);
+                          const pedidosDoSku = pedidosAbertos?.get(row.sku_id) ?? [];
+                          // A situação LÊ a sugestão canônica (já líquida do trânsito); nunca subtrai de novo.
+                          const compra = assessOpenPurchase({
+                            pendingQuantity: pedidosAbertos === null ? null : row.compra_pendente,
+                            plannedQuantity: pedidosAbertos === null ? null : row.compra_planejada,
+                            nextExpectedDate: dataDaPrevisao(row.compra_proxima_chegada),
+                            late: row.compra_atrasada,
+                            suggestedQuantity: sugestao,
+                            usable,
+                            dailyRate: breakdown.dailyRate,
+                            today: dateTo,
+                          });
+                          const resumoCompra = resumoPedidoJaFeito({
+                            situacao: compra.situation,
+                            risco: compra.risk,
+                            pendente: row.compra_pendente,
+                            planejada: row.compra_planejada,
+                            sugestao,
+                          });
                           const avaliacao =
                             extra === undefined || analise === null
                               ? null
@@ -612,6 +684,52 @@ export default async function ReposicaoPage({
                                       tetoDias={policy?.maxCoverageDays ?? null}
                                     />
                                   </details>
+                                )}
+                                {/*
+                                  D-763: o pedido já feito. A frase resume; o painel
+                                  lista os pedidos e leva à tela de cada um, onde
+                                  ficam previsão, chegada parcial/total e cancelamento.
+                                  O risco até a chegada nunca some com a reposição coberta.
+                                */}
+                                {resumoCompra !== null && (
+                                  <details className={`sb-pjf-resumo sb-pjf-tom-${resumoCompra.tom}`}>
+                                    <summary>
+                                      <b>{resumoCompra.titulo}</b>
+                                      {resumoCompra.detalhe !== null && <small>{resumoCompra.detalhe}</small>}
+                                    </summary>
+                                    <ul className="sb-pjf-pedidos">
+                                      {pedidosDoSku.map((pedido) => (
+                                        <li key={pedido.itemId}>
+                                          <Link prefetch={false} href={`/compras/${pedido.purchaseOrderId}`}>
+                                            Pedido nº {pedido.orderNumber}
+                                          </Link>
+                                          {pedido.externalReference !== null && <> · ref. {pedido.externalReference}</>}
+                                          {" · "}
+                                          {situacaoDoPedido(pedido, LOGISTICS_STAGE)}
+                                          <small>
+                                            {formatCount(pedido.quantityOrdered)} un pedidas
+                                            {pedido.status === "ORDERED" &&
+                                              ` · ${formatCount(pedido.quantityReceived)} recebidas · ${formatCount(pedido.pendente ?? 0)} a chegar · ${previsaoTexto(pedido.expectedAt)}`}
+                                            {pedido.supplierName !== null && ` · ${pedido.supplierName}`}
+                                            {` · ${ORIGEM_PEDIDO[pedido.origin]}`}
+                                          </small>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    <p className="sb-pjf-dica">
+                                      Previsão, chegada parcial ou total e cancelamento ficam na tela do pedido.
+                                      {sugestao !== null && sugestao > 0 && " Para comprar a quantidade complementar, marque a linha e leve ao pedido."}
+                                    </p>
+                                  </details>
+                                )}
+                                {podeComprar && (
+                                  <JaFizPedido
+                                    skuId={row.sku_id}
+                                    sku={row.sku}
+                                    titulo={row.title}
+                                    sugestao={sugestao}
+                                    fornecedores={fornecedores}
+                                  />
                                 )}
                               </td>
                               <td>
@@ -767,7 +885,7 @@ export default async function ReposicaoPage({
 
                 {/* A seleção vira pedido de compra, e só ADMIN/GESTOR cria pedido
                     (`check_purchase_order_writer`) — lote 1 do pente fino, 18/09. */}
-                {podeOperarCompras(membership.role) ? (
+                {podeComprar ? (
                   <SelecaoPedido formId="rep-pedido" />
                 ) : (
                   <p className="sb-rep-rodape">Pedidos de compra são criados por ADMIN ou GESTOR.</p>

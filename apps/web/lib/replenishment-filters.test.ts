@@ -13,7 +13,7 @@ describe("resolveReplenishmentFilters", () => {
   it("lê as dimensões da URL", () => {
     const f = resolveReplenishmentFilters({ marca: "NAVETEC", estado: "RUPTURA", busca: "3001", pagina: "3" });
 
-    expect(f).toEqual({ brand: "NAVETEC", state: "RUPTURA", search: "3001", page: 3, marginDays: 30 });
+    expect(f).toEqual({ brand: "NAVETEC", state: "RUPTURA", search: "3001", page: 3, marginDays: 30, compra: null });
   });
 
   it("período da margem: só 7, 15, 30, 60 e 90; o padrão fica fora da URL (D-720)", () => {
@@ -82,5 +82,14 @@ describe("summarizeReplenishmentWindow", () => {
 
   it("uma página só não vira ruído de intervalo", () => {
     expect(summarizeReplenishmentWindow(1, 40, 40).label).toBe("40 SKUs.");
+  });
+
+  it("filtro de compra: só os códigos do SQL; desconhecido volta a todos (D-763)", () => {
+    expect(resolveReplenishmentFilters({ compra: "COMPLEMENTAR" }).compra).toBe("COMPLEMENTAR");
+    expect(resolveReplenishmentFilters({ compra: "QUALQUER" }).compra).toBeNull();
+    expect(buildReplenishmentHref(resolveReplenishmentFilters({ marca: "X" }), { compra: "ATRASADO" })).toBe(
+      "/reposicao?marca=X&compra=ATRASADO",
+    );
+    expect(buildReplenishmentHref(resolveReplenishmentFilters({ compra: "ATRASADO", pagina: "2" }), { compra: null })).toBe("/reposicao");
   });
 });

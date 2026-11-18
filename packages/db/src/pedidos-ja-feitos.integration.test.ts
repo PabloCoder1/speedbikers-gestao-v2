@@ -510,7 +510,7 @@ describe("Cenário 9 — prazo de chegada", () => {
     expect(l.compra_proxima_chegada).not.toBeNull();
     expect((await visao(ADMIN, "CHEGADA_PREVISTA")).linhas.map((x) => x.sku_id)).toContain(sku["D760-ATRASO"]);
 
-    const ev = await client.query("select metadata from public.purchase_order_events where purchase_order_id = $1 and event_type = 'EXPECTED_CHANGED'", [
+    const ev = await client.query<{ metadata: unknown }>("select metadata from public.purchase_order_events where purchase_order_id = $1 and event_type = 'EXPECTED_CHANGED'", [
       r.pedido?.id,
     ]);
     expect(ev.rows[0]?.metadata).toMatchObject({ note: "navio atrasou" });
@@ -588,7 +588,7 @@ describe("Cenário 7 — importação, código ambíguo e planilha repetida", ()
     await expect(
       asUser(ADMIN, "select public.resolve_purchase_import_rows($1, $2::jsonb)", [
         lote,
-        JSON.stringify([{ rowId: (await client.query("select id from public.purchase_import_rows where batch_id = $1 and sheet_name = 'BAU'", [lote])).rows[0]?.id, resolution: "VINCULADA" }]),
+        JSON.stringify([{ rowId: (await client.query<{ id: string }>("select id from public.purchase_import_rows where batch_id = $1 and sheet_name = 'BAU'", [lote])).rows[0]?.id, resolution: "VINCULADA" }]),
       ]),
     ).rejects.toThrow(/escolha o SKU/);
 
@@ -607,7 +607,7 @@ describe("Cenário 7 — importação, código ambíguo e planilha repetida", ()
       ]),
     ]);
 
-    const hist = await client.query("select count(*)::int as n from public.purchase_import_row_events where row_id = $1", [id("PEÇAS", 6)]);
+    const hist = await client.query<{ n: number }>("select count(*)::int as n from public.purchase_import_row_events where row_id = $1", [id("PEÇAS", 6)]);
     expect(hist.rows[0]?.n).toBe(1);
   });
 
@@ -625,7 +625,7 @@ describe("Cenário 7 — importação, código ambíguo e planilha repetida", ()
     expect(await transito(sku["D760-PLAN-B"] ?? "")).toBe(120);
     expect(await transito(sku["D760-PLAN-A"] ?? "")).toBe(80);
 
-    const ambiguas = await client.query(
+    const ambiguas = await client.query<{ n: number }>(
       "select count(*)::int as n from public.purchase_import_rows where batch_id = $1 and match_status = 'AMBIGUA' and purchase_order_id is null",
       [lote],
     );

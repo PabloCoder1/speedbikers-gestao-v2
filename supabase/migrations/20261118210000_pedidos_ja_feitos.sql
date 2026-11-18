@@ -735,7 +735,8 @@ begin
       coalesce(bool_or(
         o.status = 'ORDERED' and i.quantity_ordered > i.quantity_received
         and o.expected_at is not null
-        and (o.expected_at at time zone 'America/Sao_Paulo')::date < v_hoje
+        -- A previsão é a data de negócio gravada como meia-noite UTC (D-365).
+        and (o.expected_at at time zone 'UTC')::date < v_hoje
       ), false) as atrasado,
       count(distinct o.id) filter (where o.status = 'ORDERED' and i.quantity_ordered > i.quantity_received) as pedidos
     from public.purchase_order_items i

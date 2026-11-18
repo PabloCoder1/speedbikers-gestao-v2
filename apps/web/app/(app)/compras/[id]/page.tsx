@@ -20,6 +20,14 @@ import { createClient } from "../../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
 import { ExportActions } from "./export-actions";
 import { CustosDoPedido, EtapaLogistica, RecebimentoParcial } from "./operacao-pedido";
+import { PrevisaoEReferencia } from "./previsao-e-referencia";
+
+/** D-760: de onde o pedido veio. */
+const ORIGEM: Record<string, string> = {
+  INTERNO: "Criado no sistema",
+  EXTERNO_MANUAL: "Pedido externo (já feito)",
+  PLANILHA: "Importado de planilha",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +74,7 @@ export default async function PedidoDeCompraPage({
     supabase
       .from("purchase_orders")
       .select(
-        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, supplier_id, logistics_stage, logistics_stage_at, is_import, exchange_rate, suppliers(name)",
+        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, supplier_id, logistics_stage, logistics_stage_at, is_import, exchange_rate, origin, external_reference, supplier_ordered_on, suppliers(name)",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -173,6 +181,13 @@ export default async function PedidoDeCompraPage({
   // itens precisa dizer que é parcial na mesma linha em que se apresenta.
   const fatos: readonly (readonly [string, ReactNode])[] = [
     ["Destino", info.destination_warehouse_name ?? "—"],
+    // D-760: origem e referência externa. A data do pedido no fornecedor é a
+    // informada; sem ela, "—" (nunca a data do registro no lugar).
+    ["Origem", ORIGEM[info.origin] ?? info.origin],
+    ...(info.external_reference === null ? [] : ([["Referência", info.external_reference]] as const)),
+    ...(info.origin === "INTERNO"
+      ? []
+      : ([["Pedido feito em", info.supplier_ordered_on === null ? "—" : formatBusinessDate(info.supplier_ordered_on)]] as const)),
     // A previsão é data de negócio gravada como meia-noite UTC: `formatDateTime`
     // a mostrava como a véspera às 21h (D-365).
     ["Previsão", info.expected_at === null ? "—" : formatBusinessDate(info.expected_at.slice(0, 10))],
@@ -269,6 +284,13 @@ export default async function PedidoDeCompraPage({
           <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
           <div className="sb-pod-operacoes">
             <EtapaLogistica purchaseOrderId={info.id} status={info.status} etapa={info.logistics_stage} />
+            {info.status !== "RECEIVED" && info.status !== "CANCELLED" && (
+              <PrevisaoEReferencia
+                purchaseOrderId={info.id}
+                expectedAt={info.expected_at}
+                externalReference={info.external_reference}
+              />
+            )}
             {info.status === "ORDERED" && items.error === null && (
               <RecebimentoParcial
                 purchaseOrderId={info.id}

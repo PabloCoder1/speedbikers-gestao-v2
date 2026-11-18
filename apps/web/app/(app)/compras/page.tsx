@@ -228,6 +228,12 @@ export default async function ComprasPage({
             <Link className="sb-button" href="/reposicao">
               Sugestão de compra
             </Link>
+            {/* D-764: compras feitas antes do sistema, por planilha. */}
+            {podeOperar && (
+              <Link className="sb-button" href="/compras/importar">
+                Importar pedidos anteriores
+              </Link>
+            )}
             {podeOperar && (
               <Link className="sb-button sb-button-primary" href="/compras/novo">
                 Novo Pedido

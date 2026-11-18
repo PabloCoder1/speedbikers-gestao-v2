@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **612** (D-001 a D-725).
+Decisões registradas: **617** (D-001 a D-764).
 
 ## Por domínio
 
@@ -130,7 +130,7 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (51)
+### estoque (52)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -183,6 +183,7 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-695** — A tabela de Reposição abre o detalhe do SKU ao clicar
 - **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
 - **D-704** — As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
+- **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 
 ### interface (74)
 
@@ -383,7 +384,7 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-698** — O Detector de frete abre o detalhe do anúncio ao clicar
 - **D-703** — O Histórico de Preços abre o SKU e o anúncio ao clicar
 
-### outros (87)
+### outros (88)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -472,12 +473,13 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-694** — A tabela de Produtos abre o detalhe do SKU ao clicar
 - **D-697** — O ranking de Produtos da Central abre o detalhe do SKU ao clicar
 - **D-702** — As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
+- **D-762** — A previsão de chegada se edita com histórico
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (69)
+### vendas/métricas (70)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -548,8 +550,9 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 - **D-720** — Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
+- **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (103)
+### worker/infra (105)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -654,4 +657,6 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-723** — Fornecedor × SKU é um vínculo explícito, com mínimo, múltiplo e prazo
 - **D-724** — Recebimento parcial baixa só o trânsito do que chegou
 - **D-725** — Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
+- **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
+- **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 

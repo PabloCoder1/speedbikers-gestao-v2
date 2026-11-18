@@ -7401,7 +7401,8 @@ export type Database = {
         Returns: number
       }
       set_purchase_order_expected_at: {
-        Args: { p_expected_at: string; p_id: string; p_note?: string }
+        // CORRECAO MANUAL (D-762): p_expected_at aceita NULL — limpa a previsão (desconhecida).
+        Args: { p_expected_at: string | null; p_id: string; p_note?: string }
         Returns: {
           approved_at: string | null
           approved_by: string | null

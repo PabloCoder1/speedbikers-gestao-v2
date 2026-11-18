@@ -112,6 +112,11 @@ const PURCHASE_ORDER_EVENT: Record<string, string> = {
   PARTIALLY_RECEIVED: "Recebido em parte",
   STAGE_CHANGED: "Etapa atualizada",
   COSTS_UPDATED: "Custos atualizados",
+  // D-761/D-762.
+  EXTERNAL_REGISTERED: "Registrado como pedido já feito",
+  EXTERNAL_LINKED: "Referência externa vinculada",
+  EXPECTED_CHANGED: "Previsão de chegada alterada",
+  ITEMS_ADDED: "Itens acrescentados",
 };
 
 /** `purchase_orders.logistics_stage` (D-725) — a etapa por cima do status. */

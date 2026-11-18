@@ -37,6 +37,26 @@ export interface ReplenishmentFilters {
   page: number;
   /** Ausente = o padrão (30 dias). */
   marginDays?: PeriodoMargem;
+  /**
+   * D-763: o filtro de pedido de compra (`compra` na URL). Ausente = todos.
+   * Valor desconhecido NÃO vai ao banco (que recusaria): volta a "todos".
+   */
+  compra?: FiltroCompra | null;
+}
+
+/** Os filtros de compra (D-763), na ordem do menu, com o mesmo código do SQL. */
+export const FILTROS_COMPRA = {
+  SEM_PEDIDO: "Sem pedido em aberto",
+  ENCOMENDADO: "Já encomendados",
+  COMPLEMENTAR: "Precisam de compra complementar",
+  ATRASADO: "Pedidos atrasados",
+  CHEGADA_PREVISTA: "Com chegada prevista",
+  PLANEJADO: "Compras planejadas",
+} as const;
+export type FiltroCompra = keyof typeof FILTROS_COMPRA;
+
+function lerFiltroCompra(raw: unknown): FiltroCompra | null {
+  return typeof raw === "string" && raw in FILTROS_COMPRA ? (raw as FiltroCompra) : null;
 }
 
 function readParam(raw: unknown): string | null {
@@ -54,6 +74,7 @@ export function resolveReplenishmentFilters(
     search: readParam(query.busca),
     page: resolvePageParam(query.pagina),
     marginDays: lerPeriodoMargem(query.margem),
+    compra: lerFiltroCompra(query.compra),
   };
 }
 
@@ -82,6 +103,7 @@ export function buildReplenishmentHref(
       busca: next.search,
       // O padrão não vai para a URL: o link de sempre continua igual.
       margem: next.marginDays === undefined || next.marginDays === PERIODO_MARGEM_PADRAO ? null : String(next.marginDays),
+      compra: next.compra ?? null,
     },
     override.page === undefined ? 1 : next.page,
   );
