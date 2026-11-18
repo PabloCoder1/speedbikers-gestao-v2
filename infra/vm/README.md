@@ -24,9 +24,17 @@ não deve ser atribuída ao workflow `migrations-producao.yml`.
 - Bucket `speedbikers-prod-db-backups`, objeto
   `manual/antes-migrations-nov-20261118.dump`, 181.558.306 bytes. Archive CUSTOM
   do PostgreSQL 17.6, 2.596 entradas legíveis por `pg_restore --list`.
-- Restore completo ainda deve ser provado em instância descartável com a
-  configuração de `pg_cron` da VM; o ensaio em database secundária local
-  encontrou a restrição de `cron.database_name`. Nunca restaurar sobre produção.
+- **Restore completo provado** em container descartável sem rede nem portas
+  publicadas, com `pg_restore --no-owner --exit-on-error` encerrando em 0.
+  A cópia voltou em `20261022170000`; os 17 SQLs posteriores foram ensaiados
+  nela sem falha, e os 64 objetos do catálogo comparados com a VM coincidiram
+  em definição. A RPC de reposição respondeu como `authenticated` em READ ONLY.
+- Para reproduzir: usar `supabase_admin`, preparar os nomes de roles usados
+  nos GRANTs (o dump de database não cria roles), pré-carregar
+  `pg_stat_statements`, `pg_cron` e `pg_net` e definir `cron.database_name`
+  para o database de ensaio. Desligar a execução dos jobs do cron e a rede.
+  Não copiar senhas de roles nem restaurar sobre produção. O snapshot cobre
+  a instância; o ensaio do dump usou owners locais com `--no-owner`.
 
 ## Fluxo oficial pendente de reconciliação
 

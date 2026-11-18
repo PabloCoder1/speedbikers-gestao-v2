@@ -56,16 +56,45 @@ Nenhuma migration foi reaplicada nem objeto de produção alterado nesta sessão
   `speedbikers-prod-db-backups`: **181.558.306 bytes**, atualizado 18:49 UTC.
   Download íntegro pelo gcloud, fora do Git; `pg_restore --list` lê as 2.596
   entradas do arquivo CUSTOM, PostgreSQL 17.6, criado às 18:48:31 UTC.
-- Um restore de ensaio numa database secundária local parou no `pg_cron`, que
-  exige o database configurado em `cron.database_name`. Isso não comprova
-  corrupção do dump e também não comprova restore completo. O snapshot está
-  disponível; falta concluir o restore completo em instância isolada com a
-  configuração das extensões da VM.
+- **Restore completo confirmado:** container descartável
+  `sb-codex-pedidos-restore-20261118`, sem portas publicadas, sem rede e sem
+  volumes de produção. `pg_restore --no-owner --exit-on-error` terminou em 0;
+  a versão restaurada era `20261022170000`, sem índices inválidos nem itens de
+  compra com organização diferente do pedido. Foram ensaiados os 17 SQLs
+  versionados, em ordem e com `ON_ERROR_STOP`/transação por arquivo: todos
+  passaram. Os 64 objetos comparados com produção ficaram idênticos em
+  definição (ACLs/owners de restauração não entram nessa comparação).
+  `get_replenishment_overview` respondeu como `authenticated` sobre a cópia
+  real, em READ ONLY, com limite de cinco linhas. Container parado e cópia
+  conservada fora do Git.
+- **Requisitos para repetir o restore:** o dump é de database, não de roles.
+  Usar `supabase_admin`, preparar os nomes dos roles referidos nos GRANTs
+  (sem copiar senhas), pré-carregar `pg_cron`/`pg_net`/`pg_stat_statements` e
+  configurar `cron.database_name` para o database de ensaio. Manter
+  `cron.launch_active_jobs=off` e rede desativada. A tentativa inicial numa
+  database secundária sem essa configuração falhou em `pg_cron`; a imagem
+  crua também não tinha `supabase_functions_admin`. Nenhuma dessas adaptações
+  foi feita na VM de produção.
 - A aplicação por SSH em 18/11 foi relatada pelo executor anterior. O catálogo
   confirma o resultado, mas não registra o canal nem a data por versão. Não é
   aplicação pelo workflow. O workflow oficial ainda aponta ao Supabase hosted
   e exige CI/Dev e duas aprovações; não foi disparado. Reconciliar o destino
   oficial é trabalho de infraestrutura separado. Ver `infra/vm/README.md`.
+
+## Integridade e workflow
+
+Consultas agregadas em READ ONLY na VM encontraram zero divergências entre
+saldo pendente por pedido/SKU e o ledger TRANSITO, e zero referências externas
+duplicadas entre pedidos não cancelados. Isso cobre os pedidos existentes;
+não foram fabricados casos em produção. Planejado, confirmação, cancelamento,
+recebimento parcial e isolamento seguem comprovados pelos testes locais/CI.
+
+MCP em 18/11 confirmou `INACTIVE` nos Supabase hosted Dev e produção.
+O run da `main` do #328 (`44371457229`, `ec6b5e26`) tinha os quatro checks
+de código verdes e falhava somente em aplicar migrations no Dev; o run
+anterior `39819868730` registra `project is paused`. Esse é um problema
+anterior à entrega. Não houve desligamento de check, retomada do Dev ou
+redirecionamento do workflow para a VM.
 
 ## Pendências verificáveis
 
@@ -76,10 +105,38 @@ docs, guardas estáticas; 1.197 testes SQL e quatro cenários Chromium de compra
 pedido já feito e importação. O Playwright usou a porta 60100, pois a 3000
 pertencia à worktree do Gemini Sentinel. Nenhum processo alheio foi parado.
 
-- Acompanhar CI dos HEADs publicados, integrar #330 antes de #332 e conferir
-  o SHA/alias/runtime da Vercel após cada merge.
 - As três planilhas reais não foram encontradas nas pastas locais consultadas
-  (Desktop, Documents, Downloads e downloads do Claude). Os casos existentes
+  (Desktop, Documents, Downloads e downloads do Claude), nem nas buscas por
+  nome exato no Drive conectado. Os casos existentes
   usam fixtures sintéticas com abas, coluna sem referência, `200 + 200`, código
   desconhecido e imagem embutida; não substituem o ensaio dos arquivos reais.
   Nenhuma planilha ou dado de cliente foi versionado nem importado em produção.
+
+## Integração e produção conferidas
+
+- O E2E independente do #330 (`44380328519`, `27a267be`) executou 320 casos:
+  319 verdes e um erro real de hierarquia de títulos em `/reposicao`
+  (`h2` → `h4`). A correção já existia em `24c8da20`, do #332.
+- Estratégia equivalente à ordem sequencial: integrar atomicamente o #332,
+  que contém todo o #330 e o #328 e já corrige o título. Evitou publicar a
+  etapa intermediária defeituosa ou duplicar o commit de correção. A ancestry
+  do #330 foi conferida antes do merge. Nenhum teste foi alterado para ignorar
+  a falha.
+- CI `44381338715`, HEAD **`2da04c9345db353866fe17d1538c1c04ac488239`**:
+  check/build/audit, infraestrutura, **1.197 testes SQL e 342 E2E verdes**.
+  Merge condicionado ao mesmo HEAD via `--match-head-commit`.
+- **#332 mergeado** às 16:47 BRT em
+  `c6b4588187fdfb9f90686e51fb1386bceb19cc91`; **#330 marcado MERGED pelo
+  GitHub** em seguida, por estar integralmente incluído. Nenhuma branch alheia
+  foi apagada nem checkpoint do Sentinel editado.
+- Vercel Production **`dpl_CHapXyGvMR73VtV4Gxsq1yMPa5bF`**, commit `c6b45881`,
+  estado READY, alias `speedbikers-prod.vercel.app` confirmado. Consulta de
+  runtime desse deployment sem registros error/fatal na janela de 15 min.
+- Navegador autenticado do dono, somente leitura: `/compras`, `/compras/novo`,
+  detalhe de pedido existente, `/compras/importar` e `/reposicao` carregaram.
+  Confirmados origem/referência no detalhe, entrada da importação, filtro
+  **Compras planejadas**, indicação de que planejado não reduz a necessidade
+  e abertura/cancelamento do formulário **Já fiz o pedido**. Nenhum pedido
+  foi registrado, recebido ou cancelado pela validação; nenhum arquivo foi
+  enviado em produção. Não havia pedidos ORDERED no recorte consultado para
+  testar chegada real; esses cenários estão na suíte SQL/E2E isolada.
