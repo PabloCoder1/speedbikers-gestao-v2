@@ -57,6 +57,8 @@ As 23 refs que ficam têm PR aberto (15), vínculo exclusivo com worktree (7) ou
 
 ## Inventário por branch
 
+Rechecagem de 17/11/2026. O GitHub retornou 24 branches com os mesmos SHAs das referências locais de `origin` e 14 PRs abertos, incluindo o [PR Sentinel #328](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/328) em `513c38f4`. As sete referências integradas ainda têm upstream ligado a uma worktree registrada. `v3` continua como base do PR #76 e com alterações no checkout compartilhado. `v2-legacy` preserva o histórico da V2. A consulta de regras da `main` retornou `protected: false` e nenhuma regra aplicada. A rodada não identificou referência elegível para exclusão.
+
 Rechecagem de 13/11/2026. `git ls-remote` retornou 24 branches, incluindo `codex/sentinel-audit` em `4d94686f`. `main` permaneceu em `d6169205`. O GitHub retornou 13 PRs abertos. A classificação atual tem 13 branches de origem de PR, sete branches integradas ainda vinculadas a worktrees existentes, a branch de trabalho Sentinel, `main`, `v3` e `v2-legacy`. A `v3` continua como base do PR #76.
 
 As sete refs integradas foram cruzadas com os upstreams e caminhos de worktree. `feat/d654-barra-com-nome-longo` (`49a43442`), integrada no PR #325, ainda é upstream de `revisao-325`. As outras seis são `feat/curva-abc-filtros-excel`, `feat/notificacoes-triagem`, `feat/tiktok-fatia1-conexao`, `fix/faturamento-campanhas-visiveis`, `fix/sku-da-venda-pela-variacao` e `fix/web-vitals-rota-da-carga`. Nenhuma exclusão nesta rodada. Os dados de deploy e alias na tabela são da verificação anterior.

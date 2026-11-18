@@ -12,12 +12,12 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-16 |
+| **Atualizado em** | 2026-11-17 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
-| **Supabase** | Dev `nmgccyqquwxecqffsidr` e produção `imvjfgnaprqsfjlnsyev` constavam como `INACTIVE` em 11/11. Consultas leves de catálogo falharam nos dois. O job Dev da CI reportou `project is paused`. |
+| **Supabase** | Dev `nmgccyqquwxecqffsidr` e o hospedado de produção `imvjfgnaprqsfjlnsyev` seguem pausados. **A produção roda na VM `sb-db` desde 18/11:** `infra/selfhost-db/README.md`. |
 | **Produção** | Cloud Run com 100% do tráfego configurado em `api-00038-qsf` e `worker-00056-wjk`, ambas com `APP_COMMIT=dc69d1fb`. O endpoint `/health` da API devolveu 503 em 11/11. O alias da web aponta para o build Vercel da `main` em `d6169205`. |
 | **Migrations** | Último workflow de produção com sucesso observado `39665807654`, até `20261021180000`. O run seguinte conferido (`39817649217`) parou na verificação de origem. A aplicação exige CI do SHA alvo e duas aprovações em `migrations-producao.yml`. |
 | **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
@@ -42,7 +42,6 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
-- **Produção na VM `sb-db`** (corte 18/11): Supabase hospedado pausado (2,0 GB). URL provisória sslip.io, sem domínio nem SMTP. 403 do ML em ~10% de `GET /items`: acompanhar. `infra/selfhost-db/README.md`.
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
@@ -204,13 +203,12 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **D-721, depois do deploy:** `select private.agendar_expurgo_de_telemetria();` em produção.
 
 ---
 
 ## Próximos passos
 
-- **Sentinel.** D-704 desativa o prefetch do link de SKU nas exceções da Configuração de Reposição. Com 50 exceções, as pré-buscas de SKU antes do clique caíram de 52 para zero na mediana. D-699 a D-703 fizeram o mesmo nos rankings de Vendas, nos pedidos de Vendas da Shopee, em Movimentações, nas listas do Faturamento e no Histórico de Preços. A fila de tabelas com link por linha terminou. Restam o painel de devoluções da Shopee, que pede loja real no banco local, e as telas de detalhe ainda não medidas. A publicação das correções, incluindo a migration da D-693, e a validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
+- **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. D-717 recupera o popup de Vinculações após falha de transporte no vínculo manual, na resolução e no descarte de candidato. O SKU escolhido é preservado, e a operação não confirmada recebe aviso. O audit de produção da CI reprovava todo PR com um aviso alto do `picomatch` sem versão corrigida publicada: as ferramentas de lint de `@sb/config` passaram para `devDependencies` (A75). D-718 e D-719 liberam os diálogos de remover e vincular anúncio ML do SKU após falha de transporte. O inventário de 17/11 listou mais 12 componentes que aguardam Server Action sem tratar exceção, no plano. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

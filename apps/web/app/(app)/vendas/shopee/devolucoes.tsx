@@ -227,7 +227,7 @@ function Lista({ lista, acao }: { lista: Resposta<LinhaDevolucao>; acao: AcaoDoE
                           {item.skuId === null || item.sku === null ? (
                             <span title={item.nome ?? undefined}>sem SKU vinculado</span>
                           ) : (
-                            <Link className="sb-mono" href={`/skus/${item.skuId}`} title={item.nome ?? undefined}>
+                            <Link className="sb-mono" href={`/skus/${item.skuId}`} prefetch={false} title={item.nome ?? undefined}>
                               {item.sku}
                             </Link>
                           )}
