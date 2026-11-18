@@ -182,6 +182,9 @@ O que foi provado, e o que não foi:
 | 3 usuários pesados ao mesmo tempo, 2 CPUs | Pior caso 1,9 s (o limite do papel é 8 s) |
 | Auth próprio: criar usuário, entrar com senha, token `HS256` | Funciona (100–200 ms) |
 | PostgREST pelo gateway com o token do usuário | RLS aplicada; anônimo recebe 401; usuário sem vínculo vê 0 linhas |
+| Web real (build de produção) contra a pilha própria, banco só com o seed: login, notificações, home, faturamento, ajuste de estoque e saúde | **29 de 29 casos do Playwright passaram** |
+| Storage: os 2 avatares do ZIP enviados e lidos pela URL pública | Idênticos byte a byte |
+| Realtime: assinatura de `notification_recipients` e um UPDATE provocado | Evento recebido em ~1,2 s |
 | Memória da pilha ociosa | ~2,1 GB com Studio, imgproxy, meta e functions; ~1,7 GB sem eles |
 
 **Ajustes que o ensaio exigiu (valem para a VM):**
@@ -200,3 +203,5 @@ O que foi provado, e o que não foi:
   precisa ser reconferido nas primeiras semanas.
 - **Sem cron ainda.** O `pg_cron` existe na imagem, mas o agendamento (vigia,
   expurgo) é ato posterior ao corte.
+
+**Não coberto pelo ensaio:** os demais ~280 casos de e2e (só rodei os de login, notificações, home, faturamento, estoque e saúde), o envio de e-mail do convite (a pilha local usa um SMTP falso; a VM precisa de SMTP real) e qualquer integração com marketplace (webhooks e OAuth dependem da URL final).
