@@ -98,6 +98,8 @@ Para revisar código morto, começar no produtor, seguir o tipo até o registro 
 
 ## Verificação operacional em 2026-11-11
 
+Este recorte é histórico. Em 18/11 a API voltou a responder200, há novas revisões Run e o banco de produção está numa VM GCP. O [relatório atual](STATE_AND_COMPLETION_2026-11-18.md) registra inventário, limites da consulta e critérios de recuperação; não usar a indisponibilidade abaixo como estado atual.
+
 - Cloud Run produção, `southamerica-east1`. A configuração de tráfego mostra `api-00038-qsf` e `worker-00056-wjk` com 100% cada, ambos com `APP_COMMIT=dc69d1fb`, ancestral 51 commits atrás de `d6169205`. O IAM de invocação do worker lista a conta de serviço do Cloud Tasks. A alocação de tráfego indica qual revisão receberia pedidos.
 - Duas chamadas `GET /health` diretamente no serviço Cloud Run da API de produção retornaram **HTTP 503**. A segunda resposta tinha corpo HTML e servidor `Google,Frontend`. A API de faturamento do Google reportou `billingEnabled=False` em produção e Dev. As listagens de Scheduler e Tasks de produção retornaram `PERMISSION_DENIED` com motivo `BILLING_DISABLED`. Esses sinais confirmam indisponibilidade no endpoint verificado e impedem enumerar filas e agendamentos ativos. A duração do impacto e o estado do backlog permanecem desconhecidos. [Guia do Google Cloud para reativar faturamento](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
 - Dev: o inventário Cloud Run ainda mostra `api-00042-8wd` e `worker-00053-z26` como últimas revisões prontas. A configuração ou revisão de um serviço tampouco confirma que ele processa tarefas.

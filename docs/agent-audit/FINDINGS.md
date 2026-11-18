@@ -2,6 +2,8 @@
 
 Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retomar a investigação.
 
+**Atualização operacional de 18/11:** A01 é incidente histórico; API200 e novas revisões estão confirmadas. A02 continua verdadeiro para os dois projetos hospedados, mas a produção passou à VM GCP. Recuperação de Auth/dados, backup e pipeline continuam abertas. Consultar o [relatório atual](STATE_AND_COMPLETION_2026-11-18.md). A auditoria atual retorna três moderados e um alto de picomatch cujo advisory foi retirado pelo GitHub hoje; não confundir o retorno do registry com vulnerabilidade comprovada nem afirmar que o comando passou.
+
 | ID | Prioridade e evidência | Local e evidência | Impacto, causa e ação |
 |---|---|---|---|
 | A01 | P0 · CONFIRMADO | GCP `speedbikers-prod` com billing desativado. API pública do Cloud Run retornou 503 duas vezes em `/health`. Cloud Scheduler e Tasks reportaram `BILLING_DISABLED` | API indisponível pelo caminho consultado, processamento assíncrono sem verificação de atividade. O responsável pelo faturamento precisa restabelecer o vínculo e conferir cada serviço, fila e execução recente |
@@ -103,8 +105,9 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A86 | P2 · CORRIGIDO localmente (D-728) | A interrupção da Server Action derrubava os quatro cadastros da Central; recusas de validação também apagavam valores, e o reset nativo podia trocar Shopee por ML | O estado guarda os campos editados, trata a exceção e controla a limpeza após sucesso. Seis regressões conferem transporte, recusa, marketplace preservado, nove limites e atualização dos campos ao restaurar padrões. [Verificação](SESSION_LOG.md) |
 
-## Referências externas
+| A87 | P2 · CORRIGIDO localmente (D-729) | O POST interrompido nas três remoções de metas/alíquota e na restauração de limites derrubava a confirmação para a fronteira de erro | A ação compartilhada trata a exceção, conserva confirmação e campos ocultos e permite conferir/repetir manualmente. Cancelar fica bloqueado no envio. Quatro regressões e 43 E2E relacionados passaram, com conferência do banco. [Verificação](SESSION_LOG.md) |
 
+## Referências externas
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
 - A03 · [Next.js Image Optimization](https://github.com/advisories/GHSA-2464-fhr4-w9xw), [Next.js use cache](https://github.com/advisories/GHSA-673q-mjm6-r5xr), [Next.js Server Actions](https://github.com/advisories/GHSA-p3m5-59mp-jv5r) e [Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
 - A11 · [Uso de getSession no Supabase Auth](https://supabase.com/docs/reference/javascript/auth-getsession).

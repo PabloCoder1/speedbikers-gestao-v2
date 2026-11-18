@@ -15,13 +15,14 @@
 | **Atualizado em** | 2026-11-18 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
-| **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
-| **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
-| **Supabase** | Dev `nmgccyqquwxecqffsidr` e produção `imvjfgnaprqsfjlnsyev` constavam como `INACTIVE` em 11/11. Consultas leves de catálogo falharam nos dois. O job Dev da CI reportou `project is paused`. |
-| **Produção** | Cloud Run com 100% do tráfego configurado em `api-00038-qsf` e `worker-00056-wjk`, ambas com `APP_COMMIT=dc69d1fb`. O endpoint `/health` da API devolveu 503 em 11/11. O alias da web aponta para o build Vercel da `main` em `d6169205`. |
-| **Migrations** | Último workflow de produção com sucesso observado `39665807654`, até `20261021180000`. O run seguinte conferido (`39817649217`) parou na verificação de origem. A aplicação exige CI do SHA alvo e duas aprovações em `migrations-producao.yml`. |
-| **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); C-57 (busca universal com a Shopee, D-467) no ar com a T7 (15/10); C-66 (metas por marketplace, D-473) no ar (16/10); telas T0 a T11 e D-484 a D-632 no ar (21/10; a última, a D-632, a divergência de estoque da Shopee na Central de Ações), com as quatro opções do item 4 do dono feitas: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622, D-624) e os detectores da Shopee (D-626, D-632) — lista na seção do Agente 2 de `docs/MULTICHANNEL_HANDOFF.md`; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
+| **Fechamento da V3** | O 190/213 é histórico. O [inventário de fechamento de 18/11](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) separa entrega técnica de publicação e aceite após recuperação. Cálculo reproduzível: `node scripts/report-closure-progress.mjs`. Bloqueadores: recuperação do atraso/estoque, Auth/SMTP, backup restaurável, alertas, migrations para VM e publicação validada. |
+| **Sentinel: próximo passo** | A87/D-729 testado localmente: quatro confirmações da Central conservam a ação após falha. Rever integração dos PRs #330/#331 e commits locais, resolver colisões de decisões e conferir as 17 migrations candidatas. Progresso técnico 129/226 pontos (57,1%); não é aceite operacional. |
+| **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo em 18/11. Consultas GCP de `speedbikers-gestao-v3` negadas; não inferir estado atual das revisões. Pausa das rotinas registrada em D-350. |
+| **Supabase** | Hospedados Dev e produção `imvjfgnaprqsfjlnsyev` continuam `INACTIVE`. Produção aponta agora à VM GCP `sb-db`, em `speedbikers-prod`, conforme corte da frente de banco em 18/11 (PR #331). Login real e recuperação completa ainda não comprovados. |
+| **Produção** | Verificado em 18/11: 100% do tráfego em `api-00039-22b` e `worker-00058-mbc`; API `/health` 200 com código `dc69d1fb`. Web `d6169205`, deployment `dpl_6zpmnqQQ1ibHguhxkq2Snfq24zv7`, login 200 e CSP HTTPS/WSS da VM. VM RUNNING, e2-standard-2/50GB. Isso não prova saúde dos dados. |
+| **Migrations** | 12 candidatas Sentinel, 3 de compras (#330) e 2 de banco (#331); aplicação na VM não conferida por catálogo nesta sessão. A frente de banco registra 305 da main restauradas. O workflow ainda aponta ao hospedado: adequar caminho com as aprovações existentes antes de aplicar. |
+| **UX (Agente 3)** | Central D-500–D-519 integrada até #261. Escopo e evidências em `docs/UX_SYSTEM.md` §6; aceite pós-recuperação continua separado. |
+| **Frente atual** | Recuperação e fechamento após corte de banco em 18/11. ML/Shopee e telas existentes estão no SHA publicado; a operação com dados restaurados exige novo aceite. Estoque Shopee/Go Live e TikTok transacional continuam pendentes. Escopo e contratos: `docs/MULTICHANNEL_HANDOFF.md` e `docs/MULTICHANNEL_CONTRACTS.md`. O detalhamento histórico de outubro foi para `docs/archive/handoffs/2026-11-18_frente-multicanal.md`. |
 
 ### O que está pronto
 
@@ -34,16 +35,17 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **API indisponível no endpoint verificado.** Faturamento de `speedbikers-prod` desativado, `/health` retornou 503 e as consultas ao Scheduler e ao Tasks retornaram `BILLING_DISABLED`. Incidente com o responsável. A auditoria segue no ambiente local. Validar `job_runs` e o backlog após a reativação.
-- **Supabase inacessível nas consultas de auditoria.** Dev e produção reportados inativos. Confirmar recuperação no painel e validar Auth, REST e banco por consultas leves.
-- **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
+- **Recuperação após corte para a VM.** API voltou a responder; a frente de banco restaurou o backup de 22/10. Provar login/convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Oito dos 18 agendamentos têm último status de indisponibilidade: conferir próxima rodada e efeitos, não só ACK.
+- **Recuperação de desastre e caminho de migrations.** VM única, sem alerta externo no Monitoring consultado. Política de snapshot anexada e backup diário configurado pela outra frente; ainda sem objetos em `diario/` nem snapshots observados em 18/11. Provar primeira execução e restore. Adaptar o workflow hospedado à VM antes de qualquer migration. Supabase Dev continua inativo.
+- **Segurança: patches ainda locais.** Next/Zod críticos corrigidos; falta publicar. Auditoria atual falha: três moderados e um alto de picomatch com advisory retirado. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).
+- **Publicação sem proteção efetiva.** GitHub em 18/11: `main.protected=false`, sem checks obrigatórios ou rulesets. A07 exige ação do responsável antes de considerar os portões de publicação cumpridos.
 
 ---
 
 ## Riscos ativos
 
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
-- **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
+- **Produção sem alerta externo** (rechecado em 18/11: zero uptime checks e políticas no Monitoring): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do

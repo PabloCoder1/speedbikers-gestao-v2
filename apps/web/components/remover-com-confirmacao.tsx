@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { BotaoEnviar } from "./botao-enviar";
 
@@ -42,6 +42,14 @@ export function RemoverComConfirmacao({
   pendente?: string;
 }): ReactNode {
   const [confirmando, setConfirmando] = useState(false);
+  const [erro, executar, enviando] = useActionState(async (_anterior: string | null, dados: FormData): Promise<string | null> => {
+    try {
+      await acao(dados);
+      return null;
+    } catch {
+      return "Não foi possível confirmar a alteração. Confira os dados antes de tentar novamente.";
+    }
+  }, null);
   const grupo = useRef<HTMLFormElement>(null);
   const botao = useRef<HTMLButtonElement>(null);
   const abriu = useRef(false);
@@ -78,7 +86,7 @@ export function RemoverComConfirmacao({
   return (
     <form
       ref={grupo}
-      action={acao}
+      action={executar}
       className="sb-confirmacao sb-confirmacao-perigo sb-remover-confirmacao"
       role="group"
       aria-label={`Confirmar: ${rotulo}`}
@@ -88,12 +96,14 @@ export function RemoverComConfirmacao({
         <input key={nome} type="hidden" name={nome} value={valor} />
       ))}
       <span className="sb-remover-confirmacao-texto">{consequencia}</span>
+      {erro !== null && <span role="alert">{erro}</span>}
       <BotaoEnviar className="sb-button sb-button-danger" pendente={pendente}>
         {textoDaConfirmacao}
       </BotaoEnviar>
       <button
         type="button"
         className="sb-button"
+        disabled={enviando}
         onClick={() => {
           setConfirmando(false);
         }}
