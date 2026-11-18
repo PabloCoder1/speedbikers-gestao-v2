@@ -147,87 +147,43 @@ export async function completeTikTokConnect(
     return { status: "rejected", reason: "o TikTok Shop não devolveu nenhuma loja autorizada" };
   }
 
-  // A MESMA ORGANIZAÇÃO. Uma loja já ligada a outra organização não muda de
-  // dono por uma nova autorização. Confere TODAS antes de gravar qualquer uma.
-  const existentes = await deps.db
-    .from("tiktok_shops")
-    .select("shop_id, organization_id")
-    .in(
-      "shop_id",
-      shops.map((shop) => shop.id),
-    );
+  // Um vendedor pode autorizar várias lojas. O par é compartilhado, e o
+  // cipher de cada loja é gravado com ela no mesmo lote.
+  const lojas = [...new Map(shops.map((shop) => [shop.id, shop])).values()].map((shop) => ({
+    shop_id: shop.id,
+    shop_name: shop.name ?? null,
+    region: shop.region ?? null,
+    seller_type: shop.seller_type ?? null,
+    shop_code: shop.code ?? null,
+    shop_cipher: shop.cipher,
+  }));
+  const { error } = await deps.db.rpc("tiktok_connect_shops", {
+    p_organization_id: organizationId,
+    p_created_by: createdBy,
+    p_connected_at: now.toISOString(),
+    p_shops: lojas,
+    p_open_id: token.open_id,
+    p_seller_name: token.seller_name ?? null,
+    p_granted_scopes: token.granted_scopes ?? null,
+    p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
+    p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
+    p_access_token_expires_at: tiktokEpochToIso(token.access_token_expire_in),
+    p_refresh_token_expires_at: tiktokEpochToIso(token.refresh_token_expire_in),
+  });
 
-  if (existentes.error !== null) {
-    deps.logger.error("tiktok_shop_owner_check_failed", { reason: existentes.error.message });
-
-    return { status: "rejected", reason: "não foi possível conferir as lojas; tente de novo" };
-  }
-
-  const deOutra = existentes.data.filter((linha) => linha.organization_id !== organizationId);
-
-  if (deOutra.length > 0) {
-    deps.logger.warn("tiktok_shop_other_organization", { shop_ids: deOutra.map((linha) => linha.shop_id) });
+  if (error?.code === "PT409") {
+    deps.logger.warn("tiktok_shop_other_organization", { shop_ids: lojas.map((loja) => loja.shop_id) });
 
     return { status: "rejected", reason: "uma das lojas autorizadas já está ligada a outra organização" };
   }
 
-  const conectadas: { shopId: string; shopName: string | null }[] = [];
+  if (error !== null) {
+    deps.logger.error("tiktok_shops_not_stored", { code: error.code });
 
-  for (const shop of shops) {
-    const loja = await deps.db
-      .from("tiktok_shops")
-      .upsert(
-        {
-          organization_id: organizationId,
-          shop_id: shop.id,
-          shop_name: shop.name ?? null,
-          region: shop.region ?? null,
-          seller_type: shop.seller_type ?? null,
-          shop_code: shop.code ?? null,
-          open_id: token.open_id,
-          seller_name: token.seller_name ?? null,
-          granted_scopes: token.granted_scopes ?? null,
-          status: "CONNECTED",
-          authorized_at: now.toISOString(),
-          auth_expires_at: tiktokEpochToIso(token.refresh_token_expire_in),
-          connected_at: now.toISOString(),
-          last_error: null,
-          created_by: createdBy,
-        },
-        { onConflict: "shop_id" },
-      )
-      .select("id")
-      .single();
-
-    if (loja.error !== null) {
-      deps.logger.error("tiktok_shop_not_stored", { shop_id: shop.id, reason: loja.error.message });
-
-      return { status: "rejected", reason: "não foi possível gravar a loja" };
-    }
-
-    // O mesmo par vale para as lojas que o vendedor autorizou (a do Brasil é
-    // LOCAL, uma loja só); o `cipher` é de cada uma.
-    const credenciais = await deps.db.from("tiktok_credentials").upsert(
-      {
-        tiktok_shop_id: loja.data.id,
-        shop_cipher: shop.cipher,
-        access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
-        refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
-        access_token_expires_at: tiktokEpochToIso(token.access_token_expire_in),
-        refresh_token_expires_at: tiktokEpochToIso(token.refresh_token_expire_in),
-        refresh_locked_until: null,
-      },
-      { onConflict: "tiktok_shop_id" },
-    );
-
-    if (credenciais.error !== null) {
-      deps.logger.error("tiktok_credentials_not_stored", { shop_id: shop.id, reason: credenciais.error.message });
-
-      return { status: "rejected", reason: "não foi possível gravar as credenciais da loja" };
-    }
-
-    conectadas.push({ shopId: shop.id, shopName: shop.name ?? null });
+    return { status: "rejected", reason: "não foi possível gravar as lojas autorizadas" };
   }
+
+  const conectadas = lojas.map((loja) => ({ shopId: loja.shop_id, shopName: loja.shop_name }));
 
   deps.logger.info("tiktok_shops_connected", { shops: conectadas.length, scopes: token.granted_scopes?.length ?? 0 });
 

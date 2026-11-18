@@ -19,12 +19,12 @@ import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filte
 export const PAGE_SIZE = 50;
 
 /** `todos` é o default: a tela sempre listou ativos e inativos juntos, e o inativo continua sendo informação. */
-export const SUPPLIER_STATES = ["todos", "ativos", "em_aberto", "sem_pedido", "inativos"] as const;
+const SUPPLIER_STATES = ["todos", "ativos", "em_aberto", "sem_pedido", "inativos"] as const;
 
 export type SupplierState = (typeof SUPPLIER_STATES)[number];
 
 /** `nome` é o default: é a ordem em que se procura um cadastro. */
-export const SUPPLIER_ORDERS = ["nome", "em_aberto", "recente", "valor"] as const;
+const SUPPLIER_ORDERS = ["nome", "em_aberto", "recente", "valor"] as const;
 
 export type SupplierOrder = (typeof SUPPLIER_ORDERS)[number];
 

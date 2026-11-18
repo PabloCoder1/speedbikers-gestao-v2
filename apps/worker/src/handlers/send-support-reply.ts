@@ -1,4 +1,4 @@
-import type { AdminClient } from "@sb/db";
+import type { AdminClient, TablesUpdate } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import {
   fetchReceivedQuestion,
@@ -14,8 +14,8 @@ import { ensureAccessToken } from "./ml-token.js";
 import { persistSupportQuestion } from "./persist-support-question.js";
 
 /**
- * `support.reply.send` — **o primeiro job do projeto que ESCREVE no Mercado
- * Livre** (D-096). Tudo até aqui era leitura.
+ * `support.reply.send.v2` — continuação do envio de Perguntas ao Mercado
+ * Livre (D-096).
  *
  * A `api` já autorizou a pessoa e gravou a linha PENDING de
  * `support_reply_attempts`; aqui acontece o envio de verdade.
@@ -26,6 +26,8 @@ import { persistSupportQuestion } from "./persist-support-question.js";
  * `POST /answers` pode significar que a resposta CHEGOU ao comprador.
  * Repetir produziria duas respostas. Falhas antes do POST (token,
  * revalidação) continuam retryable, porque nada saiu ainda.
+ * A trava persistida antes do POST também cobre duas entregas simultâneas
+ * e uma queda após a chamada, antes de gravar o resultado.
  */
 
 const payloadSchema = z.object({ attemptId: z.uuid() });
@@ -45,6 +47,8 @@ interface AttemptRow {
   support_case_id: string;
   final_text: string;
   status: string;
+  dispatch_queue: string | null;
+  dispatch_started_at: string | null;
   support_cases: { external_case_id: string; channel: string } | null;
 }
 
@@ -62,7 +66,7 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
     const attemptResult = await deps.db
       .from("support_reply_attempts")
       .select(
-        "id, organization_id, ml_account_id, support_case_id, final_text, status, support_cases(external_case_id, channel)",
+        "id, organization_id, ml_account_id, support_case_id, final_text, status, dispatch_queue, dispatch_started_at, support_cases(external_case_id, channel)",
       )
       .eq("id", attemptId)
       .maybeSingle();
@@ -77,6 +81,10 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
       return { status: "failed", retryable: false, reason: `tentativa ${attemptId} não encontrada` };
     }
 
+    if (attempt.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "tentativa de outra organização" };
+    }
+
     // Já resolvida: uma reentrega do Cloud Tasks NÃO pode reenviar. A linha
     // terminal é o registro de que isto já aconteceu uma vez.
     if (attempt.status !== "PENDING") {
@@ -88,16 +96,64 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
       return { status: "done", processed: 0 };
     }
 
-    if (attempt.organization_id !== envelope.organizationId) {
-      return { status: "failed", retryable: false, reason: "tentativa de outra organização" };
+    if (attempt.dispatch_started_at !== null) {
+      context.logger.info("support_reply_dispatch_already_started", { attempt_id: attemptId });
+
+      return { status: "done", processed: 0 };
     }
+
+    if (attempt.dispatch_queue === null) {
+      context.logger.warn("support_reply_legacy_outcome_unconfirmed", { attempt_id: attemptId });
+
+      return { status: "failed", retryable: false, reason: "tentativa anterior à trava de envio exige conferência no Mercado Livre" };
+    }
+
+    const recordOutcome = async (
+      patch: TablesUpdate<"support_reply_attempts">,
+      dispatchStartedAt: string | null,
+    ): Promise<boolean> => {
+      try {
+        const update = deps.db
+          .from("support_reply_attempts")
+          .update(patch)
+          .eq("id", attemptId)
+          .eq("status", "PENDING");
+        const scoped = dispatchStartedAt === null
+          ? update.is("dispatch_started_at", null)
+          : update.eq("dispatch_started_at", dispatchStartedAt);
+        const recorded = await scoped.select("id").maybeSingle();
+
+        if (recorded.error === null && recorded.data !== null) {
+          return true;
+        }
+      } catch {
+        // Depois do POST, o desfecho remoto não pode virar erro retryable
+        // por causa de uma falha de transporte ao gravar a auditoria.
+      }
+
+      context.logger.error("support_reply_outcome_unrecorded", {
+        attempt_id: attemptId,
+        status: patch.status,
+      });
+
+      return false;
+    };
+
+    const fail = async (code: string, reason: string, dispatchStartedAt: string | null = null): Promise<JobOutcome> => {
+      const recorded = await recordOutcome({
+        status: "FAILED",
+        error_code: code,
+        error_message: reason.slice(0, 2_000),
+        resolved_at: (deps.now?.() ?? new Date()).toISOString(),
+      }, dispatchStartedAt);
+
+      return { status: "failed", retryable: !recorded && dispatchStartedAt === null, reason };
+    };
 
     const questionId = Number(attempt.support_cases?.external_case_id);
 
     if (attempt.support_cases?.channel !== "QUESTION" || !Number.isSafeInteger(questionId)) {
-      await resolveFailed(deps, attemptId, "escopo", "atendimento não é uma Pergunta respondível", now);
-
-      return { status: "failed", retryable: false, reason: "atendimento não é uma Pergunta" };
+      return fail("escopo", "atendimento não é uma Pergunta respondível");
     }
 
     const token = await ensureAccessToken(deps, attempt.ml_account_id, now);
@@ -109,9 +165,7 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
         return { status: "failed", retryable: true, reason: token.reason };
       }
 
-      await resolveFailed(deps, attemptId, "token", token.reason, deps.now?.() ?? new Date());
-
-      return { status: "failed", retryable: false, reason: token.reason };
+      return fail("token", token.reason);
     }
 
     // Revalidação NA HORA (D-084/D-096): `support_cases.remote_reply_state` é
@@ -135,9 +189,7 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
         return { status: "failed", retryable: true, reason };
       }
 
-      await resolveFailed(deps, attemptId, "revalidacao", reason, deps.now?.() ?? new Date());
-
-      return { status: "failed", retryable: false, reason };
+      return fail("revalidacao", reason);
     }
 
     if (remote.status !== "UNANSWERED" || remote.deleted_from_listing || remote.hold) {
@@ -146,14 +198,30 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
           ? "a pergunta está retida ou foi removida do anúncio no Mercado Livre"
           : `a pergunta não está mais aberta no Mercado Livre (${remote.status})`;
 
-      await resolveFailed(deps, attemptId, "estado_remoto", reason, deps.now?.() ?? new Date());
+      return fail("estado_remoto", reason);
+    }
 
-      // Definitivo: repetir não vai reabrir a pergunta.
-      return { status: "failed", retryable: false, reason };
+    const dispatchStartedAt = (deps.now?.() ?? new Date()).toISOString();
+    const claim = await deps.db
+      .from("support_reply_attempts")
+      .update({ dispatch_started_at: dispatchStartedAt })
+      .eq("id", attemptId)
+      .eq("status", "PENDING")
+      .is("dispatch_started_at", null)
+      .select("id")
+      .maybeSingle();
+
+    if (claim.error !== null) {
+      return { status: "failed", retryable: true, reason: "não foi possível iniciar o envio da resposta" };
+    }
+
+    if (claim.data === null) {
+      return { status: "done", processed: 0 };
     }
 
     // ---- Ponto de não retorno: daqui para baixo, nada é retryable. ----
 
+    let remoteMessageId: string;
     try {
       const answer = await postQuestionAnswer({
         mercadoLivre: deps.mercadoLivre,
@@ -162,33 +230,44 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
         text: attempt.final_text,
       });
 
-      await resolveSucceeded(deps, attemptId, String(answer.id), deps.now?.() ?? new Date());
+      remoteMessageId = String(answer.id);
+    } catch (error) {
+      if (error instanceof MercadoLivreApiError && [400, 401, 403, 404, 422].includes(error.status)) {
+        return fail("envio", `Mercado Livre recusou a resposta (HTTP ${String(error.status)})`, dispatchStartedAt);
+      }
 
-      context.logger.info("support_reply_sent", {
+      // 5xx, timeout ou resposta inválida podem ocorrer após a entrega.
+      // PENDING retém a trava por caso. A mensagem orienta quem vê a
+      // tentativa na Central a conferir o desfecho no marketplace.
+      const reason = "Envio não confirmado. Confira a resposta no Mercado Livre antes de reconciliar a tentativa.";
+      await recordOutcome({ status: "PENDING", error_message: reason }, dispatchStartedAt);
+      context.logger.warn("support_reply_dispatch_uncertain", {
         attempt_id: attemptId,
         question_id: questionId,
-        // O TEXTO enviado nunca entra no log — é conteúdo de atendimento.
+        remote_status: error instanceof MercadoLivreApiError ? error.status : undefined,
       });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "erro ao enviar a resposta";
 
-      await resolveFailed(deps, attemptId, "envio", reason, deps.now?.() ?? new Date());
-
-      // `retryable: false` mesmo em 5xx, de propósito: um 5xx aqui pode
-      // significar que a resposta chegou. Uma nova tentativa exige nova
-      // confirmação humana, com `clientRequestId` novo, e quem confirma vê
-      // antes que a anterior falhou.
       return { status: "failed", retryable: false, reason };
     }
+
+    await recordOutcome({
+      status: "SUCCEEDED",
+      remote_message_id: remoteMessageId,
+      resolved_at: (deps.now?.() ?? new Date()).toISOString(),
+    }, dispatchStartedAt);
+    context.logger.info("support_reply_sent", {
+      attempt_id: attemptId,
+      question_id: questionId,
+      remote_message_id: remoteMessageId,
+    });
 
     // Materializar a mensagem outbound relendo do Mercado Livre, em vez de
     // escrever o que ACHAMOS que mandamos: o transcript passa a refletir o
     // que o Mercado Livre registrou de fato. Reaproveita o mapper e a
     // persistência idempotente de D-086, sem duplicar projeção.
     //
-    // Falha aqui NÃO desfaz o envio nem falha o job: a resposta saiu e a
-    // tentativa está registrada como SUCCEEDED. A próxima reconciliação
-    // (a cada 10 minutos, D-092) traz a mensagem.
+    // Falha aqui não desfaz o envio. A próxima reconciliação (D-092)
+    // pode materializar a mensagem a partir do estado remoto.
     try {
       const answered = await fetchReceivedQuestion({
         mercadoLivre: deps.mercadoLivre,
@@ -211,38 +290,4 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
 
     return { status: "done", processed: 1 };
   };
-}
-
-async function resolveSucceeded(
-  deps: SendSupportReplyDeps,
-  attemptId: string,
-  remoteMessageId: string,
-  at: Date,
-): Promise<void> {
-  await deps.db
-    .from("support_reply_attempts")
-    .update({
-      status: "SUCCEEDED",
-      remote_message_id: remoteMessageId,
-      resolved_at: at.toISOString(),
-    })
-    .eq("id", attemptId);
-}
-
-async function resolveFailed(
-  deps: SendSupportReplyDeps,
-  attemptId: string,
-  errorCode: string,
-  errorMessage: string,
-  at: Date,
-): Promise<void> {
-  await deps.db
-    .from("support_reply_attempts")
-    .update({
-      status: "FAILED",
-      error_code: errorCode,
-      error_message: errorMessage.slice(0, 2_000),
-      resolved_at: at.toISOString(),
-    })
-    .eq("id", attemptId);
 }

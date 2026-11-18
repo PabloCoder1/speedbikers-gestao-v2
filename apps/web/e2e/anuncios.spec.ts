@@ -1,7 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { E2E_LISTINGS, E2E_LISTING_FULL, E2E_LISTING_PROMO_PRICE, E2E_LISTING_TRAFFIC } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_FULL, E2E_LISTING_PROMO_PRICE, E2E_LISTING_TRAFFIC, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/anuncios` — o Dashboard de Anúncios depois da migração da composição para o
@@ -40,6 +41,53 @@ const ESPERADO = {
 function celula(page: Page, rotulo: string) {
   return page.locator(".sb-kpi", { has: page.getByText(rotulo, { exact: true }) });
 }
+
+test("/anuncios: os links de anúncio, SKU e campanhas carregam sob demanda", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const [vinculado, foraDeCampanha] = E2E_LISTINGS;
+  const anuncio = `/anuncios/${vinculado.itemId}`;
+  const sku = `/skus/${skuId}`;
+  const campanhas = `/anuncios/${foraDeCampanha.itemId}`;
+  const origem = "/anuncios?busca=E2E";
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && (pathname === anuncio || pathname === sku || pathname === campanhas)) prefetches.push(pathname);
+  });
+
+  await login(page, origem);
+
+  const linhaVinculada = page.getByRole("row").filter({ hasText: vinculado.itemId });
+  const titulo = linhaVinculada.getByRole("link", { name: vinculado.title, exact: true });
+  const linhaFora = page.getByRole("row").filter({ hasText: foraDeCampanha.itemId });
+  const atalhoCampanhas = linhaFora.getByRole("link", { name: "Campanhas →" });
+
+  await titulo.scrollIntoViewIfNeeded();
+  await atalhoCampanhas.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+  await expect(linhaVinculada.getByRole("link", { name: vinculado.itemId, exact: true })).toHaveAttribute("href", anuncio);
+
+  await titulo.click();
+  await expect(page).toHaveURL((url) => url.pathname === anuncio);
+  await expect(page.getByRole("heading", { level: 2, name: vinculado.title, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname + url.search === origem);
+  await linhaVinculada.getByRole("link", { name: E2E_SKU_CODE, exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === sku);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname + url.search === origem);
+  await atalhoCampanhas.click();
+  await expect(page).toHaveURL((url) => url.pathname === campanhas && url.searchParams.get("aba") === "preco");
+  await expect(page.getByRole("table", { name: "Campanhas disponíveis" })).toBeVisible();
+});
 
 test("/anuncios: a faixa de estados conta o que a lista mostra", async ({ page }) => {
   await login(page, "/anuncios");

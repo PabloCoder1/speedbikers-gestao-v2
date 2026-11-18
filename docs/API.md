@@ -61,7 +61,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 | Troca de `code` por token falhou | 400 | `{ error: { code: "rejected" } }` |
 | Sucesso — conta `CONNECTED`, credenciais cifradas gravadas | 200 | `{ connected: true, mlAccountId }` |
 
-Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERROR'` com `last_error` preenchido — nunca fica presa em `PENDING` sem explicação. Tokens e verifier PKCE são cifrados com AES-256-GCM antes de tocar o banco (D-046, D-049); nunca aparecem em log, mesmo em erro (`apps/api/src/ml-accounts.test.ts` prova isso). State criado antes de D-049 não tem verifier e é recusado com instrução para reiniciar a conexão.
+Uma recusa de consentimento, falha de PKCE ou falha na troca de código marca `ERROR` com `last_error` somente se a conta da organização do state estiver fora de `CONNECTED` no momento da atualização (D-662). O callback devolve a recusa mesmo quando a conta já está conectada. Tokens e verifier PKCE são cifrados com AES-256-GCM antes de tocar o banco (D-046, D-049) e ficam fora dos logs. State criado antes de D-049 não tem verifier e é recusado com instrução para reiniciar a conexão.
 
 ### Autenticadas por JWT do usuário (Supabase)
 

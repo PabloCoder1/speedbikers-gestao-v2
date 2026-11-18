@@ -7,11 +7,29 @@ import {
   fetchReceivedQuestion,
   fetchReceivedQuestionsPage,
   mapQuestionToSupportProjection,
+  postQuestionAnswer,
   receivedQuestionSchema,
   receivedQuestionsPageSchema,
 } from "./questions.js";
 
 const OBSERVED_AT = new Date("2026-08-25T17:30:00.000Z");
+
+describe("postQuestionAnswer", () => {
+  it.each([429, 500])("faz um único POST /answers quando recebe HTTP %i", async (status) => {
+    const fetchImpl = vi.fn(() => Promise.resolve(new Response(null, { status })));
+    const sleep = vi.fn(() => Promise.resolve());
+
+    await expect(postQuestionAnswer({
+      mercadoLivre: createMercadoLivreClient({ fetchImpl, sleep }),
+      accessToken: "token-de-teste",
+      questionId: 11_436_370_259,
+      text: "Resposta confirmada.",
+    })).rejects.toMatchObject({ status });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
 
 async function loadFixture(name: string): Promise<unknown> {
   const url = new URL(`../test/fixtures/questions/${name}.json`, import.meta.url);

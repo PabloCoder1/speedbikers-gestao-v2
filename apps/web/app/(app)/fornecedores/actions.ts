@@ -15,9 +15,6 @@ import { createClient } from "../../../lib/supabase/server";
  * existia como filtro. As RPCs continuam as mesmas (`security definer`, papel
  * ADMIN/GESTOR conferido lá dentro); o que é novo é a conferência campo a
  * campo antes (`lib/supplier-form.ts`) e o erro dito na língua de quem cadastra.
- *
- * As ações de fornecedor de `app/(app)/compras/actions.ts` ficam onde estão: o
- * formulário de pedido não as usa, e a tela de fornecedores passa a usar estas.
  */
 
 export interface ResultadoSalvar {

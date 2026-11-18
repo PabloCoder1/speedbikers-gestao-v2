@@ -1,7 +1,10 @@
 import { type Page, expect, test } from "@playwright/test";
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 
 import { E2E_LISTINGS, E2E_LISTING_SOLD_UNLINKED, E2E_ML_ACCOUNT, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/vinculacoes` — Integridade de Catálogo (D21, D-259), com o popup de D-374 e
@@ -102,6 +105,45 @@ test("/vinculacoes: os cartões contam o que a tabela mostra, e vínculo por var
   await expect(destaque(page, "CATÁLOGO VINCULADO")).toContainText("estão ligados");
 });
 
+test("/vinculacoes: os detalhes do anúncio e do SKU carregam ao clicar", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const [vinculado] = E2E_LISTINGS;
+  const filtro = `?busca=${vinculado.itemId}`;
+  const anuncio = `/anuncios/${vinculado.itemId}`;
+  const sku = `/skus/${skuId}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && (pathname === anuncio || pathname === sku)) prefetches.push(pathname);
+  });
+
+  await login(page, "/vinculacoes" + filtro);
+  await esperaResumo(page);
+  const linha = tabela(page).getByRole("row").filter({ hasText: vinculado.itemId });
+  const linkAnuncio = linha.getByRole("link", { name: vinculado.title, exact: true });
+  const linkSku = linha.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+  await expect(linkAnuncio).toHaveAttribute("href", anuncio);
+  await expect(linkSku).toHaveAttribute("href", sku);
+  await linkAnuncio.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await linkAnuncio.click();
+  await expect(page).toHaveURL((url) => url.pathname === anuncio);
+  await expect(page.getByRole("heading", { level: 2, name: vinculado.title, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/vinculacoes" && url.search === filtro);
+  await linkSku.click();
+  await expect(page).toHaveURL((url) => url.pathname === sku);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+});
+
 test("/vinculacoes: clicar em 'Vendeu sem vínculo' mostra exatamente aquelas linhas", async ({ page }) => {
   await login(page, "/vinculacoes");
   await esperaResumo(page);
@@ -197,6 +239,115 @@ test("/vinculacoes: o link de outra tela (?item=) abre o popup direto no anúnci
   await expect(popup).toBeVisible();
   await expect(popup.getByRole("link", { name: new RegExp(E2E_LISTING_SOLD_UNLINKED.itemId) })).toBeVisible();
 });
+
+for (const operacao of ["vincular anúncio", "resolver candidato", "descartar candidato"] as const) {
+  test(`/vinculacoes: falha de conexão ao ${operacao} preserva o diálogo e permite nova tentativa`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+    const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", { auth: { persistSession: false } });
+    const seed = await readSeedOutput();
+    const conta = await db.from("ml_accounts").select("id").eq("organization_id", seed.organizationId)
+      .eq("slug", E2E_ML_ACCOUNT.slug).single();
+    if (conta.error !== null) throw new Error(conta.error.message);
+    const itemId = "MLB760000001";
+    const skuInformado = "E2E-CANDIDATO-CONEXAO";
+    const manual = operacao === "vincular anúncio";
+    let loteId: string | null = null;
+    let candidatoId: string | null = null;
+    const erros: string[] = [];
+    page.on("pageerror", (erro) => erros.push(erro.message));
+
+    try {
+      const anuncio = await db.from("listings").upsert({
+        organization_id: seed.organizationId, ml_account_id: conta.data.id, item_id: itemId,
+        title: "Anúncio E2E de falha de vínculo", status: "active", currency_id: "BRL", price: 100,
+        available_quantity: 1, deleted_at: null, sku_id: null,
+      }, { onConflict: "ml_account_id,item_id" });
+      if (anuncio.error !== null) throw new Error(anuncio.error.message);
+      if (!manual) {
+        const lote = await db.from("erp_import_batches").insert({
+          organization_id: seed.organizationId, kind: "LINKS", status: "PARSED",
+          storage_path: "e2e/falha-vinculo.csv", content_hash: "76".repeat(32),
+        }).select("id").single();
+        if (lote.error !== null) throw new Error(lote.error.message);
+        loteId = lote.data.id;
+        const origem = await db.from("erp_import_rows").insert({
+          batch_id: loteId, row_number: 1, status: "OK", sku_key: skuInformado,
+          payload: { skuKey: skuInformado, storeSlug: E2E_ML_ACCOUNT.slug, ref: { kind: "ITEM", itemId } },
+        }).select("id").single();
+        if (origem.error !== null) throw new Error(origem.error.message);
+        const candidato = await db.from("link_candidates").insert({
+          organization_id: seed.organizationId, ml_account_id: conta.data.id, source_row_id: origem.data.id,
+          sku_key: skuInformado, ref_kind: "ITEM", item_id: itemId, status: "OPEN",
+        }).select("id").single();
+        if (candidato.error !== null) throw new Error(candidato.error.message);
+        candidatoId = candidato.data.id;
+      }
+
+      await login(page, "/vinculacoes");
+      if (manual) {
+        await tabela(page).getByRole("row").filter({ hasText: itemId }).getByRole("button", { name: "Vincular", exact: true }).click();
+      } else {
+        await page.getByRole("region", { name: "Candidatos da importação do ERP", exact: true })
+          .getByRole("row").filter({ hasText: skuInformado }).getByRole("button", { name: "Resolver", exact: true }).click();
+      }
+      const popup = page.getByRole("dialog");
+      await popup.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
+      await popup.getByRole("option").filter({ hasText: E2E_SKU_CODE }).first().click();
+      let bloqueada = false;
+      await page.route((u) => u.pathname === "/vinculacoes", async (route) => {
+        const request = route.request();
+        if (!bloqueada && request.method() === "POST" && request.headers()["next-action"] !== undefined) {
+          bloqueada = true;
+          await route.abort("failed");
+        } else await route.continue();
+      });
+      const botao = popup.getByRole("button", { name: operacao === "descartar candidato" ? "Descartar candidato" : "Vincular", exact: true });
+      await botao.click();
+      await expect(popup.getByRole("alert")).toContainText("Não foi possível confirmar");
+      await expect(botao).toBeEnabled();
+      await expect(popup.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+      await expect(popup.getByRole("status")).toContainText(E2E_SKU_CODE);
+      expect(bloqueada).toBe(true);
+      expect(erros).toEqual([]);
+      const vinculoAntes = await db.from("sku_listing_links").select("id").eq("ml_account_id", conta.data.id)
+        .eq("item_id", itemId).maybeSingle();
+      expect(vinculoAntes.error).toBeNull();
+      expect(vinculoAntes.data).toBeNull();
+      if (candidatoId !== null) {
+        const antes = await db.from("link_candidates").select("status").eq("id", candidatoId).single();
+        expect(antes.error).toBeNull();
+        expect(antes.data?.status).toBe("OPEN");
+      }
+
+      await botao.click();
+      await expect(popup).toHaveCount(0);
+      const vinculo = await db.from("sku_listing_links").select("sku_id").eq("ml_account_id", conta.data.id)
+        .eq("item_id", itemId).maybeSingle();
+      expect(vinculo.error).toBeNull();
+      expect(vinculo.data?.sku_id ?? null).toBe(operacao === "descartar candidato" ? null : seed.skuId);
+      if (candidatoId !== null) {
+        const depois = await db.from("link_candidates").select("status").eq("id", candidatoId).single();
+        expect(depois.error).toBeNull();
+        expect(depois.data?.status).toBe(operacao === "descartar candidato" ? "DISMISSED" : "RESOLVED");
+      }
+    } finally {
+      const vinculos = await db.from("sku_listing_links").delete().eq("organization_id", seed.organizationId)
+        .eq("ml_account_id", conta.data.id).eq("item_id", itemId);
+      // A API não permite apagar anúncios. A fixture sai das telas pela exclusão lógica.
+      const anuncio = await db.from("listings").update({ deleted_at: new Date().toISOString(), status: "closed", sku_id: null })
+        .eq("organization_id", seed.organizationId)
+        .eq("ml_account_id", conta.data.id).eq("item_id", itemId);
+      expect.soft(vinculos.error).toBeNull();
+      expect.soft(anuncio.error).toBeNull();
+      if (loteId !== null) {
+        const lote = await db.from("erp_import_batches").delete().eq("id", loteId);
+        expect.soft(lote.error).toBeNull();
+      }
+    }
+  });
+}
 
 /**
  * As duas leituras POR CONTA que o reenquadramento de D-259 perdeu: o recorte

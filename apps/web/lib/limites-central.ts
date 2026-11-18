@@ -103,7 +103,7 @@ export async function carregarLimites(supabase: Supabase, organizationId: string
 }
 
 /** Os campos do formulário, na ordem em que a tela os mostra. */
-export const CAMPOS_DOS_LIMITES = [
+const CAMPOS_DOS_LIMITES = [
   "change_neutral",
   "change_strong",
   "points_neutral",

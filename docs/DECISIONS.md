@@ -19334,3 +19334,429 @@ No celular continuam o `flex: 1 1 auto; width: auto` da busca e o `kbd` escondid
 - `apps/web/app/globals.css`;
 - `apps/web/e2e/tela-estreita-e-acessibilidade.spec.ts`;
 - `docs/{DECISIONS,DECISIONS_INDEX,MULTICHANNEL_HANDOFF}.md` (com a D-650 marcada como no ar).
+
+## D-657 - Conexão OAuth multicanal confirma a titularidade na gravação
+
+O callback consumia o state uma única vez, mas dois states de organizações diferentes podiam passar pela mesma consulta de proprietário antes da primeira gravação. A segunda escrita alterava a organização da loja. A separação entre loja e credenciais também deixava gravações parciais.
+
+Cada callback envia um lote para `shopee_connect_shops` ou `tiktok_connect_shops`. A RPC insere ou atualiza pela identidade externa e só atualiza se o proprietário gravado corresponde à organização do state. As lojas são ordenadas pela chave de conflito. A mesma transação grava as credenciais cifradas e reverte o lote quando qualquer loja pertence a outra organização ou uma constraint falha. Execução concedida apenas a `service_role`.
+
+Dois clientes PostgreSQL verificaram o bloqueio concorrente e a recusa da segunda organização. A integração testa reconexão pelo mesmo dono, reversão do lote, erro de credencial e recusa para `anon` e `authenticated` nos dois marketplaces. A migration `20261111175813` deve estar aplicada antes da API que chama as RPCs.
+
+## D-658 - Retomada do enfileiramento e autorização única do POST no SAC
+
+Uma falha de confirmação do Cloud Tasks podia deixar uma tentativa PENDING sem tarefa. Uma reentrega concorrente do worker podia alcançar `POST /answers` duas vezes, e a política HTTP padrão também repetia esse POST em 429 e 5xx.
+
+A nova confirmação grava a fila com a tentativa. Com o mesmo ID, usuário, conta, caso e conteúdo, a API pode retomar a tentativa nova que ainda não iniciou o envio, usando a mesma fila e chave de tarefa. O worker revalida a pergunta, registra `dispatch_started_at` por atualização condicional e só quem adquiriu a trava chama o Mercado Livre. O cliente faz uma tentativa HTTP. As gravações de desfecho são condicionadas à tentativa ainda PENDING e à trava correspondente.
+
+O job `support.reply.send.v2` recebe 503 de um worker antigo. A versão nova aceita o nome anterior para reconhecer tarefas legadas. Linhas antigas sem fila registrada, quedas após a trava e POSTs de resultado incerto exigem conciliação. O caso permanece bloqueado enquanto a tentativa estiver PENDING. Se houver confirmação do POST e falha na auditoria, `support_reply_sent` com `remote_message_id` e `support_reply_outcome_unrecorded` ajudam a conferir o transcript. O desfecho só deve ser registrado quando houver evidência suficiente, com a tentativa e organização conferidas e a trava preservada.
+
+Aplicar a migration `20261111175814`, drenar envios legados em andamento, publicar o worker e então a API. As regressões cobrem fila confirmada ou incerta, corrida da chave no insert, rejeição de reutilização fora do escopo, duas conexões concorrentes no PostgreSQL e reentrega após falha de auditoria.
+
+## D-659 - Renovação Shopee conclui apenas enquanto mantém a trava
+
+Uma reautorização da mesma loja troca as credenciais e limpa a trava anterior. Um refresh em andamento ainda conseguia gravar o par antigo, limpar a trava de outro job ou marcar ERROR após receber a recusa do token antigo.
+
+O worker condiciona sucesso e liberação da trava ao valor que adquiriu. Para recusa definitiva, `shopee_reject_token_refresh` trava a loja antes da credencial, na mesma ordem da reconexão D-657, e marca ERROR somente se a mesma trava ainda estiver vigente na linha. Se a credencial mudou, o job pode repetir a leitura da credencial atual. A RPC tem execução para `service_role`. Aplicar a migration `20261112120939` antes do worker correspondente.
+
+## D-660 - Reconexão Mercado Livre invalida a renovação anterior
+
+O callback gravava o par e o status em operações separadas. A reconexão preservava a trava antiga, e um worker atrasado podia sobrescrever as credenciais novas, liberar a trava de outro job ou marcar a conta reconectada como ERROR.
+
+A migration `20261112122618` cria `ml_connect_account` e `ml_reject_token_refresh`, com execução para `service_role`. A conexão trava a conta, confere organização e vendedor, grava o par cifrado, limpa a trava e marca CONNECTED na mesma transação. A renovação usa o prazo para adquirir a trava e um UUID para confirmar sua titularidade ao gravar ou liberar. O UUID distingue aquisições com o mesmo prazo. A recusa definitiva registra ERROR e libera a trava em uma transação, travando conta e credencial na mesma ordem da reconexão.
+
+Aplicar a migration antes da API e do worker. Coordenar a atualização dos dois serviços e encerrar renovações em execução no worker antigo antes de liberar novas reconexões. O teste local com duas conexões confirma que a recusa antiga espera a reconexão e perde a titularidade. O teste também cobre rollback, escopo da organização, vendedor e permissões.
+
+## D-661 - Cada aquisição da trava Shopee tem identidade própria
+
+D-659 usava o prazo como identidade. Com duas aquisições de prazo igual, antes e depois da reconexão, o PostgreSQL aceitava a gravação e a recusa definitivas da renovação antiga.
+
+A migration `20261112124430` acrescenta `shopee_credentials.refresh_lock_id`. O prazo continua determinando quando outra renovação pode adquirir a trava. O worker usa o UUID da aquisição para salvar o par, soltar a trava e registrar recusa definitiva. `shopee_connect_shops` invalida o UUID na mesma transação que troca as credenciais. A RPC de recusa por UUID é reservada a `service_role`. A sobrecarga legada por prazo continua disponível para linhas sem UUID. A constraint protege travas com UUID de gravações antigas que limpam somente o prazo.
+
+Aplicar a migration antes do worker. Encerrar renovações legadas em voo antes de liberar novas reconexões durante a troca de revisão. O teste local reproduz o prazo idêntico e verifica sucesso antigo, recusa antiga, recusa atual e compatibilidade com linhas legadas.
+
+## D-662 - Falha no callback OAuth preserva conta Mercado Livre conectada
+
+Dois states válidos da mesma conta podem ser consumidos em paralelo. Uma troca de token atrasada e recusada marcava `ERROR` mesmo depois que o outro callback havia gravado a conexão. A sincronização periódica deixava de enfileirar para a conta.
+
+A API limita a escrita de `ERROR` à conta e organização do state e inclui `status <> 'CONNECTED'` no próprio `UPDATE`. Uma falha antes de conectar ainda pode ser registrada. Um callback que falha depois de uma conexão devolve sua recusa e preserva a conta. Uma conta conectada com token vencido continua elegível para nova autorização.
+
+O teste local manteve uma troca de token em espera, conectou a conta com outro state e depois liberou a recusa. A mesma sequência passou a preservar `CONNECTED` e `last_error`. A alteração entra com o deploy da API.
+
+## D-663 - Retomada da confirmação do SAC após recarregar
+
+D-658 permite reenfileirar uma confirmação pendente com a mesma chave e o mesmo conteúdo. O navegador guardava a chave em memória. Depois da recarga, o formulário vazio gerava outra chave e o índice de tentativa pendente impedia concluir o envio original.
+
+O detalhe do atendimento reutiliza a leitura do histórico sob RLS. Perguntas consulta a tentativa pendente apenas do cartão aberto. As duas telas oferecem a retomada ao autor de uma confirmação `PENDING` com fila registrada e sem início de envio. O formulário mostra o texto confirmado em modo somente leitura e reapresenta o ID e o conteúdo à API quando o operador pede a retomada. A API e o worker mantêm a autorização e o controle de concorrência de D-658.
+
+O Playwright gravou uma tentativa no Supabase local antes de simular falha na fila. A recarga mostrou o texto confirmado nas duas entradas e a ação explícita repetiu o mesmo payload. A publicação depende da migration, do worker e da API de D-658.
+
+## D-664 - Cartão de Perguntas lê a primeira mensagem recebida
+
+A lista paginava os casos e, em outra consulta, baixava as mensagens de todos eles para encontrar a primeira recebida. Ao atingir o teto de 1.000 linhas do PostgREST, um cartão podia mostrar ausência de transcript apesar da pergunta já sincronizada.
+
+A consulta paginada dos casos inclui `support_messages` como embed. O recorte de filhos exige `INBOUND`, ordena por `occurred_at, id` e limita a uma linha por caso. A relação preserva casos sem mensagem recebida. A página usa a leitura sob RLS, a mesma chave composta do transcript e os campos já exibidos.
+
+No Supabase local, mil eventos anteriores escondiam a pergunta na leitura antiga. A nova consulta devolveu a primeira mensagem em uma linha e preservou um caso vazio. A regressão Playwright exercita o cartão na página de Perguntas.
+
+## D-665 - Detalhe do SAC pagina a conversa por data e mensagem
+
+O detalhe lia as mensagens mais antigas em uma consulta sem paginação. O teto do PostgREST ocultava as mais recentes em atendimentos com mais de mil registros.
+
+A conversa abre nas 50 mensagens mais recentes, em ordem cronológica de leitura. Os links avançam nas duas direções por `occurred_at, id`, com precisão de microssegundos e um registro extra para detectar a próxima página. A consulta opera sob a RLS da conta e usa as colunas do índice `support_messages_case_timeline_idx`. A navegação preserva o retorno à fila.
+
+A regressão usa 1.050 mensagens, com horários iguais na fronteira entre páginas, e insere outra enquanto o usuário lê. Um gestor sem acesso à conta recebe a página de atendimento não encontrado ao abrir o mesmo cursor.
+
+## D-666 - Telemetria de jobs exige escopo explícito de plataforma
+
+`job_runs` conserva a organização registrada no envelope. As RPCs de saúde classificavam a ausência desse ID no catálogo como telemetria de plataforma. No PostgreSQL local, apagar uma organização sintética tornou uma execução dela visível a outro administrador. `get_job_failures` incluiu também o motivo registrado.
+
+A migration `20261112181422` limita as duas RPCs a organizações administradas pelo chamador e ao par `system.ping` com o UUID de plataforma enviado pela API. A função privada `system_ping_organization_id()` fornece o identificador às consultas. `get_system_health` aplica o escopo à última execução e à contagem de falhas. `get_job_failures` filtra antes de agrupar e escolher a amostra de motivo.
+
+As regressões reproduzem a remoção em transação revertida, conferem tipo exclusivo e compartilhado, testam o motivo de falha e preservam o heartbeat de plataforma. A migration está preparada para a esteira de banco.
+
+## D-667 - Indicadores de get_sync_health compartilham uma agregação
+
+A RPC da tela de Sincronização lia `sync_runs` três vezes para obter última execução, último sucesso e contagens de 24 horas. O ensaio de 40 mil linhas mostrou 2.938 blocos compartilhados para ADMIN.
+
+A migration `20261112182921` calcula os indicadores numa agregação por conta, recurso e canal. A busca da execução mais recente usa conta, recurso e horário para localizar status e motivo pelo índice existente. Empates no horário são resolvidos pelo maior ID. O último sucesso inclui `partial` e a data do dado é o maior `latest_record_at` entre execuções com sucesso total ou parcial. A consulta continua sob RLS.
+
+As duas versões produziram os mesmos resultados nas comparações `EXCEPT ALL` para ADMIN e GESTOR, incluindo uma organização fora do escopo. A regressão da migration cobre o limite de 24 horas, motivo truncado, empates e grupo sem sucesso. No volume sintético de 40 mil linhas, a mediana para ADMIN caiu de 68,82 ms para 16,39 ms.
+
+## D-668 - O resumo de cobertura usa a data indexada dos pedidos Shopee
+
+O resumo da Home filtrava a venda da Shopee pela data calculada em `shopee_sales_items`. No ensaio local de 60 mil pedidos, o filtro levou a uma varredura de `shopee_orders` para a janela de 30 dias.
+
+A migration `20261112184110` usa o horário bruto do pedido entre o início do primeiro dia em São Paulo, inclusive, e o início do dia seguinte ao último, exclusivo. O intervalo segue o padrão das consultas multicanal e pode usar `shopee_orders_org_created_idx`. A regra de vendas válidas das lojas live continua sob RLS, com a mesma assinatura e as mesmas contagens.
+
+As comparações `EXCEPT ALL` deram os mesmos resultados para ADMIN e GESTOR nas janelas de 7, 30, 90 e 365 dias. As regressões conferem os pedidos nos dois limites do dia, inclusive em uma virada histórica do horário de verão. No ensaio de 30 dias, a mediana de ADMIN caiu de 38,14 ms para 13,10 ms.
+
+## D-669 - O faturamento do ML conta compras pelos IDs numéricos
+
+`get_faturamento` convertia o ID em texto e acrescentava um prefixo por tipo antes de contar compras. A migration `20261113131644` conta os IDs distintos de pacote e soma os IDs distintos dos pedidos avulsos. Assim, dois pedidos do mesmo pacote contam como uma compra, e um pedido avulso com o mesmo número do pacote conta separadamente. O ticket médio usa a mesma contagem.
+
+O JSON completo coincidiu em 36 combinações com ADMIN e GESTOR, incluindo tentativas de consultar contas fora do escopo. No ensaio local de 90 dias para ADMIN, com todas as contas, a mediana caiu de 314,32 ms para 271,82 ms sem detalhe. As regras de classificação, custo, frete e alíquota continuam na consulta sob RLS.
+
+## D-670 - O faturamento do ML inicia as consultas do período sem esperar pelas lojas Shopee
+
+`/faturamento` esperava a lista de contas ML e a contagem de lojas Shopee antes de iniciar as duas leituras de faturamento e a de Ads. A contagem de lojas alimenta o seletor de marketplace. A lista de contas é necessária para resolver o slug da URL quando informado.
+
+As três consultas começam em paralelo, logo após abrir o recorte consolidado ou resolver o slug com as contas visíveis sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis. O cabeçalho continua recebendo as duas leituras necessárias aos filtros.
+
+No Chromium com PostgREST local e atraso controlado nas duas leituras do cabeçalho, a primeira RPC no consolidado passou de 367 ms para 2 ms. Períodos, argumento de conta e quantidade de chamadas coincidiram nas duas versões.
+
+## D-671 - Faturamento multicanal inicia as leituras após resolver o recorte
+
+Os recortes Shopee e Todos aguardavam a lista de contas e lojas antes de iniciar as consultas. A organização é necessária para as RPCs da Shopee. A lista só é necessária para montar o filtro quando a URL pede lojas no recorte Shopee.
+
+Em Todos e na Shopee sem filtro, as consultas começam assim que a associação à organização resolve. Com filtro explícito, a Shopee continua usando apenas as lojas visíveis sob RLS e avisa quando descarta uma loja. O cabeçalho recebe a lista completa. A Central segue reaproveitando as respostas do Mercado Livre no bloco por marketplace.
+
+O ensaio local com atraso controlado confirmou a ordem das requisições, a mesma quantidade de chamadas e os mesmos argumentos nos quatro recortes exercitados.
+
+## D-672 - Vendas multicanal inicia as consultas sem esperar os filtros salvos
+
+O carregamento de Vendas multicanal iniciava a associação à organização, a lista de contas e os filtros salvos juntos. O resumo, a série diária, o ranking e as demais RPCs aguardavam as três respostas.
+
+As leituras começam quando a organização está disponível. Um filtro explícito de contas ainda aguarda a lista sob RLS. Os filtros salvos e a lista continuam disponíveis para montar o cabeçalho. A paginação da série diária e as regras de marca e cancelamento seguem as mesmas.
+
+## D-673 - Séries diárias encerram na primeira página quando a contagem confirma o total
+
+As séries de Vendas do ML e de Vendas multicanal pedem contagem exata na primeira página para janelas de até 90 dias. Quando o total coincide com as linhas entregues, a leitura termina. Se a contagem estiver ausente ou indicar que faltam linhas, a paginação continua até uma página vazia ou até o teto. Uma resposta curta pode resultar do limite do PostgREST.
+
+Em janelas maiores, as duas séries mantêm a paginação sem contagem. O leitor continua compartilhado entre a tela e os CSVs.
+
+## D-674 - Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
+
+As leituras de Vendas do ML aguardavam a lista de contas, a associação à organização, os filtros salvos e a contagem de lojas Shopee. As RPCs de vendas já recebem o escopo do usuário pela RLS. Só precisam da lista de contas quando a URL traz um slug. A lista de marcas usa a organização.
+
+As consultas de resumo, série, ranking, cancelamento e hoje começam assim que o filtro de conta está resolvido. A consulta de marcas começa quando a associação à organização responde. Os dados do cabeçalho são aguardados em paralelo, com as mesmas regras de filtro e erro.
+
+## D-675 - A lista e os contadores de Anúncios começam assim que o recorte está resolvido
+
+No dashboard de anúncios do ML, as duas RPCs aguardavam organização, lista de contas, filtros salvos e contagem de lojas Shopee. Agora iniciam após resolver a organização e, se a URL trouxer um slug, verificar a conta na lista visível sob RLS. Filtros salvos e contagem de lojas continuam alimentando o cabeçalho.
+
+A lista e os contadores mantêm a mesma organização, conta e busca. A lista também recebe os filtros de estado, período e ordenação. A compatibilidade com o banco anterior continua no mesmo fluxo.
+
+## D-676 - Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
+
+`/anuncios/shopee` aguardava organização, lojas, contagem de contas ML e filtros salvos antes de consultar a lista e o resumo. As duas RPCs agora começam após resolver a organização e as lojas visíveis. A contagem de contas e os filtros salvos continuam alimentando os controles.
+
+O catálogo só é consultado quando existe ao menos uma loja visível na organização. A loja pedida na URL continua validada contra a lista sob RLS. A busca, o estado e o período continuam restritos à lista, e o resumo mantém o escopo da loja.
+
+## D-677 - Vendas da Shopee inicia as consultas após validar as lojas visíveis
+
+Em `/vendas/shopee`, as consultas de vendas, pedidos e devoluções aguardavam também a contagem de contas do ML e os filtros salvos. As quatro RPCs agora começam após a organização e as lojas visíveis definirem o recorte. Os controles continuam recebendo a contagem e os filtros em paralelo.
+
+O painel por loja mantém o período inteiro sob RLS. Pedidos aceitam loja, situação e número do pedido. Devoluções aceitam loja e período e mantêm seu painel com streaming. Sem loja visível, a página exibe o aviso antes de consultar vendas, pedidos ou devoluções.
+
+## D-678 - A Curva ABC inicia as consultas assim que o recorte está resolvido
+
+A Curva ABC aguardava filtros salvos, contas do Mercado Livre e a contagem de lojas Shopee antes de iniciar a análise e as listas de marcas e categorias. Em Todos e Shopee, também aguardava a lista multicanal mesmo sem seleção de contas.
+
+As listas de marcas e categorias começam assim que a organização responde. A curva espera pela lista de contas do ML quando há um slug e pela lista multicanal quando a URL pede contas ou lojas por ID. Filtros salvos, contagens e listas continuam disponíveis no cabeçalho. A validação das contas e do filtro Sem Full continua compartilhada com o XLSX.
+
+O ensaio em sete recortes confirmou os mesmos argumentos nas três RPCs da tela e os mesmos filtros compartilhados com as curvas do XLSX. [Medição](PERFORMANCE.md#início-das-consultas-da-curva-abc-sentinel-a35-13112026)
+
+## D-679 - Reposição lê todas as regras da organização por cursor
+
+`/reposicao` e `/reposicao/configuracoes` consultavam `replenishment_settings` em uma chamada e recebiam até 1.000 regras. A primeira tela podia aplicar o padrão ou a regra de marca quando a regra específica por SKU ficava fora da resposta. A segunda podia ocultar exceções.
+
+As duas leituras filtram pela organização da sessão e usam o mesmo paginador por ID. A contagem exata da consulta já inclui o cursor. A leitura termina quando a página contém todas as regras restantes ou volta vazia. Uma falha descarta a leitura parcial e aciona o tratamento de erro da tela. O cliente conserva as policies existentes de RLS.
+
+O ensaio local recuperou 1.003 regras em duas chamadas por rota e conferiu a precedência por SKU e o isolamento entre organizações. [Medição](PERFORMANCE.md#leitura-das-regras-de-reposição-sentinel-a36-13112026)
+
+## D-680 - A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
+
+A inspeção consultava até 1.000 regras de reposição sem recorte. A regra do SKU podia ficar fora da resposta, fazendo a gaveta mostrar o alvo de outra regra.
+
+A consulta filtra a organização e reúne os escopos do SKU, da marca e do padrão. Os índices únicos garantem até uma regra por escopo. A comparação de marca preserva a pontuação e a regra canônica continua resolvendo a precedência SKU, marca e padrão.
+
+O ensaio com 1.004 regras na organização confirmou a redução de 1.000 para três linhas, o alvo correto e a ausência de efeito da regra de outra organização. [Medição](PERFORMANCE.md#regras-da-inspeção-de-produtos-sentinel-a37-13112026)
+
+## D-681 - Vinculações inicia a visão e os painéis em paralelo
+
+A visão de Vinculações aguardava a lista de contas em qualquer recorte. Os painéis de candidatos e vínculos manuais aguardavam a resposta da visão. As três consultas podem começar assim que a organização está disponível e, quando a URL pede uma conta, assim que o slug é resolvido na lista visível sob RLS. Um slug desconhecido mantém o recorte de todas as contas visíveis.
+
+Os painéis mantêm os limites de 200 candidatos abertos e oito vínculos manuais. A conferência com pedidos continua em streaming. Quando a visão falha, a tabela alternativa mantém os filtros e o aviso. Nesse caso, as duas leituras dos painéis já foram iniciadas e seus resultados são descartados.
+
+O ensaio local com atrasos controlados confirmou a ordem das chamadas, os argumentos e o caminho alternativo. [Medição](PERFORMANCE.md#consultas-dos-painéis-de-vinculações-sentinel-a38-13112026)
+
+## D-682 - Histórico de Preços inicia o consolidado sem esperar a lista de contas
+
+O Histórico de Preços e seu XLSX aguardavam a lista de contas em todos os recortes. A tela continua carregando essa lista para o seletor. A RPC começa após resolver a organização quando a URL não pede conta. O XLSX consolidado dispensa a lista porque o arquivo não precisa de um rótulo de conta.
+
+Com conta explícita, as duas entradas ainda validam o ID na lista visível sob RLS. O ensaio conferiu conta, período, direção e busca na tela e na exportação. [Medição](PERFORMANCE.md#consultas-do-histórico-de-preços-e-do-xlsx-sentinel-a39-13112026)
+
+## D-683 - A Central Full inicia a consulta do consolidado após resolver a organização
+
+A Central Full aguardava a lista de contas antes de consultar a visão, mesmo sem seleção na URL. A consulta consolidada começa assim que a associação à organização responde. A lista de contas segue alimentando o seletor e continua necessária para validar a conta quando informada.
+
+Os filtros, a exportação CSV pelo link da tela e o caminho para a assinatura antiga da RPC foram conferidos em ensaio local. [Medição](PERFORMANCE.md#consultas-da-central-full-sentinel-a40-13112026)
+
+## D-684 - Perguntas inicia a lista e os contadores sem esperar a lista de contas
+
+Em Perguntas do SAC, a lista e os contadores por aba esperavam a lista de contas em todos os recortes. Sem conta na URL, as duas consultas começam em paralelo com a leitura das contas. Com conta na URL, a consulta ainda espera a lista para resolver o slug. A tentativa de resposta pendente continua sequencial, porque depende da pergunta selecionada.
+
+A etapa também antecipava os modelos de resposta e a verificação do usuário para o topo da aba Pendente. A D-685 revisou esse ponto: essas leituras só começam com uma pergunta selecionada e aberta. Não houve medição própria. A da D-685 cobre a tela. [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+
+## D-685 - Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
+
+Uma URL com uma página acima do total retornava `PGRST103` no PostgREST. Perguntas mostrava falha de carregamento. A página usa a mesma detecção da Caixa de Entrada e oferece voltar à primeira página da aba e conta atuais. Os erros de leitura continuam com a ação de tentar novamente.
+
+A lista de contas é uma promessa executada uma vez e pode ser reutilizada para resolver o slug e montar o seletor. Sem slug, lista e contadores começam em paralelo com as contas. Modelos, tentativa pendente e verificação do usuário para a resposta só são solicitados quando há uma pergunta selecionada e aberta. [Medição](PERFORMANCE.md#leituras-e-paginação-de-perguntas-do-sac-sentinel-a43-16112026)
+
+## D-686 - A barra lateral consulta o destino a partir do clique
+
+Em duas jornadas com Chromium, a tela de entrada disparava 48 verificações de sessão por prefetch antes de qualquer ação. O menu aberto expõe várias rotas ao prefetch automático do Next. Cada pedido de prefetch autenticado passa pelo proxy.
+
+Os links dos grupos e do rodapé da barra lateral usam `prefetch={false}`. A troca de tela continua pelo App Router com o indicador de carregamento. Nos dois destinos medidos, o clique fez uma requisição RSC. Os atalhos do conteúdo ainda podem iniciar prefetch. Requisições sem sessão foram redirecionadas ao login, inclusive com cabeçalhos de prefetch. [Medição](PERFORMANCE.md#auth-na-navegação-cliente-sentinel-a11-16112026)
+
+## D-687 - Configurações e cartões de Estoque consultam o destino ao clicar
+
+Os links de Configurações e os cartões da faixa de indicadores de Estoque disparavam prefetch quando apareciam no navegador. Em dois fluxos medidos, cada destino fez duas verificações de Auth antes do clique e ainda precisou de uma requisição RSC no clique.
+
+Os atalhos de Configurações usam `prefetch={false}`. A faixa compartilhada aceita a opção por cartão, adotada em Estoque para os destinos Produtos e Central Full. A navegação usa os mesmos links, inclusive a âncora de configuração de reposição. [Medição](PERFORMANCE.md#prefetch-em-configurações-e-estoque-sentinel-a44-16112026)
+
+## D-688 - A tabela de Estoque abre detalhe e ajuste de SKU ao clicar
+
+Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 SKUs, a abertura e a rolagem fizeram 59 verificações de sessão na mediana para detalhes e ajustes. Os destinos ainda exigiram uma requisição RSC no clique.
+
+O nome do produto, o link Ver SKU e o link Ajustar usam `prefetch={false}` na tabela de Estoque. O Chromium abriu os dois destinos para o SKU da linha clicada. O teste de regressão também confere o retorno ao mesmo filtro de Estoque. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-estoque-sentinel-a45-16112026)
+
+## D-689 - A tabela de Anúncios do Mercado Livre consulta os destinos da linha ao clicar
+
+Os links de cada linha disparavam o prefetch automático ao entrar na área visível. Em uma página de 100 anúncios, a abertura e a rolagem fizeram 70 verificações de sessão na mediana para anúncios, SKUs e a aba Preços. Cada destino ainda fez uma requisição RSC no clique.
+
+O título, o ID do anúncio, o SKU vinculado e o atalho Campanhas usam `prefetch={false}` na tabela. A regressão confere a ausência das pré-buscas, a abertura dos registros e a navegação direta para a aba Preços. [Medição](PERFORMANCE.md#prefetch-dos-links-em-anúncios-do-mercado-livre-sentinel-a46-16112026)
+
+## D-690 - Anúncios da Shopee abre o SKU vinculado ao clicar
+
+O link da coluna Vínculo disparava prefetch assim que entrava na área visível. Ao abrir e rolar uma página de 50 anúncios da Shopee, a web fez 48 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link de SKU usa `prefetch={false}` na coluna Vínculo, tanto para o vínculo pelo código do anúncio quanto para o manual. A regressão confere o SKU esperado e o retorno ao filtro original. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-anúncios-da-shopee-sentinel-a47-16112026)
+
+## D-691 - A tabela de Vinculações abre o anúncio e o SKU ao clicar
+
+Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 anúncios, a web fez 69,5 verificações de sessão na mediana para anúncios e SKUs antes do clique. O clique ainda fez uma requisição RSC.
+
+O título do anúncio e o link para o SKU usam `prefetch={false}` na tabela compartilhada pela visão principal e pela alternativa. A regressão confere os dois destinos e o retorno à busca original. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-de-vinculações-sentinel-a48-16112026)
+
+## D-692 - A tabela da Central Full abre o SKU e a Reposição ao clicar
+
+Os links de cada linha disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página com 50 SKUs, a web fez 77 verificações de sessão na mediana para detalhes de SKU e buscas em Reposição antes do clique. O clique ainda fez uma requisição RSC.
+
+O link do SKU e a ação Ver reposição usam `prefetch={false}` na tabela. A regressão confere o detalhe, o retorno à busca na Central Full e a busca em Reposição pelo mesmo SKU. [Medição](PERFORMANCE.md#prefetch-dos-links-na-central-full-sentinel-a49-16112026)
+
+## D-693 - A Reposição inclui SKUs com saldo atual exclusivo no Full
+
+O recorte partia dos saldos de inventário e de vendas dos últimos 90 dias. O saldo Full era somado depois, para os SKUs que já estavam no recorte. Um SKU que só tinha saldo no Full ficava fora da busca, inclusive ao abrir Reposição pela Central Full.
+
+A migration `20261116164846` inclui também SKUs com saldo Full positivo. Entra a última captura por conta e bucket na janela de três dias, somada por SKU sob RLS. Reposição e o alcance das regras aplicam o mesmo critério, e continuam exigindo o histórico e a amostra já usados para calcular cobertura, estado e sugestão de compra. As assinaturas e permissões das RPCs foram preservadas. [Medição](PERFORMANCE.md#skus-com-saldo-exclusivo-no-full-na-reposição-sentinel-a50-16112026)
+
+## D-694 - A tabela de Produtos abre o detalhe do SKU ao clicar
+
+Os títulos dos produtos disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 100 SKUs, a web fez 49 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` na tabela. A Inspeção rápida funciona pelo botão da própria linha e seus atalhos aparecem ao abrir a gaveta. A regressão confere o SKU esperado, o retorno ao recorte e o destino da ação Ver diagnóstico. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-produtos-sentinel-a51-16112026)
+
+## D-695 - A tabela de Reposição abre o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 100 SKUs, a web fez 54 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do SKU usa `prefetch={false}` na tabela de Reposição. A regressão confere o SKU esperado e o retorno à busca com o filtro original. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-em-reposição-sentinel-a52-16112026)
+
+## D-696 - A tabela da Curva ABC abre o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao rolar uma página de 50 SKUs, a web fez 38 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` no ranking. A regressão confere o SKU esperado e o retorno com a busca, o período e o critério originais. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-na-curva-abc-sentinel-a53-16112026)
+
+## D-697 - O ranking de Produtos da Central abre o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 SKUs, a web fez 54 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` no ranking. A regressão confere o SKU esperado e o retorno à conta, ao período e à ordem originais. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-produtos-da-central-sentinel-a54-16112026)
+
+## D-698 - O Detector de frete abre o detalhe do anúncio ao clicar
+
+Os links dos anúncios disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma lista com 30 observações, a web fez 24 verificações de sessão na mediana para esses destinos. O clique ainda fez uma requisição RSC.
+
+O link do anúncio usa `prefetch={false}` em cada cartão. O ensaio confere o detalhe esperado e o retorno ao mesmo nível do detector. [Medição](PERFORMANCE.md#prefetch-dos-links-de-anúncio-no-detector-de-frete-sentinel-a55-16112026)
+
+## D-699 - Os rankings de Vendas abrem o detalhe do SKU ao clicar
+
+Os links dos SKUs disparavam prefetch ao entrar na área visível. Ao rolar o ranking cheio, com 10 SKUs, a web fez 14 pré-buscas de SKU na mediana nos recortes Mercado Livre e Todos. Sem elas, a jornada fez 14 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` nos dois rankings. A regressão confere o SKU esperado e o retorno ao mesmo recorte de marketplace. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-vendas-sentinel-a56-16112026)
+
+## D-700 - A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
+
+Os links de SKU dos itens disparavam prefetch ao entrar na área visível. Ao rolar uma página de 50 pedidos, a web fez 46 pré-buscas de SKU na mediana. Sem elas, a jornada fez 46 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do SKU usa `prefetch={false}` em cada item da lista. A regressão confere o SKU esperado e o retorno à lista. O link de SKU do painel de devoluções não mudou: o painel só lista itens quando há loja real com devoluções lidas, o que o banco local do ensaio não tem. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-pedidos-de-vendas-da-shopee-sentinel-a57-16112026)
+
+## D-701 - A tabela de Movimentações abre o SKU e a origem ao clicar
+
+Cada linha tem um link para o SKU e, quando há origem, outro para a nota fiscal, o pedido de compra ou o pedido da Shopee. Os dois disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 movimentos, a web fez 62 pré-buscas na mediana. Sem elas, a jornada fez 62 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+Os dois links usam `prefetch={false}`. A regressão confere o SKU esperado e o retorno à lista. O link de origem foi conferido no ensaio, para nota fiscal e pedido de compra: o seed não tem movimento com origem. [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-em-movimentações-sentinel-a58-16112026)
+
+## D-702 - As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
+
+Os links de SKU das listas de produtos disparavam prefetch ao entrar na área visível. Ao rolar o ranking por receita cheio, com 30 produtos, a web fez 31 pré-buscas de SKU na mediana. Sem elas, a jornada fez 31 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do título usa `prefetch={false}` no componente que serve o ranking por receita e a lista de menor margem, no Mercado Livre e no recorte multicanal. A regressão confere o SKU esperado no ranking por receita e o retorno ao mesmo recorte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-no-ranking-de-faturamento-sentinel-a59-16112026)
+
+## D-703 - O Histórico de Preços abre o SKU e o anúncio ao clicar
+
+Cada linha tem um link para o anúncio e, quando há vínculo, outro para o SKU. Os dois disparavam prefetch ao entrar na área visível. Ao abrir e rolar uma página de 50 alterações, a web fez 93 pré-buscas na mediana, e as verificações de sessão antes do clique passaram de 100. O clique ainda fez uma requisição RSC.
+
+Os dois links usam `prefetch={false}`. A regressão confere o SKU e o anúncio esperados e o retorno à tabela. [Medição](PERFORMANCE.md#prefetch-dos-links-por-linha-no-histórico-de-preços-sentinel-a60-16112026)
+
+## D-704 - As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
+
+A tabela de exceções lista todas as regras por SKU, sem paginação, e o link de cada uma disparava prefetch ao entrar na área visível. Ao abrir e rolar 50 exceções, a web fez 52 pré-buscas de SKU na mediana. Sem elas, a jornada fez 52 verificações de sessão a menos. O clique ainda fez uma requisição RSC.
+
+O link do SKU usa `prefetch={false}`. A tela só cria regra padrão e por marca, e o seed não tem regra: a regressão grava uma exceção no banco local, confere o SKU esperado e o retorno à tela, e apaga a regra ao final. [Medição](PERFORMANCE.md#prefetch-do-link-de-sku-nas-exceções-de-reposição-sentinel-a61-16112026)
+
+## D-705 - Os itens vinculados do pedido de compra abrem o SKU ao clicar
+
+No detalhe do pedido, o link do SKU vinculado usa `prefetch={false}`. Em rascunhos locais com 2 e 50 SKUs, a mudança evitou 4 e 51 chamadas ao Auth antes do clique, na mediana. A mediana do clique aumentou 27 ms no pedido menor e 6 ms no maior. O pedido maior motivou aplicar o comportamento a todos os links de SKU da tabela.
+
+Itens em texto livre aparecem pelo código registrado no pedido. A regressão cria um rascunho pela interface, abre o SKU vinculado e verifica o retorno ao mesmo pedido. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+
+## D-706 - Os produtos do fornecedor abrem o SKU ao clicar
+
+Na seção SKUs já comprados, rolar até os itens disparava pré-buscas dos SKUs vinculados. Em duas listas locais com 2 e 49 links, a mediana de chamadas ao Auth atribuídas às pré-buscas foi de 4 e 53. Com `prefetch={false}` nos links de SKU, os dois casos chegaram a zero antes do clique. A medição local do clique foi de 134 para 119 ms e de 138 para 132 ms na mediana.
+
+A regressão cria um pedido pela interface a partir do fornecedor, abre o SKU na seção de produtos e verifica o retorno ao fornecedor. A seção Pedidos de compra será medida à parte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
+
+## D-707 - O detalhe do SKU abre anúncios do Mercado Livre ao clicar
+
+No detalhe do SKU, os links de anúncio do Mercado Livre usam `prefetch={false}` no cartão da Visão geral, nas duas entradas da linha de Anúncios e nas alterações da aba Preços. No ensaio local, desativar a pré-busca evitou 6, 51 e 50 chamadas ao Auth antes do clique, na mediana das três jornadas.
+
+As regressões conferem o anúncio esperado e o retorno à aba de origem. O destino dos links do Mercado Livre é o detalhe do anúncio. Os links da Shopee vão para uma lista filtrada e pedem medição própria. [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+
+## D-708 - O painel do fornecedor abre o pedido de compra ao clicar
+
+O link da linha de Pedidos de compra usa `prefetch={false}`. No ensaio local, a mudança evitou 3 chamadas ao Auth antes do clique no fornecedor com 2 pedidos e 49 no fornecedor com 50. A mediana do clique ficou em 121 ms na lista cheia e subiu de 107 para 116 ms na lista curta.
+
+A regressão confere o número do pedido aberto e o retorno ao mesmo fornecedor. [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
+
+## D-709 - Os links de anúncio e devolução da Shopee carregam ao clicar
+
+Na tabela de Anúncios da Shopee do SKU, o link do número do item usa `prefetch={false}` e abre a lista filtrada pelo número. Em Devoluções, a mesma opção vale para SKUs vinculados. O ensaio com loja sintética do projeto `loja-live` registrou a redução de 48 e 13 chamadas ao Auth para zero antes do clique, na mediana.
+
+As regressões verificam a busca do item, a abertura do SKU correto e o retorno à aba original ou ao filtro de loja. [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+
+## D-710 - As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+
+Os links das abas no `ObjectHeader` usam `prefetch={false}`. O Chromium mediu quatro jornadas, entrando pela Visão geral ou direto na aba de preço de cada detalhe. Cada troca precisou de uma requisição RSC nos dois builds. A mudança poupou de 4 a 8 verificações de sessão antes do primeiro clique, conforme a jornada.
+
+As abas usam o indicador de atualização no lugar. As regressões atrasam a resposta e verificam que o painel anterior fica visível, que o indicador sai ao concluir e que voltar restaura a aba anterior. Os atalhos para abas que aparecem no conteúdo ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+
+## D-711 - Os atalhos da Visão geral abrem outras abas ao clicar
+
+Foi aplicado `prefetch={false}` aos atalhos de Anúncios e Decisões no SKU e aos de Vendas, Tráfego e Histórico no anúncio, incluindo o link Linha do tempo e republicações no menu Ações. A comparação local registrou duas chamadas ao Auth a menos por jornada no SKU e três no anúncio. Todos os destinos continuaram a abrir com uma única resposta RSC e preservaram a aba no histórico de navegação.
+
+As regressões conferem os destinos dos links antes do clique e exercitam a abertura de Decisões e de Republicações pelo menu. As pré-buscas para outras telas que aparecem ao abrir o menu Ações ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
+
+## D-712 - Os links para outras telas no menu Ações do anúncio carregam ao clicar
+
+Os links para SKU ou Vinculações, Central de Preços, busca de Anúncios, Central de Ações e catálogo usam `prefetch={false}` nesse menu. As seis jornadas locais mediram 8 a 10 chamadas ao Auth por pré-busca na abertura, conforme o destino, e zero no build corrigido. Os atalhos filtrados levaram o MLB à busca e o retorno restaurou a Visão geral do anúncio.
+
+As regressões verificam Preços e Vinculações, com atraso na requisição de navegação para conferir o indicador de atualização. [Medição](PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+
+## D-713 - O atalho de Diagnóstico para Anúncios do SKU carrega ao clicar
+
+O link aba Anúncios no painel de limites do diagnóstico usa `prefetch={false}`. As duas jornadas locais, no consolidado e com conta na URL, evitaram uma chamada ao Auth por pré-busca antes do clique. As medianas do clique passaram de 122 para 118 ms e de 132 para 119 ms.
+
+A regressão atrasa a resposta da aba, verifica o indicador de atualização e volta ao Diagnóstico. O benchmark confere o retorno ao recorte de conta. [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+
+## D-714 - A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
+
+A web usa o paginador de RPC existente, com contagem exata na primeira página e sem teto de descarte no cliente. A ordenação preserva nome da conta, título e MLB e acrescenta o ID da conta para desempatar contas de mesmo nome com o mesmo anúncio. Em caso de erro, o paginador devolve o erro e descarta o lote incompleto.
+
+A migration `20261117171808` também corrige a RPC. O campo `ml_account_id` vinha da linha opcional de `listings`. Um vínculo ainda sem essa linha devolvia conta nula, que o Diagnóstico podia selecionar ao resolver o escopo padrão. O ID passa a vir do par de conta e anúncio já determinado pelo vínculo. A assinatura e a política `security invoker` continuam válidas para os consumidores existentes.
+
+A reprodução mostrou 1.000 de 1.002 anúncios na tela original. Com paginação e a migration, a tabela e o Diagnóstico receberam o conjunto inteiro, incluindo variação e vínculo ainda sem leitura, com o anúncio excluído fora. A migration foi aplicada só no banco local. A publicação exige sua aplicação antes da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)
+
+## D-715 - O painel Shopee do SKU lê todos os anúncios em páginas
+
+A RPC `get_sku_shopee_listings` tinha teto SQL de 200 previsto na D-429, sem aviso de corte no painel do SKU. A migration `20261117173152` retira esse teto e acrescenta o ID da loja ao desempate da ordenação. A assinatura e as permissões ficam preservadas por `create or replace`, com `security invoker` e a mesma view canônica.
+
+A web usa o paginador existente, com contagem exata na primeira página e ordem por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O erro da RPC conserva o código para a mensagem de banco ainda sem a função. Um erro interrompe a leitura e descarta as páginas parciais.
+
+A fixture de 1.002 unidades reproduziu 200 linhas na tela original e 1.000 após retirar apenas o limite SQL. Com a paginação, o conjunto chegou inteiro, incluindo variações, precedência manual e lojas de mesmo nome, com os anúncios apagados fora e o sandbox marcado. A migration foi aplicada apenas no banco local e deve preceder a publicação da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+
+## D-716 - Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+
+As rotinas de vincular e remover só liberavam o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa, deixando o diálogo sem alerta e com os botões presos em Gravando ou Removendo. A reprodução em Chromium bloqueou o POST da ação antes do envio, nos dois caminhos.
+
+Cada rotina trata a exceção e libera o estado pendente em `finally`. A mensagem informa que o vínculo ou a remoção não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Uma falha de comunicação pode ocorrer depois da gravação no servidor, por isso o cliente não anuncia que nada mudou nem repete a ação automaticamente. O SKU escolhido e o motivo permanecem no diálogo.
+
+As regressões conferem a ausência de gravação quando o POST foi bloqueado, os controles liberados e a nova tentativa. Outro caso usa a RPC real para recusar um item que saiu do catálogo e duas sessões autenticadas para remover um vínculo enquanto a primeira ainda tem o diálogo aberto. Os dois estados já exibiam a recusa e permitiam recuperar a tela. O banco e as ações de servidor mantêm seu contrato.
+
+## D-717 - O popup de Vinculações recupera os controles após falha da ação
+
+Vincular um anúncio, resolver um candidato do ERP e descartar um candidato aguardavam a Server Action antes de liberar o estado pendente. A interrupção da conexão rejeitava a promessa e deixava o popup sem alerta e com os controles desabilitados. Os três caminhos foram reproduzidos em Chromium bloqueando o POST antes do envio.
+
+As rotinas tratam a exceção da ação e liberam o estado pendente em `finally`. O aviso informa que o vínculo ou o descarte não pôde ser confirmado e pede conferir a lista antes de tentar novamente, pois a comunicação pode falhar depois da gravação no servidor. O SKU escolhido, o anúncio e o candidato continuam no popup. O cliente aguarda uma nova ação da pessoa.
+
+As regressões consultam o banco para confirmar que o POST bloqueado não criou vínculo nem fechou o candidato. Na nova tentativa, o vínculo aponta para o SKU escolhido, a resolução deixa o candidato RESOLVED e o descarte o deixa DISMISSED. O anúncio da fixture é arquivado ao fim, com o SKU nulo, seguindo a exclusão lógica permitida pela API. Vínculos e lote temporários são removidos. O fluxo de sucesso e o avanço entre variações mantêm a sequência anterior.
+
+## D-718 - O diálogo de remover vínculo do SKU recupera os controles após falha da ação
+
+Remover a vinculação a partir do detalhe do SKU só liberava o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa e deixava o diálogo em Removendo, sem alerta, com Remover e Cancelar desabilitados e o Esc desligado. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e libera o estado pendente em `finally`. A mensagem, agora anunciada como alerta, informa que a remoção não pôde ser confirmada e pede conferir a lista antes de tentar novamente, pela mesma razão das D-716 e D-717: a comunicação pode falhar depois da gravação. O diálogo continua aberto até uma nova ação da pessoa.
+
+A regressão cria o vínculo pela tela num anúncio do seed sem vínculo, confere que o POST bloqueado não removeu a linha, e que a nova tentativa fecha o diálogo e apaga o vínculo. O que sobrar é apagado ao fim. A recusa do servidor segue o caminho anterior.
+
+## D-719 - O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
+
+Vincular um anúncio a partir do detalhe do SKU deixava o diálogo em Gravando o vínculo quando a Server Action falhava no transporte. Cancelar, a nova tentativa e o Esc ficavam desligados, sem aviso. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz que o vínculo não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Diferente da recusa do servidor, que segue para a mensagem de erro e pede nova busca, a falha de transporte não diz nada sobre o anúncio: ele continua no diálogo e Confirmar vinculação fica disponível. A mensagem de erro do diálogo também passa a ser anunciada como alerta.
+
+A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.

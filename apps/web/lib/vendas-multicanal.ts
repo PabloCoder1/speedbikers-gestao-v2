@@ -137,11 +137,6 @@ export interface RecorteDeVendas {
 
 const TODAS_AS_MARCAS: FiltroDeMarca = { kind: "todas" };
 
-/** Há recorte de marca: compras, ticket, recebido e cancelamento não se aplicam (C-72, D-237). */
-export function sobMarca(recorte: Pick<RecorteDeVendas, "marca">): boolean {
-  return recorte.marca !== undefined && recorte.marca.kind !== "todas";
-}
-
 const METRICA_PADRAO = "faturamento";
 
 /** As telas que têm o recorte de marketplace com "Todos" (D-440, D-442). */

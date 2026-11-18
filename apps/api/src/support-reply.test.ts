@@ -28,6 +28,19 @@ const DEFAULT_CASE = {
 };
 
 const REQUEST = { clientRequestId: "req-1", text: "Serve sim, amigo." };
+const QUEUE = "ml-sync-speedbikers-loja-1";
+const EXISTING_ATTEMPT = {
+  id: ATTEMPT_ID,
+  status: "PENDING",
+  error_message: null,
+  support_case_id: CASE_ID,
+  ml_account_id: DEFAULT_CASE.ml_account_id,
+  requested_by: CALLER.userId,
+  final_text: REQUEST.text,
+  suggested_text: null,
+  dispatch_queue: QUEUE,
+  dispatch_started_at: null,
+};
 
 function chain<T>(result: T) {
   const self = { eq: () => self, maybeSingle: () => Promise.resolve(result) };
@@ -36,8 +49,10 @@ function chain<T>(result: T) {
 
 interface Options {
   supportCase?: Record<string, unknown> | null;
-  existingAttempt?: { id: string; status: string; error_message: string | null } | null;
+  existingAttempt?: Record<string, unknown> | null;
+  attemptOnInsertConflict?: Record<string, unknown>;
   insertError?: { code?: string; message: string } | null;
+  queueFailure?: "before_create" | "after_create";
   /** `false` = o chamador NÃO tem `user_account_permissions` para a conta do case. */
   accountPermission?: boolean;
 }
@@ -52,6 +67,8 @@ function deps(options: Options = {}): {
   const inserted: Record<string, unknown>[] = [];
   const lines: string[] = [];
   const supportCase = "supportCase" in options ? options.supportCase : DEFAULT_CASE;
+  let attempt = options.existingAttempt ?? null;
+  const tasks = new Set<string>();
 
   const db = {
     from: (table: string) => ({
@@ -67,13 +84,18 @@ function deps(options: Options = {}): {
         }
 
         if (table === "support_reply_attempts") {
-          return chain({ data: options.existingAttempt ?? null, error: null });
+          return chain({ data: attempt, error: null });
         }
 
         throw new Error(`select inesperado em ${table}`);
       },
       insert: (row: Record<string, unknown>) => {
         inserted.push(row);
+        if (options.insertError == null) {
+          attempt = { ...row, id: ATTEMPT_ID, dispatch_started_at: null };
+        } else if (options.attemptOnInsertConflict !== undefined) {
+          attempt = options.attemptOnInsertConflict;
+        }
 
         return {
           select: () => ({
@@ -100,10 +122,22 @@ function deps(options: Options = {}): {
       enqueuer: {
         enqueue: (request) => {
           enqueued.push(request);
+          const task = `${request.queue}/${request.dedupeKey}`;
+          const deduplicated = tasks.has(task);
+
+          if (enqueued.length === 1 && options.queueFailure === "before_create") {
+            return Promise.reject(new Error("Cloud Tasks indisponível"));
+          }
+
+          tasks.add(task);
+
+          if (enqueued.length === 1 && options.queueFailure === "after_create") {
+            return Promise.reject(new Error("Confirmação do Cloud Tasks perdida"));
+          }
 
           return Promise.resolve({
             taskName: "t",
-            deduplicated: false,
+            deduplicated,
             envelope: {
               jobType: request.jobType,
               jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b42",
@@ -153,12 +187,13 @@ describe("requestSupportReply (D-096)", () => {
       client_request_id: "req-1",
       final_text: "Serve sim, amigo.",
       requested_by: CALLER.userId,
+      dispatch_queue: QUEUE,
     });
 
     expect(ctx.enqueued[0]).toMatchObject({
-      jobType: "support.reply.send",
-      queue: "ml-sync-speedbikers-loja-1",
-      dedupeKey: "support-reply:req-1",
+      jobType: "support.reply.send.v2",
+      queue: QUEUE,
+      dedupeKey: `support-reply:${ATTEMPT_ID}`,
       payload: { attemptId: ATTEMPT_ID },
     });
   });
@@ -223,7 +258,7 @@ describe("requestSupportReply (D-096)", () => {
 
   it("mesma chave de uma tentativa BEM-SUCEDIDA não reenvia", async () => {
     const ctx = deps({
-      existingAttempt: { id: ATTEMPT_ID, status: "SUCCEEDED", error_message: null },
+      existingAttempt: { ...EXISTING_ATTEMPT, status: "SUCCEEDED" },
     });
 
     expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
@@ -234,10 +269,29 @@ describe("requestSupportReply (D-096)", () => {
     expect(ctx.inserted).toHaveLength(0);
   });
 
-  it("mesma chave de uma tentativa PENDENTE não reenvia — pode estar a caminho", async () => {
-    const ctx = deps({
-      existingAttempt: { id: ATTEMPT_ID, status: "PENDING", error_message: null },
-    });
+  it.each(["before_create", "after_create"] as const)(
+    "recupera a mesma tentativa quando o Cloud Tasks falha (%s)",
+    async (queueFailure) => {
+      const ctx = deps({ queueFailure });
+
+      expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toMatchObject({
+        status: "error",
+      });
+      expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
+        status: queueFailure === "before_create" ? "queued" : "in_flight",
+        attemptId: ATTEMPT_ID,
+      });
+      expect(ctx.inserted).toHaveLength(1);
+      expect(ctx.enqueued).toHaveLength(2);
+      expect(ctx.enqueued[1]).toEqual(ctx.enqueued[0]);
+    },
+  );
+
+  it.each([
+    { dispatch_queue: null },
+    { dispatch_started_at: "2026-08-26T14:00:00Z" },
+  ])("mantém PENDING no legado ou após o início do envio (%j)", async (patch) => {
+    const ctx = deps({ existingAttempt: { ...EXISTING_ATTEMPT, ...patch } });
 
     expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
       status: "in_flight",
@@ -246,11 +300,34 @@ describe("requestSupportReply (D-096)", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
+  it("reutiliza a fila gravada mesmo que o slug da conta tenha mudado", async () => {
+    const ctx = deps({
+      existingAttempt: EXISTING_ATTEMPT,
+      supportCase: { ...DEFAULT_CASE, ml_accounts: { slug: "renomeada" } },
+    });
+
+    expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toMatchObject({ status: "queued" });
+    expect(ctx.enqueued[0]).toMatchObject({ queue: QUEUE, payload: { attemptId: ATTEMPT_ID } });
+  });
+
+  it.each([
+    { requested_by: "outro-usuario" },
+    { support_case_id: "outro-caso" },
+    { ml_account_id: "outra-conta" },
+    { final_text: "outro texto" },
+    { suggested_text: "outra sugestão" },
+  ])("recusa reutilização da chave com confirmação diferente (%j)", async (patch) => {
+    const ctx = deps({ existingAttempt: { ...EXISTING_ATTEMPT, ...patch } });
+
+    expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toMatchObject({ status: "invalid" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
   it("mesma chave de uma tentativa que FALHOU devolve o motivo, sem reenviar", async () => {
     // Reenviar exige nova confirmação humana, com chave nova — e quem
     // confirma vê antes que a anterior falhou.
     const ctx = deps({
-      existingAttempt: { id: ATTEMPT_ID, status: "FAILED", error_message: "pergunta já respondida" },
+      existingAttempt: { ...EXISTING_ATTEMPT, status: "FAILED", error_message: "pergunta já respondida" },
     });
 
     expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
@@ -261,15 +338,29 @@ describe("requestSupportReply (D-096)", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
-  it("corrida no INSERT (23505) NÃO enfileira — a outra requisição ganhou", async () => {
-    // Sem isto, duas requisições simultâneas com a mesma chave produziriam
-    // duas tasks e, potencialmente, duas respostas ao comprador.
+  it("colisão com uma confirmação diferente no mesmo caso mantém a tentativa anterior", async () => {
     const ctx = deps({ insertError: { code: "23505", message: "duplicate key" } });
 
     expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toMatchObject({
       status: "in_flight",
     });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("corrida no INSERT com a mesma confirmação reutiliza a tentativa vencedora", async () => {
+    const ctx = deps({
+      insertError: { code: "23505", message: "duplicate key" },
+      attemptOnInsertConflict: EXISTING_ATTEMPT,
+    });
+
+    expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
+      status: "queued",
+      attemptId: ATTEMPT_ID,
+    });
+    expect(ctx.enqueued).toEqual([expect.objectContaining({
+      dedupeKey: `support-reply:${ATTEMPT_ID}`,
+      payload: { attemptId: ATTEMPT_ID },
+    })]);
   });
 
   it("identificador remoto não numérico é recusado antes de qualquer escrita", async () => {

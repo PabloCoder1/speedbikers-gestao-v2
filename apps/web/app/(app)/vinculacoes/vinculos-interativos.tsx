@@ -156,7 +156,7 @@ export function TabelaVinculos({
                 >
                   <td>
                     <div className="sb-vnc-anuncio">
-                      <Link className="sb-entity" href={`/anuncios/${linha.itemId}`}>
+                      <Link className="sb-entity" prefetch={false} href={`/anuncios/${linha.itemId}`}>
                         {linha.title}
                       </Link>
                       <span className="sb-vnc-anuncio-pe">
@@ -179,7 +179,7 @@ export function TabelaVinculos({
                     ) : linha.skuId === null ? (
                       <span className="sb-vnc-mudo">—</span>
                     ) : (
-                      <Link href={`/skus/${linha.skuId}`}>{linha.sku}</Link>
+                      <Link prefetch={false} href={`/skus/${linha.skuId}`}>{linha.sku}</Link>
                     )}
                   </td>
                   <td>

@@ -21,8 +21,10 @@ import {
   supportReplyStateLabel,
   supportSenderKindLabel,
 } from "../../../../lib/labels";
+import { pendingSupportReply, type StoredSupportReply } from "../../../../lib/pending-support-reply";
 import { safeNext } from "../../../../lib/safe-next";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
+import { conversationHref, parseConversationCursor } from "../../../../lib/support-conversation";
 import { createClient } from "../../../../lib/supabase/server";
 import { GavetaPedido } from "../gaveta-pedido";
 import { TriageCell } from "../triage-cell";
@@ -67,10 +69,8 @@ interface DeadlineRow {
   status: string;
 }
 
-interface ReplyAttemptRow {
+interface ReplyAttemptRow extends StoredSupportReply {
   id: string;
-  status: string;
-  final_text: string;
   error_message: string | null;
   requested_at: string;
   resolved_at: string | null;
@@ -79,6 +79,7 @@ interface ReplyAttemptRow {
 
 
 const section: React.CSSProperties = { marginTop: "var(--sb-space-4)" };
+const MESSAGES_PER_PAGE = 50;
 
 const meta: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -132,8 +133,29 @@ export default async function AtendimentoDetalhePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const { caseId } = await params;
-  const volta = voltaParaFila((await searchParams).volta);
+  const query = await searchParams;
+  const volta = voltaParaFila(query.volta);
+  const cursor = parseConversationCursor(query.mensagens);
+  const ascending = cursor?.direction === "depois";
   const supabase = await createClient();
+
+  let messagesQuery = supabase
+    .from("support_messages")
+    .select("id, direction, sender_kind, body, body_state, remote_status, occurred_at")
+    .eq("support_case_id", caseId)
+    .order("occurred_at", { ascending })
+    .order("id", { ascending })
+    .limit(MESSAGES_PER_PAGE + 1);
+
+  if (cursor !== null) {
+    const { occurredAt, id } = cursor;
+    const operator = ascending ? "gt" : "lt";
+    // O limite inclusivo em occurred_at usa o prefixo do índice da conversa.
+    // O desempate por id preserva a ordem quando várias mensagens têm a mesma data.
+    messagesQuery = messagesQuery
+      .filter("occurred_at", ascending ? "gte" : "lte", occurredAt)
+      .or(`occurred_at.${operator}.${occurredAt},and(occurred_at.eq.${occurredAt},id.${operator}.${id})`);
+  }
 
   // `getUser()` em paralelo com a leitura, não antes dela (D-195). Ele revalida
   // o token contra o servidor de Auth e custa uma ida inteira; enfileirá-lo
@@ -168,13 +190,7 @@ export default async function AtendimentoDetalhePage({
       )
       .eq("id", caseId)
       .maybeSingle(),
-    supabase
-      .from("support_messages")
-      .select(
-        "id, direction, sender_kind, body, body_state, remote_status, occurred_at",
-      )
-      .eq("support_case_id", caseId)
-      .order("occurred_at", { ascending: true }),
+    messagesQuery,
     supabase
       .from("support_case_deadlines")
       .select("id, deadline_kind, source, due_at, started_at, status")
@@ -191,7 +207,7 @@ export default async function AtendimentoDetalhePage({
     supabase
       .from("support_reply_attempts")
       .select(
-        "id, status, final_text, error_message, requested_at, resolved_at, profiles(full_name)",
+        "id, status, requested_by, client_request_id, final_text, suggested_text, dispatch_queue, dispatch_started_at, error_message, requested_at, resolved_at, profiles(full_name)",
       )
       .eq("support_case_id", caseId)
       .order("requested_at", { ascending: false })
@@ -229,7 +245,19 @@ export default async function AtendimentoDetalhePage({
     eventsResult.error ??
     attemptsResult.error;
 
-  const messages = (messagesResult.data ?? []) as MessageRow[];
+  const rows = messagesResult.data ?? [];
+  const messages = rows.slice(0, MESSAGES_PER_PAGE);
+  if (!ascending) messages.reverse();
+  const oldest = messages[0];
+  const newest = messages.at(-1);
+  const hasMore = rows.length > MESSAGES_PER_PAGE;
+  const olderHref = oldest !== undefined && (ascending || hasMore)
+    ? conversationHref(caseId, volta, { direction: "antes", occurredAt: oldest.occurred_at, id: oldest.id })
+    : null;
+  const newerHref = newest !== undefined && (ascending ? hasMore : cursor !== null)
+    ? conversationHref(caseId, volta, { direction: "depois", occurredAt: newest.occurred_at, id: newest.id })
+    : null;
+  const latestHref = cursor !== null && messages.length === 0 ? conversationHref(caseId, volta) : null;
   const deadlines = (deadlinesResult.data ?? []) as DeadlineRow[];
   const events = eventsResult.data ?? [];
   const attempts = (attemptsResult.data ?? []) as unknown as ReplyAttemptRow[];
@@ -449,11 +477,22 @@ export default async function AtendimentoDetalhePage({
       )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
-      <Panel title="Conversa" subtitle="Vendedor à direita, cliente à esquerda — a direção é o que se lê primeiro.">
+      <Panel
+        title="Conversa"
+        id="conversa"
+        subtitle="Vendedor à direita, cliente à esquerda — a direção é o que se lê primeiro."
+        aside={olderHref !== null || newerHref !== null || latestHref !== null ? (
+          <nav aria-label="Páginas da conversa" style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)" }}>
+            {olderHref !== null && <Link className="sb-button sb-button-sm" href={olderHref} prefetch={false}>Mensagens anteriores</Link>}
+            {newerHref !== null && <Link className="sb-button sb-button-sm" href={newerHref} prefetch={false}>Mensagens seguintes</Link>}
+            {latestHref !== null && <Link className="sb-button sb-button-sm" href={latestHref} prefetch={false}>Voltar às mais recentes</Link>}
+          </nav>
+        ) : undefined}
+      >
 
-        {messages.length === 0 ? (
+        {messagesResult.error !== null ? null : messages.length === 0 ? (
           <p style={{ color: "var(--sb-text-soft)" }}>
-            Nenhuma mensagem sincronizada para este atendimento.
+            {cursor === null ? "Nenhuma mensagem sincronizada para este atendimento." : "Não há mensagens nesta página."}
           </p>
         ) : (
           <ol
@@ -533,6 +572,7 @@ export default async function AtendimentoDetalhePage({
             caseId={supportCase.id}
             remoteReplyState={supportCase.remote_reply_state}
             remoteReplyBlockReason={supportCase.remote_reply_block_reason}
+            pendingReply={pendingSupportReply(attempts, viewerId)}
             templates={templates}
           />
           </div>

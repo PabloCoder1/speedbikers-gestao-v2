@@ -54,17 +54,26 @@ export function RemoverVinculo({
     setRemovendo(true);
     setErro(null);
 
-    const resultado = await removeLink(linkId, motivoDaRemocao(skuCode));
+    let resultado: Awaited<ReturnType<typeof removeLink>>;
+
+    try {
+      resultado = await removeLink(linkId, motivoDaRemocao(skuCode));
+    } catch {
+      // A remoção pode ter sido gravada antes de a conexão cair.
+      setErro("Não foi possível confirmar a remoção. Confira a lista antes de tentar novamente.");
+
+      return;
+    } finally {
+      setRemovendo(false);
+    }
 
     if (!resultado.ok) {
       setErro(resultado.message ?? "Não foi possível remover o vínculo.");
-      setRemovendo(false);
 
       return;
     }
 
     setAberto(false);
-    setRemovendo(false);
     router.refresh();
   }
 
@@ -110,7 +119,9 @@ export function RemoverVinculo({
             </p>
 
             {erro !== null && (
-              <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)", fontSize: "0.75rem" }}>{erro}</p>
+              <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)", fontSize: "0.75rem" }}>
+                {erro}
+              </p>
             )}
 
             <div style={{ display: "flex", gap: "var(--sb-space-2)", justifyContent: "flex-end" }}>

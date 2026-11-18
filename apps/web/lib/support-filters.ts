@@ -52,7 +52,7 @@ export type StatusFilter = "abertos" | "todos" | InternalStatus;
  * Filtros Salvos; `vencido` e `24h` separam as duas metades, que são as duas
  * contagens de `get_support_metrics` — clicar no número abre a mesma fila.
  */
-export const PRAZO_FILTERS = ["risco", "vencido", "24h"] as const;
+const PRAZO_FILTERS = ["risco", "vencido", "24h"] as const;
 
 export type PrazoFilter = (typeof PRAZO_FILTERS)[number];
 

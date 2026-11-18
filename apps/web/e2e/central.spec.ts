@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { E2E_ML_ACCOUNT, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/central` (D-394, D-395) — os indicadores contra o período anterior, a meta
@@ -346,6 +348,43 @@ test("/central/ads: abre a partir da central, sem erro, com o motivo quando não
   ]);
   await expect(page.getByRole("region", { name: "Todas as campanhas da semana" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Como os sinais são decididos" })).toBeVisible();
+});
+
+test("/central/produtos: o SKU carrega ao clicar e a volta preserva o ranking", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const filtro = `?p=7d&account=${E2E_ML_ACCOUNT.slug}&ordem=volume`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname === destino) prefetches.push(pathname);
+  });
+
+  await login(page, "/central/produtos" + filtro);
+  const ranking = page.getByRole("region", { name: "Maior volume" });
+  const linha = ranking.getByRole("row").filter({ hasText: E2E_SKU_CODE });
+  const titulo = "Produto de teste E2E";
+  const produto = linha.getByRole("link", { name: titulo, exact: true });
+
+  await expect(produto).toHaveAttribute("href", destino);
+  await produto.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await produto.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: titulo, exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/central/produtos" && url.search === filtro);
+  await expect(
+    ranking.getByRole("navigation", { name: "Ordem do ranking" }).getByRole("link", { name: "Maior volume" }),
+  ).toHaveAttribute("aria-current", "true");
+  await expect(produto).toBeVisible();
 });
 
 test("/central/produtos: abre da central com o mesmo recorte, e a ordem mora na URL", async ({ page }) => {

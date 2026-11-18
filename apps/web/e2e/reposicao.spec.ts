@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_LISTING_FULL, E2E_LOCAL_STOCK, E2E_SKU_CODE, E2E_SKU_SALES } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/reposicao` — a tela FUNDIDA (D-288).
@@ -46,6 +47,40 @@ test("/reposicao: a cobertura em dias conta o APROVEITÁVEL, não o estoque loca
   await expect(linha).toContainText(String(aproveitavel));
   await expect(linha).toContainText(pelaReposicao.toFixed(2).replace(".", ","));
   await expect(linha).not.toContainText(peloEstoqueLocal.toFixed(2).replace(".", ","));
+});
+
+test("/reposicao: o detalhe do SKU carrega ao clicar e o retorno preserva o recorte", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const filtro = `?estado=SEM_ESTADO&busca=${E2E_SKU_CODE}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const { pathname } = new URL(request.url());
+
+    if (prefetch && pathname === destino) prefetches.push(pathname);
+  });
+
+  await login(page, "/reposicao" + filtro);
+  const linha = page.getByRole("row").filter({ hasText: E2E_SKU_CODE });
+  const sku = linha.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+
+  await expect(sku).toHaveAttribute("href", destino);
+  await sku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await sku.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/reposicao" && url.search === filtro);
+  await expect(page.getByRole("searchbox", { name: "Buscar por SKU ou título" })).toHaveValue(E2E_SKU_CODE);
+  await expect(page.getByRole("link", { name: /^Sem estado/ })).toHaveAttribute("aria-current", "true");
+  await expect(sku).toBeVisible();
 });
 
 test("/reposicao: SKU com saldo sentinela não recebe número de cobertura", async ({ page }) => {

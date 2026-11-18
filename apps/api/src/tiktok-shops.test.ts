@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import type { Database } from "@sb/db";
 import { decryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { createTikTokShopClient } from "@sb/tiktok-shop";
@@ -14,7 +15,7 @@ const CALLER: Caller = {
   organizationId: "11111111-0000-4000-8000-000000000001",
   role: "ADMIN",
 };
-const OUTRA_ORG = "22222222-0000-4000-8000-000000000002";
+type ConnectArgs = Database["public"]["Functions"]["tiktok_connect_shops"]["Args"];
 const ENCRYPTION_KEY = randomBytes(32);
 const NOW = new Date("2026-10-22T15:00:00.000Z");
 const SERVICE_ID = "7697150457891358480";
@@ -26,12 +27,11 @@ const APP_SECRET = "segredo-de-teste-nao-real";
 function chain(result: unknown): Record<string, unknown> {
   const self: Record<string, unknown> = {};
 
-  for (const metodo of ["eq", "is", "gt", "in", "select"]) {
+  for (const metodo of ["eq", "is", "gt", "select"]) {
     self[metodo] = () => self;
   }
 
   self.maybeSingle = () => Promise.resolve(result);
-  self.single = () => Promise.resolve(result);
   self.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
 
   return self;
@@ -39,36 +39,38 @@ function chain(result: unknown): Record<string, unknown> {
 
 interface Opcoes {
   state?: { data: { organization_id: string; created_by: string | null } | null };
-  existentes?: { shop_id: string; organization_id: string }[];
+  rpcError?: { code: string; message?: string };
   stateInsertFalha?: boolean;
 }
 
 function fakeDb(opcoes: Opcoes = {}) {
-  const gravado: Record<string, { table: string; row: Record<string, unknown> }[]> = { insert: [], update: [], upsert: [] };
-  let proximoId = 1;
+  const gravado = {
+    insert: [] as { table: string; row: Record<string, unknown> }[],
+    update: [] as { table: string; row: Record<string, unknown> }[],
+    rpc: [] as { name: string; args: ConnectArgs }[],
+  };
 
   const db = {
     from: (table: string) => ({
       insert: (row: Record<string, unknown>) => {
-        gravado.insert?.push({ table, row });
+        gravado.insert.push({ table, row });
 
         return chain(opcoes.stateInsertFalha === true ? { error: { message: "boom" } } : { error: null });
       },
       update: (row: Record<string, unknown>) => {
-        gravado.update?.push({ table, row });
+        gravado.update.push({ table, row });
 
         return chain({
           data: opcoes.state === undefined ? { organization_id: CALLER.organizationId, created_by: CALLER.userId } : opcoes.state.data,
           error: null,
         });
       },
-      select: () => chain({ data: opcoes.existentes ?? [], error: null }),
-      upsert: (row: Record<string, unknown>) => {
-        gravado.upsert?.push({ table, row });
-
-        return chain({ data: { id: `loja-${String(proximoId++)}` }, error: null });
-      },
     }),
+    rpc: (name: string, args: ConnectArgs) => {
+      gravado.rpc.push({ name, args });
+
+      return Promise.resolve({ data: null, error: opcoes.rpcError ?? null });
+    },
   } as unknown as TikTokShopsDeps["db"];
 
   return { db, gravado };
@@ -143,7 +145,7 @@ describe("startTikTokConnect (D-645)", () => {
     expect(outcome.status).toBe("redirect");
 
     const url = new URL(outcome.status === "redirect" ? outcome.authorizationUrl : "http://x");
-    const linha = gravado.insert?.[0]?.row ?? {};
+    const linha = gravado.insert[0]?.row ?? {};
 
     expect(url.origin + url.pathname).toBe("https://services.tiktokshop.com/open/authorize");
     expect(Object.fromEntries(url.searchParams)).toEqual({ service_id: SERVICE_ID, state: linha.state });
@@ -172,30 +174,32 @@ describe("completeTikTokConnect (D-645)", () => {
     expect(chamadas.map((url) => url.pathname)).toEqual(["/api/v2/token/get", "/authorization/202309/shops"]);
     expect(chamadas[0]?.searchParams.get("grant_type")).toBe("authorized_code");
 
-    const loja = gravado.upsert?.find((g) => g.table === "tiktok_shops")?.row;
-    const credencial = gravado.upsert?.find((g) => g.table === "tiktok_credentials")?.row ?? {};
-
-    expect(loja).toMatchObject({
-      organization_id: CALLER.organizationId,
-      shop_id: "7000714532876273420",
-      shop_name: "Speed Bikers BR",
-      seller_type: "LOCAL",
-      shop_code: "BRLC1",
-      open_id: "7010736057180325637",
-      granted_scopes: ["seller.order.info", "seller.finance.info"],
-      status: "CONNECTED",
-      auth_expires_at: new Date(1824222000 * 1000).toISOString(),
-      created_by: CALLER.userId,
+    expect(gravado.rpc).toHaveLength(1);
+    const chamada = gravado.rpc[0];
+    expect(chamada).toMatchObject({
+      name: "tiktok_connect_shops",
+      args: {
+        p_organization_id: CALLER.organizationId,
+        p_created_by: CALLER.userId,
+        p_shops: [{
+          shop_id: "7000714532876273420",
+          shop_name: "Speed Bikers BR",
+          seller_type: "LOCAL",
+          shop_code: "BRLC1",
+          shop_cipher: "GCP_cipher_br",
+        }],
+        p_open_id: "7010736057180325637",
+        p_granted_scopes: ["seller.order.info", "seller.finance.info"],
+        p_connected_at: NOW.toISOString(),
+        p_refresh_token_expires_at: new Date(1824222000 * 1000).toISOString(),
+        p_access_token_expires_at: new Date(1793286000 * 1000).toISOString(),
+      },
     });
-    expect(credencial).toMatchObject({
-      tiktok_shop_id: "loja-1",
-      shop_cipher: "GCP_cipher_br",
-      access_token_expires_at: new Date(1793286000 * 1000).toISOString(),
-    });
-    // Cifrado de verdade: nunca o texto claro, e decifra para o token.
-    expect(credencial.access_token_ciphertext).not.toContain(ACCESS);
-    expect(decryptToken(String(credencial.access_token_ciphertext), ENCRYPTION_KEY)).toBe(ACCESS);
-    expect(decryptToken(String(credencial.refresh_token_ciphertext), ENCRYPTION_KEY)).toBe(REFRESH);
+    if (chamada === undefined) throw new Error("RPC de conexão ausente");
+    const { args } = chamada;
+    expect(args.p_access_token_ciphertext).not.toContain(ACCESS);
+    expect(decryptToken(args.p_access_token_ciphertext, ENCRYPTION_KEY)).toBe(ACCESS);
+    expect(decryptToken(args.p_refresh_token_ciphertext, ENCRYPTION_KEY)).toBe(REFRESH);
   });
 
   it("state inválido, vencido ou já usado: nada é chamado nem gravado", async () => {
@@ -203,7 +207,7 @@ describe("completeTikTokConnect (D-645)", () => {
 
     expect(await completeTikTokConnect(deps, { state: "s", code: "TTP_code" })).toEqual({ status: "invalid_state" });
     expect(chamadas).toHaveLength(0);
-    expect(gravado.upsert).toHaveLength(0);
+    expect(gravado.rpc).toHaveLength(0);
   });
 
   it("a recusa do vendedor (auth_denied) ou o retorno sem code consomem o state e recusam, sem trocar token", async () => {
@@ -232,7 +236,7 @@ describe("completeTikTokConnect (D-645)", () => {
       status: "rejected",
       reason: "não foi possível concluir a autorização com o TikTok Shop",
     });
-    expect(gravado.upsert).toHaveLength(0);
+    expect(gravado.rpc).toHaveLength(0);
     expect(lines.join("\n")).toContain("tiktok_oauth_exchange_failed");
     expect(lines.join("\n")).not.toContain(APP_SECRET);
   });
@@ -249,9 +253,9 @@ describe("completeTikTokConnect (D-645)", () => {
     expect(chamadas.map((url) => url.pathname)).toEqual(["/api/v2/token/get"]);
   });
 
-  it("sem loja autorizada, ou com a loja de outra organização, nada é gravado", async () => {
+  it("sem loja autorizada ou com conflito de organização, recusa a autorização", async () => {
     const vazio = montar({ respostas: { "/api/v2/token/get": TOKEN, "/authorization/202309/shops": { code: 0, data: { shops: [] } } } });
-    const deOutra = montar({ existentes: [{ shop_id: "7000714532876273420", organization_id: OUTRA_ORG }] });
+    const deOutra = montar({ rpcError: { code: "PT409" } });
 
     expect(await completeTikTokConnect(vazio.deps, { state: "s", code: "TTP_code" })).toEqual({
       status: "rejected",
@@ -261,7 +265,7 @@ describe("completeTikTokConnect (D-645)", () => {
       status: "rejected",
       reason: "uma das lojas autorizadas já está ligada a outra organização",
     });
-    expect(vazio.gravado.upsert).toHaveLength(0);
-    expect(deOutra.gravado.upsert).toHaveLength(0);
+    expect(vazio.gravado.rpc).toHaveLength(0);
+    expect(deOutra.gravado.rpc).toHaveLength(1);
   });
 });

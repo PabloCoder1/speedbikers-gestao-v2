@@ -187,20 +187,23 @@ export default async function AnunciosPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // As contas e os filtros salvos não dependem da organização (a RLS já os
-  // restringe): saem juntos com o membership desde D-195. As duas RPCs abaixo
-  // continuam depois, porque elas SIM precisam da conta escolhida.
-  const [membership, accountsResult, savedFiltersResult, lojasShopee] = await Promise.all([
-    currentMembership(),
+  const membershipPromise = currentMembership();
+  const accountsPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
+  );
+  const cabecalhoPromise = Promise.all([
+    accountsPromise,
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/anuncios").order("name"),
     // D-431: só o NÚMERO de lojas, para o seletor de marketplace.
     contarLojasShopee(supabase),
   ]);
+  // Uma falha no cabeçalho pode chegar antes da resolução da organização.
+  void cabecalhoPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
+    await cabecalhoPromise;
     return (
       <>
         <PageTitle eyebrow="COMERCIAL / CATÁLOGO" title="Dashboard de anúncios" />
@@ -209,18 +212,13 @@ export default async function AnunciosPage({
     );
   }
 
-  const accounts = accountsResult.data ?? [];
-  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    params: row.params as Record<string, string>,
-  }));
-
+  // A lista de contas só participa do recorte quando a URL pede um slug.
+  const contasDoRecorte = typeof query.conta === "string" ? (await accountsPromise).data ?? [] : [];
   const filters: Filters = resolveListingsFilters(
     query,
-    accounts.map((account) => account.slug),
+    contasDoRecorte.map((account) => account.slug),
   );
-  const selectedAccount = accounts.find((a) => a.slug === filters.account) ?? null;
+  const selectedAccount = contasDoRecorte.find((a) => a.slug === filters.account) ?? null;
 
   // A janela sai do filtro (D-308). `days - 1` porque o intervalo da RPC é
   // fechado nas duas pontas: "últimos 7 dias" é hoje mais seis.
@@ -253,7 +251,7 @@ export default async function AnunciosPage({
     o argumento, a chamada serve às duas assinaturas; com ele, o banco antigo
     responde PGRST202 e a tela diz que o filtro ainda não chegou.
   */
-  const [paginaNova, faixaNova] = await Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_listings_dashboard", {
       ...listaSemOrdem,
       p_order: orderKey(filters.order),
@@ -265,6 +263,16 @@ export default async function AnunciosPage({
       p_search: filters.search,
     }),
   ]);
+  const [[paginaNova, faixaNova], [accountsResult, savedFiltersResult, lojasShopee]] = await Promise.all([
+    leituras,
+    cabecalhoPromise,
+  ]);
+  const accounts = accountsResult.data ?? [];
+  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    params: row.params as Record<string, string>,
+  }));
 
   /*
     BANCO AINDA SEM 20260918150000 (PGRST202). A web e a migration chegam a
@@ -804,6 +812,7 @@ export default async function AnunciosPage({
                             <span className="sb-an-produto-texto">
                               <Link
                                 className="sb-entity sb-an-titulo"
+                                prefetch={false}
                                 href={`/anuncios/${row.item_id}`}
                                 title={`${row.title} — sincronizado em ${formatDateTime(row.synced_at)}`}
                               >
@@ -811,12 +820,12 @@ export default async function AnunciosPage({
                               </Link>
                               <span className="sb-an-meta">
                                 {/* Dashboard 360º do anúncio (D-168) — o destino individual. */}
-                                <Link className="sb-mono" href={`/anuncios/${row.item_id}`}>
+                                <Link className="sb-mono" prefetch={false} href={`/anuncios/${row.item_id}`}>
                                   {row.item_id}
                                 </Link>
                                 <span aria-hidden="true">·</span>
                                 {row.sku_id !== null && row.sku !== null ? (
-                                  <Link className="sb-mono" href={`/skus/${row.sku_id}`}>
+                                  <Link className="sb-mono" prefetch={false} href={`/skus/${row.sku_id}`}>
                                     {row.sku}
                                   </Link>
                                 ) : (
@@ -857,7 +866,7 @@ export default async function AnunciosPage({
                             // campanhas em que ele pode entrar.
                             <span className="sb-an-preco-promo">
                               {formatCurrency(row.price)}
-                              <Link className="sb-an-preco-de" href={`/anuncios/${row.item_id}?aba=preco`}>
+                              <Link className="sb-an-preco-de" prefetch={false} href={`/anuncios/${row.item_id}?aba=preco`}>
                                 Campanhas →
                               </Link>
                             </span>

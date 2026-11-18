@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { termoSeguroParaOr } from "./postgrest-search";
+import { termoSeguroParaOr, valorLiteralParaOr } from "./postgrest-search";
 
 describe("termoSeguroParaOr", () => {
   it("tira o que quebra o or= do PostgREST ou muda o padrão do ilike", () => {
@@ -10,5 +10,11 @@ describe("termoSeguroParaOr", () => {
 
   it("texto limpo passa igual", () => {
     expect(termoSeguroParaOr("E2E-SKU-001")).toBe("E2E-SKU-001");
+  });
+});
+
+describe("valorLiteralParaOr", () => {
+  it("preserva pontuação da marca e escapa aspas e barras invertidas", () => {
+    expect(valorLiteralParaOr('MARCA, (NACIONAL)."A"\\B')).toBe('"MARCA, (NACIONAL).\\"A\\"\\\\B"');
   });
 });

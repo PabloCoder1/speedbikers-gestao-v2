@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   classifySalesTrend,
   classifyStockState,
@@ -2250,6 +2252,33 @@ describe("get_faturamento (D-356)", () => {
     expect(dados.por_sku).toBeNull();
   });
 
+  it("conta um pacote uma vez e distingue um pedido avulso com o mesmo ID", async () => {
+    await client.query("begin");
+    try {
+      await client.query(
+        "update public.orders set pack_id = $1 where id = any($2::bigint[])",
+        [PEDIDOS[2], PEDIDOS.slice(0, 2)],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN_SB })]);
+      const { rows } = await client.query<{ com_detalhe: Faturamento; sem_detalhe: Faturamento }>(
+        `select public.get_faturamento($1, $1, $2, true) as com_detalhe,
+                public.get_faturamento($1, $1, $2, false) as sem_detalhe`,
+        [DIA, CONTA_A],
+      );
+
+      expect(rows[0]?.com_detalhe.resumo).toMatchObject({
+        pedidos: 4,
+        compras: 3,
+        receita_bruta: 280,
+        ticket_medio: 93.33,
+      });
+      expect(rows[0]?.sem_detalhe.resumo).toEqual(rows[0]?.com_detalhe.resumo);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   it("outra organização não enxerga nada — e margem sem cobertura é NULL, nunca 0%", async () => {
     const { resumo } = await faturamento(DE_OUTRA_ORG);
 
@@ -3932,6 +3961,37 @@ describe("permissão por loja Shopee (D-433)", () => {
     }
   });
 
+  it("o painel do SKU supera 200 anúncios e mantém a permissão por loja e organização (D-715)", async () => {
+    await client.query(
+      `insert into public.shopee_items
+         (organization_id, shopee_shop_id, item_id, item_name, item_sku, item_status,
+          has_model, details_synced_at, shopee_updated_at)
+       select $1, loja, item, 'Anuncio D715', 'D433-SKU', 'NORMAL', false, now(), now()
+       from unnest($2::uuid[]) loja cross join generate_series(715100, 715300) item`,
+      [ORG, [LOJA_A, LOJA_B]],
+    );
+
+    try {
+      const consulta = `select count(*)::int as n from public.get_sku_shopee_listings('${ORG}', '${skuId}')`;
+      expect(await asUser(ADMIN, consulta)).toEqual([{ n: 402 }]);
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 0 }]);
+      await client.query(
+        "insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ($1, $2)",
+        [ANALISTA, LOJA_A],
+      );
+      expect(await asUser(ANALISTA, consulta)).toEqual([{ n: 201 }]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([{ n: 0 }]);
+      expect(await asUser(ADMIN, `select * from public.get_sku_shopee_listings('${ORG_OUTRA}', '${skuId}')`)).toEqual([]);
+      await expect(asAnon(consulta)).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query("delete from public.user_shopee_shop_permissions where user_id = $1 and shopee_shop_id = $2", [ANALISTA, LOJA_A]);
+      await client.query(
+        "delete from public.shopee_items where shopee_shop_id = any($1::uuid[]) and item_id between 715100 and 715300",
+        [[LOJA_A, LOJA_B]],
+      );
+    }
+  });
+
   it("só o ADMIN da organização da loja concede, e só a quem é membro dela", async () => {
     await expect(
       asUser(ANALISTA, `insert into public.user_shopee_shop_permissions (user_id, shopee_shop_id) values ('${ANALISTA}', '${LOJA_A}')`),
@@ -5256,6 +5316,56 @@ describe("Demanda da Shopee na cobertura e na reposição (D-459, C-65)", () => 
 
     expect(soShopee).toEqual({ coberto: true });
     expect(resumo).toEqual(contagem);
+  });
+
+  it.each([
+    { dia: "2024-06-01", inicio: "2024-06-01 03:00:00+00", fim: "2024-06-02 03:00:00+00" },
+    { dia: "2018-11-04", inicio: "2018-11-04 03:00:00+00", fim: "2018-11-05 02:00:00+00" },
+  ])("D-668: o resumo usa os limites do dia $dia em São Paulo", async ({ dia, inicio, fim }) => {
+    await client.query("begin");
+    try {
+      await client.query(
+        `with pedidos (marca, criado_em) as (
+           values ('D668-ANTES', $3::timestamptz - interval '1 microsecond'),
+                  ('D668-INICIO', $3::timestamptz),
+                  ('D668-FIM', $4::timestamptz - interval '1 microsecond'),
+                  ('D668-DEPOIS', $4::timestamptz)
+         ), novos_skus as (
+           insert into public.skus (organization_id, sku, kind, supplier_brand, supplier_brand_source)
+           select $1, marca, 'PRODUTO', marca, 'DERIVED' from pedidos
+           returning id, sku
+         ), novos_pedidos as (
+           insert into public.shopee_orders
+             (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+           select $2, $1, marca, 'COMPLETED', criado_em, criado_em, criado_em from pedidos
+           returning shopee_shop_id, order_sn, organization_id
+         )
+         insert into public.shopee_order_items
+           (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, sku_id, vinculo_via)
+         select p.shopee_shop_id, p.order_sn, 0, p.organization_id, 1, 2, s.id, 'SKU_DO_PEDIDO'
+         from novos_pedidos p join novos_skus s on s.sku = p.order_sn`,
+        [ORG, LOJA, inicio, fim],
+      );
+      await client.query("set local time zone 'Asia/Tokyo'");
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+      const { rows } = await client.query(
+        `select marca, resumo.total, resumo.em_ruptura
+         from unnest($3::text[]) as marca
+         cross join lateral public.get_stock_coverage_summary($1, $2, $2, marca) resumo
+         order by marca`,
+        [ORG, dia, ["D668-ANTES", "D668-INICIO", "D668-FIM", "D668-DEPOIS"]],
+      );
+
+      expect(rows).toEqual([
+        { marca: "D668-ANTES", total: "0", em_ruptura: "0" },
+        { marca: "D668-DEPOIS", total: "0", em_ruptura: "0" },
+        { marca: "D668-FIM", total: "1", em_ruptura: "1" },
+        { marca: "D668-INICIO", total: "1", em_ruptura: "1" },
+      ]);
+    } finally {
+      await client.query("rollback");
+    }
   });
 
   it("sem loja live com pedidos lidos (só a de teste e uma real nunca lida): a parte da Shopee nula e o total só do ML", async () => {
@@ -7666,6 +7776,78 @@ describe("observabilidade de sincronização", () => {
     await expect(
       client.query(`delete from public.sync_runs where id=$1`, [syncRunId]),
     ).rejects.toThrow(/append-only/);
+  });
+
+  it("get_sync_health mantém os indicadores e o escopo por conta", async () => {
+    const oculta = randomUUID();
+    const prefixo = randomUUID().slice(0, 24);
+    const consulta = `
+      select ml_account_id, channel, last_run_status, last_run_reason,
+             extract(epoch from now() - last_run_at)::int / 3600 as horas_execucao,
+             extract(epoch from now() - last_success_at)::int / 3600 as horas_sucesso,
+             extract(epoch from now() - latest_record_at)::int / 3600 as horas_dado,
+             runs_24h::int, failed_24h::int, items_24h::int
+      from public.get_sync_health($1)
+      where ml_account_id in ($2, $3) and resource = 'orders' and channel <> 'webhook'
+      order by channel, ml_account_id
+    `;
+
+    await client.query("begin");
+    try {
+      await client.query(
+        "insert into public.ml_accounts (id, organization_id, label, slug) values ($1, $2, 'Conta sem acesso', $1::uuid::text)",
+        [oculta, ORG_SB],
+      );
+      await client.query(
+        `insert into public.sync_runs
+           (id, organization_id, ml_account_id, job_id, resource, channel, status,
+            items_processed, started_at, finished_at, latest_record_at, reason)
+         select v.id, $1, v.conta, gen_random_uuid(), 'orders', v.canal, v.status, v.itens,
+                now() - make_interval(hours => v.horas) - interval '1 second',
+                now() - make_interval(hours => v.horas),
+                now() - make_interval(hours => v.horas_dado), v.motivo
+         from (values
+           (gen_random_uuid(), $2::uuid, 'backfill', 'done', 72, 5, 73, null::text),
+           (gen_random_uuid(), $2, 'backfill', 'done', 24, 11, 96, null),
+           (gen_random_uuid(), $2, 'backfill', 'partial', 2, 3, 120, 'parcial'),
+           ($4::uuid, $2, 'backfill', 'failed', 1, 4, 1, 'empate anterior'),
+           ($5::uuid, $2, 'backfill', 'failed', 1, null, null, repeat('x', 230)),
+           (gen_random_uuid(), $2, 'reconciliation', 'failed', 48, null, null, 'sem sucesso'),
+           (gen_random_uuid(), $3::uuid, 'backfill', 'done', 1, 99, 1, null)
+         ) v(id, conta, canal, status, horas, itens, horas_dado, motivo)`,
+        [ORG_SB, CONTA, oculta, prefixo + "000000000001", prefixo + "000000000002"],
+      );
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ANALISTA_SB }),
+      ]);
+
+      const resultado = await client.query(consulta, [ORG_SB, CONTA, oculta]);
+      expect(resultado.rows).toEqual([
+        {
+          ml_account_id: CONTA, channel: "backfill", last_run_status: "failed",
+          last_run_reason: "x".repeat(200), horas_execucao: 1, horas_sucesso: 2, horas_dado: 73,
+          runs_24h: 4, failed_24h: 2, items_24h: 18,
+        },
+        {
+          ml_account_id: CONTA, channel: "reconciliation", last_run_status: "failed",
+          last_run_reason: "sem sucesso", horas_execucao: 48, horas_sucesso: null, horas_dado: null,
+          runs_24h: 0, failed_24h: 0, items_24h: 0,
+        },
+      ]);
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ADMIN_SB }),
+      ]);
+      expect((await client.query(consulta, [ORG_SB, CONTA, oculta])).rows).toHaveLength(3);
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: DE_OUTRA_ORG }),
+      ]);
+      expect((await client.query(consulta, [ORG_SB, CONTA, oculta])).rows).toHaveLength(0);
+    } finally {
+      await client.query("rollback");
+    }
   });
 
   describe("RLS", () => {
@@ -13560,6 +13742,32 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
     expect(rows.map((r) => r.job_type)).toContain("system.ping");
   });
 
+  it("jobs da organização excluída não aparecem nem alteram o estado de um tipo compartilhado", async () => {
+    const removida = randomUUID();
+    const compartilhado = "rlstest.job.removida.compartilhado";
+    const exclusivo = "rlstest.job.removida.exclusivo";
+    const falsoHeartbeat = "rlstest.job.falso-heartbeat";
+    const rows = await comJobRuns<{ job_type: string; job_status: string; job_failures_24h: string }>(
+      [
+        `insert into public.organizations (id, name, slug) values ('${removida}', 'Org removida', '${removida}')`,
+        inserirJob(ORG_SB, compartilhado, "done", "now() - interval '1 hour'"),
+        inserirJob(removida, compartilhado, "failed", "now()"),
+        inserirJob(removida, exclusivo, "failed", "now()"),
+        inserirJob("00000000-0000-4000-8000-000000000000", falsoHeartbeat, "failed", "now()"),
+        `delete from public.organizations where id = '${removida}'`,
+      ].join(";"),
+      ADMIN_SB,
+      JOBS_VISIVEIS,
+    );
+
+    expect(rows.find((row) => row.job_type === compartilhado)).toMatchObject({
+      job_status: "done",
+      job_failures_24h: "0",
+    });
+    expect(rows.map((row) => row.job_type)).not.toContain(exclusivo);
+    expect(rows.map((row) => row.job_type)).not.toContain(falsoHeartbeat);
+  });
+
   /**
    * O vazamento que sobrevive a um escopo feito pela metade. O mesmo
    * `job_type` roda em TODA organizacao (`sync.orders.window`), entao a linha
@@ -13734,6 +13942,23 @@ describe("get_job_failures (D-291, execucoes que falharam)", () => {
     expect(rows.map((r) => r.job_type)).toContain("system.ping");
   });
 
+  it("motivo de falha da organização excluída fica fora da telemetria de plataforma", async () => {
+    const removida = randomUUID();
+    const rows = await comFalhas<{ job_type: string; sample_reason: string }>(
+      [
+        `insert into public.organizations (id, name, slug) values ('${removida}', 'Org removida', '${removida}')`,
+        inserirFalha(removida, "system.ping", "motivo da organização removida", "now()"),
+        inserirFalha("00000000-0000-4000-8000-000000000000", "system.ping", "heartbeat de plataforma", "now()"),
+        `delete from public.organizations where id = '${removida}'`,
+      ].join(";"),
+      ADMIN_SB,
+      "select job_type, sample_reason from public.get_job_failures(7, 50) where job_type = 'system.ping'",
+    );
+
+    expect(rows.map((row) => row.sample_reason)).toContain("heartbeat de plataforma");
+    expect(rows.map((row) => row.sample_reason)).not.toContain("motivo da organização removida");
+  });
+
   it("quem nao e ADMIN recebe ZERO linhas, nao erro e nao dado", async () => {
     const rows = await comFalhas(
       inserirFalha(ORG_SB, "rlstest.falhas", "qualquer coisa", "now()"),
@@ -13856,6 +14081,7 @@ describe("get_ml_account_cards (D-299)", () => {
       "refresh_token_ciphertext",
       "encryption_key_version",
       "access_token_expires_at",
+      "refresh_lock_id",
       "refresh_locked_until",
       "scopes",
     ]) {
@@ -17222,8 +17448,8 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
       await client.query(
         `insert into public.support_reply_attempts
            (id, organization_id, ml_account_id, support_case_id, client_request_id,
-            requested_by, final_text, status)
-         values ($1, $2, $3, $4, 'req-d096-ok', $5, 'Serve sim, amigo.', 'PENDING')
+            requested_by, final_text, status, dispatch_queue)
+         values ($1, $2, $3, $4, 'req-d096-ok', $5, 'Serve sim, amigo.', 'PENDING', 'ml-sync-conta-a')
          on conflict (id) do nothing`,
         [ATTEMPT_OK, ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
       );
@@ -17299,7 +17525,54 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
           `update public.support_reply_attempts set final_text='texto trocado' where id=$1`,
           [ATTEMPT_OK],
         ),
-      ).rejects.toThrow(/so o desfecho pode ser atualizado/i);
+      ).rejects.toThrow(/so o desfecho e o inicio do envio podem ser atualizados/i);
+    });
+
+    it("a fila de despacho fica imutavel", async () => {
+      await expect(
+        client.query(
+          `update public.support_reply_attempts set dispatch_queue='ml-sync-outra-fila' where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/so o desfecho e o inicio do envio podem ser atualizados/i);
+    });
+
+    it("a trava de envio exige fila registrada", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text, status, resolved_at, dispatch_started_at)
+           values ($1,$2,$3,'req-d096-sem-fila',$4,'texto','SUCCEEDED',now(),now())`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/dispatch_queue_required/i);
+    });
+
+    it("duas conexoes concorrentes adquirem uma unica trava de envio, que nao pode ser apagada", async () => {
+      const other = new Client({ connectionString: DB_URL });
+      const claimSql = `update public.support_reply_attempts
+        set dispatch_started_at=now()
+        where id=$1 and status='PENDING' and dispatch_started_at is null returning id`;
+
+      await other.connect();
+      try {
+        const claims = await Promise.all([
+          client.query(claimSql, [ATTEMPT_OK]),
+          other.query(claimSql, [ATTEMPT_OK]),
+        ]);
+
+        expect(claims.flatMap(({ rows }) => rows as { id: string }[])).toEqual([{ id: ATTEMPT_OK }]);
+      } finally {
+        await other.end();
+      }
+
+      await expect(
+        client.query(
+          `update public.support_reply_attempts set dispatch_started_at=null where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/inicio do envio e irreversivel/i);
     });
 
     it("PENDING transiciona UMA vez para terminal, e o desfecho nao pode ser reescrito", async () => {
@@ -19152,6 +19425,39 @@ describe("get_sku_listings — os anuncios de um SKU pela regua canonica (D-316)
     expect(linhas[1]?.apenas_cache).toBe(false);
   });
 
+  it("preserva a conta do vínculo sem anúncio sincronizado e respeita a permissão dessa conta", async () => {
+    await client.query(
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, ref_kind, item_id, sku_id, source)
+       values ($1,$2,'ITEM','MLB700000008',$4,'MANUAL'),
+              ($1,$3,'ITEM','MLB700000008',$4,'MANUAL')`,
+      [ORG_SB, CONTA, CONTA_SEM_ACESSO, SKU],
+    );
+
+    try {
+      const consulta = `select item_id, ml_account_id, listing_id, title
+        from public.get_sku_listings('${ORG_SB}', '${SKU}')
+        where item_id = 'MLB700000008' order by ml_account_id`;
+      const admin = await asUser<{ ml_account_id: string; listing_id: string | null; title: string | null }>(
+        ADMIN_SB, consulta,
+      );
+      expect(admin).toEqual([
+        { item_id: "MLB700000008", ml_account_id: CONTA, listing_id: null, title: null },
+        { item_id: "MLB700000008", ml_account_id: CONTA_SEM_ACESSO, listing_id: null, title: null },
+      ]);
+
+      const analista = await asUser<{ ml_account_id: string }>(ANALISTA_SB, consulta);
+      expect(analista).toEqual([admin[0]]);
+      expect(await asUser(DE_OUTRA_ORG, consulta)).toEqual([]);
+    } finally {
+      await client.query(
+        `delete from public.sku_listing_links
+         where organization_id = $1 and sku_id = $2 and item_id = 'MLB700000008'`,
+        [ORG_SB, SKU],
+      );
+    }
+  });
+
   it("uma linha por (conta, anuncio), mesmo com duas variacoes vinculadas", async () => {
     await client.query(
       `insert into public.sku_listing_links
@@ -19328,9 +19634,12 @@ describe("get_replenishment_reach (D-361)", () => {
   const TODAY = "2026-08-23";
 
   /*
-    Cinco SKUs, um em cada fronteira do universo de `get_purchase_suggestions`:
+    Oito SKUs nas fronteiras do universo de `get_purchase_suggestions`:
 
-      so-saldo      saldo, sem venda            -> na reposição, sem venda 30d
+      so-saldo      saldo local, sem venda      -> na reposição, sem venda 30d
+      so-full       Full positivo atual        -> na reposição, sem venda 30d
+      full-zerado   última captura com zero    -> só no cadastro
+      full-antigo   última captura há 4 dias   -> só no cadastro
       venda-30d     venda há 5 dias             -> na reposição, com venda 30d, regra própria
       venda-40d     venda há 40 dias (<90, >30) -> na reposição, sem venda 30d
       so-cadastro   nada                        -> só no cadastro, regra própria FORA do universo
@@ -19346,7 +19655,7 @@ describe("get_replenishment_reach (D-361)", () => {
       [CONTA, ORG_SB],
     );
 
-    for (const nome of ["so-saldo", "venda-30d", "venda-40d", "so-cadastro", "venda-120d"]) {
+    for (const nome of ["so-saldo", "so-full", "full-zerado", "full-antigo", "venda-30d", "venda-40d", "so-cadastro", "venda-120d"]) {
       const sku = await client.query<{ id: string }>(
         `insert into public.skus
            (organization_id, sku, kind, supplier_brand, supplier_brand_source, supplier_brand_set_at)
@@ -19374,9 +19683,21 @@ describe("get_replenishment_reach (D-361)", () => {
     );
 
     await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, sku_id, item_id, inventory_id, quantity, captured_at)
+       values ($1,$2,$3,'MLB910361001','reach-full-a',99,now() - interval '2 days'),
+              ($1,$2,$3,'MLB910361001','reach-full-a',7,now() - interval '1 hour'),
+              ($1,$2,$3,'MLB910361001','reach-full-b',5,now() - interval '1 hour'),
+              ($1,$2,$4,'MLB910361002','reach-zero',8,now() - interval '2 days'),
+              ($1,$2,$4,'MLB910361002','reach-zero',0,now() - interval '1 hour'),
+              ($1,$2,$5,'MLB910361003','reach-old',9,now() - interval '4 days')`,
+      [ORG_SB, CONTA, ids["so-full"], ids["full-zerado"], ids["full-antigo"]],
+    );
+
+    await client.query(
       `insert into public.replenishment_settings (organization_id, sku_id, lead_time_days, target_coverage_days)
-       values ($1,$2,15,30), ($1,$3,15,30)`,
-      [ORG_SB, ids["venda-30d"], ids["so-cadastro"]],
+       values ($1,$2,15,30), ($1,$3,15,30), ($1,$4,15,30)`,
+      [ORG_SB, ids["venda-30d"], ids["so-cadastro"], ids["so-full"]],
     );
   });
 
@@ -19389,7 +19710,7 @@ describe("get_replenishment_reach (D-361)", () => {
     skus_com_regra_sku_venda_30d: string;
   }
 
-  it("conta cada fronteira do universo: saldo OU métrica em 90 dias, e venda em 30", async () => {
+  it("conta cada fronteira do universo: saldo em outros locais, Full atual positivo ou métrica em 90 dias", async () => {
     // ADMIN alcança todas as contas por papel. Ver o caso do ANALISTA abaixo.
     const rows = await asUser<Linha>(
       ADMIN_SB,
@@ -19397,12 +19718,52 @@ describe("get_replenishment_reach (D-361)", () => {
     );
 
     expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.skus)).toBe(5);
-    expect(Number(rows[0]?.skus_na_reposicao)).toBe(3);
+    expect(Number(rows[0]?.skus)).toBe(8);
+    expect(Number(rows[0]?.skus_na_reposicao)).toBe(4);
     expect(Number(rows[0]?.skus_com_venda_30d)).toBe(1);
-    // A regra própria de `so-cadastro` fica FORA: ele não está na reposição.
-    expect(Number(rows[0]?.skus_com_regra_sku)).toBe(1);
+    // A regra própria do Full entra no alcance. A regra de so-cadastro fica fora.
+    expect(Number(rows[0]?.skus_com_regra_sku)).toBe(2);
     expect(Number(rows[0]?.skus_com_regra_sku_venda_30d)).toBe(1);
+  });
+
+  it("inclui o Full positivo visível sem inventar cobertura ou compra", async () => {
+    interface Alvo {
+      sku: string;
+      full_quantity: number;
+      units_30d: number;
+      coverage_days: number | null;
+      state: string | null;
+      suggested_quantity: number | null;
+    }
+
+    const buscar = (usuario: string, sku: string) =>
+      asUser<{ v: { total: number; linhas: Alvo[] } }>(
+        usuario,
+        `select public.get_replenishment_overview('${ORG_SB}','${TODAY}',null,'${sku}',null,1,0) as v`
+      );
+
+    const [visivel] = await buscar(ADMIN_SB, "REACHTEST-so-full");
+    expect(visivel?.v.total).toBe(1);
+    expect(visivel?.v.linhas).toMatchObject([{
+      sku: "REACHTEST-so-full",
+      full_quantity: 12,
+      units_30d: 0,
+      coverage_days: null,
+      state: null,
+      suggested_quantity: null,
+    }]);
+
+    for (const codigo of ["REACHTEST-full-zerado", "REACHTEST-full-antigo"]) {
+      const [foraDoRecorte] = await buscar(ADMIN_SB, codigo);
+      expect(foraDoRecorte?.v.total).toBe(0);
+      expect(foraDoRecorte?.v.linhas).toEqual([]);
+    }
+
+    for (const usuario of [ANALISTA_SB, DE_OUTRA_ORG]) {
+      const [semAcesso] = await buscar(usuario, "REACHTEST-so-full");
+      expect(semAcesso?.v.total).toBe(0);
+      expect(semAcesso?.v.linhas).toEqual([]);
+    }
   });
 
   it("o universo É o de get_purchase_suggestions: a mesma marca dá o mesmo total nas duas", async () => {
@@ -19420,8 +19781,8 @@ describe("get_replenishment_reach (D-361)", () => {
 
   /*
     Achado ao escrever o primeiro caso como ANALISTA: ele via 1 SKU na
-    reposição, não 3. A conta do fixture não está entre as dele, e a RLS de
-    `daily_sku_metrics` esconde as vendas dela — só o SKU com saldo sobra.
+    reposição, não 4. A conta do fixture não está entre as dele, e a RLS de
+    `daily_sku_metrics` esconde as vendas, e a RLS do Full esconde as capturas. Só o saldo local sobra.
     Não é defeito: a função é invoker, e `/reposicao` mostra a ele o mesmo
     recorte. O que precisa valer é que as DUAS telas concordem para ele.
   */

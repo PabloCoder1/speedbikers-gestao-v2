@@ -380,9 +380,8 @@ export type QuestionAnswerResult = z.infer<typeof questionAnswerResultSchema>;
  * dá para saber daqui.
  *
  * O cliente comum continua dono de Authorization, backoff e classificação de
- * erro. **Retry automático é decisão de quem chama, não daqui**: repetir um
- * POST que talvez tenha chegado é o caminho para duas respostas ao mesmo
- * comprador (ver `support_reply_attempts.client_request_id`).
+ * erro. Este POST usa uma única tentativa: um erro de rede ou HTTP pode
+ * ocorrer depois de a resposta chegar ao comprador.
  */
 export function postQuestionAnswer(
   options: PostQuestionAnswerOptions,
@@ -403,5 +402,6 @@ export function postQuestionAnswer(
     body: { question_id: options.questionId, text },
     accessToken: options.accessToken,
     schema: questionAnswerResultSchema,
+    maxAttempts: 1,
   });
 }

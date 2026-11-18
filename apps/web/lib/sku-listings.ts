@@ -44,7 +44,7 @@ export interface LinhaDeAnuncio {
   readonly links: unknown;
 }
 
-export function lerVinculos(cru: unknown): VinculoDoAnuncio[] {
+function lerVinculos(cru: unknown): VinculoDoAnuncio[] {
   if (!Array.isArray(cru)) return [];
 
   const vinculos: VinculoDoAnuncio[] = [];

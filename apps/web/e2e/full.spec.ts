@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_ANOMALIA, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/full` — Central Full depois da migração para o frame `IntelligenceScreen
@@ -78,6 +79,47 @@ test("/full: as recusas ao frame, e o link sem filtro fantasma", async ({ page }
   await expect(page.locator(".sb-note")).toContainText(
     "Full é por conta; estoque local é da organização",
   );
+});
+
+test("/full: os links de SKU e Reposição carregam ao clicar", async ({ page }) => {
+  const { skuId } = await readSeedOutput();
+  const filtro = encodeURIComponent(E2E_SKU_CODE);
+  const sku = `/skus/${skuId}`;
+  const reposicao = `/reposicao?busca=${filtro}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+    const url = new URL(request.url());
+    const buscaDoSku = url.pathname === "/reposicao" && url.searchParams.get("busca") === E2E_SKU_CODE;
+
+    if (prefetch && (url.pathname === sku || buscaDoSku)) prefetches.push(url.pathname);
+  });
+
+  await login(page, `/full?busca=${filtro}`);
+  const linha = page.getByRole("row").filter({ hasText: E2E_SKU_CODE });
+  const linkSku = linha.getByRole("link", { name: E2E_SKU_CODE, exact: true });
+  const linkReposicao = linha.getByRole("link", { name: "Ver reposição →", exact: true });
+
+  await expect(linkSku).toHaveAttribute("href", sku);
+  await expect(linkReposicao).toHaveAttribute("href", reposicao);
+  await linha.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await linkSku.click();
+  await expect(page).toHaveURL((url) => url.pathname === sku);
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E", exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.pathname === "/full" && url.searchParams.get("busca") === E2E_SKU_CODE);
+  await linkReposicao.click();
+  await expect(page).toHaveURL((url) => url.pathname === "/reposicao" && url.searchParams.get("busca") === E2E_SKU_CODE);
+  await expect(page.getByRole("searchbox", { name: "Buscar por SKU ou título" })).toHaveValue(E2E_SKU_CODE);
+  const resultados = page.getByRole("table").locator("tbody").getByRole("row");
+  await expect(resultados).toHaveCount(1);
+  await expect(resultados.getByRole("link", { name: E2E_SKU_CODE, exact: true })).toHaveAttribute("href", sku);
 });
 
 test("/full: recorte vazio esvazia a tabela e MANTÉM a faixa", async ({ page }) => {

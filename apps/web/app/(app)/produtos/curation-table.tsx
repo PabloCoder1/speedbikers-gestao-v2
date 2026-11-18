@@ -504,7 +504,7 @@ export function CurationTable({
                     {/* Título em cima e SKU em monoespaçado embaixo — a célula
                         "Produto / SKU" do frame, clicável: leva ao dashboard do
                         SKU, o destino que o drawer do frame aponta. */}
-                    <Link className="sb-entity sb-prod-titulo" href={`/skus/${row.sku_id}`} title={row.title ?? row.sku}>
+                    <Link className="sb-entity sb-prod-titulo" prefetch={false} href={`/skus/${row.sku_id}`} title={row.title ?? row.sku}>
                       {row.title ?? row.sku}
                     </Link>
                     <span className="sb-prod-sku">

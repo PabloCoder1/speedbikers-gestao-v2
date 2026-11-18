@@ -400,7 +400,7 @@ export function ListaProdutos({
           </span>
 
           <span className="sb-fat-produto">
-            <Link className="sb-entity" href={`/skus/${linha.sku_id}`} title={linha.title ?? linha.sku}>
+            <Link className="sb-entity" prefetch={false} href={`/skus/${linha.sku_id}`} title={linha.title ?? linha.sku}>
               {linha.title ?? linha.sku}
             </Link>
             <span className="sb-mono sb-faturamento-sku">SKU {linha.sku}</span>

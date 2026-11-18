@@ -172,23 +172,17 @@ export default async function VinculacoesPage({
   const query = await searchParams;
   const filters = resolveLinkIntegrityFilters(query);
 
-  /*
-    As contas vêm ANTES do resto, e não junto: a leitura precisa do id da conta
-    escolhida, e a URL traz o SLUG. Mesma ordem de `/anuncios` (D-242) — duas
-    idas em série, não seis.
-  */
-  const [membership, contas] = await Promise.all([
-    currentMembership(),
-    // Só as contas que o usuário alcança — a RLS de `ml_accounts` decide.
+  const membershipPromise = currentMembership();
+  const contasPromise = Promise.resolve(
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
-  ]);
+  );
+  // A lista do cabeçalho pode falhar enquanto a organização é resolvida.
+  void contasPromise.catch(() => undefined);
 
-  const organizationId = membership.organizationId;
-  const accounts = contas.data ?? [];
-  // Slug desconhecido cai em "todas as contas" em silêncio, como em `/anuncios`.
-  const contaEscolhida = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
+  const { organizationId } = await membershipPromise;
 
   if (organizationId === null) {
+    await contasPromise;
     return (
       <>
         <PageTitle
@@ -201,26 +195,57 @@ export default async function VinculacoesPage({
     );
   }
 
+  // Só o slug explícito exige a lista visível sob RLS. Slug desconhecido usa todas as contas.
+  const contaEscolhida =
+    filters.accountSlug === null
+      ? null
+      : ((await contasPromise).data?.find((a) => a.slug === filters.accountSlug) ?? null);
+
   const hoje = new Date();
   const desde = new Date(hoje.getTime() - JANELA_DIAS * 24 * 60 * 60 * 1000);
+
+  // Os painéis usam a mesma conta da visão, e podem consultar em paralelo.
+  const candidatosBase = supabase
+    .from("link_candidates")
+    .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
+    .eq("status", "OPEN");
+
+  const manuaisBase = supabase
+    .from("sku_listing_links")
+    .select("id, item_id, variation_id, confirmed_at, skus(sku), ml_accounts(label)")
+    .eq("source", "MANUAL");
+
+  const naConta = <T extends { eq: (coluna: "ml_account_id", valor: string) => T }>(consulta: T): T =>
+    contaEscolhida === null ? consulta : consulta.eq("ml_account_id", contaEscolhida.id);
+
+  const paineisPromise = Promise.all([
+    naConta(candidatosBase).order("created_at", { ascending: true }).limit(200),
+    naConta(manuaisBase).order("confirmed_at", { ascending: false, nullsFirst: false }).limit(8),
+  ]);
+  // O caminho alternativo só usa a tabela de anúncios.
+  void paineisPromise.catch(() => undefined);
 
   /*
     A LEITURA ÚNICA (D-376). Página, contagens dos cartões e a linha por conta
     da comparação numa ida só. O que antes eram cinco chamadas à mesma função
     pesada.
   */
-  const leitura = await supabase.rpc("get_listings_link_overview", {
-    p_organization_id: organizationId,
-    p_date_from: desde.toISOString().slice(0, 10),
-    p_date_to: hoje.toISOString().slice(0, 10),
-    // A conta entra na JANELA: vale para a lista E para as contagens (D-236).
-    p_ml_account_id: contaEscolhida?.id ?? null,
-    ...toRpcArgs(filters),
-    p_limit: PAGE_SIZE,
-    p_offset: (filters.page - 1) * PAGE_SIZE,
-    ...(filters.search !== null ? { p_search: filters.search } : {}),
-  });
+  const [leitura, contas] = await Promise.all([
+    supabase.rpc("get_listings_link_overview", {
+      p_organization_id: organizationId,
+      p_date_from: desde.toISOString().slice(0, 10),
+      p_date_to: hoje.toISOString().slice(0, 10),
+      // A conta entra na JANELA: vale para a lista E para as contagens (D-236).
+      p_ml_account_id: contaEscolhida?.id ?? null,
+      ...toRpcArgs(filters),
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+      ...(filters.search !== null ? { p_search: filters.search } : {}),
+    }),
+    contasPromise,
+  ]);
 
+  const accounts = contas.data ?? [];
   const visao = leitura.error === null ? lerVisaoVinculacoes(leitura.data) : null;
 
   // Banco sem a migration (o Preview do PR, D-025) ou resposta fora do
@@ -240,24 +265,7 @@ export default async function VinculacoesPage({
     );
   }
 
-  // As duas listas dos painéis de baixo seguem o MESMO recorte de conta.
-  const candidatosBase = supabase
-    .from("link_candidates")
-    .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
-    .eq("status", "OPEN");
-
-  const manuaisBase = supabase
-    .from("sku_listing_links")
-    .select("id, item_id, variation_id, confirmed_at, skus(sku), ml_accounts(label)")
-    .eq("source", "MANUAL");
-
-  const naConta = <T extends { eq: (coluna: "ml_account_id", valor: string) => T }>(consulta: T): T =>
-    contaEscolhida === null ? consulta : consulta.eq("ml_account_id", contaEscolhida.id);
-
-  const [candidatos, manuais] = await Promise.all([
-    naConta(candidatosBase).order("created_at", { ascending: true }).limit(200),
-    naConta(manuaisBase).order("confirmed_at", { ascending: false, nullsFirst: false }).limit(8),
-  ]);
+  const [candidatos, manuais] = await paineisPromise;
 
   const abertos = candidatos.data ?? [];
   const window = summarizeLinkIntegrityWindow(filters.page, visao.total, visao.linhas.length);

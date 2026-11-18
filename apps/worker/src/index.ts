@@ -125,6 +125,8 @@ const nfeHandlers =
       }
     : {};
 
+const sendSupportReply = createSendSupportReplyHandler({ db, mercadoLivre, oauth, encryptionKey });
+
 const app = createWorkerApp({
   logger,
   db,
@@ -197,12 +199,10 @@ const app = createWorkerApp({
       oauth,
       encryptionKey,
     }),
-    "support.reply.send": createSendSupportReplyHandler({
-      db,
-      mercadoLivre,
-      oauth,
-      encryptionKey,
-    }),
+    "support.reply.send": sendSupportReply,
+    // Uma revisão antiga devolve 503 para v2 e a fila retenta até encontrar
+    // um worker que sabe adquirir a trava antes do POST.
+    "support.reply.send.v2": sendSupportReply,
     "sync.support.messages": createSyncSupportMessagesHandler({
       db,
       mercadoLivre,

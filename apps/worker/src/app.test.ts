@@ -91,6 +91,16 @@ describe("POST /internal/jobs", () => {
     expect(response.status).toBe(503);
   });
 
+  it("worker anterior devolve 503 para resposta SAC v2 sem chamar o handler antigo", async () => {
+    const legacySend = vi.fn(() => Promise.resolve({ status: "done" as const }));
+    const { app } = buildWorker({ "support.reply.send": legacySend });
+
+    const response = await post(app, { ...validEnvelope, jobType: "support.reply.send.v2" });
+
+    expect(response.status).toBe(503);
+    expect(legacySend).not.toHaveBeenCalled();
+  });
+
   it("não resolve handler por propriedade herdada de Object", async () => {
     const { app } = buildWorker();
 

@@ -30,7 +30,7 @@ export interface LojaShopeeDaFaixa {
 }
 
 /** A autorização da Shopee que vence nestes dias já pede a reautorização. */
-export const DIAS_DE_AVISO_DA_AUTORIZACAO = 7;
+const DIAS_DE_AVISO_DA_AUTORIZACAO = 7;
 
 const DIA_MS = 86_400_000;
 

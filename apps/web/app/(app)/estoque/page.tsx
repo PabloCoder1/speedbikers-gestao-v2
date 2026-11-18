@@ -193,6 +193,7 @@ export default async function EstoquePage({
       previous: null,
       ressalva: confirmados === 0 ? razaoDaRecusa : `sobre ${formatCount(confirmados)} SKU(s) confirmados como físicos`,
       href: "/produtos?estado=pendente&sinal=sentinela",
+      prefetch: false,
       tom: confirmados === 0 ? "atencao" : "neutro",
     },
     {
@@ -220,6 +221,7 @@ export default async function EstoquePage({
       value: formatCount(total?.full_quantity ?? 0),
       previous: null,
       href: "/full",
+      prefetch: false,
       tom: "ok",
     },
     {
@@ -229,6 +231,7 @@ export default async function EstoquePage({
       previous: null,
       ressalva: confirmados === 0 ? razaoDaRecusa : `sobre ${formatCount(confirmados)} SKU(s) confirmados`,
       href: "/produtos?estado=pendente&sinal=sentinela",
+      prefetch: false,
       tom: confirmados === 0 ? "atencao" : "neutro",
     },
     {
@@ -444,7 +447,7 @@ export default async function EstoquePage({
                         {monogramaDeProduto(row.title, row.sku)}
                       </span>
                       <span className="sb-stock-product-copy">
-                        <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                        <Link className="sb-entity" href={`/skus/${row.sku_id}`} prefetch={false}>
                           {row.title ?? "Produto sem título"}
                         </Link>
                         <span className="sb-mono">{row.sku}</span>
@@ -511,10 +514,10 @@ export default async function EstoquePage({
                   </td>
                   <td>
                     <span className="sb-stock-row-actions">
-                      <Link className="sb-button sb-button-sm" href={`/skus/${row.sku_id}`}>
+                      <Link className="sb-button sb-button-sm" href={`/skus/${row.sku_id}`} prefetch={false}>
                         Ver SKU
                       </Link>
-                      <Link className="sb-text-button" href={`/estoque/${row.sku_id}/ajuste`}>
+                      <Link className="sb-text-button" href={`/estoque/${row.sku_id}/ajuste`} prefetch={false}>
                         Ajustar
                       </Link>
                     </span>

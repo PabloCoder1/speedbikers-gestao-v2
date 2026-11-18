@@ -6,15 +6,15 @@
  * visibilidade na Central de Notificações) nunca é filtrada por preferência
  * — `docs/NOTIFICATIONS.md` secao 1.
  *
- * Mesma lógica de especificidade que a trigger original tinha em SQL
- * (`event_type`/`ml_account_id` batendo os dois > só um > nenhum, curinga
- * geral vence por último), só que avaliada aqui porque agora é o único
- * lugar que ainda decide alguma coisa com base na preferência.
+ * Uma regra com tipo e origem precede uma regra com apenas um deles. A
+ * origem pode ser uma conta do Mercado Livre ou uma loja da Shopee (D-635).
+ * A regra geral é usada por último.
  */
 
 export interface NotificationPreferenceRule {
   eventType: string | null;
   mlAccountId: string | null;
+  shopeeShopId: string | null;
   minSeverity: string;
   enabled: boolean;
 }
@@ -27,7 +27,7 @@ const SEVERITY_RANK: Record<string, number> = {
 
 export function shouldNotify(
   rules: readonly NotificationPreferenceRule[],
-  event: { eventType: string; mlAccountId: string | null; severity: string },
+  event: { eventType: string; mlAccountId: string | null; shopeeShopId: string | null; severity: string },
 ): boolean {
   let best: NotificationPreferenceRule | null = null;
   let bestScore = -1;
@@ -35,10 +35,12 @@ export function shouldNotify(
   for (const rule of rules) {
     const eventMatches = rule.eventType === null || rule.eventType === event.eventType;
     const accountMatches = rule.mlAccountId === null || rule.mlAccountId === event.mlAccountId;
+    const shopMatches = rule.shopeeShopId === null || rule.shopeeShopId === event.shopeeShopId;
 
-    if (!eventMatches || !accountMatches) continue;
+    if (!eventMatches || !accountMatches || !shopMatches) continue;
 
-    const score = (rule.eventType !== null ? 1 : 0) + (rule.mlAccountId !== null ? 1 : 0);
+    const hasOrigin = rule.mlAccountId !== null || rule.shopeeShopId !== null;
+    const score = (rule.eventType !== null ? 1 : 0) + (hasOrigin ? 1 : 0);
 
     if (score > bestScore) {
       best = rule;

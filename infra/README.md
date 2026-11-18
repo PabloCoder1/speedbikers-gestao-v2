@@ -44,9 +44,9 @@ A guarda existe porque, até D-333, `PROJECT_ID` era sobrescrevível e o Supabas
 
 ## Migrations de produção (D-334)
 
-Nenhum script de `infra/` aplica migration em produção, de propósito: o caminho é `.github/workflows/migrations-producao.yml`, disparado à mão na `v3`, com duas aprovações do ambiente `producao` do GitHub — uma para ver o plano, outra para aplicar.
+O fluxo de migrations de produção é `.github/workflows/migrations-producao.yml`, disparado à mão na `main`, com duas aprovações do ambiente `producao` do GitHub, uma para ver o plano e outra para aplicar.
 
-`guarda-migrations-producao.sh` decide as recusas — disparo fora da `v3`; ambiente `producao` inexistente, sem revisor obrigatório ou aceitando qualquer branch; CI do commit não verde ou sem ter aplicado no Dev; ref de produção ausente, fora do formato, igual ao do Dev ou diferente do digitado — e `guarda-migrations-producao.test.sh` prova cada caso na CI. Criar o ambiente: `docs/DEPLOYMENT.md` 8.2, passo 2.
+`guarda-migrations-producao.sh` recusa disparos fora da `main`, ambiente `producao` inexistente, sem revisor obrigatório ou aberto a qualquer branch, CI sem sucesso ou sem aplicação no Dev, e divergências na ref de produção. `guarda-migrations-producao.test.sh` exercita esses casos. A configuração do ambiente está em `docs/DEPLOYMENT.md` §8.2.
 
 ## Ordem de execução
 

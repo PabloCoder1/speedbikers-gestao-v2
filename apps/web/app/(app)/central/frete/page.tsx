@@ -301,7 +301,7 @@ function CartaoDoAlerta({ alerta: a, janela }: { alerta: AlertaDeFrete; janela: 
         <div className="sb-sinal-titulo">
           <strong>{a.titulo}</strong>
           <span>
-            {a.sku ?? "sem SKU vinculado"} · <Link href={`/anuncios/${a.anuncio}`}>{a.anuncio}</Link> · {a.conta} ·
+            {a.sku ?? "sem SKU vinculado"} · <Link prefetch={false} href={`/anuncios/${a.anuncio}`}>{a.anuncio}</Link> · {a.conta} ·
             preço {ROTULO_DA_FAIXA[a.faixa]}
           </span>
         </div>

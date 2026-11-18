@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_SUPPLIER } from "./constants.js";
 import { factValue, login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * "Pedido de compra" (docs/TESTING.md) — cria um rascunho do zero pela UI.
@@ -42,6 +43,45 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
     "aria-current",
     "step",
   );
+});
+
+test("detalhe do pedido: o SKU vinculado carrega ao clicar e o retorno abre o mesmo pedido", async ({ page }) => {
+  const { skuId, skuCode } = await readSeedOutput();
+  const destino = `/skus/${skuId}`;
+  const prefetches: string[] = [];
+
+  page.on("request", (request) => {
+    const headers = request.headers();
+    const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+    if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
+  });
+
+  await login(page, "/compras/novo");
+  const linha = page.locator("tbody tr").first();
+
+  await linha.getByPlaceholder("SKU ou nome…").fill(skuCode);
+  await page.getByRole("option").filter({ hasText: skuCode }).first().click();
+  await linha.locator('input[type="number"]').first().fill("2");
+  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
+  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+
+  const pedido = page.url();
+  const sku = page.getByRole("region", { name: "Itens do pedido" }).getByRole("link", { name: skuCode, exact: true });
+
+  await expect(sku).toHaveAttribute("href", destino);
+  await sku.scrollIntoViewIfNeeded();
+  await page.waitForLoadState("networkidle");
+  expect(prefetches).toEqual([]);
+
+  await sku.click();
+  await expect(page).toHaveURL((url) => url.pathname === destino);
+  await expect(page.getByRole("heading", { level: 1, name: "Detalhe do SKU" })).toBeVisible();
+  await expect(page.getByText(`SKU ${skuCode}`, { exact: true })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(pedido);
+  await expect(sku).toBeVisible();
 });
 
 /*

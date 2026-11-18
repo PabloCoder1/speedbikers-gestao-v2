@@ -1,3 +1,5 @@
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import {
@@ -131,6 +133,48 @@ test("aba Preços existe e não confunde ausência de evento com preço parado",
   // evento" nunca quer dizer "preço parado".
   await expect(page.getByText("uma alteração feita e desfeita entre duas leituras não deixa registro")).toBeVisible();
 });
+
+for (const { aba, busca, secao } of [
+  { aba: "Visão geral", busca: "", secao: "Anúncios vinculados" },
+  { aba: "Anúncios", busca: "?aba=anuncios", secao: "Anúncios vinculados" },
+  { aba: "Preços", busca: "?aba=precos", secao: "Mudanças de preço observadas" },
+]) {
+  test(`SKU · ${aba}: o anúncio abre ao clicar e a volta preserva a aba`, async ({ page }) => {
+    const { skuId } = await readSeedOutput();
+    const anuncio = E2E_LISTINGS[0];
+    const origem = `/skus/${skuId}`;
+    const destino = `/anuncios/${anuncio.itemId}`;
+    const prefetches: string[] = [];
+
+    page.on("request", (request) => {
+      const headers = request.headers();
+      const prefetch = headers["next-router-prefetch"] !== undefined || headers["next-router-segment-prefetch"] !== undefined;
+
+      if (prefetch && new URL(request.url()).pathname === destino) prefetches.push(request.url());
+    });
+
+    await login(page, origem + busca);
+    const painel = page.getByRole("region", { name: secao, exact: true });
+    const link = painel.getByRole("link", { name: anuncio.itemId, exact: true });
+    const abrir = aba === "Anúncios"
+      ? painel.getByRole("row").filter({ hasText: anuncio.itemId }).getByRole("link", { name: "Ver", exact: true })
+      : link;
+
+    await expect(link).toHaveAttribute("href", destino);
+    await expect(abrir).toHaveAttribute("href", destino);
+    await link.scrollIntoViewIfNeeded();
+    await page.waitForLoadState("networkidle");
+    expect(prefetches).toEqual([]);
+
+    await abrir.click();
+    await expect(page).toHaveURL((url) => url.pathname === destino);
+    await expect(page.getByRole("heading", { level: 2, name: anuncio.title, exact: true })).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL((url) => url.pathname === origem && url.search === busca);
+    await expect(link).toBeVisible();
+  });
+}
 
 /**
  * Aba Vendas (D-227) — a única com RPC própria, e por isso a única em que o
@@ -341,6 +385,186 @@ test("Dashboard do SKU: vincular um anúncio por MLB e remover o vínculo, com c
 
 
 /**
+ * D-718: a remoção que perde a conexão no meio. O POST bloqueado deixava o
+ * diálogo preso em "Removendo…", com Cancelar e Esc desligados. O caso cria o
+ * vínculo pela tela, num anúncio do seed sem vínculo, e apaga o que sobrar.
+ */
+test("Dashboard do SKU: falha de conexão ao remover o vínculo libera o diálogo e permite nova tentativa", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const alvo = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "nenhum");
+
+  if (alvo === undefined) throw new Error("O seed não tem anúncio sem vínculo.");
+
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const destino = `/skus/${seed.skuId}`;
+  const erros: string[] = [];
+
+  page.on("pageerror", (erro) => erros.push(erro.message));
+
+  const vinculoDoAlvo = () =>
+    db.from("sku_listing_links").select("id").eq("organization_id", seed.organizationId).eq("item_id", alvo.itemId);
+
+  try {
+    await login(page, `${destino}?aba=anuncios`);
+    await page.getByRole("button", { name: "+ Vincular anúncio" }).click();
+
+    const modal = page.getByRole("dialog", { name: "Vincular anúncio" });
+
+    await modal.getByLabel("MLB / id do anúncio").fill(alvo.itemId);
+    await modal.getByRole("button", { name: "Procurar anúncio" }).click();
+    await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+    await modal.getByRole("button", { name: "Confirmar vinculação" }).click();
+
+    const linha = page.locator("tbody tr", { hasText: alvo.itemId });
+
+    await expect(linha).toBeVisible();
+
+    let bloqueada = false;
+
+    await page.route(
+      (endereco) => endereco.pathname === destino,
+      async (rota) => {
+        const pedido = rota.request();
+
+        if (!bloqueada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+          bloqueada = true;
+          await rota.abort("failed");
+        } else {
+          await rota.continue();
+        }
+      },
+    );
+
+    await linha.getByRole("button", { name: "Remover" }).click();
+
+    const confirmacao = page.getByRole("dialog", { name: "Remover vinculação" });
+    const remover = confirmacao.getByRole("button", { name: "Remover vinculação", exact: true });
+
+    await remover.click();
+    await expect(confirmacao.getByRole("alert")).toContainText("Não foi possível confirmar");
+    await expect(remover).toBeEnabled();
+    await expect(confirmacao.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    expect(bloqueada).toBe(true);
+    expect(erros).toEqual([]);
+
+    const antes = await vinculoDoAlvo();
+
+    expect(antes.error).toBeNull();
+    expect(antes.data).toHaveLength(1);
+
+    await remover.click();
+    await expect(confirmacao).toHaveCount(0);
+    await expect(page.locator("tbody tr", { hasText: alvo.itemId })).toHaveCount(0);
+
+    const depois = await vinculoDoAlvo();
+
+    expect(depois.error).toBeNull();
+    expect(depois.data).toHaveLength(0);
+  } finally {
+    const limpeza = await db
+      .from("sku_listing_links")
+      .delete()
+      .eq("organization_id", seed.organizationId)
+      .eq("item_id", alvo.itemId);
+
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+/**
+ * D-719: o vínculo que perde a conexão no meio. O POST bloqueado deixava o
+ * diálogo em "Gravando o vínculo…", com Cancelar e Esc desligados. O anúncio
+ * encontrado fica no diálogo para a nova tentativa.
+ */
+test("Dashboard do SKU: falha de conexão ao vincular o anúncio conserva o anúncio e permite nova tentativa", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const alvo = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "nenhum");
+
+  if (alvo === undefined) throw new Error("O seed não tem anúncio sem vínculo.");
+
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const destino = `/skus/${seed.skuId}`;
+  const erros: string[] = [];
+
+  page.on("pageerror", (erro) => erros.push(erro.message));
+
+  const vinculoDoAlvo = () =>
+    db.from("sku_listing_links").select("sku_id").eq("organization_id", seed.organizationId).eq("item_id", alvo.itemId);
+
+  try {
+    await login(page, `${destino}?aba=anuncios`);
+    await page.getByRole("button", { name: "+ Vincular anúncio" }).click();
+
+    const modal = page.getByRole("dialog", { name: "Vincular anúncio" });
+
+    await modal.getByLabel("MLB / id do anúncio").fill(alvo.itemId);
+    await modal.getByRole("button", { name: "Procurar anúncio" }).click();
+    await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+
+    let bloqueada = false;
+
+    await page.route(
+      (endereco) => endereco.pathname === destino,
+      async (rota) => {
+        const pedido = rota.request();
+
+        if (!bloqueada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+          bloqueada = true;
+          await rota.abort("failed");
+        } else {
+          await rota.continue();
+        }
+      },
+    );
+
+    const confirmar = modal.getByRole("button", { name: "Confirmar vinculação", exact: true });
+
+    await confirmar.click();
+    await expect(modal.getByRole("alert")).toContainText("Não foi possível confirmar");
+    await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+    await expect(modal).toContainText(alvo.title);
+    await expect(confirmar).toBeEnabled();
+    await expect(modal.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    expect(bloqueada).toBe(true);
+    expect(erros).toEqual([]);
+
+    const antes = await vinculoDoAlvo();
+
+    expect(antes.error).toBeNull();
+    expect(antes.data).toHaveLength(0);
+
+    await confirmar.click();
+    await expect(modal).toHaveCount(0);
+    await expect(page.locator("tbody tr", { hasText: alvo.itemId })).toBeVisible();
+
+    const depois = await vinculoDoAlvo();
+
+    expect(depois.error).toBeNull();
+    expect(depois.data?.map((linha) => linha.sku_id)).toEqual([seed.skuId]);
+  } finally {
+    const limpeza = await db
+      .from("sku_listing_links")
+      .delete()
+      .eq("organization_id", seed.organizationId)
+      .eq("item_id", alvo.itemId);
+
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+/**
  * A ABA DIAGNÓSTICO (D-317) — três níveis, cada um com régua escrita.
  *
  * A aba era UMA LINHA: um botão que calculava a anomalia de venda no clique, e
@@ -404,4 +628,223 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
 
   // O motor de anomalia de venda continua onde estava, e continua sob demanda.
   await expect(page.getByRole("button", { name: "O que aconteceu?" })).toBeVisible();
+});
+
+test("SKU: todos os anúncios ML aparecem acima de mil, incluindo vínculo por variação e anúncio sem leitura", async ({ page }) => {
+  test.setTimeout(60_000);
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const sku = await db.from("skus").insert({
+    organization_id: seed.organizationId,
+    sku: "E2E-SKU-PAGINACAO-ML",
+    title: "Produto E2E com mais de mil anúncios",
+  }).select("id").single();
+
+  if (sku.error !== null) throw new Error(sku.error.message);
+
+  const slugs = ["e2e-paginacao-ml-0", "e2e-paginacao-ml-1"];
+  try {
+    const contas: string[] = [];
+    for (const [indice, slug] of slugs.entries()) {
+      const conta = await db.from("ml_accounts").insert({
+        organization_id: seed.organizationId,
+        slug,
+        label: "Conta E2E de paginação",
+        status: "CONNECTED",
+        seller_id: 720000001 + indice,
+        connected_at: new Date().toISOString(),
+      }).select("id").single();
+
+      if (conta.error !== null) throw new Error(conta.error.message);
+      contas.push(conta.data.id);
+
+      // Mesmos nomes, títulos e MLBs em duas contas exercitam o desempate da paginação.
+      const anuncios = await db.from("listings").insert(Array.from({ length: 500 }, (_, n) => ({
+        organization_id: seed.organizationId,
+        ml_account_id: conta.data.id,
+        item_id: `MLB720000${String(n + 1).padStart(3, "0")}`,
+        sku_id: sku.data.id,
+        title: "Anúncio E2E da paginação",
+        status: "active",
+        price: 100,
+        currency_id: "BRL",
+        available_quantity: 1,
+        synced_at: new Date().toISOString(),
+      })));
+
+      if (anuncios.error !== null) throw new Error(anuncios.error.message);
+    }
+
+    const primeiraConta = contas[0];
+    if (primeiraConta === undefined) throw new Error("A fixture precisa de uma conta.");
+
+    const especiais = await db.from("listings").insert([
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta,
+        item_id: "MLB729999998", title: "Anúncio E2E da paginação", status: "active",
+        price: 100, currency_id: "BRL", available_quantity: 1, synced_at: new Date().toISOString(),
+      },
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        item_id: "MLB729999997", title: "Anúncio excluído E2E", status: "closed",
+        price: 100, currency_id: "BRL", available_quantity: 0,
+        synced_at: new Date().toISOString(), deleted_at: new Date().toISOString(),
+      },
+    ]);
+    if (especiais.error !== null) throw new Error(especiais.error.message);
+
+    const vinculos = await db.from("sku_listing_links").insert([
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        ref_kind: "ITEM", item_id: "MLB729999998", variation_id: "72001", source: "MANUAL",
+      },
+      {
+        organization_id: seed.organizationId, ml_account_id: primeiraConta, sku_id: sku.data.id,
+        ref_kind: "ITEM", item_id: "MLB729999999", source: "MANUAL",
+      },
+    ]);
+    if (vinculos.error !== null) throw new Error(vinculos.error.message);
+
+    const origem = `/skus/${sku.data.id}`;
+    await login(page, origem + "?aba=anuncios");
+    const painel = page.getByRole("region", { name: "Anúncios vinculados", exact: true });
+    const linhas = painel.locator("tbody tr");
+
+    await expect(linhas).toHaveCount(1_002, { timeout: 20_000 });
+    const codigos = await linhas.locator(".sb-skud-mono-caption a").allTextContents();
+    expect(codigos.sort()).toEqual([
+      ...Array.from({ length: 500 }, (_, n) => `MLB720000${String(n + 1).padStart(3, "0")}`)
+        .flatMap((codigo) => [codigo, codigo]),
+      "MLB729999998", "MLB729999999",
+    ].sort());
+    await expect(painel).toContainText("1002 anúncios deste SKU");
+    await expect(linhas.filter({ hasText: "MLB720000001" })).toHaveCount(2);
+    await expect(linhas.filter({ hasText: "MLB729999998" })).toContainText("por variação");
+    await expect(linhas.filter({ hasText: "MLB729999999" })).toContainText("ainda não sincronizado");
+    await expect(linhas.filter({ hasText: "MLB729999997" })).toHaveCount(0);
+
+    await page.goto(origem + "?aba=diagnostico");
+    const saude = page.getByRole("region", { name: "Saúde do SKU", exact: true });
+    await expect(saude.locator(".sb-stat").filter({
+      has: page.getByText("Anúncios", { exact: true }),
+    }).locator(".sb-stat-value")).toHaveText("1.002");
+  } finally {
+    const removidas = await db.from("ml_accounts").delete()
+      .eq("organization_id", seed.organizationId).in("slug", slugs);
+    const removido = await db.from("skus").delete().eq("id", sku.data.id);
+
+    expect.soft(removidas.error).toBeNull();
+    expect.soft(removido.error).toBeNull();
+  }
+});
+
+test("Diagnóstico do SKU: Reler agora lê dados novos e preserva o escopo da conta", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  const db = createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+  const original = await db.from("listings")
+    .select("id, ml_account_id, available_quantity")
+    .eq("organization_id", seed.organizationId)
+    .eq("item_id", E2E_LISTINGS[0].itemId)
+    .single();
+
+  if (original.error !== null) throw new Error(original.error.message);
+
+  const conta = await db.from("ml_accounts").insert({
+    organization_id: seed.organizationId,
+    slug: "e2e-reler-diagnostico",
+    label: "Conta E2E da releitura",
+    status: "CONNECTED",
+    seller_id: 710000001,
+    connected_at: new Date().toISOString(),
+  }).select("id").single();
+
+  if (conta.error !== null) throw new Error(conta.error.message);
+
+  try {
+    let quantidadeOutraConta = 97;
+    let quantidadeOriginal = original.data.available_quantity;
+    const anuncio = await db.from("listings").insert({
+      organization_id: seed.organizationId,
+      ml_account_id: conta.data.id,
+      item_id: "MLB710000001",
+      sku_id: seed.skuId,
+      title: "Anúncio da conta E2E da releitura",
+      status: "active",
+      price: 100,
+      currency_id: "BRL",
+      available_quantity: quantidadeOutraConta,
+      synced_at: new Date().toISOString(),
+    }).select("id").single();
+
+    if (anuncio.error !== null) throw new Error(anuncio.error.message);
+
+    const caminho = `/skus/${seed.skuId}`;
+    await login(page, `${caminho}?aba=diagnostico`);
+    await expect(page.getByRole("region", { name: "Saúde do SKU", exact: true })).toBeVisible();
+
+    for (const escopo of [null, original.data.ml_account_id]) {
+      const origem = `${caminho}?aba=diagnostico${escopo === null ? "" : `&escopo=${escopo}`}`;
+
+      await page.goto(origem);
+      const saude = page.getByRole("region", { name: "Saúde do SKU", exact: true });
+      const estoque = saude.locator(".sb-stat").filter({
+        has: page.getByText("Estoque anunciado", { exact: true }),
+      }).locator(".sb-stat-value");
+      const reler = saude.getByRole("link", { name: /^Reler agora/ });
+
+      await expect(reler).toHaveAttribute("href", origem);
+      await page.waitForLoadState("networkidle");
+      const antes = Number((await estoque.innerText()).replace(/\D/gu, ""));
+
+      // Altera as duas contas. No recorte, só os 13 da conta escolhida entram.
+      quantidadeOriginal += 13;
+      quantidadeOutraConta += 31;
+      const atualizado = await db.from("listings")
+        .update({ available_quantity: quantidadeOriginal }).eq("id", original.data.id);
+      const outra = await db.from("listings")
+        .update({ available_quantity: quantidadeOutraConta }).eq("id", anuncio.data.id);
+
+      if (atualizado.error !== null) throw new Error(atualizado.error.message);
+      if (outra.error !== null) throw new Error(outra.error.message);
+
+      await page.route(
+        (destino) => destino.pathname === caminho
+          && destino.searchParams.has("_rsc")
+          && destino.searchParams.get("aba") === "diagnostico"
+          && destino.searchParams.get("escopo") === escopo,
+        async (route) => {
+          await new Promise((pronto) => setTimeout(pronto, 1_200));
+          await route.continue();
+        },
+      );
+
+      await reler.click();
+      await expect(page.locator(".sb-content[aria-busy='true']")).toHaveCount(1);
+      await expect(estoque).toHaveText(String(antes));
+      await expect(estoque).toHaveText(String(antes + (escopo === null ? 44 : 13)));
+      await expect(page).toHaveURL((destino) => destino.pathname + destino.search === origem);
+      await expect(page.locator(".sb-content[aria-busy]")).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "Abas do SKU" })
+        .getByRole("link", { name: "Diagnóstico", exact: true })).toHaveAttribute("aria-current", "page");
+    }
+  } finally {
+    const restaurado = await db.from("listings")
+      .update({ available_quantity: original.data.available_quantity }).eq("id", original.data.id);
+    const removida = await db.from("ml_accounts").delete().eq("id", conta.data.id);
+
+    expect.soft(restaurado.error).toBeNull();
+    expect.soft(removida.error).toBeNull();
+  }
 });

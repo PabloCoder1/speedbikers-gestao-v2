@@ -370,7 +370,7 @@ export default async function MovimentacoesPage({
                         <time dateTime={row.occurred_at}>{formatDateTime(row.occurred_at)}</time>
                       </td>
                       <td data-label="Produto / SKU" className="sb-mov-product">
-                        <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                        <Link className="sb-entity" prefetch={false} href={`/skus/${row.sku_id}`}>
                           {row.sku_title ?? row.sku}
                         </Link>
                         <span className="sb-mono">{row.sku}</span>
@@ -398,6 +398,7 @@ export default async function MovimentacoesPage({
                         ) : (
                           <Link
                             className="sb-mov-secondary-text sb-mono sb-mov-reference"
+                            prefetch={false}
                             href={referencia}
                           >
                             {row.source_type === "PURCHASE_ORDER"

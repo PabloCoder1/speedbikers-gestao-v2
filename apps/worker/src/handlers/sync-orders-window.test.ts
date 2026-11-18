@@ -162,6 +162,10 @@ function fakeDb(options: FakeDbOptions = {}): {
                   { data: { ml_account_id: ML_ACCOUNT_ID, ...(credentials ?? {}) }, error: null },
             );
           }
+
+          if ("access_token_ciphertext" in (row as Record<string, unknown>)) {
+            return chain({ data: { ml_account_id: ML_ACCOUNT_ID }, error: null });
+          }
         }
 
         return chain({ data: null, error: null });

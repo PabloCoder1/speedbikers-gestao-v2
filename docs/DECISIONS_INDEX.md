@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **558** (D-001 a D-654).
+Decisões registradas: **621** (D-001 a D-719).
 
 ## Por domínio
 
-### atendimento (59)
+### atendimento (62)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -77,6 +77,9 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-630** — O diagnóstico do SKU mede a dispersão de preço com a régua do C-77
 - **D-645** — A conexão da loja do TikTok Shop (fatia 1)
 - **D-646** — O rótulo de toda ferramenta do Copiloto no chat, com as duas da Shopee (C-84)
+- **D-658** — Retomada do enfileiramento e autorização única do POST no SAC
+- **D-663** — Retomada da confirmação do SAC após recarregar
+- **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
 
 ### banco/rls (46)
 
@@ -127,7 +130,7 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 
-### estoque (41)
+### estoque (51)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -170,8 +173,18 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-615** — O resumo de cobertura da Home sem a tendencia que ele nao usa: ~109 mil -> ~6,6 mil paginas
 - **D-627** — A divergencia de estoque entre a Shopee e o V3 vira acao na Central (C-78): o 4o detector da Shopee, pelo saldo no instante da leitura
 - **D-632** — A divergência de estoque da Shopee na Central de Ações (C-78)
+- **D-668** — O resumo de cobertura usa a data indexada dos pedidos Shopee
+- **D-679** — Reposição lê todas as regras da organização por cursor
+- **D-683** — A Central Full inicia a consulta do consolidado após resolver a organização
+- **D-687** — Configurações e cartões de Estoque consultam o destino ao clicar
+- **D-688** — A tabela de Estoque abre detalhe e ajuste de SKU ao clicar
+- **D-692** — A tabela da Central Full abre o SKU e a Reposição ao clicar
+- **D-693** — A Reposição inclui SKUs com saldo atual exclusivo no Full
+- **D-695** — A tabela de Reposição abre o detalhe do SKU ao clicar
+- **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
+- **D-704** — As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
 
-### interface (69)
+### interface (75)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -242,8 +255,14 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-513** — A troca de tela por codigo tambem tem sinal: a paleta de busca avisa o IndicadorDeNavegacao
 - **D-608** — O catálogo da loja Shopee na `/sincronizacao`, e o inventário das telas sem as lacunas já resolvidas
 - **D-617** — O produto no prejuizo na Shopee vira acao na Central (C-76): o 3o dos quatro detectores da Shopee, sem rateio
+- **D-659** — Renovação Shopee conclui apenas enquanto mantém a trava
+- **D-661** — Cada aquisição da trava Shopee tem identidade própria
+- **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
+- **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
+- **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
+- **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 
-### mercado-livre (106)
+### mercado-livre (127)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -351,8 +370,29 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-638** — A mudança de preço do anúncio da Shopee nas notificações (C-81, antes do worker)
 - **D-639** — O diagnostico de venda por canal: o Mercado Livre e a Shopee (C-83)
 - **D-647** — O motivo do encerramento sem o código da decisão, e a busca da /anuncios sem curinga
+- **D-657** — Conexão OAuth multicanal confirma a titularidade na gravação
+- **D-660** — Reconexão Mercado Livre invalida a renovação anterior
+- **D-662** — Falha no callback OAuth preserva conta Mercado Livre conectada
+- **D-669** — O faturamento do ML conta compras pelos IDs numéricos
+- **D-670** — O faturamento do ML inicia as consultas do período sem esperar pelas lojas Shopee
+- **D-674** — Vendas do Mercado Livre inicia as consultas assim que o recorte está resolvido
+- **D-675** — A lista e os contadores de Anúncios começam assim que o recorte está resolvido
+- **D-676** — Anúncios da Shopee inicia o catálogo após validar as lojas visíveis
+- **D-689** — A tabela de Anúncios do Mercado Livre consulta os destinos da linha ao clicar
+- **D-690** — Anúncios da Shopee abre o SKU vinculado ao clicar
+- **D-691** — A tabela de Vinculações abre o anúncio e o SKU ao clicar
+- **D-698** — O Detector de frete abre o detalhe do anúncio ao clicar
+- **D-703** — O Histórico de Preços abre o SKU e o anúncio ao clicar
+- **D-707** — O detalhe do SKU abre anúncios do Mercado Livre ao clicar
+- **D-709** — Os links de anúncio e devolução da Shopee carregam ao clicar
+- **D-710** — As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+- **D-712** — Os links para outras telas no menu Ações do anúncio carregam ao clicar
+- **D-713** — O atalho de Diagnóstico para Anúncios do SKU carrega ao clicar
+- **D-714** — A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
+- **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
+- **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 
-### outros (81)
+### outros (93)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -435,12 +475,24 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-633** — O historico de preco da Shopee (C-81)
 - **D-636** — O cabeçalho da /faturamento tem a mesma forma nos três recortes
 - **D-650** — A barra do topo cabe no celular: a busca cede espaço ao "Sair"
+- **D-667** — Indicadores de get_sync_health compartilham uma agregação
+- **D-680** — A inspeção de Produtos lê apenas as regras aplicáveis ao SKU
+- **D-686** — A barra lateral consulta o destino a partir do clique
+- **D-694** — A tabela de Produtos abre o detalhe do SKU ao clicar
+- **D-697** — O ranking de Produtos da Central abre o detalhe do SKU ao clicar
+- **D-702** — As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
+- **D-705** — Os itens vinculados do pedido de compra abrem o SKU ao clicar
+- **D-706** — Os produtos do fornecedor abrem o SKU ao clicar
+- **D-708** — O painel do fornecedor abre o pedido de compra ao clicar
+- **D-716** — Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+- **D-717** — O popup de Vinculações recupera os controles após falha da ação
+- **D-718** — O diálogo de remover vínculo do SKU recupera os controles após falha da ação
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (61)
+### vendas/métricas (67)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -503,8 +555,14 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-620** — O cancelamento por compra e o hoje ao vivo no "Todos" e na Shopee de /vendas (C-70)
 - **D-641** — A Shopee no Copiloto: as vendas por canal e o ranking de SKUs (C-84)
 - **D-643** — A venda anomala vira um episodio por SKU e canal
+- **D-672** — Vendas multicanal inicia as consultas sem esperar os filtros salvos
+- **D-677** — Vendas da Shopee inicia as consultas após validar as lojas visíveis
+- **D-678** — A Curva ABC inicia as consultas assim que o recorte está resolvido
+- **D-696** — A tabela da Curva ABC abre o detalhe do SKU ao clicar
+- **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
+- **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (94)
+### worker/infra (99)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -600,4 +658,9 @@ Decisões registradas: **558** (D-001 a D-654).
 - **D-601** — O TikTok Shop entra como terceiro canal, so leitura, no desenho da Shopee; a primeira fatia e o contrato conferido na documentacao oficial
 - **D-635** — A loja da Shopee na preferencia de aviso (C-82)
 - **D-654** — A barra do topo com nome de perfil longo, logo acima do trilho
+- **D-666** — Telemetria de jobs exige escopo explícito de plataforma
+- **D-671** — Faturamento multicanal inicia as leituras após resolver o recorte
+- **D-681** — Vinculações inicia a visão e os painéis em paralelo
+- **D-682** — Histórico de Preços inicia o consolidado sem esperar a lista de contas
+- **D-684** — Perguntas inicia a lista e os contadores sem esperar a lista de contas
 

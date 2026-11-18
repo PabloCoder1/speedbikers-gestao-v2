@@ -64,6 +64,8 @@ const JOB_DO_PUSH: Record<number, { jobType: string; prefixo: string }> = {
   [PUSH_RETURN_UPDATES]: { jobType: "shopee.returns.sync", prefixo: "shopee-returns-push" },
 };
 
+const CHAVES_DO_ENVELOPE = ["data", "shop_id", "shopid", "code", "partner_id", "timestamp"] as const;
+
 /**
  * Os endereços que valem na assinatura: o cadastrado e as variações que só
  * mudam a forma (barra no fim, http no lugar de https). Todas exigem a chave
@@ -85,19 +87,25 @@ export function enderecosDoPush(pushUrl: string): { nome: string; url: string }[
 /**
  * O que dá para dizer de um push recusado SEM expor a assinatura nem o
  * corpo: se o cabeçalho veio, o formato e o tamanho dele, o tamanho do corpo,
- * as chaves e o código. Os nomes evitam as palavras que a redação de log
+ * as chaves conhecidas e o código numérico. Os nomes evitam as palavras que a redação de log
  * apaga (`authorization`, `token`…) — `has_authorization` saía `[REDACTED]`.
  */
 function diagnosticoDaRecusa(input: { rawBody: string; authorization: string | undefined }): Record<string, unknown> {
-  let chaves: string[] | null = null;
-  let code: unknown = null;
+  let chaves: readonly string[] | null = null;
+  let code: number | null = null;
 
   try {
     const corpo = JSON.parse(input.rawBody) as unknown;
 
     if (corpo !== null && typeof corpo === "object" && !Array.isArray(corpo)) {
-      chaves = Object.keys(corpo).slice(0, 12);
-      code = (corpo as { code?: unknown }).code ?? null;
+      chaves = CHAVES_DO_ENVELOPE.filter((chave) => Object.hasOwn(corpo, chave));
+      const valor = (corpo as { code?: unknown }).code;
+
+      if (typeof valor === "number" && Number.isSafeInteger(valor)) {
+        code = valor;
+      } else if (typeof valor === "string" && /^\d{1,8}$/.test(valor)) {
+        code = Number(valor);
+      }
     }
   } catch {
     chaves = null;
@@ -157,7 +165,7 @@ export async function receiveShopeePush(
   const push = parsed.data;
 
   if (push.code === PUSH_AUTHORIZATION_CANCELED) {
-    deps.logger.warn("shopee_push_authorization_canceled", { code: push.code, shop_id: push.shop_id ?? null, data: push.data ?? null });
+    deps.logger.warn("shopee_push_authorization_canceled", { code: push.code, shop_id: push.shop_id ?? null });
 
     return { status: "ignored", code: push.code, reason: "autorização cancelada: só registrada" };
   }

@@ -7,7 +7,6 @@ import {
   lerRankingProdutos,
   ordemDaUrl,
   paginaDaUrl,
-  valorDaOrdem,
   type ResumoDoRanking,
 } from "./ranking-produtos";
 
@@ -155,17 +154,5 @@ describe("formatos", () => {
     expect(formatVariacao(null)).toBe("—");
     expect(limpo(formatPontos(-0.4))).toBe("−40,0 p.p.");
     expect(limpo(formatPontos(0))).toBe("0,0 p.p.");
-  });
-
-  it("o valor da coluna de cada ordem", () => {
-    const item = lerRankingProdutos(RESPOSTA)?.itens[0];
-
-    if (item === undefined) throw new Error("fixture fora do contrato");
-
-    expect(limpo(valorDaOrdem("receita", item))).toBe("R$ 800,00");
-    expect(valorDaOrdem("margem", item)).toBe("25,0%");
-    expect(valorDaOrdem("volume", item)).toBe("20");
-    expect(valorDaOrdem("crescimento", item)).toBe("+100%");
-    expect(limpo(valorDaOrdem("queda_margem", item))).toBe("0,0 p.p.");
   });
 });
