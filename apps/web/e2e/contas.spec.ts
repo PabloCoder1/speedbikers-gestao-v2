@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_SHOPEE_ESPERADO, E2E_SHOPEE_SHOP } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * `/contas` — o painel "Lojas Shopee" (D-425). O que só se prova rodando: a
@@ -9,6 +11,42 @@ import { login } from "./helpers.js";
  * organização), o ambiente dito por extenso e o botão de conectar para o ADMIN.
  * O clique em si chama a api, que este e2e não sobe.
  */
+test("/contas: falha de conexão ao cadastrar conserva os campos e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const slug = "e2e-conta-falha-conexao";
+  const label = "Conta E2E de falha de conexão";
+  const lista = () => db.from("ml_accounts").select("label,status").eq("organization_id", seed.organizationId).eq("slug", slug);
+
+  try {
+    await login(page, "/contas");
+    await page.getByLabel("Rótulo", { exact: true }).fill(label);
+    await page.getByLabel("Identificador (nomeia a fila interna)", { exact: true }).fill(slug);
+    const cadastrar = page.getByRole("button", { name: "Cadastrar conta", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await cadastrar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar o cadastro" })).toBeVisible();
+    await expect(cadastrar).toBeEnabled();
+    await expect(page.getByLabel("Rótulo", { exact: true })).toHaveValue(label);
+    await expect(page.getByLabel("Identificador (nomeia a fila interna)", { exact: true })).toHaveValue(slug);
+    expect(caiu()).toBe(true);
+    const antes = await lista();
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+
+    await cadastrar.click();
+    await expect(page.getByLabel("Rótulo", { exact: true })).toHaveValue("");
+    const depois = await lista();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([{ label, status: "PENDING" }]);
+  } finally {
+    const limpeza = await db.from("ml_accounts").delete().eq("organization_id", seed.organizationId).eq("slug", slug);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
 test("/contas: o painel Lojas Shopee lista a loja da organização e oferece conectar ao ADMIN", async ({ page }) => {
   await login(page, "/contas");
 

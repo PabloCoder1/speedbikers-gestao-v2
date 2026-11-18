@@ -89,6 +89,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A78 | P2 · CORRIGIDO localmente (D-720) | Marcar como lida, marcar todas e criar, alterar ou remover regra de notificação ficavam com os controles presos e sem aviso quando a Server Action falhava no transporte | Os quatro componentes liberam os controles e avisam. As regressões derrubam o POST da ação e conferem que nada foi gravado. [Registro](SESSION_LOG.md#17112026--falha-de-transporte-em-notificações-e-preferências) |
 | A79 | P2 · CORRIGIDO localmente (D-721) | Trocar papel, alternar acesso, remover membro e salvar o nome do perfil ficavam com os controles presos e sem aviso quando a Server Action falhava no transporte | Os três componentes liberam os controles e avisam. As regressões derrubam o POST da ação e conferem no banco que nada mudou. [Registro](SESSION_LOG.md#17112026--falha-de-transporte-em-usuários-e-no-nome-do-perfil) |
 
+| A80 | P2 · CORRIGIDO localmente (D-722) | A falha de transporte deixava Contas em Cadastrando, Sugestões em Enviando e visões salvas em Salvando ou com exclusão desabilitada, sem aviso | As quatro regressões falharam no build anterior e passaram no corrigido. Os controles são liberados em `finally`, os campos permanecem preenchidos e a nova tentativa é confirmada no banco. O aviso de salvar visão aparece dentro do diálogo. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

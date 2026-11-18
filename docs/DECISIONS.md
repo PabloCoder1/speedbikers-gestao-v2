@@ -19776,3 +19776,11 @@ Na gaveta de um membro, trocar o papel, alternar uma conta ou loja permitida e r
 Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-720. Papel, acesso e remoção podem ter sido gravados antes da queda, e o aviso pede recarregar a página antes de tentar novamente. Salvar o nome é idempotente, e o aviso pede só nova tentativa, com o nome digitado preservado. Suspender e reativar o acesso usam `chamarApi`, que já tratava a falha de rede.
 
 A regressão da gaveta não repete as tentativas, porque mudariam o GESTOR que os outros casos usam, e confere no banco que o membro e o papel continuam iguais. A do nome repete a tentativa e devolve o nome original no fim.
+
+## D-722 - Contas, Sugestões e visões salvas recuperam os controles após falha da ação
+
+Os formulários de cadastrar conta e enviar sugestão, e as ações de salvar e apagar visão, ligavam o estado pendente antes de aguardar a Server Action e só o desligavam após a resposta. Derrubar o POST reproduziu os quatro caminhos presos e sem aviso.
+
+Cada ação trata a exceção e libera os controles em `finally`. Os campos continuam preenchidos, e a mensagem informa que a operação não pôde ser confirmada e pede conferir a lista antes de tentar de novo. A comunicação pode falhar depois da gravação no servidor. Os campos só são limpos no sucesso, e o cliente aguarda nova iniciativa da pessoa.
+
+Em visões salvas, o aviso de salvamento fica dentro do diálogo aberto. Fora dele, o aviso de exclusão continua junto aos controles da página. A regressão de nome maior que o limite do banco confere a recusa no diálogo e a correção do nome para salvar. As regressões de transporte conferem nenhuma inserção ou exclusão no POST bloqueado, a conta criada como PENDING, a sugestão com texto preservado e os parâmetros da visão na nova tentativa. As fixtures são removidas ao final.

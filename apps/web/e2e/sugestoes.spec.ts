@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_SUGESTOES } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Central de Sugestões (`/sugestoes`) pelo frame `CentralScreen` na variação de
@@ -21,6 +23,43 @@ import { login } from "./helpers.js";
  *  4. **a janela declarada**, que a tela não tinha: ela lia SEM LIMITE e
  *     imprimia `rows.length` como total (a forma do defeito de D-263).
  */
+
+test("/sugestoes: falha de conexão conserva o texto e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const texto = "E2E: conservar esta sugestão após a falha de conexão.";
+  const lista = () => db.from("feature_suggestions").select("original_text,status")
+    .eq("organization_id", seed.organizationId).eq("created_by", seed.userId).eq("original_text", texto);
+
+  try {
+    await login(page, "/sugestoes");
+    const campo = page.getByRole("textbox", { name: "Sugerir uma melhoria" });
+    await campo.fill(texto);
+    const enviar = page.getByRole("button", { name: "Enviar sugestão", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await enviar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar o envio" })).toBeVisible();
+    await expect(enviar).toBeEnabled();
+    await expect(campo).toHaveValue(texto);
+    expect(caiu()).toBe(true);
+    const antes = await lista();
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+
+    await enviar.click();
+    await expect(page.getByText("Enviada.", { exact: true })).toBeVisible();
+    await expect(campo).toHaveValue("");
+    const depois = await lista();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([{ original_text: texto, status: "nova" }]);
+  } finally {
+    const limpeza = await db.from("feature_suggestions").delete().eq("organization_id", seed.organizationId)
+      .eq("created_by", seed.userId).eq("original_text", texto);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
 
 test("/sugestoes: o detalhe abre na mais recente e diz que ela não foi estruturada", async ({ page }) => {
   await login(page, "/sugestoes");

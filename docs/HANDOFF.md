@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-17 |
+| **Atualizado em** | 2026-11-18 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-721 liberam diálogos e formulários quando a Server Action cai no transporte; restam cinco componentes e cinco com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-722 liberam diálogos e formulários quando a Server Action cai no transporte. A última fatia cobre Contas, Sugestões e visões salvas; restam compra, item de nota fiscal e cinco componentes com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

@@ -22,7 +22,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · home, acoes, centra
 | `/diagnostico` | [page.tsx](<../../apps/web/app/(app)/diagnostico/page.tsx>) | RPC `get_sku_sales_baseline`, `get_sku_correlated_events`, `get_sku_average_prices`. Tabelas `support_case_links` |
 | `/notificacoes` | [page.tsx](<../../apps/web/app/(app)/notificacoes/page.tsx>) | Tabelas `notification_recipients`, `ml_accounts`, `shopee_shops`. Marcar como lida e marcar todas liberam os controles após falha de transporte (D-720). |
 | `/notificacoes/preferencias` | [page.tsx](<../../apps/web/app/(app)/notificacoes/preferencias/page.tsx>) | Tabelas `notification_preferences`, `ml_accounts`. Criar, alterar e remover regra liberam os controles após falha de transporte (D-720). |
-| `/sugestoes` | [page.tsx](<../../apps/web/app/(app)/sugestoes/page.tsx>) | Tabelas `feature_suggestions` |
+| `/sugestoes` | [page.tsx](<../../apps/web/app/(app)/sugestoes/page.tsx>) | Tabela `feature_suggestions`. D-722 recupera o envio após falha da ação, conservando o texto e permitindo nova tentativa. |
 
 ## Comercial e anúncios
 
@@ -32,7 +32,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · anuncios, anuncio-d
 |---|---|---|
 | `/anuncios` | [page.tsx](<../../apps/web/app/(app)/anuncios/page.tsx>) | `get_listings_dashboard` e `get_listings_dashboard_counts` começam após a organização e a conta solicitada. A lista recebe filtros de estado, período e ordenação. `saved_filters` e a contagem Shopee alimentam o cabeçalho. Detalhe, SKU e aba Preços são carregados ao clicar nos links da linha (D-689). |
 | `/anuncios/[itemId]` | [page.tsx](<../../apps/web/app/(app)/anuncios/[itemId]/page.tsx>) | RPC `get_listing_dashboard_summary`, `get_listings_dashboard`, `get_fulfillment_overview`, `get_listing_content_change_analysis`. Tabelas `listings`, `domain_events`, `actions`, `daily_listing_metrics`, `daily_listing_visits`, `listing_relists`, `action_decisions`. As abas do cabeçalho e os atalhos de Vendas, Tráfego e Histórico carregam ao acionar (D-710, D-711). Os links do menu Ações carregam ao clicar (D-712) |
-| `/anuncios/shopee` | [page.tsx](<../../apps/web/app/(app)/anuncios/shopee/page.tsx>) | `get_shopee_listings` e `get_shopee_listings_summary` começam após resolver a organização e as lojas visíveis. `saved_filters` e a contagem de contas ML alimentam os controles. O SKU vinculado carrega ao clicar (D-690). D-716 recupera os diálogos de vincular e remover após falha de transporte. Recusa do catálogo e remoção concorrente têm regressão com duas sessões. |
+| `/anuncios/shopee` | [page.tsx](<../../apps/web/app/(app)/anuncios/shopee/page.tsx>) | `get_shopee_listings` e `get_shopee_listings_summary` começam após resolver a organização e as lojas visíveis. `saved_filters` e a contagem de contas ML alimentam os controles. D-722 recupera salvar e apagar visões após falha da ação, com aviso de salvamento dentro do diálogo. O SKU vinculado carrega ao clicar (D-690). D-716 recupera os diálogos de vincular e remover após falha de transporte. Recusa do catálogo e remoção concorrente têm regressão com duas sessões. |
 | `/faturamento` | [page.tsx](<../../apps/web/app/(app)/faturamento/page.tsx>) | No ML, `get_faturamento` e `get_ads_overview` iniciam assim que o recorte da URL é resolvido. Shopee e Todos usam `multicanal.tsx` e iniciam as RPCs após resolver a organização. A lista de `marketplace_accounts` alimenta o cabeçalho e valida o filtro explícito de lojas. O detalhe do SKU abre ao clicar nas listas de produtos (D-702) |
 | `/full` | [page.tsx](<../../apps/web/app/(app)/full/page.tsx>) | RPC `get_fulfillment_overview` após organização. A lista `ml_accounts` só bloqueia a consulta com conta explícita na URL (D-683). SKU e Reposição filtrada carregam ao clicar (D-692) |
 | `/precos` | [page.tsx](<../../apps/web/app/(app)/precos/page.tsx>) | RPC `get_price_changes` após a organização. A lista `ml_accounts` só bloqueia a consulta quando há conta na URL (D-682). O SKU e o anúncio abrem ao clicar na linha (D-703) |
@@ -90,7 +90,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · configuracoes, cont
 | Rota | Entrada | Referências diretas de dados |
 |---|---|---|
 | `/configuracoes` | [page.tsx](<../../apps/web/app/(app)/configuracoes/page.tsx>) | RPC `get_settings_overview`. Tabela `shopee_shops`. Os atalhos dos cartões consultam o destino ao clicar (D-687) |
-| `/contas` | [page.tsx](<../../apps/web/app/(app)/contas/page.tsx>) | RPC `get_ml_account_cards`, `get_shopee_shop_catalog_counts`. Tabelas `shopee_shops` |
+| `/contas` | [page.tsx](<../../apps/web/app/(app)/contas/page.tsx>) | RPC `get_ml_account_cards`, `get_shopee_shop_catalog_counts`. Tabelas `ml_accounts`, `shopee_shops`. D-722 libera o cadastro após falha da ação, conservando rótulo e identificador. |
 | `/integracoes` | [page.tsx](<../../apps/web/app/(app)/integracoes/page.tsx>) | RPC `get_sync_health`, `get_system_health`, `get_ai_monthly_cost_usd`. Tabelas `ml_accounts`, `marketplace_accounts`, `erp_import_batches`, `ai_runs`, `domain_events` |
 | `/login` | [page.tsx](<../../apps/web/app/login/page.tsx>) | Ver a entrada e seus imports |
 | `/saude` | [page.tsx](<../../apps/web/app/(app)/saude/page.tsx>) | RPC `get_system_health` |
