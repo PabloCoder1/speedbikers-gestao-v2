@@ -19816,3 +19816,11 @@ A tabela de Produtos disparava uma função assíncrona com `void` dentro de `st
 O callback agora é assíncrono diretamente e trata a exceção localmente. A falha conserva seleção, marca e painel de confirmação; o resultado é anunciado como alerta e pede conferir os produtos antes de tentar novamente. Não há repetição automática. Os checkboxes da página e das linhas e o campo de marca ficam bloqueados durante a ação, para o lote em andamento conservar seu significado.
 
 Se a falha ocorre em Desfazer, o aviso mantém o botão e somente os IDs que a ação original alterou. A regressão envia um SKU pendente junto de outro já virtual, interrompe o desfazer e tenta novamente: só o primeiro volta a não classificado. As recusas declaradas e o resultado por linha seguem o fluxo existente. As fixtures devolvem os sete campos de classificação e marca aos valores anteriores, incluindo autores e datas.
+
+## D-727 - Regra de reposição conserva a gaveta após falha da ação
+
+Criar e editar regra aguardavam a Server Action no callback de `useActionState`; remover aguardava a ação em `useTransition`. Nenhum dos dois tratava a exceção. Nos três caminhos, bloquear o POST substituiu a gaveta pela fronteira de erro do segmento, perdendo os campos e a confirmação de remoção.
+
+O salvamento agora devolve um `ResultadoDaRegra` de falha quando a comunicação é interrompida, sem erros de validação antigos. A remoção trata a exceção na própria transição. Os hooks liberam os controles, os campos controlados permanecem preenchidos e a confirmação continua disponível. Os avisos pedem conferir as regras antes de tentar novamente, pois uma falha de resposta não prova ausência de gravação. Não há repetição automática. As ações, validações e regras de autorização no servidor não mudam; a gaveta só fecha no sucesso.
+
+Três regressões conferem o banco intacto após o POST bloqueado e o resultado da nova tentativa: inserção, edição com identidade de escopo preservada e remoção. Um quarto caso remove a regra no banco enquanto a edição está aberta e confirma a recusa real de salvar uma linha ausente, sem fechar nem apagar o rascunho. As regras temporárias são removidas no fim. Esta fatia encerra a verificação dos cinco componentes com `useTransition` inventariados em 17/11; os quatro formulários diretos de `useActionState` da Central ficam para a próxima reprodução.

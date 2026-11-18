@@ -99,6 +99,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A84 | P2 · CORRIGIDO localmente (D-726) | A interrupção da Server Action de curadoria não mostrava aviso em classificar, aplicar marca, limpar marca ou desfazer; seleção e marca continuavam editáveis com a confirmação pendente | O callback trata a exceção, preserva o preenchimento e anuncia o erro. A nova tentativa de Desfazer conserva só os IDs originalmente alterados, e os controles do lote ficam bloqueados durante a gravação. Cinco regressões com consulta ao banco. [Verificação](SESSION_LOG.md) |
 
+| A85 | P2 · CORRIGIDO localmente (D-727) | Criar, editar ou remover regra de reposição após interrupção da Server Action derrubava a gaveta para a fronteira de erro, perdendo campos e confirmação | O salvamento devolve falha tratada e a remoção trata a exceção localmente. Três regressões conferem a gaveta preservada, o banco intacto no POST bloqueado e a nova tentativa. Uma quarta confere a recusa real de editar uma regra removida. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
