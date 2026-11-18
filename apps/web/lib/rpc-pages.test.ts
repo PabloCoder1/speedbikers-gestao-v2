@@ -60,15 +60,15 @@ describe("lerPaginasDaRpc", () => {
     expect(linhas).toEqual(Array.from({ length: 2_300 }, (_, i) => i));
   });
 
-  it("erro em qualquer página devolve o erro, nunca um arquivo pela metade", async () => {
+  it("erro em qualquer página preserva o código e descarta a leitura incompleta", async () => {
     let n = 0;
     const lerPagina = () => {
       n += 1;
       return Promise.resolve(
-        n === 2 ? { data: null, error: { message: "boom" } } : { data: Array(1_000).fill(0) as number[], error: null },
+        n === 2 ? { data: null, error: { message: "boom", code: "PGRST202" } } : { data: Array(1_000).fill(0) as number[], error: null },
       );
     };
 
-    await expect(lerPaginasDaRpc(lerPagina, 5_000)).resolves.toEqual({ linhas: [], error: { message: "boom" } });
+    await expect(lerPaginasDaRpc(lerPagina, 5_000)).resolves.toEqual({ linhas: [], error: { message: "boom", code: "PGRST202" } });
   });
 });

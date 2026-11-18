@@ -335,7 +335,7 @@ export default async function FornecedorPage({
                 {orders.map((order) => (
                   <tr key={order.id}>
                     <td className="sb-mono">
-                      <Link href={`/compras/${order.id}`}>#{order.order_number}</Link>
+                      <Link href={`/compras/${order.id}`} prefetch={false}>#{order.order_number}</Link>
                     </td>
                     <td>
                       <StatusPill code={order.status} label={purchaseOrderStatusLabel(order.status)} />
@@ -393,7 +393,11 @@ export default async function FornecedorPage({
                     <tr key={`${row.sku_id ?? "livre"}:${row.sku}`}>
                       <td className="sb-mono">
                         {/* Item digitado livre não tem vínculo — vira texto, não link morto. */}
-                        {row.sku_id === null ? row.sku : <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>}
+                        {row.sku_id === null ? row.sku : (
+                          <Link href={`/skus/${row.sku_id}`} prefetch={false}>
+                            {row.sku}
+                          </Link>
+                        )}
                         {row.title !== null && (
                           <div
                             style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontFamily: "inherit" }}

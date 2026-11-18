@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DM_Mono, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 import "./globals.css";
@@ -16,25 +16,27 @@ import { WebVitals } from "./web-vitals";
  * desenho é a alternância entre a Inter do texto e o monoespaçado dos rótulos e
  * números.
  *
- * `next/font` baixa as fontes no BUILD e as serve do próprio domínio — não há
- * requisição ao Google em tempo de execução, e não há salto de layout esperando
- * uma folha externa. `display: "swap"` mantém o texto legível enquanto a fonte
- * carrega, com a pilha de fallback declarada abaixo fazendo a ponte.
+ * `next/font/local` serve os WOFF2 versionados do próprio domínio. O build
+ * também independe do Google: URLs sem extensão retornadas para a Inter
+ * quebram o parser de fontes do Turbopack no Next 16.4.1 (next.js#99114).
+ * `display: "swap"` mantém o texto legível enquanto a fonte carrega.
  *
  * Os pesos são os que o Figma usa (medido: 400, 500, 600, 700). Pedir a família
- * variável inteira seria mais bytes por nada.
+ * Inter usa um arquivo variável compartilhado pelos quatro pesos; DM Mono,
+ * os dois arquivos estáticos. Origem e licenças em `fonts/README.md`.
  */
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const inter = localFont({
+  src: [{ path: "./fonts/inter-latin-variable.woff2", weight: "400 700", style: "normal" }],
   display: "swap",
   variable: "--sb-font-sans",
   fallback: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
 });
 
-const dmMono = DM_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const dmMono = localFont({
+  src: [
+    { path: "./fonts/dm-mono-latin-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/dm-mono-latin-500.woff2", weight: "500", style: "normal" },
+  ],
   display: "swap",
   variable: "--sb-font-mono",
   fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],

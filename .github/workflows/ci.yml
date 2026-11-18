@@ -199,6 +199,14 @@ jobs:
       #
       # Testar RLS contra mock não provaria nada — o que está sob teste é o
       # comportamento do Postgres.
+      - name: Isolar a stack de testes
+        env:
+          SUPABASE_TEST_ID: ci-${{ github.run_id }}-integration-${{ github.run_attempt }}
+        run: |
+          node --test scripts/isolate-supabase.test.mjs
+          node scripts/isolate-supabase.mjs
+          docker ps --format '{{.Names}} {{.Ports}}'
+
       - name: Subir Supabase local
         run: pnpm exec supabase start
 
@@ -212,6 +220,8 @@ jobs:
           {
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "SUPABASE_DB_URL=$DB_URL"
+            echo "DB_URL=$DB_URL"
           } >> "$GITHUB_ENV"
 
       - name: Testes de RLS e de gravacao idempotente
@@ -312,6 +322,13 @@ jobs:
 
       # Job proprio (nao reusa o Supabase do job "integracao"): jobs do
       # GitHub Actions nao compartilham processo, cada um sobe o seu.
+      - name: Isolar a stack de testes
+        env:
+          SUPABASE_TEST_ID: ci-${{ github.run_id }}-e2e-${{ github.run_attempt }}
+        run: |
+          node scripts/isolate-supabase.mjs
+          docker ps --format '{{.Names}} {{.Ports}}'
+
       - name: Subir Supabase local
         run: pnpm exec supabase start
 

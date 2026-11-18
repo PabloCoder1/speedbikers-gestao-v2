@@ -179,7 +179,7 @@ export function ObjectHeader({
       {abas !== undefined && abas.length > 0 && (
         <nav aria-label={rotuloAbas} className="sb-object-tabs">
           {abas.map((aba) => (
-            <Link key={aba.href} href={aba.href} aria-current={aba.active ? "page" : undefined}>
+            <Link key={aba.href} href={aba.href} prefetch={false} aria-current={aba.active ? "page" : undefined}>
               {aba.label}
               <CarregandoSeODemorar />
             </Link>

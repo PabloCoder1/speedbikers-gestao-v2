@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **612** (D-001 a D-725).
+Decisões registradas: **627** (D-001 a D-725).
 
 ## Por domínio
 
@@ -184,7 +184,7 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
 - **D-704** — As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
 
-### interface (74)
+### interface (75)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -260,8 +260,9 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-665** — Detalhe do SAC pagina a conversa por data e mensagem
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
+- **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 
-### mercado-livre (119)
+### mercado-livre (127)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -382,8 +383,16 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-691** — A tabela de Vinculações abre o anúncio e o SKU ao clicar
 - **D-698** — O Detector de frete abre o detalhe do anúncio ao clicar
 - **D-703** — O Histórico de Preços abre o SKU e o anúncio ao clicar
+- **D-707** — O detalhe do SKU abre anúncios do Mercado Livre ao clicar
+- **D-709** — Os links de anúncio e devolução da Shopee carregam ao clicar
+- **D-710** — As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+- **D-712** — Os links para outras telas no menu Ações do anúncio carregam ao clicar
+- **D-713** — O atalho de Diagnóstico para Anúncios do SKU carrega ao clicar
+- **D-714** — A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
+- **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
+- **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 
-### outros (87)
+### outros (93)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -472,6 +481,12 @@ Decisões registradas: **612** (D-001 a D-725).
 - **D-694** — A tabela de Produtos abre o detalhe do SKU ao clicar
 - **D-697** — O ranking de Produtos da Central abre o detalhe do SKU ao clicar
 - **D-702** — As listas de produtos do Faturamento abrem o detalhe do SKU ao clicar
+- **D-705** — Os itens vinculados do pedido de compra abrem o SKU ao clicar
+- **D-706** — Os produtos do fornecedor abrem o SKU ao clicar
+- **D-708** — O painel do fornecedor abre o pedido de compra ao clicar
+- **D-716** — Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+- **D-717** — O popup de Vinculações recupera os controles após falha da ação
+- **D-718** — O diálogo de remover vínculo do SKU recupera os controles após falha da ação
 
 ### processo/docs (1)
 

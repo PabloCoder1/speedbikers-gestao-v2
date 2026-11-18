@@ -148,24 +148,27 @@ export function VincularShopeeDialog({
     setGravando(true);
     setErro(null);
 
-    const resultado = await vincularAnuncioShopee({
-      lojaId: unidade.lojaId,
-      itemId: unidade.itemId,
-      modelId: unidade.modelId,
-      skuId: sku.skuId,
-      motivo,
-    });
+    try {
+      const resultado = await vincularAnuncioShopee({
+        lojaId: unidade.lojaId,
+        itemId: unidade.itemId,
+        modelId: unidade.modelId,
+        skuId: sku.skuId,
+        motivo,
+      });
 
-    setGravando(false);
+      if (!resultado.ok) {
+        setErro(resultado.message ?? "Não foi possível vincular.");
+        return;
+      }
 
-    if (!resultado.ok) {
-      setErro(resultado.message ?? "Não foi possível vincular.");
-
-      return;
+      // A ação já refez a tela (`revalidatePath`): a linha mostra o vínculo novo.
+      onFechar();
+    } catch {
+      setErro("Não foi possível confirmar o vínculo. Confira o vínculo na lista antes de tentar novamente.");
+    } finally {
+      setGravando(false);
     }
-
-    // A ação já refez a tela (`revalidatePath`): a linha mostra o vínculo novo.
-    onFechar();
   }
 
   const sobrancelha = modo === "trocar" ? "TROCAR O SKU DO VÍNCULO MANUAL" : "VINCULAR ANÚNCIO SHOPEE";
@@ -311,17 +314,20 @@ export function RemoverVinculoShopeeDialog({
     setRemovendo(true);
     setErro(null);
 
-    const resultado = await removerVinculoShopee(linkId, motivo);
+    try {
+      const resultado = await removerVinculoShopee(linkId, motivo);
 
-    setRemovendo(false);
+      if (!resultado.ok) {
+        setErro(resultado.message ?? "Não foi possível remover o vínculo.");
+        return;
+      }
 
-    if (!resultado.ok) {
-      setErro(resultado.message ?? "Não foi possível remover o vínculo.");
-
-      return;
+      onFechar();
+    } catch {
+      setErro("Não foi possível confirmar a remoção. Confira o vínculo na lista antes de tentar novamente.");
+    } finally {
+      setRemovendo(false);
     }
-
-    onFechar();
   }
 
   return (

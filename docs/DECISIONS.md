@@ -19705,3 +19705,104 @@ Nenhum segundo sistema de compras. O pedido ganhou `is_import`, câmbio e `logis
 `purchase_order_costs` guarda frete internacional, seguro, tributos, despesas aduaneiras, desembaraço e transporte nacional, com estimado e realizado separados. `get_purchase_order_landed_cost` dá o custo de chegada por item, rateado pelo valor (premissa declarada). Moeda diferente de BRL sem câmbio deixa o valor em reais desconhecido, nunca convertido a 1, e item sem custo deixa o rateio desconhecido. Nada de NCM, imposto, peso ou cubagem inventado: o que não foi informado aparece como pendente.
 
 No novo pedido, "Trazer produtos do fornecedor" lê o catálogo dele (D-723), avalia cada SKU pelo mesmo motor da revisão (D-721) e traz só o que precisa de compra. A quantidade já vem ajustada ao mínimo e ao múltiplo, e o que ficou de fora é contado por motivo: sem necessidade agora, sem dados ou já no pedido.
+## D-705 - Os itens vinculados do pedido de compra abrem o SKU ao clicar
+
+No detalhe do pedido, o link do SKU vinculado usa `prefetch={false}`. Em rascunhos locais com 2 e 50 SKUs, a mudança evitou 4 e 51 chamadas ao Auth antes do clique, na mediana. A mediana do clique aumentou 27 ms no pedido menor e 6 ms no maior. O pedido maior motivou aplicar o comportamento a todos os links de SKU da tabela.
+
+Itens em texto livre aparecem pelo código registrado no pedido. A regressão cria um rascunho pela interface, abre o SKU vinculado e verifica o retorno ao mesmo pedido. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-itens-do-pedido-de-compra-sentinel-a62-17112026)
+
+## D-706 - Os produtos do fornecedor abrem o SKU ao clicar
+
+Na seção SKUs já comprados, rolar até os itens disparava pré-buscas dos SKUs vinculados. Em duas listas locais com 2 e 49 links, a mediana de chamadas ao Auth atribuídas às pré-buscas foi de 4 e 53. Com `prefetch={false}` nos links de SKU, os dois casos chegaram a zero antes do clique. A medição local do clique foi de 134 para 119 ms e de 138 para 132 ms na mediana.
+
+A regressão cria um pedido pela interface a partir do fornecedor, abre o SKU na seção de produtos e verifica o retorno ao fornecedor. A seção Pedidos de compra será medida à parte. [Medição](PERFORMANCE.md#prefetch-dos-links-de-sku-nos-produtos-do-fornecedor-sentinel-a63-17112026)
+
+## D-707 - O detalhe do SKU abre anúncios do Mercado Livre ao clicar
+
+No detalhe do SKU, os links de anúncio do Mercado Livre usam `prefetch={false}` no cartão da Visão geral, nas duas entradas da linha de Anúncios e nas alterações da aba Preços. No ensaio local, desativar a pré-busca evitou 6, 51 e 50 chamadas ao Auth antes do clique, na mediana das três jornadas.
+
+As regressões conferem o anúncio esperado e o retorno à aba de origem. O destino dos links do Mercado Livre é o detalhe do anúncio. Os links da Shopee vão para uma lista filtrada e pedem medição própria. [Medição](PERFORMANCE.md#prefetch-dos-links-do-mercado-livre-no-detalhe-do-sku-sentinel-a64-17112026)
+
+## D-708 - O painel do fornecedor abre o pedido de compra ao clicar
+
+O link da linha de Pedidos de compra usa `prefetch={false}`. No ensaio local, a mudança evitou 3 chamadas ao Auth antes do clique no fornecedor com 2 pedidos e 49 no fornecedor com 50. A mediana do clique ficou em 121 ms na lista cheia e subiu de 107 para 116 ms na lista curta.
+
+A regressão confere o número do pedido aberto e o retorno ao mesmo fornecedor. [Medição](PERFORMANCE.md#prefetch-dos-links-de-pedido-no-painel-do-fornecedor-sentinel-a65-17112026)
+
+## D-709 - Os links de anúncio e devolução da Shopee carregam ao clicar
+
+Na tabela de Anúncios da Shopee do SKU, o link do número do item usa `prefetch={false}` e abre a lista filtrada pelo número. Em Devoluções, a mesma opção vale para SKUs vinculados. O ensaio com loja sintética do projeto `loja-live` registrou a redução de 48 e 13 chamadas ao Auth para zero antes do clique, na mediana.
+
+As regressões verificam a busca do item, a abertura do SKU correto e o retorno à aba original ou ao filtro de loja. [Medição](PERFORMANCE.md#prefetch-dos-links-da-shopee-no-sku-e-em-devolucoes-sentinel-a66-17112026)
+
+## D-710 - As abas do cabeçalho do SKU e do anúncio carregam ao acionar
+
+Os links das abas no `ObjectHeader` usam `prefetch={false}`. O Chromium mediu quatro jornadas, entrando pela Visão geral ou direto na aba de preço de cada detalhe. Cada troca precisou de uma requisição RSC nos dois builds. A mudança poupou de 4 a 8 verificações de sessão antes do primeiro clique, conforme a jornada.
+
+As abas usam o indicador de atualização no lugar. As regressões atrasam a resposta e verificam que o painel anterior fica visível, que o indicador sai ao concluir e que voltar restaura a aba anterior. Os atalhos para abas que aparecem no conteúdo ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-do-seletor-de-abas-no-sku-e-no-anuncio-sentinel-a67-17112026)
+
+## D-711 - Os atalhos da Visão geral abrem outras abas ao clicar
+
+Foi aplicado `prefetch={false}` aos atalhos de Anúncios e Decisões no SKU e aos de Vendas, Tráfego e Histórico no anúncio, incluindo o link Linha do tempo e republicações no menu Ações. A comparação local registrou duas chamadas ao Auth a menos por jornada no SKU e três no anúncio. Todos os destinos continuaram a abrir com uma única resposta RSC e preservaram a aba no histórico de navegação.
+
+As regressões conferem os destinos dos links antes do clique e exercitam a abertura de Decisões e de Republicações pelo menu. As pré-buscas para outras telas que aparecem ao abrir o menu Ações ficam na fila de medição. [Medição](PERFORMANCE.md#prefetch-dos-atalhos-para-abas-nos-detalhes-sentinel-a68-17112026)
+
+## D-712 - Os links para outras telas no menu Ações do anúncio carregam ao clicar
+
+Os links para SKU ou Vinculações, Central de Preços, busca de Anúncios, Central de Ações e catálogo usam `prefetch={false}` nesse menu. As seis jornadas locais mediram 8 a 10 chamadas ao Auth por pré-busca na abertura, conforme o destino, e zero no build corrigido. Os atalhos filtrados levaram o MLB à busca e o retorno restaurou a Visão geral do anúncio.
+
+As regressões verificam Preços e Vinculações, com atraso na requisição de navegação para conferir o indicador de atualização. [Medição](PERFORMANCE.md#prefetch-dos-links-do-menu-acoes-do-anuncio-sentinel-a69-17112026)
+
+## D-713 - O atalho de Diagnóstico para Anúncios do SKU carrega ao clicar
+
+O link aba Anúncios no painel de limites do diagnóstico usa `prefetch={false}`. As duas jornadas locais, no consolidado e com conta na URL, evitaram uma chamada ao Auth por pré-busca antes do clique. As medianas do clique passaram de 122 para 118 ms e de 132 para 119 ms.
+
+A regressão atrasa a resposta da aba, verifica o indicador de atualização e volta ao Diagnóstico. O benchmark confere o retorno ao recorte de conta. [Medição](PERFORMANCE.md#prefetch-do-atalho-de-diagnostico-para-anuncios-no-sku-sentinel-a70-17112026)
+
+## D-714 - A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
+
+A web usa o paginador de RPC existente, com contagem exata na primeira página e sem teto de descarte no cliente. A ordenação preserva nome da conta, título e MLB e acrescenta o ID da conta para desempatar contas de mesmo nome com o mesmo anúncio. Em caso de erro, o paginador devolve o erro e descarta o lote incompleto.
+
+A migration `20261117171808` também corrige a RPC. O campo `ml_account_id` vinha da linha opcional de `listings`. Um vínculo ainda sem essa linha devolvia conta nula, que o Diagnóstico podia selecionar ao resolver o escopo padrão. O ID passa a vir do par de conta e anúncio já determinado pelo vínculo. A assinatura e a política `security invoker` continuam válidas para os consumidores existentes.
+
+A reprodução mostrou 1.000 de 1.002 anúncios na tela original. Com paginação e a migration, a tabela e o Diagnóstico receberam o conjunto inteiro, incluindo variação e vínculo ainda sem leitura, com o anúncio excluído fora. A migration foi aplicada só no banco local. A publicação exige sua aplicação antes da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-ml-no-sku-sentinel-a71-17112026)
+
+## D-715 - O painel Shopee do SKU lê todos os anúncios em páginas
+
+A RPC `get_sku_shopee_listings` tinha teto SQL de 200 previsto na D-429, sem aviso de corte no painel do SKU. A migration `20261117173152` retira esse teto e acrescenta o ID da loja ao desempate da ordenação. A assinatura e as permissões ficam preservadas por `create or replace`, com `security invoker` e a mesma view canônica.
+
+A web usa o paginador existente, com contagem exata na primeira página e ordem por nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O erro da RPC conserva o código para a mensagem de banco ainda sem a função. Um erro interrompe a leitura e descarta as páginas parciais.
+
+A fixture de 1.002 unidades reproduziu 200 linhas na tela original e 1.000 após retirar apenas o limite SQL. Com a paginação, o conjunto chegou inteiro, incluindo variações, precedência manual e lojas de mesmo nome, com os anúncios apagados fora e o sandbox marcado. A migration foi aplicada apenas no banco local e deve preceder a publicação da web. [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+
+## D-716 - Os diálogos do vínculo Shopee recuperam os controles após falha da ação
+
+As rotinas de vincular e remover só liberavam o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa, deixando o diálogo sem alerta e com os botões presos em Gravando ou Removendo. A reprodução em Chromium bloqueou o POST da ação antes do envio, nos dois caminhos.
+
+Cada rotina trata a exceção e libera o estado pendente em `finally`. A mensagem informa que o vínculo ou a remoção não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Uma falha de comunicação pode ocorrer depois da gravação no servidor, por isso o cliente não anuncia que nada mudou nem repete a ação automaticamente. O SKU escolhido e o motivo permanecem no diálogo.
+
+As regressões conferem a ausência de gravação quando o POST foi bloqueado, os controles liberados e a nova tentativa. Outro caso usa a RPC real para recusar um item que saiu do catálogo e duas sessões autenticadas para remover um vínculo enquanto a primeira ainda tem o diálogo aberto. Os dois estados já exibiam a recusa e permitiam recuperar a tela. O banco e as ações de servidor mantêm seu contrato.
+
+## D-717 - O popup de Vinculações recupera os controles após falha da ação
+
+Vincular um anúncio, resolver um candidato do ERP e descartar um candidato aguardavam a Server Action antes de liberar o estado pendente. A interrupção da conexão rejeitava a promessa e deixava o popup sem alerta e com os controles desabilitados. Os três caminhos foram reproduzidos em Chromium bloqueando o POST antes do envio.
+
+As rotinas tratam a exceção da ação e liberam o estado pendente em `finally`. O aviso informa que o vínculo ou o descarte não pôde ser confirmado e pede conferir a lista antes de tentar novamente, pois a comunicação pode falhar depois da gravação no servidor. O SKU escolhido, o anúncio e o candidato continuam no popup. O cliente aguarda uma nova ação da pessoa.
+
+As regressões consultam o banco para confirmar que o POST bloqueado não criou vínculo nem fechou o candidato. Na nova tentativa, o vínculo aponta para o SKU escolhido, a resolução deixa o candidato RESOLVED e o descarte o deixa DISMISSED. O anúncio da fixture é arquivado ao fim, com o SKU nulo, seguindo a exclusão lógica permitida pela API. Vínculos e lote temporários são removidos. O fluxo de sucesso e o avanço entre variações mantêm a sequência anterior.
+
+## D-718 - O diálogo de remover vínculo do SKU recupera os controles após falha da ação
+
+Remover a vinculação a partir do detalhe do SKU só liberava o estado pendente depois que a Server Action resolvia. A interrupção da conexão rejeitava a promessa e deixava o diálogo em Removendo, sem alerta, com Remover e Cancelar desabilitados e o Esc desligado. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e libera o estado pendente em `finally`. A mensagem, agora anunciada como alerta, informa que a remoção não pôde ser confirmada e pede conferir a lista antes de tentar novamente, pela mesma razão das D-716 e D-717: a comunicação pode falhar depois da gravação. O diálogo continua aberto até uma nova ação da pessoa.
+
+A regressão cria o vínculo pela tela num anúncio do seed sem vínculo, confere que o POST bloqueado não removeu a linha, e que a nova tentativa fecha o diálogo e apaga o vínculo. O que sobrar é apagado ao fim. A recusa do servidor segue o caminho anterior.
+
+## D-719 - O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
+
+Vincular um anúncio a partir do detalhe do SKU deixava o diálogo em Gravando o vínculo quando a Server Action falhava no transporte. Cancelar, a nova tentativa e o Esc ficavam desligados, sem aviso. A reprodução em Chromium bloqueou o POST da ação antes do envio.
+
+A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz que o vínculo não pôde ser confirmado e pede conferir a lista antes de tentar novamente. Diferente da recusa do servidor, que segue para a mensagem de erro e pede nova busca, a falha de transporte não diz nada sobre o anúncio: ele continua no diálogo e Confirmar vinculação fica disponível. A mensagem de erro do diálogo também passa a ser anunciada como alerta.
+
+A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.

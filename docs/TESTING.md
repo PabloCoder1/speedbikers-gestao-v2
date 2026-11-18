@@ -51,6 +51,15 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 ## 3. Ferramentas
 
+Na CI, `scripts/isolate-supabase.mjs` escolhe um bloco de portas livre e um
+`project_id` por run/job/tentativa antes de subir a stack. `SUPABASE_DB_URL`
+e `DB_URL` recebem a URL emitida por `supabase status`, sem pressupor 54322.
+Localmente, execute o script só numa worktree própria com config padrão e
+`SUPABASE_TEST_ID` exclusivo; nunca pare containers alheios para liberar portas.
+`E2E_BASE_URL` também configura a porta do `next start` do Playwright.
+Limpezas que desativam gatilhos de tabela devem manter desativação, limpeza e
+reativação na mesma transação: a organização da fixture não isola o gatilho.
+
 **Vitest**, com descoberta automática de arquivos.
 
 *Motivo:* a V2 usava `node --test` e acumulou **48 caminhos de teste listados à mão em uma única linha** do `package.json`. Isso não escala e garante que um arquivo novo seja esquecido.
