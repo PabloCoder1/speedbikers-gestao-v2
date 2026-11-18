@@ -212,3 +212,28 @@ O que foi provado, e o que não foi:
 - **Não precisa retomar.** A mesma tela diz que os dados, os backups e os objetos de Storage seguem seguros e podem ser baixados (*Download backups*), e que o prazo para retomar vai até 27/11/2027. O ato 1 da §3.3 (retomar no Free) cai. Fica um ato: confirmar na lista de *Download backups* a data do último backup. Se for o de 22/10 16:26, esse backup é o estado de quando o projeto foi pausado, e o que já está baixado é completo.
 - **Custo medido, e maior que o estimado.** Catálogo público do Google, São Paulo, sob demanda: VM `e2-standard-2` (2 vCPU, 8 GB) US$ 77,65/mês; disco SSD balanceado de 50 GB ~US$ 7,50; IP externo e snapshots ~US$ 5–10. **Total ~US$ 90–105/mês**, contra US$ 25 do Supabase Pro. Esse é o preço de não ter um cartão aceito pelo Supabase. Compromisso de 1 ano baixa a VM em cerca de um terço, mas prende o gasto.
 - **Fora do ar desde a pausa.** Se a pausa foi em 22/10, o sistema está parado há quase 4 semanas: pedidos, estoque e SAC desse período entram pela releitura dos marketplaces (D-721 não tem relação). A data da pausa precisa ser confirmada.
+
+### 3.8 A VM existe e está carregada (18/11/2026)
+
+Autorizada pelo dono em 18/11 ("Sim, prepare"). Detalhes e operação em
+`infra/selfhost-db/README.md`. **Não está em uso**: nenhum app aponta para ela, e ela não tem porta
+aberta para a internet.
+
+| Verificação na VM | Resultado |
+|---|---|
+| Pilha (11 contêineres) subiu sozinha pelo script de inicialização | Saudável, 2,0 GB de memória em uso, disco 26% |
+| 305 migrations da `main` (o conjunto que o código implantado conhece) | Aplicadas; `schema_migrations` com 305 |
+| Dados do backup | Carga em 1 min 47 s, sem erro; 91 de 91 tabelas com a mesma contagem; 216 FKs, 0 órfãos |
+| Avatares no Storage | Enviados e lidos, idênticos byte a byte |
+| Backup diário para o bucket | Dump de ~162 MB no bucket; **restaurado num banco descartável com as mesmas contagens** |
+| Snapshot do disco | Diário, 7 dias |
+| Portas de fora (22, 80, 443, 5432, 8000) | Todas sem resposta |
+
+**Decisão de conteúdo:** só as migrations da `main` (até `20261022170000`). A `main` não tem nada
+posterior a 22/10; as migrations de novembro (`codex/sentinel-audit`, #328, e as D-720 e D-721, #331)
+chegam pelo fluxo normal depois do merge, com o código que depende delas. O banco de produção tinha
+aplicado 298 das 305, e nenhuma que a `main` não conheça.
+
+**O que falta para o corte**, em `infra/selfhost-db/README.md` (Pendências): domínio e HTTPS, SMTP,
+paridade do Auth, agendamento do vigia, alertas, caminho das migrations de produção e a troca das
+variáveis na Vercel e no Cloud Run.
