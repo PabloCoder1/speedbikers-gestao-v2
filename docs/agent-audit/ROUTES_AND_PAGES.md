@@ -49,8 +49,8 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/cobertura` | [page.tsx](<../../apps/web/app/cobertura/page.tsx>) | Ver a entrada e seus imports |
 | `/compras` | [page.tsx](<../../apps/web/app/(app)/compras/page.tsx>) | RPC `get_purchase_orders_overview`, `get_purchase_orders` |
 | `/compras/[id]` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `purchase_order_events`. O SKU vinculado ao item abre ao clicar (D-705) |
-| `/compras/[id]/editar` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/editar/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `suppliers` |
-| `/compras/novo` | [page.tsx](<../../apps/web/app/(app)/compras/novo/page.tsx>) | RPC `get_suppliers_overview`, `get_supplier_brands`. Tabelas `purchase_orders`, `skus` |
+| `/compras/[id]/editar` | [page.tsx](<../../apps/web/app/(app)/compras/[id]/editar/page.tsx>) | Tabelas `purchase_orders`, `purchase_order_items`, `suppliers`. D-723 conserva o rascunho e libera o envio após falha da ação de salvar. |
+| `/compras/novo` | [page.tsx](<../../apps/web/app/(app)/compras/novo/page.tsx>) | RPC `get_suppliers_overview`, `get_supplier_brands`. Tabelas `purchase_orders`, `skus`. D-723 recupera a criação após falha da ação e mantém o botão bloqueado na navegação após sucesso. |
 | `/curva-abc` | [page.tsx](<../../apps/web/app/(app)/curva-abc/page.tsx>) | RPC `get_sku_abc_analysis` após organização e a lista de contas quando a URL pede seleção. RPC `get_supplier_brands` e `get_sku_categories` após organização. Leituras do cabeçalho em `ml_accounts`, `saved_filters`, `marketplace_accounts` e contagem em `shopee_shops` (D-678). O SKU abre no clique (D-696) |
 | `/estoque` | [page.tsx](<../../apps/web/app/(app)/estoque/page.tsx>) | RPC `get_stock_balances`, `get_supplier_brands`, `get_stock_summary`. Os cartões de indicadores e os links por SKU consultam o destino ao clicar (D-687/D-688) |
 | `/estoque/[skuId]/ajuste` | [page.tsx](<../../apps/web/app/(app)/estoque/[skuId]/ajuste/page.tsx>) | Tabelas `skus`, `inventory_balances`, `stock_movements`, `profiles` |
@@ -63,7 +63,7 @@ Specs relacionados em `apps/web/e2e/` (sufixo `.spec.ts`) · compras, pedido-com
 | `/importacoes/[id]` | [page.tsx](<../../apps/web/app/(app)/importacoes/[id]/page.tsx>) | Tabelas `erp_import_rows`, `erp_import_batches` |
 | `/importacoes/nova` | [page.tsx](<../../apps/web/app/(app)/importacoes/nova/page.tsx>) | Ver a entrada e seus imports |
 | `/notas-fiscais` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/page.tsx>) | RPC `get_documents_overview`. Tabelas `documents` |
-| `/notas-fiscais/[id]` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/[id]/page.tsx>) | Tabelas `documents`, `document_items` |
+| `/notas-fiscais/[id]` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/[id]/page.tsx>) | Tabelas `documents`, `document_items`. D-723 recupera vincular e desvincular item após falha da ação, sem limpar a escolha ou o vínculo anterior. |
 | `/notas-fiscais/nova` | [page.tsx](<../../apps/web/app/(app)/notas-fiscais/nova/page.tsx>) | Ver a entrada e seus imports |
 | `/produtos` | [page.tsx](<../../apps/web/app/(app)/produtos/page.tsx>) | RPC `get_products_overview`, `get_sku_curation_summary`, `get_sku_curation`. A inspeção lê até três regras de reposição aplicáveis na organização (D-680). O título da linha abre o SKU no clique (D-694) |
 | `/reposicao` | [page.tsx](<../../apps/web/app/(app)/reposicao/page.tsx>) | RPC `get_replenishment_overview`, `get_supplier_brands`. Leitura de `replenishment_settings` paginada por ID e escopada à organização (D-679). A lista inclui saldo Full atual positivo sob RLS (D-693). O SKU abre no clique (D-695). Tabela `marketplace_accounts` |

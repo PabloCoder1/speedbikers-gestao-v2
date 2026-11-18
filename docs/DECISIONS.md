@@ -19784,3 +19784,11 @@ Os formulários de cadastrar conta e enviar sugestão, e as ações de salvar e 
 Cada ação trata a exceção e libera os controles em `finally`. Os campos continuam preenchidos, e a mensagem informa que a operação não pôde ser confirmada e pede conferir a lista antes de tentar de novo. A comunicação pode falhar depois da gravação no servidor. Os campos só são limpos no sucesso, e o cliente aguarda nova iniciativa da pessoa.
 
 Em visões salvas, o aviso de salvamento fica dentro do diálogo aberto. Fora dele, o aviso de exclusão continua junto aos controles da página. A regressão de nome maior que o limite do banco confere a recusa no diálogo e a correção do nome para salvar. As regressões de transporte conferem nenhuma inserção ou exclusão no POST bloqueado, a conta criada como PENDING, a sugestão com texto preservado e os parâmetros da visão na nova tentativa. As fixtures são removidas ao final.
+
+## D-723 - Compras e o vínculo de item da NF-e recuperam os controles após falha da ação
+
+As duas ações do formulário de compra e as de vincular e desvincular item da NF-e aguardavam a Server Action antes de liberar o estado pendente. O POST bloqueado reproduziu os quatro caminhos presos, sem aviso. A correção informa que a operação não pôde ser confirmada e pede conferir o pedido ou o item antes de tentar novamente. Os dados do formulário, o SKU escolhido e o vínculo anterior são mantidos.
+
+Em compras, a exceção libera o botão. O sucesso conserva Salvando até a navegação para o detalhe, como antes, para evitar novo envio entre a resposta e a troca de tela. A regressão segura a requisição RSC do detalhe e confere o botão ainda desabilitado. No item da NF-e, `finally` libera o estado da ação tanto na recusa quanto na exceção.
+
+As regressões de criação de compra e vínculo da nota foram incorporadas aos fluxos existentes. A criação mantém a mesma quantidade de pedidos do teste anterior. A edição usa um rascunho do seed, mantém SKU, quantidade e custo e devolve o destino no fim. A remoção do vínculo da NF-e devolve o SKU e o contador inicial ao terminar. As consultas conferem a ausência de gravação no POST bloqueado e o resultado após nova tentativa, com custo ausente preservado.

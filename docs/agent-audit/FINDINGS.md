@@ -91,6 +91,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A80 | P2 · CORRIGIDO localmente (D-722) | A falha de transporte deixava Contas em Cadastrando, Sugestões em Enviando e visões salvas em Salvando ou com exclusão desabilitada, sem aviso | As quatro regressões falharam no build anterior e passaram no corrigido. Os controles são liberados em `finally`, os campos permanecem preenchidos e a nova tentativa é confirmada no banco. O aviso de salvar visão aparece dentro do diálogo. [Verificação](SESSION_LOG.md) |
 
+| A81 | P2 · CORRIGIDO localmente (D-723) | A interrupção da Server Action prendia criar e editar compra em Salvando e o item da NF-e em Vinculando ou Desvinculando, sem aviso | Os quatro caminhos foram reproduzidos. A correção conserva os campos e o vínculo, libera os controles na falha e permite nova tentativa. A compra mantém o botão bloqueado enquanto abre o detalhe após sucesso. [Verificação](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

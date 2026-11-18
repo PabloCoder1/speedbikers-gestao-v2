@@ -208,7 +208,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-722 liberam diálogos e formulários quando a Server Action cai no transporte. A última fatia cobre Contas, Sugestões e visões salvas; restam compra, item de nota fiscal e cinco componentes com `useTransition`, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
+- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716 a D-723 recuperam diálogos e formulários após falha de transporte. A última fatia cobre criar e editar compra e vincular e desvincular item da NF-e. Restam os cinco componentes com `useTransition` do inventário, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 

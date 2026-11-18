@@ -434,7 +434,14 @@ export function PurchaseOrderForm({
     };
 
     if (isEditing) {
-      const result = await updatePurchaseOrderDraft(orderId, input);
+      let result: Awaited<ReturnType<typeof updatePurchaseOrderDraft>>;
+      try {
+        result = await updatePurchaseOrderDraft(orderId, input);
+      } catch {
+        setError("Não foi possível confirmar as alterações. Confira o pedido antes de tentar novamente.");
+        setBusy(false);
+        return;
+      }
 
       if (!result.ok) {
         setError(result.message ?? "Não foi possível salvar as alterações.");
@@ -448,7 +455,14 @@ export function PurchaseOrderForm({
       return;
     }
 
-    const result = await createPurchaseOrder(input);
+    let result: Awaited<ReturnType<typeof createPurchaseOrder>>;
+    try {
+      result = await createPurchaseOrder(input);
+    } catch {
+      setError("Não foi possível confirmar a criação. Confira a lista de pedidos antes de tentar novamente.");
+      setBusy(false);
+      return;
+    }
 
     if (!result.ok || result.id === undefined) {
       setError(result.message ?? "Não foi possível criar o pedido.");

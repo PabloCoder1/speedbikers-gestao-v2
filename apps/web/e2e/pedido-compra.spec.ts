@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_SUPPLIER } from "./constants.js";
-import { factValue, login } from "./helpers.js";
+import { derrubarPrimeiraAcao, factValue, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -16,7 +17,18 @@ import { readSeedOutput } from "./seed-output.js";
  * de leitura fazia esse resumo mostrar "0 itens, R$ 0,00" num pedido que
  * tinha itens de verdade — este teste é a guarda de regressão daquele bug.
  */
-test("cria um pedido de compra com item em texto livre e mostra o resumo certo", async ({ page }) => {
+function bancoLocal() {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  return clienteDeServico();
+}
+
+test("cria um pedido após falha de conexão e mostra o resumo certo", async ({ page }) => {
+  const db = bancoLocal();
+  const seed = await readSeedOutput();
+  const contar = () => db.from("purchase_orders").select("id", { count: "exact", head: true }).eq("organization_id", seed.organizationId);
+  const antes = await contar();
+  expect(antes.error).toBeNull();
   await login(page, "/compras/novo");
 
   await expect(page).toHaveURL(/\/compras\/novo$/);
@@ -27,7 +39,28 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
   await row.locator('input[type="number"]').first().fill("5");
   await row.locator('input[type="number"]').nth(1).fill("10.5");
 
-  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
+  const criar = page.getByRole("button", { name: "Criar pedido (rascunho)" });
+  const caiu = await derrubarPrimeiraAcao(page);
+  await criar.click();
+  await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar a criação" })).toBeVisible();
+  await expect(criar).toBeEnabled();
+  await expect(row.getByPlaceholder("SKU ou nome…")).toHaveValue("PEDIDO-E2E-001");
+  await expect(row.locator('input[type="number"]').first()).toHaveValue("5");
+  await expect(row.locator('input[type="number"]').nth(1)).toHaveValue("10.5");
+  expect(caiu()).toBe(true);
+  const depoisDaFalha = await contar();
+  expect(depoisDaFalha.error).toBeNull();
+  expect(depoisDaFalha.count).toBe(antes.count);
+
+  const detalhe = (url: URL) => /^\/compras\/[0-9a-f-]{36}$/u.test(url.pathname) && url.searchParams.has("_rsc");
+  await page.route(detalhe, async (route) => {
+    await new Promise((pronto) => setTimeout(pronto, 1_500));
+    await route.continue();
+  });
+  const navegando = page.waitForRequest((request) => detalhe(new URL(request.url())));
+  await criar.click();
+  await navegando;
+  await expect(page.getByRole("button", { name: "Salvando…", exact: true })).toBeDisabled();
 
   await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
 
@@ -43,6 +76,51 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
     "aria-current",
     "step",
   );
+});
+
+test("editar pedido: falha de conexão conserva o rascunho e permite nova tentativa", async ({ page }) => {
+  const db = bancoLocal();
+  const seed = await readSeedOutput();
+  const pedido = await db.from("purchase_orders").select("id,destination_warehouse_name,status")
+    .eq("organization_id", seed.organizationId).eq("notes", "e2e:compras:sem-custo").single();
+  if (pedido.error !== null) throw new Error(pedido.error.message);
+  const item = () => db.from("purchase_order_items").select("id,sku_snapshot,quantity_ordered,unit_cost")
+    .eq("purchase_order_id", pedido.data.id).single();
+  const antes = await item();
+  if (antes.error !== null) throw new Error(antes.error.message);
+  const destino = "E2E destino após falha de conexão";
+
+  try {
+    await login(page, `/compras/${pedido.data.id}/editar`);
+    await page.getByLabel("Armazém de destino", { exact: true }).fill(destino);
+    const salvar = page.getByRole("button", { name: "Salvar alterações", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await salvar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar as alterações" })).toBeVisible();
+    await expect(salvar).toBeEnabled();
+    await expect(page.getByLabel("Armazém de destino", { exact: true })).toHaveValue(destino);
+    expect(caiu()).toBe(true);
+    const depoisDaFalha = await item();
+    expect(depoisDaFalha.error).toBeNull();
+    expect(depoisDaFalha.data).toEqual(antes.data);
+    const cabecalho = await db.from("purchase_orders").select("destination_warehouse_name,status").eq("id", pedido.data.id).single();
+    expect(cabecalho.error).toBeNull();
+    expect(cabecalho.data).toEqual({ destination_warehouse_name: pedido.data.destination_warehouse_name, status: pedido.data.status });
+
+    await salvar.click();
+    await expect(page).toHaveURL((u) => u.pathname === `/compras/${pedido.data.id}`);
+    const depois = await db.from("purchase_orders").select("destination_warehouse_name,status").eq("id", pedido.data.id).single();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual({ destination_warehouse_name: destino, status: "DRAFT" });
+    const itemDepois = await item();
+    expect(itemDepois.error).toBeNull();
+    expect(itemDepois.data?.sku_snapshot).toBe(antes.data.sku_snapshot);
+    expect(itemDepois.data?.quantity_ordered).toBe(antes.data.quantity_ordered);
+    expect(itemDepois.data?.unit_cost).toBe(antes.data.unit_cost);
+  } finally {
+    const volta = await db.from("purchase_orders").update({ destination_warehouse_name: pedido.data.destination_warehouse_name }).eq("id", pedido.data.id);
+    expect.soft(volta.error).toBeNull();
+  }
 });
 
 test("detalhe do pedido: o SKU vinculado carrega ao clicar e o retorno abre o mesmo pedido", async ({ page }) => {
