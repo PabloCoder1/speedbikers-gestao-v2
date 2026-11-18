@@ -18526,10 +18526,18 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   // superficie morta) e todas tem `search_path` travado. A 26a entrou em
   // 2026-09-09 (D-291) e a 27a em 2026-09-10 (D-296), sob a mesma conferencia.
   const RPCS_DEFINER_EXPOSTAS = [
+    // D-761: organizacao do PEDIDO, papel refeito nela; so pedido externo; SKU da
+    // organizacao (e o trigger de purchase_order_items recusa o de fora); idempotente.
+    "add_purchase_order_items_placed",
     "approve_purchase_order",
     "cancel_purchase_order",
+    // D-764: organizacao do LOTE, papel refeito nela; as linhas sao DESTE lote; o
+    // pedido-alvo tem de ser da mesma organizacao e da mesma referencia.
+    "commit_purchase_import_group",
     "create_action_decision",
     "create_manual_stock_adjustment",
+    // D-764: papel refeito na organizacao pedida; o lote nasce nela; ate 5000 linhas.
+    "create_purchase_import_batch",
     "create_purchase_order",
     "create_saved_filter",
     "create_sku_listing_link",
@@ -18571,11 +18579,16 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "get_sku_curation_summary",
     "get_system_health",
     "link_document_item",
+    // D-761: organizacao do PEDIDO, papel refeito nela; so grava a referencia.
+    "link_purchase_order_external_reference",
     "mark_purchase_order_ordered",
     "receive_purchase_order",
     // D-724: organizacao do pedido, papel refeito, e cada item tem de ser DESTE
     // pedido; quantidade limitada ao pendente; idempotente pela requisicao.
     "receive_purchase_order_items",
+    // D-761: papel refeito na organizacao pedida; SKU e fornecedor da mesma
+    // organizacao; delega em create/approve/mark_ordered, que refazem tudo.
+    "register_placed_purchase_order",
     // D-429: o vinculo manual Shopee. Os dois validam o escopo de cada
     // parametro: a organizacao sai da LOJA (ou do vinculo), o papel e
     // conferido nela (has_org_role ADMIN/GESTOR/OPERADOR), o SKU tem de ser
@@ -18583,7 +18596,12 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "remove_shopee_sku_link",
     "remove_sku_listing_link",
     "resolve_link_candidate",
+    // D-764: organizacao do LOTE, papel refeito nela; a linha tem de ser deste
+    // lote e o SKU escolhido, da mesma organizacao.
+    "resolve_purchase_import_rows",
     "retarget_sku_listing_link",
+    // D-762: organizacao do PEDIDO, papel refeito nela; so a previsao.
+    "set_purchase_order_expected_at",
     // D-725: organizacao do pedido, papel refeito, etapa validada pelo status.
     "set_purchase_order_stage",
     // D-721: has_org_role(ADMIN) na organizacao pedida.
