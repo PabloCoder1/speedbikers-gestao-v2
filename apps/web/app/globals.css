@@ -9390,6 +9390,7 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   white-space: normal;
 }
 
+.sb-cmp-painel h3,
 .sb-cmp-painel h4 {
   margin: 0 0 0.25rem;
   font-size: 0.75rem;

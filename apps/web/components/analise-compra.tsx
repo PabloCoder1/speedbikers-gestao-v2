@@ -155,8 +155,10 @@ export interface PainelAnaliseProps {
 }
 
 /** O "porquê" de uma linha — conteúdo do `<details>`. */
-export function PainelAnalise(p: PainelAnaliseProps): ReactNode {
+export function PainelAnalise(p: PainelAnaliseProps & { nivelTitulo?: 3 | 4 }): ReactNode {
   const { linha, margem, fit } = p.avaliacao;
+  // O nível do título segue a tela: sob o h2 da reposição é h3; dentro da revisão (h3), h4.
+  const H = p.nivelTitulo === 3 ? "h3" : "h4";
 
   if (fit === null) {
     return (
@@ -185,12 +187,12 @@ export function PainelAnalise(p: PainelAnaliseProps): ReactNode {
   return (
     <div className="sb-cmp-painel">
       <section aria-label="Por que">
-        <h4>
+        <H>
           {SITUACAO[fit.situation].rotulo}
           {fit.recommendedQuantity !== null && (
             <span className="sb-cmp-recomendado"> · o sistema compraria {formatCount(fit.recommendedQuantity)} un</span>
           )}
-        </h4>
+        </H>
         <ul className="sb-cmp-motivos">
           {motivos.map((m) => (
             <li key={m.code} className={m.weight === "atencao" ? "sb-cmp-motivo-atencao" : undefined}>
@@ -206,7 +208,7 @@ export function PainelAnalise(p: PainelAnaliseProps): ReactNode {
       </section>
 
       <section aria-label="Margem">
-        <h4>
+        <H>
           Margem
           {p.periodoMargem !== null && (
             <span className="sb-cmp-periodo">
@@ -214,7 +216,7 @@ export function PainelAnalise(p: PainelAnaliseProps): ReactNode {
               · {formatDay(p.periodoMargem.de)} a {formatDay(p.periodoMargem.ate)}
             </span>
           )}
-        </h4>
+        </H>
         {margem?.total == null ? (
           <p className="sb-rep-mudo">Nenhuma venda válida no período.</p>
         ) : (
@@ -231,7 +233,7 @@ export function PainelAnalise(p: PainelAnaliseProps): ReactNode {
 
       {(linha.otherOpenOrders.length > 0 || linha.lastPurchase !== null || linha.supplierRule !== null || linha.preferredSupplier !== null) && (
         <section aria-label="Compras">
-          <h4>Compras</h4>
+          <H>Compras</H>
           <ul className="sb-cmp-motivos">
             {linha.otherOpenOrders.map((o) => (
               <li key={o.id}>

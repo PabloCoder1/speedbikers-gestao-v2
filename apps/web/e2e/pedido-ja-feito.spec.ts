@@ -151,5 +151,6 @@ test("já fiz o pedido: a sugestão desconta uma vez, a referência não duplica
 
   await page.goto(`/reposicao?busca=${E2E_SKU_CODE}`);
   await expect(linha.locator(".sb-rep-sugestao")).toContainText(new Intl.NumberFormat("pt-BR").format(antes));
-  await expect(linha.locator(".sb-pjf-resumo")).toHaveCount(0);
+  // Outros specs deixam pedidos abertos do mesmo SKU: o que some é o pedido cancelado.
+  await expect(linha).not.toContainText(REFERENCIA);
 });

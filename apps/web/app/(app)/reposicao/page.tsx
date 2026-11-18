@@ -675,6 +675,7 @@ export default async function ReposicaoPage({
                                       <span className="sb-cmp-ver">análise</span>
                                     </summary>
                                     <PainelAnalise
+                                      nivelTitulo={3}
                                       avaliacao={avaliacao}
                                       margemMinima={analise.margemMinima}
                                       periodoMargem={margens === null ? null : { de: margens.de, ate: margens.ate }}
