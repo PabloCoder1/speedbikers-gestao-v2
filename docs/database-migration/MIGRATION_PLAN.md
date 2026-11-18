@@ -237,3 +237,30 @@ aplicado 298 das 305, e nenhuma que a `main` não conheça.
 **O que falta para o corte**, em `infra/selfhost-db/README.md` (Pendências): domínio e HTTPS, SMTP,
 paridade do Auth, agendamento do vigia, alertas, caminho das migrations de produção e a troca das
 variáveis na Vercel e no Cloud Run.
+
+### 3.9 Corte executado (18/11/2026, ~11:40 a 12:10 em Brasília)
+
+Autorizado pelo dono ("Sim, pode cortar"). A produção passou a usar a VM `sb-db`, com os dados do
+backup de 22/10 (o último que existe: a pausa foi em 22/10). Endereço provisório
+`https://34-39-221-164.sslip.io` (sem domínio próprio; ver README de `infra/selfhost-db`).
+
+| Peça | Antes | Depois |
+|---|---|---|
+| Segredo `SUPABASE_SERVICE_ROLE_KEY` (Secret Manager, lido pela `api` e pelo `worker` em `latest`) | versão 1 (Supabase hospedado) | versão 2 (VM) |
+| `api` (Cloud Run) | `api-00038-qsf` | `api-00039-22b`, 100% do tráfego; `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` novos |
+| `worker` (Cloud Run, tráfego fixado) | `worker-00056-wjk` | `worker-00058-mbc`, 100%; `SUPABASE_URL` novo |
+| Web (Vercel, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`) | deploy `dpl_64mHs5sni1awBJEqjqcjF7UNmWtt` | `dpl_6zpmnqQQ1ibHguhxkq2Snfq24zv7`, mesmo commit `d6169205`, build com as variáveis novas |
+
+**Verificado depois do corte:** `api` responde `/health`; o worker grava `job_runs` na VM (sincronização de
+anúncios, SAC, devoluções e financeiro da Shopee, webhooks do ML e da Shopee chegando); as 4 contas do
+ML seguem `CONNECTED`; a produção serve CSP com a VM em `https` e `wss`, e o pacote do navegador não
+tem mais nenhuma referência ao projeto antigo. **Não verificado:** o login de um usuário real pela
+interface (credenciais não são minhas) e a recuperação completa do atraso.
+
+**Achado depois do corte:** `GET /items` do Mercado Livre devolve 403 em ~10% dos itens (anúncios ativos
+na maioria), sem nenhum 403 igual em outubro. Ocorre durante a rajada de notificações represadas e cai
+a cada faixa de 5 minutos. Acompanhar; se persistir depois da rajada, ver `ml-403-por-instancia`
+(revisão nova do worker).
+
+**O que deixa de existir:** a escrita que o banco hospedado teria recebido. O Supabase hospedado fica
+pausado e intacto (retomável até 27/11/2027). A VM é a fonte da verdade a partir daqui.

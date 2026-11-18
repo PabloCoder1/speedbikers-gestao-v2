@@ -29,3 +29,18 @@ banco de mais de 500 MB rebaixado para o Free fica em somente leitura:
   só sai com a VALIDATION §1 verde.
 - Nunca usar "Production rebuild" da Vercel para voltar (memória do
   projeto: reconstrói commit velho).
+
+## Retorno do corte de 18/11/2026 (VM para o Supabase hospedado)
+
+**Só faz sentido com o Supabase hospedado retomado** (plano pago, ou o banco abaixo de 500 MB): ele está
+pausado, e a VM é a fonte da verdade desde o corte. **Tudo o que foi gravado na VM depois do corte não
+volta** para o hospedado sem uma carga nova.
+
+1. Pausar o Scheduler e escalar o worker a zero.
+2. Segredo `SUPABASE_SERVICE_ROLE_KEY`: desabilitar a versão 2 (a `latest` volta a ser a 1).
+3. Cloud Run: `api` para `api-00038-qsf` e `worker` para `worker-00056-wjk`, 100% cada.
+4. Vercel: variáveis para `https://imvjfgnaprqsfjlnsyev.supabase.co` e a chave publicável do projeto
+   hospedado (os valores antigos ficaram criptografados e não são legíveis), e novo deploy do commit
+   `d6169205`; ou promover o deploy anterior `dpl_64mHs5sni1awBJEqjqcjF7UNmWtt`, que já traz as
+   variáveis antigas embutidas.
+5. Reativar o Scheduler. A VM permanece de pé, com os backups, até a decisão final.
