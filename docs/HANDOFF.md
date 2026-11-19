@@ -27,7 +27,7 @@
 
 ### O que está pronto
 
-Entregas de tela e de backend até setembro (as centrais, `/estoque`, `/anuncios`, `/sincronizacao`, `/notificacoes`, `/central`): `docs/archive/handoffs/2026-10-15_o-que-esta-pronto-de-setembro.md` e os arquivos de 18/09 e 14/10 na mesma pasta. O que está no ar agora: a linha **Frente atual** acima.
+Entregas até setembro em `docs/archive/handoffs/2026-10-15_o-que-esta-pronto-de-setembro.md`. Margem na Curva ABC e base do cálculo visível no Ranking (METRICS 5N e 5X).
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.

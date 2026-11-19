@@ -268,15 +268,19 @@ const TERMOS_DO_RANKING = [
   {
     termo: "Pedidos cobertos",
     definicao:
-      "Os pedidos com resultado conhecido: frete observado, custo do produto conhecido e um só produto no pedido. Pedido com vários produtos não entra no resultado de nenhum deles, porque o frete é do pacote.",
+      "Pedidos com uma linha de produto e dados de comissão, frete do vendedor e custo disponíveis para calcular o resultado.",
   },
   { termo: "Unid.", definicao: "Unidades vendidas no período, em todos os pedidos válidos." },
   {
     termo: "Receita",
     definicao:
-      "Receita bruta do período, em todos os pedidos válidos. Embaixo, a variação contra o período anterior, só com 5 pedidos ou mais nos dois.",
+      "Receita bruta de todos os pedidos válidos. Quando a cobertura é parcial, “na margem” mostra a receita dos pedidos usados no cálculo. A variação compara a receita total, com pelo menos 5 pedidos em cada período.",
   },
-  { termo: "Comissão", definicao: "A comissão do Mercado Livre por unidade × as unidades, em todos os pedidos." },
+  {
+    termo: "Comissão",
+    definicao:
+      "Comissão do Mercado Livre por unidade × unidades vendidas. Quando a cobertura é parcial, “na margem” mostra a comissão dos pedidos usados no cálculo.",
+  },
   {
     termo: "Frete",
     definicao: "O frete pago pelo vendedor nos pedidos cobertos. Embaixo, quanto ele pesa na receita desses mesmos pedidos.",
@@ -294,7 +298,7 @@ const TERMOS_DO_RANKING = [
   {
     termo: "Margem",
     definicao:
-      "Resultado ÷ receita dos pedidos cobertos. O selo marca perigo abaixo de zero e atenção abaixo da margem mínima dos limites. Embaixo, a variação em pontos percentuais (p.p.) contra o anterior, só com 5 pedidos cobertos nos dois.",
+      "(Receita − comissão − frete do vendedor − custo do produto) × 100 ÷ receita, nos mesmos pedidos cobertos. Embaixo, a variação em pontos percentuais (p.p.) contra o período anterior, com pelo menos 5 pedidos cobertos em cada período.",
   },
   {
     termo: "Após imposto",
@@ -409,8 +413,8 @@ function colunaDaOrdem(ordem: OrdemRanking): { coluna: string; direcao: "descend
 
 const COLUNAS: readonly { readonly id: string; readonly rotulo: string; readonly titulo: string }[] = [
   { id: "unidades", rotulo: "Unid.", titulo: "unidades vendidas no período" },
-  { id: "receita", rotulo: "Receita", titulo: "receita bruta do período e, embaixo, contra o anterior (5 pedidos ou mais nos dois)" },
-  { id: "taxas", rotulo: "Comissão", titulo: "comissão do Mercado Livre por unidade × unidades, todos os pedidos" },
+  { id: "receita", rotulo: "Receita", titulo: "receita bruta e receita usada na margem quando a cobertura é parcial" },
+  { id: "taxas", rotulo: "Comissão", titulo: "comissão total e comissão usada na margem quando a cobertura é parcial" },
   { id: "frete", rotulo: "Frete", titulo: "frete pago pelo vendedor, pedidos cobertos" },
   { id: "custo", rotulo: "Custo", titulo: "custo do produto na data da venda, pedidos cobertos" },
   { id: "resultado", rotulo: "Resultado", titulo: "receita − comissão − frete − custo, pedidos cobertos" },
@@ -545,6 +549,7 @@ function Linha({
   margemMinima: number;
 }): ReactNode {
   const classe = (id: string): string => (id === coluna ? "sb-num sb-rank-ordenada" : "sb-num");
+  const coberturaParcial = p.pedidos_cobertos < p.pedidos;
 
   return (
     <tr>
@@ -555,17 +560,25 @@ function Linha({
         </Link>
         <span className="sb-central-motivo">
           SKU {p.sku} · {formatCount(p.pedidos)} {p.pedidos === 1 ? "pedido" : "pedidos"}
-          {p.pedidos_cobertos < p.pedidos && `, ${formatCount(p.pedidos_cobertos)} cobertos`}
+          {coberturaParcial && `, ${formatCount(p.pedidos_cobertos)} cobertos`}
         </span>
       </td>
       <td className={classe("unidades")}>{formatCount(p.unidades)}</td>
       <td className={classe("receita")}>
         {formatCurrency(p.receita_bruta)}
+        {coberturaParcial && p.receita_coberta !== null && (
+          <span className="sb-central-motivo">{formatCurrency(p.receita_coberta)} na margem</span>
+        )}
         {p.variacao_receita !== null && (
           <span className="sb-central-motivo">{formatVariacao(p.variacao_receita)} contra o anterior</span>
         )}
       </td>
-      <td className={classe("taxas")}>{formatCurrency(p.taxas_ml)}</td>
+      <td className={classe("taxas")}>
+        {formatCurrency(p.taxas_ml)}
+        {coberturaParcial && p.taxas_ml_cobertas !== null && (
+          <span className="sb-central-motivo">{formatCurrency(p.taxas_ml_cobertas)} na margem</span>
+        )}
+      </td>
       <td className={classe("frete")}>
         {formatCurrency(p.frete_vendedor)}
         {p.frete_sobre_receita !== null && <span className="sb-central-motivo">{formatPercent(p.frete_sobre_receita)} da receita coberta</span>}
@@ -602,8 +615,8 @@ function ComoCalcula({ ranking }: { ranking: RankingDeProdutos }): ReactNode {
         <p>
           <strong>Os mesmos números do faturamento.</strong> Receita, comissão, frete e custo saem das mesmas regras de
           <Link href="/faturamento"> /faturamento</Link>: resultado e margem só nos <strong>pedidos cobertos</strong> —
-          frete observado, custo conhecido e uma linha de item. Pedido com vários produtos não entra no resultado de
-          nenhum deles, porque o frete é do pacote. O custo é o da data da venda; com * é o atual, por não haver
+          comissão e frete observados, custo conhecido e uma linha de item. Pedido com vários produtos não entra no
+          resultado de nenhum deles, porque o frete é do pacote. O custo é o da data da venda; com * é o atual, por não haver
           histórico anterior.
         </p>
         <p>

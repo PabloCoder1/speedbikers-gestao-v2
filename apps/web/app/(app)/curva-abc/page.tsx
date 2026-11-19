@@ -37,6 +37,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "
 import { contarLojasShopee } from "../../../lib/marketplace";
 import { currentMembership } from "../../../lib/request-membership";
 import { mesmaUrl } from "../../../lib/mesma-url";
+import { lerMargens } from "../../../lib/purchase-analysis";
 import { createClient } from "../../../lib/supabase/server";
 import {
   HISTORICO_SHOPEE_DIAS,
@@ -248,6 +249,26 @@ export default async function CurvaAbcPage({
   ].filter((falha): falha is { oQue: string; mensagem: string } => falha !== null);
 
   const rows: AbcAnalysisRow[] = data ?? [];
+  const contaMargem = selectedAccount?.id ?? filters.contas?.[0] ?? null;
+  // A RPC já consolida cada marketplace e todas as contas. Uma seleção
+  // intermediária de várias contas não possui somatório próprio.
+  const limiteMargem = janela.dayCount > 366
+    ? "A margem está disponível em períodos de até 366 dias."
+    : (filters.contas?.length ?? 0) > 1
+      ? "Para ver a margem, selecione uma conta ou todas as contas do marketplace."
+      : null;
+  const leituraMargem = rows.length > 0 && limiteMargem === null
+    ? await supabase.rpc("get_sku_margins", {
+        p_organization_id: organizationId,
+        p_sku_ids: rows.map((row) => row.sku_id),
+        p_date_from: janela.from,
+        p_date_to: janela.to,
+      })
+    : null;
+  const margens = leituraMargem?.error === null ? lerMargens(leituraMargem.data) : null;
+  const notaMargem = limiteMargem ?? (margens === null
+    ? "Não foi possível carregar a margem de venda."
+    : "(Valor recebido após taxas − custo do produto) × 100 ÷ valor de venda, nos pedidos com dados completos.");
   const first = rows[0];
   const totalCount = first?.total_count ?? 0;
   const windowInfo = summarizeAbcWindow(filters.page, totalCount, rows.length);
@@ -766,7 +787,12 @@ export default async function CurvaAbcPage({
                 ? `SKUs da classe ${filters.abcClass}`
                 : "SKUs por participação"
           }
-          subtitle={windowInfo.label}
+          subtitle={(
+            <>
+              {windowInfo.label}
+              {rows.length > 0 && <><br /><span id="abc-margem-nota">{notaMargem}</span></>}
+            </>
+          )}
           aside={
             <span className="sb-abc-table-context">
               {filters.criterion.label} · {filters.custom === null ? `${String(filters.days)} dias` : "período personalizado"}
@@ -786,6 +812,7 @@ export default async function CurvaAbcPage({
                     <th className="sb-num">
                       Faturamento
                     </th>
+                    <th className="sb-num" scope="col" aria-describedby="abc-margem-nota">Margem de venda</th>
                     <th className="sb-num">Unidades</th>
                     {multicanal ? (
                       <th className="sb-num" title="O pack do Mercado Livre e o pedido da Shopee que contêm o SKU">
@@ -822,6 +849,14 @@ export default async function CurvaAbcPage({
                   {rows.map((row) => {
                     const mov = row.movement === null ? null : (MOVIMENTO[row.movement] ?? null);
                     const v = variacao(row.metric_value, row.prev_metric_value);
+                    const skuMargens = margens?.porSku.get(row.sku_id);
+                    const margem = contaMargem !== null
+                      ? skuMargens?.porConta.find((conta) => conta.contaId === contaMargem)
+                      : filters.escopo === "todos"
+                        ? skuMargens?.total
+                        : skuMargens?.porMarketplace.find(
+                            (canal) => canal.marketplace === (filters.escopo === "ml" ? "MERCADO_LIVRE" : "SHOPEE"),
+                          );
 
                     return (
                       <tr key={row.sku_id}>
@@ -858,6 +893,17 @@ export default async function CurvaAbcPage({
                             <small className="sb-an-sub">
                               {formatCount(row.shopee_items_without_revenue)} itens Shopee sem receita
                             </small>
+                          )}
+                        </td>
+                        <td className="sb-num">
+                          {formatPercent(margem?.avaliacao.margin ?? null)}
+                          {margem != null && margem.coveredOrders < margem.orders && (
+                            <small className="sb-an-sub">
+                              {formatCount(margem.coveredOrders)} de {formatCount(margem.orders)} pedidos
+                            </small>
+                          )}
+                          {margem != null && margem.currentCostOrders > 0 && (
+                            <small className="sb-an-sub">Inclui custo atual</small>
                           )}
                         </td>
                         <td className="sb-num">{formatCount(row.units)}</td>
