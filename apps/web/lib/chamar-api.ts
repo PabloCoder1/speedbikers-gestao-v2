@@ -34,8 +34,41 @@ export async function lerTokenDeSessao(
 }
 
 /**
+ * Valida a resposta JSON 200 OK de `/v1/copilot/query` para ações narrativas
+ * (`narrate_action` e `narrate_sku_diagnosis`), recusando HTML ou payload
+ * malformado de proxy/CDN.
+ */
+export function extrairNarrativaDoCopiloto(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null || !("data" in payload)) {
+    return null;
+  }
+
+  const data = (payload as { data?: unknown }).data;
+
+  if (typeof data !== "object" || data === null || !("narrativa" in data)) {
+    return null;
+  }
+
+  const narrativa = (data as { narrativa?: unknown }).narrativa;
+
+  return typeof narrativa === "string" && narrativa.trim().length > 0 ? narrativa : null;
+}
+
+/**
+ * Valida a resposta JSON 200 OK das rotas `/v1/listings/relist*`, garantindo
+ * que o enfileiramento veio da API e não de uma página HTML intermediária.
+ */
+export function respostaDeRepublicacaoValida(payload: unknown): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { status?: unknown }).status === "queued"
+  );
+}
+
+/**
  * POST autenticado sem corpo para confirmar a aplicação de lote ou NF-e,
- * recuperando erro de sessão, rede ou HTTP para liberar o botão na UI.
+ * recuperando erro de sessão, rede, HTTP ou corpo 200 não confirmado.
  */
 export async function confirmarAplicacaoNaApi(
   caminho: string,
@@ -52,14 +85,26 @@ export async function confirmarAplicacaoNaApi(
       headers: { authorization: `Bearer ${sessao.token}` },
     });
 
+    const payload: unknown = await response.json().catch(() => null);
+
     if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
       const message =
         typeof payload === "object" && payload !== null && "error" in payload
           ? (payload as { error?: { message?: string } }).error?.message
           : undefined;
 
       return { ok: false, mensagem: message ?? "Não foi possível confirmar a aplicação." };
+    }
+
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      (payload as { queued?: unknown }).queued !== true
+    ) {
+      return {
+        ok: false,
+        mensagem: "A API respondeu em formato inesperado. Confira se a aplicação foi iniciada.",
+      };
     }
 
     return { ok: true };
