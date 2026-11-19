@@ -139,7 +139,9 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A103 | P1 · CORRIGIDO localmente (D-749) | O parser UpSeller/ERP também reabria lotes com estado vencido ou com conferência pronta | Exige a versão e o status lidos para gravar `PARSING`. Preserva a conferência em entregas tardias e permite recuperar falha antes de concluir o parse. Cinco regressões reproduzidas. [Checkpoint](SESSION_LOG.md) |
 
-| A104 | P1 · CONFIRMADO localmente | NF-e permite uma segunda entrada em `PARSING` se a entrega ler a versão atual enquanto o primeiro job ainda processa. O `DELETE` de itens filtra pelo documento, então ainda encontra itens depois de `PARSED` | Ensaio em Postgres isolado intercalou as operações e confirmou uma linha removida depois de `PARSED`. Preparar persistência em transação condicionada à versão. Verificar o mesmo caminho no ERP. [Checkpoint](SESSION_LOG.md) |
+| A104 | P1 · CORRIGIDO localmente (D-750) | Uma execução substituída da NF-e ainda podia regravar itens ou marcar `FAILED` depois de outra completar a leitura | A RPC valida a versão de `PARSING` e troca cabeçalho e itens em uma transação. As falhas simples também exigem a versão. A migration aguarda Dev. [Checkpoint](SESSION_LOG.md) |
+
+| A105 | P1 · CONFIRMADO localmente | ERP permite duas execuções em `PARSING` e deixa exclusões de staging e atualizações de erro filtrarem apenas pelo lote | O ensaio SQL intercalou as operações e reproduziu remoção de staging e regressão de `APPLYING` para `FAILED`. Primeiro proteger o registro dos erros e depois ensaiar a gravação atômica com planilhas grandes. [Checkpoint](SESSION_LOG.md) |
 
 ## Referências externas
 

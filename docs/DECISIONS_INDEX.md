@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **651** (D-001 a D-749).
+Decisões registradas: **652** (D-001 a D-750).
 
 ## Por domínio
 
@@ -402,7 +402,7 @@ Decisões registradas: **651** (D-001 a D-749).
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 
-### outros (102)
+### outros (103)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -506,6 +506,7 @@ Decisões registradas: **651** (D-001 a D-749).
 - **D-730** — Remoções da Central conferem erro e linhas afetadas
 - **D-737** — Next.js atualizado de 16.4.1 para 16.4.6 para encerrar os avisos moderados do framework
 - **D-745** — Sessão, flush final do SSE e preservação do link de convite nos sete componentes cliente restantes da web
+- **D-750** — Parse de NF-e grava itens e cabeçalho com a versão da tentativa
 
 ### processo/docs (1)
 

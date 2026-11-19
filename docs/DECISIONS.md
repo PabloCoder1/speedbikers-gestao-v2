@@ -20020,3 +20020,9 @@ Uma entrega tardia para documento `PARSED`, `CANCELLED` ou com `parsed_at` preen
 O parse do UpSeller passa a comparar o status e o `updated_at` de `erp_import_batches` antes de entrar em `PARSING`. Se a versão foi superada, devolve falha retentável antes do bucket e das tabelas de conferência. A API cadastra um lote por arquivo e trata o mesmo hash como duplicado. Entregas atrasadas preservam lotes `PARSED`, cancelados ou com `parsed_at` preenchido, inclusive se a aplicação posterior falhou. Lotes `PARSING` e `FAILED` sem leitura concluída continuam recuperáveis.
 
 O ensaio de A104 em NF-e confirmou que a comparação de entrada deixa uma segunda entrega prosseguir se ela leu a versão mais recente de `PARSING`. Uma vez iniciada, a gravação em etapas ainda permite que a entrega tardia remova itens depois de a nota mudar para `PARSED`. A proteção de persistência deve validar a versão no mesmo limite transacional da substituição das linhas. D-748/D-749 tratam a transição de entrada e preservam a recuperação depois de falha.
+
+## D-750 - Parse de NF-e grava itens e cabeçalho com a versão da tentativa
+
+Ao iniciar `PARSING`, o worker recebe o `updated_at` da atualização. A RPC `persist_nfe_parse` verifica a versão e bloqueia a linha do documento durante a substituição dos itens e a atualização de estado. Uma versão superada retorna `false` sem gravar. Falha de validação reverte a exclusão e a inserção. As falhas de leitura que só alteram o cabeçalho usam o mesmo filtro de versão e estado.
+
+A migração de trabalho `20261119094000` foi aplicada à stack isolada. A RPC é `SECURITY INVOKER` e tem execução restrita a `service_role`. O worker usa um contrato local para evitar alteração no arquivo de tipos gerados que também integra a frente de compras. A versão da migration e a regeneração conjunta dos tipos dependem da aplicação no Supabase Dev, que está inativo.
