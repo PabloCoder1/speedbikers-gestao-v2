@@ -8,7 +8,7 @@ import { TOM, tomDeRelist } from "../../../../components/tone";
 import { useDialogo } from "../../../../components/use-dialogo";
 import { anuncioExcluido, quandoAV3ViuAExclusao } from "../../../../lib/anuncio-excluido";
 import { relistStatusLabel } from "../../../../lib/labels";
-import { createClient } from "../../../../lib/supabase/browser";
+import { lerTokenDeSessao, respostaDeRepublicacaoValida } from "../../../../lib/chamar-api";
 import {
   INTERVALO_MS,
   MENSAGEM_NAO_PERMITIDA,
@@ -185,21 +185,21 @@ export function RelistPanel({
     setEstado({ kind: "enviando" });
 
     try {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
+      const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página e entre de novo.");
 
-      if (token === undefined) {
-        setEstado({ kind: "erro", mensagem: "Sessão expirada — atualize a página e entre de novo." });
+      if (!sessao.ok) {
+        setEstado({ kind: "erro", mensagem: sessao.mensagem });
 
         return;
       }
 
       const response = await fetch(`${API_URL}${caminho}`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
         body: JSON.stringify(corpo),
       });
+
+      const payload: unknown = await response.json().catch(() => null);
 
       if (!response.ok) {
         /*
@@ -208,7 +208,7 @@ export function RelistPanel({
           conta. Traduzir isso aqui em "não foi possível" apagaria justamente
           a informação que faz a pessoa entender o que fazer em seguida.
         */
-        const corpoErro = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        const corpoErro = payload as { error?: { message?: string } } | null;
         const motivo = corpoErro?.error?.message ?? `A API recusou o pedido (HTTP ${String(response.status)}).`;
 
         // 409 é o estado que andou desde que a tela foi desenhada — quase
@@ -222,6 +222,15 @@ export function RelistPanel({
         }
 
         setEstado({ kind: "erro", mensagem: motivo });
+
+        return;
+      }
+
+      if (!respostaDeRepublicacaoValida(payload)) {
+        setEstado({
+          kind: "erro",
+          mensagem: "A API respondeu em formato inesperado. Confira o estado da republicação antes de tentar de novo.",
+        });
 
         return;
       }

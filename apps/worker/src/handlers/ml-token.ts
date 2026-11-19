@@ -119,11 +119,17 @@ export async function ensureAccessToken(
   }
 
   const release = async (): Promise<void> => {
-    await deps.db
-      .from("ml_credentials")
-      .update({ refresh_locked_until: null, refresh_lock_id: null })
-      .eq("ml_account_id", mlAccountId)
-      .eq("refresh_lock_id", lockId);
+    try {
+      await deps.db
+        .from("ml_credentials")
+        .update({ refresh_locked_until: null, refresh_lock_id: null })
+        .eq("ml_account_id", mlAccountId)
+        .eq("refresh_lock_id", lockId);
+    } catch {
+      // D-780: a trava expira em REFRESH_LOCK_MS (60s); falha de transporte ao
+      // soltá-la não deve descartar um token já renovado por outra execução
+      // nem mascarar o erro transitório original do Mercado Livre.
+    }
   };
 
   if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **682** (D-001 a D-790).
+Decisões registradas: **685** (D-001 a D-791).
 
 ## Por domínio
 
-### atendimento (68)
+### atendimento (69)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -86,6 +86,7 @@ Decisões registradas: **682** (D-001 a D-790).
 - **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 - **D-770** — Edição de itens de NF-e e saída manual separam erro transitório, exigem linha afetada e fatiamento em lotes na API
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
+- **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
 
 ### banco/rls (50)
 
@@ -278,7 +279,7 @@ Decisões registradas: **682** (D-001 a D-790).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (131)
+### mercado-livre (133)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -411,6 +412,8 @@ Decisões registradas: **682** (D-001 a D-790).
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
+- **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
+- **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 
 ### outros (112)
 

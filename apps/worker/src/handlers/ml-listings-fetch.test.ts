@@ -243,10 +243,11 @@ function fakeClient(options: {
         return Promise.resolve(request.schema.parse(page));
       }
 
-      if (request.path === "/items") {
+      if (request.path === "/items/bulk") {
         const ids = String(request.searchParams?.ids ?? "").split(",").filter(Boolean);
         const entries = ids.map((id) => ({
-          code: options.codes?.[id] ?? 200,
+          id,
+          status_code: options.codes?.[id] ?? 200,
           body: options.bodies?.[id] ?? item(id),
         }));
 
@@ -376,7 +377,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const paths = requests.map((request) => request.path);
     const ultimaBusca = paths.lastIndexOf(`/users/${String(SELLER_ID)}/items/search`);
-    const primeiroMultiget = paths.indexOf("/items");
+    const primeiroMultiget = paths.indexOf("/items/bulk");
 
     expect(primeiroMultiget).toBeGreaterThan(ultimaBusca);
   });
@@ -388,7 +389,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const result = await fetchListings(params(fake.db, client));
 
-    const multigets = requests.filter((request) => request.path === "/items");
+    const multigets = requests.filter((request) => request.path === "/items/bulk");
 
     expect(multigets).toHaveLength(3);
     expect(String(multigets[0]?.searchParams?.ids).split(",")).toHaveLength(20);
@@ -495,7 +496,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     await fetchListings(params(fake.db, client));
 
-    const multiget = requests.find((request) => request.path === "/items");
+    const multiget = requests.find((request) => request.path === "/items/bulk");
 
     expect(String(multiget?.searchParams?.attributes)).toContain("available_quantity");
     // D-631: o subestado (a exclusão) e o dono do item.
@@ -768,7 +769,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 */
 describe("fetchListings — o anúncio excluído e a leitura por notificação (D-631)", () => {
   const multigets = (requests: RequestOptions<unknown>[]) =>
-    requests.filter((r) => r.path === "/items").map((r) => String(r.searchParams?.ids));
+    requests.filter((r) => r.path === "/items/bulk").map((r) => String(r.searchParams?.ids));
 
   it("o anúncio vivo que a varredura não listou é relido; excluído no ML, ganha deleted_at", async () => {
     const fake = fakeDb({

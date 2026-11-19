@@ -10,7 +10,7 @@ import type { ActionShortcut } from "../../../lib/action-shortcuts";
 import { formatCurrency } from "../../../lib/format";
 import { formatDecisionSnapshot, outcomeWindowLabel } from "../../../lib/decision-format";
 import { actionSeverityLabel, actionStatusLabel } from "../../../lib/labels";
-import { createClient } from "../../../lib/supabase/browser";
+import { extrairNarrativaDoCopiloto, lerTokenDeSessao } from "../../../lib/chamar-api";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
 /**
@@ -95,24 +95,23 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
     setExplainError(null);
 
     try {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
+      const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
-      if (token === undefined) {
-        setExplainError("Sua sessão expirou. Entre de novo.");
+      if (!sessao.ok) {
+        setExplainError(sessao.mensagem);
 
         return;
       }
 
       const response = await fetch(`${API_URL}/v1/copilot/query`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: JSON.stringify({ tool: "narrate_action", input: { actionId: action.id } }),
       });
 
+      const payload: unknown = await response.json().catch(() => null);
+
       if (!response.ok) {
-        const payload: unknown = await response.json().catch(() => null);
         const message =
           typeof payload === "object" && payload !== null && "error" in payload
             ? (payload as { error?: { message?: string } }).error?.message
@@ -123,9 +122,15 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
         return;
       }
 
-      const payload = (await response.json()) as { data: { narrativa: string } };
+      const narrativa = extrairNarrativaDoCopiloto(payload);
 
-      setExplanation(payload.data.narrativa);
+      if (narrativa === null) {
+        setExplainError("A API respondeu em formato inesperado. Tente novamente.");
+
+        return;
+      }
+
+      setExplanation(narrativa);
     } catch {
       setExplainError("Não foi possível falar com o servidor. Tente de novo.");
     } finally {

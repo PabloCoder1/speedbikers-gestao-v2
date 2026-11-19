@@ -7,21 +7,21 @@ Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Co
 | Item | Estado verificado |
 |---|---|
 | **Base sincronizada (FF)** | `codex/sentinel-db-331-20261119` (`e0bedddf`), incorporando linearmente `origin/main` (`1ff173ca`, PRs `#328`/`#332`/`#333`/`#334`/`#335`), a rodada inicial do Gemini (`D-732..D-746`) e os avanços do Codex (`D-747..D-759`, `D-767..D-769`) |
-| **Branch Gemini** | `agent/gemini-sentinel` (`872d9079..f3ae0df6` + checkpoint documental) |
+| **Branch Gemini** | `agent/gemini-sentinel` (`872d9079..b7d459ea` + checkpoint documental; PR Draft `#343` publicado no GitHub) |
 | **Worktree Gemini** | `C:\Users\usuario\Desktop\Projetos\speedbikers-gestao-v2\.worktrees\gemini-sentinel` |
-| **PRs abertos do Codex (coordenação)** | `#336` (`codex/sentinel-policy-20261119`, `b552bfd6`, já incorpora Gemini até `29ec52a1` / `D-770..D-775` + `#337` da `main` e renumera índice Full para `D-790`), `#338` (`codex/sentinel-clean-lint`, `d73cd20c`), `#339` (`codex/sentinel-log-envelope`, `4537e3aa` — aponta adoção preferencial de `D-779`), `#340` (`codex/sentinel-docker-ports`, `43dcbf40`) |
-| **Convenção de IDs `D-xxx`** | `D-767` preservado para invoice do Claude (`#337` na `main` em `b3099724`); `D-790` reservado pelo Codex no `#336` para o índice do Full; Gemini usa `D-770..D-779` e faixa `D-780..D-789` nas próximas entregas independentes |
+| **PRs do Codex (coordenação)** | `#336` (`codex/sentinel-policy-20261119`, `b552bfd6`, já incorpora Gemini até `29ec52a1` / `D-770..D-775` + `#337` e renumera índice Full para `D-790`), `#338` (`codex/sentinel-clean-lint`, `d73cd20c`), `#339` (**FECHADO** pelo Codex em 19/11 após confirmação de `D-779`), `#340` (`codex/sentinel-docker-ports`, `43dcbf40`), `#342` (`codex/sentinel-ml-items-bulk`, `D-791`, CI verde — migra `/items` para `/items/bulk`). Todos revisados pelo Gemini no GitHub. |
+| **Convenção de IDs `D-xxx`** | `D-767` preservado para invoice do Claude (`#337` na `main` em `b3099724`); `D-790`/`D-791`+ usados pelo Codex (`#336`/`#342`); Gemini usa `D-770..D-781` e faixa `D-782..D-789` nas próximas entregas independentes |
 | **Branches Codex / raiz (intocadas)** | `codex/sentinel-audit` (`e524f346`), `codex/sentinel-integration-20261119` (`f5df5ab4`), `codex/sentinel-db-331-20261119` (`e0bedddf`), worktree `.codex/worktrees/sentinel-speedbikers-20261111` e pasta raiz em `v3` (`9642d921`) intocadas |
 | **Remotos / `main`** | `origin/main` avançou para `b3099724` (`#337` + `#341` do Claude); Gemini publica **somente** `origin/agent/gemini-sentinel` (PR Draft), sem merge na `main` nem escrita em Dev/Prod |
 
 ### Respeito à frente reservada ao Claude Code e às tarefas do Codex
 
 - **Claude Code:** nenhum arquivo de `/compras`, `/reposicao`, pedidos de importação/invoices (`#337`/`#341`), análise de compras, recebimento/estoque em trânsito, `fornecedores/[supplierId]/produtos-fornecidos.tsx`, migrations `20261117100000*–120000*` / `20261118210000*–211000*` / `20261119120000*`, worktrees ou branches do Claude foi alterado.
-- **Codex Sentinel:** nenhum arquivo tocado nos PRs abertos `#338` (`turbo.json`), `#340` (`scripts/isolate-supabase.mjs`) ou nas branches `codex/*` foi modificado; em `#339` (`packages/observability/src/logger.ts`), `D-779` (`f3ae0df6`) já estava commitado antes da abertura do `#339` e o próprio Codex registrou preferência pela adoção de `D-779`.
+- **Codex Sentinel:** nenhum arquivo tocado nos PRs abertos `#338` (`turbo.json`), `#340` (`scripts/isolate-supabase.mjs`), `#342` (`packages/mercado-livre/src/items.ts`, `ml-listings-fetch.test.ts`, `sync-listings-snapshot.test.ts`) ou nas branches `codex/*` foi modificado; em `#339` (`packages/observability/src/logger.ts`), `D-779` (`f3ae0df6`) já estava commitado antes da abertura do `#339` e o Codex encerrou `#339` após a revisão cruzada.
 
-## 2. Commits entregues sobre `e0bedddf` (`872d9079..f3ae0df6`)
+## 2. Commits entregues sobre `e0bedddf` (`872d9079..b7d459ea`)
 
-Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`) já foram incorporados em `codex/sentinel-audit` (`e524f346`) e `codex/sentinel-db-331-20261119` (`e0bedddf`), e `D-770..D-775` (`872d9079..29ec52a1`) já foram incorporados pelo Codex no PR `#336`. Abaixo estão todas as dez fatias de código entregues em `agent/gemini-sentinel` (sendo `D-776..D-779` novas sobre `29ec52a1`):
+Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`) já foram incorporados em `codex/sentinel-audit` (`e524f346`) e `codex/sentinel-db-331-20261119` (`e0bedddf`), e `D-770..D-775` (`872d9079..29ec52a1`) já foram incorporados pelo Codex no PR `#336`. Abaixo estão todas as doze fatias de código entregues em `agent/gemini-sentinel` (sendo `D-776..D-781` novas sobre `29ec52a1`):
 
 | Commit | Decisão / Achado | Escopo e correção |
 |---|---|---|
@@ -36,18 +36,22 @@ Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`)
 | `8b37d676` | `D-776` / `A116` | **Worker Performance + HTTP 414 no Full (`ml-fulfillment-fetch.ts`):** elimina `.in("inventory_id", inventories)` sem lote (contas reais têm 1.640–2.012 vínculos) e elimina a varredura de todo o histórico de `fulfillment_stock_snapshots` (346.394 linhas na VM) por `readAllPages` com ordenação não determinística; `readPreviousSnapshots` fatia em lotes de `100`, consulta janela recente de 48 h (`captured_at DESC, inventory_id ASC`) com parada antecipada quando o lote resolve e faz fallback pontual com concorrência `10` (`.limit(1).maybeSingle()` no índice único) falhando fechado em erro de banco. Reproduzido (`4 failed | 43 passed (47)`). *(Novo pós-`#336`.)* |
 | `6e7f2d41` | `D-777` / `A117` | **API — Backfills internos, `erroInterno` em D-766 e callback Shopee (`app.ts`, `order-financials-backfill.ts`, `order-user-products-backfill.ts`):** backfills passam a retornar `failed: true` + HTTP `503` via `respostaDoAgendador` em erro de `ml_accounts`; rotas `/v1/nfe-imports/:id/items/:itemId` e `/v1/stock/manual-exits` usam `erroInterno()` no ramo `failed` (gerando `request_id` e log `request_internal_error`); `/oauth/shopee/callback` exige `Number.isSafeInteger(n) && n > 0` para `shop_id`/`main_account_id`. Reproduzido (`7 failed | 115 passed (122)`). *(Novo pós-`#336`.)* |
 | `1946a22e` | `D-778` / `A118` | **Web — Autorização em `claimAction`, fail-closed em Server Actions e escape ILIKE:** `claimAction(id)` passa a derivar o responsável estritamente de `supabase.auth.getUser()` no servidor (impedindo atribuir ações a terceiros via `userId` do cliente); `acoes/page.tsx` separa erro de `membership` com `role="alert"`; `assignToMe` falha fechado em erro de leitura prévia; 6 arquivos de Server Actions separam erro de banco de falta de sessão/SKU e deixam de vazar `error.message` do Postgres; `escaparIlike` protege busca por SKU em `/atendimento` e `contaIndisponivel` impede ignorar filtro `?account=` quando `ml_accounts` falha. Reproduzido (`6 failed (6)`). *(Novo pós-`#336`.)* |
-| `f3ae0df6` | `D-779` / `A119` | **Observability — Logger blindado (`packages/observability/src/logger.ts`):** redige segredos também no campo principal `message` (`redactSecretText(message, "[REDACTED]")`), protege referências cíclicas com `WeakSet` de ancestrais (`"[Circular]"`, preservando DAGs compartilhados sem `RangeError`), serializa e redige instâncias de `Error` em qualquer profundidade (`name`, `message`, `stack`, `cause`) e converte `Date` para ISO string. Reproduzido (`3 failed | 35 passed (38)`). *(Superconjunto de `#339`, conforme nota do Codex no PR.)* |
+| `f3ae0df6` | `D-779` / `A119` | **Observability — Logger blindado (`packages/observability/src/logger.ts`):** redige segredos também no campo principal `message` (`redactSecretText(message, "[REDACTED]")`), protege referências cíclicas com `WeakSet` de ancestrais (`"[Circular]"`, preservando DAGs compartilhados sem `RangeError`), serializa e redige instâncias de `Error` em qualquer profundidade (`name`, `message`, `stack`, `cause`) e converte `Date` para ISO string. Reproduzido (`3 failed | 35 passed (38)`). *(Superconjunto adotado no lugar do `#339`, fechado pelo Codex.)* |
+| `c25e75c8` | Checkpoint Docs | Checkpoint documental + abertura do PR Draft `#343` e revisões em `#336`/`#338`/`#339`/`#340`/`#342`. |
+| `dd0c27f` | `D-780` / `A120` | **Worker — Visitas fail-closed, telemetria de backfill financeiro e unlock de refresh ML/Shopee:** `ml-listing-visits-fetch.ts` lança erro em falha de upsert de `daily_listing_visits` (preservando o checkpoint de 12 h sem marcar `sync_runs.status = "done"` nem perder dados silenciosamente); `backfill-order-financials.ts` move `readAllPages` (`orders`) e checkpoint (`order_financials`) para dentro do `try/catch` gravando `sync_runs`/`sync_errors`; `ml-token.ts` e `shopee-token.ts` protegem `release()`/`soltar()` em `try/catch` (TTL 60 s) e `shopee-token.ts` separa erro do banco de trava ocupada. Reproduzido (`6 failed | 47 passed (53)`). *(Novo pós-`#336`.)* |
+| `b7d459ea` | `D-781` / `A121` | **Web — Encerramento dos últimos `getSession()` diretos em cliente e validação de JSON `200 OK`:** migra `action-card.tsx`, `relist-panel.tsx` e `diagnosis-panel.tsx` para `lerTokenDeSessao` (zero componentes cliente restam chamando `.auth.getSession()` diretamente); adiciona `extrairNarrativaDoCopiloto`, `respostaDeRepublicacaoValida` e validação de `queued === true` em `confirmarAplicacaoNaApi` (`apps/web/lib/chamar-api.ts`), recusando respostas `200 OK` HTML/malformadas. Reproduzido (`3 failed | 4 passed (7)`). *(Novo pós-`#336`.)* |
 
-## 3. Verificação completa executada após o último código (`f3ae0df6`)
+## 3. Verificação completa executada
 
-- **Integração (`@sb/db` + PostgreSQL isolado `127.0.0.1:56421/56422`):** `supabase db reset --no-seed` aplicou todas as **326 migrations**; **16 arquivos / 1.213 testes passaram** (`test:integration`).
-- **Embeds PostgREST (`@sb/db run check:embeds`):** **39 projeções com embed, todas aceitas**.
-- **Check completo (`pnpm run check`):** **37/37 tarefas passaram** (**339 arquivos / 4.250 testes unitários**): `@sb/web` 149/1.562, `@sb/worker` 68/1.097, `@sb/domain` 46/738, `@sb/api` 43/566, `@sb/mercado-livre` 14/162, `@sb/shopee` 8/38, `@sb/observability` 3/38, `@sb/db` 6/28, `@sb/tiktok-shop` 1/11, `@sb/contracts` 1/10.
-- **Build (`pnpm run build`):** **10/10 tarefas passaram** (`Next.js 16.4.6`).
-- **7 guardas estáticas de `@sb/web`:** `check:waterfalls` (115), `check:server-actions` (27), `check:table-styles` (52), `check:control-styles` (542), `check:loading` (59), `check:navegacao-suave` (206) e `check:settings-vocabulary` (17 termos / 11 telas) — todos aprovados.
-- **Auditoria de dependências (`pnpm audit --prod --audit-level high`):** saída `0` (`1` moderado transitivo em `uuid`).
-- **Documentação (`pnpm docs:check`):** aprovada (`681` decisões únicas `D-001`–`D-779` em `docs/DECISIONS_INDEX.md`, `HANDOFF.md` dentro do budget de 25 KB).
-- **Playwright E2E completo (`pnpm --filter @sb/web run e2e` em `:3000` após `db reset --no-seed` + `e2e:seed`):** **401 de 401 passaram (15.9m)** nos projetos `chromium` e `loja-live` (zero falhas, zero skips).
+- **Verificação pós-`b7d459ea` (`D-780` e `D-781`):**
+  - **Check completo (`pnpm run check`):** **37/37 tarefas passaram** (**339 arquivos / 4.258 testes unitários**): `@sb/web` 149/1.565, `@sb/worker` 68/1.102, `@sb/domain` 46/738, `@sb/api` 43/566, `@sb/mercado-livre` 14/162, `@sb/shopee` 8/38, `@sb/observability` 3/38, `@sb/db` 6/28, `@sb/tiktok-shop` 1/11, `@sb/contracts` 1/10.
+  - **Build (`pnpm run build`):** **10/10 tarefas passaram** (`Next.js 16.4.6`).
+  - **7 guardas estáticas de `@sb/web`:** `check:waterfalls` (115), `check:server-actions` (27), `check:table-styles` (52), `check:control-styles` (542), `check:loading` (59), `check:navegacao-suave` (206) e `check:settings-vocabulary` (17 termos / 11 telas) — todos aprovados.
+  - **Auditoria de dependências (`pnpm audit --prod --audit-level high`):** saída `0` (`1` moderado transitivo em `uuid`).
+  - **Documentação (`pnpm docs:check`):** aprovada (`683` decisões únicas `D-001`–`D-781` em `docs/DECISIONS_INDEX.md`, `HANDOFF.md` dentro do budget de 25 KB).
+- **Verificação completa contra Postgres isolado e Playwright E2E (executada em `f3ae0df6`; `D-780`/`D-781` não alteram migrations nem schema SQL):**
+  - **Integração (`@sb/db` + PostgreSQL isolado `127.0.0.1:56421/56422`):** `supabase db reset --no-seed` aplicou todas as **326 migrations**; **16 arquivos / 1.213 testes passaram** (`test:integration`); `check:embeds` **39/39 projeções aceitas**.
+  - **Playwright E2E completo (`pnpm --filter @sb/web run e2e` em `:3000` após `db reset --no-seed` + `e2e:seed`):** **401 de 401 passaram (15.9m)** nos projetos `chromium` e `loja-live` (zero falhas, zero skips).
 - **Progresso de fechamento (`node scripts/report-closure-progress.mjs`):** **137/226 pontos = 60,6% (24/43 entregas = 55,8%)**, restando **39,4% (89/226 pontos / 19 entregas)** nos gates externos e de publicação.
 
 ## 4. Stack Supabase local isolada e armadilhas desta máquina
@@ -65,14 +69,14 @@ Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`)
 # Commits novos do Gemini pós-29ec52a1 (já incorporado no #336):
 git log --oneline 29ec52a1..agent/gemini-sentinel
 
-# Incorporação seletiva de D-776..D-779 em codex/sentinel-policy-20261119 (#336):
-git cherry-pick 8b37d676 6e7f2d41 1946a22e f3ae0df6
+# Incorporação seletiva de D-776..D-781 em codex/sentinel-policy-20261119 (#336):
+git cherry-pick 8b37d676 6e7f2d41 1946a22e f3ae0df6 dd0c27f b7d459ea
 ```
 
-- **Próximas fatias independentes reservadas pelo Gemini (fora dos arquivos do Codex e do Claude):**
-  1. Auditoria e correção de falhas silenciosas em handlers do worker (`ml-listing-visits-fetch.ts` / `sync-listing-visits-snapshot.ts` e análise de código dos retornos `403` em lote de anúncios ML em `sync-listing-item.ts` / `ml-listings-fetch.ts`).
-  2. Migração dos últimos `getSession()` sem proteção em cliente web (`action-card.tsx`, `relist-panel.tsx`, `diagnosis-panel.tsx`) para `lerTokenDeSessao` + validação de payload `200 OK` JSON.
+- **Próximas fatias independentes reservadas pelo Gemini (faixa `D-782..D-789`, fora dos arquivos de `#338`, `#340`, `#342` e do Claude):**
+  1. Auditoria de rotas/serviços restantes da API (`apps/api/src/pricing-quote.ts`, `support-reply.ts`, `relist.ts`, `invites.ts` e webhooks) buscando falhas silenciosas de banco, validações de entrada e idempotência.
+  2. Auditoria de páginas Server Components em `apps/web/app/(app)` (fora `/compras`/`/reposicao`/`/importacoes`) para falhas de leitura de contas/organização e paginação `> 1.000`.
 - **Pendências externas / de integração conjunta:**
-  1. Reconciliar `#336` com `origin/main` (`b3099724`, `#341`), `#338`, `#340` e `D-776..D-779` (adotando `D-779` no lugar de `#339`).
+  1. Reconciliar `#336` com `origin/main` (`b3099724`, `#341`), `#338`, `#340`, `#342` (`D-791`) e `D-776..D-781` (com `#339` já encerrado em favor de `D-779`).
   2. Quando o Supabase Dev (`nmgccyqquwxecqffsidr`) voltar a ficar ativo: registrar as 4 migrations pendentes da Sentinel (`D-750`, `D-752`, `D-790`, `D-768`) com timestamps definitivos pós-`20261119120000`, regenerar tipos em coordenação com compras e rodar a CI remota do candidato integrado (`V01`).
   3. Atos do dono e ambiente remoto ([STATE_AND_COMPLETION_2026-11-18.md](STATE_AND_COMPLETION_2026-11-18.md)): proteção da branch `main` (`S05`), workflow de migrations para a VM `sb-db` (`I05`), dump recorrente + alerta (`I03`), Monitoring/uptime checks (`I04`), Auth/SMTP (`S04`), benchmark representativo na VM (`P02`), estoque Shopee/TikTok (`M03`/`M04`/`M05`) e deploy coordenado (`migrations -> worker -> API -> web`, `V02`/`V03`).

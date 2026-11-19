@@ -20290,3 +20290,30 @@ Três falhas confirmadas em `packages/observability/src/logger.ts`:
 3. **`Error` fora da chave raiz `error` virava `{}` vazio:** `serializeError` só era chamado para `combined.error`. Agora qualquer `Error` encontrado em profundidade (incluindo `cause` e elementos de array) é serializado com `name`, `message`, `stack` e `cause` redigidos, e `Date` vira ISO string.
 
 Reprodução pré-correção em `packages/observability/src/logger.test.ts` registrou 3 falhas (`3 failed | 35 passed (38)`); após a correção, `@sb/observability` passou integralmente em `build`, `typecheck`, `eslint` e `vitest` (`3` arquivos / `38` testes).
+
+## D-780 - Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
+
+Três falhas confirmadas de confiabilidade em `apps/worker/src/handlers`:
+
+1. **Perda silenciosa de visitas em erro de upsert (`ml-listing-visits-fetch.ts`):** quando `daily_listing_visits.upsert()` devolvia `result.error !== null`, o laço apenas logava `listing_visits_not_recorded`, marcava `recorded = false` e seguia sem incrementar `itemsFailed` nem lançar erro; `sync-listing-visits-snapshot.ts` concluía `sync_runs.status = "done"` (`processed: 0`, HTTP 200 sem retry do Cloud Tasks) e desperdiçava o restante das chamadas ao ML. Agora o erro de gravação lança exceção imediatamente (preservando o checkpoint de 12 h dos itens já gravados, sem checkpoint parcial do item que falhou), levando `sync.listing-visits.snapshot` a gravar `sync_runs.status = "failed"` + `sync_errors.error_class = "retryable"` e devolver `retryable: true`.
+2. **Falhas de banco fora da telemetria em `backfill-order-financials.ts`:** `readAllPages` (`orders`) e a leitura do checkpoint (`order_financials`) rodavam fora do `try/catch`, deixando erros de banco escaparem sem `recordSyncRunFailure` (diferente do irmão `backfill-order-user-products.ts`). Agora ambos correm dentro do `try/catch`, registrando `sync_runs`/`sync_errors` como `failed`/`retryable` sem avançar a corrente.
+3. **Unlock de trava de refresh sem `try/catch` e erro de reserva mascarado (`ml-token.ts` e `shopee-token.ts`):** se o `UPDATE` de liberação da trava (TTL de 60 s) lançasse erro de transporte em `release()`/`soltar()`, descartava um `access_token` já renovado por outra execução ou mascarava o erro transitório original da API externa; além disso `shopee-token.ts` colapsava `travada.error !== null` na mensagem de corrida. Agora `release()`/`soltar()` absorvem falhas de transporte (a trava expira em 60 s) e `shopee-token.ts` separa erro do banco de trava ocupada.
+
+Reprodução pré-correção nas cinco suítes (`ml-listing-visits-fetch.test.ts`, `sync-listing-visits-snapshot.test.ts`, `backfill-order-financials.test.ts`, `ml-token.test.ts` e `shopee-token.test.ts`) registrou 6 falhas (`6 failed | 47 passed (53)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.102` testes).
+
+## D-781 - Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
+
+Dois defeitos confirmados nos últimos três componentes cliente que ainda chamavam `supabase.auth.getSession()` diretamente (`action-card.tsx`, `relist-panel.tsx`, `diagnosis-panel.tsx`) e em `confirmarAplicacaoNaApi` (`apps/web/lib/chamar-api.ts`):
+
+1. **Sessão sem helper centralizado (`lerTokenDeSessao`):** `action-card.tsx`, `relist-panel.tsx` e `diagnosis-panel.tsx` eram os três últimos componentes cliente fora de `lib/chamar-api.ts` a chamar `createClient().auth.getSession()` diretamente, perdendo a diferenciação entre sessão expirada e falha local do cliente Auth. Agora todos os clientes web passam por `lerTokenDeSessao`.
+2. **Aceite cego de `200 OK` HTML/malformado:** `confirmarAplicacaoNaApi` aceitava qualquer resposta `response.ok` sem ler o JSON (`{ queued: true }`), podendo confirmar aplicação de ERP/NF-e diante de página HTML de proxy; `relist-panel.tsx` aceitava `200 OK` sem conferir `status === "queued"`; e `action-card.tsx` / `diagnosis-panel.tsx` faziam cast direto `(await response.json()) as { data: { narrativa: string } }`. Extraídos `extrairNarrativaDoCopiloto` e `respostaDeRepublicacaoValida` em `lib/chamar-api.ts` e exigido `queued === true` em `confirmarAplicacaoNaApi`.
+
+Reprodução pré-correção em `apps/web/lib/chamar-api.test.ts` registrou 3 falhas (`3 failed | 4 passed (7)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`149` arquivos / `1.565` testes) e nas 7 guardas estáticas.
+
+## D-791 - O cliente usa o endpoint bulk de anúncios do Mercado Livre
+
+**Evidência em 19/11.** A amostra de três horas do worker encontrou 31 respostas finais HTTP 403 com `ResourceDeprecated` na rota de multiget anterior. Em outra janela recente, três pares de conta e anúncio tiveram processamento posterior a uma falha. Esses sucessos não garantem acesso à rota antiga. O novo contrato especifica `/items/bulk`, `status_code`, ID no envelope e projeções `body.`. [Guia de migração do Mercado Livre](https://developers.mercadolivre.com.br/pt_br/convivencia-me1-me2/itens-e-buscas)
+
+**Correção.** O cliente usa o endpoint novo e normaliza o código por entrada. Preserva o limite de 20 e a lógica de releitura e de exclusão do worker. A busca do vendedor e as consultas singulares continuam em seus endpoints. O repositório usa `/users/me` para a leitura da conta.
+
+**Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
