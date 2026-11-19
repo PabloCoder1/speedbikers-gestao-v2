@@ -18581,6 +18581,50 @@ td.sb-pco-num-linha {
   color: var(--sb-text-soft);
 }
 
+/* Invoice (D-766): o cabeçalho do documento e o nº do pedido padrão. */
+.sb-imp-invoice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sb-space-2) var(--sb-space-4);
+  margin: var(--sb-space-2) 0;
+}
+
+.sb-imp-documento {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-1) var(--sb-space-3);
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.sb-imp-documento div {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.sb-imp-documento dt {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-imp-documento dd {
+  margin: 0;
+  font-family: var(--sb-mono);
+  overflow-wrap: anywhere;
+}
+
+.sb-imp-padrao {
+  display: grid;
+  gap: 0.125rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-imp-preco {
+  font-family: var(--sb-mono);
+}
+
 .sb-imp-exemplos {
   max-width: 16rem;
   overflow: hidden;

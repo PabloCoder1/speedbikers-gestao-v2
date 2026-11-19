@@ -1,3 +1,4 @@
+import { detectarLista, numeroDeInvoice, referenciaPadrao, resumoDoDocumento, textoLimpo, type DocumentoFornecedor } from "./invoice";
 import { colunaDe, indiceDaColuna, type Aba, type Celula } from "./xlsx";
 
 /**
@@ -14,7 +15,18 @@ import { colunaDe, indiceDaColuna, type Aba, type Celula } from "./xlsx";
  *   quantidade encomendada).
  */
 
-export type PapelColuna = "CODIGO" | "EAN" | "NCM" | "DESCRICAO" | "OBSERVACAO" | "QUANTIDADE" | "IGNORAR";
+export type PapelColuna =
+  | "CODIGO"
+  | "EAN"
+  | "NCM"
+  | "DESCRICAO"
+  | "OBSERVACAO"
+  | "QUANTIDADE"
+  | "REFERENCIA"
+  | "PRECO"
+  | "VALOR"
+  | "UNIDADE"
+  | "IGNORAR";
 
 export interface ColunaClassificada {
   readonly coluna: string;
@@ -31,6 +43,18 @@ export interface ClassificacaoAba {
   readonly aba: string;
   linhaCabecalho: number;
   colunas: ColunaClassificada[];
+  /**
+   * Invoice/proforma (D-767): uma linha por item. As linhas de item já
+   * escolhidas, o cabeçalho do documento e a referência das linhas sem pedido
+   * (editável). Ausente = layout de matriz (uma coluna por pedido).
+   */
+  lista?: {
+    readonly itens: readonly number[];
+    readonly documento: DocumentoFornecedor;
+    /** O TOTAL impresso no documento, para conferir com a soma lida. */
+    readonly totalDocumento: number | null;
+    referenciaPadrao: string | null;
+  };
 }
 
 const PALAVRAS: readonly (readonly [PapelColuna, RegExp])[] = [
@@ -221,6 +245,12 @@ export interface LinhaMontada {
   quantityNeedsConfirmation: boolean;
   reference: string | null;
   notes: string | null;
+  /** Invoice: preço unitário e valor da linha, na moeda do documento (null = sem moeda conhecida). */
+  unitPrice: number | null;
+  amount: number | null;
+  currency: string | null;
+  unit: string | null;
+  document: DocumentoFornecedor | null;
   raw: Record<string, string>;
 }
 
@@ -237,6 +267,8 @@ function referenciaDaColuna(referencia: string | null): string | null {
  * vai em `raw`, para a origem nunca se perder.
  */
 export function montarLinhas(aba: Aba, cls: ClassificacaoAba): LinhaMontada[] {
+  if (cls.lista !== undefined) return montarLinhasDeLista(aba, cls, cls.lista);
+
   const por = (p: PapelColuna): string[] => cls.colunas.filter((c) => c.papel === p).map((c) => c.coluna);
   const [codigo] = por("CODIGO");
   const [ean] = por("EAN");
@@ -293,9 +325,184 @@ export function montarLinhas(aba: Aba, cls: ClassificacaoAba): LinhaMontada[] {
         quantityNeedsConfirmation: qtd.precisaConfirmar,
         reference: referenciaDaColuna(q.referencia),
         notes: notas.length === 0 ? null : notas.join(" · ").slice(0, 500),
+        unitPrice: null,
+        amount: null,
+        currency: null,
+        unit: null,
+        document: null,
         raw,
       });
     }
+  }
+
+  return saida;
+}
+
+/** Os papéis que o layout de lista achou, como colunas classificadas (o usuário pode trocar). */
+function colunasDaLista(aba: Aba, layout: NonNullable<ReturnType<typeof detectarLista>>): ColunaClassificada[] {
+  const papelDe = new Map<string, PapelColuna>([
+    [layout.quantidade, "QUANTIDADE"],
+    [layout.preco, "PRECO"],
+  ]);
+
+  if (layout.valor !== null) papelDe.set(layout.valor, "VALOR");
+  if (layout.ncm !== null) papelDe.set(layout.ncm, "NCM");
+  if (layout.referencia !== null) papelDe.set(layout.referencia, "REFERENCIA");
+  if (layout.codigo !== null) papelDe.set(layout.codigo, "CODIGO");
+  if (layout.descricao !== null) papelDe.set(layout.descricao, "DESCRICAO");
+  if (layout.unidade !== null) papelDe.set(layout.unidade, "UNIDADE");
+  for (const c of layout.observacoes) papelDe.set(c, "OBSERVACAO");
+
+  const cabecalho = aba.grade.get(layout.linhaCabecalho);
+  const colunas = new Set<string>();
+
+  for (const n of layout.itens) for (const c of aba.grade.get(n)?.keys() ?? []) colunas.add(c);
+
+  return [...colunas]
+    .sort((a, b) => indiceDaColuna(a) - indiceDaColuna(b))
+    .map((coluna) => {
+      const valores = layout.itens.map((n) => aba.grade.get(n)?.get(coluna)).filter((c): c is Celula => c !== undefined);
+
+      return {
+        coluna,
+        cabecalho: textoLimpo(cabecalho?.get(coluna)),
+        papel: papelDe.get(coluna) ?? "IGNORAR",
+        referencia: null,
+        preenchidas: valores.length,
+        numericas: valores.filter((c) => numeroDeInvoice(c.texto) !== null).length,
+      };
+    });
+}
+
+/**
+ * A classificação da aba: invoice/proforma (uma linha por item) quando a aba
+ * tem a assinatura quantidade × preço = valor; senão, a matriz do controle de
+ * chegada (uma coluna por pedido).
+ */
+export function classificar(aba: Aba, nomeArquivo = ""): ClassificacaoAba {
+  const layout = detectarLista(aba, nomeArquivo);
+
+  if (layout === null) return classificarAba(aba);
+
+  return {
+    aba: aba.nome,
+    linhaCabecalho: layout.linhaCabecalho,
+    colunas: colunasDaLista(aba, layout),
+    lista: {
+      itens: layout.itens,
+      documento: layout.documento,
+      totalDocumento: layout.totalDocumento,
+      referenciaPadrao: referenciaPadrao(layout.documento, nomeArquivo) },
+  };
+}
+
+/** Aba que só repete a invoice com peso e caixas: começa desmarcada. */
+export function ehListaDeEmbalagem(aba: Aba): boolean {
+  if (/^(pl|packing(\s*list)?)$/i.test(aba.nome.trim())) return true;
+
+  for (const [n, linha] of aba.grade) {
+    if (n > 25) continue;
+    for (const c of linha.values()) if (/packing\s+list/i.test(c.texto)) return true;
+  }
+
+  return false;
+}
+
+/** Código no começo da descrição quando não há coluna de código ("JDR-37 Com 2 encostos" → "JDR-37"). */
+function codigoNoInicio(descricao: string | null): string | null {
+  const token = /^(\S+)\s/.exec(descricao ?? "")?.[1];
+
+  return token !== undefined && /[A-Z]/i.test(token) && /\d/.test(token) && token.length <= 30 ? token : null;
+}
+
+function montarLinhasDeLista(aba: Aba, cls: ClassificacaoAba, lista: NonNullable<ClassificacaoAba["lista"]>): LinhaMontada[] {
+  const por = (p: PapelColuna): string[] => cls.colunas.filter((c) => c.papel === p).map((c) => c.coluna);
+  const [codigo] = por("CODIGO");
+  const [ean] = por("EAN");
+  const [ncm] = por("NCM");
+  const [descricao] = por("DESCRICAO");
+  const [refCol] = por("REFERENCIA");
+  const [preco] = por("PRECO");
+  const [valor] = por("VALOR");
+  const [unidade] = por("UNIDADE");
+  const [quantidade] = por("QUANTIDADE");
+  const obs = por("OBSERVACAO");
+  const doc = lista.documento;
+  const padrao = referenciaDaColuna(lista.referenciaPadrao);
+  const resumo = resumoDoDocumento(doc);
+  const saida: LinhaMontada[] = [];
+
+  if (quantidade === undefined) return saida;
+
+  const texto = (linha: ReadonlyMap<string, Celula>, col: string | undefined): string | null => {
+    if (col === undefined) return null;
+    const t = textoLimpo(linha.get(col));
+
+    return t === "" ? null : t.slice(0, 500);
+  };
+  const numero = (linha: ReadonlyMap<string, Celula>, col: string | undefined): number | null => {
+    const t = col === undefined ? undefined : linha.get(col)?.texto;
+
+    return t === undefined ? null : numeroDeInvoice(t);
+  };
+
+  for (const n of lista.itens) {
+    const linha = aba.grade.get(n);
+
+    if (linha === undefined) continue;
+
+    const description = texto(linha, descricao);
+    const code = texto(linha, codigo) ?? (codigo === undefined ? codigoNoInicio(description) : null);
+    const eanBruto = texto(linha, ean);
+    const eanTexto = eanBruto === null ? null : limparEan(eanBruto);
+
+    if (code === null && eanTexto === null && description === null) continue;
+
+    const c = linha.get(quantidade);
+    const bruto = textoLimpo(c);
+
+    if (c === undefined || bruto === "" || bruto === "0") continue;
+
+    const qtdLida = numeroDeInvoice(c.texto);
+    const qtd =
+      qtdLida !== null && qtdLida > 0
+        ? { valor: qtdLida, precisaConfirmar: !Number.isInteger(qtdLida) || qtdLida > QUANTIDADE_PLAUSIVEL }
+        : interpretarQuantidade(bruto, c.numerica);
+    const unitPrice = numero(linha, preco);
+    const amount = numero(linha, valor);
+    // Valor que não bate com quantidade × preço: a quantidade pede confirmação.
+    const diverge =
+      qtd.valor !== null && unitPrice !== null && amount !== null && Math.abs(qtd.valor * unitPrice - amount) > Math.max(0.011, amount * 0.005);
+    const unit = texto(linha, unidade)?.slice(0, 20) ?? null;
+    const notas = [
+      ...obs.map((col) => texto(linha, col)).filter((t): t is string => t !== null),
+      ...(unit === null ? [] : [`unidade na invoice: ${unit}`]),
+      ...(resumo === null ? [] : [resumo]),
+    ];
+    const raw: Record<string, string> = {};
+
+    for (const [col, cel] of linha) raw[col] = cel.formula !== null && cel.texto === "" ? `=${cel.formula}` : textoLimpo(cel).slice(0, 200);
+
+    saida.push({
+      sheet: aba.nome,
+      row: n,
+      column: quantidade,
+      code: code?.slice(0, 120) ?? null,
+      ean: eanTexto?.slice(0, 40) ?? null,
+      ncm: texto(linha, ncm)?.slice(0, 20) ?? null,
+      description,
+      quantityRaw: bruto.slice(0, 120),
+      quantity: qtd.valor,
+      quantityNeedsConfirmation: qtd.precisaConfirmar || diverge,
+      reference: referenciaDaColuna(texto(linha, refCol)) ?? padrao,
+      notes: notas.length === 0 ? null : notas.join(" · ").slice(0, 500),
+      unitPrice,
+      amount,
+      currency: doc.moeda,
+      unit,
+      document: doc,
+      raw,
+    });
   }
 
   return saida;

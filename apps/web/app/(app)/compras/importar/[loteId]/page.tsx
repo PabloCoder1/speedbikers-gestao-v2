@@ -30,6 +30,7 @@ const FILTROS = {
   QUANTIDADE: "Quantidade a confirmar",
   SEM_REFERENCIA: "Sem referência",
   VINCULADAS: "Vinculadas",
+  JA_NO_PEDIDO: "Já no pedido",
   REGISTRADAS: "Registradas",
   IGNORADAS: "Ignoradas",
 } as const;
@@ -129,10 +130,12 @@ export default async function LoteImportacaoPage({
             ["Não encontradas", r.nao_encontradas],
             ["Quantidade a confirmar", r.quantidade_a_confirmar],
             ["Sem referência", r.sem_referencia],
-            ["SKU repetido na referência", r.sku_repetido_na_referencia],
+            ["Mesmo SKU em várias linhas (somadas)", r.sku_repetido_na_referencia],
+            // D-767: ausente até a migration da invoice chegar ao banco — não vira zero.
+            ["SKU que já está no pedido", r.ja_no_pedido],
             ["Registradas", r.registradas],
           ] as const
-        ).map(([rotulo, n]) => (
+        ).filter(([, n]) => n !== undefined).map(([rotulo, n]) => (
           <div key={rotulo} className="sb-imp-cartao">
             <span>{rotulo}</span>
             <strong>{formatCount(n ?? 0)}</strong>
