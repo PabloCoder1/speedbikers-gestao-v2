@@ -2063,6 +2063,29 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     },
   );
 
+  it.each(["1e2", "0x10", "1.0", "0", "-5", "abc"])(
+    "D-770: POST /v1/nfe-imports/:id/items/%s recusa itemId fora de inteiro decimal positivo com 400",
+    async (itemId) => {
+      const app = createApp({
+        logger: createLogger({}, { sink: () => undefined }),
+        auth: admin,
+        nfeImportDeps: {} as never,
+      });
+
+      const response = await app.request(
+        `/v1/nfe-imports/9c8b7a6d-5e4f-4a3b-9c1d-0e9f8a7b6c5d/items/${itemId}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ acao: "quantidade", quantidade: 2 }),
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: "invalid_payload" } });
+    },
+  );
+
   it("erro interno não devolve a mensagem do banco, só o request_id", async () => {
     const linhas: string[] = [];
     const app = createApp({

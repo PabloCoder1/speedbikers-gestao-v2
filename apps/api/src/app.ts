@@ -1587,7 +1587,8 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const documentId = context.req.param("id");
-    const itemId = Number(context.req.param("itemId"));
+    const rawItemId = context.req.param("itemId");
+    const itemId = /^\d+$/.test(rawItemId) ? Number(rawItemId) : Number.NaN;
 
     if (!z.uuid().safeParse(documentId).success || !Number.isSafeInteger(itemId) || itemId <= 0) {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
