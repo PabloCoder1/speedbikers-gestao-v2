@@ -846,3 +846,8 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 
 - Base publicada `d3a9debb` (#337), integrada ao candidato `d45ce2e6` em `codex/sentinel-invoices-integration`. D-767 de Compras fica como publicada. O índice Full, anteriormente D-767 no Sentinel, passa a D-790. Os checkpoints históricos conservam o ID vigente à época. Código e migration de Compras mantêm o conteúdo da `main`.
 - A CI do corte anterior #336 passou check, integração, Playwright e scripts. Este corte exige nova CI. A cópia isolada aplicou as 323 versões até a invoice. O dry-run recusou os quatro nomes originais. Com timestamps temporários `20261119120001` a `20261119120004`, o upgrade chegou a 327 versões e o dry-run final ficou limpo. Os SQLs e nomes no Git conservam o conteúdo original. Dev segue inativo; faltam timestamps definitivos e conferência dos destinos. Passaram 37 tarefas de check, 4.246 testes unitários, 10 tarefas de build e a checagem de documentação.
+
+### 19/11/2026 · Correção de colunas da invoice incorporada ao candidato
+
+- O corte b552bfd6 passou check, integração, Playwright e scripts na CI do #336. Em leitura na VM, a migration de invoice e as cinco colunas estavam presentes; catálogo com 323 versões até `20261119120000`.
+- A `main` avançou a `b3099724` (#341). A integração manteve os quatro arquivos de Compras byte a byte. Passaram 37 tarefas de check, 4.247 testes unitários, 10 tarefas de build e documentação. Próxima etapa é a CI deste corte. As quatro migrations do Sentinel seguem pendentes de registro definitivo em Dev.

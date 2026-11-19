@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, candidato #336 reconciliado com #337 (d3a9debb)",
+  "corte": "2026-11-19, candidato #336 inclui correção de Compras #341 (b3099724)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI do #336 aprovada em d45ce2e6; #337 reconciliado e upgrade isolado de 323 para 327 versões aprovado. Nova CI em validação; Dev inativo",
+      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI do #336 aprovada em b552bfd6. Novo corte incorpora #341 e passou check, build e docs. CI do novo corte e registro em Dev pendentes",
       "fase": 5
     },
     {
