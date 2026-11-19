@@ -150,8 +150,8 @@ describe("chunkItemIds", () => {
 });
 
 describe("getItemsBatch", () => {
-  it("monta ids separados por vírgula e projeta atributos", async () => {
-    const { client, calls } = fakeClient([[{ code: 200, body: { id: "MLB1" } }]]);
+  it("chama o bulk com campos do body e preserva o código por item", async () => {
+    const { client, calls } = fakeClient([[{ id: "MLB2", status_code: 404, body: null }, { id: "MLB1", status_code: 200, body: { id: "MLB1" } }]]);
 
     const entries = await getItemsBatch({
       client,
@@ -160,9 +160,9 @@ describe("getItemsBatch", () => {
       attributes: ["id", "title"],
     });
 
-    expect(calls[0]?.path).toBe("/items");
-    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2", attributes: "id,title" });
-    expect(entries[0]?.code).toBe(200);
+    expect(calls[0]?.path).toBe("/items/bulk");
+    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2", attributes: "body.id,body.title" });
+    expect(entries).toEqual([{ code: 404, body: null }, { code: 200, body: { id: "MLB1" } }]);
   });
 
   it("acima de 20 ids FALHA em vez de deixar a API truncar em silêncio", async () => {
@@ -183,8 +183,8 @@ describe("getItemsBatch", () => {
 
   it("o envelope verbose preserva falha POR ITEM, não da chamada", () => {
     const entries = itemsMultigetSchema.parse([
-      { code: 200, body: { id: "MLB1" } },
-      { code: 404, body: { message: "Item not found" } },
+      { id: "MLB1", status_code: 200, body: { id: "MLB1" } },
+      { id: "MLB2", status_code: 404, body: { message: "Item not found" } },
     ]);
 
     expect(entries.filter((entry) => entry.code === 200)).toHaveLength(1);
