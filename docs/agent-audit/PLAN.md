@@ -2,9 +2,9 @@
 
 ## Diagnóstico e critérios
 
-Há 106 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
+Há 107 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 19/11.** A integração em `codex/sentinel-integration-20261119` usa a `main` em `1ff173ca` (#335). Na documentação, compras mantém D-720–D-725 e as decisões da Sentinel passam a D-754–D-759. O formulário de compras e seu spec permanecem no corte publicado para coordenação com o Claude. A integração passou check, build, 1.204 testes de banco e 8 E2E de NF-e e compras. D-750/D-752 aguardam Dev e regeneração de tipos. Revisar índice e retenção do #331 em recorte separado da infraestrutura, reconciliando seus dois IDs com a numeração de compras. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
+**Frente atual em 19/11.** O candidato `codex/sentinel-db-331-20261119` parte de `849e4b78` (integração do #335). As duas migrations do #331 foram isoladas da infraestrutura e testadas com 1.212 casos de banco. Seus IDs são D-767/D-768. D03 passa a Testado localmente. D-750/D-752/D-767/D-768 aguardam Dev, que está inativo. Conferir a matriz de CI e comparar a sequência das migrations com o pipeline da VM antes de propor aplicação ou publicação. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
 
 | Prioridade | Critério aplicado |
 | --- | --- |

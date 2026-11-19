@@ -20151,3 +20151,15 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Alternativas rejeitadas:** chamar `create_manual_stock_adjustment` uma vez por SKU — sem atomicidade, uma falha no meio deixaria meia saída gravada, e sem chave de idempotência. `movement_type` próprio (`SAIDA_MANUAL`) — migration do CHECK; a origem já identifica a saída.
 
 **Risco que fica:** a saída manual não tem tela própria de histórico — aparece em `/estoque/movimentacoes` como ajuste manual, linha por linha. A edição de item não guarda o valor lido original no banco (fica no log `document_item_edited` da `api`, com antes e depois).
+
+## D-767 - Um índice único atende a timeline do Full
+
+A migration `20261117182500` substitui a constraint unique ASC e o índice da timeline por um índice unique `(ml_account_id, inventory_id, captured_at DESC)`. A captura repetida continua a retornar 23505, e o índice atende à ordem mista usada pelo `DISTINCT ON` do Full. O nome `fulfillment_stock_snapshots_unique` foi preservado. O DDL roda em uma transação com `lock_timeout` de 10 segundos.
+
+A proposta do #331 usava D-720. A validação do recorte Sentinel foi local. A construção do índice bloqueia escritas durante o DDL, e a janela de aplicação ainda precisa ser medida no banco de destino. [Plano de consulta](PERFORMANCE.md#timeline-do-full-d-767-19112026)
+
+## D-768 - Retenção preserva a última execução concluída apesar de falhas posteriores
+
+A migration `20261117182600` permite ao expurgo remover execuções `done` com mais de 30 dias, preservando a concluída mais recente por organização e tipo e todas as falhas. Uma falha recente já não libera o último sucesso para remoção. O corte do UpSeller mantém `reconciled_at` quando depende desse histórico. Os gatilhos preservam a regra append-only fora do expurgo. A chave de serviço mantém a inserção e fica sem permissão de exclusão ou execução do expurgo.
+
+A proposta do #331 usava D-721. O recorte corrigido mantém o agendamento como ato separado. A migration cria as funções e os gatilhos. O teste local confirmou zero agendamentos de expurgo. A janela e a política de retenção em produção continuam pendentes.

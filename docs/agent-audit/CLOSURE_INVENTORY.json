@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, Gemini D-732 a D-746, Codex D-747 a D-752 e publicação de compras confirmada em f2eb787c",
+  "corte": "2026-11-19, integração local 849e4b78 e validação de D-767/D-768",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -157,9 +157,9 @@
       "area": "Banco de dados",
       "entrega": "R3/R5: retenção de job_runs e índice Full",
       "peso": 3,
-      "status": "Implementado",
+      "status": "Testado localmente",
       "responsavel": "Database",
-      "evidencia": "PR #331; duas migrations 17182500/17182600",
+      "evidencia": "D-767/D-768, migrations 17182500/17182600 e 1.212 testes em banco local. Expurgo aguarda aprovação de agendamento",
       "fase": 3
     },
     {
@@ -389,7 +389,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Sentinel/Outros",
-      "evidencia": "IDs da Sentinel reconciliados com a main em 1ff173ca. O PR #331 ainda contém duas decisões com IDs de compras",
+      "evidencia": "O candidato local preserva os IDs de compras e atribui D-767/D-768 ao recorte de banco do #331. PRs/worktrees ainda em revisão",
       "fase": 4
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Checkout local com main 1ff173ca, Gemini e Sentinel passou check, build, 1.204 testes de banco e 8 E2E. Falta CI remota e integração do #331",
+      "evidencia": "Integração 849e4b78 passou 8 E2E. O candidato com as duas migrations revistas do #331 passou 1.212 testes locais de banco. Falta CI remota",
       "fase": 5
     },
     {

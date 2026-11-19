@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **668** (D-001 a D-766).
+Decisões registradas: **670** (D-001 a D-768).
 
 ## Por domínio
 
@@ -85,7 +85,7 @@ Decisões registradas: **668** (D-001 a D-766).
 - **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 - **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 
-### banco/rls (48)
+### banco/rls (49)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -135,6 +135,7 @@ Decisões registradas: **668** (D-001 a D-766).
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-753** — Índice de decisões exige IDs únicos antes de gravar
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
+- **D-767** — Um índice único atende a timeline do Full
 
 ### estoque (55)
 
@@ -406,7 +407,7 @@ Decisões registradas: **668** (D-001 a D-766).
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 
-### outros (105)
+### outros (106)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -513,6 +514,7 @@ Decisões registradas: **668** (D-001 a D-766).
 - **D-757** — Compras e o vínculo de item da NF-e recuperam os controles após falha da ação
 - **D-759** — Ações do fornecedor conservam a edição após falha de transporte
 - **D-762** — A previsão de chegada se edita com histórico
+- **D-768** — Retenção preserva a última execução concluída apesar de falhas posteriores
 
 ### processo/docs (1)
 

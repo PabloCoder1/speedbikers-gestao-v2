@@ -8,6 +8,7 @@ Este corte substitui a leitura de disponibilidade de 11/11. Foi apresentado ao d
 - **Recuperação da VM.** O #333 registra 17 versões de novembro no catálogo até `20261118211000`, um restore isolado bem-sucedido e o ensaio da mesma faixa de SQL. Em 19/11, o snapshot automático estava READY e a listagem de `diario/` retornou vazia. I03 continua em andamento até provar dump recorrente e alerta. Run mantém `api-00039-22b` e `worker-00058-mbc` com 100% do tráfego. Dois dos 18 agendamentos habilitados tinham último código 14. A `main` continua sem proteção ou rulesets.
 - **Continuidade Sentinel.** `58fc91fb` consolidava 18 commits do Gemini sobre `76a27296`. A Sentinel avançou linearmente e acrescentou D-747. O Gemini registrou 397 E2E e 1.160 testes de integração em sua base. Nesta retomada passaram 85 testes selecionados de ERP/NF-e, check e build. A correção de NF-e amplia a evidência de B02 com o mesmo peso. [Checkpoint](SESSION_LOG.md)
 - **Integração local.** No corte `1ff173ca`, a colisão documental foi resolvida com D-754 a D-759 para as seis decisões da Sentinel. As decisões publicadas de compras conservaram seus IDs. O #331 segue aberto e mantém suas duas migrations separadas da faixa documentada na VM. As evidências anteriores nesta página ficam como histórico da auditoria de 18/11. [PR #331](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/331)
+- **Recorte de banco.** D03 passou a Testado localmente após validar D-767/D-768 em 1.212 testes. O índice do Full preserva unicidade e ordem. A retenção preserva o último sucesso mesmo quando houve falhas mais recentes, mantendo o corte do UpSeller. A aplicação e o agendamento em produção continuam pendentes. [Checkpoint](SESSION_LOG.md)
 - **Leitura de NF-e e ERP.** D-750 e D-752 protegem a gravação de conferência com transação e versão. As duas migrations foram validadas localmente e aguardam Dev. D-752 também comprovou 23.924 linhas normalizadas em 24 blocos. B02 acumula evidência dentro dos 134 pontos registrados. [Checkpoint](SESSION_LOG.md)
 
 O diagnóstico inicial usa a base 010c252d. Foi atualizado com A87/D-729 e A88/D-730: transporte e recusa do banco nas quatro confirmações da Central. F04 mantém os mesmos dois pontos; não houve aumento de progresso por esta extensão da cobertura. Os estados remotos permanecem como observados na auditoria, não como nova verificação de disponibilidade.
@@ -165,7 +166,7 @@ Aceite técnico do inventário = status **Testado localmente**, **Publicado** ou
 | Frontend e telas | 25/25 | 100.0% | 0.0% | 5/5 |
 | Backend e APIs | 21/21 | 100.0% | 0.0% | 3/3 |
 | Integrações dos marketplaces | 16/34 | 47.1% | 52.9% | 2/5 |
-| Banco de dados | 15/21 | 71.4% | 28.6% | 3/5 |
+| Banco de dados | 18/21 | 85.7% | 14.3% | 4/5 |
 | Google Cloud e infraestrutura | 13/29 | 44.8% | 55.2% | 2/6 |
 | Segurança e autenticação | 18/26 | 69.2% | 30.8% | 3/5 |
 | Performance | 8/16 | 50.0% | 50.0% | 1/3 |
@@ -174,9 +175,9 @@ Aceite técnico do inventário = status **Testado localmente**, **Publicado** ou
 | Publicação e validação | 0/21 | 0.0% | 100.0% | 0/3 |
 <!-- closure-table:end -->
 
-**Geral em 19/11: 134/226 = 59,3%, com 40,7% restante. Por contagem simples, 23/43 = 53,5%.** O avanço de 5 pontos sobre os 129 anteriores vem de F05 publicada. Cálculo reproduzível em `node scripts/report-closure-progress.mjs`.
+**Geral em 19/11 muda para 137/226 (60,6%), com 39,4% restante. Por contagem simples, 24/43 (55,8%).** F05 publicada somou cinco pontos e D03 testado localmente somou três. Cálculo reproduzível em `node scripts/report-closure-progress.mjs`.
 
-Confiança média no aceite técnico e baixa no aceite operacional completo. A revisão e os testes de D03 ainda podem acrescentar 3 pontos, chegando a 60,6%. As portas de publicação e validação continuam abertas para o conjunto final.
+O aceite operacional depende da publicação e validação do conjunto final. D03 tem evidência local.
 
 Backend100% mede implementação dos três pacotes definidos, não ausência de bugs ou disponibilidade. Publicação/validação0% mede os três gates ainda abertos. Funcionalidades incompletas, backlog e recuperação impedem declarar uso diário seguro após simples deploy. A proximidade funcional não elimina o trabalho de operação.
 
@@ -186,7 +187,7 @@ Backend100% mede implementação dos três pacotes definidos, não ausência de 
 |---|---:|---|---|---|
 |1 — Críticos|15/30=50%|Auth/SMTP e acesso real; atrasos/403ML; estoqueERP/Shopee; correções segurança/OAuth/SAC já locais. Risco:duplicação, credencial antiga, saldo incorreto|Login/convite/reset; pedidos e financeiro reconciliados por janela; ledger sem divergência; envioSAC único e incertos conferidos; patches aprovados publicados|Auditar/testar local agora; dono validaERP/login; escrita de recuperação/migrations/deploy exige autorização|
 |2 — Infraestrutura|15/34=44,1%|Dependente do corteVM:primeiro backup e restoreisolado, alertas externos, pipelineVM, IAMEditor, custos/limites. Risco:perda daVM e falha comum de projeto|Restore completo comRPO/RTO medidos, backup recorrente observado, alertas exercitados, migração/rollback ensaiados, custo porSKU|Preparar scripts/testes/planos agora; recursos pagos, IAM/produção/canais e alterações reais dependem do dono|
-|3 — Técnica|86/108 = 79,6%|Compras publicada. Revisar Sentinel, #331, retenção e benchmarks na VM|Regressões aprovadas, decisões únicas, migrations comparadas e desempenho medido|Testes locais e revisão de integração. Política de retenção depende do responsável|
+|3 — Técnica|89/108 = 82,4%|Compras publicada. Índice e retenção aprovados em teste local. Comparar as migrations com a VM e a CI|Regressões aprovadas, decisões únicas, migrations comparadas e desempenho medido|Política de retenção depende do responsável|
 |4 — Limpeza|5/10=50%|17PRs/31worktrees/24refs; nuvem com consumidores e rollback. Risco:apagar trabalho de outroagente ou janela de recuperação|Cada candidato com proprietário, consumidor, evidência e tratamento; recursos ativos preservados|Inventariar/remover código comprovadamente morto local; excluirprojetos/recursos produtivos não autorizado|
 |5 — Validação|13/44=29,5%|Após 1–3:CI exata, integração/RLS/E2E,carga/recuperação, deployworker→API→web apósmigrations, aceiteobservado. Risco:falsoverde com dados antigos|SHAfinal emtodosserviços, catálogoalvo, pedidos/estoque/faturamento/SAC/importaçãoconsistentes, limites de erro/atraso e janelaobservação acordados|Ensaiarlocal agora; merge/main,migrationsprod,deploy e aceite real com dono|
 
@@ -211,7 +212,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | M05 | Integrações dos marketplaces: Recuperação do atraso e diagnóstico ML 403 | Backend | 5 | Em andamento | MIGRATION_PLAN §3.9; SQL/externo ainda por validar | 1 |
 | D01 | Banco de dados: Schema, ledger, RLS e agregação SQL do núcleo | Database | 8 | Publicado | supabase/migrations até main; DATABASE | 3 |
 | D02 | Banco de dados: Migrations Sentinel transacionais, segurança e consultas | Sentinel/Database | 5 | Testado localmente | 12 migrations em diff origin/main; integração registrada | 3 |
-| D03 | Banco de dados: R3/R5: retenção de job_runs e índice Full | Database | 3 | Implementado | PR #331; duas migrations 17182500/17182600 | 3 |
+| D03 | Banco de dados: R3/R5: retenção de job_runs e índice Full | Database | 3 | Testado localmente | D-767/D-768, migrations 17182500/17182600, 1.212 testes de banco | 3 |
 | D04 | Banco de dados: R1/R2/R4: compactação e retenções com política aprovada | Database/Dono | 3 | Não iniciado | OPTIMIZATION_PLAN; não apagar negócio | 3 |
 | D05 | Banco de dados: Inventário e medição física; comparação de provedores | Database/Sentinel | 2 | Testado localmente | SIZE_REPORT: dump 22/10 restaurado 1092 MB; preços oficiais | 2 |
 | I01 | Google Cloud e infraestrutura: Run, Tasks, Scheduler e rede de produção provisionados | Infra | 8 | Publicado | Em 19/11, 18 agendamentos habilitados e dois com último código 14. Revisões Run mantidas | 2 |
@@ -234,9 +235,9 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | Q04 | Testes e qualidade: Ensaio completo negócio→dados após recuperação | Dono/QA | 5 | Bloqueado | Pedidos/estoque/faturamento/SAC e importação; requer ambiente recuperado | 5 |
 | L01 | Limpeza técnica: Branches obsoletas verificadas e removidas | Sentinel | 3 | Testado localmente | BRANCH_AUDIT:106exclusões;24refs atuais | 4 |
 | L02 | Limpeza técnica: Código sem consumidor e exports desnecessários | Sentinel | 2 | Testado localmente | A24/A25;3helpers e32exports; consumidores indiretos preservados | 4 |
-| L03 | Limpeza técnica: PRs/worktrees remanescentes e colisões documentais | Sentinel/Outros | 3 | Em andamento | 17PRs;31worktrees; D720–725 duplicados PR330/331 | 4 |
+| L03 | Limpeza técnica: PRs/worktrees remanescentes e colisões documentais | Sentinel/Outros | 3 | Em andamento | IDs de compras preservados. Recorte #331 usa D-767/D-768 no candidato local | 4 |
 | L04 | Limpeza técnica: Recursos de nuvem candidatos com dependência e rollback | Infra | 2 | Em andamento | Nenhuma exclusão autorizada; revisões não custam runtime sem tráfego/min | 4 |
-| V01 | Publicação e validação: CI de compras, Gemini/Codex Sentinel e banco no conjunto final | Sentinel/QA | 5 | Não iniciado | #332 e Gemini testados em bases separadas. Falta integração com #331 e CI do conjunto | 5 |
+| V01 | Publicação e validação: CI de compras, Gemini/Codex Sentinel e banco no conjunto final | Sentinel/QA | 5 | Em andamento | Candidato local com as duas migrations revistas do #331. Falta CI remota | 5 |
 | V02 | Publicação e validação: Migrations, worker, API e web no SHA aprovado | Dono/Infra | 8 | Bloqueado | #333 registra as 17 versões da main na VM. Workflow ainda no hosted. Publicação conjunta pendente | 5 |
 | V03 | Publicação e validação: Aceite operacional e observação de estabilidade pós-deploy | Dono/QA | 8 | Não iniciado | janela e limites de erro/atraso acordar; não basta /health | 5 |
 

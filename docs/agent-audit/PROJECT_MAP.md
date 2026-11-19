@@ -2,7 +2,7 @@
 
 Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd0b944b5c491adb`. A `main` remota contém a V3 e publica a web na Vercel. A V2 histórica está em `v2-legacy` e na tag `v2-final`.
 
-Em 19/11, `origin/main` avançou para `1ff173ca` com a Saída Manual do #335. O checkout `codex/sentinel-integration-20261119` reúne esse corte e as entregas Sentinel. Os seis IDs de recuperação de interface passaram a D-754–D-759. O [plano](PLAN.md) registra a validação conjunta de NF-e, Full e Saída Manual, e a aplicação de D-750/D-752 em Dev.
+Em 19/11, `origin/main` avançou para `1ff173ca` com a Saída Manual do #335. O candidato de banco `codex/sentinel-db-331-20261119` deriva da integração local `849e4b78`. Ele acrescenta a timeline do Full (D-767) e a retenção corrigida de `job_runs` (D-768). O [plano](PLAN.md) registra as evidências e as etapas de CI e Dev.
 
 ## Navegação
 

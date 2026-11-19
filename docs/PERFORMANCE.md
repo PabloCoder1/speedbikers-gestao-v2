@@ -1,4 +1,4 @@
-﻿# Performance — baseline e histórico de otimização
+# Performance — baseline e histórico de otimização
 
 > Dono documental de: medições de performance, antes/depois, planos e
 > decisões de índice. O `HANDOFF` só aponta para cá — números não moram lá
@@ -2234,3 +2234,9 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Timeline do Full (D-767, 19/11/2026)
+
+No Postgres local, a consulta `DISTINCT ON (ml_account_id, inventory_id)` com ordem de conta, inventário e instante descendente mostrou `Unique → Index Scan using fulfillment_stock_snapshots_unique` ao desabilitar a varredura sequencial para isolar a capacidade do índice. O teste de integração contou um único índice para essas três colunas. Uma segunda captura com a mesma chave retornou `23505`.
+
+O ensaio verifica ordenação e unicidade. A latência com dados reais e a janela de bloqueio da construção no banco de destino ainda precisam de medição.
