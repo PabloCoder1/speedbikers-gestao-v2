@@ -51,7 +51,8 @@ export interface UploadRequest {
 export type UploadOutcome =
   | { status: "created"; batchId: string; contentHash: string }
   | { status: "duplicate"; batchId: string; contentHash: string }
-  | { status: "rejected"; reason: string };
+  | { status: "rejected"; reason: string }
+  | { status: "error"; reason: string };
 
 export interface ImportDeps {
   db: AdminClient;
@@ -85,6 +86,15 @@ export async function receiveUpload(
     .eq("organization_id", caller.organizationId)
     .eq("content_hash", contentHash)
     .maybeSingle();
+
+  if (existing.error !== null) {
+    deps.logger.error("erp_import_lookup_failed", {
+      content_hash: contentHash,
+      reason: existing.error.message,
+    });
+
+    return { status: "error", reason: existing.error.message };
+  }
 
   if (existing.data !== null) {
     deps.logger.info("erp_import_duplicate", {
@@ -130,14 +140,41 @@ export async function receiveUpload(
 
   const batchId = inserted.data.id;
 
-  await deps.enqueuer.enqueue({
-    jobType: "erp.import.parse",
-    organizationId: caller.organizationId,
-    // Um parse por lote. Reenviar a notificação não duplica trabalho.
-    dedupeKey: `erp-parse:${batchId}`,
-    queue: "maintenance",
-    payload: { batchId },
-  });
+  try {
+    await deps.enqueuer.enqueue({
+      jobType: "erp.import.parse",
+      organizationId: caller.organizationId,
+      // Um parse por lote. Reenviar a notificação não duplica trabalho.
+      dedupeKey: `erp-parse:${batchId}`,
+      queue: "maintenance",
+      payload: { batchId },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    deps.logger.error("erp_import_enqueue_failed", {
+      batch_id: batchId,
+      content_hash: contentHash,
+      reason,
+    });
+
+    // D-744: remove o lote recém-criado se ainda estiver em UPLOADED para que
+    // o reenvio do mesmo arquivo não caia em `duplicate` permanente sem parse.
+    const rolledBack = await deps.db
+      .from("erp_import_batches")
+      .delete()
+      .eq("id", batchId)
+      .eq("status", "UPLOADED");
+
+    if (rolledBack.error !== null) {
+      deps.logger.error("erp_import_rollback_failed", {
+        batch_id: batchId,
+        reason: rolledBack.error.message,
+      });
+    }
+
+    throw error;
+  }
 
   deps.logger.info("erp_import_received", {
     batch_id: batchId,

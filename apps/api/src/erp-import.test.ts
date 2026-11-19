@@ -23,11 +23,17 @@ const FILE = {
  * Testar a `api` contra um Postgres real é papel dos testes de integração de
  * `@sb/db`; aqui o que está sob teste é a decisão de fluxo.
  */
-function fakeDb(options: { existingBatchId?: string; insertFails?: boolean }): {
+function fakeDb(options: {
+  existingBatchId?: string;
+  lookupFails?: boolean;
+  insertFails?: boolean;
+}): {
   db: ImportDeps["db"];
   inserted: ReturnType<typeof vi.fn>;
+  deleted: ReturnType<typeof vi.fn>;
 } {
   const inserted = vi.fn();
+  const deleted = vi.fn();
 
   const db = {
     from: () => ({
@@ -35,10 +41,14 @@ function fakeDb(options: { existingBatchId?: string; insertFails?: boolean }): {
         eq: () => ({
           eq: () => ({
             maybeSingle: () =>
-              Promise.resolve({
-                data: options.existingBatchId === undefined ? null : { id: options.existingBatchId },
-                error: null,
-              }),
+              Promise.resolve(
+                options.lookupFails === true
+                  ? { data: null, error: { message: "connection timeout" } }
+                  : {
+                      data: options.existingBatchId === undefined ? null : { id: options.existingBatchId },
+                      error: null,
+                    },
+              ),
           }),
         }),
       }),
@@ -56,31 +66,56 @@ function fakeDb(options: { existingBatchId?: string; insertFails?: boolean }): {
           }),
         };
       },
+      delete: () => {
+        const filters: [string, unknown][] = [];
+        const chain = {
+          eq: (column: string, value: unknown) => {
+            filters.push([column, value]);
+
+            return chain;
+          },
+          then: <R>(resolve: (value: { error: null }) => R) => {
+            deleted(filters);
+
+            return Promise.resolve({ error: null }).then(resolve);
+          },
+        };
+
+        return chain;
+      },
     }),
   } as unknown as ImportDeps["db"];
 
-  return { db, inserted };
+  return { db, inserted, deleted };
 }
 
 function deps(
-  options: { existingBatchId?: string; insertFails?: boolean; uploadFails?: boolean } = {},
+  options: {
+    existingBatchId?: string;
+    lookupFails?: boolean;
+    insertFails?: boolean;
+    uploadFails?: boolean;
+    enqueueFails?: boolean;
+  } = {},
 ): {
   deps: ImportDeps;
   uploads: { path: string }[];
   enqueued: { dedupeKey: string; jobType: string }[];
   lines: string[];
   inserted: ReturnType<typeof vi.fn>;
+  deleted: ReturnType<typeof vi.fn>;
 } {
   const uploads: { path: string }[] = [];
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
   const lines: string[] = [];
-  const { db, inserted } = fakeDb(options);
+  const { db, inserted, deleted } = fakeDb(options);
 
   return {
     uploads,
     enqueued,
     lines,
     inserted,
+    deleted,
     deps: {
       db,
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
@@ -98,6 +133,10 @@ function deps(
       },
       enqueuer: {
         enqueue: (request) => {
+          if (options.enqueueFails === true) {
+            return Promise.reject(new Error("cloud tasks down"));
+          }
+
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
 
           return Promise.resolve({
@@ -220,6 +259,28 @@ describe("receiveUpload", () => {
     expect(ctx.inserted).toHaveBeenCalledWith(
       expect.objectContaining({ uploaded_by: CALLER.userId, kind: "PRODUCTS" }),
     );
+  });
+
+  it("D-744: erro na consulta de duplicado interrompe antes do bucket e devolve erro", async () => {
+    const ctx = deps({ lookupFails: true });
+
+    const result = await receiveUpload(ctx.deps, CALLER, FILE);
+
+    expect(result).toEqual({ status: "error", reason: "connection timeout" });
+    expect(ctx.uploads).toHaveLength(0);
+    expect(ctx.inserted).not.toHaveBeenCalled();
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("D-744: falha ao enfileirar parse remove o lote recém-criado em UPLOADED antes de propagar", async () => {
+    const ctx = deps({ enqueueFails: true });
+
+    await expect(receiveUpload(ctx.deps, CALLER, FILE)).rejects.toThrow("cloud tasks down");
+
+    expect(ctx.deleted).toHaveBeenCalledWith([
+      ["id", "b1000000-0000-4000-8000-00000000000b"],
+      ["status", "UPLOADED"],
+    ]);
   });
 });
 

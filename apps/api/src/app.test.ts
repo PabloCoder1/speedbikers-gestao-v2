@@ -1308,13 +1308,16 @@ describe("conexão de conta Mercado Livre", () => {
   }
 
   describe("POST /v1/ml-accounts/connect", () => {
+    const ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
+    const MISSING_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000099";
+
     it("exige ADMIN — GESTOR é recusado", async () => {
       const app = withMlAccounts({ role: "GESTOR" });
 
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-1" }),
+        body: JSON.stringify({ mlAccountId: ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(403);
@@ -1326,7 +1329,7 @@ describe("conexão de conta Mercado Livre", () => {
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-1" }),
+        body: JSON.stringify({ mlAccountId: ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(401);
@@ -1338,7 +1341,7 @@ describe("conexão de conta Mercado Livre", () => {
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-1" }),
+        body: JSON.stringify({ mlAccountId: ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(503);
@@ -1356,13 +1359,25 @@ describe("conexão de conta Mercado Livre", () => {
       expect(response.status).toBe(400);
     });
 
+    it("D-744: responde 400 quando mlAccountId não é UUID válido", async () => {
+      const app = withMlAccounts();
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "nao-e-uuid" }),
+      });
+
+      expect(response.status).toBe(400);
+    });
+
     it("responde 404 quando a conta não existe", async () => {
       const app = withMlAccounts({ accountStatus: null });
 
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-inexistente" }),
+        body: JSON.stringify({ mlAccountId: MISSING_ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(404);
@@ -1374,7 +1389,7 @@ describe("conexão de conta Mercado Livre", () => {
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-1" }),
+        body: JSON.stringify({ mlAccountId: ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(409);
@@ -1386,7 +1401,7 @@ describe("conexão de conta Mercado Livre", () => {
       const response = await app.request("/v1/ml-accounts/connect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mlAccountId: "acc-1" }),
+        body: JSON.stringify({ mlAccountId: ACCOUNT_ID }),
       });
 
       expect(response.status).toBe(200);
@@ -2026,6 +2041,27 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     expect(response.status).toBe(400);
     expect(enqueued).toHaveLength(0);
   });
+
+  it.each([["/v1/erp-imports"], ["/v1/nfe-imports"]])(
+    "D-744: %s com multipart malformado responde 400 em vez de 500",
+    async (caminho) => {
+      const app = createApp({
+        logger: createLogger({}, { sink: () => undefined }),
+        auth: admin,
+        importDeps: {} as never,
+        nfeImportDeps: {} as never,
+      });
+
+      const response = await app.request(caminho, {
+        method: "POST",
+        headers: { "content-type": "multipart/form-data; boundary=broken-boundary" },
+        body: "--wrong-boundary\r\nnot-a-valid-multipart-body",
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: "invalid_payload" } });
+    },
+  );
 
   it("erro interno não devolve a mensagem do banco, só o request_id", async () => {
     const linhas: string[] = [];
