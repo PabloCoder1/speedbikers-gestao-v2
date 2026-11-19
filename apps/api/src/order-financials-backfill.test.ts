@@ -118,6 +118,7 @@ describe("triggerOrderFinancialsBackfill (D-396)", () => {
     expect(await triggerOrderFinancialsBackfill({ ...deps, db: fakeDb(null).db }, { dias: 90 })).toMatchObject({
       accountsScanned: 0,
       enqueued: 0,
+      failed: true,
     });
   });
 });

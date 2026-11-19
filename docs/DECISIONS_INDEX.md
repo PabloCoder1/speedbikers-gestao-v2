@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **678** (D-001 a D-790).
+Decisões registradas: **682** (D-001 a D-790).
 
 ## Por domínio
 
-### atendimento (67)
+### atendimento (68)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -85,6 +85,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 - **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 - **D-770** — Edição de itens de NF-e e saída manual separam erro transitório, exigem linha afetada e fatiamento em lotes na API
+- **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
 
 ### banco/rls (50)
 
@@ -139,7 +140,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-790** — Um índice único atende a timeline do Full
 
-### estoque (55)
+### estoque (56)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -196,6 +197,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-758** — Ajuste de estoque preserva o formulário quando a ação falha no transporte
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
+- **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
 
 ### interface (76)
 
@@ -410,7 +412,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 
-### outros (111)
+### outros (112)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -523,6 +525,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-773** — Clientes HTTP de marketplaces tratam HTTP 200 não-JSON como passageiro, protegem parâmetros de assinatura e cancelam stream em retry
 - **D-774** — Rotas de exportação falham fechado em erro de contas/organização e `csvCell` neutraliza fórmulas com espaço/tab/CR
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
+- **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 
 ### processo/docs (1)
 
@@ -601,7 +604,7 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (117)
+### worker/infra (118)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -720,4 +723,5 @@ Decisões registradas: **678** (D-001 a D-790).
 - **D-754** — Notificações e preferências recuperam os controles após falha da ação
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
+- **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
 

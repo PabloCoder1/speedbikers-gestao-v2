@@ -20248,3 +20248,45 @@ Três fragilidades confirmadas de segurança e resiliência em `apps/api/src/aut
 3. **Falha de transporte ao destravar `shopee.orders.sync` no `finally` (`apps/worker/src/handlers/shopee-orders-sync.ts`):** se o `UPDATE` de liberação da trava lançasse exceção de transporte no `finally`, mascarava o erro original de `lerJanela` ou abortava antes de enfileirar `seguintes`. Agora o `finally` está envolvido em `try/catch`, registrando `shopee_orders_sync_unlock_failed` sem perder o resultado nem mascarar a exceção original.
 
 Reprodução pré-correção em `auth.test.ts`, `oidc.test.ts` e `shopee-orders-sync.test.ts` registrou 6 falhas (`6 failed | 17 passed (23)`); após a correção, `@sb/api` (`43` arquivos / `561` testes) e `@sb/worker` (`68` arquivos / `1.093` testes) passaram integralmente em `typecheck`, `eslint` e `vitest`.
+
+## D-776 - Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
+
+Em `apps/worker/src/handlers/ml-fulfillment-fetch.ts`, a leitura dos snapshots anteriores de `fulfillment_stock_snapshots` passava todos os `inventory_id`s da conta em um único `.in()` na URL do PostgREST (arriscando HTTP 414 em contas com >100 inventários Full — as quatro contas reais medem 1.640–2.012 vínculos), ordenava apenas por `captured_at DESC` sem tie-breaker determinístico entre páginas de mesma captura, e usava `readAllPages` sobre toda a tabela histórica sem filtro de janela nem parada antecipada (baixando centenas de milhares de snapshots históricos apenas para manter o mais recente de cada `inventory_id`).
+
+`readPreviousSnapshots` passou a:
+1. Fatiar `inventories` em lotes de `INVENTORY_LOOKUP_CHUNK = 100` (mesmo teto de `ABSENCE_DELETE_CHUNK`).
+2. Consultar primeiro a janela recente de 48 h (`captured_at >= capturedAt - 48h`, ordenação determinística `captured_at DESC, inventory_id ASC`), interrompendo a paginação assim que todos os inventários do lote são encontrados (1 única página por lote na cadência normal de 6 h).
+3. Para eventuais inventários sem snapshot nas últimas 48 h (novos ou sem captura recente), executar lookup pontual em concorrência limitada (`10`) via `.eq("ml_account_id", ...).eq("inventory_id", id).order("captured_at", { ascending: false }).limit(1).maybeSingle()` apoiado diretamente pelo índice único `fulfillment_stock_snapshots_unique (ml_account_id, inventory_id, captured_at DESC)`, propagando qualquer erro de banco (fail-closed, sem falso `listing.fulfillment.entered`).
+
+Reprodução pré-correção em `ml-fulfillment-fetch.test.ts` registrou 4 falhas (`4 failed | 43 passed (47)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.097` testes).
+
+## D-777 - Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
+
+Três inconsistências confirmadas em `apps/api/src`:
+
+1. **Falso HTTP 200 em falha de banco nos backfills internos (`order-financials-backfill.ts`, `order-user-products-backfill.ts` e `app.ts`):** quando a consulta a `ml_accounts` falhava, `triggerOrderFinancialsBackfill` e `triggerOrderUserProductsBackfill` devolviam `{ accountsScanned: 0, enqueued: 0, ... }` sem `failed: true` e `/internal/backfill/order-financials` e `/internal/backfill/order-user-products` respondiam HTTP `200`, escondendo indisponibilidade como "0 contas conectadas". Agora ambos retornam `failed: true` e as rotas passam por `respostaDoAgendador` (HTTP `503`), alinhadas aos demais 15 agendadores.
+2. **Erro 500 das rotas D-766 fora do contrato de `erroInterno` (`app.ts`):** `/v1/nfe-imports/:id/items/:itemId` e `/v1/stock/manual-exits` devolviam `{ error: { code: "failed", message: outcome.reason } }` em HTTP `500` sem `request_id` e sem log `request_internal_error`. Agora passam por `erroInterno(context, dependencies.logger, outcome.reason)` (mesmo contrato de todas as demais rotas `/v1/*`, `docs/API.md` seção 6).
+3. **Inteiro inseguro ou zero no callback OAuth Shopee (`app.ts`):** `/oauth/shopee/callback` convertia `shop_id` e `main_account_id` apenas com `/^[0-9]+$/ ? Number(valor)`, aceitando `0` ou números acima de `Number.MAX_SAFE_INTEGER` (perda silenciosa de precisão). Agora exige `Number.isSafeInteger(parsed) && parsed > 0`.
+
+Reprodução pré-correção em `order-financials-backfill.test.ts`, `order-user-products-backfill.test.ts` e `app.test.ts` registrou 7 falhas (`7 failed | 115 passed (122)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`43` arquivos / `566` testes).
+
+## D-778 - Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
+
+Cinco defeitos confirmados em Server Actions e páginas de `apps/web` (fora do escopo de `/compras`/`/reposicao`/`/importacoes`):
+
+1. **`claimAction` aceitava `userId` arbitrário do cliente (`apps/web/app/(app)/acoes/actions.ts` e `action-card.tsx`):** ao contrário de `assignToMe` no atendimento, `claimAction(id, userId)` repassava o `userId` vindo do navegador direto para `update_action_status(p_assignee_id)`, permitindo atribuir ações a outro membro da organização. Agora `claimAction(id)` deriva o responsável exclusivamente de `supabase.auth.getUser()` no servidor.
+2. **`assignToMe` ignorava erro de banco ao ler `support_cases` (`apps/web/app/(app)/atendimento/actions.ts`):** erro em `current.error` fazia `promote` virar `false` silenciosamente e assumia casos em `NOVO` sem promovê-los para `EM_ATENDIMENTO`. Agora falha fechado retornando erro amigável antes da RPC.
+3. **Separação de falha de organização/SKU e eliminação de vazamento de erro cru do Postgres:** `atendimento/conhecimento/actions.ts`, `atendimento/templates/actions.ts`, `central/limites/actions.ts`, `central/metas/actions.ts`, `sugestoes/actions.ts`, `skus/[skuId]/actions.ts` e `acoes/page.tsx` agora distinguem erro transitório em `currentMembership` ou consulta de `skus` de "sessão expirada"/"sem organização"/"SKU não encontrado", e não expõem `error.message` cru do Postgres à interface.
+4. **Escape literal de `ILIKE` e fail-closed em falha de contas na Caixa de Entrada (`apps/web/lib/postgrest-search.ts` e `apps/web/app/(app)/atendimento/page.tsx`):** `escaparIlike` neutraliza `\`, `%` e `_` na busca de SKU, e quando `?account=` está ativo mas `ml_accounts` falha, a tela não dispara `casosDaBusca` nem `casesQuery` sem o filtro de conta.
+
+Reprodução pré-correção em `lib/server-actions-seguranca.test.ts` registrou 6 falhas (`6 failed (6)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`149` arquivos / `1.562` testes) e nas 7 guardas estáticas.
+
+## D-779 - Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
+
+Três falhas confirmadas em `packages/observability/src/logger.ts`:
+
+1. **`message` sem redação de segredos:** `write()` redigia apenas os campos de `context`, deixando `message` passar cru para `JSON.stringify` (vazando tokens `APP_USR-`, `sk-ant-`, JWT ou DSN com senha se interpolados no texto do evento). Agora `message` passa por `redactSecretText(message, "[REDACTED]")`.
+2. **Referência circular causava `RangeError: Maximum call stack size exceeded`:** `redactValue()` descia em objetos e arrays sem rastrear ancestrais visitados. Agora usa `WeakSet` por caminho (preservando objetos compartilhados em DAG e substituindo ciclos reais por `"[Circular]"`).
+3. **`Error` fora da chave raiz `error` virava `{}` vazio:** `serializeError` só era chamado para `combined.error`. Agora qualquer `Error` encontrado em profundidade (incluindo `cause` e elementos de array) é serializado com `name`, `message`, `stack` e `cause` redigidos, e `Date` vira ISO string.
+
+Reprodução pré-correção em `packages/observability/src/logger.test.ts` registrou 3 falhas (`3 failed | 35 passed (38)`); após a correção, `@sb/observability` passou integralmente em `build`, `typecheck`, `eslint` e `vitest` (`3` arquivos / `38` testes).

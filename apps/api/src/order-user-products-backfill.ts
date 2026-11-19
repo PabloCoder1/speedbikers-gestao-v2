@@ -38,6 +38,8 @@ export interface OrderUserProductsBackfillOutcome {
   deduplicated: number;
   ate: string;
   limite: string;
+  /** Verdadeiro quando nem foi possível listar as contas (HTTP 503 em app.ts, D-777). */
+  failed?: true;
 }
 
 /** O pedido mais novo que isso ainda volta ao worker (ver o cabeçalho). */
@@ -63,7 +65,7 @@ export async function triggerOrderUserProductsBackfill(
   if (accounts.error !== null) {
     deps.logger.error("order_user_products_backfill_accounts_not_listed", { reason: accounts.error.message });
 
-    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base };
+    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base, failed: true };
   }
 
   let enqueued = 0;

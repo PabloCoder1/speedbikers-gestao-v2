@@ -30,6 +30,7 @@ function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
   in: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
+  gte: () => ReturnType<typeof chain<T>>;
   or: () => ReturnType<typeof chain<T>>;
   order: () => ReturnType<typeof chain<T>>;
   limit: () => ReturnType<typeof chain<T>>;
@@ -42,6 +43,7 @@ function chain<T>(result: T): {
     eq: () => self,
     in: () => self,
     is: () => self,
+    gte: () => self,
     or: () => self,
     order: () => self,
     limit: () => self,
@@ -58,7 +60,18 @@ function chain<T>(result: T): {
 
       return Promise.resolve(result);
     },
-    maybeSingle: () => Promise.resolve(result),
+    maybeSingle: () => {
+      const envelope = result as { data?: unknown };
+
+      if (Array.isArray(envelope.data)) {
+        const items = envelope.data as readonly unknown[];
+        const first: unknown = items[0] ?? null;
+
+        return Promise.resolve({ ...(result as object), data: first } as T);
+      }
+
+      return Promise.resolve(result);
+    },
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };
 

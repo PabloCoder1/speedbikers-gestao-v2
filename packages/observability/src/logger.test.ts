@@ -158,4 +158,45 @@ describe("redact por valor", () => {
   it("não come a mensagem benigna — ela precisa continuar dizendo o que aconteceu", () => {
     expect(redact({ reason: "troca de token: invalid_client" })).toEqual({ reason: "troca de token: invalid_client" });
   });
+
+  it("D-779: redige segredos também no campo message do log", () => {
+    const { lines, logger } = captureLogger();
+
+    logger.error("falha com APP_USR-1234567890-segredo e postgres://u:senha-super-secreta@db.local/app");
+
+    const linha = lines[0] ?? "";
+    expect(linha).not.toContain("APP_USR-1234567890");
+    expect(linha).not.toContain("senha-super-secreta");
+    expect(parse(linha).message).toContain("[REDACTED]");
+  });
+
+  it("D-779: tolera referência circular no contexto sem stack overflow", () => {
+    const { lines, logger } = captureLogger();
+    const ciclo: Record<string, unknown> = { nome: "ciclo" };
+    ciclo.self = ciclo;
+
+    expect(() => {
+      logger.warn("payload_circular", { detalhe: ciclo });
+    }).not.toThrow();
+
+    const parsed = parse(lines[0] ?? "");
+    expect(parsed.detalhe).toEqual({ nome: "ciclo", self: "[Circular]" });
+  });
+
+  it("D-779: serializa e redige Error em qualquer chave aninhada, não apenas em error na raiz", () => {
+    const { lines, logger } = captureLogger();
+    const erroInterno = new Error("falha com sk-ant-segredo-987654321");
+
+    logger.error("falha_com_causa", { cause: erroInterno, extras: [erroInterno] });
+
+    const linha = lines[0] ?? "";
+    const parsed = parse(linha);
+    const cause = parsed.cause as Record<string, unknown>;
+    const extras = parsed.extras as Record<string, unknown>[];
+
+    expect(linha).not.toContain("sk-ant-segredo-987654321");
+    expect(cause.name).toBe("Error");
+    expect(cause.message).toContain("[REDACTED]");
+    expect(extras[0]?.name).toBe("Error");
+  });
 });
