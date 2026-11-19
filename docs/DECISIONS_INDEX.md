@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **644** (D-001 a D-742).
+Decisões registradas: **645** (D-001 a D-743).
 
 ## Por domínio
 
-### atendimento (65)
+### atendimento (66)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -83,6 +83,7 @@ Decisões registradas: **644** (D-001 a D-742).
 - **D-726** — Curadoria trata falhas de transporte e conserva os alvos de Desfazer
 - **D-733** — Sugestões e atendimento tratam falha de transporte e confirmam escrita de status
 - **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
+- **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 
 ### banco/rls (46)
 

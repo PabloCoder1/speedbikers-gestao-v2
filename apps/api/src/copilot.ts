@@ -505,7 +505,13 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
   },
   structure_feature_suggestion: {
     inputSchema: structureFeatureSuggestionInputSchema,
-    run: async (userClient, input, deps) => {
+    run: async (userClient, input, deps, caller) => {
+      // D-743: recusa antes de gastar tokens de LLM quando o papel não alcança
+      // a policy de UPDATE; a RLS continua sendo verificada na escrita.
+      if (caller.role !== "ADMIN" && caller.role !== "GESTOR") {
+        throw new CopilotToolError("Só ADMIN e GESTOR estruturam sugestões.");
+      }
+
       const outcome = await runStructureFeatureSuggestion(userClient, input, deps.anthropic);
 
       return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
@@ -645,6 +651,10 @@ export async function runResolveCatalogEntity(
   };
 }
 
+function valorLiteralParaOr(valor: string): string {
+  return `"${valor.replace(/["\\]/g, "\\$&")}"`;
+}
+
 export async function runSkuReplenishment(
   userClient: UserClient,
   input: SkuReplenishmentInput,
@@ -652,24 +662,15 @@ export async function runSkuReplenishment(
 ): Promise<SkuReplenishmentOutput> {
   const hoje = toSalesMetricDate(new Date());
 
-  const [linhas, configuracoes] = await Promise.all([
-    userClient.rpc("get_purchase_suggestions", {
-      p_organization_id: organizationId,
-      p_date_to: hoje,
-      p_search: input.sku,
-      p_limit: 20,
-    }),
-    userClient
-      .from("replenishment_settings")
-      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note"),
-  ]);
+  const linhas = await userClient.rpc("get_purchase_suggestions", {
+    p_organization_id: organizationId,
+    p_date_to: hoje,
+    p_search: input.sku,
+    p_limit: 20,
+  });
 
   if (linhas.error !== null) {
     throw new CopilotToolError(linhas.error.message);
-  }
-
-  if (configuracoes.error !== null) {
-    throw new CopilotToolError(configuracoes.error.message);
   }
 
   // `data` nao e anulavel depois da checagem de erro; o lint acusa a condicao
@@ -680,6 +681,30 @@ export async function runSkuReplenishment(
     throw new CopilotToolError(
       `Nenhum SKU com o código "${input.sku}" foi encontrado nas contas que você acessa.`,
     );
+  }
+
+  // D-743 (mesma regra de D-680): os índices únicos garantem no máximo 3 regras
+  // aplicáveis (SKU, marca e padrão da organização), evitando truncamento em
+  // 1.000 linhas do PostgREST e leitura da tabela inteira a cada pergunta.
+  // O tipo gerado de RPC RETURNS TABLE marca colunas anuláveis como `string`;
+  // em tempo de execução `supplier_brand` pode vir `null`.
+  const marca = alvo.supplier_brand as string | null;
+  const escopos = [
+    `sku_id.eq.${valorLiteralParaOr(alvo.sku_id)}`,
+    "and(sku_id.is.null,supplier_brand.is.null)",
+    ...(marca !== null && marca !== ""
+      ? [`and(sku_id.is.null,supplier_brand.eq.${valorLiteralParaOr(marca)})`]
+      : []),
+  ];
+
+  const configuracoes = await userClient
+    .from("replenishment_settings")
+    .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note")
+    .eq("organization_id", organizationId)
+    .or(escopos.join(","));
+
+  if (configuracoes.error !== null) {
+    throw new CopilotToolError(configuracoes.error.message);
   }
 
   const settings: ReplenishmentSetting[] = configuracoes.data.map((linha) => ({
