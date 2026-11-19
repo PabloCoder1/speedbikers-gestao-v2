@@ -17,9 +17,8 @@ import { recordStockMovements } from "./stock-movements.js";
  *
  * `confirmNfeApply` (`apps/api/src/nfe-import.ts`) já exigiu 100% dos itens
  * vinculados antes de mover o documento para `APPLYING` — a checagem é
- * repetida aqui (`resolved_items === total_items`) pelo mesmo motivo de
- * dupla checagem já usado nas RPCs `security definer`: cada camada se
- * defende sozinha, não confia cegamente na anterior.
+ * repetida aqui nos contadores e nos itens lidos. Uma leitura divergente
+ * não pode gerar só parte dos movimentos de uma nota.
  *
  * Idempotente por construção: reentrega encontra o documento `APPLIED` e sai
  * cedo, sem gerar novo movimento (regra 1 de `docs/TESTING.md`) — e mesmo
@@ -109,7 +108,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
     const total = data.total_items ?? 0;
     const resolved = data.resolved_items ?? 0;
 
-    if (total === 0 || resolved < total) {
+    if (total === 0 || resolved !== total) {
       return {
         status: "failed",
         retryable: false,
@@ -133,6 +132,17 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
         status: "failed",
         retryable: true,
         reason: error instanceof Error ? error.message : "falha ao ler itens do documento",
+      };
+    }
+
+    if (items.length !== total || items.some((item) => item.sku_id === null)) {
+      // Uma nova entrega relê o documento e os itens antes de tocar no ledger.
+      return {
+        status: "failed",
+        retryable: true,
+        reason: items.length !== total
+          ? `itens da nota divergem da conferência: esperados ${String(total)}, lidos ${String(items.length)}`
+          : "item da nota sem vínculo com SKU após a conferência",
       };
     }
 

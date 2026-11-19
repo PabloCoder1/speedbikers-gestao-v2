@@ -14,13 +14,13 @@
 |---|---|
 | **Atualizado em** | 2026-11-19 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | GitHub `main` em `d6169205` (PR #325), também identificado no alias de produção da Vercel. Correções Sentinel em `codex/sentinel-audit`. D-657 a D-684 e regras de toast Shopee validadas localmente. Aplicar migrations antes do deploy da API/worker e C-82 antes da web. Toda página nova precisa ser dinâmica (D-331) para receber nonce. |
-| **Fechamento da V3** | O 190/213 é histórico. O [inventário de fechamento de 18/11](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) separa entrega técnica de publicação e aceite após recuperação. Cálculo reproduzível: `node scripts/report-closure-progress.mjs`. Bloqueadores: recuperação do atraso/estoque, Auth/SMTP, backup restaurável, alertas, migrations para VM e publicação validada. |
-| **Sentinel: próximo passo** | Gemini (`agent/gemini-sentinel`) entregou `D-732..D-746` (OAuth/SAC, sessão/SSE/convites web, Copiloto, uploads/parse/apply ERP+NF-e, `relist-prepare`, paginação >1k e `next@16.4.6`; 397/397 E2E). Ver [GEMINI_HANDOFF.md](agent-audit/GEMINI_HANDOFF.md). Compras/`#330` ficam com Claude. Progresso: 129/226 (57,1%). |
+| **HEAD conhecido** | `origin/main` e alias Vercel em `f2eb787c` (#333, com compras #330/#332). Sentinel em branch própria, incorporou os 18 commits do Gemini por fast-forward. |
+| **Fechamento da V3** | 134/226 pontos (59,3%), 23/43 entregas. Compras (F05) publicada. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) e `node scripts/report-closure-progress.mjs`. |
+| **Sentinel: próximo passo** | D-747 exige todos os itens conferidos na aplicação de NF-e. Investigar a transição concorrente para `PARSING` e revisar conflitos documentais com a `main`. Compras/reposição seguem reservadas ao Claude. [Gemini](agent-audit/GEMINI_HANDOFF.md). |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo em 18/11. Consultas GCP de `speedbikers-gestao-v3` negadas; não inferir estado atual das revisões. Pausa das rotinas registrada em D-350. |
-| **Supabase** | Hospedados Dev e produção `imvjfgnaprqsfjlnsyev` continuam `INACTIVE`. Produção aponta agora à VM GCP `sb-db`, em `speedbikers-prod`, conforme corte da frente de banco em 18/11 (PR #331). Login real e recuperação completa ainda não comprovados. |
-| **Produção** | Verificado em 18/11: 100% do tráfego em `api-00039-22b` e `worker-00058-mbc`; API `/health` 200 com código `dc69d1fb`. Web `d6169205`, deployment `dpl_6zpmnqQQ1ibHguhxkq2Snfq24zv7`, login 200 e CSP HTTPS/WSS da VM. VM RUNNING, e2-standard-2/50GB. Isso não prova saúde dos dados. |
-| **Migrations** | 12 candidatas Sentinel, 3 de compras (#330) e 2 de banco (#331); aplicação na VM não conferida por catálogo nesta sessão. A frente de banco registra 305 da main restauradas. O workflow ainda aponta ao hospedado: adequar caminho com as aprovações existentes antes de aplicar. |
+| **Supabase** | Projetos hospedados Dev e produção `imvjfgnaprqsfjlnsyev` estavam `INACTIVE` em 18/11. Produção usa `sb-db`. #333 registra navegação autenticada e catálogo lido na VM. Convite, SMTP/reset e recuperação completa seguem pendentes. |
+| **Produção** | Em 19/11 a web `f2eb787c` está READY (`dpl_DxjdksaBE1QZRqzK7o9B52mgcKbN`). Run mantém 100% em `api-00039-22b` e `worker-00058-mbc`. Dois dos 18 agendamentos têm último código 14. |
+| **Migrations** | #333 registrou 17 versões da `main` na VM até `20261118211000`. As duas de retenção/índice do #331 seguem separadas. O workflow oficial ainda aponta ao hospedado. |
 | **UX (Agente 3)** | Central D-500–D-519 integrada até #261. Escopo e evidências em `docs/UX_SYSTEM.md` §6; aceite pós-recuperação continua separado. |
 | **Frente atual** | Recuperação e fechamento após corte de banco em 18/11. ML/Shopee e telas existentes estão no SHA publicado; a operação com dados restaurados exige novo aceite. Estoque Shopee/Go Live e TikTok transacional continuam pendentes. Escopo e contratos: `docs/MULTICHANNEL_HANDOFF.md` e `docs/MULTICHANNEL_CONTRACTS.md`. O detalhamento histórico de outubro foi para `docs/archive/handoffs/2026-11-18_frente-multicanal.md`. |
 
@@ -35,8 +35,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Recuperação após corte para a VM.** API voltou a responder; a frente de banco restaurou o backup de 22/10. Provar login/convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Oito dos 18 agendamentos têm último status de indisponibilidade: conferir próxima rodada e efeitos, não só ACK.
-- **Recuperação de desastre e caminho de migrations.** VM única, sem alerta externo no Monitoring consultado. Política de snapshot anexada e backup diário configurado pela outra frente; ainda sem objetos em `diario/` nem snapshots observados em 18/11. Provar primeira execução e restore. Adaptar o workflow hospedado à VM antes de qualquer migration. Supabase Dev continua inativo.
+- **Recuperação após corte para a VM.** Navegação autenticada registrada pelo #333. Provar convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Conferir os efeitos dos agendamentos no banco.
+- **Recuperação de desastre e migrations.** #333 registra restore isolado completo e ensaio dos 17 SQLs. Em 19/11 há snapshot automático READY. Prefixo `diario/` vazio na listagem. Faltam confirmar o dump recorrente, alertas e adequação do workflow à VM.
 - **Segurança: patches locais.** Next (`16.4.6`), Zod, ERP/NF-e apply e webhook Shopee corrigidos localmente; falta publicar. `pnpm audit --prod --audit-level high` passa com 1 moderado transitivo (`uuid`). [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).
 - **Publicação sem proteção efetiva.** GitHub em 18/11: `main.protected=false`, sem checks obrigatórios ou rulesets. A07 exige ação do responsável antes de considerar os portões de publicação cumpridos.
 

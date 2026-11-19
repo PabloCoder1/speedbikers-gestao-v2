@@ -219,6 +219,39 @@ describe("aplicação da NF-e conferida", () => {
     expect(captured.movements).toHaveLength(0);
   });
 
+  it.each([
+    { nome: "faltam itens na leitura", totalItems: 2, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }] },
+    { nome: "há itens além do total conferido", totalItems: 1, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }, { position: 1, sku_id: "sku-b", quantity: 3 }] },
+    { nome: "um item perdeu o vínculo", totalItems: 2, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }, { position: 1, sku_id: null, quantity: 3 }] },
+  ])("não aplica parcialmente quando $nome e o cabeçalho diz que tudo está vinculado", async ({ totalItems, items }) => {
+    const { deps, captured, lines } = fakeDeps({ totalItems, resolvedItems: totalItems, items });
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.movements).toEqual([]);
+    expect(captured.documentUpdates).toEqual([]);
+    expect(lines.join()).not.toContain("nfe_apply_finished");
+  });
+
+  it("reentrega com a leitura completa registra os movimentos que ficaram pendentes", async () => {
+    const items = [{ position: 0, sku_id: "sku-a", quantity: 19 }];
+    const { deps, captured, lines } = fakeDeps({ totalItems: 2, resolvedItems: 2, items });
+    const handler = createNfeImportApplyHandler(deps);
+
+    const primeira = await handler(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+    expect(primeira).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.movements).toHaveLength(0);
+
+    items.push({ position: 1, sku_id: "sku-b", quantity: 3 });
+    const segunda = await handler({ ...ENVELOPE, attempt: 2 }, ctx(lines, { documentId: DOCUMENT_ID }));
+    expect(segunda).toEqual({ status: "done", processed: 2 });
+    expect(captured.movements.map((movement) => movement.idempotency_key)).toEqual([
+      `nfe:${DOCUMENT_ID}:0`,
+      `nfe:${DOCUMENT_ID}:1`,
+    ]);
+    expect(captured.documentUpdates).toEqual([expect.objectContaining({ status: "APPLIED" })]);
+  });
+
   it("documento fora de APPLYING é recusado — só a confirmação humana libera este job", async () => {
     const { deps, captured, lines } = fakeDeps({ status: "PARSED" });
 

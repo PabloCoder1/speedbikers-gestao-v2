@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19; auditoria base 010c252d, evidências locais atualizadas até D-746 em 048b9774 (397/397 E2E)",
+  "corte": "2026-11-19; Gemini D-732 a D-746, Codex D-747 e publicação de compras confirmada em f2eb787c",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -47,9 +47,9 @@
       "area": "Frontend e telas",
       "entrega": "Nova experiência de compras e reposição aprovada",
       "peso": 5,
-      "status": "Implementado",
+      "status": "Publicado",
       "responsavel": "Agente Compras",
-      "evidencia": "PR #330 d451cfd9; ainda separado",
+      "evidencia": "#330 entrou pelo #332. CI 44381338715 com 1.197 SQL e 342 E2E. Alias de produção READY em f2eb787c em 19/11. Três planilhas reais seguem sem validação",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/worker/src; API_AND_JOBS_MAP",
+      "evidencia": "Worker publicado. Gemini D-746 e Codex D-747 testados localmente, com paginação e conferência completa de itens de NF-e",
       "fase": 3
     },
     {
@@ -189,7 +189,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Infra",
-      "evidencia": "18 jobs,7 filas,2 revisões Ready em18/11; oito últimos erros",
+      "evidencia": "19/11: 18 agendamentos habilitados, dois últimos com código 14. API e worker Ready com 100% nas revisões de 18/11",
       "fase": 2
     },
     {
@@ -209,7 +209,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "cron/snapshot policy existentes; diário e snapshots ainda vazios",
+      "evidencia": "#333 registra dump restaurado em isolamento e ensaio dos 17 SQLs. Snapshot automático READY em 19/11. Prefixo diario/ vazio na listagem e alerta pendente",
       "fase": 2
     },
     {
@@ -279,7 +279,7 @@
       "peso": 5,
       "status": "Bloqueado",
       "responsavel": "Dono/Database",
-      "evidencia": "MIGRATION_PLAN: login não testado; README Auth/SMTP pendentes",
+      "evidencia": "#333 registra navegação autenticada após o corte. Convite, SMTP, recuperação de senha e política Auth seguem sem validação",
       "fase": 1
     },
     {
@@ -405,11 +405,11 @@
     {
       "id": "V01",
       "area": "Publicação e validação",
-      "entrega": "CI do conjunto integrado incluindo 9 commits locais e PRs330/331",
+      "entrega": "CI do conjunto integrado de compras, Gemini/Codex Sentinel e banco",
       "peso": 5,
       "status": "Não iniciado",
       "responsavel": "Sentinel/QA",
-      "evidencia": "PR328 remoto verde não cobreHEAD010c252d nemPRs separados",
+      "evidencia": "#332 validou compras com a Sentinel remota. O Gemini validou sua própria base. Falta CI da combinação com os commits locais e o #331",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "Requer autorização; 17 migrations candidatas das três frentes; sem merge/deploy nesta sessão",
+      "evidencia": "#333 registra 17 versões da main na VM até 20261118211000. Workflow ainda no hosted. Revisões API/worker mantidas. Faltam revisão e autorização para publicar Gemini/Codex e #331",
       "fase": 5
     },
     {

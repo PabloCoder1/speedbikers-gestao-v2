@@ -133,6 +133,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A100 | P1 · CORRIGIDO localmente (D-746) | `erp-import-parse.ts` e `nfe-import-parse.ts` não bloqueavam `APPLYING` (reentrega tardia podia apagar staging/itens vinculados) e ignoravam erros de `PARSING`/`DELETE`/`PARSED`; `erp-import-apply.ts` e `nfe-import-apply.ts` ignoravam erro de `markRows` e do `UPDATE` final `APPLIED` (retornando `done` com registro preso em `APPLYING`), e `nfe-import-apply.ts` não paginava `document_items` | Barra `APPLYING` nos dois parsers, checa `.error !== null` em todos os `DELETE`, `markRows` e `UPDATE` finais retornando `retryable: true`, e pagina `document_items` com `readAllPages` em `nfe-import-apply.ts`. Reproduzido (`9 failed | 72 passed (81)`); `@sb/worker` verde (`1.061` testes). [Handoff](GEMINI_HANDOFF.md) |
 
+| A101 | P1 · CORRIGIDO localmente (D-747) | `nfe-import-apply.ts` aceitava o cabeçalho como prova de completude. Com quantidade de linhas diferente ou SKU ausente, gravava movimentos incompletos e concluía `APPLIED` | Exige concordância entre cabeçalho e itens já paginados. Divergência interrompe antes do ledger e permite releitura em nova entrega. Três regressões e uma recuperação verificada. [Checkpoint](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

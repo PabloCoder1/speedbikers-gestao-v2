@@ -20002,3 +20002,9 @@ Quatro defeitos de consistência e tratamento silencioso de erro confirmados nos
 4. **Leitura de `document_items` sem paginação em `nfe-import-apply.ts`:** trocada por `readAllPages` ordenado por `position`, eliminando truncamento silencioso acima de 1.000 itens sem custo extra quando há menos de 1.000 linhas.
 
 Reprodução pré-correção em `erp-import-parse.test.ts`, `erp-import-apply.test.ts`, `nfe-import-parse.test.ts` e `nfe-import-apply.test.ts` registrou 9 falhas (`9 failed | 72 passed (81)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.061` testes).
+
+## D-747 - Worker valida os itens conferidos antes de aplicar NF-e
+
+A paginação de D-746 permite ler todas as linhas. Antes de gravar o estoque, a aplicação agora exige que os contadores do documento concordem e que a leitura tenha exatamente o total conferido com SKU em cada item. Em três reproduções, o cabeçalho indicava conferência completa e o worker encerrava com sucesso mesmo com uma linha ausente, uma linha excedente ou um item sem SKU.
+
+Se a leitura divergir, o job retorna falha retentável antes de gravar movimentos ou marcar `APPLIED`. A reentrega relê as linhas e, quando a conferência coincide, usa as chaves de idempotência existentes por documento e posição. Divergência persistente fica para investigação do lote após as tentativas da fila. A mudança usa os itens que já foram paginados e preserva a autorização, as tabelas e as regras fiscais.
