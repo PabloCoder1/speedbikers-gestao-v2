@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-11-19 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` e alias Vercel em `f2eb787c` (#333, com compras #330/#332). Sentinel em branch própria, incorporou os 18 commits do Gemini por fast-forward. |
+| **HEAD conhecido** | Referência local `origin/main` em `f243b7c1` (#334, saída para Full). Sentinel em branch própria, com Gemini e D-747 a D-749. A [simulação de integração](agent-audit/SESSION_LOG.md) segue com três conflitos documentais. |
 | **Fechamento da V3** | 134/226 pontos (59,3%), 23/43 entregas. Compras (F05) publicada. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) e `node scripts/report-closure-progress.mjs`. |
 | **Sentinel: próximo passo** | D-748/D-749 protegem a entrada em `PARSING` na NF-e e no ERP. Um ensaio local confirmou a lacuna na gravação quando duas entregas já iniciaram. Preparar persistência atômica vinculada à versão da leitura e revisar a integração documental. [Checkpoint](agent-audit/SESSION_LOG.md). |
-| **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo em 18/11. Consultas GCP de `speedbikers-gestao-v3` negadas; não inferir estado atual das revisões. Pausa das rotinas registrada em D-350. |
+| **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` confirmado inativo em 19/11. Consultas GCP de `speedbikers-gestao-v3` negadas. Pausa das rotinas registrada em D-350. |
 | **Supabase** | Projetos hospedados Dev e produção `imvjfgnaprqsfjlnsyev` estavam `INACTIVE` em 18/11. Produção usa `sb-db`. #333 registra navegação autenticada e catálogo lido na VM. Convite, SMTP/reset e recuperação completa seguem pendentes. |
-| **Produção** | Em 19/11 a web `f2eb787c` está READY (`dpl_DxjdksaBE1QZRqzK7o9B52mgcKbN`). Run mantém 100% em `api-00039-22b` e `worker-00058-mbc`. Dois dos 18 agendamentos têm último código 14. |
+| **Produção** | A conferência Sentinel anterior ao #334 encontrou web `f2eb787c` READY (`dpl_DxjdksaBE1QZRqzK7o9B52mgcKbN`), Run em `api-00039-22b`/`worker-00058-mbc` e dois de 18 agendamentos com código 14. O #334 registra revisões Run `api-00040-fr5`/`worker-00059-mjc` em `7a93bf70`. O runtime desse corte aguarda conferência independente. |
 | **Migrations** | #333 registrou 17 versões da `main` na VM até `20261118211000`. As duas de retenção/índice do #331 seguem separadas. O workflow oficial ainda aponta ao hospedado. |
 | **UX (Agente 3)** | Central D-500–D-519 integrada até #261. Escopo e evidências em `docs/UX_SYSTEM.md` §6; aceite pós-recuperação continua separado. |
 | **Frente atual** | Recuperação e fechamento após corte de banco em 18/11. ML/Shopee e telas existentes estão no SHA publicado; a operação com dados restaurados exige novo aceite. Estoque Shopee/Go Live e TikTok transacional continuam pendentes. Escopo e contratos: `docs/MULTICHANNEL_HANDOFF.md` e `docs/MULTICHANNEL_CONTRACTS.md`. O detalhamento histórico de outubro foi para `docs/archive/handoffs/2026-11-18_frente-multicanal.md`. |
