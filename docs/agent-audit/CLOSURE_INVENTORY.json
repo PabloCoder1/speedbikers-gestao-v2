@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local 849e4b78 e ensaio incremental D-769",
+  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-772 (9646d3e8)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99; confirmação real, gavetas, OAuth/SAC/aplicação/SSE/convite protegidos (1.501 unit + 397/397 E2E)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111; confirmação real, gavetas, OAuth/SAC/aplicação/SSE/convite e Saída Manual/NF-e protegidos (1.550 unit + 401/401 E2E)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770 endurece edição de item NF-e e saída manual (555 testes)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752 testados localmente com paginação, guardas por versão e persistência atômica de NF-e e ERP",
+      "evidencia": "Worker publicado. D-746 a D-752 e D-772 testados localmente com paginação, guardas por versão, fatiamento .in(), unlock no finally e persistência atômica (1.091 testes)",
       "fase": 3
     },
     {
@@ -299,7 +299,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Sentinel/Backend",
-      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746 paginam >1.000 no worker, Copiloto e /diagnostico + lotes .in 200",
+      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746/D-770–D-772 paginam >1.000 no worker, Copiloto, estoque Shopee e /diagnostico + lotes .in 100/200",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas, 1.160 integração e 39 embeds em 048b9774",
+      "evidencia": "check 37/37 tarefas (4.214 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em 9646d3e8",
       "fase": 5
     },
     {
@@ -339,7 +339,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "Playwright E2E completo: 397/397 (chromium + loja-live) em 048b9774",
+      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em 9646d3e8",
       "fase": 5
     },
     {
