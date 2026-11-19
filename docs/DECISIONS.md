@@ -20222,3 +20222,13 @@ Três defeitos confirmados nas sete rotas de exportação web (fora `/compras`) 
 3. **Injeção de fórmula CSV precedida por espaço, tab ou CR (`apps/web/lib/csv.ts`):** `csvCell` protegia apenas `/^[=+\-@]/`, deixando passar títulos iniciados por `" =..."`, `"\t=..."` ou `"\r+..."`. Agora neutraliza `/^[\t\r ]*[=+\-@]|^[\t\r]/` com apóstrofo antes da quotação RFC 4180.
 
 Reprodução pré-correção em `lib/export-routes.test.ts` e `lib/listings-export.test.ts` registrou 5 falhas (`5 failed | 5 passed (10)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`148` arquivos / `1.555` testes) e nas 7 guardas estáticas.
+
+## D-775 - Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
+
+Três fragilidades confirmadas de segurança e resiliência em `apps/api/src/auth.ts`, `apps/api/src/oidc.ts` e `apps/worker/src/handlers/shopee-orders-sync.ts`:
+
+1. **Escolha arbitrária de organização e 403/401 enganoso em indisponibilidade (`apps/api/src/auth.ts`):** `createAuthenticator` consultava `organization_members` com `.limit(1).maybeSingle()`, escolhendo arbitrariamente uma organização se o usuário pertencesse a 2+ (contrariando `apps/web/lib/membership.ts`) e devolvendo `403` ("usuário sem organização") em falha transitória de banco ou `401` em erro 5xx/rede do Supabase Auth. Agora lê `.limit(2)`, recusa `length > 1` com `403`, devolve `503` em erro do banco ou 5xx/rede do Auth, e exige `/^Bearer\s+(\S+)\s*$/i` (recusando Bearer só com espaços ou múltiplos tokens sem gastar chamada de rede).
+2. **Verificação OIDC sem `email_verified === true` (`apps/api/src/oidc.ts`):** `createOidcVerifier` conferia apenas `payload.email` contra `allowedServiceAccounts`, sem exigir `payload.email_verified === true` e aceitando Bearer com espaços em branco antes de chamar `verifyIdToken`. Agora exige `email_verified === true` e valida o formato `/^Bearer\s+(\S+)\s*$/i`.
+3. **Falha de transporte ao destravar `shopee.orders.sync` no `finally` (`apps/worker/src/handlers/shopee-orders-sync.ts`):** se o `UPDATE` de liberação da trava lançasse exceção de transporte no `finally`, mascarava o erro original de `lerJanela` ou abortava antes de enfileirar `seguintes`. Agora o `finally` está envolvido em `try/catch`, registrando `shopee_orders_sync_unlock_failed` sem perder o resultado nem mascarar a exceção original.
+
+Reprodução pré-correção em `auth.test.ts`, `oidc.test.ts` e `shopee-orders-sync.test.ts` registrou 6 falhas (`6 failed | 17 passed (23)`); após a correção, `@sb/api` (`43` arquivos / `561` testes) e `@sb/worker` (`68` arquivos / `1.093` testes) passaram integralmente em `typecheck`, `eslint` e `vitest`.

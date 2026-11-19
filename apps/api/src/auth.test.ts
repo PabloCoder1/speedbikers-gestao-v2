@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createAuthenticator } from "./auth.js";
+import { createAuthenticator, extractBearerToken } from "./auth.js";
 import type { AdminClient } from "@sb/db";
 
 /**
@@ -78,5 +78,91 @@ describe("recusa de token (D-300)", () => {
 
     expect(resultado.status).toBe(401);
     expect(resultado.reason).toContain("desconhecido");
+  });
+});
+
+function clienteComVinculos(opcoes: {
+  authError?: { message: string; status?: number } | null;
+  linhas?: { organization_id: string; role: string }[];
+  erroVinculos?: { message: string } | null;
+}) {
+  const getUser = vi.fn(() =>
+    opcoes.authError !== undefined && opcoes.authError !== null
+      ? Promise.resolve({ data: { user: null }, error: opcoes.authError })
+      : Promise.resolve({ data: { user: { id: "user-1" } }, error: null }),
+  );
+  const linhas = opcoes.linhas ?? [];
+  const erroVinculos = opcoes.erroVinculos ?? null;
+  let limite = linhas.length;
+  const cadeia = {
+    select: () => cadeia,
+    eq: () => cadeia,
+    limit: (n: number) => {
+      limite = n;
+      return cadeia;
+    },
+    maybeSingle: () =>
+      Promise.resolve({
+        data: erroVinculos === null ? (linhas[0] ?? null) : null,
+        error: erroVinculos,
+      }),
+    then: (resolve: (v: unknown) => void) => {
+      resolve({
+        data: erroVinculos === null ? linhas.slice(0, limite) : null,
+        error: erroVinculos,
+      });
+    },
+  };
+
+  return {
+    db: {
+      supabaseUrl: "https://projeto-local.supabase.co",
+      auth: { getUser },
+      from: () => cadeia,
+    } as unknown as AdminClient,
+    getUser,
+  };
+}
+
+describe("endurecimento de autenticação (D-775)", () => {
+  it("recusa usuário em múltiplas organizações em vez de escolher uma organização arbitrária", async () => {
+    const { db } = clienteComVinculos({
+      linhas: [
+        { organization_id: "org-1", role: "ADMIN" },
+        { organization_id: "org-2", role: "ADMIN" },
+      ],
+    });
+    const auth = createAuthenticator(db);
+
+    const resultado = await auth.authenticate("Bearer token-valido", ["ADMIN"]);
+
+    expect(resultado.ok).toBe(false);
+    if (!resultado.ok) {
+      expect(resultado.status).toBe(403);
+      expect(resultado.reason).toMatch(/mais de uma organização/i);
+    }
+  });
+
+  it("erro transitório ao consultar organization_members devolve 503 em vez de 403 'sem organização'", async () => {
+    const { db } = clienteComVinculos({ erroVinculos: { message: "connection timeout" } });
+    const auth = createAuthenticator(db);
+
+    const resultado = await auth.authenticate("Bearer token-valido", ["ADMIN"]);
+
+    expect(resultado).toMatchObject({ ok: false, status: 503 });
+  });
+
+  it("erro 5xx/rede no Supabase Auth devolve 503; Bearer só com espaços é recusado antes de chamar o Auth", async () => {
+    const indisponivel = clienteComVinculos({ authError: { message: "upstream 503", status: 503 } });
+    const resultado = await createAuthenticator(indisponivel.db).authenticate("Bearer token-valido", ["ADMIN"]);
+
+    expect(resultado).toMatchObject({ ok: false, status: 503 });
+
+    const vazio = clienteComVinculos({});
+    const espaco = await createAuthenticator(vazio.db).authenticate("Bearer    ", ["ADMIN"]);
+
+    expect(espaco).toMatchObject({ ok: false, status: 401 });
+    expect(vazio.getUser).not.toHaveBeenCalled();
+    expect(extractBearerToken("Bearer a b")).toBeUndefined();
   });
 });

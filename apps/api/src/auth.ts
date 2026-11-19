@@ -39,9 +39,9 @@ export interface Caller {
 
 export type AuthResult =
   | { ok: true; caller: Caller }
-  | { ok: false; status: 401 | 403; reason: string };
+  | { ok: false; status: 401 | 403 | 503; reason: string };
 
-const BEARER = /^Bearer (.+)$/i;
+const BEARER = /^Bearer\s+(\S+)\s*$/i;
 
 /**
  * Extrai o token cru do header `Authorization: Bearer <token>`.
@@ -82,6 +82,14 @@ export function createAuthenticator(db: AdminClient): Authenticator {
       // `getUser` devolve união discriminada: sem erro, `data.user` existe.
       // Checar os dois seria redundante e o lint com tipos acusa.
       if (error !== null) {
+        if (error.status === 0 || (error.status !== undefined && error.status >= 500)) {
+          return {
+            ok: false,
+            status: 503,
+            reason: `Supabase Auth indisponivel nesta API (${supabaseHost(db)})`,
+          };
+        }
+
         // O HOST entra no motivo porque "token invalido" manda procurar
         // defeito no token, e a causa mais comum e outra: web e API apontando
         // para projetos Supabase DIFERENTES (D-300). O token esta perfeito --
@@ -94,19 +102,38 @@ export function createAuthenticator(db: AdminClient): Authenticator {
       }
 
       // Papel e organização vêm do BANCO, nunca do token. Claim é editável no
-      // futuro; a tabela é a verdade.
+      // futuro; a tabela é a verdade. Lemos até 2 linhas para nunca escolher
+      // arbitrariamente uma organização quando o usuário pertence a mais de uma
+      // (mesmo contrato de `apps/web/lib/membership.ts`).
       const membership = await db
         .from("organization_members")
         .select("organization_id, role")
         .eq("user_id", data.user.id)
-        .limit(1)
-        .maybeSingle();
+        .limit(2);
 
-      if (membership.error !== null || membership.data === null) {
+      if (membership.error !== null) {
+        return { ok: false, status: 503, reason: "não foi possível verificar a organização do usuário" };
+      }
+
+      if (membership.data.length === 0) {
         return { ok: false, status: 403, reason: "usuário sem organização" };
       }
 
-      const role = membership.data.role as Role;
+      if (membership.data.length > 1) {
+        return {
+          ok: false,
+          status: 403,
+          reason: "usuário pertence a mais de uma organização e não há seletor de organização",
+        };
+      }
+
+      const vinculo = membership.data[0];
+
+      if (vinculo === undefined) {
+        return { ok: false, status: 403, reason: "usuário sem organização" };
+      }
+
+      const role = vinculo.role as Role;
 
       if (!allowed.includes(role)) {
         return { ok: false, status: 403, reason: "papel sem permissão para esta ação" };
@@ -116,7 +143,7 @@ export function createAuthenticator(db: AdminClient): Authenticator {
         ok: true,
         caller: {
           userId: data.user.id,
-          organizationId: membership.data.organization_id,
+          organizationId: vinculo.organization_id,
           role,
         },
       };
