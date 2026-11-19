@@ -14,6 +14,7 @@ import { documentTypeLabel } from "../../../../lib/document-filters";
 import { erroLegivel, recusaLegivel } from "../../../../lib/document-error";
 import { batchStatusLabel, operationTypeLabel, statusTone } from "../../../../lib/labels";
 import { nfeEtapas } from "../../../../lib/nfe-steps";
+import { LOTE_CONSULTA_SAIDA, particionarEmLotes } from "../../../../lib/saida-manual";
 import { createClient } from "../../../../lib/supabase/server";
 import { ConfirmApplyForm } from "./confirm-apply-form";
 import { DocumentItemRow } from "./document-item-row";
@@ -126,20 +127,25 @@ export default async function NotaFiscalPage({
   const skusVinculados = [...new Set(linhas.flatMap((item) => (item.sku_id === null ? [] : [item.sku_id])))];
   const saldos =
     saida && info.status === "PARSED" && skusVinculados.length > 0
-      ? await supabase
-          .from("inventory_balances")
-          .select("sku_id, quantity")
-          .eq("location_kind", "LOCAL")
-          .in("sku_id", skusVinculados)
+      ? await Promise.all(
+          particionarEmLotes(skusVinculados, LOTE_CONSULTA_SAIDA).map((lote) =>
+            supabase.from("inventory_balances").select("sku_id, quantity").eq("location_kind", "LOCAL").in("sku_id", lote),
+          ),
+        )
       : null;
   // SKU sem linha de saldo é saldo zero: a linha só nasce com o primeiro movimento.
   const saldoNaLoja = new Map<string, number>();
+  const saldosFalharam = saldos?.some((resposta) => resposta.error !== null) ?? false;
 
-  if (saldos !== null && saldos.error === null) {
-    for (const linha of saldos.data) saldoNaLoja.set(linha.sku_id, linha.quantity);
+  if (saldos !== null && !saldosFalharam) {
+    for (const resposta of saldos) {
+      if (resposta.error === null) {
+        for (const linha of resposta.data) saldoNaLoja.set(linha.sku_id, linha.quantity);
+      }
+    }
   }
 
-  const mostraDisponivel = saida && info.status === "PARSED" && saldos?.error == null;
+  const mostraDisponivel = saida && info.status === "PARSED" && !saldosFalharam;
   // Unidades pedidas por SKU: dois itens do mesmo SKU somam contra o MESMO saldo.
   const pedidoPorSku = new Map<string, number>();
 

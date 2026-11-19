@@ -1,4 +1,4 @@
-import type { AdminClient } from "@sb/db";
+import type { AdminClient, TablesInsert, TablesUpdate } from "@sb/db";
 import type { DocumentoLido, TipoDocumento } from "@sb/domain";
 import { digitos, documentoDaNfe, lerDocumentoPdf, parseNfeXmlObject, recusaDeVendaDeMarketplace } from "@sb/domain";
 import { z } from "zod";
@@ -49,7 +49,22 @@ export interface NfeParseDeps {
   now?: () => Date;
 }
 
-const CHUNK = 500;
+interface NfeParseRpc {
+  rpc(
+    name: "persist_nfe_parse",
+    args: {
+      p_document_id: string;
+      p_parse_version: string;
+      p_header: TablesUpdate<"documents"> | null;
+      p_items: Omit<TablesInsert<"document_items">, "document_id" | "sku_id">[];
+      p_parsed_at: string | null;
+      p_error: string | null;
+      p_error_code: string | null;
+    },
+  ): PromiseLike<{ data: boolean | null; error: { code: string; message: string } | null }>;
+}
+
+const PARSE_SUPERADO = { status: "failed", retryable: true, reason: "a versão da leitura foi substituída" } as const;
 
 /**
  * `documents.document_type` guarda o layout. `NFE_XML` virou só `NFE` na
@@ -74,6 +89,9 @@ function erroDeDado(error: { code?: string } | null): boolean {
 }
 
 export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
+  // Contrato local da migration até regenerar os tipos compartilhados a partir do Dev.
+  const persistence = deps.db as unknown as NfeParseRpc;
+
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
@@ -85,7 +103,7 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     const document = await deps.db
       .from("documents")
-      .select("id, status, organization_id, storage_path")
+      .select("id, status, organization_id, storage_path, updated_at, parsed_at")
       .eq("id", documentId)
       .maybeSingle();
 
@@ -97,10 +115,19 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: false, reason: `documento ${documentId} não existe` };
     }
 
-    if (document.data.status === "APPLIED") {
-      // Reprocessar um documento já aplicado reescreveria a conferência que
-      // sustentou a decisão humana — mesma regra de erp_import_batches.
-      return { status: "failed", retryable: false, reason: "documento já aplicado" };
+    if (document.data.status === "APPLIED" || document.data.status === "APPLYING") {
+      // Reprocessar um documento em aplicação ou já aplicado apagaria os itens
+      // já vinculados e reescreveria a conferência humana (D-746).
+      return {
+        status: "failed",
+        retryable: false,
+        reason: document.data.status === "APPLIED" ? "documento já aplicado" : "documento já em aplicação",
+      };
+    }
+
+    if (document.data.status === "PARSED" || document.data.status === "CANCELLED" || document.data.parsed_at !== null) {
+      // A API só reenvia documentos que falharam antes de concluir a leitura.
+      return { status: "done", processed: 0 };
     }
 
     // CNPJ da própria organização decide ENTRADA/SAIDA (não `ide/tpNF`
@@ -118,18 +145,35 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: true, reason: organization.error.message };
     }
 
+    // A leitura acima pode ter ficado antiga enquanto buscávamos o CNPJ.
+    // A comparação de versão também detecta PARSING -> PARSING numa reentrega.
+    const parsing = await deps.db
+      .from("documents")
+      .update({ status: "PARSING" })
+      .eq("id", documentId)
+      .eq("status", document.data.status)
+      .eq("updated_at", document.data.updated_at)
+      .select("updated_at")
+      .maybeSingle();
+
+    if (parsing.error !== null) {
+      return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
+
+    if (parsing.data === null) {
+      return { status: "failed", retryable: true, reason: "documento mudou antes de iniciar a leitura" };
+    }
+
+    const version = parsing.data.updated_at;
+
     if (organization.data?.cnpj === null || organization.data?.cnpj === undefined) {
       const reason = "organização sem CNPJ cadastrado — não é possível decidir entrada/saída do documento";
 
-      await deps.db.from("documents").update({ status: "FAILED", last_error: reason }).eq("id", documentId);
-
-      return { status: "failed", retryable: false, reason };
+      return marcarFalhaDeLeitura(deps.db, documentId, version, reason, false);
     }
 
     const storagePath = document.data.storage_path;
     const ehPdf = storagePath.toLowerCase().endsWith(".pdf");
-
-    await deps.db.from("documents").update({ status: "PARSING" }).eq("id", documentId);
 
     let arquivo: unknown;
 
@@ -138,10 +182,8 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "falha ao ler o arquivo";
 
-      await deps.db.from("documents").update({ status: "FAILED", last_error: reason }).eq("id", documentId);
-
       // Bucket indisponível é transitório; o documento volta a PARSING na próxima.
-      return { status: "failed", retryable: true, reason };
+      return marcarFalhaDeLeitura(deps.db, documentId, version, reason, true);
     }
 
     const leitura = ehPdf
@@ -149,18 +191,13 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       : lerXml(arquivo, organization.data.cnpj);
 
     if (!leitura.ok) {
-      await deps.db
-        .from("documents")
-        .update({ status: "FAILED", last_error: leitura.motivo })
-        .eq("id", documentId);
-
       context.logger.error("documento_parse_invalido", {
         document_id: documentId,
         formato: ehPdf ? "PDF" : "XML",
         reason: leitura.motivo,
       });
 
-      return { status: "failed", retryable: false, reason: leitura.motivo };
+      return marcarFalhaDeLeitura(deps.db, documentId, version, leitura.motivo, false);
     }
 
     const documento = leitura.valor;
@@ -195,37 +232,6 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       cfops: documento.itens.map((item) => item.cfop),
     });
 
-    if (recusa !== null) {
-      await deps.db.from("document_items").delete().eq("document_id", documentId);
-
-      const recusado = await deps.db
-        .from("documents")
-        .update({ ...cabecalho, status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
-        .eq("id", documentId);
-
-      if (recusado.error !== null) {
-        // O cabeçalho pode ser o que o banco recusa (a chave lida do PDF): a
-        // recusa vale do mesmo jeito.
-        await deps.db
-          .from("documents")
-          .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
-          .eq("id", documentId);
-      }
-
-      context.logger.warn("documento_recusado", {
-        document_id: documentId,
-        tipo: documento.tipo,
-        codigo: recusa.codigo,
-        intermediary_cnpj: cabecalho.intermediary_cnpj,
-      });
-
-      return { status: "done", processed: 0 };
-    }
-
-    // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
-    // reexecução começar do zero em vez de colidir com a chave única.
-    await deps.db.from("document_items").delete().eq("document_id", documentId);
-
     /*
       `document_items.position` é ZERO-based desde o parser do XML (D-053), e é
       ela que a tela numera ("#1" = position 0) e que entra na chave de
@@ -233,8 +239,7 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       é assim que o papel numera os itens — a conversão é aqui, num lugar só, em
       vez de cada leitor ter de conhecer a convenção da tabela.
     */
-    const rows = documento.itens.map((item, indice) => ({
-      document_id: documentId,
+    const itens = (recusa === null ? documento.itens : []).map((item, indice) => ({
       position: indice,
       supplier_code: item.codigo,
       ean: item.ean,
@@ -247,44 +252,45 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       // valor se leria como "de graça" (a distinção de D-254).
       unit_value: item.valorUnitario,
       total_value: item.valorTotal,
-      sku_id: null,
     }));
 
-    for (let start = 0; start < rows.length; start += CHUNK) {
-      const chunk = rows.slice(start, start + CHUNK);
+    const resultado = {
+      p_document_id: documentId,
+      p_parse_version: version,
+      p_header: cabecalho,
+      p_items: itens,
+      p_parsed_at: recusa === null ? (deps.now?.() ?? new Date()).toISOString() : null,
+      p_error: recusa?.motivo ?? null,
+      p_error_code: recusa?.codigo ?? null,
+    };
+    let gravado = await persistence.rpc("persist_nfe_parse", resultado);
 
-      const inserted = await deps.db.from("document_items").insert(chunk);
-
-      if (inserted.error !== null) {
-        if (erroDeDado(inserted.error)) {
-          return falhaDeGravacao(deps.db, documentId, `os itens lidos não puderam ser gravados: ${inserted.error.message}`);
-        }
-
-        return { status: "failed", retryable: true, reason: inserted.error.message };
-      }
+    if (recusa !== null && erroDeDado(gravado.error)) {
+      gravado = await persistence.rpc("persist_nfe_parse", { ...resultado, p_header: null });
     }
-
-    const gravado = await deps.db
-      .from("documents")
-      .update({
-        ...cabecalho,
-        status: "PARSED",
-        total_items: rows.length,
-        resolved_items: 0,
-        parsed_at: (deps.now?.() ?? new Date()).toISOString(),
-        last_error: null,
-        last_error_code: null,
-      })
-      .eq("id", documentId);
 
     if (gravado.error !== null) {
       if (erroDeDado(gravado.error)) {
-        await deps.db.from("document_items").delete().eq("document_id", documentId);
-
-        return falhaDeGravacao(deps.db, documentId, `a leitura não pôde ser gravada: ${gravado.error.message}`);
+        const reason = `a leitura não pôde ser gravada: ${gravado.error.message}`;
+        return marcarFalhaDeLeitura(deps.db, documentId, version, reason, false, "LEITURA_NAO_GRAVADA");
       }
 
       return { status: "failed", retryable: true, reason: gravado.error.message };
+    }
+
+    if (gravado.data !== true) {
+      return PARSE_SUPERADO;
+    }
+
+    if (recusa !== null) {
+      context.logger.warn("documento_recusado", {
+        document_id: documentId,
+        tipo: documento.tipo,
+        codigo: recusa.codigo,
+        intermediary_cnpj: cabecalho.intermediary_cnpj,
+      });
+
+      return { status: "done", processed: 0 };
     }
 
     context.logger.info("documento_parse_finished", {
@@ -292,21 +298,35 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       tipo: documento.tipo,
       access_key: documento.chave,
       operation_type: documento.direcao,
-      total_items: rows.length,
+      total_items: itens.length,
     });
 
-    return { status: "done", processed: rows.length };
+    return { status: "done", processed: itens.length };
   };
 }
 
-/** O documento que o banco não aceitou vira FAILED com o erro dito, sem repetir. */
-async function falhaDeGravacao(db: AdminClient, documentId: string, reason: string): Promise<JobOutcome> {
-  await db
+async function marcarFalhaDeLeitura(
+  db: AdminClient,
+  documentId: string,
+  version: string,
+  reason: string,
+  retryable: boolean,
+  code?: "LEITURA_NAO_GRAVADA",
+): Promise<JobOutcome> {
+  const failed = await db
     .from("documents")
-    .update({ status: "FAILED", last_error: reason, last_error_code: "LEITURA_NAO_GRAVADA" })
-    .eq("id", documentId);
+    .update({ status: "FAILED", last_error: reason, last_error_code: code ?? null })
+    .eq("id", documentId)
+    .eq("status", "PARSING")
+    .eq("updated_at", version)
+    .select("id")
+    .maybeSingle();
 
-  return { status: "failed", retryable: false, reason };
+  if (failed.error !== null) {
+    return { status: "failed", retryable: true, reason: failed.error.message };
+  }
+
+  return failed.data === null ? PARSE_SUPERADO : { status: "failed", retryable, reason };
 }
 
 /**

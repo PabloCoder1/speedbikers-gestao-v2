@@ -98,6 +98,53 @@ describe("cliente", () => {
 
     await expect(getAccessToken(outro.client, { code: "c", shopId: 1 })).rejects.toThrow();
   });
+
+  it("D-773: HTTP 200 com HTML ou corpo não-JSON vira ShopeeApiError repetível, sem vazar credenciais", async () => {
+    const client = createShopeeClient({
+      environment: "sandbox",
+      partnerId: 1248019,
+      partnerKey: PARTNER_KEY,
+      fetchImpl: vi.fn(() => Promise.resolve(new Response("<html><body>502 proxy</body></html>", { status: 200 }))),
+      now: () => NOW,
+    });
+
+    const falha = await getShopInfo(client, { accessToken: "tok-secreto", shopId: 54804 }).catch((e: unknown) => e);
+
+    expect(falha).toBeInstanceOf(ShopeeApiError);
+    expect(falha).toMatchObject({ status: 200, code: null, errorClass: "retryable" });
+    expect((falha as Error).message).not.toContain("tok-secreto");
+    expect((falha as Error).message).not.toContain("sign");
+  });
+
+  it("D-773: parâmetros em query nunca sobrescrevem partner_id, timestamp, access_token, shop_id ou sign", async () => {
+    const { client, chamadas } = clienteCom(200, { error: "", ok: true });
+
+    await client.request({
+      method: "GET",
+      path: "/api/v2/shop/get_shop_info",
+      shop: { accessToken: "tok-real", shopId: 54804 },
+      query: {
+        partner_id: "999999",
+        timestamp: "1",
+        access_token: "forjado",
+        shop_id: "1",
+        sign: "assinatura-forjada",
+        extra: "ok",
+      },
+      schema: z.object({ ok: z.boolean() }),
+    });
+
+    const params = Object.fromEntries(chamadas[0]?.url.searchParams.entries() ?? []);
+
+    expect(params).toEqual({
+      extra: "ok",
+      partner_id: "1248019",
+      timestamp: String(TIMESTAMP),
+      access_token: "tok-real",
+      shop_id: "54804",
+      sign: sign(PARTNER_KEY, `1248019/api/v2/shop/get_shop_info${String(TIMESTAMP)}tok-real54804`),
+    });
+  });
 });
 
 describe("autorização (open.shopee.com/developer-guide/20)", () => {

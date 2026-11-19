@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -15,18 +16,30 @@ if (!ports.includes(54321) || !ports.includes(54322)) {
   throw new Error("Config deve partir das portas padrão 543xx; não reutilize uma stack já isolada.");
 }
 
+// O daemon Docker pode publicar portas fora da rede que o Node enxerga.
+const published = execFileSync("docker", ["ps", "--format", "{{.Ports}}"], { encoding: "utf8" });
+const dockerRanges = Array.from(
+  published.matchAll(/:(\d+)(?:-(\d+))?->/gu),
+  ([, first, last = first]) => ({ first: Number(first), last: Number(last) }),
+);
+
 // Mantém o bloco reservado até testar todas as portas. A stack sobe logo após
 // a liberação; uma disputa posterior continua falhando alto no Docker.
 let selected;
 for (let base = 60000; base < 65000; base += 100) {
+  const candidates = ports.map((port) => base + port - 54300);
+  if (candidates.some((port) => dockerRanges.some(({ first, last }) => port >= first && port <= last))) {
+    continue;
+  }
+
   const servers = [];
   try {
-    for (const port of ports) {
+    for (const port of candidates) {
       const server = createServer();
       servers.push(server);
       await new Promise((ok, fail) => {
         server.once("error", fail);
-        server.listen(base + port - 54300, "0.0.0.0", ok);
+        server.listen(port, "0.0.0.0", ok);
       });
     }
     selected = base;

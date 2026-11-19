@@ -140,4 +140,35 @@ describe("registerManualExit", () => {
 
     expect((await registerManualExit(ctx.deps, CALLER, entrada())).status).toBe("failed");
   });
+
+  it("D-770: fatia verificação de SKUs em lotes de no máximo 100 UUIDs para evitar HTTP 414", async () => {
+    const duzentosECinquenta = Array.from({ length: 250 }, (_, index) => ({
+      skuId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      quantidade: 1,
+    }));
+    const ctx = deps((consulta) => {
+      if (consulta.tabela === "skus") {
+        const filtroIn = consulta.filtros.find(([op]) => op === "in");
+        const ids = Array.isArray(filtroIn?.[2]) ? (filtroIn[2] as string[]) : [];
+
+        return { data: ids.map((id) => ({ id })) };
+      }
+
+      return { data: null };
+    });
+
+    const outcome = await registerManualExit(ctx.deps, CALLER, entrada({ itens: duzentosECinquenta }));
+
+    expect(outcome).toEqual({ status: "applied", requestId: SAIDA, itens: 250, unidades: 250 });
+
+    const leiturasSkus = ctx.consultas.filter((c) => c.tabela === "skus" && c.operacao === "select");
+
+    expect(leiturasSkus).toHaveLength(3);
+
+    for (const leitura of leiturasSkus) {
+      const ids = leitura.filtros.find(([op]) => op === "in")?.[2];
+
+      expect(Array.isArray(ids) ? ids.length : 0).toBeLessThanOrEqual(100);
+    }
+  });
 });

@@ -47,9 +47,18 @@ export function RoleSelect({
     setBusy(true);
     setError(null);
 
-    const result = await changeMemberRole(organizationId, userId, next);
+    let result: Awaited<ReturnType<typeof changeMemberRole>>;
 
-    setBusy(false);
+    try {
+      result = await changeMemberRole(organizationId, userId, next);
+    } catch {
+      // A troca pode ter sido gravada antes de a conexão cair.
+      setError("Não foi possível confirmar a troca de papel. Recarregue a página antes de tentar novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       // A recusa do banco é o que o usuário precisa ler — inclusive a do
@@ -172,9 +181,18 @@ function AlcanceControls({
     setBusy(true);
     setError(null);
 
-    const result = await alternar(id, on);
+    let result: AccessResult;
 
-    setBusy(false);
+    try {
+      result = await alternar(id, on);
+    } catch {
+      // A concessão pode ter sido gravada antes de a conexão cair.
+      setError("Não foi possível confirmar o acesso. Recarregue a página antes de tentar novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);

@@ -36,6 +36,34 @@ não deve ser atribuída ao workflow `migrations-producao.yml`.
   Não copiar senhas de roles nem restaurar sobre produção. O snapshot cobre
   a instância; o ensaio do dump usou owners locais com `--no-owner`.
 
+## Dump diário verificado em 19/11
+
+O objeto `diario/2026-11-19.dump`, geração `1795068954797517`, tem
+183.547.863 bytes. O MD5 calculado em fluxo coincidiu com o Cloud
+Storage. `pg_restore --list` leu 2.786 entradas em um container
+isolado. O catálogo inclui as tabelas de migrations, importação e
+`job_runs`.
+
+A definição arquivada de `purchase_import_rows` antecede a migration
+`20261119120000` da invoice. Para recuperar o schema atual a partir
+desse dump, conferir o histórico restaurado e planejar a reaplicação
+das migrations posteriores. O checksum e a leitura do catálogo
+verificam a transferência e a estrutura. O restore integral também
+passou em container descartável, sem rede, portas ou jobs ativos.
+`pg_restore --no-owner --exit-on-error` terminou em 0.
+
+A cópia tinha 322 migrations até `20261118211000`, zero índices
+inválidos e nenhuma das cinco colunas da invoice. A reaplicação
+transacional de `20261119120000` na cópia criou as cinco colunas.
+O ensaio executou o SQL da migration sem gravar a entrada no histórico.
+O container e seu volume anônimo foram removidos.
+
+O cron e o Ops Agent estavam ativos na consulta de leitura. O arquivo
+`/var/log/sb-backup.log` existe na VM e não está listado no arquivo
+de configuração consultado do Ops Agent. Na consulta de 36 horas
+para a instância, o Cloud Logging não retornou marcadores de sucesso
+do dump diário. Coleta e alerta de falha seguem pendentes.
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e

@@ -102,6 +102,36 @@ describe("o cliente", () => {
     expect(erro).toMatchObject({ errorClass: "retryable", code: null, status: 502 });
     expect((erro as Error).message).toBe("TikTok Shop respondeu 502 para GET /authorization/202309/shops.");
   });
+
+  it("D-773: HTTP 200 com HTML/não-JSON vira TikTokShopApiError passageiro, e requestToken protege app_key/app_secret", async () => {
+    const htmlClient = createTikTokShopClient({
+      appKey: "k",
+      appSecret: APP_SECRET,
+      fetchImpl: () => Promise.resolve(new Response("<html><body>proxy</body></html>", { status: 200 })),
+    });
+
+    const falha = await htmlClient
+      .request({ method: "GET", path: "/authorization/202309/shops", schema: z.unknown() })
+      .catch((e: unknown) => e);
+
+    expect(falha).toBeInstanceOf(TikTokShopApiError);
+    expect(falha).toMatchObject({ status: 200, code: null, errorClass: "retryable" });
+    expect((falha as Error).message).not.toContain(APP_SECRET);
+
+    const { client, chamadas } = clienteCom(200, { code: 0, data: { ok: true } });
+
+    await client.requestToken(
+      "/api/v2/token/get",
+      { app_key: "forjada", app_secret: "forjado", grant_type: "authorized_code" },
+      z.object({ ok: z.boolean() }),
+    );
+
+    expect(Object.fromEntries(chamadas[0]?.url.searchParams ?? [])).toEqual({
+      grant_type: "authorized_code",
+      app_key: "chave-de-teste",
+      app_secret: APP_SECRET,
+    });
+  });
 });
 
 describe("a autorização (P`authorization-overview-202407`)", () => {

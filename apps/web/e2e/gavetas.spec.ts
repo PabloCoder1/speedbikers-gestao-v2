@@ -9,7 +9,7 @@ import {
   E2E_SKU_CODE,
   E2E_SUPPLIER,
 } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
 
 /**
  * As QUATRO gavetas que fecharam a composição do Figma (D39, D-282).
@@ -182,4 +182,23 @@ test("gaveta do pedido: a primeira superfície de venda da V3, com item vinculad
 
   // O silêncio do histórico é declarado, não deixado em branco.
   await expect(gaveta.getByText(/o silêncio aqui é o curso normal/)).toBeVisible();
+});
+
+test("gaveta do anúncio: falha de transporte ao inspecionar mostra erro e recupera ao reabrir", async ({ page }) => {
+  await login(page, "/anuncios");
+
+  const caiu = await derrubarPrimeiraAcao(page);
+  await abrirGaveta(page, E2E_LISTING_TRAFFIC.itemId);
+
+  const gaveta = page.getByRole("dialog");
+
+  expect(caiu()).toBe(true);
+  await expect(gaveta.getByRole("alert")).toContainText("Não foi possível");
+  await expect(gaveta.getByText("Lendo o histórico…")).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await abrirGaveta(page, E2E_LISTING_TRAFFIC.itemId);
+  await expect(page.getByRole("dialog").getByText(E2E_LISTING_RELIST.status)).toBeVisible();
 });

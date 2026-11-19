@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { StatusPill } from "../../../components/status-pill";
+import { lerTokenDeSessao } from "../../../lib/chamar-api";
 import { formatDateTime } from "../../../lib/format";
 import { featureSuggestionStatusLabel } from "../../../lib/labels";
-import { createClient } from "../../../lib/supabase/browser";
 import { updateSuggestionStatus } from "./actions";
 import { SUGGESTION_STATUS_VALUES, type SuggestionStatus } from "./constants";
 
@@ -90,31 +90,28 @@ export function SuggestionDetail({
     setError(null);
 
     void (async () => {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-
-      if (token === undefined) {
-        setError("Sessão expirada — atualize a página.");
-        setStructuring(false);
-
-        return;
-      }
-
       try {
+        const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página.");
+
+        if (!sessao.ok) {
+          setError(sessao.mensagem);
+
+          return;
+        }
+
         const response = await fetch(`${API_URL}/v1/copilot/query`, {
           method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
           body: JSON.stringify({
             tool: "structure_feature_suggestion",
             input: { suggestionId: suggestion.id },
           }),
         });
 
-        const body = (await response.json()) as { error?: { message?: string } };
+        const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
 
-        if (!response.ok) {
-          setError(body.error?.message ?? "Não foi possível estruturar a sugestão.");
+        if (!response.ok || body === null) {
+          setError(body?.error?.message ?? "Não foi possível estruturar a sugestão.");
 
           return;
         }
@@ -132,17 +129,21 @@ export function SuggestionDetail({
     setBusy(true);
     setError(null);
 
-    const result = await updateSuggestionStatus(suggestion.id, next);
+    try {
+      const result = await updateSuggestionStatus(suggestion.id, next);
 
-    setBusy(false);
+      if (!result.ok) {
+        setError(result.message ?? "Não foi possível atualizar — só ADMIN/GESTOR muda o status.");
 
-    if (!result.ok) {
-      setError(result.message);
+        return;
+      }
 
-      return;
+      setStatus(next);
+    } catch {
+      setError("Não foi possível confirmar a alteração de status. Recarregue a página antes de tentar novamente.");
+    } finally {
+      setBusy(false);
     }
-
-    setStatus(next);
   }
 
   return (

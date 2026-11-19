@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { fetchListings } from "./ml-listings-fetch.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -38,25 +39,31 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, status, seller_id")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_listings_snapshot_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_listings_snapshot_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       context.logger.info("sync_listings_snapshot_account_not_connected", { ml_account_id: mlAccountId });
 
       return { status: "done", processed: 0 };
     }
 
-    const { organization_id: organizationId, seller_id: sellerId } = account.data;
+    const { organization_id: organizationId, seller_id: sellerId } = account;
 
     // Sem  não há como enumerar o catálogo (a busca é por VENDEDOR,
     // não por conta interna). Conta CONNECTED sem ele é incoerência de dado,

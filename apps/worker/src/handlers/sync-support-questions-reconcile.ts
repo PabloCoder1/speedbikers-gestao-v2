@@ -7,6 +7,7 @@ import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { fetchSupportQuestions } from "./ml-support-questions-fetch.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -123,21 +124,25 @@ export function createSyncSupportQuestionsReconcileHandler(
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, seller_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_support_questions_reconcile_account_missing", {
-        ml_account_id: mlAccountId,
-      });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_support_questions_reconcile_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       context.logger.info("sync_support_questions_reconcile_account_not_connected", {
         ml_account_id: mlAccountId,
       });
@@ -145,7 +150,7 @@ export function createSyncSupportQuestionsReconcileHandler(
       return { status: "done", processed: 0 };
     }
 
-    const { organization_id: organizationId, seller_id: sellerId } = account.data;
+    const { organization_id: organizationId, seller_id: sellerId } = account;
 
     if (sellerId === null) {
       // Mesma fronteira de D-087: sem `seller_id` não há como conferir que a

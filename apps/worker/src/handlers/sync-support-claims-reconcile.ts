@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { fetchSupportClaims } from "./ml-support-claims-fetch.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
@@ -117,19 +118,25 @@ export function createSyncSupportClaimsReconcileHandler(
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, seller_id, status, connected_at")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_support_claims_reconcile_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_support_claims_reconcile_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       context.logger.info("sync_support_claims_reconcile_account_not_connected", {
         ml_account_id: mlAccountId,
       });
@@ -137,7 +144,7 @@ export function createSyncSupportClaimsReconcileHandler(
       return { status: "done", processed: 0 };
     }
 
-    const { organization_id: organizationId, seller_id: sellerId } = account.data;
+    const { organization_id: organizationId, seller_id: sellerId } = account;
 
     if (sellerId === null) {
       // `players.user_id` é o filtro base exigido pela API: sem `seller_id`
@@ -201,7 +208,7 @@ export function createSyncSupportClaimsReconcileHandler(
         mercadoLivre: deps.mercadoLivre,
         accessToken: tokenResult.accessToken,
         updatedAfter: toMercadoLivreInstant(from),
-        notifyEpoch: resolveNotifyEpoch(account.data.connected_at),
+        notifyEpoch: resolveNotifyEpoch(account.connected_at),
         logger: context.logger,
       });
     } catch (error) {

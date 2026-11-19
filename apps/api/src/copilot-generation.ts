@@ -115,7 +115,10 @@ export async function runSuggestSupportReply(
     .from("support_messages")
     .select("direction, sender_kind, body, body_state, occurred_at")
     .eq("support_case_id", input.supportCaseId)
-    .order("occurred_at", { ascending: true })
+    // D-743 (mesma classe de D-665): lê as 40 mensagens MAIS RECENTES e inverte
+    // abaixo para ordem cronológica — conversas longas não perdem a última pergunta.
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(TRANSCRIPT_LIMIT);
 
   if (transcript.error !== null) {
@@ -141,9 +144,13 @@ export async function runSuggestSupportReply(
         ? `reclamação (${caseResult.data.external_type ?? "tipo desconhecido"})`
         : "conversa pós-venda";
 
-  const skuIds = caseResult.data.support_case_links
-    .map((link) => link.sku_id)
-    .filter((id): id is string => id !== null);
+  const skuIds = [
+    ...new Set(
+      caseResult.data.support_case_links
+        .map((link) => link.sku_id)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
 
   const knowledge = await fetchValidatedKnowledge(userClient, skuIds);
 
@@ -151,7 +158,7 @@ export async function runSuggestSupportReply(
     `Tipo de atendimento: ${channelLabel}${caseResult.data.is_mediation ? " EM MEDIAÇÃO com o Mercado Livre" : ""}`,
     `Produto(s) vinculado(s): ${products.length > 0 ? products.join("; ") : "nenhum vínculo registrado"}`,
     `Conhecimento validado pela equipe:\n${knowledge.length > 0 ? knowledge.map((fact) => `- ${fact}`).join("\n") : "(nenhum registro para este produto)"}`,
-    `Conversa até aqui:\n${formatTranscript(transcript.data)}`,
+    `Conversa até aqui:\n${formatTranscript([...transcript.data].reverse())}`,
   ].join("\n\n");
 
   const { text, costUsd } = await anthropic.narrate({

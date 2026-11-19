@@ -7,6 +7,7 @@ import { z, ZodError } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { processClaimReturn } from "./claim-return.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { orderSchema } from "./order-schema.js";
 import { persistOrder } from "./persist-order.js";
@@ -113,19 +114,25 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     const resourceId = match[1] ?? "";
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("organization_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("webhook_fast_path_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "webhook_fast_path_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       // Desconectada entre o webhook e a execução — corrida benigna, mesmo
       // raciocínio de sync.orders.window.
       return { status: "done", processed: 0 };
@@ -144,7 +151,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       try {
         processed = await processClaimReturn(
           deps,
-          { organizationId: account.data.organization_id, mlAccountId },
+          { organizationId: account.organization_id, mlAccountId },
           tokenResult.accessToken,
           resourceId,
           now,
@@ -172,13 +179,12 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       return classifyFetchFailure(error, "erro desconhecido ao buscar o pedido");
     }
 
-    // Fora do gancho: dentro da função, o TypeScript perde o estreitamento de `account.data`.
-    const organizationId = account.data.organization_id;
+    const organizationId = account.organization_id;
 
     await persistOrder(
       deps.db,
       // D-351: pedido que chega pelo webhook e notícia de agora — `sync`, notifica.
-      { organizationId: account.data.organization_id, mlAccountId, eventSource: "sync" },
+      { organizationId: account.organization_id, mlAccountId, eventSource: "sync" },
       order,
       context.logger,
       undefined,

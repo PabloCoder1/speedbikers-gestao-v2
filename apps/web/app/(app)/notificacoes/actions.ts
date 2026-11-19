@@ -30,18 +30,27 @@ export interface NotificationActionResult {
 export async function markNotificationRead(notificationId: string): Promise<NotificationActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("notification_recipients")
     .update({ read_at: new Date().toISOString() })
-    .eq("notification_id", notificationId);
+    .eq("notification_id", notificationId)
+    .select("notification_id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível marcar como lida.", marked: null };
   }
 
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message: "A notificação não foi marcada. Ela pode não estar mais disponível ou seu acesso mudou. Atualize a página para conferir.",
+      marked: null,
+    };
+  }
+
   revalidatePath("/notificacoes");
 
-  return { ok: true, message: null, marked: 1 };
+  return { ok: true, message: null, marked: data.length };
 }
 
 /**

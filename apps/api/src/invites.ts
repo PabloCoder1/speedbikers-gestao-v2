@@ -99,7 +99,9 @@ export async function inviteOrganizationMember(
 
   // As contas pedidas precisam ser DESTA organização. `AdminClient` ignora a
   // RLS: sem esta checagem, um id de outra organização viraria permissão.
-  const contasPedidas = request.mlAccountIds ?? [];
+  // D-744: deduplica antes da checagem e do INSERT para evitar falso "não pertence"
+  // e violação de PK composta em payloads repetidos.
+  const contasPedidas = [...new Set(request.mlAccountIds ?? [])];
 
   if (contasPedidas.length > 0) {
     const contas = await deps.db
@@ -117,8 +119,8 @@ export async function inviteOrganizationMember(
     }
   }
 
-  // As lojas Shopee pedidas, pela mesma razão (D-433).
-  const lojasPedidas = request.shopeeShopIds ?? [];
+  // As lojas Shopee pedidas, pela mesma razão (D-433, D-744).
+  const lojasPedidas = [...new Set(request.shopeeShopIds ?? [])];
 
   if (lojasPedidas.length > 0) {
     const lojas = await deps.db

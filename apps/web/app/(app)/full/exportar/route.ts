@@ -24,6 +24,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }

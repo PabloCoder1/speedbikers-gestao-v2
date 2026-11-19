@@ -257,4 +257,26 @@ describe("shopee.order-financials.sync (D-427)", () => {
       expect(db.rpcs).toEqual([]);
     }
   });
+
+  it("D-773: HTTP 200 HTML de proxy interrompe com retryable=true e não suprime o pedido como fora_do_contrato", async () => {
+    const db = fakeDb({ pendentes: ["A1", "A2"] });
+    const pedidos: string[] = [];
+    const client = createShopeeClient({
+      environment: "sandbox",
+      partnerId: 1248019,
+      partnerKey: "chave-de-teste-nao-real",
+      fetchImpl: ((url: URL) => {
+        pedidos.push(url.searchParams.get("order_sn") ?? "");
+
+        return Promise.resolve(new Response("<html><body>proxy ok</body></html>", { status: 200 }));
+      }) as unknown as typeof fetch,
+      now: () => NOW,
+    });
+
+    const { outcome } = await rodar(db, { client, pedidos });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(pedidos).toEqual(["A1"]);
+    expect(db.gravados).toEqual([]);
+  });
 });

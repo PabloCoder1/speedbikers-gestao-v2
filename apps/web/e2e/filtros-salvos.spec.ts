@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * D-494: as visões salvas nas duas telas da Shopee -- e o primeiro e2e dos
@@ -47,6 +49,113 @@ async function apagarVisao(page: Page, nome: string): Promise<void> {
   await page.getByRole("button", { name: `Apagar filtro ${nome}`, exact: true }).click();
   await expect(page.getByText(nome, { exact: true })).toHaveCount(0);
 }
+
+test("filtros salvos: falha de conexão ao salvar conserva o nome e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const nome = "E2E visão com falha de conexão";
+  const screen = "/anuncios/shopee";
+  const lista = () => db.from("saved_filters").select("name,params").eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+
+  try {
+    await entrar(page, screen + "?estado=vinculado");
+    await page.getByRole("button", { name: "Salvar visão", exact: true }).click();
+    const janela = page.getByRole("dialog", { name: "Salvar visão" });
+    await janela.getByRole("textbox", { name: "Nome da visão" }).fill(nome);
+    const salvar = janela.getByRole("button", { name: "Salvar", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await salvar.click();
+    await expect(janela.getByRole("alert")).toContainText("Não foi possível confirmar");
+    await expect(salvar).toBeEnabled();
+    await expect(janela.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    await expect(janela.getByRole("textbox", { name: "Nome da visão" })).toHaveValue(nome);
+    expect(caiu()).toBe(true);
+    const antes = await lista();
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+
+    await salvar.click();
+    await expect(janela).toHaveCount(0);
+    const depois = await lista();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([{ name: nome, params: { estado: "vinculado" } }]);
+  } finally {
+    const limpeza = await db.from("saved_filters").delete().eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+test("filtros salvos: falha de conexão ao apagar mantém a visão e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const nome = "E2E apagar visão após falha de conexão";
+  const screen = "/anuncios/shopee";
+  const lista = () => db.from("saved_filters").select("id,name,params").eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+
+  try {
+    const inserida = await db.from("saved_filters").insert({
+      organization_id: seed.organizationId, created_by: seed.userId, screen, name: nome, params: { estado: "vinculado" },
+    });
+    if (inserida.error !== null) throw new Error(inserida.error.message);
+    const antes = await lista();
+    expect(antes.error).toBeNull();
+    await entrar(page, screen);
+    await menuDasVisoes(page).click();
+    const apagar = page.getByRole("button", { name: `Apagar filtro ${nome}`, exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await apagar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar" })).toBeVisible();
+    await expect(apagar).toBeEnabled();
+    expect(caiu()).toBe(true);
+    const depoisDaFalha = await lista();
+    expect(depoisDaFalha.error).toBeNull();
+    expect(depoisDaFalha.data).toEqual(antes.data);
+
+    await apagar.click();
+    await expect(page.getByRole("link", { name: nome, exact: true })).toHaveCount(0);
+    const depois = await lista();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([]);
+  } finally {
+    const limpeza = await db.from("saved_filters").delete().eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+test("filtros salvos: recusa do nome aparece dentro do diálogo e permite corrigir", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const nome = "E2E visão após recusa de nome";
+  const screen = "/anuncios/shopee";
+
+  try {
+    await entrar(page, screen + "?estado=vinculado");
+    await page.getByRole("button", { name: "Salvar visão", exact: true }).click();
+    const janela = page.getByRole("dialog", { name: "Salvar visão" });
+    const campo = janela.getByRole("textbox", { name: "Nome da visão" });
+    await campo.fill("x".repeat(81));
+    const salvar = janela.getByRole("button", { name: "Salvar", exact: true });
+    await salvar.click();
+    await expect(janela.getByRole("alert")).toHaveText("Não foi possível salvar o filtro.");
+    await expect(salvar).toBeEnabled();
+    await expect(campo).toHaveValue("x".repeat(81));
+    await campo.fill(nome);
+    await salvar.click();
+    await expect(janela).toHaveCount(0);
+    const depois = await db.from("saved_filters").select("params").eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([{ params: { estado: "vinculado" } }]);
+  } finally {
+    const limpeza = await db.from("saved_filters").delete().eq("created_by", seed.userId).eq("screen", screen).eq("name", nome);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
 
 test("/anuncios/shopee: a visão salva guarda o recorte, fica só nesta tela e sai quando apagada (D-494)", async ({ page }) => {
   const nome = "E2E vinculados da Shopee (D-494)";

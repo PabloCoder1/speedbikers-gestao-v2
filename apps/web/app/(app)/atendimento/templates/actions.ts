@@ -54,7 +54,7 @@ function translate(code: string | undefined, message: string): string {
     return "Só ADMIN e GESTOR podem gerenciar templates.";
   }
 
-  return message;
+  return "Não foi possível salvar o template. Tente novamente.";
 }
 
 export async function createTemplate(name: string, body: string): Promise<TemplateActionResult> {
@@ -70,6 +70,10 @@ export async function createTemplate(name: string, body: string): Promise<Templa
     supabase.auth.getUser(),
     currentMembership(supabase),
   ]);
+
+  if (membershipResult.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   const userId = authResult.data.user?.id;
   const organizationId = membershipResult.organizationId;

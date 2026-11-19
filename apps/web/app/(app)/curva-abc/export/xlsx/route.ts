@@ -34,7 +34,9 @@ export async function GET(request: Request): Promise<NextResponse> {
   // aba "Por conta" e o que valida as contas do link.
   const [membership, accounts, contasDoRecorte] = await Promise.all([
     currentMembership(supabase),
-    supabase.from("ml_accounts").select("id, slug, label").order("label"),
+    multicanal
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.from("ml_accounts").select("id, slug, label").order("label"),
     multicanal
       ? supabase
           .from("marketplace_accounts")
@@ -52,6 +54,18 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (organizationId === null) {
     return NextResponse.json({ error: { code: "no_organization" } }, { status: 403 });
+  }
+
+  // Sem as contas do escopo, o filtro de conta cairia em "todas" e a aba "Por conta" sairia sem colunas.
+  if (!multicanal && accounts.error !== null) {
+    return NextResponse.json({ error: { code: "accounts_read_failed", message: accounts.error.message } }, { status: 502 });
+  }
+
+  if (multicanal && contasDoRecorte.error !== null) {
+    return NextResponse.json(
+      { error: { code: "accounts_read_failed", message: contasDoRecorte.error.message } },
+      { status: 502 },
+    );
   }
 
   // Conta desconhecida cai em "todas", a MESMA regra da tela.

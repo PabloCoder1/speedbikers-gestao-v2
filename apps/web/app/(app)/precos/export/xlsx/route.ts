@@ -42,10 +42,15 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: { code: "no_organization" } }, { status: 403 });
   }
 
+  // Sem ler `ml_accounts`, `?conta=<uuid>` cairia em "todas as contas" em silêncio.
+  if (accounts !== null && accounts.error !== null) {
+    return NextResponse.json({ error: { code: "accounts_read_failed", message: accounts.error.message } }, { status: 502 });
+  }
+
   // Conta desconhecida (ou de outra organização) vira "sem filtro" antes de
   // tocar a RPC — a MESMA regra da tela, para o arquivo não sair de um recorte
   // que a tela não produziria.
-  const conta = accounts?.data?.find((row) => row.id === filters.account) ?? null;
+  const conta = accounts?.data.find((row) => row.id === filters.account) ?? null;
 
   const now = new Date();
   const { data, error } = await loadPriceExportData(supabase, organizationId, filters, conta?.id ?? null, now);

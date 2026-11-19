@@ -9,11 +9,11 @@ const DECIMAL = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2, useGr
 
 /**
  * Aspas sempre que houver separador, aspas ou quebra de linha (RFC 4180). E o
- * prefixo "'" neutraliza fórmula (=, +, -, @) vinda de título de anúncio —
- * injeção de fórmula ao abrir no Excel.
+ * prefixo "'" neutraliza fórmula (=, +, -, @, inclusive precedida por espaço,
+ * tabulação ou CR) vinda de título de anúncio — injeção de fórmula no Excel.
  */
 export function csvCell(value: string): string {
-  const seguro = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const seguro = /^[\t\r ]*[=+\-@]|^[\t\r]/.test(value) ? `'${value}` : value;
 
   return /[";\n\r]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
 }

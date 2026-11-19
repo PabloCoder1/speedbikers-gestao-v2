@@ -347,8 +347,12 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "invalid_payload", message: "state ausente" } }, 400);
     }
 
-    const numero = (valor: string | undefined): number | undefined =>
-      valor !== undefined && /^[0-9]+$/.test(valor) ? Number(valor) : undefined;
+    const numero = (valor: string | undefined): number | undefined => {
+      if (valor === undefined || !/^[0-9]+$/.test(valor)) return undefined;
+      const parsed = Number(valor);
+
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+    };
     const code = context.req.query("code");
     const shopId = numero(context.req.query("shop_id"));
     const mainAccountId = numero(context.req.query("main_account_id"));
@@ -703,7 +707,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const { dias, conta } = parsed.data;
     const opcoes = conta === undefined ? { dias } : { dias, conta };
 
-    return context.json(await triggerOrderFinancialsBackfill(deps, opcoes));
+    return respostaDoAgendador(context, await triggerOrderFinancialsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------
@@ -735,7 +739,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const { dias, conta } = parsed.data;
     const opcoes = conta === undefined ? { dias } : { dias, conta };
 
-    return context.json(await triggerOrderUserProductsBackfill(deps, opcoes));
+    return respostaDoAgendador(context, await triggerOrderUserProductsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------
@@ -1351,7 +1355,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
     const kind = form.kind;
 
@@ -1369,6 +1380,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1461,7 +1476,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
 
     if (!(file instanceof File)) {
@@ -1473,6 +1495,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1565,7 +1591,8 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const documentId = context.req.param("id");
-    const itemId = Number(context.req.param("itemId"));
+    const rawItemId = context.req.param("itemId");
+    const itemId = /^\d+$/.test(rawItemId) ? Number(rawItemId) : Number.NaN;
 
     if (!z.uuid().safeParse(documentId).success || !Number.isSafeInteger(itemId) || itemId <= 0) {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
@@ -1589,7 +1616,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "failed") {
-      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json({ totalItems: outcome.totalItems, resolvedItems: outcome.resolvedItems });
@@ -1636,7 +1663,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "failed") {
-      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json({ requestId: outcome.requestId, itens: outcome.itens, unidades: outcome.unidades });
@@ -1678,8 +1705,16 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
         ? body.mlAccountId
         : undefined;
 
-    if (mlAccountId === undefined) {
-      return context.json({ error: { code: "invalid_payload", message: "mlAccountId obrigatório" } }, 400);
+    if (mlAccountId === undefined || !z.uuid().safeParse(mlAccountId).success) {
+      return context.json(
+        {
+          error: {
+            code: "invalid_payload",
+            message: mlAccountId === undefined ? "mlAccountId obrigatório" : "mlAccountId inválido",
+          },
+        },
+        400,
+      );
     }
 
     const outcome = await startConnect(mlAccounts, authorized.caller, mlAccountId);

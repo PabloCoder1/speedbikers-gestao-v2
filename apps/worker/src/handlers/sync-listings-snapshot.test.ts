@@ -143,12 +143,12 @@ function fakeMercadoLivreClient(
         return Promise.resolve(options.schema.parse(page));
       }
 
-      if (options.path === "/items") {
+      if (options.path === "/items/bulk") {
         const ids = String(options.searchParams?.ids ?? "").split(",").filter(Boolean);
         const entries = ids.map((id) => {
           const body = itemsById[id];
 
-          return body === undefined ? { code: 404, body: {} } : { code: 200, body };
+          return { id, status_code: body === undefined ? 404 : 200, body: body ?? {} };
         });
 
         return Promise.resolve(options.schema.parse(entries));
@@ -289,7 +289,7 @@ describe("sync.listings.snapshot (D-058)", () => {
 
       // D-631: o 404 virou "o anúncio não existe mais" (marca a exclusão);
       // a falha de item que vira `partial` é outro código.
-      return Promise.resolve(options.schema.parse([{ code: 500, body: { message: "erro" } }]));
+      return Promise.resolve(options.schema.parse([{ id: "MLB-removido", status_code: 500, body: { message: "erro" } }]));
     }) as typeof d.mercadoLivre.request;
 
     const outcome = await run(d, lines);

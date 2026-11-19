@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { explicar404 } from "../../../lib/api-desatualizada";
-import { createClient } from "../../../lib/supabase/browser";
+import { lerTokenDeSessao } from "../../../lib/chamar-api";
 import { LinkDeAcesso } from "./link-de-acesso";
 
 /**
@@ -49,11 +49,10 @@ export function ReemitirLink({ userId, nome }: { userId: string; nome: string })
 
     setEstado({ kind: "gerando" });
 
-    const { data } = await createClient().auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao();
 
-    if (token === undefined) {
-      setEstado({ kind: "erro", mensagem: "Sessão expirada — atualize a página e entre de novo." });
+    if (!sessao.ok) {
+      setEstado({ kind: "erro", mensagem: sessao.mensagem });
 
       return;
     }
@@ -68,7 +67,7 @@ export function ReemitirLink({ userId, nome }: { userId: string; nome: string })
       */
       const response = await fetch(`${API_URL}/v1/organization/members/${userId}/access-link`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: "{}",
       });
 

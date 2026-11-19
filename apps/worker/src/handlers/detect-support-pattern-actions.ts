@@ -3,7 +3,9 @@ import { detectSupportPatterns } from "@sb/domain";
 import type { SkuClaimAggregate, SupportPatternFinding } from "@sb/domain";
 import { z } from "zod";
 
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 
 /**
@@ -48,19 +50,31 @@ export function createDetectSupportPatternActionsHandler(
     // Vínculos de SKU cujos cases são CLAIM aberto. O `!inner` no embed
     // filtra pelo pai — sem ele, o filtro de canal viraria "link com case
     // nulo" em vez de "sem linha".
-    const skuLinks = await deps.db
-      .from("support_case_links")
-      .select("support_case_id, sku_id, skus(sku, title), support_cases!inner(internal_status, channel, is_mediation)")
-      .eq("organization_id", organizationId)
-      .not("sku_id", "is", null)
-      .eq("support_cases.channel", "CLAIM")
-      .neq("support_cases.internal_status", "RESOLVIDO");
+    //
+    // D-738: paginado por `id`. Sem `.range()` a resposta parava em 1.000
+    // linhas (`max_rows`), sem erro, e o padrão de um SKU depois do corte
+    // simplesmente não virava ação.
+    const readSkuLinks = () =>
+      readAllPages(
+        (from, to) =>
+          deps.db
+            .from("support_case_links")
+            .select("support_case_id, sku_id, skus(sku, title), support_cases!inner(internal_status, channel, is_mediation)")
+            .eq("organization_id", organizationId)
+            .not("sku_id", "is", null)
+            .eq("support_cases.channel", "CLAIM")
+            .neq("support_cases.internal_status", "RESOLVIDO")
+            .order("id")
+            .range(from, to),
+        { label: "support_case_links (sku)" },
+      );
+    let rows: Awaited<ReturnType<typeof readSkuLinks>>;
 
-    if (skuLinks.error !== null) {
-      return { status: "failed", retryable: true, reason: skuLinks.error.message };
+    try {
+      rows = await readSkuLinks();
+    } catch (error) {
+      return { status: "failed", retryable: true, reason: error instanceof Error ? error.message : String(error) };
     }
-
-    const rows = skuLinks.data;
 
     if (rows.length === 0) {
       context.logger.info("detect_support_pattern_actions_done", {
@@ -72,28 +86,38 @@ export function createDetectSupportPatternActionsHandler(
     }
 
     // Pedidos vinculados aos MESMOS cases — link de pedido e link de SKU são
-    // linhas distintas (`exactly_one_target`), daí a segunda consulta.
+    // linhas distintas (`exactly_one_target`), daí a segunda consulta. D-738:
+    // os cases vão ao `.in` em lotes de `LOOKUP_CHUNK` (a lista vira URL) e
+    // cada lote também é paginado.
     const caseIds = [...new Set(rows.map((row) => row.support_case_id))];
-
-    const orderLinks = await deps.db
-      .from("support_case_links")
-      .select("support_case_id, orders(total_amount)")
-      .eq("organization_id", organizationId)
-      .in("support_case_id", caseIds)
-      .not("order_id", "is", null);
-
-    if (orderLinks.error !== null) {
-      return { status: "failed", retryable: true, reason: orderLinks.error.message };
-    }
 
     const orderTotalByCase = new Map<string, number>();
 
-    for (const link of orderLinks.data) {
-      const amount = link.orders?.total_amount;
+    try {
+      for (const idChunk of chunk(caseIds, LOOKUP_CHUNK)) {
+        const orderLinks = await readAllPages(
+          (from, to) =>
+            deps.db
+              .from("support_case_links")
+              .select("support_case_id, orders(total_amount)")
+              .eq("organization_id", organizationId)
+              .in("support_case_id", idChunk)
+              .not("order_id", "is", null)
+              .order("id")
+              .range(from, to),
+          { label: "support_case_links (order)" },
+        );
 
-      if (amount != null) {
-        orderTotalByCase.set(link.support_case_id, (orderTotalByCase.get(link.support_case_id) ?? 0) + amount);
+        for (const link of orderLinks) {
+          const amount = link.orders?.total_amount;
+
+          if (amount != null) {
+            orderTotalByCase.set(link.support_case_id, (orderTotalByCase.get(link.support_case_id) ?? 0) + amount);
+          }
+        }
       }
+    } catch (error) {
+      return { status: "failed", retryable: true, reason: error instanceof Error ? error.message : String(error) };
     }
 
     // Agrega por SKU. Um case com dois SKUs vinculados conta nos dois — a
@@ -103,8 +127,9 @@ export function createDetectSupportPatternActionsHandler(
     // Dos TRES guardas de nulo que moravam aqui, dois eram mortos e um NAO
     // era — e sem o cast o compilador separa os dois casos sozinho (D-200):
     //
-    // - `sku_id` e anulavel no banco, mas o `.not("sku_id", "is", null)` da
-    //   consulta acima estreita o tipo. Guarda morto.
+    // - `sku_id` e anulavel no banco. O `.not("sku_id", "is", null)` filtra
+    //   no servidor, mas desde a paginacao (D-738) o tipo chega por
+    //   `readAllPages` sem esse estreitamento: o guarda voltou, nunca dispara.
     // - `support_cases` vem com `!inner`. Guarda morto.
     // - `skus` NAO tem `!inner`, e o embed continua anulavel. **Este fica.**
     //
@@ -112,10 +137,9 @@ export function createDetectSupportPatternActionsHandler(
     // exatamente o terceiro. E o que o cast escondia: com ele, os tres pareciam
     // igualmente necessarios (ou igualmente dispensaveis) e nada distinguia.
     for (const row of rows) {
-      if (row.skus === null) {
+      if (row.skus === null || row.sku_id === null) {
         continue;
       }
-
 
       const entry = bySkuCases.get(row.sku_id) ?? {
         sku: row.skus.sku,

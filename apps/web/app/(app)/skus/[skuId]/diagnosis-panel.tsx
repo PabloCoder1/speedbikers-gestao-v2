@@ -4,7 +4,7 @@ import type { SalesAnomalyDiagnosis } from "@sb/domain";
 import { useState, type ReactNode } from "react";
 
 import { formatCurrency } from "../../../../lib/format";
-import { createClient } from "../../../../lib/supabase/browser";
+import { extrairNarrativaDoCopiloto, lerTokenDeSessao } from "../../../../lib/chamar-api";
 import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
 
 /**
@@ -80,62 +80,66 @@ export function DiagnosisPanel({
     setNarrativa(null);
     setNarrationError(null);
 
-    const outcome = await diagnoseSku(skuId);
+    try {
+      const outcome = await diagnoseSku(skuId);
 
-    setBusy(false);
-    setResult(outcome);
+      setResult(outcome);
+    } catch {
+      setResult({ ok: false, message: "Não foi possível consultar o diagnóstico agora. Tente de novo." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleNarrate(diagnosis: SalesAnomalyDiagnosis, impactBrl: number | null): Promise<void> {
     setNarrating(true);
     setNarrationError(null);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-
-    if (token === undefined) {
-      setNarrationError("Sua sessão expirou. Entre de novo.");
-      setNarrating(false);
-
-      return;
-    }
-
-    let response: Response;
-
     try {
-      response = await fetch(`${API_URL}/v1/copilot/query`, {
+      const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
+
+      if (!sessao.ok) {
+        setNarrationError(sessao.mensagem);
+
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/v1/copilot/query`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: JSON.stringify({
           tool: "narrate_sku_diagnosis",
           input: { diagnosis, impactBrl },
         }),
       });
+
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          typeof payload === "object" && payload !== null && "error" in payload
+            ? (payload as { error?: { message?: string } }).error?.message
+            : undefined;
+
+        setNarrationError(message ?? "Não foi possível narrar o diagnóstico.");
+
+        return;
+      }
+
+      const texto = extrairNarrativaDoCopiloto(payload);
+
+      if (texto === null) {
+        setNarrationError("A API respondeu em formato inesperado. Tente novamente.");
+
+        return;
+      }
+
+      setNarrativa(texto);
     } catch {
       setNarrationError("Não foi possível falar com o servidor. Tente de novo.");
+    } finally {
       setNarrating(false);
-
-      return;
     }
-
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      const message =
-        typeof payload === "object" && payload !== null && "error" in payload
-          ? (payload as { error?: { message?: string } }).error?.message
-          : undefined;
-
-      setNarrationError(message ?? "Não foi possível narrar o diagnóstico.");
-      setNarrating(false);
-
-      return;
-    }
-
-    const payload = (await response.json()) as { data: { narrativa: string } };
-
-    setNarrativa(payload.data.narrativa);
-    setNarrating(false);
   }
 
   const anomalia = result !== null && result.ok && result.status === "anomaly" ? result.diagnosis : null;

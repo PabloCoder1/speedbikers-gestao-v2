@@ -310,17 +310,20 @@ describe("fetchListingVisits (D-032)", () => {
     expect(upserted.filter((row) => row.item_id === "MLB1")).toHaveLength(2);
   });
 
-  it("falha em um dia rejeita o lote inteiro, sem checkpoint parcial", async () => {
+  it("D-780: falha ao gravar daily_listing_visits rejeita o lote sem checkpoint parcial e interrompe para retry", async () => {
     const { db, upserted } = fakeDb({
-      links: [{ item_id: "MLB1" }],
+      links: [{ item_id: "MLB1" }, { item_id: "MLB2" }],
       upsertFailsFor: ["2026-08-22"],
     });
-    const { client } = fakeMercadoLivreClient({ MLB1: TIME_WINDOW_MLB1 });
+    const { client, requests } = fakeMercadoLivreClient({ MLB1: TIME_WINDOW_MLB1, MLB2: TIME_WINDOW_MLB1 });
+    const lines: string[] = [];
 
-    const result = await fetchListingVisits(baseParams(db, client));
-
-    expect(result).toEqual({ itemsProcessed: 0, itemsFailed: 0, itemsSkipped: 0 });
+    await expect(fetchListingVisits(baseParams(db, client, lines))).rejects.toThrow(
+      /falha ao gravar daily_listing_visits \(MLB1\): boom/,
+    );
     expect(upserted).toHaveLength(0);
+    expect(requests).toHaveLength(1);
+    expect(lines.some((line) => line.includes("listing_visits_not_recorded"))).toBe(true);
   });
 
   it("falha ao ler listings rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {

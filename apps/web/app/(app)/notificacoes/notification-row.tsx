@@ -122,9 +122,17 @@ export function NotificationRow({ notification }: { notification: NotificationRo
     setBusy(true);
     setError(null);
 
-    const result = await markNotificationRead(notification.id);
+    let result: Awaited<ReturnType<typeof markNotificationRead>>;
 
-    setBusy(false);
+    try {
+      result = await markNotificationRead(notification.id);
+    } catch {
+      setError("Não foi possível confirmar a leitura. Tente novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);

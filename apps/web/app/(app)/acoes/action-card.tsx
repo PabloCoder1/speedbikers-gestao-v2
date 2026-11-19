@@ -10,7 +10,7 @@ import type { ActionShortcut } from "../../../lib/action-shortcuts";
 import { formatCurrency } from "../../../lib/format";
 import { formatDecisionSnapshot, outcomeWindowLabel } from "../../../lib/decision-format";
 import { actionSeverityLabel, actionStatusLabel } from "../../../lib/labels";
-import { createClient } from "../../../lib/supabase/browser";
+import { extrairNarrativaDoCopiloto, lerTokenDeSessao } from "../../../lib/chamar-api";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
 /**
@@ -94,49 +94,48 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
     setExplaining(true);
     setExplainError(null);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-
-    if (token === undefined) {
-      setExplainError("Sua sessão expirou. Entre de novo.");
-      setExplaining(false);
-
-      return;
-    }
-
-    let response: Response;
-
     try {
-      response = await fetch(`${API_URL}/v1/copilot/query`, {
+      const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
+
+      if (!sessao.ok) {
+        setExplainError(sessao.mensagem);
+
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/v1/copilot/query`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: JSON.stringify({ tool: "narrate_action", input: { actionId: action.id } }),
       });
+
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          typeof payload === "object" && payload !== null && "error" in payload
+            ? (payload as { error?: { message?: string } }).error?.message
+            : undefined;
+
+        setExplainError(message ?? "Não foi possível explicar a ação.");
+
+        return;
+      }
+
+      const narrativa = extrairNarrativaDoCopiloto(payload);
+
+      if (narrativa === null) {
+        setExplainError("A API respondeu em formato inesperado. Tente novamente.");
+
+        return;
+      }
+
+      setExplanation(narrativa);
     } catch {
       setExplainError("Não foi possível falar com o servidor. Tente de novo.");
+    } finally {
       setExplaining(false);
-
-      return;
     }
-
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      const message =
-        typeof payload === "object" && payload !== null && "error" in payload
-          ? (payload as { error?: { message?: string } }).error?.message
-          : undefined;
-
-      setExplainError(message ?? "Não foi possível explicar a ação.");
-      setExplaining(false);
-
-      return;
-    }
-
-    const payload = (await response.json()) as { data: { narrativa: string } };
-
-    setExplanation(payload.data.narrativa);
-    setExplaining(false);
   }
 
   async function run(
@@ -147,18 +146,26 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
     setEmCurso(next);
     setError(null);
 
-    const result = await fn();
+    let result: { ok: boolean; message: string | null };
+
+    try {
+      result = await fn();
+    } catch {
+      setError("Não foi possível atualizar a ação. Tente novamente.");
+
+      return;
+    } finally {
+      setEmCurso(null);
+    }
 
     if (!result.ok) {
       setError(result.message);
-      setEmCurso(null);
 
       return;
     }
 
     setStatus(next);
     if (nextAssigneeId !== undefined) setAssigneeId(nextAssigneeId);
-    setEmCurso(null);
   }
 
   async function handleRegisterDecision(): Promise<void> {
@@ -169,9 +176,17 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
     setEmCurso("decisao");
     setError(null);
 
-    const result = await registerDecision(action.id, decision.trim());
+    let result: { ok: boolean; message: string | null };
 
-    setEmCurso(null);
+    try {
+      result = await registerDecision(action.id, decision.trim());
+    } catch {
+      setError("Não foi possível registrar a decisão. Tente novamente.");
+
+      return;
+    } finally {
+      setEmCurso(null);
+    }
 
     if (!result.ok) {
       setError(result.message);
@@ -267,7 +282,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  void run(() => claimAction(action.id, userId), "em_andamento", userId);
+                  void run(() => claimAction(action.id), "em_andamento", userId);
                 }}
               >
                 {emCurso === "em_andamento" ? "Assumindo…" : "Assumir"}

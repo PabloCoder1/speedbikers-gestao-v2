@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { chaveDoSku, lerListaDeSkus, mensagemDaApi, quantidadeValida } from "./saida-manual";
+import {
+  MAX_QUANTIDADE,
+  chaveDoSku,
+  lerListaDeSkus,
+  mensagemDaApi,
+  particionarEmLotes,
+  quantidadeValida,
+  respostaDeEdicaoDeItemValida,
+  respostaDeSaidaValida,
+  somarQuantidadeNoLimite,
+} from "./saida-manual";
 
 describe("chaveDoSku", () => {
   it("normaliza como a coluna gerada sku_key", () => {
@@ -54,5 +64,30 @@ describe("mensagemDaApi", () => {
     expect(mensagemDaApi({ error: { code: "unauthorized" } })).toBeUndefined();
     expect(mensagemDaApi(null)).toBeUndefined();
     expect(mensagemDaApi("texto")).toBeUndefined();
+  });
+});
+
+describe("guardas da saída manual e edição de item (D-771)", () => {
+  it("particionarEmLotes fatia listas longas para consultas .in() sem estourar URL", () => {
+    const ids = Array.from({ length: 250 }, (_, i) => `id-${String(i)}`);
+    const lotes = particionarEmLotes(ids, 100);
+
+    expect(lotes.map((l) => l.length)).toEqual([100, 100, 50]);
+    expect(particionarEmLotes([])).toEqual([]);
+  });
+
+  it("somarQuantidadeNoLimite não ultrapassa MAX_QUANTIDADE", () => {
+    expect(somarQuantidadeNoLimite(5, 3)).toBe(8);
+    expect(somarQuantidadeNoLimite(MAX_QUANTIDADE - 2, 10)).toBe(MAX_QUANTIDADE);
+  });
+
+  it("valida corpo JSON de sucesso da saída manual e da edição de item", () => {
+    expect(respostaDeSaidaValida({ requestId: "req-1", itens: 1, unidades: 2 }, "req-1")).toBe(true);
+    expect(respostaDeSaidaValida({ requestId: "outro" }, "req-1")).toBe(false);
+    expect(respostaDeSaidaValida(null, "req-1")).toBe(false);
+
+    expect(respostaDeEdicaoDeItemValida({ totalItems: 3, resolvedItems: 2 })).toBe(true);
+    expect(respostaDeEdicaoDeItemValida(null)).toBe(false);
+    expect(respostaDeEdicaoDeItemValida({})).toBe(false);
   });
 });

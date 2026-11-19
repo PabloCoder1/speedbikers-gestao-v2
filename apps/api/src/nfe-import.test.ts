@@ -26,11 +26,13 @@ interface ExistingDocument {
   id: string;
   status: string;
   parsed_at: string | null;
+  last_error?: string | null;
 }
 
 function fakeDb(options: {
   existingDocumentId?: string;
   existing?: ExistingDocument;
+  lookupFails?: boolean;
   insertFails?: boolean;
   /** O `update ... where status = 'FAILED'` não acha a linha: outro reenvio chegou antes. */
   retryLosesRace?: boolean;
@@ -38,9 +40,11 @@ function fakeDb(options: {
   db: NfeImportDeps["db"];
   inserted: ReturnType<typeof vi.fn>;
   updated: ReturnType<typeof vi.fn>;
+  deleted: ReturnType<typeof vi.fn>;
 } {
   const inserted = vi.fn();
   const updated = vi.fn();
+  const deleted = vi.fn();
 
   // `existingDocumentId` sozinho é o duplicado de sempre: um documento que foi lido.
   const existing: ExistingDocument | null =
@@ -54,26 +58,29 @@ function fakeDb(options: {
       select: () => ({
         eq: () => ({
           eq: () => ({
-            maybeSingle: () => Promise.resolve({ data: existing, error: null }),
+            maybeSingle: () =>
+              Promise.resolve(
+                options.lookupFails === true
+                  ? { data: null, error: { message: "connection timeout" } }
+                  : { data: existing, error: null },
+              ),
           }),
         }),
       }),
       update: (row: unknown) => {
         updated(row);
 
-        return {
-          eq: () => ({
-            eq: () => ({
-              select: () => ({
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: options.retryLosesRace === true || existing === null ? null : { id: existing.id },
-                    error: null,
-                  }),
-              }),
-            }),
-          }),
+        const result = {
+          data: options.retryLosesRace === true || existing === null ? null : { id: existing.id },
+          error: null,
         };
+        const chain = {
+          eq: () => chain,
+          select: () => ({ maybeSingle: () => Promise.resolve(result) }),
+          then: <R>(resolve: (value: { error: null }) => R) => Promise.resolve({ error: null }).then(resolve),
+        };
+
+        return chain;
       },
       insert: (row: unknown) => {
         inserted(row);
@@ -89,14 +96,31 @@ function fakeDb(options: {
           }),
         };
       },
+      delete: () => {
+        const filters: [string, unknown][] = [];
+        const chain = {
+          eq: (column: string, value: unknown) => {
+            filters.push([column, value]);
+
+            return chain;
+          },
+          then: <R>(resolve: (value: { error: null }) => R) => {
+            deleted(filters);
+
+            return Promise.resolve({ error: null }).then(resolve);
+          },
+        };
+
+        return chain;
+      },
     }),
   } as unknown as NfeImportDeps["db"];
 
-  return { db, inserted, updated };
+  return { db, inserted, updated, deleted };
 }
 
 function deps(
-  options: Parameters<typeof fakeDb>[0] & { uploadFails?: boolean } = {},
+  options: Parameters<typeof fakeDb>[0] & { uploadFails?: boolean; enqueueFails?: boolean } = {},
 ): {
   deps: NfeImportDeps;
   uploads: { path: string }[];
@@ -104,11 +128,12 @@ function deps(
   lines: string[];
   inserted: ReturnType<typeof vi.fn>;
   updated: ReturnType<typeof vi.fn>;
+  deleted: ReturnType<typeof vi.fn>;
 } {
   const uploads: { path: string }[] = [];
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
   const lines: string[] = [];
-  const { db, inserted, updated } = fakeDb(options);
+  const { db, inserted, updated, deleted } = fakeDb(options);
 
   return {
     uploads,
@@ -116,6 +141,7 @@ function deps(
     lines,
     inserted,
     updated,
+    deleted,
     deps: {
       db,
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
@@ -133,6 +159,10 @@ function deps(
       },
       enqueuer: {
         enqueue: (request) => {
+          if (options.enqueueFails === true) {
+            return Promise.reject(new Error("cloud tasks down"));
+          }
+
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
 
           return Promise.resolve({
@@ -286,6 +316,46 @@ describe("receiveNfeUpload", () => {
 
     expect(ctx.inserted).toHaveBeenCalledWith(expect.objectContaining({ uploaded_by: CALLER.userId }));
   });
+
+  it("D-744: erro na consulta de duplicado interrompe antes do bucket e devolve erro", async () => {
+    const ctx = deps({ lookupFails: true });
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, FILE);
+
+    expect(result).toEqual({ status: "error", reason: "connection timeout" });
+    expect(ctx.uploads).toHaveLength(0);
+    expect(ctx.inserted).not.toHaveBeenCalled();
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("D-744: falha ao enfileirar parse de documento novo remove a linha em UPLOADED antes de propagar", async () => {
+    const ctx = deps({ enqueueFails: true });
+
+    await expect(receiveNfeUpload(ctx.deps, CALLER, FILE)).rejects.toThrow("cloud tasks down");
+
+    expect(ctx.deleted).toHaveBeenCalledWith([
+      ["id", "d1000000-0000-4000-8000-00000000000d"],
+      ["status", "UPLOADED"],
+    ]);
+  });
+
+  it("D-744: falha ao enfileirar reenvio de leitura devolve o documento de UPLOADED para FAILED", async () => {
+    const ctx = deps({
+      existing: { id: "doc-falhou", status: "FAILED", parsed_at: null, last_error: "erro anterior" },
+      enqueueFails: true,
+    });
+
+    await expect(receiveNfeUpload(ctx.deps, CALLER, FILE)).rejects.toThrow("cloud tasks down");
+
+    expect(ctx.updated).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ status: "UPLOADED", last_error: null }),
+    );
+    expect(ctx.updated).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ status: "FAILED", last_error: "erro anterior" }),
+    );
+  });
 });
 
 /** Fake para `confirmNfeApply`: cadeia `select().eq().eq().maybeSingle()` e `update().eq().eq()`. */
@@ -293,6 +363,8 @@ function applyDb(options: {
   status?: string;
   missing?: boolean;
   updateFails?: boolean;
+  updateRaced?: boolean;
+  rollbackFails?: boolean;
   totalItems?: number | null;
   resolvedItems?: number | null;
   documentType?: string;
@@ -340,14 +412,22 @@ function applyDb(options: {
       update: (values: Record<string, unknown>) => {
         updates.push(values);
 
-        return {
-          eq: () => ({
-            eq: () =>
-              Promise.resolve(
-                options.updateFails === true ? { error: { message: "boom" } } : { error: null },
-              ),
-          }),
+        const result =
+          values.status === "PARSED"
+            ? { data: null, error: options.rollbackFails === true ? { message: "rollback boom" } : null }
+            : options.updateFails === true
+              ? { data: null, error: { message: "boom" } }
+              : options.updateRaced === true
+                ? { data: null, error: null }
+                : { data: { id: "doc-1" }, error: null };
+
+        const chain = {
+          eq: () => chain,
+          select: () => ({ maybeSingle: () => Promise.resolve(result) }),
+          then: <R>(resolve: (value: typeof result) => R) => Promise.resolve(result).then(resolve),
         };
+
+        return chain;
       },
     }),
   } as unknown as NfeImportDeps["db"];
@@ -360,6 +440,9 @@ function applyDeps(
     status?: string;
     missing?: boolean;
     updateFails?: boolean;
+    updateRaced?: boolean;
+    enqueueFails?: boolean;
+    rollbackFails?: boolean;
     totalItems?: number | null;
     resolvedItems?: number | null;
     documentType?: string;
@@ -380,6 +463,10 @@ function applyDeps(
       store: { upload: () => Promise.resolve() },
       enqueuer: {
         enqueue: (request) => {
+          if (options.enqueueFails === true) {
+            return Promise.reject(new Error("cloud tasks down"));
+          }
+
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
 
           return Promise.resolve({
@@ -492,6 +579,25 @@ describe("confirmNfeApply", () => {
 
     expect(outcome).toMatchObject({ status: "rejected" });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("corrida concorrente que atualiza zero linhas é recusada sem enfileirar", async () => {
+    const ctx = applyDeps({ updateRaced: true });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("falha ao enfileirar devolve o documento para PARSED antes de falhar", async () => {
+    const ctx = applyDeps({ enqueueFails: true });
+
+    await expect(confirmNfeApply(ctx.deps, CALLER, "doc-1")).rejects.toThrow("cloud tasks down");
+    expect(ctx.updates).toEqual([
+      { status: "APPLYING", applied_by: CALLER.userId },
+      { status: "PARSED", applied_by: null },
+    ]);
   });
 });
 

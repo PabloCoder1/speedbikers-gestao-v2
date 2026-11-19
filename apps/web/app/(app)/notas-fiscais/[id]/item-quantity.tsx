@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { lerTokenDeSessao } from "../../../../lib/chamar-api";
 import { formatCount } from "../../../../lib/format";
-import { mensagemDaApi } from "../../../../lib/saida-manual";
-import { createClient } from "../../../../lib/supabase/browser";
+import { mensagemDaApi, respostaDeEdicaoDeItemValida } from "../../../../lib/saida-manual";
 
 /**
  * Quantidade de um item lido, editável enquanto o documento está em
@@ -64,11 +64,10 @@ export function ItemQuantity({
     setAcao(comando.acao === "remover" ? "removendo" : "salvando");
     setErro(null);
 
-    const { data } = await createClient().auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
-    if (token === undefined) {
-      setErro("Sua sessão expirou. Entre de novo.");
+    if (!sessao.ok) {
+      setErro(sessao.mensagem);
       setAcao(null);
 
       return;
@@ -79,7 +78,7 @@ export function ItemQuantity({
     try {
       resposta = await fetch(`${API_URL}/v1/nfe-imports/${documentId}/items/${String(itemId)}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: JSON.stringify(comando),
       });
     } catch {
@@ -89,10 +88,15 @@ export function ItemQuantity({
       return;
     }
 
-    if (!resposta.ok) {
-      const payload: unknown = await resposta.json().catch(() => null);
+    const payload: unknown = await resposta.json().catch(() => null);
 
-      setErro(mensagemDaApi(payload) ?? "Não foi possível alterar o item.");
+    if (!resposta.ok || !respostaDeEdicaoDeItemValida(payload)) {
+      setErro(
+        mensagemDaApi(payload) ??
+          (resposta.ok
+            ? "O servidor respondeu em formato inesperado. Recarregue e confira o item."
+            : "Não foi possível alterar o item."),
+      );
       setAcao(null);
 
       return;
@@ -118,8 +122,15 @@ export function ItemQuantity({
               setValor(event.target.value);
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && nova !== null) void enviar({ acao: "quantidade", quantidade: nova });
-              if (event.key === "Escape") setModo("ver");
+              if (event.key === "Enter" && !ocupado && nova !== null && nova !== quantity) {
+                void enviar({ acao: "quantidade", quantidade: nova });
+              }
+
+              if (event.key === "Escape" && !ocupado) {
+                setModo("ver");
+                setValor(String(quantity));
+                setErro(null);
+              }
             }}
             aria-label="Nova quantidade do item"
             aria-invalid={nova === null}
