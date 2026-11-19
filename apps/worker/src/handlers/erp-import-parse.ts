@@ -58,6 +58,36 @@ interface MappedRow {
   payload: Json;
 }
 
+interface ErpParseVersionArgs {
+  p_batch_id: string;
+  p_parse_version: string;
+}
+
+interface ErpParseCounts {
+  total_rows: number;
+  ok_rows: number;
+  skipped_rows: number;
+  invalid_rows: number;
+}
+
+interface ErpParseRpcResult<Data> {
+  data: Data | null;
+  error: { message: string } | null;
+}
+
+interface ErpParseRpc {
+  rpc(
+    name: "stage_erp_parse_chunk",
+    args: ErpParseVersionArgs & { p_offset: number; p_rows: MappedRow[] },
+  ): PromiseLike<ErpParseRpcResult<boolean>>;
+  rpc(
+    name: "publish_erp_parse",
+    args: ErpParseVersionArgs & { p_expected_rows: number; p_parsed_at: string },
+  ): PromiseLike<ErpParseRpcResult<ErpParseCounts[]>>;
+}
+
+const PARSE_SUPERADO = { status: "failed", retryable: true, reason: "a versão da leitura do lote foi substituída" } as const;
+
 /**
  * Converte o registro normalizado para o tipo da coluna `jsonb`.
  *
@@ -139,6 +169,9 @@ function mapRows(
 }
 
 export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
+  // Contrato local da migration até regenerar os tipos compartilhados a partir do Dev.
+  const persistence = deps.db as unknown as ErpParseRpc;
+
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
@@ -220,51 +253,33 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       return marcarFalhaNoLote(deps.db, batchId, version, { last_error: reason, total_rows: body.length }, false);
     }
 
-    // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
-    // reexecução começar do zero em vez de colidir com a chave única.
-    const clearedRows = await deps.db.from("erp_import_rows").delete().eq("batch_id", batchId);
-
-    if (clearedRows.error !== null) {
-      return { status: "failed", retryable: true, reason: clearedRows.error.message };
-    }
-
-    const clearedSnapshots = await deps.db.from("erp_stock_snapshots").delete().eq("batch_id", batchId);
-
-    if (clearedSnapshots.error !== null) {
-      return { status: "failed", retryable: true, reason: clearedSnapshots.error.message };
-    }
-
+    const parse = { p_batch_id: batchId, p_parse_version: version };
     for (let start = 0; start < rows.length; start += CHUNK) {
-      const chunk = rows.slice(start, start + CHUNK);
-
-      const inserted = await deps.db
-        .from("erp_import_rows")
-        .insert(chunk.map((row) => ({ ...row, batch_id: batchId })));
-
-      if (inserted.error !== null) {
-        return { status: "failed", retryable: true, reason: inserted.error.message };
+      const staged = await persistence.rpc("stage_erp_parse_chunk", {
+        ...parse,
+        p_offset: start,
+        p_rows: rows.slice(start, start + CHUNK),
+      });
+      if (staged.error !== null) {
+        return { status: "failed", retryable: true, reason: staged.error.message };
+      }
+      if (staged.data !== true) {
+        return PARSE_SUPERADO;
       }
     }
 
-    const counts = {
-      total_rows: rows.length,
-      ok_rows: rows.filter((r) => r.status === "OK").length,
-      skipped_rows: rows.filter((r) => r.status === "SKIPPED").length,
-      invalid_rows: rows.filter((r) => r.status === "INVALID").length,
-    };
-
-    const finished = await deps.db
-      .from("erp_import_batches")
-      .update({
-        ...counts,
-        status: "PARSED",
-        parsed_at: (deps.now?.() ?? new Date()).toISOString(),
-        last_error: null,
-      })
-      .eq("id", batchId);
+    const finished = await persistence.rpc("publish_erp_parse", {
+      ...parse,
+      p_expected_rows: rows.length,
+      p_parsed_at: (deps.now?.() ?? new Date()).toISOString(),
+    });
 
     if (finished.error !== null) {
       return { status: "failed", retryable: true, reason: finished.error.message };
+    }
+    const counts = finished.data?.[0];
+    if (counts === undefined) {
+      return PARSE_SUPERADO;
     }
 
     context.logger.info("erp_parse_finished", { batch_id: batchId, ...counts });
@@ -293,7 +308,7 @@ async function marcarFalhaNoLote(
     return { status: "failed", retryable: true, reason: failed.error.message };
   }
   if (failed.data === null) {
-    return { status: "failed", retryable: true, reason: "a versão da leitura do lote foi substituída" };
+    return PARSE_SUPERADO;
   }
 
   return { status: "failed", retryable, reason: update.last_error };

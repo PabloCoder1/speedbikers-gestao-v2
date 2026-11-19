@@ -33,7 +33,7 @@ const LINK_SHEET = [
 interface Captured {
   updates: Record<string, unknown>[];
   inserted: Record<string, unknown>[][];
-  deletedTables: string[];
+  publishAttempts: number;
 }
 
 function fakeDeps(options: {
@@ -44,11 +44,12 @@ function fakeDeps(options: {
   batchStateAfterRead?: { status: string; updatedAt: string };
   batchMissing?: boolean;
   readFails?: boolean;
-  deleteFailsTable?: string;
+  stageFailsOffset?: number;
   updateError?: (values: Record<string, unknown>) => { message: string } | null;
 }): { deps: ParseDeps; captured: Captured; lines: string[] } {
-  const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
+  const captured: Captured = { updates: [], inserted: [], publishAttempts: 0 };
   const lines: string[] = [];
+  const staged = new Map<number, Record<string, unknown>[]>();
   let batch = {
     id: BATCH,
     kind: options.kind ?? "STOCK",
@@ -60,7 +61,7 @@ function fakeDeps(options: {
   };
 
   const db = {
-    from: (table: string) => ({
+    from: () => ({
       select: () => ({
         eq: () => ({
           maybeSingle: () =>
@@ -82,6 +83,7 @@ function fakeDeps(options: {
           if (!matches || error !== null) return Promise.resolve({ data: null, error });
 
           captured.updates.push(values);
+          staged.clear();
           batch = {
             ...batch,
             ...values,
@@ -99,22 +101,45 @@ function fakeDeps(options: {
         };
         return update;
       },
-      insert: (rows: Record<string, unknown>[]) => {
-        captured.inserted.push(rows);
-
-        return Promise.resolve({ error: null });
-      },
-      delete: () => {
-        captured.deletedTables.push(table);
-
-        return {
-          eq: () =>
-            Promise.resolve({
-              error: options.deleteFailsTable === table ? { message: `falha ao limpar ${table}` } : null,
-            }),
-        };
-      },
     }),
+    rpc: (name: "stage_erp_parse_chunk" | "publish_erp_parse", args: {
+      p_parse_version: string;
+      p_offset?: number;
+      p_rows?: Record<string, unknown>[];
+      p_expected_rows?: number;
+      p_parsed_at?: string;
+    }) => {
+      const current = batch.status === "PARSING" && batch.updated_at === args.p_parse_version;
+      if (name === "stage_erp_parse_chunk") {
+        if (!current) return Promise.resolve({ data: false, error: null });
+        if (args.p_offset === undefined || args.p_rows === undefined) throw new Error("bloco sem posição ou linhas");
+        if (options.stageFailsOffset === args.p_offset) {
+          return Promise.resolve({ data: null, error: { message: "bloco indisponível" } });
+        }
+        staged.set(args.p_offset, args.p_rows);
+        captured.inserted.push(args.p_rows);
+        return Promise.resolve({ data: true, error: null });
+      }
+
+      captured.publishAttempts += 1;
+      if (!current) return Promise.resolve({ data: [], error: null });
+      const rows = [...staged.values()].flat();
+      if (rows.length !== args.p_expected_rows) throw new Error("conferência incompleta no teste");
+      const counts = {
+        total_rows: rows.length,
+        ok_rows: rows.filter((row) => row.status === "OK").length,
+        skipped_rows: rows.filter((row) => row.status === "SKIPPED").length,
+        invalid_rows: rows.filter((row) => row.status === "INVALID").length,
+      };
+      const values = { ...counts, status: "PARSED", parsed_at: args.p_parsed_at ?? null, last_error: null };
+      const error = options.updateError?.(values) ?? null;
+      if (error !== null) return Promise.resolve({ data: null, error });
+
+      captured.updates.push(values);
+      batch = { ...batch, ...values };
+      staged.clear();
+      return Promise.resolve({ data: [counts], error: null });
+    },
   } as unknown as ParseDeps["db"];
 
   return {
@@ -138,6 +163,31 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("parse do arquivo do UpSeller", () => {
+  it("descarta uma leitura válida quando a segunda tentativa já publicou a conferência", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const firstReading = Promise.withResolvers<undefined>();
+    const finishFirst = Promise.withResolvers<readonly (readonly unknown[])[]>();
+    vi.spyOn(deps.reader, "read").mockImplementationOnce(() => {
+      firstReading.resolve(undefined);
+      return finishFirst.promise;
+    });
+    const handler = createErpImportParseHandler(deps);
+    const first = handler(ENVELOPE, ctx(lines, { batchId: BATCH }));
+    await firstReading.promise;
+
+    let newer;
+    try {
+      newer = await handler({ ...ENVELOPE, attempt: 2 }, ctx(lines, { batchId: BATCH }));
+    } finally {
+      finishFirst.resolve(STOCK_SHEET.slice(0, 2));
+    }
+
+    expect(newer).toEqual({ status: "done", processed: 2 });
+    expect(await first).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED", total_rows: 2 });
+    expect(captured.inserted).toHaveLength(1);
+  });
+
   it.each(["erro de bucket", "planilha sem cabeçalho"])("preserva o lote conferido depois de %s de uma tentativa antiga", async (failure) => {
     const { deps, captured, lines } = fakeDeps({});
     const firstReading = Promise.withResolvers<undefined>();
@@ -181,7 +231,7 @@ describe("parse do arquivo do UpSeller", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: true });
     expect(read).not.toHaveBeenCalled();
     expect(captured.updates).toEqual([]);
-    expect(captured.deletedTables).toEqual([]);
+    expect(captured.publishAttempts).toBe(0);
     expect(captured.inserted).toEqual([]);
   });
 
@@ -198,7 +248,7 @@ describe("parse do arquivo do UpSeller", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(read).not.toHaveBeenCalled();
     expect(captured.updates).toEqual([]);
-    expect(captured.deletedTables).toEqual([]);
+    expect(captured.publishAttempts).toBe(0);
     expect(captured.inserted).toEqual([]);
   });
 
@@ -247,13 +297,15 @@ describe("parse do arquivo do UpSeller", () => {
     });
   });
 
-  it("limpa antes de inserir — reexecução não colide com a chave única", async () => {
-    const { deps, captured, lines } = fakeDeps({});
+  it("publica uma vez depois de enviar uma planilha em blocos de até mil linhas", async () => {
+    const sheet = [...STOCK_SHEET, ...Array.from({ length: 500 }, () => STOCK_SHEET.slice(1)).flat()];
+    const { deps, captured, lines } = fakeDeps({ sheet });
 
-    await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
 
-    expect(captured.deletedTables).toContain("erp_import_rows");
-    expect(captured.deletedTables).toContain("erp_stock_snapshots");
+    expect(captured.inserted.map((chunk) => chunk.length)).toEqual([1_000, 2]);
+    expect(captured.publishAttempts).toBe(1);
+    expect(outcome).toEqual({ status: "done", processed: 1_002 });
   });
 
   it("arquivo trocado falha de imediato, sem produzir milhares de linhas inválidas", async () => {
@@ -323,18 +375,20 @@ describe("parse do arquivo do UpSeller", () => {
     const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
-    expect(captured.deletedTables).toEqual([]);
+    expect(captured.publishAttempts).toBe(0);
     expect(captured.updates).toEqual([]);
     expect(captured.inserted).toHaveLength(0);
   });
 
-  it("D-746: falha ao limpar staging antes de inserir retorna retryable sem inserir duplicatas", async () => {
-    const { deps, captured, lines } = fakeDeps({ deleteFailsTable: "erp_import_rows" });
+  it("falha transitória num bloco impede publicar uma conferência parcial", async () => {
+    const sheet = [...STOCK_SHEET, ...Array.from({ length: 500 }, () => STOCK_SHEET.slice(1)).flat()];
+    const { deps, captured, lines } = fakeDeps({ sheet, stageFailsOffset: 1_000 });
 
     const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
 
-    expect(outcome).toMatchObject({ status: "failed", retryable: true });
-    expect(captured.inserted).toHaveLength(0);
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "bloco indisponível" });
+    expect(captured.inserted.map((chunk) => chunk.length)).toEqual([1_000]);
+    expect(captured.publishAttempts).toBe(0);
   });
 
   it("D-746: falha transitória na gravação final de PARSED retorna retryable em vez de done", async () => {

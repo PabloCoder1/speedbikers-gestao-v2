@@ -20032,3 +20032,11 @@ A migração de trabalho `20261119094000` foi aplicada à stack isolada. A RPC �
 A falha de leitura do bucket e a falta de colunas no UpSeller agora exigem o estado `PARSING` e o `updated_at` que a execução recebeu ao iniciar a leitura. Se a tentativa foi substituída ou a gravação do erro falhar, o job retorna falha retentável. Quando a versão ainda é atual, uma falha de bucket continua retentável e colunas ausentes continuam uma rejeição definitiva, com a contagem de linhas preservada.
 
 A105 continua aberto para a substituição da conferência. O importador opera em lotes de mil linhas, com upload de 25 MiB e histórico de planilhas com 23.924 linhas. O próximo ensaio deve preservar essa capacidade e validar a troca das linhas de uma tentativa como unidade.
+
+## D-752 - ERP publica a conferência completa em uma transação
+
+O worker envia as linhas normalizadas à `stage_erp_parse_chunk` em blocos de até mil. Cada bloco fica em `private.erp_parse_chunks`, com identidade por lote, versão e posição. Uma tentativa superada é recusada tanto ao enviar blocos quanto ao publicar. A mudança de versão ou de estado limpa os blocos anteriores por trigger. Excluir um lote também exclui seus blocos. Se o job esgotar as retentativas em `PARSING`, os blocos da tentativa atual ainda ficam vinculados ao lote até nova tentativa, mudança de estado ou exclusão.
+
+A `publish_erp_parse` bloqueia a linha do lote, substitui as linhas e os snapshots anteriores, calcula os totais em SQL e muda o estado para `PARSED` na mesma transação. Quantidade, posições extremas e unicidade garantem uma conferência completa. Falha em qualquer etapa reverte a substituição. A leitura do bucket e a escrita de blocos não mantêm aberto o bloqueio da publicação.
+
+A migration de trabalho `20261119101000` mantém as duas RPCs em modo invocador com execução restrita a `service_role`. O worker usa um contrato local até a regeneração coordenada dos tipos a partir do Dev. A migration precisa ser aplicada antes da revisão do worker que usa as RPCs.
