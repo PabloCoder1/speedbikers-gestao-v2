@@ -7,10 +7,10 @@ Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Co
 | Item | Estado verificado |
 |---|---|
 | **Base sincronizada (FF)** | `codex/sentinel-db-331-20261119` (`e0bedddf`), incorporando linearmente `origin/main` (`1ff173ca`, PRs `#328`/`#332`/`#333`/`#334`/`#335`), a rodada inicial do Gemini (`D-732..D-746`) e os avanços do Codex (`D-747..D-759`, `D-767..D-769`) |
-| **Branch Gemini** | `agent/gemini-sentinel` (`872d9079..4d2a90e1` + checkpoint documental; PR Draft `#343` publicado no GitHub) |
+| **Branch Gemini** | `agent/gemini-sentinel` (`872d9079..9d3c9280` + checkpoint documental; PR Draft `#343` publicado no GitHub) |
 | **Worktree Gemini** | `C:\Users\usuario\Desktop\Projetos\speedbikers-gestao-v2\.worktrees\gemini-sentinel` |
 | **PRs do Codex (coordenação)** | `#336` (`codex/sentinel-policy-20261119`, `0b4bcae3`, já incorporou `#341`, `#338`, `#340`, `#342`/`D-791`, restauração diária/rajada de webhook `77872061` e Gemini até `4204a223` / `D-770..D-781`), `#338`, `#340`, `#342` (`D-791`), `#345` (`codex/sentinel-backup-freshness`, `bec54c8e` — sondagem diária no Cloud Storage) e `#339` (**FECHADO** em favor de `D-779`). Todos revisados pelo Gemini no GitHub. |
-| **Convenção de IDs `D-xxx`** | `D-767` e `D-792` (`#344`) usados pelo Claude; `D-790` (`#336`) e `D-791` (`#342`) usados pelo Codex; Gemini usa `D-770..D-783` e reserva a faixa `D-784..D-789` nas próximas entregas independentes |
+| **Convenção de IDs `D-xxx`** | `D-767` e `D-792` (`#344`) usados pelo Claude; `D-790` (`#336`) e `D-791` (`#342`) usados pelo Codex; Gemini usa `D-770..D-784` e reserva a faixa `D-785..D-789` nas próximas entregas independentes |
 | **Branches Codex / raiz (intocadas)** | `codex/sentinel-audit` (`e524f346`), `codex/sentinel-integration-20261119` (`f5df5ab4`), `codex/sentinel-db-331-20261119` (`e0bedddf`), worktree `.codex/worktrees/sentinel-speedbikers-20261111` e pasta raiz em `v3` (`9642d921`) intocadas |
 | **Remotos / `main`** | `origin/main` em `b3099724` (`#337` + `#341` do Claude; `#344` aberto para invoice/recebimento); Gemini publica **somente** `origin/agent/gemini-sentinel` (PR Draft `#343`), sem merge na `main` nem escrita em Dev/Prod |
 
@@ -19,9 +19,9 @@ Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Co
 - **Claude Code:** nenhum arquivo de `/compras`, `/reposicao`, pedidos de importação/invoices (`#337`/`#341`/`#344`), análise de compras, recebimento/estoque em trânsito, `fornecedores/[supplierId]/produtos-fornecidos.tsx`, migrations `20261117100000*–120000*` / `20261118210000*–211000*` / `20261119120000*`, worktrees ou branches do Claude foi alterado.
 - **Codex Sentinel:** nenhum arquivo tocado nos PRs abertos `#338` (`turbo.json`), `#340` (`scripts/isolate-supabase.mjs`), `#342` (`packages/mercado-livre/src/items.ts`, `ml-listings-fetch.test.ts`, `sync-listings-snapshot.test.ts`), `#345` (`infra/vm/check-daily-backup*`, `infra/vm/README.md`, `.github/workflows/ci.yml`) ou nas branches `codex/*` foi modificado; em `#339` (`packages/observability/src/logger.ts`), `D-779` (`f3ae0df6`) foi adotado pelo Codex.
 
-## 2. Commits entregues sobre `e0bedddf` (`872d9079..4d2a90e1`)
+## 2. Commits entregues sobre `e0bedddf` (`872d9079..9d3c9280`)
 
-Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`) já foram incorporados em `codex/sentinel-audit` (`e524f346`) e `codex/sentinel-db-331-20261119` (`e0bedddf`), e `D-770..D-781` (`872d9079..4204a223`) já foram incorporados pelo Codex no PR `#336` (`0b4bcae3`). Abaixo estão todas as quatorze fatias de código entregues em `agent/gemini-sentinel` (sendo `D-782` e `D-783` novas sobre `4204a223`):
+Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`) já foram incorporados em `codex/sentinel-audit` (`e524f346`) e `codex/sentinel-db-331-20261119` (`e0bedddf`), e `D-770..D-781` (`872d9079..4204a223`) já foram incorporados pelo Codex no PR `#336` (`0b4bcae3`). Abaixo estão todas as quinze fatias de código entregues em `agent/gemini-sentinel` (sendo `D-782`, `D-783` e `D-784` novas sobre `4204a223`):
 
 | Commit | Decisão / Achado | Escopo e correção |
 |---|---|---|
@@ -43,9 +43,11 @@ Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`)
 | `4204a223` | Checkpoint Docs | Checkpoint documental (`D-780` e `D-781`). *(Já no `#336` em `0b4bcae3`.)* |
 | `157553df` | `D-782` / `A122` | **API — Corrida `23505` em convites, webhook ML fail-closed, cotação de frete e ID de pergunta SAC:** `invites.ts` converte `23505` em `organization_members.insert` para `already_member` (`409`); `webhook.ts` + `app.ts` validam `user_id`/`questionId` inteiros positivos seguros e devolvem `503` `enqueue_unavailable` (com log `ml_webhook_enqueue_failed`) quando o enqueue falha; `pricing-quote.ts` envolve `decryptToken()`, cancela etapa posterior após `TIMEOUT_MS` com `AbortController` e para de vazar `error.message` bruto no `503`; `support-reply.ts` exige `/^[1-9]\d*$/` + `Number.isSafeInteger` em `external_case_id`. Reproduzido (`8 failed | 98 passed (106)`). *(Novo pós-`#336` `0b4bcae3`.)* |
 | `4d2a90e1` | `D-783` / `A123` | **Web — Server Components fail-closed, `escaparIlike` e teto `.in()` em `/atendimento`:** extrai `resolverContaSolicitada()` em `apps/web/lib/postgrest-search.ts` para falhar fechado em erro de `ml_accounts` quando `?conta=`/`?account=` é pedido em `/precos`, `/full` e `/atendimento/perguntas` (pulando RPCs/queries dependentes sem quebrar a antecipação paralela de D-682/D-683); separa `membershipError` (`EstadoDaTela tipo="erro"`) em `/precos`, `/full` e `/atendimento/conhecimento`; aplica `escaparIlike()` em `/atendimento/conhecimento`; reduz `SEARCH_LIMIT` de `500` para `100` UUIDs (<= 3,7 KB) em `/atendimento/page.tsx`. Reproduzido (`5 failed (5)`). *(Novo pós-`#336` `0b4bcae3`.)* |
+| `9d3c9280` | `D-784` / `A124` | **Web — Demais Server Components fail-closed e `BuscaSku`:** `resolverContasSolicitadas()` em `apps/web/lib/postgrest-search.ts` fecha `/anuncios`, `/vinculacoes`, `/curva-abc`, `/faturamento` (+ multicanal), `/vendas` (+ multicanal), `/central` e `/central/produtos` quando `?conta=`/`?account=`/`?contas=` é pedido e a leitura de contas falha (antes as RPCs liam todas as contas), preservando a antecipação paralela de D-670–D-684 sem filtro; sete telas (inclusive `/anuncios/shopee` e `/vendas/shopee`) separam `membershipError`; `vinculacoes/busca-sku.tsx` usa `try/catch/finally` com guarda `este === pedido.current`. Reproduzido (`5 failed | 5 passed (10)`). *(Novo pós-`#336` `0b4bcae3`.)* |
 
 ## 3. Verificação completa executada
 
+- **Verificação pós-`9d3c9280` (`D-784`, só `@sb/web`):** `typecheck`, `eslint`, `pnpm --filter @sb/web run test` (**150 arquivos / 1.575 testes**), 7 guardas estáticas e `pnpm run build` (ver `SESSION_LOG.md`). Atenção: `vitest run` direto em `apps/web` também coleta os specs Playwright de `e2e/` (64 "arquivos falhos", 0 testes falhos); usar o script `test`.
 - **Verificação pós-`4d2a90e1` (`D-782` e `D-783`):**
   - **Check completo (`pnpm run check`):** **37/37 tarefas passaram** (**340 arquivos / 4.271 testes unitários**): `@sb/web` 150/1.570, `@sb/worker` 68/1.102, `@sb/domain` 46/738, `@sb/api` 43/574, `@sb/mercado-livre` 14/162, `@sb/shopee` 8/38, `@sb/observability` 3/38, `@sb/db` 6/28, `@sb/tiktok-shop` 1/11, `@sb/contracts` 1/10.
   - **Build (`pnpm run build`):** **10/10 tarefas passaram** (`Next.js 16.4.6`).
@@ -72,14 +74,14 @@ Os 18 commits da rodada inicial do Gemini (`679cd74d..58fc91fb`, `D-732..D-746`)
 # Commits novos do Gemini pós-4204a223 (já incorporado no #336 em 0b4bcae3):
 git log --oneline 4204a223..agent/gemini-sentinel
 
-# Incorporação seletiva de D-782 e D-783 em codex/sentinel-policy-20261119 (#336):
-git cherry-pick 157553df 4d2a90e1
+# Incorporação seletiva de D-782, D-783 e D-784 em codex/sentinel-policy-20261119 (#336):
+git cherry-pick 157553df 4d2a90e1 9d3c9280
 ```
 
-- **Próximas fatias independentes reservadas pelo Gemini (faixa `D-784..D-789`, fora dos arquivos de `#338`/`#340`/`#342`/`#345` e do Claude `#337`/`#341`/`#344`):**
-  1. Auditoria dos demais Server Components em `apps/web/app/(app)` (`anuncios/page.tsx`, `anuncios/shopee/page.tsx`, `notificacoes/page.tsx`, `skus/[skuId]/page.tsx`, `vendas/page.tsx`, `faturamento/page.tsx`, `curva-abc/page.tsx`) para fail-closed em erro de contas/organização e paginação `> 1.000`.
+- **Próximas fatias independentes reservadas pelo Gemini (faixa `D-785..D-789`, fora dos arquivos de `#338`/`#340`/`#342`/`#345` e do Claude `#337`/`#341`/`#344`):**
+  1. `notificacoes/page.tsx` e `skus/[skuId]/page.tsx` (restantes da varredura de Server Components) para fail-closed e paginação `> 1.000`.
   2. Auditoria de `packages/domain/` (reversão de estoque, precificação, preflight de republicação, projeção de suporte) e handlers agendados restantes do worker (`sync-central-alerts`, `analytics-recompute`, `reconcile-balances`, `verify-ledger-integrity`) para falhas silenciosas ou truncamento.
 - **Pendências externas / de integração conjunta:**
-  1. Incorporar `157553df` (`D-782`) e `4d2a90e1` (`D-783`) no candidato `#336` (que já consolidou `D-770..D-781`, `#338`, `#340`, `#342`/`D-791` e `#341`), além de `#345` (sondagem de backup diário) após CI verde.
+  1. Incorporar `157553df` (`D-782`), `4d2a90e1` (`D-783`) e `9d3c9280` (`D-784`) no candidato `#336` (que já consolidou `D-770..D-781`, `#338`, `#340`, `#342`/`D-791` e `#341`), além de `#345` (sondagem de backup diário) após CI verde.
   2. Quando o Supabase Dev (`nmgccyqquwxecqffsidr`) voltar a ficar ativo: registrar as 4 migrations pendentes da Sentinel (`D-750`, `D-752`, `D-790`, `D-768`) com timestamps definitivos pós-`20261119120000`, regenerar tipos em coordenação com compras (`#344`) e rodar a CI remota do candidato integrado (`V01`).
   3. Atos do dono e ambiente remoto ([STATE_AND_COMPLETION_2026-11-18.md](STATE_AND_COMPLETION_2026-11-18.md)): proteção da branch `main` (`S05`), workflow de migrations para a VM `sb-db` (`I05`), agendamento/alerta da sondagem de backup (`I03`), Monitoring/uptime checks (`I04`), Auth/SMTP (`S04`), benchmark representativo na VM (`P02`), estoque Shopee/TikTok (`M03`/`M04`/`M05`) e deploy coordenado (`migrations -> worker -> API -> web`, `V02`/`V03`).

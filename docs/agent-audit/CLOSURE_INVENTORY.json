@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.570 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.575 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
