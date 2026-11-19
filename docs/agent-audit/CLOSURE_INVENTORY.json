@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-772 (9646d3e8)",
+  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-775 (73f886e3)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111; confirmação real, gavetas, OAuth/SAC/aplicação/SSE/convite e Saída Manual/NF-e protegidos (1.550 unit + 401/401 E2E)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e e 7 rotas de exportação + CSV protegidos (1.555 unit + 401/401 E2E)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API; D-770 endurece edição de item NF-e e saída manual (555 testes)",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770 e D-775 endurecem edição NF-e, saída manual, auth multi-org/503 e OIDC email_verified (561 testes)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752 e D-772 testados localmente com paginação, guardas por versão, fatiamento .in(), unlock no finally e persistência atômica (1.091 testes)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773 e D-775 testados localmente com paginação, guardas por versão, fatiamento .in(), clientes HTTP resilientes e unlock no finally (1.093 testes)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.214 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em 9646d3e8",
+      "evidencia": "check 37/37 tarefas (4.231 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em 73f886e3",
       "fase": 5
     },
     {
@@ -339,7 +339,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em 9646d3e8",
+      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em 73f886e3",
       "fase": 5
     },
     {
