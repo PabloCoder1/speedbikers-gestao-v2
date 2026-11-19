@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-781 (b7d459ea, PR #343)",
+  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-783 (4d2a90e1, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/ILIKE e zero getSession direto em clientes web (1.565 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.570 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775 e D-777 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno e callback Shopee (566 testes)",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775, D-777 e D-782 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno, callback Shopee, convites 23505, webhook ML 503, frete e SAC (574 testes)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.258 unitários), build 10/10, 7 guardas web em b7d459ea; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "evidencia": "check 37/37 tarefas (4.271 unitários), build 10/10, 7 guardas web em 4d2a90e1; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
