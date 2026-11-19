@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-775 (73f886e3)",
+  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-779 (f3ae0df6)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e e 7 rotas de exportação + CSV protegidos (1.555 unit + 401/401 E2E)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV e Server Actions/ILIKE protegidos (1.562 unit + 401/401 E2E)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API; D-770 e D-775 endurecem edição NF-e, saída manual, auth multi-org/503 e OIDC email_verified (561 testes)",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775 e D-777 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno e callback Shopee (566 testes)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773 e D-775 testados localmente com paginação, guardas por versão, fatiamento .in(), clientes HTTP resilientes e unlock no finally (1.093 testes)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776 e D-779 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, clientes HTTP resilientes, unlock no finally e logger blindado (1.097 worker + 38 observability)",
       "fase": 3
     },
     {
@@ -299,7 +299,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Sentinel/Backend",
-      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746/D-770–D-772 paginam >1.000 no worker, Copiloto, estoque Shopee e /diagnostico + lotes .in 100/200",
+      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746/D-770–D-772/D-776 paginam >1.000 no worker, Copiloto, estoque Shopee e /diagnostico + lotes .in 100/200 e leitura anterior do Full sem varredura histórica",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.231 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em 73f886e3",
+      "evidencia": "check 37/37 tarefas (4.250 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em f3ae0df6",
       "fase": 5
     },
     {
@@ -339,7 +339,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em 73f886e3",
+      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em f3ae0df6",
       "fase": 5
     },
     {
