@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **677** (D-001 a D-775).
+Decisões registradas: **678** (D-001 a D-776).
 
 ## Por domínio
 
@@ -276,7 +276,7 @@ Decisões registradas: **677** (D-001 a D-775).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (131)
+### mercado-livre (132)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -409,6 +409,7 @@ Decisões registradas: **677** (D-001 a D-775).
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
+- **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
 
 ### outros (110)
 

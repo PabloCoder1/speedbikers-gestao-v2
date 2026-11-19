@@ -20232,3 +20232,14 @@ Três fragilidades confirmadas de segurança e resiliência em `apps/api/src/aut
 3. **Falha de transporte ao destravar `shopee.orders.sync` no `finally` (`apps/worker/src/handlers/shopee-orders-sync.ts`):** se o `UPDATE` de liberação da trava lançasse exceção de transporte no `finally`, mascarava o erro original de `lerJanela` ou abortava antes de enfileirar `seguintes`. Agora o `finally` está envolvido em `try/catch`, registrando `shopee_orders_sync_unlock_failed` sem perder o resultado nem mascarar a exceção original.
 
 Reprodução pré-correção em `auth.test.ts`, `oidc.test.ts` e `shopee-orders-sync.test.ts` registrou 6 falhas (`6 failed | 17 passed (23)`); após a correção, `@sb/api` (`43` arquivos / `561` testes) e `@sb/worker` (`68` arquivos / `1.093` testes) passaram integralmente em `typecheck`, `eslint` e `vitest`.
+
+## D-776 - Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
+
+Em `apps/worker/src/handlers/ml-fulfillment-fetch.ts`, a leitura dos snapshots anteriores de `fulfillment_stock_snapshots` passava todos os `inventory_id`s da conta em um único `.in()` na URL do PostgREST (arriscando HTTP 414 em contas com >100 inventários Full — as quatro contas reais medem 1.640–2.012 vínculos), ordenava apenas por `captured_at DESC` sem tie-breaker determinístico entre páginas de mesma captura, e usava `readAllPages` sobre toda a tabela histórica sem filtro de janela nem parada antecipada (baixando centenas de milhares de snapshots históricos apenas para manter o mais recente de cada `inventory_id`).
+
+`readPreviousSnapshots` passou a:
+1. Fatiar `inventories` em lotes de `INVENTORY_LOOKUP_CHUNK = 100` (mesmo teto de `ABSENCE_DELETE_CHUNK`).
+2. Consultar primeiro a janela recente de 48 h (`captured_at >= capturedAt - 48h`, ordenação determinística `captured_at DESC, inventory_id ASC`), interrompendo a paginação assim que todos os inventários do lote são encontrados (1 única página por lote na cadência normal de 6 h).
+3. Para eventuais inventários sem snapshot nas últimas 48 h (novos ou sem captura recente), executar lookup pontual em concorrência limitada (`10`) via `.eq("ml_account_id", ...).eq("inventory_id", id).order("captured_at", { ascending: false }).limit(1).maybeSingle()` apoiado diretamente pelo índice único `fulfillment_stock_snapshots_unique (ml_account_id, inventory_id, captured_at DESC)`, propagando qualquer erro de banco (fail-closed, sem falso `listing.fulfillment.entered`).
+
+Reprodução pré-correção em `ml-fulfillment-fetch.test.ts` registrou 4 falhas (`4 failed | 43 passed (47)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.097` testes).
