@@ -1006,6 +1006,21 @@ Medido em 2026-09-13 nos logs de requisição do Cloud Run, sem tocar em nada �
 
 **Tráfego de usuário na `api`:** 89 chamadas de `/v1` em 7 dias. As telas leem o Supabase direto, e esse lado não aparece nestes logs — é a revisão de `pg_stat_statements` que o mede.
 
+### ACK observado após a recuperação da VM, 19/11/2026
+
+Leitura de Cloud Logging na revisão `api-00041-8m8`. Foram consultados
+os logs existentes da rota `POST /webhooks/mercado-livre` e os eventos
+de enfileiramento, em amostras distintas.
+
+| Amostra em Brasília | Volume | Resultado |
+| --- | ---: | --- |
+| 15:09:37 a 15:30:27 | 1.500 POSTs | 1.500 HTTP 200; ACK p50 1,9 ms, p95 242,4 ms, p99 304,0 ms. Um ACK acima de 500 ms |
+| 14:57:48 a 15:29:51 | 1.000 eventos enfileirados | Lookup p95 0 ms, enqueue p95 285 ms |
+
+Os dois limites de amostra foram atingidos. Os percentis correspondem
+às janelas e às populações acima. A leitura não mede pico induzido,
+comportamento em falha ou latência SQL da VM.
+
 ### Quanto do ACK é a conta e quanto é a Cloud Task (D-343)
 
 Desde D-343 os logs do webhook carregam o tempo de cada etapa, em ms inteiros: `lookup_ms` (a consulta de `ml_accounts`) em `ml_webhook_topic_without_consumer`, `ml_webhook_unknown_account`, `ml_webhook_read_receipt_ignored` e `ml_webhook_unroutable_resource`; e `lookup_ms` **mais** `enqueue_ms` (a criação da Cloud Task) em `ml_webhook_enqueued`. Nenhum I/O mudou — só campos a mais no log.

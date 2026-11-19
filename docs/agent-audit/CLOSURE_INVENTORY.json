@@ -209,7 +209,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "#333 registra dump restaurado em isolamento e ensaio dos 17 SQLs. Snapshot automático READY em 19/11. Prefixo diario/ vazio na listagem e alerta pendente",
+      "evidencia": "#333 restaurou o dump manual. O diário de 19/11 passou checksum e leitura de 2.786 entradas. A definição arquivada antecede a invoice. Restore integral do diário e alerta pendentes",
       "fase": 2
     },
     {

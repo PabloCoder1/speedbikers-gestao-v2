@@ -870,3 +870,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - Integração em worktree própria de `5364c544` e `c25e75c8`. Preserva byte a byte o código de #341 e as alterações do Gemini D-776–D-779. Inclui as correções de lint e de portas Docker de #338 e #340. O índice documental foi regenerado com 682 decisões únicas.
 - Passaram 37 tarefas de check com 4.266 testes unitários, 10 tarefas de build, o teste de isolamento e a checagem de documentação. A CI do #336 continua no corte anterior até concluir a rodada.
 - O multiget do ML retornou 31 respostas `403 ResourceDeprecated` na amostra. D-791/#342 usa `/items/bulk` e exige validação em produção após aprovação. A entrega M05 permanece em andamento.
+
+### 19/11/2026 · CI do candidato combinado e auditoria do dump diário
+
+- A CI 44587757810 foi disparada na branch própria `codex/sentinel-gemini-handoff-20261119`, SHA `87038af1`. Consultas de build, integração e scripts passaram. Playwright em execução nesta captura. O job de aplicação em Dev é restrito à `main`.
+- O dump diário de 19/11 passou na verificação de checksum por fluxo e no catálogo de 2.786 entradas. A definição arquivada de `purchase_import_rows` ainda não contém as colunas de `20261119120000`. Restore integral do diário e alerta de falha seguem pendentes. [Registro da VM](../../infra/vm/README.md).
+- Novo recorte de ACK após recuperação. A revisão `api-00041-8m8` respondeu 200 nos 1.500 POSTs consultados (p95 242,4 ms). Lookup p95 0 ms e enqueue p95 285 ms em amostra distinta de 1.000 eventos. [Medição](../PERFORMANCE.md#ack-observado-após-a-recuperação-da-vm-19112026).

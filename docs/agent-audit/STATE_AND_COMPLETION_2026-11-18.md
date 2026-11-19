@@ -219,7 +219,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | D05 | Banco de dados: Inventário e medição física; comparação de provedores | Database/Sentinel | 2 | Testado localmente | SIZE_REPORT: dump 22/10 restaurado 1092 MB; preços oficiais | 2 |
 | I01 | Google Cloud e infraestrutura: Run, Tasks, Scheduler e rede de produção provisionados | Infra | 8 | Publicado | Em 19/11, 18 agendamentos habilitados e dois com último código 14. Revisões Run mantidas | 2 |
 | I02 | Google Cloud e infraestrutura: Cutover VM self-hosted e HTTPS | Database/Infra | 5 | Publicado | VM Running; CSP nova; API200; PR331 docs | 2 |
-| I03 | Google Cloud e infraestrutura: Backup/restore recorrente com prova e alerta | Infra/Database | 5 | Em andamento | Restore isolado do #333 e snapshot automático READY. Dump diário e alerta pendentes | 2 |
+| I03 | Google Cloud e infraestrutura: Backup/restore recorrente com prova e alerta | Infra/Database | 5 | Em andamento | Restore manual no #333. Dump diário de 19/11 com checksum e catálogo OK. Restore diário e alerta pendentes | 2 |
 | I04 | Google Cloud e infraestrutura: Monitoramento externo, disco e falha de backup | Infra/Dono | 3 | Não iniciado | Monitoring18/11:0uptimechecks e0alertPolicies | 2 |
 | I05 | Google Cloud e infraestrutura: Pipeline de migrations para VM e rollback ensaiado | Infra/Database | 5 | Não iniciado | workflow ainda Supabase hospedado; README pendência6 | 2 |
 | I06 | Google Cloud e infraestrutura: Custo real, retenção de artefatos e dimensionamento | Infra/Dono | 3 | Em andamento | Billing429; ArtifactRegistry1.33GB; consumo não medido | 2 |

@@ -36,6 +36,21 @@ não deve ser atribuída ao workflow `migrations-producao.yml`.
   Não copiar senhas de roles nem restaurar sobre produção. O snapshot cobre
   a instância; o ensaio do dump usou owners locais com `--no-owner`.
 
+## Dump diário verificado em 19/11
+
+O objeto `diario/2026-11-19.dump`, geração `1795068954797517`, tem
+183.547.863 bytes. O MD5 calculado em fluxo coincidiu com o Cloud
+Storage. `pg_restore --list` leu 2.786 entradas em um container
+isolado. O catálogo inclui as tabelas de migrations, importação e
+`job_runs`.
+
+A definição arquivada de `purchase_import_rows` antecede a migration
+`20261119120000` da invoice. Para recuperar o schema atual a partir
+desse dump, conferir o histórico restaurado e planejar a reaplicação
+das migrations posteriores. O checksum e a leitura do catálogo
+verificam a transferência e a estrutura. O restore integral deste
+dump e o alerta de falha seguem pendentes.
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e
