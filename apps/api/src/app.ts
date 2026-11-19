@@ -72,6 +72,9 @@ import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
 import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
+import { comandoDeItemSchema, editDocumentItem } from "./document-items.js";
+import type { ManualExitDeps } from "./manual-exit.js";
+import { manualExitSchema, registerManualExit } from "./manual-exit.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
@@ -138,6 +141,8 @@ export interface AppDependencies {
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
   relist?: RelistDeps;
+  /** D-766: a Saída Manual (estoque da loja), gravada pela `api` com a chave de serviço. */
+  manualExit?: ManualExitDeps;
   pricingQuote?: PricingQuoteDeps;
   invites?: InviteDeps;
   metricsRefreshSchedule?: MetricsRefreshScheduleDeps;
@@ -1533,6 +1538,108 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     return context.json({ documentId: outcome.documentId, queued: true });
+  });
+
+  // --------------------------------------------------------------------
+  // D-766 — editar um item lido de um documento em conferência: mudar a
+  // quantidade ou remover. POST, e não PATCH/DELETE: o CORS da `api` só
+  // libera GET/POST, e abrir métodos por causa de uma rota não vale o risco.
+  // --------------------------------------------------------------------
+  app.post("/v1/nfe-imports/:id/items/:itemId", async (context) => {
+    const auth = dependencies.auth;
+    const nfeImportDeps = dependencies.nfeImportDeps;
+
+    if (auth === undefined || nfeImportDeps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN", "GESTOR"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("document_item_edit_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const documentId = context.req.param("id");
+    const itemId = Number(context.req.param("itemId"));
+
+    if (!z.uuid().safeParse(documentId).success || !Number.isSafeInteger(itemId) || itemId <= 0) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    const body: unknown = await context.req.json().catch(() => null);
+    const comando = comandoDeItemSchema.safeParse(body);
+
+    if (!comando.success) {
+      return context.json({ error: { code: "invalid_payload", message: "comando inválido para o item" } }, 400);
+    }
+
+    const outcome = await editDocumentItem(nfeImportDeps, authorized.caller, documentId, itemId, comando.data);
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    if (outcome.status === "failed") {
+      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+    }
+
+    return context.json({ totalItems: outcome.totalItems, resolvedItems: outcome.resolvedItems });
+  });
+
+  // --------------------------------------------------------------------
+  // D-766 — Saída Manual: vários SKUs saem do estoque da loja de uma vez,
+  // como "Salvar e Dar Saída" do UpSeller. Ver manual-exit.ts.
+  // --------------------------------------------------------------------
+  app.post("/v1/stock/manual-exits", async (context) => {
+    const auth = dependencies.auth;
+    const manualExit = dependencies.manualExit;
+
+    if (auth === undefined || manualExit === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // O mesmo papel do ajuste manual por SKU (`create_manual_stock_adjustment`).
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN", "GESTOR"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("manual_exit_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const body: unknown = await context.req.json().catch(() => null);
+    const input = manualExitSchema.safeParse(body);
+
+    if (!input.success) {
+      return context.json(
+        { error: { code: "invalid_payload", message: "confira o tipo, a observação e as quantidades" } },
+        400,
+      );
+    }
+
+    const outcome = await registerManualExit(manualExit, authorized.caller, input.data);
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    if (outcome.status === "failed") {
+      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+    }
+
+    return context.json({ requestId: outcome.requestId, itens: outcome.itens, unidades: outcome.unidades });
   });
 
   // --------------------------------------------------------------------

@@ -153,6 +153,10 @@ Até D-765 o envio ao Full era lido e conferido, mas a aplicação era recusada:
 - **DANFE de mais de uma página de itens** com continuação de descrição atravessando a página: o leitor trata continuação dentro da página;
 - **ISO-8859-1 no XML** segue não testado (seção 3).
 
+### 4.5 Itens editáveis e Saída Manual (D-766)
+
+Na conferência (`PARSED`), a quantidade de cada item pode ser alterada e o item removido (menos o último), pela `api` (`POST /v1/nfe-imports/:id/items/:itemId`). O valor total do item acompanha a quantidade; `total_items` e `resolved_items` do documento são recontados. Adicionar item não existe: quem precisa de uma saída sem documento usa `/notas-fiscais/saida-manual`, que grava `AJUSTE_MANUAL` na loja com `source_type = 'SAIDA_MANUAL'` (`POST /v1/stock/manual-exits`).
+
 ---
 
 ## Como adicionar novo campo confirmado

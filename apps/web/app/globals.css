@@ -15754,6 +15754,228 @@ td.sb-pco-num-linha {
   color: #ffb4b4;
 }
 
+/*
+ * SAÍDA MANUAL (D-766) — `/notas-fiscais/saida-manual`.
+ *
+ * O "Criar Saída" do UpSeller na língua da casa: dois blocos (a saída e os
+ * produtos) e a mesma barra de confirmação presa ao pé da conferência de
+ * documento (`sb-nf-confirmar`), porque é o mesmo gesto — dar saída.
+ */
+.sb-saida {
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-saida-bloco {
+  padding: var(--sb-space-3);
+  overflow: visible;
+}
+
+.sb-saida-titulo {
+  margin: 0 0 var(--sb-space-3);
+  padding-left: 0.5rem;
+  border-left: 3px solid var(--sb-accent);
+  font-size: 0.875rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-saida-campos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 18rem));
+  gap: var(--sb-space-3);
+}
+
+.sb-saida-campo {
+  position: relative;
+  display: grid;
+  gap: 0.3125rem;
+  /* Sem isto, o campo de duas linhas estica para a altura do vizinho de três
+     e os dois selects ficam desalinhados. */
+  align-content: start;
+  font-size: 0.75rem;
+}
+
+.sb-saida-campo > span {
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+.sb-saida-campo > span em {
+  font-style: normal;
+  color: var(--sb-danger);
+}
+
+.sb-saida-campo small {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-saida-campo-largo {
+  grid-column: 1 / -1;
+  max-width: 37rem;
+}
+
+.sb-saida-contador {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-saida-cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+}
+
+.sb-saida-cabeca .sb-saida-titulo {
+  margin-bottom: 0;
+}
+
+.sb-saida-cabeca-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.sb-saida-busca {
+  max-width: 37rem;
+  margin: var(--sb-space-3) 0;
+}
+
+.sb-saida-importar {
+  display: grid;
+  gap: var(--sb-space-2);
+  max-width: 37rem;
+  margin-bottom: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-ground);
+}
+
+.sb-saida-importar-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+/* O <input type=file> fica dentro do rótulo com cara de botão da casa. */
+.sb-saida-arquivo {
+  position: relative;
+  cursor: pointer;
+}
+
+.sb-saida-arquivo:focus-within {
+  outline: 2px solid var(--sb-primary);
+  outline-offset: 2px;
+}
+
+.sb-saida-vazio {
+  margin: 0;
+}
+
+.sb-saida-tabela td {
+  vertical-align: middle;
+}
+
+.sb-saida-massa {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.sb-saida-qtd {
+  width: 5.5rem;
+  height: 2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-saida-qtd-invalida {
+  border-color: var(--sb-danger);
+}
+
+.sb-saida-remover {
+  color: var(--sb-danger-ink);
+}
+
+.sb-saida-rodape-acoes {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sb-saida-feita {
+  display: grid;
+  gap: 0.375rem;
+  max-width: 40rem;
+  padding: var(--sb-space-4);
+  border-left: 3px solid var(--sb-success);
+}
+
+.sb-saida-feita h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-saida-feita p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-saida-feita-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: var(--sb-space-2);
+}
+
+/* A quantidade editável do item em conferência (D-766). */
+.sb-nf-qtd {
+  display: inline-grid;
+  justify-items: end;
+  gap: 0.125rem;
+}
+
+.sb-nf-qtd-acoes {
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.sb-nf-qtd-edicao {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sb-nf-qtd-erro {
+  max-width: 12rem;
+  margin: 0;
+  font-size: 0.6875rem;
+  text-align: right;
+  color: var(--sb-danger-ink);
+}
+
+@media (max-width: 640px) {
+  .sb-saida-campos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-saida-rodape-acoes {
+    width: 100%;
+  }
+
+  .sb-saida-rodape-acoes > * {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 @media (max-width: 1100px) {
   .sb-nf-doc-topo {
     grid-template-columns: auto minmax(0, 1fr);
