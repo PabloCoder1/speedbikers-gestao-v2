@@ -13,6 +13,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { createClient } from "../../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../../lib/sales-metric";
 import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
@@ -431,9 +432,41 @@ async function VendasContent({
   const metric = resolveSalesMetric(query.metric);
 
   // Slug desconhecido cai em "todas as contas" em silêncio (`lib/vendas-ml-filtros.ts`,
-  // a mesma regra do CSV do recorte, D-602).
+  // a mesma regra do CSV do recorte, D-602), mas erro na leitura de `ml_accounts`
+  // falha fechado quando a URL pediu uma conta explícita.
+  const contaSolicitada = typeof query.account === "string" && query.account.trim() !== "" ? query.account.trim() : null;
+  const leituraContasPedida = contaSolicitada === null ? null : await accountsPromise;
+  const { erro: erroConta } = resolverContaSolicitada(
+    contaSolicitada,
+    leituraContasPedida,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    await Promise.all([cabecalhoPromise, brandsPromise]);
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Dashboard de vendas" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas do Mercado Livre"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{
+            href: buildHref(
+              { period, accountSlug: contaSolicitada, metricKey: metric.key, brand: resolverMarcaDaVenda(query) },
+              {},
+            ),
+            rotulo: TENTAR_DE_NOVO,
+            mesmaTela: true,
+          }}
+        />
+      </>
+    );
+  }
+
   const selectedAccount =
-    typeof query.account === "string" ? resolverContaDaVenda(query, (await accountsPromise).data ?? []) : null;
+    contaSolicitada === null ? null : resolverContaDaVenda(query, leituraContasPedida?.data ?? []);
   const accountSlug = selectedAccount?.slug ?? null;
 
   // `exactOptionalPropertyTypes` distingue "propriedade ausente" de

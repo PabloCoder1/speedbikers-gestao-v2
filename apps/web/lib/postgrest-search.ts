@@ -48,3 +48,31 @@ export function resolverContaSolicitada<
     erro: null,
   };
 }
+
+/**
+ * Resolve seleção múltipla de contas/lojas (`?contas=...`) contra
+ * `marketplace_accounts`, falhando fechado quando o usuário pediu contas
+ * específicas e a leitura falhou.
+ */
+export function resolverContasSolicitadas<
+  T,
+  R,
+  E extends { message: string; code?: string } = { message: string; code?: string },
+>(
+  valor: string | string[] | undefined,
+  leitura: { data: readonly T[] | null; error: E | null } | null,
+  resolver: (raw: string, contas: readonly T[]) => R,
+): { resultado: R | null; erro: E | { message: string; code?: string } | null } {
+  if (typeof valor !== "string" || valor.trim() === "") {
+    return { resultado: null, erro: null };
+  }
+
+  if (leitura?.error !== null) {
+    return { resultado: null, erro: leitura?.error ?? { message: "falha ao ler contas" } };
+  }
+
+  return {
+    resultado: resolver(valor, leitura.data ?? []),
+    erro: null,
+  };
+}

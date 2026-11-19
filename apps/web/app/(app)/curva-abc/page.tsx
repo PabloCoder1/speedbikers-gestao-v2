@@ -35,6 +35,7 @@ import {
 } from "../../../lib/abc-filters";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import { contarLojasShopee } from "../../../lib/marketplace";
+import { resolverContaSolicitada, resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { mesmaUrl } from "../../../lib/mesma-url";
 import { createClient } from "../../../lib/supabase/server";
@@ -142,7 +143,23 @@ export default async function CurvaAbcPage({
   // O cabeçalho pode falhar antes de a organização ou a conta ser resolvida.
   void cabecalhoPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await cabecalhoPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / ANÁLISE" title="Curva ABC" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membershipError.message}
+          acao={{ href: "/curva-abc", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     await cabecalhoPromise;
@@ -154,6 +171,38 @@ export default async function CurvaAbcPage({
     );
   }
 
+  // A curva só espera a lista de contas quando o link pede uma seleção.
+  // Se uma conta ou loja foi pedida e a leitura de contas falhou, falha fechado
+  // antes de recalcular a curva sobre todas as contas.
+  const { conta: selectedAccount, erro: erroContaMl } = resolverContaSolicitada(
+    pedidos.accountSlug,
+    pedidos.accountSlug === null ? null : await accountsPromise,
+    (account, slug) => account.slug === slug,
+  );
+  const contasParam = pedidos.contas === null ? undefined : pedidos.contas.join(",");
+  const { resultado: contasPedidasResolvidas, erro: erroContasMulticanal } = resolverContasSolicitadas(
+    contasParam,
+    pedidos.contas === null ? null : await contasDoRecortePromise,
+    (_raw, contas) => contas,
+  );
+  const erroConta = erroContaMl ?? erroContasMulticanal;
+
+  if (erroConta !== null) {
+    await cabecalhoPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / ANÁLISE" title="Curva ABC" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas do recorte"
+          descricao="A seleção de contas pedida na URL não pôde ser confirmada."
+          detalhe={erroConta.message}
+          acao={{ href: "/curva-abc", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   // Marca e categoria dependem só da organização (D-194).
   const filtrosPromise = Promise.all([
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
@@ -161,14 +210,7 @@ export default async function CurvaAbcPage({
   ]);
   void filtrosPromise.catch(() => undefined);
 
-  // A curva só espera a lista de contas quando o link pede uma seleção.
-  // Slug desconhecido cai no consolidado. A seleção multicanal usa a mesma
-  // validação por RLS do Excel e conta as contas descartadas (D-440).
-  const selectedAccount =
-    pedidos.accountSlug === null
-      ? null
-      : ((await accountsPromise).data?.find((a) => a.slug === pedidos.accountSlug) ?? null);
-  const contasPedidas = pedidos.contas === null ? [] : ((await contasDoRecortePromise).data ?? []);
+  const contasPedidas = contasPedidasResolvidas ?? [];
   const { filters, selecionadas, descartadas, leMl } = aplicarContasDoRecorte(pedidos, contasPedidas);
   const janela = resolveAbcWindow(filters, today);
 

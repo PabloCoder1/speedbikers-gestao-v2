@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **685** (D-001 a D-783).
+Decisões registradas: **686** (D-001 a D-784).
 
 ## Por domínio
 
@@ -416,7 +416,7 @@ Decisões registradas: **685** (D-001 a D-783).
 - **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 
-### outros (111)
+### outros (112)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -529,6 +529,7 @@ Decisões registradas: **685** (D-001 a D-783).
 - **D-774** — Rotas de exportação falham fechado em erro de contas/organização e `csvCell` neutraliza fórmulas com espaço/tab/CR
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
+- **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
 
 ### processo/docs (1)
 
